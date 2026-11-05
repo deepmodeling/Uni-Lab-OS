@@ -52,9 +52,13 @@ def parse_envelope(response_json: Dict[str, Any]) -> Envelope:
     if "code" not in response_json:
         raise ValueError("响应缺少 code 字段")
 
+    error = response_json.get("error", "")
+    if isinstance(error, dict):
+        # 信封错误形状 {"msg": "..."}（workflow / graphs / chemicals 统一）
+        error = str(error.get("msg") or "")
     return Envelope(
         code=response_json.get("code", -1),
-        error=response_json.get("error", ""),
+        error=error,
         data=response_json.get("data"),
         timestamp=response_json.get("timestamp", 0),
     )

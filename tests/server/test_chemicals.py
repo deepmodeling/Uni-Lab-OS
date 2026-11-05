@@ -101,7 +101,7 @@ def test_http_envelope(service) -> None:
     assert created.status_code == 201 and created.json()["code"] == 0
     chemical = created.json()["data"]
     assert client.post("/api/v1/chemicals", json=WATER).json()["code"] == 3003
-    assert client.post("/api/v1/chemicals", json={"name": "坏的", "cas": "1-1-1"}).json()["code"] == 2
+    assert client.post("/api/v1/chemicals", json={"name": "坏的", "cas": "1-1-1"}).json()["code"] == 1000
     assert client.get("/api/v1/chemicals", params={"q": "water"}).json()["data"]["total"] == 1
 
     patched = client.patch(f"/api/v1/chemicals/{chemical['chemical_uuid']}",

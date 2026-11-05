@@ -14,10 +14,17 @@ from fastapi import APIRouter, FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from unilabos.server.api.envelope import envelope_error, install_envelope_validation
 from unilabos.server.services.materials.graph import GraphError, GraphService
 
-#: envelope 业务码：not_found 独立编码便于客户端区分，其余归为通用失败。
-_BUSINESS_CODES = {"not_found": 3002, "invalid_input": 2, "invalid_payload": 2}
+#: GraphError.code → 信封业务码类别（与 workflow / chemicals 同一张码表，见 api/envelope.py）。
+_CATEGORIES = {
+    "not_found": "not_found",
+    "invalid_input": "invalid",
+    "invalid_payload": "invalid",
+    "identity_conflict": "conflict",
+    "unsupported": "unavailable",
+}
 
 
 class GraphUpsertRequest(BaseModel):
@@ -45,13 +52,7 @@ def _success(data: Any = None) -> JSONResponse:
 
 
 def _error(error: GraphError) -> JSONResponse:
-    return JSONResponse(
-        status_code=200,
-        content={
-            "code": _BUSINESS_CODES.get(error.code, 1),
-            "error": error.message,
-        },
-    )
+    return envelope_error(_CATEGORIES.get(error.code, "internal"), error.message)
 
 
 def create_graph_router(service: GraphService) -> APIRouter:
@@ -130,6 +131,7 @@ def create_graph_router(service: GraphService) -> APIRouter:
 
 
 def install_graph_api(app: FastAPI, service: GraphService) -> None:
+    install_envelope_validation(app, ("/api/v1/graphs",))
     app.include_router(create_graph_router(service))
 
 

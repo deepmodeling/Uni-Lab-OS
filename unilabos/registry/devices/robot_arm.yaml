@@ -10,7 +10,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -38,7 +37,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           retry: 10
           speed: 1
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -86,7 +84,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           speed: 1
           target_link: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -137,7 +134,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
           parent_link: null
           resource: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -166,7 +162,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -191,7 +186,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -224,7 +218,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -257,7 +250,6 @@ robotic_arm.SCARA_with_slider.moveit.virtual:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -329,7 +321,6 @@ robotic_arm.UR:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -353,7 +344,6 @@ robotic_arm.UR:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -380,7 +370,6 @@ robotic_arm.UR:
         goal_default:
           file: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -406,7 +395,6 @@ robotic_arm.UR:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -431,7 +419,6 @@ robotic_arm.UR:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -511,7 +498,6 @@ robotic_arm.elite:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -534,7 +520,6 @@ robotic_arm.elite:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -560,7 +545,6 @@ robotic_arm.elite:
           start_addr: null
           unit_id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -593,7 +577,6 @@ robotic_arm.elite:
         goal_default:
           job_id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -622,7 +605,6 @@ robotic_arm.elite:
           unit_id: null
           value: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -655,7 +637,6 @@ robotic_arm.elite:
         goal_default:
           response: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -682,7 +663,6 @@ robotic_arm.elite:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -710,7 +690,6 @@ robotic_arm.elite:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

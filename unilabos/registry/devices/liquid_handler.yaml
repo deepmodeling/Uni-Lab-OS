@@ -44,7 +44,6 @@ liquid_handler:
           targets: null
           use_channels: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           reagent_sources: unilabos_resources
           targets: unilabos_resources
@@ -158,7 +157,6 @@ liquid_handler:
           use_channels: []
           vols: []
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -311,7 +309,6 @@ liquid_handler:
           protocol_type: null
           protocol_version: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -359,7 +356,6 @@ liquid_handler:
           msg: null
           seconds: 0
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -390,7 +386,6 @@ liquid_handler:
         goal_default:
           tip_racks: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -422,7 +417,6 @@ liquid_handler:
           volumes: null
           wells: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -461,7 +455,6 @@ liquid_handler:
           volumes: null
           wells: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -936,7 +929,6 @@ liquid_handler:
           volumes: null
           well_names: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           plate: unilabos_resources
         result: {}
@@ -1422,7 +1414,6 @@ liquid_handler:
         goal_default:
           tip_racks: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1451,7 +1442,6 @@ liquid_handler:
         goal_default:
           targets: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1482,7 +1472,6 @@ liquid_handler:
           target_group_name: null
           unit_volume: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1516,7 +1505,6 @@ liquid_handler:
         goal_default:
           use_channels: []
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -1569,7 +1557,6 @@ liquid_handler:
           use_channels: []
           vols: []
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -1719,7 +1706,6 @@ liquid_handler:
           tip_spots: []
           use_channels: []
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result:
@@ -1879,7 +1865,6 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -2042,7 +2027,6 @@ liquid_handler:
           offsets: null
           targets: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2152,7 +2136,6 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -2506,7 +2489,6 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -2861,7 +2843,6 @@ liquid_handler:
             y: 0.0
             z: 0.0
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3083,7 +3064,6 @@ liquid_handler:
           dis_to_top: 0
           well: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -3132,7 +3112,6 @@ liquid_handler:
           tip_spots: []
           use_channels: []
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3286,7 +3265,6 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3478,7 +3456,6 @@ liquid_handler:
             sample_id: ''
             type: ''
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -3754,7 +3731,6 @@ liquid_handler:
           vols: null
           waste_liquid: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           waste_liquid: unilabos_resources
@@ -3842,7 +3818,6 @@ liquid_handler:
           allow_nonzero_volume: false
           use_channels: []
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3885,7 +3860,6 @@ liquid_handler:
         goal_default:
           allow_nonzero_volume: false
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -3970,7 +3944,6 @@ liquid_handler:
             type: ''
           volume: 0.0
         handles: {}
-        materials_need_lock: []
         result:
           name: name
         schema:
@@ -4215,7 +4188,6 @@ liquid_handler:
           viscous: false
           volume: 0.0
         handles: {}
-        materials_need_lock: []
         schema:
           description: ''
           properties:
@@ -4358,7 +4330,6 @@ liquid_handler:
             data_type: resource
             handler_key: targets_out
             label: 移液后目标孔
-        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -4966,7 +4937,6 @@ liquid_handler.biomek:
           resources: null
           slot_on_deck: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5029,7 +4999,6 @@ liquid_handler.biomek:
           allow_marshal: false
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5066,7 +5035,6 @@ liquid_handler.biomek:
           parent: null
           slot_on_deck: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5130,7 +5098,6 @@ liquid_handler.biomek:
           protocol_type: null
           protocol_version: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5200,7 +5167,6 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: plate_out
             label: plate
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5247,7 +5213,6 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets
             label: targets
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5295,7 +5260,6 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: plate_out
             label: plate
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5327,7 +5291,6 @@ liquid_handler.biomek:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5396,7 +5359,6 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets_out
             label: targets
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -5511,7 +5473,6 @@ liquid_handler.biomek:
             data_type: resource
             handler_key: targets_out
             label: 移液后目标孔
-        materials_need_lock: []
         placeholder_keys:
           sources: unilabos_resources
           targets: unilabos_resources
@@ -5698,7 +5659,6 @@ liquid_handler.laiyu:
           targets: null
           use_channels: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           reagent_sources: unilabos_resources
           targets: unilabos_resources
@@ -5813,7 +5773,6 @@ liquid_handler.laiyu:
           use_channels: null
           vols: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result: {}
@@ -5898,7 +5857,6 @@ liquid_handler.laiyu:
           touch_tip: false
           use_channels: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -6030,7 +5988,6 @@ liquid_handler.laiyu:
           use_channels: null
           vols: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           resources: unilabos_resources
         result: {}
@@ -6102,7 +6059,6 @@ liquid_handler.laiyu:
           tip_spots: null
           use_channels: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result: {}
@@ -6161,7 +6117,6 @@ liquid_handler.laiyu:
           offsets: null
           targets: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           targets: unilabos_resources
         result: {}
@@ -6214,7 +6169,6 @@ liquid_handler.laiyu:
           tip_spots: null
           use_channels: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys:
           tip_spots: unilabos_resources
         result: {}
@@ -6315,7 +6269,6 @@ liquid_handler.revvity:
             AichemecoHiwo:
               id: AichemecoHiwo
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -11,7 +11,6 @@ cameracontroller_device:
         goal_default:
           config: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -36,7 +35,6 @@ cameracontroller_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -155,7 +155,8 @@ def effective_material_lock_parameters(
     """动作执行期间要独占的物料入参（写入注册表的最终 ``materials_need_lock``）。
 
     ``params`` 为动作签名（``{"name", "type"}`` 字典或 ``inspect.Parameter``）；
-    为 None 表示签名未知，此时不校验参数名、也不推导默认锁。
+    为 None 表示签名未知（直接加载的 YAML 条目）：不校验参数名，默认锁只按
+    ``placeholder_keys`` 里标为 ``unilabos_resources`` 的字段推导。
     """
 
     param_list = list(params) if params is not None else None
@@ -182,7 +183,11 @@ def effective_material_lock_parameters(
             action_name=action_name,
         )
     if param_list is None:
-        return []
+        return [
+            str(key)
+            for key, kind in (placeholder_keys or {}).items()
+            if kind == PLACEHOLDER_RESOURCES and str(key) not in free_names
+        ]
     return [
         name
         for name in material_parameter_names(param_list, placeholder_keys)

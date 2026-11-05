@@ -10,7 +10,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -37,7 +36,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -60,7 +58,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -83,7 +80,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -114,7 +110,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -145,7 +140,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -176,7 +170,6 @@ zhida_gcms:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -207,7 +200,6 @@ zhida_gcms:
           string: null
           text: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -244,7 +236,6 @@ zhida_gcms:
           csv_file_path: null
           string: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

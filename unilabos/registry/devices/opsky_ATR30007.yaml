@@ -15,7 +15,6 @@ opsky_ATR30007:
           name: null
           port: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -56,7 +55,6 @@ opsky_ATR30007:
           save_csv: 'true'
           save_plot: 'true'
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -103,7 +101,6 @@ opsky_ATR30007:
           name: null
           retries: 3
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -146,7 +143,6 @@ opsky_ATR30007:
           name: null
           retries: 3
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -187,7 +183,6 @@ opsky_ATR30007:
           robot: null
           seconds: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

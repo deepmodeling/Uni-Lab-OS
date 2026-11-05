@@ -335,6 +335,15 @@ def substance_match_key(text: str) -> str:
     return text.strip().translate(_ASCII_LOWER)
 
 
+def chemical_link_given(substance: Any) -> bool:
+    """写入方是否显式给出了 ``chemical_uuid``（含显式 null）；省略时由权威沿用 / 自动匹配。"""
+
+    given = getattr(substance, "chemical_uuid_given", None)
+    if given is None:  # 不是协议模型（如落库行）：有值即视为给出
+        return getattr(substance, "chemical_uuid", None) is not None
+    return bool(given)
+
+
 def _chunks(values: Sequence[str]) -> Iterator[list[str]]:
     for start in range(0, len(values), _IN_CHUNK):
         yield list(values[start:start + _IN_CHUNK])
@@ -393,11 +402,12 @@ def resolve_substance_chemicals(
 ) -> list[Optional[str]]:
     """内容物落库前确定每一份的 ``chemical_uuid``；物料内容写入的唯一入口在这里调用。
 
-    1. 显式给出：必须指向未删除的化学品；已在该物料上的引用原样保留（即使化学品已删除，
+    1. 显式 uuid：必须指向未删除的化学品；已在该物料上的引用原样保留（即使化学品已删除，
        读-改-写回传不会因此失败）。
-    2. 未给出：沿用同一物料同名（不区分大小写）内容物已有的引用——设备按名称上报内容物，
+    2. 显式 null：解除引用，本次写入不沿用也不自动匹配。
+    3. 省略：沿用同一物料同名（不区分大小写）内容物已有的引用——设备按名称上报内容物，
        不能因此丢掉关联。多份同名时优先同位次，否则取位次最前的一份。
-    3. 仍没有：按名称 / 英文名 / 别名 / CAS 精确匹配（不区分大小写），恰好一个未删除化学品
+    4. 仍没有：按名称 / 英文名 / 别名 / CAS 精确匹配（不区分大小写），恰好一个未删除化学品
        命中才关联；歧义或无命中保持 null。
 
     显式引用无效时抛 ``ChemicalError("invalid_input")``；不修改入参。查询次数与内容物份数无关：
@@ -414,9 +424,9 @@ def resolve_substance_chemicals(
     explicit: dict[str, str] = {}
     unresolved: dict[str, list[int]] = {}
     for ordinal, substance in enumerate(substances):
-        if substance.chemical_uuid:
-            result[ordinal] = substance.chemical_uuid
-            if substance.chemical_uuid not in existing:
+        if chemical_link_given(substance):
+            result[ordinal] = substance.chemical_uuid  # 显式 null 即解除
+            if substance.chemical_uuid and substance.chemical_uuid not in existing:
                 explicit.setdefault(substance.chemical_uuid, substance.name)
             continue
         key = substance_match_key(substance.name)
@@ -450,6 +460,7 @@ __all__ = [
     "ChemicalError",
     "ChemicalService",
     "PHYSICAL_STATES",
+    "chemical_link_given",
     "chemical_summaries",
     "normalize_cas",
     "normalize_inchi_key",

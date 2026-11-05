@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from unilabos.protocol.base import canonical_hash
@@ -48,8 +49,8 @@ def data_semantic(data: Any) -> dict[str, Any]:
     为 None）；比较只看内容物本身（名称 / 数量 / 单位 / 相态 / 组成），否则每次
     apply 后设备与权威都会因 None ≠ uuid 永远"有差异"而反复重写。
 
-    chemical_uuid / chemical 同理：设备按名称上报内容物，不知道化学品引用，权威落库时
-    按名称沿用已有引用。只改化学品引用要走 put_data（物料聚合的 state_hash 含 chemical_uuid）。
+    chemical_uuid / chemical 同理：设备按名称上报内容物（省略引用），权威落库时按名称沿用
+    已有引用。调用方显式改引用另由 :func:`substance_links_requested` 判定。
     """
 
     return data.model_dump(
@@ -60,6 +61,21 @@ def data_semantic(data: Any) -> dict[str, Any]:
         },
         exclude_none=False,
     )
+
+
+def substance_links_requested(desired: Sequence[Any], current: Sequence[Any]) -> bool:
+    """调用方是否显式改了化学品引用：显式给出的 chemical_uuid（含显式 null）与权威同位次的不同。
+
+    省略引用（设备快照 / 增量、旧客户端）从不算变化；内容不变、只改引用的快照或增量据此落库。
+    """
+
+    for ordinal, substance in enumerate(desired):
+        if not getattr(substance, "chemical_uuid_given", False):
+            continue
+        stored = current[ordinal].chemical_uuid if ordinal < len(current) else None
+        if substance.chemical_uuid != stored:
+            return True
+    return False
 
 
 def material_sections(node: MaterialAggregateRead) -> dict[str, dict[str, Any]]:
@@ -142,7 +158,10 @@ def compare_material_snapshot(
         for section in ("identity", "position", "data"):
             before = before_sections[section]
             after = after_sections[section]
-            if before != after:
+            relinked = section == "data" and substance_links_requested(
+                after_node.data.substances, before_node.data.substances
+            )
+            if before != after or relinked:
                 changes.append(
                     MaterialSnapshotChange(
                         aggregate_type="material",
@@ -150,7 +169,7 @@ def compare_material_snapshot(
                         section=section,
                         before_hash=canonical_hash(before),
                         after_hash=canonical_hash(after),
-                        changed_fields=_changed_fields(before, after),
+                        changed_fields=_changed_fields(before, after) or ["substances"],
                     )
                 )
 
@@ -192,4 +211,5 @@ __all__ = [
     "material_sections",
     "site_semantic",
     "snapshot_state_hash",
+    "substance_links_requested",
 ]

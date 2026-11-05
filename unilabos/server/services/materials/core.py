@@ -71,6 +71,7 @@ from unilabos.server.services.materials.snapshot import (
     data_semantic,
     material_sections,
     site_semantic,
+    substance_links_requested,
 )
 
 
@@ -135,6 +136,27 @@ def material_link_uuid(
         )
     )
     return str(uuid5(MATERIAL_LINK_NAMESPACE, identity))
+
+
+def _hashed_substances(substances: Sequence[Any]) -> list[Any]:
+    """内容物进入 state_hash 的形态。
+
+    chemical_uuid 是内容物身份的一部分，有引用时参与哈希；未关联（null / 缺省）时不出现，
+    与引入化学品引用之前的哈希逐字一致——升级后旧行存的 data state_hash 仍可用于无变化判断，
+    设备缓存的 ``expected_state_hash`` 也照常有效。chemical 只是读取时附带的摘要，随化学品
+    定义变化，从不参与（编辑化学品不改物料的 state_hash）。
+    """
+
+    result: list[Any] = []
+    for substance in substances:
+        if isinstance(substance, Mapping):
+            substance = {
+                key: value
+                for key, value in substance.items()
+                if key != "chemical" and not (key == "chemical_uuid" and value is None)
+            }
+        result.append(substance)
+    return result
 
 
 @dataclass
@@ -1394,6 +1416,10 @@ class MaterialsService(MaterialsRepository):
             },
         )
         values["meta_data"] = values.pop("meta_data_json")
+        # 未关联的内容物不带 chemical_uuid：读取形态与引入化学品引用之前逐字一致（旧客户端可解析，
+        # state_hash 不变），回传时也是"省略"语义而不是"显式解除"。
+        if values.get("chemical_uuid") is None:
+            values.pop("chemical_uuid", None)
         return MaterialSubstance.model_validate(values)
 
     @classmethod
@@ -1427,15 +1453,8 @@ class MaterialsService(MaterialsRepository):
             "observed_at_ms",
         ):
             semantic.pop(key, None)
-        # chemical_uuid 是内容物身份的一部分，参与哈希；chemical 只是读取时附带的摘要，
-        # 随化学品定义变化，不能让编辑化学品改动物料的 state_hash。
         if isinstance(semantic.get("substances"), list):
-            semantic["substances"] = [
-                {key: item for key, item in substance.items() if key != "chemical"}
-                if isinstance(substance, Mapping)
-                else substance
-                for substance in semantic["substances"]
-            ]
+            semantic["substances"] = _hashed_substances(semantic["substances"])
         return canonical_hash(semantic)
 
     @staticmethod
@@ -1476,10 +1495,9 @@ class MaterialsService(MaterialsRepository):
                 "source_job_uuid": True,
                 "source_command_uuid": True,
                 "observed_at_ms": True,
-                # 化学品摘要随化学品定义变化，不属于物料状态；chemical_uuid 参与。
-                "substances": {"__all__": {"chemical"}},
             },
         )
+        data_values["substances"] = _hashed_substances(data_values.get("substances", []))
         return canonical_hash(
             {
                 "material": material_values,
@@ -1514,14 +1532,11 @@ class MaterialsService(MaterialsRepository):
             if not any(item.chemical_uuid for item in aggregate.data.substances):
                 result.append(aggregate)
                 continue
+            # 只给有引用的内容物附摘要；未关联的保持旧形态（不出现 chemical 字段）
             substances = [
-                item.model_copy(
-                    update={
-                        "chemical": summaries.get(item.chemical_uuid)
-                        if item.chemical_uuid
-                        else None
-                    }
-                )
+                item.model_copy(update={"chemical": summaries.get(item.chemical_uuid)})
+                if item.chemical_uuid
+                else item
                 for item in aggregate.data.substances
             ]
             data = aggregate.data.model_copy(update={"substances": substances})
@@ -3415,7 +3430,9 @@ class MaterialsService(MaterialsRepository):
             source_command_uuid=mutation.command_uuid,
             observed_at_ms=max(delta.observed_at_ms, timestamp),
         )
-        if data_semantic(desired) == data_semantic(current.data):
+        if data_semantic(desired) == data_semantic(current.data) and not substance_links_requested(
+            desired.substances, current.data.substances
+        ):
             return False
         content_version = current_data.content_version + 1
         substances = self._new_substance_records(

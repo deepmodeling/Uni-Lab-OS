@@ -1,4 +1,4 @@
-"""物料内容物引用化学品定义：显式校验、同名沿用、按名称自动匹配、读取摘要与 materials.db v2 → v3。"""
+"""物料内容物引用化学品定义：显式校验、同名沿用、按名称自动匹配、读取摘要、向后兼容与 materials.db v2 → v3。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from unilabos.client.materials import bind_payload
+from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import (
     InventoryMutation,
     MaterialAggregateRead,
@@ -30,6 +31,7 @@ from unilabos.server.api.materials import install_materials_api
 from unilabos.server.database import DATABASE_SPECS
 from unilabos.server.database.schema import TableSpec, initialize_database
 from unilabos.server.services.materials import (
+    MaterialConflictError,
     MaterialNoChangeError,
     MaterialValidationError,
     MaterialsService,
@@ -339,6 +341,171 @@ def test_resolution_does_not_mutate_the_request(stack) -> None:
     assert replay.replayed is True and replay.data == first.data
 
 
+# ── 向后兼容：省略 / 显式 null / 升级前的哈希 ────────────────────
+
+FIXED_MATERIAL_UUID = "11111111-1111-4111-8111-111111111111"
+#: 引入化学品引用之前的代码（17d380a9）对下面固定场景算出的值。未关联的内容物升级后必须逐字不变：
+#: 旧行存的 data state_hash 仍能判无变化，设备缓存的 expected_state_hash 照常有效，旧请求可重放。
+PRE_LINK_AGGREGATE_STATE_HASH = "d08cf5f11b4b5e877e861de467c2b8dbd8e2eada5b57a0b5af99725e948e2c73"
+PRE_LINK_DATA_STATE_HASH = "54a1dc910f70a8df7581b0563badbe670f969aaaaee9fcf3f3fccddf7f9d42b9"
+PRE_LINK_PUT_REQUEST_HASH = "db026bd2f201aa01f91db0d1d01624f51c5a1d09848253966fdd063e2d420bc5"
+
+
+def _fixed_substances(water: float) -> list[MaterialSubstance]:
+    return [
+        MaterialSubstance(substance_uuid="s-water", name="Water", quantity=water, quantity_unit="mL"),
+        MaterialSubstance(substance_uuid="s-salt", name="NaCl", quantity=2.0, quantity_unit="g",
+                          physical_state="solid"),
+    ]
+
+
+def _fixed_tree(*, with_substances: bool = True) -> MaterialTreeCreate:
+    return MaterialTreeCreate(nodes=[MaterialNodeCreate(
+        client_ref="tube",
+        material_uuid=FIXED_MATERIAL_UUID,
+        identity=MaterialIdentityWrite(resource_id="tube-fixed", name="tube-fixed", resource_type="container",
+                                       class_name="Container", template_name="tube"),
+        data=MaterialDataWrite(substances=_fixed_substances(5.0) if with_substances else []),
+    )])
+
+
+def _fixed_put_mutation(payload: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """旧客户端会发的原始请求 JSON（payload 是旧模型的完整 dump，没有 chemical_uuid / chemical）。"""
+
+    return {
+        "protocol_version": "materials.v1", "command_uuid": "put-fixed", "effect_key": "put_data:put-fixed",
+        "operation": "put_data", "actor_type": "human", "actor_uuid": None, "job_uuid": None,
+        "observed_at_ms": 1, "preconditions": [],
+        "payload": payload if payload is not None else MaterialDataWrite(
+            substances=_fixed_substances(4.0)
+        ).model_dump(mode="json", exclude_none=False),
+    }
+
+
+def test_unlinked_substances_keep_pre_link_hashes_and_shape(stack) -> None:
+    service, chemicals = stack
+    chemicals.create_chemical(ETHANOL)  # 有化学品但不匹配：内容物保持未关联
+    created = service.create_tree(_mutation("create_material_tree"), _fixed_tree()).data.nodes[0]
+
+    assert _links(created) == [None, None]
+    assert created.state_hash == PRE_LINK_AGGREGATE_STATE_HASH
+    assert created.data.state_hash == PRE_LINK_DATA_STATE_HASH
+    request = InventoryMutation.model_validate(_fixed_put_mutation())
+    body = MaterialDataWrite.model_validate(request.payload)
+    assert canonical_hash(MaterialsService._bound_request(request, body)) == PRE_LINK_PUT_REQUEST_HASH
+    # 读取形态也与之前一致：未关联的内容物不出现新字段（不认识它们的旧客户端照常解析）
+    assert all(set(item) == {"substance_uuid", "name", "quantity", "quantity_unit", "physical_state",
+                             "composition", "meta_data"}
+               for item in created.data.model_dump(mode="json")["substances"])
+
+
+@pytest.mark.parametrize("variant", ["old_client", "explicit_null", "explicit_uuid_with_summary"])
+def test_payload_forms_pass_the_completeness_check_and_replay(stack, variant) -> None:
+    service, chemicals = stack
+    water = chemicals.create_chemical(WATER)
+    created = service.create_tree(_mutation("create_material_tree"), _fixed_tree()).data.nodes[0]
+    assert _links(created) == [water["chemical_uuid"], None]  # "Water" 按英文名自动关联
+
+    payload = MaterialDataWrite(substances=_fixed_substances(4.0)).model_dump(mode="json", exclude_none=False)
+    expected = {"old_client": water["chemical_uuid"], "explicit_null": None,
+                "explicit_uuid_with_summary": water["chemical_uuid"]}[variant]
+    if variant == "explicit_null":
+        payload["substances"][0].update({"chemical_uuid": None, "chemical": None})
+    elif variant == "explicit_uuid_with_summary":
+        payload["substances"][0].update({
+            "chemical_uuid": water["chemical_uuid"],
+            "chemical": created.data.substances[0].chemical.model_dump(mode="json"),
+        })
+    app = FastAPI()
+    install_materials_api(app, service)
+    with TestClient(app) as client:
+        url = f"/api/v1/materials/instances/{FIXED_MATERIAL_UUID}/data"
+        first = client.put(url, json=_fixed_put_mutation(payload))
+        assert first.status_code == 200, first.text
+        assert first.json()["replayed"] is False
+        assert [item.get("chemical_uuid") for item in first.json()["data"]["data"]["substances"]] == [expected, None]
+        replay = client.put(url, json=_fixed_put_mutation(payload))
+        assert replay.status_code == 200 and replay.json()["replayed"] is True
+
+    effect = service.get_effect("put-fixed", "put_data:put-fixed")
+    if variant == "old_client":
+        # 旧版本存下的同一请求哈希与现在一致：升级前发出的命令升级后重发仍是幂等重放
+        assert effect.request_hash == PRE_LINK_PUT_REQUEST_HASH
+    else:
+        assert effect.request_hash != PRE_LINK_PUT_REQUEST_HASH
+
+
+def test_omitted_and_explicit_null_are_different_requests(stack) -> None:
+    service, chemicals = stack
+    chemicals.create_chemical(WATER)
+    material_uuid = _create(service, _substance("水")).material.material_uuid
+    mutation = _mutation("put_data")
+    omitted = MaterialDataWrite(substances=[_substance("水", 2.0)])
+    nulled = MaterialDataWrite(substances=[_substance("水", 2.0, chemical_uuid=None)])
+
+    assert "chemical_uuid" not in omitted.model_dump(mode="json")["substances"][0]
+    assert nulled.model_dump(mode="json")["substances"][0]["chemical_uuid"] is None
+    assert canonical_hash(MaterialsService._bound_request(mutation, omitted)) != canonical_hash(
+        MaterialsService._bound_request(mutation, nulled)
+    )
+    service.put_data(mutation, material_uuid, omitted)
+    with pytest.raises(MaterialConflictError, match="another request"):
+        service.put_data(mutation, material_uuid, nulled)
+    assert service.put_data(mutation, material_uuid, omitted).replayed is True
+
+
+def test_explicit_null_unlinks_without_auto_resolve(stack) -> None:
+    service, chemicals = stack
+    water = chemicals.create_chemical(WATER)
+    material = _create(service, _substance("水", 1.0))
+    material_uuid = material.material.material_uuid
+    assert _links(material) == [water["chemical_uuid"]]
+
+    unlinked = _put(service, material_uuid, _substance("水", 1.0, chemical_uuid=None))
+    assert _links(unlinked) == [None]  # 同名化学品仍在，但本次写入不自动匹配
+    assert unlinked.state_hash != material.state_hash
+    assert "chemical_uuid" not in unlinked.data.model_dump(mode="json")["substances"][0]
+
+    # 内容不变、只显式改引用的增量 / 快照同样算变化；省略引用的上报不算
+    service.apply_delta(
+        _mutation("apply_material_delta"),
+        MaterialDelta(root_material_uuid=material_uuid, nodes=[MaterialNodeDelta(
+            material_uuid=material_uuid,
+            data=MaterialDataDelta(substances=[_substance("水", 1.0, chemical_uuid=water["chemical_uuid"])]),
+        )]),
+    )
+    assert _links(service.get_material(material_uuid)) == [water["chemical_uuid"]]
+    node = service.get_tree(material_uuid).nodes[0]
+
+    def observed(substance: MaterialSubstance) -> MaterialSnapshot:
+        data = node.data.model_copy(update={"substances": [substance]})
+        return MaterialSnapshot(root_material_uuid=material_uuid, nodes=[node.model_copy(update={"data": data})])
+
+    assert not service.compare_snapshot(observed(_substance("水", 1.0))).changed
+    assert service.compare_snapshot(observed(_substance("水", 1.0, chemical_uuid=None))).changed
+    service.apply_snapshot(_mutation("apply_material_snapshot"), observed(_substance("水", 1.0, chemical_uuid=None)))
+    assert _links(service.get_material(material_uuid)) == [None]
+
+    # 解除只对那一次写入生效：之后省略引用的内容变化按规则重新自动匹配
+    assert _links(_put(service, material_uuid, _substance("水", 2.0))) == [water["chemical_uuid"]]
+
+
+def test_device_snapshot_json_round_trip_keeps_links(stack) -> None:
+    """设备快照经 HTTP / HostLink 序列化后仍是"省略"，不会被当成显式解除。"""
+
+    service, chemicals = stack
+    water = chemicals.create_chemical(WATER)
+    material_uuid = _create(service, _substance("溶剂", 1.0, chemical_uuid=water["chemical_uuid"])).material.material_uuid
+    node = service.get_tree(material_uuid).nodes[0]
+    data = node.data.model_copy(update={"substances": [_substance("溶剂", 3.0)]})
+    snapshot = MaterialSnapshot(root_material_uuid=material_uuid, nodes=[node.model_copy(update={"data": data})])
+
+    wire = MaterialSnapshot.model_validate_json(snapshot.model_dump_json())
+    service.apply_snapshot(_mutation("apply_material_snapshot"), wire)
+
+    assert _links(service.get_material(material_uuid)) == [water["chemical_uuid"]]
+
+
 # ── materials.db v2 → v3 ─────────────────────────────────────
 
 #: v2 冻结的 material_substance（没有 chemical_uuid）；与 v2 的结构指纹逐字一致。
@@ -401,8 +568,9 @@ def test_v2_materials_database_migrates_to_v3_keeping_substances(tmp_path) -> No
                                   class_name="Container"),
         )
         material_uuid = legacy.create_tree(
-            _mutation("create_material_tree"), MaterialTreeCreate(nodes=[_node("tube")])
+            _mutation("create_material_tree"), _fixed_tree(with_substances=False)
         ).data.root_material_uuid
+        # 旧版本写下的内容物行与 data state_hash（v2 表没有 chemical_uuid 列）
         with connection:
             connection.executemany(
                 "INSERT INTO material_substance(substance_uuid, material_uuid, ordinal, name, quantity, "
@@ -410,6 +578,10 @@ def test_v2_materials_database_migrates_to_v3_keeping_substances(tmp_path) -> No
                 "observed_at_ms, updated_at_ms, version) VALUES (?, ?, ?, ?, ?, ?, ?, '[]', '{}', 1, 1, 1, 1)",
                 [("s-water", material_uuid, 0, "Water", 5.0, "mL", "liquid"),
                  ("s-salt", material_uuid, 1, "NaCl", 2.0, "g", "solid")],
+            )
+            connection.execute(
+                "UPDATE material_data SET state_hash = ? WHERE material_uuid = ?",
+                (PRE_LINK_DATA_STATE_HASH, material_uuid),
             )
     finally:
         connection.close()
@@ -421,11 +593,19 @@ def test_v2_materials_database_migrates_to_v3_keeping_substances(tmp_path) -> No
                 for item in migrated.data.substances] == [
             ("s-water", "Water", 5.0, None), ("s-salt", "NaCl", 2.0, None),
         ]
+        # 升级前后 state_hash 不变：设备缓存的 expected_state_hash 照常可用，旧行的 data 哈希仍能判无变化
+        assert migrated.state_hash == PRE_LINK_AGGREGATE_STATE_HASH
+        assert migrated.data.state_hash == PRE_LINK_DATA_STATE_HASH
+        # 与写下该 data state_hash 的建树请求同一内容（建树按请求体算 data 哈希）
+        same = MaterialDataWrite(substances=_fixed_substances(5.0))
+        with pytest.raises(MaterialNoChangeError):
+            service.put_data(_mutation("put_data"), material_uuid, same)
         # 迁移后的库照常解析引用：按名称匹配新登记的化学品
         water = ChemicalService(service).create_chemical(WATER)
-        updated = _put(service, material_uuid, _substance("Water", 4.0), _substance("NaCl", 2.0))
+        updated = service.put_data(_mutation("put_data"), material_uuid, same).data
         assert _links(updated) == [water["chemical_uuid"], None]
         assert updated.data.substances[0].substance_uuid == "s-water"
+        assert updated.state_hash != PRE_LINK_AGGREGATE_STATE_HASH
     finally:
         service.close()
 

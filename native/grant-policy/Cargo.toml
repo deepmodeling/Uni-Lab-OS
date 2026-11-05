@@ -1,0 +1,20 @@
+[package]
+name = "unilab-grant-policy"
+version = "0.1.0"
+edition = "2021"
+description = "Uni-Lab-OS scheduler grant policy (FIFO over lock sets) behind a small C ABI"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "unilab_grant_policy"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "unwind"
+strip = true

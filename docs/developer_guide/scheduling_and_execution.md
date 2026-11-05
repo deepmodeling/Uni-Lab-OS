@@ -215,6 +215,23 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 资源管理器使用稳定登记顺序避免后来者越过有冲突的早期等待者，也不会让一个 Job
 只持有部分锁。
 
+### 5.1 可插拔的授予策略
+
+“这一轮谁拿到完整资源集合”由授予策略决定（`scheduler/grant_policy.py`）。宿主只交给策略决策所需的事实：
+按到达顺序的等待请求、已被持有的键、被 pending handoff 预留的键、哪些请求是 handoff 目标（键与 owner
+在本轮编号为整数）；策略返回授予的请求下标。宿主逐条复核——下标有效且不重复、不授予 handoff 目标、
+与已持有 / 预留 / 彼此不相交——不合格或抛异常时整轮退回 Python 参考实现，坏的策略不会造成重复占用。
+handoff、部分持有断言与下发仍由宿主负责。
+
+默认策略是严格按键 FIFO：不相交的集合并行授予，被挡住的请求阻塞与它重叠的后来者。
+`native/grant-policy` 是同一策略的原生实现（Rust 编译出的 C ABI 动态库，导出
+`uni_grant_abi_version` / `uni_grant_decide` / `uni_grant_free`，输入输出是小端 u32 序列），
+进程内经 ctypes 调用；CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实现逐条比对。
+`python scripts/build_grant_policy.py --install <working_dir>/native` 编译并安装；
+`BasicConfig.scheduler_grant_policy` 取 `auto`（默认：找到原生库就用，否则 Python）、`python`、
+`native`（找不到或加载失败即报错）。库位置：`BasicConfig.scheduler_grant_library`、
+环境变量 `UNILABOS_SCHEDULER_GRANT_LIBRARY`，缺省 `<working_dir>/native/`。
+
 ## 6. 什么时候重算
 
 统一 Scheduler 没有独立定时轮询。重算由事实变化触发：

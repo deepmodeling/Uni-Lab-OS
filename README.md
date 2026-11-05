@@ -167,6 +167,9 @@ the management endpoint:
 | Split deployment | `http://127.0.0.1:8081` (the Backend authority) |
 | Remote Backend | the address passed to `--address` |
 
+For debugging, this repository also ships a React debug console in [`frontend/`](frontend/README.md)
+(`cd frontend && npm ci && npm run dev`, proxied to `http://127.0.0.1:8002`); OpenLab remains the recommended UI.
+
 Use the generated contract at `/api/openapi.json` and the interactive docs at
 `/api/docs`. A Vite-style static UI can be developed and served independently:
 

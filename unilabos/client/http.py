@@ -66,6 +66,9 @@ class HTTPClient:
             secret = self.get_auth_secret()
             if secret:
                 headers["Authorization"] = f"Lab {secret}"
+        from unilabos.config.control_token import client_headers
+
+        headers.update(client_headers())
         return headers
 
     def _request(self, method: str, path: str, **kwargs) -> Any:

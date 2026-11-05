@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
-from unilabos.config.config import HTTPConfig
+from unilabos.config.config import BasicConfig, HTTPConfig
+from unilabos.config.control_token import TOKEN_HEADER
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -78,14 +79,38 @@ registry_routes_mounted = False
 driver_packages_mounted = False
 edge_proxy_mounted = False
 
+def cors_allow_origins() -> list[str]:
+    """``BasicConfig.cors_allow_origins``：逗号分隔的来源；空或含 ``*`` 即全部允许（默认）。"""
+
+    raw = str(getattr(BasicConfig, "cors_allow_origins", "*") or "*")
+    origins = [item.strip().rstrip("/") for item in raw.split(",") if item.strip()]
+    return ["*"] if not origins or "*" in origins else origins
+
+
+class ConfiguredCORSMiddleware:
+    """按 ``BasicConfig.cors_allow_origins`` 放行跨域请求（默认全部来源）。
+
+    app 模块导入时配置文件可能还没加载，所以在第一个请求到达时才按配置构造 CORSMiddleware。
+    """
+
+    def __init__(self, app) -> None:
+        self._app = app
+        self._inner = None
+
+    async def __call__(self, scope, receive, send) -> None:
+        if self._inner is None:
+            self._inner = CORSMiddleware(
+                self._app,
+                allow_origins=cors_allow_origins(),
+                allow_credentials=True,
+                allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+                allow_headers=["Authorization", "Content-Type", "Accept", "Last-Event-ID", TOKEN_HEADER],
+            )
+        await self._inner(scope, receive, send)
+
+
 # noinspection PyTypeChecker
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Last-Event-ID"],
-)
+app.add_middleware(ConfiguredCORSMiddleware)
 
 
 @app.exception_handler(ClientDisconnect)

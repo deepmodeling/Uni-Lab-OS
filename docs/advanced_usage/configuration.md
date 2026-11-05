@@ -272,6 +272,19 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `server_database_root`   | str  | `""`          | 四个数据库所在目录，留空为工作目录下的 `database/`，见下文「数据库位置」 |
 | `scheduler_grant_policy` | str  | `"auto"`      | 调度锁授予策略：`auto`（有原生库用原生，否则 Python FIFO）/ `python` / `native` |
 | `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
+| `control_token`          | str  | `""`          | 调度权威与 Host 之间控制面的共享 token，见下文「控制面 token」 |
+| `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
+
+#### 控制面 token
+
+Host 专属的控制面（控制 WebSocket `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、
+`POST /api/v1/edge/http-responses/{uuid}`）要求请求头 `X-UniLab-Token`（也接受 `Authorization: Bearer <token>`），
+否则 WebSocket 握手被拒（HTTP 403）、HTTP 返回 401。
+
+- 调度权威：`control_token` 留空时首次启动生成 `<工作目录>/control_token`（权限 0600），之后沿用；启动日志会打印它的位置。
+- 默认双进程拓扑：Host 子进程由权威经环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` 拿到 token，无需配置。
+- `--role backend` + 远端 Host（`--address`）：在 Host 的配置文件填 `control_token`（或设上面的环境变量）为权威那份 token；
+  两者在同一台机器、同一工作目录时，Host 直接读 `<工作目录>/control_token`。
 
 #### 数据库位置
 

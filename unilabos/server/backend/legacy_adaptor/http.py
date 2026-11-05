@@ -11,6 +11,7 @@ from urllib.parse import quote
 import requests
 
 from unilabos.config.config import BasicConfig, HTTPConfig
+from unilabos.config.control_token import client_headers
 from unilabos.protocol.runtime.control import BackendCommandDocument
 from unilabos.utils.tracing import inject_trace_context
 
@@ -38,6 +39,7 @@ class BackendHTTPClient:
             self.session.headers.update(
                 {"Authorization": f"Lab {BasicConfig.auth_secret()}"}
             )
+        self.session.headers.update(client_headers())
 
     def fetch_command(self, command_uuid: str) -> BackendCommandDocument:
         """仅由 UUID 派生固定路径，禁止 WS 下发任意拉取 URL。"""

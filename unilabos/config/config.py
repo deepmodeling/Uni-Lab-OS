@@ -24,12 +24,23 @@ _NON_CONFIG_ENV_KEYS = frozenset(
 )
 
 
+# 值不进日志的配置字段（小写）。
+_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token"})
+
+
 class BasicConfig:
     # 运行时 backend 名称由 unilabos.backend 统一规范化。
     backend: Literal["hostlink", "ros2"] = "hostlink"
     ak = ""
     sk = ""
     working_dir = ""
+    # 调度权威与 Host 之间控制面（控制 WebSocket、命令正文、backend_http 回送）的共享 token，
+    # 见 unilabos/config/control_token.py。权威留空时首次启动生成并保存在 <working_dir>/control_token；
+    # Host 子进程由权威经环境变量传入；远端 Host（--address 指向另一台机器）在这里填权威那份 token。
+    control_token = ""
+    # 允许跨域访问管理 API 的来源，逗号分隔（如 "https://xuwznln.github.io,http://localhost:5173"）；
+    # "*" 为全部允许（默认）。
+    cors_allow_origins = "*"
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
     # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
     server_database_root = ""
@@ -238,7 +249,9 @@ def _update_config_from_env():
             else:
                 value = env_value
             setattr(matched_cls, matched_field, value)
-            logger.info(f"[ENV] 设置 {matched_cls.__name__}.{matched_field} = {value}")
+            # 密钥类字段只记"已设置"：环境变量覆盖会进日志，日志可能被转发给前端或上传
+            shown = "<已设置>" if matched_field.lower() in _SECRET_CONFIG_FIELDS else value
+            logger.info(f"[ENV] 设置 {matched_cls.__name__}.{matched_field} = {shown}")
         except Exception as e:
             logger.warning(f"[ENV] 解析环境变量 {env_key} 失败: {e}")
 

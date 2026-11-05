@@ -147,6 +147,16 @@ def run_backend_process(
             "info",
         )
 
+        from unilabos.config.control_token import TOKEN_ENV, ensure_authority_token
+
+        control_token, token_file = ensure_authority_token(working_dir)
+        print_status(
+            "控制面 token："
+            + (f"{token_file}" if token_file is not None else "来自配置 BasicConfig.control_token")
+            + "（远端 Host 需配置同一 token：BasicConfig.control_token 或环境变量 "
+            + f"{TOKEN_ENV}）",
+            "info",
+        )
         app = setup_server()
         install_edge_control_api(app)
 
@@ -159,6 +169,8 @@ def run_backend_process(
                     authority_port=port,
                     database_root=edge_root,
                 ),
+                # Host 子进程经环境变量拿到控制面 token，无需另配
+                env={**os.environ, TOKEN_ENV: control_token},
                 ready_probe=lambda: _authority_listening(port),
             )
             host_child.start()

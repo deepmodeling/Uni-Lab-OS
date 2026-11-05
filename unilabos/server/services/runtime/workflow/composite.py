@@ -114,8 +114,13 @@ def project_published_workflow_contract(
         outputs=outputs,
         composition_allow_transparent=transparent,
     )
+    # 模板身份按 (workflow_uuid, revision)：父流程钉在哪个修订就引用哪个模板，
+    # 发布新修订不会改写旧父流程依赖的输入输出集合（没有自动刷新父流程）。
     template_uuid = str(
-        uuid5(UUID(host["uuid"]), f"unilabos:published-workflow:v1:{workflow_uuid}")
+        uuid5(
+            UUID(host["uuid"]),
+            f"unilabos:published-workflow:v2:{workflow_uuid}:{revision}",
+        )
     )
     schema = _workflow_schema(
         inputs=inputs,
@@ -152,7 +157,7 @@ def project_published_workflow_contract(
         template={
             "uuid": template_uuid,
             "resource_template_uuid": host["uuid"],
-            "name": f"workflow:{workflow_uuid}",
+            "name": f"workflow:{workflow_uuid}@{revision}",
             "display_name": str(workflow.get("name") or source.symbol),
             "description": str(workflow.get("description") or ""),
             "class": f"{source.module}:{source.symbol}",

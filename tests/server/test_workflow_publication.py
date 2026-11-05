@@ -445,3 +445,36 @@ def test_canvas_child_without_templates_keeps_depends_on_order(stack) -> None:
         assert executor.dispatched[index]["node_id"] == expected
         executor.finish(index)
     wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
+
+
+def test_parents_pinned_to_different_revisions_keep_working(stack) -> None:
+    """发布新修订不能改写旧父流程引用的模板：两个父流程分别钉在 r1 / r2，都能建任务。"""
+
+    _service, _executor, client = stack
+    child, node_uuid, io = _child_with_volume_input(client)
+    first = _publish(client, child["uuid"], io["workflow"]["revision"])
+    parent_a = _create_workflow(client, "父流程 A")
+    _ok(_insert(client, parent_a, child["uuid"], arguments={"volume": 2}), 201)
+
+    current = _ok(client.get(f"/api/v1/workflows/{child['uuid']}"))
+    revised = _ok(client.put(
+        f"/api/v1/workflows/{child['uuid']}/io",
+        json={
+            "revision": current["revision"],
+            "input_contract": {"version": 1, "parameters": [
+                {"name": "volume", "schema": NUMBER, "required": True, "title": "体积"},
+            ]},
+            "output_contract": {"version": 1, "outputs": []},
+            "output_bindings": {},
+            "node_input_bindings": {node_uuid: {VOLUME_TARGET: {"parameter": "volume"}}},
+        },
+    ))
+    second = _publish(client, child["uuid"], revised["workflow"]["revision"])
+    assert second["revision"] > first["revision"]
+    assert second["node_template"]["uuid"] != first["node_template"]["uuid"]
+    parent_b = _create_workflow(client, "父流程 B")
+    _ok(_insert(client, parent_b, child["uuid"], arguments={"volume": 3}), 201)
+
+    for parent in (parent_a, parent_b):
+        response = client.post("/api/v1/workflow-tasks", json={"workflow_uuid": parent["uuid"]})
+        assert response.status_code == 201, response.text

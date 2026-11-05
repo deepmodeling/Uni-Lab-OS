@@ -47,11 +47,17 @@ def data_semantic(data: Any) -> dict[str, Any]:
     substance_uuid 是权威给内容物行发的身份，设备侧 PLR tracker 不承载它（上报时
     为 None）；比较只看内容物本身（名称 / 数量 / 单位 / 相态 / 组成），否则每次
     apply 后设备与权威都会因 None ≠ uuid 永远"有差异"而反复重写。
+
+    chemical_uuid / chemical 同理：设备按名称上报内容物，不知道化学品引用，权威落库时
+    按名称沿用已有引用。只改化学品引用要走 put_data（物料聚合的 state_hash 含 chemical_uuid）。
     """
 
     return data.model_dump(
         mode="json",
-        exclude={**{key: True for key in _DATA_VOLATILE}, "substances": {"__all__": {"substance_uuid"}}},
+        exclude={
+            **{key: True for key in _DATA_VOLATILE},
+            "substances": {"__all__": {"substance_uuid", "chemical_uuid", "chemical"}},
+        },
         exclude_none=False,
     )
 

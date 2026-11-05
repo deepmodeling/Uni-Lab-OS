@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any, Callable, Generic, Mapping, Optional, Sequence, TypeVar
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from unilabos.server.services.materials.chemicals import (
+    ChemicalError,
+    chemical_summaries,
+    resolve_substance_chemicals,
+)
 from unilabos.server.services.materials.store import MaterialsRepository
 from unilabos.server.database.tables.materials import (
     InventoryCommandEffectRecord,
@@ -27,6 +32,7 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
+    ChemicalSummary,
     InventoryAllocation,
     InventoryLotInbound,
     InventoryLotRead,
@@ -364,7 +370,7 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialNotFoundError(f"template not found: {aggregate_uuid}")
             return record.version, self._template_state_hash(record)
         if aggregate_type == "material":
-            aggregate = self.get_material(aggregate_uuid)
+            aggregate = self._aggregate(aggregate_uuid)
             return aggregate.material.version, aggregate.state_hash
         if aggregate_type == "site":
             record = self.get_site(aggregate_uuid)
@@ -679,7 +685,7 @@ class MaterialsService(MaterialsRepository):
             sequences: list[int] = []
             for current, updated in material_updates:
                 self.update_material(updated)
-                state_hash = self.get_material(updated.material_uuid).state_hash
+                state_hash = self._aggregate(updated.material_uuid).state_hash
                 sequences.append(self._ledger(
                     mutation,
                     aggregate_type="material",
@@ -1106,7 +1112,7 @@ class MaterialsService(MaterialsRepository):
                     }
                 )
                 self.update_material(updated_material)
-                material_hash = self.get_material(material_uuid).state_hash
+                material_hash = self._aggregate(material_uuid).state_hash
                 sequences.append(self._ledger(
                     mutation,
                     aggregate_type="material",
@@ -1421,6 +1427,15 @@ class MaterialsService(MaterialsRepository):
             "observed_at_ms",
         ):
             semantic.pop(key, None)
+        # chemical_uuid 是内容物身份的一部分，参与哈希；chemical 只是读取时附带的摘要，
+        # 随化学品定义变化，不能让编辑化学品改动物料的 state_hash。
+        if isinstance(semantic.get("substances"), list):
+            semantic["substances"] = [
+                {key: item for key, item in substance.items() if key != "chemical"}
+                if isinstance(substance, Mapping)
+                else substance
+                for substance in semantic["substances"]
+            ]
         return canonical_hash(semantic)
 
     @staticmethod
@@ -1453,14 +1468,16 @@ class MaterialsService(MaterialsRepository):
         data_values = data.model_dump(
             mode="json",
             exclude={
-                "content_version",
-                "state_hash",
-                "updated_at_ms",
-                "version",
-                "source_event_uuid",
-                "source_job_uuid",
-                "source_command_uuid",
-                "observed_at_ms",
+                "content_version": True,
+                "state_hash": True,
+                "updated_at_ms": True,
+                "version": True,
+                "source_event_uuid": True,
+                "source_job_uuid": True,
+                "source_command_uuid": True,
+                "observed_at_ms": True,
+                # 化学品摘要随化学品定义变化，不属于物料状态；chemical_uuid 参与。
+                "substances": {"__all__": {"chemical"}},
             },
         )
         return canonical_hash(
@@ -1471,7 +1488,54 @@ class MaterialsService(MaterialsRepository):
             }
         )
 
+    def _with_chemicals(
+        self, aggregates: list[MaterialAggregateRead]
+    ) -> list[MaterialAggregateRead]:
+        """给一批聚合的内容物附上化学品摘要：整批一次查询，不逐份查。
+
+        引用的化学品已删除（或不存在）时摘要为 null，chemical_uuid 保留。摘要不参与
+        state_hash，附上前后哈希不变。
+        """
+
+        linked = {
+            substance.chemical_uuid
+            for aggregate in aggregates
+            for substance in aggregate.data.substances
+            if substance.chemical_uuid
+        }
+        if not linked:
+            return aggregates
+        summaries = {
+            chemical_uuid: ChemicalSummary.model_validate(values)
+            for chemical_uuid, values in chemical_summaries(self.connection, linked).items()
+        }
+        result: list[MaterialAggregateRead] = []
+        for aggregate in aggregates:
+            if not any(item.chemical_uuid for item in aggregate.data.substances):
+                result.append(aggregate)
+                continue
+            substances = [
+                item.model_copy(
+                    update={
+                        "chemical": summaries.get(item.chemical_uuid)
+                        if item.chemical_uuid
+                        else None
+                    }
+                )
+                for item in aggregate.data.substances
+            ]
+            data = aggregate.data.model_copy(update={"substances": substances})
+            result.append(aggregate.model_copy(update={"data": data}))
+        return result
+
     def get_material(self, material_uuid: str) -> MaterialAggregateRead:
+        """单个物料聚合；内容物附带化学品摘要。"""
+
+        return self._with_chemicals([self._aggregate(material_uuid)])[0]
+
+    def _aggregate(self, material_uuid: str) -> MaterialAggregateRead:
+        """物料聚合的权威读，不附化学品摘要（state_hash 与摘要无关，内部比较用它即可）。"""
+
         material = MaterialsRepository.get_material(self, material_uuid)
         if material is None:
             raise MaterialNotFoundError(f"material not found: {material_uuid}")
@@ -1503,10 +1567,12 @@ class MaterialsService(MaterialsRepository):
 
     def search_materials(self, name: str) -> list[MaterialAggregateRead]:
         """按名称精确搜索；与 get 系不同，未命中返回空列表而不抛错。"""
-        return [
-            self.get_material(record.material_uuid)
-            for record in self.search_materials_by_name(name)
-        ]
+        return self._with_chemicals(
+            [
+                self._aggregate(record.material_uuid)
+                for record in self.search_materials_by_name(name)
+            ]
+        )
 
     def get_tree(
         self, root_material_uuid: str, *, client_ref_map: Optional[dict[str, str]] = None
@@ -1514,7 +1580,9 @@ class MaterialsService(MaterialsRepository):
         records = self.tree_materials(root_material_uuid)
         if not records:
             raise MaterialNotFoundError(f"material root not found: {root_material_uuid}")
-        nodes = [self.get_material(item.material_uuid) for item in records]
+        nodes = self._with_chemicals(
+            [self._aggregate(item.material_uuid) for item in records]
+        )
         tree_hash = canonical_hash(
             [
                 {
@@ -1539,10 +1607,12 @@ class MaterialsService(MaterialsRepository):
         )
 
     def list_materials(self, *, roots_only: bool = False) -> list[MaterialAggregateRead]:
-        return [
-            self.get_material(item.material_uuid)
-            for item in MaterialsRepository.list_materials(self, roots_only=roots_only)
-        ]
+        return self._with_chemicals(
+            [
+                self._aggregate(item.material_uuid)
+                for item in MaterialsRepository.list_materials(self, roots_only=roots_only)
+            ]
+        )
 
     # -- Topology links ----------------------------------------------------
 
@@ -2035,7 +2105,7 @@ class MaterialsService(MaterialsRepository):
 
             for node in value.nodes:
                 material_uuid = client_map[node.client_ref]
-                aggregate = self.get_material(material_uuid)
+                aggregate = self._aggregate(material_uuid)
                 affected.append(
                     AggregateVersion(
                         aggregate_type="material",
@@ -2104,11 +2174,23 @@ class MaterialsService(MaterialsRepository):
         timestamp: int,
         previous: Optional[list[MaterialSubstanceRecord]] = None,
     ) -> list[MaterialSubstanceRecord]:
+        """由写请求生成待落库的内容物行；四条内容写入路径（建树 / put_data / 快照 / 增量）都经过这里。
+
+        化学品引用在这里统一确定（显式校验、同名沿用、按名称自动匹配），落库与 state_hash
+        用的是同一份结果。
+        """
+
         records: list[MaterialSubstanceRecord] = []
         seen: set[str] = set()
         previous_by_uuid = {
             item.substance_uuid: item for item in (previous or [])
         }
+        try:
+            chemical_uuids = resolve_substance_chemicals(
+                self.connection, value.substances, previous or ()
+            )
+        except ChemicalError as error:
+            raise MaterialValidationError(error.message) from None
         for ordinal, substance in enumerate(value.substances):
             prior_at_ordinal = (
                 previous[ordinal]
@@ -2133,6 +2215,7 @@ class MaterialsService(MaterialsRepository):
                     material_uuid=material_uuid,
                     ordinal=ordinal,
                     name=substance.name,
+                    chemical_uuid=chemical_uuids[ordinal],
                     quantity=substance.quantity,
                     quantity_unit=substance.quantity_unit,
                     physical_state=substance.physical_state,
@@ -2631,7 +2714,7 @@ class MaterialsService(MaterialsRepository):
             resolved: list[tuple[Any, SiteRead | None]] = []
             destination_sites: set[str] = set()
             for item in value.items:
-                target = self.get_material(item.target_material_uuid)
+                target = self._aggregate(item.target_material_uuid)
                 destination = self._transfer_destination_site(
                     target,
                     item.target_site,
@@ -3108,7 +3191,7 @@ class MaterialsService(MaterialsRepository):
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
             for material_uuid, (before, after) in changed_material_records.items():
-                aggregate = self.get_material(material_uuid)
+                aggregate = self._aggregate(material_uuid)
                 affected.append(
                     AggregateVersion(
                         aggregate_type="material",
@@ -3189,7 +3272,7 @@ class MaterialsService(MaterialsRepository):
             ancestry_cache: dict[str, Optional[str]] = {}
 
             for node in value.nodes:
-                current = self.get_material(node.material_uuid)
+                current = self._aggregate(node.material_uuid)
                 self._require_within_root(node.material_uuid, root_uuid, ancestry_cache)
                 if (
                     node.expected_version is not None
@@ -3242,7 +3325,7 @@ class MaterialsService(MaterialsRepository):
                         update={"updated_at_ms": timestamp, "version": record.version + 1}
                     )
                     self.update_material(updated_record)
-                    aggregate = self.get_material(node.material_uuid)
+                    aggregate = self._aggregate(node.material_uuid)
                     affected.append(
                         AggregateVersion(
                             aggregate_type="material",

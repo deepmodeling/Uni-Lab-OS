@@ -2815,6 +2815,34 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * ChemicalSummary
+         * @description 内容物引用的化学品定义摘要（只读，取自 ``/api/v1/chemicals``）。
+         */
+        ChemicalSummary: {
+            /** Chemical Uuid */
+            chemical_uuid: string;
+            /** Name */
+            name: string;
+            /** Cas */
+            cas?: string | null;
+            /** Inchi Key */
+            inchi_key?: string | null;
+            /** Molecular Formula */
+            molecular_formula?: string | null;
+            /** Smiles */
+            smiles?: string | null;
+            /** Molecular Weight */
+            molecular_weight?: number | null;
+            /** Density G Per Ml */
+            density_g_per_ml?: number | null;
+            /**
+             * Physical State
+             * @default unknown
+             * @enum {string}
+             */
+            physical_state?: "liquid" | "solid" | "gas" | "unknown";
+        };
         /** ChemicalWrite */
         ChemicalWrite: {
             /** Name */
@@ -4021,7 +4049,15 @@ export interface components {
             /** State Hash */
             state_hash?: string | null;
         };
-        /** MaterialSubstance */
+        /**
+         * MaterialSubstance
+         * @description 一份内容物。
+         *
+         *     ``chemical_uuid`` 引用化学品定义：写入时显式给出必须指向未删除的化学品（已在该物料上的
+         *     引用可原样保留）；不给出时权威先沿用同一物料同名（不区分大小写）内容物已有的引用，否则按
+         *     名称 / 英文名 / 别名 / CAS 唯一匹配自动关联。``chemical`` 是读取时附带的只读摘要，
+         *     写入时忽略；引用的化学品已删除时为 null（uuid 保留）。
+         */
         MaterialSubstance: {
             /** Substance Uuid */
             substance_uuid?: string | null;
@@ -4043,6 +4079,9 @@ export interface components {
             meta_data?: {
                 [key: string]: unknown;
             };
+            /** Chemical Uuid */
+            chemical_uuid?: string | null;
+            chemical?: components["schemas"]["ChemicalSummary"] | null;
         };
         /** PayloadObjectRecord */
         PayloadObjectRecord: {

@@ -193,7 +193,29 @@ class MaterialPosition(ServerObject):
         return self
 
 
+class ChemicalSummary(ServerObject):
+    """内容物引用的化学品定义摘要（只读，取自 ``/api/v1/chemicals``）。"""
+
+    chemical_uuid: NonEmptyStr
+    name: NonEmptyStr
+    cas: Optional[str] = None
+    inchi_key: Optional[str] = None
+    molecular_formula: Optional[str] = None
+    smiles: Optional[str] = None
+    molecular_weight: Optional[float] = Field(default=None, gt=0)
+    density_g_per_ml: Optional[float] = Field(default=None, gt=0)
+    physical_state: Literal["liquid", "solid", "gas", "unknown"] = "unknown"
+
+
 class MaterialSubstance(ServerObject):
+    """一份内容物。
+
+    ``chemical_uuid`` 引用化学品定义：写入时显式给出必须指向未删除的化学品（已在该物料上的
+    引用可原样保留）；不给出时权威先沿用同一物料同名（不区分大小写）内容物已有的引用，否则按
+    名称 / 英文名 / 别名 / CAS 唯一匹配自动关联。``chemical`` 是读取时附带的只读摘要，
+    写入时忽略；引用的化学品已删除时为 null（uuid 保留）。
+    """
+
     substance_uuid: Optional[NonEmptyStr] = None
     name: NonEmptyStr
     quantity: float = Field(ge=0)
@@ -201,6 +223,8 @@ class MaterialSubstance(ServerObject):
     physical_state: Literal["liquid", "solid", "gas", "unknown"] = "liquid"
     composition: list[JsonValue] = Field(default_factory=list)
     meta_data: JsonObject = Field(default_factory=dict)
+    chemical_uuid: Optional[NonEmptyStr] = None
+    chemical: Optional[ChemicalSummary] = None
 
 
 class MaterialDataWrite(ServerObject):
@@ -781,6 +805,7 @@ __all__ = [
     "AggregatePrecondition",
     "AggregateType",
     "AggregateVersion",
+    "ChemicalSummary",
     "InventoryAllocation",
     "InventoryChange",
     "InventoryLotInbound",

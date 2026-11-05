@@ -706,6 +706,8 @@ class BackendScheduler:
         spec = self._run_specs[node.node_id]
         recovered_status = spec.pop("recovered_status", None)
         if recovered_status is not None:
+            # 重启前在飞的 attempt：设备可能仍停在中间态，裁决前继续占着它的锁，后来的任务排队
+            self._hold_recovered_resources(task, node, spec)
             self._open_reconciliation_decision(task, node, spec, recovered_status)
             return
         # 运行模式以权威为准：起跑时是自动、之后被暂停的任务，捕获的 task 快照已过期。
@@ -1885,6 +1887,56 @@ class BackendScheduler:
             return
         task, node = context
         self._open_reconciliation_decision(task, node, spec, "execution_unknown")
+
+    def _hold_recovered_resources(
+        self,
+        task: Dict[str, Any],
+        node: DagNode,
+        spec: Dict[str, Any],
+    ) -> None:
+        """进程重启后，为待裁决的遗留 attempt 重新登记它的动作锁 / 物料锁。
+
+        锁表只在内存里：重启后若不重新占用，别的任务会在操作员核对设备之前就派发到同一台
+        设备、同一份物料上。这里以该 attempt 为 owner 重新申请（不进等待派发集合，不会被
+        重新下发），裁决收敛（retry / skip / 人工结果 / abort）时随 attempt 终态释放。
+        物料参数解析失败时只保留设备动作锁。
+        """
+
+        job_uuid = str(spec["current_job_uuid"])
+        material_uuids: set[str] = set()
+        try:
+            args = self._resolve_action_args(node.node_id)
+            args.update(spec.get("inventory_allocations") or {})
+            material_uuids = set(
+                material_uuids_for_parameters(
+                    self._material_lock_parameters(node.device_id, node.action),
+                    args,
+                )
+            )
+        except Exception:  # noqa: BLE001 - 物料解析失败不影响设备锁
+            logger.warning(
+                "恢复的 attempt %s 无法解析物料锁，只保留设备动作锁", job_uuid, exc_info=True
+            )
+        material_uuids.update(spec.get("reserved_material_uuids") or ())
+        try:
+            self.resources.acquire(
+                SchedulerResourceRequest(
+                    request_uuid=f"resource:{job_uuid}",
+                    owner_uuid=job_uuid,
+                    task_uuid=str(task["uuid"]),
+                    current_action=ActionLockClaim(
+                        device_id=node.device_id,
+                        action_name=node.action,
+                    ),
+                    always_free=self._action_always_free(node, spec),
+                    material_lock_claims=[
+                        MaterialLockClaim(material_uuid=material_uuid)
+                        for material_uuid in sorted(material_uuids)
+                    ],
+                )
+            )
+        except Exception:  # noqa: BLE001 - 占用失败也要能开裁决
+            logger.exception("恢复的 attempt %s 重新占用资源失败", job_uuid)
 
     def _open_reconciliation_decision(
         self,

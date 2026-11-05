@@ -379,6 +379,9 @@ Backend 必须先更新调度事实，然后下发 `release_failed` 或 replacem
 - Materials mutation 使用 command/effect 幂等；
 - Coordinator 启动时恢复未完成 dispatch、error gate 和可靠 outbox；
 - 本地 Scheduler 启动时查询可恢复 Workflow Task，并从持久化 Job 终态重建 DAG walk；
+- 重启前在飞、被标为 execution_unknown 的 attempt 开人工裁决，并以该 attempt 为 owner 重新登记它的
+  动作锁 / 物料锁（锁表只在内存里）：操作员核对设备之前，后来的任务在同一设备、同一物料上排队；
+  裁决收敛（retry / skip / 人工结果 / abort）时随 attempt 终态释放；
 - 执行端只登记 active Job，不承担跨重启调度恢复。
 
 ## 13. 实现入口

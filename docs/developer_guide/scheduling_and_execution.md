@@ -227,7 +227,9 @@ handoff、部分持有断言与下发仍由宿主负责。
 `native/grant-policy` 是同一策略的原生实现（Rust 编译出的 C ABI 动态库，导出
 `uni_grant_abi_version` / `uni_grant_decide` / `uni_grant_free`，输入输出是小端 u32 序列），
 进程内经 ctypes 调用；CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实现逐条比对。
-`python scripts/build_grant_policy.py --install <working_dir>/native` 编译并安装；
+`python scripts/build_grant_policy.py --install <working_dir>/native` 编译并安装；发布版本附带各平台的
+`unilab-grant-policy-<platform>.zip`（linux-64 / win-64 / osx-64 / osx-arm64），解压到 `<working_dir>/native/`
+（默认 `~/.unilabos/native/`）即可；
 `BasicConfig.scheduler_grant_policy` 取 `auto`（默认：找到原生库就用，否则 Python）、`python`、
 `native`（找不到或加载失败即报错）。库位置：`BasicConfig.scheduler_grant_library`、
 环境变量 `UNILABOS_SCHEDULER_GRANT_LIBRARY`，缺省 `<working_dir>/native/`。

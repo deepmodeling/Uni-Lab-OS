@@ -56,7 +56,6 @@ workstation:
             type: ''
           to_repo_position: ''
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -345,7 +344,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -558,7 +556,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -739,7 +736,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -941,7 +937,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -1165,7 +1160,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -1378,7 +1372,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -1571,7 +1564,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -1744,7 +1736,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -1958,7 +1949,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Evaporation Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_nodes
         result: {}
@@ -2212,7 +2202,6 @@ workstation:
             data_type: resource
             handler_key: FiltrateOut
             label: Filtrate Vessel
-        materials_need_lock: []
         placeholder_keys:
           filtrate_vessel: unilabos_resources
           vessel: unilabos_nodes
@@ -2562,7 +2551,6 @@ workstation:
             data_type: resource
             handler_key: ToVesselOut
             label: To Vessel
-        materials_need_lock: []
         placeholder_keys:
           from_vessel: unilabos_resources
           to_vessel: unilabos_resources
@@ -2946,7 +2934,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -3137,7 +3124,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -3306,7 +3292,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -3473,7 +3458,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -3708,7 +3692,6 @@ workstation:
             data_type: resource
             handler_key: ToVesselOut
             label: To Vessel
-        materials_need_lock: []
         placeholder_keys:
           from_vessel: unilabos_nodes
           to_vessel: unilabos_nodes
@@ -4053,7 +4036,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -4226,7 +4208,6 @@ workstation:
             handler_key: solvent
             label: Solvent
           output: []
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -4434,7 +4415,6 @@ workstation:
             data_type: resource
             handler_key: ToVesselOut
             label: To Vessel
-        materials_need_lock: []
         placeholder_keys:
           column: unilabos_devices
           from_vessel: unilabos_resources
@@ -4867,7 +4847,6 @@ workstation:
             data_type: resource
             handler_key: ToVesselOut
             label: To Vessel
-        materials_need_lock: []
         placeholder_keys:
           from_vessel: unilabos_resources
           to_vessel: unilabos_resources
@@ -5617,7 +5596,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -5808,7 +5786,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -5989,7 +5966,6 @@ workstation:
             data_type: resource
             handler_key: VesselOut
             label: Vessel
-        materials_need_lock: []
         placeholder_keys:
           vessel: unilabos_resources
         result: {}
@@ -6172,7 +6148,6 @@ workstation:
             data_type: resource
             handler_key: ToVesselOut
             label: To Vessel
-        materials_need_lock: []
         placeholder_keys:
           from_vessel: unilabos_nodes
           to_vessel: unilabos_nodes
@@ -6337,7 +6312,6 @@ workstation:
             data_type: resource
             handler_key: filtrate_vessel_out
             label: Filtrate Vessel
-        materials_need_lock: []
         placeholder_keys:
           filtrate_vessel: unilabos_resources
           vessel: unilabos_resources

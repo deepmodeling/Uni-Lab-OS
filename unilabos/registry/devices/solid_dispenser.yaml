@@ -16,7 +16,6 @@ solid_dispenser.laiyu:
           powder_tube_number: null
           target_tube_position: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -52,7 +51,6 @@ solid_dispenser.laiyu:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -80,7 +78,6 @@ solid_dispenser.laiyu:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -109,7 +106,6 @@ solid_dispenser.laiyu:
         goal_default:
           float_in: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -141,7 +137,6 @@ solid_dispenser.laiyu:
         goal_default:
           string: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -176,7 +171,6 @@ solid_dispenser.laiyu:
           y: null
           z: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -214,7 +208,6 @@ solid_dispenser.laiyu:
         goal_default:
           int_input: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -246,7 +239,6 @@ solid_dispenser.laiyu:
         goal_default:
           int_input: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -276,7 +268,6 @@ solid_dispenser.laiyu:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

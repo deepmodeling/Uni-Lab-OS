@@ -11,7 +11,6 @@ bioyond_cell:
         goal_default:
           xlsx_path: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -144,7 +143,6 @@ bioyond_cell:
           WH4_x5_y2_z1_10_quantity: 0.0
           xlsx_path: D:\UniLab\Uni-Lab-OS\unilabos\devices\workstation\bioyond_studio\bioyond_cell\material_template.xlsx
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -488,7 +486,6 @@ bioyond_cell:
           type_id: 3a190ca0-b2f6-9aeb-8067-547e72c11469
           warehouse_name: 粉末加样头堆栈
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -529,7 +526,6 @@ bioyond_cell:
           type_id: null
           warehouse_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -569,7 +565,6 @@ bioyond_cell:
         goal_default:
           mappings: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -608,7 +603,6 @@ bioyond_cell:
             handler_key: bottle_count
             io_type: sink
             label: 配液瓶数
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -643,7 +637,6 @@ bioyond_cell:
             handler_key: bottle_count
             io_type: sink
             label: 配液瓶数
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -675,7 +668,6 @@ bioyond_cell:
           name: null
           warehouse_name: 手动堆栈
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -727,7 +719,6 @@ bioyond_cell:
           status: ''
           timeType: ''
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -777,7 +768,6 @@ bioyond_cell:
           report_request: null
           used_materials: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -806,7 +796,6 @@ bioyond_cell:
         goal_default:
           report_request: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -833,7 +822,6 @@ bioyond_cell:
         goal_default:
           report_request: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -860,7 +848,6 @@ bioyond_cell:
         goal_default:
           material_obj: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -890,7 +877,6 @@ bioyond_cell:
           parent_resource: null
           plr_resource: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -922,7 +908,6 @@ bioyond_cell:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -946,7 +931,6 @@ bioyond_cell:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -970,7 +954,6 @@ bioyond_cell:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1100,7 +1083,6 @@ bioyond_cell:
           WH4_x5_y2_z1_10_quantity: 0.0
           xlsx_path: D:\UniLab\Uni-Lab-OS\unilabos\devices\workstation\bioyond_studio\bioyond_cell\material_template.xlsx
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1548,7 +1530,6 @@ bioyond_cell:
           WH4_x5_y2_z1_10_quantity: 0.0
           xlsx_path: D:\UniLab\Uni-Lab-OS\unilabos\devices\workstation\bioyond_studio\bioyond_cell\material_template.xlsx
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1890,7 +1871,6 @@ bioyond_cell:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1915,7 +1895,6 @@ bioyond_cell:
         goal_default:
           items: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1948,7 +1927,6 @@ bioyond_cell:
           location_id: null
           material_id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1978,7 +1956,6 @@ bioyond_cell:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2006,7 +1983,6 @@ bioyond_cell:
           source_y: 1
           source_z: 1
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2050,7 +2026,6 @@ bioyond_cell:
           source_y: 1
           source_z: 1
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2088,7 +2063,6 @@ bioyond_cell:
           ip: null
           port: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2118,7 +2092,6 @@ bioyond_cell:
           order_code: null
           timeout: 36000
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2153,7 +2126,6 @@ bioyond_cell:
           poll_interval: 0.5
           timeout: 36000
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -2192,7 +2164,6 @@ bioyond_cell:
           interval: 5
           timeout: 3000
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

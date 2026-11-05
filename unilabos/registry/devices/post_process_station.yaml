@@ -11,7 +11,6 @@ post_process_station:
         goal_default:
           config_path: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -37,7 +36,6 @@ post_process_station:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -62,7 +60,6 @@ post_process_station:
           name: null
           value: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -92,7 +89,6 @@ post_process_station:
           command: command
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -121,7 +117,6 @@ post_process_station:
         goal_default:
           node_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -231,7 +226,6 @@ post_process_station:
           water_stirrer_cleaning_wait_time: 0
           water_stirrer_cleaning_waste_time: 0
         handles: {}
-        materials_need_lock: []
         result:
           return_info: return_info
         schema:
@@ -428,7 +422,6 @@ post_process_station:
           raw_tank_number: 0
           reaction_tank_number: 0
         handles: {}
-        materials_need_lock: []
         result:
           return_info: return_info
         schema:
@@ -497,7 +490,6 @@ post_process_station:
           second_wash_water_amount: 0.0
           wash_slow_speed: 0.0
         handles: {}
-        materials_need_lock: []
         result:
           return_info: return_info
         schema:
@@ -589,7 +581,6 @@ post_process_station:
         goal_default:
           command: ''
         handles: {}
-        materials_need_lock: []
         result:
           success: success
         schema:

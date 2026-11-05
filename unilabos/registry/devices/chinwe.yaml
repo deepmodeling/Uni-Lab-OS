@@ -11,7 +11,6 @@ separator.chinwe:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -35,7 +34,6 @@ separator.chinwe:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -59,7 +57,6 @@ separator.chinwe:
         goal_default:
           command_dict: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -92,7 +89,6 @@ separator.chinwe:
           motor_id: null
           speed: 60
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -133,7 +129,6 @@ separator.chinwe:
           motor_id: null
           speed: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -170,7 +165,6 @@ separator.chinwe:
         goal_default:
           motor_id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -204,7 +198,6 @@ separator.chinwe:
           valve_port: null
           volume: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -245,7 +238,6 @@ separator.chinwe:
           valve_port: null
           volume: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -288,7 +280,6 @@ separator.chinwe:
           pump_id: null
           speed: 10
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -332,7 +323,6 @@ separator.chinwe:
           port: null
           pump_id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -367,7 +357,6 @@ separator.chinwe:
           target_state: 有液
           timeout: 30
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -401,7 +390,6 @@ separator.chinwe:
         goal_default:
           duration: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

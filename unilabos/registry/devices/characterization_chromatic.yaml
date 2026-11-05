@@ -10,7 +10,6 @@ hplc.agilent:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -34,7 +33,6 @@ hplc.agilent:
         goal_default:
           file_path: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -63,7 +61,6 @@ hplc.agilent:
           resource: null
           wf_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -94,7 +91,6 @@ hplc.agilent:
         goal_default:
           device_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -120,7 +116,6 @@ hplc.agilent:
         goal_default:
           device_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -147,7 +142,6 @@ hplc.agilent:
         goal_default:
           command: ''
         handles: {}
-        materials_need_lock: []
         result:
           success: success
         schema:
@@ -247,7 +241,6 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -274,7 +267,6 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -297,7 +289,6 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -320,7 +311,6 @@ hplc.agilent-zhida:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         result: {}
         schema:
           description: ''
@@ -354,7 +344,6 @@ hplc.agilent-zhida:
         goal_default:
           text: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

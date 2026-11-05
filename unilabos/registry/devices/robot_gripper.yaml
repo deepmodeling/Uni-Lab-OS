@@ -10,7 +10,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -33,7 +32,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -59,7 +57,6 @@ gripper.misumi_rz:
           pos: null
           speed: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -91,7 +88,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -115,7 +111,6 @@ gripper.misumi_rz:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -148,7 +143,6 @@ gripper.misumi_rz:
           spin_pos: null
           spin_v: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -190,7 +184,6 @@ gripper.misumi_rz:
         goal_default:
           cmd: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -217,7 +210,6 @@ gripper.misumi_rz:
         goal_default:
           cmd: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -246,7 +238,6 @@ gripper.misumi_rz:
           data_len: null
           id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -281,7 +272,6 @@ gripper.misumi_rz:
           pos: null
           speed: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -317,7 +307,6 @@ gripper.misumi_rz:
           fun: null
           id: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -352,7 +341,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -375,7 +363,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -398,7 +385,6 @@ gripper.misumi_rz:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -423,7 +409,6 @@ gripper.misumi_rz:
         goal_default:
           command: ''
         handles: {}
-        materials_need_lock: []
         result:
           success: success
         schema:
@@ -512,7 +497,6 @@ gripper.mock:
             Gripper1: {}
           wf_name: gripper_run
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -552,7 +536,6 @@ gripper.mock:
           torque: null
           velocity: 0.0
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -168,6 +168,8 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 `@action(materials_free=["参数名"])` 排除；`@action(materials_need_lock=[...])` 显式给出最终集合，
 `[]` 表示整个动作不锁物料，两者不能同时写。注册表条目里的 `materials_need_lock` 是推导后的最终列表，
 运行时先解析实际 UUID，再交调度处理；可选物料入参未传或为空时没有物料，也就不加锁。
+YAML 注册表条目同一规则：不写 `materials_need_lock` 即默认，`placeholder_keys` 标为 `unilabos_resources`
+的字段加锁（`materials_free` 排除）；`--complete_registry` / `--check_mode` 只把显式声明写回 YAML，默认值每次加载重新推导。
 物料资源锁保护同一对象的并发使用；库存 reservation 保护某批次的可用数量；Site 占用表达物料所在位置。
 三者不是同一个标志，也不能互相代用。
 

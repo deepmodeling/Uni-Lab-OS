@@ -11,7 +11,6 @@ coincellassemblyworkstation_device:
         goal_default:
           hole: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -37,7 +36,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -60,7 +58,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -90,7 +87,6 @@ coincellassemblyworkstation_device:
           elec_vol: 50
           file_path: /Users/sml/work
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -150,7 +146,6 @@ coincellassemblyworkstation_device:
           lvbodian: true
           qiangtou_juzhendianwei: 0
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -246,7 +241,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -269,7 +263,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -292,7 +285,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -316,7 +308,6 @@ coincellassemblyworkstation_device:
         goal_default:
           material_search_enable: false
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -350,7 +341,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -373,7 +363,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -398,7 +387,6 @@ coincellassemblyworkstation_device:
         goal_default:
           file_path: D:\coin_cell_data
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -434,7 +422,6 @@ coincellassemblyworkstation_device:
             io_type: source
             label: 配液瓶数
             required: true
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -460,7 +447,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -488,7 +474,6 @@ coincellassemblyworkstation_device:
           elec_use_num: null
           elec_vol: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -525,7 +510,6 @@ coincellassemblyworkstation_device:
         goal_default:
           file_path: /Users/sml/work
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -577,7 +561,6 @@ coincellassemblyworkstation_device:
             io_type: source
             label: 配液瓶数
             required: true
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -673,7 +656,6 @@ coincellassemblyworkstation_device:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -697,7 +679,6 @@ coincellassemblyworkstation_device:
         goal_default:
           resource_name: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -731,7 +712,6 @@ coincellassemblyworkstation_device:
           gemopanshu: 0
           lvbodian: true
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

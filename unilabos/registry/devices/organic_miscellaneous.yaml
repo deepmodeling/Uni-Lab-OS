@@ -11,7 +11,6 @@ rotavap.one:
         goal_default:
           cmd: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -37,7 +36,6 @@ rotavap.one:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -61,7 +59,6 @@ rotavap.one:
         goal_default:
           time: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -88,7 +85,6 @@ rotavap.one:
         goal_default:
           time: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -116,7 +112,6 @@ rotavap.one:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -180,7 +175,6 @@ separator.homemade:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -205,7 +199,6 @@ separator.homemade:
           condition: null
           value: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -239,7 +232,6 @@ separator.homemade:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -275,7 +267,6 @@ separator.homemade:
           stir_speed: 300
           stir_time: 10
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -317,7 +308,6 @@ separator.homemade:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

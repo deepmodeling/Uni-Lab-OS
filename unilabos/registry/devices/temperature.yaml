@@ -14,7 +14,6 @@ chiller:
           register_address: null
           value: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -52,7 +51,6 @@ chiller:
           decimal_points: 1
           temperature: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -83,7 +81,6 @@ chiller:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -110,7 +107,6 @@ chiller:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -135,7 +131,6 @@ chiller:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -199,7 +194,6 @@ heaterstirrer.dalong:
         goal: {}
         goal_default: {}
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -223,7 +217,6 @@ heaterstirrer.dalong:
         goal_default:
           speed: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -251,7 +244,6 @@ heaterstirrer.dalong:
           temp: null
           type: warning
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -296,7 +288,6 @@ heaterstirrer.dalong:
           time: 3600
           vessel: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -344,7 +335,6 @@ heaterstirrer.dalong:
         goal_default:
           temp: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -376,7 +366,6 @@ heaterstirrer.dalong:
         goal_default:
           temp: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -467,7 +456,6 @@ tempsensor:
           register_address: null
           register_count: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -503,7 +491,6 @@ tempsensor:
         goal_default:
           data: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -530,7 +517,6 @@ tempsensor:
         goal_default:
           response: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -557,7 +543,6 @@ tempsensor:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -585,7 +570,6 @@ tempsensor:
         goal_default:
           command: null
         handles: {}
-        materials_need_lock: []
         placeholder_keys: {}
         result: {}
         schema:

@@ -1,4 +1,5 @@
-"""物料内容物引用化学品定义：显式校验、同名沿用、按名称自动匹配、读取摘要、向后兼容与 materials.db v2 → v3。"""
+"""物料内容物引用化学品定义：显式校验、同名沿用、按名称自动匹配、显式解除后不再自动匹配、读取摘要、
+向后兼容与 materials.db v2 → v3 → v4。"""
 
 from __future__ import annotations
 
@@ -30,6 +31,10 @@ from unilabos.protocol.materials import (
 from unilabos.server.api.materials import install_materials_api
 from unilabos.server.database import DATABASE_SPECS
 from unilabos.server.database.schema import TableSpec, initialize_database
+from unilabos.server.database.tables.materials_migrations import (
+    _MATERIAL_SUBSTANCE_V3,
+    _MATERIAL_SUBSTANCE_V3_INDEXES,
+)
 from unilabos.server.services.materials import (
     MaterialConflictError,
     MaterialNoChangeError,
@@ -85,6 +90,21 @@ def _put(service: MaterialsService, material_uuid: str, *substances: MaterialSub
 
 def _links(aggregate: MaterialAggregateRead) -> list[Optional[str]]:
     return [item.chemical_uuid for item in aggregate.data.substances]
+
+
+def _unlinked(aggregate: MaterialAggregateRead) -> list[bool]:
+    return [item.chemical_unlinked for item in aggregate.data.substances]
+
+
+def _report(service: MaterialsService, material_uuid: str, *substances: MaterialSubstance) -> None:
+    """设备按名称上报（增量，不带引用）。"""
+
+    service.apply_delta(
+        _mutation("apply_material_delta"),
+        MaterialDelta(root_material_uuid=material_uuid, nodes=[MaterialNodeDelta(
+            material_uuid=material_uuid, data=MaterialDataDelta(substances=list(substances)),
+        )]),
+    )
 
 
 @pytest.fixture
@@ -486,8 +506,98 @@ def test_explicit_null_unlinks_without_auto_resolve(stack) -> None:
     service.apply_snapshot(_mutation("apply_material_snapshot"), observed(_substance("水", 1.0, chemical_uuid=None)))
     assert _links(service.get_material(material_uuid)) == [None]
 
-    # 解除只对那一次写入生效：之后省略引用的内容变化按规则重新自动匹配
-    assert _links(_put(service, material_uuid, _substance("水", 2.0))) == [water["chemical_uuid"]]
+    # 解除是持久的：之后省略引用的内容变化（设备按名称上报）不再自动匹配
+    assert _links(_put(service, material_uuid, _substance("水", 2.0))) == [None]
+
+
+# ── 显式解除后不再自动匹配（materials.db v4）──────────────────
+
+
+def test_unlink_survives_device_reports_until_linked_again(stack) -> None:
+    service, chemicals = stack
+    water = chemicals.create_chemical(WATER)
+    material_uuid = _create(service, _substance("水", 1.0), _substance("样品", 1.0)).material.material_uuid
+    assert _links(service.get_material(material_uuid)) == [water["chemical_uuid"], None]
+
+    # 界面按所见即所得写回：解除"水"，"样品"本来就没有关联
+    unlinked = _put(service, material_uuid, _substance("水", 1.0, chemical_uuid=None),
+                    _substance("样品", 1.0, chemical_uuid=None))
+    assert _links(unlinked) == [None, None]
+    assert _unlinked(unlinked) == [True, False]
+    shape = unlinked.data.model_dump(mode="json")["substances"]
+    assert shape[0]["chemical_unlinked"] is True and "chemical_uuid" not in shape[0]
+    assert "chemical_unlinked" not in shape[1]
+
+    # 设备按名称上报（增量 / 快照，内容变化）：不再自动关联
+    _report(service, material_uuid, _substance("水", 3.0), _substance("样品", 1.0))
+    node = service.get_tree(material_uuid).nodes[0]
+    data = node.data.model_copy(update={"substances": [_substance("水", 2.5), _substance("样品", 1.0)]})
+    service.apply_snapshot(
+        _mutation("apply_material_snapshot"),
+        MaterialSnapshot(root_material_uuid=material_uuid, nodes=[node.model_copy(update={"data": data})]),
+    )
+    after_reports = service.get_material(material_uuid)
+    assert _links(after_reports) == [None, None]
+    assert _unlinked(after_reports) == [True, False]
+
+    # 旧客户端读-改-写：回传读取形态（带只读的 chemical_unlinked、不带 chemical_uuid）仍是"省略"
+    echoed = after_reports.data.model_dump(mode="json")["substances"]
+    echoed[0]["quantity"] = 2.0
+    roundtrip = _put(service, material_uuid, *[MaterialSubstance.model_validate(item) for item in echoed])
+    assert _links(roundtrip) == [None, None] and _unlinked(roundtrip) == [True, False]
+
+    # 再次显式关联清除"已解除"，之后的上报照常沿用
+    relinked = _put(service, material_uuid, _substance("水", 2.0, chemical_uuid=water["chemical_uuid"]),
+                    _substance("样品", 1.0))
+    assert _links(relinked) == [water["chemical_uuid"], None] and _unlinked(relinked) == [False, False]
+    _report(service, material_uuid, _substance("水", 1.5), _substance("样品", 1.0))
+    assert _links(service.get_material(material_uuid)) == [water["chemical_uuid"], None]
+
+
+def test_explicit_null_on_a_never_linked_substance_keeps_auto_matching(stack) -> None:
+    """界面回传每份内容物的 null 不会把从未关联过的变成"永不关联"。"""
+
+    service, chemicals = stack
+    material_uuid = _create(service, _substance("缓冲液", 1.0)).material.material_uuid
+    written = _put(service, material_uuid, _substance("缓冲液", 1.5, chemical_uuid=None))
+    assert _links(written) == [None] and _unlinked(written) == [False]
+
+    buffer = chemicals.create_chemical({"name": "缓冲液", "physical_state": "liquid"})
+    _report(service, material_uuid, _substance("缓冲液", 2.0))
+    assert _links(service.get_material(material_uuid)) == [buffer["chemical_uuid"]]
+
+
+def test_unlink_follows_the_substance_when_its_position_changes(stack) -> None:
+    service, chemicals = stack
+    water = chemicals.create_chemical(WATER)
+    material_uuid = _create(service, _substance("水", 1.0), _substance("样品", 1.0)).material.material_uuid
+    _put(service, material_uuid, _substance("水", 1.0, chemical_uuid=None), _substance("样品", 1.0))
+
+    # 位次变化后按同名找到已解除的那一份
+    _report(service, material_uuid, _substance("样品", 1.0), _substance("水", 4.0))
+    moved = service.get_material(material_uuid)
+    assert _links(moved) == [None, None] and _unlinked(moved) == [False, True]
+    assert water["chemical_uuid"] not in _links(moved)
+
+
+def test_unlinked_flag_is_not_part_of_the_state_hash(stack) -> None:
+    service, chemicals = stack
+    chemicals.create_chemical(WATER)
+    material_uuid = _create(service, _substance("水", 1.0)).material.material_uuid
+    unlinked = _put(service, material_uuid, _substance("水", 1.0, chemical_uuid=None))
+    data = unlinked.data.model_dump(mode="json")
+    assert data["substances"][0]["chemical_unlinked"] is True
+    without = {**data, "substances": [{key: value for key, value in item.items() if key != "chemical_unlinked"}
+                                      for item in data["substances"]]}
+    assert MaterialsService._data_state_hash(data) == MaterialsService._data_state_hash(without)
+    assert unlinked.data.state_hash == MaterialsService._data_state_hash(without)
+
+    # 内容不变、只回传读取形态的设备上报不算变化
+    node = service.get_tree(material_uuid).nodes[0]
+    observed = MaterialSnapshot(root_material_uuid=material_uuid, nodes=[node.model_copy(update={
+        "data": node.data.model_copy(update={"substances": [_substance("水", 1.0)]}),
+    })])
+    assert not service.compare_snapshot(observed).changed
 
 
 def test_device_snapshot_json_round_trip_keeps_links(stack) -> None:
@@ -548,7 +658,7 @@ MATERIAL_SUBSTANCE_V2 = TableSpec(
 MATERIALS_V2_CHECKSUM = "40eaebcd605c6eb334dcfb8aa548370386e6f1575c048f464f824cb6ea306e63"
 
 
-def test_v2_materials_database_migrates_to_v3_keeping_substances(tmp_path) -> None:
+def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -> None:
     spec = DATABASE_SPECS["materials"]
     v2 = replace(
         spec,
@@ -611,16 +721,86 @@ def test_v2_materials_database_migrates_to_v3_keeping_substances(tmp_path) -> No
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 3
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 4
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
         history = [tuple(row) for row in peek.execute("SELECT version, description FROM schema_migration")]
-        assert [version for version, _ in history] == [3]
+        assert [version for version, _ in history] == [3, 4]
         indexes = {row[0] for row in peek.execute(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'material_substance'"
         )}
         assert {"idx_material_substance_name", "idx_material_substance_chemical"} <= indexes
         columns = [row[1] for row in peek.execute("PRAGMA table_info(material_substance)")]
         assert columns.index("chemical_uuid") == columns.index("name") + 1
+        assert columns.index("chemical_unlinked") == columns.index("chemical_uuid") + 1
     finally:
         peek.close()
-    assert list(tmp_path.glob("materials.db.pre-v3-*.bak"))
+    assert list(tmp_path.glob("materials.db.pre-v*-*.bak"))
+
+
+# ── materials.db v3 → v4 ─────────────────────────────────────
+
+#: v3 发布的结构指纹（tests/server/test_database_schema_versions.py 曾经固定的值）。
+MATERIALS_V3_CHECKSUM = "cc857e09f440d87eaab792134ff8b0d3a5501f76ad59915bddeb322505ce1300"
+
+
+def test_v3_materials_database_migrates_to_v4_keeping_links(tmp_path) -> None:
+    spec = DATABASE_SPECS["materials"]
+    v3_table = TableSpec("material_substance", _MATERIAL_SUBSTANCE_V3, _MATERIAL_SUBSTANCE_V3_INDEXES)
+    v3 = replace(
+        spec,
+        tables=tuple(v3_table if table.name == "material_substance" else table for table in spec.tables),
+        schema_version=3,
+        migrations=spec.migrations[:2],
+    )
+    assert v3.checksum == MATERIALS_V3_CHECKSUM  # 夹具确实是发布过的 v3 结构
+    path = tmp_path / "materials.db"
+
+    connection = initialize_database(path, v3)
+    try:
+        legacy = MaterialsService(connection)
+        legacy.put_template(
+            _mutation("put_template"),
+            ResourceTemplateWrite(template_uuid="tube-template", name="tube", resource_type="container",
+                                  class_name="Container"),
+        )
+        material_uuid = legacy.create_tree(
+            _mutation("create_material_tree"), _fixed_tree(with_substances=False)
+        ).data.root_material_uuid
+        with connection:
+            connection.execute(
+                "INSERT INTO chemical(chemical_uuid, name, cas, physical_state, created_at_ms, updated_at_ms) "
+                "VALUES ('c-water', '水', '7732-18-5', 'liquid', 1, 1)"
+            )
+            # v3 写下的内容物行：一份已关联、一份未关联（v3 表没有 chemical_unlinked 列）
+            connection.executemany(
+                "INSERT INTO material_substance(substance_uuid, material_uuid, ordinal, name, chemical_uuid, "
+                "quantity, quantity_unit, physical_state, composition_json, meta_data_json, content_version, "
+                "observed_at_ms, updated_at_ms, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', '{}', 1, 1, 1, 1)",
+                [("s-water", material_uuid, 0, "Water", "c-water", 5.0, "mL", "liquid"),
+                 ("s-salt", material_uuid, 1, "NaCl", None, 2.0, "g", "solid")],
+            )
+    finally:
+        connection.close()
+
+    service = MaterialsService(path)
+    try:
+        migrated = service.get_material(material_uuid)
+        assert [(item.substance_uuid, item.chemical_uuid, item.chemical_unlinked)
+                for item in migrated.data.substances] == [
+            ("s-water", "c-water", False), ("s-salt", None, False),
+        ]
+        # 迁移后的库照常记录解除
+        unlinked = _put(service, material_uuid, _substance("Water", 5.0, chemical_uuid=None))
+        assert _unlinked(unlinked) == [True]
+    finally:
+        service.close()
+
+    peek = sqlite3.connect(path)
+    try:
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 4
+        assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
+        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4]
+        with pytest.raises(sqlite3.IntegrityError):
+            peek.execute("UPDATE material_substance SET chemical_unlinked = 1, chemical_uuid = 'c-water'")
+    finally:
+        peek.close()

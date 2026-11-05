@@ -254,6 +254,8 @@ class MaterialSubstanceRecord(TableObject, table=True):
 
     ``name/quantity/quantity_unit`` 与 canonical ``LiquidStateEntry`` 三元组直接对应。
     ``chemical_uuid`` 引用化学品定义（可空、无外键：化学品是软删除）。
+    ``chemical_unlinked`` 记录显式解除过关联：之后省略引用的写入不再按名称自动匹配，
+    显式关联时清除；为 true 时 ``chemical_uuid`` 必为空。
     """
 
     __tablename__: ClassVar[str] = "material_substance"
@@ -263,6 +265,7 @@ class MaterialSubstanceRecord(TableObject, table=True):
     ordinal: int = Field(ge=0)
     name: NonEmptyStr
     chemical_uuid: Optional[NonEmptyStr] = None
+    chemical_unlinked: bool = False
     quantity: float = Field(ge=0)
     quantity_unit: NonEmptyStr
     physical_state: Literal["liquid", "solid", "gas", "unknown"] = Field(
@@ -285,6 +288,8 @@ class MaterialSubstanceRecord(TableObject, table=True):
     def _validate_timestamps(self) -> "MaterialSubstanceRecord":
         if self.updated_at_ms < self.observed_at_ms:
             raise ValueError("updated_at_ms cannot precede observed_at_ms")
+        if self.chemical_unlinked and self.chemical_uuid is not None:
+            raise ValueError("an unlinked substance cannot reference a chemical")
         return self
 
 
@@ -878,6 +883,9 @@ MATERIALS_TABLES = (
             ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
             name TEXT NOT NULL CHECK (TRIM(name) <> ''),
             chemical_uuid TEXT CHECK (chemical_uuid IS NULL OR TRIM(chemical_uuid) <> ''),
+            chemical_unlinked INTEGER NOT NULL DEFAULT 0 CHECK (
+                chemical_unlinked IN (0, 1) AND (chemical_unlinked = 0 OR chemical_uuid IS NULL)
+            ),
             quantity REAL NOT NULL CHECK (quantity >= 0),
             quantity_unit TEXT NOT NULL CHECK (TRIM(quantity_unit) <> ''),
             physical_state TEXT NOT NULL DEFAULT 'liquid' CHECK (
@@ -1305,7 +1313,8 @@ MATERIALS_DATABASE = DatabaseSpec(
     # 删除是软删除，被删物料的 resource_id 不该永久占坑，否则同名重建一律 409。
     contract_version=3,
     # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）；
-    # schema v3：material_substance.chemical_uuid（内容物引用化学品，可空）。迁移链见 materials_migrations.py。
+    # schema v3：material_substance.chemical_uuid（内容物引用化学品，可空）；
+    # schema v4：material_substance.chemical_unlinked（显式解除后不再自动匹配）。迁移链见 materials_migrations.py。
     schema_version=MATERIALS_SCHEMA_VERSION,
     migrations=MATERIALS_MIGRATIONS,
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。

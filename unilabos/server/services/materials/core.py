@@ -144,7 +144,9 @@ def _hashed_substances(substances: Sequence[Any]) -> list[Any]:
     chemical_uuid 是内容物身份的一部分，有引用时参与哈希；未关联（null / 缺省）时不出现，
     与引入化学品引用之前的哈希逐字一致——升级后旧行存的 data state_hash 仍可用于无变化判断，
     设备缓存的 ``expected_state_hash`` 也照常有效。chemical 只是读取时附带的摘要，随化学品
-    定义变化，从不参与（编辑化学品不改物料的 state_hash）。
+    定义变化，从不参与（编辑化学品不改物料的 state_hash）。chemical_unlinked 也不参与：
+    它只在引用变化时改变（解除 / 再关联本身已改变 chemical_uuid），已解除与从未关联的同一内容
+    哈希相同。
     """
 
     result: list[Any] = []
@@ -153,7 +155,8 @@ def _hashed_substances(substances: Sequence[Any]) -> list[Any]:
             substance = {
                 key: value
                 for key, value in substance.items()
-                if key != "chemical" and not (key == "chemical_uuid" and value is None)
+                if key not in ("chemical", "chemical_unlinked")
+                and not (key == "chemical_uuid" and value is None)
             }
         result.append(substance)
     return result
@@ -1420,6 +1423,9 @@ class MaterialsService(MaterialsRepository):
         # state_hash 不变），回传时也是"省略"语义而不是"显式解除"。
         if values.get("chemical_uuid") is None:
             values.pop("chemical_uuid", None)
+        # 只有显式解除过的内容物带 chemical_unlinked=true（只读，写入时忽略）。
+        if not values.get("chemical_unlinked"):
+            values.pop("chemical_unlinked", None)
         return MaterialSubstance.model_validate(values)
 
     @classmethod
@@ -2201,7 +2207,7 @@ class MaterialsService(MaterialsRepository):
             item.substance_uuid: item for item in (previous or [])
         }
         try:
-            chemical_uuids = resolve_substance_chemicals(
+            links = resolve_substance_chemicals(
                 self.connection, value.substances, previous or ()
             )
         except ChemicalError as error:
@@ -2230,7 +2236,8 @@ class MaterialsService(MaterialsRepository):
                     material_uuid=material_uuid,
                     ordinal=ordinal,
                     name=substance.name,
-                    chemical_uuid=chemical_uuids[ordinal],
+                    chemical_uuid=links[ordinal].chemical_uuid,
+                    chemical_unlinked=links[ordinal].unlinked,
                     quantity=substance.quantity,
                     quantity_unit=substance.quantity_unit,
                     physical_state=substance.physical_state,

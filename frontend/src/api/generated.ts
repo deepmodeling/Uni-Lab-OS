@@ -4055,15 +4055,18 @@ export interface components {
          *
          *     ``chemical_uuid`` 引用化学品定义，写入时三种形态语义不同：
          *
-         *     - **省略**（设备快照 / 增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用，
-         *       否则按名称 / 英文名 / 别名 / CAS 唯一匹配自动关联；
-         *     - **显式 null**：解除引用，本次写入不自动匹配；
-         *     - **显式 uuid**：必须指向未删除的化学品（该物料上已有的引用可原样保留）。
+         *     - **省略**（设备快照 / 增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用
+         *       或"已解除"状态，都没有时按名称 / 英文名 / 别名 / CAS 唯一匹配自动关联；
+         *     - **显式 null**：不关联，本次写入不自动匹配。对已关联的内容物这是**解除**：记为已解除，
+         *       之后省略引用的写入（设备按名称上报）也不再自动关联，直到再次显式关联；
+         *     - **显式 uuid**：必须指向未删除的化学品（该物料上已有的引用可原样保留），并清除"已解除"。
          *
          *     ``chemical`` 是读取时附带的只读摘要，写入时忽略，可带可不带；引用的化学品已删除时为
-         *     null（uuid 保留）。读取时未关联的内容物不出现这两个字段。
+         *     null（uuid 保留）。``chemical_unlinked`` 是读取时附带的只读状态：为 true 表示该内容物被
+         *     显式解除过关联、不会自动匹配；写入时忽略。读取时未关联的内容物不出现 ``chemical_uuid`` /
+         *     ``chemical``，未解除过的不出现 ``chemical_unlinked``。
          *
-         *     两个字段只在显式给出时才序列化：没有它们的旧载荷与新模型的完整 dump 逐字一致（payload
+         *     这些字段只在显式给出时才序列化：没有它们的旧载荷与新模型的完整 dump 逐字一致（payload
          *     完整性比对、请求哈希、state_hash 都不变），"省略"与"显式 null"也不会哈希成同一个请求。
          */
         MaterialSubstance: {
@@ -4090,6 +4093,11 @@ export interface components {
             /** Chemical Uuid */
             chemical_uuid?: string | null;
             chemical?: components["schemas"]["ChemicalSummary"] | null;
+            /**
+             * Chemical Unlinked
+             * @default false
+             */
+            chemical_unlinked?: boolean;
         };
         /** PayloadObjectRecord */
         PayloadObjectRecord: {

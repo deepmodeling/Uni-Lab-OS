@@ -435,6 +435,7 @@ class MaterialsRepository:
         values = dict(row)
         values["composition"] = _load_json(values.pop("composition_json"), [])
         values["meta_data_json"] = _load_json(values["meta_data_json"], {})
+        values["chemical_unlinked"] = bool(values.get("chemical_unlinked", 0))
         return MaterialSubstanceRecord.model_validate(values)
 
     def _data(self, row: sqlite3.Row) -> MaterialDataRecord:
@@ -681,15 +682,15 @@ class MaterialsRepository:
             self.connection.execute(
                 """
                 INSERT INTO material_substance(
-                    substance_uuid,material_uuid,ordinal,name,chemical_uuid,quantity,
-                    quantity_unit,physical_state,composition_json,meta_data_json,
+                    substance_uuid,material_uuid,ordinal,name,chemical_uuid,chemical_unlinked,
+                    quantity,quantity_unit,physical_state,composition_json,meta_data_json,
                     content_version,observed_at_ms,updated_at_ms,version
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     values["substance_uuid"], values["material_uuid"],
                     values["ordinal"], values["name"], values["chemical_uuid"],
-                    values["quantity"], values["quantity_unit"], values["physical_state"],
+                    int(bool(values["chemical_unlinked"])), values["quantity"], values["quantity_unit"], values["physical_state"],
                     stored_json(values["composition"]),
                     stored_json(values["meta_data_json"]),
                     values["content_version"], values["observed_at_ms"],

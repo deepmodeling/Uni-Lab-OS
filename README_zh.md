@@ -158,6 +158,9 @@ Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部
 | 拆分部署 | `http://127.0.0.1:8081`（Backend 权威） |
 | 远端 Backend | 启动参数 `--address` 指定的地址 |
 
+调试时可以用仓库自带的 React 调试控制台 [`frontend/`](frontend/README.md)（`cd frontend && npm ci && npm run dev`，
+代理到 `http://127.0.0.1:8002`）；推荐界面仍是 OpenLab。
+
 接口契约见 `/api/openapi.json`，交互式文档见 `/api/docs`。以 Vite 为例，
 自定义静态前端可独立开发和预览：
 

@@ -1,0 +1,159 @@
+{
+ "workflow": {
+  "uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+  "create_time": "2026-11-05T07:34:28.242366Z",
+  "update_time": "2026-11-05T07:34:56.925829Z",
+  "meta_data": {},
+  "description": "复位 -> for 板 ×2 { 切换到板 -> for 孔 ×3 { 孔位加样 } } -> 汇总（预期 6 次孔位加样）",
+  "name": "循环演示：嵌套板孔",
+  "tags": [
+   "complex-workflow",
+   "loop-for",
+   "nested"
+  ],
+  "revision": 3
+ },
+ "nodes": [
+  {
+   "uuid": "08ad9180-0000-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {
+    "target_device_id": "reactor"
+   },
+   "description": "温度回到 20 ℃、纯度回到 0.4，清空累计记录——每条演示都从同一状态出发。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "复位",
+   "type": "device_action",
+   "pose": {},
+   "param": {},
+   "execution_policy": {},
+   "disabled": false,
+   "minimized": false,
+   "material_uuid": "5c2e7d90-4b1f-4a83-9e6a-000000003001",
+   "action_name": "reset",
+   "action_type": "UniLabJsonCommand"
+  },
+  {
+   "uuid": "08ad9180-0001-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {},
+   "description": "外层：两块板。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "板 ×2",
+   "type": "loop",
+   "pose": {},
+   "param": {
+    "count": 2,
+    "interval_seconds": 0.0,
+    "mode": "for"
+   },
+   "execution_policy": {
+    "depends_on": [
+     "08ad9180-0000-4369-8b50-119f160d3b2e"
+    ]
+   },
+   "disabled": false,
+   "minimized": false
+  },
+  {
+   "uuid": "08ad9180-0002-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {
+    "target_device_id": "reactor"
+   },
+   "description": "板号 = 外层当前轮次（整个参数恰为占位符，保持整数类型）。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "切换到板",
+   "type": "device_action",
+   "pose": {},
+   "param": {
+    "plate": "{{loop.iteration}}"
+   },
+   "execution_policy": {},
+   "disabled": false,
+   "minimized": false,
+   "parent_uuid": "08ad9180-0001-4369-8b50-119f160d3b2e",
+   "material_uuid": "5c2e7d90-4b1f-4a83-9e6a-000000003001",
+   "action_name": "start_plate",
+   "action_type": "UniLabJsonCommand"
+  },
+  {
+   "uuid": "08ad9180-0003-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {},
+   "description": "内层：每块板三个孔。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "板孔 ×3",
+   "type": "loop",
+   "pose": {},
+   "param": {
+    "count": 3,
+    "interval_seconds": 0.0,
+    "mode": "for"
+   },
+   "execution_policy": {
+    "depends_on": [
+     "08ad9180-0002-4369-8b50-119f160d3b2e"
+    ]
+   },
+   "disabled": false,
+   "minimized": false,
+   "parent_uuid": "08ad9180-0001-4369-8b50-119f160d3b2e"
+  },
+  {
+   "uuid": "08ad9180-0004-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {
+    "target_device_id": "reactor"
+   },
+   "description": "孔号 = 内层当前轮次。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "孔位加样",
+   "type": "device_action",
+   "pose": {},
+   "param": {
+    "volume_ml": 2.0,
+    "well": "{{loop.iteration}}"
+   },
+   "execution_policy": {},
+   "disabled": false,
+   "minimized": false,
+   "parent_uuid": "08ad9180-0003-4369-8b50-119f160d3b2e",
+   "material_uuid": "5c2e7d90-4b1f-4a83-9e6a-000000003001",
+   "action_name": "fill_well",
+   "action_type": "UniLabJsonCommand"
+  },
+  {
+   "uuid": "08ad9180-0005-4369-8b50-119f160d3b2e",
+   "create_time": "2026-11-05T07:34:28.252366Z",
+   "update_time": "2026-11-05T07:34:56.925829Z",
+   "meta_data": {
+    "target_device_id": "reactor"
+   },
+   "description": "plates 应为两块板各三孔。",
+   "workflow_uuid": "08ad9180-369b-5011-9f16-0d3b2e3c8ee4",
+   "name": "汇总报告",
+   "type": "device_action",
+   "pose": {},
+   "param": {},
+   "execution_policy": {
+    "depends_on": [
+     "08ad9180-0001-4369-8b50-119f160d3b2e"
+    ]
+   },
+   "disabled": false,
+   "minimized": false,
+   "material_uuid": "5c2e7d90-4b1f-4a83-9e6a-000000003001",
+   "action_name": "report",
+   "action_type": "UniLabJsonCommand"
+  }
+ ],
+ "edges": [],
+ "node_templates": [],
+ "handle_templates": []
+}

@@ -172,6 +172,7 @@ expected_candidate_hash。非空哈希形如 `sha256:` 加 64 个小写十六进
 | POST | `/api/v1/workflow-tasks` | B: WorkflowTaskCreateRequest | 成功实际 201，data.uuid 为 task 身份；已接受不等于成功终态 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}` | — | 任务快照、进度与 control_revision |
 | POST | `/api/v1/workflow-tasks/{task_uuid}/commands` | B: WorkflowTaskCommandRequest | step/resume/pause/cancel 的处理结果；冲突需重新读取任务 |
+| PATCH | `/api/v1/workflow-tasks/{task_uuid}/input` | B: WorkflowTaskInputEditRequest | 暂停时修改未被消费的入口参数；冻结参数 / 未暂停 / revision 不符为 3003 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}/node-runs` | — | 逻辑节点运行集合 |
 | GET | `/api/v1/workflow-node-runs/{run_uuid}` | — | 单个逻辑节点运行及尝试关联 |
 | GET | `/api/v1/workflow-tasks/{task_uuid}/jobs` | — | 该任务的物理尝试集合 |
@@ -185,6 +186,8 @@ expected_candidate_hash。非空哈希形如 `sha256:` 加 64 个小写十六进
 | POST | `/api/v1/workflow-tasks/{task_uuid}/manual-confirmations/{confirmation_uuid}/decision` | B: ManualConfirmationDecisionRequest | 同上，并检查确认单属于该 task |
 
 WorkflowTaskCreateRequest 默认 execution_kind=workflow、run_mode=normal，整图必须提供 workflow_uuid。
+整图任务可带 `input`（入口参数，按 input_contract 校验并补默认值；未声明合同的工作流只接受 {}；单点设备动作不接受）。
+WorkflowTaskInputEditRequest 必填 expected_revision（control_revision，严格整数 >=0）与 input（部分更新），可带 idempotency_key（1..200）；拒绝未知字段。
 run_mode=step 创建暂停任务；single_node 还需 target_node_uuid。设备单点用 execution_kind=ad_hoc_device_action，
 提供 device_id、action_name、param；可携带 action_type、execution_policy、execution_timeout_seconds、idempotency_key。
 公共可选元数据为 description 和 meta_data。图任务的输入来自图节点，不能用未声明的 task.input 任意覆盖。

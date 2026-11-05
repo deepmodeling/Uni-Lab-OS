@@ -149,6 +149,45 @@ _WORKFLOW_PUBLICATION_V3_INDEXES = (
             """,
 )
 
+# v4：任务命令新增 edit_input（暂停时修改入口参数的审计记录，推进 control_revision）。
+_WORKFLOW_TASK_COMMAND_V4 = """
+        CREATE TABLE IF NOT EXISTS workflow_task_command (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            deleted_at TEXT,
+            description TEXT,
+            meta_data TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data) AND json_type(meta_data) = 'object'
+            ),
+            workflow_task_uuid TEXT NOT NULL,
+            type TEXT NOT NULL CHECK (type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')),
+            target_node_uuid TEXT,
+            idempotency_key TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'rejected')),
+            result TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(result) AND json_type(result) = 'object'
+            ),
+            trace_context TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(trace_context) AND json_type(trace_context) = 'object'
+            ),
+            consumed_at TEXT,
+            FOREIGN KEY(workflow_task_uuid) REFERENCES workflow_task(uuid) ON DELETE CASCADE
+        )
+        """
+_WORKFLOW_TASK_COMMAND_V4_INDEXES = (
+    """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_workflow_task_command_idempotency_active
+            ON workflow_task_command(workflow_task_uuid, idempotency_key)
+            WHERE deleted_at IS NULL
+            """,
+    """
+            CREATE INDEX IF NOT EXISTS idx_workflow_task_command_pending
+            ON workflow_task_command(workflow_task_uuid, create_time, uuid)
+            WHERE deleted_at IS NULL AND status = 'pending'
+            """,
+)
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -162,6 +201,13 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
         "新增 workflow_publication：工作流发布的不可变修订快照",
         _WORKFLOW_PUBLICATION_V3,
         *_WORKFLOW_PUBLICATION_V3_INDEXES,
+    ),
+    rebuild_table_migration(
+        4,
+        "workflow_task_command 允许 edit_input（暂停时修改入口参数）",
+        table="workflow_task_command",
+        create_sql=_WORKFLOW_TASK_COMMAND_V4,
+        indexes=_WORKFLOW_TASK_COMMAND_V4_INDEXES,
     ),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

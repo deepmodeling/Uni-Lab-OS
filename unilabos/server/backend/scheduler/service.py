@@ -311,6 +311,10 @@ class BackendScheduler:
             if not active:
                 self.submit(task_uuid)
                 return
+            try:
+                self._refresh_pending_run_params(task_uuid)
+            except Exception:
+                logger.exception("任务 %s 重载未下发节点参数失败", task_uuid)
             if self._task_cancel_requested(task_uuid):
                 with self._guard:
                     runner = self._runners.get(task_uuid)
@@ -330,6 +334,22 @@ class BackendScheduler:
                     self._notify_start_failure(node.node_id)
 
         self._loop.call_soon_threadsafe(wake)
+
+    def _refresh_pending_run_params(self, task_uuid: str) -> None:
+        """暂停窗口里入口参数可能已改：尚未下发的节点运行按库内 param 重载基础参数。"""
+
+        lister = getattr(self.workflow, "list_workflow_node_runs", None)
+        if not callable(lister):
+            return
+        runs = lister(task_uuid)
+        with self._guard:
+            for run in runs:
+                spec = self._run_specs.get(str(run.get("uuid")))
+                if spec is None or run.get("status") != "pending":
+                    continue
+                if spec.get("current_job_uuid") in self._dispatched_jobs:
+                    continue
+                spec["base_param"] = dict(run.get("param") or {})
 
     async def run_task(self, task_uuid: str) -> Dict[str, NodeState]:
         prepared = self.workflow.prepare_workflow_task_execution(task_uuid)

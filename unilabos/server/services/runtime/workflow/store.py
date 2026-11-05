@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
-from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json
+from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json, strict_json_equal
 from unilabos.protocol.runtime.workflow import WorkflowEdgeWrite, WorkflowNodeWrite
 from unilabos.protocol.utils.workflow_validation import (
     GraphValidationError,
@@ -1038,10 +1038,15 @@ class WorkflowStore:
         ],
         idempotency_key: Optional[str] = None,
         request_fingerprint: str = "",
+        input_builder: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        """``input_builder`` 按同一事务内的图求有效任务输入（先于 ``plan_builder`` 调用）。"""
+
         now = utc_now()
         with self.transaction() as conn:
             graph = WorkflowStore.get_graph(self, workflow_uuid, conn=conn)
+            if input_builder is not None:
+                input_value = input_builder(graph)
             plan, jobs = plan_builder(graph)
             effective_run_mode = str(plan["run_mode"])
             effective_target = plan.get("target_node_uuid")
@@ -1542,6 +1547,119 @@ class WorkflowStore:
         )
         self._append_event(conn, event="workflow.task.changed",
                            data={"workflow_task_uuid": task_uuid, "status": "canceling"}, now=now)
+
+    def edit_task_input(
+        self,
+        task_uuid: str,
+        *,
+        expected_revision: int,
+        values: Dict[str, Any],
+        idempotency_key: str,
+    ) -> Dict[str, Any]:
+        """暂停窗口内修改入口参数（ADR 0002），记为一条 ``edit_input`` 任务命令。
+
+        只改值，不改计划形状：引用该参数的未下发节点运行、其 pending attempt 与计划节点的
+        param 同步更新。参数已被任何已下发（非 pending）的 attempt 用过即冻结，整次修改拒绝。
+        """
+
+        now = utc_now()
+        with self.transaction() as conn:
+            task = self.get_task(task_uuid)
+            previous = conn.execute(
+                "SELECT * FROM workflow_task_command WHERE workflow_task_uuid=? "
+                "AND idempotency_key=? AND deleted_at IS NULL",
+                (task_uuid, idempotency_key),
+            ).fetchone()
+            if previous is not None:
+                meta = _load(previous["meta_data"], {})
+                if (
+                    previous["type"] != "edit_input"
+                    or meta.get("expected_revision") != expected_revision
+                    or not strict_json_equal(meta.get("input"), values)
+                ):
+                    raise StoreConflict("command idempotency key already used")
+                return task
+            if task["execution_kind"] != "workflow":
+                raise StoreConflict("only workflow tasks accept input edits")
+            if task["status"] not in {"pending", "running"}:
+                raise StoreConflict("task is no longer executable")
+            if task["control_revision"] != expected_revision:
+                raise StoreRevisionConflict("task control revision changed")
+            if task["control_status"] != "paused":
+                raise StoreConflict("入口参数只能在任务暂停时修改")
+            current = dict(task["input"])
+            changed = {
+                name: value
+                for name, value in values.items()
+                if name not in current or not strict_json_equal(current[name], value)
+            }
+            plan = task["execution_plan"]
+            affected: List[Tuple[Dict[str, Any], str, str]] = []
+            for planned in plan.get("nodes") or []:
+                for key, name in (planned.get("entry_bindings") or {}).items():
+                    if name in changed:
+                        affected.append((planned, str(key), str(name)))
+            runs = {
+                row["workflow_node_uuid"]: row
+                for row in conn.execute(
+                    "SELECT * FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL",
+                    (task_uuid,),
+                ).fetchall()
+            }
+            for planned, _key, name in affected:
+                run = runs.get(planned["uuid"])
+                if run is None:
+                    continue
+                if run["executor_kind"] == "loop":
+                    raise StoreConflict(f"入口参数 {name!r} 被循环容器使用，运行中不可修改")
+                dispatched = conn.execute(
+                    "SELECT 1 FROM workflow_node_job WHERE workflow_node_run_uuid=? "
+                    "AND deleted_at IS NULL AND (status <> 'pending' OR started_at IS NOT NULL) LIMIT 1",
+                    (run["uuid"],),
+                ).fetchone()
+                if dispatched is not None:
+                    raise StoreConflict(f"入口参数 {name!r} 已被已下发的节点使用，不能修改")
+            for planned, key, name in affected:
+                planned["param"] = {**(planned.get("param") or {}), key: changed[name]}
+                run = runs.get(planned["uuid"])
+                if run is None:
+                    continue
+                run_param = {**_load(run["param"], {}), key: changed[name]}
+                conn.execute(
+                    "UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?",
+                    (_json(run_param), now, run["uuid"]),
+                )
+                for job in conn.execute(
+                    "SELECT uuid, param FROM workflow_node_job WHERE workflow_node_run_uuid=? "
+                    "AND deleted_at IS NULL AND status='pending'",
+                    (run["uuid"],),
+                ).fetchall():
+                    conn.execute(
+                        "UPDATE workflow_node_job SET param=?, update_time=? WHERE uuid=?",
+                        (_json({**_load(job["param"], {}), key: changed[name]}), now, job["uuid"]),
+                    )
+            conn.execute(
+                "UPDATE workflow_task SET input=?, execution_plan=?, update_time=? WHERE uuid=?",
+                (_json({**current, **values}), _json(plan), now, task_uuid),
+            )
+            conn.execute(
+                "INSERT INTO workflow_task_command(uuid, create_time, update_time, "
+                "workflow_task_uuid, type, idempotency_key, status, meta_data, result, consumed_at) "
+                "VALUES (?, ?, ?, ?, 'edit_input', ?, 'succeeded', ?, ?, ?)",
+                (
+                    str(uuid4()), now, now, task_uuid, idempotency_key,
+                    _json({"expected_revision": expected_revision, "input": values}),
+                    _json({
+                        "changed": sorted(changed),
+                        "previous": {name: current[name] for name in sorted(changed) if name in current},
+                        "nodes": sorted({planned["uuid"] for planned, _key, _name in affected}),
+                    }),
+                    now,
+                ),
+            )
+            self._append_event(conn, event="workflow.task.changed",
+                               data={"workflow_task_uuid": task_uuid}, now=now)
+        return self.get_task(task_uuid)
 
     def mark_job_cancel_requested(self, job_uuid: str) -> bool:
         """已下发的 attempt 收到取消请求：展示为 cancel_requested，直到真实终态回报。"""

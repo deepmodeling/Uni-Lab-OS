@@ -184,6 +184,25 @@ def validate_workflow_graph_io(graph: Mapping[str, Any]) -> WorkflowGraphIO:
                 "parameter": str(parameter),
             }
             continue
+        if kind == "node_output" and set(binding) == {
+            "kind",
+            "workflow_node_uuid",
+            "data_key",
+        }:
+            # 画布节点没有 Handle：输出取该节点返回值里 data_key 指向的路径（空串 = 整个返回值）
+            try:
+                node_uuid = validate_uuid(binding["workflow_node_uuid"])
+            except (TypeError, ValueError):
+                raise WorkflowIOValidationError("workflow_io_invalid", path) from None
+            data_key = binding.get("data_key")
+            if node_uuid not in node_by_uuid or not isinstance(data_key, str):
+                raise WorkflowIOValidationError("workflow_io_invalid", path)
+            output_bindings[name] = {
+                "kind": "node_output",
+                "workflow_node_uuid": node_uuid,
+                "data_key": data_key.strip(),
+            }
+            continue
         if kind != "node_output" or set(binding) != {
             "kind",
             "workflow_node_uuid",
@@ -227,6 +246,12 @@ def validate_workflow_graph_io(graph: Mapping[str, Any]) -> WorkflowGraphIO:
         },
         output_bindings=output_bindings,
     )
+
+
+def normalize_input_contract(raw: Any) -> dict[str, Any]:
+    """校验并规范化单独的输入合同（任务入口参数校验用）；``None`` 视为空合同。"""
+
+    return _input_contract(raw)
 
 
 def _input_contract(raw: Any) -> dict[str, Any]:
@@ -402,6 +427,7 @@ __all__ = [
     "WorkflowContract",
     "WorkflowGraphIO",
     "WorkflowIOValidationError",
+    "normalize_input_contract",
     "schema_is_assignable",
     "validate_workflow_graph_io",
 ]

@@ -62,6 +62,14 @@ from unilabos.server.services.runtime.workflow.authoring_kernel import (
 from unilabos.server.services.runtime.workflow.composite_expansion import (
     CompositeAuthoring,
 )
+from unilabos.server.services.runtime.workflow.entry_parameters import (
+    EntryParameterError,
+    declared_input_contract,
+    resolve_declared_output,
+    resolve_task_input,
+    substitute_entry_references,
+    validate_entry_value,
+)
 from unilabos.server.services.runtime.workflow.publication import (
     PUBLICATION_MODULE,
     PUBLICATION_TEMPLATE_AUTHORITY,
@@ -919,28 +927,40 @@ class WorkflowService(WorkflowStore):
             meta_data = normalize_json_object(meta_data)
         except ValueError:
             raise WorkflowError("invalid_input") from None
-        # 任务参数由工作流节点的 action 参数表达；任务级 input_value 的公开
-        # 契约仅接受空对象，避免持久化执行器无法解释的数据。
-        if input_value:
-            raise WorkflowError("invalid_input")
+        # 任务输入只承载工作流声明的入口参数（input_contract）；未声明合同的工作流
+        # 仍只接受空对象。校验与补默认值在建任务事务内按同一份图完成。
         description = self._optional_text(description)
         # 幂等键可选：同一次提交（按钮重发、网络重试）复用同一键只建一个任务。指纹锁定
-        # 运行语义 (workflow, run_mode, target)；同键不同语义按 conflict 拒绝。
+        # 运行语义 (workflow, run_mode, target, input)；同键不同语义按 conflict 拒绝。
         fingerprint = ""
         if idempotency_key is not None:
             idempotency_key = str(idempotency_key).strip()
             if not idempotency_key or len(idempotency_key) > 200:
                 raise WorkflowError("invalid_input")
-            fingerprint = _sha256(_canonical_json({
+            semantics: Dict[str, Any] = {
                 "workflow_uuid": workflow_uuid,
                 "run_mode": run_mode,
                 "target_node_uuid": target_node_uuid,
-            }))
+            }
+            if input_value:
+                # 空输入不进指纹：与引入任务输入之前的既有任务保持同一指纹
+                semantics["input"] = input_value
+            fingerprint = _sha256(_canonical_json(semantics))
             existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
             if existing is not None:
                 if existing.get("request_fingerprint", "") != fingerprint:
                     raise WorkflowConflict("conflict")
                 return existing
+        resolved: Dict[str, Dict[str, Any]] = {}
+
+        def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
+            try:
+                contract = declared_input_contract(graph["workflow"])
+                resolved["input"] = resolve_task_input(contract, input_value)
+            except EntryParameterError as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            return resolved["input"]
+
         try:
             task = self.create_task_with_jobs(
                 workflow_uuid=workflow_uuid,
@@ -948,12 +968,14 @@ class WorkflowService(WorkflowStore):
                 run_mode=run_mode,
                 target_node_uuid=target_node_uuid,
                 input_value={},
+                input_builder=build_input,
                 description=description,
                 meta_data=meta_data,
                 plan_builder=lambda graph: self._build_execution_plan(
                     graph,
                     run_mode=run_mode,
                     target_node_uuid=target_node_uuid,
+                    entry_input=resolved["input"],
                 ),
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
@@ -1144,12 +1166,81 @@ class WorkflowService(WorkflowStore):
         output: Optional[Dict[str, Any]] = None,
         error_info: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        if status == "succeeded":
+            # 声明了 output_contract 的工作流：任务输出按 output_bindings 求值；
+            # 未声明时沿用调用方给的逐节点结果映射。
+            try:
+                task = self.get_task(task_uuid)
+                declared = resolve_declared_output(
+                    task.get("workflow_snapshot") or {},
+                    self.list_node_runs(task_uuid, include_attempts=False),
+                    task.get("input") or {},
+                )
+            except StoreNotFound:
+                declared = None
+            if declared is not None:
+                output = declared
         return self.finish_task(
             task_uuid,
             status=status,
             output=output or {},
             error_info=error_info or [],
         )
+
+    def edit_workflow_task_input(
+        self,
+        task_uuid: str,
+        *,
+        expected_revision: int,
+        input_value: Dict[str, Any],
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """暂停时修改入口参数（ADR 0002）：只改尚未下发、且未被已下发节点用过的参数。"""
+
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        task = self.get_workflow_task(task_uuid)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise WorkflowError("invalid_input")
+        key = str(idempotency_key or uuid4()).strip()
+        if not key or len(key) > 200:
+            raise WorkflowError("invalid_input")
+        try:
+            patch = normalize_json_object(input_value)
+            contract = declared_input_contract(
+                (task.get("workflow_snapshot") or {}).get("workflow") or {}
+            )
+            descriptors = {
+                str(item["name"]): item for item in (contract or {}).get("parameters", [])
+            }
+            unknown = sorted(set(patch) - set(descriptors))
+            if unknown:
+                raise EntryParameterError("workflow_input_unknown", f"/input/{unknown[0]}")
+            values = {
+                name: validate_entry_value(descriptors[name], value)
+                for name, value in patch.items()
+            }
+        except ValueError as exc:
+            detail = str(exc) if isinstance(exc, EntryParameterError) else ""
+            raise WorkflowError("invalid_input", detail=detail) from None
+        try:
+            result = self.edit_task_input(
+                task["uuid"],
+                expected_revision=expected_revision,
+                values=values,
+                idempotency_key=key,
+            )
+        except StoreRevisionConflict:
+            raise WorkflowConflict("conflict") from None
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._task_controller is not None:
+            try:
+                # 唤醒调度器：未下发节点按库内参数重载
+                self._task_controller(task["uuid"])
+            except Exception:
+                logger.exception("任务 %s 入口参数已修改，等待调度器恢复", task["uuid"])
+        return result
 
     def get_workflow_task(self, task_uuid: str) -> Dict[str, Any]:
         try:
@@ -1372,6 +1463,7 @@ class WorkflowService(WorkflowStore):
         *,
         run_mode: str,
         target_node_uuid: Optional[str],
+        entry_input: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         templates = {
             template["uuid"]: template for template in graph.get("node_templates", [])
@@ -1593,6 +1685,25 @@ class WorkflowService(WorkflowStore):
             template = templates.get(template_uuid)
             planned_param = dict(node.get("param") or {})
             planned_param.update(composite_params.get(node_uuid, {}))
+            # 入口参数：画布节点的 param 顶层引用与模板节点的 Handle 绑定都替换为任务输入值
+            planned_param, entry_bindings = substitute_entry_references(
+                planned_param, entry_input or {}
+            )
+            node_unilab = (node.get("meta_data") or {}).get("unilab")
+            input_bindings = (
+                node_unilab.get("input_bindings") if isinstance(node_unilab, dict) else None
+            )
+            for handle_uuid, binding in (
+                input_bindings.items() if isinstance(input_bindings, dict) else ()
+            ):
+                handle = handles.get(handle_uuid)
+                parameter = binding.get("parameter") if isinstance(binding, dict) else None
+                if handle is None or not isinstance(parameter, str):
+                    continue
+                data_key = self._final_target_data_key(self._handle_data_key(handle))
+                entry_bindings[data_key] = parameter
+                if parameter in (entry_input or {}):
+                    planned_param[data_key] = (entry_input or {})[parameter]
             target_handles = sorted(
                 (
                     handle
@@ -1657,6 +1768,8 @@ class WorkflowService(WorkflowStore):
                 planned_node["source_handle_uuids"] = source_handle_uuids
             if template is not None and template.get("schema") is not None:
                 planned_node["param_schema"] = template["schema"]
+            if entry_bindings:
+                planned_node["entry_bindings"] = entry_bindings
             planned_nodes.append(planned_node)
             jobs.append(
                 {

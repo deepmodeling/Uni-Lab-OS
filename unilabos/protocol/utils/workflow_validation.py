@@ -86,6 +86,13 @@ def validate_graph(
         )
         for node in nodes
     }
+    declared_parameters = _declared_parameter_names(workflow_meta_data)
+    for node in nodes:
+        _validate_param_references(
+            node,
+            effective_params[node.uuid],
+            declared_parameters,
+        )
     enabled = {
         node.uuid: node
         for node in nodes
@@ -373,6 +380,40 @@ def _validate_required_handles(
             handle.get("type"),
         ):
             raise GraphValidationError(f"输入 {data_key!r} 的类型不正确")
+
+
+def _declared_parameter_names(workflow_meta_data: Mapping[str, Any]) -> set[str]:
+    """Workflow input_contract 声明的入口参数名（未声明合同时为空）。"""
+
+    unilab = workflow_meta_data.get("unilab")
+    contract = unilab.get("input_contract") if isinstance(unilab, dict) else None
+    parameters = contract.get("parameters") if isinstance(contract, dict) else None
+    if not isinstance(parameters, list):
+        return set()
+    return {
+        item["name"]
+        for item in parameters
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+
+
+def _validate_param_references(
+    node: WorkflowNodeWrite,
+    param: Mapping[str, Any],
+    declared: set[str],
+) -> None:
+    """param 顶层的 ``{"kind": "workflow_input", "parameter": 名}`` 必须引用已声明的入口参数。"""
+
+    for key, value in param.items():
+        if _argument_reference(value) != "workflow_input":
+            continue
+        parameter = value.get("parameter")
+        if set(value) != {"kind", "parameter"} or not isinstance(parameter, str):
+            raise GraphValidationError(f"节点 {node.name!r} 的参数 {key!r} 引用格式无效")
+        if parameter not in declared:
+            raise GraphValidationError(
+                f"节点 {node.name!r} 的参数 {key!r} 引用了未声明的入口参数 {parameter!r}"
+            )
 
 
 def _validated_input_bindings(

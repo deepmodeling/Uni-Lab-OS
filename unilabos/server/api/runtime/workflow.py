@@ -223,8 +223,23 @@ class WorkflowTaskCreateRequest(_BackendModel):
     execution_policy: Dict[str, Any] = Field(default_factory=dict)
     execution_timeout_seconds: int = 0
     idempotency_key: Optional[str] = None
+    #: 整图任务的入口参数（工作流 input_contract）；未声明合同的工作流只接受 {}。
+    input: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("meta_data", "param", "execution_policy", mode="before")
+    @field_validator("meta_data", "param", "execution_policy", "input", mode="before")
+    @classmethod
+    def _json_object(cls, value: Any) -> Dict[str, Any]:
+        return normalize_json_object(value)
+
+
+class WorkflowTaskInputEditRequest(_StrictModel):
+    """暂停时修改入口参数：``input`` 为部分更新，``expected_revision`` 是任务 control_revision。"""
+
+    expected_revision: int = Field(ge=0, le=_INT64_MAX, strict=True)
+    input: Dict[str, Any]
+    idempotency_key: Optional[str] = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("input", mode="before")
     @classmethod
     def _json_object(cls, value: Any) -> Dict[str, Any]:
         return normalize_json_object(value)
@@ -287,9 +302,6 @@ def _public_data(data: Any) -> Any:
     if not isinstance(data, dict):
         return data
     result = {key: _public_data(value) for key, value in data.items()}
-    if "workflow_snapshot" in result and "workflow_uuid" in result:
-        result.pop("input", None)
-        result.pop("output", None)
     if "workflow_uuid" in result and "pose" in result and "param" in result:
         result.pop("status", None)
     return result
@@ -545,6 +557,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         body: WorkflowTaskCreateRequest,
     ) -> JSONResponse:
         if body.execution_kind == "ad_hoc_device_action":
+            if body.input:
+                raise WorkflowError("invalid_input", detail="单点设备动作不接受 input")
             return _success(
                 service.create_ad_hoc_device_action_task(
                     device_id=body.device_id,
@@ -566,7 +580,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 workflow_uuid=body.workflow_uuid,
                 run_mode=body.run_mode,
                 target_node_uuid=body.target_node_uuid,
-                input_value={},
+                input_value=body.input,
                 description=body.description,
                 meta_data=body.meta_data,
                 idempotency_key=body.idempotency_key,
@@ -601,6 +615,15 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         return _success(service.command_workflow_task(
             task_uuid, command_type=body.type, expected_revision=body.expected_revision,
             idempotency_key=body.idempotency_key,
+        ))
+
+    @router.patch("/workflow-tasks/{task_uuid}/input")
+    def edit_workflow_task_input(task_uuid: str, body: WorkflowTaskInputEditRequest) -> JSONResponse:
+        """暂停时修改入口参数；已被已下发节点用过的参数冻结（3003）。"""
+
+        return _success(service.edit_workflow_task_input(
+            task_uuid, expected_revision=body.expected_revision,
+            input_value=body.input, idempotency_key=body.idempotency_key,
         ))
 
     @router.get("/workflow-tasks/{task_uuid}/node-runs")

@@ -1197,7 +1197,7 @@ WORKFLOW_TABLES = (
                 json_valid(meta_data) AND json_type(meta_data) = 'object'
             ),
             workflow_task_uuid TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('step', 'pause', 'resume', 'cancel')),
+            type TEXT NOT NULL CHECK (type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')),
             target_node_uuid TEXT,
             idempotency_key TEXT NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'rejected')),

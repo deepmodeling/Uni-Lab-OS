@@ -40,13 +40,14 @@ def test_v2_runtime_database_migrates_to_v3_and_keeps_rows(tmp_path) -> None:
 
     connection = sqlite3.connect(path)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SPECS["runtime"].schema_version
         assert connection.execute("SELECT checksum FROM schema_identity").fetchone()[0] == (
             DATABASE_SPECS["runtime"].checksum
         )
         history = [tuple(row) for row in connection.execute("SELECT version, description FROM schema_migration")]
-        assert history == [(3, "新增 workflow_publication：工作流发布的不可变修订快照")]
+        assert history[0] == (3, "新增 workflow_publication：工作流发布的不可变修订快照")
         assert connection.execute("SELECT name FROM workflow").fetchall() == [("旧工作流",)]
     finally:
         connection.close()
-    assert list(tmp_path.glob("runtime.db.pre-v3-*.bak")), "迁移前应留备份"
+    target = DATABASE_SPECS["runtime"].schema_version
+    assert list(tmp_path.glob(f"runtime.db.pre-v{target}-*.bak")), "迁移前应留备份"

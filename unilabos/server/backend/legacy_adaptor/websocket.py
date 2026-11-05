@@ -21,6 +21,7 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
+from unilabos.config.control_token import client_headers
 from unilabos.server.backend.legacy_adaptor.session import BaseBackendClient
 from unilabos.server.backend.legacy_adaptor.url import build_backend_websocket_url
 from unilabos.protocol.runtime.data import RUNTIME_PROTOCOL_VERSION
@@ -243,6 +244,7 @@ class BackendWebSocketClient(BaseBackendClient):
                         "Authorization": f"Lab {BasicConfig.auth_secret()}",
                         "EdgeSession": self.client_id,
                         "EdgeProtocol": RUNTIME_PROTOCOL_VERSION,
+                        **client_headers(),
                     },
                     logger=ws_logger,
                 ) as websocket:
@@ -528,6 +530,7 @@ class BackendWebSocketClient(BaseBackendClient):
         url = f"{self.backend_url()}/api/v1/edge/http-responses/{response.request_uuid}"
         secret = BasicConfig.auth_secret()
         headers = {"Authorization": f"Lab {secret}"} if secret else {}
+        headers.update(client_headers())
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 reply = await client.post(url, json=response.model_dump(mode="json"), headers=headers)

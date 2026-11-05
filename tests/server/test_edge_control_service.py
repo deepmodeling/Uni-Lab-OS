@@ -18,6 +18,7 @@ from unilabos.protocol.runtime.control import (
     ExecuteJobContent,
 )
 from unilabos.server.backend.edge_control import (
+    EDGE_EVENT_MAX_ATTEMPTS,
     EdgeControlService,
     get_edge_control_service,
     set_edge_control_service,
@@ -386,6 +387,112 @@ def test_duplicate_edge_events_ack_but_apply_once() -> None:
     assert first is not None and second is not None
     assert second["data"]["through_sequence"] == 1
     assert finished == ["job-1"]
+
+
+def _finished_recorder(service: EdgeControlService) -> list[tuple[str, bool, Any]]:
+    finished: list[tuple[str, bool, Any]] = []
+    service.add_job_finished_listener(
+        lambda job_id, success, ret_value, *_rest: finished.append((job_id, success, ret_value))
+    )
+    return finished
+
+
+def test_event_whose_payload_is_unavailable_is_not_acked_until_redelivered() -> None:
+    """详情 payload 暂时取不到：不确认、不落地，Host 重发时再处理（以前会带空结果直接确认）。"""
+
+    service = _service()
+    service.attach_connection()
+    finished = _finished_recorder(service)
+
+    assert service.handle_message("edge_change", _edge_change(1)) is None
+    assert finished == []
+
+    service._payloads.payloads["payload-1"] = {"return_info": {"suc": True, "return_value": {"volume": 5}}}
+    ack = service.handle_message("edge_change", _edge_change(1))
+    assert ack is not None and ack["data"]["through_sequence"] == 1
+    assert finished == [("job-1", True, {"volume": 5})]
+
+
+def test_events_after_a_failed_one_wait_because_acks_are_cumulative() -> None:
+    service = _service({"payload-2": {"return_info": {"return_value": 2}}})
+    service.attach_connection()
+    finished = _finished_recorder(service)
+
+    assert service.handle_message("edge_change", _edge_change(1)) is None
+    # #2 能处理，但确认到 #2 会连带确认还没落地的 #1：先不处理也不确认
+    later = _edge_change(2, job_uuid="job-2", detail_payload_uuid="payload-2")
+    assert service.handle_message("edge_change", later) is None
+    assert finished == []
+
+    service._payloads.payloads["payload-1"] = {"return_info": {"return_value": 1}}
+    assert service.handle_message("edge_change", _edge_change(1))["data"]["through_sequence"] == 1
+    assert service.handle_message("edge_change", later)["data"]["through_sequence"] == 2
+    assert finished == [("job-1", True, 1), ("job-2", True, 2)]
+    # 重复投递只重新确认
+    assert service.handle_message("edge_change", later)["data"]["through_sequence"] == 2
+    assert len(finished) == 2
+
+
+def test_unexpected_apply_error_is_retried_then_dead_lettered() -> None:
+    service = _service({"payload-2": {"return_info": {}}})
+    service.attach_connection()
+    finished = _finished_recorder(service)
+    calls: list[int] = []
+    original = service._apply_edge_event
+
+    def broken(notice, *, final_attempt: bool = False) -> None:
+        if notice.event_sequence == 1:
+            calls.append(notice.event_sequence)
+            raise ValueError("坏事件")
+        original(notice, final_attempt=final_attempt)
+
+    service._apply_edge_event = broken  # type: ignore[method-assign]
+    for _ in range(EDGE_EVENT_MAX_ATTEMPTS - 1):
+        assert service.handle_message("edge_change", _edge_change(1, job_uuid="job-bad")) is None
+    ack = service.handle_message("edge_change", _edge_change(1, job_uuid="job-bad"))
+    assert ack is not None and ack["data"]["through_sequence"] == 1
+    assert len(calls) == EDGE_EVENT_MAX_ATTEMPTS
+    letters = service.edge_dead_letters()
+    assert [(item["event_sequence"], item["job_uuid"], item["attempts"]) for item in letters] == [
+        (1, "job-bad", EDGE_EVENT_MAX_ATTEMPTS)
+    ]
+    assert "坏事件" in letters[0]["error"]
+
+    # 死信不再挡住后面的事件
+    ack = service.handle_message("edge_change", _edge_change(2, job_uuid="job-2", detail_payload_uuid="payload-2"))
+    assert ack["data"]["through_sequence"] == 2
+    assert finished == [("job-2", True, None)]
+
+
+def test_payload_that_never_arrives_settles_degraded_on_the_last_attempt() -> None:
+    """拉了 N 次仍取不到：按降级口径落地（空 return_info），不让 job 永远停在运行中。"""
+
+    service = _service()
+    service.attach_connection()
+    finished = _finished_recorder(service)
+    for _ in range(EDGE_EVENT_MAX_ATTEMPTS - 1):
+        assert service.handle_message("edge_change", _edge_change(1, event_type="execution.failed")) is None
+    ack = service.handle_message("edge_change", _edge_change(1, event_type="execution.failed"))
+    assert ack["data"]["through_sequence"] == 1
+    assert finished == [("job-1", False, None)]
+    assert service.edge_dead_letters() == []
+    assert service._payloads.requested == ["payload-1"] * EDGE_EVENT_MAX_ATTEMPTS
+
+
+def test_error_decision_waits_for_its_snapshot() -> None:
+    service = _service()
+    service.attach_connection()
+    service.dispatch(_dispatch_payload(job_id="job-1"))
+    event = _edge_change(1, event_type="execution.error_pending", detail_payload_uuid="decision-1")
+
+    assert service.handle_message("edge_change", event) is None
+    assert service.list_error_decisions() == []
+
+    service._payloads.payloads["decision-1"] = {
+        "report": {"decision_id": "d-1", "job_uuid": "job-1", "options": ["retry", "fail"]}
+    }
+    assert service.handle_message("edge_change", event)["data"]["through_sequence"] == 1
+    assert [item.get("decision_id") for item in service.list_error_decisions()] == ["d-1"]
 
 
 def test_cancel_task_issues_cancel_commands_for_inflight_jobs() -> None:

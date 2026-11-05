@@ -15,6 +15,10 @@ fn main() {
         .generate()
         .expect("生成 C 头文件失败")
         .write_to_file(&header);
+    // no_std 动态库在 macOS 上必须显式链接 libSystem（abort / memset 等也从这里解析）
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-lib=System");
+    }
     println!("cargo:rerun-if-changed=src/lib.rs");
     println!("cargo:rerun-if-changed=cbindgen.toml");
 }

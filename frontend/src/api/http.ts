@@ -11,6 +11,8 @@ export const BUSINESS_CODES = {
   ok: 0,
   internal: 1,
   invalid: 1000,
+  /** 写操作缺少或带错控制面 token（HTTP 401）。 */
+  unauthorized: 4001,
   not_found: 3002,
   conflict: 3003,
   unavailable: 5001,
@@ -157,7 +159,13 @@ export interface Transport {
 export function createTransport({
   baseUrl = '',
   fetchImpl,
-}: { baseUrl?: string; fetchImpl?: typeof fetch } = {}): Transport {
+  getToken,
+}: {
+  baseUrl?: string
+  fetchImpl?: typeof fetch
+  /** 每个请求取一次控制面 token；有值就带 `Authorization: Bearer <token>`（写操作需要）。 */
+  getToken?: () => string | null | undefined
+} = {}): Transport {
   const doFetch: typeof fetch = fetchImpl ?? ((input, init) => globalThis.fetch(input, init))
 
   async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -165,6 +173,8 @@ export function createTransport({
     const context = { method, path }
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+    const token = getToken?.()?.trim()
+    if (token) headers.Authorization = `Bearer ${token}`
     let response: Response
     try {
       response = await doFetch(buildUrl(baseUrl, path, options.query), {

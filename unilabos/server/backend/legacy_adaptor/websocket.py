@@ -513,7 +513,11 @@ class BackendWebSocketClient(BaseBackendClient):
             upstream = await client.request(
                 request.method,
                 request.path,
-                headers={k: v for k, v in request.headers.items() if k.lower() not in self._HOP_HEADERS},
+                # 权威已在转发前校验过调用方；本进程的应用照样检查写请求，出示自己那份 token
+                headers={
+                    **{k: v for k, v in request.headers.items() if k.lower() not in self._HOP_HEADERS},
+                    **client_headers(),
+                },
                 content=base64.b64decode(request.body_base64) if request.body_base64 else None,
                 timeout=request.timeout_seconds,
             )

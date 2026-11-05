@@ -8,6 +8,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from unilabos.config.control_token import client_headers
+
 from unilabos.protocol.materials import InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
     InventoryLotInbound,
@@ -387,7 +389,7 @@ class HTTPMaterialsClient:
         self, method: str, path: str, body: Optional[Any] = None
     ) -> Any:
         data = None
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", **client_headers()}
         if body is not None:
             if hasattr(body, "model_dump"):
                 body = body.model_dump(mode="json", exclude_none=False)

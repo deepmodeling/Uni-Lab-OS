@@ -3,6 +3,7 @@
 import asyncio
 import errno
 import json
+from urllib.parse import quote
 import socket
 import sys
 import threading
@@ -15,7 +16,7 @@ from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.config.control_token import TOKEN_HEADER
+from unilabos.config.control_token import TOKEN_HEADER, authority_token, token_accepted
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -30,6 +31,8 @@ RECOMMENDED_FRONTENDS = (
         "name": "OpenLab",
         "url": "https://xuwznln.github.io/OpenLabSite/",
         "description": "面向 Uni-Lab OS 微后端的社区实验室前端。",
+        # 本页经 URL 片段把控制令牌交给它（见 _TOKEN_HANDOFF_SCRIPT）
+        "token_handoff": True,
     },
 )
 
@@ -109,6 +112,53 @@ class ConfiguredCORSMiddleware:
         await self._inner(scope, receive, send)
 
 
+#: 需要控制面 token 的 HTTP 方法：管理 API 的一切写操作。读（GET / HEAD）和预检（OPTIONS）不需要。
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+#: 不经 token 检查的写入口：MCP 端点自带 Host 白名单并拒绝一切浏览器 Origin（见 server/mcp）。
+TOKEN_EXEMPT_PATHS = ("/mcp",)
+
+
+class ControlTokenMiddleware:
+    """管理 API 的写请求必须出示控制面 token（``X-UniLab-Token`` 或 ``Authorization: Bearer``）。
+
+    CORS 默认放行所有来源，任何网页都能向本机后端发请求；没有 token 时，随便打开的一个网页就能
+    创建任务、启动设备。token 见 ``unilabos/config/control_token.py``；本进程没有 token（单元测试、
+    嵌入式装配）时不检查。被拒的请求返回 HTTP 401 + ``{"code": 4001, ...}``，经外层 CORS 中间件
+    补上跨域头，浏览器能读到原因。
+    """
+
+    def __init__(self, app) -> None:
+        self._app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if (
+            scope.get("type") == "http"
+            and scope.get("method") in WRITE_METHODS
+            and not any(
+                scope.get("path", "") == prefix or scope.get("path", "").startswith(prefix + "/")
+                for prefix in TOKEN_EXEMPT_PATHS
+            )
+        ):
+            from starlette.datastructures import Headers
+
+            if not token_accepted(Headers(scope=scope)):
+                message = (
+                    "写操作需要控制面 token：请求头 X-UniLab-Token 或 Authorization: Bearer <token>。"
+                    "在运行 unilab 的机器上执行 `unilab token` 查看"
+                )
+                response = JSONResponse(
+                    status_code=401,
+                    content={"code": 4001, "error": {"msg": message}, "detail": "control token missing or invalid"},
+                    headers={"WWW-Authenticate": 'Bearer realm="unilab"'},
+                )
+                await response(scope, receive, send)
+                return
+        await self._app(scope, receive, send)
+
+
+# 中间件后加的在外层：先登记 token 检查、再登记 CORS，401 响应也带跨域头。
+# noinspection PyTypeChecker
+app.add_middleware(ControlTokenMiddleware)
 # noinspection PyTypeChecker
 app.add_middleware(ConfiguredCORSMiddleware)
 
@@ -160,12 +210,34 @@ async def allow_private_network(request: Request, call_next) -> Response:
 def _render_cards(items) -> str:
     return "".join(
         (
-            '<a class="card" href="{url}" target="_blank" rel="noreferrer">'
+            '<a class="card" href="{url}" target="_blank" rel="noreferrer"{handoff}>'
             '<strong>{name}</strong><span>{description}</span>'
             '<code>{url}</code></a>'
-        ).format(**item)
+        ).format(handoff=' data-token-handoff="1"' if item.get("token_handoff") else "", **item)
         for item in items
     )
+
+
+#: 浏览器以 ``/#token=<t>`` 打开本页时（``unilab`` 启动时自动打开的地址），把 token 经 URL 片段交给
+#: 内置推荐前端（``data-token-handoff``），站点索引里的第三方前端拿不到；随后从地址栏抹掉片段。
+#: 片段不会发给任何服务器，本页也不把 token 写进 DOM 文本。
+_TOKEN_HANDOFF_SCRIPT = """
+<script>
+(function () {
+  var match = /(?:^#|&)token=([^&]+)/.exec(window.location.hash || "");
+  if (!match) return;
+  var token = decodeURIComponent(match[1]);
+  try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
+  var backend = window.location.origin;
+  document.querySelectorAll("a.card[data-token-handoff]").forEach(function (card) {
+    var base = card.getAttribute("href").split("#")[0];
+    card.setAttribute("href", base + "#/?backend=" + encodeURIComponent(backend) + "&token=" + encodeURIComponent(token));
+  });
+  var note = document.getElementById("token-note");
+  if (note) note.textContent = "已为推荐前端带上本机的控制令牌（写操作需要它）。";
+})();
+</script>
+"""
 
 
 #: 浏览器侧读取站点索引并补卡。只用 DOM API 写入文本，索引内容不进 innerHTML。
@@ -247,7 +319,7 @@ def _render_catalog_page(title: str, intro: str, sections, *, site_index_url: st
         _SITE_INDEX_SCRIPT.replace("__SITE_INDEX_URL__", json.dumps(site_index_url))
         if site_index_url
         else ""
-    )
+    ) + _TOKEN_HANDOFF_SCRIPT
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -273,6 +345,7 @@ def _render_catalog_page(title: str, intro: str, sections, *, site_index_url: st
 <body><main>
   <h1>{title}</h1>
   <p>{intro}</p>
+  <p id="token-note" class="index-note"></p>
   {body}
 </main>{script}</body>
 </html>"""
@@ -545,7 +618,10 @@ def browser_landing_url(host: str, port: int) -> str:
     if remote:
         return f"{remote}/"
     # noinspection HttpUrlsUsage
-    return f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
+    url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
+    token = authority_token()
+    # 片段不发给服务器；导航页把它交给内置推荐前端后立即从地址栏抹掉
+    return f"{url}#token={quote(token, safe='')}" if token else url
 
 
 class ManagementPortInUseError(OSError):
@@ -620,10 +696,17 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
     # 配置日志
     log_config = setup_fastapi_logging()
 
+    # 写操作需要控制面 token：调度权威 / 单进程模式在这里确定（已由 backend_main 确定时沿用）
+    from unilabos.config.control_token import ensure_authority_token
+    from unilabos.config.working_dir import resolve_working_dir
+
+    ensure_authority_token(BasicConfig.working_dir or resolve_working_dir(None))
+
     # 启动前打开浏览器
     if open_browser:
         url = browser_landing_url(host, port)
-        info(f"[Web] 正在打开浏览器访问: {url}")
+        # 日志会转发给前端：只记不带片段（token）的地址
+        info(f"[Web] 正在打开浏览器访问: {url.split('#', 1)[0]}")
         try:
             webbrowser.open(url)
         except Exception as e:

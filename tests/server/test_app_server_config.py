@@ -120,9 +120,13 @@ def test_client_disconnect_during_body_read_is_not_an_asgi_error() -> None:
 
 
 @pytest.mark.parametrize("platform", ["win32", "linux"])
-def test_start_server_bounds_graceful_shutdown(monkeypatch, platform) -> None:
+def test_start_server_bounds_graceful_shutdown(monkeypatch, platform, tmp_path) -> None:
     if platform == "win32" and sys.platform != "win32":
         pytest.skip("Windows IOCP 专用入口")
+    # start_server 会确定控制面 token：落在临时工作目录，不写真实的 ~/.unilabos
+    from unilabos.config.config import BasicConfig
+
+    monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
     captured: dict = {}
     policy = asyncio.get_event_loop_policy()
 
@@ -167,10 +171,14 @@ def test_start_server_bounds_graceful_shutdown(monkeypatch, platform) -> None:
     assert app_module.request_server_shutdown() is False  # run 返回后已清空引用
 
 
-def test_abort_serving_stops_control_plane_wait_even_before_it_starts(monkeypatch) -> None:
+def test_abort_serving_stops_control_plane_wait_even_before_it_starts(monkeypatch, tmp_path) -> None:
     """backend 线程往往在主线程进入服务循环之前就失败：abort 必须让随后的等待立刻返回。"""
 
     import threading
+
+    from unilabos.config.config import BasicConfig
+
+    monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
 
     monkeypatch.setattr(app_module, "setup_server", lambda: app_module.app)
     app_module._abort_serving.clear()

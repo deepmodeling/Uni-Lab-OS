@@ -23,7 +23,8 @@ def _app(tmp_path) -> TestClient:
 
 def test_code_table_is_shared() -> None:
     assert BUSINESS_CODES == {
-        "ok": 0, "internal": 1, "invalid": 1000, "not_found": 3002, "conflict": 3003, "unavailable": 5001,
+        "ok": 0, "internal": 1, "invalid": 1000, "unauthorized": 4001, "not_found": 3002, "conflict": 3003,
+        "unavailable": 5001,
     }
 
 

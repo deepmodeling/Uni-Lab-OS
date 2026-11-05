@@ -10,7 +10,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 from pathlib import Path
 
-from tests.e2e.readme_demos import DemoSpec, api_request
+from tests.e2e.readme_demos import E2E_CONTROL_TOKEN, DemoSpec, api_request
 
 
 @contextmanager
@@ -28,6 +28,9 @@ def demo_smoke(spec: DemoSpec, source: Path):
         importlib.invalidate_caches()
         smoke = importlib.import_module(f"{spec.package}.smoke")
         assert Path(smoke.__file__).resolve() == (source / spec.package / "smoke.py").resolve()
+        # demo 的 smoke 自己定控制面 token；这里的运行时由 harness 拉起，用 harness 那份
+        if hasattr(smoke, "CONTROL_TOKEN"):
+            smoke.CONTROL_TOKEN = E2E_CONTROL_TOKEN
         yield smoke
     finally:
         sys.path.remove(str(source))

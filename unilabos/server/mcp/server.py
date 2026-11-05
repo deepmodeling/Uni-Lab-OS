@@ -216,7 +216,10 @@ class ProtocolMCP:
     async def request(self, operation: Operation, arguments: dict) -> tuple[dict, bool]:
         path = self._path(operation, arguments)
         query = {key: value for key, value in arguments.get("query", {}).items() if value is not None}
-        kwargs: dict[str, Any] = {"params": query, "headers": {"accept": "application/json"}}
+        from unilabos.config.control_token import client_headers
+
+        # 进程内 ASGI 调用同样经过写操作的 token 检查：MCP 端点本身只接受本机、拒绝浏览器 Origin
+        kwargs: dict[str, Any] = {"params": query, "headers": {"accept": "application/json", **client_headers()}}
         if "body" in arguments:
             kwargs["json"] = normalize_body(operation, arguments["body"])
         # ASGI 调用仍经过应用中间件、原来的参数验证、路由与调度/物料服务。

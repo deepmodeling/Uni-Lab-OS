@@ -1,6 +1,7 @@
 /** 控制台外壳（移植自 v1.0 components/AppShell.tsx）：侧栏导航、连接卡片、顶栏。 */
-import type { PropsWithChildren } from 'react'
+import { useState, type PropsWithChildren } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { getControlToken, setControlToken } from '../api/token'
 import {
   Boxes,
   BookOpen,
@@ -36,6 +37,46 @@ export function pageLabel(pathname: string): string {
     .sort((left, right) => right.to.length - left.to.length)
     .find((item) => (item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)))
   return match?.label ?? '总览'
+}
+
+/** 写操作需要的控制面 token（`unilab token` 查看）；存在本浏览器。 */
+export function ControlTokenField() {
+  const [saved, setSaved] = useState<string | null>(() => getControlToken())
+  const [draft, setDraft] = useState('')
+  return (
+    <details className="token-field">
+      <summary>控制令牌：{saved ? `已设置 ••••${saved.slice(-4)}` : '未设置（写操作会被拒）'}</summary>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault()
+          setControlToken(draft)
+          setSaved(getControlToken())
+          setDraft('')
+        }}
+      >
+        <input
+          aria-label="控制令牌"
+          type="password"
+          autoComplete="off"
+          placeholder="粘贴 unilab token 的输出"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <button type="submit">保存</button>
+        {saved ? (
+          <button
+            type="button"
+            onClick={() => {
+              setControlToken('')
+              setSaved(null)
+            }}
+          >
+            清除
+          </button>
+        ) : null}
+      </form>
+    </details>
+  )
 }
 
 export function AppShell({
@@ -83,6 +124,7 @@ export function AppShell({
           <strong>开发代理 /api →</strong>
           <small title={__UNILAB_BACKEND_URL__}>{__UNILAB_BACKEND_URL__}</small>
           <div className="edge-meter"><span /></div>
+          <ControlTokenField />
         </div>
       </aside>
 

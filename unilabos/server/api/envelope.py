@@ -30,6 +30,8 @@ BUSINESS_CODES: Dict[str, int] = {
     "ok": 0,
     "internal": 1,
     "invalid": 1000,
+    # 写操作缺少或带错控制面 token（中间件直接以 HTTP 401 返回，不经路由）
+    "unauthorized": 4001,
     "not_found": 3002,
     "conflict": 3003,
     "unavailable": 5001,

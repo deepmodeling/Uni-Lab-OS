@@ -178,9 +178,12 @@ class TemplateSynchronizer:
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
+        from unilabos.config.control_token import client_headers
+
         headers = {
             "Content-Type": "application/json",
             "Content-Encoding": "gzip",
+            **client_headers(),
         }
         url = f"{self.backend_api}/resource-templates"
         target = urlsplit(url)

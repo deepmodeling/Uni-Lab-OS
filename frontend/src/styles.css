@@ -655,3 +655,10 @@ code, .uuid { font-size: 11px; }
   .page-content { padding: 16px; }
   .topbar-note { display: none; }
 }
+
+/* 控制令牌（写操作需要） */
+.token-field { margin-top: 10px; font-size: 12px; }
+.token-field summary { cursor: pointer; color: inherit; opacity: 0.85; }
+.token-field form { display: flex; gap: 6px; margin-top: 6px; }
+.token-field input { flex: 1; min-width: 0; padding: 4px 6px; border-radius: 6px; border: 1px solid rgba(127, 127, 127, 0.4); background: transparent; color: inherit; }
+.token-field button { padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(127, 127, 127, 0.4); background: transparent; color: inherit; cursor: pointer; }

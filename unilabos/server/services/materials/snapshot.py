@@ -49,15 +49,16 @@ def data_semantic(data: Any) -> dict[str, Any]:
     为 None）；比较只看内容物本身（名称 / 数量 / 单位 / 相态 / 组成），否则每次
     apply 后设备与权威都会因 None ≠ uuid 永远"有差异"而反复重写。
 
-    chemical_uuid / chemical 同理：设备按名称上报内容物（省略引用），权威落库时按名称沿用
-    已有引用。调用方显式改引用另由 :func:`substance_links_requested` 判定。
+    chemical_uuid / chemical / chemical_unlinked 同理：设备按名称上报内容物（省略引用），
+    权威落库时按名称沿用已有引用或"已解除"。调用方显式改引用另由
+    :func:`substance_links_requested` 判定。
     """
 
     return data.model_dump(
         mode="json",
         exclude={
             **{key: True for key in _DATA_VOLATILE},
-            "substances": {"__all__": {"substance_uuid", "chemical_uuid", "chemical"}},
+            "substances": {"__all__": {"substance_uuid", "chemical_uuid", "chemical", "chemical_unlinked"}},
         },
         exclude_none=False,
     )

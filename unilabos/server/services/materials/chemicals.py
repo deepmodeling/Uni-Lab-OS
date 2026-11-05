@@ -17,7 +17,7 @@ import string
 import time
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Optional, Protocol
+from typing import Any, Mapping, NamedTuple, Optional, Protocol
 from uuid import uuid4
 
 from unilabos.server.services.materials.store import MaterialsRepository
@@ -327,6 +327,14 @@ class _SubstanceLike(Protocol):
 
 class _StoredSubstanceLike(_SubstanceLike, Protocol):
     ordinal: int
+    chemical_unlinked: bool
+
+
+class SubstanceLink(NamedTuple):
+    """一份内容物落库时的化学品引用：``chemical_uuid`` 与是否被显式解除（解除时 uuid 为空）。"""
+
+    chemical_uuid: Optional[str]
+    unlinked: bool = False
 
 
 def substance_match_key(text: str) -> str:
@@ -399,14 +407,19 @@ def resolve_substance_chemicals(
     connection: Any,
     substances: Sequence[_SubstanceLike],
     previous: Sequence[_StoredSubstanceLike] = (),
-) -> list[Optional[str]]:
-    """内容物落库前确定每一份的 ``chemical_uuid``；物料内容写入的唯一入口在这里调用。
+) -> list[SubstanceLink]:
+    """内容物落库前确定每一份的化学品引用；物料内容写入的唯一入口在这里调用。
+
+    "同名的已有内容物"指同一物料上名称相同（不区分大小写）、已关联或已解除的一份：多份同名时
+    优先同位次，否则取位次最前的一份。
 
     1. 显式 uuid：必须指向未删除的化学品；已在该物料上的引用原样保留（即使化学品已删除，
-       读-改-写回传不会因此失败）。
-    2. 显式 null：解除引用，本次写入不沿用也不自动匹配。
-    3. 省略：沿用同一物料同名（不区分大小写）内容物已有的引用——设备按名称上报内容物，
-       不能因此丢掉关联。多份同名时优先同位次，否则取位次最前的一份。
+       读-改-写回传不会因此失败）。清除"已解除"。
+    2. 显式 null：本次写入不沿用也不自动匹配。同名的已有内容物已关联（这次是解除）或已解除
+       时记为已解除；从未关联过的保持未解除，之后仍可自动匹配——界面按所见即所得回传 null
+       不会把它们变成"永不关联"。
+    3. 省略：沿用同名的已有内容物的引用或"已解除"——设备按名称上报内容物，不能因此丢掉关联，
+       也不能让已解除的重新关联。
     4. 仍没有：按名称 / 英文名 / 别名 / CAS 精确匹配（不区分大小写），恰好一个未删除化学品
        命中才关联；歧义或无命中保持 null。
 
@@ -415,27 +428,48 @@ def resolve_substance_chemicals(
     """
 
     existing = {item.chemical_uuid for item in previous if item.chemical_uuid}
-    carried: dict[str, list[tuple[int, str]]] = {}
+    by_ordinal = {item.ordinal: item for item in previous}
+    carried: dict[str, list[tuple[int, SubstanceLink]]] = {}
     for item in sorted(previous, key=lambda value: value.ordinal):
         if item.chemical_uuid:
-            carried.setdefault(substance_match_key(item.name), []).append((item.ordinal, item.chemical_uuid))
+            link = SubstanceLink(item.chemical_uuid)
+        elif getattr(item, "chemical_unlinked", False):
+            link = SubstanceLink(None, unlinked=True)
+        else:
+            continue
+        carried.setdefault(substance_match_key(item.name), []).append((item.ordinal, link))
 
-    result: list[Optional[str]] = [None] * len(substances)
+    def prior(ordinal: int, name: str) -> Optional[SubstanceLink]:
+        links = carried.get(substance_match_key(name))
+        if not links:
+            return None
+        same_ordinal = [link for prior_ordinal, link in links if prior_ordinal == ordinal]
+        return same_ordinal[0] if same_ordinal else links[0][1]
+
+    result: list[SubstanceLink] = [SubstanceLink(None)] * len(substances)
     explicit: dict[str, str] = {}
     unresolved: dict[str, list[int]] = {}
     for ordinal, substance in enumerate(substances):
         if chemical_link_given(substance):
-            result[ordinal] = substance.chemical_uuid  # 显式 null 即解除
-            if substance.chemical_uuid and substance.chemical_uuid not in existing:
-                explicit.setdefault(substance.chemical_uuid, substance.name)
+            if substance.chemical_uuid:
+                result[ordinal] = SubstanceLink(substance.chemical_uuid)
+                if substance.chemical_uuid not in existing:
+                    explicit.setdefault(substance.chemical_uuid, substance.name)
+            else:
+                # 显式 null：解除已关联的，或保持已解除的；从未关联过的不算解除。
+                # 同位次同名的一份就是它自己，以它为准；位次变了才按同名查找。
+                same = by_ordinal.get(ordinal)
+                if same is not None and substance_match_key(same.name) == substance_match_key(substance.name):
+                    was_linked = bool(same.chemical_uuid) or bool(getattr(same, "chemical_unlinked", False))
+                else:
+                    was_linked = prior(ordinal, substance.name) is not None
+                result[ordinal] = SubstanceLink(None, unlinked=was_linked)
             continue
-        key = substance_match_key(substance.name)
-        links = carried.get(key)
-        if links:
-            same_ordinal = [uuid for prior_ordinal, uuid in links if prior_ordinal == ordinal]
-            result[ordinal] = same_ordinal[0] if same_ordinal else links[0][1]
+        link = prior(ordinal, substance.name)
+        if link is not None:
+            result[ordinal] = link
         else:
-            unresolved.setdefault(key, []).append(ordinal)
+            unresolved.setdefault(substance_match_key(substance.name), []).append(ordinal)
 
     if explicit:
         active = chemical_summaries(connection, explicit)
@@ -451,7 +485,7 @@ def resolve_substance_chemicals(
             if len(candidates) == 1:
                 (chemical_uuid,) = candidates
                 for ordinal in ordinals:
-                    result[ordinal] = chemical_uuid
+                    result[ordinal] = SubstanceLink(chemical_uuid)
     return result
 
 
@@ -460,6 +494,7 @@ __all__ = [
     "ChemicalError",
     "ChemicalService",
     "PHYSICAL_STATES",
+    "SubstanceLink",
     "chemical_link_given",
     "chemical_summaries",
     "normalize_cas",

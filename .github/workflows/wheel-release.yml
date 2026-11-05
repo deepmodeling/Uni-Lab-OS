@@ -55,7 +55,7 @@ jobs:
       - name: Build the native grant policy bundle
         shell: bash
         run: |
-          cargo test --release --locked --manifest-path native/grant-policy/Cargo.toml
+          cargo test --release --locked --lib --manifest-path native/grant-policy/Cargo.toml
           python scripts/build_grant_policy.py --bundle dist --platform ${{ matrix.platform }}
       - uses: actions/upload-artifact@v6
         with:

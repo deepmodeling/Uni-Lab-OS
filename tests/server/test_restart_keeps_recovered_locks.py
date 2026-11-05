@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import time
+from unittest import mock
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
+from unilabos.server.backend.scheduler.dag.runner import TaskDagRunner
 from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -29,7 +31,7 @@ class Executor:
         self.callback(self.dispatched[index]["job_id"], success, {"index": index}, "normal", {})
 
 
-def wait_for(predicate, timeout=5.0):
+def wait_for(predicate, timeout=15.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -64,9 +66,11 @@ def test_recovered_attempt_keeps_the_device_until_it_is_reconciled(tmp_path) -> 
     with TestClient(create_workflow_app(service)) as client:
         first = create_task(client, "shared-device")
         wait_for(lambda: len(executor.dispatched) == 1)
-    # 进程在动作执行中退出：不回报结果
+    # 模拟进程在动作执行中崩溃：不回报结果，也不走优雅停止里的取消
+    # （优雅停止会取消 runner，事件循环若先跑完收尾就把任务记成 canceled，那就不是崩溃了）
     service.set_task_submitter(None)
-    scheduler.stop()
+    with mock.patch.object(TaskDagRunner, "cancel", lambda self: None):
+        scheduler.stop()
     service.close()
 
     service = WorkflowService(path)

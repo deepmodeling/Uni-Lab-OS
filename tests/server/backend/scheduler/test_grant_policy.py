@@ -1,32 +1,34 @@
-"""可插拔锁授予策略：Python 参考实现、宿主复核与退回、原生库与参考实现逐条等价。"""
+"""可插拔锁授予策略：参考实现、宿主复核与退回、生成的绑定与头文件一致、原生库与参考实现逐条等价。"""
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import random
 from pathlib import Path
 
 import pytest
 
-from unilabos.server.backend.scheduler.grant_policy import (
+from unilabos.server.backend.scheduler.grant import (
     NativeGrantPolicy,
     PythonFifoPolicy,
     WaitingRequest,
-    decode_grants,
-    encode_request,
     fifo_grants,
     library_filename,
     load_grant_policy,
     validate_grants,
 )
-from unilabos.server.backend.scheduler.models import (
-    ActionLockClaim,
-    MaterialLockClaim,
-    SchedulerResourceRequest,
-)
+from unilabos.server.backend.scheduler.models import ActionLockClaim, SchedulerResourceRequest
 from unilabos.server.backend.scheduler.resource_manager import SchedulerResourceManager
 
 ROOT = Path(__file__).resolve().parents[4]
+
+
+def _generator():
+    spec = importlib.util.spec_from_file_location("gen_grant_bindings", ROOT / "scripts" / "gen_grant_bindings.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _native_library() -> Path | None:
@@ -46,31 +48,29 @@ def test_fifo_grants_disjoint_sets_in_parallel_and_blocks_overlap() -> None:
     assert fifo_grants([w(1), w(7, target=True), w(7, 8), w(5), w(9)], [1], [5]) == [4]
 
 
-def test_wire_format_round_trip() -> None:
-    payload = encode_request([w(3), w(3, target=True)], [], [])
-    assert len(payload) % 4 == 0
-    assert decode_grants((1).to_bytes(4, "little") + (0).to_bytes(4, "little")) == [0]
-    with pytest.raises(ValueError):
-        decode_grants(b"\x01\x00")
+def test_generated_binding_matches_the_committed_header() -> None:
+    """_abi.py 由头文件生成；改了 Rust 接口后要重新编译并运行 scripts/gen_grant_bindings.py。"""
+
+    generator = _generator()
+    assert generator.main_check() == 0
 
 
 def test_validate_rejects_unsafe_grants() -> None:
     waiting = [w(1), w(1), w(2, target=True), w(3)]
     assert validate_grants([0, 3], waiting, [], [])
-    assert not validate_grants([0, 1], waiting, [], [])  # 两个请求抢同一个键
-    assert not validate_grants([2], waiting, [], [])  # handoff 目标不在这里授予
-    assert not validate_grants([3], waiting, [3], [])  # 已被持有
+    assert not validate_grants([0, 1], waiting, [], [])
+    assert not validate_grants([2], waiting, [], [])
+    assert not validate_grants([3], waiting, [3], [])
     assert not validate_grants([9], waiting, [], [])
     assert not validate_grants([0, 0], waiting, [], [])
 
 
-def _request(owner: str, *, device: str = "", materials: tuple[str, ...] = ()) -> SchedulerResourceRequest:
+def _request(owner: str) -> SchedulerResourceRequest:
     return SchedulerResourceRequest(
         request_uuid=f"resource:{owner}",
         owner_uuid=owner,
         task_uuid=f"task-{owner}",
-        current_action=ActionLockClaim(device_id=device, action_name="act") if device else None,
-        material_lock_claims=[MaterialLockClaim(material_uuid=item) for item in materials],
+        current_action=ActionLockClaim(device_id="pump", action_name="act"),
     )
 
 
@@ -90,14 +90,13 @@ class _GrantNothing:
 
 def test_unsafe_policy_output_falls_back_to_fifo() -> None:
     manager = SchedulerResourceManager(grant_policy=_GreedyUnsafe())
-    first = manager.acquire(_request("a", device="pump"))
-    second = manager.acquire(_request("b", device="pump"))
-    assert first.status == "held" and second.status == "waiting"
+    assert manager.acquire(_request("a")).status == "held"
+    assert manager.acquire(_request("b")).status == "waiting"
 
 
 def test_pluggable_policy_decides_when_its_answer_is_safe() -> None:
     manager = SchedulerResourceManager(grant_policy=_GrantNothing())
-    assert manager.acquire(_request("a", device="pump")).status == "waiting"
+    assert manager.acquire(_request("a")).status == "waiting"
     assert manager.grant_policy_name == "grant-nothing"
 
 
@@ -116,7 +115,6 @@ def test_policy_selection(monkeypatch, tmp_path) -> None:
         load_grant_policy("fastest")
     broken = tmp_path / library_filename()
     broken.write_bytes(b"not a library")
-    # 坏的库：auto 退回 Python，native 报错
     assert isinstance(load_grant_policy("auto", library=str(broken)), PythonFifoPolicy)
     with pytest.raises(RuntimeError):
         load_grant_policy("native", library=str(broken))
@@ -127,8 +125,7 @@ def test_require_native_in_ci() -> None:
 
     if os.environ.get("UNILABOS_REQUIRE_NATIVE_GRANT_POLICY") != "1":
         pytest.skip("只在原生 CI 步骤里要求原生库")
-    policy = SchedulerResourceManager()
-    assert policy.grant_policy_name == "native-fifo"
+    assert SchedulerResourceManager().grant_policy_name == "native-fifo"
 
 
 @pytest.mark.skipif(_native_library() is None, reason="原生库未编译（python scripts/build_grant_policy.py）")

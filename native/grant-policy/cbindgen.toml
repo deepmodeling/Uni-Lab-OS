@@ -1,0 +1,10 @@
+language = "C"
+include_guard = "UNILAB_GRANT_POLICY_H"
+autogen_warning = "/* 由 cbindgen 从 native/grant-policy/src/lib.rs 生成，不要手改。 */"
+no_includes = true
+sys_includes = ["stdint.h", "stddef.h"]
+usize_is_size_t = true
+style = "both"
+
+[export]
+include = ["UniGrantWaiting"]

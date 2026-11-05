@@ -3,10 +3,10 @@ name: UniLabOS Companion Wheels
 on:
   push:
     branches: [dev]
-    paths: ['recipes/**', '.conda/pylabrobot/**', 'scripts/*wheel_release.py', 'scripts/verify_installation.py', 'setup.py', 'pyproject.toml', 'MANIFEST.in', 'unilabos/utils/requirements*.txt', '.github/workflows/wheel-release.yml']
+    paths: ['recipes/**', '.conda/pylabrobot/**', 'scripts/*wheel_release.py', 'native/**', 'scripts/build_grant_policy.py', 'scripts/verify_installation.py', 'setup.py', 'pyproject.toml', 'MANIFEST.in', 'unilabos/utils/requirements*.txt', '.github/workflows/wheel-release.yml']
   pull_request:
     branches: [dev]
-    paths: ['recipes/**', '.conda/pylabrobot/**', 'scripts/*wheel_release.py', 'scripts/verify_installation.py', 'setup.py', 'pyproject.toml', 'MANIFEST.in', 'unilabos/utils/requirements*.txt', '.github/workflows/wheel-release.yml']
+    paths: ['recipes/**', '.conda/pylabrobot/**', 'scripts/*wheel_release.py', 'native/**', 'scripts/build_grant_policy.py', 'scripts/verify_installation.py', 'setup.py', 'pyproject.toml', 'MANIFEST.in', 'unilabos/utils/requirements*.txt', '.github/workflows/wheel-release.yml']
   release:
     types: [published]
   workflow_dispatch:
@@ -51,6 +51,20 @@ jobs:
       - name: Check release tag against built metadata
         if: github.event_name == 'release'
         run: python -c "import json, os; from pathlib import Path; m=json.loads(Path('dist/wheel-release/manifest.json').read_text()); assert os.environ['RELEASE_TAG'] == 'v'+m['version']; assert m['verified'] and not m['local_test']"
+      # 原生锁授予策略库（native/grant-policy）：单独的发布附件，解压到 <working_dir>/native/ 即被加载
+      - name: Build the native grant policy bundle
+        shell: bash
+        run: |
+          cargo test --release --locked --manifest-path native/grant-policy/Cargo.toml
+          python scripts/build_grant_policy.py --bundle dist --platform ${{ matrix.platform }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: unilab-grant-policy-${{ matrix.platform }}
+          path: |
+            dist/unilab-grant-policy-*.zip
+            dist/unilab-grant-policy-*.zip.sha256
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@v6
         with:
           name: unilabos-wheelhouse-${{ matrix.platform }}
@@ -70,6 +84,11 @@ jobs:
       - uses: actions/download-artifact@v5
         with:
           pattern: unilabos-wheelhouse-*
+          merge-multiple: true
+          path: release-wheels
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: unilab-grant-policy-*
           merge-multiple: true
           path: release-wheels
       - name: Attach tested bundles to this release (never PyPI, never overwrite)

@@ -14,6 +14,7 @@ from unilabos.server.api.history import create_history_router, install_history_a
 from unilabos.server.api.materials import (
     create_graph_router,
     create_materials_router,
+    install_chemical_api,
     install_graph_api,
     install_materials_api,
 )
@@ -52,6 +53,7 @@ def install_server_apis(
     install_lab_api(app, services.lab)
     if include_materials:
         install_materials_api(app, services.materials)
+        install_chemical_api(app, services.chemicals)
     if include_host_data:
         install_telemetry_api(app, services.telemetry)
         install_history_api(app, services.history)

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from unilabos.server.database import ServerDatabasePaths
+from unilabos.server.services.materials.chemicals import ChemicalService
 from unilabos.server.services.materials.graph import GraphService
 from unilabos.server.services.history import HistoryService
 from unilabos.server.services.materials import MaterialsService
@@ -25,6 +26,7 @@ class ServerServices:
     telemetry: TelemetryService
     history: HistoryService
     graph: GraphService
+    chemicals: ChemicalService
     # 实验室布局与 runtime 共用 runtime.db 的连接和写锁
     lab: LabLayoutService
 
@@ -45,6 +47,8 @@ class ServerServices:
             opened.append(history)
             # 图快照与物料共用 materials.db 的连接和写锁。
             graph = GraphService(materials)
+            # 化学品定义同样共用 materials.db 的连接和写锁
+            chemicals = ChemicalService(materials)
             lab = LabLayoutService(runtime)
         except BaseException:
             for opened_domain in reversed(opened):
@@ -57,6 +61,7 @@ class ServerServices:
             telemetry=telemetry,
             history=history,
             graph=graph,
+            chemicals=chemicals,
             lab=lab,
         )
 

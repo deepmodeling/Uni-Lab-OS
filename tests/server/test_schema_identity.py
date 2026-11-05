@@ -125,11 +125,15 @@ def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) ->
 
     spec = DATABASE_SPECS["materials"]
     previous = replace(spec, contract_version=spec.contract_version - 1)
+    # 在当前版本之上再加一步迁移（与库的真实版本号无关）
+    next_version = spec.schema_version + 1
     current = replace(
         spec,
-        schema_version=2,
-        migrations=(sql_migration(2, "drop effects derived with the old request envelope",
-                                  "DELETE FROM inventory_command_effect WHERE operation = 'sync_template'"),),
+        schema_version=next_version,
+        migrations=spec.migrations + (
+            sql_migration(next_version, "drop effects derived with the old request envelope",
+                          "DELETE FROM inventory_command_effect WHERE operation = 'sync_template'"),
+        ),
     )
     path = tmp_path / spec.filename
     connection = initialize_database(path, previous)
@@ -149,14 +153,14 @@ def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) ->
 
     connection = initialize_database(path, current)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == next_version
         assert tuple(connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()) == (
             "materials", current.checksum,
         )
         assert [row[0] for row in connection.execute("SELECT command_uuid FROM inventory_command_effect")] == ["keep"]
     finally:
         connection.close()
-    assert len(list(tmp_path.glob(f"{spec.filename}.pre-v2-*.bak"))) == 1
+    assert len(list(tmp_path.glob(f"{spec.filename}.pre-v{next_version}-*.bak"))) == 1
 
 
 def test_unidentified_database_is_rebuilt_for_derived_databases(tmp_path) -> None:

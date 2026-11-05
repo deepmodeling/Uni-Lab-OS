@@ -54,6 +54,7 @@ def test_configured_token_wins_and_is_not_written(tmp_path, monkeypatch) -> None
 
 
 def test_client_reads_config_then_the_working_dir_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("UNILABOS_BASICCONFIG_CONTROL_TOKEN", raising=False)
     assert client_token() == "" and client_headers() == {}
     (tmp_path / "control_token").write_text("from-file\n", encoding="utf-8")
     assert client_headers() == {TOKEN_HEADER: "from-file"}
@@ -175,3 +176,13 @@ def test_env_override_does_not_log_the_token(monkeypatch, caplog) -> None:
     assert BasicConfig.control_token == "very-secret-value"
     assert "very-secret-value" not in caplog.text
     assert "BasicConfig.control_token = <已设置>" in caplog.text  # 确实记录了，只是不带值
+
+
+def test_client_reads_the_environment_when_config_overrides_were_not_applied(tmp_path, monkeypatch) -> None:
+    """CLI 子命令不加载配置、不应用 UNILABOS_* 覆盖：环境变量里的 token 也要能用。"""
+
+    (tmp_path / "control_token").write_text("from-file\n", encoding="utf-8")
+    monkeypatch.setenv("UNILABOS_BASICCONFIG_CONTROL_TOKEN", "from-env")
+    assert client_token() == "from-env"
+    monkeypatch.setattr(BasicConfig, "control_token", "from-config")
+    assert client_token() == "from-config"

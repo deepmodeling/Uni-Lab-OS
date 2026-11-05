@@ -73,9 +73,12 @@ def ensure_authority_token(working_dir: str | os.PathLike[str]) -> tuple[str, Op
 
 
 def client_token() -> str:
-    """Host / SDK 发请求时带的 token：配置或环境变量优先，其次工作目录里的 token 文件。"""
+    """Host / SDK 发请求时带的 token：配置、环境变量、工作目录里的 token 文件，依次取第一个非空的。
 
-    configured = str(BasicConfig.control_token or "").strip()
+    环境变量单独再读一次：CLI 子命令不加载配置文件，也不应用 ``UNILABOS_*`` 覆盖。
+    """
+
+    configured = str(BasicConfig.control_token or "").strip() or os.environ.get(TOKEN_ENV, "").strip()
     if configured:
         return configured
     working_dir = str(BasicConfig.working_dir or "").strip()

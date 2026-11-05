@@ -213,6 +213,9 @@ HTTP substances 使用具名对象，不使用三元组：
 }
 ```
 
+可选的 `chemical_uuid` / `chemical` 是加法字段，**省略与显式 null 语义不同**，见下文“化学品定义”一节；
+不带它们的载荷照旧有效（完整 dump 里也不含未给出的这两个字段）。
+
 ResourceDict/PLR 侧可以使用 `(名称, 数量, 单位)` 三元组，经适配变成上述对象。
 这不是“体积、质量、摩尔数三个数值字段”；协议用 quantity + quantity_unit 表达量，
 不能假设后端会自动换算所有单位。
@@ -250,7 +253,27 @@ reservation 的 consume/release/quarantine 由执行生命周期或明确业务�
 CAS 登记号与 InChIKey 是可空的唯一键，只在未删除的行之间唯一——软删除后让出，可以重新登记。
 CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写；另有名称、英文名、别名、分子式、SMILES、
 分子量、密度与物态（liquid / solid / gas / unknown）。修改与删除带 `expected_version`，过期返回 3003。
-物料内容物（substance）目前仍以名称记录，引用化学品定义在后续版本加入。
+
+物料内容物通过可空的 `MaterialSubstance.chemical_uuid` 引用化学品定义（materials.db v3，
+`material_substance.chemical_uuid`；化学品是软删除，故不设外键）。四条内容写入路径（建树、put_data、
+快照、增量）落库前统一确定引用，`chemical_uuid` 的三种写法：
+
+1. **显式 uuid**：必须指向未删除的化学品，否则 422；该物料上已有的引用可原样回传（即使化学品已删除）。
+2. **显式 null**：解除引用，本次写入不自动匹配（之后省略引用的写入仍按第 3、4 条处理）。
+3. **省略**（设备 / Host 的快照与增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用，
+   设备按名称上报内容物不会丢掉关联；
+4. 省略且没有可沿用的引用：内容物名称与化学品的名称、英文名、任一别名或 CAS 不区分大小写精确相等，
+   且恰好一个未删除化学品命中时自动关联；歧义或无命中保持未关联。
+
+两个字段只在显式给出时才进入请求 dump：旧载荷与旧版本存下的请求哈希不变（升级前发出的命令升级后重发仍是幂等重放），
+“省略”与“显式 null”是两个不同的请求。快照 / 增量的内容比较不看引用；只有显式给出且与现值不同的引用才算变化。
+
+读取物料（实例、树、列表、写入结果）时，有引用的内容物带 `chemical_uuid` 与只读的 `chemical` 摘要
+（`chemical_uuid`、`name`、`cas`、`inchi_key`、`molecular_formula`、`smiles`、`molecular_weight`、
+`density_g_per_ml`、`physical_state`），每次读取批量查询一次；引用的化学品已删除时 `chemical` 为 null、
+`chemical_uuid` 保留。未关联的内容物不出现这两个字段（与之前的读取形态一致）。写入时 `chemical` 被忽略，可带可不带。
+物料聚合与 data 的 `state_hash` 只在有引用时包含 `chemical_uuid`、从不包含摘要：未关联内容物的哈希与升级前一致，
+编辑化学品也不会改变物料 `state_hash`。
 
 ## 源码依据
 

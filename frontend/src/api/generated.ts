@@ -2815,6 +2815,34 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /**
+         * ChemicalSummary
+         * @description 内容物引用的化学品定义摘要（只读，取自 ``/api/v1/chemicals``）。
+         */
+        ChemicalSummary: {
+            /** Chemical Uuid */
+            chemical_uuid: string;
+            /** Name */
+            name: string;
+            /** Cas */
+            cas?: string | null;
+            /** Inchi Key */
+            inchi_key?: string | null;
+            /** Molecular Formula */
+            molecular_formula?: string | null;
+            /** Smiles */
+            smiles?: string | null;
+            /** Molecular Weight */
+            molecular_weight?: number | null;
+            /** Density G Per Ml */
+            density_g_per_ml?: number | null;
+            /**
+             * Physical State
+             * @default unknown
+             * @enum {string}
+             */
+            physical_state?: "liquid" | "solid" | "gas" | "unknown";
+        };
         /** ChemicalWrite */
         ChemicalWrite: {
             /** Name */
@@ -4021,7 +4049,23 @@ export interface components {
             /** State Hash */
             state_hash?: string | null;
         };
-        /** MaterialSubstance */
+        /**
+         * MaterialSubstance
+         * @description 一份内容物。
+         *
+         *     ``chemical_uuid`` 引用化学品定义，写入时三种形态语义不同：
+         *
+         *     - **省略**（设备快照 / 增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用，
+         *       否则按名称 / 英文名 / 别名 / CAS 唯一匹配自动关联；
+         *     - **显式 null**：解除引用，本次写入不自动匹配；
+         *     - **显式 uuid**：必须指向未删除的化学品（该物料上已有的引用可原样保留）。
+         *
+         *     ``chemical`` 是读取时附带的只读摘要，写入时忽略，可带可不带；引用的化学品已删除时为
+         *     null（uuid 保留）。读取时未关联的内容物不出现这两个字段。
+         *
+         *     两个字段只在显式给出时才序列化：没有它们的旧载荷与新模型的完整 dump 逐字一致（payload
+         *     完整性比对、请求哈希、state_hash 都不变），"省略"与"显式 null"也不会哈希成同一个请求。
+         */
         MaterialSubstance: {
             /** Substance Uuid */
             substance_uuid?: string | null;
@@ -4043,6 +4087,9 @@ export interface components {
             meta_data?: {
                 [key: string]: unknown;
             };
+            /** Chemical Uuid */
+            chemical_uuid?: string | null;
+            chemical?: components["schemas"]["ChemicalSummary"] | null;
         };
         /** PayloadObjectRecord */
         PayloadObjectRecord: {

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from unilabos.server.database.schema import Migration, sql_migration
+from unilabos.server.database.schema import Migration, rebuild_table_migration, sql_migration
 
 # v2：化学品定义表（CAS / InChIKey 可空唯一键，软删除后让出）。
 _CHEMICAL_V2 = """
@@ -50,7 +50,55 @@ _CHEMICAL_V2_INDEXES = (
             """,
 )
 
+# v3：内容物引用化学品定义（可空 chemical_uuid）。不加外键：化学品是软删除，
+# 引用在写入时由服务校验，读取时已删除的化学品摘要为 null、uuid 保留。
+_MATERIAL_SUBSTANCE_V3 = """
+        CREATE TABLE IF NOT EXISTS material_substance (
+            substance_uuid TEXT PRIMARY KEY CHECK (TRIM(substance_uuid) <> ''),
+            material_uuid TEXT NOT NULL,
+            ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+            name TEXT NOT NULL CHECK (TRIM(name) <> ''),
+            chemical_uuid TEXT CHECK (chemical_uuid IS NULL OR TRIM(chemical_uuid) <> ''),
+            quantity REAL NOT NULL CHECK (quantity >= 0),
+            quantity_unit TEXT NOT NULL CHECK (TRIM(quantity_unit) <> ''),
+            physical_state TEXT NOT NULL DEFAULT 'liquid' CHECK (
+                physical_state IN ('liquid','solid','gas','unknown')
+            ),
+            composition_json TEXT NOT NULL DEFAULT '[]' CHECK (
+                json_valid(composition_json)
+                AND json_type(composition_json) = 'array'
+            ),
+            meta_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data_json) AND json_type(meta_data_json) = 'object'
+            ),
+            content_version INTEGER NOT NULL CHECK (content_version > 0),
+            observed_at_ms INTEGER NOT NULL CHECK (observed_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= observed_at_ms),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            UNIQUE(material_uuid, ordinal),
+            FOREIGN KEY(material_uuid) REFERENCES material_data(material_uuid)
+                ON DELETE CASCADE
+        )
+        """
+_MATERIAL_SUBSTANCE_V3_INDEXES = (
+    """
+            CREATE INDEX IF NOT EXISTS idx_material_substance_name
+            ON material_substance(LOWER(name), quantity_unit, material_uuid)
+            """,
+    """
+            CREATE INDEX IF NOT EXISTS idx_material_substance_chemical
+            ON material_substance(chemical_uuid) WHERE chemical_uuid IS NOT NULL
+            """,
+)
+
 MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(2, "新增化学品定义表 chemical", _CHEMICAL_V2, *_CHEMICAL_V2_INDEXES),
+    rebuild_table_migration(
+        3,
+        "内容物引用化学品定义：material_substance 新增可空 chemical_uuid",
+        table="material_substance",
+        create_sql=_MATERIAL_SUBSTANCE_V3,
+        indexes=_MATERIAL_SUBSTANCE_V3_INDEXES,
+    ),
 )
 MATERIALS_SCHEMA_VERSION = MATERIALS_MIGRATIONS[-1].version

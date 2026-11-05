@@ -10,7 +10,7 @@ from unilabos.server.database import DATABASE_SPECS
 #: 把对应库的 schema_version +1，在其 migrations 里补上迁移，再更新这里。
 PINNED = {
     "runtime": (4, "4157bc5364ff208e4be30c37a75b7b46987877e75a4d4c39c4c36eb42e09ed91"),
-    "materials": (2, "40eaebcd605c6eb334dcfb8aa548370386e6f1575c048f464f824cb6ea306e63"),
+    "materials": (3, "cc857e09f440d87eaab792134ff8b0d3a5501f76ad59915bddeb322505ce1300"),
     "telemetry": (1, "a0e00118c131bbae1e4a693563977d7ffff49c17c482ebad0e5ad2b224b548af"),
     "history": (1, "5005469f86db3fe747ab1f30ea32d0c0c8f2f2779202a81bedb8d8254217f4cc"),
 }

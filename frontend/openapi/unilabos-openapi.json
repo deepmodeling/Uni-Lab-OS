@@ -9102,6 +9102,107 @@
         ],
         "title": "ChemicalPatch"
       },
+      "ChemicalSummary": {
+        "properties": {
+          "chemical_uuid": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Chemical Uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "cas": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cas"
+          },
+          "inchi_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inchi Key"
+          },
+          "molecular_formula": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Molecular Formula"
+          },
+          "smiles": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Smiles"
+          },
+          "molecular_weight": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Molecular Weight"
+          },
+          "density_g_per_ml": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Density G Per Ml"
+          },
+          "physical_state": {
+            "type": "string",
+            "enum": [
+              "liquid",
+              "solid",
+              "gas",
+              "unknown"
+            ],
+            "title": "Physical State",
+            "default": "unknown"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chemical_uuid",
+          "name"
+        ],
+        "title": "ChemicalSummary",
+        "description": "内容物引用的化学品定义摘要（只读，取自 ``/api/v1/chemicals``）。"
+      },
       "ChemicalWrite": {
         "properties": {
           "name": {
@@ -12201,6 +12302,28 @@
             "additionalProperties": true,
             "type": "object",
             "title": "Meta Data"
+          },
+          "chemical_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chemical Uuid"
+          },
+          "chemical": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChemicalSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12210,7 +12333,8 @@
           "quantity",
           "quantity_unit"
         ],
-        "title": "MaterialSubstance"
+        "title": "MaterialSubstance",
+        "description": "一份内容物。\n\n``chemical_uuid`` 引用化学品定义，写入时三种形态语义不同：\n\n- **省略**（设备快照 / 增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用，\n  否则按名称 / 英文名 / 别名 / CAS 唯一匹配自动关联；\n- **显式 null**：解除引用，本次写入不自动匹配；\n- **显式 uuid**：必须指向未删除的化学品（该物料上已有的引用可原样保留）。\n\n``chemical`` 是读取时附带的只读摘要，写入时忽略，可带可不带；引用的化学品已删除时为\nnull（uuid 保留）。读取时未关联的内容物不出现这两个字段。\n\n两个字段只在显式给出时才序列化：没有它们的旧载荷与新模型的完整 dump 逐字一致（payload\n完整性比对、请求哈希、state_hash 都不变），\"省略\"与\"显式 null\"也不会哈希成同一个请求。"
       },
       "PayloadObjectRecord": {
         "properties": {

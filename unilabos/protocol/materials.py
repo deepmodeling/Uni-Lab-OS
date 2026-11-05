@@ -8,9 +8,15 @@
 
 from __future__ import annotations
 
-from typing import Generic, Literal, Optional, TypeVar, Union
+from typing import Any, Generic, Literal, Optional, TypeVar, Union
 
-from pydantic import Field, JsonValue, model_validator
+from pydantic import (
+    Field,
+    JsonValue,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from unilabos.protocol.base import JsonObject, NonEmptyStr, ServerObject
 from unilabos.server.database.tables.materials import ResourceTemplateHandle
@@ -193,7 +199,41 @@ class MaterialPosition(ServerObject):
         return self
 
 
+#: ``MaterialSubstance`` 上只在显式给出时才序列化的化学品字段（见其说明）。
+SUBSTANCE_CHEMICAL_FIELDS = ("chemical_uuid", "chemical")
+
+
+class ChemicalSummary(ServerObject):
+    """内容物引用的化学品定义摘要（只读，取自 ``/api/v1/chemicals``）。"""
+
+    chemical_uuid: NonEmptyStr
+    name: NonEmptyStr
+    cas: Optional[str] = None
+    inchi_key: Optional[str] = None
+    molecular_formula: Optional[str] = None
+    smiles: Optional[str] = None
+    molecular_weight: Optional[float] = Field(default=None, gt=0)
+    density_g_per_ml: Optional[float] = Field(default=None, gt=0)
+    physical_state: Literal["liquid", "solid", "gas", "unknown"] = "unknown"
+
+
 class MaterialSubstance(ServerObject):
+    """一份内容物。
+
+    ``chemical_uuid`` 引用化学品定义，写入时三种形态语义不同：
+
+    - **省略**（设备快照 / 增量、旧客户端）：沿用同一物料同名（不区分大小写）内容物已有的引用，
+      否则按名称 / 英文名 / 别名 / CAS 唯一匹配自动关联；
+    - **显式 null**：解除引用，本次写入不自动匹配；
+    - **显式 uuid**：必须指向未删除的化学品（该物料上已有的引用可原样保留）。
+
+    ``chemical`` 是读取时附带的只读摘要，写入时忽略，可带可不带；引用的化学品已删除时为
+    null（uuid 保留）。读取时未关联的内容物不出现这两个字段。
+
+    两个字段只在显式给出时才序列化：没有它们的旧载荷与新模型的完整 dump 逐字一致（payload
+    完整性比对、请求哈希、state_hash 都不变），"省略"与"显式 null"也不会哈希成同一个请求。
+    """
+
     substance_uuid: Optional[NonEmptyStr] = None
     name: NonEmptyStr
     quantity: float = Field(ge=0)
@@ -201,6 +241,23 @@ class MaterialSubstance(ServerObject):
     physical_state: Literal["liquid", "solid", "gas", "unknown"] = "liquid"
     composition: list[JsonValue] = Field(default_factory=list)
     meta_data: JsonObject = Field(default_factory=dict)
+    chemical_uuid: Optional[NonEmptyStr] = None
+    chemical: Optional[ChemicalSummary] = None
+
+    @property
+    def chemical_uuid_given(self) -> bool:
+        """写入方是否显式给出了 ``chemical_uuid``（含显式 null）。"""
+
+        return "chemical_uuid" in self.model_fields_set
+
+    @model_serializer(mode="wrap")
+    def _omit_unset_chemical_fields(self, handler: SerializerFunctionWrapHandler) -> Any:
+        values = handler(self)
+        if isinstance(values, dict):
+            for field in SUBSTANCE_CHEMICAL_FIELDS:
+                if field not in self.model_fields_set:
+                    values.pop(field, None)
+        return values
 
 
 class MaterialDataWrite(ServerObject):
@@ -781,6 +838,7 @@ __all__ = [
     "AggregatePrecondition",
     "AggregateType",
     "AggregateVersion",
+    "ChemicalSummary",
     "InventoryAllocation",
     "InventoryChange",
     "InventoryLotInbound",
@@ -825,4 +883,5 @@ __all__ = [
     "SiteDelta",
     "SiteRead",
     "SiteWrite",
+    "SUBSTANCE_CHEMICAL_FIELDS",
 ]

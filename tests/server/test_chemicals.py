@@ -114,7 +114,7 @@ def test_http_envelope(service) -> None:
     assert client.get(f"/api/v1/chemicals/{chemical['chemical_uuid']}").json()["code"] == 3002
 
 
-def test_v1_materials_database_migrates_to_v2(tmp_path) -> None:
+def test_v1_materials_database_migrates_to_current(tmp_path) -> None:
     spec = DATABASE_SPECS["materials"]
     v1 = replace(
         spec,
@@ -137,12 +137,13 @@ def test_v1_materials_database_migrates_to_v2(tmp_path) -> None:
 
     connection = sqlite3.connect(path)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version
         history = [tuple(row) for row in connection.execute("SELECT version, description FROM schema_migration")]
         assert (2, "新增化学品定义表 chemical") in history
+        assert [version for version, _ in history] == list(range(2, spec.schema_version + 1))
         assert connection.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
         tables_after = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert tables_before <= tables_after
     finally:
         connection.close()
-    assert list(tmp_path.glob("materials.db.pre-v2-*.bak"))
+    assert list(tmp_path.glob(f"materials.db.pre-v{spec.schema_version}-*.bak"))

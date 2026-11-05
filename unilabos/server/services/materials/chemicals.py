@@ -3,6 +3,9 @@
 一条化学品定义以 ``chemical_uuid`` 为主键；CAS 登记号与 InChIKey 是可空的唯一键
 （只在未删除的行之间唯一，软删除后可以重新登记）。CAS 校验格式与校验位，
 InChIKey 校验 27 位标准格式并统一大写。
+
+物料内容物（``material_substance.chemical_uuid``）引用化学品定义：落库前由
+:func:`resolve_substance_chemicals` 确定引用，读取时由 :func:`chemical_summaries` 批量附上摘要。
 """
 
 from __future__ import annotations
@@ -10,9 +13,11 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import string
 import time
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Protocol
 from uuid import uuid4
 
 from unilabos.server.services.materials.store import MaterialsRepository
@@ -24,6 +29,15 @@ _FIELDS = (
     "name", "name_en", "aliases", "cas", "inchi_key", "molecular_formula", "smiles",
     "molecular_weight", "density_g_per_ml", "physical_state", "description", "meta_data",
 )
+#: 内容物读取时附带的化学品摘要字段。
+CHEMICAL_SUMMARY_FIELDS = (
+    "chemical_uuid", "name", "cas", "inchi_key", "molecular_formula", "smiles",
+    "molecular_weight", "density_g_per_ml", "physical_state",
+)
+#: 只折叠 ASCII 大小写，与 SQLite 内置 ``LOWER()`` 一致，SQL 与 Python 两侧的比较键才相同。
+_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+#: 单条 IN (...) 的参数上限（低于 SQLite 默认的 999）。
+_IN_CHUNK = 200
 
 
 class ChemicalError(Exception):
@@ -303,4 +317,153 @@ class ChemicalService(MaterialsRepository):
             raise ChemicalError("conflict", "化学品已被修改，请刷新后重试")
 
 
-__all__ = ["ChemicalError", "ChemicalService", "PHYSICAL_STATES", "normalize_cas", "normalize_inchi_key"]
+# ── 内容物 → 化学品引用 ─────────────────────────────────────
+
+
+class _SubstanceLike(Protocol):
+    name: str
+    chemical_uuid: Optional[str]
+
+
+class _StoredSubstanceLike(_SubstanceLike, Protocol):
+    ordinal: int
+
+
+def substance_match_key(text: str) -> str:
+    """内容物名与化学品名称 / 英文名 / 别名 / CAS 的比较键：去首尾空白、不区分（ASCII）大小写。"""
+
+    return text.strip().translate(_ASCII_LOWER)
+
+
+def chemical_link_given(substance: Any) -> bool:
+    """写入方是否显式给出了 ``chemical_uuid``（含显式 null）；省略时由权威沿用 / 自动匹配。"""
+
+    given = getattr(substance, "chemical_uuid_given", None)
+    if given is None:  # 不是协议模型（如落库行）：有值即视为给出
+        return getattr(substance, "chemical_uuid", None) is not None
+    return bool(given)
+
+
+def _chunks(values: Sequence[str]) -> Iterator[list[str]]:
+    for start in range(0, len(values), _IN_CHUNK):
+        yield list(values[start:start + _IN_CHUNK])
+
+
+def chemical_summaries(connection: Any, chemical_uuids: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """批量读取未删除化学品的摘要；已删除或不存在的 uuid 不出现在结果里。"""
+
+    wanted = sorted({str(item) for item in chemical_uuids if item})
+    result: dict[str, dict[str, Any]] = {}
+    columns = ", ".join(CHEMICAL_SUMMARY_FIELDS)
+    for chunk in _chunks(wanted):
+        rows = connection.execute(
+            f"SELECT {columns} FROM chemical WHERE deleted_at_ms IS NULL "
+            f"AND chemical_uuid IN ({', '.join('?' for _ in chunk)})",
+            chunk,
+        ).fetchall()
+        for row in rows:
+            result[str(row["chemical_uuid"])] = {field: row[field] for field in CHEMICAL_SUMMARY_FIELDS}
+    return result
+
+
+def _chemicals_by_key(connection: Any, keys: Sequence[str]) -> dict[str, set[str]]:
+    """比较键 → 命中的未删除化学品：名称、英文名、CAS 或任一别名（不区分 ASCII 大小写）精确相等。"""
+
+    matches: dict[str, set[str]] = {}
+    for chunk in _chunks(sorted(set(keys))):
+        marks = ", ".join("?" for _ in chunk)
+        rows = connection.execute(
+            f"""
+            SELECT chemical_uuid, LOWER(name) AS match_key FROM chemical
+            WHERE deleted_at_ms IS NULL AND LOWER(name) IN ({marks})
+            UNION
+            SELECT chemical_uuid, LOWER(name_en) FROM chemical
+            WHERE deleted_at_ms IS NULL AND LOWER(name_en) IN ({marks})
+            UNION
+            SELECT chemical_uuid, LOWER(cas) FROM chemical
+            WHERE deleted_at_ms IS NULL AND LOWER(cas) IN ({marks})
+            UNION
+            SELECT chemical.chemical_uuid, LOWER(TRIM(alias.value))
+            FROM chemical, json_each(chemical.aliases_json) AS alias
+            WHERE chemical.deleted_at_ms IS NULL AND alias.type = 'text'
+                AND LOWER(TRIM(alias.value)) IN ({marks})
+            """,
+            chunk * 4,
+        ).fetchall()
+        for row in rows:
+            matches.setdefault(str(row["match_key"]), set()).add(str(row["chemical_uuid"]))
+    return matches
+
+
+def resolve_substance_chemicals(
+    connection: Any,
+    substances: Sequence[_SubstanceLike],
+    previous: Sequence[_StoredSubstanceLike] = (),
+) -> list[Optional[str]]:
+    """内容物落库前确定每一份的 ``chemical_uuid``；物料内容写入的唯一入口在这里调用。
+
+    1. 显式 uuid：必须指向未删除的化学品；已在该物料上的引用原样保留（即使化学品已删除，
+       读-改-写回传不会因此失败）。
+    2. 显式 null：解除引用，本次写入不沿用也不自动匹配。
+    3. 省略：沿用同一物料同名（不区分大小写）内容物已有的引用——设备按名称上报内容物，
+       不能因此丢掉关联。多份同名时优先同位次，否则取位次最前的一份。
+    4. 仍没有：按名称 / 英文名 / 别名 / CAS 精确匹配（不区分大小写），恰好一个未删除化学品
+       命中才关联；歧义或无命中保持 null。
+
+    显式引用无效时抛 ``ChemicalError("invalid_input")``；不修改入参。查询次数与内容物份数无关：
+    显式校验与自动匹配各至多一次批量查询（份数极多时按 IN 上限分批）。
+    """
+
+    existing = {item.chemical_uuid for item in previous if item.chemical_uuid}
+    carried: dict[str, list[tuple[int, str]]] = {}
+    for item in sorted(previous, key=lambda value: value.ordinal):
+        if item.chemical_uuid:
+            carried.setdefault(substance_match_key(item.name), []).append((item.ordinal, item.chemical_uuid))
+
+    result: list[Optional[str]] = [None] * len(substances)
+    explicit: dict[str, str] = {}
+    unresolved: dict[str, list[int]] = {}
+    for ordinal, substance in enumerate(substances):
+        if chemical_link_given(substance):
+            result[ordinal] = substance.chemical_uuid  # 显式 null 即解除
+            if substance.chemical_uuid and substance.chemical_uuid not in existing:
+                explicit.setdefault(substance.chemical_uuid, substance.name)
+            continue
+        key = substance_match_key(substance.name)
+        links = carried.get(key)
+        if links:
+            same_ordinal = [uuid for prior_ordinal, uuid in links if prior_ordinal == ordinal]
+            result[ordinal] = same_ordinal[0] if same_ordinal else links[0][1]
+        else:
+            unresolved.setdefault(key, []).append(ordinal)
+
+    if explicit:
+        active = chemical_summaries(connection, explicit)
+        for chemical_uuid, name in explicit.items():
+            if chemical_uuid not in active:
+                raise ChemicalError(
+                    "invalid_input", f"内容物 {name!r} 引用的化学品 {chemical_uuid} 不存在或已删除"
+                )
+    if unresolved:
+        matches = _chemicals_by_key(connection, list(unresolved))
+        for key, ordinals in unresolved.items():
+            candidates = matches.get(key, set())
+            if len(candidates) == 1:
+                (chemical_uuid,) = candidates
+                for ordinal in ordinals:
+                    result[ordinal] = chemical_uuid
+    return result
+
+
+__all__ = [
+    "CHEMICAL_SUMMARY_FIELDS",
+    "ChemicalError",
+    "ChemicalService",
+    "PHYSICAL_STATES",
+    "chemical_link_given",
+    "chemical_summaries",
+    "normalize_cas",
+    "normalize_inchi_key",
+    "resolve_substance_chemicals",
+    "substance_match_key",
+]

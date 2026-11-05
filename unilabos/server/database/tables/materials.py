@@ -253,6 +253,7 @@ class MaterialSubstanceRecord(TableObject, table=True):
     """MaterialData 下的一份 current substance。
 
     ``name/quantity/quantity_unit`` 与 canonical ``LiquidStateEntry`` 三元组直接对应。
+    ``chemical_uuid`` 引用化学品定义（可空、无外键：化学品是软删除）。
     """
 
     __tablename__: ClassVar[str] = "material_substance"
@@ -261,6 +262,7 @@ class MaterialSubstanceRecord(TableObject, table=True):
     material_uuid: NonEmptyStr
     ordinal: int = Field(ge=0)
     name: NonEmptyStr
+    chemical_uuid: Optional[NonEmptyStr] = None
     quantity: float = Field(ge=0)
     quantity_unit: NonEmptyStr
     physical_state: Literal["liquid", "solid", "gas", "unknown"] = Field(
@@ -875,6 +877,7 @@ MATERIALS_TABLES = (
             material_uuid TEXT NOT NULL,
             ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
             name TEXT NOT NULL CHECK (TRIM(name) <> ''),
+            chemical_uuid TEXT CHECK (chemical_uuid IS NULL OR TRIM(chemical_uuid) <> ''),
             quantity REAL NOT NULL CHECK (quantity >= 0),
             quantity_unit TEXT NOT NULL CHECK (TRIM(quantity_unit) <> ''),
             physical_state TEXT NOT NULL DEFAULT 'liquid' CHECK (
@@ -900,6 +903,10 @@ MATERIALS_TABLES = (
             """
             CREATE INDEX IF NOT EXISTS idx_material_substance_name
             ON material_substance(LOWER(name), quantity_unit, material_uuid)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_substance_chemical
+            ON material_substance(chemical_uuid) WHERE chemical_uuid IS NOT NULL
             """,
         ),
     ),
@@ -1297,7 +1304,8 @@ MATERIALS_DATABASE = DatabaseSpec(
     # v3：material.resource_id 的唯一约束改为只对未删除行生效（部分唯一索引）：
     # 删除是软删除，被删物料的 resource_id 不该永久占坑，否则同名重建一律 409。
     contract_version=3,
-    # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）。迁移链见 materials_migrations.py。
+    # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）；
+    # schema v3：material_substance.chemical_uuid（内容物引用化学品，可空）。迁移链见 materials_migrations.py。
     schema_version=MATERIALS_SCHEMA_VERSION,
     migrations=MATERIALS_MIGRATIONS,
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。

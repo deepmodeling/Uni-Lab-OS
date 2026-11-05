@@ -681,15 +681,15 @@ class MaterialsRepository:
             self.connection.execute(
                 """
                 INSERT INTO material_substance(
-                    substance_uuid,material_uuid,ordinal,name,quantity,quantity_unit,
-                    physical_state,composition_json,meta_data_json,content_version,
-                    observed_at_ms,updated_at_ms,version
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    substance_uuid,material_uuid,ordinal,name,chemical_uuid,quantity,
+                    quantity_unit,physical_state,composition_json,meta_data_json,
+                    content_version,observed_at_ms,updated_at_ms,version
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     values["substance_uuid"], values["material_uuid"],
-                    values["ordinal"], values["name"], values["quantity"],
-                    values["quantity_unit"], values["physical_state"],
+                    values["ordinal"], values["name"], values["chemical_uuid"],
+                    values["quantity"], values["quantity_unit"], values["physical_state"],
                     stored_json(values["composition"]),
                     stored_json(values["meta_data_json"]),
                     values["content_version"], values["observed_at_ms"],

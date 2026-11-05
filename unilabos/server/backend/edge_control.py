@@ -42,6 +42,16 @@ logger = logging.getLogger(__name__)
 # listener 签名与 JobExecutionBackend 一致：(job_id, success, ret_value, suc_type, return_info)
 JobFinishedListener = Callable[..., None]
 
+#: 一条 Edge 事件最多处理几次。处理失败时不推进序号、不确认，等 Host durable outbox 在租约
+#: （约 30 秒）到期后重发；ack 是累计的，所以它后面的事件也先不处理。最后一次放宽：payload
+#: 仍取不到时按降级口径落地（终态带空 return_info、失败决策快照缺失则不登记），还失败就记一条
+#: 死信并确认，免得一条坏事件永远挡住后面的事件。
+EDGE_EVENT_MAX_ATTEMPTS = 5
+
+
+class EdgeEventRetry(RuntimeError):
+    """事件这次处理不了（例如详情 payload 拉取失败），不确认，等 Host 重发。"""
+
 _TERMINAL_EVENT_STATUS = {
     "execution.succeeded": ("succeeded", True),
     "execution.failed": ("failed", False),
@@ -146,7 +156,16 @@ class EdgeControlService:
         self.result_bridges: List[Any] = []
         # Edge 打开终态闸门、等 Backend 放行的失败：decision_id -> {job_uuid, report, required_scheduler_revision}
         self._pending_decisions: Dict[str, Dict[str, Any]] = {}
+        # 已处理（并确认）到的 Edge 事件序号；只在处理成功或记为死信后推进。
         self._last_edge_sequence = 0
+        # 处理失败、等 Host 重发的那条事件序号：在它处理成功前，更大的序号一律不处理也不确认。
+        self._blocked_edge_sequence: Optional[int] = None
+        # event_uuid -> 已失败次数；成功或记为死信后清除。
+        self._edge_event_failures: Dict[str, int] = {}
+        # 处理到最后一次仍失败、被确认跳过的事件（最近 100 条），供诊断。
+        self._edge_dead_letters: List[Dict[str, Any]] = []
+        # 新旧连接的业务线程可能同时在处理事件（后来者赢），事件处理串行化。
+        self._edge_event_lock = threading.Lock()
         # WS 下行通道：线程安全队列，由 API 层的发送协程消费
         self.outgoing: "queue.Queue[dict[str, Any]]" = queue.Queue()
         self._connected = False
@@ -518,16 +537,12 @@ class EdgeControlService:
                 }
             )
 
-    def _record_error_pending(self, notice: EdgeChangeNotice) -> None:
+    def _record_error_pending(self, notice: EdgeChangeNotice, *, final_attempt: bool = False) -> None:
         job_uuid = notice.job_uuid or notice.aggregate_uuid
-        snapshot = (
-            self._payloads.fetch_json(notice.detail_payload_uuid)
-            if notice.detail_payload_uuid
-            else None
-        )
+        snapshot = self._event_detail(notice, final_attempt=final_attempt)
         report = snapshot.get("report") if isinstance(snapshot, dict) else None
         if not isinstance(report, dict) or not report.get("decision_id"):
-            logger.warning("[EdgeControl] job %s 的失败决策快照不完整，无法登记", job_uuid)
+            logger.error("[EdgeControl] job %s 的失败决策快照不完整，无法登记", job_uuid)
             return
         decision_id = str(report["decision_id"])
         with self._lock:
@@ -818,24 +833,66 @@ class EdgeControlService:
         logger.warning("[EdgeControl] 忽略不支持的上行 action: %s", action)
         return None
 
-    def _handle_edge_change(self, data: dict[str, Any]) -> dict[str, Any]:
+    def _handle_edge_change(self, data: dict[str, Any]) -> Optional[dict[str, Any]]:
+        """处理一条 Edge 事件；只有处理成功（或记为死信）才推进序号并确认。
+
+        ack 是累计的（确认到某个序号即确认它之前的全部），所以一条事件失败后，在它被 Host
+        重发并处理成功之前，更大序号的事件既不处理也不确认——它们会随 durable outbox 重发。
+        """
+
         notice = EdgeChangeNotice.model_validate(data)
-        with self._lock:
-            duplicate = notice.event_sequence <= self._last_edge_sequence
-            if not duplicate:
-                self._last_edge_sequence = notice.event_sequence
-        if not duplicate:
+        with self._edge_event_lock:
+            with self._lock:
+                last = self._last_edge_sequence
+                blocked = self._blocked_edge_sequence
+            if notice.event_sequence <= last:
+                return self._edge_ack(last)  # 重复投递：已处理过，重新确认
+            if blocked is not None and notice.event_sequence > blocked:
+                logger.debug(
+                    "[EdgeControl] 事件 #%d 之前的 #%d 尚未处理成功，先不处理也不确认",
+                    notice.event_sequence,
+                    blocked,
+                )
+                return None
+            attempt = self._edge_event_failures.get(notice.event_uuid, 0) + 1
+            final_attempt = attempt >= EDGE_EVENT_MAX_ATTEMPTS
             try:
-                self._apply_edge_event(notice)
-            except Exception:  # noqa: BLE001 - 单条事件失败不阻塞 ack 推进
+                self._apply_edge_event(notice, final_attempt=final_attempt)
+            except Exception as error:  # noqa: BLE001 - 失败的事件等重发，不能确认
+                if not final_attempt:
+                    self._edge_event_failures[notice.event_uuid] = attempt
+                    with self._lock:
+                        self._blocked_edge_sequence = notice.event_sequence
+                    log = logger.warning if isinstance(error, EdgeEventRetry) else logger.exception
+                    log(
+                        "[EdgeControl] 处理 edge 事件 #%d %s (%s) 失败（第 %d/%d 次），不确认，等 Host 重发：%s",
+                        notice.event_sequence,
+                        notice.event_uuid,
+                        notice.event_type,
+                        attempt,
+                        EDGE_EVENT_MAX_ATTEMPTS,
+                        error,
+                    )
+                    return None
                 logger.exception(
-                    "[EdgeControl] 处理 edge 事件 %s (%s) 失败",
+                    "[EdgeControl] edge 事件 #%d %s (%s) 连续 %d 次处理失败，记为死信并确认，"
+                    "相关 job 可能需要人工核对",
+                    notice.event_sequence,
                     notice.event_uuid,
                     notice.event_type,
+                    attempt,
                 )
+                self._record_dead_letter(notice, attempt, error)
+            with self._lock:
+                self._last_edge_sequence = notice.event_sequence
+                self._blocked_edge_sequence = None
+            self._edge_event_failures.pop(notice.event_uuid, None)
+            return self._edge_ack(notice.event_sequence)
+
+    def _edge_ack(self, through_sequence: int) -> dict[str, Any]:
         ack = EdgeChangeAck(
             session_uuid=self.session_uuid,
-            through_sequence=notice.event_sequence,
+            through_sequence=through_sequence,
             acknowledged_at_ms=_now_ms(),
         )
         return {
@@ -843,9 +900,47 @@ class EdgeControlService:
             "data": ack.model_dump(mode="json", exclude_none=True),
         }
 
-    def _apply_edge_event(self, notice: EdgeChangeNotice) -> None:
+    def _record_dead_letter(self, notice: EdgeChangeNotice, attempts: int, error: BaseException) -> None:
+        with self._lock:
+            self._edge_dead_letters.append(
+                {
+                    "event_uuid": notice.event_uuid,
+                    "event_sequence": notice.event_sequence,
+                    "event_type": notice.event_type,
+                    "job_uuid": notice.job_uuid or notice.aggregate_uuid,
+                    "attempts": attempts,
+                    "error": f"{type(error).__name__}: {error}",
+                    "recorded_at_ms": _now_ms(),
+                }
+            )
+            del self._edge_dead_letters[:-100]
+
+    def edge_dead_letters(self) -> list[dict[str, Any]]:
+        """处理到最后一次仍失败、被确认跳过的 Edge 事件（最近 100 条）。"""
+
+        with self._lock:
+            return deepcopy(self._edge_dead_letters)
+
+    def _event_detail(self, notice: EdgeChangeNotice, *, final_attempt: bool) -> Optional[Any]:
+        """拉取事件的详情 payload；拉不到时在最后一次之前抛 :class:`EdgeEventRetry` 等重发。"""
+
+        if not notice.detail_payload_uuid:
+            return None
+        detail = self._payloads.fetch_json(notice.detail_payload_uuid)
+        if detail is None and not final_attempt:
+            raise EdgeEventRetry(f"详情 payload {notice.detail_payload_uuid} 暂时取不到")
+        if detail is None:
+            logger.error(
+                "[EdgeControl] 事件 %s (%s) 的详情 payload %s 始终取不到，按降级口径处理",
+                notice.event_uuid,
+                notice.event_type,
+                notice.detail_payload_uuid,
+            )
+        return detail
+
+    def _apply_edge_event(self, notice: EdgeChangeNotice, *, final_attempt: bool = False) -> None:
         if notice.event_type == "execution.error_pending":
-            self._record_error_pending(notice)
+            self._record_error_pending(notice, final_attempt=final_attempt)
             return
         if notice.event_type == "execution.error_resumed":
             self._record_error_resumed(notice)
@@ -860,11 +955,9 @@ class EdgeControlService:
             return
         status, success = terminal
         job_uuid = notice.job_uuid or notice.aggregate_uuid
-        detail: dict[str, Any] = {}
-        if notice.detail_payload_uuid:
-            fetched = self._payloads.fetch_json(notice.detail_payload_uuid)
-            if isinstance(fetched, dict):
-                detail = fetched
+        # 详情拉不到时等重发（见 _handle_edge_change）；不能把终态当成"无返回值"直接落地。
+        fetched = self._event_detail(notice, final_attempt=final_attempt)
+        detail: dict[str, Any] = fetched if isinstance(fetched, dict) else {}
         # detail 形状与 coordinator.publish_job_status 存储的一致：
         # {"status", "feedback_data", "return_info"}；return_info 出自
         # serialize_result_info，与本地执行端 listener 的取值口径对齐。

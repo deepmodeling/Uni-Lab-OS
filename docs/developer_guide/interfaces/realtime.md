@@ -157,6 +157,14 @@ WebSocket 消息统一为 `{"action":"...","data":{...}}`。不是 HostLink 的 
    执行端校验身份/版本/正文，经 inbox 准入后执行，不能只凭通知就执行一次。
 5. 生命周期和结果先记 runtime/history，再 edge_change 通知 Backend 取详情；ACK 仅推进对应 session 的连续序号。
 
+**edge_change 的确认时机。** Backend 只有在事件**处理成功之后**才推进序号并回 `edge_change_ack`。
+处理失败（包括详情 payload 暂时取不到）时不确认，等 Host 的 durable outbox 在租约（约 30 秒）
+到期后重发。ACK 是累计的（确认到某序号即确认它之前的全部），所以在失败的那条处理成功之前，
+更大序号的事件既不处理也不确认，随后一并重发；重复投递只重新确认、不重复处理。同一条事件最多处理
+`EDGE_EVENT_MAX_ATTEMPTS`（5）次：最后一次 payload 仍取不到时按降级口径落地（终态带空 `return_info`），
+仍失败则记为死信（`EdgeControlService.edge_dead_letters()`，ERROR 日志）并确认，避免一条坏事件
+永远挡住后续事件。
+
 | command_type | payload |
 | --- | --- |
 | execute_job | ExecuteJobContent |

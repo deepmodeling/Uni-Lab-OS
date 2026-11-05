@@ -39,12 +39,22 @@ Host 不在线或中继超时，Host 专属请求返回 **503 + `Retry-After: 3`
 
 ## 认证与网络边界
 
-当前微后端普通 HTTP API 没有统一的登录令牌校验层；CORS 开放并不意味着具备鉴权。
-不要将端口直接暴露到不可信网络。对外部署需在可信网络或反向代理上落实访问控制、TLS、
-来源限制；驱动包安装、任务提交、干预和 reset 均可能改变设备或实验数据。
+**写操作需要控制面 token。** 管理 API 的 POST / PUT / PATCH / DELETE 必须带请求头 `X-UniLab-Token: <token>`
+或 `Authorization: Bearer <token>`，即使只监听 127.0.0.1 也一样：CORS 默认放行所有来源（`BasicConfig.cors_allow_origins`），
+没有 token 时任何网页都能经浏览器向本机后端提交任务、启动设备。缺少或带错时返回 HTTP 401，
+正文 `{"code": 4001, "error": {"msg": ...}, "detail": "control token missing or invalid"}`，带 `WWW-Authenticate: Bearer`。
+读操作（GET、SSE `/api/v1/events`）不需要 token。
 
-SDK 中的 `Authorization: Lab <base64(ak:sk)>` 是上游 Backend 认证能力，
-不能据此宣称本机所有 API 已受保护。MCP 有独立的本机/非浏览器检查，见接入章节。
+- token 由调度权威首次启动时生成在 `<工作目录>/control_token`（或取 `BasicConfig.control_token`），见配置指南「控制面 token」；
+  在同一台机器上执行 `unilab token` 打印它（stdout 只有 token 本身）。
+- `unilab` 启动时打开的导航页地址带 `#token=...`（URL 片段，不发给服务器），导航页只把它交给内置推荐前端
+  （OpenLabSite：`#/?backend=<地址>&token=<token>`），随后从地址栏抹掉；站点索引里的第三方前端拿不到。
+- Python SDK、CLI、Host 都会自动从配置 / 环境变量 / 工作目录里找到 token；MCP 端点 `/mcp` 不经此检查
+  （它只接受本机且拒绝一切浏览器 Origin），其工具在进程内调用 API 时自带 token。
+
+对外部署仍需在可信网络或反向代理上落实 TLS 与访问控制：token 只证明调用方拿到了本机的这份密钥，
+驱动包安装、任务提交、干预和 reset 均可能改变设备或实验数据。SDK 中的 `Authorization: Lab <base64(ak:sk)>`
+是上游 Backend 认证能力，与控制面 token 无关。
 
 ## 三类响应，不能统一盲解包
 

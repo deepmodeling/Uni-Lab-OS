@@ -277,14 +277,16 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 
 #### 控制面 token
 
-Host 专属的控制面（控制 WebSocket `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、
-`POST /api/v1/edge/http-responses/{uuid}`）要求请求头 `X-UniLab-Token`（也接受 `Authorization: Bearer <token>`），
-否则 WebSocket 握手被拒（HTTP 403）、HTTP 返回 401。
+管理 API 的一切写操作（POST / PUT / PATCH / DELETE），以及 Host 专属的控制面（控制 WebSocket
+`/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`），都要求请求头
+`X-UniLab-Token`（也接受 `Authorization: Bearer <token>`），否则 WebSocket 握手被拒（HTTP 403）、HTTP 返回 401。
+读操作不需要。浏览器前端（OpenLabSite、调试控制台）在连接设置里填写 token；`unilab token` 打印它。
 
 - 调度权威：`control_token` 留空时首次启动生成 `<工作目录>/control_token`（权限 0600），之后沿用；启动日志会打印它的位置。
 - 默认双进程拓扑：Host 子进程由权威经环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` 拿到 token，无需配置。
 - `--role backend` + 远端 Host（`--address`）：在 Host 的配置文件填 `control_token`（或设上面的环境变量）为权威那份 token；
   两者在同一台机器、同一工作目录时，Host 直接读 `<工作目录>/control_token`。
+- 更换 token：停止 unilab，删除 `<工作目录>/control_token` 后重启，并在前端里重新填写。
 
 #### 数据库位置
 

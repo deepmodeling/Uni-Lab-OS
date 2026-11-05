@@ -82,6 +82,12 @@ def client_token() -> str:
     return _read_token(token_path(working_dir)) if working_dir else ""
 
 
+def authority_token() -> str:
+    """本进程作为权威时使用的 token（未启用时为空）。"""
+
+    return str(BasicConfig.control_token or "").strip()
+
+
 def client_headers() -> dict[str, str]:
     token = client_token()
     return {TOKEN_HEADER: token} if token else {}
@@ -114,6 +120,7 @@ def token_accepted(headers: Mapping[str, str]) -> bool:
 
 
 __all__ = [
+    "authority_token",
     "TOKEN_ENV",
     "TOKEN_FILENAME",
     "TOKEN_HEADER",

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import random
 import re
 import signal
@@ -477,6 +478,10 @@ def runtime_command(
     return command
 
 
+#: 本 harness 拉起的运行时使用的控制面 token（管理 API 写请求需要）。
+E2E_CONTROL_TOKEN = secrets.token_urlsafe(24)
+
+
 def subprocess_env(extra: dict[str, str]) -> dict[str, str]:
     environment = {
         key: value
@@ -484,6 +489,7 @@ def subprocess_env(extra: dict[str, str]) -> dict[str, str]:
         if not key.startswith("UNILABOS_") and not any(key.startswith(spec.package.upper() + "_") for spec in DEMOS)
     }
     environment.update({"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    environment["UNILABOS_BASICCONFIG_CONTROL_TOKEN"] = E2E_CONTROL_TOKEN
     environment.update(extra)
     return environment
 
@@ -550,6 +556,7 @@ def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, 
     url = f"http://127.0.0.1:{port}/api/v1{path}"
     data = None if payload is None else json.dumps(payload).encode("utf-8")
     headers = {} if payload is None else {"Content-Type": "application/json"}
+    headers["X-UniLab-Token"] = E2E_CONTROL_TOKEN
     request = urllib.request.Request(
         url, data=data, headers=headers, method=method or ("GET" if payload is None else "POST")
     )

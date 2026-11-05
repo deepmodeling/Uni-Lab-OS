@@ -208,7 +208,12 @@ unilab workflow run WORKFLOW_UUID --mode step --address http://127.0.0.1:8003 --
 unilab workflow inspect TASK_UUID --kind task --address http://127.0.0.1:8003 --json
 unilab graph --help
 unilab package --help
+unilab token          # 打印写操作需要的控制面 token（stdout 只有 token；--json 带文件位置）
 ```
+
+CLI 与 Python SDK 的写请求自动带控制面 token：取 `BasicConfig.control_token`、环境变量
+`UNILABOS_BASICCONFIG_CONTROL_TOKEN`，或工作目录（默认 `~/.unilabos`）下的 `control_token`。
+连接另一台机器上的权威时，把那台机器 `unilab token` 的输出设到上述环境变量。
 
 实际替换 UUID/路径；run 会创建真实任务，不是 dry-run。
 package/pkg 已合入 app.cli，不使用旧 package_cli 入口；命令处理完成后不启动设备运行时。
@@ -222,6 +227,7 @@ session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 
 服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP，
 GET/POST/DELETE；当前 stateless、JSON 响应模式。它独立于 SSE 观察端与设备 WS。
 仅 loopback 对端且无 Origin 请求可访问；浏览器/远端会得到 403，尚未就绪 503。
+MCP 端点本身不要求控制面 token（见 HTTP 文档「认证与网络边界」）；工具在进程内调用管理 API 时自动带上。
 不要把本机开放工具等同于用户已授权执行硬件。
 
 本版 **131 个白名单业务工具 + 6 个辅助工具**，完整 inputSchema/annotations

@@ -137,7 +137,9 @@ def test_user_environment_does_not_change_test_scenarios(monkeypatch):
     monkeypatch.setenv("UNILABOS_E2E_BACKEND", "ros2")
     monkeypatch.setenv("ROS_DISTRO", "jazzy")
     environment = harness.subprocess_env({"LAN_DEMO_TERMINATE_AFTER": "3"})
-    assert not any(key.startswith("UNILABOS_") for key in environment)
+    # 用户环境里的 UNILABOS_* 一律不透传；只有 harness 自己给运行时的控制面 token
+    assert {key for key in environment if key.startswith("UNILABOS_")} == {"UNILABOS_BASICCONFIG_CONTROL_TOKEN"}
+    assert environment["UNILABOS_BASICCONFIG_CONTROL_TOKEN"] == harness.E2E_CONTROL_TOKEN
     assert "MATERIALS_DEMO_SKIP_AUTO_PREPARE" not in environment
     assert environment["LAN_DEMO_TERMINATE_AFTER"] == "3"
     assert environment["ROS_DISTRO"] == "jazzy"

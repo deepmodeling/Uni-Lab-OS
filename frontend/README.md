@@ -29,6 +29,10 @@ UNILAB_BACKEND_URL=http://127.0.0.1:18620 npm run dev   # 换后端地址
 （也可以写进 `frontend/.env.local`）。`npm run build` 产出 `dist/`，用 `npm run preview`
 在同一套代理下查看；不提交 `dist/`。
 
+后端的写操作需要控制面 token：在运行 unilab 的机器上执行 `unilab token`，填进侧栏「控制令牌」，
+或用 `http://127.0.0.1:5174/?token=<token>` 打开（读到后存进本浏览器并从地址栏抹掉）。请求带
+`Authorization: Bearer <token>`。
+
 ## 检查
 
 ```bash

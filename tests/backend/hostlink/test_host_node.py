@@ -72,6 +72,13 @@ class AdapterDriver:
             action_context.raise_if_cancelled()
             time.sleep(0.01)
 
+    def ignores_cancel(self) -> dict[str, bool]:
+        """同步驱动、不检查取消：取消请求之后仍要跑完。"""
+        self.calls += 1
+        self.started.set()
+        time.sleep(0.4)
+        return {"done": True}
+
     def samples(self, sample_uuids: dict[str, str]) -> dict[str, Any]:
         return {"samples": sample_uuids}
 
@@ -111,6 +118,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
             "mapped",
             "fail",
             "wait_until_cancelled",
+            "ignores_cancel",
             "samples",
         ),
         action_value_mappings={
@@ -142,6 +150,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
                 ),
             },
             "wait_until_cancelled": {"type": "NativeAction"},
+            "ignores_cancel": {"type": "NativeAction"},
             "samples": {"type": "UniLabJsonCommand"},
         },
     )
@@ -408,6 +417,41 @@ def test_microbackend_cancels_running_hostlink_action(execution_stack) -> None:
     assert bridge.statuses[-1][1] == "failed"
     assert bridge.statuses[-1][3]["suc"] is False
     assert bridge.statuses[-1][3]["suc_type"] == "cancellation"
+
+
+def test_cancel_waits_for_a_driver_that_cannot_be_interrupted(execution_stack) -> None:
+    """同步驱动无法被打断：取消只是请求，驱动真实返回前 job 保持活动，返回后按取消收口。"""
+
+    _adapter, microbackend, driver, bridge = execution_stack
+    item = _item("ignores_cancel")
+    microbackend.dispatch(
+        {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "node_id": item.node_id,
+            "device_id": item.device_id,
+            "action": item.action_name,
+            "action_type": "NativeAction",
+            "action_args": {},
+        }
+    )
+    assert driver.started.wait(2)
+    assert microbackend.cancel_job(item.job_id)
+
+    time.sleep(0.15)
+    terminal = [status for status in bridge.statuses if status[0] == item.job_id and status[1] != "running"]
+    assert terminal == [], "驱动还在跑，不能先报取消"
+    assert microbackend.device_manager.get_job_info(item.job_id) is not None
+
+    assert bridge.status_event.wait(2)
+    final = [status for status in bridge.statuses if status[0] == item.job_id][-1]
+    assert final[1] == "failed"
+    assert final[3]["suc_type"] == "cancellation"
+    assert not bridge.decisions, "取消后的返回不进失败决策链"
+    deadline = time.monotonic() + 2
+    while microbackend.device_manager.get_job_info(item.job_id) is not None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert microbackend.device_manager.get_job_info(item.job_id) is None
 
 
 def test_backend_controlled_microbackend_rejects_scheduler_conflict(

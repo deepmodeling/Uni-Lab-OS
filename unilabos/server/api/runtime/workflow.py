@@ -179,12 +179,14 @@ class WorkflowTaskCreateRequest(_BackendModel):
 
 
 class WorkflowTaskCommandRequest(_StrictModel):
-    """step 放行一个动作；resume 切回自动；pause 转单步并停止派发新动作（已下发的照常跑完）。
+    """step 放行一个动作；resume 切回自动；pause 转单步并停止派发新动作（已下发的照常跑完）；
+    cancel 取消任务：不再派发，正在执行的动作收到取消请求，设备真实返回后任务落 canceled
+    （期间任务为 canceling，设备锁保持）。
 
     版本与幂等键防止跨页面重复放行。
     """
 
-    type: Literal["step", "resume", "pause"]
+    type: Literal["step", "resume", "pause", "cancel"]
     expected_revision: int = Field(ge=0, le=_INT64_MAX, strict=True)
     idempotency_key: str = Field(min_length=1, max_length=200)
 

@@ -163,7 +163,7 @@ def test_normal_mode_is_unchanged_and_invalid_controls_are_rejected(stack):
     wait_for(lambda: len(executor.dispatched) == 3)
     assert command(client, task).json()["code"] == 3003
     for data in [{}, {"type": "step", "expected_revision": True, "idempotency_key": "x"},
-                 {"type": "cancel", "expected_revision": 0, "idempotency_key": "x"}]:
+                 {"type": "retry", "expected_revision": 0, "idempotency_key": "x"}]:
         response = client.post(f"/api/v1/workflow-tasks/{task['uuid']}/commands", json=data)
         assert response.json()["code"] == 1000
     for index in range(3):

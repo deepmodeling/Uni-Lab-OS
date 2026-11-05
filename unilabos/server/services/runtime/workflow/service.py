@@ -363,7 +363,7 @@ class WorkflowService(WorkflowStore):
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
         task_uuid = self.get_workflow_task(task_uuid)["uuid"]
-        if (command_type not in {"step", "resume", "pause"} or not idempotency_key.strip()
+        if (command_type not in {"step", "resume", "pause", "cancel"} or not idempotency_key.strip()
                 or type(expected_revision) is not int or expected_revision < 0):
             raise WorkflowError("invalid_input")
         try:
@@ -379,6 +379,9 @@ class WorkflowService(WorkflowStore):
                 # 命令已落库，执行器暂时不可用时不能误报提交失败；恢复时重新消费。
                 logger.exception("任务 %s 控制已持久化，等待调度器恢复", task_uuid)
         return result
+
+    def mark_workflow_node_job_cancel_requested(self, job_uuid: str) -> bool:
+        return self.mark_job_cancel_requested(job_uuid)
 
     def _notify_manual_confirmation_resolver(
         self, confirmation: Dict[str, Any]

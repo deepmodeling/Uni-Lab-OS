@@ -1084,11 +1084,16 @@ class WorkflowStore:
                         _load(previous["meta_data"], {}).get("expected_revision") != expected_revision):
                     raise StoreConflict("command idempotency key already used")
                 return task
-            if command_type not in {"step", "resume", "pause"}:
+            if command_type not in {"step", "resume", "pause", "cancel"}:
                 raise StoreConflict("unsupported task command")
+            if command_type == "cancel" and task["status"] in {"pending", "running"}:
+                # 取消对单点设备动作同样适用；不检查控制态与节点状态，任何时候都能停
+                self._apply_cancel(conn, task, idempotency_key=idempotency_key,
+                                   expected_revision=expected_revision, now=now)
+                return self.get_task(task_uuid)
             if task["execution_kind"] != "workflow":
                 raise StoreConflict("only workflow tasks accept execution control")
-            if command_type != "pause" and task["run_mode"] != "step":
+            if command_type not in {"pause", "cancel"} and task["run_mode"] != "step":
                 raise StoreConflict("only step workflows accept execution control")
             if task["status"] not in {"pending", "running"}:
                 raise StoreConflict("task is no longer executable")
@@ -1197,13 +1202,61 @@ class WorkflowStore:
         self._append_event(conn, event="workflow.task.changed",
                            data={"workflow_task_uuid": task_uuid}, now=now)
 
+    def _apply_cancel(
+        self, conn: sqlite3.Connection, task: Dict[str, Any], *,
+        idempotency_key: str, expected_revision: int, now: str,
+    ) -> None:
+        """取消 = 任务进入 canceling：不再派发；已下发的动作等真实返回后任务落 canceled。"""
+
+        if task["control_revision"] != expected_revision:
+            raise StoreRevisionConflict("task control revision changed")
+        task_uuid = task["uuid"]
+        conn.execute(
+            "UPDATE workflow_task_command SET status='rejected', consumed_at=?, update_time=?, "
+            "result=json_set(result, '$.revoked_by', 'cancel') WHERE workflow_task_uuid=? "
+            "AND type='step' AND status='pending' AND deleted_at IS NULL",
+            (now, now, task_uuid),
+        )
+        conn.execute(
+            "UPDATE workflow_task SET status='canceling', update_time=? WHERE uuid=?",
+            (now, task_uuid),
+        )
+        conn.execute(
+            "INSERT INTO workflow_task_command(uuid, create_time, update_time, "
+            "workflow_task_uuid, type, idempotency_key, status, meta_data, consumed_at) "
+            "VALUES (?, ?, ?, ?, 'cancel', ?, 'succeeded', ?, ?)",
+            (str(uuid4()), now, now, task_uuid, idempotency_key,
+             _json({"expected_revision": expected_revision}), now),
+        )
+        self._append_event(conn, event="workflow.task.changed",
+                           data={"workflow_task_uuid": task_uuid, "status": "canceling"}, now=now)
+
+    def mark_job_cancel_requested(self, job_uuid: str) -> bool:
+        """已下发的 attempt 收到取消请求：展示为 cancel_requested，直到真实终态回报。"""
+
+        now = utc_now()
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM workflow_node_job WHERE uuid=? AND deleted_at IS NULL",
+                (job_uuid,),
+            ).fetchone()
+            if row is None or row["status"] not in {"dispatched", "running"}:
+                return False
+            conn.execute(
+                "UPDATE workflow_node_job SET status='cancel_requested', update_time=? WHERE uuid=?",
+                (now, job_uuid),
+            )
+            self._emit_job_changed(conn, row, "cancel_requested", now)
+            self._sync_run_projection(conn, row["workflow_node_run_uuid"], now)
+        return True
+
     def claim_task_step(self, task_uuid: str, job_uuid: str) -> bool:
         """在申请动作锁前消费一次许可；一个许可只能绑定一个 attempt。"""
 
         with self.transaction() as conn:
             task = self.get_task(task_uuid)
             if task["status"] not in {"pending", "running"}:
-                return False
+                return False  # canceling / 终态：不再派发
             if task["run_mode"] != "step":
                 return True
             if task["control_status"] != "active":
@@ -2093,7 +2146,9 @@ class WorkflowStore:
             terminal_ready = not runs or statuses <= {"succeeded", "skipped"} or bool(
                 statuses & {"failed", "timeout", "canceled"}
             )
-            if task["control_status"] not in {"active", "waiting_reconciliation"} and not terminal_ready:
+            # 取消中的任务即使处于暂停也要接管：调度器据此把未起跑的节点收为 canceled
+            if (task["control_status"] not in {"active", "waiting_reconciliation"}
+                    and not terminal_ready and task["status"] != "canceling"):
                 return {"state": task["control_status"], "task": task, "runs": runs}
 
             # 循环容器没有设备副作用：在飞的循环 attempt 直接退回 pending，由调度器按
@@ -2175,7 +2230,8 @@ class WorkflowStore:
                 conn.execute(
                     """
                     UPDATE workflow_task
-                    SET status = 'running', started_at = COALESCE(started_at, ?),
+                    SET status = CASE WHEN status = 'canceling' THEN status ELSE 'running' END,
+                        started_at = COALESCE(started_at, ?),
                         update_time = ?
                     WHERE uuid = ?
                     """,

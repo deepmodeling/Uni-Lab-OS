@@ -44,7 +44,7 @@ class DagWalk:
     - ready()：indeg==0 且仍 PENDING 的节点集（供驱动层提交）。
     - mark_running(id)：PENDING/READY -> RUNNING（每节点恰好一次，I1）。
     - on_success(id)：-> SUCCESS，并对每条 out-edge 递减后继 indeg（I2）。
-    - on_failed(id)：-> FAILED 且 fail-fast：其余非终态 -> CANCELLED。
+    - on_failed(id)：-> FAILED 且 fail-fast：未起跑的 -> CANCELLED，在跑的等真实终态。
     - resume：以 completed 初始化，已完成节点视作 SUCCESS 并预满足后继依赖（I4）。
     """
 
@@ -90,9 +90,10 @@ class DagWalk:
     def on_failed(self, node_id: str) -> None:
         self.states[node_id] = NodeState.FAILED
         self.failed = True
-        # fail-fast：对齐 backend gctx 兄弟组取消语义，其余非终态一律 CANCELLED
+        # fail-fast：尚未起跑的节点一律 CANCELLED；正在跑的保持 RUNNING，等它回报真实终态
+        # （设备上仍在执行的动作不能在走图层面当作已结束）
         for nid, st in self.states.items():
-            if nid != node_id and st in _ACTIVE_STATES:
+            if nid != node_id and st in _ACTIVE_STATES and st != NodeState.RUNNING:
                 self.states[nid] = NodeState.CANCELLED
 
     def cancel_remaining(self) -> None:
@@ -131,10 +132,12 @@ class DagExecutor:
         *,
         on_node_terminal: Optional[OnTerminalFn] = None,
         walk: Optional[DagWalk] = None,
+        on_stop: Optional[Callable[[], None]] = None,
     ) -> None:
         self.dag = dag
         self._submit = submit
         self._on_terminal = on_node_terminal
+        self._on_stop = on_stop
         self.walk = walk if walk is not None else DagWalk(dag)
         self._cancelled = False
 
@@ -142,13 +145,29 @@ class DagExecutor:
         """外部取消（对应 cancel_task）：停止调度后继，已在跑节点由上层取消。"""
         self._cancelled = True
 
-    async def run(self) -> dict[str, NodeState]:
-        """走完整张图，返回每节点终态快照。无环则有限步终止（I6）。"""
-        inflight: dict[str, asyncio.Task] = {}
+    def _request_stop(self) -> None:
+        if self._on_stop is None:
+            return
         try:
-            while not self.walk.is_done() and not self._cancelled:
+            self._on_stop()
+        except Exception:  # noqa: BLE001 —— 停止请求失败不打断收敛
+            logger.exception("DagExecutor on_stop 回调失败，继续等待在跑节点")
+
+    async def run(self) -> dict[str, NodeState]:
+        """走完整张图，返回每节点终态快照。无环则有限步终止（I6）。
+
+        失败 / 取消后**排空**而不是丢下在跑节点：停止调度后继，经 ``on_stop`` 请上层取消
+        尚未下发的节点、对已下发的发取消请求，然后继续等每个在跑节点回报真实终态——
+        设备上仍在执行的动作不能在走图层面被当作已结束（锁随它的终态释放）。
+        """
+        inflight: dict[str, asyncio.Task] = {}
+        stopping = False
+        try:
+            while not self.walk.is_done():
+                if self._cancelled:
+                    stopping = True
                 # 1) 提交本轮全部 ready 节点（不同设备并发；同设备由调度器串行）
-                for nid in self.walk.ready():
+                for nid in [] if stopping else self.walk.ready():
                     self.walk.mark_running(nid)
                     inflight[nid] = asyncio.ensure_future(self._run_node(nid))
 
@@ -171,21 +190,20 @@ class DagExecutor:
                     else:
                         self.walk.on_failed(nid)
                     self._notify_terminal(nid, status)
-                    # fail-fast：某节点**失败**即取消其余在跑并停止调度
-                    if status == NodeState.FAILED:
-                        await self._cancel_inflight(inflight)
-                        return self.walk.snapshot()
-                    # 某节点被取消（执行面撤单）：后继依赖永远不满足，同样停止走图，
-                    # 其余节点收敛为 CANCELLED——但不是失败
-                    if status == NodeState.CANCELLED and not self._cancelled:
-                        await self._cancel_inflight(inflight)
-                        self.walk.cancel_remaining()
-                        return self.walk.snapshot()
+                    # fail-fast：某节点**失败**或被执行面撤单即停止调度，其余在跑节点排空；
+                    # 后继依赖永远不满足，最终收敛为 CANCELLED（撤单不算失败）
+                    if not stopping and (
+                        status == NodeState.FAILED
+                        or (status == NodeState.CANCELLED and not self._cancelled)
+                    ):
+                        stopping = True
+                        self._request_stop()
         finally:
             if inflight:
+                # 只在 run 本身被取消（进程停止）时到这里：不再等待
                 await self._cancel_inflight(inflight)
-        # 外部取消：把剩余未决节点收敛为 CANCELLED，返回全终态快照
-        if self._cancelled:
+        # 停止后把从未起跑的节点收敛为 CANCELLED，返回全终态快照
+        if stopping or self._cancelled:
             self.walk.cancel_remaining()
         return self.walk.snapshot()
 

@@ -65,8 +65,15 @@ class TaskDagRunner:
         self._loop = loop
         self._pending: dict[str, asyncio.Future] = {}  # node_id(=job_id) -> future
         self._cancelled = False
+        # 用户取消 / fail-fast：不再起跑新节点，但已下发的节点等真实终态（见 stop_dispatching）
+        self._stopping = False
+        self._stop_requested = False
         self._executor = DagExecutor(
-            dag, self._submit, on_node_terminal=on_node_terminal, walk=walk
+            dag,
+            self._submit,
+            on_node_terminal=on_node_terminal,
+            walk=walk,
+            on_stop=self._request_stop,
         )
         # 正在跑的循环体执行器（嵌套层级各一个），取消时一并停掉
         self._nested: set[DagExecutor] = set()
@@ -85,7 +92,7 @@ class TaskDagRunner:
             # 未决 future 兜底解析，避免异常路径下的悬挂
             self._resolve_all_pending(NodeState.CANCELLED)
         # 任一节点非 SUCCESS -> fail-fast，清理仍在设备侧运行/排队的本 task 任务
-        if self._on_cancel_remaining is not None and any(
+        if not self._stop_requested and self._on_cancel_remaining is not None and any(
             st != NodeState.SUCCESS for st in result.values()
         ):
             try:
@@ -107,7 +114,7 @@ class TaskDagRunner:
         # 先登记再触发副作用：即便终态瞬间回流（跨线程 call_soon_threadsafe），
         # 也只会在本协程让出后执行 _resolve，pending 已就位，无竞态。
         self._pending[node.node_id] = fut
-        if self._cancelled:
+        if self._cancelled or self._stopping:
             self._pending.pop(node.node_id, None)
             return NodeState.CANCELLED
         try:
@@ -127,7 +134,7 @@ class TaskDagRunner:
         body = node.body
 
         async def run_body(completed: Iterable[str]) -> dict[str, NodeState]:
-            if self._cancelled:
+            if self._cancelled or self._stopping:
                 return {node_id: NodeState.CANCELLED for node_id in body.nodes}
             executor = DagExecutor(
                 body,
@@ -158,6 +165,30 @@ class TaskDagRunner:
             self._resolve(job_id, state)
             return
         loop.call_soon_threadsafe(self._resolve, job_id, state)
+
+    def _request_stop(self) -> None:
+        """失败 / 取消后请调度器停掉本任务：未下发的节点收为 CANCELLED，已下发的发取消请求。"""
+
+        self._stopping = True
+        if self._stop_requested or self._on_cancel_remaining is None:
+            return
+        self._stop_requested = True
+        try:
+            self._on_cancel_remaining()
+        except Exception:  # noqa: BLE001 —— 停止失败不应改变已定终态
+            logger.exception("TaskDagRunner 停止任务失败，继续等待在跑节点")
+
+    def stop_dispatching(self) -> None:
+        """用户取消：不再起跑任何节点，在跑节点排空——已下发的动作等设备真实返回。
+
+        与 :meth:`cancel`（进程停止）不同，这里不把在跑节点直接解析为 CANCELLED。
+        """
+
+        self._stopping = True
+        self._executor.cancel()
+        for nested in list(self._nested):
+            nested.cancel()
+        self._request_stop()
 
     def cancel(self) -> None:
         """外部取消（cancel_task）：停止调度后继，未决节点解析为 CANCELLED。

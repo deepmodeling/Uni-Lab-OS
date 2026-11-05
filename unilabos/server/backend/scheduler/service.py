@@ -311,6 +311,12 @@ class BackendScheduler:
             if not active:
                 self.submit(task_uuid)
                 return
+            if self._task_cancel_requested(task_uuid):
+                with self._guard:
+                    runner = self._runners.get(task_uuid)
+                if runner is not None:
+                    runner.stop_dispatching()
+                return
             # pause：排队等锁、尚未下发的节点退出队列，等单步 / 恢复后重新申请。
             try:
                 self._gate_waiting_resource_jobs(task_uuid)
@@ -371,6 +377,9 @@ class BackendScheduler:
             for run_uuid in specs:
                 self._run_to_task[run_uuid] = task_uuid
         try:
+            if self._task_cancel_requested(task_uuid):
+                # 取消命令先于起跑（或重启后接管一个取消中的任务）：一个节点也不派发
+                runner.stop_dispatching()
             result = await runner.run()
             for run_uuid, state in result.items():
                 self._persist_terminal_if_needed(run_uuid, state)
@@ -1033,14 +1042,64 @@ class BackendScheduler:
         self._reconcile_resources()
 
     def _cancel_task(self, task_uuid: str) -> None:
-        self.executor.cancel_task(task_uuid)
+        """停掉一个任务：未下发的节点直接收为 CANCELLED，已下发的只请求取消。
+
+        已交给设备的动作继续持有动作锁 / 物料锁，直到执行面回报它真实结束（驱动返回或
+        取消后返回）——锁随该 attempt 的终态释放。同步驱动无法被打断，只能等它返回；
+        若 Host 在此期间失联，仍按 execution_unknown 交人工核对。
+        """
+
         with self._guard:
+            runner = self._runners.get(task_uuid)
+            jobs = [
+                (job_uuid, run_uuid)
+                for job_uuid, run_uuid in self._job_runs.items()
+                if self._run_to_task.get(run_uuid) == task_uuid
+            ]
+            dispatched = [job_uuid for job_uuid, _run in jobs if job_uuid in self._dispatched_jobs]
+            queued = [
+                (job_uuid, run_uuid)
+                for job_uuid, run_uuid in jobs
+                if job_uuid not in self._dispatched_jobs and job_uuid in self._waiting_resource_jobs
+            ]
+            waiting_steps = [
+                node_id
+                for node_id, (task, _node) in list(self._waiting_step_nodes.items())
+                if str(task["uuid"]) == task_uuid
+            ]
+            for node_id in waiting_steps:
+                self._waiting_step_nodes.pop(node_id, None)
             manual_jobs = [
                 job_uuid
                 for job_uuid in self._manual_confirmation_jobs
                 if (run_uuid := self._job_runs.get(job_uuid)) is not None
                 and self._run_to_task.get(run_uuid) == task_uuid
             ]
+        # 排队等锁的 attempt 退出队列；等单步许可的节点直接收口
+        for job_uuid, run_uuid in queued:
+            try:
+                if not self.resources.withdraw(job_uuid, reason="task_canceled"):
+                    self.resources.cancel_owner(job_uuid, reason="task_canceled")
+            except ResourceNotFound:
+                pass
+            with self._guard:
+                self._waiting_resource_jobs.pop(job_uuid, None)
+            if runner is not None:
+                runner.notify_terminal(run_uuid, NodeState.CANCELLED)
+        for node_id in waiting_steps:
+            if runner is not None:
+                runner.notify_terminal(node_id, NodeState.CANCELLED)
+        # 已下发的动作：只请求取消，锁保留到真实终态
+        cancel_job = getattr(self.executor, "cancel_job", None)
+        for job_uuid in dispatched:
+            self._mark_job_cancel_requested(job_uuid)
+            if callable(cancel_job):
+                try:
+                    cancel_job(job_uuid)
+                except Exception:  # noqa: BLE001 - 取消请求失败时等动作自然结束
+                    logger.exception("failed to request cancel for job %s", job_uuid)
+        if dispatched and not callable(cancel_job):
+            self.executor.cancel_task(task_uuid)
         for job_uuid in manual_jobs:
             try:
                 self.workflow.decide_workflow_manual_confirmation(
@@ -1051,7 +1110,24 @@ class BackendScheduler:
                 )
             except Exception:  # noqa: BLE001 - 任务取消仍由 run/job 收敛兜底
                 logger.exception("failed to cancel manual confirmation for job %s", job_uuid)
-        self._cleanup_task_resources(task_uuid)
+
+    def _mark_job_cancel_requested(self, job_uuid: str) -> None:
+        marker = getattr(self.workflow, "mark_workflow_node_job_cancel_requested", None)
+        if not callable(marker):
+            return
+        try:
+            marker(job_uuid)
+        except Exception:  # noqa: BLE001 - 展示状态，失败不影响取消
+            logger.exception("failed to mark job %s cancel_requested", job_uuid)
+
+    def _task_cancel_requested(self, task_uuid: str) -> bool:
+        getter = getattr(self.workflow, "get_workflow_task", None)
+        if not callable(getter):
+            return False
+        try:
+            return getter(task_uuid).get("status") == "canceling"
+        except Exception:  # noqa: BLE001 - 读取失败按未取消处理
+            return False
 
     def _cleanup_task_resources(self, task_uuid: str) -> None:
         with self._guard:

@@ -18,6 +18,10 @@ from unilabos.server.database.tables.base import (
     UnixMilliseconds,
     json_text_column,
 )
+from unilabos.server.database.tables.materials_migrations import (
+    MATERIALS_MIGRATIONS,
+    MATERIALS_SCHEMA_VERSION,
+)
 from unilabos.server.database.schema import (
     SCHEMA_IDENTITY_TABLE,
     DatabaseSpec,
@@ -564,6 +568,38 @@ class InventoryLedgerRecord(TableObject, table=True):
         return self
 
 
+class ChemicalRecord(TableObject, table=True):
+    """化学品定义：CAS / InChIKey 是可空唯一键，只在未删除的行之间唯一。"""
+
+    __tablename__: ClassVar[str] = "chemical"
+
+    chemical_uuid: NonEmptyStr = Field(primary_key=True)
+    name: NonEmptyStr
+    name_en: Optional[str] = None
+    aliases: List[JsonValue] = Field(
+        default_factory=list,
+        sa_column=json_text_column("aliases_json", default_json="[]"),
+    )
+    cas: Optional[str] = None
+    inchi_key: Optional[str] = None
+    molecular_formula: Optional[str] = None
+    smiles: Optional[str] = None
+    molecular_weight: Optional[float] = Field(default=None, gt=0)
+    density_g_per_ml: Optional[float] = Field(default=None, gt=0)
+    physical_state: Literal["liquid", "solid", "gas", "unknown"] = Field(
+        default="unknown", sa_type=Text
+    )
+    description: str = ""
+    meta_data_json: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("meta_data_json", default_json="{}"),
+    )
+    created_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+    deleted_at_ms: Optional[int] = Field(default=None, ge=0)
+    version: PositiveVersion = 1
+
+
 MATERIALS_TABLE_MODELS = (
     ResourceTemplateRecord,
     InventoryLotRecord,
@@ -577,6 +613,7 @@ MATERIALS_TABLE_MODELS = (
     InventoryReservationRecord,
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
+    ChemicalRecord,
 )
 
 
@@ -1201,6 +1238,50 @@ MATERIALS_TABLES = (
             """,
         ),
     ),
+    TableSpec(
+        "chemical",
+        """
+        CREATE TABLE IF NOT EXISTS chemical (
+            chemical_uuid TEXT PRIMARY KEY CHECK (TRIM(chemical_uuid) <> ''),
+            name TEXT NOT NULL CHECK (TRIM(name) <> ''),
+            name_en TEXT,
+            aliases_json TEXT NOT NULL DEFAULT '[]' CHECK (
+                json_valid(aliases_json) AND json_type(aliases_json) = 'array'
+            ),
+            cas TEXT CHECK (cas IS NULL OR TRIM(cas) <> ''),
+            inchi_key TEXT CHECK (inchi_key IS NULL OR TRIM(inchi_key) <> ''),
+            molecular_formula TEXT,
+            smiles TEXT,
+            molecular_weight REAL CHECK (molecular_weight IS NULL OR molecular_weight > 0),
+            density_g_per_ml REAL CHECK (density_g_per_ml IS NULL OR density_g_per_ml > 0),
+            physical_state TEXT NOT NULL DEFAULT 'unknown' CHECK (
+                physical_state IN ('liquid','solid','gas','unknown')
+            ),
+            description TEXT NOT NULL DEFAULT '',
+            meta_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data_json) AND json_type(meta_data_json) = 'object'
+            ),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
+            deleted_at_ms INTEGER CHECK (deleted_at_ms IS NULL OR deleted_at_ms >= created_at_ms),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0)
+        )
+        """,
+        (
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_chemical_cas_active
+            ON chemical(cas) WHERE deleted_at_ms IS NULL AND cas IS NOT NULL
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_chemical_inchi_key_active
+            ON chemical(inchi_key) WHERE deleted_at_ms IS NULL AND inchi_key IS NOT NULL
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_chemical_name_active
+            ON chemical(LOWER(name)) WHERE deleted_at_ms IS NULL
+            """,
+        ),
+    ),
 )
 
 
@@ -1216,12 +1297,16 @@ MATERIALS_DATABASE = DatabaseSpec(
     # v3：material.resource_id 的唯一约束改为只对未删除行生效（部分唯一索引）：
     # 删除是软删除，被删物料的 resource_id 不该永久占坑，否则同名重建一律 409。
     contract_version=3,
+    # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）。迁移链见 materials_migrations.py。
+    schema_version=MATERIALS_SCHEMA_VERSION,
+    migrations=MATERIALS_MIGRATIONS,
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。
     # 开发期没有迁移路径时备份后重建；正式发布前改为 "refuse"（拒绝启动、保留旧库）。
     on_unmigratable="rebuild",
 )
 
 __all__ = [
+    "ChemicalRecord",
     "InventoryCommandEffectRecord",
     "InventoryLedgerRecord",
     "InventoryLotRecord",

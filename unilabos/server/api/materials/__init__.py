@@ -7,6 +7,10 @@ from unilabos.server.api.materials.core import (
     create_materials_router,
     install_materials_api,
 )
+from unilabos.server.api.materials.chemicals import (
+    create_chemical_router,
+    install_chemical_api,
+)
 from unilabos.server.api.materials.graph import (
     GraphUpsertRequest,
     create_graph_router,
@@ -15,6 +19,8 @@ from unilabos.server.api.materials.graph import (
 
 __all__ = [
     "GraphUpsertRequest",
+    "create_chemical_router",
+    "install_chemical_api",
     "LedgerAcknowledge",
     "ResourceTreeNotify",
     "ResourceTreeNotifyResult",

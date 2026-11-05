@@ -244,6 +244,14 @@ reservation 的 consume/release/quarantine 由执行生命周期或明确业务�
 物料锁是另一层：动作的物料入参默认独占（`materials_free` 排除，`materials_need_lock` 显式覆盖，
 规则见 [设计约定](design.md)），交给调度器按绑定后的身份占用。库存预留不自动等于设备动作锁，也不代表实现了多层子工作流锁升级。
 
+## 化学品定义
+
+`/api/v1/chemicals` 管理化学品身份（materials.db 的 `chemical` 表）：`chemical_uuid` 为主键，
+CAS 登记号与 InChIKey 是可空的唯一键，只在未删除的行之间唯一——软删除后让出，可以重新登记。
+CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写；另有名称、英文名、别名、分子式、SMILES、
+分子量、密度与物态（liquid / solid / gas / unknown）。修改与删除带 `expected_version`，过期返回 3003。
+物料内容物（substance）目前仍以名称记录，引用化学品定义在后续版本加入。
+
 ## 源码依据
 
 - [协议模型](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/protocol/materials.py)

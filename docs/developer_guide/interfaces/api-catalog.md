@@ -98,6 +98,11 @@ graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；�
 | GET | `/api/v1/registry/pending-impacts` | — | 信封 data.impacts，待升级定义影响面 |
 | GET | `/api/v1/registry/reports` | Q: page=1（>=1）、page_size=50（1..200） | 信封；上报批次分页 |
 | GET | `/api/v1/registry/workflow-templates` | — | 信封 data.templates；尚未绑定设备的模板 |
+| GET | `/api/v1/chemicals` | Q: q、cas、inchi_key、physical_state、page=1、page_size=50（1..500） | 信封；化学品定义分页；q 模糊匹配名称/别名/CAS/分子式 |
+| POST | `/api/v1/chemicals` | B: ChemicalWrite | 201 信封；CAS 校验格式与校验位、InChIKey 统一大写；重复 CAS / InChIKey 返回 3003 |
+| GET | `/api/v1/chemicals/{chemical_uuid}` | — | 信封；不存在或已删除返回 3002 |
+| PATCH | `/api/v1/chemicals/{chemical_uuid}` | B: ChemicalPatch（expected_version 必填） | 信封；版本过期返回 3003 |
+| DELETE | `/api/v1/chemicals/{chemical_uuid}` | Q: expected_version | 信封；软删除，CAS / InChIKey 让出可重新登记 |
 | GET | `/api/v1/graphs` | Q: page=1（>=1）、page_size=100（1..1000）、name="" | 信封；设备图快照分页 |
 | POST | `/api/v1/graphs` | B: GraphUpsertRequest | 信封；登记/更新设备图与相关物料；replace/adopt 语义不同 |
 | GET | `/api/v1/graphs/live/payload` | — | 信封；从当前权威状态构建的实时拓扑，不是旧图快照 |

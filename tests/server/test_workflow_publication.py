@@ -371,3 +371,77 @@ def test_nested_publication_expands_each_leaf_once(stack) -> None:
     executor.finish(0)
     wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
     assert len(executor.dispatched) == 1
+
+
+def _canvas_node(node_uuid: str, name: str, device: str, depends_on: list[str]) -> dict:
+    """编排画布形状：无节点模板，顺序用 execution_policy.depends_on 表达。"""
+
+    return {
+        "uuid": node_uuid,
+        "name": name,
+        "type": "device_action",
+        "material_uuid": str(uuid4()),
+        "action_name": "record",
+        "action_type": "UniLabJsonCommand",
+        "param": {"step": name},
+        "pose": {"x": 0, "y": 0},
+        "execution_policy": {"depends_on": depends_on},
+        "meta_data": {"target_device_id": device},
+    }
+
+
+def test_canvas_child_without_templates_keeps_depends_on_order(stack) -> None:
+    service, executor, client = stack
+    child = _create_workflow(client, "画布子流程")
+    first, second = str(uuid4()), str(uuid4())
+    graph = _ok(client.put(
+        f"/api/v1/workflows/{child['uuid']}/graph",
+        json={"revision": child["revision"], "site_binding_mode": "preserve", "edges": [],
+              "nodes": [_canvas_node(first, "子1", "dev-a", []),
+                        _canvas_node(second, "子2", "dev-b", [first])]},
+    ))
+    _publish(client, child["uuid"], graph["workflow"]["revision"])
+
+    parent = _create_workflow(client, "画布父流程")
+    invocation = str(uuid4())
+    inserted = _ok(_insert(client, parent, child["uuid"], invocation_uuid=invocation), 201)["graph"]
+    inner_first = expanded_node_uuid(invocation, first)
+    inner_second = expanded_node_uuid(invocation, second)
+    by_uuid = {node["uuid"]: node for node in inserted["nodes"]}
+    # 子图内的 depends_on 换成展开后的身份
+    assert by_uuid[inner_second]["execution_policy"]["depends_on"] == [inner_first]
+
+    # 父图：before → [组合调用] → after，全部用 depends_on 串联
+    before, after = str(uuid4()), str(uuid4())
+    nodes = [
+        _canvas_node(before, "前", "dev-c", []),
+        *(
+            {**node, "execution_policy": {"depends_on": [before]}}
+            if node["uuid"] == invocation else node
+            for node in inserted["nodes"]
+        ),
+        _canvas_node(after, "后", "dev-d", [invocation]),
+    ]
+    _ok(client.put(
+        f"/api/v1/workflows/{parent['uuid']}/graph",
+        json={"revision": inserted["workflow"]["revision"], "nodes": nodes, "edges": [],
+              "site_binding_mode": "preserve"},
+    ))
+    task = _ok(client.post("/api/v1/workflow-tasks", json={"workflow_uuid": parent["uuid"]}), 201)
+    order = [before, inner_first, inner_second, after]
+    planned = {node["uuid"]: node for node in task["execution_plan"]["nodes"]}
+    assert list(planned) == order
+    # 调度器按节点自己的 depends_on 建 DAG：指向/来自组合调用的依赖已平面化到叶子
+    def upstreams(node_uuid: str) -> set[str]:
+        return set(planned[node_uuid]["execution_policy"]["depends_on"])
+
+    assert upstreams(inner_first) == {before}
+    assert upstreams(inner_second) == {inner_first, before}
+    assert upstreams(after) == {inner_first, inner_second}
+    for index, expected in enumerate(order):
+        wait_for(lambda: len(executor.dispatched) == index + 1)
+        time.sleep(0.05)
+        assert len(executor.dispatched) == index + 1, "后继不能在依赖完成前派发"
+        assert executor.dispatched[index]["node_id"] == expected
+        executor.finish(index)
+    wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")

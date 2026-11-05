@@ -117,6 +117,11 @@ UUID 字段必须是非 nil 的有效 UUID，disabled/minimized 必须是 JSON �
    展开诊断 code=1000，消息含诊断码与路径（如 `composite_recursive_reference（/composite/child_workflow_uuid）`）。
    嵌套组合按各调用固定的发布修订重新展开；同一子工作流在嵌套中固定了不同修订会被拒绝。
 
+   子工作流可以是画布形状（节点不引用模板、用 `execution_policy.depends_on` 排序）：展开时 depends_on
+   换成展开后的节点身份。父图里 depends_on 指向组合调用节点，等价于依赖它展开出的全部叶子；
+   组合调用节点自己的 depends_on 施加到全部叶子上（执行计划里写回平面化后的 depends_on）。
+   不引用模板的节点不能做 I/O 绑定，也不参与 ready 连线的结构映射。
+
 已发布工作流模板的 uuid 只由 workflow_uuid 派生：插入更新的修订会更新共享模板行；
 仍固定旧修订、且输入输出集合不同的父图在建任务时 fail-closed（code=1000），需重新插入。
 

@@ -1405,6 +1405,7 @@ class WorkflowService(WorkflowStore):
         enabled: Dict[str, Dict[str, Any]] = {}
         node_kinds: Dict[str, str] = {}
         all_kinds: Dict[str, str] = {}
+        invocations: set[str] = set()
         for node in graph_nodes:
             template = templates.get(node.get("workflow_node_template_uuid"))
             raw_kind = (
@@ -1412,6 +1413,7 @@ class WorkflowService(WorkflowStore):
             )
             if str(raw_kind).strip().lower() == "workflow":
                 # Composite 调用节点只用于画布、追溯和边界映射，不拥有 Job。
+                invocations.add(node["uuid"])
                 continue
             kind = self._executor_kind(raw_kind)
             all_kinds[node["uuid"]] = kind
@@ -1473,15 +1475,54 @@ class WorkflowService(WorkflowStore):
         # execution_policy.depends_on：无 handle 数据流的纯执行序依赖（@workflow 声明式
         # 步骤、编排画布的顺序连线）。不生成计划边，但参与拓扑排序与环检测，
         # 这样 topological_index / 节点运行顺序与调度器实际的 DAG 一致。
+        # 组合调用节点没有 Job：depends_on 指向它等价于依赖它展开出的全部可执行后代；
+        # 它自己的 depends_on 施加到这些后代上（与 ready 连线经边界映射平面化同义）。
+        composite_members: Dict[str, List[str]] = defaultdict(list)
+        for node_uuid in enabled:
+            seen: set[str] = set()
+            parent = node_index[node_uuid].get("parent_uuid")
+            while parent is not None and str(parent) in node_index:
+                identity = str(parent)
+                if identity in seen:
+                    break
+                seen.add(identity)
+                if identity in invocations:
+                    composite_members[identity].append(node_uuid)
+                parent = node_index[identity].get("parent_uuid")
+
+        def upstream_nodes(upstream: Any) -> List[str]:
+            identity = str(upstream)
+            return composite_members.get(identity, [identity])
+
+        # 调度器按每个节点运行自己的 depends_on 建 DAG：含组合调用时把平面化后的上游写回。
+        effective_depends_on: Dict[str, List[str]] = defaultdict(list)
+
+        def depend(source_uuid: str, target_uuid: str) -> None:
+            add_ordering(source_uuid, target_uuid)
+            if source_uuid not in effective_depends_on[target_uuid]:
+                effective_depends_on[target_uuid].append(source_uuid)
+
         for target_uuid, node in enabled.items():
             depends_on = (node.get("execution_policy") or {}).get("depends_on") or []
             if not isinstance(depends_on, list):
                 continue
             for upstream in depends_on:
-                source_uuid = str(upstream)
-                if source_uuid not in enabled or source_uuid == target_uuid:
-                    continue
-                add_ordering(source_uuid, target_uuid)
+                for source_uuid in upstream_nodes(upstream):
+                    if source_uuid not in enabled or source_uuid == target_uuid:
+                        continue
+                    depend(source_uuid, target_uuid)
+        for invocation_uuid, members in composite_members.items():
+            depends_on = (
+                node_index[invocation_uuid].get("execution_policy") or {}
+            ).get("depends_on") or []
+            if not isinstance(depends_on, list):
+                continue
+            for upstream in depends_on:
+                for source_uuid in upstream_nodes(upstream):
+                    if source_uuid not in enabled or source_uuid in members:
+                        continue
+                    for member in members:
+                        depend(source_uuid, member)
 
         # 分层拓扑排序：同级节点按依赖序，容器紧跟着它的循环体，再回到外层的后继。
         children: Dict[Optional[str], List[str]] = defaultdict(list)
@@ -1546,6 +1587,8 @@ class WorkflowService(WorkflowStore):
             if kind == "script":
                 raise StoreConflict("script executor is not configured")
             policy = node.get("execution_policy") or {}
+            if invocations and effective_depends_on.get(node_uuid):
+                policy = {**policy, "depends_on": list(effective_depends_on[node_uuid])}
             template_uuid = node.get("workflow_node_template_uuid")
             template = templates.get(template_uuid)
             planned_param = dict(node.get("param") or {})

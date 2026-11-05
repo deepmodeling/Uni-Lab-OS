@@ -396,3 +396,21 @@ def test_v3_runtime_database_migrates_task_commands_to_v4(tmp_path) -> None:
         assert history == [(4, "workflow_task_command 允许 edit_input（暂停时修改入口参数）")]
     finally:
         connection.close()
+
+
+def test_task_list_omits_output_but_detail_keeps_it(stack) -> None:
+    """列表只给摘要；output 可能很大，只在任务详情里返回。"""
+
+    _service, executor, client = stack
+    graph = _workflow(client, "列表摘要", [_node(str(uuid4()), "加样", {"volume": 1}, device="pump-1")])
+    task = _ok(_task(client, graph["workflow"]["uuid"]), 201)
+    wait_for(lambda: len(executor.dispatched) == 1)
+    executor.finish(0, {"volume": 1})
+    wait_for(lambda: _ok(client.get(f"/api/v1/workflow-tasks/{task['uuid']}"))["status"] == "succeeded")
+
+    listed = client.get("/api/v1/workflow-tasks").json()["data"]
+    assert listed["items"], "需要至少一个任务"
+    for item in listed["items"]:
+        assert "output" not in item
+        detail = client.get(f"/api/v1/workflow-tasks/{item['uuid']}").json()["data"]
+        assert "output" in detail and "input" in detail

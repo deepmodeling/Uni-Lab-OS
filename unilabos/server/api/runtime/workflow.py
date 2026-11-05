@@ -596,15 +596,18 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         status: str = Query(default=""),
         cleanup_status: str = Query(default=""),
     ) -> JSONResponse:
-        return _success(
-            service.list_workflow_tasks(
-                page=page,
-                page_size=page_size,
-                workflow_uuid=workflow_uuid,
-                status=status,
-                cleanup_status=cleanup_status,
-            )
+        result = service.list_workflow_tasks(
+            page=page,
+            page_size=page_size,
+            workflow_uuid=workflow_uuid,
+            status=status,
+            cleanup_status=cleanup_status,
         )
+        # 列表只给摘要：output 可能带每个节点的完整返回值，详情接口再取
+        for item in result.get("items", []) if isinstance(result, dict) else []:
+            if isinstance(item, dict):
+                item.pop("output", None)
+        return _success(result)
 
     @router.get("/workflow-tasks/{task_uuid}")
     def get_workflow_task(task_uuid: str) -> JSONResponse:

@@ -121,6 +121,10 @@ class JobExecutionBackend:
         self._job_timeouts: Dict[str, Dict[str, Any]] = {}
         # 终态已由超时闸门决定的 job：之后设备迟到的 feedback / 结果一律忽略
         self._superseded_jobs: Set[str] = set()
+        # 已交给驱动执行的 job；对它们的取消只是请求，驱动真实返回后才收口（锁也随之释放）
+        self._cancel_state_lock = threading.Lock()
+        self._goal_sent_jobs: Set[str] = set()
+        self._cancel_requested_jobs: Set[str] = set()
         self._timeout_lock = threading.RLock()
         self._events: "queue.Queue[tuple[Any, tuple]]" = queue.Queue()
         self._worker: Optional[threading.Thread] = None
@@ -725,13 +729,48 @@ class JobExecutionBackend:
                         "[JobExecutionBackend] failed to emit canceled decision"
                     )
 
+    def _request_running_cancel(self, job_id: str) -> None:
+        """对已交给驱动的 job 只发取消请求。
+
+        协程驱动在下一个 await 处收到 CancelledError；同步驱动跑在线程里无法被打断，
+        只能等它返回（可在驱动里调用 ``context.raise_if_cancelled()`` 配合）。真实返回经
+        ``publish_job_status`` 按取消收口；在此之前 Job 保持活动，设备与锁都不会被让出。
+        """
+
+        with self._cancel_state_lock:
+            self._cancel_requested_jobs.add(job_id)
+        adapter = self._host_node_getter()
+        if adapter is not None:
+            try:
+                adapter.cancel_goal(job_id)
+            except Exception:  # noqa: BLE001 - 取消请求失败时等驱动自然返回
+                logger.exception(
+                    "[JobExecutionBackend] cancel goal failed for %s", job_id
+                )
+        self._cancel_pending_error_decisions({job_id})
+
+    def _goal_sent(self, job_id: str) -> bool:
+        with self._cancel_state_lock:
+            return job_id in self._goal_sent_jobs
+
+    def _forget_cancel_state(self, job_id: str) -> None:
+        with self._cancel_state_lock:
+            self._goal_sent_jobs.discard(job_id)
+            self._cancel_requested_jobs.discard(job_id)
+
     def cancel_job(self, job_id: str) -> bool:
-        """Cancel one microbackend-owned job through its active adapter."""
+        """Cancel one microbackend-owned job through its active adapter.
+
+        尚未交给驱动的 job 立即结束；已在执行的只请求取消，等驱动真实返回再收口。
+        """
 
         job = self.device_manager.get_job_info(job_id)
         if job is None:
             return False
         self._forget_job_timeouts(job_id)
+        if self._goal_sent(job_id):
+            self._request_running_cancel(job_id)
+            return True
         adapter = self._host_node_getter()
         if adapter is not None:
             try:
@@ -743,6 +782,7 @@ class JobExecutionBackend:
         self._cancel_pending_error_decisions({job_id})
         if not self.device_manager.cancel_job(job_id):
             return False
+        self._forget_cancel_state(job_id)
         self._safe_inventory_cancel(job_id, reason="job_canceled")
         item = self._queue_item_for(job)
         return_info = serialize_result_info(
@@ -766,9 +806,15 @@ class JobExecutionBackend:
         jobs_by_id = {job.job_id: job for job in jobs}
         for job_id in jobs_by_id:
             self._forget_job_timeouts(job_id)
+        # 已在执行的只请求取消，等驱动返回；其余（排队中）立即结束
+        running = {job_id for job_id in jobs_by_id if self._goal_sent(job_id)}
+        for job_id in running:
+            self._request_running_cancel(job_id)
         adapter = self._host_node_getter()
         if adapter is not None:
             for job in jobs:
+                if job.job_id in running:
+                    continue
                 try:
                     adapter.cancel_goal(job.job_id)
                 except Exception:  # noqa: BLE001 - local state still converges
@@ -776,10 +822,15 @@ class JobExecutionBackend:
                         "[JobExecutionBackend] cancel goal failed for %s",
                         job.job_id,
                     )
-        self._cancel_pending_error_decisions(set(jobs_by_id))
-        cancelled_jobs = self.device_manager.cancel_jobs_by_task_id(task_id)
+        self._cancel_pending_error_decisions(set(jobs_by_id) - running)
+        cancelled_jobs = [
+            job
+            for job_id, job in jobs_by_id.items()
+            if job_id not in running and self.device_manager.cancel_job(job_id)
+        ]
         for job in cancelled_jobs:
             job_id = job.job_id
+            self._forget_cancel_state(job_id)
             self._safe_inventory_cancel(job_id, reason="task_canceled")
             item = self._queue_item_for(job)
             cancel_info = serialize_result_info(
@@ -851,6 +902,22 @@ class JobExecutionBackend:
             self._publish_to_result_bridges(feedback_data, item, status, return_info)
             return
         if status not in ("success", "failed", "canceled"):
+            return
+
+        with self._cancel_state_lock:
+            cancel_requested = item.job_id in self._cancel_requested_jobs
+        if cancel_requested and status != "success":
+            # 取消请求之后驱动的真实返回：按取消收口，不进失败决策链
+            self._clear_job_timeouts(item.job_id)
+            self._safe_inventory_cancel(item.job_id, reason="job_canceled")
+            cancel_info = serialize_result_info(
+                "Job was cancelled",
+                False,
+                {},
+                suc_type=SUCCESS_TYPE_CANCELLATION,
+            )
+            cancel_info["device_status"] = status
+            self._release_terminal(item, "failed", cancel_info, dict(feedback_data or {}))
             return
 
         self._clear_job_timeouts(item.job_id)
@@ -1009,6 +1076,7 @@ class JobExecutionBackend:
     ) -> None:
         """Publish exactly the terminal result released by the microbackend."""
 
+        self._forget_cancel_state(item.job_id)
         self._publish_to_result_bridges(result_data, item, status, return_info)
 
         ret_value = None
@@ -1704,6 +1772,8 @@ class JobExecutionBackend:
                 sample_material=job.sample_material,
                 server_info=job.server_info,
             )
+            with self._cancel_state_lock:
+                self._goal_sent_jobs.add(job.job_id)
             self.publish_job_started(queue_item)
             logger.info("[JobExecutionBackend] goal sent for job %s", job_log)
             timeouts = self._arm_job_timeouts(job)

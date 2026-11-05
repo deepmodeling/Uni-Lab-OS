@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
         "workflow_manual_confirmation",
         "workflow_source_registration",
         "workflow_authoring",
+        "workflow_publication",
         "frontend_event",
         # registry authority（edge 注册表版本快照）
         "registry_entry",
@@ -178,11 +179,12 @@ def test_total_table_count_stays_small() -> None:
     # workflow / registry 并入 runtime：调度产物与注册表条目版本同库单写者
     # （registry 为条目级版本三表：entry / entry_state / report）；
     # workflow 节点执行为两级：workflow_node_run（节点运行）+ workflow_node_job（attempt）；
-    # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义。
+    # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
+    # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 29,
+        "runtime": 30,
         "materials": 14,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 50
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 51

@@ -709,6 +709,318 @@ class WorkflowStore:
                 (now, now, workflow_uuid),
             )
 
+    # Workflow 发布与组合调用 ---------------------------------------------
+
+    def save_graph_with_reserved_metadata(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        workflow_meta_data: Dict[str, Any],
+        nodes: Sequence[Dict[str, Any]],
+        edges: Sequence[Dict[str, Any]],
+        template_authority_id: str = "",
+        node_templates: Sequence[Dict[str, Any]] = (),
+        handle_templates: Sequence[Dict[str, Any]] = (),
+    ) -> Dict[str, Any]:
+        """服务端写入保留的 ``meta_data.unilab``（I/O 声明、组合调用），其余同全图协调。
+
+        与 ``save_graph`` 共用 revision 乐观锁、图校验与 revision 递增；``node_templates``
+        是要随图一起落库的已发布工作流模板（按 uuid upsert）。
+        """
+
+        node_values = [
+            WorkflowNodeWrite.model_validate(
+                {field: item[field] for field in WorkflowNodeWrite.model_fields if field in item}
+            )
+            for item in nodes
+        ]
+        edge_values = [
+            WorkflowEdgeWrite.model_validate(
+                {field: item[field] for field in WorkflowEdgeWrite.model_fields if field in item}
+            )
+            for item in edges
+        ]
+        now = utc_now()
+        with self.transaction() as conn:
+            if node_templates:
+                self._upsert_published_templates(
+                    conn,
+                    node_templates,
+                    handle_templates,
+                    authority_id=template_authority_id,
+                    now=now,
+                )
+            self._reconcile_graph(
+                conn,
+                workflow_uuid=workflow_uuid,
+                expected_revision=revision,
+                nodes=node_values,
+                edges=edge_values,
+                advance_revision=True,
+                protect_reserved_metadata=False,
+                semantic_workflow_meta_data=workflow_meta_data,
+            )
+            conn.execute(
+                "UPDATE workflow SET meta_data = ?, update_time = ? "
+                "WHERE uuid = ? AND deleted_at IS NULL",
+                (_json(workflow_meta_data), now, workflow_uuid),
+            )
+        return WorkflowStore.get_graph(self, workflow_uuid)
+
+    def _upsert_published_templates(
+        self,
+        conn: sqlite3.Connection,
+        node_templates: Sequence[Dict[str, Any]],
+        handle_templates: Sequence[Dict[str, Any]],
+        *,
+        authority_id: str,
+        now: str,
+    ) -> None:
+        """按 uuid 写入已发布工作流模板；同模板下不在新集合里的 Handle 软删除。"""
+
+        if not authority_id:
+            raise StoreConflict("published template authority_id must not be empty")
+        try:
+            for template in node_templates:
+                schema = template.get("schema")
+                if schema is not None and not isinstance(schema, str):
+                    schema = _json(schema)
+                values = (
+                    template.get("description"),
+                    _json(template.get("meta_data") or {}),
+                    authority_id,
+                    template["resource_template_uuid"],
+                    template["name"],
+                    template.get("display_name") or "",
+                    template.get("class"),
+                    _json(template.get("goal") or {}),
+                    _json(template.get("goal_default") or {}),
+                    _json(template.get("feedback") or {}),
+                    _json(template.get("result") or {}),
+                    schema,
+                    template["type"],
+                    template["node_type"],
+                )
+                existing = conn.execute(
+                    "SELECT uuid FROM workflow_node_template WHERE uuid = ?",
+                    (template["uuid"],),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """
+                        INSERT INTO workflow_node_template(
+                            uuid, create_time, update_time, deleted_at, description,
+                            meta_data, authority_id, resource_template_uuid, name,
+                            display_name, class, goal, goal_default, feedback, result,
+                            schema, type, node_type
+                        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (template["uuid"], now, now, *values),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE workflow_node_template
+                        SET update_time = ?, deleted_at = NULL, description = ?,
+                            meta_data = ?, authority_id = ?, resource_template_uuid = ?,
+                            name = ?, display_name = ?, class = ?, goal = ?,
+                            goal_default = ?, feedback = ?, result = ?, schema = ?,
+                            type = ?, node_type = ?
+                        WHERE uuid = ?
+                        """,
+                        (now, *values, template["uuid"]),
+                    )
+                retained = [
+                    str(handle["uuid"])
+                    for handle in handle_templates
+                    if handle.get("workflow_node_template_uuid") == template["uuid"]
+                ]
+                marks = ",".join("?" for _ in retained) or "''"
+                conn.execute(
+                    f"""
+                    UPDATE workflow_handle_template
+                    SET deleted_at = ?, update_time = ?
+                    WHERE workflow_node_template_uuid = ? AND deleted_at IS NULL
+                      AND uuid NOT IN ({marks})
+                    """,
+                    (now, now, template["uuid"], *retained),
+                )
+            for handle in handle_templates:
+                values = (
+                    handle.get("description"),
+                    _json(handle.get("meta_data") or {}),
+                    authority_id,
+                    handle["workflow_node_template_uuid"],
+                    handle["handle_key"],
+                    handle["io_type"],
+                    handle.get("display_name") or "",
+                    handle["type"],
+                    int(bool(handle.get("required"))),
+                    handle.get("data_source"),
+                    handle.get("data_key"),
+                )
+                existing = conn.execute(
+                    "SELECT uuid FROM workflow_handle_template WHERE uuid = ?",
+                    (handle["uuid"],),
+                ).fetchone()
+                if existing is None:
+                    conn.execute(
+                        """
+                        INSERT INTO workflow_handle_template(
+                            uuid, create_time, update_time, deleted_at, description,
+                            meta_data, authority_id, workflow_node_template_uuid,
+                            handle_key, io_type, display_name, type, required,
+                            data_source, data_key
+                        ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (handle["uuid"], now, now, *values),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE workflow_handle_template
+                        SET update_time = ?, deleted_at = NULL, description = ?,
+                            meta_data = ?, authority_id = ?,
+                            workflow_node_template_uuid = ?, handle_key = ?,
+                            io_type = ?, display_name = ?, type = ?, required = ?,
+                            data_source = ?, data_key = ?
+                        WHERE uuid = ?
+                        """,
+                        (now, *values, handle["uuid"]),
+                    )
+        except sqlite3.IntegrityError as exc:
+            raise StoreConflict(f"published workflow template conflicts: {exc}") from exc
+
+    def list_catalog_templates(
+        self,
+        template_uuids: Iterable[str],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """读取当前目录中的普通（非已发布工作流）节点模板及其 Handle。"""
+
+        identities = sorted(set(template_uuids))
+        if not identities:
+            return [], []
+        marks = ",".join("?" for _ in identities)
+        with self._lock:
+            template_rows = self._conn.execute(
+                f"""
+                SELECT * FROM workflow_node_template
+                WHERE uuid IN ({marks}) AND deleted_at IS NULL
+                  AND node_type <> 'workflow'
+                ORDER BY uuid
+                """,
+                identities,
+            ).fetchall()
+            found = [row["uuid"] for row in template_rows]
+            handle_rows = (
+                self._conn.execute(
+                    f"""
+                    SELECT * FROM workflow_handle_template
+                    WHERE workflow_node_template_uuid IN ({",".join("?" for _ in found)})
+                      AND deleted_at IS NULL
+                    ORDER BY uuid
+                    """,
+                    found,
+                ).fetchall()
+                if found
+                else []
+            )
+        return (
+            [self._node_template_row(row) for row in template_rows],
+            [self._handle_template_row(row) for row in handle_rows],
+        )
+
+    def insert_workflow_publication(
+        self,
+        *,
+        workflow_uuid: str,
+        revision: int,
+        name: str,
+        source_hash: str,
+        contract_digest: str,
+        snapshot: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """写入一次发布；同一 (workflow_uuid, revision) 已存在时返回既有行。"""
+
+        try:
+            with self.transaction() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO workflow_publication(
+                        uuid, create_time, workflow_uuid, revision, name,
+                        source_hash, contract_digest, snapshot
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        utc_now(),
+                        workflow_uuid,
+                        revision,
+                        name,
+                        source_hash,
+                        contract_digest,
+                        _json(snapshot),
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            existing = WorkflowStore.find_workflow_publication(self, workflow_uuid, revision)
+            if existing is None:
+                raise StoreConflict(f"workflow publication rejected: {exc}") from exc
+            return existing
+        found = WorkflowStore.find_workflow_publication(self, workflow_uuid, revision)
+        assert found is not None
+        return found
+
+    def find_workflow_publication(
+        self,
+        workflow_uuid: str,
+        revision: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """按修订读取发布；``revision`` 为空时取最新一次发布。"""
+
+        with self._lock:
+            if revision is None:
+                row = self._conn.execute(
+                    "SELECT * FROM workflow_publication WHERE workflow_uuid = ? "
+                    "ORDER BY revision DESC LIMIT 1",
+                    (workflow_uuid,),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT * FROM workflow_publication "
+                    "WHERE workflow_uuid = ? AND revision = ?",
+                    (workflow_uuid, revision),
+                ).fetchone()
+        return self._publication_row(row) if row is not None else None
+
+    def list_workflow_publications(self, workflow_uuid: str) -> List[Dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM workflow_publication WHERE workflow_uuid = ? "
+                "ORDER BY revision DESC",
+                (workflow_uuid,),
+            ).fetchall()
+        return [self._publication_row(row) for row in rows]
+
+    def list_latest_workflow_publications(self) -> List[Dict[str, Any]]:
+        """每个未删除工作流的最新一次发布（调色板数据源）。"""
+
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT publication.* FROM workflow_publication AS publication
+                JOIN workflow ON workflow.uuid = publication.workflow_uuid
+                WHERE workflow.deleted_at IS NULL
+                  AND publication.revision = (
+                      SELECT MAX(latest.revision) FROM workflow_publication AS latest
+                      WHERE latest.workflow_uuid = publication.workflow_uuid
+                  )
+                ORDER BY publication.create_time DESC, publication.uuid
+                """
+            ).fetchall()
+        return [self._publication_row(row) for row in rows]
+
     # Task 与 Job --------------------------------------------------------
 
     def create_task_with_jobs(
@@ -3393,6 +3705,19 @@ class WorkflowStore:
         }
         cls._add_optional(result, row, "data_source", "data_key")
         return result
+
+    @staticmethod
+    def _publication_row(row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "uuid": row["uuid"],
+            "create_time": row["create_time"],
+            "workflow_uuid": row["workflow_uuid"],
+            "revision": row["revision"],
+            "name": row["name"],
+            "source_hash": row["source_hash"],
+            "contract_digest": row["contract_digest"],
+            "snapshot": _load(row["snapshot"], {}),
+        }
 
     @classmethod
     def _task_row(cls, row: sqlite3.Row) -> Dict[str, Any]:

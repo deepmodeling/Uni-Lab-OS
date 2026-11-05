@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from unilabos.server.database.schema import Migration, rebuild_table_migration
+from unilabos.server.database.schema import Migration, rebuild_table_migration, sql_migration
 
 # v2：整图任务也可携带幂等键（与单点设备动作同一套 idempotency_key + request_fingerprint）。
 _WORKFLOW_TASK_V2 = """
@@ -125,6 +125,30 @@ _WORKFLOW_TASK_V2_INDEXES = (
             """,
 )
 
+# v3：工作流显式发布为不可变修订（工作流即节点）；纯新增表，旧表不动。
+_WORKFLOW_PUBLICATION_V3 = """
+        CREATE TABLE IF NOT EXISTS workflow_publication (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            workflow_uuid TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            name TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            contract_digest TEXT NOT NULL,
+            snapshot TEXT NOT NULL CHECK (
+                json_valid(snapshot) AND json_type(snapshot) = 'object'
+            ),
+            FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid),
+            UNIQUE(workflow_uuid, revision)
+        )
+        """
+_WORKFLOW_PUBLICATION_V3_INDEXES = (
+    """
+            CREATE INDEX IF NOT EXISTS idx_workflow_publication_created
+            ON workflow_publication(create_time DESC, uuid)
+            """,
+)
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -132,6 +156,12 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
         table="workflow_task",
         create_sql=_WORKFLOW_TASK_V2,
         indexes=_WORKFLOW_TASK_V2_INDEXES,
+    ),
+    sql_migration(
+        3,
+        "新增 workflow_publication：工作流发布的不可变修订快照",
+        _WORKFLOW_PUBLICATION_V3,
+        *_WORKFLOW_PUBLICATION_V3_INDEXES,
     ),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

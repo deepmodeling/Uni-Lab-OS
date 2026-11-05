@@ -154,4 +154,5 @@ def test_v1_runtime_database_migrates_without_losing_tasks(tmp_path) -> None:
         assert identity == DATABASE_SPECS["runtime"].checksum
     finally:
         connection.close()
-    assert list(tmp_path.glob("runtime.db.pre-v2-*.bak")), "迁移前应留备份"
+    target = DATABASE_SPECS["runtime"].schema_version
+    assert list(tmp_path.glob(f"runtime.db.pre-v{target}-*.bak")), "迁移前应留备份"

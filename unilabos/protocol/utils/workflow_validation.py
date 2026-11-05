@@ -126,6 +126,21 @@ def validate_graph(
     for node_uuid, node in enabled.items():
         param = effective_params[node_uuid]
         bindings = bindings_by_node[node_uuid]
+        workflow_inputs: set[str] = set()
+        if kinds[node_uuid] == "workflow":
+            # 组合调用节点的 param 是子工作流实参：引用型实参不是静态默认值，
+            # workflow_input 由父工作流输入提供，node_output 必须由连线提供。
+            workflow_inputs = {
+                key
+                for key, value in param.items()
+                if _argument_reference(value) == "workflow_input"
+            }
+            param = {
+                key: value
+                for key, value in param.items()
+                if _argument_reference(value) is None
+            }
+            available_data_keys[node_uuid].extend(sorted(workflow_inputs))
         for handle_uuid in bindings:
             available_data_keys[node_uuid].append(
                 _handle_data_key(handles[handle_uuid])
@@ -133,6 +148,8 @@ def validate_graph(
         template_uuid = node.workflow_node_template_uuid
         if template_uuid is not None:
             schema = _parse_schema(templates[template_uuid].get("schema"))
+            if kinds[node_uuid] == "workflow":
+                schema = _workflow_goal_schema(schema)
             if schema is not None:
                 _validate_schema_value(
                     schema,
@@ -160,6 +177,7 @@ def validate_graph(
             handles.values(),
             connected_inputs,
             bindings,
+            workflow_inputs=workflow_inputs,
         )
         _validate_execution_policy(node.execution_policy)
         if _node_kind(node, templates) == "device_action":
@@ -326,10 +344,13 @@ def _validate_required_handles(
     handles: Iterable[Dict[str, Any]],
     incoming: Mapping[tuple[str, str], str],
     bindings: Mapping[str, Dict[str, Any]],
+    *,
+    workflow_inputs: Iterable[str] = (),
 ) -> None:
     template_uuid = node.workflow_node_template_uuid
     if template_uuid is None:
         return
+    referenced_inputs = set(workflow_inputs)
     for handle in handles:
         if (
             handle.get("workflow_node_template_uuid") != template_uuid
@@ -339,7 +360,9 @@ def _validate_required_handles(
         data_key = _final_target_data_key(_handle_data_key(handle))
         has_default = data_key in param and param[data_key] is not None
         has_edge = (node.uuid, str(handle["uuid"])) in incoming
-        has_binding = str(handle["uuid"]) in bindings
+        has_binding = (
+            str(handle["uuid"]) in bindings or data_key in referenced_inputs
+        )
         provider_count = sum((has_default, has_edge, has_binding))
         if provider_count > 1:
             raise GraphValidationError(f"输入 {data_key!r} 存在多个 Provider")
@@ -422,6 +445,26 @@ def _validate_execution_policy(policy: Mapping[str, Any]) -> None:
             or value > _MAX_TIMEOUT_SECONDS
         ):
             raise GraphValidationError(f"{key} 必须是非负整数")
+
+
+def _argument_reference(value: Any) -> str | None:
+    """组合调用实参若是引用（而非静态值），返回引用类型。"""
+
+    if isinstance(value, dict) and value.get("kind") in {"workflow_input", "node_output"}:
+        return str(value["kind"])
+    return None
+
+
+def _workflow_goal_schema(schema: Any) -> Any:
+    """已发布工作流模板的 schema 描述 {goal, result} 信封；节点 param 只对应 goal。"""
+
+    if not isinstance(schema, dict) or "x-unilabos-workflow-contract" not in schema:
+        return schema
+    properties = schema.get("properties")
+    goal = properties.get("goal") if isinstance(properties, dict) else None
+    if not isinstance(goal, (dict, bool)):
+        raise GraphValidationError("已发布工作流模板缺少 goal Schema")
+    return goal
 
 
 def _parse_schema(raw_schema: Any) -> Any:

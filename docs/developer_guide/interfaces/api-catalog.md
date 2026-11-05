@@ -27,6 +27,7 @@ OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每�
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/health` | — | 直出 status、scheduler、execution；execution 可为 ready/restarting/disabled |
+| GET | `/api/v1/readiness` | — | 就绪探针：能接收并执行任务时 200，否则 503；body 含 status（ready/not_ready）、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
 | GET | `/api/v1/ping` | Q: client_timestamp?: number | 回显客户端时间与服务端秒级时间戳，不是任务心跳 |
 | GET | `/api/v1/scheduler/resources` | — | 调度资源快照；本进程无调度权威时 503 |
 | GET | `/api/v1/restart` | — | 当前重启请求状态 |

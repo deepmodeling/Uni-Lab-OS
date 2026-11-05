@@ -217,21 +217,22 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 
 ### 5.1 可插拔的授予策略
 
-“这一轮谁拿到完整资源集合”由授予策略决定（`scheduler/grant_policy.py`）。宿主只交给策略决策所需的事实：
+“这一轮谁拿到完整资源集合”由授予策略决定（`scheduler/grant/`）。宿主只交给策略决策所需的事实：
 按到达顺序的等待请求、已被持有的键、被 pending handoff 预留的键、哪些请求是 handoff 目标（键与 owner
-在本轮编号为整数）；策略返回授予的请求下标。宿主逐条复核——下标有效且不重复、不授予 handoff 目标、
-与已持有 / 预留 / 彼此不相交——不合格或抛异常时整轮退回 Python 参考实现，坏的策略不会造成重复占用。
+在本轮编号为 `0..n` 的整数）；策略返回授予的请求下标。宿主逐条复核——下标有效且不重复、不授予 handoff
+目标、与已持有 / 预留 / 彼此不相交——不合格或抛异常时整轮退回 Python 参考实现，坏的策略不会造成重复占用。
 handoff、部分持有断言与下发仍由宿主负责。
 
 默认策略是严格按键 FIFO：不相交的集合并行授予，被挡住的请求阻塞与它重叠的后来者。
-`native/grant-policy` 是同一策略的原生实现（Rust 编译出的 C ABI 动态库，导出
-`uni_grant_abi_version` / `uni_grant_decide` / `uni_grant_free`，输入输出是小端 u32 序列），
-进程内经 ctypes 调用；CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实现逐条比对。
-`python scripts/build_grant_policy.py --install <working_dir>/native` 编译并安装；发布版本附带各平台的
+`native/grant-policy` 是同一策略的原生实现：`no_std`、不分配内存的 Rust C ABI 动态库（约 4 KB），
+键状态与输出缓冲区由调用方提供，导出 `uni_grant_abi_version` / `uni_grant_decide`。接口文件全部生成：
+`cargo build` 的 build.rs 经 cbindgen 从 Rust 源码生成 C 头文件 `include/unilab_grant_policy.h`，
+`scripts/gen_grant_bindings.py` 再从头文件生成 Python ctypes 绑定 `scheduler/grant/_abi.py`；
+`python scripts/build_grant_policy.py` 一次完成编译与生成，`--check` 在生成物过期时失败（CI 用）。
+CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实现逐条比对；发布版本附带各平台的
 `unilab-grant-policy-<platform>.zip`（linux-64 / win-64 / osx-64 / osx-arm64），解压到 `<working_dir>/native/`
-（默认 `~/.unilabos/native/`）即可；
-`BasicConfig.scheduler_grant_policy` 取 `auto`（默认：找到原生库就用，否则 Python）、`python`、
-`native`（找不到或加载失败即报错）。库位置：`BasicConfig.scheduler_grant_library`、
+（默认 `~/.unilabos/native/`）即可。`BasicConfig.scheduler_grant_policy` 取 `auto`（默认：找到原生库就用，
+否则 Python）、`python`、`native`（找不到或加载失败即报错）。库位置：`BasicConfig.scheduler_grant_library`、
 环境变量 `UNILABOS_SCHEDULER_GRANT_LIBRARY`，缺省 `<working_dir>/native/`。
 
 ## 6. 什么时候重算

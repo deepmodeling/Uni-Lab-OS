@@ -39,8 +39,8 @@ jobs:
       - name: Build and test the native grant policy
         shell: bash
         run: |
-          cargo test --release --locked --manifest-path native/grant-policy/Cargo.toml
-          echo "UNILABOS_SCHEDULER_GRANT_LIBRARY=$(python scripts/build_grant_policy.py | tail -n 1)" >> "$GITHUB_ENV"
+          cargo test --release --locked --lib --manifest-path native/grant-policy/Cargo.toml
+          echo "UNILABOS_SCHEDULER_GRANT_LIBRARY=$(python scripts/build_grant_policy.py --check | tail -n 1)" >> "$GITHUB_ENV"
       - name: Scheduler contracts with the native grant policy
         env:
           UNILABOS_REQUIRE_NATIVE_GRANT_POLICY: '1'

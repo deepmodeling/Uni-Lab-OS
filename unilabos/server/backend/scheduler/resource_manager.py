@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Iterable
 
-from unilabos.server.backend.scheduler.grant_policy import (
+from unilabos.server.backend.scheduler.grant import (
     GrantPolicy,
     KeyIndex,
     WaitingRequest,

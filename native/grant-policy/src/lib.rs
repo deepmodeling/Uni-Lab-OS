@@ -1,198 +1,192 @@
-//! Uni-Lab-OS 调度器的锁授予策略（FIFO over lock sets），以极小的 C ABI 导出。
+//! Uni-Lab-OS 调度器的锁授予策略（按键严格 FIFO），以极小的 C ABI 导出。
 //!
-//! Python 侧 `unilabos/server/backend/scheduler/grant_policy.py` 是同一策略的参考实现，
-//! 二者必须对任意输入给出相同结果（CI 用随机场景逐一比对）。
-//!
-//! 输入 / 输出都是小端 u32 序列，键与 owner 在 Python 侧映射为整数编号，不跨边界传字符串：
-//!
-//! ```text
-//! input  := ABI_VERSION n_waiting { flags n_keys key* }* n_held key* n_reserved key*
-//!           flags bit0 = 该请求是 pending handoff 的目标（不在这里授予，但阻塞后来者）
-//! output := n_grants index*        （index 是 waiting 的下标，按授予顺序）
-//! ```
+//! `no_std`、不分配内存：键与等待请求在宿主侧编号为整数，键状态用调用方给的 scratch 缓冲区
+//! （每个键一个字节，长度即键空间），结果写入调用方给的输出缓冲区。所有访问都做边界检查并以
+//! 错误码返回，没有会 panic 的路径。C 头文件由 build.rs 经 cbindgen 生成，Python 绑定再由头文件
+//! 生成。Python 参考实现 `unilabos/server/backend/scheduler/grant/policy.py::fifo_grants` 必须与
+//! 这里逐条等价。
+#![cfg_attr(not(test), no_std)]
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+/// ABI 2.0：主版本不兼容时宿主拒绝加载并退回参考实现。
+pub const UNI_GRANT_ABI_VERSION: u32 = 0x0002_0000;
+pub const UNI_GRANT_OK: i32 = 0;
+/// 空指针、键超出 scratch 长度、输出缓冲区太小。
+pub const UNI_GRANT_ERR_ARGUMENT: i32 = -1;
 
-/// 1.0：主版本不兼容时 Python 侧拒绝加载并退回参考实现。
-pub const ABI_VERSION: u32 = 0x0001_0000;
-
-pub const OK: i32 = 0;
-pub const ERR_ARGUMENT: i32 = -1;
-pub const ERR_DECODE: i32 = -2;
-pub const ERR_PANIC: i32 = -3;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Waiting {
-    pub keys: Vec<u32>,
-    pub handoff_target: bool,
+/// 一条按到达顺序排列的等待请求。
+#[repr(C)]
+pub struct UniGrantWaiting {
+    /// 该请求的全部锁键编号（必须小于 scratch_len）
+    pub keys: *const u32,
+    pub key_count: usize,
+    /// 非 0 表示是 pending handoff 的目标：不在这里授予，但阻塞与它重叠的后来者
+    pub handoff_target: u8,
 }
 
-/// 单次扫描：按到达顺序，资源未被持有、未被 pending handoff 预留、且不与更早的等待者重叠时授予；
-/// 被挡住的请求把自己的键加入阻塞集，后来者不能越过它（严格按键 FIFO，不相交的集合并行授予）。
-pub fn fifo_grants(waiting: &[Waiting], held: &[u32], reserved: &[u32]) -> Vec<u32> {
-    use std::collections::HashSet;
-    let reserved: HashSet<u32> = reserved.iter().copied().collect();
-    let mut owned: HashSet<u32> = held.iter().copied().collect();
-    let mut blocked: HashSet<u32> = HashSet::new();
-    let mut grants = Vec::new();
+const OWNED: u8 = 1;
+const BLOCKED: u8 = 2;
+const RESERVED: u8 = 4;
+
+unsafe fn view<'a, T>(ptr: *const T, len: usize) -> Option<&'a [T]> {
+    if len == 0 {
+        Some(&[])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(core::slice::from_raw_parts(ptr, len))
+    }
+}
+
+unsafe fn view_mut<'a, T>(ptr: *mut T, len: usize) -> Option<&'a mut [T]> {
+    if len == 0 {
+        Some(&mut [])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(core::slice::from_raw_parts_mut(ptr, len))
+    }
+}
+
+/// 单次扫描：资源未被持有、未被预留、且不与更早的等待者重叠时授予；被挡住的请求把自己的键
+/// 标为阻塞，后来者不能越过它。不相交的集合并行授予。返回授予数量。
+unsafe fn decide(
+    waiting: &[UniGrantWaiting],
+    held: &[u32],
+    reserved: &[u32],
+    state: &mut [u8],
+    grants: &mut [u32],
+) -> Option<usize> {
+    for slot in state.iter_mut() {
+        *slot = 0;
+    }
+    for &key in held {
+        *state.get_mut(key as usize)? |= OWNED;
+    }
+    for &key in reserved {
+        *state.get_mut(key as usize)? |= RESERVED;
+    }
+    let mut count = 0usize;
     for (index, request) in waiting.iter().enumerate() {
-        if request.handoff_target {
-            blocked.extend(request.keys.iter().copied());
-            continue;
+        let keys = view(request.keys, request.key_count)?;
+        let mut conflict = request.handoff_target != 0;
+        for &key in keys {
+            conflict |= *state.get(key as usize)? != 0;
         }
-        let conflict = request
-            .keys
-            .iter()
-            .any(|key| reserved.contains(key) || blocked.contains(key) || owned.contains(key));
-        if conflict {
-            blocked.extend(request.keys.iter().copied());
-            continue;
+        let mark = if conflict { BLOCKED } else { OWNED };
+        for &key in keys {
+            *state.get_mut(key as usize)? |= mark;
         }
-        owned.extend(request.keys.iter().copied());
-        grants.push(index as u32);
-    }
-    grants
-}
-
-struct Reader<'a> {
-    words: &'a [u8],
-    offset: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn next(&mut self) -> Option<u32> {
-        let end = self.offset.checked_add(4)?;
-        let bytes = self.words.get(self.offset..end)?;
-        self.offset = end;
-        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-    }
-
-    fn keys(&mut self) -> Option<Vec<u32>> {
-        let count = self.next()? as usize;
-        // 防御畸形输入：剩余字节不足以容纳声明的键数时直接判为解码失败
-        if count > (self.words.len() - self.offset) / 4 {
-            return None;
+        if !conflict {
+            *grants.get_mut(count)? = index as u32;
+            count += 1;
         }
-        (0..count).map(|_| self.next()).collect()
     }
-}
-
-pub fn decode(input: &[u8]) -> Option<(Vec<Waiting>, Vec<u32>, Vec<u32>)> {
-    let mut reader = Reader { words: input, offset: 0 };
-    if reader.next()? >> 16 != ABI_VERSION >> 16 {
-        return None;
-    }
-    let n_waiting = reader.next()? as usize;
-    if n_waiting > input.len() / 8 {
-        return None;
-    }
-    let mut waiting = Vec::with_capacity(n_waiting);
-    for _ in 0..n_waiting {
-        let flags = reader.next()?;
-        let keys = reader.keys()?;
-        waiting.push(Waiting { keys, handoff_target: flags & 1 == 1 });
-    }
-    let held = reader.keys()?;
-    let reserved = reader.keys()?;
-    if reader.offset != input.len() {
-        return None;
-    }
-    Some((waiting, held, reserved))
-}
-
-pub fn encode_grants(grants: &[u32]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(4 * (grants.len() + 1));
-    out.extend_from_slice(&(grants.len() as u32).to_le_bytes());
-    for index in grants {
-        out.extend_from_slice(&index.to_le_bytes());
-    }
-    out
+    Some(count)
 }
 
 #[no_mangle]
 pub extern "C" fn uni_grant_abi_version() -> u32 {
-    ABI_VERSION
+    UNI_GRANT_ABI_VERSION
 }
 
+/// 计算本轮授予：授予的等待请求下标（按授予顺序）写入 `grants_out`，数量写入 `*grant_count`。
+/// `scratch` 是调用方提供的 `scratch_len` 字节工作区，所有键编号必须小于 `scratch_len`；
+/// `grants_capacity` 不小于 `waiting_count` 时一定放得下。
+///
 /// # Safety
-/// `input` 指向 `input_len` 个可读字节；`out_ptr` / `out_len` 可写。成功时 `*out_ptr`
-/// 指向由本库分配的缓冲区，调用方必须用 `uni_grant_free` 释放。
+/// 各指针指向对应长度的有效内存；`scratch` 与 `grants_out` 可写。
 #[no_mangle]
 pub unsafe extern "C" fn uni_grant_decide(
-    input: *const u8,
-    input_len: usize,
-    out_ptr: *mut *mut u8,
-    out_len: *mut usize,
+    waiting: *const UniGrantWaiting,
+    waiting_count: usize,
+    held: *const u32,
+    held_count: usize,
+    reserved: *const u32,
+    reserved_count: usize,
+    scratch: *mut u8,
+    scratch_len: usize,
+    grants_out: *mut u32,
+    grants_capacity: usize,
+    grant_count: *mut usize,
 ) -> i32 {
-    if input.is_null() || out_ptr.is_null() || out_len.is_null() {
-        return ERR_ARGUMENT;
+    if grant_count.is_null() {
+        return UNI_GRANT_ERR_ARGUMENT;
     }
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let bytes = std::slice::from_raw_parts(input, input_len);
-        let (waiting, held, reserved) = decode(bytes)?;
-        Some(encode_grants(&fifo_grants(&waiting, &held, &reserved)))
-    }));
+    let result = (|| {
+        decide(
+            view(waiting, waiting_count)?,
+            view(held, held_count)?,
+            view(reserved, reserved_count)?,
+            view_mut(scratch, scratch_len)?,
+            view_mut(grants_out, grants_capacity)?,
+        )
+    })();
     match result {
-        Ok(Some(encoded)) => {
-            let mut boxed = encoded.into_boxed_slice();
-            *out_len = boxed.len();
-            *out_ptr = boxed.as_mut_ptr();
-            std::mem::forget(boxed);
-            OK
+        Some(count) => {
+            *grant_count = count;
+            UNI_GRANT_OK
         }
-        Ok(None) => ERR_DECODE,
-        Err(_) => ERR_PANIC,
+        None => UNI_GRANT_ERR_ARGUMENT,
     }
 }
 
-/// # Safety
-/// `ptr` / `len` 必须来自 `uni_grant_decide` 的同一次成功调用，且只释放一次。
-#[no_mangle]
-pub unsafe extern "C" fn uni_grant_free(ptr: *mut u8, len: usize) {
-    if ptr.is_null() {
-        return;
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    // 上面没有会 panic 的路径；万一出现，终止而不是越界写内存
+    extern "C" {
+        fn abort() -> !;
     }
-    drop(Box::from_raw(std::slice::from_raw_parts_mut(ptr, len)));
+    unsafe { abort() }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn w(keys: &[u32]) -> Waiting {
-        Waiting { keys: keys.to_vec(), handoff_target: false }
+    fn run(waiting: &[(&[u32], bool)], held: &[u32], reserved: &[u32], key_space: usize) -> Result<Vec<u32>, i32> {
+        let requests: Vec<UniGrantWaiting> = waiting
+            .iter()
+            .map(|(keys, target)| UniGrantWaiting { keys: keys.as_ptr(), key_count: keys.len(), handoff_target: *target as u8 })
+            .collect();
+        let mut scratch = vec![0u8; key_space];
+        let mut out = vec![0u32; requests.len()];
+        let mut count = 0usize;
+        let status = unsafe {
+            uni_grant_decide(
+                requests.as_ptr(), requests.len(), held.as_ptr(), held.len(), reserved.as_ptr(), reserved.len(),
+                scratch.as_mut_ptr(), scratch.len(), out.as_mut_ptr(), out.len(), &mut count,
+            )
+        };
+        if status == UNI_GRANT_OK {
+            out.truncate(count);
+            Ok(out)
+        } else {
+            Err(status)
+        }
     }
 
     #[test]
     fn disjoint_sets_are_granted_in_parallel_and_overlap_waits() {
-        let waiting = vec![w(&[1, 2]), w(&[3]), w(&[2, 4]), w(&[4])];
-        // [2,4] 被 [1,2] 挡住并阻塞 4，所以 [4] 也不能越过它
-        assert_eq!(fifo_grants(&waiting, &[], &[]), vec![0, 1]);
+        assert_eq!(run(&[(&[1, 2], false), (&[3], false), (&[2, 4], false), (&[4], false)], &[], &[], 5), Ok(vec![0, 1]));
     }
 
     #[test]
     fn held_reserved_and_handoff_targets_block() {
-        let target = Waiting { keys: vec![7], handoff_target: true };
-        let waiting = vec![w(&[1]), target, w(&[7, 8]), w(&[5]), w(&[9])];
-        assert_eq!(fifo_grants(&waiting, &[1], &[5]), vec![4]);
+        let waiting: &[(&[u32], bool)] = &[(&[1], false), (&[7], true), (&[7, 8], false), (&[5], false), (&[9], false)];
+        assert_eq!(run(waiting, &[1], &[5], 10), Ok(vec![4]));
     }
 
     #[test]
-    fn round_trip_through_the_wire_format() {
-        let mut input = Vec::new();
-        for word in [ABI_VERSION, 2, 0, 1, 3, 1, 1, 3, 0, 0] {
-            input.extend_from_slice(&u32::to_le_bytes(word));
-        }
-        let (waiting, held, reserved) = decode(&input).expect("decode");
-        assert_eq!(waiting.len(), 2);
-        assert!(waiting[1].handoff_target);
-        assert_eq!(encode_grants(&fifo_grants(&waiting, &held, &reserved)), {
-            let mut out = Vec::new();
-            for word in [1u32, 0] {
-                out.extend_from_slice(&word.to_le_bytes());
-            }
-            out
-        });
-        assert!(decode(&input[..input.len() - 2]).is_none());
+    fn invalid_arguments_are_errors_not_panics() {
+        assert_eq!(run(&[(&[3], false)], &[], &[], 3), Err(UNI_GRANT_ERR_ARGUMENT));
+        assert_eq!(run(&[], &[9], &[], 3), Err(UNI_GRANT_ERR_ARGUMENT));
+        let mut count = 0usize;
+        let waiting = [UniGrantWaiting { keys: [0u32].as_ptr(), key_count: 1, handoff_target: 0 }];
+        let mut scratch = [0u8; 1];
+        let too_small = unsafe {
+            uni_grant_decide(waiting.as_ptr(), 1, core::ptr::null(), 0, core::ptr::null(), 0, scratch.as_mut_ptr(), 1, core::ptr::null_mut(), 0, &mut count)
+        };
+        assert_eq!(too_small, UNI_GRANT_ERR_ARGUMENT);
     }
 }

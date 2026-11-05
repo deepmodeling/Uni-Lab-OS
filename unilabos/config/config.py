@@ -36,6 +36,10 @@ class BasicConfig:
     # 库结构不一致且没有迁移路径时，策略为 refuse 的库拒绝启动；设为 True 则改为把旧库改名为
     # .bak-<时间戳> 后重建空库。开发期四个库都是 rebuild，本开关在发布切换为 refuse 后才起作用。
     database_rebuild_on_mismatch = False
+    # 调度锁授予策略：auto（有原生库用原生，否则 Python FIFO）/ python / native（找不到原生库报错）。
+    scheduler_grant_policy = "auto"
+    # 原生策略库路径；留空时依次查环境变量 UNILABOS_SCHEDULER_GRANT_LIBRARY、<working_dir>/native/。
+    scheduler_grant_library = ""
     # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
     server_database_paths = None
     config_path = ""

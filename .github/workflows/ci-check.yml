@@ -35,6 +35,16 @@ jobs:
           unilab --help
       - name: Test Python-only API and runtime contracts
         run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/server tests/protocol tests/backend/hostlink
+      # 原生锁授予策略（native/grant-policy，Rust → C ABI）：各平台编译，并与 Python 参考实现逐条比对
+      - name: Build and test the native grant policy
+        shell: bash
+        run: |
+          cargo test --release --locked --manifest-path native/grant-policy/Cargo.toml
+          echo "UNILABOS_SCHEDULER_GRANT_LIBRARY=$(python scripts/build_grant_policy.py | tail -n 1)" >> "$GITHUB_ENV"
+      - name: Scheduler contracts with the native grant policy
+        env:
+          UNILABOS_REQUIRE_NATIVE_GRANT_POLICY: '1'
+        run: python -m pytest -q tests/server/backend/scheduler tests/server/test_workflow_task_pause.py tests/server/test_workflow_task_cancel.py
       - name: Test seven complete demos including graph CLI and split Host/Slave
         run: python -m pytest -q tests/e2e/test_readme_demos.py --basetemp="${{ runner.temp }}/no-ros-demos" --junitxml="${{ runner.temp }}/no-ros-demos.xml"
       - uses: actions/upload-artifact@v6

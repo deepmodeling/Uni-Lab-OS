@@ -7,11 +7,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from threading import RLock
 from typing import Iterable
 
+from unilabos.server.backend.scheduler.grant_policy import (
+    GrantPolicy,
+    KeyIndex,
+    WaitingRequest,
+    fifo_grants,
+    load_grant_policy,
+    validate_grants,
+)
 from unilabos.server.backend.scheduler.models import (
     ResourceLockIdentifier,
     SchedulerLockEvent,
@@ -26,6 +35,8 @@ from unilabos.server.backend.scheduler.models import (
 
 LockKey = tuple[str, ...]
 
+
+logger = logging.getLogger(__name__)
 
 class SchedulerResourceError(RuntimeError):
     """Backend Scheduler 资源管理错误基类。"""
@@ -81,7 +92,9 @@ class SchedulerResourceManager:
     调度器负责先登记后继 Job 的完整申请，再提交 handoff，最后结束前序 Job。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, grant_policy: GrantPolicy | None = None) -> None:
+        # 谁在这一轮拿到资源由可插拔策略决定；默认按配置加载（原生库可用时用原生，否则 Python FIFO）
+        self._grant_policy: GrantPolicy = grant_policy or load_grant_policy()
         self._lock = RLock()
         self._sequence = 0
         self._requests: "OrderedDict[str, _RequestState]" = OrderedDict()
@@ -486,21 +499,48 @@ class SchedulerResourceManager:
             if state.status == "pending"
             for key in self._requests[state.value.to_owner_uuid].keys
         }
-        earlier_waiting_keys: set[LockKey] = set()
-        for owner_uuid, state in self._requests.items():
-            if state.status != "waiting":
-                continue
-            keys = set(state.keys)
-            if owner_uuid in pending_targets:
-                earlier_waiting_keys.update(keys)
-                continue
-            owns_reserved = bool(keys & reserved_keys)
-            conflicts_with_waiter = bool(keys & earlier_waiting_keys)
-            has_owner = any(key in self._ownerships for key in keys)
-            if owns_reserved or conflicts_with_waiter or has_owner:
-                earlier_waiting_keys.update(keys)
-                continue
-            self._acquire_request(state)
+        candidates = [
+            (owner_uuid, state)
+            for owner_uuid, state in self._requests.items()
+            if state.status == "waiting"
+        ]
+        if not candidates:
+            return
+        # 策略只看整数编号化的事实：等待请求（按到达顺序）、已持有的键、被预留的键
+        index = KeyIndex()
+        waiting = [
+            WaitingRequest(
+                keys=tuple(index(key) for key in state.keys),
+                handoff_target=owner_uuid in pending_targets,
+            )
+            for owner_uuid, state in candidates
+        ]
+        held = [index(key) for key in self._ownerships]
+        reserved = [index(key) for key in reserved_keys]
+        for position in self._decide_grants(waiting, held, reserved):
+            self._acquire_request(candidates[position][1])
+
+    def _decide_grants(
+        self,
+        waiting: list[WaitingRequest],
+        held: list[int],
+        reserved: list[int],
+    ) -> list[int]:
+        """调用授予策略并复核；异常或不安全的结果整轮退回 Python FIFO。"""
+
+        try:
+            grants = list(self._grant_policy.decide(waiting, held, reserved))
+        except Exception:  # noqa: BLE001 - 策略失败不能卡住调度
+            logger.exception("锁授予策略 %s 调用失败，本轮退回 Python FIFO", self._grant_policy.name)
+            return fifo_grants(waiting, held, reserved)
+        if validate_grants(grants, waiting, held, reserved):
+            return grants
+        logger.error("锁授予策略 %s 返回了不安全的授予 %s，本轮退回 Python FIFO", self._grant_policy.name, grants)
+        return fifo_grants(waiting, held, reserved)
+
+    @property
+    def grant_policy_name(self) -> str:
+        return self._grant_policy.name
 
     def _acquire_request(self, state: _RequestState) -> None:
         event_sequence = self._emit(

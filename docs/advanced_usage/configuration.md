@@ -270,6 +270,8 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `frontend_event_cleanup_interval_seconds` | int | `60` | 保留清理检查间隔（秒） |
 | `frontend_event_cleanup_batch_size` | int | `1000` | 每个清理事务最多删除条数 |
 | `server_database_root`   | str  | `""`          | 四个数据库所在目录，留空为工作目录下的 `database/`，见下文「数据库位置」 |
+| `scheduler_grant_policy` | str  | `"auto"`      | 调度锁授予策略：`auto`（有原生库用原生，否则 Python FIFO）/ `python` / `native` |
+| `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
 
 #### 数据库位置
 

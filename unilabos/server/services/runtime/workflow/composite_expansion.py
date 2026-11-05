@@ -328,7 +328,7 @@ class CompositeAuthoring:
     ]:
         raw_nodes = [_mapping(item, "/child/nodes") for item in graph["nodes"]]
         by_uuid: dict[str, dict[str, Any]] = {}
-        templates: dict[str, AuthoringCatalogAction] = {}
+        templates: dict[str, AuthoringCatalogAction | None] = {}
         for node in raw_nodes:
             node_uuid = _canonical_uuid(
                 node.get("uuid"),
@@ -340,6 +340,12 @@ class CompositeAuthoring:
                     "composite_boundary_mapping_invalid",
                     "/child/nodes/uuid",
                 )
+            if node.get("workflow_node_template_uuid") is None:
+                # 画布节点可以不引用模板（type + action_name + depends_on）：
+                # 原样展开，不参与 Handle 边界与结构映射。
+                by_uuid[node_uuid] = node
+                templates[node_uuid] = None
+                continue
             try:
                 action = self._catalog.require_template(
                     str(node["workflow_node_template_uuid"])
@@ -375,11 +381,11 @@ class CompositeAuthoring:
                     "/child/nodes/parent_uuid",
                 )
             action = templates[node_uuid]
-            if action.template.get("node_type") != "workflow":
+            if action is None or action.template.get("node_type") != "workflow":
                 copied = _plain(node)
                 copied["uuid"] = mapped_uuid
                 copied["parent_uuid"] = mapped_parent
-                nodes.append(copied)
+                nodes.append(_remap_depends_on(copied, node_uuid_map))
                 continue
             nested_source = _source_from_template(self._resolver, action)
             if nested_source.workflow_uuid in next_stack:
@@ -424,7 +430,7 @@ class CompositeAuthoring:
                     "composite_contract_stale",
                     "/child/nodes/composite/contract_compatibility",
                 )
-            nodes.append(_plain(nested.invocation_node))
+            nodes.append(_remap_depends_on(_plain(nested.invocation_node), node_uuid_map))
             nodes.extend(_plain(nested.nodes))
             nested_edges.extend(_plain(nested.edges))
             effective_input_contract = _plain(nested.effective_parent_input_contract)
@@ -624,6 +630,8 @@ def _structural_mappings(
 ) -> dict[str, list[dict[str, str]]]:
     executable: dict[str, AuthoringCatalogAction] = {}
     for node in nodes:
+        if node.get("workflow_node_template_uuid") is None:
+            continue
         try:
             action = catalog.require_template(str(node["workflow_node_template_uuid"]))
         except (AuthoringCatalogError, KeyError):
@@ -811,6 +819,8 @@ def _referenced_templates(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     actions = {str(template_action.template["uuid"]): template_action}
     for node in nodes:
+        if node.get("workflow_node_template_uuid") is None:
+            continue
         action = catalog.require_template(str(node["workflow_node_template_uuid"]))
         actions[str(action.template["uuid"])] = action
     templates = [actions[key].detached_template() for key in sorted(actions)]
@@ -891,6 +901,25 @@ def _expand_edges(
         )
         result.append(copied)
     return result
+
+
+def _remap_depends_on(
+    node: dict[str, Any],
+    node_uuid_map: Mapping[str, str],
+) -> dict[str, Any]:
+    """把子图内 ``execution_policy.depends_on`` 的节点身份换成展开后的身份。"""
+
+    policy = node.get("execution_policy")
+    depends_on = policy.get("depends_on") if isinstance(policy, Mapping) else None
+    if not isinstance(depends_on, list):
+        return node
+    node["execution_policy"] = {
+        **policy,
+        "depends_on": [
+            node_uuid_map[str(item)] for item in depends_on if str(item) in node_uuid_map
+        ],
+    }
+    return node
 
 
 def _validate_parent_tree(nodes: Mapping[str, Mapping[str, Any]]) -> None:

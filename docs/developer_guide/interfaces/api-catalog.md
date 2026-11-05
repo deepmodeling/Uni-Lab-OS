@@ -139,6 +139,11 @@ zone 有 id/name/color/cells；cells 和 walls 用 `col,row` 整数字符串。�
 | DELETE | `/api/v1/workflows/{workflow_uuid}` | — | code=0 表示删除成功；不是 204 |
 | GET | `/api/v1/workflows/{workflow_uuid}/graph` | — | 图节点与连线；编辑前读取当前定义 |
 | PUT | `/api/v1/workflows/{workflow_uuid}/graph` | B: GraphWriteRequest | 按 revision 全图协调，浏览器草稿须 preserve |
+| PUT | `/api/v1/workflows/{workflow_uuid}/io` | B: WorkflowIODeclareRequest | 声明输入输出与节点输入绑定（服务端保留元数据）；revision +1，返回整图 |
+| POST | `/api/v1/workflows/{workflow_uuid}/publications` | B: WorkflowPublishRequest | 成功实际 201；冻结当前修订为不可变发布，同修订重复发布幂等 |
+| GET | `/api/v1/workflows/{workflow_uuid}/publications` | — | 该工作流全部发布（revision 倒序），含投影节点模板，不含快照正文 |
+| GET | `/api/v1/workflow-publications` | — | 每个工作流的最新发布：inputs/outputs、contract_digest、节点模板与 Handle |
+| POST | `/api/v1/workflows/{workflow_uuid}/composite-invocations` | B: CompositeInvocationRequest | 成功实际 201；插入已发布子工作流并内联展开，返回 invocation_uuid、contract_pin、graph |
 | GET | `/api/v1/workflows/{workflow_uuid}/authoring` | — | 草稿、编译候选及诊断状态 |
 | PUT | `/api/v1/workflows/{workflow_uuid}/authoring/draft` | B: DraftWriteRequest | 保存 Python 草稿；不是直接执行脚本 |
 | POST | `/api/v1/workflows/{workflow_uuid}/authoring/apply` | B: ApplyRequest | 校验草稿/候选哈希和图版本后应用 |
@@ -147,6 +152,10 @@ zone 有 id/name/color/cells；cells 和 walls 用 `col,row` 整数字符串。�
 从模板创建必填 template_uuid，bindings 默认 {}、name 默认 null、site_binding_mode 默认 resolve。
 浏览器必须按交互明确使用 preserve，确认后提交真实 Site UUID。
 
+WorkflowIODeclareRequest 必填 revision，可带 input_contract / output_contract（null 视为空合同）、
+output_bindings={}、node_input_bindings={}（完整替换）、node_params={}；WorkflowPublishRequest 只有 revision；
+CompositeInvocationRequest 必填 revision（父图）与 child_workflow_uuid，可带 child_revision、invocation_uuid、
+pose={}、arguments={}。三者都拒绝未知字段。
 GraphWriteRequest 必填 revision（严格整数 >=1），nodes/edges 默认空数组，site_binding_mode 默认 resolve。
 空数组有替换语义，不是“保持原节点不变”。DraftWriteRequest 必填 python_source、expected_draft_hash
 （首次允许 null，但不能省略字段）、expected_workflow_revision；ApplyRequest 必填同名图版本和草稿哈希、

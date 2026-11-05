@@ -148,6 +148,58 @@ class GraphWriteRequest(_BackendModel):
         return [] if value is None else value
 
 
+class WorkflowIODeclareRequest(_StrictModel):
+    """声明工作流公共输入输出（写入服务端保留的 ``meta_data.unilab``）。
+
+    ``node_input_bindings`` 形如 ``{node_uuid: {handle_uuid: {"parameter": 输入名}}}``，
+    是完整替换：未列出的节点清空 input_bindings；被绑定输入在节点 param 中的静态值移除。
+    ``node_params``（可选）按节点合并进 param，用于解绑必填输入时给回静态值。
+    """
+
+    revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
+    input_contract: Optional[Dict[str, Any]] = None
+    output_contract: Optional[Dict[str, Any]] = None
+    output_bindings: Dict[str, Any] = Field(default_factory=dict)
+    node_input_bindings: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    node_params: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("input_contract", "output_contract", mode="before")
+    @classmethod
+    def _optional_json_object(cls, value: Any) -> Optional[Dict[str, Any]]:
+        return None if value is None else normalize_json_object(value)
+
+    @field_validator("output_bindings", "node_input_bindings", "node_params", mode="before")
+    @classmethod
+    def _json_object(cls, value: Any) -> Dict[str, Any]:
+        return normalize_json_object(value)
+
+
+class WorkflowPublishRequest(_StrictModel):
+    """发布当前修订；revision 必须等于工作流当前 revision（重复发布同一修订幂等）。"""
+
+    revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
+
+
+class CompositeInvocationRequest(_StrictModel):
+    """把已发布子工作流作为组合调用插入父图（父图 revision 乐观锁）。
+
+    ``child_revision`` 缺省取子工作流最新发布；``arguments`` 为子工作流输入的实参：
+    静态 JSON 值，或 ``{"kind": "workflow_input", "parameter": 父工作流输入名}``。
+    """
+
+    revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
+    child_workflow_uuid: str
+    child_revision: Optional[int] = Field(default=None, ge=1, le=_INT64_MAX, strict=True)
+    invocation_uuid: Optional[str] = None
+    pose: Dict[str, Any] = Field(default_factory=dict)
+    arguments: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("pose", "arguments", mode="before")
+    @classmethod
+    def _json_object(cls, value: Any) -> Dict[str, Any]:
+        return {} if value is None else normalize_json_object(value)
+
+
 class WorkflowTaskCreateRequest(_BackendModel):
     """整图运行与单点设备动作共用的提交体。
 
@@ -445,6 +497,49 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             )
         )
 
+    @router.put("/workflows/{workflow_uuid}/io")
+    def declare_workflow_io(
+        workflow_uuid: str,
+        body: WorkflowIODeclareRequest,
+    ) -> JSONResponse:
+        """声明输入输出合同与节点输入绑定；返回更新后的整图。"""
+
+        return _success(service.declare_workflow_io(workflow_uuid, **body.model_dump()))
+
+    @router.post("/workflows/{workflow_uuid}/publications")
+    def publish_workflow(
+        workflow_uuid: str,
+        body: WorkflowPublishRequest,
+    ) -> JSONResponse:
+        """把当前修订冻结为不可变发布。"""
+
+        return _success(
+            service.publish_workflow(workflow_uuid, revision=body.revision),
+            status=201,
+        )
+
+    @router.get("/workflows/{workflow_uuid}/publications")
+    def list_workflow_publications(workflow_uuid: str) -> JSONResponse:
+        return _success(service.list_workflow_publications(workflow_uuid))
+
+    @router.get("/workflow-publications")
+    def list_published_workflows() -> JSONResponse:
+        """每个工作流的最新发布：输入输出、合同摘要与投影出的节点模板。"""
+
+        return _success(service.list_published_workflows())
+
+    @router.post("/workflows/{workflow_uuid}/composite-invocations")
+    def insert_composite_invocation(
+        workflow_uuid: str,
+        body: CompositeInvocationRequest,
+    ) -> JSONResponse:
+        """插入组合调用：子工作流按冻结发布内联展开，父图 revision +1。"""
+
+        return _success(
+            service.insert_composite_invocation(workflow_uuid, **body.model_dump()),
+            status=201,
+        )
+
     @router.post("/workflow-tasks")
     def create_workflow_task(
         body: WorkflowTaskCreateRequest,
@@ -675,6 +770,7 @@ def install_workflow_api(app: FastAPI, service: WorkflowService) -> None:
             "/api/v1/workflow-tasks",
             "/api/v1/workflow-node-jobs",
             "/api/v1/workflow-manual-confirmations",
+            "/api/v1/workflow-publications",
             "/api/v1/events",
         )
         if any(

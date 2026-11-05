@@ -547,6 +547,24 @@ class WorkflowAuthoringRecord(TableObject, table=True):
     update_time: NonEmptyStr
 
 
+class WorkflowPublicationRecord(TableObject, table=True):
+    """工作流的一次显式发布：冻结的不可变修订快照（工作流即节点的复用单位）。"""
+
+    __tablename__: ClassVar[str] = "workflow_publication"
+
+    uuid: NonEmptyStr = Field(primary_key=True)
+    create_time: NonEmptyStr
+    workflow_uuid: NonEmptyStr
+    revision: int = Field(ge=1)
+    name: NonEmptyStr
+    source_hash: NonEmptyStr
+    contract_digest: NonEmptyStr
+    snapshot: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("snapshot", default_json="{}"),
+    )
+
+
 class FrontendEventRecord(TableObject, table=True):
     __tablename__: ClassVar[str] = "frontend_event"
 
@@ -578,6 +596,7 @@ WORKFLOW_TABLE_MODELS = (
     WorkflowManualConfirmationRecord,
     WorkflowSourceRegistrationRecord,
     WorkflowAuthoringRecord,
+    WorkflowPublicationRecord,
     FrontendEventRecord,
 )
 
@@ -1514,6 +1533,31 @@ WORKFLOW_TABLES = (
         """,
     ),
     TableSpec(
+        "workflow_publication",
+        """
+        CREATE TABLE IF NOT EXISTS workflow_publication (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            workflow_uuid TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision >= 1),
+            name TEXT NOT NULL,
+            source_hash TEXT NOT NULL,
+            contract_digest TEXT NOT NULL,
+            snapshot TEXT NOT NULL CHECK (
+                json_valid(snapshot) AND json_type(snapshot) = 'object'
+            ),
+            FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid),
+            UNIQUE(workflow_uuid, revision)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_publication_created
+            ON workflow_publication(create_time DESC, uuid)
+            """,
+        ),
+    ),
+    TableSpec(
         "frontend_event",
         """
         CREATE TABLE IF NOT EXISTS frontend_event (
@@ -1558,6 +1602,7 @@ __all__ = [
     "WorkflowNodeRecord",
     "WorkflowNodeRunRecord",
     "WorkflowNodeTemplateRecord",
+    "WorkflowPublicationRecord",
     "WorkflowRecord",
     "WorkflowSourceRegistrationRecord",
     "WorkflowTaskCommandRecord",

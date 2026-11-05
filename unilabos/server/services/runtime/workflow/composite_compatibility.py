@@ -35,7 +35,7 @@ def published_workflow_compatibility_projection(
         or not isinstance(extension.get("composition_allow_transparent"), bool)
         or template.get("type") != "workflow"
         or template.get("node_type") != "workflow"
-        or template.get("name") != f"workflow:{workflow_uuid}"
+        or template.get("name") != f"workflow:{workflow_uuid}@{extension.get('workflow_revision')}"
     ):
         raise ValueError("已发布工作流合同身份无效")
     goal = _envelope(schema, "goal", input_order)

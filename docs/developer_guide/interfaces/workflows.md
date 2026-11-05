@@ -70,6 +70,61 @@ UUID 字段必须是非 nil 的有效 UUID，disabled/minimized 必须是 JSON �
 节点 param 就是运行参数。当前整图任务提交不提供自由的 task input/output 通道；
 不要在 POST task 时放一份未被绑定的 `input`，以为会覆盖节点参数。
 
+## 工作流即节点：声明 I/O、发布与插入
+
+一个工作流声明输入输出后可显式**发布**为不可变修订，再作为组合调用插入另一个工作流。
+身份是 `(workflow_uuid, revision)` 加内容摘要 `source_hash`（语义图规范 JSON 的 `sha256:`），
+对外合同由 `contract_digest` 标识，没有单独的 contract_uuid。
+
+1. PUT `/workflows/{uuid}/io`：
+
+   ```text
+   {
+     revision: 当前 revision,
+     input_contract:  {version: 1, parameters: [{name, schema, required?, default?, title?, description?}]},
+     output_contract: {version: 1, outputs: [{name, schema, implicit?, title?, description?}]},
+     output_bindings: {输出名: {kind: "node_output", workflow_node_uuid, source_handle_uuid}
+                              | {kind: "workflow_input", parameter}},
+     node_input_bindings: {node_uuid: {handle_uuid: {parameter: 输入名}}},
+     node_params?: {node_uuid: {data_key: 静态值}}
+   }
+   ```
+
+   写入服务端保留的 `meta_data.unilab`（普通 PUT 工作流 / PUT graph 不能写、也不会清掉它），
+   按整图（含节点 / Handle 模板）校验后 revision +1，返回更新后的整图。`node_input_bindings`
+   是完整替换；绑定的输入成为唯一 Provider，节点 param 里的同名静态值被移除。
+   解绑必填输入时用 `node_params` 同时给回静态值。绑定引用 Handle UUID，因此只有引用了节点模板的节点能绑定。
+   校验失败 code=1000，消息含 `workflow_io_invalid（路径）`；revision 不符 code=3003。
+2. POST `/workflows/{uuid}/publications`，body `{revision}`（必须等于当前 revision）：
+   冻结 `{workflow, nodes, edges, node_templates, handle_templates, applied_source}`，
+   并投影为一个 `node_type="workflow"` 的节点模板校验。成功 201；同一修订再次发布返回同一条（幂等），
+   非当前修订且未发布过返回 3003。GET `/workflows/{uuid}/publications` 按 revision 倒序列出；
+   GET `/workflow-publications` 给每个未删除工作流的最新发布（调色板数据源）。
+   返回项含 uuid、workflow_uuid、revision、name、source_hash、contract_digest、inputs、outputs、
+   `node_template`（schema 为 JSON 文本，与 `/graph` 一致）和 `handle_templates`；不含快照正文。
+3. POST `/workflows/{parent_uuid}/composite-invocations`：
+
+   ```text
+   {revision: 父图 revision, child_workflow_uuid, child_revision?（缺省=最新发布）,
+    invocation_uuid?, pose?, arguments?: {输入名: 静态值 | {kind: "workflow_input", parameter: 父输入名}}}
+   ```
+
+   子工作流按所选发布的冻结快照**内联展开**：父图多一个组合调用节点（无 Job，仅画布/追溯/边界映射）
+   和它展开出的普通节点与连线，节点 uuid 由调用 uuid 派生。展开节点各自申请设备 / 物料锁，
+   没有组级锁。静态实参下推到内部节点 param；未给出的可选输入在父图里不存在。
+   成功 201，返回 `{invocation_uuid, contract_pin, graph}`，父图 revision +1。
+   子工作流未发布 code=3002；递归（插入自身、子工作流内含父工作流）、缺必填实参、实参类型不符等
+   展开诊断 code=1000，消息含诊断码与路径（如 `composite_recursive_reference（/composite/child_workflow_uuid）`）。
+   嵌套组合按各调用固定的发布修订重新展开；同一子工作流在嵌套中固定了不同修订会被拒绝。
+
+   子工作流可以是画布形状（节点不引用模板、用 `execution_policy.depends_on` 排序）：展开时 depends_on
+   换成展开后的节点身份。父图里 depends_on 指向组合调用节点，等价于依赖它展开出的全部叶子；
+   组合调用节点自己的 depends_on 施加到全部叶子上（执行计划里写回平面化后的 depends_on）。
+   不引用模板的节点不能做 I/O 绑定，也不参与 ready 连线的结构映射。
+
+已发布工作流模板的 uuid 只由 workflow_uuid 派生：插入更新的修订会更新共享模板行；
+仍固定旧修订、且输入输出集合不同的父图在建任务时 fail-closed（code=1000），需重新插入。
+
 ## Site 默认值与确认规则
 
 **默认 T1 是一个待绑定标签，不是已确认的 Site 身份。**
@@ -234,7 +289,7 @@ ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state
 循环变量 `{{loop.index}}`、`{{loop.iteration}}`、`{{loop.count}}` 由运行时处理。
 这不等同于支持把任意 Python while/try/except 直接变成可恢复的工作流。
 
-已发布子工作流通过同修订的 applied snapshot 与输入/输出 handle 合同展开，不能只凭函数名调用。
+已发布子工作流通过冻结的发布快照与输入/输出 handle 合同展开，不能只凭函数名调用（见上文“工作流即节点”）。
 **本轮没有升级嵌套作用域锁**：父组资源预占、组内并行竞争等讨论不能当成本版已兑现能力。
 跨设备共享物料声明依然使用 `@action(materials_need_lock=["输入参数名"])`，让调度器集中处理。
 

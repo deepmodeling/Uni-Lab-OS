@@ -50,27 +50,30 @@ SDK 中的 `Authorization: Lab <base64(ak:sk)>` 是上游 Backend 认证能力�
 
 | 类型 | 形状 / 判断方式 | 主要使用者 |
 | --- | --- | --- |
-| Backend 信封 | 成功 `{"code":0,"data":...}`，无数据时可以只有 `code`；先判 HTTP，再判 `code` | workflow、registry、graphs |
+| Backend 信封 | 成功 `{"code":0,"data":...}`，无数据时可以只有 `code`；先判 HTTP，再判 `code` | workflow、graphs、chemicals、registry（成功） |
 | 直出 DTO / 数组 | 直接是资源或列表；错误通常 `{"detail":...}` | runtime、telemetry、history、诊断、驱动包、日志 |
 | materials.v1 | 读操作直出；幂等写结果 `MutationResult`，含 `data`、账本区间与 replayed | 物料聚合/库存写入 |
 
-Workflow 的业务失败通常仍是 HTTP 200：
+信封式路由（workflow、graphs、chemicals）的业务失败一律 HTTP 200，形状固定：
 
 ```json
 {"code":3003,"error":{"msg":"冲突详情"}}
 ```
 
-| Workflow code | 含义 |
-| --- | --- |
-| 0 | 成功 |
-| 1000 | 输入、模板绑定或 Site 绑定错误 |
-| 3002 | 工作流、模板或目标对象不存在 |
-| 3003 | revision/hash/决策冲突等 |
-| 5001 | 模板目录等能力未就绪 |
-| 1 | 其余业务失败；检查 error.msg |
+三者共用一张业务码表（`unilabos/server/api/envelope.py`）：
 
-不能将这张表机械推广到所有域。Registry 的无效 gzip/JSON 等分支实际会返回 HTTP 400；
-路径/请求模型校验还可能返回 FastAPI 422。具体错误以 handler 为准。
+| code | 含义 |
+| --- | --- |
+| 0 | 成功（创建类接口 HTTP 201） |
+| 1000 | 请求参数 / 载荷不合法：字段校验、JSON 解析、模板或 Site 绑定错误 |
+| 3002 | 资源不存在或已删除 |
+| 3003 | 状态冲突：revision / hash 过期、唯一键重复、当前状态不允许该操作 |
+| 5001 | 依赖暂不可用或该部署不支持 |
+| 1 | 其余内部错误；检查 error.msg |
+
+这些路由的请求体 / 查询参数校验失败也返回 1000 信封，而不是 FastAPI 默认 422。
+直出 DTO 的域（runtime、telemetry、history、materials.v1、诊断、驱动包）仍用 HTTP 状态码表达失败
+（404 / 409 / 422 / 503，正文 `{"detail": ...}`）；Registry 成功走信封，无效 gzip / JSON 等错误返回 HTTP 4xx。
 
 实际成功状态码中的重要例外：
 
@@ -123,8 +126,8 @@ execution_timeout、materials_need_lock、supported_backends 是编辑与调度�
 以已有权威物料为准补新增。`GET /graphs/live/payload` 从当前物料及拓扑边生成实时图，
 不等同于原始上传快照。布局通过 `/lab/layout` 保存，PUT 使用该布局自己的 revision。
 
-Graph 业务失败也用 HTTP 200，但 error 是字符串；not_found=3002，invalid_input/invalid_payload=2，
-其余通常为 1，与 Workflow 的 error.msg/code=1000 不同。
+Graph 业务失败与 Workflow 同一张码表：not_found=3002，invalid_input / invalid_payload=1000，
+identity_conflict=3003，unsupported=5001，error 为 `{"msg": ...}`。
 
 ## Runtime、Telemetry 与 History
 

@@ -7,8 +7,6 @@ import re
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, FastAPI, Query, Request
-from fastapi.exception_handlers import request_validation_exception_handler
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -20,6 +18,7 @@ from unilabos.protocol.runtime.workflow import (
     normalize_json_array,
     normalize_json_object,
 )
+from unilabos.server.api.envelope import business_code, install_envelope_validation
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
 
 
@@ -329,19 +328,19 @@ def _error(error: WorkflowError) -> _BackendJSONResponse:
         "manual_confirmation_key_used",
     }
     if error.code in {"invalid_input", "template_binding_invalid", "site_binding_invalid"}:
-        business_code = 1000
+        category = "invalid"
     elif error.code in {"not_found", "workflow_not_found", "workflow_template_not_found"}:
-        business_code = 3002
+        category = "not_found"
     elif error.code in conflict_codes:
-        business_code = 3003
+        category = "conflict"
     elif error.code in {"template_catalog_unavailable", "workflow_template_unavailable"}:
-        business_code = 5001
+        category = "unavailable"
     else:
-        business_code = 1
+        category = "internal"
     return _BackendJSONResponse(
         status_code=200,
         content={
-            "code": business_code,
+            "code": business_code(category),
             "error": {"msg": error.message},
         },
     )
@@ -786,30 +785,15 @@ def install_workflow_api(app: FastAPI, service: WorkflowService) -> None:
     ) -> JSONResponse:
         return _error(error)
 
-    @app.exception_handler(RequestValidationError)
-    async def validation_error_handler(
-        request: Request,
-        error: RequestValidationError,
-    ) -> JSONResponse:
-        workflow_prefixes = (
-            "/api/v1/workflows",
-            "/api/v1/workflow-tasks",
-            "/api/v1/workflow-node-jobs",
-            "/api/v1/workflow-manual-confirmations",
-            "/api/v1/workflow-publications",
-            "/api/v1/events",
-        )
-        if any(
-            request.url.path == prefix or request.url.path.startswith(f"{prefix}/")
-            for prefix in workflow_prefixes
-        ):
-            # 只回字段路径与校验信息，不把完整输入（可能含驱动凭据）或堆栈回显。
-            detail = "; ".join(
-                f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
-                for item in error.errors()[:5]
-            )
-            return _error(WorkflowError("invalid_input", detail=detail))
-        return await request_validation_exception_handler(request, error)
+    # 请求校验失败也回信封（1000）：与 graphs / chemicals 共用同一个处理器
+    install_envelope_validation(app, (
+        "/api/v1/workflows",
+        "/api/v1/workflow-tasks",
+        "/api/v1/workflow-node-jobs",
+        "/api/v1/workflow-manual-confirmations",
+        "/api/v1/workflow-publications",
+        "/api/v1/events",
+    ))
 
     # 同进程后装配 Workflow Authority 时替换无工作流读取器的公共通知路由。
     app.router.routes[:] = [route for route in app.router.routes if getattr(route, "name", "") != "runtime_events"]

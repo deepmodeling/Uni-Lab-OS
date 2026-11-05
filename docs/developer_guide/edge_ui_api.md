@@ -90,9 +90,10 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - 方法语义：PUT 整体设定、PATCH 局部、DELETE 幂等；空体请求不要求 `Content-Type: application/json`；
 - 状态码：201 同步创建、202 异步长操作（返回 operation 资源供轮询）、204 无正文删除、
   404 不存在或未挂载、409 状态冲突、422 一切可修正的请求错误（不用 400）、503 能力未装配；
-  错误正文统一 `{"detail": …}`；
-- 响应形态按域固定：直出 DTO；Backend 信封 `{code, data | error}`（workflow / registry / graphs，
-  HTTP 恒 200，业务码只追加）；materials.v1 写信封 `InventoryMutation → MutationResult`；
+  直出 DTO 域的错误正文统一 `{"detail": …}`；
+- 响应形态按域固定：直出 DTO；Backend 信封 `{code, data | error: {msg}}`（workflow / graphs / chemicals
+  业务失败 HTTP 恒 200，业务码表见 [HTTP 约定](interfaces/http.md)，只追加；registry 成功走信封、
+  错误用 HTTP 4xx）；materials.v1 写信封 `InventoryMutation → MutationResult`；
 - 字段 snake_case；权威身份 `*_uuid`；新增时间字段一律 `*_at_ms`（UTC epoch 毫秒整数）；
   枚举小写；新增枚举值算加法变更，客户端必须容忍；
 - 列表：人看的用 `page / page_size → {items, total, page, page_size}`；子记录用 `limit / offset`；

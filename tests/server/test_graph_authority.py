@@ -159,7 +159,7 @@ class TestGraphAPI:
             "/api/v1/graphs",
             json={"name": "bad", "payload": {"nodes": "not-a-list"}},
         ).json()
-        assert body["code"] == 2
+        assert body["code"] == 1000
 
 
 class _EnvelopeHTTPStub:

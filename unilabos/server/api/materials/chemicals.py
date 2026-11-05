@@ -1,6 +1,6 @@
 """``/api/v1/chemicals``：化学品定义（CAS / InChIKey 可空唯一键）的 HTTP 契约。
 
-响应使用 envelope（``{"code": 0, "data": ...}``）；业务码与 graphs 一致：2 参数错误、
+响应使用 envelope（``{"code": 0, "data": ...}``），业务码见 ``api/envelope.py``：1000 参数错误、
 3002 不存在、3003 冲突（重复 CAS / InChIKey、版本过期）。
 """
 
@@ -12,9 +12,10 @@ from fastapi import APIRouter, FastAPI, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from unilabos.server.api.envelope import envelope_error, install_envelope_validation
 from unilabos.server.services.materials.chemicals import ChemicalError, ChemicalService
 
-_BUSINESS_CODES = {"invalid_input": 2, "not_found": 3002, "conflict": 3003}
+_CATEGORIES = {"invalid_input": "invalid", "not_found": "not_found", "conflict": "conflict"}
 PhysicalState = Literal["liquid", "solid", "gas", "unknown"]
 
 
@@ -62,10 +63,7 @@ def _success(data: Any = None, status: int = 200) -> JSONResponse:
 
 
 def _error(error: ChemicalError) -> JSONResponse:
-    return JSONResponse(
-        status_code=200,
-        content={"code": _BUSINESS_CODES.get(error.code, 1), "error": error.message},
-    )
+    return envelope_error(_CATEGORIES.get(error.code, "internal"), error.message)
 
 
 def create_chemical_router(service: ChemicalService) -> APIRouter:
@@ -124,6 +122,7 @@ def create_chemical_router(service: ChemicalService) -> APIRouter:
 
 
 def install_chemical_api(app: FastAPI, service: ChemicalService) -> None:
+    install_envelope_validation(app, ("/api/v1/chemicals",))
     app.include_router(create_chemical_router(service))
 
 

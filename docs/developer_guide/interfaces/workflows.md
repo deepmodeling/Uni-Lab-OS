@@ -67,8 +67,43 @@ UUID 字段必须是非 nil 的有效 UUID，disabled/minimized 必须是 JSON �
 设备包 `@workflow` 顺序步骤用 `execution_policy.depends_on` 表达顺序，可能没有 handle 连线；
 空 edges 不必然表示可以并行。
 
-节点 param 就是运行参数。当前整图任务提交不提供自由的 task input/output 通道；
-不要在 POST task 时放一份未被绑定的 `input`，以为会覆盖节点参数。
+节点 param 就是运行参数。任务级 `input` 只承载工作流声明的入口参数（见下文“入口参数”）；
+未声明 input_contract 的工作流 POST task 时 `input` 必须为空对象，不能指望它覆盖节点参数。
+
+## 入口参数：任务输入、输出与暂停时修改
+
+画布节点没有模板也没有连线，入口参数写在节点 param 里引用：
+
+```text
+node.param = {"volume": {"kind": "workflow_input", "parameter": "volume"}, "speed": 300}
+```
+
+- 只识别 param **顶层**的引用；引用的参数必须在 input_contract 中声明（PUT graph / PUT io 都校验，否则 1000）。
+  声明了但没有节点使用的参数允许存在。先用 PUT `/io` 声明合同（可同时用 `node_params` 写入引用），再保存引用它的图。
+- 模板节点继续用 `node_input_bindings`（Handle 绑定）；画布工作流的 PUT `/io` 不需要任何 Handle 绑定。
+- 画布节点的输出绑定：`{"kind": "node_output", "workflow_node_uuid", "data_key": "返回值内路径"}`
+  （空串 = 整个返回值）；模板节点仍可用 `source_handle_uuid`，`workflow_input` 透传也可用。
+
+POST `/workflow-tasks` 可带 `input`：按合同校验（未知键、缺必填、类型不符均 1000，消息含
+`workflow_input_unknown` / `workflow_input_required` / Schema 错误码与路径），补默认值后作为任务的有效 `input` 保存。
+执行计划把引用（以及模板节点的 Handle 绑定）替换成具体值，派发的动作参数是具体值；未提供且无默认值的可选参数对应键移除。
+计划节点带 `entry_bindings`（param 键 → 入口参数名）。`idempotency_key` 的指纹包含非空 input。
+任务成功时，声明了 output_contract 的工作流按 output_bindings 求 `output`（`{输出名: 值}`，取不到的输出省略；
+绑在组合调用边界 Handle 上的输出沿冻结映射追到展开后的叶子）；未声明输出时仍是逐节点结果映射。
+任务 DTO 现在返回 `input` 与 `output`。
+
+插入画布子工作流时，子图 param 里的引用替换为插入实参：静态值直接写入；实参为
+`{"kind": "workflow_input", "parameter": 父输入名}` 时保留为父工作流引用，父任务的 input 经同一替换流入内部节点。
+
+暂停时修改入口参数：PATCH `/workflow-tasks/{task_uuid}/input`，body
+`{expected_revision: control_revision, input: {部分参数}, idempotency_key?}`（遵循 ADR 0002）：
+
+- 只在任务 `control_status="paused"` 且 status 为 pending / running 时允许，否则 3003；revision 不符 3003。
+- 只能改入口参数；未知参数或值不符合 Schema 为 1000。
+- 已被任何已下发（非 pending）attempt 用过的参数冻结，修改返回 3003；同值提交是空操作。被循环容器 param 引用的参数运行中不可修改。
+- 其余参数更新任务 input，以及引用它的未下发节点运行 / pending attempt / 计划节点的 param；计划形状不变。
+- 每次修改记为一条 `edit_input` 任务命令（审计：result 里有 changed / previous / nodes），control_revision +1；
+  resume 或 step 后继续的后缀使用新值。
 
 ## 工作流即节点：声明 I/O、发布与插入
 
@@ -93,7 +128,7 @@ UUID 字段必须是非 nil 的有效 UUID，disabled/minimized 必须是 JSON �
    写入服务端保留的 `meta_data.unilab`（普通 PUT 工作流 / PUT graph 不能写、也不会清掉它），
    按整图（含节点 / Handle 模板）校验后 revision +1，返回更新后的整图。`node_input_bindings`
    是完整替换；绑定的输入成为唯一 Provider，节点 param 里的同名静态值被移除。
-   解绑必填输入时用 `node_params` 同时给回静态值。绑定引用 Handle UUID，因此只有引用了节点模板的节点能绑定。
+   解绑必填输入时用 `node_params` 同时给回静态值。Handle 绑定只适用于引用了节点模板的节点；画布节点用 param 内引用（见“入口参数”）。
    校验失败 code=1000，消息含 `workflow_io_invalid（路径）`；revision 不符 code=3003。
 2. POST `/workflows/{uuid}/publications`，body `{revision}`（必须等于当前 revision）：
    冻结 `{workflow, nodes, edges, node_templates, handle_templates, applied_source}`，
@@ -211,7 +246,7 @@ Site 绑定只确认身份与范围，不搬动物料，也不预留该 Site；�
   **设备锁保持到它真实返回**——协程驱动在下一个 await 处被打断，同步驱动跑在线程里无法打断，只能等它返回
   （驱动可调用 `context.raise_if_cancelled()` 提前结束）。全部返回后任务落 `canceled`。
   取消中再取消、任务已结束时返回 3003。
-- 当前命令类型是 step / resume / pause / cancel。
+- 当前命令类型是 step / resume / pause / cancel；暂停时修改入口参数另走 PATCH `/workflow-tasks/{uuid}/input`，记为 `edit_input` 命令，同样推进 control_revision。
 
 重启后的执行状态未知会进入 waiting_reconciliation / execution_unknown 等状态，
 此时不能用 resume 自动重做设备动作，应先核对实际执行结果并处理干预。

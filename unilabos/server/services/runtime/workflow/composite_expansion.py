@@ -239,6 +239,11 @@ class CompositeAuthoring:
             keyword_arguments=normalized_arguments,
             catalog=self._catalog,
         )
+        _materialize_param_references(
+            nodes,
+            input_names={str(item["name"]) for item in input_contract.get("parameters", [])},
+            keyword_arguments=normalized_arguments,
+        )
         source_mappings = _source_mappings(
             output_contract,
             workflow_io.output_bindings,
@@ -809,6 +814,44 @@ def _materialize_boundary_arguments(
                         f"/target_mappings/{name}",
                     )
                 param[str(handles[0]["data_key"])] = _plain(value)
+
+
+def _materialize_param_references(
+    nodes: Sequence[dict[str, Any]],
+    *,
+    input_names: set[str],
+    keyword_arguments: Mapping[str, object],
+) -> None:
+    """画布节点 param 顶层的子工作流输入引用换成本次调用的实参。
+
+    实参是父工作流输入引用时保留为引用（父任务输入经同一替换流入）；
+    未提供且无默认值的可选输入在父图里不存在，对应参数键移除。
+    """
+
+    for node in nodes:
+        param = node.get("param")
+        if not isinstance(param, dict):
+            continue
+        for key, value in list(param.items()):
+            if not isinstance(value, Mapping) or value.get("kind") != "workflow_input":
+                continue
+            name = value.get("parameter")
+            if name not in input_names:
+                raise _CompositeFailure(
+                    "composite_boundary_mapping_invalid",
+                    f"/child/nodes/param/{key}",
+                )
+            if name not in keyword_arguments:
+                param.pop(key)
+                continue
+            argument = keyword_arguments[name]
+            if isinstance(argument, Mapping) and argument.get("kind") == "node_output":
+                # 画布参数没有 Handle 可接线，节点输出实参只能经模板 Handle 绑定
+                raise _CompositeFailure(
+                    "composite_boundary_mapping_invalid",
+                    f"/keyword_arguments/{name}",
+                )
+            param[key] = _plain(argument)
 
 
 def _referenced_templates(

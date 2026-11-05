@@ -222,6 +222,12 @@ class CompositeExecutionPlanNormalizer:
         for boundary_uuid, raw_mapping in source_mappings.items():
             mapping = _mapping(raw_mapping, "source_mappings")
             consumers = outgoing_by_handle.get(boundary_uuid, [])
+            if mapping.get("kind") == "node_output" and "data_key" in mapping:
+                # 画布子工作流的输出按返回值路径取值，没有可接线的 Handle
+                if consumers:
+                    raise CompositeExecutionPlanError("画布子工作流的输出不能经 Handle 连线消费")
+                _node_identity(mapping, nodes)
+                continue
             if mapping.get("kind") == "node_output":
                 source_node = _node_identity(mapping, nodes)
                 source_handle = _handle_identity(

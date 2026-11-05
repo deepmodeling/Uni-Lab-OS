@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 
@@ -146,6 +147,39 @@ def create_backend_router(
             return "disabled"
         service = get_edge_control_service()
         return "ready" if service is not None and service.connected else "restarting"
+
+    def _readiness() -> tuple[bool, dict[str, Any]]:
+        backend = get_execution_backend()
+        if backend is not None:
+            # 本进程带执行面：执行适配器（HostLink / ROS2 host node）注册后才能派发
+            host_ready = getattr(backend, "host_ready", None)
+            execution = "ready" if not callable(host_ready) or bool(host_ready()) else "starting"
+        else:
+            execution = _execution_state()
+        reasons: list[str] = []
+        if execution == "starting":
+            reasons.append("执行适配器尚未注册（设备初始化中）")
+        elif execution == "restarting":
+            reasons.append("Host 子进程未接入控制面（启动或重启中）")
+        # disabled：纯调度权威（--role backend），执行由远端 Edge 接入，不在本进程判定
+        ready = execution in {"ready", "disabled"}
+        return ready, {
+            "status": "ready" if ready else "not_ready",
+            "scheduler": "local" if get_scheduler() is not None else "remote",
+            "execution": execution,
+            "reasons": reasons,
+        }
+
+    @router.get("/readiness")
+    def readiness() -> JSONResponse:
+        """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同）。
+
+        与 ``/health``（进程存活，恒 200）不同：Host 子进程启动 / 安静点重启期间、执行适配器
+        尚未注册时返回 503；全量重置期间维护闸门同样返回 503。响应只含状态摘要。
+        """
+
+        ready, summary = _readiness()
+        return JSONResponse(status_code=200 if ready else 503, content=summary)
 
     @router.get("/health")
     def health() -> dict[str, str]:

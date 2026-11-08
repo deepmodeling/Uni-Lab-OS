@@ -390,6 +390,6 @@ print(result)
 
 ## 相关文档
 
-- [设备注册指南](add_device.md)
+- [设备注册指南](external_device_packages.md)
 - [动作定义指南](add_action.md)
 - [网络架构概述](networking_overview.md)

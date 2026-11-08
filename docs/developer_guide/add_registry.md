@@ -1,5 +1,7 @@
 # 添加设备：注册表配置完整指南
 
+> 本页包含旧版仓库内驱动路径示例。公开 v1.0 的独立设备包结构和 mock Task 入口见 {doc}`external_device_packages`。
+
 本文档说明如何为设备创建和配置注册表，包括基本结构、特殊类型识别、动作配置等内容。
 
 ## 概述
@@ -1165,8 +1167,7 @@ def method(
 
 ## 参考资料
 
-- {doc}`add_device` - 设备驱动编写指南
-- {doc}`04_add_device_testing` - 设备测试指南
+- {doc}`external_device_packages` - v1.0 外部设备包开发
 - Python [typing 模块](https://docs.python.org/3/library/typing.html)
 - [YAML 语法](https://yaml.org/)
 - [JSON Schema](https://json-schema.org/)

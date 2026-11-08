@@ -1,10 +1,12 @@
-# 设备 Driver 开发（无 SDK 设备）
+# 旧版设备 Driver 开发（无 SDK 设备）
+
+> 本页保留旧版仓库内驱动示例，不属于公开 v1.0 的包开发流程。公开版请使用[外部设备包指南](external_device_packages.md)。
 
 我们对设备 Driver 的定义，是一个 Python/C++/C# 类，类的方法可以用于获取传感器数据、执行设备动作、更新物料信息。它们经过 Uni-Lab 的通信中间件包装，就能成为高效分布式通信的设备节点。
 
-因此，若已有设备的 SDK (Driver)，可以直接 [添加进 Uni-Lab](add_device.md)。**仅当没有 SDK (Driver) 时，请参考本章进行驱动开发。**
+因此，若已有设备的 SDK (Driver)，请按[外部设备包指南](external_device_packages.md)创建独立驱动包。本页代码只供历史实现参考。
 
-> **💡 提示：** 本文档介绍如何为没有现成驱动的老设备开发驱动程序。如果您的设备已经有 SDK 或驱动，请直接参考 {doc}`add_device`。
+> **提示：** 本文档介绍旧版内置驱动开发方式。公开 v1.0 的设备包结构和运行方式见 {doc}`external_device_packages`。
 
 ## 有串口字符串指令集文档的设备：Python 串口通信（常见 RS485, RS232, USB）
 
@@ -335,13 +337,4 @@ child_window(title="数字键盘", auto_id="NumberPad", control_type="Group")
 
 ## 下一步
 
-完成设备驱动开发后，建议继续阅读：
-
-- {doc}`add_device` - 了解如何将驱动添加到 Uni-Lab 中
-- {doc}`add_action` - 学习如何添加新的动作指令
-- {doc}`add_yaml` - 编写和完善 YAML 注册表
-
-进阶主题：
-
-- {doc}`03_add_device_registry` - 详细的注册表配置
-- {doc}`04_add_device_testing` - 设备测试指南
+公开 v1.0 的后续步骤请阅读 {doc}`external_device_packages`、{doc}`add_action` 和 {doc}`add_registry`。

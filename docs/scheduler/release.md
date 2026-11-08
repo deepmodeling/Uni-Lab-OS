@@ -5,6 +5,30 @@ Rust 动态库。同一 Task 内允许满足依赖和资源约束的并行作业
 等待当前 Task 结算。暂停保留队首，失败和取消须完成结算后才推进下一 Task。
 平台继续负责设备调用、库存、持久开始许可、人工授权和结果恢复。
 
+## 固定队列策略
+
+默认引擎为 `queue`。公开 v1.0 的策略固定如下：
+
+| 配置项 | 行为 |
+| --- | --- |
+| `queue_order` | `fifo` |
+| `paused_task` | `hold` |
+| `failed_task` | `advance_after_settlement` |
+| `canceled_task` | `advance_after_settlement` |
+| `manual_outside_scope` | `reject` |
+
+## 旧时间规划配置迁移
+
+旧时间规划设置不能选择新调度引擎。非空旧设置可能让启动以 `CONFIG_INVALID` 失败；升级前请清理旧环境变量。
+
+| 旧变量 | v1.0 行为与迁移 |
+| --- | --- |
+| `UNILABOS_TIME_SCHEDULING_ENABLED` | 不能选择引擎。未设置或留空可启动；只有引擎为 `queue` 时，`false` / `0` 可保留但没有选择作用。其他非空值会导致启动失败。建议删除。 |
+| `UNILABOS_TIME_SCHEDULING_SOLVE_SECONDS`、`UNILABOS_TIME_SCHEDULING_MAX_NODES` | 任一非空值都会导致启动失败。队列用户删除；插件用户仅在插件 schema 支持时迁移。 |
+| `ULAB_SCHEDULER_AGING_INTERVAL_SECONDS`、`ULAB_ESTIMATE_MODE`、`ULAB_ESTIMATE_DEFAULT_S`、`UNILABOS_TIMING_RULES_FILE` | 任一非空值都会导致启动失败。队列用户删除；插件用户仅在插件 schema 支持时迁移。 |
+
+队列模式使用 `UNILABOS_SCHEDULING_ENGINE=queue`。旧算法参数不能直接映射为队列配置。如果仍需第三方算法，应选择 `UNILABOS_SCHEDULING_ENGINE=plugin`、提供 `UNILABOS_SCHEDULING_MANIFEST`，并将 `UNILABOS_SCHEDULING_CONFIG` 写成该插件 schema 接受的 JSON 对象；不要把旧变量名原样塞进新配置。
+
 ## 构建与验证
 
 需要 Python 3.11+ 和 Rust 稳定版工具链。
@@ -15,6 +39,13 @@ cargo test --locked --manifest-path native/scheduler_shared/Cargo.toml
 cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
 python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
 UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
+```
+
+PowerShell:
+
+```powershell
+$env:UNILAB_TEST_CLEAN_INSTALL = "1"
+python -m pytest -q tests/scheduling
 ```
 
 构建 wheel 时会自动生成当前平台的串行库：

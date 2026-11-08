@@ -2,7 +2,7 @@
 
 > **文档类型**：架构设计指南与实战案例  
 > **适用场景**：大型工作站接入、子设备管理、物料系统集成  
-> **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **前置知识**：{doc}`../external_device_packages` | {doc}`../add_registry`
 
 ## 0. 问题简介
 

@@ -4,8 +4,6 @@
 
 # Uni-Lab-OS
 
-<!-- Language switcher -->
-
 [English](README.md) | **中文**
 
 [![GitHub Stars](https://img.shields.io/github/stars/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
@@ -13,79 +11,52 @@
 [![GitHub Issues](https://img.shields.io/github/issues/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
 [![GitHub License](https://img.shields.io/github/license/deepmodeling/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
 
-Uni-Lab-OS 用于连接实验设备并运行实验工作流。公开版提供串行 Task 调度器：Task 进入队列后按 FIFO（先进先出，first in, first out）顺序推进。同一 Task 内，依赖和资源都允许时作业可以并行。暂停会保留队首。失败或取消的 Task 必须完成结算，下一 Task 才会前进。设备调用、库存、持久开始许可、人工授权和结果恢复仍由平台负责。
+Uni-Lab-OS 是一个开源的实验室自动化平台，用统一方式接入实验设备，并描述设备、物料及其协同执行的实验工作流。
 
-Python 包与原生串行库的版本都是 **1.0.0**。构建步骤、配置和已记录的验收见[串行 Task 说明](docs/scheduler/release.md)。
+## 平台能力
 
-## 本版本包含什么
+- 为不同实验设备提供一致的接入接口。
+- 编排设备动作与物料操作，执行实验工作流。
+- 支持本地部署和分布式实验室部署。
+- 设备集成通过外部设备包独立开发和许可。
 
-| 包含 | 不包含 |
-| --- | --- |
-| 开源 FIFO 调度器 `unilab.queue`，以及由 `native/scheduler-queue` 构建的 Rust 库 | CP-SAT（约束规划可满足性，constraint programming SAT）源码、商业动态库和商业构建依赖 |
-| 共用调度协议、插件宿主和独立 worker | 其他仓库的私有父提交历史 |
-| 驱动该调度器的宿主、工作流、物料与 Edge 代码 | 树内设备驱动。驱动以独立包发布，并使用各自的许可证 |
-| 公开验收套件 [`tests/scheduling`](tests/scheduling) | 旧时间规划算法。相关设置不能用来选择引擎 |
+## v1.0 串行 Task 版本
 
-默认 `UNILABOS_SCHEDULING_ENGINE=queue`。启动时宿主从 `unilabos/scheduling/queue_native/plugin.json` 加载原生库。运行时不会调用编译器，也不会退回 Python 调度算法。将引擎设为 `plugin` 时，通过 `UNILABOS_SCHEDULING_MANIFEST` 指向的路径加载其他引擎。
+公开版 v1.0 按 FIFO（先进先出）顺序推进 Task。当前 Task 内的作业在依赖和资源允许时可以并行。设备接入、物料管理和工作流协作仍由平台负责。调度配置、旧参数迁移和验收细节见[串行 Task 发行说明](docs/scheduler/release.md)。
 
-队列策略是固定的：
+## 快速开始
 
-| 键 | 值 |
-| --- | --- |
-| `queue_order` | `fifo` |
-| `paused_task` | `hold` |
-| `failed_task` | `advance_after_settlement` |
-| `canceled_task` | `advance_after_settlement` |
-| `manual_outside_scope` | `reject` |
-
-公开 CI（持续集成，continuous integration）为 [`.github/workflows/public-scheduler.yml`](.github/workflows/public-scheduler.yml)。它在 Linux、macOS 和 Windows 上使用 Python 3.11 构建真实动态库，并运行 `tests/scheduling`。
-
-## 环境
-
-- Python 3.11 或更高版本
-- Rust 稳定版工具链，用于从本仓库编译串行库
-
-## 安装
-
-在仓库根目录执行：
+环境要求：Python 3.11 或更高版本，以及 Rust 稳定版工具链。完整 ROS 2 运行环境所需依赖见[安装指南](docs/user_guide/installation.md)。
 
 ```bash
-python -m pip install -e . pytest wheel packaging
+git clone --branch feat/schedule https://github.com/deepmodeling/Uni-Lab-OS.git
+cd Uni-Lab-OS
+python -m venv .venv
+```
+
+激活虚拟环境后，安装源码并构建原生调度库：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
 python native/scheduler-queue/build.py --destination unilabos/scheduling/queue_native
+unilab --help
 ```
 
-可编辑安装会提供命令 `unilab`、`unilab-supervisor` 和 `unilab-mcp`。启动队列引擎前，用第二条命令构建串行库。构建 wheel 时会为当前操作系统和 CPU 编译该库并打进 wheel：
+Linux 和 macOS 使用 `source .venv/bin/activate` 激活环境，其余 Python 命令相同。
 
-```bash
-python -m pip wheel . --no-deps -w dist/public
-```
+创建并运行一个无硬件 mock 设备包和首个 Task，请按[外部设备包指南](docs/developer_guide/external_device_packages.md)操作。
 
-wheel 标记为 `py3-none-<platform>`。动态库不链接 CPython。若库构建在其他目录，把 `UNILABOS_SCHEDULING_MANIFEST` 指到该目录的 `plugin.json`。构建目标目录必须尚不存在。
-
-协议清单和 ABI（应用二进制接口，application binary interface）见 [`unilabos/scheduling/contract/`](unilabos/scheduling/contract/)。库的说明见 [`native/scheduler-queue/README.md`](native/scheduler-queue/README.md)。
-
-## 检查构建
-
-```bash
-cargo test --locked --manifest-path native/scheduler_shared/Cargo.toml
-cargo test --locked --manifest-path native/scheduler-queue/Cargo.toml
-UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
-```
-
-`tests/scheduling` 使用真实原生库，覆盖协议边界、FIFO 顺序、暂停、结算后推进、幂等、持久会话恢复，以及从已安装 wheel 执行 Task。验收记录写在[发行说明](docs/scheduler/release.md)。
+可选：使用 MCP 命令时，安装 `python -m pip install -e ".[mcp]"`。
 
 ## 文档
 
-[docs/index.md](docs/index.md) 是文档集的索引。本页不罗列其中的页面。串行 Task 说明 [docs/scheduler/release.md](docs/scheduler/release.md) 不在这个索引里。
+- [文档索引](docs/index.md)
+- [源码安装](docs/user_guide/installation.md)
+- [外部设备包](docs/developer_guide/external_device_packages.md)
+- [串行 Task 调度器](docs/scheduler/release.md)
 
-## 目录
-
-| 路径 | 内容 |
-| --- | --- |
-| [`native/scheduler-queue/`](native/scheduler-queue/) | FIFO 动态库 |
-| [`native/scheduler_shared/`](native/scheduler_shared/) | 共用的 Rust 协议与语义检查 |
-| [`unilabos/scheduling/`](unilabos/scheduling/) | Python 宿主、队列适配和插件 worker |
-| [`tests/scheduling/`](tests/scheduling/) | 公开版调度验收套件 |
+公开调度器 workflow 已配置为在 Linux、macOS 和 Windows 上使用 Python 3.11 构建原生库并运行 `tests/scheduling`。
 
 ## 引用
 
@@ -106,9 +77,7 @@ UNILAB_TEST_CLEAN_INSTALL=1 python -m pytest -q tests/scheduling
 
 ## 许可证
 
-本仓库中的代码为 GPL-3.0。见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
-
-`setup.py` 不发行 `unilabos.devices`。驱动包使用各自的许可证。该目录存在时，`unilabos/devices/` 适用深势科技专有许可证。
+本仓库代码适用 GPL-3.0；详见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。外部设备包独立发布，并各自声明许可证。
 
 ## 联系
 

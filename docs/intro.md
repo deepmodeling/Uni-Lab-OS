@@ -39,14 +39,14 @@ advanced_usage/working_directory.md
 
 设备开发、系统扩展与架构说明。
 
+公开版 v1.0 的外部设备包开发入口见[外部设备包指南](developer_guide/external_device_packages.md)。
+
 ```{toctree}
 :maxdepth: 2
 
 developer_guide/networking_overview.md
-developer_guide/add_device.md
 developer_guide/add_old_device.md
 developer_guide/add_registry.md
-developer_guide/add_yaml.md
 developer_guide/add_action.md
 developer_guide/actions.md
 developer_guide/action_includes.md

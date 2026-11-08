@@ -848,7 +848,7 @@ class ResourceDictPosition(BaseModel):
 ## 下一步
 
 - {doc}`../boot_examples/index` - 查看完整启动示例
-- {doc}`../developer_guide/add_device` - 了解如何添加新设备
+- {doc}`../developer_guide/external_device_packages` - 了解如何添加新设备
 - {doc}`06_troubleshooting` - 图文件相关问题排查
 - 源码参考: `unilabos/ros/nodes/resource_tracker.py` - ResourceDict 标准定义
 

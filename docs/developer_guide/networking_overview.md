@@ -610,7 +610,7 @@ ros2 topic list
 - [最佳实践指南](../user_guide/best_practice.md) - 完整的实验室搭建流程
 - [安装指南](../user_guide/installation.md) - 环境安装步骤
 - [启动参数详解](../user_guide/launch.md) - 启动参数说明
-- [添加设备驱动](add_device.md) - 自定义设备开发
+- [添加设备驱动](external_device_packages.md) - 自定义设备开发
 - [工作站架构](workstation_architecture.md) - 复杂工作站搭建
 
 ---

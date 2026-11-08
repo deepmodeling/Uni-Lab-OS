@@ -2,7 +2,7 @@
 
 > **文档类型**：实际应用案例  
 > **适用场景**：使用 PLC 控制的电池装配工站接入  
-> **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **前置知识**：{doc}`../external_device_packages` | {doc}`../add_registry`
 
 本指南以电池装配工站为实际案例，引导你完成 PLC 控制设备的完整接入流程，包括新建工站文件、编写驱动与寄存器读写、生成注册表、上传及注意事项。
 
@@ -179,7 +179,7 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 
 ### 相关文档
 
-- {doc}`../add_device` - 设备驱动编写通用指南
+- {doc}`../external_device_packages` - v1.0 外部设备包开发指南
 - {doc}`../add_registry` - 注册表配置完整指南
 - {doc}`../workstation_architecture` - 工站架构详解
 

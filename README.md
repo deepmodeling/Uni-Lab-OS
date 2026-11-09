@@ -158,7 +158,7 @@ Edge connection factory branches on a legacy probe.
 ### 5. Use a custom UI
 
 Uni-Lab is backend-only: an Edge process does not host a SPA. Build or deploy
-your UI separately ([OpenLab](https://xuwznln.github.io/OpenLabSite/) is one example), and configure its API base URL to
+your UI separately ([Uni-Lab FE source](https://git.dp.tech/lab-os/uni-lab-fe)), and configure its API base URL to
 the management endpoint:
 
 | Deployment | UI API base URL |
@@ -167,8 +167,7 @@ the management endpoint:
 | Split deployment | `http://127.0.0.1:8081` (the Backend authority) |
 | Remote Backend | the address passed to `--address` |
 
-For debugging, this repository also ships a React debug console in [`frontend/`](frontend/README.md)
-(`cd frontend && npm ci && npm run dev`, proxied to `http://127.0.0.1:8002`); OpenLab remains the recommended UI.
+The frontend is maintained in the separate Uni-Lab FE repository; this repository provides the backend API and its exported contract.
 
 Use the generated contract at `/api/openapi.json` and the interactive docs at
 `/api/docs`. A Vite-style static UI can be developed and served independently:

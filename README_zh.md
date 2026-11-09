@@ -150,7 +150,7 @@ legacy 探测分叉。
 ### 5. 使用自定义界面
 
 Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部署自己的
-前端（[OpenLab](https://xuwznln.github.io/OpenLabSite/) 是一个示例），并把 API 根地址配置为管理端点：
+前端（[Uni-Lab FE 源码](https://git.dp.tech/lab-os/uni-lab-fe)），并把 API 根地址配置为管理端点：
 
 | 部署方式 | 前端 API 根地址 |
 |----------|----------------|
@@ -158,8 +158,7 @@ Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部
 | 拆分部署 | `http://127.0.0.1:8081`（Backend 权威） |
 | 远端 Backend | 启动参数 `--address` 指定的地址 |
 
-调试时可以用仓库自带的 React 调试控制台 [`frontend/`](frontend/README.md)（`cd frontend && npm ci && npm run dev`，
-代理到 `http://127.0.0.1:8002`）；推荐界面仍是 OpenLab。
+前端在独立的 Uni-Lab FE 仓库维护，本仓库提供后端 API 和导出的接口契约。
 
 接口契约见 `/api/openapi.json`，交互式文档见 `/api/docs`。以 Vite 为例，
 自定义静态前端可独立开发和预览：

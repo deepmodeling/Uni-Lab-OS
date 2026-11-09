@@ -1,4 +1,4 @@
-"""物料天然带锁：未声明 materials_need_lock 时，物料入参默认独占。"""
+"""物料天然带锁：未声明 materials_need_lock 时，物料入参默认在本次使用期间互斥。"""
 
 from __future__ import annotations
 
@@ -138,5 +138,5 @@ class Driver:
     assert mappings["transfer"]["materials_need_lock"] == ["source", "targets"]
     assert mappings["compare"]["materials_need_lock"] == ["sample"]
     assert mappings["look"]["materials_need_lock"] == []
-    # 未加 @action 的 auto- 动作同样默认独占物料入参
+    # 未加 @action 的 auto- 动作同样默认给物料入参加锁
     assert mappings["auto-shake"]["materials_need_lock"] == ["plate"]

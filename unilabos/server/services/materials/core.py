@@ -16,6 +16,7 @@ from unilabos.server.services.materials.chemicals import (
     resolve_substance_chemicals,
 )
 from unilabos.server.services.materials.store import MaterialsRepository
+from unilabos.server.services.materials.quantity import convert_quantity, quantity_tolerance
 from unilabos.server.database.tables.materials import (
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
@@ -36,6 +37,7 @@ from unilabos.protocol.materials import (
     InventoryAllocation,
     InventoryLotInbound,
     InventoryLotRead,
+    InventoryStocktake,
     InventoryRequirement,
     InventoryReservationCreate,
     InventoryReservationRead,
@@ -291,6 +293,16 @@ class MaterialsService(MaterialsRepository):
                 effect_started = True
                 self._check_preconditions(mutation.preconditions)
                 applied = apply(timestamp)
+                # 所有内容、快照、配置变更在同一写事务的最终状态校验容量。
+                capacity_materials = {item.aggregate_uuid for item in applied.affected if item.aggregate_type == "material"}
+                for item in applied.affected:
+                    if item.aggregate_type == "resource_template":
+                        capacity_materials.update(row[0] for row in self.connection.execute(
+                            "SELECT material_uuid FROM material WHERE template_uuid=? AND deleted_at_ms IS NULL",
+                            (item.aggregate_uuid,),
+                        ).fetchall())
+                for identity in capacity_materials:
+                    self._validate_material_capacity(identity)
                 if not applied.sequences:
                     raise MaterialNoChangeError("mutation produced no aggregate change")
                 result = result_model(
@@ -590,6 +602,48 @@ class MaterialsService(MaterialsRepository):
             apply,
         )
 
+    def stocktake_inventory_lot(
+        self, mutation: InventoryMutation, value: InventoryStocktake,
+    ) -> MutationResult[InventoryLotRead]:
+        """人工核对数量后校正；身份、预留和版本冲突不自动覆盖。"""
+        if mutation.operation != "stocktake_inventory_lot" or not mutation.actor_uuid:
+            raise MaterialValidationError("盘点需要正确操作类型及明确的操作人")
+
+        def apply(timestamp: int) -> _Applied[InventoryLotRead]:
+            current = self.get_lot(value.lot_uuid)
+            if current is None:
+                raise MaterialNotFoundError("盘点批次不存在")
+            if current.version != value.expected_version:
+                raise MaterialConflictError("盘点期间库存版本已变化，请重新核对")
+            if current.unit.casefold() not in {"count", "piece", "粒"} or not current.quantity_total.is_integer():
+                raise MaterialValidationError("计数盘点只适用于离散整数库存")
+            if current.quantity_total != value.measured_count:
+                identified = self.connection.execute(
+                    "SELECT material_uuid FROM material WHERE lot_uuid=? AND deleted_at_ms IS NULL LIMIT 1",
+                    (current.lot_uuid,),
+                ).fetchone()
+                if current.quarantined or current.quantity_reserved > 0 or identified is not None:
+                    raise MaterialConflictError("stocktake_review_required: 差异涉及隔离、预留或已登记物料，必须先复核")
+            updated = self._advance_lot(
+                current, total_delta=value.measured_count - current.quantity_total,
+                available_delta=value.measured_count - current.quantity_total, timestamp=timestamp,
+            )
+            self.update_lot(updated)
+            state_hash = self._lot_state_hash(updated)
+            sequence = self._ledger(
+                mutation, aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                operation="inventory.lot.stocktake", previous_version=current.version,
+                aggregate_version=updated.version, state_hash=state_hash, timestamp=timestamp,
+                delta={"previous_count": current.quantity_total, "measured_count": value.measured_count,
+                       "reason": value.reason, "source": "operator"},
+            )
+            return _Applied(self._lot_read(updated), [AggregateVersion(
+                aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                version=updated.version, state_hash=state_hash,
+            )], [sequence])
+
+        return self._run_mutation(mutation, value, MutationResult[InventoryLotRead], apply)
+
     def get_inventory_reservation(
         self, reservation_uuid: str
     ) -> InventoryReservationRead:
@@ -648,62 +702,28 @@ class MaterialsService(MaterialsRepository):
                     f"inventory reservation already exists: {reservation_uuid}"
                 )
 
-            allocations: list[InventoryAllocation] = []
-            selected_materials: set[str] = set()
+            allocations, shortages = self._plan_inventory(value.requirements, timestamp)
+            if shortages:
+                # 预检报告提供中文说明，既有预留接口保留示例和调用方依赖的错误文案。
+                raise InsufficientInventoryError("; ".join(
+                    f"requirement {item['key']!r} is short by {item['shortage']:g} {item['unit']}"
+                    if item["kind"] == "lot" else item["message"]
+                    for item in shortages
+                ))
             material_updates: list[tuple[MaterialRecord, MaterialRecord]] = []
             lot_reserved: dict[str, float] = {}
-
-            for requirement in value.requirements:
-                if requirement.kind == "material":
-                    material = self._select_inventory_material(
-                        requirement,
-                        selected_materials=selected_materials,
-                    )
-                    selected_materials.add(material.material_uuid)
-                    updated = material.model_copy(
-                        update={
-                            "lifecycle_status": "reserved",
-                            "updated_at_ms": timestamp,
-                            "version": material.version + 1,
-                        }
-                    )
+            for allocation in allocations:
+                if allocation.kind == "material":
+                    material = MaterialsRepository.get_material(self, allocation.material_uuid)
+                    assert material is not None
+                    updated = material.model_copy(update={
+                        "lifecycle_status": "reserved", "updated_at_ms": timestamp,
+                        "version": material.version + 1,
+                    })
                     material_updates.append((material, updated))
-                    allocations.append(
-                        InventoryAllocation(
-                            key=requirement.key,
-                            kind="material",
-                            material_uuid=material.material_uuid,
-                            template_uuid=material.template_uuid,
-                        )
-                    )
-                    continue
-
-                remaining = float(requirement.quantity or 0)
-                candidates = self._candidate_inventory_lots(requirement, timestamp)
-                for lot in candidates:
-                    already = lot_reserved.get(lot.lot_uuid, 0.0)
-                    available = lot.quantity_available - already
-                    take = min(available, remaining)
-                    if take <= 1e-9:
-                        continue
-                    lot_reserved[lot.lot_uuid] = already + take
-                    allocations.append(
-                        InventoryAllocation(
-                            key=requirement.key,
-                            kind="lot",
-                            template_uuid=lot.template_uuid,
-                            lot_uuid=lot.lot_uuid,
-                            quantity=take,
-                            unit=lot.unit,
-                        )
-                    )
-                    remaining -= take
-                    if remaining <= 1e-9:
-                        break
-                if remaining > 1e-9:
-                    raise InsufficientInventoryError(
-                        f"requirement {requirement.key!r} is short by {remaining:g} "
-                        f"{requirement.unit}"
+                else:
+                    lot_reserved[allocation.lot_uuid] = (
+                        lot_reserved.get(allocation.lot_uuid, 0.0) + allocation.quantity
                     )
 
             affected: list[AggregateVersion] = []
@@ -945,6 +965,72 @@ class MaterialsService(MaterialsRepository):
             f"({identity})"
         )
 
+    def _plan_inventory(
+        self, requirements: Sequence[InventoryRequirement], timestamp: int,
+    ) -> tuple[list[InventoryAllocation], list[dict[str, Any]]]:
+        """整批需求共用虚拟余量；与真正预留复用同一筛选、单位换算和顺序。"""
+        allocations: list[InventoryAllocation] = []
+        shortages: list[dict[str, Any]] = []
+        selected_materials: set[str] = set()
+        lot_reserved: dict[str, float] = {}
+        for requirement in requirements:
+            if requirement.kind == "material":
+                try:
+                    material = self._select_inventory_material(requirement, selected_materials=selected_materials)
+                except (InsufficientInventoryError, MaterialNotFoundError) as error:
+                    shortages.append({"key": requirement.key, "kind": "material", "message": str(error)})
+                    continue
+                selected_materials.add(material.material_uuid)
+                allocations.append(InventoryAllocation(
+                    key=requirement.key, kind="material", material_uuid=material.material_uuid,
+                    template_uuid=material.template_uuid,
+                ))
+                continue
+            requested = remaining = float(requirement.quantity)
+            for lot in self._candidate_inventory_lots(requirement, timestamp):
+                # 分配与流水始终以原批次单位记账；跨批次需求以请求单位比较。
+                converted = convert_quantity(1.0, lot.unit, requirement.unit)
+                assert converted is not None
+                factor = converted[0]
+                available = max(0.0, lot.quantity_available - lot_reserved.get(lot.lot_uuid, 0.0))
+                take = min(available, remaining / factor)
+                if take <= 0:
+                    continue
+                lot_reserved[lot.lot_uuid] = lot_reserved.get(lot.lot_uuid, 0.0) + take
+                allocations.append(InventoryAllocation(
+                    key=requirement.key, kind="lot", template_uuid=lot.template_uuid,
+                    lot_uuid=lot.lot_uuid, quantity=take, unit=lot.unit,
+                ))
+                remaining -= take * factor
+                if remaining <= quantity_tolerance(requested, remaining):
+                    remaining = 0.0
+                    break
+            if remaining > 0:
+                shortages.append({
+                    "key": requirement.key, "kind": "lot", "lot_uuid": requirement.lot_uuid,
+                    "template_uuid": requirement.template_uuid, "required": requested,
+                    "available": requested - remaining, "shortage": remaining, "unit": requirement.unit,
+                    "message": f"库存需求 {requirement.key} 缺少 {remaining:g} {requirement.unit}",
+                })
+        return allocations, shortages
+
+    def preview_inventory(self, requirements: Sequence[InventoryRequirement]) -> dict[str, Any]:
+        """只读库存快照，不创建预留、命令效果或流水。结果不是派发许可。"""
+        with self._write_lock:
+            nested = self.connection.in_transaction
+            if not nested:
+                self.connection.execute("BEGIN")
+            try:
+                allocations, shortages = self._plan_inventory(requirements, int(time.time() * 1000))
+                return {
+                    "available": not shortages,
+                    "allocations": [item.model_dump(mode="json") for item in allocations],
+                    "shortages": shortages,
+                }
+            finally:
+                if not nested:
+                    self.connection.rollback()
+
     def _candidate_inventory_lots(
         self,
         requirement: InventoryRequirement,
@@ -960,18 +1046,17 @@ class MaterialsService(MaterialsRepository):
         else:
             candidates = self.list_lots(
                 template_uuid=requirement.template_uuid,
-                unit=requirement.unit,
                 available_only=True,
             )
         result: list[InventoryLotRecord] = []
         for lot in candidates:
-            if lot.quarantined or lot.quantity_available <= 1e-9:
+            if lot.quarantined or lot.quantity_available <= 0:
                 continue
             if requirement.template_uuid is not None and (
                 lot.template_uuid != requirement.template_uuid
             ):
                 continue
-            if lot.unit != requirement.unit:
+            if convert_quantity(1.0, lot.unit, requirement.unit) is None:
                 continue
             if lot.expiry_at_ms is not None and lot.expiry_at_ms <= timestamp:
                 continue
@@ -987,16 +1072,18 @@ class MaterialsService(MaterialsRepository):
         reserved_delta: float = 0,
         timestamp: int,
     ) -> InventoryLotRecord:
-        def normalized(value: float) -> float:
-            return 0.0 if abs(value) <= 1e-9 else value
+        def adjusted(value: float, delta: float) -> float:
+            result = value + delta
+            return 0.0 if abs(result) <= quantity_tolerance(value, delta) else result
 
-        total = normalized(current.quantity_total + total_delta)
-        available = normalized(current.quantity_available + available_delta)
-        reserved = normalized(current.quantity_reserved + reserved_delta)
-        if min(total, available, reserved) < 0 or available + reserved > total + 1e-9:
-            raise MaterialConflictError(
-                f"inventory lot invariant failed for {current.lot_uuid}"
-            )
+        total = adjusted(current.quantity_total, total_delta)
+        available = adjusted(current.quantity_available, available_delta)
+        reserved = adjusted(current.quantity_reserved, reserved_delta)
+        if min(total, available, reserved) < 0 or available + reserved > total + quantity_tolerance(total):
+            raise MaterialConflictError(f"inventory lot invariant failed for {current.lot_uuid}")
+        # SQLite 的约束不带容差；把纯舍入差异收敛到可用量。
+        if available + reserved > total:
+            available = max(0.0, total - reserved)
         return current.model_copy(
             update={
                 "quantity_total": total,
@@ -2256,6 +2343,32 @@ class MaterialsService(MaterialsRepository):
         return records
 
     # -- Material aggregate updates --------------------------------------
+
+    def _validate_material_capacity(
+        self, material_uuid: str, substances: Optional[Sequence[MaterialSubstanceRecord]] = None,
+        *, config: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, float]:
+        from unilabos.server.services.materials.capacity import capacity_projection, validate_contents
+
+        material = MaterialsRepository.get_material(self, material_uuid)
+        if material is None:
+            return {}
+        template = MaterialsRepository.get_template(self, material.template_uuid, include_deleted=True)
+        try:
+            capacity = capacity_projection(
+                material.config_json if config is None else config,
+                template.definition_json if template is not None else {},
+            )
+            if not capacity:
+                return {}
+            if substances is None:
+                data = self.get_data(material_uuid)
+                substances = data.substances if data is not None else []
+            chemicals = chemical_summaries(self.connection, [item.chemical_uuid for item in substances if item.chemical_uuid])
+            validate_contents(capacity, substances, chemicals)
+            return capacity
+        except ValueError as error:
+            raise MaterialValidationError(str(error)) from None
 
     def patch_material(
         self,

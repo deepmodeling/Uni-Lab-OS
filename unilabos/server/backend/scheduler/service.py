@@ -137,7 +137,9 @@ class BackendSchedulingError(RuntimeError):
     """A persisted execution plan cannot be mapped to the local executor."""
 
 
-def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
+def allocation_arguments(
+    items: Any, *, action_schema: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """把权威的 InventoryAllocation 列表按需求 key 归并成动作参数值。
 
     - ``material``：一个需求恰好选出一个物料实例，值是 ResourceSlot 引用形态
@@ -146,9 +148,15 @@ def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
       值给出合计数量与 lot 明细 ``{"quantity", "unit", "lots": [{"lot_uuid", "quantity"}]}``。
     """
 
+    from unilabos.server.services.materials.quantity import convert_quantity
+
+    fields = (action_schema or {}).get("properties", {}).get("goal", {}).get("properties", {})
     arguments: Dict[str, Dict[str, Any]] = {}
     for item in items:
         if item.kind == "material":
+            if "x-unilabos-material-lock" in fields.get(item.key, {}):
+                arguments[item.key] = {"uuid": item.material_uuid}
+                continue
             arguments[item.key] = {
                 "key": item.key,
                 "kind": "material",
@@ -167,8 +175,12 @@ def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
                 "lots": [],
             },
         )
-        current["quantity"] = float(current["quantity"]) + float(item.quantity or 0)
-        current["lots"].append({"lot_uuid": item.lot_uuid, "quantity": float(item.quantity or 0)})
+        # 预留记录保持各批次原单位；给动作的合计和明细统一为首个批次单位。
+        converted = convert_quantity(float(item.quantity or 0), item.unit, current["unit"])
+        if converted is None:
+            raise BackendSchedulingError(f"库存需求 {item.key} 的批次单位无法合并")
+        current["quantity"] = float(current["quantity"]) + converted[0]
+        current["lots"].append({"lot_uuid": item.lot_uuid, "quantity": converted[0]})
     return arguments
 
 
@@ -591,6 +603,7 @@ class BackendScheduler:
                 # 节点级超时（冻结语义 execution_timeout_seconds / 新增 timeout_seconds，0 = 未声明）
                 "execution_policy": dict(policy),
                 "base_param": param,
+                "param_schema": planned.get("param_schema"),
                 "edges": list(plan.get("edges") or []),
                 "runs_by_node": {
                     node_uuid: str(node_run["uuid"])
@@ -721,6 +734,13 @@ class BackendScheduler:
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
         # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
         args.update(spec.get("inventory_allocations") or {})
+        from unilabos.registry.typed_contract import validate_action_values
+
+        args = validate_action_values(spec.get("param_schema"), args)
+        if spec.get("param_schema"):
+            from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+            validate_resource_values(spec["param_schema"], args, self.materials_gateway)
         parameter_names = self._material_lock_parameters(
             node.device_id,
             node.action,
@@ -1233,7 +1253,9 @@ class BackendScheduler:
                     }
                 )
                 # 权威解析出的出库内容：按需求 key 归并，派发时注入同名动作参数
-                spec["inventory_allocations"] = allocation_arguments(reservation.items)
+                spec["inventory_allocations"] = allocation_arguments(
+                    reservation.items, action_schema=spec.get("param_schema"),
+                )
 
     def _reserve_task_inventory(
         self,

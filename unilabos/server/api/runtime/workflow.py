@@ -211,6 +211,7 @@ class WorkflowTaskCreateRequest(_BackendModel):
 
     execution_kind: str = "workflow"
     workflow_uuid: str = ""
+    expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
     run_mode: str = "normal"
     target_node_uuid: Optional[str] = None
     description: Optional[str] = None
@@ -229,6 +230,13 @@ class WorkflowTaskCreateRequest(_BackendModel):
     @classmethod
     def _json_object(cls, value: Any) -> Dict[str, Any]:
         return normalize_json_object(value)
+
+
+class WorkflowPreflightRequest(_StrictModel):
+    run_mode: Literal["normal", "step", "single_node"] = "normal"
+    target_node_uuid: Optional[str] = None
+    input: Dict[str, Any] = Field(default_factory=dict)
+    expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
 
 
 class WorkflowTaskInputEditRequest(_StrictModel):
@@ -551,6 +559,14 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             status=201,
         )
 
+    @router.post("/workflows/{workflow_uuid}/run-preflight")
+    def preflight_workflow(workflow_uuid: str, body: WorkflowPreflightRequest) -> JSONResponse:
+        return _success(service.preflight_workflow(
+            workflow_uuid=workflow_uuid, run_mode=body.run_mode,
+            target_node_uuid=body.target_node_uuid, input_value=body.input,
+            expected_revision=body.expected_revision,
+        ))
+
     @router.post("/workflow-tasks")
     def create_workflow_task(
         body: WorkflowTaskCreateRequest,
@@ -577,6 +593,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         return _success(
             service.create_workflow_task(
                 workflow_uuid=body.workflow_uuid,
+                expected_revision=body.expected_revision,
                 run_mode=body.run_mode,
                 target_node_uuid=body.target_node_uuid,
                 input_value=body.input,

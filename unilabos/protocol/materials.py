@@ -561,6 +561,15 @@ class InventoryLotInbound(ServerObject):
     expiry_at_ms: Optional[int] = Field(default=None, ge=0)
 
 
+class InventoryStocktake(ServerObject):
+    """人工盘点计数库存；预留或已实例化库存的差异必须另行复核。"""
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_count: int = Field(ge=0, strict=True)
+    reason: NonEmptyStr
+
+
 class InventoryLotRead(ServerObject):
     lot_uuid: NonEmptyStr
     template_uuid: NonEmptyStr

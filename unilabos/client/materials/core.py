@@ -98,6 +98,12 @@ class LocalMaterialsClient:
             include_quarantined=include_quarantined,
         )
 
+    def stocktake_inventory_lot(self, mutation, value):
+        return self.service.stocktake_inventory_lot(bind_payload(mutation, value), value)
+
+    def preview_inventory(self, requirements):
+        return self.service.preview_inventory(requirements)
+
     def reserve_inventory(self, mutation, value):
         return self.service.reserve_inventory(bind_payload(mutation, value), value)
 
@@ -491,6 +497,16 @@ class HTTPMaterialsClient:
             InventoryLotRead.model_validate(item)
             for item in self._request("GET", f"/lots?{query}")
         ]
+
+    def stocktake_inventory_lot(self, mutation, value):
+        return MutationResult[InventoryLotRead].model_validate(self._request(
+            "POST", f"/lots/{value.lot_uuid}/stocktake", bind_payload(mutation, value),
+        ))
+
+    def preview_inventory(self, requirements):
+        return self._request("POST", "/inventory/preview", {
+            "requirements": [item.model_dump(mode="json") for item in requirements],
+        })
 
     def reserve_inventory(
         self,

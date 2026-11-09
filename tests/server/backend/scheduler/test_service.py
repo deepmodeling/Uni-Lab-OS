@@ -347,6 +347,18 @@ def test_start_node_injects_resolved_inventory_into_action_args() -> None:
     }
 
 
+def test_mixed_unit_lot_arguments_share_one_unit_without_changing_reservations() -> None:
+    items = [
+        InventoryAllocation(key="water", kind="lot", template_uuid="water", lot_uuid="a", quantity=500, unit="uL"),
+        InventoryAllocation(key="water", kind="lot", template_uuid="water", lot_uuid="b", quantity=0.5, unit="mL"),
+    ]
+    arguments = allocation_arguments(items)["water"]
+    assert arguments["unit"] == "uL"
+    assert arguments["quantity"] == 1000
+    assert arguments["lots"] == [{"lot_uuid": "a", "quantity": 500}, {"lot_uuid": "b", "quantity": 500}]
+    assert items[1].quantity == 0.5 and items[1].unit == "mL"
+
+
 def test_dispatch_waits_for_the_execution_adapter_and_resumes_on_host_ready() -> None:
     """执行适配器未注册（ROS2 host node 晚于管理 API 就绪）时不派发，host ready 后原样派发。"""
 

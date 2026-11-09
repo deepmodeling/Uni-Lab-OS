@@ -357,3 +357,15 @@ export interface Intervention extends Base {
 export type MaterialAggregate = Schemas['MaterialAggregateRead']
 export type MaterialIdentity = Schemas['MaterialIdentityRead']
 export type MaterialSite = Schemas['SiteRead']
+
+/** 候选运行预检（server/services/runtime/workflow/run_preflight.py）。 */
+export interface RunPreflight {
+  workflow_uuid: string
+  workflow_revision: number
+  status: 'invalid' | 'temporarily_unavailable' | 'runnable_now'
+  can_run: boolean
+  checked_at: string
+  checks: { type: string; status: string; code: string; message: string; blocking: boolean; node_uuid?: string; details: JsonObject }[]
+  summary: Record<string, number>
+}
+export type RunPreflightBody = Schemas['WorkflowPreflightRequest']

@@ -13,6 +13,8 @@ from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 from unilabos.server.lifecycle import shutting_down, sleep_unless_shutting_down
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.protocol.materials import (
+    InventoryRequirement,
+    InventoryStocktake,
     InventoryLotInbound,
     InventoryReservationCreate,
     InventoryReservationTransition,
@@ -39,6 +41,10 @@ from unilabos.server.services.materials import (
     InsufficientInventoryError,
     RejectedMutationError,
 )
+class InventoryPreviewRequest(ServerObject):
+    requirements: list[InventoryRequirement]
+
+
 class LedgerAcknowledge(ServerObject):
     through_sequence: int = Field(ge=0)
 
@@ -168,9 +174,20 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             include_quarantined=include_quarantined,
         )
 
+    @router.post("/lots/{lot_uuid}/stocktake")
+    def stocktake_inventory_lot(lot_uuid: str, mutation: InventoryMutation):
+        value = _payload(mutation, InventoryStocktake)
+        if value.lot_uuid != lot_uuid:
+            raise HTTPException(status_code=422, detail="盘点批次与路径不一致")
+        return _call(service.stocktake_inventory_lot, mutation, value)
+
     @router.get("/lots/{lot_uuid}")
     async def get_inventory_lot(lot_uuid: str):
         return _call(service.get_inventory_lot, lot_uuid)
+
+    @router.post("/inventory/preview")
+    def preview_inventory(body: InventoryPreviewRequest):
+        return _call(service.preview_inventory, body.requirements)
 
     @router.post("/reservations")
     async def reserve_inventory(mutation: InventoryMutation):

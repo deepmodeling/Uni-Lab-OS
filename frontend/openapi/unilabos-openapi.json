@@ -2821,6 +2821,46 @@
         "x-openlab-role": "any"
       }
     },
+    "/api/v1/materials/inventory/preview": {
+      "post": {
+        "tags": [
+          "materials-v1"
+        ],
+        "summary": "Preview Inventory",
+        "operationId": "preview_inventory_api_v1_materials_inventory_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-openlab-role": "any"
+      }
+    },
     "/api/v1/materials/links": {
       "get": {
         "tags": [
@@ -3112,6 +3152,57 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-openlab-role": "any"
+      }
+    },
+    "/api/v1/materials/lots/{lot_uuid}/stocktake": {
+      "post": {
+        "tags": [
+          "materials-v1"
+        ],
+        "summary": "Stocktake Inventory Lot",
+        "operationId": "stocktake_inventory_lot_api_v1_materials_lots__lot_uuid__stocktake_post",
+        "parameters": [
+          {
+            "name": "lot_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Lot Uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InventoryMutation"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8444,6 +8535,57 @@
         },
         "x-openlab-role": "any"
       }
+    },
+    "/api/v1/workflows/{workflow_uuid}/run-preflight": {
+      "post": {
+        "tags": [
+          "workflow"
+        ],
+        "summary": "Preflight Workflow",
+        "operationId": "preflight_workflow_api_v1_workflows__workflow_uuid__run_preflight_post",
+        "parameters": [
+          {
+            "name": "workflow_uuid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Workflow Uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowPreflightRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "x-openlab-role": "any"
+      }
     }
   },
   "components": {
@@ -11313,6 +11455,132 @@
         "title": "InventoryMutation",
         "description": "所有写请求共用的幂等信封。"
       },
+      "InventoryPreviewRequest": {
+        "properties": {
+          "requirements": {
+            "items": {
+              "$ref": "#/components/schemas/InventoryRequirement"
+            },
+            "type": "array",
+            "title": "Requirements"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "requirements"
+        ],
+        "title": "InventoryPreviewRequest"
+      },
+      "InventoryRequirement": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Key"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "material",
+              "lot"
+            ],
+            "title": "Kind"
+          },
+          "material_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Material Uuid"
+          },
+          "template_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Uuid"
+          },
+          "lot_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lot Uuid"
+          },
+          "parent_material_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Material Uuid"
+          },
+          "site_uuid": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Uuid"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "kind"
+        ],
+        "title": "InventoryRequirement",
+        "description": "调度器冻结的一项库存需求。\n\n两种 kind 区分的是账目形态而不是物料种类：``material`` 表示独立物料实例\n（有 uuid、可放到位点的个体，例如枪头盒、孔板、试剂瓶），只改变生命周期而不\n扣数量；``lot`` 表示按量计量的 ``inventory_lot`` 库存（散装试剂、散装耗材等），\n按 lot FIFO 从 available 预留并在动作开始时扣减。"
+      },
       "JsonValue": {},
       "LabLayoutRead": {
         "properties": {
@@ -13508,6 +13776,51 @@
         "title": "WorkflowNodeWrite",
         "description": "Complete WorkflowNode payload used by full-graph reconciliation."
       },
+      "WorkflowPreflightRequest": {
+        "properties": {
+          "run_mode": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "step",
+              "single_node"
+            ],
+            "title": "Run Mode",
+            "default": "normal"
+          },
+          "target_node_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Node Uuid"
+          },
+          "input": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Input"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WorkflowPreflightRequest"
+      },
       "WorkflowPublishRequest": {
         "properties": {
           "revision": {
@@ -13571,6 +13884,18 @@
             "type": "string",
             "title": "Workflow Uuid",
             "default": ""
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
           },
           "run_mode": {
             "type": "string",

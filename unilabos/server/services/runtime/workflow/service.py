@@ -355,6 +355,9 @@ class WorkflowService(WorkflowStore):
         ),
     ):
         super().__init__(database)
+        self._preflight_materials = None
+        self._preflight_endpoints = None
+        self._action_schema_resolver = None
         self.compiler = compiler
         self._compiler_rebuilder = compiler_rebuilder
         self._authority_profile = SchedulerAuthorityProfile.parse(authority_profile)
@@ -900,6 +903,21 @@ class WorkflowService(WorkflowStore):
 
     # WorkflowTask 与 WorkflowNodeJob -----------------------------------
 
+    def configure_preflight(
+        self, *, materials: Any = None,
+        endpoints: Optional[Callable[[], list[dict[str, Any]]]] = None,
+        action_schema_resolver: Optional[Callable[[str, str], Optional[dict[str, Any]]]] = None,
+    ) -> None:
+        """组合根注入只读库存与设备快照，不把 HTTP 依赖带入领域服务。"""
+        self._preflight_materials = materials
+        self._preflight_endpoints = endpoints
+        self._action_schema_resolver = action_schema_resolver
+
+    def preflight_workflow(self, **kwargs: Any) -> dict[str, Any]:
+        from .run_preflight import build_run_preflight_report
+
+        return build_run_preflight_report(self, **kwargs)
+
     def create_workflow_task(
         self,
         *,
@@ -910,6 +928,7 @@ class WorkflowService(WorkflowStore):
         description: Optional[str],
         meta_data: Dict[str, Any],
         idempotency_key: Optional[str] = None,
+        expected_revision: Optional[int] = None,
     ) -> Dict[str, Any]:
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
@@ -945,6 +964,8 @@ class WorkflowService(WorkflowStore):
             if input_value:
                 # 空输入不进指纹：与引入任务输入之前的既有任务保持同一指纹
                 semantics["input"] = input_value
+            if expected_revision is not None:
+                semantics["expected_revision"] = expected_revision
             fingerprint = _sha256(_canonical_json(semantics))
             existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
             if existing is not None:
@@ -954,6 +975,9 @@ class WorkflowService(WorkflowStore):
         resolved: Dict[str, Dict[str, Any]] = {}
 
         def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
+            # 在建任务事务内比较修订，避免预检后图被修改却提交了另一份计划。
+            if expected_revision is not None and graph["workflow"]["revision"] != expected_revision:
+                raise WorkflowConflict("conflict", detail="工作流修订已变化，请刷新后重新预检")
             try:
                 contract = declared_input_contract(graph["workflow"])
                 resolved["input"] = resolve_task_input(contract, input_value)
@@ -1768,6 +1792,12 @@ class WorkflowService(WorkflowStore):
                 planned_node["source_handle_uuids"] = source_handle_uuids
             if template is not None and template.get("schema") is not None:
                 planned_node["param_schema"] = template["schema"]
+            if self._action_schema_resolver is not None and kind == "device_action":
+                device_id = str((node.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid") or planned_param.get("device_id") or "")
+                action_name = str(node.get("action_name") or planned_param.get("action") or "")
+                schema = self._action_schema_resolver(device_id, action_name)
+                if schema and "x-unilabos-action-contract" in schema:
+                    planned_node["param_schema"] = schema
             if entry_bindings:
                 planned_node["entry_bindings"] = entry_bindings
             planned_nodes.append(planned_node)
@@ -1789,6 +1819,20 @@ class WorkflowService(WorkflowStore):
         }
         if target_node_uuid is not None:
             plan["target_node_uuid"] = target_node_uuid
+        from unilabos.registry.typed_contract import validate_action_values
+        from .run_preflight import deferred_parameters
+
+        for node, job in zip(planned_nodes, jobs):
+            schema = node.get("param_schema")
+            if schema and "x-unilabos-action-contract" in schema:
+                try:
+                    pending = deferred_parameters(plan, node)
+                    normalized = validate_action_values(schema, node["param"], deferred=pending)
+                    # 未生成的动态值仍保留引用；预检不得用空值覆盖引用。
+                    node["param"] = {**node["param"], **normalized}
+                    job["param"] = dict(node["param"])
+                except ValueError as error:
+                    raise StoreConflict(str(error)) from None
         return plan, jobs
 
     @staticmethod

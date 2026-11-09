@@ -704,7 +704,12 @@ class MaterialsService(MaterialsRepository):
 
             allocations, shortages = self._plan_inventory(value.requirements, timestamp)
             if shortages:
-                raise InsufficientInventoryError("；".join(item["message"] for item in shortages))
+                # 预检报告提供中文说明，既有预留接口保留示例和调用方依赖的错误文案。
+                raise InsufficientInventoryError("; ".join(
+                    f"requirement {item['key']!r} is short by {item['shortage']:g} {item['unit']}"
+                    if item["kind"] == "lot" else item["message"]
+                    for item in shortages
+                ))
             material_updates: list[tuple[MaterialRecord, MaterialRecord]] = []
             lot_reserved: dict[str, float] = {}
             for allocation in allocations:

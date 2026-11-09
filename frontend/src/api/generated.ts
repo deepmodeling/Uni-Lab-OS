@@ -4740,6 +4740,8 @@ export interface components {
              * @default
              */
             workflow_uuid?: string;
+            /** Expected Revision */
+            expected_revision?: number | null;
             /**
              * Run Mode
              * @default normal

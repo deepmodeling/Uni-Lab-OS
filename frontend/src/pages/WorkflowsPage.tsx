@@ -227,6 +227,7 @@ function RunForm({ workflowUuid, revision }: { workflowUuid: string; revision: n
       if (!result.can_run) throw new Error('预检发现阻塞项，请处理后重试。')
       return api.tasks.create({
         workflow_uuid: workflowUuid,
+        expected_revision: result.workflow_revision,
         run_mode: runMode,
         input: value,
         idempotency_key: newIdempotencyKey('run'),

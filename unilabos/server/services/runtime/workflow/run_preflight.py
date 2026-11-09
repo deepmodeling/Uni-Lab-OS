@@ -112,7 +112,8 @@ def build_run_preflight_report(
                         break
                     except Exception as error:
                         if getattr(error, "code", None) != "not_found":
-                            raise
+                            check("device", "blocked", "device_identity_unavailable", str(error), node=node)
+                            break
             matches = [cap for endpoint in endpoints if endpoint.get("state") == "online"
                        for cap in endpoint.get("action_capabilities", [])
                        if cap.get("state") == "active" and str(cap.get("device_uuid")) in identities

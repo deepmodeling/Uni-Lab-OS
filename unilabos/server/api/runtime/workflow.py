@@ -211,6 +211,7 @@ class WorkflowTaskCreateRequest(_BackendModel):
 
     execution_kind: str = "workflow"
     workflow_uuid: str = ""
+    expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
     run_mode: str = "normal"
     target_node_uuid: Optional[str] = None
     description: Optional[str] = None
@@ -592,6 +593,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         return _success(
             service.create_workflow_task(
                 workflow_uuid=body.workflow_uuid,
+                expected_revision=body.expected_revision,
                 run_mode=body.run_mode,
                 target_node_uuid=body.target_node_uuid,
                 input_value=body.input,

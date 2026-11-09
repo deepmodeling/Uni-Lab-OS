@@ -84,6 +84,29 @@ describe('App', () => {
     expect(fetcher.mock.calls.some(([url, options]) => String(url).endsWith('/workflow-tasks') && options?.method === 'POST')).toBe(false)
   })
 
+  it('submits the revision returned by preflight', async () => {
+    let submitted: Record<string, unknown> | undefined
+    const fetcher = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/run-preflight')) return new Response(JSON.stringify(envelope({
+        workflow_uuid: complexGraph.workflow.uuid, workflow_revision: 42,
+        status: 'runnable_now', can_run: true, checked_at: '', summary: {}, checks: [],
+      })), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (url.endsWith('/workflow-tasks') && options?.method === 'POST') {
+        submitted = JSON.parse(String(options.body))
+        return new Response(JSON.stringify({ code: 3003, message: '工作流修订已变化' }), { status: 409 })
+      }
+      const [status, body] = backend(url)
+      return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    renderAt(`/workflows/${complexGraph.workflow.uuid}`)
+    fireEvent.click(await screen.findByRole('tab', { name: '提交任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '检查并提交任务' }))
+    await waitFor(() => expect(submitted?.expected_revision).toBe(42))
+    expect(submitted?.workflow_uuid).toBe(complexGraph.workflow.uuid)
+  })
+
   it('workflow page draws the DAG of the selected workflow', async () => {
     renderAt(`/workflows/${complexGraph.workflow.uuid}`)
     expect(await screen.findByRole('group', { name: '区域：提纯直到达标' })).toBeInTheDocument()

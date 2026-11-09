@@ -13885,6 +13885,18 @@
             "title": "Workflow Uuid",
             "default": ""
           },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
           "run_mode": {
             "type": "string",
             "title": "Run Mode",

@@ -1,5 +1,7 @@
 """运行预检复用当前图，查询真实库存，不创建运行记录。"""
 from uuid import uuid4
+from contextlib import closing
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -66,3 +68,53 @@ def test_preflight_missing_entry_input_is_invalid_and_single_node_selection_matc
         assert result["checks"][0]["code"] == "invalid_execution_plan"
     finally:
         service.close()
+
+
+def test_preflight_authority_failure_is_a_blocked_report():
+    with closing(WorkflowService(":memory:")) as service:
+        workflow = service.create_workflow(name="离线预检", tags=[], description=None, meta_data={})
+        service.save_graph(workflow["uuid"], revision=1, nodes=[{
+            "uuid": str(uuid4()), "name": "动作", "type": "device_action", "action_name": "run",
+            "material_uuid": str(uuid4()), "param": {}, "pose": {"x": 0, "y": 0},
+        }], edges=[])
+        materials = Mock()
+        materials.get_material.side_effect = RuntimeError("库存权威暂不可达")
+        service.configure_preflight(materials=materials, endpoints=lambda: [])
+        report = service.preflight_workflow(
+            workflow_uuid=workflow["uuid"], run_mode="normal", target_node_uuid=None, input_value={},
+        )
+        assert report["status"] == "temporarily_unavailable"
+        assert any(item["code"] == "device_identity_unavailable" and item["blocking"] for item in report["checks"])
+
+
+def test_submission_checks_preflight_revision_without_writes_and_replays_original_task():
+    with closing(WorkflowService(":memory:")) as service:
+        workflow = service.create_workflow(name="修订检查", tags=[], description=None, meta_data={})
+        nodes = [{
+            "uuid": str(uuid4()), "name": "动作", "type": "device_action", "action_name": "run",
+            "material_uuid": str(uuid4()), "param": {}, "pose": {"x": 0, "y": 0},
+        }]
+        service.save_graph(workflow["uuid"], revision=1, nodes=nodes, edges=[])
+        submitted = []
+        service.set_task_submitter(submitted.append)
+        client = TestClient(create_workflow_app(service))
+        report = client.post(f'/api/v1/workflows/{workflow["uuid"]}/run-preflight', json={}).json()["data"]
+        checked_revision = report["workflow_revision"]
+        service.save_graph(workflow["uuid"], revision=checked_revision, nodes=nodes, edges=[])
+        before = service.connection.execute("SELECT total_changes()").fetchone()[0]
+        body = {"workflow_uuid": workflow["uuid"], "expected_revision": checked_revision, "idempotency_key": "reviewed-run"}
+        response = client.post("/api/v1/workflow-tasks", json=body)
+        assert response.json()["code"] == 3003, response.text
+        assert service.connection.execute("SELECT total_changes()").fetchone()[0] == before
+        assert submitted == []
+        assert service.list_tasks(page=1, page_size=10)["items"] == []
+        body["expected_revision"] = checked_revision + 1
+        response = client.post("/api/v1/workflow-tasks", json=body)
+        assert response.status_code == 201, response.text
+        task = response.json()["data"]
+        service.save_graph(workflow["uuid"], revision=checked_revision + 1, nodes=nodes, edges=[])
+        replay = client.post("/api/v1/workflow-tasks", json=body)
+        assert replay.json()["data"]["uuid"] == task["uuid"]
+        assert submitted == [task["uuid"]]
+        body["expected_revision"] = checked_revision + 2
+        assert client.post("/api/v1/workflow-tasks", json=body).json()["code"] == 3003

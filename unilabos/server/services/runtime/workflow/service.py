@@ -928,6 +928,7 @@ class WorkflowService(WorkflowStore):
         description: Optional[str],
         meta_data: Dict[str, Any],
         idempotency_key: Optional[str] = None,
+        expected_revision: Optional[int] = None,
     ) -> Dict[str, Any]:
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
@@ -963,6 +964,8 @@ class WorkflowService(WorkflowStore):
             if input_value:
                 # 空输入不进指纹：与引入任务输入之前的既有任务保持同一指纹
                 semantics["input"] = input_value
+            if expected_revision is not None:
+                semantics["expected_revision"] = expected_revision
             fingerprint = _sha256(_canonical_json(semantics))
             existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
             if existing is not None:
@@ -972,6 +975,9 @@ class WorkflowService(WorkflowStore):
         resolved: Dict[str, Dict[str, Any]] = {}
 
         def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
+            # 在建任务事务内比较修订，避免预检后图被修改却提交了另一份计划。
+            if expected_revision is not None and graph["workflow"]["revision"] != expected_revision:
+                raise WorkflowConflict("conflict", detail="工作流修订已变化，请刷新后重新预检")
             try:
                 contract = declared_input_contract(graph["workflow"])
                 resolved["input"] = resolve_task_input(contract, input_value)

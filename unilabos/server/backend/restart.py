@@ -23,6 +23,7 @@ import time
 from typing import Any, Callable, Optional
 
 from unilabos.app.supervisor import RESTART_EXIT_CODE, is_supervised
+from unilabos.server.backend.lifecycle import active_device_job_ids
 
 logger = logging.getLogger(__name__)
 
@@ -67,17 +68,7 @@ class RestartCoordinator:
     # ── 状态查询 ─────────────────────────────────────────────
 
     def active_job_ids(self) -> list[str]:
-        backend = self._get_execution_backend()
-        if backend is not None:
-            manager = getattr(backend, "device_manager", None)
-            if manager is not None:
-                return [job.job_id for job in manager.get_active_jobs()]
-            return []
-        # --role backend：执行端在 Edge 进程，取 runtime.v1 控制面在途命令视图
-        service = self._edge_control_service()
-        if service is not None:
-            return service.active_job_ids()
-        return []
+        return active_device_job_ids(self._get_scheduler(), self._get_execution_backend())
 
     def status(self) -> dict[str, Any]:
         with self._lock:
@@ -124,7 +115,7 @@ class RestartCoordinator:
             self._requested_at = time.time()
             scheduler = self._get_scheduler()
             if scheduler is not None:
-                scheduler.pause_dispatch()
+                scheduler.pause_dispatch(reason="restart")
             if self._watcher is None or not self._watcher.is_alive():
                 self._watcher = threading.Thread(
                     target=self._watch,
@@ -147,8 +138,8 @@ class RestartCoordinator:
             self._requested_at = None
             scheduler = self._get_scheduler()
         if scheduler is not None:
-            scheduler.resume_dispatch()
-        logger.info("[Restart] 重启请求已取消，恢复调度派发")
+            scheduler.resume_dispatch(reason="restart")
+        logger.info("[Restart] 重启请求已取消，解除重启的派发暂停")
         return self.status()
 
     # ── 安静点检测与执行 ─────────────────────────────────────
@@ -223,8 +214,8 @@ class RestartCoordinator:
             self._restarting = False
             scheduler = self._get_scheduler()
         if scheduler is not None:
-            scheduler.resume_dispatch()
-        logger.warning("[Restart] Edge 已重连 runtime.v1 控制面会话，派发已恢复")
+            scheduler.resume_dispatch(reason="restart")
+        logger.warning("[Restart] Edge 已重连 runtime.v1 控制面会话，解除重启的派发暂停")
 
     def _wait_edge_reconnected(
         self,

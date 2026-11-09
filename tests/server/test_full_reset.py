@@ -132,8 +132,12 @@ def test_full_reset_real_split_runtime(tmp_path):
     log = tmp_path / "runtime.log"
     def request(path, payload=None):
         data = None if payload is None else json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        token_path = work / "control_token"
+        if token_path.exists():
+            headers["X-UniLab-Token"] = token_path.read_text(encoding="utf-8").strip()
         req = urllib.request.Request(f"http://127.0.0.1:{management}/api/v1{path}", data=data,
-                                     headers={"Content-Type": "application/json"})
+                                     headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
             return json.load(response)
     with log.open("w", encoding="utf-8") as stream:
@@ -152,6 +156,10 @@ def test_full_reset_real_split_runtime(tmp_path):
                 time.sleep(0.3)
             else:
                 pytest.fail(log.read_text(encoding="utf-8"))
+            assert request("/scheduler/drain", {})["phase"] == "drained"
+            assert request("/scheduler/drain/resume", {})["phase"] == "running"
+            # reset 预检在已有显式 drain 时也必须取得自己的暂停来源。
+            assert request("/scheduler/drain", {})["requested"]
             preview = request("/reset")
             assert preview["supported"]
             smoke = os.environ.get("OPENLAB_PROTOCOL_SMOKE")

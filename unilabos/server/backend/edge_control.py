@@ -124,7 +124,10 @@ class _HttpWaiter:
 
 
 class EdgeControlService:
-    """单 Edge 的 runtime.v1 控制面服务端与调度执行代理。"""
+    """一个 backend 对应一个主 Host/runtime；slave 经该 runtime 扩展设备。
+
+    控制面只保留一条主连接，新会话替换旧会话属于重连，不是多主 Host 复用。
+    """
 
     def __init__(
         self,

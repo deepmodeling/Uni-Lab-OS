@@ -236,7 +236,7 @@ class BackendScheduler:
         # 进程重启后执行态未知 / 决策上下文丢失的 attempt：decision_id -> 待裁决记录。
         # 与执行面的失败决策一起从 /error-decisions 暴露，由本调度器直接收敛。
         self._reconciliation_decisions: Dict[str, Dict[str, Any]] = {}
-        self._dispatch_paused = False
+        self._dispatch_pause_reasons: set[str] = set()
         self.executor.add_job_finished_listener(self._on_executor_finished)
         resolver = getattr(self.workflow, "set_manual_confirmation_resolver", None)
         if callable(resolver):
@@ -247,20 +247,39 @@ class BackendScheduler:
 
     @property
     def dispatch_paused(self) -> bool:
-        return self._dispatch_paused
-
-    def pause_dispatch(self) -> None:
-        """暂停新 Job 派发（安静点重启用）；已派发的 Job 不受影响。"""
         with self._guard:
-            self._dispatch_paused = True
+            return bool(self._dispatch_pause_reasons)
 
-    def resume_dispatch(self) -> None:
-        """恢复派发并立即重算等待集合，被闸门拦下的 Job 原样继续。"""
+    @property
+    def dispatch_pause_reasons(self) -> tuple[str, ...]:
         with self._guard:
-            if not self._dispatch_paused:
+            return tuple(sorted(self._dispatch_pause_reasons))
+
+    def pause_dispatch(self, *, reason: str = "manual") -> None:
+        """按来源暂停新 Job；同一来源重复请求幂等，已派发的 Job 不受影响。"""
+        with self._guard:
+            self._dispatch_pause_reasons.add(reason)
+
+    def resume_dispatch(self, *, reason: str = "manual") -> None:
+        """仅解除本来源的暂停；最后一个来源解除后才重算等待集合。"""
+        with self._guard:
+            if reason not in self._dispatch_pause_reasons:
                 return
-            self._dispatch_paused = False
+            self._dispatch_pause_reasons.remove(reason)
+            if self._dispatch_pause_reasons:
+                return
         self._reconcile_resources()
+
+    def active_device_job_ids(self) -> list[str]:
+        """已获派发许可到终态落账之间的设备作业，包含执行态待裁决项。
+
+        人工确认没有设备执行，不阻止 runtime 排空；排空也不取消这类等待。
+        """
+        with self._guard:
+            return sorted(
+                (self._dispatched_jobs - self._manual_confirmation_jobs)
+                | {item["job_uuid"] for item in self._reconciliation_decisions.values()}
+            )
 
     def start(self, *, recover: bool = True) -> None:
         with self._guard:
@@ -836,7 +855,7 @@ class BackendScheduler:
         with self._guard:
             spec = self._run_specs[node.node_id]
             job_uuid = spec["current_job_uuid"]
-            if self._dispatch_paused or not self._executor_ready():
+            if self._dispatch_pause_reasons or not self._executor_ready():
                 # 安静点重启闸门 / 执行适配器尚未就绪（ROS2 host node 在设备初始化
                 # 完成后才注册）：节点保持在等待集合并继续持有资源，resume /
                 # host ready 后由 _reconcile_resources 原样派发，不产生失败。

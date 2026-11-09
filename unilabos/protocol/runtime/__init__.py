@@ -8,6 +8,7 @@ Edge 与 runtime（微后端/Backend）之间的通信只有一个协议版本
   命令与事件队列），后端、微后端与执行 adapter 共用；
 - ``control``：业务控制面（命令下发通知、命令正文、事件回收），
   Backend/Edge 的轻通知与 HTTP 权威文档；
+- ``lifecycle``：状态、排空、重启与重置的管理协议；一个 backend 对应一个主 runtime；
 - ``workflow``：节点/边写入 DTO、JSON 值约束与 UUID 规范化；
 - ``loop``：循环容器节点（``type="loop"``）的参数契约、条件求值与迭代变量；
 - ``registry``：Registry Authority 条目状态、挂起冲突、上报批次统计，以及

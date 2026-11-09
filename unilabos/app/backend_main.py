@@ -176,16 +176,16 @@ def run_backend_process(
             host_child.start()
             def reset_preflight() -> None:
                 from unilabos.server.backend.composition import get_scheduler
+                from unilabos.server.backend.lifecycle import active_device_job_ids
                 from unilabos.server.backend.restart import get_restart_coordinator
 
                 restart = get_restart_coordinator().status()
                 if restart["pending"] or restart["restarting"]:
                     raise ResetConflict("请等待当前重启完成")
                 scheduler = get_scheduler()
-                already_paused = scheduler.dispatch_paused
-                scheduler.pause_dispatch()
+                scheduler.pause_dispatch(reason="reset")
                 try:
-                    if edge_control.active_job_ids():
+                    if active_device_job_ids(scheduler, None):
                         raise ResetConflict("仍有活跃作业，请先结束或裁决作业后重置")
                     response = edge_control.http_request("GET", "/api/v1/hostlink/peers")
                     import json
@@ -200,8 +200,7 @@ def run_backend_process(
                     if any(op.get("status") == "running" for op in json.loads(response.body_bytes()).get("operations", [])):
                         raise ResetConflict("请等待驱动包安装或卸载完成")
                 except Exception as exc:
-                    if not already_paused:
-                        scheduler.resume_dispatch()
+                    scheduler.resume_dispatch(reason="reset")
                     if isinstance(exc, ResetConflict):
                         raise
                     raise ResetConflict(f"无法确认安全重置条件：{exc}") from exc

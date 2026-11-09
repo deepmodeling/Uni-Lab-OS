@@ -35,13 +35,17 @@ class _FakeExecutionBackend:
 
 class _FakeScheduler:
     def __init__(self) -> None:
-        self.dispatch_paused = False
+        self.reasons: set[str] = set()
 
-    def pause_dispatch(self) -> None:
-        self.dispatch_paused = True
+    @property
+    def dispatch_paused(self) -> bool:
+        return bool(self.reasons)
 
-    def resume_dispatch(self) -> None:
-        self.dispatch_paused = False
+    def pause_dispatch(self, *, reason: str = "manual") -> None:
+        self.reasons.add(reason)
+
+    def resume_dispatch(self, *, reason: str = "manual") -> None:
+        self.reasons.discard(reason)
 
 
 @pytest.fixture()

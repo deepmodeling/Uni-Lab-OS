@@ -1,6 +1,6 @@
 # Workspace Host 规整说明
 
-核验日期：2026-11-10。固定比较 Dev `4153b032` / review 分支 `5883fa44` 与 V1 `690491a3`，不是对所有远端分支的实时盘点。本轮只整理职责与协议，没有删除 V1 运行代码。
+核验日期：2026-11-10。原盘点固定比较 Dev `4153b032` / review 分支 `5883fa44` 与 V1 `690491a3`，不是对所有远端分支的实时盘点。后续已在本地 review 分支迁入生命周期协议与 drain，见 [迁移实现与使用方式](runtime_lifecycle_migration.md)；仍未删除 V1 分支运行代码。
 
 ## 先把当前工作归成四件事
 
@@ -38,7 +38,7 @@
 
 另有结构化错误 `code/message/details`，以及 HTTP 401/404/409/400 的映射。发现文件位于 `<workspace>/.unilabos/runtime/workbench/session.json`，通过 `host.token` 的 Bearer token 访问本机服务。
 
-这些是 CLI/SDK 所依赖的对外约定，不能随着 `host.py` 一起消失。建议把数据结构放入新的 `protocol/workspace.py`，HTTP client 放入新的 `client/workspace.py`，主进程路由放入新的 `server/api/workspace.py`。以上路径是建议，尚未实现；不要求继续保留独立 HTTP 进程或原端口。
+这些是旧 CLI/SDK 所依赖的对外约定，不能在迁移调用方之前随着 `host.py` 一起消失。当前迁移沿用 Dev 已有的 `protocol/runtime`、`client/runtime`、`server/api/runtime` 和 `server/backend`，本轮不采用另建 `workspace` 管理层的旧建议。状态/重启/重置与排空已归位；旧 snapshot、通用 operation 日志、revision/eventCursor 尚未提供兼容 API，也不宣称新 SDK 可直接替换旧 WorkspaceHostClient。
 
 整理时要保留几个区别：
 
@@ -52,7 +52,7 @@
 
 V1 客户端调用 `POST/GET /api/v1/scheduler/drain` 和 `POST /api/v1/scheduler/drain/resume`，检查 `phase=running/draining/drained` 及在途 Job 数量/ID。它支持整个 workspace 停止前先排空；超时则保持运行。
 
-Dev 没有这三个同名接口，但已有 `/api/v1/restart` 和 `RestartCoordinator`：暂停派发、等待在途动作、重启 Host、恢复派发。建议复用这套协调逻辑，把需要对外使用的排空状态独立定义；**安全重启已实现，不等于 V1 的所有 stop/drain 操作已等价替代**。
+Dev 基线没有这三个同名接口。本地本轮已复用 `BackendScheduler` 派发闸门和 `RestartCoordinator` 的执行状态来源补上：停止新派发，等待当前动作，保留后续任务，显式 resume 后继续。暂停按 drain/restart/reset/manual 分来源管理，取消重启不会解除显式排空。**drain 已迁移，不等于旧 workspace/backend 的 start/stop 命令都已等价替代**。
 
 `backend.restart` 还有生命周期差别：旧 Workspace Host 位于 backend 外层，能拉起退出的 backend；Dev 的 backend 就是顶层主进程，不能靠自身 API 监督自己。当前 Dev 明确拒绝权威自身 `scope=process`。应保留“重启执行面”与“由外部启动器/服务管理器重启 backend”的区别。
 
@@ -82,11 +82,11 @@ backend 主进程：Scheduler / Workflow / Registry / Materials
        └─ slave 设备进程 B / …（HostLink）
 ```
 
-这符合“一个 backend 下通过 slave 启动多个设备运行实例”的已有路径。若目标是多个**独立主 Host/runtime** 各自直接接入同一个 backend，则还需扩展协议。
+用户已确认这就是目标结构：Host 的职责是 runtime，一个 backend 只连接一个主 Host，通过 slave 启动多个设备运行实例。多主 Host 同时接入不属于待补差异。
 
 证据：`server/backend/edge_control.py:126` 明确写着“单 Edge”；它只有一组 `edge_uuid/session_uuid/connection_epoch/outgoing`，且模块全局只有一个 service。`attach_connection():673` 实现后来连接替换旧连接。`device_processes.py::build_command` 则使用 `--is_slave --host_node_ip --hostlink_port` 启动多个设备进程。
 
-因此：先保留一个主 Host + 多 slave 的运行方式。若继续扩展多主 Host，必须按 runtime 身份隔离 session、epoch、通知队列、事件游标、HTTP 代理和在途 Job，并让重启/排空带明确目标；只把 `components.edge` 改成列表不够。
+因此保持单主 runtime 的 session、epoch、通知队列、事件游标、HTTP 代理与在途作业视图。管理客户端只访问统一 HTTP API，不占用主 Host 的控制 WebSocket。
 
 ## 调用方与清理顺序
 
@@ -100,6 +100,6 @@ V1 的直接调用方包括 `app/main.py` 的 workspace CLI、`agent_tools/workf
 4. **归位业务能力**：排空/重置归生命周期服务；布局归 Graph/Materials；模板检查归包/注册表工具链；PLC/renderer 归开发工具适配。统一 Dev 数据权威与鉴权方式。
 5. **最后撤旧入口**：确认旧客户端迁移后删除兼容层和独立 host daemon。验收幂等冲突、版本变化、离线查询不启动进程、在途停止、未知执行不能重放、布局并发冲突、多个 slave 隔离。
 
-这轮最值得先做的是第 1、2 步：可减少明显冗余，并让后续替换进程结构不再牵动业务协议。多主 Host 控制面属于独立扩展，不应夹在目录清理中顺便改变。
+上述五步是 V1 旧目录最终撤除前的完整清理范围。当前 Dev 分支已先完成生命周期协议迁移，旧发布链、旧 SDK 调用点、布局和模板需分别处理；不能把仍保留 V1 的源代码当成已经删除。
 
 本轮验证：静态盘点 13 个模块、25 个命令和直接调用方；Dev 的连接代次、重连补发、HTTP 代理、重启等待/取消及权威自身重启拒绝共 6 个现有测试通过。没有启动 V1 工站、修改数据库或操作真实设备。

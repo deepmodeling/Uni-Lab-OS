@@ -10,6 +10,16 @@ from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from unilabos.protocol.runtime.lifecycle import (
+    HealthStatus,
+    ReadinessStatus,
+    ResetRequest,
+    ResetStatus,
+    RestartRequest,
+    RestartStatus,
+)
+from unilabos.server.api.runtime.lifecycle import create_scheduler_lifecycle_router
+
 
 class StatusIncidentDecision(BaseModel):
     action: str = ""
@@ -26,31 +36,6 @@ class ErrorDecision(BaseModel):
     job_id: str = ""
     device_id: str = ""
     extra: dict[str, Any] = Field(default_factory=dict)
-
-
-class RestartRequest(BaseModel):
-    """安静点重启请求。
-
-    mode: quiescent 等执行端安静；immediate 跳过等待立即重启。
-    scope: auto 按运行形态选择（调度权威进程 → edge，只重启 Host；其它 → process）；
-    edge 只重启 Host 进程，调度权威与管理端口常驻；process 本进程整体重启。
-    """
-
-    mode: str = "quiescent"
-    scope: str = "auto"
-
-
-class ResetRequest(BaseModel):
-    confirmation_token: str = Field(min_length=1, max_length=128)
-    confirmation: str = Field(min_length=1, max_length=64)
-
-
-class ResetStatus(BaseModel):
-    supported: bool
-    pending: bool
-    confirmation_token: str
-    backup_path: str
-    detail: str
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
@@ -97,6 +82,7 @@ def create_backend_router(
     """创建不复制 Runtime/History/Telemetry 数据面的诊断路由。"""
 
     router = APIRouter(prefix="/api/v1", tags=["backend"])
+    router.include_router(create_scheduler_lifecycle_router(get_scheduler, get_execution_backend))
 
     @router.get("/reset", response_model=ResetStatus)
     def reset_preview() -> dict[str, Any]:
@@ -162,7 +148,10 @@ def create_backend_router(
         elif execution == "restarting":
             reasons.append("Host 子进程未接入控制面（启动或重启中）")
         # disabled：纯调度权威（--role backend），执行由远端 Edge 接入，不在本进程判定
-        ready = execution in {"ready", "disabled"}
+        scheduler = get_scheduler()
+        if bool(getattr(scheduler, "dispatch_paused", False)):
+            reasons.append("调度派发已暂停（排空、重启或维护中）")
+        ready = execution in {"ready", "disabled"} and not reasons
         return ready, {
             "status": "ready" if ready else "not_ready",
             "scheduler": "local" if get_scheduler() is not None else "remote",
@@ -170,7 +159,7 @@ def create_backend_router(
             "reasons": reasons,
         }
 
-    @router.get("/readiness")
+    @router.get("/readiness", response_model=ReadinessStatus, responses={503: {"model": ReadinessStatus}})
     def readiness() -> JSONResponse:
         """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同）。
 
@@ -181,7 +170,7 @@ def create_backend_router(
         ready, summary = _readiness()
         return JSONResponse(status_code=200 if ready else 503, content=summary)
 
-    @router.get("/health")
+    @router.get("/health", response_model=HealthStatus)
     def health() -> dict[str, str]:
         return {
             "status": "ok",
@@ -320,7 +309,7 @@ def create_backend_router(
 
     # ── 安静点重启（调试用） ─────────────────────────────────
 
-    @router.post("/restart")
+    @router.post("/restart", response_model=RestartStatus)
     def request_restart(body: RestartRequest) -> dict[str, Any]:
         """登记重启：暂停新派发，active job 清空后按 scope 重启并自动恢复。"""
         from unilabos.server.backend.restart import get_restart_coordinator
@@ -330,13 +319,13 @@ def create_backend_router(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @router.get("/restart")
+    @router.get("/restart", response_model=RestartStatus)
     def restart_status() -> dict[str, Any]:
         from unilabos.server.backend.restart import get_restart_coordinator
 
         return get_restart_coordinator().status()
 
-    @router.delete("/restart")
+    @router.delete("/restart", response_model=RestartStatus)
     def cancel_restart() -> dict[str, Any]:
         from unilabos.server.backend.restart import get_restart_coordinator
 

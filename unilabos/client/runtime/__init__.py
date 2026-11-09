@@ -21,19 +21,24 @@ from unilabos.client.runtime.workflow import (
 _LAZY_DATA_EXPORTS = frozenset(
     {"HTTPRuntimeClient", "LocalRuntimeClient", "RuntimeHTTPError"}
 )
+_LAZY_LIFECYCLE_EXPORTS = frozenset({"HTTPLifecycleClient", "SchedulerDrainTimeout"})
 
 
 def __getattr__(name: str) -> Any:
+    if name in _LAZY_LIFECYCLE_EXPORTS:
+        return getattr(importlib.import_module(f"{__name__}.lifecycle"), name)
     if name in _LAZY_DATA_EXPORTS:
         return getattr(importlib.import_module(f"{__name__}.data"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _LAZY_DATA_EXPORTS)
+    return sorted(set(globals()) | _LAZY_DATA_EXPORTS | _LAZY_LIFECYCLE_EXPORTS)
 
 
 __all__ = [
+    "HTTPLifecycleClient",
+    "SchedulerDrainTimeout",
     "HTTPRuntimeClient",
     "HTTPWorkflowClient",
     "LocalRuntimeClient",

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
+import threading
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
+from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -171,3 +173,50 @@ def test_pause_conflicts_and_idempotent_replay(stack):
     wait_for(lambda: task_of(service, task)["status"] == "succeeded")
     # 任务结束后不再接受暂停
     assert command(client, task, "pause").json()["code"] == 3003
+
+
+def test_scheduler_drain_finishes_current_action_and_resumes_waiting_work(stack):
+    service, executor, scheduler, client = stack
+    task = create_task(client, devices=["device-a", "device-b"])
+    wait_for(lambda: len(executor.dispatched) == 1)
+    with TestClient(create_backend_app(lambda: scheduler, lambda: executor)) as management:
+        status = management.post("/api/v1/scheduler/drain", json={}).json()
+        assert status["phase"] == "draining"
+        assert status["active_device_job_ids"] == [executor.dispatched[0]["job_id"]]
+        executor.finish(0)
+        wait_for(lambda: bool(scheduler._waiting_resource_jobs))
+        assert management.get("/api/v1/scheduler/drain").json()["phase"] == "drained"
+        assert len(executor.dispatched) == 1
+        assert task_of(service, task)["status"] == "running"
+        management.post("/api/v1/scheduler/drain/resume", json={})
+        wait_for(lambda: len(executor.dispatched) == 2)
+        executor.finish(1)
+        wait_for(lambda: task_of(service, task)["status"] == "succeeded")
+
+
+def test_drain_observes_job_before_runtime_accepts_dispatch(stack, monkeypatch):
+    service, executor, scheduler, client = stack
+    entered, release = threading.Event(), threading.Event()
+    original = executor.dispatch
+
+    def blocked_dispatch(payload):
+        entered.set()
+        assert release.wait(timeout=5)
+        original(payload)
+
+    monkeypatch.setattr(executor, "dispatch", blocked_dispatch)
+    try:
+        task = create_task(client, devices=["device-a"])
+        assert entered.wait(timeout=5)
+        assert executor.dispatched == []
+        with TestClient(create_backend_app(lambda: scheduler, lambda: executor)) as management:
+            status = management.post("/api/v1/scheduler/drain", json={}).json()
+            assert status["phase"] == "draining"
+            assert status["active_device_job_count"] == 1
+            release.set()
+            wait_for(lambda: len(executor.dispatched) == 1)
+            executor.finish(0)
+            wait_for(lambda: task_of(service, task)["status"] == "succeeded")
+            assert management.get("/api/v1/scheduler/drain").json()["phase"] == "drained"
+    finally:
+        release.set()

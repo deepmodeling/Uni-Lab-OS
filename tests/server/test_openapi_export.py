@@ -29,6 +29,9 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     assert "GET /api/v1/registry/entries" in operations
     assert "GET /api/v1/health" in operations
     assert "GET /api/v1/ping" in operations
+    assert "GET /api/v1/scheduler/drain" in operations
+    assert "POST /api/v1/scheduler/drain" in operations
+    assert "POST /api/v1/scheduler/drain/resume" in operations
     assert "GET /api/v1/materials/instances" in operations
     assert "GET /api/v1/workflow-tasks/{task_uuid}/node-runs" in operations
     assert "GET /api/v1/events" in operations  # SSE 在 OpenAPI 里是 GET
@@ -47,6 +50,11 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     assert meta["api_version"] == "v1" and meta["api_prefix"] == "/api/v1"
     assert meta["sse"] == ["/api/v1/events", "/api/v1/materials/events"]
     assert all(path.startswith("/api/v1/") for path in document["paths"])
+    assert operations["GET /api/v1/scheduler/drain"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/SchedulerDrainStatus"
+    }
+    schemas = document["components"]["schemas"]
+    assert {"HealthStatus", "ReadinessStatus", "RestartRequest", "RestartStatus", "ResetRequest", "ResetStatus"} <= schemas.keys()
 
 
 def test_export_is_deterministic_and_json_serializable() -> None:

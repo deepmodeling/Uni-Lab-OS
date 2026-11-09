@@ -2,7 +2,7 @@
 
 核验日期：2026-11-09。本文区分“已实现”“保留 Dev 设计而关闭差异”“待移植”和“待验收”，不以文件差异消失代表功能完成。
 
-2026-11-10 补充：Workspace Host 的进程编排可以沿用 Dev，但其中管理协议、排空、布局等仍需逐项归位；Dev 当前是单主 Host 控制连接加多 slave，并非多主 Host 同时接入。详见 [Workspace Host 规整说明](workspace_host_cleanup.md)。
+2026-11-10 更新：生命周期 DTO、HTTP SDK 和 V1 的 drain 接口已在本地工作分支接入现有 server/protocol/client 分层，见 [生命周期协议迁移](runtime_lifecycle_migration.md)。用户确认一个 backend 对应一个主 Host/runtime，设备通过多 slave 扩展；多主 Host 不属于目标差异。布局、模板和旧管理操作日志仍需单独处理，详见 [Workspace Host 规整说明](workspace_host_cleanup.md)。
 
 ## 基线与原始目标
 
@@ -25,7 +25,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | 层次 | Dev | V1 参考实现 | 消解方式 |
 | --- | --- | --- | --- |
 | 启动 | `app/backend_main.py` 的主进程持有 Scheduler / Workflow / Registry / Materials，默认监督 Host 子进程 | `app/runtime_topology.py`、`workspace_host/`；combined / workspace_backend / edge_runtime 角色 | 保留 Dev；不另搬 workspace_host 来重复监督主进程 |
-| 多运行时 | 单主 Host 执行面（可本地或远端），下接多个 HostLink slave；支持设备进程管理与包安装 | V1 自身的 runtime、workspace 生命周期与控制面约定 | 保留一个 backend 通过主 Host 管多个 slave；多个独立主 Host 同时接入仍需扩展控制面 |
+| 运行时拓扑 | 单主 Host/runtime（可本地或远端），下接多个 HostLink slave；支持设备进程管理与包安装 | V1 自身的 runtime、workspace 生命周期与控制面约定 | 按用户确认保留一个 backend 对应一个主 runtime，多主 Host 不在目标范围 |
 | 浏览器入口 | 主进程统一 API 地址；Host 专属请求经 runtime.v1 通道代理，Host 不另占 HTTP 端口 | V1 本地 Console 及独立前端协议 | 正式 UI 使用 Uni-Lab FE；删除主仓库 React 调试站，继续保留 API、OpenAPI、SSE 与代理 |
 | 设备 | `backend/runtime` 公共内核 + HostLink / 可选 ROS2；工作目录中的设备包和 slave | V1 工站执行适配、包目录和作者编译 | 保留 Dev 驱动生命周期；只抽取需要的合同/编排能力 |
 | 调度 | `server/backend/scheduler`；并行 DAG、动作/物料互斥、FIFO、原生授锁插件和 Python fallback | `app/scheduler`、`workflow`、`scheduling`；控制区域、资源区间、Claim/Lease、开始许可、引擎协议 | 功能逐项适配；原生授锁插件不等于 V1 全部排程引擎 |
@@ -39,8 +39,8 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | ID | 状态 | 决定与证据 |
 | --- | --- | --- |
 | D01 | 本地已完成 | 删除 `frontend/` 全部 React 调试站及 `tests/frontend/test_debug_console_api.py`；README 改指正式前端。后端 OpenAPI 导出和 API 测试保留。 |
-| D02 | 进程编排方向已定；协议待归位 | 不重复迁入 workspace_host 进程管理层；使用现有主进程、supervisor、设备包和 slave。管理 API/SDK、排空、布局和模板校验仍按规整说明处理，不能整目录判为已消解。 |
-| D03 | 单主 Host + 多 slave 已有；多主 Host 未实现 | 现有 supervisor、device-processes、driver-packages、HostLink 测试覆盖基本路径。runtime.v1 当前只有一个主 Host 控制连接；多主 Host 并发接入另行扩展，多个真实工站的现场验收列 T02。 |
+| D02 | 生命周期协议已本地迁移；业务协议待归位 | 状态/重启/重置 DTO 与 SDK 归入 protocol/runtime、client/runtime；drain 三个接口接入 server/backend 与 server/api/runtime。保留 Dev 主进程监督；布局、模板及旧操作日志尚不能判为已消解。 |
+| D03 | 拓扑按设计消解，现场验收待做 | 一个 backend 对应一个主 Host/runtime，下接多个 slave；符合本轮用户确认，不再把多主 Host 列为缺失能力。现有 supervisor、device-processes、driver-packages、HostLink 覆盖基本路径，真实工站验收列 T02。 |
 | D04 | 按设计消解 | 保留并行任务和任务级单步；不将 V1 当前工站级单步准入策略直接复制过来。 |
 | D05 | 按设计消解 | 保留原生授锁插件可选、加载失败回退 Python；保留已建立的版本化数据库迁移。 |
 | D06 | 已配置 | WSL 的 `git.dp.tech` 使用 Windows Git Credential Manager；站点代理 `http://127.0.0.1:3897`。克隆成功，无需再次网页登录；凭据不写入报告或 patch。 |
@@ -68,7 +68,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | R02 持久 Claim/Lease 与恢复 | Dev 有锁恢复/人工裁决基础；未完全等同 V1 | 保留 Dev 的未知执行和人工裁决；围绕 R01/M02/A03/I03 设计持久事实和迁移，补 Host/权威重启与重放回归。 |
 | C01 #358 合并 | 阻塞 | CI `42584235496` 的 jazzy/humble 各有两个容量/资源快照失败；HostLink 三平台、合同检查、四平台构建成功。不能绕过失败合并。 |
 | T01 device status | TODO，按用户要求后续做 | 现有 telemetry / status_fields / device_state 不等于用户要求的新设备状态合同；本轮不实现。 |
-| T02 苏州工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖多 runtime、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
+| T02 苏州工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖主 runtime 下多 slave、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
 | U01 其他文件差异 | 已建立全文件索引，待逐项核验 | 目录迁移、文档、生成物、测试和驱动差异不能按行数判定为缺失能力；索引中的“待核验”不可当作已关闭。 |
 
 ## 锁的统一语义

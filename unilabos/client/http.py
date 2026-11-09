@@ -26,6 +26,8 @@ class HTTPClientConfig:
     timeout: float = 30.0
     max_retries: int = 3
     retry_backoff: float = 1.0
+    # Workflow 等业务 API 使用信封，生命周期/诊断 API 返回裸 DTO。
+    response_envelope: bool = True
 
 
 class HTTPClient:
@@ -94,7 +96,8 @@ class HTTPClient:
             try:
                 response = self._client.request(method, path, **kwargs)
                 response.raise_for_status()
-                return unwrap_envelope(response.json())
+                payload = response.json()
+                return unwrap_envelope(payload) if self.config.response_envelope else payload
 
             except (httpx.HTTPError, EnvelopeError) as e:
                 last_error = e

@@ -355,6 +355,9 @@ class WorkflowService(WorkflowStore):
         ),
     ):
         super().__init__(database)
+        self._preflight_materials = None
+        self._preflight_endpoints = None
+        self._action_schema_resolver = None
         self.compiler = compiler
         self._compiler_rebuilder = compiler_rebuilder
         self._authority_profile = SchedulerAuthorityProfile.parse(authority_profile)
@@ -899,6 +902,21 @@ class WorkflowService(WorkflowStore):
             raise WorkflowError("invalid_input", detail=str(exc)) from None
 
     # WorkflowTask 与 WorkflowNodeJob -----------------------------------
+
+    def configure_preflight(
+        self, *, materials: Any = None,
+        endpoints: Optional[Callable[[], list[dict[str, Any]]]] = None,
+        action_schema_resolver: Optional[Callable[[str, str], Optional[dict[str, Any]]]] = None,
+    ) -> None:
+        """组合根注入只读库存与设备快照，不把 HTTP 依赖带入领域服务。"""
+        self._preflight_materials = materials
+        self._preflight_endpoints = endpoints
+        self._action_schema_resolver = action_schema_resolver
+
+    def preflight_workflow(self, **kwargs: Any) -> dict[str, Any]:
+        from .run_preflight import build_run_preflight_report
+
+        return build_run_preflight_report(self, **kwargs)
 
     def create_workflow_task(
         self,
@@ -1768,6 +1786,12 @@ class WorkflowService(WorkflowStore):
                 planned_node["source_handle_uuids"] = source_handle_uuids
             if template is not None and template.get("schema") is not None:
                 planned_node["param_schema"] = template["schema"]
+            if self._action_schema_resolver is not None and kind == "device_action":
+                device_id = str((node.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid") or planned_param.get("device_id") or "")
+                action_name = str(node.get("action_name") or planned_param.get("action") or "")
+                schema = self._action_schema_resolver(device_id, action_name)
+                if schema and "x-unilabos-action-contract" in schema:
+                    planned_node["param_schema"] = schema
             if entry_bindings:
                 planned_node["entry_bindings"] = entry_bindings
             planned_nodes.append(planned_node)
@@ -1789,6 +1813,20 @@ class WorkflowService(WorkflowStore):
         }
         if target_node_uuid is not None:
             plan["target_node_uuid"] = target_node_uuid
+        from unilabos.registry.typed_contract import validate_action_values
+        from .run_preflight import deferred_parameters
+
+        for node, job in zip(planned_nodes, jobs):
+            schema = node.get("param_schema")
+            if schema and "x-unilabos-action-contract" in schema:
+                try:
+                    pending = deferred_parameters(plan, node)
+                    normalized = validate_action_values(schema, node["param"], deferred=pending)
+                    # 未生成的动态值仍保留引用；预检不得用空值覆盖引用。
+                    node["param"] = {**node["param"], **normalized}
+                    job["param"] = dict(node["param"])
+                except ValueError as error:
+                    raise StoreConflict(str(error)) from None
         return plan, jobs
 
     @staticmethod

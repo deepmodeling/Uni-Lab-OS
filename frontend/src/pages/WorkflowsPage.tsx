@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { api } from '../api'
-import type { JsonObject, RunMode, WorkflowGraph } from '../api/types'
+import type { JsonObject, RunMode, RunPreflight, WorkflowGraph } from '../api/types'
 import { WorkflowDag } from '../components/WorkflowDag'
 import {
   Button,
@@ -176,7 +176,7 @@ function WorkflowDetail({ uuid }: { uuid: string }) {
             </div>
           ) : <EmptyState title="这个工作流还没有发布" description="发布 = POST /workflows/{uuid}/publications（当前 revision）；这里只读。" />
         ) : null}
-        {tab === 'run' ? <RunForm workflowUuid={workflow.uuid} /> : null}
+        {tab === 'run' ? <RunForm workflowUuid={workflow.uuid} revision={workflow.revision} /> : null}
       </Panel>
     </div>
   )
@@ -209,24 +209,34 @@ function NodesTable({ graph }: { graph: WorkflowGraph }) {
   )
 }
 
-function RunForm({ workflowUuid }: { workflowUuid: string }) {
+function RunForm({ workflowUuid, revision }: { workflowUuid: string; revision: number }) {
   const navigate = useNavigate()
   const [runMode, setRunMode] = useState<RunMode>('normal')
   const [input, setInput] = useState('{}')
   const [error, setError] = useState<string>()
+  const [report, setReport] = useState<RunPreflight>()
+  const check = async (value: JsonObject) => {
+    const result = await api.workflows.preflight(workflowUuid, { run_mode: runMode, input: value, expected_revision: revision })
+    setReport(result)
+    return result
+  }
+  const preview = useMutation({ mutationFn: check, onError: (failure) => setError(describeError(failure)) })
   const create = useMutation({
-    mutationFn: (value: JsonObject) =>
-      api.tasks.create({
+    mutationFn: async (value: JsonObject) => {
+      const result = await check(value)
+      if (!result.can_run) throw new Error('预检发现阻塞项，请处理后重试。')
+      return api.tasks.create({
         workflow_uuid: workflowUuid,
         run_mode: runMode,
         input: value,
         idempotency_key: newIdempotencyKey('run'),
         description: '调试控制台提交',
-      }),
+      })
+    },
     onSuccess: (task) => navigate(`/tasks/${task.uuid}`),
     onError: (failure) => setError(describeError(failure)),
   })
-  const submit = () => {
+  const submit = (previewOnly = false) => {
     let value: unknown
     try {
       value = JSON.parse(input || '{}')
@@ -239,26 +249,36 @@ function RunForm({ workflowUuid }: { workflowUuid: string }) {
       return
     }
     setError(undefined)
-    create.mutate(value as JsonObject)
+    if (previewOnly) preview.mutate(value as JsonObject)
+    else create.mutate(value as JsonObject)
   }
   return (
     <div className="panel-body stack">
       <p className="muted">POST /api/v1/workflow-tasks（execution_kind=workflow）。step 模式提交后在任务页逐个放行；没有入口参数合同的工作流只接受 {'{}'}。</p>
       <label className="inline-field">
         <span>run_mode</span>
-        <select value={runMode} onChange={(event) => setRunMode(event.target.value as RunMode)}>
+        <select disabled={create.isPending || preview.isPending} value={runMode} onChange={(event) => { setRunMode(event.target.value as RunMode); setReport(undefined) }}>
           <option value="normal">normal（自动）</option>
           <option value="step">step（单步）</option>
         </select>
       </label>
       <label className="field-block">
         <span>input（JSON 对象）</span>
-        <textarea className="json-editor" rows={6} value={input} onChange={(event) => setInput(event.target.value)} spellCheck={false} />
+        <textarea disabled={create.isPending || preview.isPending} className="json-editor" rows={6} value={input} onChange={(event) => { setInput(event.target.value); setReport(undefined) }} spellCheck={false} />
       </label>
       <div className="row-actions">
-        <Button tone="primary" disabled={create.isPending} onClick={submit}>提交任务</Button>
+        <Button disabled={create.isPending || preview.isPending} onClick={() => submit(true)}>检查运行条件</Button>
+        <Button tone="primary" disabled={create.isPending || preview.isPending} onClick={() => submit()}>检查并提交任务</Button>
         <Link className="link-button" to={`/tasks?workflow=${workflowUuid}`}>查看这个工作流的任务</Link>
       </div>
+      {report ? <div className="stack" aria-live="polite">
+        <strong>{({ invalid: '配置有误', temporarily_unavailable: '当前暂不可运行', runnable_now: '当前检查通过' })[report.status]}</strong>
+        <p className="muted">检查不预留库存或设备，派发时还会重新校验。</p>
+        <ul>{report.checks.map((item, index) => <li key={index} className={item.blocking ? 'command-result bad' : ''}>
+          {item.status === 'deferred' ? '运行时检查：' : ''}{item.message}
+        </li>)}</ul>
+        <JsonView title="预检详情" value={report} defaultOpen={false} />
+      </div> : null}
       {error ? <p className="command-result bad">{error}</p> : null}
     </div>
   )

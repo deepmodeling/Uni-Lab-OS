@@ -298,6 +298,12 @@ class JobExecutionBackend:
                 return mapping
         return None
 
+    def resolve_action_schema(self, device_id: str, action_name: str) -> dict[str, Any] | None:
+        """从当前注册表读取动作合同，供候选计划冻结及预检使用。"""
+        action = self._action_mapping(device_id, action_name)
+        schema = action.get("schema") if action else None
+        return deepcopy(schema) if isinstance(schema, dict) else None
+
     def resolve_material_lock_parameters(
         self, device_id: str, action_name: str
     ) -> List[str]:
@@ -904,6 +910,23 @@ class JobExecutionBackend:
         if status not in ("success", "failed", "canceled"):
             return
 
+        if status == "success":
+            from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
+
+            schema = (self._action_mapping(item.device_id, item.action_name) or {}).get("schema")
+            if schema and "x-unilabos-action-contract" in schema:
+                try:
+                    validate_action_values(schema, (return_info or {}).get("return_value"), section="result")
+                except TypedActionValueError as error:
+                    status = "failed"
+                    return_info = {**(return_info or {}), "suc": False, "error": str(error), "error_info": {
+                        "action_name": item.action_name, "exception_type": "TypedActionValueError",
+                        "exception_mro": ["TypedActionValueError", "ValueError", "Exception"],
+                        "error_message": str(error), "category": "execution", "severity": "error",
+                    }}
+                    feedback_data = dict(feedback_data or {})
+                    if "return_info" in feedback_data:
+                        feedback_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
         with self._cancel_state_lock:
             cancel_requested = item.job_id in self._cancel_requested_jobs
         if cancel_requested and status != "success":
@@ -1566,6 +1589,19 @@ class JobExecutionBackend:
                 for option in pending["error_info"]["options"]
             }:
                 return False
+            if selected == "operator_intervention":
+                schema = (self._action_mapping(device_id, pending["item"].action_name) or {}).get("schema")
+                if schema and "x-unilabos-action-contract" in schema:
+                    from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
+
+                    late = pending.get("late_result") if pending.get("soft_timeout") else None
+                    if "result" in decision or "return_value" in decision or isinstance(late, dict):
+                        replacement = decision.get("result", decision.get("return_value", (late or {}).get("return_info", {}).get("return_value")))
+                        try:
+                            validate_action_values(schema, replacement, section="result")
+                        except TypedActionValueError:
+                            # 无效替换不得消费待决策记录，操作员可修改后重试。
+                            return False
             pending["resolving"] = True
             self._pending_action_error_decisions.pop(decision_id, None)
             resolved_report = {
@@ -1748,6 +1784,19 @@ class JobExecutionBackend:
                 {},
             ):
                 self._release_terminal(queue_item, "failed", return_info, {})
+            return
+        from unilabos.registry.typed_contract import validate_action_values
+
+        schema = (self._action_mapping(job.device_id, job.action_name) or {}).get("schema")
+        try:
+            job.action_args = validate_action_values(schema, job.action_args)
+            if schema and "x-unilabos-action-contract" in schema:
+                from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+                gateway = self._inventory_authority.gateway if self._inventory_authority is not None else None
+                validate_resource_values(schema, job.action_args, gateway)
+        except ValueError as error:
+            self._reject_job(job, str(error), "TypedActionValueError")
             return
         if self._inventory_authority is not None:
             try:

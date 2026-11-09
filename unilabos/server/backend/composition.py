@@ -173,6 +173,10 @@ def setup_local_scheduler(
         ),
         device_state_reader=make_device_state_reader(execution_backend),
     )
+    service.configure_preflight(
+        materials=_materials_gateway, endpoints=read_preflight_endpoints,
+        action_schema_resolver=getattr(execution_backend, "resolve_action_schema", None),
+    )
     service.set_task_submitter(scheduler.submit)
     # 本机调度器是其派发 job 的生命周期 owner：失败 attempt 挂起等待决策时由它
     # 把 attempt/节点运行置为 intervention_required（执行面按 origin 路由）。
@@ -213,6 +217,27 @@ def _stop_event_retention() -> None:
     if _event_retention is not None:
         _event_retention.stop()
         _event_retention = None
+
+
+def read_preflight_endpoints() -> list[dict[str, Any]]:
+    """与浏览器共享当前 Host 的在线能力快照，避免读取权威进程的空遥测镜像。"""
+    import json
+    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled
+    from unilabos.server.composition import get_server_services
+
+    if edge_proxy_enabled():
+        response = edge_http("GET", "/api/v1/runtime/endpoints?limit=1000", timeout=5.0)
+        if response is None or response.status_code != 200:
+            raise RuntimeError("Host 在线能力暂不可用")
+        result = json.loads(response.body_bytes())
+    else:
+        services = get_server_services()
+        if services is None:
+            raise RuntimeError("设备运行服务尚未启动")
+        result = services.runtime.list_endpoint_snapshots(limit=1000)
+    if not isinstance(result, list):
+        raise ValueError("设备能力快照格式无效")
+    return [item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item) for item in result]
 
 
 def make_device_state_reader(execution_backend: Any):

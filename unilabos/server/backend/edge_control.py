@@ -354,6 +354,12 @@ class EdgeControlService:
             logger.exception("[EdgeControl] 解析动作声明失败: %s/%s", device_id, action_name)
             return None
 
+    def resolve_action_schema(self, device_id: str, action_name: str) -> dict[str, Any] | None:
+        """从当前注册表读取动作合同，供候选计划冻结及预检使用。"""
+        action = self._action_definition(device_id, action_name)
+        schema = action.get("schema") if action else None
+        return deepcopy(schema) if isinstance(schema, dict) else None
+
     def resolve_material_lock_parameters(
         self, device_id: str, action_name: str
     ) -> list[str]:
@@ -470,6 +476,15 @@ class EdgeControlService:
             )
             return False
         replace = selected == "operator_intervention" and result is not None
+        if replace:
+            schema = self.resolve_action_schema(str(report.get("device_id") or ""), str(report.get("action_name") or ""))
+            if schema and "x-unilabos-action-contract" in schema:
+                from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
+
+                try:
+                    validate_action_values(schema, result, section="result")
+                except TypedActionValueError:
+                    return False
         content = ErrorDecisionContent(
             decision_uuid=decision_id,
             confirmed_scheduler_revision=int(pending["required_scheduler_revision"]),

@@ -874,6 +874,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/materials/inventory/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Inventory */
+        post: operations["preview_inventory_api_v1_materials_inventory_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/materials/links": {
         parameters: {
             query?: never;
@@ -960,6 +977,23 @@ export interface paths {
         get: operations["get_inventory_lot_api_v1_materials_lots__lot_uuid__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/materials/lots/{lot_uuid}/stocktake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stocktake Inventory Lot */
+        post: operations["stocktake_inventory_lot_api_v1_materials_lots__lot_uuid__stocktake_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2594,6 +2628,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workflows/{workflow_uuid}/run-preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preflight Workflow */
+        post: operations["preflight_workflow_api_v1_workflows__workflow_uuid__run_preflight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3640,6 +3691,43 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** InventoryPreviewRequest */
+        InventoryPreviewRequest: {
+            /** Requirements */
+            requirements: components["schemas"]["InventoryRequirement"][];
+        };
+        /**
+         * InventoryRequirement
+         * @description 调度器冻结的一项库存需求。
+         *
+         *     两种 kind 区分的是账目形态而不是物料种类：``material`` 表示独立物料实例
+         *     （有 uuid、可放到位点的个体，例如枪头盒、孔板、试剂瓶），只改变生命周期而不
+         *     扣数量；``lot`` 表示按量计量的 ``inventory_lot`` 库存（散装试剂、散装耗材等），
+         *     按 lot FIFO 从 available 预留并在动作开始时扣减。
+         */
+        InventoryRequirement: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "material" | "lot";
+            /** Material Uuid */
+            material_uuid?: string | null;
+            /** Template Uuid */
+            template_uuid?: string | null;
+            /** Lot Uuid */
+            lot_uuid?: string | null;
+            /** Parent Material Uuid */
+            parent_material_uuid?: string | null;
+            /** Site Uuid */
+            site_uuid?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Unit */
+            unit?: string | null;
+        };
         JsonValue: unknown;
         /**
          * LabLayoutRead
@@ -4586,6 +4674,23 @@ export interface components {
             meta_data?: {
                 [key: string]: unknown;
             };
+        };
+        /** WorkflowPreflightRequest */
+        WorkflowPreflightRequest: {
+            /**
+             * Run Mode
+             * @default normal
+             * @enum {string}
+             */
+            run_mode?: "normal" | "step" | "single_node";
+            /** Target Node Uuid */
+            target_node_uuid?: string | null;
+            /** Input */
+            input?: {
+                [key: string]: unknown;
+            };
+            /** Expected Revision */
+            expected_revision?: number | null;
         };
         /**
          * WorkflowPublishRequest
@@ -6595,6 +6700,39 @@ export interface operations {
             };
         };
     };
+    preview_inventory_api_v1_materials_inventory_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventoryPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_links_api_v1_materials_links_get: {
         parameters: {
             query?: {
@@ -6769,6 +6907,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stocktake_inventory_lot_api_v1_materials_lots__lot_uuid__stocktake_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lot_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InventoryMutation"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -10236,6 +10409,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["WorkflowPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preflight_workflow_api_v1_workflows__workflow_uuid__run_preflight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workflow_uuid: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkflowPreflightRequest"];
             };
         };
         responses: {

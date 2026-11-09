@@ -1087,6 +1087,33 @@ class Registry:
             nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
+            canonical_schema = method_info.get("canonical_schema")
+            if canonical_schema is not None:
+                from unilabos.registry.typed_contract import material_lock_parameters
+
+                entry["schema"] = canonical_schema
+                entry["contract_kind"] = "typed"
+                from unilabos.registry.action_template_projection import compile_backend_action_handles
+
+                entry["handles"] = compile_backend_action_handles(canonical_schema)
+                properties = canonical_schema["properties"]["goal"]["properties"]
+                entry["goal"] = {name: name for name in properties}
+                entry["goal_default"] = {
+                    name: schema["default"] for name, schema in properties.items() if "default" in schema
+                }
+                entry["goal_default"].update((action_args or {}).get("goal_default") or {})
+                entry["materials_need_lock"] = material_lock_parameters(canonical_schema)
+                def resource_field(field: Dict[str, Any]) -> bool:
+                    if not field:
+                        return False
+                    return "x-unilabos-material-lock" in field or resource_field(field.get("items", {}))
+                entry["placeholder_keys"] = {
+                    name: "unilabos_resources" for name, field in properties.items() if resource_field(field)
+                }
+                entry["placeholder_keys"].update({
+                    name: "unilabos_sites" for name, field in properties.items()
+                    if "x-unilabos-site-selector" in field
+                })
             return action_name, entry
 
         # 1) auto- actions
@@ -2196,6 +2223,10 @@ class Registry:
                             continue
                         else:
                             action_key = f"auto-{k}"
+                        existing = old_action_configs.get(action_key, {})
+                        if "x-unilabos-action-contract" in (existing.get("schema") or {}):
+                            device_config["class"]["action_value_mappings"][action_key] = existing
+                            continue
                         goal_schema = self._generate_unilab_json_command_schema(
                             v["args"], docstring=v.get("docstring"), import_map=enhanced_import_map
                         )
@@ -2721,7 +2752,7 @@ class Registry:
                     type_obj = action_config.get("type")
                     if hasattr(type_obj, "__name__"):
                         action_config["type"] = type_obj.__name__
-                    if "schema" in action_config and action_config["schema"]:
+                    if "schema" in action_config and action_config["schema"] and "x-unilabos-action-contract" not in action_config["schema"]:
                         schema = action_config["schema"]
                         # 确保schema结构存在
                         if (

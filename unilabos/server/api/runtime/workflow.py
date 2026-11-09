@@ -231,6 +231,13 @@ class WorkflowTaskCreateRequest(_BackendModel):
         return normalize_json_object(value)
 
 
+class WorkflowPreflightRequest(_StrictModel):
+    run_mode: Literal["normal", "step", "single_node"] = "normal"
+    target_node_uuid: Optional[str] = None
+    input: Dict[str, Any] = Field(default_factory=dict)
+    expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
+
+
 class WorkflowTaskInputEditRequest(_StrictModel):
     """暂停时修改入口参数：``input`` 为部分更新，``expected_revision`` 是任务 control_revision。"""
 
@@ -550,6 +557,14 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             service.insert_composite_invocation(workflow_uuid, **body.model_dump()),
             status=201,
         )
+
+    @router.post("/workflows/{workflow_uuid}/run-preflight")
+    def preflight_workflow(workflow_uuid: str, body: WorkflowPreflightRequest) -> JSONResponse:
+        return _success(service.preflight_workflow(
+            workflow_uuid=workflow_uuid, run_mode=body.run_mode,
+            target_node_uuid=body.target_node_uuid, input_value=body.input,
+            expected_revision=body.expected_revision,
+        ))
 
     @router.post("/workflow-tasks")
     def create_workflow_task(

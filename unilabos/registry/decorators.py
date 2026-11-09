@@ -397,6 +397,8 @@ def action(
     materials_free: Optional[List[str]] = None,
     timeout: Optional[float] = None,
     execution_timeout: Optional[Union[float, str]] = None,
+    contract: str = "legacy",
+    resource_contract: Optional[Dict[str, Any]] = None,
 ):
     """
     动作方法装饰器
@@ -430,6 +432,8 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
+        contract: legacy 保留既有签名推断；typed 用 AST 编译严格参数和具名返回合同。
+        resource_contract: typed 动作的资源角色声明；未接通的物理结算或长期托管语义在运行前拒绝。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         materials_need_lock: 本动作执行期间需要独占的物料参数名列表（最终集合）。
@@ -447,6 +451,13 @@ def action(
                            一条带 wait 选项的决策；表达式在下发时按真实 action_args
                            （叠加 goal_default）求值。详见 unilabos.registry.action_timeout。
     """
+
+    if contract not in {"legacy", "typed"}:
+        raise ValueError("contract 仅支持 legacy 或 typed")
+    if contract == "typed" and action_type not in (_ACTION_TYPE_UNSET, None):
+        raise ValueError("typed 合同仅支持 JSON 动作")
+    if resource_contract is not None and contract != "typed":
+        raise ValueError("资源合同必须绑定 typed 动作")
 
     def decorator(func: F) -> F:
         import asyncio as _asyncio
@@ -479,6 +490,11 @@ def action(
             "auto_prefix": auto_prefix,
             "parent": parent,
         }
+        if contract == "typed":
+            from unilabos.registry.action_resource_contract import normalize_action_resource_contract
+
+            meta["contract_kind"] = "typed"
+            meta["resource_contract"] = normalize_action_resource_contract(resource_contract)
         if feedback_interval is not None:
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:

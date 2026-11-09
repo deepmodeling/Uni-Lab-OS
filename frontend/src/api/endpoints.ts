@@ -15,6 +15,8 @@ import type {
   MaterialAggregate,
   Page,
   ReadinessSummary,
+  RunPreflight,
+  RunPreflightBody,
   SchedulerResourceSnapshot,
   TaskCommandBody,
   TaskCreateBody,
@@ -40,6 +42,7 @@ export const ENDPOINTS = {
   listWorkflows: ['GET', '/api/v1/workflows'],
   getWorkflow: ['GET', '/api/v1/workflows/{workflow_uuid}'],
   workflowGraph: ['GET', '/api/v1/workflows/{workflow_uuid}/graph'],
+  runPreflight: ['POST', '/api/v1/workflows/{workflow_uuid}/run-preflight'],
   workflowPublications: ['GET', '/api/v1/workflows/{workflow_uuid}/publications'],
   publishedWorkflows: ['GET', '/api/v1/workflow-publications'],
   listTasks: ['GET', '/api/v1/workflow-tasks'],
@@ -107,6 +110,7 @@ export function createApi(transport: Transport) {
       publications: (uuid: string) =>
         call<WorkflowPublication[]>('workflowPublications', { params: { workflow_uuid: uuid } }),
       published: () => call<WorkflowPublication[]>('publishedWorkflows'),
+      preflight: (uuid: string, body: RunPreflightBody) => call<RunPreflight>('runPreflight', { params: { workflow_uuid: uuid }, body }),
     },
     tasks: {
       list: (query: TaskListQuery = {}) => call<Page<WorkflowTask>>('listTasks', { query }),

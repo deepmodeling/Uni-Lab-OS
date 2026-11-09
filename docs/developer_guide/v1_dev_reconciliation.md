@@ -2,6 +2,8 @@
 
 核验日期：2026-11-09。本文区分“已实现”“保留 Dev 设计而关闭差异”“待移植”和“待验收”，不以文件差异消失代表功能完成。
 
+2026-11-10 补充：Workspace Host 的进程编排可以沿用 Dev，但其中管理协议、排空、布局等仍需逐项归位；Dev 当前是单主 Host 控制连接加多 slave，并非多主 Host 同时接入。详见 [Workspace Host 规整说明](workspace_host_cleanup.md)。
+
 ## 基线与原始目标
 
 | 对象 | 固定版本 | 当前含义 |
@@ -23,7 +25,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | 层次 | Dev | V1 参考实现 | 消解方式 |
 | --- | --- | --- | --- |
 | 启动 | `app/backend_main.py` 的主进程持有 Scheduler / Workflow / Registry / Materials，默认监督 Host 子进程 | `app/runtime_topology.py`、`workspace_host/`；combined / workspace_backend / edge_runtime 角色 | 保留 Dev；不另搬 workspace_host 来重复监督主进程 |
-| 多运行时 | Host 执行面，远程 Host 接入、HostLink slave、设备进程管理与包安装 | V1 自身的 runtime、workspace 生命周期与控制面约定 | 保留一套 backend 权威管理多个执行实例的方向；默认本地 Host 为一个，不等于只能运行一组设备 |
+| 多运行时 | 单主 Host 执行面（可本地或远端），下接多个 HostLink slave；支持设备进程管理与包安装 | V1 自身的 runtime、workspace 生命周期与控制面约定 | 保留一个 backend 通过主 Host 管多个 slave；多个独立主 Host 同时接入仍需扩展控制面 |
 | 浏览器入口 | 主进程统一 API 地址；Host 专属请求经 runtime.v1 通道代理，Host 不另占 HTTP 端口 | V1 本地 Console 及独立前端协议 | 正式 UI 使用 Uni-Lab FE；删除主仓库 React 调试站，继续保留 API、OpenAPI、SSE 与代理 |
 | 设备 | `backend/runtime` 公共内核 + HostLink / 可选 ROS2；工作目录中的设备包和 slave | V1 工站执行适配、包目录和作者编译 | 保留 Dev 驱动生命周期；只抽取需要的合同/编排能力 |
 | 调度 | `server/backend/scheduler`；并行 DAG、动作/物料互斥、FIFO、原生授锁插件和 Python fallback | `app/scheduler`、`workflow`、`scheduling`；控制区域、资源区间、Claim/Lease、开始许可、引擎协议 | 功能逐项适配；原生授锁插件不等于 V1 全部排程引擎 |
@@ -37,8 +39,8 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | ID | 状态 | 决定与证据 |
 | --- | --- | --- |
 | D01 | 本地已完成 | 删除 `frontend/` 全部 React 调试站及 `tests/frontend/test_debug_console_api.py`；README 改指正式前端。后端 OpenAPI 导出和 API 测试保留。 |
-| D02 | 按设计消解 | 不迁入 V1 的 workspace_host 管理层；使用现有主进程、supervisor、设备包和 slave。复杂多 Host 故障场景仍按 D03 验收。 |
-| D03 | 保留 Dev；基础验证通过 | backend 权威 + 默认 Host + 远程/设备 slave；现有 supervisor、device-processes、driver-packages、HostLink 测试覆盖基本路径。多个真实工站的现场验收列 T02。 |
+| D02 | 进程编排方向已定；协议待归位 | 不重复迁入 workspace_host 进程管理层；使用现有主进程、supervisor、设备包和 slave。管理 API/SDK、排空、布局和模板校验仍按规整说明处理，不能整目录判为已消解。 |
+| D03 | 单主 Host + 多 slave 已有；多主 Host 未实现 | 现有 supervisor、device-processes、driver-packages、HostLink 测试覆盖基本路径。runtime.v1 当前只有一个主 Host 控制连接；多主 Host 并发接入另行扩展，多个真实工站的现场验收列 T02。 |
 | D04 | 按设计消解 | 保留并行任务和任务级单步；不将 V1 当前工站级单步准入策略直接复制过来。 |
 | D05 | 按设计消解 | 保留原生授锁插件可选、加载失败回退 Python；保留已建立的版本化数据库迁移。 |
 | D06 | 已配置 | WSL 的 `git.dp.tech` 使用 Windows Git Credential Manager；站点代理 `http://127.0.0.1:3897`。克隆成功，无需再次网页登录；凭据不写入报告或 patch。 |

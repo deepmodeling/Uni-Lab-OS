@@ -2348,24 +2348,34 @@ class MaterialsService(MaterialsRepository):
         self, material_uuid: str, substances: Optional[Sequence[MaterialSubstanceRecord]] = None,
         *, config: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, float]:
-        from unilabos.server.services.materials.capacity import capacity_projection, validate_contents
+        from unilabos.server.services.materials.capacity import (
+            capacity_projection, normalize_capacity, validate_contents,
+        )
 
         material = MaterialsRepository.get_material(self, material_uuid)
         if material is None:
             return {}
         template = MaterialsRepository.get_template(self, material.template_uuid, include_deleted=True)
         try:
-            capacity = capacity_projection(
-                material.config_json if config is None else config,
-                template.definition_json if template is not None else {},
-            )
+            config = material.config_json if config is None else config
+            definition = template.definition_json if template is not None else {}
+            capacity = capacity_projection(config, definition)
             if not capacity:
                 return {}
             if substances is None:
                 data = self.get_data(material_uuid)
                 substances = data.substances if data is not None else []
             chemicals = chemical_summaries(self.connection, [item.chemical_uuid for item in substances if item.chemical_uuid])
-            validate_contents(capacity, substances, chemicals)
+            # PLR 的旧体积规格不要求质量记录具备密度；显式体积合同仍完整校验。
+            allow_unquantified_volume = (
+                config.get("max_volume") is not None
+                and "max_volume_ul" not in normalize_capacity(config.get("capacity"))
+                and "max_volume_ul" not in normalize_capacity(definition.get("capacity"))
+            )
+            validate_contents(
+                capacity, substances, chemicals,
+                allow_unquantified_volume=allow_unquantified_volume,
+            )
             return capacity
         except ValueError as error:
             raise MaterialValidationError(str(error)) from None

@@ -37,8 +37,18 @@ def capacity_projection(config: Mapping[str, Any], definition: Mapping[str, Any]
     return {**rated, **local}
 
 
-def validate_contents(capacity: Mapping[str, float], substances: Sequence[Any], chemicals: Mapping[str, Any]) -> None:
-    """同一容器内各份内容物合计；跨维度只采用明确液体密度，不猜测溶液浓度。"""
+def validate_contents(
+    capacity: Mapping[str, float],
+    substances: Sequence[Any],
+    chemicals: Mapping[str, Any],
+    *,
+    allow_unquantified_volume: bool = False,
+) -> None:
+    """合计内容物；只有旧 max_volume 允许保存无法可靠换算体积的事实。
+
+    显式 capacity 默认要求全部内容物可验算。旧规格仅检查已知体积的合计，
+    通过检查不代表未知部分没有体积，也不构成设备动作的容量许可。
+    """
     for dimension, maximum in capacity.items():
         total = 0.0
         for substance in substances:
@@ -49,13 +59,21 @@ def validate_contents(capacity: Mapping[str, float], substances: Sequence[Any], 
             concentration = substance.meta_data_json.get("concentration_value")
             if concentration is None and substance.composition:
                 concentration = 1
+            conversion = {
+                "inventory_type": "reagent",
+                "physical_state": substance.physical_state,
+                "density_g_per_ml": density,
+                "concentration_value": concentration,
+            }
+            target_unit = CAPACITY_UNITS[dimension]
             converted = convert_quantity(
-                substance.quantity, substance.quantity_unit, CAPACITY_UNITS[dimension],
-                inventory_type="reagent", physical_state=substance.physical_state,
-                density_g_per_ml=density,
-                concentration_value=concentration,
+                substance.quantity, substance.quantity_unit, target_unit, **conversion,
             )
             if converted is None:
+                if allow_unquantified_volume and dimension == "max_volume_ul":
+                    # 零量只探测单位和物性是否足以换算，不能把数值溢出当成缺少物性。
+                    if convert_quantity(0, substance.quantity_unit, target_unit, **conversion) is None:
+                        continue
                 raise ValueError(f"内容物 {substance.name} 无法按 {dimension} 验证容量，请补充适用的物性或容量维度")
             total += converted[0]
             if not math.isfinite(total):

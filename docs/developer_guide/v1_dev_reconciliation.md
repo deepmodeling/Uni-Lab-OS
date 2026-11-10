@@ -4,6 +4,8 @@
 
 2026-11-10 更新：生命周期 DTO、HTTP SDK 和 V1 的 drain 接口已在本地工作分支接入现有 server/protocol/client 分层，见 [生命周期协议迁移](runtime_lifecycle_migration.md)。用户确认一个 backend 对应一个主 Host/runtime，设备通过多 slave 扩展；多主 Host 不属于目标差异。布局、模板和旧管理操作日志仍需单独处理，详见 [Workspace Host 规整说明](workspace_host_cleanup.md)。
 
+同日后续：C01 容量/资源快照回归已本地修复，相关回归 114 项通过。旧 `max_volume` 允许保存无法可靠换算体积的事实，已知体积仍受上限约束；显式 `capacity` 继续完整校验。详见 [容量规则与兼容边界](v1_inventory_preflight_contracts.md#容量)。修复未推送，#358 的远端 CI 和合入仍待完成。
+
 ## 基线与原始目标
 
 | 对象 | 固定版本 | 当前含义 |
@@ -66,7 +68,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | P01 运行预检 | #358 已有 Dev API；正式 FE 未兼容 | 复用 Dev 执行计划/输入/当前库存，无业务写入；保留运行时 deferred 检查。先修 F02/F03，绑定修订并回归只读性。 |
 | R01 启动许可 / fencing | 尚未移植 | 设备调用前确认当前 attempt 的开始权限并持久化；处理消息重发、旧 epoch、应答丢失和重启。许可不是执行成功或实际用量证据。 |
 | R02 持久 Claim/Lease 与恢复 | Dev 有锁恢复/人工裁决基础；未完全等同 V1 | 保留 Dev 的未知执行和人工裁决；围绕 R01/M02/A03/I03 设计持久事实和迁移，补 Host/权威重启与重放回归。 |
-| C01 #358 合并 | 阻塞 | CI `42584235496` 的 jazzy/humble 各有两个容量/资源快照失败；HostLink 三平台、合同检查、四平台构建成功。不能绕过失败合并。 |
+| C01 #358 合并 | 容量回归本地已修复；远端 CI / 合入待做 | 保留原资源测试，按旧规格与显式容量声明区分校验；本轮 114 项回归通过。远端仍为 `0c940ded`、CI `42584235496` 未更新，不能按本地结果宣称合并完成。 |
 | T01 device status | TODO，按用户要求后续做 | 现有 telemetry / status_fields / device_state 不等于用户要求的新设备状态合同；本轮不实现。 |
 | T02 苏州工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖主 runtime 下多 slave、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
 | U01 其他文件差异 | 已建立全文件索引，待逐项核验 | 目录迁移、文档、生成物、测试和驱动差异不能按行数判定为缺失能力；索引中的“待核验”不可当作已关闭。 |
@@ -121,10 +123,11 @@ def inspect_flow(ctx):
 
 - Python 3.12.16；核心相关回归：113 passed / 2 skipped。覆盖 OpenAPI、预检、token、backend-only、物料锁、超时、授锁、单步并行和循环。
 - 补充进程/包拓扑回归：36 passed，覆盖 supervisor、device-processes、driver-packages、HostLink hello/RPC。
-- `tests/backend/runtime/test_resource.py` 在本地复现同样的容量问题：8 passed / 2 failed。它不是 Windows/Linux 差异，也不是缺少 ROS 导致的导入错误。
+- `tests/backend/runtime/test_resource.py` 修复前复现容量问题：8 passed / 2 failed。修复后该文件全部 10 项通过，已包含在本轮 114 项回归中；不是 Windows/Linux 差异，也不是缺少 ROS 导致的导入错误。
+- 2026-11-10 容量修复回归：114 passed，覆盖 `tests/server/test_materials*.py`、库存增量、调度库存权威、运行预检、runtime 资源服务、PLR 适配/序列化与 HostLink 物料代理。新增 24 项容量边界用例；不与此前生命周期等重叠批次累加计数。
 - 正式前端 pnpm 10.13.1，core 67 个文件 / 531 项测试通过；这些使用 mock，不代表 Dev 兼容。
 - 单独 HTTP 诊断用例通过，断言的是上述真实不兼容可复现，同时确认 Dev 合法预检和 instances 读接口可响应。它不是“全部接口通过”的验收。
 - 主工作区 Dev 未改动；修改在独立分支，包中提供真正可应用的 patch 和前端只读核验材料。
-- C01 的具体冲突：旧 `RegularContainer(max_volume=100)` 快照含 `NaCl` / `catalyst` 的 µg 质量记录，新增容量验证没有可信密度就不能按体积上限验算。要保留资源事实同步的兼容性，又不能靠把固体质量当体积或删除容量断言蒙混通过。
+- C01 的具体冲突：旧 `RegularContainer(max_volume=100)` 快照含 `NaCl` / `catalyst` 的 µg 质量记录，新增容量验证没有可信密度就不能按体积上限验算。本地修复仅对旧体积规格允许记录未知体积；显式容量仍要求完整换算，混合记录的已知超量、数值溢出、模板/实例约束冲突继续拒绝并回滚。
 
-建议讨论顺序：先定 C01 容量约束与快照兼容边界并合入 #358；再落实 F01–F05 的正式前端最小运行链路；随后共同设计 M02/W01 的资源区间接口，接入 W02/W03/A01；最后在 R01/R02 基础上完善 I02/I03/A03。T01/T02 保留明确 TODO。每一轮关闭的是对应语义和验收项，不要求源码目录和 V1 完全相同。
+建议讨论顺序：先将 C01 本地修复接入 #358，完成远端 CI 后合入；再落实 F01–F05 的正式前端最小运行链路；随后共同设计 M02/W01 的资源区间接口，接入 W02/W03/A01；最后在 R01/R02 基础上完善 I02/I03/A03。T01/T02 保留明确 TODO。每一轮关闭的是对应语义和验收项，不要求源码目录和 V1 完全相同。

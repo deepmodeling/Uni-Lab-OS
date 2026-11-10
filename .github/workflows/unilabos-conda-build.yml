@@ -139,18 +139,13 @@ jobs:
             mamba install -n build-env --override-channels -c conda-forge rattler-build anaconda-client -y
           fi
           echo "CONDA_NO_PLUGINS=true" >> "$GITHUB_ENV"
-      - name: Initialize MSVC x64 toolchain
-        if: steps.should_build.outputs.should_build == 'true' && runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
       - name: Build and test packages
         if: steps.should_build.outputs.should_build == 'true'
         run: |
           extra=()
           if [[ "$BUILD_FULL" == "true" ]]; then extra+=(--full); fi
           if [[ "$EXTENSIONS_ONLY" == "true" ]]; then extra+=(--extensions-only); fi
-          python scripts/build_conda_release.py build --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" "${extra[@]}"
+          python scripts/build_conda_release.py build --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" --output-dir "$RUNNER_TEMP/c" "${extra[@]}"
       - name: Upload packages after successful tests
         if: steps.should_build.outputs.should_build == 'true' && (github.event_name == 'release' || inputs.upload_to_anaconda == true)
         env:
@@ -159,7 +154,7 @@ jobs:
           extra=()
           if [[ "$BUILD_FULL" == "true" ]]; then extra+=(--full); fi
           if [[ "$EXTENSIONS_ONLY" == "true" ]]; then extra+=(--extensions-only); fi
-          python scripts/build_conda_release.py upload --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" "${extra[@]}"
+          python scripts/build_conda_release.py upload --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" --output-dir "$RUNNER_TEMP/c" "${extra[@]}"
       - uses: actions/upload-artifact@v6
         if: steps.should_build.outputs.should_build == 'true'
         with:

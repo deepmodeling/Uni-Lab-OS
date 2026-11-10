@@ -44,7 +44,8 @@ def test_downstream_versions_sources_and_patches_match_conda():
         f"recipes/opentrons-shared-data/{patch}" for patch in ot["source"]["patches"]]
     plr = yaml.safe_load((ROOT / ".conda/pylabrobot/recipe.yaml").read_text(encoding="utf-8"))
     assert specs["pylabrobot"]["version"] == plr["package"]["version"]
-    assert plr["source"]["rev"] in specs["pylabrobot"]["url"]
+    for key in ("url", "sha256"):
+        assert plr["source"][key] == specs["pylabrobot"][key]
     assert specs["pylabrobot"]["patches"] == [f".conda/pylabrobot/{p}" for p in plr["source"]["patches"]]
     assert specs["pylabrobot"]["requires"] == [f"opentrons-shared-data=={ot['package']['version']}"]
     assert (f"opentrons-shared-data =={ot['package']['version']} {ot['build']['string']}"

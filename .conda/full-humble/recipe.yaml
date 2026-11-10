@@ -57,7 +57,7 @@ requirements:
 tests:
   - python:
       imports:
-        - rclpy
+        - unilabos.backend.hostlink.local_runtime
         - unilabos_msgs.action
         - sphinx
         - myst_parser
@@ -67,6 +67,8 @@ tests:
         - opcua
       pip_check: true
   - script:
+      # ROS 启动按应用约定先修复 DLL，首次修补后必须在新进程验证。
+      - python -c "import subprocess, sys; code = 'from unilabos.app.utils import patch_rclpy_dll_windows; patch_rclpy_dll_windows(); import rclpy; from rosidl_generator_py import import_type_support_impl; import_type_support_impl.import_type_support(\'unilabos_msgs\'); rclpy.init(); node = rclpy.create_node(\'conda_full_test\'); node.destroy_node(); rclpy.shutdown()'; process = subprocess.run([sys.executable, '-c', code]); assert process.returncode in (0, 75), process.returncode; process = subprocess.run([sys.executable, '-c', code]) if process.returncode == 75 else process; assert process.returncode == 0, process.returncode"
       # 与 Jazzy 相同的 Windows 隔离用户目录初始化，字体导入测试不跳过。
       - if: win
         then:

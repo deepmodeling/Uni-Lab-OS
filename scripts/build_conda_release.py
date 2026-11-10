@@ -55,7 +55,7 @@ def main() -> None:
     parser.add_argument("--extensions-only", action="store_true", help="复用已发布的默认包，仅构建/上传 ROS2/full 扩展")
     parser.add_argument("--output-dir", default="output")
     parser.add_argument("--artifact-dir", default="conda-artifacts")
-    parser.add_argument("--skip-existing", action="store_true", help="续跑本地已通过构建测试的产物")
+    parser.add_argument("--skip-existing", action="store_true", help="续跑时复用本地已有产物；调用方须先确认其测试通过")
     args = parser.parse_args()
     selected = recipes(args.ros_distros, args.full, args.extensions_only)
     output = Path(args.output_dir).resolve()

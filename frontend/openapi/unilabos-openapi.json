@@ -3,11 +3,11 @@
   "info": {
     "title": "Uni-Lab-OS Microbackend API",
     "description": "Uni-Lab-OS 微后端 HTTP 契约全集（Host 与 --role backend 两种角色的路由并集）。每个 operation 的 x-openlab-role 标注它在哪种进程角色下可用。",
-    "version": "0.12.3",
+    "version": "0.12.4",
     "x-openlab-protocol": {
       "api_version": "v1",
       "api_prefix": "/api/v1",
-      "unilabos_version": "0.12.3",
+      "unilabos_version": "0.12.4",
       "roles": [
         "host",
         "backend",

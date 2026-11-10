@@ -113,6 +113,18 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
     assert uploads == [support.name, "unilabos-full-0.12.4-jazzy_0.conda"]
 
 
+def test_conda_abi_upgrade_builds_message_packages_before_consumers():
+    """消息扩展不能靠频道中尚不存在或 ABI 不同的产物通过求解。"""
+    from scripts.build_conda_release import EXTERNAL_RECIPES, recipes
+
+    ordered = [name for name, _ in recipes("jazzy,humble", full=True)]
+    assert ordered.index("opentrons-shared-data") < ordered.index("pylabrobot")
+    for suffix in ("", "-humble"):
+        assert ordered.index(f"msgs{suffix}") < ordered.index(f"ros2{suffix}")
+        assert ordered.index(f"ros2{suffix}") < ordered.index(f"full{suffix}")
+        assert (Path(__file__).resolve().parents[2] / EXTERNAL_RECIPES[f"msgs{suffix}"]).is_file()
+
+
 def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypatch, tmp_path):
     from scripts import build_conda_release
 

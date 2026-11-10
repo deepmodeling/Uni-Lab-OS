@@ -8,10 +8,10 @@
 
 - `recipes/wheels.toml` 固定下载地址、SHA256、版本、补丁和 NOTICE。
 - Opentrons wheel 使用 `recipes/opentrons-shared-data/numpy2.patch`，与 Conda 完全共用；
-  包版本为 `9.1.0+unilabos.np2.1`，保留原许可证、修改说明和物料 JSON 数据。
+  包版本为 `10.1.0+unilabos.np2.1`，保留原许可证、修改说明和物料 JSON 数据。
 - PLR 固定提交 `6285d662effa972be97a781ba7493553f2ba94ee`，与 Conda 共用版本和依赖补丁；
-  Python 分发版本 `0.2.2+unilabos.6285d662effa`，避免与上游 `0.2.2` 混淆。
-- PLR 自身必须无条件声明 `opentrons-shared-data==9.1.0+unilabos.np2.1`；
+  Python 分发版本 `0.2.2+unilabos.6285d662effa.ot10`；`ot10` 仅标识 Opentrons 10 依赖元数据修订，PLR 源码提交不变。
+- PLR 自身必须无条件声明 `opentrons-shared-data==10.1.0+unilabos.np2.1`；
   Conda 的 PLR 配方也声明同一前置包。不是调整 requirements 的行顺序，也不安装完整的 `opentrons` SDK。
 - UniLabOS 的 `Requires-Dist` 与包内 `unilabos/utils/requirements.txt` 一致。
   不使用源码直链依赖：`--no-index` 不会阻止直接 URL 的下载。

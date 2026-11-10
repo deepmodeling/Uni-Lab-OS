@@ -72,8 +72,8 @@ Python 包源和 GitHub；如果已有配套包，用 `python scripts/dev_instal
 这只是误用 `--no-deps` 后的恢复入口，正常安装不依靠首次启动时再下载依赖；
 恢复入口允许访问普通包源，严格离线安装应使用前面的安装入口/锁定清单。
 
-两个修正版是默认物料依赖：`pylabrobot==0.2.2+unilabos.6285d662effa` 固定到已验证的 fork 提交，
-`opentrons-shared-data==9.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
+两个修正版是默认物料依赖：`pylabrobot==0.2.2+unilabos.6285d662effa.ot10` 固定到已验证的 fork 提交，
+`opentrons-shared-data==10.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
 普通上游 `opentrons-shared-data` 仍限制 NumPy 1，不能替换修正版。
 PLR 自身也声明了这个 Opentrons 数据包前置依赖；从完整配套 `wheelhouse` 只安装 PLR 时，
 pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，也无须安装完整的 `opentrons` SDK。
@@ -115,7 +115,7 @@ unilab --disable_browser --port 8002
 ROS 扩展使用另一个包名，避免 Conda 在同名默认包的 ROS / 非 ROS 变体之间自行选择。
 
 只安装 `unilabos` 即会直接带上 PLR fork、`msgcenterpy` 及 NumPy 2 修复版
-`opentrons-shared-data=9.1.0+unilabos.np2.1=py314_np2_1`，不要求用户另装环境中间包
+`opentrons-shared-data=10.1.0+unilabos.np2.1=py314_np2_1`，不要求用户另装环境中间包
 或 ROS 扩展。发行自检会实际创建 Opentrons 96 孔板，并检查 NumPy 2 积分接口，不能只验证 import。
 
 ## 运行 Host 与 Slave

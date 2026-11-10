@@ -56,18 +56,18 @@ def test_downstream_versions_sources_and_patches_match_conda():
 @pytest.mark.parametrize("dependencies", [
     [],
     ["opentrons-shared-data>=9.1"],
-    ['opentrons-shared-data==9.1.0+unilabos.np2.1; extra == "opentrons"'],
+    ['opentrons-shared-data==10.1.0+unilabos.np2.1; extra == "opentrons"'],
     ["opentrons-shared-data==9.1.0"],
 ])
 def test_plr_wheel_requires_numpy2_opentrons_unconditionally(tmp_path, dependencies):
-    spec = {"version": "0.2.2", "requires": ["opentrons-shared-data==9.1.0+unilabos.np2.1"]}
+    spec = {"version": "0.2.2", "requires": ["opentrons-shared-data==10.1.0+unilabos.np2.1"]}
     wheel = fake_wheel(tmp_path, "pylabrobot", spec["version"], dependencies)
     with pytest.raises(RuntimeError, match="直接依赖"):
         builder.verify_companion_metadata(wheel, "pylabrobot", spec)
 
 
 def test_companion_dependency_metadata_accepts_exact_pin(tmp_path):
-    spec = {"version": "0.2.2", "requires": ["opentrons-shared-data==9.1.0+unilabos.np2.1"]}
+    spec = {"version": "0.2.2", "requires": ["opentrons-shared-data==10.1.0+unilabos.np2.1"]}
     wheel = fake_wheel(tmp_path, "pylabrobot", spec["version"], spec["requires"])
     builder.verify_companion_metadata(wheel, "pylabrobot", spec)
 
@@ -117,9 +117,9 @@ def test_materials_only_verification_does_not_require_unilabos(monkeypatch, cata
 
 def test_lock_uses_exact_downstream_version_and_wheel_hash(tmp_path):
     fake_wheel(tmp_path)
-    patch = fake_wheel(tmp_path, "opentrons_shared_data", "9.1.0+unilabos.np2.1")
+    patch = fake_wheel(tmp_path, "opentrons_shared_data", "10.1.0+unilabos.np2.1")
     lock = builder.lock_wheels(tmp_path)
-    assert f"opentrons-shared-data==9.1.0+unilabos.np2.1 --hash=sha256:{installer.sha256(patch)}" in lock
+    assert f"opentrons-shared-data==10.1.0+unilabos.np2.1 --hash=sha256:{installer.sha256(patch)}" in lock
     assert len(lock.splitlines()) == 2
 
 
@@ -256,7 +256,7 @@ def test_environment_bootstrap_accepts_companion_wheelhouse(monkeypatch, tmp_pat
 
     monkeypatch.setenv("UNILABOS_WHEELHOUSE", str(tmp_path))
     for tool in ("pip", "uv"):
-        command = environment_check._install_command(tool, "opentrons-shared-data==9.1.0+unilabos.np2.1", False, False)
+        command = environment_check._install_command(tool, "opentrons-shared-data==10.1.0+unilabos.np2.1", False, False)
         assert command[-2:] == ["--find-links", str(tmp_path)]
 
 

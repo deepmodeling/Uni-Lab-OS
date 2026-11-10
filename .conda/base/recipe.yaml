@@ -54,8 +54,8 @@ requirements:
     - pyserial >=3.5
     - crcmod-plus >=2.3.1
     - pymodbus >=3.6.9,<4
-    - pylabrobot-unilab ==0.2.2+unilabos.6285d662effa py314_0
-    - opentrons-shared-data ==9.1.0+unilabos.np2.1 py314_np2_1
+    - pylabrobot-unilab ==0.2.2+unilabos.6285d662effa.ot10 py314_0
+    - opentrons-shared-data ==10.1.0+unilabos.np2.1 py314_np2_1
 tests:
   - python:
       imports:
@@ -67,7 +67,7 @@ tests:
   - script:
       - unilab --help
       - python -c "import importlib.util; assert importlib.util.find_spec('rclpy') is None"
-      - python -c "import importlib.metadata as m; from opentrons_shared_data.labware import labware_definition as ld; from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat; assert m.version('opentrons-shared-data') == '9.1.0+unilabos.np2.1'; assert ld.trapezoid([1, 2, 3]) == 4; assert corning_96_wellplate_360ul_flat('install_check').num_items == 96"
+      - python -c "import importlib.metadata as m; from opentrons_shared_data.labware import labware_definition as ld; from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat; assert m.version('opentrons-shared-data') == '10.1.0+unilabos.np2.1'; assert ld.trapezoid([1, 2, 3]) == 4; assert corning_96_wellplate_360ul_flat('install_check').num_items == 96"
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only

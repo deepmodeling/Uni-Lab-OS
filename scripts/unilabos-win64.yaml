@@ -14,7 +14,7 @@ dependencies:
   # - sphinx_rtd_theme
   # Data Visualization
   - numpy >=2,<3
-  - uni-lab::opentrons-shared-data=9.1.0+unilabos.np2.1=py314_np2_1
+  - uni-lab::opentrons-shared-data=10.1.0+unilabos.np2.1=py314_np2_1
   - scipy
   - pandas
   - networkx

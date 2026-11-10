@@ -75,7 +75,8 @@ tests:
           - if not exist "%USERPROFILE%\AppData\Local" mkdir "%USERPROFILE%\AppData\Local"
           - if not exist "%USERPROFILE%\AppData\Roaming" mkdir "%USERPROFILE%\AppData\Roaming"
       - python -c "import rinoh_typeface_dejavuserif, rinoh_typeface_texgyrecursor, rinoh_typeface_texgyreheros, rinoh_typeface_texgyrepagella"
-      - python -c "from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(version(r.name))]; assert not missing, missing"
+      # conda-forge 的 Ruff 是原生可执行文件，无 Python dist-info，仍须校验实际版本。
+      - python -c "import subprocess; from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(subprocess.check_output(['ruff', '--version'], text=True).split()[1] if r.name == 'ruff' else version(r.name))]; assert not missing, missing"
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only

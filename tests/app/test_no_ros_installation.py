@@ -395,6 +395,9 @@ def test_full_conda_support_packages_and_closed_dependency_validation():
         assert all("%USERPROFILE%\\AppData\\" in command for command in windows["then"])
         assert any("import rinoh_typeface_dejavuserif" in command for command in commands if isinstance(command, str))
         assert "patch_rclpy_dll_windows" in commands[0]
+        validation = next(command for command in commands if isinstance(command, str) and "reqs =" in command)
+        assert "['ruff', '--version']" in validation
+        assert "r.specifier.contains" in validation
 
 
 def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp_path):

@@ -181,7 +181,7 @@ def bundle(tmp_path):
     (tmp_path / "requirements.lock").write_text(builder.lock_wheels(wheels), encoding="utf-8")
     (tmp_path / "verify_installation.py").write_text("pass", encoding="utf-8")
     manifest = {"schema_version": 1, "kind": "offline-wheelhouse", "version": "0.12.3",
-                "python": "3.12", "platform": installer.platform_id(),
+                "python": "3.14", "platform": installer.platform_id(),
                 "files": {p.relative_to(tmp_path).as_posix(): installer.sha256(p)
                           for p in tmp_path.rglob("*") if p.is_file()}}
     (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -195,6 +195,13 @@ def test_bundle_rejects_tampering_before_creating_environment(bundle, monkeypatc
     (bundle / "requirements.lock").write_text("tampered", encoding="utf-8")
     with pytest.raises(RuntimeError, match="SHA256"):
         installer.main()
+
+
+def test_bundle_rejects_free_threaded_abi(bundle, monkeypatch):
+    """cp314 的离线原生包不能安装到独立 ABI 的 cp314t 解释器。"""
+    monkeypatch.setattr(installer.sysconfig, "get_config_var", lambda name: 1)
+    with pytest.raises(RuntimeError, match="cp314t"):
+        installer.verify_bundle(bundle)
 
 
 def test_bundle_rejects_unlisted_wheels(bundle):

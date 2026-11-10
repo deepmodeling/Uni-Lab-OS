@@ -5,7 +5,7 @@ This file provides guidance for coding agents working in this repository.
 ## Build & Development
 
 ```bash
-# Default installation needs only Python 3.12; ROS 2 is explicitly optional
+# Default installation needs only Python 3.14; ROS 2 is explicitly optional
 python scripts/dev_install.py  # builds companion PLR / Opentrons wheels; no PyPI upload
 python scripts/dev_install.py --extras full  # docs, tests, driver SDKs and development tools
 
@@ -75,7 +75,7 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 ## Code Conventions
 
 - Code comments and log messages in simplified Chinese
-- Python 3.12+, type hints expected
+- Python 3.14+, type hints expected
 - Pydantic models for data validation (`resource_tracker.py`)
 - Singleton pattern via `@singleton` decorator (`utils/decorator.py`)
 - Dynamic class loading via `utils/import_manager.py` — device classes resolved at runtime from registry YAML paths

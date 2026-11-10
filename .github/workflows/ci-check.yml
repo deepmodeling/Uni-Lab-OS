@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Build companion wheels without uploading to PyPI
         run: python scripts/build_wheel_release.py --dependencies-only
       - name: Install only the default Python distribution
@@ -75,7 +75,7 @@ jobs:
       ROS_DISTRO: ${{ matrix.ros_distro }}
       ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
       ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
-      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.15' || '0.9' }}
+      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.20' || '0.11' }}
 
     defaults:
       run:
@@ -91,7 +91,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge,robostack-${{ matrix.ros_distro }}
           channel-priority: strict
           activate-environment: check-env
@@ -108,7 +108,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp312
+      - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp314
         run: |
           call conda activate check-env
           if /I "%ROS_DISTRO%"=="humble" python -m pip install empy==3.3.4
@@ -116,7 +116,7 @@ jobs:
           colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CMAKE_PYTHON%"
           if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
           call install\unilabos_msgs\setup.bat
-          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312 typesupport: OK')"
+          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp314 typesupport: OK')"
 
       - name: Install pip dependencies and unilabos
         run: |

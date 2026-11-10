@@ -11,19 +11,19 @@ source:
 build:
   noarch: python
   number: 0
-  string: py312_0
+  string: py314_0
   script: python -m pip install . --no-deps --no-build-isolation
 requirements:
   host:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - pip
     - setuptools >=68
     - wheel
   run:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - typing_extensions
     - websockets
-    - opentrons-shared-data ==9.1.0+unilabos.np2.1 py312_np2_1
+    - opentrons-shared-data ==9.1.0+unilabos.np2.1 py314_np2_1
 tests:
   - python:
       imports:

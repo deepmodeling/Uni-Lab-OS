@@ -6,13 +6,13 @@ package:
   version: 0.12.3
 
 build:
-  number: 0
-  string: jazzy_0
+  number: 1
+  string: jazzy_1
 
 requirements:
   run:
   # 完整 ROS2 运行时，默认依赖直接由 unilabos 声明，不再发布 unilabos-env。
-  - unilabos-ros2 ==0.12.3 jazzy_0
+  - unilabos-ros2 ==0.12.3 jazzy_1
   # Documentation tools
   - sphinx >=7
   - sphinx_rtd_theme >=2

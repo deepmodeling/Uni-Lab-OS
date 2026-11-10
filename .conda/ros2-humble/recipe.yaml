@@ -5,15 +5,15 @@ package:
   version: 0.12.3
 build:
   noarch: generic
-  number: 0
-  string: humble_0
+  number: 1
+  string: humble_1
 requirements:
   run:
-    - unilabos ==0.12.3 py312_0
-    - python ==3.12.13
+    - unilabos ==0.12.3 py314_0
+    - python ==3.14.10
     - opencv
     - transforms3d
-    - ros2-distro-mutex 0.9.* humble_*
+    - ros2-distro-mutex 0.11.* humble_*
     - ros-humble-ros-core
     - ros-humble-action-msgs
     - ros-humble-std-msgs
@@ -29,4 +29,4 @@ requirements:
     - ros-humble-unilabos-msgs ==0.12.1
 about:
   license: GPL-3.0-only
-  description: Optional UniLabOS ROS 2 humble transport (CPython 3.12)
+  description: Optional UniLabOS ROS 2 humble transport (CPython 3.14)

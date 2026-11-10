@@ -19,6 +19,7 @@ Usage:
 """
 
 import sys
+import sysconfig
 import os
 import argparse
 
@@ -82,11 +83,12 @@ def check_python_version() -> bool:
     version = sys.version_info
     version_str = f"{version.major}.{version.minor}.{version.micro}"
 
-    if version.major == 3 and version.minor == 12:
+    if (version.major == 3 and version.minor == 14
+            and not sysconfig.get_config_var("Py_GIL_DISABLED")):
         print(f"  {CHECK_MARK} Python {version_str}")
         return True
     else:
-        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.12 / cp312 ABI)")
+        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.14 / cp314 ABI)")
         return False
 
 

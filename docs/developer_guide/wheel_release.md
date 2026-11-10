@@ -1,6 +1,6 @@
 # 配套 wheel 发布约定
 
-默认发行使用 Python 3.12 / NumPy 2 / HostLink，不需要 ROS。下游修正版不上传官方 PyPI，
+默认发行使用 Python 3.14 / NumPy 2 / HostLink，不需要 ROS。下游修正版不上传官方 PyPI，
 而是与 UniLabOS 同批作为发行附件提供。只附带一个 wheel 不会改变 pip 的查找规则；
 安装入口必须显式提供 `--find-links`，不能把解决依赖的责任推迟到启动设备时。
 
@@ -33,7 +33,7 @@ python scripts/build_wheel_release.py --output-dir dist/wheel-release
 python scripts/build_wheel_release.py --local-test --output-dir dist/wheel-local-test
 ```
 
-构建机需要 Python 3.12、pip、Git 和网络；目标机只需 Python 3.12。
+构建机需要 Python 3.14、pip、Git 和网络；目标机只需 Python 3.14。
 脚本要求新的或空的输出目录，不会覆盖旧发行包。源码缓存按 SHA256 命名，每次复核哈希。
 正式构建拒绝相关未提交修改，主包从当前 HEAD 的 Git 归档构建，避免夹带本地 build 缓存。
 

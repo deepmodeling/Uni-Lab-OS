@@ -10,7 +10,7 @@ source:
     sha256: da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768
 build:
   noarch: python
-  number: 0
+  number: 1
   script: python -m pip install . --no-deps --no-build-isolation
   python:
     entry_points:
@@ -26,12 +26,12 @@ build:
       - uacall = opcua.tools:uacall
 requirements:
   host:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - pip
     - setuptools >=68
     - wheel
   run:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - lxml
     - python-dateutil
     - pytz

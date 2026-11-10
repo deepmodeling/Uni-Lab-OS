@@ -5,12 +5,12 @@ package:
   version: 0.12.3
 
 build:
-  number: 0
-  string: humble_0
+  number: 1
+  string: humble_1
 
 requirements:
   run:
-  - unilabos-ros2 ==0.12.3 humble_0
+  - unilabos-ros2 ==0.12.3 humble_1
   - sphinx >=7
   - sphinx_rtd_theme >=2
   - myst-parser >=2

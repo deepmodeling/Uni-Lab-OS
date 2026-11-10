@@ -3,7 +3,7 @@ name: Opentrons NumPy 2 Build
 on:
   push:
     branches:
-    - feat/jazzy-py312
+    - feat/python314-jazzy
     tags:
     - opentrons-numpy2-v*
     paths:
@@ -36,7 +36,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge,uni-lab
           channel-priority: strict
           activate-environment: build-env
@@ -60,7 +60,7 @@ jobs:
           PACKAGE_PATH=$(find ./output/noarch -name "opentrons-shared-data-9.1.0+unilabos.np2.1-*.conda" -print -quit)
           test -n "$PACKAGE_PATH"
           mamba create -n opentrons-test --override-channels -c conda-forge \
-            python=3.12.13 "numpy>=2.5,<3" jsonschema pydantic typing-extensions pip -y
+            python=3.14.10 "numpy>=2.5,<3" jsonschema pydantic typing-extensions pip -y
           mamba install -n opentrons-test --override-channels -c conda-forge "$PACKAGE_PATH" -y
           conda run -n opentrons-test python -c "import importlib.metadata as m; import numpy as np; from opentrons_shared_data.labware import labware_definition as ld; reqs=m.requires('opentrons-shared-data') or []; assert np.lib.NumpyVersion(np.__version__) >= '2.5.0'; assert ld.trapezoid([1, 2, 3]) == 4; assert any(r.startswith('numpy') and '>=2' in r and '<3' in r for r in reqs), reqs; assert m.version('opentrons-shared-data') == '9.1.0+unilabos.np2.1'; print(np.__version__, m.version('opentrons-shared-data'))"
           conda run -n opentrons-test pip check

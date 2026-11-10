@@ -91,7 +91,7 @@ def test_conda_build_default_has_no_ros_channels():
 def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_path):
     from scripts import build_conda_release
 
-    for name in ("unilabos-0.12.3-py312_0.conda", "unilabos-full-0.12.3-jazzy_0.conda"):
+    for name in ("unilabos-0.12.3-py314_0.conda", "unilabos-full-0.12.3-jazzy_0.conda"):
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
@@ -115,8 +115,8 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
 
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
-        "win-64/mcp-1.30.0-py312_0.conda": True,
-        "win-64/unilabos-0.12.3-py312_0.conda": False,
+        "win-64/mcp-1.30.0-py314_0.conda": True,
+        "win-64/unilabos-0.12.3-py314_0.conda": False,
     }
     for name in packages:
         package = tmp_path / name

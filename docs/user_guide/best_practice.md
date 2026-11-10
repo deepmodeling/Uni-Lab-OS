@@ -4,7 +4,7 @@
 
 本指南将引导您从零开始完成 Uni-Lab-OS 实验室系统的完整搭建，从环境安装到高级设备开发。无论您是初次接触 Uni-Lab-OS 的用户，还是希望深入定制开发的开发者，都能在本指南中找到清晰的步骤和实用建议。
 
-> 默认环境为 Python 3.12、HostLink 和 NumPy 2，不需要 ROS；ROS2 仅显式选装。
+> 默认环境为 Python 3.14、HostLink 和 NumPy 2，不需要 ROS；ROS2 仅显式选装。
 > 旧 ROS 环境迁移及 ROS 专用设备的安装见[运行时与 ABI 基线](runtime_baseline.md)。
 
 ### 适用对象
@@ -49,7 +49,7 @@
 # 下载 Miniforge: https://github.com/conda-forge/miniforge/releases
 
 # 2. 创建 Conda 环境
-mamba create -n unilab python=3.12.13
+mamba create -n unilab python=3.14.10
 
 # 3. 激活环境
 mamba activate unilab
@@ -64,7 +64,7 @@ cd /path/to/Uni-Lab-OS
 python scripts/dev_install.py --extras full  # 可编辑安装
 
 # 方案 C：完整版（仿真/可视化）
-mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.3=jazzy_0"
+mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.3=jazzy_1"
 ```
 
 以上 Conda 命令需对应新版本已发布；发布前可按安装指南从源码安装。
@@ -72,7 +72,7 @@ mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "
 **选择建议：**
 
 - **日常使用/生产部署**：使用 `unilabos`（推荐），完整功能，开箱即用
-- **开发者**：使用 Python 3.12 虚拟环境 + `python scripts/dev_install.py --extras full`，一次安装全部 Python 开发依赖；需要原生 ROS 时选 Conda full
+- **开发者**：使用 Python 3.14 虚拟环境 + `python scripts/dev_install.py --extras full`，一次安装全部 Python 开发依赖；需要原生 ROS 时选 Conda full
 - **仿真/可视化**：使用 `unilabos-full`，含 Gazebo、rviz2、MoveIt
 
 #### 1.2 验证安装
@@ -804,7 +804,7 @@ Waiting for host service...
 
 ```bash
 # 1. 创建 Python 环境；需要原生 ROS 时改用安装指南中的 Conda full
-mamba create -n unilab python=3.12.13
+mamba create -n unilab python=3.14.10
 conda activate unilab
 
 # 2. 克隆代码
@@ -896,7 +896,7 @@ setup(
         # "pyserial",
         # "requests",
     ],
-    python_requires=">=3.12,<3.13",
+    python_requires=">=3.14,<3.15",
     # 包含注册表文件
     package_data={
         "my_lab_devices": [

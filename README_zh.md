@@ -61,10 +61,10 @@ unilab --disable-browser
 `pip install unilabos` 找不到它们，需要安装入口或 `--find-links <配套包>/wheelhouse`。
 上面的源码安装工具会先构建配套依赖。详见[安装指南](docs/user_guide/installation.md)。
 
-**0.12.3+ 默认 Conda 包发布后**：
+**0.12.4+ 默认 Conda 包发布后**：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 mamba activate unilab
 unilab --disable-browser
 ```

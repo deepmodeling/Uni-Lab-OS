@@ -57,14 +57,14 @@ mamba activate unilab
 # 4. 安装 Uni-Lab-OS（选择其一）
 
 # 方案 A：标准安装（推荐大多数用户）
-mamba install --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba install --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 
 # 方案 B：开发者环境（可编辑模式开发）
 cd /path/to/Uni-Lab-OS
 python scripts/dev_install.py --extras full  # 可编辑安装
 
 # 方案 C：完整版（仿真/可视化）
-mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.3=jazzy_1"
+mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.4=jazzy_1"
 ```
 
 以上 Conda 命令需对应新版本已发布；发布前可按安装指南从源码安装。

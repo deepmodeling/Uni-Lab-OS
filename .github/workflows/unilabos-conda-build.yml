@@ -1,6 +1,14 @@
 name: UniLabOS Conda Build
 
 on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.conda/**'
+      - 'recipes/**'
+      - 'scripts/build_conda_release.py'
+      - '.github/workflows/unilabos-conda-build.yml'
+      - 'setup.py'
   # 默认发行链与 ROS msgs 脱钩；dev CI 仅构建验证，正式 Release 才自动发布。
   workflow_run:
     workflows: ["CI Check"]
@@ -51,7 +59,7 @@ jobs:
         id: source
         uses: actions/github-script@v8
         env:
-          REQUESTED_REF: ${{ inputs.source_ref || github.event.release.tag_name }}
+          REQUESTED_REF: ${{ inputs.source_ref || github.event.release.tag_name || github.event.pull_request.head.sha }}
         with:
           script: |
             core.setOutput("should_continue", "false");
@@ -92,8 +100,8 @@ jobs:
       run:
         shell: bash -l {0}
     env:
-      ROS_DISTROS: ${{ inputs.ros_distros }}
-      BUILD_FULL: ${{ inputs.build_full == true }}
+      ROS_DISTROS: ${{ github.event_name == 'pull_request' && 'jazzy,humble' || inputs.ros_distros }}
+      BUILD_FULL: ${{ github.event_name == 'pull_request' || inputs.build_full == true }}
       EXTENSIONS_ONLY: ${{ inputs.extensions_only == true }}
       PYTHONUTF8: '1'
       ANACONDA_CLIENT_FORCE_STANDALONE: '1'
@@ -131,6 +139,11 @@ jobs:
             mamba install -n build-env --override-channels -c conda-forge rattler-build anaconda-client -y
           fi
           echo "CONDA_NO_PLUGINS=true" >> "$GITHUB_ENV"
+      - name: Initialize MSVC x64 toolchain
+        if: steps.should_build.outputs.should_build == 'true' && runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
       - name: Build and test packages
         if: steps.should_build.outputs.should_build == 'true'
         run: |

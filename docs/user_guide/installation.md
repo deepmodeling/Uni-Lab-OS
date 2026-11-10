@@ -1,9 +1,9 @@
 # Uni-Lab-OS 安装指南
 
-从 **0.12.3** 起，默认安装和运行均使用 **HostLink，不需要 ROS**。Python 要求为
+从 **0.12.4** 起，默认安装和运行均使用 **HostLink，不需要 ROS**。Python 要求为
 `>=3.14,<3.15`；Windows、Linux、macOS 可使用相同的 Python 入口。
 
-本文的 Conda 命令适用于 0.12.3 及之后的发布。如果 channel 尚未提供该版本，请先使用
+本文的 Conda 命令适用于 0.12.4 及之后的发布。如果 channel 尚未提供该版本，请先使用
 下方源码安装；旧的 0.12.2 Conda 包仍包含 ROS，升级源码不会自动卸载旧环境中的 ROS。
 
 ## 配套 wheel 发行包（推荐，无须 Conda）
@@ -33,7 +33,7 @@ PLR fork 和 Opentrons NumPy 2 修正版只作为配套文件提供，**不上�
 # 完整离线、精确版本与文件哈希：推荐保留安装入口的默认行为
 python -m pip install --no-index --find-links ./wheelhouse --require-hashes -r requirements.lock
 # 只指定主包，自动安装所需依赖（不锁定清单中全部间接依赖版本）
-python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.12.3"
+python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.12.4"
 ```
 
 只复制 `unilabos.whl`、不提供配套目录，或直接对公共源执行 `pip install unilabos`，
@@ -87,7 +87,7 @@ pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，�
 | full | `python scripts/dev_install.py --extras full` | 全部 Python 依赖：内置驱动 SDK、文档、测试、开发工具及 ROS Python 辅助依赖 |
 
 已有配套 wheel 时追加 `--wheelhouse <解压目录>/wheelhouse`。非源码安装使用
-`python -m pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.12.3"`。
+`python -m pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.12.4"`。
 默认离线 wheel 包只锁定默认依赖；扩展档位还需联网取得公共依赖，不能宣称整套 full 离线可用。
 pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesupport**，
 需要这些组件时使用下方 Conda 对应档位。专有硬件 SDK、系统驱动和许可证仍按设备包要求准备。
@@ -98,7 +98,7 @@ pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesup
 默认只启用 Uni-Lab 和 conda-forge，不添加 RoboStack channel：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 conda activate unilab
 unilab --help
 unilab --disable_browser --port 8002
@@ -146,17 +146,17 @@ HTTP/FFmpeg 等非 ROS 图像方案不因此被禁用，但仍需安装自己的
 
 ```bash
 # Jazzy
-mamba create -n unilab-jazzy --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-ros2=0.12.3=jazzy_1"
+mamba create -n unilab-jazzy --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-ros2=0.12.4=jazzy_1"
 conda activate unilab-jazzy
 unilab --backend ros2 -g graph.json
 
 # Humble：在另一个环境执行
-mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.12.3=humble_1"
+mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.12.4=humble_1"
 ```
 
 ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
 安装扩展后也必须使用 `--backend ros2`，不会偷偷切换默认 backend。
-需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.12.3=jazzy_1` 或 `humble_1`，
+需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.12.4=jazzy_1` 或 `humble_1`，
 这些大型组件的可用性还取决于平台和 RoboStack 包。
 
 自定义 ROS Action/消息参见[添加动作](../developer_guide/add_action.md)。
@@ -167,7 +167,7 @@ ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
 需要连同 ROS 运行与文档一起开发时，创建完整环境后可编辑安装源码：
 
 ```bash
-mamba create -n unilab-full --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.3=jazzy_1"
+mamba create -n unilab-full --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.4=jazzy_1"
 conda activate unilab-full
 python scripts/dev_install.py --extras full
 python -m pytest tests/

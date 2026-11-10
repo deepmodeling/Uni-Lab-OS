@@ -1,6 +1,6 @@
 package:
   name: ros-jazzy-unilabos-msgs
-  version: 0.12.1
+  version: 0.12.2
 source:
   path: ../../unilabos_msgs
   target_directory: src

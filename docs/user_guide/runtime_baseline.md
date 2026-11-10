@@ -4,7 +4,7 @@
 `cp314t`。Jazzy 使用 mutex `0.20.*`，Humble 使用 `0.11.*`。升级时创建新环境，
 并重新构建对应发行版的 `unilabos_msgs`，不要复用旧 cp312 原生扩展。
 
-从 0.12.3 起，默认安装、运行、Conda 发布和离线包都采用无 ROS 的 HostLink。
+从 0.12.4 起，默认安装、运行、Conda 发布和离线包都采用无 ROS 的 HostLink。
 旧版 0.12.2 的已发布包不覆盖；新版本发布前可从当前源码安装。
 
 ## 支持矩阵
@@ -18,7 +18,7 @@
 | 环境依赖 | 默认包直接声明 | 默认依赖加 ROS 扩展 | 默认依赖加 ROS 扩展 |
 | RoboStack channel | 不需要 | robostack-jazzy | robostack-humble |
 | distro mutex | 不需要 | 0.20.* / jazzy_* | 0.11.* / humble_* |
-| UniLabOS 消息包 | 不需要 | ros-jazzy-unilabos-msgs 0.12.1 | ros-humble-unilabos-msgs 0.12.1 |
+| UniLabOS 消息包 | 不需要 | ros-jazzy-unilabos-msgs 0.12.2 | ros-humble-unilabos-msgs 0.12.2 |
 | 启动选择 | 不传 backend 或 --backend hostlink | --backend ros2 | --backend ros2 |
 
 Python 核心应用不再按 ROS 发行版重复打包。ROS2 包只是显式选装扩展，
@@ -45,7 +45,7 @@ Workstation/sub-device 初始化，以及 Host/Slave 跨进程和跨机器通信
 完整命令见[安装指南](installation.md)。默认不添加 RoboStack channel：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 mamba activate unilab
 unilab --disable-browser
 ```

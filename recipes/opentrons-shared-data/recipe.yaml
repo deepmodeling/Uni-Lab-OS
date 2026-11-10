@@ -11,11 +11,17 @@ source:
 build:
   noarch: python
   string: py314_np2_1
-  script: |
-    $PYTHON -m pip install . --no-deps --no-build-isolation -vv
-    mkdir -p "$PREFIX/share/licenses/opentrons-shared-data"
-    cp LICENSE "$PREFIX/share/licenses/opentrons-shared-data/LICENSE"
-    cp "$RECIPE_DIR/NOTICE" "$PREFIX/share/licenses/opentrons-shared-data/NOTICE"
+  script:
+  - python -m pip install . --no-deps --no-build-isolation -vv
+  - if: win
+    then:
+    - if not exist "%PREFIX%\share\licenses\opentrons-shared-data" mkdir "%PREFIX%\share\licenses\opentrons-shared-data"
+    - copy LICENSE "%PREFIX%\share\licenses\opentrons-shared-data\LICENSE"
+    - copy "%RECIPE_DIR%\NOTICE" "%PREFIX%\share\licenses\opentrons-shared-data\NOTICE"
+    else:
+    - mkdir -p "$PREFIX/share/licenses/opentrons-shared-data"
+    - cp LICENSE "$PREFIX/share/licenses/opentrons-shared-data/LICENSE"
+    - cp "$RECIPE_DIR/NOTICE" "$PREFIX/share/licenses/opentrons-shared-data/NOTICE"
 
 requirements:
   host:

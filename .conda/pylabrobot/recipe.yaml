@@ -3,8 +3,8 @@ package:
   name: pylabrobot-unilab
   version: 0.2.2+unilabos.6285d662effa
 source:
-  git: https://github.com/Xuwznln/pylabrobot.git
-  rev: 6285d662effa972be97a781ba7493553f2ba94ee
+  url: https://github.com/Xuwznln/pylabrobot/archive/6285d662effa972be97a781ba7493553f2ba94ee.tar.gz
+  sha256: 3565c12bd28133e569695e37b78e5a1aba0bae57e297457fcc89c1f66a93840a
   patches:
     - unilab-version.patch
     - opentrons-dependency.patch

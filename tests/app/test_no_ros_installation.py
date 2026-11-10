@@ -76,7 +76,9 @@ class Counter:
 def test_conda_build_default_has_no_ros_channels():
     from scripts.build_conda_release import FULL_SUPPORT_RECIPES, recipes
 
-    assert recipes() == [(name, []) for name in ("msgcenterpy", "pylabrobot", "mcp", "base")]
+    assert recipes() == [(name, []) for name in (
+        "opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base"
+    )]
     assert recipes("jazzy")[-1] == ("ros2", ["robostack-jazzy"])
     with pytest.raises(ValueError, match="显式"):
         recipes(full=True)
@@ -84,6 +86,7 @@ def test_conda_build_default_has_no_ros_channels():
         recipes(extensions_only=True)
     assert recipes("jazzy", full=True, extensions_only=True) == [
         *((name, []) for name in FULL_SUPPORT_RECIPES),
+        ("msgs", ["robostack-jazzy"]),
         ("ros2", ["robostack-jazzy"]), ("full", ["robostack-jazzy"]),
     ]
 
@@ -91,7 +94,7 @@ def test_conda_build_default_has_no_ros_channels():
 def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_path):
     from scripts import build_conda_release
 
-    for name in ("unilabos-0.12.3-py314_0.conda", "unilabos-full-0.12.3-jazzy_0.conda"):
+    for name in ("unilabos-0.12.4-py314_0.conda", "unilabos-full-0.12.4-jazzy_0.conda"):
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
@@ -107,7 +110,7 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
                         lambda command, **kw: uploads.append(Path(command[-1]).name)
                         or subprocess.CompletedProcess(command, 0))
     build_conda_release.main()
-    assert uploads == [support.name, "unilabos-full-0.12.3-jazzy_0.conda"]
+    assert uploads == [support.name, "unilabos-full-0.12.4-jazzy_0.conda"]
 
 
 def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypatch, tmp_path):
@@ -116,7 +119,7 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
         "win-64/mcp-1.30.0-py314_0.conda": True,
-        "win-64/unilabos-0.12.3-py314_0.conda": False,
+        "win-64/unilabos-0.12.4-py314_0.conda": False,
     }
     for name in packages:
         package = tmp_path / name

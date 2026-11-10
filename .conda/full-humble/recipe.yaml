@@ -2,7 +2,7 @@
 
 package:
   name: unilabos-full
-  version: 0.12.3
+  version: 0.12.4
 
 build:
   number: 1
@@ -10,7 +10,7 @@ build:
 
 requirements:
   run:
-  - unilabos-ros2 ==0.12.3 humble_1
+  - unilabos-ros2 ==0.12.4 humble_1
   - sphinx >=7
   - sphinx_rtd_theme >=2
   - myst-parser >=2

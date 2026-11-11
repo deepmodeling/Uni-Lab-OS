@@ -89,9 +89,14 @@ class BackendCommandDocument(ServerObject):
     payload: JsonObject
 
 
+from unilabos.protocol.runtime.execution_start import ExecutionPermit
+
+
 class ExecuteJobContent(ServerObject):
     """由 Backend scheduler 生成的一次独立执行 attempt。"""
 
+    execution_permit: Optional[ExecutionPermit] = None
+    resource_contract: Optional[JsonObject] = None
     job_uuid: NonEmptyStr
     task_uuid: NonEmptyStr
     node_uuid: NonEmptyStr

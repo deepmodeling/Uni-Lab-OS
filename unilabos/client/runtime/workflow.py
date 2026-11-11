@@ -314,12 +314,13 @@ class HTTPWorkflowClient:
         revision: int,
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """与 ``WorkflowService.save_graph`` 同签名，便于 ``registry.workflows.upsert_workflow``
         经 HTTP 向远端 Workflow Authority 写入实例化后的工作流。"""
 
         return self.save_workflow_graph(
-            workflow_uuid, revision=revision, nodes=nodes, edges=edges
+            workflow_uuid, revision=revision, nodes=nodes, edges=edges, workflow_io=workflow_io
         )
 
     def get_workflow_graph(self, workflow_uuid: str) -> dict[str, Any]:
@@ -332,10 +333,12 @@ class HTTPWorkflowClient:
         revision: int,
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._http.put(
             f"/workflows/{workflow_uuid}/graph",
-            json={"revision": revision, "nodes": nodes, "edges": edges},
+            json={"revision": revision, "nodes": nodes, "edges": edges,
+                  **({"workflow_io": workflow_io} if workflow_io is not None else {})},
         )
 
     def inspect_workflow(self, workflow_uuid: str) -> dict[str, Any]:
@@ -371,6 +374,12 @@ class HTTPWorkflowClient:
                 },
             },
         )
+
+    def begin_execution(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/begin", json=body)
+
+    def record_start_receipt(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/started", json=body)
 
     def get_task(self, task_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflow-tasks/{task_uuid}")

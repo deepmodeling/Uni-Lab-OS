@@ -582,6 +582,24 @@ class TestRegistryApi:
         response = TestClient(app).get("/api/v1/registry/entries")
         assert response.status_code == 503
 
+    @pytest.mark.parametrize("malformed", [False, True])
+    def test_condition_template_report_validates_branch_references(self, client, service, malformed) -> None:
+        template = _workflow_template("demo.workflows:conditional", "条件演示")
+        action = template["nodes"][0]
+        template["nodes"] = [
+            {"key": "condition", "kind": "condition", "name": "判定",
+             "param": {"version": 1, "expression": {"lit": True}}},
+            {**action, "condition_guards": [{"node_key": "missing" if malformed else "condition", "equals": True}]},
+        ]
+        template["edges"] = [{"source": "condition", "target": "step-0"}]
+        response = client.post("/api/v1/resource-templates", json={"resources": [], "workflow_templates": [template]})
+        assert response.status_code == 200
+        if malformed:
+            assert service.list_workflow_templates() == []
+            assert service.entry_detail(template["id"])["unusable_reason"] == "invalid-condition-node"
+        else:
+            assert service.get_workflow_template(template["uuid"])["nodes"] == template["nodes"]
+
     def test_workflow_templates_ride_the_snapshot_report(self, client, service) -> None:
         """包里的 @workflow 模板随同一份快照上报（独立键，旧权威忽略），与设备条目同一套
         版本化：内容变了升版本、从快照里消失即软移除、再出现即复活。"""

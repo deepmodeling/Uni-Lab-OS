@@ -52,6 +52,8 @@ class HostNode(HostAdapterBase):
     结束时调用 :meth:`stop`。
     """
 
+    supports_execution_start_guard = True
+
     _instance: ClassVar[Optional["HostNode"]] = None
     _ready_event: ClassVar[threading.Event] = threading.Event()
 
@@ -287,6 +289,8 @@ class HostNode(HostAdapterBase):
             and getattr(local_node.driver, "run_in_test_mode", False) is True
         )
         if BasicConfig.test_mode and not run_simulator:
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             result = self._build_test_mode_return(item.device_id, item.action_name, action_kwargs)
             return_info = serialize_result_info("", True, result)
             result_data = self._result_data(item, result, return_info)
@@ -323,7 +327,10 @@ class HostNode(HostAdapterBase):
         action_kwargs: Dict[str, Any],
         context: ActionContext,
     ) -> None:
+        from unilabos.server.backend.execution_start import confirm_execution_start, ExecutionStartUnknown
         try:
+            context.raise_if_cancelled()
+            confirm_execution_start(item)
             # A scheduler action may legitimately run for hours.  ``-1`` means
             # no transport request deadline; cancellation remains explicit.
             result = asyncio.run(
@@ -337,6 +344,12 @@ class HostNode(HostAdapterBase):
             )
             status, return_info = self._normalize_result(item, action_type, result)
             result_data = self._result_data(item, result, return_info)
+        except ExecutionStartUnknown as exc:
+            from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+            status = "failed"
+            return_info = serialize_result_info(str(exc), False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+            return_info["uncertainty_reason"] = str(exc)
+            result_data = self._result_data(item, {}, return_info)
         except ActionCancelled:
             status = "failed"
             return_info = serialize_result_info(
@@ -346,16 +359,17 @@ class HostNode(HostAdapterBase):
                 suc_type=SUCCESS_TYPE_CANCELLATION,
             )
             result_data = self._result_data(item, {}, return_info)
-        except Exception as exc:  # noqa: BLE001 - convert driver failure to job result
+        except Exception as exc:  # noqa: BLE001 - 驱动明确失败与传输结果未知必须区分
+            from unilabos.backend.hostlink.protocol import LinkError, RemoteError
+            from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
             status = "failed"
             error_text = traceback.format_exc()
-            error_info = self._exception_error_info(item.action_name, exc, error_text)
-            return_info = serialize_result_info(
-                error_text,
-                False,
-                {},
-                error_info=error_info,
-            )
+            if isinstance(exc, LinkError) and not isinstance(exc, RemoteError):
+                return_info = serialize_result_info(error_text, False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+                return_info["uncertainty_reason"] = str(exc)
+            else:
+                error_info = self._exception_error_info(item.action_name, exc, error_text)
+                return_info = serialize_result_info(error_text, False, {}, error_info=error_info)
             result_data = self._result_data(item, {}, return_info)
         finally:
             with self._contexts_lock:
@@ -364,7 +378,8 @@ class HostNode(HostAdapterBase):
 
         with self._goal_state_lock:
             canceled = item.job_id in self._canceled_jobs
-        if canceled and status != "canceled":
+        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+        if canceled and status != "canceled" and return_info.get("suc_type") != SUCCESS_TYPE_EXECUTION_UNKNOWN:
             status = "failed"
             return_info = serialize_result_info(
                 "Job was cancelled",

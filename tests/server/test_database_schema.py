@@ -28,6 +28,18 @@ EXPECTED_TABLES = {
         "workflow_node_job",
         "workflow_task_command",
         "execution_lock_lease",
+        "workflow_execution_claim",
+        "workflow_execution_fence",
+        "workflow_execution_lease",
+        "workflow_execution_authority",
+        "workflow_execution_dispatch",
+        "workflow_resource_interval",
+        "workflow_resource_admission",
+        "workflow_resource_use",
+        "workflow_resource_loan",
+        "workflow_device_tenancy",
+        "workflow_tenancy_transition",
+        "workflow_resource_waiter",
         "workflow_node_job_result",
         "workflow_node_job_feedback_history",
         "workflow_intervention",
@@ -182,9 +194,9 @@ def test_total_table_count_stays_small() -> None:
     # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 30,
+        "runtime": 42,
         "materials": 14,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 51
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 63

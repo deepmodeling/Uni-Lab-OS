@@ -674,11 +674,12 @@ class _ListenerOnlyBackend:
 def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> None:
     service = MaterialsService(tmp_path / "materials.db")
     client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
     try:
         _template(service, "reagent-template", "reagent")
         _inbound(service, lot_uuid="lot-a", quantity=5)
         scheduler = BackendScheduler(
-            object(),
+            workflow,
             _ListenerOnlyBackend(),
             materials_gateway=client,
         )
@@ -731,6 +732,7 @@ def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> N
         ] == ["released", "released"]
         assert service.get_inventory_lot("lot-a").quantity_available == 5
     finally:
+        workflow.close()
         service.close()
 
 

@@ -56,6 +56,7 @@ _TERMINAL_EVENT_STATUS = {
     "execution.succeeded": ("succeeded", True),
     "execution.failed": ("failed", False),
     "execution.canceled": ("canceled", False),
+    "execution.execution_unknown": ("execution_unknown", False),
 }
 
 
@@ -255,6 +256,8 @@ class EdgeControlService:
         else:
             retry_of_job_uuid = str(retry_of_job_uuid)
         content = ExecuteJobContent(
+            execution_permit=payload.get("execution_permit"),
+            resource_contract=payload.get("resource_contract"),
             job_uuid=job_uuid,
             task_uuid=str(payload["task_id"]),
             node_uuid=str(payload["node_id"]),
@@ -983,7 +986,8 @@ class EdgeControlService:
         if not isinstance(return_info, dict):
             return_info = {}
         ret_value = return_info.get("return_value")
-        suc_type = str(return_info.get("suc_type") or "normal")
+        suc_type = (SUCCESS_TYPE_EXECUTION_UNKNOWN if status == "execution_unknown"
+                    else str(return_info.get("suc_type") or "normal"))
         with self._lock:
             self._inflight.pop(job_uuid, None)
             for decision_id in [

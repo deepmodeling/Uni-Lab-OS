@@ -156,6 +156,8 @@ class HostNode(HostAdapterBase, Node):
     ``host_coordinator`` 名义加入全局 executor。
     """
 
+    supports_execution_start_guard = True
+
     _instance: ClassVar[Optional["HostNode"]] = None
     _ready_event: ClassVar[threading.Event] = threading.Event()
     _shutting_down: ClassVar[bool] = False
@@ -629,6 +631,8 @@ class HostNode(HostAdapterBase, Node):
                         f"[Host Node] action_type 兜底解析: {device_id}/{action_name} -> {action_type}"
                     )
         if BasicConfig.test_mode:
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             action_id = f"/devices/{device_id}/{action_name}"
             self.lab_logger().info(
                 f"[TEST MODE] 模拟执行: {action_id} (job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"
@@ -681,6 +685,8 @@ class HostNode(HostAdapterBase, Node):
                 )
             goal_uuid_obj = UUID(uuid=list(u.bytes))
 
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             future = action_client.send_goal_async(
                 goal_msg,
                 feedback_callback=lambda feedback_msg: self.feedback_callback(

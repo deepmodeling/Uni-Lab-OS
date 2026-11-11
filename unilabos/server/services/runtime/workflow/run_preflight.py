@@ -27,7 +27,7 @@ def deferred_parameters(plan: Mapping[str, Any], node: Mapping[str, Any]) -> lis
         if isinstance(value, str):
             return "{{loop." in value
         if isinstance(value, Mapping):
-            return any(dynamic(item) for item in value.values())
+            return value.get("kind") == "node_output" or any(dynamic(item) for item in value.values())
         return isinstance(value, list) and any(dynamic(item) for item in value)
     names.update(key for key, value in node.get("param", {}).items() if dynamic(value))
     return sorted(names - {""})
@@ -126,7 +126,7 @@ def build_run_preflight_report(
         schema = node.get("param_schema")
         if schema and "x-unilabos-action-contract" in schema:
             try:
-                values = validate_action_values(schema, node["param"], deferred=pending)
+                values = validate_action_values(schema, node["param"], deferred=pending, managed_resources=True)
                 validate_resource_values(schema, values, materials, deferred=pending)
                 check("action_contract", "passed", "action_contract_ready", "静态动作参数符合合同", node=node)
             except ResourceUnavailableError as error:
@@ -195,6 +195,26 @@ def validate_resource_values(
         if isinstance(value, list):
             return [uuid for item in value for uuid in resources(field.get("items", {}), item)]
         return []
+    contract = schema.get("x-unilabos-action-contract", {}).get("resource_contract") or {}
+    device_parameters = set(contract.get("required_device_params", []))
+    device_parameters.update(item["param"] for item in contract.get("resource_params", []) if item["role"] in {"device","motion"})
+    tenancy = contract.get("device_tenancy") or {}
+    device_parameters.update(tenancy[field] for field in ("acquire_device_param","release_device_param") if tenancy.get(field))
+    for name in device_parameters:
+        if name in deferred or name not in values or not isinstance(values[name], str):
+            continue
+        if materials is None:
+            raise ResourceUnavailableError("物料权威尚未接入，无法校验设备 ID")
+        try:
+            aggregate = materials.get_material_by_resource_id(values[name])
+        except (RuntimeError, OSError) as error:
+            if getattr(error,"code",None) == "not_found":
+                raise ValueError(f"设备参数 {name} 指向不存在的设备 {values[name]}") from None
+            raise ResourceUnavailableError(f"无法读取设备参数 {name}：{error}") from error
+        if aggregate.material.resource_type != "device" or aggregate.material.resource_id != values[name]:
+            raise ValueError(f"设备参数 {name} 不是有效的设备 ID")
+        if aggregate.material.lifecycle_status in {"quarantined","consumed","disposed","deleted","retired"}:
+            raise ResourceUnavailableError(f"设备参数 {name} 当前不可用")
     for name, field in fields.items():
         if name in deferred or name not in values:
             continue

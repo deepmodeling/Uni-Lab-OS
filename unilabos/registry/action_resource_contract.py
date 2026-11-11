@@ -169,7 +169,7 @@ def validate_action_resource_contract_schema(
     """证明资源合同引用的参数存在且具有匹配的静态值类型。
 
     参数：``contract`` 是已规范化资源合同；``action_schema`` 是同一动作由 AST
-    编译的完整第 2 版 Schema。返回：无。异常：设备/物料参数不是 ResourceSlot、
+    编译的完整第 2 版 Schema。返回：无。异常：物料参数不是 ResourceSlot、设备参数既不是 ResourceSlot 也不是字符串 ID、
     库位参数不是字符串或任一参数不存在时抛 ``ActionResourceContractError``，
     防止运行时按名称猜测资源身份。
     """
@@ -290,6 +290,9 @@ def validate_action_resource_contract_schema(
         )
         for index, name in enumerate(aliquot["target_material_params"]):
             resource_fields.append((str(name), f"/aliquot/target_material_params/{index}"))
+    device_paths = {f"/required_device_params/{index}" for index, _ in enumerate(contract.get("required_device_params", []))}
+    device_paths.update(f"/resource_params/{index}/param" for index,item in enumerate(resource_params) if item.get("role") in {"device","motion"})
+    device_paths.update({"/device_tenancy/acquire_device_param", "/device_tenancy/release_device_param"})
     for name, path in resource_fields:
         schema = goal_properties.get(name)
         if not isinstance(schema, Mapping):
@@ -298,11 +301,14 @@ def validate_action_resource_contract_schema(
                 path,
                 f"动作资源合同引用不存在的参数 {name}",
             )
+        # 设备身份可以直接用可读 ID；它不是要反序列化的 PLR 物料实例。
+        if path in device_paths and schema.get("type") == "string":
+            continue
         if not _is_resource_reference_schema(schema):
             _fail(
                 "invalid_resource_parameter_type",
                 path,
-                f"资源参数 {name} 必须是 ResourceSlot",
+                f"资源参数 {name} 必须是 ResourceSlot；设备参数也可使用字符串 ID",
             )
 
 

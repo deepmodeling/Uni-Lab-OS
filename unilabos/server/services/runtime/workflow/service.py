@@ -365,6 +365,7 @@ class WorkflowService(WorkflowStore):
         self._authoring_locks: Dict[str, threading.RLock] = {}
         self._task_submitter: Optional[Callable[[str], None]] = None
         self._task_controller: Optional[Callable[[str], None]] = None
+        self._resource_change_listener: Optional[Callable[[], None]] = None
         # Scheduler 绑定此回调消费 durable 人工确认决策；Service 本身不依赖调度器。
         self._manual_confirmation_resolver: Optional[
             Callable[[Dict[str, Any]], None]
@@ -393,6 +394,71 @@ class WorkflowService(WorkflowStore):
     def set_task_controller(self, controller: Optional[Callable[[str], None]]) -> None:
         """绑定持久化控制命令后的调度唤醒；HTTP 层不直接操作执行器。"""
         self._task_controller = controller
+
+    def set_resource_change_listener(self, listener: Optional[Callable[[], None]]) -> None:
+        """资源释放已提交后唤醒调度器；回调失败不撤销持久决策。"""
+        self._resource_change_listener = listener
+
+    def list_resource_intervals(self, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_intervals import ResourceIntervals
+
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        return ResourceIntervals(self).snapshot(task_uuid)
+
+    def release_resource_interval(self, owner_uuid: str, *, expected_version: int, reason: str) -> Dict[str, Any]:
+        from .resource_intervals import ResourceIntervals
+
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        try:
+            result = ResourceIntervals(self).confirm_release(owner_uuid, expected_version=expected_version, reason=reason)
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._resource_change_listener is not None:
+            try:
+                self._resource_change_listener()
+            except Exception:
+                logger.exception("资源区间 %s 的释放已持久化，等待调度器恢复", owner_uuid)
+        return result
+
+    def list_resource_custody(self, kind: str, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        with self.write_lock:
+            return (ResourceLoans if kind == "loans" else DeviceTenancies).snapshot(self.connection, task_uuid)
+
+    def change_resource_custody(self, operation: str, identity: str, **values) -> Dict[str, Any]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest, ResourceLoanRequest
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        body = (ResourceLoanRequest if operation == "lend" else ResourceIntervalReleaseRequest).model_validate(values)
+        try:
+            with self.transaction() as conn:
+                if operation == "lend":
+                    result = ResourceLoans.lend(conn, identity, **body.model_dump())
+                elif operation == "return":
+                    result = ResourceLoans.confirm_return(conn, identity, **body.model_dump())
+                elif operation == "release_tenancy":
+                    result = DeviceTenancies.confirm_release(conn, identity, **body.model_dump())
+                    if not DeviceTenancies.snapshot(conn, result["task_uuid"]):
+                        conn.execute("UPDATE workflow_task SET cleanup_status='settled',attention_reason='device_tenancy_released' "
+                                     "WHERE uuid=? AND attention_reason='device_tenancy_active'", (result["task_uuid"],))
+                else:
+                    raise StoreConflict("未知资源操作")
+                self._append_event(conn, event="workflow.resource.changed", data={"operation": operation, "identity": identity}, now=utc_now())
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._resource_change_listener is not None:
+            try:
+                self._resource_change_listener()
+            except Exception:
+                logger.exception("资源操作 %s 已持久化，等待调度器恢复", identity)
+        return result
 
     def command_workflow_task(
         self, task_uuid: str, *, command_type: str,
@@ -547,6 +613,7 @@ class WorkflowService(WorkflowStore):
         revision: int,
         nodes: List[WorkflowNodeWrite | Dict[str, Any]],
         edges: List[WorkflowEdgeWrite | Dict[str, Any]],
+        workflow_io: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         identity = self.get_workflow(workflow_uuid)["uuid"]
         with self._authoring_lock(identity):
@@ -570,6 +637,7 @@ class WorkflowService(WorkflowStore):
                     nodes=node_values,
                     edges=edge_values,
                     protect_reserved_metadata=True,
+                    workflow_io=normalize_json_object(workflow_io) if workflow_io is not None else None,
                 )
             except ValidationError as exc:
                 detail = "; ".join(
@@ -584,6 +652,43 @@ class WorkflowService(WorkflowStore):
             except StoreConflict as exc:
                 # 留下 protocol 图校验的具体原因；仅有笼统文案时前端/AI 都无法纠正节点。
                 raise WorkflowError("invalid_input", detail=str(exc)) from None
+
+    def declare_workflow_resource_scopes(
+        self, workflow_uuid: str, *, revision: int, scopes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """资源作用域通过专用修订接口写入，普通 metadata 更新不能改保留字段。"""
+        from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            graph = WorkflowStore.get_graph(self, identity)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict")
+            try:
+                body = WorkflowResourceScopesRequest(revision=revision, scopes=scopes)
+                metadata = dict(graph["workflow"]["meta_data"])
+                metadata["unilab"] = {**(metadata.get("unilab") or {}),
+                    "resource_scopes": [scope.model_dump(exclude_none=True) for scope in body.scopes]}
+                candidate = {**graph, "workflow": {**graph["workflow"], "meta_data": metadata}}
+                # 此接口只接受明确的动作成员；循环层级和资源别名由同一编译器检查。
+                nodes = {node["uuid"]: node for node in graph["nodes"]}
+                def loop_parent(node):
+                    parent = node.get("parent_uuid")
+                    seen = set()
+                    while parent in nodes and nodes[parent].get("type") != "loop":
+                        if parent in seen:
+                            raise ValueError("节点父级关系成环")
+                        seen.add(parent)
+                        parent = nodes[parent].get("parent_uuid")
+                    return parent
+                plan = {"nodes": [{**node, "kind": node["type"], "parent_uuid": loop_parent(node)}
+                                  for node in nodes.values() if node["type"] != "group"], "edges": graph["edges"]}
+                compile_interval_plan(plan, candidate)
+            except (ValueError, TypeError) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            return self._save_reserved_graph(identity, revision=revision, workflow_meta_data=metadata,
+                                             nodes=graph["nodes"], edges=graph["edges"])
 
     # 工作流 I/O、发布与组合调用 --------------------------------------------
 
@@ -1202,6 +1307,10 @@ class WorkflowService(WorkflowStore):
                 )
             except StoreNotFound:
                 declared = None
+            except EntryParameterError as exc:
+                declared = None
+                status = "failed"
+                error_info = [*(error_info or []), {"code": exc.code, "message": str(exc), "path": exc.path}]
             if declared is not None:
                 output = declared
         return self.finish_task(
@@ -1618,6 +1727,21 @@ class WorkflowService(WorkflowStore):
             if source_uuid not in effective_depends_on[target_uuid]:
                 effective_depends_on[target_uuid].append(source_uuid)
 
+        from unilabos.protocol.runtime.condition import validate_condition_graph
+
+        from unilabos.protocol.runtime.value_binding import validate_result_binding_graph
+
+        effective_params = {key: {**(node.get("param") or {}), **composite_params.get(key, {})}
+                            for key, node in enabled.items()}
+        condition_dependencies = validate_condition_graph(enabled, node_kinds, parents, effective_params)
+        result_dependencies = validate_result_binding_graph(enabled, node_kinds, parents, effective_params)
+        for target_uuid, sources in result_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+        for target_uuid, sources in condition_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+
         for target_uuid, node in enabled.items():
             depends_on = (node.get("execution_policy") or {}).get("depends_on") or []
             if not isinstance(depends_on, list):
@@ -1703,16 +1827,21 @@ class WorkflowService(WorkflowStore):
             if kind == "script":
                 raise StoreConflict("script executor is not configured")
             policy = node.get("execution_policy") or {}
-            if invocations and effective_depends_on.get(node_uuid):
+            if effective_depends_on.get(node_uuid):
                 policy = {**policy, "depends_on": list(effective_depends_on[node_uuid])}
             template_uuid = node.get("workflow_node_template_uuid")
             template = templates.get(template_uuid)
             planned_param = dict(node.get("param") or {})
             planned_param.update(composite_params.get(node_uuid, {}))
-            # 入口参数：画布节点的 param 顶层引用与模板节点的 Handle 绑定都替换为任务输入值
-            planned_param, entry_bindings = substitute_entry_references(
-                planned_param, entry_input or {}
-            )
+            from copy import deepcopy
+            from unilabos.protocol.runtime.input_binding import input_references
+
+            entry_param_template = deepcopy(planned_param)
+            # 入口参数递归替换；保留原始引用供暂停修改时重新生成未派发参数。
+            if kind == "condition":
+                entry_bindings = {}
+            else:
+                planned_param, entry_bindings = substitute_entry_references(planned_param, entry_input or {})
             node_unilab = (node.get("meta_data") or {}).get("unilab")
             input_bindings = (
                 node_unilab.get("input_bindings") if isinstance(node_unilab, dict) else None
@@ -1726,6 +1855,7 @@ class WorkflowService(WorkflowStore):
                     continue
                 data_key = self._final_target_data_key(self._handle_data_key(handle))
                 entry_bindings[data_key] = parameter
+                entry_param_template[data_key] = {"kind": "workflow_input", "parameter": parameter}
                 if parameter in (entry_input or {}):
                     planned_param[data_key] = (entry_input or {})[parameter]
             target_handles = sorted(
@@ -1800,6 +1930,14 @@ class WorkflowService(WorkflowStore):
                     planned_node["param_schema"] = schema
             if entry_bindings:
                 planned_node["entry_bindings"] = entry_bindings
+            parameter_names = set() if kind == "condition" else input_references(entry_param_template)
+            if kind == "condition":
+                from unilabos.protocol.runtime.condition import condition_input_references
+
+                parameter_names.update(condition_input_references(entry_param_template))
+            if parameter_names:
+                planned_node["entry_parameter_names"] = sorted(parameter_names)
+                planned_node["entry_param_template"] = entry_param_template
             planned_nodes.append(planned_node)
             jobs.append(
                 {
@@ -1827,12 +1965,18 @@ class WorkflowService(WorkflowStore):
             if schema and "x-unilabos-action-contract" in schema:
                 try:
                     pending = deferred_parameters(plan, node)
-                    normalized = validate_action_values(schema, node["param"], deferred=pending)
+                    normalized = validate_action_values(schema, node["param"], deferred=pending, managed_resources=True)
                     # 未生成的动态值仍保留引用；预检不得用空值覆盖引用。
                     node["param"] = {**node["param"], **normalized}
                     job["param"] = dict(node["param"])
                 except ValueError as error:
                     raise StoreConflict(str(error)) from None
+        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+
+        try:
+            plan["resource_intervals"] = compile_interval_plan(plan, graph)
+        except ValueError as exc:
+            raise StoreConflict(str(exc)) from None
         return plan, jobs
 
     @staticmethod

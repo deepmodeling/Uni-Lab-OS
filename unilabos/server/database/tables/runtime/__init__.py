@@ -70,11 +70,24 @@ from unilabos.server.database.tables.runtime.workflow import (
 )
 
 
+from unilabos.server.database.tables.runtime.execution_claim import (
+    EXECUTION_CLAIM_TABLES, EXECUTION_CLAIM_MODELS,
+)
+
+
+from .resource_interval import RESOURCE_INTERVAL_TABLES, RESOURCE_INTERVAL_MODELS
+
+
+from .resource_custody import RESOURCE_CUSTODY_TABLES, RESOURCE_CUSTODY_MODELS
+
 RUNTIME_TABLE_MODELS = (
     *DATA_TABLE_MODELS,
     *WORKFLOW_TABLE_MODELS,
     *REGISTRY_TABLE_MODELS,
     *LAB_TABLE_MODELS,
+    *EXECUTION_CLAIM_MODELS,
+    *RESOURCE_INTERVAL_MODELS,
+    *RESOURCE_CUSTODY_MODELS,
 )
 
 
@@ -94,6 +107,9 @@ RUNTIME_DATABASE = DatabaseSpec(
         *(spec for spec in WORKFLOW_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *LAB_TABLES,
+        *EXECUTION_CLAIM_TABLES,
+        *RESOURCE_INTERVAL_TABLES,
+        *RESOURCE_CUSTODY_TABLES,
     ),
     schema_version=RUNTIME_SCHEMA_VERSION,
     migrations=RUNTIME_MIGRATIONS,

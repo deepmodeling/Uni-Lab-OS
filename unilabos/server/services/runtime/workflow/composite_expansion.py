@@ -828,30 +828,30 @@ def _materialize_param_references(
     未提供且无默认值的可选输入在父图里不存在，对应参数键移除。
     """
 
+    from unilabos.protocol.runtime.input_binding import map_input_bindings, literal_input
+
+    def resolve(name: str) -> Any:
+        if name not in input_names or name not in keyword_arguments:
+            raise _CompositeFailure("composite_boundary_mapping_invalid", f"/child/nodes/param/{name}")
+        argument = keyword_arguments[name]
+        if isinstance(argument, Mapping) and argument.get("kind") == "node_output":
+            raise _CompositeFailure("composite_boundary_mapping_invalid", f"/keyword_arguments/{name}")
+        if isinstance(argument, Mapping) and argument.get("kind") == "workflow_input":
+            return _plain(argument)
+        return literal_input(argument)
     for node in nodes:
         param = node.get("param")
         if not isinstance(param, dict):
             continue
+        # 旧可选顶层参数仍可省略；嵌套值缺失不能悄悄改变容器形状。
         for key, value in list(param.items()):
-            if not isinstance(value, Mapping) or value.get("kind") != "workflow_input":
-                continue
-            name = value.get("parameter")
-            if name not in input_names:
-                raise _CompositeFailure(
-                    "composite_boundary_mapping_invalid",
-                    f"/child/nodes/param/{key}",
-                )
-            if name not in keyword_arguments:
+            if isinstance(value, Mapping) and value.get("kind") == "workflow_input" and value.get("parameter") in input_names and value["parameter"] not in keyword_arguments:
                 param.pop(key)
-                continue
-            argument = keyword_arguments[name]
-            if isinstance(argument, Mapping) and argument.get("kind") == "node_output":
-                # 画布参数没有 Handle 可接线，节点输出实参只能经模板 Handle 绑定
-                raise _CompositeFailure(
-                    "composite_boundary_mapping_invalid",
-                    f"/keyword_arguments/{name}",
-                )
-            param[key] = _plain(argument)
+        node["param"] = param if node.get("type") == "condition" else map_input_bindings(param, resolve)
+        if node.get("type") == "condition":
+            from unilabos.protocol.runtime.condition import bind_condition_inputs
+
+            node["param"] = bind_condition_inputs(node["param"], resolve)
 
 
 def _referenced_templates(
@@ -954,14 +954,25 @@ def _remap_depends_on(
 
     policy = node.get("execution_policy")
     depends_on = policy.get("depends_on") if isinstance(policy, Mapping) else None
-    if not isinstance(depends_on, list):
-        return node
-    node["execution_policy"] = {
-        **policy,
-        "depends_on": [
+    policy = dict(policy or {})
+    if isinstance(depends_on, list):
+        policy["depends_on"] = [
             node_uuid_map[str(item)] for item in depends_on if str(item) in node_uuid_map
-        ],
-    }
+        ]
+    if policy.get("condition_guards"):
+        policy["condition_guards"] = [
+            {**guard, "node_uuid": node_uuid_map[str(guard["node_uuid"])]}
+            for guard in policy["condition_guards"]
+        ]
+    if node.get("type") == "condition":
+        from unilabos.protocol.runtime.condition import remap_expression
+
+        node["param"] = remap_expression(node.get("param") or {}, node_uuid_map.__getitem__)
+    if node.get("type") not in {"workflow", "condition"}:
+        from unilabos.protocol.runtime.value_binding import remap_result_bindings
+
+        node["param"] = remap_result_bindings(node.get("param") or {}, node_uuid_map.__getitem__)
+    node["execution_policy"] = policy
     return node
 
 

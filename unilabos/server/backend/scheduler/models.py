@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from pydantic import Field, model_validator
+from unilabos.protocol.runtime.resource_intervals import DeviceTenancyTransition, DeviceTenancyRequirement
 
 from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 
@@ -84,6 +85,10 @@ class SchedulerResourceRequest(ServerObject):
     task_uuid: NonEmptyStr
     current_action: Optional[ActionLockClaim] = None
     always_free: bool = False
+    interval_admission: bool = False
+    device_claims: list[NonEmptyStr] = Field(default_factory=list)
+    device_tenancy: DeviceTenancyTransition | None = None
+    operate_in_place: DeviceTenancyRequirement | None = None
     action_lock_claims: list[ActionLockClaim] = Field(default_factory=list)
     material_lock_claims: list[MaterialLockClaim] = Field(default_factory=list)
 
@@ -224,6 +229,9 @@ class SchedulerLockEvent(ServerObject):
 
 
 class SchedulerResourceSnapshot(ServerObject):
+    intervals: list[dict] = Field(default_factory=list)
+    loans: list[dict] = Field(default_factory=list)
+    tenancies: list[dict] = Field(default_factory=list)
     sequence: int = Field(ge=0)
     requests: list[SchedulerResourceRequestRecord] = Field(default_factory=list)
     ownerships: list[SchedulerLockOwnership] = Field(default_factory=list)

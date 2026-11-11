@@ -133,3 +133,17 @@ def test_ast_freezes_aliquot_source_and_complete_target_parameter_set(
         "source_material_param": "material",
         "target_material_params": ["source_device", "target_device"],
     }
+
+
+def test_tenancy_device_parameter_accepts_readable_id_but_material_stays_resource_slot(tmp_path):
+    contract="{'version':1,'device_tenancy':{'mode':'task_while_loaded','material_param':'material','acquire_device_param':'target_device'}}"
+    _scan_action(tmp_path,contract)
+    path=tmp_path/'robot.py'
+    source=path.read_text().replace('target_device: ResourceSlot','target_device: str')
+    path.write_text(source)
+    devices,_,_=_parse_file(path,tmp_path)
+    schema=devices[0]['actions']['move']['canonical_schema']
+    assert schema['properties']['goal']['properties']['target_device']['type']=='string'
+    path.write_text(source.replace('material: ResourceSlot','material: str'))
+    with pytest.raises(ActionResourceContractError):
+        _parse_file(path,tmp_path)

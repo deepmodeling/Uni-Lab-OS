@@ -393,6 +393,10 @@ def setup_execution_backend(
             else _materials_gateway
         ),
     )
+    from unilabos.config.config import HTTPConfig
+    if HTTPConfig.remote_addr:
+        from unilabos.client.runtime.workflow import HTTPWorkflowClient
+        backend.configure_execution_authority(HTTPWorkflowClient(HTTPConfig.remote_addr, timeout=5.0))
     coordinator = WorkflowBusinessCoordinator(
         services.runtime,
         services.history,

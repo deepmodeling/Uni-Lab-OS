@@ -360,8 +360,16 @@ class WorkflowStore:
         nodes: List[WorkflowNodeWrite],
         edges: List[WorkflowEdgeWrite],
         protect_reserved_metadata: bool = False,
+        workflow_io: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         with self.transaction() as conn:
+            if workflow_io is not None:
+                if set(workflow_io) != {"input_contract", "output_contract", "output_bindings"}:
+                    raise StoreConflict("工作流 I/O 必须完整声明输入、输出合同与输出绑定")
+                current = WorkflowStore.get_workflow(self, workflow_uuid, conn=conn)
+                metadata = dict(current["meta_data"])
+                metadata["unilab"] = {**metadata.get("unilab", {}), **workflow_io}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
             self._reconcile_graph(
                 conn,
                 workflow_uuid=workflow_uuid,
@@ -371,6 +379,19 @@ class WorkflowStore:
                 advance_revision=True,
                 protect_reserved_metadata=protect_reserved_metadata,
             )
+            graph = WorkflowStore.get_graph(self, workflow_uuid, conn=conn)
+            unilab = (graph["workflow"].get("meta_data") or {}).get("unilab") or {}
+            if "input_contract" in unilab or "output_contract" in unilab:
+                from .workflow_io import validate_workflow_graph_io, WorkflowIOValidationError
+
+                try:
+                    checked = validate_workflow_graph_io(graph)
+                except WorkflowIOValidationError as exc:
+                    raise StoreConflict(f"{exc.code}（{exc.path}）") from exc
+                metadata = dict(graph["workflow"]["meta_data"])
+                metadata["unilab"] = {**unilab, "input_contract": checked.input_contract.to_dict(),
+                    "output_contract": checked.output_contract.to_dict(), "output_bindings": checked.output_bindings}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
         return WorkflowStore.get_graph(self, workflow_uuid)
 
     def _reconcile_graph(
@@ -1594,11 +1615,12 @@ class WorkflowStore:
                 if name not in current or not strict_json_equal(current[name], value)
             }
             plan = task["execution_plan"]
-            affected: List[Tuple[Dict[str, Any], str, str]] = []
+            affected = []
             for planned in plan.get("nodes") or []:
-                for key, name in (planned.get("entry_bindings") or {}).items():
-                    if name in changed:
-                        affected.append((planned, str(key), str(name)))
+                names = set(planned.get("entry_parameter_names") or []) | set((planned.get("entry_bindings") or {}).values())
+                used = names & changed.keys()
+                if used:
+                    affected.append((planned, used))
             runs = {
                 row["workflow_node_uuid"]: row
                 for row in conn.execute(
@@ -1606,10 +1628,11 @@ class WorkflowStore:
                     (task_uuid,),
                 ).fetchall()
             }
-            for planned, _key, name in affected:
+            for planned, names in affected:
                 run = runs.get(planned["uuid"])
                 if run is None:
                     continue
+                name = sorted(names)[0]
                 if run["executor_kind"] == "loop":
                     raise StoreConflict(f"入口参数 {name!r} 被循环容器使用，运行中不可修改")
                 dispatched = conn.execute(
@@ -1619,25 +1642,29 @@ class WorkflowStore:
                 ).fetchone()
                 if dispatched is not None:
                     raise StoreConflict(f"入口参数 {name!r} 已被已下发的节点使用，不能修改")
-            for planned, key, name in affected:
-                planned["param"] = {**(planned.get("param") or {}), key: changed[name]}
+            for planned, _names in affected:
+                if "entry_param_template" in planned:
+                    from .entry_parameters import substitute_entry_references
+
+                    if planned.get("kind") != "condition":
+                        planned["param"], _bindings = substitute_entry_references(
+                            planned["entry_param_template"], {**current, **values})
+                else:
+                    # 兼容旧任务快照：旧计划只有顶层参数的绑定表。
+                    planned["param"] = {**(planned.get("param") or {}), **{
+                        key: changed[name] for key, name in (planned.get("entry_bindings") or {}).items() if name in changed}}
                 run = runs.get(planned["uuid"])
                 if run is None:
                     continue
-                run_param = {**_load(run["param"], {}), key: changed[name]}
                 conn.execute(
                     "UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?",
-                    (_json(run_param), now, run["uuid"]),
+                    (_json(planned["param"]), now, run["uuid"]),
                 )
-                for job in conn.execute(
-                    "SELECT uuid, param FROM workflow_node_job WHERE workflow_node_run_uuid=? "
+                conn.execute(
+                    "UPDATE workflow_node_job SET param=?, update_time=? WHERE workflow_node_run_uuid=? "
                     "AND deleted_at IS NULL AND status='pending'",
-                    (run["uuid"],),
-                ).fetchall():
-                    conn.execute(
-                        "UPDATE workflow_node_job SET param=?, update_time=? WHERE uuid=?",
-                        (_json({**_load(job["param"], {}), key: changed[name]}), now, job["uuid"]),
-                    )
+                    (_json(planned["param"]), now, run["uuid"]),
+                )
             conn.execute(
                 "UPDATE workflow_task SET input=?, execution_plan=?, update_time=? WHERE uuid=?",
                 (_json({**current, **values}), _json(plan), now, task_uuid),
@@ -1652,7 +1679,7 @@ class WorkflowStore:
                     _json({
                         "changed": sorted(changed),
                         "previous": {name: current[name] for name in sorted(changed) if name in current},
-                        "nodes": sorted({planned["uuid"] for planned, _key, _name in affected}),
+                        "nodes": sorted({planned["uuid"] for planned, _names in affected}),
                     }),
                     now,
                 ),
@@ -2584,7 +2611,7 @@ class WorkflowStore:
             # 循环容器没有设备副作用：在飞的循环 attempt 直接退回 pending，由调度器按
             # control_data.loop.iteration 续跑，不需要人裁决（循环体里的设备节点仍要）。
             for run in runs:
-                if run["status"] in self._RUN_IN_FLIGHT and run["executor_kind"] == "loop":
+                if run["status"] in self._RUN_IN_FLIGHT and run["executor_kind"] in {"loop", "condition"}:
                     conn.execute(
                         """
                         UPDATE workflow_node_job
@@ -3115,16 +3142,19 @@ class WorkflowStore:
 
         if status not in self._RUN_TERMINAL:
             raise ValueError(f"invalid terminal workflow node run status: {status}")
-        current = self.get_node_run(run_uuid, include_attempts=False)
-        if current["status"] in self._RUN_TERMINAL:
-            return current
-        outcome = self.record_job_terminal(
-            str(current["current_job_uuid"]),
-            status=status,
-            return_info={},
-            error_info=([] if status == "succeeded" else [{"code": status}]),
-        )
-        return outcome["run"]
+        with self.write_lock:
+            current = self.get_node_run(run_uuid, include_attempts=False)
+            if current["status"] in self._RUN_TERMINAL:
+                return current
+            if current["executor_kind"] not in {"loop", "condition"} and current["status"] in self._RUN_IN_FLIGHT:
+                raise StoreConflict("在飞或待核实动作不能由 DAG 清理关闭，必须等待执行结果或人工核实")
+            outcome = self.record_job_terminal(
+                str(current["current_job_uuid"]),
+                status=status,
+                return_info={},
+                error_info=([] if status == "succeeded" else [{"code": status}]),
+            )
+            return outcome["run"]
 
     def finish_task(
         self,
@@ -3146,6 +3176,21 @@ class WorkflowStore:
                 raise StoreNotFound(f"workflow task {task_uuid} not found")
             if row["status"] in {"succeeded", "failed", "canceled", "timeout"}:
                 return self.get_task(task_uuid)
+            unresolved = conn.execute(
+                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+                "AND executor_kind NOT IN ('loop','condition') "
+                "AND status IN ('dispatched','running','cancel_requested','execution_unknown','intervention_required') LIMIT 1",
+                (task_uuid,),
+            ).fetchone()
+            if unresolved:
+                raise StoreConflict("任务仍有在飞或待核实动作，不能提前结束任务")
+            from .device_tenancy import DeviceTenancies
+            DeviceTenancies.reconcile(conn, task_uuid)
+            if DeviceTenancies.snapshot(conn, task_uuid):
+                if status == "succeeded":
+                    status = "failed"
+                error_info = [*error_info, {"code": "device_tenancy_active", "message": "任务仍托管样品，请核实并取走后释放设备"}]
+                conn.execute("UPDATE workflow_task SET cleanup_status='requires_attention',attention_reason='device_tenancy_active' WHERE uuid=?", (task_uuid,))
             conn.execute(
                 """
                 UPDATE workflow_task

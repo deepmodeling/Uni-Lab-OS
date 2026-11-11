@@ -188,6 +188,149 @@ _WORKFLOW_TASK_COMMAND_V4_INDEXES = (
             """,
 )
 
+_EXECUTION_CLAIM_V5 = (
+    """
+        CREATE TABLE IF NOT EXISTS workflow_execution_claim (
+            claim_uuid TEXT PRIMARY KEY,
+            job_uuid TEXT NOT NULL UNIQUE,
+            task_uuid TEXT NOT NULL,
+            attempt_no INTEGER NOT NULL CHECK (attempt_no >= 1),
+            request TEXT NOT NULL CHECK (json_valid(request) AND json_type(request) = 'object'),
+            fences TEXT NOT NULL CHECK (json_valid(fences) AND json_type(fences) = 'object'),
+            state TEXT NOT NULL CHECK (state IN ('reserved', 'running', 'uncertain', 'released')),
+            acquired_at TEXT NOT NULL,
+            released_at TEXT,
+            FOREIGN KEY(job_uuid) REFERENCES workflow_node_job(uuid),
+            FOREIGN KEY(task_uuid) REFERENCES workflow_task(uuid)
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_execution_fence (
+            lock_key TEXT PRIMARY KEY,
+            token INTEGER NOT NULL CHECK (token >= 1)
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_execution_lease (
+            lock_key TEXT PRIMARY KEY,
+            claim_uuid TEXT NOT NULL,
+            token INTEGER NOT NULL CHECK (token >= 1),
+            FOREIGN KEY(claim_uuid) REFERENCES workflow_execution_claim(claim_uuid),
+            FOREIGN KEY(lock_key) REFERENCES workflow_execution_fence(lock_key)
+        )
+    """,
+)
+
+_EXECUTION_START_V6 = (
+    """
+        CREATE TABLE IF NOT EXISTS workflow_execution_authority (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            epoch TEXT NOT NULL
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_execution_dispatch (
+            job_uuid TEXT PRIMARY KEY,
+            claim_uuid TEXT NOT NULL UNIQUE,
+            authority_epoch TEXT NOT NULL,
+            payload_hash TEXT NOT NULL,
+            identity TEXT NOT NULL CHECK (json_valid(identity) AND json_type(identity) = 'object'),
+            invocation_uuid TEXT,
+            executor_epoch TEXT,
+            authorized_at TEXT,
+            receipt TEXT CHECK (receipt IS NULL OR (json_valid(receipt) AND json_type(receipt) = 'object')),
+            FOREIGN KEY(job_uuid) REFERENCES workflow_node_job(uuid),
+            FOREIGN KEY(claim_uuid) REFERENCES workflow_execution_claim(claim_uuid)
+        )
+    """,
+)
+
+_RESOURCE_INTERVAL_V7 = (
+    """
+        CREATE TABLE IF NOT EXISTS workflow_resource_interval (
+            owner_uuid TEXT PRIMARY KEY,
+            task_uuid TEXT NOT NULL REFERENCES workflow_task(uuid),
+            lock_key TEXT NOT NULL,
+            definition TEXT NOT NULL CHECK(json_valid(definition) AND json_type(definition)='object'),
+            state TEXT NOT NULL CHECK(state IN ('held','retained','released')),
+            version INTEGER NOT NULL CHECK(version >= 1),
+            acquired_job_uuid TEXT NOT NULL REFERENCES workflow_node_job(uuid),
+            acquired_at TEXT NOT NULL,
+            released_at TEXT,
+            release_reason TEXT
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_resource_admission (
+            job_uuid TEXT PRIMARY KEY REFERENCES workflow_node_job(uuid),
+            request TEXT NOT NULL CHECK(json_valid(request) AND json_type(request)='object'),
+            ownerships TEXT NOT NULL CHECK(json_valid(ownerships) AND json_type(ownerships)='object'),
+            uses TEXT NOT NULL CHECK(json_valid(uses) AND json_type(uses)='object'),
+            state TEXT NOT NULL CHECK(state IN ('active','released')),
+            admitted_at TEXT NOT NULL
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_resource_use (
+            lock_key TEXT PRIMARY KEY,
+            job_uuid TEXT NOT NULL REFERENCES workflow_resource_admission(job_uuid),
+            owner_uuid TEXT NOT NULL REFERENCES workflow_resource_interval(owner_uuid)
+        )
+    """,
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_interval_active ON workflow_resource_interval(lock_key) WHERE state!='released'""",
+)
+
+_RESOURCE_CUSTODY_V8 = (
+    """
+        CREATE TABLE IF NOT EXISTS workflow_resource_loan (
+            loan_uuid TEXT PRIMARY KEY,
+            lender_owner_uuid TEXT NOT NULL REFERENCES workflow_resource_interval(owner_uuid),
+            borrower_task_uuid TEXT NOT NULL REFERENCES workflow_task(uuid),
+            borrower_owner_uuid TEXT,
+            definition TEXT NOT NULL CHECK(json_valid(definition) AND json_type(definition)='object'),
+            state TEXT NOT NULL CHECK(state IN ('lent','retained','returned')),
+            version INTEGER NOT NULL CHECK(version>=1),
+            reason TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            returned_at TEXT,
+            return_reason TEXT
+        )
+    """,
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_loan_active ON workflow_resource_loan(lender_owner_uuid) WHERE state!='returned'""",
+    """
+        CREATE TABLE IF NOT EXISTS workflow_device_tenancy (
+            tenancy_uuid TEXT PRIMARY KEY,
+            task_uuid TEXT NOT NULL REFERENCES workflow_task(uuid),
+            material_uuid TEXT NOT NULL,
+            device_key TEXT NOT NULL,
+            acquired_job_uuid TEXT NOT NULL REFERENCES workflow_node_job(uuid),
+            state TEXT NOT NULL CHECK(state IN ('reserved','loaded','retained','released')),
+            version INTEGER NOT NULL CHECK(version>=1),
+            created_at TEXT NOT NULL,
+            released_at TEXT,
+            release_reason TEXT
+        )
+    """,
+    """CREATE UNIQUE INDEX IF NOT EXISTS idx_device_tenancy_active ON workflow_device_tenancy(device_key) WHERE state!='released'""",
+    """
+        CREATE TABLE IF NOT EXISTS workflow_tenancy_transition (
+            job_uuid TEXT PRIMARY KEY REFERENCES workflow_node_job(uuid),
+            contract TEXT NOT NULL CHECK(json_valid(contract) AND json_type(contract)='object'),
+            acquire_uuid TEXT REFERENCES workflow_device_tenancy(tenancy_uuid),
+            release_uuid TEXT REFERENCES workflow_device_tenancy(tenancy_uuid),
+            state TEXT NOT NULL CHECK(state IN ('prepared','settled','retained','reverted'))
+        )
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_resource_waiter (
+            job_uuid TEXT PRIMARY KEY REFERENCES workflow_node_job(uuid),
+            task_uuid TEXT NOT NULL REFERENCES workflow_task(uuid),
+            lock_keys TEXT NOT NULL CHECK(json_valid(lock_keys) AND json_type(lock_keys)='array'),
+            blockers TEXT NOT NULL CHECK(json_valid(blockers) AND json_type(blockers)='array')
+        )
+    """,
+)
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -209,5 +352,9 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
         create_sql=_WORKFLOW_TASK_COMMAND_V4,
         indexes=_WORKFLOW_TASK_COMMAND_V4_INDEXES,
     ),
+    sql_migration(5, "持久化派发资源声明、租约与栅栏计数", *_EXECUTION_CLAIM_V5),
+    sql_migration(6, "执行代次、一次开始许可与不可变开始回执", *_EXECUTION_START_V6),
+    sql_migration(7, "区间资源所有权和单次动作使用清单", *_RESOURCE_INTERVAL_V7),
+    sql_migration(8, "设备托管、资源借还和等待环路", *_RESOURCE_CUSTODY_V8),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

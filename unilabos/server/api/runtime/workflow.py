@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from unilabos.protocol.runtime.resource_intervals import ResourceLoanRequest, ResourceIntervalReleaseRequest, WorkflowResourceScopesRequest
+from unilabos.protocol.runtime.execution_start import ExecutionBeginRequest, ExecutionStartReceipt
 from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json
 from unilabos.protocol.runtime.workflow import (
     WorkflowEdgeWrite,
@@ -133,7 +135,35 @@ class WorkflowFromTemplateRequest(_BackendModel):
         return {str(key): str(item) for key, item in mapping.items()}
 
 
+class WorkflowTemplateInstanceRequest(WorkflowFromTemplateRequest):
+    """浏览器创建独立实例，只调整设备选择和动作参数，保留模板过程。"""
+
+    model_config = ConfigDict(extra="forbid")
+    site_binding_mode: Literal["preserve"] = "preserve"
+    node_params: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("bindings", mode="before")
+    @classmethod
+    def _strict_bindings(cls, value: Any) -> Dict[str, str]:
+        mapping = normalize_json_object(value)
+        if any(not isinstance(item, str) or not item.strip() for item in mapping.values()):
+            raise ValueError("设备 ID 必须为非空字符串")
+        return mapping
+
+    @field_validator("node_params", mode="before")
+    @classmethod
+    def _params(cls, value: Any) -> Dict[str, Any]:
+        return normalize_json_object(value)
+
+
+class WorkflowGraphIORequest(_StrictModel):
+    input_contract: Dict[str, Any]
+    output_contract: Dict[str, Any]
+    output_bindings: Dict[str, Any]
+
+
 class GraphWriteRequest(_BackendModel):
+    workflow_io: Optional[WorkflowGraphIORequest] = None
     revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
     nodes: List[WorkflowNodeWrite] = Field(default_factory=list)
     edges: List[WorkflowEdgeWrite] = Field(default_factory=list)
@@ -199,7 +229,7 @@ class CompositeInvocationRequest(_StrictModel):
         return {} if value is None else normalize_json_object(value)
 
 
-class WorkflowTaskCreateRequest(_BackendModel):
+class WorkflowTaskCreateRequest(_StrictModel):
     """整图运行与单点设备动作共用的提交体。
 
     execution_kind=workflow（默认）：workflow_uuid 必填，走整图编排。
@@ -372,6 +402,25 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         route_class=_BackendJSONRoute,
     )
 
+    from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
+    from unilabos.server.services.runtime.workflow.errors import StoreConflict
+
+    execution_claims = ExecutionClaims(service)
+
+    @router.post("/workflow-node-jobs/{job_uuid}/begin")
+    def begin_execution(job_uuid: str, body: ExecutionBeginRequest) -> JSONResponse:
+        try:
+            return _success(execution_claims.begin_execution(job_uuid, body.model_dump(mode="json")))
+        except StoreConflict as exc:
+            return _error(WorkflowError("conflict", detail=str(exc)))
+
+    @router.post("/workflow-node-jobs/{job_uuid}/started")
+    def record_execution_start(job_uuid: str, body: ExecutionStartReceipt) -> JSONResponse:
+        try:
+            return _success(execution_claims.record_start_receipt(job_uuid, body.model_dump(mode="json")))
+        except StoreConflict as exc:
+            return _error(WorkflowError("conflict", detail=str(exc)))
+
     def bind_sites(nodes: List[Any], *, mapped_paths: Optional[Dict[str, List[str]]] = None) -> List[Any]:
         from unilabos.server.backend.composition import get_materials_service
         from unilabos.server.composition import get_server_services
@@ -456,19 +505,82 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             status=201,
         )
 
+    @router.get("/workflows/template-catalog")
+    def workflow_template_catalog() -> JSONResponse:
+        from unilabos.registry.workflows import DeviceCatalog
+        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.services.runtime.registry import get_registry_service
+
+        registry = get_registry_service()
+        if registry is None:
+            raise WorkflowError("workflow_template_unavailable")
+        catalog = DeviceCatalog.from_materials_service(get_materials_service())
+        return _success({
+            "templates": registry.list_workflow_templates(),
+            "devices": [
+                {"device_id": device_id, "device_class": info["class"]}
+                for device_id, info in sorted(catalog.by_device_id.items())
+            ],
+        })
+
+    @router.post("/workflows/template-instances")
+    def create_template_instance(body: WorkflowTemplateInstanceRequest) -> JSONResponse:
+        from uuid import uuid4
+        from unilabos.registry.workflows import (
+            DeviceCatalog, WorkflowTemplateBindingError, materialize_workflow_template,
+        )
+        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.services.runtime.registry import get_registry_service
+
+        registry = get_registry_service()
+        if registry is None:
+            raise WorkflowError("workflow_template_unavailable")
+        template = registry.get_workflow_template(body.template_uuid)
+        if template is None:
+            raise WorkflowError("workflow_template_not_found")
+        try:
+            payload = materialize_workflow_template(
+                template, DeviceCatalog.from_materials_service(get_materials_service()),
+                body.bindings, name=body.name or "", instance_uuid=str(uuid4()),
+                node_params=body.node_params,
+            )
+        except WorkflowTemplateBindingError as exc:
+            raise WorkflowError("template_binding_invalid", detail=str(exc)) from exc
+        except ValueError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from exc
+        record = service.create_workflow(
+            workflow_uuid=payload["workflow_uuid"], name=payload["name"],
+            description=payload["description"] or None, tags=payload["tags"], meta_data={},
+        )
+        try:
+            service.save_graph(record["uuid"], revision=record["revision"], nodes=payload["nodes"],
+                               edges=payload["edges"], workflow_io=payload.get("io"))
+        except Exception:
+            # 新身份只属于本次请求，保存失败时清理空壳，不触及既有工作流。
+            service.delete_workflow(record["uuid"])
+            raise
+        return _success({"workflow": service.get_workflow(record["uuid"]), "bindings": payload["bindings"]}, status=201)
+
+    def browser_workflow(record: Dict[str, Any]) -> Dict[str, Any]:
+        # dev 的工作流都是普通流程；发布状态按当前修订的真实发布记录判断。
+        published = service.find_workflow_publication(record["uuid"], record["revision"])
+        return dict(record, workflow_type="workflow", status="published" if published else "source")
+
     @router.get("/workflows")
     def list_workflows(
         page: int = Query(default=1),
         page_size: int = Query(default=20),
         name: str = Query(default=""),
     ) -> JSONResponse:
-        return _success(
-            service.list_workflows(page=page, page_size=page_size, name=name)
-        )
+        result = service.list_workflows(page=page, page_size=page_size, name=name)
+        return _success(dict(
+            result, items=[browser_workflow(item) for item in result["items"]],
+            has_more=result["page"] * result["page_size"] < result["total"],
+        ))
 
     @router.get("/workflows/{workflow_uuid}")
     def get_workflow(workflow_uuid: str) -> JSONResponse:
-        return _success(service.get_workflow(workflow_uuid))
+        return _success(browser_workflow(service.get_workflow(workflow_uuid)))
 
     @router.put("/workflows/{workflow_uuid}")
     def update_workflow(
@@ -513,6 +625,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 revision=body.revision,
                 nodes=nodes,
                 edges=body.edges,
+                workflow_io=body.workflow_io.model_dump(mode="json") if body.workflow_io is not None else None,
             )
         )
 
@@ -650,6 +763,38 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         """节点运行视图：每节点一条，status/return_info 为当前 attempt，attempts 为历史。"""
 
         return _success(service.list_workflow_node_runs(task_uuid))
+
+    @router.put("/workflows/{workflow_uuid}/resource-scopes")
+    def declare_resource_scopes(workflow_uuid: str, body: WorkflowResourceScopesRequest) -> JSONResponse:
+        return _success(service.declare_workflow_resource_scopes(workflow_uuid, **body.model_dump(exclude_none=True)))
+
+    @router.get("/workflow-resource-intervals")
+    def list_resource_intervals(task_uuid: Optional[str] = None) -> JSONResponse:
+        return _success(service.list_resource_intervals(task_uuid))
+
+    @router.post("/workflow-resource-intervals/{owner_uuid}/release")
+    def release_resource_interval(owner_uuid: str, body: ResourceIntervalReleaseRequest) -> JSONResponse:
+        return _success(service.release_resource_interval(owner_uuid, **body.model_dump()))
+
+    @router.post("/workflow-resource-intervals/{owner_uuid}/lend")
+    def lend_resource(owner_uuid: str, body: ResourceLoanRequest) -> JSONResponse:
+        return _success(service.change_resource_custody("lend", owner_uuid, **body.model_dump()))
+
+    @router.get("/workflow-resource-loans")
+    def list_resource_loans(task_uuid: Optional[str] = None) -> JSONResponse:
+        return _success(service.list_resource_custody("loans", task_uuid))
+
+    @router.post("/workflow-resource-loans/{loan_uuid}/return")
+    def return_resource(loan_uuid: str, body: ResourceIntervalReleaseRequest) -> JSONResponse:
+        return _success(service.change_resource_custody("return", loan_uuid, **body.model_dump()))
+
+    @router.get("/workflow-device-tenancies")
+    def list_device_tenancies(task_uuid: Optional[str] = None) -> JSONResponse:
+        return _success(service.list_resource_custody("tenancies", task_uuid))
+
+    @router.post("/workflow-device-tenancies/{tenancy_uuid}/release")
+    def release_device_tenancy(tenancy_uuid: str, body: ResourceIntervalReleaseRequest) -> JSONResponse:
+        return _success(service.change_resource_custody("release_tenancy", tenancy_uuid, **body.model_dump()))
 
     @router.get("/workflow-node-runs/{run_uuid}")
     def get_workflow_node_run(run_uuid: str) -> JSONResponse:
@@ -806,6 +951,9 @@ def install_workflow_api(app: FastAPI, service: WorkflowService) -> None:
     install_envelope_validation(app, (
         "/api/v1/workflows",
         "/api/v1/workflow-tasks",
+        "/api/v1/workflow-resource-intervals",
+        "/api/v1/workflow-resource-loans",
+        "/api/v1/workflow-device-tenancies",
         "/api/v1/workflow-node-jobs",
         "/api/v1/workflow-manual-confirmations",
         "/api/v1/workflow-publications",

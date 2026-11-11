@@ -322,6 +322,8 @@ class WorkflowBusinessCoordinator:
     def _dispatch(self, content: ExecuteJobContent) -> None:
         self.executor.dispatch(
             {
+                "execution_permit": content.execution_permit.model_dump(mode="json") if content.execution_permit else None,
+                "resource_contract": content.resource_contract,
                 "job_id": content.job_uuid,
                 "task_id": content.task_uuid,
                 "node_id": content.node_uuid,
@@ -595,6 +597,11 @@ class WorkflowBusinessCoordinator:
             "failed": "failed",
             "canceled": "canceled",
         }[status]
+        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+        if (return_info or {}).get("suc_type") == SUCCESS_TYPE_EXECUTION_UNKNOWN:
+            target_status = "execution_unknown"
+            if latest.status == target_status:
+                return
         transition = ExecutionJobTransition(
             expected_version=latest.version,
             status=target_status,

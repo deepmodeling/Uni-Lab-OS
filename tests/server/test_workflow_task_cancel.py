@@ -94,7 +94,7 @@ def test_cancel_keeps_the_device_locked_until_the_running_action_returns(stack):
     first = create_task(client, devices=["shared-device"])
     wait_for(lambda: len(executor.dispatched) == 1)
     second = create_task(client, devices=["shared-device"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
     response = command(client, first, "cancel")
     assert response.status_code == 200, response.text
@@ -121,11 +121,11 @@ def test_cancel_finishes_at_once_when_nothing_is_running(stack):
     holder = create_task(client, devices=["shared-device"])
     wait_for(lambda: len(executor.dispatched) == 1)
     queued = create_task(client, devices=["shared-device", "other-device"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
     assert command(client, queued, "cancel").status_code == 200
     wait_for(lambda: status(service, queued) == "canceled")
-    assert not scheduler._waiting_resource_jobs
+    assert not scheduler._waiting_resource_jobs and not scheduler._waiting_interval_jobs
     assert executor.cancel_requests == []
     assert {run["status"] for run in service.list_workflow_node_runs(queued["uuid"])} == {"canceled"}
 
@@ -150,7 +150,7 @@ def test_failure_drains_running_siblings_before_releasing_their_device(stack):
     wait_for(lambda: len(executor.dispatched) == 2)
     by_device = {payload["device_id"]: index for index, payload in enumerate(executor.dispatched)}
     waiting = create_task(client, devices=["device-b"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
     executor.finish(by_device["device-a"], success=False)
     sibling = executor.dispatched[by_device["device-b"]]["job_id"]

@@ -117,11 +117,11 @@ def test_pause_withdraws_a_node_queued_for_a_lock(stack):
     first = create_task(client, devices=["shared-device"])
     wait_for(lambda: len(executor.dispatched) == 1)
     second = create_task(client, devices=["shared-device"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
     assert command(client, second, "pause").status_code == 200
     # 排队等锁的 attempt 退出队列，不再占着位置
-    wait_for(lambda: not scheduler._waiting_resource_jobs)
+    wait_for(lambda: not scheduler._waiting_resource_jobs and not scheduler._waiting_interval_jobs)
 
     executor.finish(0)
     wait_for(lambda: task_of(service, first)["status"] == "succeeded")

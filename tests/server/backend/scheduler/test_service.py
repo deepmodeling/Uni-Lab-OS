@@ -1,10 +1,32 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import Mock
+import pytest
 
 from unilabos.protocol.materials import InventoryAllocation
 from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState
 from unilabos.server.backend.scheduler.service import BackendScheduler, allocation_arguments
+
+
+@pytest.fixture(autouse=True)
+def isolated_claim_storage(monkeypatch):
+    # 本文件只测调度策略，Workflow 本身是桩；持久资源事务由集成测试覆盖。
+    monkeypatch.setattr(BackendScheduler, "_release_confirmed_custody_inventory", lambda self: None)
+    intervals = Mock()
+    intervals.admit.return_value = True
+    intervals.unadmitted_active_claims.return_value = []
+    intervals.snapshot.return_value = []
+    monkeypatch.setattr("unilabos.server.services.runtime.workflow.resource_intervals.ResourceIntervals", lambda _store: intervals)
+    claims = Mock()
+    claims.restore_requests.return_value = []
+    claims.unclaimed_active_jobs.return_value = []
+    claims.reserve.return_value = {"claim_uuid": "unit-claim", "attempt_no": 1, "fences": {}}
+    claims.release_if_terminal.return_value = True
+    claims.get.return_value = None
+    claims.activate_authority.return_value = "unit-epoch"
+    claims.seal_dispatch.return_value = {}
+    monkeypatch.setattr("unilabos.server.services.runtime.workflow.execution_claim.ExecutionClaims", lambda _store: claims)
 
 
 class _Workflow:

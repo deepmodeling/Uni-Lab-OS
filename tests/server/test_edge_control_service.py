@@ -760,3 +760,16 @@ def test_reconnect_of_the_same_host_process_keeps_jobs_in_flight() -> None:
 
     assert not _wait_for(lambda: calls, timeout=0.2)
     assert service.active_job_ids() == ["job-1"]
+
+
+def test_unknown_start_event_reaches_scheduler_as_unknown_not_failure():
+    from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+    detail = {"status": "failed", "return_info": {"uncertainty_reason": "开始不确定"}}
+    service = _service({"payload-1": detail})
+    service.attach_connection()
+    service.dispatch(_dispatch_payload())
+    seen = []
+    service.add_job_finished_listener(lambda *args: seen.append(args))
+    assert service.handle_message("edge_change", _edge_change(1, event_type="execution.execution_unknown"))
+    assert seen[0][3] == SUCCESS_TYPE_EXECUTION_UNKNOWN
+    assert seen[0][4]["uncertainty_reason"] == "开始不确定"

@@ -31,6 +31,7 @@ def validate_action_values(
     *,
     section: str = "goal",
     deferred: Sequence[str] = (),
+    managed_resources: bool = False,
 ) -> dict[str, Any]:
     """校验实际值，补合同声明的默认值；预检只推迟尚未产生的上游值。"""
     if not schema or "x-unilabos-action-contract" not in schema:
@@ -49,7 +50,7 @@ def validate_action_values(
     if section == "goal":
         # 物理结算和跨动作设备托管需要持久开始记录及资源租约，不能仅凭 Schema 宣称已执行。
         resource_contract = schema["x-unilabos-action-contract"].get("resource_contract") or {}
-        unsupported = [name for name in ("device_tenancy", "transfer", "transfer_step", "operate_in_place", "aliquot", "order_sensitive") if resource_contract.get(name)]
+        unsupported = [name for name in ("device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot", "order_sensitive") if resource_contract.get(name) and not (managed_resources and name in {"device_tenancy", "operate_in_place"})]
         if unsupported:
             raise TypedActionValueError("当前 dev 尚未启用资源执行合同：" + "、".join(unsupported))
     selected = deepcopy(schema["properties"][section])
@@ -68,3 +69,11 @@ def validate_action_values(
         path = "/".join(str(part) for part in error.path)
         raise TypedActionValueError(f"动作{section}合同校验失败 /{path}: {error.message}")
     return result
+
+
+def require_frozen_resource_contract(schema: Mapping[str, Any] | None, payload: Mapping[str, Any]) -> None:
+    """开始许可必须封存当前驱动的资源语义，防止更新驱动后沿用旧计划绕过托管。"""
+    contract = ((schema or {}).get("x-unilabos-action-contract") or {}).get("resource_contract") or {}
+    frozen = payload.get("resource_contract") or {}
+    if (contract.get("device_tenancy") or contract.get("operate_in_place") or frozen) and contract != frozen:
+        raise TypedActionValueError("当前驱动资源合同与冻结执行计划不一致，请重新创建任务")

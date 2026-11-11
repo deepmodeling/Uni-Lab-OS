@@ -129,8 +129,17 @@ class JobExecutionBackend:
         self._events: "queue.Queue[tuple[Any, tuple]]" = queue.Queue()
         self._worker: Optional[threading.Thread] = None
         self._running = False
+        self._execution_authority = None
+        self._require_execution_permit = False
+        from uuid import uuid4
+        self._executor_epoch = str(uuid4())
         self._pending = 0
         self._pending_lock = threading.Lock()
+
+    def configure_execution_authority(self, channel: Any) -> None:
+        """本机直调或远端 HTTP 共用一次开始许可合同。"""
+        self._execution_authority = channel
+        self._require_execution_permit = True
 
     # ── 生命周期 ─────────────────────────────────────────────
 
@@ -180,6 +189,7 @@ class JobExecutionBackend:
             always_free=bool(payload.get("always_free", False)),
             action_type=payload.get("action_type", ""),
             action_args=payload.get("action_args", {}) or {},
+            execution_payload=dict(payload),
             sample_material=payload.get("sample_material", {}) or {},
             server_info=payload.get("server_info"),
             node_id=payload.get("node_id", ""),
@@ -910,6 +920,10 @@ class JobExecutionBackend:
         if status not in ("success", "failed", "canceled"):
             return
 
+        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+        if (return_info or {}).get("suc_type") == SUCCESS_TYPE_EXECUTION_UNKNOWN:
+            self._release_terminal(item, "failed", dict(return_info), dict(feedback_data or {}))
+            return
         if status == "success":
             from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
 
@@ -1789,7 +1803,10 @@ class JobExecutionBackend:
 
         schema = (self._action_mapping(job.device_id, job.action_name) or {}).get("schema")
         try:
-            job.action_args = validate_action_values(schema, job.action_args)
+            from unilabos.registry.typed_contract import require_frozen_resource_contract
+            require_frozen_resource_contract(schema, job.execution_payload)
+            job.action_args = validate_action_values(schema, job.action_args,
+                managed_resources=bool(job.execution_payload.get("execution_permit")))
             if schema and "x-unilabos-action-contract" in schema:
                 from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
 
@@ -1798,22 +1815,26 @@ class JobExecutionBackend:
         except ValueError as error:
             self._reject_job(job, str(error), "TypedActionValueError")
             return
-        if self._inventory_authority is not None:
+        from unilabos.server.backend.execution_start import ExecutionStartGuard, confirm_execution_start
+        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+        guarded = self._require_execution_permit or bool(job.execution_payload.get("execution_permit"))
+        if guarded:
+            queue_item.start_guard = ExecutionStartGuard(
+                self._execution_authority, {**job.execution_payload, "action_args": job.action_args}, self._executor_epoch,
+                canceled=lambda: (self.device_manager.get_job_info(job.job_id) is None
+                                  or job.job_id in self._cancel_requested_jobs),
+                consume=lambda: self._inventory_authority.consume(job.job_id) if self._inventory_authority else None,
+                stopped=lambda: not self._running,
+            )
+        elif self._inventory_authority is not None:
             try:
                 self._inventory_authority.consume(job.job_id)
             except ExecutionInventoryError as exc:
-                logger.error(
-                    "[JobExecutionBackend] inventory consume failed for job %s: %s",
-                    job_log,
-                    exc,
-                )
-                self._reject_job(
-                    job,
-                    str(exc),
-                    "InventoryConsumeError",
-                )
+                self._reject_job(job, str(exc), "InventoryConsumeError")
                 return
         try:
+            if guarded and not getattr(adapter, "supports_execution_start_guard", False):
+                confirm_execution_start(queue_item)
             adapter.send_goal(
                 queue_item,
                 action_type=job.action_type,
@@ -1834,7 +1855,12 @@ class JobExecutionBackend:
                     timeouts.get("execution_timeout"),
                     timeouts.get("execution_timeout_spec"),
                 )
-        except Exception:  # noqa: BLE001 - 启动失败必须走完结流程
+        except Exception as exc:  # noqa: BLE001 - 开始许可之后的异常不能推断设备未执行
+            if guarded:
+                return_info = serialize_result_info(str(exc), False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+                return_info["uncertainty_reason"] = str(exc)
+                self._release_terminal(queue_item, "failed", return_info, {})
+                return
             logger.exception("[JobExecutionBackend] send_goal failed for job %s", job_log)
             return_info = serialize_result_info(
                 "Failed to dispatch action to device adapter", False, {}
@@ -1963,11 +1989,9 @@ class JobExecutionBackend:
         finally:
             # 本 attempt 的库存 reservation 先收敛（失败即隔离/释放），再通知调度器：
             # retry 的新 attempt 需要在旧 reservation 处置之后重新预留。
-            self._safe_inventory_terminal(
-                job_id,
-                success=success,
-                reason="action_finished",
-            )
+            from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+            if suc_type != SUCCESS_TYPE_EXECUTION_UNKNOWN:
+                self._safe_inventory_terminal(job_id, success=success, reason="action_finished")
         self._notify_finished(job_id, success, ret_value, suc_type, return_info)
 
     @staticmethod

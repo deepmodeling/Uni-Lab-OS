@@ -195,6 +195,44 @@ def test_materialize_resolves_roles_and_builds_serial_nodes() -> None:
     assert nodes[1]["execution_policy"] == {"depends_on": [nodes[0]["uuid"]]}
 
 
+@pytest.mark.parametrize("compiler", ["builder", "ast"])
+def test_device_id_rebinding_updates_actions_and_state_without_mutating_template(compiler: str) -> None:
+    @workflow(display_name="通用反应釜流程", compiler=compiler)
+    def flow(ctx):
+        ctx.run("reactor/start_heating", {"target_c": 80})
+        with ctx.loop_while(ctx.device_state("reactor", "temperature_c", "<", 80), interval_seconds=0.5):
+            pass
+
+    definition = next(iter(get_registered_workflows().values()))
+    template = build_workflow_template_payload(definition)
+    catalog = DeviceCatalog()
+    catalog.add("reactor-a", "demo_class", str(uuid.uuid4()))
+    catalog.add("reactor-b", "demo_class", str(uuid.uuid4()))
+    assert [role["role"] for role in template["roles"]] == ["reactor"]
+    for target in ("reactor-a", "reactor-b"):
+        payload = materialize_workflow_template(template, catalog, {"reactor": target})
+        action, loop = payload["nodes"]
+        assert action["meta_data"]["target_device_id"] == target
+        assert action["material_uuid"] == catalog.by_device_id[target]["uuid"]
+        assert loop["param"]["condition"]["device_id"] == target
+    assert template["nodes"][1]["param"]["condition"]["device_id"] == "reactor"
+
+
+def test_state_only_device_is_a_bindable_id_role() -> None:
+    @workflow(display_name="仅等待状态", compiler="ast")
+    def flow(ctx):
+        with ctx.loop_while(ctx.device_state("sensor", "ready", "==", False), interval_seconds=0.5):
+            pass
+
+    definition = next(iter(get_registered_workflows().values()))
+    template = build_workflow_template_payload(definition)
+    assert [role["role"] for role in template["roles"]] == ["sensor"]
+    default = materialize_workflow_template(template, DeviceCatalog())
+    bound = materialize_workflow_template(template, DeviceCatalog(), {"sensor": "slave-sensor-02"})
+    assert default["nodes"][0]["param"]["condition"]["device_id"] == "sensor"
+    assert bound["nodes"][0]["param"]["condition"]["device_id"] == "slave-sensor-02"
+
+
 def test_class_role_needs_binding_unless_single_instance() -> None:
     @workflow(display_name="多实例流")
     def ambiguous(ctx: WorkflowBuildContext) -> None:

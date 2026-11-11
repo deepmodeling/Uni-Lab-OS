@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -32,11 +33,13 @@ import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from unilabos.utils import logger
+from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
 
 LEDGER_FILENAME = "driver_packages.json"
 CATALOG_FILENAME = "driver_package_catalog.json"
@@ -63,6 +66,10 @@ _ARCHIVE_URL_RE = re.compile(r"^https?://\S+\.(zip|tar\.gz|tgz|tar)(\?\S*)?$", r
 
 class DriverPackageError(RuntimeError):
     """驱动包操作的可预期错误（参数非法 / 不存在 / 冲突）。"""
+
+
+class DriverPackageBusyError(DriverPackageError):
+    """同一 Host 已在修改源码、依赖或台账；写请求需等待当前操作结束。"""
 
 
 @dataclass
@@ -412,17 +419,23 @@ class DriverPackageService:
     def __init__(self, working_dir: str | Path) -> None:
         self.working_dir = Path(working_dir)
         self._lock = threading.Lock()
+        self._mutation_lock = threading.Lock()
         self._operations: Dict[str, DriverPackageOperation] = {}
         self._order: List[str] = []
         self._scan_dirs: List[str] = []
         self._restart_required = False
         self._external_only = False
+        self.source_changes = get_source_changes(self.working_dir)
 
     # ── 运行态上下文（启动时由 main 注入） ─────────────────────────
 
-    def configure(self, scan_dirs: List[str], external_only: bool) -> None:
+    def configure(self, scan_dirs: List[str], external_only: bool, *, watch: bool = False) -> None:
         self._scan_dirs = [str(Path(item).resolve()) for item in scan_dirs if item]
         self._external_only = external_only
+        roots, packages = source_roots(self._scan_dirs, load_ledger(self.working_dir), external_only=external_only)
+        self.source_changes.register("host", kind="host", name="Host", pid=os.getpid(), roots=roots, packages=packages)
+        if watch:
+            self.source_changes.start()
 
     # ── 读 ────────────────────────────────────────────────────────
 
@@ -443,6 +456,7 @@ class DriverPackageService:
                     "loaded_device_ids": [item for item in record.device_ids if item in loaded_ids],
                 }
             )
+        changes = self.source_changes.status()
         return {
             "python": {"executable": sys.executable, "version": sys.version.split()[0]},
             "working_dir": str(self.working_dir),
@@ -450,7 +464,8 @@ class DriverPackageService:
             "ledger_path": str(ledger_path(self.working_dir)),
             "scan_dirs": list(self._scan_dirs),
             "external_only": self._external_only,
-            "restart_required": self._restart_required,
+            "restart_required": self._restart_required or changes["restart_required"],
+            "source_changes": changes,
             "packages": packages,
             "operations": self.operations(limit=5),
         }
@@ -527,53 +542,93 @@ class DriverPackageService:
 
     # ── 写 ────────────────────────────────────────────────────────
 
+    def _acquire_mutation(self) -> None:
+        if not self._mutation_lock.acquire(blocking=False):
+            raise DriverPackageBusyError("已有驱动包变更正在进行，请查询 operations 并在完成后重试")
+        self.source_changes.mutation(True)
+
+    def _release_mutation(self) -> None:
+        self.source_changes.mutation(False)
+        self._mutation_lock.release()
+
     def set_enabled(self, name: str, enabled: bool) -> Dict[str, Any]:
-        records = load_ledger(self.working_dir)
-        key = _normalize(name)
-        record = records.get(key)
-        if record is None:
-            raise DriverPackageError(f"driver package not found: {name}")
-        if record.enabled != enabled:
-            record.enabled = enabled
-            record.updated_at_ms = _now_ms()
-            save_ledger(self.working_dir, records)
-            self._restart_required = True
-        return asdict(record)
+        self._acquire_mutation()
+        try:
+            records = load_ledger(self.working_dir)
+            key = _normalize(name)
+            record = records.get(key)
+            if record is None:
+                raise DriverPackageError(f"driver package not found: {name}")
+            if record.enabled != enabled:
+                record.enabled = enabled
+                record.updated_at_ms = _now_ms()
+                save_ledger(self.working_dir, records)
+                self._restart_required = True
+                self.source_changes.package_changed(name, reason="package_mount_changed", host_mount=True)
+            return {**asdict(record), "source_changes": self.source_changes.status()}
+        finally:
+            self._release_mutation()
+
+    def _start_mutation(
+        self, kind: str, spec: str, worker: Callable[..., Dict[str, Any]],
+        *args: Any, package_name: str = "",
+    ) -> Dict[str, Any]:
+        self._acquire_mutation()
+        operation = None
+        try:
+            operation = self._new_operation(kind, spec)
+            operation.package_name = package_name
+            accepted = asdict(operation)
+            threading.Thread(
+                target=self._execute_mutation,
+                args=(operation.operation_id, worker, args),
+                name=f"DriverPackage-{operation.operation_id[:8]}", daemon=True,
+            ).start()
+            return accepted
+        except Exception as exc:
+            self._release_mutation()
+            if operation is not None:
+                self._finish(operation.operation_id, error=str(exc))
+            raise DriverPackageError(f"无法启动驱动包操作：{exc}") from exc
+
+    def _execute_mutation(
+        self, operation_id: str, worker: Callable[..., Dict[str, Any]], args: tuple[Any, ...],
+    ) -> None:
+        result = None
+        error = None
+        try:
+            result = worker(operation_id, *args)
+        except Exception as exc:  # noqa: BLE001 - 后台操作统一记录失败并释放写锁
+            error = str(exc) or type(exc).__name__
+            self._append_log(operation_id, f"[error] {error}")
+            if not isinstance(exc, DriverPackageError):
+                logger.exception("[DriverPackages] 驱动包变更失败")
+        finally:
+            # 完成状态出现后，下一个请求就可修改；查询日志不占用写锁。
+            self._release_mutation()
+        if result is not None:
+            result["source_changes"] = self.source_changes.status()
+        self._finish(operation_id, error=error, result=result)
 
     def start_install(
         self, spec: str, enable: bool = True, upgrade: bool = False, name: str = ""
     ) -> Dict[str, Any]:
-        """``name`` 是调用方已知的包名（索引条目里带），源码树没有 pyproject 时用它登记。"""
+        """源码树没有 pyproject 时使用调用方提供的 name；同一 Host 只接受一个包变更。"""
         source = resolve_source(spec)
         name = (name or "").strip()
         if name and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
             raise DriverPackageError(f"包名不合法：{name}")
-        operation = self._new_operation("install", source.spec)
-        if name:
-            operation.package_name = name
-        threading.Thread(
-            target=self._run_install,
-            args=(operation.operation_id, source, enable, upgrade, name),
-            name=f"DriverPackageInstall-{operation.operation_id[:8]}",
-            daemon=True,
-        ).start()
-        return asdict(operation)
+        return self._start_mutation(
+            "install", source.spec, self._run_install, source, enable, upgrade, name, package_name=name,
+        )
 
     def start_uninstall(self, name: str) -> Dict[str, Any]:
-        records = load_ledger(self.working_dir)
-        key = _normalize(name)
-        record = records.get(key)
+        record = load_ledger(self.working_dir).get(_normalize(name))
         if record is None:
             raise DriverPackageError(f"driver package not found: {name}")
-        operation = self._new_operation("uninstall", record.name)
-        operation.package_name = record.name
-        threading.Thread(
-            target=self._run_uninstall,
-            args=(operation.operation_id, record.name),
-            name=f"DriverPackageUninstall-{operation.operation_id[:8]}",
-            daemon=True,
-        ).start()
-        return asdict(operation)
+        return self._start_mutation(
+            "uninstall", record.name, self._run_uninstall, record.name, package_name=record.name,
+        )
 
     # ── 内部 ──────────────────────────────────────────────────────
 
@@ -695,7 +750,7 @@ class DriverPackageService:
 
     def _run_install(
         self, operation_id: str, source: PackageSource, enable: bool, upgrade: bool, name_hint: str = ""
-    ) -> None:
+    ) -> Dict[str, Any]:
         log = lambda text: self._append_log(operation_id, text)  # noqa: E731
         staging: Optional[Path] = None
         try:
@@ -707,108 +762,141 @@ class DriverPackageService:
             else:
                 staging, root, sha256 = self._fetch_source_tree(source, log)
 
+            root = root.resolve()
             project = read_project_metadata(root)
             name = project["name"] or name_hint or source.fallback_name
             if not name:
                 raise DriverPackageError("无法确定包名：源码树没有 pyproject.toml，请在请求里给 name")
             if name_hint and project["name"] and _normalize(name_hint) != _normalize(project["name"]):
                 log(f"[warn] 索引里的包名 {name_hint} 与 pyproject 的 {project['name']} 不同，按 pyproject 登记")
-            version = project["version"] or (source.ref or "local" if source.kind == "local" else source.ref or "main")
+            version = project["version"] or source.ref or ("local" if source.kind == "local" else "main")
+            if source.kind != "local":
+                self._package_target(name, version)  # 在依赖安装和文件移动之前验证落盘边界
             dependencies = _dependency_filter(project["dependencies"], name)
             log(f"[project] {name} {version} 依赖 {dependencies or '-'}")
 
+            # 在候选源码上校验，不能先删旧版本再发现包无效。
+            source_dirs = detect_package_dirs(root, project["include"])
+            if not source_dirs:
+                raise DriverPackageError(f"源码树里没有可挂载的 Python 包目录（含 __init__.py）：{root}")
+            device_ids = scan_device_ids(source_dirs)
+            if dependencies:
+                # 安装器失败也可能已部分改变共享环境，因此提前标记受影响进程。
+                self.source_changes.package_changed(name, reason="shared_dependencies_changed", shared_dependencies=True)
             installer = self._install_dependencies(dependencies, upgrade, log)
-
-            if source.kind == "local":
-                package_root = root
-            else:
-                package_root = self._place_source_tree(root, name, version, log)
-
-            package_dirs = detect_package_dirs(package_root, project["include"])
-            if not package_dirs:
-                raise DriverPackageError(f"源码树里没有可挂载的 Python 包目录（含 __init__.py）：{package_root}")
-            device_ids = scan_device_ids(package_dirs)
-            log(f"[scan] 包目录 {package_dirs} 设备 {', '.join(device_ids) or '-'}")
-
-            records = load_ledger(self.working_dir)
-            key = _normalize(name)
-            previous = records.get(key)
-            record = DriverPackageRecord(
-                name=name,
-                spec=source.spec,
-                version=version,
-                source_kind=source.kind,
-                package_root=str(package_root),
-                package_dirs=package_dirs,
-                device_ids=device_ids,
-                dependencies=dependencies,
-                sha256=sha256,
-                enabled=enable if previous is None else previous.enabled,
-                installer=installer,
-                installed_at_ms=previous.installed_at_ms if previous else _now_ms(),
-                updated_at_ms=_now_ms(),
-            )
-            records[key] = record
-            save_ledger(self.working_dir, records)
+            placement = nullcontext(root) if source.kind == "local" else self._place_source_tree(root, name, version, log)
+            with placement as package_root:
+                package_dirs = source_dirs if source.kind == "local" else [
+                    str(package_root / Path(item).relative_to(root)) for item in source_dirs
+                ]
+                log(f"[scan] 包目录 {package_dirs} 设备 {', '.join(device_ids) or '-'}")
+                records = load_ledger(self.working_dir)
+                key = _normalize(name)
+                previous = records.get(key)
+                record = DriverPackageRecord(
+                    name=name, spec=source.spec, version=version, source_kind=source.kind,
+                    package_root=str(package_root), package_dirs=package_dirs, device_ids=device_ids,
+                    dependencies=dependencies, sha256=sha256,
+                    enabled=enable if previous is None else previous.enabled,
+                    installer=installer,
+                    installed_at_ms=previous.installed_at_ms if previous else _now_ms(),
+                    updated_at_ms=_now_ms(),
+                )
+                records[key] = record
+                save_ledger(self.working_dir, records)
             self._restart_required = True
+            self.source_changes.package_changed(name, reason="package_installed", host_mount=record.enabled)
             with self._lock:
-                operation = self._operations.get(operation_id)
-                if operation is not None:
-                    operation.package_name = name
-            self._finish(operation_id, result={"packages": [asdict(record)], "restart_required": True})
-        except DriverPackageError as exc:
-            log(f"[error] {exc}")
-            self._finish(operation_id, error=str(exc))
-        except Exception as exc:  # noqa: BLE001 - 后台线程兜底
-            logger.exception("[DriverPackages] install failed")
-            log(f"[error] {exc}")
-            self._finish(operation_id, error=str(exc))
+                self._operations[operation_id].package_name = name
+            return {"packages": [asdict(record)], "restart_required": True}
         finally:
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
 
-    def _place_source_tree(self, root: Path, name: str, version: str, log: Callable[[str], None]) -> Path:
-        """把临时目录里的源码根搬到 ``<working_dir>/driver_packages/<name>/<version>/``，清掉同名其它版本。"""
+    def _package_target(self, name: str, version: str) -> Path:
+        """包名和版本只能成为缓存下的两个路径分量，不允许符号链接越界。"""
+        def safe_component(value: str) -> str:
+            component = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-") or "unnamed"
+            if component.startswith("."):
+                raise DriverPackageError(f"包名或版本不能用作源码目录：{value!r}")
+            return component
 
-        safe = lambda text: re.sub(r"[^A-Za-z0-9._-]+", "-", text).strip("-") or "unnamed"  # noqa: E731
-        package_home = packages_root(self.working_dir) / safe(name)
-        target = package_home / safe(version)
-        if target.exists():
-            shutil.rmtree(target)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(root), str(target))
-        for sibling in package_home.iterdir():
-            if sibling.is_dir() and sibling != target:
-                shutil.rmtree(sibling, ignore_errors=True)
-                log(f"[place] 移除旧版本 {sibling.name}")
-        log(f"[place] {target}")
+        managed = packages_root(self.working_dir).resolve()
+        package_home = managed / safe_component(name)
+        target = package_home / safe_component(version)
+        if package_home.is_symlink() or target.is_symlink() or managed not in target.resolve().parents:
+            raise DriverPackageError("驱动包源码目录越过缓存边界或使用了符号链接")
         return target
 
-    def _run_uninstall(self, operation_id: str, name: str) -> None:
-        log = lambda text: self._append_log(operation_id, text)  # noqa: E731
+    @contextmanager
+    def _source_transaction(self, target: Path) -> Iterator[None]:
+        """源码变更在台账成功写入前可回滚；回滚失败时保留备份供恢复。"""
+        managed = packages_root(self.working_dir).resolve()
+        if target.is_symlink() or managed not in target.resolve().parents:
+            raise DriverPackageError("只能修改驱动包缓存内的源码目录")
+        backup_root = Path(tempfile.mkdtemp(prefix="rollback-", dir=str(self._staging_root())))
+        backup = backup_root / "previous"
         try:
-            records = load_ledger(self.working_dir)
-            key = _normalize(name)
-            record = records.get(key)
-            if record is None:
-                raise DriverPackageError(f"driver package not found: {name}")
-            root = Path(record.package_root) if record.package_root else None
-            managed_root = packages_root(self.working_dir).resolve()
-            if record.source_kind != "local" and root is not None and root.exists() and managed_root in root.resolve().parents:
-                shutil.rmtree(root.parent if root.parent != managed_root else root, ignore_errors=True)
-                log(f"[remove] {root}")
-            else:
-                log("[remove] 本机目录原地登记，只移出台账，不删文件")
+            if target.exists():
+                target.rename(backup)
+        except BaseException:
+            shutil.rmtree(backup_root, ignore_errors=True)
+            raise
+        try:
+            yield
+        except BaseException:
+            # 不用 ignore_errors：失败时不可删除唯一的旧源码备份。
+            if target.exists():
+                shutil.rmtree(target)
+            if backup.exists():
+                backup.rename(target)
+            shutil.rmtree(backup_root, ignore_errors=True)
+            raise
+        else:
+            shutil.rmtree(backup_root, ignore_errors=True)
+
+    @contextmanager
+    def _place_source_tree(self, root: Path, name: str, version: str, log: Callable[[str], None]) -> Iterator[Path]:
+        target = self._package_target(name, version)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with self._source_transaction(target):
+            shutil.move(str(root), str(target))
+            log(f"[place] {target}")
+            yield target
+        # 新台账已提交，才回收不同版本的缓存；失败路径保留原版本。
+        try:
+            for sibling in target.parent.iterdir():
+                if sibling.is_dir() and sibling != target and not sibling.is_symlink():
+                    shutil.rmtree(sibling)
+                    log(f"[place] 移除旧版本 {sibling.name}")
+        except OSError as exc:
+            # 提交后的缓存回收失败不改变已成功的安装结果。
+            log(f"[warn] 旧版本缓存未完全回收：{exc}")
+
+    def _run_uninstall(self, operation_id: str, name: str) -> Dict[str, Any]:
+        log = lambda text: self._append_log(operation_id, text)  # noqa: E731
+        records = load_ledger(self.working_dir)
+        key = _normalize(name)
+        record = records.get(key)
+        if record is None:
+            raise DriverPackageError(f"driver package not found: {name}")
+        root = Path(record.package_root) if record.package_root else None
+        managed_root = packages_root(self.working_dir).resolve()
+        removal = nullcontext()
+        if record.source_kind != "local" and root is not None and root.exists() and managed_root in root.resolve().parents:
+            target = root.parent if root.parent.resolve() != managed_root else root
+            removal = self._source_transaction(target)
+            log(f"[remove] {root}")
+        else:
+            log("[remove] 本机目录原地登记，只移出台账，不删文件")
+        with removal:
             if record.dependencies:
                 log(f"[deps] 保留已装依赖（可能被其他包共用）：{', '.join(record.dependencies)}")
             records.pop(key, None)
             save_ledger(self.working_dir, records)
-            self._restart_required = True
-            self._finish(operation_id, result={"removed": record.name, "restart_required": True})
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("[DriverPackages] uninstall failed")
-            log(f"[error] {exc}")
-            self._finish(operation_id, error=str(exc))
+        self._restart_required = True
+        self.source_changes.package_changed(name, reason="package_uninstalled", host_mount=record.enabled)
+        return {"removed": record.name, "restart_required": True}
 
     @staticmethod
     def _loaded_device_ids() -> set[str]:

@@ -105,7 +105,7 @@ def test_lists_graphs_from_source_checkout_and_skips_non_graphs(lab) -> None:
 
 
 def test_distribution_data_files_take_precedence(lab, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """pip 安装后图在 <prefix>/share/<包>/graph：以 RECORD 里的 data-files 为准。"""
+    """没有源码身份的旧台账仍兼容 RECORD 里的 data-files。"""
     share = tmp_path / "prefix" / "share" / "lock_demo" / "graph"
     share.mkdir(parents=True)
     (share / "lock_demo.json").write_text(json.dumps(_demo_graph("probe_from_wheel")), encoding="utf-8")
@@ -133,6 +133,30 @@ def test_distribution_data_files_take_precedence(lab, tmp_path: Path, monkeypatc
     assert set(graphs) == {"bench", "lock_demo"}
     assert graphs["lock_demo"]["source"] == "dist"
     assert [device["id"] for device in graphs["lock_demo"]["devices"]] == ["probe_from_wheel"]
+
+
+@pytest.mark.parametrize("layout", ["flat", "src", "root"])
+def test_source_identity_uses_its_graphs_without_old_distribution(lab, monkeypatch, layout):
+    package = lab.repo / "lock_demo"
+    if layout == "src":
+        package = lab.repo / "src" / "lock_demo"
+        package.mkdir(parents=True)
+    elif layout == "root":
+        package = lab.repo
+    records = dp.load_ledger(lab.working_dir)
+    records["lock_demo"].source_kind = "local"
+    records["lock_demo"].package_root = str(lab.repo)
+    records["lock_demo"].package_dirs = [str(package)]
+    dp.save_ledger(lab.working_dir, records)
+    monkeypatch.setattr(dpg, "_distribution_json_files", lambda name: pytest.fail("源码包不应读取同名旧分发"))
+
+    graphs = dpg.list_bundled_graphs(lab.working_dir, "lock_demo")
+    assert [entry["name"] for entry in graphs] == ["lock_demo"]
+    assert graphs[0]["devices"][0]["id"] == "lock_probe_a"
+    assert graphs[0]["source"] == "source"
+    # 当前源码删除图后，不能从旧分发重新引入它。
+    (lab.repo / "graph" / "lock_demo.json").unlink()
+    assert dpg.list_bundled_graphs(lab.working_dir, "lock_demo") == []
 
 
 def test_launch_creates_process_then_reuses_it(lab) -> None:

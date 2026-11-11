@@ -52,7 +52,7 @@ default_tools_approval_mode = "writes"
    所需驱动动作的参数、错误策略和 `materials_need_lock`。
 5. `protocol_search`：用具体关键词缩小操作范围；`protocol_inspect`：调用前确认字段和必填项。
 
-当前有 131 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
+当前有 132 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
 `.`、`-` 替换为 `_` 得到，客户端可能再显示 MCP server 前缀。
 
 | 需求 | 优先入口 |

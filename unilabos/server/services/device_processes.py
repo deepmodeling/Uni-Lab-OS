@@ -13,6 +13,7 @@ Host 本体、物料权威和调度都不受影响；改驱动、改配置也只
 from __future__ import annotations
 
 import atexit
+import argparse
 import json
 import os
 import subprocess
@@ -26,6 +27,7 @@ from typing import Any, Dict, List, Optional
 
 from unilabos.utils import logger
 from unilabos.utils.log_notices import log_notices
+from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
 
 SPEC_FILENAME = "device_processes.json"
 PROCESS_DIRNAME = "device_processes"
@@ -169,6 +171,7 @@ class DeviceProcessService:
         self._stop_requested: set[str] = set()
         self._monitor: Optional[threading.Thread] = None
         self._closing = False
+        self.source_changes = get_source_changes(self.working_dir)
         atexit.register(self.shutdown)
 
     # ── 环境 ──────────────────────────────────────────────────────
@@ -231,6 +234,27 @@ class DeviceProcessService:
         command.extend(str(item) for item in spec.extra_args if str(item).strip())
         return command
 
+    def _register_source_watch(self, spec: DeviceProcessSpec, command: List[str]) -> None:
+        """观察子进程实际命令和工作目录会挂载的目录，包含额外参数及启用台账。"""
+        from unilabos.app.cli.parser import build_parser
+        from unilabos.config.working_dir import resolve_working_dir
+        from unilabos.server.services.driver_packages import enabled_package_dirs, load_ledger
+
+        try:
+            args, _ = build_parser().parse_known_args(command[3:])
+        except (SystemExit, argparse.ArgumentError) as exc:
+            raise DeviceProcessError("设备进程启动参数无效，无法确定源码挂载目录") from exc
+
+        def absolute(value: str | None) -> str | None:
+            return str((self.working_dir / Path(value).expanduser()).resolve()) if value else None
+
+        child_dir = resolve_working_dir(absolute(args.working_dir), absolute(args.config), cwd=str(self.working_dir))
+        records = {**load_ledger(self.working_dir), **load_ledger(child_dir)}
+        dirs = [absolute(item) for item in args.devices or []] + enabled_package_dirs(child_dir)
+        roots, packages = source_roots(dirs, records, external_only=args.external_devices_only)
+        self.source_changes.register(spec.id, kind="slave", name=spec.name, pid=None, roots=roots,
+                                     packages=packages, auto_start=spec.auto_start)
+
     @staticmethod
     def graph_filename(spec: DeviceProcessSpec) -> str:
         """图文件名即 Graph Authority 里的图名：带进程名与 id 前缀，多个受管进程不互相覆盖。"""
@@ -278,6 +302,7 @@ class DeviceProcessService:
         spec = self._spec_from_payload(payload, existing=current)
         specs[process_id] = spec
         save_specs(self.working_dir, specs)
+        self.source_changes.describe(process_id, name=spec.name, auto_start=spec.auto_start)
         self._write_graph(spec)
         log_notices.changed(sources_changed=True)
         return self._view(spec)
@@ -353,6 +378,7 @@ class DeviceProcessService:
             if proc is not None:
                 runtime.last_exit_code = proc.poll()
             self._procs.pop(process_id, None)
+            self.source_changes.remove(process_id)
         log_notices.changed(f"managed:{process_id}", sources_changed=True)
         return self._view(spec)
 
@@ -382,6 +408,7 @@ class DeviceProcessService:
             self._stop_requested.add(process_id)
             if proc.poll() is None:
                 self._terminate(proc, wait=True)
+            self.source_changes.remove(process_id)
 
     # ── 内部：启动 / 结束 / 看护 ─────────────────────────────────
 
@@ -403,6 +430,8 @@ class DeviceProcessService:
         env.setdefault("NO_COLOR", "1")
         env.setdefault("TERM", "dumb")
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+        # 在 Popen 前取基线，子进程异步导入期间发生的编辑也必须提示。
+        self._register_source_watch(spec, command)
         try:
             proc = subprocess.Popen(
                 command,
@@ -413,6 +442,7 @@ class DeviceProcessService:
                 creationflags=creationflags,
             )
         except OSError as exc:
+            self.source_changes.remove(spec.id)
             runtime.status = "crashed"
             runtime.last_error = str(exc)
             raise DeviceProcessError(f"无法启动子进程：{exc}") from exc
@@ -421,6 +451,8 @@ class DeviceProcessService:
         runtime.stopped_at_ms = None
         runtime.status = "running"
         self._procs[spec.id] = proc
+        self.source_changes.set_pid(spec.id, proc.pid)
+        self.source_changes.start()
         log_notices.changed(f"managed:{spec.id}", sources_changed=True)
         threading.Thread(
             target=self._pump_output,
@@ -472,11 +504,15 @@ class DeviceProcessService:
                 if code is None:
                     continue
                 with self._lock:
+                    # 采样后可能已由用户重启，旧进程退出不能覆盖新实例及其源码基线。
+                    if self._procs.get(process_id) is not proc:
+                        continue
                     runtime = self._runtime.setdefault(process_id, DeviceProcessRuntime())
                     runtime.last_exit_code = code
                     runtime.pid = None
                     runtime.stopped_at_ms = _now_ms()
                     self._procs.pop(process_id, None)
+                    self.source_changes.remove(process_id)
                     requested = process_id in self._stop_requested
                 log_notices.changed(f"managed:{process_id}", sources_changed=True)
                 if requested:
@@ -524,6 +560,9 @@ class DeviceProcessService:
         view.update(asdict(spec))
         view["device_ids"] = [str(node.get("id")) for node in spec.graph_nodes]
         view["graph_path"] = str(process_dir(self.working_dir, spec.id) / self.graph_filename(spec))
+        notices = [item for item in self.source_changes.status()["notices"] if item["process_id"] == spec.id]
+        view["restart_required"] = bool(notices)
+        view["restart_notices"] = notices
         return view
 
 

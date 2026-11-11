@@ -136,6 +136,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("decisions.error-decisions.list", "decisions", "GET", "/api/v1/error-decisions", "待处理动作异常", "host"),
     Operation("decisions.error-decisions.resolve", "decisions", "POST", "/api/v1/error-decisions/{decision_id}", "处理动作异常（重试/跳过/中止/人工替换结果）", "host"),
     Operation("driver-packages.inventory", "driver-packages", "GET", "/api/v1/driver-packages", "驱动包台账 + 本次启动扫描目录 + 是否需重启", "host"),
+    Operation("driver-packages.changes", "driver-packages", "GET", "/api/v1/driver-packages/changes", "驱动源码变化、需重启的 Host/slave、文件路径与连带影响；只提示不自动重启", "host"),
     Operation("driver-packages.catalog", "driver-packages", "GET", "/api/v1/driver-packages/catalog", "官方 / 社区驱动包目录（远程索引 + 本地补充），供一键安装", "host"),
     Operation("driver-packages.install", "driver-packages", "POST", "/api/v1/driver-packages/install", "安装驱动包：GitHub 仓库 / 归档地址下载到 unilabos_data 或本机目录原地登记，uv 预装依赖，返回后台 operation", "host"),
     Operation("driver-packages.operations.list", "driver-packages", "GET", "/api/v1/driver-packages/operations", "最近的安装 / 卸载操作", "host"),

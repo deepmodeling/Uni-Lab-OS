@@ -22,9 +22,12 @@ _LAZY_DATA_EXPORTS = frozenset(
     {"HTTPRuntimeClient", "LocalRuntimeClient", "RuntimeHTTPError"}
 )
 _LAZY_LIFECYCLE_EXPORTS = frozenset({"HTTPLifecycleClient", "SchedulerDrainTimeout"})
+_LAZY_PACKAGE_EXPORTS = frozenset({"HTTPDriverPackageClient", "DriverPackageWaitTimeout"})
 
 
 def __getattr__(name: str) -> Any:
+    if name in _LAZY_PACKAGE_EXPORTS:
+        return getattr(importlib.import_module(f"{__name__}.driver_packages"), name)
     if name in _LAZY_LIFECYCLE_EXPORTS:
         return getattr(importlib.import_module(f"{__name__}.lifecycle"), name)
     if name in _LAZY_DATA_EXPORTS:
@@ -33,10 +36,12 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    return sorted(set(globals()) | _LAZY_DATA_EXPORTS | _LAZY_LIFECYCLE_EXPORTS)
+    return sorted(set(globals()) | _LAZY_DATA_EXPORTS | _LAZY_LIFECYCLE_EXPORTS | _LAZY_PACKAGE_EXPORTS)
 
 
 __all__ = [
+    "HTTPDriverPackageClient",
+    "DriverPackageWaitTimeout",
     "HTTPLifecycleClient",
     "SchedulerDrainTimeout",
     "HTTPRuntimeClient",

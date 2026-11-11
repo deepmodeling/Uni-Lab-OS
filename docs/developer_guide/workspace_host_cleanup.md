@@ -1,5 +1,7 @@
 # Workspace Host 规整说明
 
+2026-11-10 入口落地：包安装和管理已统一到 dev 的 driver-packages 服务；管理命令使用 `unilab runtime`，复用统一生命周期 SDK/API，不引入 Workspace Host daemon。具体命令、兼容变化和本轮边界见 [Dev 包管理与 runtime 管理入口](dev_package_runtime.md)。下文仍保留 V1 旧代码的历史盘点与尚未迁移的业务能力。
+
 核验日期：2026-11-10。原盘点固定比较 Dev `4153b032` / review 分支 `5883fa44` 与 V1 `690491a3`，不是对所有远端分支的实时盘点。后续已在本地 review 分支迁入生命周期协议与 drain，见 [迁移实现与使用方式](runtime_lifecycle_migration.md)；仍未删除 V1 分支运行代码。
 
 ## 先把当前工作归成四件事

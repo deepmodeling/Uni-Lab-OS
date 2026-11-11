@@ -59,3 +59,30 @@ def test_unified_router_dispatches_package_without_runtime(monkeypatch, tmp_path
     assert run_cli_command(args, parser) is True
     assert calls[0][0]["package_action"] == "inspect"
     assert calls[0][1]["args_namespace"] is args
+
+
+def test_config_path_and_explicit_working_dir_select_the_matching_token(monkeypatch, tmp_path):
+    from unilabos.config.config import BasicConfig
+    from unilabos.config.control_token import TOKEN_ENV, client_token
+
+    monkeypatch.setattr(BasicConfig, "control_token", "")
+    monkeypatch.setattr(BasicConfig, "working_dir", "stale-directory")
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    config_dir = tmp_path / "configured"
+    data_dir = config_dir / "unilabos_data"
+    data_dir.mkdir(parents=True)
+    config = config_dir / "site.py"
+    config.write_text("# 管理命令只解析路径，无需执行此文件\n", encoding="utf-8")
+    (data_dir / "control_token").write_text("configured-token", encoding="utf-8")
+    explicit = tmp_path / "explicit"
+    explicit.mkdir()
+    (explicit / "control_token").write_text("explicit-token", encoding="utf-8")
+    parser = build_parser()
+
+    args = parser.parse_args(["--config", str(config), "runtime", "status"])
+    session = _prepare_command_session(args, parser)
+    assert session.working_dir == data_dir
+    assert client_token() == "configured-token"
+    args = parser.parse_args(["--config", str(config), "--working-dir", str(explicit), "package", "list"])
+    assert _prepare_command_session(args, parser).working_dir == explicit
+    assert client_token() == "explicit-token"

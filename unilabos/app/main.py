@@ -618,7 +618,8 @@ def _run_main():
     if not check_mode:
         from unilabos.server.services.driver_packages import get_driver_package_service
 
-        get_driver_package_service().configure(list(devices_dirs or []), bool(external_only))
+        if BasicConfig.is_host_mode and args_dict.get("role") != "backend" and not _runs_local_authority(args_dict):
+            get_driver_package_service().configure(list(devices_dirs or []), bool(external_only), watch=True)
     lab_registry = build_registry(
         registry_paths=args_dict["registry_path"],
         devices_dirs=devices_dirs,

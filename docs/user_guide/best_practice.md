@@ -1640,7 +1640,7 @@ python -m unilabos.app.main \
 
 `--devices` 指向的设备包目录、`-g` 图文件等具体路径以各仓库 README 为准；`LabDeviceLanDemo` 与 `LabDeviceMaterialsDemo` 还需按「先 host 后 slave」启动两个进程（仅图文件与 `--is_slave` 不同）。
 
-**一键安装（不克隆源码）：** 七个包都收录在驱动包索引 [awesome-lab-devices](https://github.com/Xuwznln/awesome-lab-devices)（`index.json`）。先用空图起一个 Host（`unilab --backend hostlink`，不带 `-g`），打开 [OpenLab](https://xuwznln.github.io/OpenLab-site/) 连接 `http://127.0.0.1:8002`，在「驱动包」页点「安装到 Edge」——浏览器直接读索引，把 `spec`（`git+https://github.com/Xuwznln/LabDevice…Demo.git`）下发给微后端 `POST /api/v1/driver-packages/install` 执行 `pip install`；装完后「启动」即把随包设备图作为受管设备进程拉起，不需要重启 Host。命令行等价形式是 `unilab package install "<spec>"` 后重启。浏览器需要访问索引，安装执行侧也需要访问包源及依赖下载地址；离线环境应使用可达的内网包源。
+**一键安装（不克隆源码）：** 七个包都收录在驱动包索引 [awesome-lab-devices](https://github.com/Xuwznln/awesome-lab-devices)（`index.json`）。先用空图起一个 Host（`unilab --backend hostlink`，不带 `-g`），打开 [OpenLab](https://xuwznln.github.io/OpenLab-site/) 连接 `http://127.0.0.1:8002`，在「驱动包」页点「安装到 Edge」——浏览器直接读索引，把 `spec`（`git+https://github.com/Xuwznln/LabDevice…Demo.git`）下发给微后端 `POST /api/v1/driver-packages/install` 下载并登记源码目录，只用 uv/pip 安装第三方依赖；装完后「启动」即把随包设备图作为受管设备进程拉起，不需要重启 Host。命令行可使用 `unilab package install "<spec>" --wait`；需要主 Host 重挂载时执行 `unilab runtime restart`。浏览器需要访问索引，安装执行侧也需要访问包源及依赖下载地址；离线环境应使用可达的内网包源。
 
 > 这七个仓库同时是 §9（自定义设备）、§11.5（通信共享机制）、§12（物料定义）的可运行落地示例：想从零写一个新驱动，可直接 fork [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) 作为脚手架，改写设备类与图文件即可，再给 awesome-lab-devices 提 PR 收录。主仓库 CI 对 pinned 版本运行完整工作流，除终态外还核对实验实值、权威物料与库存账目。
 

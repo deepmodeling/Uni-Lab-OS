@@ -1,9 +1,8 @@
-"""社区设备包命令：本地 inspect/install 实现。"""
+"""驱动包命令：本地静态 inspect；安装、台账和启停统一走 dev 管理 API。"""
 
 import hashlib
 import json
-import re
-import subprocess
+import sys
 import tarfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -42,7 +41,7 @@ def register_package_commands(subparsers: Any) -> None:
     package_parser = subparsers.add_parser(
         "package",
         aliases=["pkg"],
-        help="Community device package tools: inspect / install",
+        help="驱动包检查与管理：inspect / install / list / enable / disable / uninstall",
     )
     package_actions = package_parser.add_subparsers(
         title="package actions", dest="package_action"
@@ -71,22 +70,25 @@ def register_package_commands(subparsers: Any) -> None:
             default=None,
             help="Output dir for archive/package_info.json",
         )
-    install_parser = package_actions.add_parser(
-        "install",
-        help="Install a pip spec / git URL locally, then scan @device IDs",
-    )
-    install_parser.add_argument(
-        "install_spec",
-        type=str,
-        help="pip spec (name==version / name) or git URL (git+https://...)",
-    )
-    install_parser.add_argument(
-        "--no-inspect",
-        "--no_inspect",
-        dest="no_inspect",
-        action="store_true",
-        help="Skip post-install @device scan / device listing",
-    )
+    from .management import add_management_options, positive_timeout
+
+    for action in ("install", "list", "catalog", "changes", "enable", "disable", "uninstall", "operations", "operation"):
+        command = package_actions.add_parser(action)
+        add_management_options(command)
+        if action == "install":
+            command.add_argument(
+                "install_spec", help="GitHub 仓库、归档 URL 或 Host 上的源码目录；不接受 PyPI 包名",
+            )
+            command.add_argument("--name", default="")
+            command.add_argument("--upgrade", action="store_true")
+            command.add_argument("--disabled", action="store_true", help="新包只登记；重装保留已有启停状态")
+        elif action in {"enable", "disable", "uninstall"}:
+            command.add_argument("name")
+        elif action == "operation":
+            command.add_argument("operation_id")
+        if action in {"install", "uninstall", "operation"}:
+            command.add_argument("--wait", action="store_true", help="等待服务端操作结束")
+            command.add_argument("--timeout", type=positive_timeout, default=900.0)
 
 
 def normalize_name(name: str) -> str:
@@ -559,58 +561,54 @@ def inspect_package(
     }
 
 
-def install_package(spec: str, run_inspect: bool = True) -> Dict[str, Any]:
-    """本地安装一个设备包：uv pip install 优先、回退 pip install，
-    """
-    spec = (spec or "").strip()
-    if not spec:
-        raise PackageCLIError("缺少安装目标，用法：unilab package install <pip-spec 或 git-url>")
-
-    installer = _run_pip_install(spec)
-    print_status(f"package install 完成：{spec}（{installer}）", "info")
-
-    # PyPI 规格直接取名；本地目录/文件路径装完后从其 pyproject.toml 读分发名（git/URL 仍取不到）。
-    dist_name = _spec_dist_name(spec) or _local_dist_name(spec)
-    device_ids: List[str] = []
-    if run_inspect and dist_name:
-        device_ids = _installed_device_ids(dist_name)
-
-    if device_ids:
-        print_status(f"  包内可用设备    : {', '.join(device_ids)}", "info")
-    elif dist_name:
-        print_status(f"  已安装分发      : {dist_name}（未扫描到 @device，可能非 Uni-Lab 设备包）", "info")
-    else:
-        print_status("  已安装（git/URL 来源，无法确定分发名，跳过设备扫描）", "info")
-
-    return {"spec": spec, "installer": installer, "dist_name": dist_name, "device_ids": device_ids}
-
-
-def cmd_package(args_dict: Dict[str, Any]) -> None:
-    """package 子命令分发入口，由 main() 在配置/鉴权就绪后调用。"""
+def cmd_package(args_dict: Dict[str, Any], *, session_manager: Any = None) -> None:
+    """检查在本地执行，其余包管理命令连接已运行的管理 API。"""
     action = args_dict.get("package_action")
-    path = args_dict.get("package_path")
-    namespace = args_dict.get("namespace")
-    out_dir = args_dict.get("out")
-
-    if not action:
-        raise PackageCLIError(
-            "缺少 package 子动作，请使用 `unilab package inspect|install`"
-        )
-
-    if action == "install":
-        install_package(
-            args_dict.get("install_spec", "") or "",
-            run_inspect=not args_dict.get("no_inspect", False),
-        )
-        return
-
-    if not path:
-        raise PackageCLIError("缺少 --path（社区设备包目录）")
-
     if action == "inspect":
-        inspect_package(path, namespace=namespace, out_dir=out_dir)
-    else:
-        raise PackageCLIError(f"未知 package 子动作：{action}")
+        path = args_dict.get("package_path")
+        if not path:
+            raise PackageCLIError("缺少 --path（社区设备包目录）")
+        inspect_package(path, namespace=args_dict.get("namespace"), out_dir=args_dict.get("out"))
+        return
+    if action not in {"install", "list", "catalog", "changes", "enable", "disable", "uninstall", "operations", "operation"}:
+        raise PackageCLIError("请使用 unilab package --help 选择包管理子命令")
+
+    from types import SimpleNamespace
+
+    from unilabos.app.cli.management import management_connection
+    from unilabos.client.runtime.driver_packages import HTTPDriverPackageClient
+    from unilabos.protocol.runtime.driver_packages import DriverPackageInstallRequest
+
+    if session_manager is None:
+        from unilabos.client.session import SessionManager
+        from unilabos.config.working_dir import resolve_working_dir
+
+        session_manager = SessionManager(resolve_working_dir(args_dict.get("working_dir")))
+    args = SimpleNamespace(**args_dict)
+    with HTTPDriverPackageClient(**management_connection(args, session_manager)) as client:
+        if action == "install":
+            payload = client.install(DriverPackageInstallRequest(
+                spec=args.install_spec, enable=not args.disabled, upgrade=args.upgrade, name=args.name,
+            ))
+        elif action == "uninstall":
+            payload = client.uninstall(args.name)
+        elif action in {"enable", "disable"}:
+            payload = client.set_enabled(args.name, action == "enable")
+        elif action == "list":
+            payload = client.inventory()
+        elif action == "catalog":
+            payload = client.catalog()
+        elif action == "changes":
+            payload = client.changes()
+        elif action == "operations":
+            payload = client.operations()
+        else:
+            payload = client.operation(args.operation_id)
+        if args_dict.get("wait") and payload.get("status") == "running":
+            payload = client.wait_operation(payload["operation_id"], timeout=args.timeout)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if isinstance(payload, dict) and payload.get("status") == "failed":
+        raise PackageCLIError(str(payload.get("error") or "驱动包操作失败"))
 
 
 def run_package_command(
@@ -623,147 +621,19 @@ def run_package_command(
 
     if args.get("command") not in {"package", "pkg"}:
         return False
-    del args_namespace, session_manager
+    del args_namespace
+    import httpx
+    from unilabos.client.utils.envelope import EnvelopeError
+
     try:
-        cmd_package(args)
-    except PackageCLIError as exc:
-        print_status(str(exc), "error")
+        cmd_package(args, session_manager=session_manager)
+    except (PackageCLIError, httpx.HTTPError, EnvelopeError, ValueError, TimeoutError) as exc:
+        print(f"package 操作失败：{exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     return True
 
 
 # --- 内部工具 ---
-
-
-def _run_pip_install(spec: str) -> str:
-    """优先 `uv pip install`、回退 `python -m pip install` 安装 spec，返回实际使用的安装器名。
-
-    与 environment_check 共用安装器选择(_installer_candidates，含 uv 可用性校验+缓存)与命令构造
-    (_install_command)：中文 locale 自动走清华源、uv 显式 --python 兼容 conda。
-    失败（含找不到 uv）时切下一个；全部失败抛 PackageCLIError 并带最后一次 stderr。
-    """
-    from unilabos.utils.environment_check import _install_command, _installer_candidates, _is_chinese_locale
-
-    is_chinese = _is_chinese_locale()
-    last_err = ""
-    for installer in _installer_candidates():
-        name = "uv pip install" if installer == "uv" else "pip install"
-        cmd = _install_command(installer, spec, False, is_chinese)
-        print_status(f"尝试安装：{name} {spec}", "info")
-        try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        except FileNotFoundError:
-            continue  # 安装器不可用，换下一个
-        except subprocess.TimeoutExpired:
-            last_err = "timeout after 600s"
-            continue
-        if proc.returncode == 0:
-            return name
-        last_err = (proc.stderr or proc.stdout or "").strip()
-    raise PackageCLIError(f"安装失败：{spec}\n{last_err}")
-
-
-def _spec_dist_name(spec: str) -> str:
-    """从 pip spec 取分发名；git/URL/本地路径无法在安装前可靠确定分发名，返回空串跳过设备扫描。"""
-    s = spec.strip()
-    if s.startswith(("git+", "http://", "https://", "file:", ".", "/")):
-        return ""
-    match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", s)
-    return match.group(1) if match else ""
-
-
-def _local_dist_name(spec: str) -> str:
-    """本地目录/文件路径 spec：装完后从其 pyproject.toml 读分发名，用于补扫 @device。
-
-    git/URL 来源在安装前后都无法可靠读到本地 pyproject，返回空串跳过。
-    """
-    s = spec.strip()
-    if s.startswith(("git+", "http://", "https://")):
-        return ""
-    if s.startswith("file:"):
-        s = s[5:]
-    p = Path(s).expanduser()
-    if not p.exists():
-        return ""
-    pkg_dir = p if p.is_dir() else p.parent
-    try:
-        return str(read_pyproject(pkg_dir).get("name") or "").strip()
-    except PackageCLIError:
-        return ""
-
-
-def _installed_device_ids(dist_name: str) -> List[str]:
-    """对已安装分发的 top-level 模块做 @device AST 扫描，返回设备 ID 列表（失败返回空）。    """
-    try:
-        from importlib.metadata import PackageNotFoundError, distribution
-    except Exception:
-        return []
-    try:
-        dist = distribution(dist_name)
-    except PackageNotFoundError:
-        return []
-    except Exception as exc:
-        logger.warning(f"[package] 读取已安装分发失败: {dist_name}, {exc}")
-        return []
-
-    top_modules: List[str] = []
-    try:
-        top_text = dist.read_text("top_level.txt") or ""
-        top_modules = [line.strip() for line in top_text.splitlines() if line.strip()]
-    except Exception:
-        top_modules = []
-    if not top_modules:
-        # 现代 wheel 可能不写 top_level.txt：从 RECORD/files 兜底推断顶层模块名。
-        inferred: set[str] = set()
-        for entry in dist.files or []:
-            parts = entry.parts
-            if not parts:
-                continue
-            head = parts[0]
-            if head in {"..", "__pycache__"} or head.endswith((".dist-info", ".data")):
-                continue
-            if len(parts) == 1 and head.endswith(".py"):
-                inferred.add(head[:-3])  # 单文件模块
-            elif len(parts) > 1 and "." not in head:
-                inferred.add(head)  # 包目录
-        top_modules = sorted(inferred) or [dist_name.replace("-", "_")]
-
-    import importlib.util
-
-    from unilabos.registry.ast_registry_scanner import scan_directory
-
-    scan_files: List[Path] = []
-    for module_name in top_modules:
-        try:
-            module_spec = importlib.util.find_spec(module_name)
-        except (ImportError, ValueError):
-            continue
-        if module_spec is None:
-            continue
-        if module_spec.submodule_search_locations:
-            for location in module_spec.submodule_search_locations:
-                loc_path = Path(location)
-                if not loc_path.is_dir():
-                    continue
-                scan_files.extend(
-                    f
-                    for f in loc_path.rglob("*.py")
-                    if not f.name.startswith("__")
-                    and not (set(f.relative_to(loc_path).parts) & ARCHIVE_EXCLUDE_DIRS)
-                )
-        elif module_spec.origin and module_spec.origin.endswith(".py"):
-            scan_files.append(Path(module_spec.origin))
-
-    if not scan_files:
-        return []
-
-    executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="PackageInstallScan")
-    try:
-        result = scan_directory(scan_files[0].parent, executor=executor, include_files=scan_files)
-    finally:
-        executor.shutdown(wait=True)
-    devices = result.get("devices", {})
-    return sorted(did for did, meta in devices.items() if isinstance(meta, dict))
 
 
 def _map_handles(handles: List[Any]) -> List[Dict[str, Any]]:

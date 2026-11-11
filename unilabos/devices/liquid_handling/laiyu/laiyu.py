@@ -51,7 +51,6 @@ class TransformXYZDeck(Deck):
             size_z=size_z,
             category=category,
         )
-        self.name = name
 
 class TransformXYZBackend(LiquidHandlerBackend):
     def __init__(self, name: str, host: str, port: int, timeout: float):

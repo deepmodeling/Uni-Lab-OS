@@ -34,7 +34,7 @@ extras = {
 
 setup(
     name=package_name,
-    python_requires='>=3.12,<3.13',
+    python_requires='>=3.12,<3.15',
     version='0.12.3',
     packages=[
         name for name in find_namespace_packages(

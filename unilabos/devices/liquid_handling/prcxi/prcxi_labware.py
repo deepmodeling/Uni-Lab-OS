@@ -1,7 +1,8 @@
-from pylabrobot.resources import Tube
+from unilabos.resources.presets.tips import make_unmeasured_tip, tip_geometry_metadata
+
+from pylabrobot.resources import Tube, TipSpot
 from pylabrobot.resources.well import Well, WellBottomType, CrossSectionType
 from pylabrobot.resources.tip import Tip
-from pylabrobot.resources.tip_rack import TipSpot
 from pylabrobot.resources.utils import create_ordered_items_2d
 from pylabrobot.resources.height_volume_functions import (
   compute_height_from_volume_rectangle,
@@ -9,17 +10,6 @@ from pylabrobot.resources.height_volume_functions import (
 )
 
 from .prcxi import PRCXI9300Plate, PRCXI9300TipRack, PRCXI9300Trash, PRCXI9300TubeRack, PRCXI9300PlateAdapter
-
-def _make_tip_helper(volume: float, length: float, depth: float) -> Tip:
-    """
-    PLR 的 Tip 类参数名为: maximal_volume, total_tip_length, fitting_depth
-    """
-    return Tip(
-        has_filter=False, # 默认无滤芯
-        maximal_volume=volume, 
-        total_tip_length=length, 
-        fitting_depth=depth
-    )
 
 # =========================================================================
 # 标准品 参照 PLR 标准库的参数，但是用 PRCXI9300Plate 实例化，并注入 UUID
@@ -47,6 +37,7 @@ def PRCXI_BioER_96_wellplate(name: str) -> PRCXI9300Plate:
 
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             size_x=8.25,  
             size_y=8.25, 
             size_z=39.3,  # 修改过
@@ -102,6 +93,7 @@ def PRCXI_nest_1_troughplate(name: str) -> PRCXI9300Plate:
 
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             num_items_x=1,
             num_items_y=1,
             dx=14.38 - 9 / 2, 
@@ -135,6 +127,7 @@ def PRCXI_BioRad_384_wellplate(name: str) -> PRCXI9300Plate:
         # 3. 定义孔的排列 (抄录标准参数)
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             num_items_x=24,
             num_items_y=16,
             dx=10.58,   # A1 左边缘距离板子左边缘 需要进一步测量
@@ -194,6 +187,7 @@ def PRCXI_AGenBio_4_troughplate(name: str) -> PRCXI9300Plate:
         
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=4,
       num_items_y=1,
       dx=9.8,
@@ -242,6 +236,7 @@ def PRCXI_nest_12_troughplate(name: str) -> PRCXI9300Plate:
     },
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=12,
       num_items_y=1,
       dx=14.38 - 8.2 / 2, 
@@ -284,6 +279,7 @@ def PRCXI_CellTreat_96_wellplate(name: str) -> PRCXI9300Plate:
     },
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=12,
       num_items_y=8,
       dx=10.83, 
@@ -315,6 +311,7 @@ def PRCXI_10ul_eTips(name: str) -> PRCXI9300TipRack:
         },
         ordered_items=create_ordered_items_2d(
             TipSpot,
+            name_prefix=name,
             num_items_x=12,
             num_items_y=8,
             dx=7.97,  #需要修改
@@ -325,7 +322,11 @@ def PRCXI_10ul_eTips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_y=7.0,
             size_z=0,
-            make_tip=lambda: _make_tip_helper(volume=10, length=52.0, depth=45.1)
+            metadata=tip_geometry_metadata("PRCXI_10ul_eTips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_10ul_eTips", volume=10,
+                length=52, fitting_depth=45.1,
+            )
         )
     )
 def PRCXI_300ul_Tips(name: str) -> PRCXI9300TipRack:
@@ -347,6 +348,7 @@ def PRCXI_300ul_Tips(name: str) -> PRCXI9300TipRack:
         },
         ordered_items=create_ordered_items_2d(
             TipSpot,
+            name_prefix=name,
             num_items_x=12,
             num_items_y=8,
             dx=7.97,  #需要修改
@@ -357,7 +359,11 @@ def PRCXI_300ul_Tips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_y=7.0,
             size_z=0,
-            make_tip=lambda: _make_tip_helper(volume=300, length=60.0, depth=51.0)
+            metadata=tip_geometry_metadata("PRCXI_300ul_Tips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_300ul_Tips", volume=300,
+                length=60, fitting_depth=51,
+            )
         )
     )
 def PRCXI_PCR_Plate_200uL_nonskirted(name: str) -> PRCXI9300Plate:
@@ -381,6 +387,7 @@ def PRCXI_PCR_Plate_200uL_nonskirted(name: str) -> PRCXI9300Plate:
     },
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=12,
       num_items_y=8,
       dx=7,
@@ -416,6 +423,7 @@ def PRCXI_PCR_Plate_200uL_semiskirted(name: str) -> PRCXI9300Plate:
     },
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=12,
       num_items_y=8,
       dx=11,
@@ -451,6 +459,7 @@ def PRCXI_PCR_Plate_200uL_skirted(name: str) -> PRCXI9300Plate:
     },
     ordered_items=create_ordered_items_2d(
       Well,
+      name_prefix=name,
       num_items_x=12,
       num_items_y=8,
       dx=11,
@@ -502,6 +511,7 @@ def PRCXI_96_DeepWell(name: str) -> PRCXI9300Plate:
         },
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             num_items_x=12,
             num_items_y=8,
             dx=10.9, 
@@ -539,6 +549,7 @@ def PRCXI_EP_Adapter(name: str) -> PRCXI9300TubeRack:
         },
         ordered_items=create_ordered_items_2d(
             Tube, 
+            name_prefix=name,
             num_items_x=6,
             num_items_y=4,
             dx=dx_calc, 
@@ -612,7 +623,8 @@ def PRCXI_1250uL_Tips(name: str) -> PRCXI9300TipRack:
             "SupplyType": 1
             },
         ordered_items=create_ordered_items_2d(
-            TipSpot, 
+            TipSpot,
+            name_prefix=name,
             num_items_x=12, 
             num_items_y=8,
             dx=9.545 - 7.95/2, 
@@ -623,7 +635,11 @@ def PRCXI_1250uL_Tips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_y=7.0,
             size_z=0,
-            make_tip=lambda: _make_tip_helper(volume=1250, length=107.67, depth=8)
+            metadata=tip_geometry_metadata("PRCXI_1250uL_Tips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_1250uL_Tips", volume=1250,
+                length=107.67, fitting_depth=8,
+            )
         )
     )
 def PRCXI_10uL_Tips(name: str) -> PRCXI9300TipRack:
@@ -641,7 +657,8 @@ def PRCXI_10uL_Tips(name: str) -> PRCXI9300TipRack:
             "SupplyType": 1
             },
         ordered_items=create_ordered_items_2d(
-            TipSpot, 
+            TipSpot,
+            name_prefix=name,
             num_items_x=12, 
             num_items_y=8,
             dx=10.99 - 5/2, 
@@ -652,7 +669,11 @@ def PRCXI_10uL_Tips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_y=7.0,
             size_z=0,
-            make_tip=lambda: _make_tip_helper(volume=1250, length=52.0, depth=5)
+            metadata=tip_geometry_metadata("PRCXI_10uL_Tips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_10uL_Tips", volume=10,
+                length=52, fitting_depth=5,
+            )
         )
     )
 def PRCXI_1000uL_Tips(name: str) -> PRCXI9300TipRack:
@@ -670,7 +691,8 @@ def PRCXI_1000uL_Tips(name: str) -> PRCXI9300TipRack:
             "SupplyType": 1
             },
         ordered_items=create_ordered_items_2d(
-            TipSpot, 
+            TipSpot,
+            name_prefix=name,
             num_items_x=12, 
             num_items_y=8,
             dx=14.5 - 7.95/2, 
@@ -681,7 +703,11 @@ def PRCXI_1000uL_Tips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_y=7.0,
             size_z=0,
-            make_tip=lambda: _make_tip_helper(volume=1000, length=55.0, depth=8)
+            metadata=tip_geometry_metadata("PRCXI_1000uL_Tips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_1000uL_Tips", volume=1000,
+                length=55, fitting_depth=8,
+            )
         )
     )
 def PRCXI_200uL_Tips(name: str) -> PRCXI9300TipRack:
@@ -698,7 +724,8 @@ def PRCXI_200uL_Tips(name: str) -> PRCXI9300TipRack:
             "Name": "200μL Tip头", 
             "SupplyType": 1},
         ordered_items=create_ordered_items_2d(
-            TipSpot, 
+            TipSpot,
+            name_prefix=name,
             num_items_x=12, 
             num_items_y=8,
             dx=10.99 - 5.5/2, 
@@ -709,7 +736,11 @@ def PRCXI_200uL_Tips(name: str) -> PRCXI9300TipRack:
             size_x=7.0,
             size_z=0,
             size_y=7.0,
-            make_tip=lambda: _make_tip_helper(volume=200, length=52.0, depth=5)
+            metadata=tip_geometry_metadata("PRCXI_200uL_Tips"),
+            make_tip=lambda name: make_unmeasured_tip(
+                name, model="PRCXI_200uL_Tips", volume=200,
+                length=52, fitting_depth=5,
+            )
         )
     )
 def PRCXI_PCR_Adapter(name: str) -> PRCXI9300PlateAdapter:
@@ -805,6 +836,7 @@ def PRCXI_48_DeepWell(name: str) -> PRCXI9300Plate:
             },
         ordered_items=create_ordered_items_2d(
             Well, 
+            name_prefix=name,
             num_items_x=6, 
             num_items_y=8, 
             dx=10, 

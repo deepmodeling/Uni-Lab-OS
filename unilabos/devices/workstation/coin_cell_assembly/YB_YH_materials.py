@@ -156,6 +156,7 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
         # 创建4x4的洞位
         # TODO: 这里要改，对应不同形状
         holes = create_ordered_items_2d(
+            name_prefix=name,
             klass=MaterialHole,
             num_items_x=4,
             num_items_y=4,
@@ -193,6 +194,7 @@ class MaterialPlate(ItemizedResource[MaterialHole]):
     def update_locations(self):
         # TODO:调多次相加
         holes = create_ordered_items_2d(
+            name_prefix=self.name,
             klass=MaterialHole,
             num_items_x=4,
             num_items_y=4,
@@ -423,17 +425,20 @@ def TipBox64(
 ):
     """64孔枪头盒类"""
     from pylabrobot.resources.tip import Tip
+    from unilabos.resources.presets.tips import make_unmeasured_tip, tip_geometry_metadata
 
     # 创建12x8=96个枪头位
-    def make_tip():
-        return Tip(
-            has_filter=False,
-            total_tip_length=20.0,
-            maximal_volume=1000,  # 1mL
+    def make_tip(name: str) -> Tip:
+        return make_unmeasured_tip(
+            name,
+            model="TipBox64",
+            length=20.0,
+            volume=1000,
             fitting_depth=8.0,
         )
 
     tip_spots = create_ordered_items_2d(
+        name_prefix=name,
         klass=TipSpot,
         num_items_x=12,
         num_items_y=8,
@@ -446,6 +451,7 @@ def TipBox64(
         size_y=10,
         size_z=0.0,
         make_tip=make_tip,
+        metadata=tip_geometry_metadata("TipBox64"),
     )
     idx_available = list(range(0, 32)) + list(range(64, 96))
     tip_spots_available = {k: v for i, (k, v) in enumerate(tip_spots.items()) if i in idx_available}

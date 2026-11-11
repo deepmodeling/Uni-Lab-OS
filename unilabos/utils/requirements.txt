@@ -23,5 +23,6 @@ crcmod-plus>=2.3.1
 pymodbus>=3.6.9,<4
 # 修正版随发行包的 wheelhouse 分发，不上传 PyPI；安装时须提供 --find-links。
 # 本地版本号区分 UniLabOS fork 与同版本上游，且不包含离线时仍会联网的源码 URL。
-pylabrobot==0.2.2+unilabos.6285d662effa
+# 仅支持具名 Resource Tip 和创建时 name_prefix 的新版维护分支，不兼容 0.2.x。
+pylabrobot==1.0.0b1+unilabos.5c17d1956fe5
 opentrons-shared-data==9.1.0+unilabos.np2.1

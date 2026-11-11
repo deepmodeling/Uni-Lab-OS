@@ -20,6 +20,29 @@ from scripts import install_wheel_release as installer
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.mark.parametrize("version,dependencies_only,allowed", [
+    ((3, 12), True, True), ((3, 13), True, True), ((3, 14), True, True),
+    ((3, 15), True, False), ((3, 14), False, False),
+])
+def test_builder_python_version_boundary(tmp_path, monkeypatch, version, dependencies_only, allowed):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(builder, "sys", SimpleNamespace(**{**vars(sys), "version_info": version}))
+    args = ["build_wheel_release.py", "--output-dir", str(tmp_path / "output")]
+    if dependencies_only:
+        args.append("--dependencies-only")
+    monkeypatch.setattr(sys, "argv", args)
+    calls = []
+    monkeypatch.setattr(builder, "build_dependencies", lambda *a: calls.append(a) or {})
+    if allowed:
+        builder.main()
+        assert len(calls) == 1
+    else:
+        with pytest.raises(RuntimeError, match="Python"):
+            builder.main()
+        assert not calls
+
+
 def fake_wheel(directory: Path, name="unilabos", version="0.12.3", dependencies=()) -> Path:
     path = directory / f"{name}-{version}-py3-none-any.whl"
     with ZipFile(path, "w") as wheel:
@@ -107,7 +130,7 @@ def test_materials_only_verification_does_not_require_unilabos(monkeypatch, cata
     from scripts import verify_installation as verifier
 
     monkeypatch.setattr(sys, "argv", ["verify_installation.py", "--materials-only", "--assert-no-ros"])
-    monkeypatch.setattr(verifier, "check_python_version", lambda: True)
+    monkeypatch.setattr(verifier, "check_python_version", lambda backend: True)
     monkeypatch.setattr(verifier.importlib.util, "find_spec", lambda name: None)
     monkeypatch.setattr(verifier, "check_package", lambda *a: pytest.fail("只装 PLR 不应检查微后端"))
     monkeypatch.setattr(verifier, "check_material_catalog", lambda: catalog_ok)
@@ -174,7 +197,11 @@ def test_extract_rejects_path_traversal(tmp_path):
 
 
 @pytest.fixture
-def bundle(tmp_path):
+def bundle(tmp_path, monkeypatch):
+    # 离线发行包固定为 3.12；安全校验单测在 3.13/3.14 CI 上也模拟目标解释器。
+    # 不修改全局 sys，避免影响 pytest 或其他库的版本判断。
+    from types import SimpleNamespace
+    monkeypatch.setattr(installer, "sys", SimpleNamespace(**{**vars(sys), "version_info": (3, 12, 0)}))
     wheels = tmp_path / "wheelhouse"
     wheels.mkdir()
     fake_wheel(wheels)

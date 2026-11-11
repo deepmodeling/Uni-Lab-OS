@@ -25,9 +25,11 @@ from unilabos.resources.objects.resource import (
 )
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
+from unilabos.resources.plr_identity import material_children, material_serialization, prepare_plr_restore, restore_tip_counters
 from unilabos.resources.resource_tracker import (
     ResourceDictInstance,
     ResourceTreeSet,
+    iter_serialized_plr_children,
     apply_plr_site_metadata,
     extract_plr_sites,
     find_plr_resource_class,
@@ -681,6 +683,8 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
         """兼容根字段新形态和 data 内旧形态，组装 PLR state。"""
 
         state = copy.deepcopy(resource_dict.get("data") or {})
+        # 位置由 pose/Site 组装，不能让旧 state 快照再次覆盖。
+        state.pop("location", None)
         for state_key in TRACKER_STATE_KEYS:
             if resource_dict.get(state_key) is not None:
                 state[state_key] = copy.deepcopy(resource_dict[state_key])
@@ -809,6 +813,7 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
         return d
 
     d = resource_ulab_to_plr_inner(resource)
+    prepare_plr_restore(d, all_states)
     """无法通过Resource进行反序列化，例如TipSpot必须内部序列化好，直接用TipSpot序列化会多参数，导致出错"""
     sub_cls = find_plr_resource_class(d["type"])
     if sub_cls is None:
@@ -818,6 +823,7 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
         d.pop("category")
     resource_plr = sub_cls.deserialize(d, allow_marshal=True)
     resource_plr.load_all_state(all_states)
+    restore_tip_counters(resource_plr, all_states)
     def restore_resource_identity(current: "ResourcePLR") -> None:
         current.unilabos_extra = copy.deepcopy(all_extras.get(current.name, {}))
         set_plr_template_name(current, all_templates.get(current.name, current.__class__.__name__))
@@ -825,7 +831,7 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
         if not current_uuid:
             raise ValueError(f"资源 {current.name} 缺少微后端分配的 UUID")
         current.unilabos_uuid = current_uuid
-        for child in current.children:
+        for child in material_children(current):
             restore_resource_identity(child)
 
     restore_resource_identity(resource_plr)
@@ -874,11 +880,12 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
         static_pose = plr_extra.pop(EXTRA_RESOURCE_POSE, None)
         joint_state = plr_extra.pop(EXTRA_RESOURCE_JOINT_STATE, None)
         state = copy.deepcopy(all_states[d["name"]])
+        state_location = state.pop("location", None)
         tracker_roots = {}
         for state_key in TRACKER_STATE_KEYS:
             if state_key in state:
                 tracker_roots[state_key] = state.pop(state_key)
-        serialized_location = d.get("location")
+        serialized_location = d.get("location", state_location)
         actual_position = (
             {
                 "x": serialized_location["x"],
@@ -924,9 +931,7 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             "children": (
                 [
                     resource_plr_to_ulab_inner(child_resource, child_dict, all_states)
-                    for child_resource, child_dict in zip(
-                        plr_node.children, d.get("children", [])
-                    )
+                    for child_resource, child_dict in iter_serialized_plr_children(plr_node, d)
                 ]
                 if child
                 else []
@@ -955,8 +960,7 @@ def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, w
             r["meta_data"] = resource_meta_data
         return r
 
-    d = resource_plr.serialize()
-    all_states = resource_plr.serialize_all_state()
+    d, all_states = material_serialization(resource_plr)
     r = resource_plr_to_ulab_inner(resource_plr, d, all_states, with_children)
 
     return r

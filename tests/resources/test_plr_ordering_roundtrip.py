@@ -35,6 +35,7 @@ def _plate_4x3(name: str) -> Plate:
         model="ordering_probe_plate",
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             num_items_x=4,
             num_items_y=3,
             dx=12.0,

@@ -528,3 +528,14 @@ def test_graphio_plr_missing_metadata_sidecar_promotes_nested_metadata(
     assert graph_resource.meta_data == nested_meta_data
     assert "meta_data" not in graph_resource.config
     assert "meta_data" not in graph_resource.data
+
+
+def test_authority_capacity_round_trips_without_becoming_a_plr_constructor_argument():
+    tree=ResourceTreeSet.from_raw_dict_list([_resource_payload(template_name="plain", name="capacity-root", type="resource",
+        config={"type":"Resource","capacity":{"max_volume_ul":100}},
+        pose={"size":{"width":10,"height":10,"depth":10}})])
+    runtime=tree.to_plr_resources()[0]
+    assert "capacity" not in runtime.serialize()
+    restored=ResourceTreeSet.from_plr_resources([runtime])
+    assert restored.root_nodes[0].res_content.config["capacity"]=={"max_volume_ul":100}
+    assert "unilabos_capacity" not in restored.root_nodes[0].res_content.extra

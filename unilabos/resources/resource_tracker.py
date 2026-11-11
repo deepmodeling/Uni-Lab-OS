@@ -38,6 +38,9 @@ JSON_UNILABOS_PARAM = "unilabos_param"
 # 返回值中的 samples 字段名
 RETURN_UNILABOS_SAMPLES = "unilabos_samples"
 
+# 权威容量约束不属于 PLR 构造参数，通过运行时 sidecar 往返。
+EXTRA_RESOURCE_CAPACITY = "unilabos_capacity"
+
 
 def iter_serialized_plr_children(
     resource: "PLRResource", serialized: Mapping[str, Any]
@@ -1139,6 +1142,9 @@ class ResourceTreeSet(object):
                 "sites": extract_plr_sites(plr_resource, d),
                 "sites_initialized": True,
             }
+            capacity = extra.pop(EXTRA_RESOURCE_CAPACITY, missing)
+            if capacity is not missing:
+                r_dict["config"]["capacity"] = copy.deepcopy(capacity)
             if resource_meta_data is not missing:
                 r_dict["meta_data"] = resource_meta_data
 
@@ -1196,6 +1202,8 @@ class ResourceTreeSet(object):
             name_to_uuid[node.res_content.name] = node.res_content.uuid
             all_states[node.res_content.name] = assemble_tracker_state(node.res_content)
             plr_extra = copy.deepcopy(node.res_content.extra)
+            if "capacity" in node.res_content.config:
+                plr_extra[EXTRA_RESOURCE_CAPACITY] = copy.deepcopy(node.res_content.config["capacity"])
             plr_extra[EXTRA_RESOURCE_POSE] = node.res_content.pose.model_dump(
                 exclude={"position"}
             )
@@ -1234,6 +1242,7 @@ class ResourceTreeSet(object):
             # get_resource_instance_from_dict 从 config 读取的逻辑对称。PLR location
             # 对应唯一的 pose.position；其余 pose 字段通过 unilabos_extra sidecar 保留。
             config = dict(res.config)
+            config.pop("capacity", None)
             config.pop("sites", None)
             config.pop("template_name", None)
             if res.barcode:

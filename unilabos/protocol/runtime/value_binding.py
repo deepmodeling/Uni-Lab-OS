@@ -75,7 +75,9 @@ def validate_result_binding_graph(nodes: Mapping[str, Any], kinds: Mapping[str, 
         # 旧组合调用的 handle 引用由组合边界规范器单独校验、展开。
         if kinds.get(target) in {"workflow", "condition"}:
             continue
-        refs = result_references(params.get(target, {}))
+        node = nodes[target]
+        meta = (node.get("meta_data") if isinstance(node, Mapping) else getattr(node, "meta_data", None)) or {}
+        refs = result_references([params.get(target, {}), meta.get("inventory_requirements", [])])
         allowed = {None}
         ancestor = parents.get(target)
         while ancestor is not None:

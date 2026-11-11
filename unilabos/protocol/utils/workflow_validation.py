@@ -90,6 +90,13 @@ def validate_graph(
         for node in nodes
     }
     declared_parameters = _declared_parameter_names(workflow_meta_data)
+    from unilabos.protocol.runtime.inventory import normalize_inventory, inventory_deferred
+    for node in nodes:
+        inventory = normalize_inventory(node_meta_data[node.uuid].get("inventory_requirements") or [])
+        inventory_deferred(inventory, policy=node.execution_policy, mode=node_meta_data[node.uuid].get("inventory_mode", "task"))
+        unknown = input_references(inventory) - declared_parameters
+        if unknown:
+            raise GraphValidationError(f"库存引用了未声明的入口参数：{sorted(unknown)}")
     for node in nodes:
         _validate_param_references(
             node,

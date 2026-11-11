@@ -1652,7 +1652,8 @@ class WorkflowStore:
                     raise StoreConflict(f"入口参数 {name!r} 被循环容器使用，运行中不可修改")
                 dispatched = conn.execute(
                     "SELECT 1 FROM workflow_node_job WHERE workflow_node_run_uuid=? "
-                    "AND deleted_at IS NULL AND (status <> 'pending' OR started_at IS NOT NULL) LIMIT 1",
+                    "AND deleted_at IS NULL AND (status <> 'pending' OR started_at IS NOT NULL "
+                    "OR json_type(control_data,'$.inventory_request') IS NOT NULL) LIMIT 1",
                     (run["uuid"],),
                 ).fetchone()
                 if dispatched is not None:

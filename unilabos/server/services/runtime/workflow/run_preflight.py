@@ -91,8 +91,11 @@ def build_run_preflight_report(
         if pending:
             check("parameters", "deferred", "runtime_values_pending", "上游结果、循环变量或库存分配将在派发时校验",
                   node=node, details={"parameters": pending})
-        for item in node.get("inventory_requirements", []):
-            requirements.append(InventoryRequirement.model_validate({**item, "key": f'{node["uuid"]}/{item["key"]}'}))
+        if node.get("inventory_deferred"):
+            check("inventory", "deferred", "selected_inventory_pending", "节点选中并就绪后预留；不足时等待补料", node=node)
+        else:
+            for item in node.get("inventory_requirements", []):
+                requirements.append(InventoryRequirement.model_validate({**item, "key": f'{node["uuid"]}/{item["key"]}'}))
         if node["kind"] == "loop":
             check("inventory", "deferred", "loop_inventory_pending", "循环后续迭代需要重新预留库存", node=node)
         if node["kind"] != "device_action":

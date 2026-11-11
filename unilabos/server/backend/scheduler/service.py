@@ -685,8 +685,6 @@ class BackendScheduler:
             policy = run.get("execution_policy") or {}
             param = dict(run.get("param") or planned.get("param") or {})
             source_meta = dict(source.get("meta_data") or {})
-            if policy.get("condition_guards") and planned.get("inventory_requirements"):
-                raise BackendSchedulingError("条件分支暂不支持库存数量预留")
             if run["executor_kind"] == NODE_KIND_LOOP:
                 try:
                     loop_spec = parse_loop_spec(param)
@@ -763,6 +761,8 @@ class BackendScheduler:
                 "inventory_requirements": list(
                     planned.get("inventory_requirements") or []
                 ),
+                "inventory_template": list(planned.get("inventory_requirements") or []),
+                "inventory_deferred": bool(planned.get("inventory_deferred")),
                 "reserved_material_uuids": [],
                 "scheduler_revision": scheduler_revision,
                 # 当前 attempt：执行器 job_id / 资源 owner / 库存 reservation 的键
@@ -890,6 +890,10 @@ class BackendScheduler:
                 self._waiting_step_nodes[node.node_id] = (task, node)
                 return
             self._waiting_step_nodes.pop(node.node_id, None)
+        if spec.get("inventory_deferred") and not self._reserve_ready_inventory(task, node):
+            with self._guard:
+                self._waiting_interval_jobs[spec["current_job_uuid"]] = (task, node)
+            return
         args = self._resolve_action_args(node.node_id)
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
         # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
@@ -1451,6 +1455,7 @@ class BackendScheduler:
         targets: list[tuple[str, Dict[str, Any]]],
         *,
         command_suffix: str = "",
+        ready: bool = False,
     ) -> None:
         """为若干 (attempt job uuid, spec) 建库存 reservation，all-or-nothing。
 
@@ -1467,7 +1472,8 @@ class BackendScheduler:
                 requirements=spec["inventory_requirements"],
             )
             for job_uuid, spec in targets
-            if spec["inventory_requirements"] and spec.get("inventory_job_status", "pending") not in _RUN_TERMINAL
+            if spec["inventory_requirements"] and (ready or not spec.get("inventory_deferred"))
+            and spec.get("inventory_job_status", "pending") not in _RUN_TERMINAL
         ]
         if not requests:
             return
@@ -1498,7 +1504,7 @@ class BackendScheduler:
             # 重试、循环和部分节点已完成会改变预留集合；同一集合保持固定幂等身份。
             digest = canonical_hash(value.model_dump(mode="json", exclude_none=False))
             mutation = InventoryMutation(
-                command_uuid=self._inventory_command_uuid(task_uuid, ":batch:" + digest),
+                command_uuid=self._inventory_command_uuid(task_uuid, ":batch:" + digest + (command_suffix if ready else "")),
                 effect_key="inventory.task.reserve", operation="reserve_task_inventory", actor_type="scheduler")
             result = self.materials_gateway.reserve_task_inventory(mutation, value)
             recovered.extend(result.data.reservations)
@@ -1519,6 +1525,45 @@ class BackendScheduler:
                 spec["inventory_allocations"] = allocation_arguments(
                     reservation.items, action_schema=spec.get("param_schema"),
                 )
+
+    def _reserve_ready_inventory(self, task: Dict[str, Any], node: DagNode) -> bool:
+        from .attempt_inventory import freeze_inventory, inventory_wait
+        from unilabos.protocol.runtime.input_binding import map_input_bindings, literal_input
+        from unilabos.protocol.runtime.value_binding import resolve_result_bindings
+
+        spec = self._run_specs[node.node_id]
+        job_uuid = spec["current_job_uuid"]
+        if spec.get("inventory_reservation_uuid"):
+            return True
+        def resolve():
+            current = self.workflow.get_workflow_task(str(task["uuid"]))
+            values = current.get("input") or {}
+            def entry(name):
+                if name not in values:
+                    raise ValueError(f"库存缺少入口参数：{name}")
+                return literal_input(values[name])
+            requirements = map_input_bindings(spec["inventory_template"], entry)
+            return resolve_result_bindings(requirements, lambda source: self._condition_result(spec, source),
+                                           read_path=json_get_exists)
+        spec["inventory_requirements"] = freeze_inventory(self.workflow, self._authority_epoch, job_uuid, resolve)
+        from unilabos.protocol.materials import InventoryRequirement
+        existing = self.materials_gateway.list_inventory_reservations(task_uuid=str(task["uuid"]))
+        if not any(item.job_uuid == job_uuid for item in existing):
+            preview = self.materials_gateway.preview_inventory([
+                InventoryRequirement.model_validate(item) for item in spec["inventory_requirements"]])
+            if not preview["available"]:
+                inventory_wait(self.workflow, self._authority_epoch, job_uuid, str(preview["shortages"]))
+                return False
+        generation = (self._current_job_metadata(job_uuid).get("control_data") or {}).get("inventory_generation", 0)
+        try:
+            self._reserve_inventory(task, [(job_uuid, spec)], ready=True, command_suffix=f":ready:{generation}")
+        except Exception as error:
+            if getattr(error, "code", None) != "insufficient_inventory":
+                raise
+            inventory_wait(self.workflow, self._authority_epoch, job_uuid, str(error), advance=True)
+            return False
+        inventory_wait(self.workflow, self._authority_epoch, job_uuid, None)
+        return True
 
     def _reserve_task_inventory(
         self,
@@ -1861,6 +1906,8 @@ class BackendScheduler:
             spec["retry_count"] = 0
         spec["job_uuids"].append(str(next_job["uuid"]))
         spec.pop("inventory_reservation_uuid", None)
+        spec.pop("inventory_allocations", None)
+        spec["inventory_requirements"] = list(spec.get("inventory_template") or [])
         spec["reserved_material_uuids"] = []
 
     def _evaluate_loop_condition(

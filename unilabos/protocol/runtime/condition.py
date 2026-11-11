@@ -167,8 +167,6 @@ def validate_condition_graph(nodes: Mapping[str, Any], kinds: Mapping[str, str],
         parent = parents.get(key)
         if parent is not None and any(guard not in active for guard in guards[parent]):
             raise ValueError("循环体必须继承循环节点的分支条件")
-        if active and (get(node, "meta_data", {}) or {}).get("inventory_requirements"):
-            raise ValueError("条件分支暂不支持库存数量预留")
         if kinds.get(key) == "condition":
             for source in condition_references(params[key]):
                 visible(source, key, active)

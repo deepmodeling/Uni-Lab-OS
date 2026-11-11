@@ -27,14 +27,14 @@ class InventoryRecovery:
         self.gateway = gateway
         self.epoch = authority_epoch
         self._guard = threading.RLock()
-        self._report: dict[str, Any] = {"checked_at": None, "issues": [], "held": [], "changed": []}
+        self._report: dict[str, Any] = {"checked_at": None, "issues": [], "held": [], "changed": [], "waiting": []}
 
     def snapshot(self) -> dict[str, Any]:
         with self._guard:
             return deepcopy(self._report)
 
     def reconcile(self) -> dict[str, Any]:
-        report: dict[str, Any] = {"checked_at": utc_now(), "issues": [], "held": [], "changed": []}
+        report: dict[str, Any] = {"checked_at": utc_now(), "issues": [], "held": [], "changed": [], "waiting": []}
         with self._guard:
             try:
                 if self.gateway is None:
@@ -46,6 +46,17 @@ class InventoryRecovery:
                         report["issues"].append({"reason": "持久派发需要库存权威，但库存服务未配置"})
                     self._report = report
                     return deepcopy(report)
+                with self.workflow.write_lock:
+                    for row in self.workflow.connection.execute(
+                        "SELECT j.uuid,j.workflow_task_uuid,j.workflow_node_uuid,j.control_data FROM workflow_node_job j "
+                        "JOIN workflow_node_run r ON r.current_job_uuid=j.uuid "
+                        "JOIN workflow_task t ON t.uuid=j.workflow_task_uuid "
+                        "WHERE j.status='pending' AND t.status IN ('pending','running')"):
+                        data = _load(row["control_data"])
+                        if data.get("inventory_wait"):
+                            report["waiting"].append({"job_uuid": row["uuid"], "task_uuid": row["workflow_task_uuid"],
+                                "node_uuid": row["workflow_node_uuid"], "reason": data["inventory_wait"],
+                                "requirements": data.get("inventory_request", [])})
                 reservations = self.gateway.list_inventory_reservations()
                 by_job = {r.job_uuid: r for r in reservations}
                 # 全局列表只能用于发现身份；每次决定前重新读取当前库存，不能凭旧快照退款。
@@ -92,7 +103,8 @@ class InventoryRecovery:
             if node is None:
                 raise ValueError("库存预留对应的冻结节点不存在")
             payload = {"job_id": job_uuid, "task_id": job["workflow_task_uuid"],
-                       "node_id": job["workflow_node_uuid"], "inventory_requirements": node.get("inventory_requirements") or []}
+                       "node_id": job["workflow_node_uuid"], "inventory_requirements": _load(job["control_data"]).get(
+                            "inventory_request", node.get("inventory_requirements") or [])}
         payload["scheduler_revision"] = int(_load(job["task_meta_data"]).get("scheduler_revision") or 1)
         ExecutionInventoryCoordinator._validate_reservation(reservation, payload, allowed_statuses=_STATUSES)
         status = job["status"]

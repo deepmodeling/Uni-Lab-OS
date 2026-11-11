@@ -58,11 +58,11 @@ def test_condition_graph_adds_result_and_guard_dependencies_and_rejects_leakage(
         validate_condition_graph(nodes, kinds, {}, params)
 
 
-def test_condition_branch_inventory_is_rejected_before_reservation():
+def test_condition_branch_inventory_keeps_guard_dependency():
     nodes = {CONDITION: {}, BRANCH: {
         "execution_policy": {"condition_guards": [{"node_uuid": CONDITION, "equals": False}]},
         "meta_data": {"inventory_requirements": [{"key": "water"}]},
     }}
-    with pytest.raises(ValueError, match="库存"):
-        validate_condition_graph(nodes, {CONDITION: "condition", BRANCH: "device_action"}, {},
+    dependencies = validate_condition_graph(nodes, {CONDITION: "condition", BRANCH: "device_action"}, {},
                                  {CONDITION: {"version": 1, "expression": {"lit": True}}, BRANCH: {}})
+    assert dependencies[BRANCH] == {CONDITION}

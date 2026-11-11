@@ -1889,13 +1889,11 @@ class WorkflowService(WorkflowStore):
                 raise StoreConflict("inventory_requirements must be a list")
             if raw_inventory_requirements:
                 try:
-                    planned_node["inventory_requirements"] = [
-                        InventoryRequirement.model_validate(item).model_dump(
-                            mode="json",
-                            exclude_none=False,
-                        )
-                        for item in raw_inventory_requirements
-                    ]
+                    from unilabos.protocol.runtime.inventory import normalize_inventory, inventory_deferred
+                    planned_node["inventory_requirements"] = normalize_inventory(raw_inventory_requirements)
+                    planned_node["inventory_deferred"] = inventory_deferred(
+                        planned_node["inventory_requirements"], policy=policy,
+                        mode=(node.get("meta_data") or {}).get("inventory_mode", "task"))
                 except ValueError as exc:
                     raise StoreConflict(
                         f"invalid inventory requirement on node {node_uuid}: {exc}"
@@ -1924,6 +1922,7 @@ class WorkflowService(WorkflowStore):
                 from unilabos.protocol.runtime.condition import condition_input_references
 
                 parameter_names.update(condition_input_references(entry_param_template))
+            parameter_names.update(input_references(raw_inventory_requirements))
             if parameter_names:
                 planned_node["entry_parameter_names"] = sorted(parameter_names)
                 planned_node["entry_param_template"] = entry_param_template

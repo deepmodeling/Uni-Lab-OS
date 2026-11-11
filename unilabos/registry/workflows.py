@@ -89,6 +89,7 @@ class WorkflowStep:
     name: str  # 节点显示名，缺省 f"{target}.{action}"
     #: 已校验的 InventoryRequirement（json 形态），落到节点 meta_data.inventory_requirements
     inventory: List[Dict[str, Any]] = field(default_factory=list)
+    inventory_mode: str = "task"
     #: 这一步做什么 / 该看到什么（前端"全流程"说明里逐步展示）
     description: str = ""
     #: 所在循环或分组步骤在 ctx.steps 里的下标；顶层为 None
@@ -463,13 +464,14 @@ class WorkflowBuildContext:
         name: str = "",
         description: str = "",
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         """按 ``"device_id/action_name"`` 追加一步（显式设备实例）。
 
         ``description`` 写这一步做什么 / 操作员该看到什么，进模板的"全流程"说明。
         """
 
-        return self._append("run", target, params, name, description, inventory)
+        return self._append("run", target, params, name, description, inventory, inventory_mode)
 
     def run_template(
         self,
@@ -479,10 +481,11 @@ class WorkflowBuildContext:
         name: str = "",
         description: str = "",
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         """按 ``"class_name/action_name"`` 追加一步（设备类解析，单实例自动填）。"""
 
-        return self._append("run_template", target, params, name, description, inventory)
+        return self._append("run_template", target, params, name, description, inventory, inventory_mode)
 
     def _append(
         self,
@@ -492,6 +495,7 @@ class WorkflowBuildContext:
         name: str,
         description: str,
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         head, sep, action = str(target).partition("/")
         head = head.strip()
@@ -500,8 +504,11 @@ class WorkflowBuildContext:
             raise ValueError(
                 f'工作流步骤 target 必须是 "{"device_id" if kind == "run" else "class_name"}/action_name"：{target!r}'
             )
+        if inventory_mode not in {"task", "on_ready"}:
+            raise ValueError("inventory_mode 必须是 task 或 on_ready")
         step = WorkflowStep(
             kind=kind,
+            inventory_mode=inventory_mode,
             target=head,
             action=action,
             params=dict(params or {}),
@@ -521,16 +528,8 @@ def _normalize_inventory(
 
     if not inventory:
         return []
-    normalized = [
-        InventoryRequirement.model_validate(dict(item)).model_dump(
-            mode="json", exclude_none=False
-        )
-        for item in inventory
-    ]
-    keys = [item["key"] for item in normalized]
-    if len(keys) != len(set(keys)):
-        raise ValueError(f"工作流步骤 {step_label} 的库存需求 key 重复：{keys}")
-    return normalized
+    from unilabos.protocol.runtime.inventory import normalize_inventory
+    return normalize_inventory([dict(item) for item in inventory], template=True)
 
 
 def workflow(
@@ -798,6 +797,7 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
             }
             if step.inventory:
                 node["inventory_requirements"] = [dict(item) for item in step.inventory]
+                node["inventory_mode"] = step.inventory_mode
         if step.is_loop:
             condition = step.params.get("condition")
             if isinstance(condition, Mapping) and condition.get("source") == "device_state":
@@ -1037,7 +1037,7 @@ def materialize_workflow_template(
             device_id = resolved[str(node.get("role") or "")]
             klass = str((catalog.by_device_id.get(device_id) or {}).get("class") or "")
             action = str(node.get("action_name") or "")
-            meta_data: Dict[str, Any] = {"target_device_id": device_id}
+            meta_data: Dict[str, Any] = {"target_device_id": device_id, "inventory_mode": node.get("inventory_mode", "task")}
             if node.get("inventory_requirements"):
                 meta_data["inventory_requirements"] = [
                     dict(item) for item in node["inventory_requirements"]
@@ -1063,6 +1063,9 @@ def materialize_workflow_template(
         from unilabos.protocol.runtime.value_binding import remap_result_bindings
 
         entry["param"] = remap_result_bindings(entry["param"], node_uuid_of_key, template=True)
+        if entry["meta_data"].get("inventory_requirements"):
+            entry["meta_data"]["inventory_requirements"] = remap_result_bindings(
+                entry["meta_data"]["inventory_requirements"], node_uuid_of_key, template=True)
         nodes.append(entry)
     return {
         "workflow_uuid": workflow_uuid_value,

@@ -175,3 +175,16 @@ def test_waiting_source_survives_reopen_and_new_input_cannot_rebind_it(tmp_path)
     finally:
         resumed.stop()
         reopened.close()
+
+
+def test_published_child_inventory_references_follow_expansion_identity_and_input():
+    from unilabos.server.services.runtime.workflow.composite_expansion import _remap_depends_on, _materialize_param_references
+    source, expanded = str(uuid4()), str(uuid4())
+    node = {"type": "device_action", "param": {}, "meta_data": {"inventory_requirements": [{"key": "solvent", "kind": "lot",
+        "lot_uuid": {"kind": "node_output", "workflow_node_uuid": source, "data_key": "lot"},
+        "quantity": {"kind": "workflow_input", "parameter": "amount"}, "unit": "ul"}]}}
+    _remap_depends_on(node, {source: expanded})
+    _materialize_param_references([node], input_names={"amount"}, keyword_arguments={"amount": 5})
+    inventory = node["meta_data"]["inventory_requirements"][0]
+    assert inventory["lot_uuid"]["workflow_node_uuid"] == expanded
+    assert inventory["quantity"] == 5

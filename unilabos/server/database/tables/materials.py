@@ -607,6 +607,34 @@ class ChemicalRecord(TableObject, table=True):
     version: PositiveVersion = 1
 
 
+class MaterialExecutionRecord(TableObject, table=True):
+    """一次设备尝试的冻结物理计划与结算记录。"""
+
+    __tablename__: ClassVar[str] = "material_execution"
+    job_uuid: NonEmptyStr = Field(primary_key=True)
+    task_uuid: NonEmptyStr
+    claim_uuid: NonEmptyStr
+    request_json: JsonObject = Field(sa_column=json_text_column("request_json", default_json="{}"))
+    request_hash: NonEmptyStr
+    snapshot_json: JsonObject = Field(sa_column=json_text_column("snapshot_json", default_json="{}"))
+    state: Literal["prepared", "settled", "released"] = Field(sa_type=Text)
+    receipt_json: Optional[JsonObject] = Field(default=None, sa_column=json_text_column("receipt_json", default_json="{}", nullable=True))
+    result_json: Optional[JsonObject] = Field(default=None, sa_column=json_text_column("result_json", default_json="{}", nullable=True))
+    confirmation_json: Optional[JsonObject] = Field(default=None, sa_column=json_text_column("confirmation_json", default_json="{}", nullable=True))
+    version: PositiveVersion = 1
+    created_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+
+
+class MaterialExecutionHoldRecord(TableObject, table=True):
+    """未结算动作对物料或库位的唯一占用。"""
+
+    __tablename__: ClassVar[str] = "material_execution_hold"
+    aggregate_type: Literal["material", "site"] = Field(sa_type=Text, primary_key=True)
+    aggregate_uuid: NonEmptyStr = Field(primary_key=True)
+    job_uuid: NonEmptyStr = Field(foreign_key="material_execution.job_uuid")
+
+
 MATERIALS_TABLE_MODELS = (
     ResourceTemplateRecord,
     InventoryLotRecord,
@@ -621,6 +649,8 @@ MATERIALS_TABLE_MODELS = (
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
     ChemicalRecord,
+    MaterialExecutionRecord,
+    MaterialExecutionHoldRecord,
 )
 
 
@@ -1297,6 +1327,25 @@ MATERIALS_TABLES = (
             """,
         ),
     ),
+)
+
+MATERIALS_TABLES += (
+    TableSpec("material_execution", """CREATE TABLE IF NOT EXISTS material_execution (
+        job_uuid TEXT PRIMARY KEY, task_uuid TEXT NOT NULL, claim_uuid TEXT NOT NULL,
+        request_json TEXT NOT NULL CHECK(json_valid(request_json)), request_hash TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL CHECK(json_valid(snapshot_json)),
+        state TEXT NOT NULL CHECK(state IN ('prepared','settled','released')),
+        receipt_json TEXT CHECK(receipt_json IS NULL OR json_valid(receipt_json)),
+        result_json TEXT CHECK(result_json IS NULL OR json_valid(result_json)),
+        confirmation_json TEXT CHECK(confirmation_json IS NULL OR json_valid(confirmation_json)),
+        version INTEGER NOT NULL CHECK(version>0), created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
+    )""",
+        ("CREATE INDEX IF NOT EXISTS idx_material_execution_task ON material_execution(task_uuid,state)",)),
+    TableSpec("material_execution_hold", """CREATE TABLE IF NOT EXISTS material_execution_hold (
+        aggregate_type TEXT NOT NULL CHECK(aggregate_type IN ('material','site')),
+        aggregate_uuid TEXT NOT NULL, job_uuid TEXT NOT NULL REFERENCES material_execution(job_uuid),
+        PRIMARY KEY(aggregate_type,aggregate_uuid)
+    )"""),
 )
 
 

@@ -135,6 +135,26 @@ _MATERIAL_SUBSTANCE_V4_INDEXES = (
             """,
 )
 
+# v5：物理动作在材料库内冻结全体占用，并持久保存实际结算回执。
+_MATERIAL_EXECUTION_V5 = (
+    """CREATE TABLE IF NOT EXISTS material_execution (
+        job_uuid TEXT PRIMARY KEY, task_uuid TEXT NOT NULL, claim_uuid TEXT NOT NULL,
+        request_json TEXT NOT NULL CHECK(json_valid(request_json)), request_hash TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL CHECK(json_valid(snapshot_json)),
+        state TEXT NOT NULL CHECK(state IN ('prepared','settled','released')),
+        receipt_json TEXT CHECK(receipt_json IS NULL OR json_valid(receipt_json)),
+        result_json TEXT CHECK(result_json IS NULL OR json_valid(result_json)),
+        confirmation_json TEXT CHECK(confirmation_json IS NULL OR json_valid(confirmation_json)),
+        version INTEGER NOT NULL CHECK(version>0), created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS material_execution_hold (
+        aggregate_type TEXT NOT NULL CHECK(aggregate_type IN ('material','site')),
+        aggregate_uuid TEXT NOT NULL, job_uuid TEXT NOT NULL REFERENCES material_execution(job_uuid),
+        PRIMARY KEY(aggregate_type,aggregate_uuid)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_material_execution_task ON material_execution(task_uuid,state)",
+)
+
 MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(2, "新增化学品定义表 chemical", _CHEMICAL_V2, *_CHEMICAL_V2_INDEXES),
     rebuild_table_migration(
@@ -151,5 +171,6 @@ MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
         create_sql=_MATERIAL_SUBSTANCE_V4,
         indexes=_MATERIAL_SUBSTANCE_V4_INDEXES,
     ),
+    sql_migration(5, "物理动作占用及实际回执结算", *_MATERIAL_EXECUTION_V5),
 )
 MATERIALS_SCHEMA_VERSION = MATERIALS_MIGRATIONS[-1].version

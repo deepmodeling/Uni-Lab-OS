@@ -847,6 +847,9 @@ def _materialize_param_references(
         for key, value in list(param.items()):
             if isinstance(value, Mapping) and value.get("kind") == "workflow_input" and value.get("parameter") in input_names and value["parameter"] not in keyword_arguments:
                 param.pop(key)
+        metadata = node.get("meta_data") or {}
+        if "inventory_requirements" in metadata:
+            metadata["inventory_requirements"] = map_input_bindings(metadata["inventory_requirements"], resolve)
         node["param"] = param if node.get("type") == "condition" else map_input_bindings(param, resolve)
         if node.get("type") == "condition":
             from unilabos.protocol.runtime.condition import bind_condition_inputs
@@ -972,6 +975,10 @@ def _remap_depends_on(
         from unilabos.protocol.runtime.value_binding import remap_result_bindings
 
         node["param"] = remap_result_bindings(node.get("param") or {}, node_uuid_map.__getitem__)
+    metadata = node.get("meta_data") or {}
+    if "inventory_requirements" in metadata:
+        from unilabos.protocol.runtime.value_binding import remap_result_bindings
+        metadata["inventory_requirements"] = remap_result_bindings(metadata["inventory_requirements"], node_uuid_map.__getitem__)
     node["execution_policy"] = policy
     return node
 

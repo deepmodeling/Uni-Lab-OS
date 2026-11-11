@@ -102,6 +102,8 @@ def _call(function, *args, **kwargs):
 
 def create_materials_router(service: MaterialsService) -> APIRouter:
     router = APIRouter(prefix="/api/v1/materials", tags=["materials-v1"])
+    from .execution import create_material_execution_router
+    router.include_router(create_material_execution_router(service))
 
     @router.put("/templates/{template_uuid}")
     async def put_template(template_uuid: str, mutation: InventoryMutation):
@@ -352,7 +354,7 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             return _call(service.search_materials, name)
         return _call(service.list_materials, roots_only=roots_only)
 
-    @router.get("/instances/by-resource-id/{resource_id}")
+    @router.get("/instances/by-resource-id/{resource_id:path}")
     async def get_material_by_resource_id(resource_id: str):
         return _call(service.get_material_by_resource_id, resource_id)
 

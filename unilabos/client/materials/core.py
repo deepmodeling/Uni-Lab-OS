@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from unilabos.config.control_token import client_headers
@@ -100,6 +100,24 @@ class LocalMaterialsClient:
 
     def stocktake_inventory_lot(self, mutation, value):
         return self.service.stocktake_inventory_lot(bind_payload(mutation, value), value)
+
+    def prepare_material_execution(self, value):
+        return self.service.executions.prepare(value)
+
+    def validate_material_execution(self, value):
+        return self.service.executions.validate(value)
+
+    def settle_material_execution(self, value):
+        return self.service.executions.settle(value)
+
+    def list_material_executions(self):
+        return self.service.executions.list()
+
+    def get_material_execution(self, job_uuid):
+        return self.service.executions.get(job_uuid)
+
+    def release_material_execution(self, job_uuid, value):
+        return self.service.executions.release(job_uuid, value)
 
     def preview_inventory(self, requirements):
         return self.service.preview_inventory(requirements)
@@ -503,6 +521,31 @@ class HTTPMaterialsClient:
             "POST", f"/lots/{value.lot_uuid}/stocktake", bind_payload(mutation, value),
         ))
 
+    def prepare_material_execution(self, value):
+        return self._request("POST", "/executions/prepare", value.model_dump(mode="json"))
+
+    def validate_material_execution(self, value):
+        return self._request("POST", "/executions/validate", value.model_dump(mode="json"))
+
+    def settle_material_execution(self, value):
+        return self._request("POST", "/executions/settle", value.model_dump(mode="json"))
+
+    def list_material_executions(self):
+        return self._request("GET", "/executions")
+
+    def get_material_execution(self, job_uuid):
+        from urllib.parse import quote
+        try:
+            return self._request("GET", "/executions/" + quote(job_uuid, safe=""))
+        except Exception as error:
+            if getattr(error, "code", None) == "not_found":
+                return None
+            raise
+
+    def release_material_execution(self, job_uuid, value):
+        from urllib.parse import quote
+        return self._request("POST", "/executions/" + quote(job_uuid, safe="") + "/release", value.model_dump(mode="json"))
+
     def preview_inventory(self, requirements):
         return self._request("POST", "/inventory/preview", {
             "requirements": [item.model_dump(mode="json") for item in requirements],
@@ -601,7 +644,7 @@ class HTTPMaterialsClient:
 
     def get_material_by_resource_id(self, resource_id: str) -> MaterialAggregateRead:
         return MaterialAggregateRead.model_validate(
-            self._request("GET", f"/instances/by-resource-id/{resource_id}")
+            self._request("GET", "/instances/by-resource-id/" + quote(resource_id, safe=""))
         )
 
     def search_materials(self, name: str) -> list[MaterialAggregateRead]:

@@ -324,6 +324,7 @@ class WorkflowBusinessCoordinator:
             {
                 "execution_permit": content.execution_permit.model_dump(mode="json") if content.execution_permit else None,
                 "resource_contract": content.resource_contract,
+                "material_execution": content.material_execution,
                 "job_id": content.job_uuid,
                 "task_id": content.task_uuid,
                 "node_id": content.node_uuid,

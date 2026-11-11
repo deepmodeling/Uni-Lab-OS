@@ -55,6 +55,8 @@ def execution_identity(payload: dict[str, Any]) -> dict[str, Any]:
     })
     if payload.get("resource_contract") is not None:
         value["resource_contract"] = deepcopy(payload["resource_contract"])
+    if payload.get("material_execution") is not None:
+        value["material_execution"] = deepcopy(payload["material_execution"])
     encode_json(value, sort_keys=True)
     return deepcopy(value)
 

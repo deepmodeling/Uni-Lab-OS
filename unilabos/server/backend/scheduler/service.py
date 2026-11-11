@@ -261,6 +261,9 @@ class BackendScheduler:
             self._dispatch_pause_reasons.add("legacy_resource_reconciliation")
         from .inventory_recovery import InventoryRecovery
         self._inventory_recovery = InventoryRecovery(workflow, materials_gateway, self._authority_epoch)
+        from .physical_recovery import PhysicalRecovery
+        self._physical_recovery = PhysicalRecovery(workflow, materials_gateway, self._authority_epoch)
+        self._physical_retrying = False
         self._reconcile_inventory()
         self.executor.add_job_finished_listener(self._on_executor_finished)
         resolver = getattr(self.workflow, "set_manual_confirmation_resolver", None)
@@ -573,7 +576,12 @@ class BackendScheduler:
 
     def _reconcile_inventory(self) -> dict[str, Any]:
         report = self._inventory_recovery.reconcile()
+        try:
+            self._physical_recovery.reconcile_unstarted()
+        except Exception as error:
+            report["issues"].append({"reason": f"物理占用恢复失败：{error}"})
         with self._guard:
+            self._inventory_recovery_report = report
             if report["issues"]:
                 self._dispatch_pause_reasons.add("inventory_reconciliation")
             else:
@@ -581,7 +589,8 @@ class BackendScheduler:
         return report
 
     def inventory_recovery_snapshot(self) -> dict[str, Any]:
-        return self._inventory_recovery.snapshot()
+        with self._guard:
+            return deepcopy(getattr(self, "_inventory_recovery_report", self._inventory_recovery.snapshot()))
 
     async def _inventory_recovery_loop(self) -> None:
         """终态库存写入失败时持续重试；恢复成功后唤醒原排队动作。"""
@@ -634,6 +643,13 @@ class BackendScheduler:
                 node = DagNode(node_id=run_uuid, device_id=str(device_id), action=str(action_name))
                 if claim:
                     self._execution_claims.mark_uncertain(spec["current_job_uuid"])
+                with self._guard:
+                    self._run_context[run_uuid] = (task, node)
+                persisted = self._physical_recovery.pending().get(spec["current_job_uuid"])
+                if persisted:
+                    self._settle_attempt(spec["current_job_uuid"], **{key: persisted[key] for key in ("job_status", "return_info", "error_info", "resolution")})
+                    if self.workflow.get_workflow_node_job(spec["current_job_uuid"])["status"] in _RUN_TERMINAL:
+                        continue
                 self._open_reconciliation_decision(task, node, spec, str(run["status"]))
             if not any(run["status"] in _RUN_NEEDS_RECONCILIATION
                        for run in self.workflow.list_workflow_node_runs(task_uuid)):
@@ -913,6 +929,10 @@ class BackendScheduler:
             material_uuids_for_parameters(parameter_names, args)
         )
         material_uuids.update(spec.get("reserved_material_uuids") or ())
+        from .physical_contract import resolve_physical_contract
+        physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        material_uuids.update(physical.get("material_ids", []))
+        spec["physical_contract"] = physical
         spec["resolved_action_args"] = args
         spec["materials_need_lock"] = parameter_names
         spec["always_free"] = self._action_always_free(node, spec)
@@ -921,6 +941,16 @@ class BackendScheduler:
         # 的新 attempt 必须是新的申请才能重新排队获取。
         from .tenancy_contract import resolve_tenancy_contract
         tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        if physical:
+            tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
+            if physical.get("device_tenancy"):
+                if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
+                    raise ValueError("搬运托管与显式设备托管合同不一致")
+                tenancy["device_tenancy"] = physical["device_tenancy"]
+        if self._physical_recovery.blockers(job_uuid, material_uuids, {node.device_id, *tenancy.get("device_claims", [])}):
+            with self._guard:
+                self._waiting_interval_jobs[job_uuid] = (task, node)
+            return
         resource_request = SchedulerResourceRequest(
                 **tenancy,
                 request_uuid=f"resource:{job_uuid}",
@@ -1082,6 +1112,22 @@ class BackendScheduler:
         dispatch_invoked = False
         try:
             self._execution_claims.reserve(spec["resource_request"], authority_epoch=self._authority_epoch)
+            material_execution = None
+            if spec.get("physical_contract") or spec.get("inventory_reservation_uuid"):
+                from .physical_contract import resolve_physical_contract
+                from unilabos.protocol.material_execution import MaterialExecutionPrepare
+                from unilabos.protocol.base import canonical_hash
+                physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+                if physical.get("material_ids", []) != (spec.get("physical_contract") or {}).get("material_ids", []):
+                    raise ValueError("等待期间物理资源范围变化，请重新创建尝试")
+                claim = self._execution_claims.get(job_uuid)
+                material_execution = self.materials_gateway.prepare_material_execution(MaterialExecutionPrepare(
+                    job_uuid=job_uuid, task_uuid=str(task["uuid"]), claim_uuid=claim["claim_uuid"], attempt_no=spec["attempt_no"],
+                    parameter_hash=canonical_hash(args), fences=claim["fences"], moves=physical.get("moves", []),
+                    aliquot=physical.get("aliquot"), safety_material_uuids=physical.get("material_ids", []),
+                    safety_device_ids=sorted({node.device_id, *physical.get("device_ids", [])}) if physical else [],
+                    reserved_site_uuids=physical.get("reserved_site_uuids", []),
+                    inventory_reservation_uuid=spec.get("inventory_reservation_uuid")))
             self.workflow.mark_workflow_node_job_running(job_uuid)
             payload = build_job_start_payload(
                 job_id=job_uuid,
@@ -1105,6 +1151,9 @@ class BackendScheduler:
                 retry_count=spec.get("retry_count"),
             )
             payload["always_free"] = spec.get("always_free", node.always_free)
+            if material_execution is not None:
+                payload["material_execution"] = {key: material_execution[key] for key in ("job_uuid", "claim_uuid", "plan_hash")}
+
             contract = ((spec.get("param_schema") or {}).get("x-unilabos-action-contract") or {}).get("resource_contract")
             if contract:
                 payload["resource_contract"] = contract
@@ -1144,6 +1193,7 @@ class BackendScheduler:
             if self._stopping:
                 return
         self._reconcile_inventory()
+        self._retry_physical_outcomes()
         with self._guard:
             if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
                     and not self._intervals.unadmitted_active_claims()):
@@ -1283,6 +1333,18 @@ class BackendScheduler:
             logger.warning(
                 "failed to persist execution_timeout_seconds for node run %s", run_uuid
             )
+
+    def _retry_physical_outcomes(self) -> None:
+        with self._guard:
+            if self._physical_retrying:
+                return
+            self._physical_retrying = True
+        try:
+            for job_uuid, outcome in self._physical_recovery.pending().items():
+                self._settle_attempt(job_uuid, **{key: outcome[key] for key in ("job_status", "return_info", "error_info", "resolution")})
+        finally:
+            with self._guard:
+                self._physical_retrying = False
 
     def _release_job_resources(self, job_uuid: str, *, canceled: bool) -> None:
         """释放一个 attempt 持有的资源申请。"""
@@ -1552,7 +1614,8 @@ class BackendScheduler:
             preview = self.materials_gateway.preview_inventory([
                 InventoryRequirement.model_validate(item) for item in spec["inventory_requirements"]])
             if not preview["available"]:
-                inventory_wait(self.workflow, self._authority_epoch, job_uuid, str(preview["shortages"]))
+                reason = "；".join(str(item.get("message") or "库存不足") for item in preview["shortages"])
+                inventory_wait(self.workflow, self._authority_epoch, job_uuid, reason)
                 return False
         generation = (self._current_job_metadata(job_uuid).get("control_data") or {}).get("inventory_generation", 0)
         try:
@@ -2153,6 +2216,14 @@ class BackendScheduler:
             recovery_waiter = self._recovery_waiters.get(task_uuid or "")
         if run_uuid is None or task_uuid is None or spec is None or (runner is None and recovery_waiter is None):
             return
+        from .physical_recovery import PhysicalSettlementPending
+        try:
+            self._physical_recovery.settle(job_id, job_status=job_status, return_info=return_info,
+                error_info=error_info, resolution=resolution)
+        except PhysicalSettlementPending as error:
+            self._execution_claims.mark_uncertain(job_id)
+            self._reconcile_lost_attempt(job_id, {"uncertainty_reason": str(error)})
+            return
         # attempt 终态先落表并投影到节点运行；retry 决策由 store 在同一事务里追加新 attempt
         outcome = self.workflow.record_workflow_node_job_terminal(
             job_id,
@@ -2368,6 +2439,12 @@ class BackendScheduler:
             "severity": "warning",
             "recovered_status": recovered_status,
         }
+        physical = self._physical_recovery.get(job_uuid)
+        if physical and (physical["request"].get("moves") or physical["request"].get("aliquot")):
+            report["category"] = "physical_settlement"
+            report["error_message"] = str((job.get("control_data") or {}).get("physical_outcome", {}).get("error") or error_message)
+            report["options"] = [option for option in report["options"] if option["action"] in {"operator_intervention", "abort"}]
+            report["material_execution"] = physical
         with self._guard:
             self._run_context[node.node_id] = (task, node)
             self._job_runs[job_uuid] = node.node_id
@@ -2441,6 +2518,8 @@ class BackendScheduler:
                     decision[key] = option[key]
         else:
             selected = str(decision.get("action") or option or "")
+        if report.get("category") == "physical_settlement" and not str(decision.get("reason") or "").strip():
+            return False
         if selected not in {str(item["action"]) for item in report["options"]}:
             return False
         if selected == "retry" and int(report["retry_count"]) >= int(report["max_retries"]):
@@ -2504,7 +2583,7 @@ class BackendScheduler:
             resolution=resolution,
         )
         self._settle_task_reconciliation(pending["task_uuid"])
-        return True
+        return self.workflow.get_workflow_node_job(job_uuid)["status"] in _RUN_TERMINAL
 
     def _settle_task_reconciliation(self, task_uuid: str) -> None:
         settle = getattr(self.workflow, "settle_workflow_task_reconciliation", None)

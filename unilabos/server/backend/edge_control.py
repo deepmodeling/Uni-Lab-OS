@@ -258,6 +258,7 @@ class EdgeControlService:
         content = ExecuteJobContent(
             execution_permit=payload.get("execution_permit"),
             resource_contract=payload.get("resource_contract"),
+            material_execution=payload.get("material_execution"),
             job_uuid=job_uuid,
             task_uuid=str(payload["task_id"]),
             node_uuid=str(payload["node_id"]),

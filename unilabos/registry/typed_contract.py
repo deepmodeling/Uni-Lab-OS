@@ -50,7 +50,7 @@ def validate_action_values(
     if section == "goal":
         # 物理结算和跨动作设备托管需要持久开始记录及资源租约，不能仅凭 Schema 宣称已执行。
         resource_contract = schema["x-unilabos-action-contract"].get("resource_contract") or {}
-        unsupported = [name for name in ("device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot", "order_sensitive") if resource_contract.get(name) and not (managed_resources and name in {"device_tenancy", "operate_in_place"})]
+        unsupported = [name for name in ("device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot", "order_sensitive") if resource_contract.get(name) and not (managed_resources and name in {"device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot"})]
         if unsupported:
             raise TypedActionValueError("当前 dev 尚未启用资源执行合同：" + "、".join(unsupported))
     selected = deepcopy(schema["properties"][section])
@@ -75,5 +75,7 @@ def require_frozen_resource_contract(schema: Mapping[str, Any] | None, payload: 
     """开始许可必须封存当前驱动的资源语义，防止更新驱动后沿用旧计划绕过托管。"""
     contract = ((schema or {}).get("x-unilabos-action-contract") or {}).get("resource_contract") or {}
     frozen = payload.get("resource_contract") or {}
-    if (contract.get("device_tenancy") or contract.get("operate_in_place") or frozen) and contract != frozen:
+    if any(contract.get(key) for key in ("transfer", "transfer_step", "aliquot")) and not payload.get("material_execution"):
+        raise TypedActionValueError("物理动作缺少材料权威准备记录")
+    if (contract or frozen) and contract != frozen:
         raise TypedActionValueError("当前驱动资源合同与冻结执行计划不一致，请重新创建任务")

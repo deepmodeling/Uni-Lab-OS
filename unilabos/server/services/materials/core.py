@@ -191,6 +191,8 @@ class MaterialsService(MaterialsRepository):
         super().__init__(database)
         self._resource_sync_dispatcher = resource_sync_dispatcher
         self._transfer_lock = threading.RLock()
+        from .execution import MaterialExecutions
+        self.executions = MaterialExecutions(self)
 
     def set_resource_sync_dispatcher(
         self,
@@ -293,6 +295,7 @@ class MaterialsService(MaterialsRepository):
                 effect_started = True
                 self._check_preconditions(mutation.preconditions)
                 applied = apply(timestamp)
+                self.executions.guard_mutation(mutation, applied.affected)
                 # 所有内容、快照、配置变更在同一写事务的最终状态校验容量。
                 capacity_materials = {item.aggregate_uuid for item in applied.affected if item.aggregate_type == "material"}
                 for item in applied.affected:

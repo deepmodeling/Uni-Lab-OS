@@ -97,6 +97,7 @@ class ExecuteJobContent(ServerObject):
 
     execution_permit: Optional[ExecutionPermit] = None
     resource_contract: Optional[JsonObject] = None
+    material_execution: Optional[JsonObject] = None
     job_uuid: NonEmptyStr
     task_uuid: NonEmptyStr
     node_uuid: NonEmptyStr

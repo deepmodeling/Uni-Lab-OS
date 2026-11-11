@@ -21,6 +21,13 @@ from unilabos.protocol.runtime.lifecycle import (
 from unilabos.server.api.runtime.lifecycle import create_scheduler_lifecycle_router
 
 
+from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest
+
+
+class PhysicalSettlementConfirmation(ResourceIntervalReleaseRequest):
+    result: dict[str, Any]
+
+
 class StatusIncidentDecision(BaseModel):
     action: str = ""
     option: Optional[dict[str, Any]] = None
@@ -226,6 +233,33 @@ def create_backend_router(
         scheduler._reconcile_inventory()
         return scheduler.inventory_recovery_snapshot()
 
+    @router.get("/scheduler/physical-recovery")
+    def physical_recovery():
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        return scheduler._physical_recovery.snapshot()
+
+    @router.post("/scheduler/physical-recovery/{job_uuid}/release")
+    def release_physical(job_uuid: str, body: ResourceIntervalReleaseRequest):
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        try:
+            return scheduler._physical_recovery.release_verified(job_uuid, body.expected_version, body.reason)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @router.post("/scheduler/physical-recovery/{job_uuid}/settle")
+    def settle_physical(job_uuid: str, body: PhysicalSettlementConfirmation):
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        try:
+            return scheduler._physical_recovery.confirm_terminal_settlement(job_uuid, body.expected_version, body.reason, body.result)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
     @router.get("/status-incidents")
     def status_incidents(
         device_id: str = "",
@@ -292,6 +326,16 @@ def create_backend_router(
         lister = getattr(scheduler, "list_reconciliation_decisions", None)
         if callable(lister):
             items.extend(lister())
+        # 执行端仍在等待决策时也展示冻结物理范围，不能把未知物理结果提供为普通重试。
+        recovery = getattr(scheduler, "_physical_recovery", None)
+        if recovery is not None:
+            for item in items:
+                job_uuid = item.get("job_id")
+                record = recovery.get(job_uuid) if job_uuid else None
+                if record and (record["request"].get("moves") or record["request"].get("aliquot")):
+                    item["category"] = "physical_settlement"
+                    item["material_execution"] = record
+                    item["options"] = [option for option in item.get("options", []) if option.get("action") in {"operator_intervention", "abort"}]
         return {"items": items}
 
     @router.post("/error-decisions/{decision_id}")
@@ -307,6 +351,10 @@ def create_backend_router(
 
         scheduler = get_scheduler()
         edge_control = get_edge_control_service()
+        report = next((item for item in error_decisions()["items"] if item.get("decision_id") == decision_id), None)
+        if report and report.get("category") == "physical_settlement":
+            if decision.get("action") not in {"operator_intervention", "abort"} or not str(decision.get("reason") or "").strip():
+                raise HTTPException(status_code=409, detail="物理结果未知，须填写核实说明并补记实际结果或终止任务，禁止直接重试")
         owns = getattr(scheduler, "has_reconciliation_decision", None)
         if callable(owns) and owns(decision_id):
             resolved = scheduler.resolve_reconciliation_decision(decision_id, decision)

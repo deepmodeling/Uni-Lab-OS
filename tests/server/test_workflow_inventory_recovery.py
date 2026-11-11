@@ -44,17 +44,31 @@ class Stack:
         self.workflow.close()
         self.materials.close()
 
-    def create(self):
+    def create(self, *, with_tenancy=False):
         _template(self.materials, "reagent-template", "reagent")
         _inbound(self.materials, lot_uuid="lot-a", quantity=20)
         requirement = InventoryRequirement(key="solvent", kind="lot", template_uuid="reagent-template", quantity=5, unit="ul")
-        record = upsert_workflow(self.workflow, {"workflow_uuid": str(uuid4()), "name": "库存恢复", "description": "", "tags": [],
-            "nodes": [{"uuid": str(uuid4()), "name": "操作", "type": "device_action", "material_uuid": str(uuid4()),
+        action = {"uuid": str(uuid4()), "name": "操作", "type": "device_action", "material_uuid": str(uuid4()),
                 "action_name": "operate", "meta_data": {"target_device_id": "reactor", "inventory_requirements": [requirement.model_dump(mode="json")]},
-                "param": {}}], "edges": []})
+                "param": {}}
+        nodes, edges = [action], []
+        if with_tenancy:
+            load = {"uuid": str(uuid4()), "name": "装载", "type": "device_action", "material_uuid": str(uuid4()),
+                    "action_name": "load", "meta_data": {"target_device_id": "robot"}, "param": {}}
+            nodes.insert(0, load)
+            action["execution_policy"] = {"depends_on": [load["uuid"]]}
+        record = upsert_workflow(self.workflow, {"workflow_uuid": str(uuid4()), "name": "库存恢复", "description": "", "tags": [],
+            "nodes": nodes, "edges": edges})
         task = self.workflow.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal", target_node_uuid=None,
             input_value={}, description=None, meta_data={})
-        run = self.workflow.list_workflow_node_runs(task["uuid"])[0]
+        if with_tenancy:
+            from tests.server.test_workflow_resource_custody import tenancy_request, finish
+            from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
+            intervals = ResourceIntervals(self.workflow)
+            loading = tenancy_request(self.workflow, task, 0, str(uuid4()), acquire="reactor")
+            assert intervals.admit(loading, self.epoch)
+            finish(self.workflow, intervals, loading)
+        run = next(row for row in self.workflow.list_workflow_node_runs(task["uuid"]) if row["workflow_node_uuid"] == action["uuid"])
         job = run["current_job_uuid"]
         reservation = self.materials.reserve_inventory(_mutation("reserve_inventory", job_uuid=job),
             InventoryReservationCreate(task_uuid=task["uuid"], node_uuid=run["workflow_node_uuid"], job_uuid=job,
@@ -252,20 +266,33 @@ def test_scheduler_startup_failure_pauses_dispatch_and_retry_clears_only_own_rea
         scheduler.stop()
 
 
-def test_tenancy_keeps_unused_reservation_until_manual_release(stack):
-    task, job, payload = stack.create()
+@pytest.mark.parametrize("reopen", [False, True])
+def test_tenancy_keeps_unused_reservation_until_manual_release(tmp_path, reopen):
+    from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
+    stack = Stack(tmp_path)
+    task, job, payload = stack.create(with_tenancy=True)
     stack.finish(job, "canceled")
-    with stack.workflow.transaction() as conn:
-        # 最小托管表用于同时覆盖托管迁移前后的恢复策略。
-        conn.execute("CREATE TABLE workflow_device_tenancy(task_uuid TEXT,state TEXT)")
-        conn.execute("INSERT INTO workflow_device_tenancy VALUES (?,'loaded')", (task["uuid"],))
+    stack.workflow.finish_workflow_task(task['uuid'], status='canceled', output={}, error_info=[])
     report = stack.recovery.reconcile()
     assert not report["issues"], report
     assert report["held"] and stack.quantities() == (20,15,5)
-    with stack.workflow.transaction() as conn:
-        conn.execute("UPDATE workflow_device_tenancy SET state='released'")
-    assert not stack.recovery.reconcile()["issues"]
-    assert stack.quantities() == (20,20,0)
+    if reopen:
+        stack.close()
+        stack = Stack(tmp_path)
+    scheduler = BackendScheduler(stack.workflow, _ListenerOnlyBackend(), materials_gateway=stack.client)
+    try:
+        assert stack.quantities() == (20,15,5)
+        held = DeviceTenancies.snapshot(stack.workflow.connection)[0]
+        assert held['state'] == 'loaded'
+        stack.workflow.change_resource_custody('release_tenancy', held['tenancy_uuid'],
+            expected_version=held['version'], reason='现场确认样品已取走')
+        # 人工处置事件立即唤醒双库对账，不依赖原进程内存中的任务。
+        assert stack.quantities() == (20,20,0)
+        scheduler._reconcile_resources()
+        assert stack.quantities() == (20,20,0)
+    finally:
+        scheduler.stop()
+        stack.close()
 
 
 def test_old_authority_cannot_mutate_inventory_after_takeover(stack):

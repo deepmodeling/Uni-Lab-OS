@@ -28,8 +28,12 @@ def normalize_capacity(value: Any) -> dict[str, float]:
 def capacity_projection(config: Mapping[str, Any], definition: Mapping[str, Any]) -> dict[str, float]:
     rated = normalize_capacity(definition.get("capacity"))
     local = normalize_capacity(config.get("capacity"))
-    if config.get("max_volume") is not None:
-        legacy = normalize_capacity({"max_volume_ul": config["max_volume"]})
+    legacy_volume = config.get("max_volume")
+    # PLR 的旧序列化：未指定尺寸的容器为 0，无上限垃圾槽为 "Infinity"。
+    # 这些值不构成容量许可；显式 capacity 仍必须是正有限数值。
+    unspecified = not isinstance(legacy_volume, bool) and legacy_volume in (None, 0, float("inf"), "Infinity")
+    if not unspecified:
+        legacy = normalize_capacity({"max_volume_ul": legacy_volume})
         rated["max_volume_ul"] = min(rated.get("max_volume_ul", float("inf")), legacy["max_volume_ul"])
     for name, maximum in local.items():
         if name in rated and maximum > rated[name] + quantity_tolerance(maximum, rated[name]):

@@ -394,35 +394,6 @@ def test_driver_contract_change_requires_new_plan_and_is_part_of_start_identity(
         require_frozen_resource_contract({},payload)
 
 
-def test_manual_tenancy_release_retries_inventory_cleanup_after_restart(tmp_path):
-    path=tmp_path/'runtime.db'
-    service=WorkflowService(path)
-    task=make_task(service,('robot',))
-    intervals=ResourceIntervals(service)
-    epoch=ExecutionClaims(service).activate_authority()
-    request=tenancy_request(service,task,0,str(uuid4()),acquire='reactor')
-    assert intervals.admit(request,epoch)
-    finish(service,intervals,request)
-    service.finish_workflow_task(task['uuid'],status='succeeded',output={},error_info=[])
-    looked_up=[]
-    gateway=SimpleNamespace(list_inventory_reservations=lambda **kw: looked_up.append(kw['task_uuid']) or [])
-    scheduler=BackendScheduler(service,Executor(),materials_gateway=gateway)
-    scheduler._release_unconsumed_task_inventory(task['uuid'])
-    assert looked_up==[]
-    held=DeviceTenancies.snapshot(service.connection)[0]
-    service.change_resource_custody('release_tenancy',held['tenancy_uuid'],expected_version=held['version'],reason='样品已取走')
-    assert looked_up==[task['uuid']]
-    scheduler.stop()
-    service.close()
-    service=WorkflowService(path)
-    scheduler=BackendScheduler(service,Executor(),materials_gateway=gateway)
-    try:
-        assert looked_up==[task['uuid'],task['uuid']]
-    finally:
-        scheduler.stop()
-        service.close()
-
-
 def test_released_device_does_not_leave_a_false_wait_cycle(service):
     intervals=ResourceIntervals(service)
     epoch=ExecutionClaims(service).activate_authority()

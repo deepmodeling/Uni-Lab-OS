@@ -22,7 +22,19 @@ from unilabos.protocol.materials import (
     ResourceTemplateWrite,
 )
 from unilabos.server.services.materials import MaterialsService, MaterialValidationError
-from unilabos.server.services.materials.capacity import validate_contents
+from unilabos.server.services.materials.capacity import capacity_projection, validate_contents
+
+
+@pytest.mark.parametrize("legacy", [0, "Infinity", float("inf"), None])
+def test_plr_unspecified_capacity_does_not_override_explicit_limit(legacy):
+    assert capacity_projection({"max_volume": legacy}, {}) == {}
+    assert capacity_projection({"max_volume": legacy}, {"capacity": {"max_volume_ul": 10}}) == {"max_volume_ul": 10}
+
+
+@pytest.mark.parametrize("invalid", [0, "Infinity", float("inf"), -1, True, float("nan")])
+def test_explicit_capacity_remains_strict(invalid):
+    with pytest.raises(ValueError):
+        capacity_projection({"capacity": {"max_volume_ul": invalid}}, {})
 
 
 def _mutation(operation: str) -> InventoryMutation:

@@ -207,6 +207,14 @@ def run_runtime(args: dict[str, Any]) -> None:
 
     _ensure_management_port_available()
 
+    if BasicConfig.is_host_mode:
+        from unilabos.server.services.driver_packages import get_driver_package_service
+        state = get_driver_package_service().mutation_gate.status()
+        if state['unresolved_operations'] or state['error']:
+            print_status('包操作恢复尚未人工确认：仅启动管理服务，设备 runtime 与托管 slave 保持停止；确认后手动重启 Host。', 'warning')
+            _start_management_server()
+            return
+
     if args["visual"] == "disable":
         _run_management_or_wait(start_backend(**args))
         return

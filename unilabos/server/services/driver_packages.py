@@ -40,6 +40,8 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from unilabos.utils import logger
 from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
+from unilabos.server.services import driver_package_journal as journal
+from unilabos.server.services.host_mutations import HostMutationBusy, get_host_mutation_gate
 
 LEDGER_FILENAME = "driver_packages.json"
 CATALOG_FILENAME = "driver_package_catalog.json"
@@ -105,6 +107,10 @@ class DriverPackageOperation:
     log: str = ""
     error: Optional[str] = None
     result: Optional[Dict[str, Any]] = None
+    version: int = 1
+    requires_confirmation: bool = False
+    confirmation: Optional[Dict[str, Any]] = None
+    recovery: Dict[str, Any] = field(default_factory=dict)
 
 
 def _now_ms() -> int:
@@ -165,9 +171,10 @@ def load_ledger(working_dir: str | Path) -> Dict[str, DriverPackageRecord]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001 - 损坏台账按空处理，不影响启动
-        logger.warning(f"[DriverPackages] 台账读取失败: {exc}")
-        return {}
+    except Exception as exc:  # noqa: BLE001
+        raise DriverPackageError(f"驱动包台账读取失败，拒绝按空台账覆盖：{exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("packages"), list):
+        raise DriverPackageError("驱动包台账格式损坏")
     records: Dict[str, DriverPackageRecord] = {}
     for item in data.get("packages", []) if isinstance(data, dict) else []:
         if not isinstance(item, dict) or not item.get("name"):
@@ -181,9 +188,7 @@ def save_ledger(working_dir: str | Path, records: Dict[str, DriverPackageRecord]
     path = ledger_path(working_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"version": 2, "packages": [asdict(record) for record in records.values()]}
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    journal.atomic_json(path, payload)
 
 
 def enabled_package_dirs(working_dir: str | Path) -> List[str]:
@@ -426,6 +431,34 @@ class DriverPackageService:
         self._restart_required = False
         self._external_only = False
         self.source_changes = get_source_changes(self.working_dir)
+        self.mutation_gate = get_host_mutation_gate(self.working_dir)
+        self._mutation_token = None
+        try:
+            with self.mutation_gate.hold('recovery', recovery=True):
+                records = journal.recover_operations(self.working_dir)
+        except HostMutationBusy:
+            # 另一服务实例/进程仍活跃时只读，不把其操作误判为崩溃。
+            records = journal.load_operations(self.working_dir)
+        self._load_operations(records)
+
+    def _load_operations(self, records: List[Dict[str, Any]]) -> None:
+        self._operations = {item['operation_id']: DriverPackageOperation(**item) for item in records}
+        self._order = list(self._operations)
+
+    def _persist_operations(self) -> None:
+        journal.save_operations(self.working_dir, [asdict(self._operations[key]) for key in self._order])
+
+    def _checkpoint(self, operation_id: str, **values: Any) -> None:
+        with self._lock:
+            operation = self._operations[operation_id]
+            operation.recovery.update(values)
+            operation.version += 1
+            self._persist_operations()
+
+    def _commit_ledger(self, operation_id: str, records: Dict[str, DriverPackageRecord]) -> None:
+        self._checkpoint(operation_id, expected_ledger={'version': 2, 'packages': [asdict(item) for item in records.values()]})
+        save_ledger(self.working_dir, records)
+        self._checkpoint(operation_id, phase='ledger_committed')
 
     # ── 运行态上下文（启动时由 main 注入） ─────────────────────────
 
@@ -468,6 +501,7 @@ class DriverPackageService:
             "source_changes": changes,
             "packages": packages,
             "operations": self.operations(limit=5),
+            "mutation": self.mutation_gate.status(),
         }
 
     def catalog(self) -> Dict[str, Any]:
@@ -530,42 +564,112 @@ class DriverPackageService:
 
     def operations(self, limit: int = OPERATION_HISTORY_LIMIT) -> List[Dict[str, Any]]:
         with self._lock:
-            ordered = [self._operations[item] for item in reversed(self._order)]
-        return [asdict(item) for item in ordered[:limit]]
+            records = journal.load_operations(self.working_dir)
+        pending = [item for item in reversed(records) if item.get('requires_confirmation')]
+        rest = [item for item in reversed(records) if not item.get('requires_confirmation')]
+        return pending + rest[:max(0, limit - len(pending))]
 
     def operation(self, operation_id: str) -> Dict[str, Any]:
         with self._lock:
-            record = self._operations.get(operation_id)
+            record = next((item for item in journal.load_operations(self.working_dir) if item['operation_id'] == operation_id), None)
         if record is None:
             raise DriverPackageError(f"operation not found: {operation_id}")
-        return asdict(record)
+        return record
+
+    def confirm_operation(self, operation_id: str, expected_version: int, reason: str) -> Dict[str, Any]:
+        if not reason.strip():
+            raise DriverPackageError('确认中断操作必须填写环境核实说明')
+        try:
+            with self.mutation_gate.hold('recovery_confirmation', recovery=True), self._lock:
+                self._load_operations(journal.load_operations(self.working_dir))
+                operation = self._operations.get(operation_id)
+                if operation is None:
+                    raise DriverPackageError(f'operation not found: {operation_id}')
+                if operation.confirmation and operation.confirmation.get('expected_version') == expected_version and operation.confirmation['reason'] == reason.strip():
+                    return asdict(operation)
+                if operation.version != expected_version or not operation.requires_confirmation:
+                    raise DriverPackageBusyError('包操作状态已变化，请刷新后重新核实')
+                if operation.recovery.get('outcome') == 'manual_repair_required':
+                    raise DriverPackageBusyError('源码或台账尚未恢复一致，请先修复并重新检查恢复状态')
+                operation.requires_confirmation = False
+                operation.version += 1
+                operation.confirmation = {'expected_version': expected_version, 'reason': reason.strip(), 'at_ms': _now_ms()}
+                self._persist_operations()
+                self._restart_required = True
+                self.source_changes.package_changed(operation.package_name or operation.spec,
+                    reason='package_recovery_confirmed', shared_dependencies=True)
+                return asdict(operation)
+        except HostMutationBusy as exc:
+            raise DriverPackageBusyError(str(exc)) from exc
+
+    def retry_recovery(self, operation_id: str, expected_version: int, reason: str) -> Dict[str, Any]:
+        if not reason.strip():
+            raise DriverPackageError('重新恢复必须填写已修复的内容')
+        try:
+            with self.mutation_gate.hold('recovery_confirmation', recovery=True), self._lock:
+                self._load_operations(journal.load_operations(self.working_dir))
+                operation = self._operations.get(operation_id)
+                if operation is None:
+                    raise DriverPackageError(f'operation not found: {operation_id}')
+                if operation.version != expected_version or operation.recovery.get('outcome') != 'manual_repair_required':
+                    raise DriverPackageBusyError('恢复状态已变化，请刷新后重试')
+                self._load_operations(journal.recover_operations(self.working_dir))
+                operation = self._operations[operation_id]
+                operation.log = (operation.log + f'[recovery] {reason.strip()}\n')[-20000:]
+                self._persist_operations()
+                return asdict(operation)
+        except HostMutationBusy as exc:
+            raise DriverPackageBusyError(str(exc)) from exc
 
     # ── 写 ────────────────────────────────────────────────────────
 
     def _acquire_mutation(self) -> None:
         if not self._mutation_lock.acquire(blocking=False):
             raise DriverPackageBusyError("已有驱动包变更正在进行，请查询 operations 并在完成后重试")
+        try:
+            self._mutation_token = self.mutation_gate.acquire('package')
+            self._load_operations(journal.load_operations(self.working_dir))
+        except BaseException as exc:
+            if self._mutation_token is not None:
+                self.mutation_gate.release(self._mutation_token)
+                self._mutation_token = None
+            self._mutation_lock.release()
+            if isinstance(exc, HostMutationBusy):
+                raise DriverPackageBusyError(str(exc)) from exc
+            raise
         self.source_changes.mutation(True)
 
     def _release_mutation(self) -> None:
-        self.source_changes.mutation(False)
-        self._mutation_lock.release()
+        try:
+            self.source_changes.mutation(False)
+        finally:
+            self.mutation_gate.release(self._mutation_token)
+            self._mutation_token = None
+            self._mutation_lock.release()
 
     def set_enabled(self, name: str, enabled: bool) -> Dict[str, Any]:
         self._acquire_mutation()
+        operation = None
         try:
             records = load_ledger(self.working_dir)
             key = _normalize(name)
             record = records.get(key)
             if record is None:
                 raise DriverPackageError(f"driver package not found: {name}")
+            operation = self._new_operation('enable' if enabled else 'disable', name)
             if record.enabled != enabled:
                 record.enabled = enabled
                 record.updated_at_ms = _now_ms()
-                save_ledger(self.working_dir, records)
+                self._commit_ledger(operation.operation_id, records)
                 self._restart_required = True
                 self.source_changes.package_changed(name, reason="package_mount_changed", host_mount=True)
-            return {**asdict(record), "source_changes": self.source_changes.status()}
+            result = {**asdict(record), "source_changes": self.source_changes.status()}
+            self._finish(operation.operation_id, result=result)
+            return result
+        except Exception as exc:
+            if operation:
+                self._finish(operation.operation_id, error=str(exc))
+            raise
         finally:
             self._release_mutation()
 
@@ -578,6 +682,8 @@ class DriverPackageService:
         try:
             operation = self._new_operation(kind, spec)
             operation.package_name = package_name
+            with self._lock:
+                self._persist_operations()
             accepted = asdict(operation)
             threading.Thread(
                 target=self._execute_mutation,
@@ -586,9 +692,9 @@ class DriverPackageService:
             ).start()
             return accepted
         except Exception as exc:
-            self._release_mutation()
             if operation is not None:
                 self._finish(operation.operation_id, error=str(exc))
+            self._release_mutation()
             raise DriverPackageError(f"无法启动驱动包操作：{exc}") from exc
 
     def _execute_mutation(
@@ -604,11 +710,13 @@ class DriverPackageService:
             if not isinstance(exc, DriverPackageError):
                 logger.exception("[DriverPackages] 驱动包变更失败")
         finally:
-            # 完成状态出现后，下一个请求就可修改；查询日志不占用写锁。
-            self._release_mutation()
-        if result is not None:
-            result["source_changes"] = self.source_changes.status()
-        self._finish(operation_id, error=error, result=result)
+            try:
+                if result is not None:
+                    result["source_changes"] = self.source_changes.status()
+                # 持久化完成后才允许重启，消除退出发生在最后一次台账写入前的窗口。
+                self._finish(operation_id, error=error, result=result)
+            finally:
+                self._release_mutation()
 
     def start_install(
         self, spec: str, enable: bool = True, upgrade: bool = False, name: str = ""
@@ -638,13 +746,17 @@ class DriverPackageService:
             kind=kind,
             spec=spec,
             started_at_ms=_now_ms(),
+            recovery={'phase': 'preparing', 'previous_ledger': journal.ledger_data(self.working_dir)},
         )
         with self._lock:
             self._operations[operation.operation_id] = operation
             self._order.append(operation.operation_id)
-            while len(self._order) > OPERATION_HISTORY_LIMIT:
-                stale = self._order.pop(0)
+            completed = [key for key in self._order if self._operations[key].status != 'running'
+                         and not self._operations[key].requires_confirmation]
+            for stale in completed[:-OPERATION_HISTORY_LIMIT]:
+                self._order.remove(stale)
                 self._operations.pop(stale, None)
+            self._persist_operations()
         return operation
 
     def _append_log(self, operation_id: str, text: str) -> None:
@@ -654,6 +766,7 @@ class DriverPackageService:
             operation = self._operations.get(operation_id)
             if operation is not None:
                 operation.log = (operation.log + text.rstrip() + "\n")[-20000:]
+                self._persist_operations()
 
     def _finish(self, operation_id: str, *, error: Optional[str] = None, result: Optional[Dict[str, Any]] = None) -> None:
         with self._lock:
@@ -664,6 +777,12 @@ class DriverPackageService:
             operation.error = error
             operation.result = result
             operation.finished_at_ms = _now_ms()
+            operation.requires_confirmation = bool(error and (
+                operation.recovery.get('dependencies_started')
+                or operation.recovery.get('outcome') == 'manual_repair_required'
+                or operation.recovery.get('phase') == 'ledger_committed'))
+            operation.version += 1
+            self._persist_operations()
 
     # 下面三个是可替换的"外部世界"入口：测试用桩，生产用真实网络 / 子进程。
 
@@ -783,8 +902,9 @@ class DriverPackageService:
             if dependencies:
                 # 安装器失败也可能已部分改变共享环境，因此提前标记受影响进程。
                 self.source_changes.package_changed(name, reason="shared_dependencies_changed", shared_dependencies=True)
+                self._checkpoint(operation_id, dependencies_started=True)
             installer = self._install_dependencies(dependencies, upgrade, log)
-            placement = nullcontext(root) if source.kind == "local" else self._place_source_tree(root, name, version, log)
+            placement = nullcontext(root) if source.kind == "local" else self._place_source_tree(root, name, version, log, operation_id)
             with placement as package_root:
                 package_dirs = source_dirs if source.kind == "local" else [
                     str(package_root / Path(item).relative_to(root)) for item in source_dirs
@@ -803,7 +923,7 @@ class DriverPackageService:
                     updated_at_ms=_now_ms(),
                 )
                 records[key] = record
-                save_ledger(self.working_dir, records)
+                self._commit_ledger(operation_id, records)
             self._restart_required = True
             self.source_changes.package_changed(name, reason="package_installed", host_mount=record.enabled)
             with self._lock:
@@ -829,13 +949,15 @@ class DriverPackageService:
         return target
 
     @contextmanager
-    def _source_transaction(self, target: Path) -> Iterator[None]:
+    def _source_transaction(self, target: Path, operation_id: str) -> Iterator[None]:
         """源码变更在台账成功写入前可回滚；回滚失败时保留备份供恢复。"""
         managed = packages_root(self.working_dir).resolve()
         if target.is_symlink() or managed not in target.resolve().parents:
             raise DriverPackageError("只能修改驱动包缓存内的源码目录")
         backup_root = Path(tempfile.mkdtemp(prefix="rollback-", dir=str(self._staging_root())))
         backup = backup_root / "previous"
+        self._checkpoint(operation_id, phase='source_switch', source={
+            'target': str(target), 'backup': str(backup), 'target_existed': target.exists()})
         try:
             if target.exists():
                 target.rename(backup)
@@ -845,21 +967,30 @@ class DriverPackageService:
         try:
             yield
         except BaseException:
-            # 不用 ignore_errors：失败时不可删除唯一的旧源码备份。
-            if target.exists():
-                shutil.rmtree(target)
-            if backup.exists():
-                backup.rename(target)
-            shutil.rmtree(backup_root, ignore_errors=True)
+            # 台账已提交后，日志写入失败不能把源码回滚为与新台账不一致的旧版本。
+            recovery = self._operations[operation_id].recovery
+            if journal.ledger_data(self.working_dir) == recovery.get('expected_ledger'):
+                recovery['phase'] = 'ledger_committed'
+            else:
+                try:
+                    if target.exists():
+                        shutil.rmtree(target)
+                    if backup.exists():
+                        backup.rename(target)
+                    self._checkpoint(operation_id, source=None, outcome='rolled_back')
+                    shutil.rmtree(backup_root, ignore_errors=True)
+                except BaseException:
+                    recovery['outcome'] = 'manual_repair_required'
+                    raise
             raise
         else:
             shutil.rmtree(backup_root, ignore_errors=True)
 
     @contextmanager
-    def _place_source_tree(self, root: Path, name: str, version: str, log: Callable[[str], None]) -> Iterator[Path]:
+    def _place_source_tree(self, root: Path, name: str, version: str, log: Callable[[str], None], operation_id: str) -> Iterator[Path]:
         target = self._package_target(name, version)
         target.parent.mkdir(parents=True, exist_ok=True)
-        with self._source_transaction(target):
+        with self._source_transaction(target, operation_id):
             shutil.move(str(root), str(target))
             log(f"[place] {target}")
             yield target
@@ -885,7 +1016,7 @@ class DriverPackageService:
         removal = nullcontext()
         if record.source_kind != "local" and root is not None and root.exists() and managed_root in root.resolve().parents:
             target = root.parent if root.parent.resolve() != managed_root else root
-            removal = self._source_transaction(target)
+            removal = self._source_transaction(target, operation_id)
             log(f"[remove] {root}")
         else:
             log("[remove] 本机目录原地登记，只移出台账，不删文件")
@@ -893,7 +1024,7 @@ class DriverPackageService:
             if record.dependencies:
                 log(f"[deps] 保留已装依赖（可能被其他包共用）：{', '.join(record.dependencies)}")
             records.pop(key, None)
-            save_ledger(self.working_dir, records)
+            self._commit_ledger(operation_id, records)
         self._restart_required = True
         self.source_changes.package_changed(name, reason="package_uninstalled", host_mount=record.enabled)
         return {"removed": record.name, "restart_required": True}

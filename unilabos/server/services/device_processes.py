@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 from unilabos.utils import logger
 from unilabos.utils.log_notices import log_notices
 from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
+from unilabos.server.services.host_mutations import HostMutationBusy, get_host_mutation_gate
 
 SPEC_FILENAME = "device_processes.json"
 PROCESS_DIRNAME = "device_processes"
@@ -38,6 +39,10 @@ RESTART_POLICIES = ("never", "on-failure", "always")
 
 class DeviceProcessError(RuntimeError):
     """受管进程操作的可预期错误。"""
+
+
+class DeviceProcessBusyError(DeviceProcessError):
+    """包变更或 Host 重启尚未完成。"""
 
 
 @dataclass
@@ -383,8 +388,20 @@ class DeviceProcessService:
         return self._view(spec)
 
     def restart(self, process_id: str) -> Dict[str, Any]:
-        self.stop(process_id, wait=True)
-        return self.start(process_id)
+        spec = load_specs(self.working_dir).get(process_id)
+        if spec is None:
+            raise DeviceProcessError(f"device process not found: {process_id}")
+        try:
+            # 在停止旧 slave 前取得变更锁，拒绝时保持正在运行的进程。
+            with get_host_mutation_gate(self.working_dir).hold('slave_restart'):
+                self.stop(process_id, wait=True)
+                with self._lock:
+                    self._stop_requested.discard(process_id)
+                    self._launch_with_sources(spec, reset_restart_count=True)
+                self._ensure_monitor()
+                return self._view(spec)
+        except HostMutationBusy as exc:
+            raise DeviceProcessBusyError(str(exc)) from exc
 
     def start_auto(self) -> List[str]:
         """Host 启动完成后拉起 auto_start 的进程；返回启动的 id。"""
@@ -413,6 +430,13 @@ class DeviceProcessService:
     # ── 内部：启动 / 结束 / 看护 ─────────────────────────────────
 
     def _launch(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
+        try:
+            with get_host_mutation_gate(self.working_dir).hold('slave_start'):
+                self._launch_with_sources(spec, reset_restart_count=reset_restart_count)
+        except HostMutationBusy as exc:
+            raise DeviceProcessBusyError(str(exc)) from exc
+
+    def _launch_with_sources(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
         runtime = self._runtime.setdefault(spec.id, DeviceProcessRuntime())
         command = self.build_command(spec)
         directory = process_dir(self.working_dir, spec.id)

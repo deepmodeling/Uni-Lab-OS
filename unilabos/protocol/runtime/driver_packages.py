@@ -1,6 +1,7 @@
 """驱动包管理请求；HTTP、CLI 与 SDK 共用，源码登记由 Host 服务负责。"""
 
 from pydantic import BaseModel, Field
+from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest
 
 
 class DriverPackageInstallRequest(BaseModel):
@@ -14,3 +15,7 @@ class DriverPackageInstallRequest(BaseModel):
 
 class DriverPackageEnableRequest(BaseModel):
     enabled: bool
+
+
+class DriverPackageOperationConfirmRequest(ResourceIntervalReleaseRequest):
+    """核实中断安装后的源码、台账与共享依赖；此操作不触发重启。"""

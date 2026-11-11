@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from unilabos.protocol.runtime.driver_packages import (
     DriverPackageEnableRequest,
     DriverPackageInstallRequest,
+    DriverPackageOperationConfirmRequest,
 )
 
 from unilabos.server.services.driver_packages import (
@@ -58,6 +59,14 @@ def create_driver_packages_router() -> APIRouter:
     @router.get("/operations/{operation_id}")
     def operation(operation_id: str) -> Dict[str, Any]:
         return _call(get_driver_package_service().operation, operation_id)
+
+    @router.post("/operations/{operation_id}/confirm")
+    def confirm(operation_id: str, body: DriverPackageOperationConfirmRequest) -> Dict[str, Any]:
+        return _call(get_driver_package_service().confirm_operation, operation_id, body.expected_version, body.reason)
+
+    @router.post("/operations/{operation_id}/recover")
+    def recover(operation_id: str, body: DriverPackageOperationConfirmRequest) -> Dict[str, Any]:
+        return _call(get_driver_package_service().retry_recovery, operation_id, body.expected_version, body.reason)
 
     @router.put("/{name}/enabled")
     def set_enabled(name: str, body: DriverPackageEnableRequest) -> Dict[str, Any]:

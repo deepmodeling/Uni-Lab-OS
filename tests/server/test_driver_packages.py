@@ -373,6 +373,10 @@ def test_dependency_install_failure_and_toggle(service: dp.DriverPackageService,
     done = _wait(service, service.start_install(str(source))["operation_id"])
     assert done["status"] == "failed" and "依赖安装失败" in done["error"]
     assert service.inventory()["packages"] == []  # 失败不登记
+    assert done['requires_confirmation']
+    with pytest.raises(dp.DriverPackageBusyError):
+        service.start_install(str(source))
+    service.confirm_operation(done['operation_id'], done['version'], '已修复并核实共享依赖环境')
 
     dp.save_ledger(service.working_dir, {"x": dp.DriverPackageRecord(name="x", package_dirs=[], enabled=True)})
     record = service.set_enabled("x", False)

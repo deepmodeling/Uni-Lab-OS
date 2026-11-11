@@ -806,6 +806,12 @@ class EdgeControlService:
                 break
 
     @property
+    def edge_process(self) -> str:
+        """当前 Host 进程身份；单纯 WebSocket 重连不会改变。"""
+        with self._lock:
+            return self._edge_process
+
+    @property
     def connected(self) -> bool:
         with self._lock:
             return self._connected

@@ -39,6 +39,8 @@ class RestartCoordinator:
         self,
         get_execution_backend: Callable[[], Any],
         get_scheduler: Callable[[], Any],
+        *,
+        mutation_gate: Any = None,
     ) -> None:
         self._get_execution_backend = get_execution_backend
         self._get_scheduler = get_scheduler
@@ -49,6 +51,9 @@ class RestartCoordinator:
         self._requested_at: Optional[float] = None
         self._watcher: Optional[threading.Thread] = None
         self._restarting = False
+        self._mutation_gate = mutation_gate
+        self._edge_restart_requested = False
+        self._watch_generation = 0
 
     @staticmethod
     def _edge_control_service() -> Any:
@@ -82,6 +87,7 @@ class RestartCoordinator:
                 "safe_restart": is_safe_restart_enabled() or is_supervised(),
                 "active_jobs": self.active_job_ids(),
                 "dispatch_paused": self._scheduler_paused(),
+                "mutation": self._mutation_gate.status() if self._mutation_gate is not None else None,
             }
 
     def _scheduler_paused(self) -> bool:
@@ -109,16 +115,22 @@ class RestartCoordinator:
         with self._lock:
             if self._restarting:
                 return self.status()
+            new_request = not self._pending
+            if new_request:
+                self._watch_generation += 1
             self._pending = True
             self._mode = mode
             self._scope = scope
+            if self._resolve_scope() == 'process' and self._mutation_gate is not None:
+                self._mutation_gate.request_restart(self)
             self._requested_at = time.time()
             scheduler = self._get_scheduler()
             if scheduler is not None:
                 scheduler.pause_dispatch(reason="restart")
-            if self._watcher is None or not self._watcher.is_alive():
+            if new_request or self._watcher is None or not self._watcher.is_alive():
                 self._watcher = threading.Thread(
                     target=self._watch,
+                    args=(self._watch_generation,),
                     name="RestartCoordinator",
                     daemon=True,
                 )
@@ -131,11 +143,26 @@ class RestartCoordinator:
         return self.status()
 
     def cancel(self) -> dict[str, Any]:
+        if self._edge_restart_requested:
+            from unilabos.server.api.edge_proxy import edge_http
+            response = edge_http('DELETE', '/api/v1/restart', timeout=10)
+            if response is None or response.status_code >= 300:
+                return self.status()
+            import json
+            state = json.loads(response.body)
+            if state.get('pending') or state.get('restarting'):
+                return self.status()
+            with self._lock:
+                self._edge_restart_requested = False
+                self._restarting = False
         with self._lock:
             if self._restarting:
                 return self.status()
             self._pending = False
+            self._watch_generation += 1
             self._requested_at = None
+            if self._mutation_gate is not None:
+                self._mutation_gate.cancel_restart(self)
             scheduler = self._get_scheduler()
         if scheduler is not None:
             scheduler.resume_dispatch(reason="restart")
@@ -144,14 +171,19 @@ class RestartCoordinator:
 
     # ── 安静点检测与执行 ─────────────────────────────────────
 
-    def _watch(self) -> None:
+    def _watch(self, generation: int) -> None:
         confirmations = 0
         while True:
             time.sleep(_POLL_INTERVAL_SECONDS)
             with self._lock:
-                if not self._pending:
+                if not self._pending or generation != self._watch_generation:
                     return
                 mode = self._mode
+            if self._resolve_scope() == 'process' and self._mutation_gate is not None:
+                # immediate 也不能截断源码切换、依赖安装或持久日志提交。
+                if not self._mutation_gate.claim_restart(self):
+                    confirmations = 0
+                    continue
             if mode == "immediate":
                 break
             if self.active_job_ids():
@@ -161,7 +193,7 @@ class RestartCoordinator:
             if confirmations >= _QUIESCENT_CONFIRMATIONS:
                 break
         with self._lock:
-            if not self._pending:
+            if not self._pending or generation != self._watch_generation:
                 return
             self._restarting = True
         self._execute()
@@ -183,6 +215,9 @@ class RestartCoordinator:
         from unilabos.server.api.edge_proxy import edge_http
 
         logger.warning("[Restart] 执行端已安静，经控制面通知 Edge 进程整进程重启")
+        service = self._edge_control_service()
+        previous_process = getattr(service, 'edge_process', '')
+        generation = self._watch_generation
         response = edge_http(
             "POST",
             "/api/v1/restart",
@@ -199,7 +234,11 @@ class RestartCoordinator:
             with self._lock:
                 self._restarting = False
             return
-        ready = self._wait_edge_reconnected()
+        self._edge_restart_requested = True
+        ready = self._wait_edge_reconnected(previous_process=previous_process, generation=generation)
+        with self._lock:
+            if not self._pending or generation != self._watch_generation:
+                return  # 用户已确认取消远端等待，不能再改变新的暂停原因。
         if not ready:
             logger.error(
                 "[Restart] Edge 重启后未在预期时间内重连，派发保持暂停；"
@@ -212,6 +251,7 @@ class RestartCoordinator:
             self._pending = False
             self._requested_at = None
             self._restarting = False
+            self._edge_restart_requested = False
             scheduler = self._get_scheduler()
         if scheduler is not None:
             scheduler.resume_dispatch(reason="restart")
@@ -220,21 +260,31 @@ class RestartCoordinator:
     def _wait_edge_reconnected(
         self,
         *,
-        disconnect_timeout: float = 30.0,
+        disconnect_timeout: float = 1200.0,
         reconnect_timeout: float = 300.0,
+        previous_process: str = '',
+        generation: int | None = None,
     ) -> bool:
         """等待 Edge 断开旧连接并以新进程重连。"""
 
         service = self._edge_control_service()
         if service is None:
             return False
-        deadline = time.time() + disconnect_timeout
-        while time.time() < deadline and service.connected:
+        deadline = time.monotonic() + disconnect_timeout
+        while time.monotonic() < deadline and service.connected:
+            if not self._pending or generation is not None and generation != self._watch_generation:
+                return False
+            if previous_process and getattr(service, 'edge_process', '') not in {'', previous_process}:
+                return True
             time.sleep(_POLL_INTERVAL_SECONDS)
-        # 旧连接可能在通知前就已断开，不强求观察到断开事件
-        deadline = time.time() + reconnect_timeout
-        while time.time() < deadline:
-            if service.connected:
+        # 包安装可能持续十几分钟；旧 Host 一直在线不能当作已经重启。
+        if service.connected:
+            return False
+        deadline = time.monotonic() + reconnect_timeout
+        while time.monotonic() < deadline:
+            if not self._pending or generation is not None and generation != self._watch_generation:
+                return False
+            if service.connected and (not previous_process or getattr(service, 'edge_process', '') not in {'', previous_process}):
                 return True
             time.sleep(_POLL_INTERVAL_SECONDS)
         return False
@@ -314,8 +364,16 @@ def get_restart_coordinator() -> RestartCoordinator:
             _coordinator = RestartCoordinator(
                 get_execution_backend,
                 get_scheduler,
+                mutation_gate=_configured_mutation_gate(),
             )
         return _coordinator
+
+
+def _configured_mutation_gate():
+    from pathlib import Path
+    from unilabos.config.config import BasicConfig
+    from unilabos.server.services.host_mutations import get_host_mutation_gate
+    return get_host_mutation_gate(getattr(BasicConfig, 'working_dir', None) or Path.cwd())
 
 
 __all__ = [

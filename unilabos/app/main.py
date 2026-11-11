@@ -599,7 +599,14 @@ def _run_main():
     # 管理 API 装的驱动包（unilabos_data/driver_packages.json 中已启用者）并入扫描目录，
     # 安装后安静点重启即可加载，不用改启动命令。
     if not check_mode:
-        from unilabos.server.services.driver_packages import enabled_package_dirs
+        from unilabos.server.services.driver_packages import enabled_package_dirs, get_driver_package_service
+
+        if BasicConfig.is_host_mode and args_dict.get("role") != "backend" and not _runs_local_authority(args_dict):
+            # 恢复在目录存在性判断之前完成，避免上次切换中断后遗漏已恢复的挂载目录。
+            package_service = get_driver_package_service()
+            pending_operations = package_service.mutation_gate.status()['unresolved_operations']
+            if pending_operations:
+                print_status(f"驱动包操作待核实，受管 slave 启动已阻止：{', '.join(pending_operations)}", "warning")
 
         ledger_dirs = [
             item

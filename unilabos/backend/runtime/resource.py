@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from unilabos.backend.runtime.async_utils import run_blocking
 from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children
 from unilabos.resources.adapters.plr_materials import (
     CreatedPLRMaterials,
     MaterialGateway,
@@ -261,7 +262,7 @@ class MaterialSnapshotObserver:
     @staticmethod
     def _walk(resource: Any) -> list[Any]:
         result = [resource]
-        for child in list(getattr(resource, "children", None) or []):
+        for child in material_children(resource):
             result.extend(MaterialSnapshotObserver._walk(child))
         return result
 
@@ -317,7 +318,14 @@ class MaterialSnapshotObserver:
                     _root_key: int = root_key,
                     _node: Any = node,
                 ) -> None:
-                    self._queue(_root_key, node=_node)
+                    # legacy 通道取放不触发 Resource.children 的 assign 回调，
+                    # head_state 变化可能代表物料拓扑变化，必须冻结完整树。
+                    head_changed = has_legacy_tip_channels(_node) and (
+                        "head_state" in _state or "head96_state" in _state
+                    )
+                    if head_changed:
+                        self._observe_state_subtree(_root_key, _node)
+                    self._queue(_root_key, node=_node, structural=head_changed)
 
                 observed.state_callbacks[node_key] = (node, state_updated)
             register(state_updated)
@@ -792,7 +800,7 @@ class AuthorityResourceService:
                 node_uuid = str(getattr(current, "unilabos_uuid", "") or "")
                 if node_uuid:
                     roots[node_uuid] = root_uuid
-                stack.extend(getattr(current, "children", None) or [])
+                stack.extend(material_children(current))
         return roots
 
     @staticmethod

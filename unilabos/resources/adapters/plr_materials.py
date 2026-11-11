@@ -8,6 +8,7 @@ from typing import Any, Mapping, Optional, Protocol, Sequence
 
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children, material_serialization
 from unilabos.protocol.materials import InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
     MaterialAggregateRead,
@@ -300,12 +301,32 @@ def plr_resources_to_create(resources: Sequence[Any]) -> MaterialTreeCreate:
                         f"PLR 资源 {resource.name} 已有 Site UUID；"
                         "已有物料应走更新而不是创建"
                     )
-        for child in getattr(resource, "children", []) or []:
+        for child in material_children(resource):
             validate_new(child)
 
     for resource in resources:
         validate_new(resource)
-    draft_resources = copy.deepcopy(list(resources))
+        # 先校验原对象的提交状态；TipSpot 的 legacy tracker 使用进程侧表，
+        # deepcopy 不会复制其待提交历史，不能等复制后再判断。
+        material_serialization(resource)
+    # PLR legacy TipTracker 以 object 单例标记“无待提交操作”；普通 deepcopy
+    # 会复制该哨兵，导致已提交枪头被误认为历史对象。保留哨兵的对象身份。
+    memo = {}
+
+    def remember_tracker_sentinels(resource):
+        for field in ("head", "head96") if has_legacy_tip_channels(resource) else ():
+            channels = getattr(resource, field, None)
+            if isinstance(channels, dict):
+                for tracker in channels.values():
+                    marker = getattr(tracker, "_before", None)
+                    if type(marker) is object:
+                        memo[id(marker)] = marker
+        for child in material_children(resource):
+            remember_tracker_sentinels(child)
+
+    for resource in resources:
+        remember_tracker_sentinels(resource)
+    draft_resources = copy.deepcopy(list(resources), memo)
     tree = ResourceTreeSet.from_plr_resources(
         draft_resources, known_random_uuid=True
     )

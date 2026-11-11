@@ -1,4 +1,5 @@
-from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
+from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder
+from pylabrobot.resources.utils import create_ordered_items_2d
 
 from unilabos.resources.presets.itemized_carrier import BottleCarrier
 from unilabos.resources.presets.bioyond.bottles import (
@@ -43,6 +44,7 @@ def BIOYOND_PolymerStation_6StockCarrier(name: str) -> BottleCarrier:
     start_y = (carrier_size_y - (2 - 1) * bottle_spacing_y - bottle_diameter) / 2
 
     sites = create_ordered_items_2d(
+        name_prefix=name,
         klass=ResourceHolder,
         num_items_x=3,
         num_items_y=2,
@@ -56,8 +58,6 @@ def BIOYOND_PolymerStation_6StockCarrier(name: str) -> BottleCarrier:
         size_y=bottle_diameter,
         size_z=carrier_size_z,
     )
-    for k, v in sites.items():
-        v.name = f"{name}_{v.name}"
 
     carrier = BottleCarrier(
         name=name,
@@ -85,9 +85,9 @@ def BIOYOND_PolymerStation_6StockCarrier(name: str) -> BottleCarrier:
         for row in range(2):  # 2行
             idx = col * 2 + row  # 计算索引: 列优先顺序
             if row == 0:  # A行 (PLR y=0 → Bioyond x=1)
-                carrier[idx] = BIOYOND_PolymerStation_Liquid_Vial(f"{ordering[idx]}")
+                carrier[idx] = BIOYOND_PolymerStation_Liquid_Vial(f"{name}_{ordering[idx]}")
             else:  # B行 (PLR y=1 → Bioyond x=2)
-                carrier[idx] = BIOYOND_PolymerStation_Solid_Vial(f"{ordering[idx]}")
+                carrier[idx] = BIOYOND_PolymerStation_Solid_Vial(f"{name}_{ordering[idx]}")
     return carrier
 
 
@@ -116,6 +116,7 @@ def BIOYOND_PolymerStation_8StockCarrier(name: str) -> BottleCarrier:
     start_y = (carrier_size_y - (2 - 1) * bottle_spacing_y - bottle_diameter) / 2
 
     sites = create_ordered_items_2d(
+        name_prefix=name,
         klass=ResourceHolder,
         num_items_x=4,
         num_items_y=2,
@@ -129,8 +130,6 @@ def BIOYOND_PolymerStation_8StockCarrier(name: str) -> BottleCarrier:
         size_y=bottle_diameter,
         size_z=carrier_size_z,
     )
-    for k, v in sites.items():
-        v.name = f"{name}_{v.name}"
 
     carrier = BottleCarrier(
         name=name,
@@ -255,6 +254,7 @@ def BIOYOND_Electrolyte_6VialCarrier(name: str) -> BottleCarrier:
     start_y = (carrier_size_y - (2 - 1) * bottle_spacing_y - bottle_diameter) / 2
 
     sites = create_ordered_items_2d(
+        name_prefix=name,
         klass=ResourceHolder,
         num_items_x=3,
         num_items_y=2,
@@ -268,8 +268,6 @@ def BIOYOND_Electrolyte_6VialCarrier(name: str) -> BottleCarrier:
         size_y=bottle_diameter,
         size_z=carrier_size_z,
     )
-    for k, v in sites.items():
-        v.name = f"{name}_{v.name}"
 
     carrier = BottleCarrier(
         name=name,

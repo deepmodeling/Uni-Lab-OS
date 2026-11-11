@@ -130,11 +130,14 @@ def BIOYOND_PolymerStation_TipBox(
     """
     from pylabrobot.resources import Tip, TipRack, TipSpot, create_ordered_items_2d
 
-    def make_tip() -> Tip:
-        return Tip(
-            has_filter=False,
-            total_tip_length=size_z - 10.0,
-            maximal_volume=1000.0,
+    from unilabos.resources.presets.tips import make_unmeasured_tip, tip_geometry_metadata
+
+    def make_tip(name: str) -> Tip:
+        return make_unmeasured_tip(
+            name,
+            model="BIOYOND_PolymerStation_TipBox",
+            length=size_z - 10.0,
+            volume=1000.0,
             fitting_depth=8.0,
         )
 
@@ -153,6 +156,7 @@ def BIOYOND_PolymerStation_TipBox(
         size_y=8.0,
         size_z=size_z - 10.0,
         make_tip=make_tip,
+        metadata=tip_geometry_metadata("BIOYOND_PolymerStation_TipBox"),
     )
     tip_box = TipRack(
         name=name,

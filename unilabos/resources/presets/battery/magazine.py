@@ -185,7 +185,7 @@ def magazine_factory(
             hole_key = keys[i]
             hole = holder.children[i]
             for j in reversed(range(max_sheets_per_hole)):
-                item_name = f"{hole_key}_sheet{j+1}"
+                item_name = f"{name}_{hole_key}_sheet{j+1}"
                 item = klass(name=item_name)
                 hole.assign_child_resource(item)
     return holder

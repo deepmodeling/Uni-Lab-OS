@@ -94,6 +94,26 @@ def test_graphio_accepts_sparse_plr_serialization(monkeypatch):
     assert graph_resource.parent is None
 
 
+@pytest.mark.parametrize("position", [None, Coordinate(1, 2, 3)])
+def test_graphio_does_not_persist_duplicate_state_location(position, monkeypatch):
+    from unilabos.resources import graphio
+
+    resource = Resource(name="position_root", size_x=10, size_y=20, size_z=30)
+    resource.unilabos_uuid = str(uuid4())
+    resource.location = position
+    original_state = resource.serialize_state
+
+    def state_with_location():
+        return {**original_state(), "location": position.serialize() if position else None}
+
+    monkeypatch.setattr(resource, "serialize_state", state_with_location)
+    payload = graphio.resource_plr_to_ulab(resource)
+    assert "location" not in payload["data"]
+    assert payload["pose"].get("position") == (
+        {"x": 1, "y": 2, "z": 3} if position else None
+    )
+
+
 def test_tracker_state_is_promoted_from_data_to_root():
     resource = ResourceDict.model_validate(
         _resource_payload(
@@ -176,9 +196,18 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
         EXTRA_RESOURCE_CLASS: "BeakerTemplate",
         EXTRA_RESOURCE_META_DATA: {"vendor": {"lot": "A-1"}},
     }
+    child = Resource(name="child", size_x=1, size_y=1, size_z=1)
+    child.unilabos_uuid = str(uuid4())
+    container.assign_child_resource(child, location=Coordinate(1, 2, 3))
 
     tree = ResourceTreeSet.from_plr_resources([container])
     root = tree.root_nodes[0].res_content
+    child_content = tree.root_nodes[0].children[0].res_content
+    assert child_content.pose.position.model_dump() == {"x": 1, "y": 2, "z": 3}
+    assert "location" not in child_content.data
+    child_content.pose.position = ResourceDictPositionObject(x=4, y=5, z=6)
+    # 模拟旧调用方绕过模型校验，直接注入过期的 state 快照。
+    child_content.data["location"] = {"type": "Coordinate", "x": 1, "y": 2, "z": 3}
     original_state = container.serialize_state()
 
     expected_substances = [
@@ -223,7 +252,10 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
 
     monkeypatch.setattr(plr_serializer, "deserialize", deserialize_geometry_without_backend_scan)
     restored = tree.to_plr_resources(skip_devices=False)[0]
-    assert restored.serialize_state() == original_state
+    assert {
+        key: value for key, value in restored.serialize_state().items() if key != "location"
+    } == {key: value for key, value in original_state.items() if key != "location"}
+    assert "location" not in root.data
     assert restored.barcode is not None
     assert restored.barcode.serialize() == {
         "data": "BC-001",
@@ -235,6 +267,7 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
         "vendor": {"lot": "A-1"}
     }
     assert restored.location == Coordinate(40, 50, 60)
+    assert restored.children[0].location == Coordinate(4, 5, 6)
     assert "position" not in restored.unilabos_extra[EXTRA_RESOURCE_POSE]
 
     roundtripped = ResourceTreeSet.from_plr_resources(
@@ -246,6 +279,34 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
     assert roundtripped.barcode == "BC-001"
     assert roundtripped.barcode_symbology == "code128"
     assert roundtripped.meta_data == {"vendor": {"lot": "A-1"}}
+    assert "location" not in roundtripped.data
+
+
+@pytest.mark.parametrize("position", [None, {"x": 0, "y": 0, "z": 0}, {"x": 10, "y": 20, "z": 30}])
+def test_material_pose_wins_over_old_state_location(position):
+    payload = _resource_payload(
+        pose={"position": position},
+        data={"location": {"type": "Coordinate", "x": 1, "y": 2, "z": 3}},
+    )
+    resource = ResourceDict.model_validate(payload)
+    assert resource.pose.model_dump()["position"] == position
+    assert "location" not in resource.data
+    assert "location" in payload["data"]
+    resource.data["location"] = payload["data"]["location"]
+    assert "location" not in assemble_tracker_state(resource)
+
+
+def test_material_state_only_location_is_migrated_to_pose():
+    resource = ResourceDict.model_validate(_resource_payload(
+        data={"location": {"type": "Coordinate", "x": 1, "y": 2, "z": 3}},
+    ))
+    assert resource.pose.position.model_dump() == {"x": 1, "y": 2, "z": 3}
+    assert "location" not in resource.model_dump()["data"]
+
+
+def test_material_invalid_state_only_location_is_not_silently_discarded():
+    with pytest.raises(ValueError):
+        ResourceDict.model_validate(_resource_payload(data={"location": "bad"}))
 
 
 def test_barcode_config_is_promoted_once_and_conflicts_are_rejected():

@@ -21,6 +21,7 @@ try:
         Resource, Deck, Plate, TipRack, Container, Tip,
         Coordinate
     )
+    from unilabos.resources.presets.tips import make_unmeasured_tip, tip_geometry_metadata
     from pylabrobot.resources.tip_rack import TipSpot
     from pylabrobot.resources.well import Well as PlateWell
     PYLABROBOT_AVAILABLE = True
@@ -152,19 +153,6 @@ class LaiYuTipRack1000(LaiYuLiquidTipRack):
                     x = col * tip_spacing + tip_spacing / 2
                     y = row * tip_spacing + tip_spacing / 2
                     
-                    # 创建枪头 - 根据PyLabRobot或模拟类使用不同参数
-                    if PYLABROBOT_AVAILABLE:
-                        # PyLabRobot的Tip需要特定参数
-                        tip = Tip(
-                            has_filter=False,
-                            total_tip_length=95.0,  # 1000ul枪头长度
-                            maximal_volume=1000.0,  # 最大体积
-                            fitting_depth=8.0       # 安装深度
-                        )
-                    else:
-                        # 模拟类只需要name
-                        tip = Tip(name=f"tip_{spot_name}")
-                    
                     # 创建枪头位置
                     if PYLABROBOT_AVAILABLE:
                         # PyLabRobot的TipSpot需要特定参数
@@ -173,7 +161,11 @@ class LaiYuTipRack1000(LaiYuLiquidTipRack):
                             size_x=9.0,  # 枪头位置宽度
                             size_y=9.0,  # 枪头位置深度
                             size_z=95.0,  # 枪头位置高度
-                            make_tip=lambda: tip  # 创建枪头的函数
+                            metadata=tip_geometry_metadata("LaiYuTipRack1000"),
+                            make_tip=lambda name: make_unmeasured_tip(
+                                name, model="LaiYuTipRack1000", volume=1000,
+                                length=95, fitting_depth=8.0,
+                            ),
                         )
                     else:
                         # 模拟类只需要name
@@ -198,19 +190,6 @@ class LaiYuTipRack1000(LaiYuLiquidTipRack):
             relative_y = well_pos["y"] - module_position["y"]
             relative_z = well_pos["z"] - module_position["z"]
             
-            # 创建枪头 - 根据PyLabRobot或模拟类使用不同参数
-            if PYLABROBOT_AVAILABLE:
-                # PyLabRobot的Tip需要特定参数
-                tip = Tip(
-                    has_filter=False,
-                    total_tip_length=95.0,  # 1000ul枪头长度
-                    maximal_volume=1000.0,  # 最大体积
-                    fitting_depth=8.0       # 安装深度
-                )
-            else:
-                # 模拟类只需要name
-                tip = Tip(name=f"tip_{spot_name}")
-            
             # 创建枪头位置
             if PYLABROBOT_AVAILABLE:
                 # PyLabRobot的TipSpot需要特定参数
@@ -219,7 +198,11 @@ class LaiYuTipRack1000(LaiYuLiquidTipRack):
                     size_x=well_config.get("diameter", 9.0),  # 使用配置中的直径
                     size_y=well_config.get("diameter", 9.0),
                     size_z=well_config.get("depth", 95.0),    # 使用配置中的深度
-                    make_tip=lambda: tip  # 创建枪头的函数
+                    metadata=tip_geometry_metadata("LaiYuTipRack1000"),
+                        make_tip=lambda name: make_unmeasured_tip(
+                            name, model="LaiYuTipRack1000", volume=1000,
+                            length=95, fitting_depth=8.0,
+                        )
                 )
             else:
                 # 模拟类只需要name
@@ -231,8 +214,7 @@ class LaiYuTipRack1000(LaiYuLiquidTipRack):
                 location=Coordinate(relative_x, relative_y, relative_z)
             )
             
-            # 注意：在PyLabRobot中，Tip不是Resource，不需要分配给TipSpot
-            # TipSpot的make_tip函数会在需要时创建Tip
+
 
 
 class LaiYuTipRack200(LaiYuLiquidTipRack):
@@ -279,19 +261,6 @@ class LaiYuTipRack200(LaiYuLiquidTipRack):
                 x = col * tip_spacing + tip_spacing / 2
                 y = row * tip_spacing + tip_spacing / 2
                 
-                # 创建枪头 - 根据PyLabRobot或模拟类使用不同参数
-                if PYLABROBOT_AVAILABLE:
-                    # PyLabRobot的Tip需要特定参数
-                    tip = Tip(
-                        has_filter=False,
-                        total_tip_length=72.0,  # 200ul枪头长度
-                        maximal_volume=200.0,   # 最大体积
-                        fitting_depth=8.0       # 安装深度
-                    )
-                else:
-                    # 模拟类只需要name
-                    tip = Tip(name=f"tip_{spot_name}")
-                
                 # 创建枪头位置
                 if PYLABROBOT_AVAILABLE:
                     # PyLabRobot的TipSpot需要特定参数
@@ -300,7 +269,11 @@ class LaiYuTipRack200(LaiYuLiquidTipRack):
                         size_x=9.0,  # 枪头位置宽度
                         size_y=9.0,  # 枪头位置深度
                         size_z=72.0,  # 枪头位置高度
-                        make_tip=lambda: tip  # 创建枪头的函数
+                        metadata=tip_geometry_metadata("LaiYuTipRack200"),
+                        make_tip=lambda name: make_unmeasured_tip(
+                            name, model="LaiYuTipRack200", volume=200,
+                            length=72, fitting_depth=8.0,
+                        )
                     )
                 else:
                     # 模拟类只需要name
@@ -312,8 +285,7 @@ class LaiYuTipRack200(LaiYuLiquidTipRack):
                     location=Coordinate(x, y, 0)
                 )
                 
-                # 注意：在PyLabRobot中，Tip不是Resource，不需要分配给TipSpot
-                # TipSpot的make_tip函数会在需要时创建Tip
+
 
 
 class LaiYu96WellPlate(LaiYuLiquidContainer):

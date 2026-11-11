@@ -1,4 +1,5 @@
-from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
+from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder
+from pylabrobot.resources.utils import create_ordered_items_2d
 
 from unilabos.resources.presets.itemized_carrier import Bottle, BottleCarrier
 from unilabos.resources.presets.bioyond.YB_bottles import (
@@ -24,6 +25,7 @@ def YIHUA_Electrolyte_12VialCarrier(name: str) -> BottleCarrier:
     start_y = (carrier_size_y - (6 - 1) * bottle_spacing_y - bottle_diameter) / 2
 
     sites = create_ordered_items_2d(
+        name_prefix=name,
         klass=ResourceHolder,
         num_items_x=2,
         num_items_y=6,
@@ -37,8 +39,6 @@ def YIHUA_Electrolyte_12VialCarrier(name: str) -> BottleCarrier:
         size_y=bottle_diameter,
         size_z=carrier_size_z,
     )
-    for k, v in sites.items():
-        v.name = f"{name}_{v.name}"
 
     carrier = BottleCarrier(
         name=name,

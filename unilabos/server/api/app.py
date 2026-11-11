@@ -654,6 +654,10 @@ def ensure_port_available(host: str, port: int) -> None:
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     probe = socket.socket(family, socket.SOCK_STREAM)
     try:
+        # POSIX 与 Uvicorn 使用相同的 TIME_WAIT 复用语义；仍拒绝活动监听者。
+        # Windows 的 SO_REUSEADDR 会允许共享监听端口，因此不启用。
+        if sys.platform != "win32":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((host, port))
     except OSError as exc:
         if _is_addr_in_use(exc):

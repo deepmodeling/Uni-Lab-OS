@@ -55,7 +55,7 @@ class InventoryRecovery:
                             ExecutionClaims._require_epoch(conn, self.epoch)
                             self._reconcile_one(conn, reservation.reservation_uuid, reservation.job_uuid, report)
                     except Exception as exc:
-                        report["issues"].append({"job_uuid": reservation.job_uuid,
+                        report["issues"].append({"job_uuid": reservation.job_uuid, "task_uuid": reservation.task_uuid,
                             "reservation_uuid": reservation.reservation_uuid, "reason": str(exc)})
                 with self.workflow.write_lock:
                     # 已封存的派发不能在库存记录丢失后被当成无需库存的动作。
@@ -96,7 +96,7 @@ class InventoryRecovery:
         payload["scheduler_revision"] = int(_load(job["task_meta_data"]).get("scheduler_revision") or 1)
         ExecutionInventoryCoordinator._validate_reservation(reservation, payload, allowed_statuses=_STATUSES)
         status = job["status"]
-        identity = {"job_uuid": job_uuid, "reservation_uuid": reservation_uuid}
+        identity = {"job_uuid": job_uuid, "reservation_uuid": reservation_uuid, "task_uuid": reservation.task_uuid}
         if status not in _TERMINAL:
             if status == "pending" and reservation.status != "active":
                 raise ValueError("未开始的尝试对应库存已经结算，禁止重复执行")

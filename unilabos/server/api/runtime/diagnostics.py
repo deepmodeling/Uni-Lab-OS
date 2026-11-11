@@ -218,6 +218,14 @@ def create_backend_router(
             raise HTTPException(status_code=503, detail="scheduler authority is remote")
         return scheduler.inventory_recovery_snapshot()
 
+    @router.post("/scheduler/inventory-recovery/reconcile")
+    def reconcile_inventory() -> dict[str, Any]:
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        scheduler._reconcile_inventory()
+        return scheduler.inventory_recovery_snapshot()
+
     @router.get("/status-incidents")
     def status_incidents(
         device_id: str = "",

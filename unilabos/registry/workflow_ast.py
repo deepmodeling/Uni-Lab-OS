@@ -116,7 +116,7 @@ def collect_static_workflow(fn: Callable[..., Any]) -> WorkflowBuildContext:
 
     def call(node: ast.Call, results: dict[str, WorkflowStep]) -> Any:
         name = method(node)
-        if name not in {"run", "run_template", "loop_for", "loop_while", "step_output", "device_state", "group", "parallel"}:
+        if name not in {"run", "run_template", "loop_for", "loop_while", "step_output", "device_state", "group", "parallel", "resource_scope"}:
             return fail(node, "仅支持 ctx 的步骤、循环和条件引用声明")
         if any(item.arg is None for item in node.keywords):
             return fail(node, "不支持关键字参数展开")
@@ -199,10 +199,11 @@ def collect_static_workflow(fn: Callable[..., Any]) -> WorkflowBuildContext:
             if isinstance(statement, ast.With) and len(statement.items) == 1:
                 item = statement.items[0]
                 context = method(item.context_expr)
-                if context not in {"loop_for", "loop_while", "group", "parallel"} or item.optional_vars is not None:
+                if context not in {"loop_for", "loop_while", "group", "parallel", "resource_scope"} or item.optional_vars is not None:
                     fail(statement, "仅支持无 as 绑定的 ctx 循环、group 或 parallel")
                 with call(item.context_expr, results):
-                    ctx.steps[-1] = replace(ctx.steps[-1], guards=deepcopy(guards))
+                    if context != "resource_scope":
+                        ctx.steps[-1] = replace(ctx.steps[-1], guards=deepcopy(guards))
                     if context == "parallel":
                         exports = {}
                         for branch in statement.body:
@@ -215,7 +216,7 @@ def collect_static_workflow(fn: Callable[..., Any]) -> WorkflowBuildContext:
                                     fail(branch, "并行分支不能声明同名结果")
                                 exports[key] = local[key]
                         results.update(exports)
-                    elif context == "group":
+                    elif context in {"group", "resource_scope"}:
                         body(statement.body, results, depth + 1)
                     else:
                         body(statement.body, dict(results), depth + 1)

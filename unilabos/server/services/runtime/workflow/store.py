@@ -361,8 +361,17 @@ class WorkflowStore:
         edges: List[WorkflowEdgeWrite],
         protect_reserved_metadata: bool = False,
         workflow_io: Optional[Dict[str, Any]] = None,
+        resource_scopes: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         with self.transaction() as conn:
+            if resource_scopes is not None:
+                from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+                checked_scopes = WorkflowResourceScopesRequest(revision=revision, scopes=resource_scopes)
+                current = WorkflowStore.get_workflow(self, workflow_uuid, conn=conn)
+                metadata = dict(current["meta_data"])
+                metadata["unilab"] = {**metadata.get("unilab", {}), "resource_scopes":
+                    [scope.model_dump(exclude_none=True) for scope in checked_scopes.scopes]}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
             if workflow_io is not None:
                 if set(workflow_io) != {"input_contract", "output_contract", "output_bindings"}:
                     raise StoreConflict("工作流 I/O 必须完整声明输入、输出合同与输出绑定")
@@ -381,6 +390,12 @@ class WorkflowStore:
             )
             graph = WorkflowStore.get_graph(self, workflow_uuid, conn=conn)
             unilab = (graph["workflow"].get("meta_data") or {}).get("unilab") or {}
+            if unilab.get("resource_scopes"):
+                from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
+                try:
+                    validate_graph_resource_scopes(graph)
+                except (ValueError, TypeError) as exc:
+                    raise StoreConflict(str(exc)) from exc
             if "input_contract" in unilab or "output_contract" in unilab:
                 from .workflow_io import validate_workflow_graph_io, WorkflowIOValidationError
 

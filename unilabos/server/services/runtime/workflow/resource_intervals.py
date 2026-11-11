@@ -73,12 +73,14 @@ class ResourceIntervals:
         plan = _load(task[0])
         runs = cls._rows(conn, request.task_uuid)
         wanted = {}
+        depths = {}
         actual = physical_keys(request)
         for frame in (plan.get("resource_intervals") or {}).get("frames", []):
             frozen = deserialize_resource_plan(frame["plan"])
             resources = {resource.resource_id: resource.canonical_key for resource in frozen.resources}
             for interval in frozen.intervals:
-                if job["workflow_node_uuid"] not in interval.node_uuids:
+                admission_members = frame.get("admission_members", {}).get(interval.interval_id, interval.node_uuids)
+                if job["workflow_node_uuid"] not in admission_members:
                     continue
                 key = resources[interval.resource_id]
                 if not interval.explicit_boundary and key not in actual:
@@ -89,8 +91,14 @@ class ResourceIntervals:
                               "parent": frame["parent_node_uuid"], "generation": generation}
                 owner = str(uuid5(NAMESPACE_URL, _json([request.task_uuid, interval.interval_id, generation])))
                 if key in wanted and wanted[key][0] != owner:
-                    raise StoreConflict("同一动作映射到互相冲突的资源区间")
+                    previous = wanted[key][1]
+                    # 内层每轮的使用权复用外层显式所有权，不能逐轮释放或重复取得同一设备。
+                    if previous["explicit"] and depths[key] < len(generation):
+                        continue
+                    if not (interval.explicit_boundary and len(generation) < depths[key]):
+                        raise StoreConflict("同一动作映射到互相冲突的资源区间")
                 wanted[key] = (owner, definition)
+                depths[key] = len(generation)
         for key in actual - wanted.keys():
             owner = str(uuid5(NAMESPACE_URL, _json([request.owner_uuid, key])))
             wanted[key] = (owner, {"members": [job["workflow_node_uuid"]], "job_uuid": request.owner_uuid,

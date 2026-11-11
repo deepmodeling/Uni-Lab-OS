@@ -164,6 +164,7 @@ class WorkflowGraphIORequest(_StrictModel):
 
 class GraphWriteRequest(_BackendModel):
     workflow_io: Optional[WorkflowGraphIORequest] = None
+    resource_scopes: Optional[List[Dict[str, Any]]] = None
     revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
     nodes: List[WorkflowNodeWrite] = Field(default_factory=list)
     edges: List[WorkflowEdgeWrite] = Field(default_factory=list)
@@ -554,7 +555,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         )
         try:
             service.save_graph(record["uuid"], revision=record["revision"], nodes=payload["nodes"],
-                               edges=payload["edges"], workflow_io=payload.get("io"))
+                               edges=payload["edges"], workflow_io=payload.get("io"), resource_scopes=payload.get("resource_scopes"))
         except Exception:
             # 新身份只属于本次请求，保存失败时清理空壳，不触及既有工作流。
             service.delete_workflow(record["uuid"])
@@ -626,6 +627,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 nodes=nodes,
                 edges=body.edges,
                 workflow_io=body.workflow_io.model_dump(mode="json") if body.workflow_io is not None else None,
+                resource_scopes=body.resource_scopes,
             )
         )
 

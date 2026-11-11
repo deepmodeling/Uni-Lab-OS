@@ -9,6 +9,25 @@ from .resource_keys import device_lock_key
 from .resource_plan import ResourcePlanError, bind_station_resource_plan, compile_template_resource_plan, serialize_resource_plan
 
 
+def validate_graph_resource_scopes(graph: dict[str, Any]) -> None:
+    """保存作者图时检查作用域，组框不改变循环边界。"""
+    nodes = {node["uuid"]: node for node in graph["nodes"]}
+
+    def loop_parent(node):
+        parent = node.get("parent_uuid")
+        seen = set()
+        while parent in nodes and nodes[parent].get("type") != "loop":
+            if parent in seen:
+                raise ValueError("节点父级关系成环")
+            seen.add(parent)
+            parent = nodes[parent].get("parent_uuid")
+        return parent
+
+    plan = {"nodes": [{**node, "kind": node["type"], "parent_uuid": loop_parent(node)}
+                      for node in nodes.values() if node["type"] != "group"], "edges": graph["edges"]}
+    compile_interval_plan(plan, graph)
+
+
 def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[str, Any]:
     """资源身份使用实际设备 ID；组框已由 dev 展开，循环体每轮有独立运行代次。"""
     nodes = {node["uuid"]: node for node in plan["nodes"]}
@@ -44,6 +63,21 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
     metadata = (graph.get("workflow") or {}).get("meta_data") or {}
     declarations = (metadata.get("unilab") or {}).get("resource_scopes", [])
     scoped: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
+    scope_frames: dict[str, str | None] = {}
+    scope_members: dict[str, list[str]] = {}
+
+    def ancestors(key: str) -> list[str | None]:
+        result: list[str | None] = [key]
+        while result[-1] is not None:
+            parent = parents[result[-1]]
+            if parent in result:
+                raise ResourcePlanError("invalid_scope_boundary", "循环父级成环")
+            result.append(parent)
+        return result
+
+    def child_in_frame(key: str, frame: str | None) -> str:
+        chain = ancestors(key)
+        return chain[chain.index(frame) - 1]
     if not isinstance(declarations, list):
         raise ResourcePlanError("invalid_scope", "resource_scopes 必须是数组")
     for scope in declarations:
@@ -52,10 +86,28 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
         members = scope.get("node_uuids")
         if not isinstance(members, list) or not members or any(not isinstance(key, str) for key in members):
             raise ResourcePlanError("invalid_scope_boundary", "资源作用域必须明确列出 node_uuids")
-        levels = {parents.get(key) for key in members}
-        if len(levels) != 1 or any(key not in nodes or nodes[key]["kind"] == "loop" for key in members):
-            raise ValueError("显式资源作用域跨循环边界，需要先展开对应层级的资源合同")
-        scoped[next(iter(levels))].append({**scope, "node_uuids": members})
+        if any(key not in nodes for key in members):
+            raise ResourcePlanError("invalid_scope_boundary", "资源作用域引用未知节点")
+        scope_id = str(scope.get("scope_id") or "")
+        if not scope_id or scope_id in scope_frames:
+            raise ResourcePlanError("invalid_scope", "资源作用域身份必须非空且唯一")
+        chains = [ancestors(key)[1:] for key in members]
+        frame = next(parent for parent in chains[0] if all(parent in chain for chain in chains))
+        boundary = sorted({child_in_frame(key, frame) for key in members})
+        # 跨入循环即声明完整循环的所有权边界，真实动作逐次准入；零轮循环也能正常收口。
+        expanded = sorted(key for key in nodes if any(member in ancestors(key) for member in boundary))
+        scope_frames[scope_id] = frame
+        scope_members[scope_id] = expanded
+        scoped[frame].append({**scope, "node_uuids": boundary})
+    for frame, scopes in scoped.items():
+        for scope in scopes:
+            parent_id = scope.get("parent_scope_id")
+            if parent_id:
+                if parent_id not in scope_frames or not set(scope_members[scope["scope_id"]]) <= set(scope_members[parent_id]):
+                    raise ResourcePlanError("invalid_scope_boundary", "子资源作用域必须完整位于父作用域内")
+                if scope_frames[parent_id] != frame:
+                    # 不同循环层级由运行时继承外层所有权；单层规划器只处理本层词法父级。
+                    scope.pop("parent_scope_id", None)
     result = []
     for parent, members in frames.items():
         template = compile_template_resource_plan({
@@ -63,5 +115,8 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
             "nodes": members, "edges": edges[parent], "resource_scopes": scoped[parent],
         })
         bound = bind_station_resource_plan(template, bindings)
-        result.append({"parent_node_uuid": parent, "plan": serialize_resource_plan(bound)})
-    return {"version": 1, "frames": result}
+        inherited = {interval.interval_id: scope_members[interval.scope_id]
+                     for interval in bound.intervals if interval.explicit_boundary and interval.scope_id in scope_members}
+        result.append({"parent_node_uuid": parent, "plan": serialize_resource_plan(bound),
+                       "admission_members": inherited})
+    return {"version": 2, "frames": result}

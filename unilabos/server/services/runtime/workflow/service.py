@@ -614,6 +614,7 @@ class WorkflowService(WorkflowStore):
         nodes: List[WorkflowNodeWrite | Dict[str, Any]],
         edges: List[WorkflowEdgeWrite | Dict[str, Any]],
         workflow_io: Optional[Dict[str, Any]] = None,
+        resource_scopes: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         identity = self.get_workflow(workflow_uuid)["uuid"]
         with self._authoring_lock(identity):
@@ -638,6 +639,7 @@ class WorkflowService(WorkflowStore):
                     edges=edge_values,
                     protect_reserved_metadata=True,
                     workflow_io=normalize_json_object(workflow_io) if workflow_io is not None else None,
+                    resource_scopes=resource_scopes,
                 )
             except ValidationError as exc:
                 detail = "; ".join(
@@ -658,7 +660,7 @@ class WorkflowService(WorkflowStore):
     ) -> Dict[str, Any]:
         """资源作用域通过专用修订接口写入，普通 metadata 更新不能改保留字段。"""
         from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
-        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+        from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
 
         identity = self.get_workflow(workflow_uuid)["uuid"]
         with self._authoring_lock(identity):
@@ -671,20 +673,7 @@ class WorkflowService(WorkflowStore):
                 metadata["unilab"] = {**(metadata.get("unilab") or {}),
                     "resource_scopes": [scope.model_dump(exclude_none=True) for scope in body.scopes]}
                 candidate = {**graph, "workflow": {**graph["workflow"], "meta_data": metadata}}
-                # 此接口只接受明确的动作成员；循环层级和资源别名由同一编译器检查。
-                nodes = {node["uuid"]: node for node in graph["nodes"]}
-                def loop_parent(node):
-                    parent = node.get("parent_uuid")
-                    seen = set()
-                    while parent in nodes and nodes[parent].get("type") != "loop":
-                        if parent in seen:
-                            raise ValueError("节点父级关系成环")
-                        seen.add(parent)
-                        parent = nodes[parent].get("parent_uuid")
-                    return parent
-                plan = {"nodes": [{**node, "kind": node["type"], "parent_uuid": loop_parent(node)}
-                                  for node in nodes.values() if node["type"] != "group"], "edges": graph["edges"]}
-                compile_interval_plan(plan, candidate)
+                validate_graph_resource_scopes(candidate)
             except (ValueError, TypeError) as exc:
                 raise WorkflowError("invalid_input", detail=str(exc)) from None
             return self._save_reserved_graph(identity, revision=revision, workflow_meta_data=metadata,

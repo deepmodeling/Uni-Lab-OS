@@ -223,6 +223,8 @@ class WorkflowBuildContext:
         self.input_contract: Dict[str, Any] = {"version": 1, "parameters": []}
         self.output_contract: Dict[str, Any] = {"version": 1, "outputs": []}
         self.output_bindings: Dict[str, Any] = {}
+        self.resource_scopes: List[Dict[str, Any]] = []
+        self._resource_scope_stack: List[str] = []
         # 正在声明循环体的循环步骤下标栈（with ctx.loop_for(...) 嵌套）
         self._loop_stack: List[int] = []
         self._parent_stack: List[int] = []
@@ -289,6 +291,30 @@ class WorkflowBuildContext:
         finally:
             self._parent_stack.pop()
 
+
+    @contextmanager
+    def resource_scope(self, *device_ids: str, name: str = "") -> Iterator[None]:
+        """显式持有设备直到块结束；包含循环时覆盖全部轮次，失败后等待人工核实。"""
+        if not device_ids or any(not isinstance(value, str) or not value.strip() for value in device_ids):
+            raise ValueError("resource_scope 需要非空设备 ID")
+        if len(set(device_ids)) != len(device_ids):
+            raise ValueError("resource_scope 的设备 ID 不能重复")
+        scope_id = name or f"scope-{len(self.resource_scopes) + 1}"
+        if any(scope["scope_id"] == scope_id for scope in self.resource_scopes):
+            raise ValueError("资源作用域名称不能重复")
+        declaration = {"scope_id": scope_id, "kind": "with", "resources": list(device_ids), "node_keys": []}
+        if self._resource_scope_stack:
+            declaration["parent_scope_id"] = self._resource_scope_stack[-1]
+        self.resource_scopes.append(declaration)
+        start = len(self.steps)
+        self._resource_scope_stack.append(scope_id)
+        try:
+            yield
+        finally:
+            self._resource_scope_stack.pop()
+        declaration["node_keys"] = [step.key for step in self.steps[start:] if step.kind != "group"]
+        if not declaration["node_keys"]:
+            raise ValueError("资源作用域不能是空块")
 
     # ── 循环 ─────────────────────────────────────────────────
 
@@ -814,6 +840,11 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
     }
     if definition.guide is not None:
         payload["guide"] = definition.guide.to_payload()
+    for scope in collected.resource_scopes:
+        unknown_resources = set(scope["resources"]) - roles.keys()
+        if unknown_resources:
+            raise ValueError(f"资源作用域引用未声明的设备角色：{sorted(unknown_resources)}")
+    payload["resource_scopes"] = collected.resource_scopes
     if collected.input_contract["parameters"] or collected.output_contract["outputs"]:
         payload["io"] = {"input_contract": collected.input_contract,
                          "output_contract": collected.output_contract, "output_bindings": collected.output_bindings}
@@ -1041,6 +1072,10 @@ def materialize_workflow_template(
         "nodes": nodes,
         "edges": [],
         "bindings": resolved,
+        "resource_scopes": [{**{key: value for key, value in scope.items() if key != "node_keys"},
+                             "resources": [resolved[role] for role in scope["resources"]],
+                             "node_uuids": [node_uuid_of_key(key) for key in scope["node_keys"]]}
+                            for scope in template.get("resource_scopes", [])],
         **({"io": {**dict(template["io"]), "output_bindings": remap_result_bindings(
             template["io"].get("output_bindings") or {}, node_uuid_of_key, template=True)}} if template.get("io") else {}),
     }
@@ -1078,6 +1113,7 @@ def upsert_workflow(service: Any, payload: Mapping[str, Any]) -> Dict[str, Any]:
         nodes=payload["nodes"],
         edges=payload["edges"],
         **({"workflow_io": payload["io"]} if payload.get("io") else {}),
+        resource_scopes=payload.get("resource_scopes"),
     )
     return service.get_workflow(workflow_uuid_value)
 

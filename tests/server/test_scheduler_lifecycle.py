@@ -12,15 +12,19 @@ from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.lifecycle import SchedulerLifecycle
 from unilabos.server.backend.restart import RestartCoordinator
 from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 
 @pytest.fixture
 def stack(monkeypatch):
     monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
-    scheduler = BackendScheduler(MagicMock(), MagicMock())
+    workflow = WorkflowService(":memory:")
+    scheduler = BackendScheduler(workflow, MagicMock())
     backend = SimpleNamespace(device_manager=SimpleNamespace(get_active_jobs=lambda: []))
     lifecycle = SchedulerLifecycle(lambda: scheduler, lambda: backend)
-    return scheduler, backend, lifecycle
+    yield scheduler, backend, lifecycle
+    scheduler.stop()
+    workflow.close()
 
 
 def test_canceling_restart_preserves_explicit_drain(stack):

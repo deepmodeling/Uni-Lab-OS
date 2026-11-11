@@ -726,11 +726,12 @@ def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> N
         }
 
         scheduler._release_unconsumed_task_inventory("task-local")  # noqa: SLF001
+        # 没有 runtime 尝试事实的外部预留不能仅凭清理调用返还；真实终态由恢复测试覆盖。
         assert [
             item.status
             for item in service.list_inventory_reservations(task_uuid="task-local")
-        ] == ["released", "released"]
-        assert service.get_inventory_lot("lot-a").quantity_available == 5
+        ] == ["active", "active"]
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
     finally:
         workflow.close()
         service.close()

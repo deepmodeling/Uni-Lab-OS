@@ -259,6 +259,9 @@ class BackendScheduler:
             self._dispatch_pause_reasons.add("legacy_execution_reconciliation")
         if self._intervals.unadmitted_active_claims():
             self._dispatch_pause_reasons.add("legacy_resource_reconciliation")
+        from .inventory_recovery import InventoryRecovery
+        self._inventory_recovery = InventoryRecovery(workflow, materials_gateway, self._authority_epoch)
+        self._reconcile_inventory()
         self.executor.add_job_finished_listener(self._on_executor_finished)
         resolver = getattr(self.workflow, "set_manual_confirmation_resolver", None)
         if callable(resolver):
@@ -554,6 +557,7 @@ class BackendScheduler:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
+        loop.create_task(self._inventory_recovery_loop())
         self._started.set()
         try:
             loop.run_forever()
@@ -566,6 +570,25 @@ class BackendScheduler:
                     asyncio.gather(*pending, return_exceptions=True)
                 )
             loop.close()
+
+    def _reconcile_inventory(self) -> dict[str, Any]:
+        report = self._inventory_recovery.reconcile()
+        with self._guard:
+            if report["issues"]:
+                self._dispatch_pause_reasons.add("inventory_reconciliation")
+            else:
+                self._dispatch_pause_reasons.discard("inventory_reconciliation")
+        return report
+
+    def inventory_recovery_snapshot(self) -> dict[str, Any]:
+        return self._inventory_recovery.snapshot()
+
+    async def _inventory_recovery_loop(self) -> None:
+        """终态库存写入失败时持续重试；恢复成功后唤醒原排队动作。"""
+        while not self._stopping:
+            await asyncio.sleep(5)
+            if not self._stopping:
+                self._reconcile_resources()
 
     async def _reconcile_before_planning(
         self, task: Dict[str, Any], runs: list[Dict[str, Any]],
@@ -744,6 +767,7 @@ class BackendScheduler:
                 "scheduler_revision": scheduler_revision,
                 # 当前 attempt：执行器 job_id / 资源 owner / 库存 reservation 的键
                 "current_job_uuid": current_job_uuid,
+                "inventory_job_status": run["status"],
                 "attempt_no": attempt_no,
                 "retry_of_job_uuid": (
                     str(retry_of_job_uuid) if retry_of_job_uuid else None
@@ -1115,6 +1139,8 @@ class BackendScheduler:
         with self._guard:
             if self._stopping:
                 return
+        self._reconcile_inventory()
+        with self._guard:
             if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
                     and not self._intervals.unadmitted_active_claims()):
                 self._dispatch_pause_reasons.discard("legacy_resource_reconciliation")
@@ -1257,6 +1283,7 @@ class BackendScheduler:
     def _release_job_resources(self, job_uuid: str, *, canceled: bool) -> None:
         """释放一个 attempt 持有的资源申请。"""
 
+        self._reconcile_inventory()
         if not self._execution_claims.release_if_terminal(job_uuid):
             return
         self._intervals.release_job(job_uuid)
@@ -1440,7 +1467,7 @@ class BackendScheduler:
                 requirements=spec["inventory_requirements"],
             )
             for job_uuid, spec in targets
-            if spec["inventory_requirements"]
+            if spec["inventory_requirements"] and spec.get("inventory_job_status", "pending") not in _RUN_TERMINAL
         ]
         if not requests:
             return
@@ -1449,21 +1476,34 @@ class BackendScheduler:
                 "workflow declares inventory requirements but materials authority "
                 "is unavailable"
             )
+        from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+        from unilabos.protocol.base import canonical_hash
         task_uuid = str(task["uuid"])
-        value = InventoryTaskReservationCreate(
-            task_uuid=task_uuid,
-            scheduler_revision=requests[0].scheduler_revision,
-            reservations=requests,
-        )
-        mutation = InventoryMutation(
-            command_uuid=self._inventory_command_uuid(task_uuid, command_suffix),
-            effect_key="inventory.task.reserve",
-            operation="reserve_task_inventory",
-            actor_type="scheduler",
-        )
-        result = self.materials_gateway.reserve_task_inventory(mutation, value)
+        existing = {item.job_uuid: item for item in self.materials_gateway.list_inventory_reservations(task_uuid=task_uuid)}
+        recovered, missing = [], []
+        for request in requests:
+            reservation = existing.get(request.job_uuid)
+            if reservation is None:
+                missing.append(request)
+                continue
+            ExecutionInventoryCoordinator._validate_reservation(reservation, {
+                "task_id": task_uuid, "job_id": request.job_uuid, "node_id": request.node_uuid,
+                "scheduler_revision": request.scheduler_revision, "inventory_requirements": request.requirements,
+            }, allowed_statuses=frozenset({"active"}))
+            recovered.append(reservation)
+        if missing:
+            value = InventoryTaskReservationCreate(task_uuid=task_uuid,
+                scheduler_revision=missing[0].scheduler_revision,
+                reservations=sorted(missing, key=lambda item: item.job_uuid))
+            # 重试、循环和部分节点已完成会改变预留集合；同一集合保持固定幂等身份。
+            digest = canonical_hash(value.model_dump(mode="json", exclude_none=False))
+            mutation = InventoryMutation(
+                command_uuid=self._inventory_command_uuid(task_uuid, ":batch:" + digest),
+                effect_key="inventory.task.reserve", operation="reserve_task_inventory", actor_type="scheduler")
+            result = self.materials_gateway.reserve_task_inventory(mutation, value)
+            recovered.extend(result.data.reservations)
         specs_by_job = {job_uuid: spec for job_uuid, spec in targets}
-        for reservation in result.data.reservations:
+        for reservation in recovered:
             spec = specs_by_job.get(reservation.job_uuid)
             if spec is not None:
                 spec["inventory_reservation_uuid"] = reservation.reservation_uuid
@@ -1491,48 +1531,8 @@ class BackendScheduler:
         )
 
     def _release_unconsumed_task_inventory(self, task_uuid: str) -> None:
-        if self.materials_gateway is None:
-            return
-        from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
-        with self.workflow.write_lock:
-            if DeviceTenancies.snapshot(self.workflow.connection, task_uuid):
-                return  # 样品仍在设备内，任务结束不能释放其库存预留。
-        try:
-            reservations = self.materials_gateway.list_inventory_reservations(
-                task_uuid=task_uuid,
-                status="active",
-            )
-        except Exception:  # noqa: BLE001 - task result must remain persisted
-            logger.exception(
-                "failed to list active inventory reservations for task %s",
-                task_uuid,
-            )
-            return
-        command_uuid = self._inventory_command_uuid(task_uuid)
-        for reservation in reservations:
-            try:
-                value = InventoryReservationTransition(
-                    reservation_uuid=reservation.reservation_uuid,
-                    reason="workflow_terminal",
-                )
-                mutation = InventoryMutation(
-                    command_uuid=command_uuid,
-                    effect_key=(
-                        f"inventory.release:{reservation.reservation_uuid}"
-                    ),
-                    operation="release_inventory_reservation",
-                    actor_type="scheduler",
-                    job_uuid=reservation.job_uuid,
-                )
-                self.materials_gateway.release_inventory_reservation(
-                    mutation,
-                    value,
-                )
-            except Exception:  # noqa: BLE001 - ledger can be reconciled and retried
-                logger.exception(
-                    "failed to release inventory reservation %s",
-                    reservation.reservation_uuid,
-                )
+        # 持久 attempt 事实决定补扣、释放或隔离；不能把 task 终态等同于全部动作未执行。
+        self._reconcile_inventory()
 
     def _resolve_action_args(self, run_uuid: str) -> Dict[str, Any]:
         spec = self._run_specs[run_uuid]
@@ -1847,6 +1847,7 @@ class BackendScheduler:
         """把 spec 的当前 attempt 切到 store 追加的新 attempt（retry / 循环下一轮共用）。"""
 
         spec["current_job_uuid"] = str(next_job["uuid"])
+        spec["inventory_job_status"] = "pending"
         spec["attempt_no"] = int(next_job.get("attempt_no") or spec["attempt_no"] + 1)
         spec["retry_of_job_uuid"] = (
             str(next_job.get("retry_of_job_uuid") or retry_of) if retry_of else None

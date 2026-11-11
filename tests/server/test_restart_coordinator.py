@@ -180,7 +180,9 @@ def test_request_rejects_devices_scope() -> None:
 
 def test_scheduler_dispatch_gate_keeps_waiting_jobs() -> None:
     executor = MagicMock()
-    scheduler = BackendScheduler(workflow=MagicMock(), executor=executor)
+    workflow = MagicMock()
+    workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
+    scheduler = BackendScheduler(workflow=workflow, executor=executor)
     scheduler.resources = MagicMock()
 
     scheduler.pause_dispatch()

@@ -35,7 +35,9 @@ def _mock_http(client, handler):
 
 def test_sdk_roundtrip_reuses_authority_token_and_handles_not_ready(monkeypatch):
     monkeypatch.setattr(BasicConfig, "control_token", "test-sdk-token")
-    scheduler = BackendScheduler(MagicMock(), MagicMock())
+    workflow = MagicMock()
+    workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
+    scheduler = BackendScheduler(workflow, MagicMock())
     app = create_backend_app(lambda: scheduler, lambda: SimpleNamespace())
     app.add_middleware(ControlTokenMiddleware)
     with HTTPLifecycleClient("http://testserver/api/v1") as client:

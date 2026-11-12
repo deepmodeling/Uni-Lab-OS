@@ -464,7 +464,6 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.history.HistoryConflictError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.history.HistoryValidationError": _fixed(INVALID_PARAMETER),
     # 动作异常决策（/error-decisions）与工站异常处置（/stations/*）
-    f"{_SERVICES}.runtime.error_decisions.ErrorDecisionInvalid": _fixed(INVALID_PARAMETER),
     f"{_SERVICES}.runtime.error_decisions.ErrorDecisionConflict": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.runtime.error_decisions.ErrorDecisionUnavailable": _fixed(SERVICE_UNAVAILABLE),
     f"{_SERVICES}.runtime.station_handling.StationNotFound": _fixed(RESOURCE_NOT_FOUND),

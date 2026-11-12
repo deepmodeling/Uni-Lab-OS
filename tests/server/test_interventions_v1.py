@@ -130,7 +130,8 @@ def test_human_interaction_sketch_and_terminal_task_cancels_pending(stack: Stack
 
 class _Backend:
     def __init__(self):
-        self.pending = {"d-1": {"decision_id": "d-1", "job_id": "job-1", "options": [{"action": "retry"}]}}
+        self.pending = {"d-1": {"decision_id": "d-1", "job_id": "job-1", "options": [{"action": "retry"}]},
+                        "d-2": {"decision_id": "d-2", "job_id": "job-2", "options": [{"action": "abort"}]}}
         self.resolved = []
 
     def list_error_decisions(self):
@@ -144,22 +145,46 @@ class _Backend:
         return True
 
 
-def test_error_decisions_items_resolved_and_idempotency_key() -> None:
+def test_error_decisions_follow_the_v1_contract() -> None:
+    """V1：清单 ``decisions``；成功 ``delivered``；不在等待 404（GENERIC 口径 4001）；请求体即 ErrorDecisionIn。"""
+
     from unilabos.server.api.runtime.diagnostics import create_backend_app
 
     backend = _Backend()
     with TestClient(create_backend_app(lambda: None, lambda: backend)) as client:
-        assert ok_data(client.get("/api/v1/error-decisions")) == {"items": [backend.pending["d-1"]]}
-        error_of(client.post("/api/v1/error-decisions/d-1", json={"reason": "缺少处理方式"}), 1000)
+        assert ok_data(client.get("/api/v1/error-decisions")) == {"decisions": backend.list_error_decisions()}
+        # V1 客户端：不带幂等键、不带操作员；action 可省（执行面按 V1 设备侧口径缺省 abort）
+        assert ok_data(client.post("/api/v1/error-decisions/d-2", json={})) == {"decision_id": "d-2",
+                                                                                "status": "delivered"}
+        decision_id, payload = backend.resolved[0]
+        assert decision_id == "d-2" and payload["reason"] == "" and "action" not in payload
+        assert "option" not in payload and "result" not in payload
+        # 未知字段按 V1 忽略
+        delivered = ok_data(client.post("/api/v1/error-decisions/d-1",
+                                        json={"action": "retry", "reason": "重试", "unknown": 1}))
+        assert delivered == {"decision_id": "d-1", "status": "delivered"}
+        assert backend.resolved[1][1]["action"] == "retry" and "unknown" not in backend.resolved[1][1]
+        # 不在等待：V1 HTTP 404 → 信封不存在
+        error_of(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}), 4001)
+        error_of(client.post("/api/v1/error-decisions/missing", json={"action": "abort"}), 4001)
+    with TestClient(create_backend_app(lambda: None, lambda: None)) as client:
+        error_of(client.get("/api/v1/error-decisions"), 5001)
+
+
+def test_error_decisions_optional_idempotency_key_and_operator_extensions() -> None:
+    from unilabos.server.api.runtime.diagnostics import create_backend_app
+
+    backend = _Backend()
+    with TestClient(create_backend_app(lambda: None, lambda: backend)) as client:
         headers = {"Idempotency-Key": "decide-1", "X-UniLab-Operator": "alice"}
         result = ok_data(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}, headers=headers))
-        assert result == {"decision_id": "d-1", "status": "resolved"}
+        assert result == {"decision_id": "d-1", "status": "delivered"}
         assert backend.resolved[0][1]["operator_id"] == "alice" and backend.resolved[0][1]["action"] == "retry"
-        # 同键同内容重放：返回首次结果，不再投递
+        assert backend.resolved[0][1]["scheduler_updated"] is True
+        # 同键同内容重放：返回首次结果，不再投递；同键不同内容冲突
         assert ok_data(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}, headers=headers)) == result
         assert len(backend.resolved) == 1
         error_of(client.post("/api/v1/error-decisions/d-1", json={"action": "abort"}, headers=headers), 3003)
-        # 不再等待：状态冲突
-        error_of(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}), 3003)
-    with TestClient(create_backend_app(lambda: None, lambda: None)) as client:
-        error_of(client.get("/api/v1/error-decisions"), 5001)
+        # 请求体里的可选 operator_id 优先于请求上下文
+        ok_data(client.post("/api/v1/error-decisions/d-2", json={"action": "abort", "operator_id": "bob"}))
+        assert backend.resolved[1][1]["operator_id"] == "bob"

@@ -260,7 +260,7 @@ class ProtocolMCP:
             decisions, failed = await self.request(self.operations["decisions_error_decisions_list"], {})
             if not failed:
                 data = decisions["body"].get("data", decisions["body"])
-                pending = [item for item in data.get("items", []) if item.get("task_id") == task_uuid]
+                pending = [item for item in data.get("decisions", []) if item.get("task_id") == task_uuid]
                 if pending:
                     return self.pack({**response, "reason": "decision_required", "decisions": pending})
             confirmations, failed = await self.request(

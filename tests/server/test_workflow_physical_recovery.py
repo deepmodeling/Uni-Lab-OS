@@ -287,7 +287,7 @@ def test_host_pending_physical_error_api_requires_reason_and_disallows_retry(tmp
     )
     try:
         with TestClient(create_backend_app(lambda: scheduler, lambda: host)) as client:
-            report = ok_data(client.get("/api/v1/error-decisions"))["items"][0]
+            report = ok_data(client.get("/api/v1/error-decisions"))["decisions"][0]
             assert report["category"] == "physical_settlement"
             assert report["material_execution"]["request"]["aliquot"]["source_material_uuid"] == source
             assert {item["action"] for item in report["options"]} == {"abort", "operator_intervention"}

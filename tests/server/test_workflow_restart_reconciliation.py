@@ -421,26 +421,27 @@ def test_error_decisions_api_merges_executor_and_reconciliation_decisions(
     _task, run, _runner = _adopt(scheduler, service, task["uuid"])
     client = TestClient(create_backend_app(lambda: scheduler, lambda: backend))
 
-    listed = ok_data(client.get("/api/v1/error-decisions"))["items"]
+    listed = ok_data(client.get("/api/v1/error-decisions"))["decisions"]
     assert [item["decision_id"] for item in listed][0] == "exec-1"
     (reconciliation,) = [item for item in listed if item["job_id"] == run["current_job_uuid"]]
     assert reconciliation["exception_type"] == "ExecutionStateUnknown"
 
     # 调度器持有的裁决由调度器收敛；其余仍交给执行面
+    # V1：放行未被接受（不在等待 / 被拒绝）即 HTTP 404，经信封换算为该路由口径的"不存在"
     rejected = client.post(f"/api/v1/error-decisions/{reconciliation['decision_id']}", json={"action": "fallback"})
-    error_of(rejected, 3003)
+    error_of(rejected, 4001)
     resolved = client.post(
         f"/api/v1/error-decisions/{reconciliation['decision_id']}",
         json={"action": "operator_intervention", "result": {"moved": 5}, "reason": "已人工核对"},
     )
-    assert ok_data(resolved) == {"decision_id": reconciliation["decision_id"], "status": "resolved"}
+    assert ok_data(resolved) == {"decision_id": reconciliation["decision_id"], "status": "delivered"}
     assert service.get_workflow_node_run(run["uuid"])["status"] == "succeeded"
     assert backend.resolved == []
 
     forwarded = client.post("/api/v1/error-decisions/exec-1", json={"action": "abort"})
     ok_data(forwarded)
     assert backend.resolved[0][0] == "exec-1"
-    assert ok_data(client.get("/api/v1/error-decisions"))["items"] == backend.list_error_decisions()
+    assert ok_data(client.get("/api/v1/error-decisions"))["decisions"] == backend.list_error_decisions()
 
 
 def test_error_decisions_api_works_without_execution_backend(service: WorkflowService) -> None:
@@ -451,9 +452,9 @@ def test_error_decisions_api_works_without_execution_backend(service: WorkflowSe
     _task, run, _runner = _adopt(scheduler, service, task["uuid"])
     client = TestClient(create_backend_app(lambda: scheduler, lambda: None))
 
-    (item,) = ok_data(client.get("/api/v1/error-decisions"))["items"]
+    (item,) = ok_data(client.get("/api/v1/error-decisions"))["decisions"]
     ok_data(client.post(f"/api/v1/error-decisions/{item['decision_id']}", json={"action": "skip"}))
     assert service.get_workflow_node_run(run["uuid"])["status"] == "skipped"
-    assert ok_data(client.get("/api/v1/error-decisions"))["items"] == []
+    assert ok_data(client.get("/api/v1/error-decisions"))["decisions"] == []
     # 既无执行面也无调度器：依赖暂不可用 5001（原先的 HTTP 503）
     error_of(TestClient(create_backend_app(lambda: None, lambda: None)).get("/api/v1/error-decisions"), 5001)

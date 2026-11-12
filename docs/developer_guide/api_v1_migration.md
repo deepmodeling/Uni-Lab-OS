@@ -122,7 +122,7 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 | `/api/v1/history/*` | 归 V1（工作流与作业历史）。dev 的事件/载荷存储改到 `/api/v1/edge/history/*`，Host 客户端与 edge 代理同步修改 |
 | `GET /api/v1/lab/layout` | 归 V1（已放置实例视图）。dev 的带修订网格文档并入 V1 的 lab profile/placements 模型 |
 | `POST /api/v1/resource-templates` | 归 V1（返回身份回执）。Host 启动时的注册表上报改为 `POST /api/v1/registry/reports` |
-| `/api/v1/error-decisions` | 归 V1 DTO（`items`、`resolved`、409 语义按 V1） |
+| `/api/v1/error-decisions` | 归 V1 实际合同（`app/scheduler/api.py`）：列表 `{"decisions": [...]}`；请求体即 V1 `ErrorDecisionIn`（`action` / `option` / `result` / `reason` 均可选，`action` 不强制、不默认，都不给时执行面按 V1 设备侧口径缺省 `abort`）；成功 `{"decision_id", "status": "delivered"}`；决策已不在等待按 V1 的 HTTP 404，经信封换成该路由口径的"不存在"（诊断路由为 GENERIC，即 4001）。dev 增量扩展可选：`Idempotency-Key` 重放、操作员身份（请求体 `operator_id` 或请求上下文）、物理结果未知只允许补记或终止（3003）。**勘误**：本行早先写作"`items`、`resolved`、409 语义按 V1"，与 V1 实际合同不符（那是 dev 原口径），已按 V1 代码更正 |
 | 任务命令 | 归 V1：`pause` 与 `switch_to_step` 分开，`expected_revision` 可选；dev 的重复放行保护改由幂等键承担 |
 | `composite-invocations`、`authoring/apply` | 归 V1 请求体；dev 的 CAS 字段由服务层从当前修订推导 |
 | 图保存 `site_binding_mode` | 默认值按 V1；dev 的程序化导入显式传值 |

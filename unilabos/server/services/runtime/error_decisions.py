@@ -3,9 +3,13 @@
 三类来源报告同形：本进程执行面挂起的失败 attempt、执行面在 Host 子进程时控制面登记的失败、
 调度器重启后接管的执行态未知 / 决策上下文丢失的 attempt。放行按归属分派到对应的放行通道。
 
-V1 合同（统一分支约定）：清单键 ``items``；放行成功 ``{"decision_id", "status": "resolved"}``；
-决策已不在等待（被处理、超时或设备离线）按状态冲突（3003）。放行带 ``Idempotency-Key`` 时同键同
-内容重放直接返回首次结果，同键不同内容冲突；``operator_id`` 随决策载荷记录。
+V1 合同（``app/scheduler/api.py``）：清单 ``{"decisions": [...]}``；放行载荷按 V1 ``ErrorDecisionIn``
+组装（``reason`` 恒带，``option`` / ``action`` / ``result`` 给出才带，都不给时由执行面按 V1 设备侧
+同口径缺省为 ``abort``）；成功 ``{"decision_id", "status": "delivered"}``；决策已不在等待（被处理、
+超时或设备离线）是"不存在"（V1 HTTP 404，经信封按路由口径换算）。
+
+dev 的增量扩展（V1 客户端不发送时行为不变）：可选 ``Idempotency-Key`` 同键同内容重放首次结果、同键
+不同内容冲突；可选操作员身份随决策载荷记录；物理结果未知的失败只允许补记结果或终止（3003）。
 """
 
 from __future__ import annotations
@@ -18,12 +22,12 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 
 
 
-class ErrorDecisionInvalid(ValueError):
-    """决策载荷不合法（业务码 1000）。"""
-
-
 class ErrorDecisionConflict(RuntimeError):
-    """决策已不在等待、被拒绝或幂等键冲突（业务码 3003）。"""
+    """幂等键冲突或物理结算限制（业务码 3003）。"""
+
+
+class ErrorDecisionNotPending(LookupError):
+    """决策已不在等待（被处理、超时或设备离线）：V1 的 HTTP 404，由路由按其错误口径换算。"""
 
 
 class ErrorDecisionUnavailable(RuntimeError):
@@ -119,6 +123,9 @@ class ErrorDecisionDesk:
     def deliver(self, decision_id: str, decision: Dict[str, Any]) -> bool:
         """把决策投递给持有该决策的通道；不在等待时返回 False。"""
 
+        # dev 执行面只接受"调度权威已更新"的放行（与改造前的路由缺省一致）
+        decision = {**decision}
+        decision.setdefault("scheduler_updated", True)
         scheduler = self._get_scheduler()
         edge_control = self._get_edge_control()
         owns = getattr(scheduler, "has_reconciliation_decision", None)
@@ -140,10 +147,7 @@ class ErrorDecisionDesk:
         idempotency_key: str = "",
         operator_id: str = "",
     ) -> Dict[str, Any]:
-        decision = {key: value for key, value in decision.items() if value is not None}
-        if not str(decision.get("action") or "").strip() and not isinstance(decision.get("option"), Mapping):
-            # 不再默认 abort：未选择处理方式的请求是参数错误，不能替操作员终止任务
-            raise ErrorDecisionInvalid("必须给出 action 或 option")
+        decision = dict(decision)
         key = str(idempotency_key or "").strip()
         fingerprint = _fingerprint(decision_id, decision)
         if key:
@@ -160,9 +164,11 @@ class ErrorDecisionDesk:
             if action not in PHYSICAL_SETTLEMENT_ACTIONS or not str(decision.get("reason") or "").strip():
                 raise ErrorDecisionConflict("物理结果未知，须填写核实说明并补记实际结果或终止任务，禁止直接重试")
         if not self.deliver(decision_id, decision):
-            raise ErrorDecisionConflict("error decision was rejected or no longer pending")
+            raise ErrorDecisionNotPending(
+                f"decision {decision_id} not pending (resolved / timed out / device gone)"
+            )
         # 响应保持 V1 形状；操作员身份随决策载荷交给执行面记录
-        result = {"decision_id": decision_id, "status": "resolved"}
+        result = {"decision_id": decision_id, "status": "delivered"}
         if key:
             _LEDGER.put(key, decision_id, fingerprint, result)
         return result
@@ -179,7 +185,7 @@ def default_desk() -> ErrorDecisionDesk:
 __all__ = [
     "ErrorDecisionConflict",
     "ErrorDecisionDesk",
-    "ErrorDecisionInvalid",
+    "ErrorDecisionNotPending",
     "ErrorDecisionUnavailable",
     "PHYSICAL_SETTLEMENT_ACTIONS",
     "default_desk",

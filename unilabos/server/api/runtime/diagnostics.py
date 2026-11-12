@@ -3,12 +3,12 @@ error-decisions / restart 干预入口），不复制 Runtime 数据面。"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from unilabos.server.api.envelope import envelope_router, raw_response
 from unilabos.protocol.runtime.lifecycle import (
@@ -36,19 +36,16 @@ class StatusIncidentDecision(BaseModel):
 
 
 class ErrorDecision(BaseModel):
-    """V1 ``ErrorDecisionIn``（action / option / result / reason）+ dev 的放行上下文字段。
+    """V1 ``ErrorDecisionIn``：人工审批结果（与云端 ws job_error_decision 消息同语义）。
 
-    ``action`` 不再默认 ``abort``：action 与 option 都缺省时按参数错误拒绝。
+    字段与缺省值同 V1，未知字段忽略；``operator_id`` 是 dev 的可选扩展（缺省取请求上下文）。
     """
 
-    action: str = ""
-    option: Optional[dict[str, Any]] = None
+    action: str = ""  # retry / skip / abort / 其它已配置 option
+    option: Optional[dict[str, Any]] = None  # 或直接回传选中的 option 对象
+    result: Any = None  # operator_intervention 的服务端结果
     reason: str = ""
-    result: Any = None
-    scheduler_updated: bool = True
-    job_id: str = ""
-    device_id: str = ""
-    extra: dict[str, Any] = Field(default_factory=dict)
+    operator_id: Optional[str] = None
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
@@ -320,9 +317,9 @@ def create_backend_router(
     @router.get("/error-decisions")
     def error_decisions() -> dict[str, Any]:
         """待人工决策的清单：执行面挂起的失败 attempt + 调度器在重启后接管的
-        执行态未知 / 决策上下文丢失的 attempt，两者报告同形（清单键 ``items``）。"""
+        执行态未知 / 决策上下文丢失的 attempt，两者报告同形（V1 清单键 ``decisions``）。"""
 
-        return {"items": desk.items()}
+        return {"decisions": desk.items()}
 
     @router.post("/error-decisions/{decision_id}")
     def resolve_error_decision(
@@ -331,20 +328,29 @@ def create_backend_router(
         request: Request,
         idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        """放行一项决策：``{"decision_id", "status": "resolved"}``；已不在等待时 3003。
+        """V1：放行一项决策，``{"decision_id", "status": "delivered"}``；已不在等待时按 V1 的 404。
 
-        ``Idempotency-Key`` 同键同内容重放返回首次结果；操作员身份随决策载荷记录。
+        载荷与 V1 同组装：``reason`` 恒带，``option`` / ``action`` / ``result`` 给出才带。
+        dev 扩展（可选）：``Idempotency-Key`` 同键同内容重放首次结果；操作员身份随载荷记录。
         """
 
         from unilabos.server.api.runtime.tasks_v1 import operator_identity
+        from unilabos.server.services.runtime.error_decisions import ErrorDecisionNotPending
 
-        decision = body.model_dump(exclude_none=True)
-        extra = decision.pop("extra", {})
-        if isinstance(extra, Mapping):
-            decision.update(extra)
-        return desk.resolve(
-            decision_id, decision, idempotency_key=idempotency_key, operator_id=operator_identity(request),
-        )
+        payload: dict[str, Any] = {"reason": body.reason}
+        if body.option is not None:
+            payload["option"] = body.option
+        if body.action:
+            payload["action"] = body.action
+        if body.result is not None:
+            payload["result"] = body.result
+        try:
+            return desk.resolve(
+                decision_id, payload, idempotency_key=idempotency_key,
+                operator_id=body.operator_id or operator_identity(request),
+            )
+        except ErrorDecisionNotPending as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # ── 安静点重启（调试用） ─────────────────────────────────
 

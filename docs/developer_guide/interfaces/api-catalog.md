@@ -205,8 +205,8 @@ ManualConfirmationDecisionRequest 必填 action，可带 confirmed_by、comment�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/error-decisions` | — | `{items:[...]}`；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
-| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision | `{decision_id,status:"resolved"}`；过期/拒绝可返回 409 |
+| GET | `/api/v1/error-decisions` | — | `{decisions:[...]}`（V1）；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
+| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision（V1 ErrorDecisionIn：action / option / result / reason；可选 operator_id、Idempotency-Key 头） | `{decision_id,status:"delivered"}`；不在等待（处理过 / 超时 / 设备离线）为"不存在"（4001） |
 | GET | `/api/v1/status-incidents` | Q: device_id=""、include_terminal=false | `{host_ready,incidents,holds}`；状态策略不可用时 503 |
 | POST | `/api/v1/status-incidents/{incident_id}` | B: StatusIncidentDecision | incident 的 ack；不存在 404、冲突 409、无效选择 422 |
 

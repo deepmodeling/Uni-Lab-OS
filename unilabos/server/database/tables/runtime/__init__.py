@@ -6,7 +6,8 @@ runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
   execution_job / adapter outbox-inbox 等）；
 - ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
 - ``registry``：Edge 注册表快照（条目级版本模型三表）；
-- ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）。
+- ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）；
+- ``workspace_host``：V1 Workspace Host 的操作记录与快照修订号（v12）。
 
 对外导入只看表：一律 ``from unilabos.server.database.tables.runtime
 import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在此聚合。
@@ -84,6 +85,7 @@ from .resource_custody import RESOURCE_CUSTODY_TABLES, RESOURCE_CUSTODY_MODELS
 
 from .task_lifecycle import TASK_LIFECYCLE_TABLES, TASK_LIFECYCLE_MODELS
 from .station_handling import STATION_HANDLING_TABLES, STATION_HANDLING_MODELS
+from .workspace_host import WORKSPACE_HOST_TABLES, WORKSPACE_HOST_MODELS
 
 RUNTIME_TABLE_MODELS = (
     *DATA_TABLE_MODELS,
@@ -95,6 +97,7 @@ RUNTIME_TABLE_MODELS = (
     *RESOURCE_CUSTODY_MODELS,
     *TASK_LIFECYCLE_MODELS,
     *STATION_HANDLING_MODELS,
+    *WORKSPACE_HOST_MODELS,
 )
 
 
@@ -119,6 +122,7 @@ RUNTIME_DATABASE = DatabaseSpec(
         *RESOURCE_CUSTODY_TABLES,
         *TASK_LIFECYCLE_TABLES,
         *STATION_HANDLING_TABLES,
+        *WORKSPACE_HOST_TABLES,
     ),
     schema_version=RUNTIME_SCHEMA_VERSION,
     migrations=RUNTIME_MIGRATIONS,

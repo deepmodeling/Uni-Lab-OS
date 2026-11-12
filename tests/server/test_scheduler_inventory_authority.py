@@ -7,7 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_result, error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
@@ -325,12 +325,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
         )
         with TestClient(app) as client:
             response = client.post(
-                "/api/v1/materials/lots/inbound",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("inbound_inventory_lot"), inbound
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
+            command_result(response)
 
             request = InventoryReservationCreate(
                 task_uuid="task-http",
@@ -348,21 +348,20 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                 ],
             )
             response = client.post(
-                "/api/v1/materials/reservations",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("reserve_inventory", job_uuid="job-http"),
                     request,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            reservation_uuid = ok_data(response)["data"]["reservation_uuid"]
+            reservation_uuid = command_result(response)["data"]["reservation_uuid"]
 
             transition = InventoryReservationTransition(
                 reservation_uuid=reservation_uuid,
                 reason="action_start",
             )
             response = client.post(
-                f"/api/v1/materials/reservations/{reservation_uuid}/consume",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation(
                         "consume_inventory_reservation",
@@ -371,11 +370,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                     transition,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            assert ok_data(response)["data"]["status"] == "consumed"
+            assert command_result(response)["data"]["status"] == "consumed"
             assert ok_data(client.get(
                 "/api/v1/materials/reservations/by-job/job-http"
             ))["status"] == "consumed"
+            listed = ok_data(client.get("/api/v1/inventory/reservations", params={"task_uuid": "task-http"}))
+            assert [item["reservation_id"] for item in listed["reservations"]] == [reservation_uuid]
     finally:
         service.close()
 

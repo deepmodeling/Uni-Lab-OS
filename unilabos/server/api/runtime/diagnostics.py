@@ -3,13 +3,14 @@ error-decisions / restart 干预入口），不复制 Runtime 数据面。"""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from unilabos.config.config import BasicConfig
 from unilabos.server.api.envelope import envelope_router, raw_response
 from unilabos.protocol.runtime.lifecycle import (
     HealthStatus,
@@ -166,12 +167,41 @@ def create_backend_router(
         if bool(getattr(scheduler, "dispatch_paused", False)):
             reasons.append("调度派发已暂停（排空、重启或维护中）")
         ready = execution in {"ready", "disabled"} and not reasons
-        return ready, {
-            "status": "ready" if ready else "not_ready",
+        if ready:
+            phase = "ready"
+        elif execution == "starting":
+            phase = "execution_starting"
+        elif execution == "restarting":
+            phase = "host_restarting"
+        else:
+            phase = "dispatch_paused"
+        from unilabos.protocol.runtime.lifecycle import RuntimeCapabilities
+
+        summary: dict[str, Any] = {
+            # V1 合同字段（V1 控制台按 status / capabilities 判定）
+            "status": "ready" if ready else "starting",
+            "capabilities": RuntimeCapabilities().model_dump(),
+            "phase": phase,
+            "workflowRuntime": _workflow_runtime_state(),
+            # dev 探针摘要（扩展字段）
             "scheduler": "local" if get_scheduler() is not None else "remote",
             "execution": execution,
             "reasons": reasons,
         }
+        trace_ui = str(getattr(BasicConfig, "trace_ui_url", "") or "").strip()
+        if trace_ui:
+            summary["observability"] = {"traceUiUrl": trace_ui}
+        return ready, summary
+
+    def _workflow_runtime_state() -> str:
+        """本进程是否承载工作流运行时：调度权威为 ready，仅执行面的 Host 为 disabled。"""
+
+        try:
+            from unilabos.server.backend.composition import get_workflow_service
+
+            return "ready" if get_workflow_service() is not None else "disabled"
+        except Exception:  # noqa: BLE001 - 探针不因装配查询失败而失败
+            return "disabled"
 
     @router.get("/readiness", response_model=ReadinessStatus, responses={503: {"model": ReadinessStatus}})
     @raw_response
@@ -191,9 +221,12 @@ def create_backend_router(
     def health() -> dict[str, str]:
         """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。"""
 
+        local = get_scheduler() is not None
         return {
             "status": "ok",
-            "scheduler": "local" if get_scheduler() is not None else "remote",
+            # V1：本进程装配了调度器为 ready，否则 disabled；dev 的 local / remote 归属在 scheduler_mode
+            "scheduler": "ready" if local else "disabled",
+            "scheduler_mode": "local" if local else "remote",
             "execution": _execution_state(),
         }
 

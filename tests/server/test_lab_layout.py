@@ -10,7 +10,8 @@ from pydantic import ValidationError
 from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.runtime.lab import LabLayoutWrite, LabZone
 from unilabos.server.api import install_server_apis
-from unilabos.server.api.runtime.lab import install_lab_api
+from unilabos.server.api.materials.lab import install_lab_api
+from unilabos.server.services.materials import MaterialsService
 from unilabos.server.composition import ServerServices
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.server.services.runtime import RuntimeService
@@ -77,28 +78,34 @@ def test_write_model_enforces_invariants() -> None:
     assert LabZone(id="a", name="A", cells=["1,1", "1,1", "-2,3"]).cells == ["1,1", "-2,3"]
 
 
-def test_router_roundtrip(service: LabLayoutService) -> None:
+def test_router_roundtrip(service: LabLayoutService, tmp_path) -> None:
+    """dev 网格文档并入 V1 档案：``GET /lab/profile`` 的 ``grid``，``PUT /lab/profile`` 带 ``grid`` 写入。"""
+
+    materials = MaterialsService(tmp_path / "materials.db")
     app = FastAPI()
-    install_lab_api(app, service)
+    install_lab_api(app, materials, service)
     client = TestClient(app)
+    try:
+        initial = ok_data(client.get("/api/v1/lab/profile"))["grid"]
+        assert initial["revision"] == 0 and initial["layout_key"] == "default"
 
-    initial = ok_data(client.get("/api/v1/lab/layout"))
-    assert initial["revision"] == 0 and initial["layout_key"] == "default"
+        body = {"revision": 0, "cell_size": 100, "zones": [{"id": "z1", "name": "洗涤区", "color": "#0e9f6e", "cells": ["2,2"]}], "walls": ["0,0"]}
+        saved = client.put("/api/v1/lab/profile", json={"grid": body})
+        assert ok_data(saved)["grid"]["revision"] == 1
 
-    body = {"revision": 0, "cell_size": 100, "zones": [{"id": "z1", "name": "洗涤区", "color": "#0e9f6e", "cells": ["2,2"]}], "walls": ["0,0"]}
-    saved = client.put("/api/v1/lab/layout", json=body)
-    assert saved.status_code == 200, saved.text
-    assert ok_data(saved)["revision"] == 1
+        stale = client.put("/api/v1/lab/profile", json={"grid": body})
+        assert "revision 1" in error_of(stale, 3003)["msg"]
 
-    stale = client.put("/api/v1/lab/layout", json=body)
-    assert "revision 1" in error_of(stale, 3003)["msg"]
+        invalid = client.put("/api/v1/lab/profile", json={"grid": {**body, "revision": 1, "walls": ["2,2"]}})
+        error_of(invalid, 1000)
 
-    invalid = client.put("/api/v1/lab/layout", json={**body, "revision": 1, "walls": ["2,2"]})
-    error_of(invalid, 1000)
-
-    # 重置是无数据命令：HTTP 200 + {"code": 0}
-    assert client.delete("/api/v1/lab/layout").json() == {"code": 0}
-    assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
+        # 重置：grid 为 null
+        assert ok_data(client.put("/api/v1/lab/profile", json={"grid": None}))["grid"]["revision"] == 0
+        # GET /lab/layout 归 V1（已放置实例视图），网格作为附带字段
+        layout = ok_data(client.get("/api/v1/lab/layout"))
+        assert set(layout) >= {"zones", "placements", "storage_summary"} and layout["grid"]["revision"] == 0
+    finally:
+        materials.close()
 
 
 def test_server_services_mount_lab_layout(tmp_path) -> None:
@@ -106,8 +113,11 @@ def test_server_services_mount_lab_layout(tmp_path) -> None:
     app = FastAPI()
     install_server_apis(app, services)
     try:
-        assert "/api/v1/lab/layout" in app.openapi()["paths"]
+        paths = app.openapi()["paths"]
+        assert "/api/v1/lab/layout" in paths and "/api/v1/lab/profile" in paths
+        assert set(paths["/api/v1/lab/layout"]) == {"get"}
         with TestClient(app) as client:
-            assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
+            assert ok_data(client.get("/api/v1/lab/profile"))["grid"]["revision"] == 0
+            assert ok_data(client.get("/api/v1/lab/layout"))["placements"] == []
     finally:
         services.close()

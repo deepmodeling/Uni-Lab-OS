@@ -50,7 +50,8 @@ def install_server_apis(
 
     if include_host_data:
         install_runtime_api(app, services.runtime)
-    install_lab_api(app, services.lab)
+    # V1 实验室布局：档案 / 分区 / 摆放在 materials.db，dev 网格文档（runtime.db）并入档案的 grid
+    install_lab_api(app, services.materials, services.lab)
     if include_materials:
         install_materials_api(app, services.materials)
         install_chemical_api(app, services.chemicals)

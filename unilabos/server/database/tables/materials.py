@@ -21,6 +21,25 @@ from unilabos.server.database.tables.base import (
 from unilabos.server.database.tables.materials_migrations import (
     MATERIALS_MIGRATIONS,
     MATERIALS_SCHEMA_VERSION,
+    _LAB_META_V6,
+    _LAB_PLACEMENT_V6,
+    _LAB_PLACEMENT_V6_INDEXES,
+    _LAB_ZONE_V6,
+    _INVENTORY_PROCESSED_COMMAND_V6,
+    _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
+    _MATERIAL_BARCODE_V6_INDEX,
+    _MATERIAL_CONTENT_HISTORY_V6,
+    _MATERIAL_CONTENT_HISTORY_V6_INDEXES,
+    _MATERIAL_CONTENT_RESERVATION_V6,
+    _MATERIAL_CONTENT_RESERVATION_V6_INDEXES,
+    _MATERIAL_CONTENT_V6,
+    _MATERIAL_CONTENT_V6_INDEXES,
+    _MATERIAL_SOURCE_BINDING_V6,
+    _MATERIAL_SOURCE_BINDING_V6_INDEXES,
+    _MATERIAL_STATE_V6,
+    _MATERIAL_STATE_V6_INDEXES,
+    _STATION_INGRESS_RESERVATION_V6,
+    _STATION_INGRESS_RESERVATION_V6_INDEXES,
 )
 from unilabos.server.database.schema import (
     SCHEMA_IDENTITY_TABLE,
@@ -137,6 +156,9 @@ class InventoryLotRecord(TableObject, table=True):
     created_at_ms: UnixMilliseconds
     updated_at_ms: UnixMilliseconds
     version: PositiveVersion = 1
+    # v6：批次所在库位与仓储分区（V1 lot location / warehouse zone）
+    location_site_uuid: Optional[NonEmptyStr] = None
+    warehouse_zone_id: str = ""
 
     @model_validator(mode="after")
     def _validate_lot(self) -> "InventoryLotRecord":
@@ -635,6 +657,182 @@ class MaterialExecutionHoldRecord(TableObject, table=True):
     job_uuid: NonEmptyStr = Field(foreign_key="material_execution.job_uuid")
 
 
+class MaterialContentRecord(TableObject, table=True):
+    """V1 试剂 / 样品 / 当前内容物：``material_substance`` 行上的角色扩展（数量仍在 substance）。"""
+
+    __tablename__: ClassVar[str] = "material_content"
+    substance_uuid: NonEmptyStr = Field(primary_key=True)
+    material_uuid: NonEmptyStr
+    content_kind: Literal["reagent", "sample", "current"] = Field(sa_type=Text)
+    concentration_value: Optional[float] = None
+    concentration_unit: Optional[str] = None
+    density_g_per_ml: Optional[float] = Field(default=None, gt=0)
+    density_source: Optional[str] = None
+    code: Optional[str] = None
+    sample_type: Optional[str] = None
+    source: Optional[str] = None
+    collected_at_ms: Optional[UnixMilliseconds] = None
+    expires_at_ms: Optional[UnixMilliseconds] = None
+    description: str = ""
+    revision: PositiveVersion = 1
+    created_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+
+
+class MaterialContentHistoryRecord(TableObject, table=True):
+    """试剂 / 样品 / 当前内容物的变更历史（V1 reagent-history / substance-history）。"""
+
+    __tablename__: ClassVar[str] = "material_content_history"
+    history_uuid: NonEmptyStr = Field(primary_key=True)
+    material_uuid: NonEmptyStr
+    subject_type: Literal["reagent", "sample", "current_substance"] = Field(sa_type=Text)
+    subject_uuid: NonEmptyStr
+    event_type: NonEmptyStr
+    operator_type: str = "system"
+    quantity_delta: Optional[float] = None
+    quantity_unit: Optional[str] = None
+    revision: Optional[int] = None
+    changes: JsonObject = Field(default_factory=dict, sa_column=json_text_column("changes_json", default_json="{}"))
+    extension: JsonObject = Field(default_factory=dict, sa_column=json_text_column("extension_json", default_json="{}"))
+    workflow_task_uuid: Optional[str] = None
+    workflow_node_job_uuid: Optional[str] = None
+    trace_id: Optional[str] = None
+    causation_id: Optional[str] = None
+    recorded_at_ms: UnixMilliseconds
+
+
+class MaterialStateHistoryRecord(TableObject, table=True):
+    """物料状态追加历史（V1 ``/materials/{uuid}/states``）。"""
+
+    __tablename__: ClassVar[str] = "material_state_history"
+    state_uuid: NonEmptyStr = Field(primary_key=True)
+    material_uuid: NonEmptyStr
+    status: Optional[str] = None
+    state_data: JsonObject = Field(default_factory=dict, sa_column=json_text_column("state_data_json", default_json="{}"))
+    source: Optional[str] = None
+    description: Optional[str] = None
+    meta_data_json: JsonObject = Field(default_factory=dict, sa_column=json_text_column("meta_data_json", default_json="{}"))
+    observed_at_ms: UnixMilliseconds
+    created_at_ms: UnixMilliseconds
+
+
+class MaterialContentReservationRecord(TableObject, table=True):
+    """任务对容器内容物（``material_substance``）的数量预留。"""
+
+    __tablename__: ClassVar[str] = "material_content_reservation"
+    reservation_uuid: NonEmptyStr = Field(primary_key=True)
+    substance_uuid: NonEmptyStr
+    material_uuid: NonEmptyStr
+    task_uuid: NonEmptyStr
+    node_uuid: str = ""
+    job_uuid: Optional[str] = None
+    quantity: float = Field(gt=0)
+    quantity_unit: NonEmptyStr
+    status: Literal["active", "consumed", "released"] = Field(sa_type=Text)
+    created_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+    version: PositiveVersion = 1
+
+
+class MaterialSourceBindingRecord(TableObject, table=True):
+    """任务准入时冻结的物料来源绑定；``shared_source`` 允许多任务共享同一来源。"""
+
+    __tablename__: ClassVar[str] = "material_source_binding"
+    binding_uuid: NonEmptyStr = Field(primary_key=True)
+    task_uuid: NonEmptyStr
+    node_uuid: NonEmptyStr
+    attempt: int = Field(default=1, ge=1)
+    material_uuid: NonEmptyStr
+    template_uuid: NonEmptyStr
+    custody_policy: Literal["task_exclusive", "shared_source"] = Field(sa_type=Text)
+    selector: JsonObject = Field(default_factory=dict, sa_column=json_text_column("selector_json", default_json="{}"))
+    status: Literal["active", "released"] = Field(default="active", sa_type=Text)
+    created_at_ms: UnixMilliseconds
+    released_at_ms: Optional[UnixMilliseconds] = None
+    version: PositiveVersion = 1
+
+
+class StationIngressReservationRecord(TableObject, table=True):
+    """工站入站库位预留（V1 ``/inventory/ingress-reservations``）。"""
+
+    __tablename__: ClassVar[str] = "station_ingress_reservation"
+    reservation_uuid: NonEmptyStr = Field(primary_key=True)
+    idempotency_key: NonEmptyStr
+    request_hash: NonEmptyStr
+    backend_task_uuid: Optional[str] = None
+    invocation_key: Optional[str] = None
+    carrier_material_uuid: NonEmptyStr
+    site_uuid: Optional[str] = None
+    state: Literal["reserved", "in_transit", "received", "expired", "canceled"] = Field(sa_type=Text)
+    expires_at_ms: UnixMilliseconds
+    transport_started_at_ms: Optional[int] = None
+    received_at_ms: Optional[int] = None
+    canceled_at_ms: Optional[int] = None
+    cancel_reason: Optional[str] = None
+    created_at_ms: UnixMilliseconds
+    updated_at_ms: UnixMilliseconds
+    revision: PositiveVersion = 1
+
+
+class InventoryProcessedCommandRecord(TableObject, table=True):
+    """V1 类型化库存命令的首次结果（按 command_id 幂等重放）。"""
+
+    __tablename__: ClassVar[str] = "inventory_processed_command"
+    command_id: NonEmptyStr = Field(primary_key=True)
+    command_type: NonEmptyStr
+    request_hash: NonEmptyStr
+    status: Literal["completed", "rejected"] = Field(sa_type=Text)
+    result: JsonValue = Field(default=None, sa_column=json_text_column("result_json", default_json="{}"))
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    business_code: Optional[int] = None
+    actor: str = ""
+    processed_at_ms: UnixMilliseconds
+
+
+class LabMetaRecord(TableObject, table=True):
+    """实验室档案键值（名称、领域包、网格设置）。"""
+
+    __tablename__: ClassVar[str] = "lab_meta"
+    meta_key: NonEmptyStr = Field(primary_key=True)
+    meta_value: JsonValue = Field(default=None, sa_column=json_text_column("meta_value_json", default_json="null"))
+    updated_at_ms: UnixMilliseconds
+
+
+class LabZoneRecord(TableObject, table=True):
+    """实验室 2D 分区（实验台 / 仪器区 / 存储区 …）。"""
+
+    __tablename__: ClassVar[str] = "lab_zone"
+    zone_id: NonEmptyStr = Field(primary_key=True)
+    name: str = ""
+    kind: str = "bench"
+    x: float = 0
+    y: float = 0
+    w: float = 100
+    h: float = 100
+    meta: JsonObject = Field(default_factory=dict, sa_column=json_text_column("meta_json", default_json="{}"))
+    version: PositiveVersion = 1
+    updated_at_ms: UnixMilliseconds
+
+
+class LabPlacementRecord(TableObject, table=True):
+    """分区内的在台摆放（容器实例或设备）。"""
+
+    __tablename__: ClassVar[str] = "lab_placement"
+    subject_id: NonEmptyStr = Field(primary_key=True)
+    subject_kind: str = "container"
+    zone_id: str = ""
+    x: float = 0
+    y: float = 0
+    w: float = 40
+    h: float = 40
+    rotation: float = 0
+    label: str = ""
+    meta: JsonObject = Field(default_factory=dict, sa_column=json_text_column("meta_json", default_json="{}"))
+    version: PositiveVersion = 1
+    updated_at_ms: UnixMilliseconds
+
+
 MATERIALS_TABLE_MODELS = (
     ResourceTemplateRecord,
     InventoryLotRecord,
@@ -651,6 +849,16 @@ MATERIALS_TABLE_MODELS = (
     ChemicalRecord,
     MaterialExecutionRecord,
     MaterialExecutionHoldRecord,
+    MaterialContentRecord,
+    MaterialContentHistoryRecord,
+    MaterialStateHistoryRecord,
+    MaterialContentReservationRecord,
+    MaterialSourceBindingRecord,
+    StationIngressReservationRecord,
+    InventoryProcessedCommandRecord,
+    LabMetaRecord,
+    LabZoneRecord,
+    LabPlacementRecord,
 )
 
 
@@ -723,6 +931,8 @@ MATERIALS_TABLES = (
             created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
             updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
             version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            location_site_uuid TEXT,
+            warehouse_zone_id TEXT NOT NULL DEFAULT '',
             CHECK (quantity_available + quantity_reserved <= quantity_total),
             FOREIGN KEY(template_uuid) REFERENCES resource_template(template_uuid)
                 ON DELETE RESTRICT
@@ -799,6 +1009,7 @@ MATERIALS_TABLES = (
             ON material(resource_id)
             WHERE deleted_at_ms IS NULL
             """,
+            _MATERIAL_BARCODE_V6_INDEX,
             """
             CREATE INDEX IF NOT EXISTS idx_material_parent
             ON material(parent_material_uuid, ordinal, material_uuid)
@@ -1346,6 +1557,29 @@ MATERIALS_TABLES += (
         aggregate_uuid TEXT NOT NULL, job_uuid TEXT NOT NULL REFERENCES material_execution(job_uuid),
         PRIMARY KEY(aggregate_type,aggregate_uuid)
     )"""),
+    # schema v6：V1.0 库存概念（表结构与迁移共用 materials_migrations 中冻结的语句）
+    TableSpec("material_content", _MATERIAL_CONTENT_V6, _MATERIAL_CONTENT_V6_INDEXES),
+    TableSpec("material_content_history", _MATERIAL_CONTENT_HISTORY_V6, _MATERIAL_CONTENT_HISTORY_V6_INDEXES),
+    TableSpec("material_state_history", _MATERIAL_STATE_V6, _MATERIAL_STATE_V6_INDEXES),
+    TableSpec(
+        "material_content_reservation",
+        _MATERIAL_CONTENT_RESERVATION_V6,
+        _MATERIAL_CONTENT_RESERVATION_V6_INDEXES,
+    ),
+    TableSpec("material_source_binding", _MATERIAL_SOURCE_BINDING_V6, _MATERIAL_SOURCE_BINDING_V6_INDEXES),
+    TableSpec(
+        "station_ingress_reservation",
+        _STATION_INGRESS_RESERVATION_V6,
+        _STATION_INGRESS_RESERVATION_V6_INDEXES,
+    ),
+    TableSpec(
+        "inventory_processed_command",
+        _INVENTORY_PROCESSED_COMMAND_V6,
+        _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
+    ),
+    TableSpec("lab_meta", _LAB_META_V6),
+    TableSpec("lab_zone", _LAB_ZONE_V6),
+    TableSpec("lab_placement", _LAB_PLACEMENT_V6, _LAB_PLACEMENT_V6_INDEXES),
 )
 
 
@@ -1363,7 +1597,10 @@ MATERIALS_DATABASE = DatabaseSpec(
     contract_version=3,
     # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）；
     # schema v3：material_substance.chemical_uuid（内容物引用化学品，可空）；
-    # schema v4：material_substance.chemical_unlinked（显式解除后不再自动匹配）。迁移链见 materials_migrations.py。
+    # schema v4：material_substance.chemical_unlinked（显式解除后不再自动匹配）；
+    # schema v5：物理动作冻结计划与结算回执；
+    # schema v6：V1.0 库存概念（试剂 / 样品 / 当前内容物、状态历史、内容物预留、来源绑定、
+    # 工站入站、实验室布局、批次库位、条码唯一）。迁移链见 materials_migrations.py。
     schema_version=MATERIALS_SCHEMA_VERSION,
     migrations=MATERIALS_MIGRATIONS,
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。

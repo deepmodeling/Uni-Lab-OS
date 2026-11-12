@@ -1,6 +1,6 @@
 """Registry Authority：条目级版本的上报替换、冲突挂起与还原。
 
-Edge 通过 ``/resource-templates`` 上报完整模板快照，本服务按条目独立处理：
+Edge 通过 ``/registry/reports`` 上报完整模板快照，本服务按条目独立处理：
 
 - 任何字段变化都生成一个不可变的新版本；
 - 变化条目做表关系冲突检测：被 workflow 节点引用的 action 被删除或定义

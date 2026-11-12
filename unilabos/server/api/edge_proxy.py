@@ -23,8 +23,8 @@ from unilabos.protocol.runtime.control import EdgeHttpResponse
 logger = logging.getLogger(__name__)
 
 #: ``/api/v1/<首段>`` 命中即交给 Host 执行。其余域由权威进程自己回答：workflow /
-#: registry / materials / graphs（Graph Authority 在 materials.db）/ lab（布局在 runtime.db，
-#: 跨 Host 重启保留）/ scheduler / restart / health / ping / error-decisions。
+#: registry / materials / inventory / graphs（Graph Authority 在 materials.db）/ lab（布局在 materials.db，
+#: 网格在 runtime.db，跨 Host 重启保留）/ scheduler / restart / health / ping / error-decisions。
 EDGE_ROUTE_PREFIXES = (
     "runtime",
     "telemetry",
@@ -36,6 +36,9 @@ EDGE_ROUTE_PREFIXES = (
     "device-processes",
     # V1 设备状态视图：数据在 Host 的 telemetry.db
     "device-state",
+    # V1 工作区只读面：驱动包挂载与工作目录浏览都描述 Host 的工作区
+    "workspace",
+    "file-browser",
 )
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

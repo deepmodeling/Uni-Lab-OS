@@ -9,7 +9,7 @@ action 发生删除/变化时条目挂起（pending），由前端"升级"按钮
 
 1. Host ``GET /api/v1/registry/digest`` 拿到权威当前持有的 ``{name: content_sha256}``
    （:class:`RegistryDigest`）；首次上报权威一无所有，索引为空。
-2. Host ``POST /api/v1/resource-templates`` 发 :class:`RegistryReport`：**每个**条目都带
+2. Host ``POST /api/v1/registry/reports`` 发 :class:`RegistryReport`：**每个**条目都带
    名字和哈希（集合本身决定哪些条目要软移除），只有权威没有该哈希的条目才附完整
    ``payload``——所以首次上报会把全部定义发过去，之后每次启动只剩几 KB 的哈希清单。
 3. 权威对附了 payload 的条目自己重算哈希（Host 声明的哈希只用于选择，不作数）；
@@ -141,7 +141,7 @@ class RegistryReportEntry(ServerObject):
 
 
 class RegistryReport(ServerObject):
-    """按哈希增量的全量上报（``POST /api/v1/resource-templates`` 新形状）。
+    """按哈希增量的全量上报（``POST /api/v1/registry/reports`` 新形状）。
 
     ``entries`` 必须覆盖 Host 当前的全部条目（设备 / 资源 / 工作流模板）：
     不在其中的既有条目会被权威软移除，这一点与旧的全量定义列表一致。

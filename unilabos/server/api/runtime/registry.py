@@ -1,7 +1,7 @@
 """Registry Authority API：Edge 上报 + 条目级版本管理。
 
 ``GET /api/v1/registry/digest`` 返回权威持有的条目内容哈希（生效 / 挂起），Host 据此决定
-哪些条目要附完整定义。``POST /api/v1/resource-templates`` 接收 gzip JSON 上报，两种形状：
+哪些条目要附完整定义。``POST /api/v1/registry/reports`` 接收 gzip JSON 上报（V1 的 ``POST /api/v1/resource-templates`` 归物料模板身份同步），两种形状：
 
 - 按哈希增量（``RegistryReport``）：``{"entries": [{"id", "content_sha256", "payload"?}]}``，
   每个条目都带哈希，权威没有该哈希的才带 payload；结果里的 ``missing`` 列出仍缺定义的条目。
@@ -53,7 +53,7 @@ def get_registry_digest() -> Any:
     return _ok(RegistryDigest(**digest).model_dump(mode="json"))
 
 
-@router.post("/api/v1/resource-templates")
+@router.post("/api/v1/registry/reports")
 async def report_resource_templates(request: Request) -> Any:
     """Edge 全量上报（条目级替换：变了才升该条目版本，冲突挂起待确认）。"""
 

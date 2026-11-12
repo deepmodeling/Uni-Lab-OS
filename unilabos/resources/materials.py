@@ -610,7 +610,7 @@ def resolve(
 def _instantiate_registry_resource(class_name: str, name: str) -> Any:
     """按 registry 资源类名实例化本地草稿（发给权威创建前的载体）。
 
-    与微后端 ``POST /materials/instantiate`` 端点同款实例化入口；随后的
+    与微后端库存命令 ``instantiate_material``（``POST /api/v1/inventory/commands``）同款实例化入口；随后的
     权威登记同样走 create_tree，两条路径语义一致。
     """
 

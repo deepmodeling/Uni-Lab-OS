@@ -78,6 +78,17 @@ EXPECTED_TABLES = {
         # schema v5：物理动作的冻结计划 / 结算回执 + 未结算动作对物料或库位的唯一占用
         "material_execution",
         "material_execution_hold",
+        # schema v6：V1.0 库存概念并入 materials.db
+        "material_content",
+        "material_content_history",
+        "material_state_history",
+        "material_content_reservation",
+        "material_source_binding",
+        "station_ingress_reservation",
+        "inventory_processed_command",
+        "lab_meta",
+        "lab_zone",
+        "lab_placement",
     },
     "telemetry": {
         "schema_identity",
@@ -207,10 +218,12 @@ def test_total_table_count_stays_small() -> None:
     # runtime v9：workflow_operation_category（V1 实验操作类别），42 → 43；
     # runtime v10：V1 结构化人工交互 workflow_human_interaction，43 → 44；
     # runtime v11：V1 工站错误处置（工站控制 / 控制命令 / 处置会话 / 工站错误），44 → 48。
+    # materials v6（V1.0 库存概念）：试剂 / 样品 / 当前内容物角色、内容物历史、状态历史、
+    # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，V1 命令幂等结果，16 → 26。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 48,
-        "materials": 16,
+        "materials": 26,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 71
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 81

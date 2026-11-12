@@ -37,6 +37,15 @@
 - 请求体不是合法 JSON 或校验失败：HTTP 200，业务码 `1000`（所有 `/api/v1` 路由一律走信封，
   不再保留 FastAPI 默认 422）。
 - SSE（`text/event-stream`）、文件下载、健康探针 `/health` 的纯文本或流式响应不包信封。
+- `GET /api/v1/readiness`、`GET /api/v1/health` 按 V1 原样不包信封：探针看 HTTP 状态（就绪 200、否则 503）。
+  readiness 字段按 V1：`status`（`ready` / `starting` / `failed`）、`capabilities`、`phase`、`workflowRuntime`、
+  可选 `observability`；dev 的探针摘要 `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，
+  dev 原来的 `not_ready` 改为 V1 的 `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端
+  归属改名 `scheduler_mode`，`execution` 保留。
+- `POST /api/v1/inventory/commands` 按 V1 原样返回裸结果 `{command_id, status, result | error, error_code, replayed}`
+  （V1 控制台按 `status` 判断，业务拒绝也是 HTTP 200）；拒绝结果另带 `code`（本表业务码）。它同时是 dev 全部
+  `materials.v1` 幂等变更的唯一写入口（body 为带 `protocol_version` / `command_uuid` / `operation` 的变更信封，
+  原路径参数放在 `target_uuid`），dev 按操作拆分的写路由已删除。
 
 统一入口：`unilabos/server/api/envelope.py`。V1 的 `backend_response.py` / `_success` / `_error`
 不另行复制。
@@ -94,10 +103,12 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - 工作流领域错误按 V1 `_business_code` 分类，dev 独有的 `local_task_authority_forbidden` 归 1001；
   `workflow_identity_mismatch`、`debug_not_allowed`、`debug_task_conflict`、`device_action_not_allowed`、
   `preflight_failed` 同时输出 `error.code` 符号码。
-- 物料服务只有一个 `MaterialNotFoundError`：消息以 `material` / `site` / `template` / `parent` 开头的分别为
-  6000 / 6006 / 6001 / 6003，其余 4001；异常带 `subject` 属性时以它为准。冲突默认 4002，库位占用 6007、
-  未结算动作占用 6011、`material uuid already exists` 6010；异常带整数 `business_code` 属性时以它为准。
-  物料域迁移时应改为显式 `subject` / `business_code`，不再依赖消息文字。
+- 物料服务异常显式携带业务含义，不再按消息文字判断（p7-c 起）：`MaterialNotFoundError(msg, subject=...)`，
+  `subject` 为 `material` / `site` / `template` / `parent` / `resource_template` 时分别为 6000 / 6006 / 6001 / 6003 / 5000，
+  其余（`lot`、`reservation`、未给）为 4001；`MaterialConflictError(msg, conflict=...)`，`conflict` 为
+  `site_occupied` 6007、`identity` 6010、`active_claim` 6011、`template_immutable` 6002、`parent_cycle` 6004、
+  `database` 2005、`template_data` 5004、`state` 3003，未给为 4002。映射表在 `envelope.py`，幂等拒绝重放时
+  `subject` / `conflict` 随拒绝码（如 `not_found:material`）一起还原。
 - 化学品（V1 的试剂信息）与设备图按资源口径：不存在 4001、冲突 4002。
 
 ## 字段约定（API 层转换，存储保持 dev）
@@ -114,6 +125,19 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   原载荷字段保留。换名在 API 层（`api/runtime/events.py:to_v1_event`）做，`frontend_event` 表仍存 dev 名。
   `runtime.logs.changed`（无 id 的日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
   V1 合同里，暂保持原名。CLI `workflow watch` 同步修改。
+
+## 库存与工作区（p7-c 落地）
+
+- materials.db 升到 **schema v7**：v6 把 V1 inventory.db 的概念并入为表——`material_content`（试剂 / 样品 /
+  当前内容物是 `material_substance` 行上的角色，数量仍以 substance 为唯一权威）、`material_content_history`、
+  `material_state_history`、`material_content_reservation`（容器内容物数量预留，防并发超量抽取）、
+  `material_source_binding`（`task_exclusive` / `shared_source`）、`station_ingress_reservation`、
+  `inventory_processed_command`、`lab_meta` / `lab_zone` / `lab_placement`，以及未删除非空条码唯一索引（迁移时重复条码
+  留给最早创建的物料，其余清空并记入 `extra_json.duplicate_barcode`）；v7 重建 `inventory_lot` 增加
+  `location_site_uuid` / `warehouse_zone_id`。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
+  校正，适用于质量 / 体积批次与已隔离批次。
+- 化学品：V1 `/reagent-infos` 是 `chemical` 表的 V1 视图；dev `/chemicals`（带 `expected_version` 的写入）保留。
+- Workspace Host（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）尚未迁移：dev 没有独立的工作区监督进程。
 
 ## 同路径不同语义的处理（V1 合同优先）
 

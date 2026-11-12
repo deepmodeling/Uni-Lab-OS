@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_result, error_of, ok_data
 from unilabos.server.api.materials import install_materials_api
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.protocol.materials import InventoryMutation
@@ -40,30 +40,33 @@ def test_http_protocol_uses_mutation_payload(tmp_path) -> None:
     mutation = bind_payload(_mutation("put_template"), template)
     try:
         with TestClient(app) as client:
-            response = client.put(
-                "/api/v1/materials/templates/beaker-template",
+            # materials.v1 写入统一经 V1 库存命令入口（裸结果，不包信封）
+            response = client.post(
+                "/api/v1/inventory/commands",
                 json=mutation.model_dump(mode="json"),
             )
-            assert response.status_code == 200, response.text
-            assert ok_data(response)["data"]["definition_hash"]
+            assert command_result(response)["data"]["definition_hash"]
 
             fetched = client.get(
-                "/api/v1/materials/templates/beaker-template"
+                "/api/v1/inventory/templates/beaker-template"
             )
             assert fetched.status_code == 200
             assert ok_data(fetched)["name"] == "beaker"
 
             # 列表按 name 精确筛选，默认目录模式：存在性检查只回一条、不带 definition
             listed = client.get(
-                "/api/v1/materials/templates",
+                "/api/v1/inventory/templates",
                 params={"name": "beaker"},
             )
             assert listed.status_code == 200
-            assert [item["template_uuid"] for item in ok_data(listed)] == ["beaker-template"]
-            assert ok_data(listed)[0]["definition"] == {}
+            assert [item["template_uuid"] for item in ok_data(listed)["templates"]] == ["beaker-template"]
+            assert ok_data(listed)["templates"][0]["definition"] == {}
             assert ok_data(client.get(
-                "/api/v1/materials/templates", params={"name": "flask"}
-            )) == []
+                "/api/v1/inventory/templates", params={"name": "flask"}
+            ))["templates"] == []
+            # dev 旧路径已删除（V1 只有一套路径）：/materials/templates 现在落到 V1 的
+            # /materials/{material_uuid}，按物料不存在回答
+            error_of(client.get("/api/v1/materials/templates"), 6000)
     finally:
         service.close()
 
@@ -168,12 +171,11 @@ def test_post_tree_resolves_template_name_and_allocates_all_uuids(tmp_path) -> N
     try:
         with TestClient(app) as client:
             response = client.post(
-                "/api/v1/materials/trees",
+                "/api/v1/inventory/commands",
                 json=mutation.model_dump(mode="json"),
             )
 
-        assert response.status_code == 200, response.text
-        body = ok_data(response)["data"]
+        body = command_result(response)["data"]
         assert body["root_material_uuid"]
         assert body["nodes"][0]["material"]["template_uuid"]
     finally:

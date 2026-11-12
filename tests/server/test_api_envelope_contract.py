@@ -182,13 +182,18 @@ def test_raw_endpoints_streams_and_unknown_exceptions_are_not_enveloped() -> Non
         (lambda: _workflow_error("template_catalog_unavailable"), 5001, None),
         (lambda: _workflow_error("local_task_authority_forbidden"), 1001, None),
         (lambda: _workflow_error("internal_error"), 1, None),
-        (lambda: _materials("MaterialNotFoundError", "material not found: m1"), 6000, None),
-        (lambda: _materials("MaterialNotFoundError", "material root not found: m1"), 6000, None),
-        (lambda: _materials("MaterialNotFoundError", "site not found: s1"), 6006, None),
-        (lambda: _materials("MaterialNotFoundError", "template not found: t1"), 6001, None),
-        (lambda: _materials("MaterialNotFoundError", "inventory lot not found: l1"), 4001, None),
-        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied"), 6007, None),
-        (lambda: _materials("MaterialConflictError", "物料或库位仍由未结算动作 j1 占用"), 6011, None),
+        # 物料域：业务码由异常显式携带的 subject / conflict 决定，消息文字不再参与判断
+        (lambda: _materials("MaterialNotFoundError", "material not found: m1", subject="material"), 6000, None),
+        (lambda: _materials("MaterialNotFoundError", "material root not found: m1", subject="material"), 6000, None),
+        (lambda: _materials("MaterialNotFoundError", "site not found: s1", subject="site"), 6006, None),
+        (lambda: _materials("MaterialNotFoundError", "template not found: t1", subject="template"), 6001, None),
+        (lambda: _materials("MaterialNotFoundError", "parent not found: p1", subject="parent"), 6003, None),
+        (lambda: _materials("MaterialNotFoundError", "inventory lot not found: l1", subject="lot"), 4001, None),
+        (lambda: _materials("MaterialNotFoundError", "material not found: m1"), 4001, None),
+        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied", conflict="site_occupied"), 6007, None),
+        (lambda: _materials("MaterialConflictError", "物料或库位仍由未结算动作 j1 占用", conflict="active_claim"), 6011, None),
+        (lambda: _materials("MaterialConflictError", "material uuid already exists: m1", conflict="identity"), 6010, None),
+        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied"), 4002, None),
         (lambda: _materials("MaterialConflictError", "material m1 state changed"), 4002, None),
         (lambda: _materials("MaterialValidationError", "bad"), 1000, None),
         (lambda: _materials("MaterialTransferSyncError", "device"), 5001, None),
@@ -214,10 +219,10 @@ def _workflow_error(code: str):
     return WorkflowError(code)
 
 
-def _materials(name: str, message: str):
+def _materials(name: str, message: str, **kwargs):
     from unilabos.server.services.materials import core
 
-    return getattr(core, name)(message)
+    return getattr(core, name)(message, **kwargs)
 
 
 def _graph(code: str):
@@ -257,7 +262,15 @@ def test_code_table_matches_v1() -> None:
 # ── 完整装配后的路由审计 ─────────────────────────────────────────
 
 #: 允许不走信封的 ``/api/v1`` 路由：探针、Host↔权威内部通道（见 docs/developer_guide/api_v1_migration.md）。
-_RAW_ALLOWED = {"/api/v1/health", "/api/v1/readiness", "/api/v1/edge/http-responses/{request_uuid}"}
+_RAW_ALLOWED = {
+    "/api/v1/health",
+    "/api/v1/readiness",
+    "/api/v1/edge/http-responses/{request_uuid}",
+    # 物料 3D 模型资产是文件下载（V1 缺失时 HTTP 404）
+    "/api/v1/material-models/{asset_path:path}",
+    # 库存命令入口按 V1 原样返回裸结果 {command_id, status, ...}（V1 控制台按 status 判断）
+    "/api/v1/inventory/commands",
+}
 
 
 def _full_app(tmp_path) -> tuple[FastAPI, list]:
@@ -321,16 +334,16 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
         with TestClient(app) as client:
             missing = "5b1c2f0e-8a8b-4c39-9a51-0d4f3c9a7e21"
             error_of(client.get(f"/api/v1/workflow-tasks/{missing}"), 3002)
-            error_of(client.get("/api/v1/materials/instances/missing"), 6000)
+            error_of(client.get("/api/v1/inventory/instances/missing"), 6000)
             error_of(client.get("/api/v1/runtime/jobs/missing"), 4001)
             error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
             error_of(client.get("/api/v1/edge/history/events/missing"), 4001)
             error_of(client.get("/api/v1/graphs/missing"), 4001)
             error_of(client.get("/api/v1/scheduler/drain"), 5001)
             error_of(client.post("/api/v1/workflows", json={}), 1000)
-            error_of(client.put("/api/v1/lab/layout", content=b"[", headers={"content-type": "application/json"}), 1000)
-            assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
-            assert ok_data(client.delete("/api/v1/lab/layout")) is None
+            error_of(client.put("/api/v1/lab/profile", content=b"[", headers={"content-type": "application/json"}), 1000)
+            assert ok_data(client.get("/api/v1/lab/profile"))["grid"]["revision"] == 0
+            assert ok_data(client.get("/api/v1/lab/layout"))["placements"] == []
             assert client.get("/api/v1/health").json()["status"] == "ok"
     finally:
         for closer in closers:

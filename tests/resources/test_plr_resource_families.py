@@ -56,14 +56,16 @@ def test_native_resource_families_roundtrip(kind, monkeypatch):
         assert restored.children[0].children[0].unilabos_uuid == child.children[0].unilabos_uuid
 
 
-@pytest.mark.parametrize("kind", ["bottle", "magazine", "plate", "material_plate"])
+@pytest.mark.parametrize("kind", ["bottle", "magazine", "plate", "material_plate", "bioyond_tips"])
 def test_two_presets_can_share_one_tree(kind):
     from unilabos.resources.presets.bioyond.bottle_carriers import BIOYOND_PolymerStation_6StockCarrier
+    from unilabos.resources.presets.bioyond.bottles import BIOYOND_PolymerStation_TipBox
     from unilabos.resources.presets.battery.magazine import MagazineHolder_4_Cathode
     from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import MaterialPlate
     from unilabos.devices.liquid_handling.prcxi import prcxi_labware
 
     factories = {
+        "bioyond_tips": BIOYOND_PolymerStation_TipBox,
         "bottle": BIOYOND_PolymerStation_6StockCarrier,
         "magazine": MagazineHolder_4_Cathode,
         "material_plate": lambda name: MaterialPlate(name, 120, 100, 10, fill=True),

@@ -54,6 +54,21 @@ def test_module_entrypoint_help_without_ros(module):
                + repr(module) + ", run_name='__main__')\n")
 
 
+@pytest.mark.parametrize("minor,backend,expected", [
+    (12, "hostlink", True), (13, "hostlink", True), (14, "hostlink", True),
+    (11, "hostlink", False), (15, "hostlink", False),
+    (12, "ros2", True), (14, "ros2", False),
+])
+def test_installation_python_version_boundary(monkeypatch, minor, backend, expected):
+    from types import SimpleNamespace
+    from scripts import verify_installation as verifier
+
+    monkeypatch.setattr(verifier, "sys", SimpleNamespace(
+        version_info=SimpleNamespace(major=3, minor=minor, micro=0),
+    ))
+    assert verifier.check_python_version(backend) is expected
+
+
 @pytest.mark.parametrize("backend_args", [[], ["--backend", "hostlink"], ["--backend", "ros2"]])
 def test_graph_create_is_backend_neutral_without_ros(tmp_path, backend_args):
     package = tmp_path / "no_ros_device"

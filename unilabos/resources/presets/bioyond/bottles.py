@@ -145,6 +145,7 @@ def BIOYOND_PolymerStation_TipBox(
     # 伪装成 tip_spot，否则模板身份和 tip state 都无法正确往返。
     tip_spots = create_ordered_items_2d(
         TipSpot,
+        name_prefix=name,
         num_items_x=6,
         num_items_y=4,
         dx=14.38,

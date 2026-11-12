@@ -199,7 +199,9 @@ def main() -> None:
     parser.add_argument("--source-cache", type=Path, default=Path("dist/wheel-source-cache"), help="按源码哈希缓存下载，不缓存校验结果")
     parser.add_argument("--release-tag", default="", help="正式 Release 时校验 v<版本> 标签")
     args = parser.parse_args()
-    if sys.version_info[:2] != (3, 12):
+    if args.dependencies_only and not (3, 12) <= sys.version_info[:2] < (3, 15):
+        raise RuntimeError("配套依赖构建支持 Python 3.12–3.14")
+    if not args.dependencies_only and sys.version_info[:2] != (3, 12):
         raise RuntimeError("必须用 Python 3.12 构建默认发行包")
     version = read_version(ROOT)
     if args.release_tag and (args.local_test or args.release_tag != f"v{version}"):

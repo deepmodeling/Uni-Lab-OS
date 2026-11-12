@@ -60,6 +60,24 @@ def iter_serialized_plr_children(
         yield by_name[name], child_data
 
 
+def iter_serialized_plr_children(
+    resource: "PLRResource", serialized: Mapping[str, Any]
+) -> Iterator[Tuple["PLRResource", dict]]:
+    """按规范结构匹配实例；已提升的内嵌枪头也参与 UUID 映射。"""
+    by_name = {}
+    for child in material_children(resource):
+        if child.name in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的孩子重名: {child.name}")
+        by_name[child.name] = child
+    seen = set()
+    for child_data in serialized.get("children", []):
+        name = child_data["name"]
+        if name in seen or name not in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的序列化孩子无法唯一匹配: {name}")
+        seen.add(name)
+        yield by_name[name], child_data
+
+
 def require_plr_config_type(config: Mapping[str, Any], *, uuid: str, template_name: str) -> str:
     """PLR 实现类型只接受 config.type，禁止从业务字段推断。"""
     class_name = config.get("type")

@@ -77,16 +77,20 @@ def check_package(package_name: str, display_name: str | None = None) -> bool:
         return False
 
 
-def check_python_version() -> bool:
-    """Check Python version."""
+def check_python_version(backend: str = "hostlink") -> bool:
+    """HostLink 支持 3.12–3.14；当前 ROS 发行环境仍要求 cp312 ABI。"""
     version = sys.version_info
     version_str = f"{version.major}.{version.minor}.{version.micro}"
 
-    if version.major == 3 and version.minor == 12:
+    supported = version.major == 3 and (
+        version.minor == 12 if backend == "ros2" else 12 <= version.minor < 15
+    )
+    if supported:
         print(f"  {CHECK_MARK} Python {version_str}")
         return True
     else:
-        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.12 / cp312 ABI)")
+        required = "Python 3.12 / cp312 ABI" if backend == "ros2" else "Python 3.12–3.14"
+        print(f"  {CROSS_MARK} Python {version_str} (requires {required})")
         return False
 
 
@@ -139,7 +143,7 @@ def main():
 
     # Check Python version
     print("Checking Python version...")
-    if not check_python_version():
+    if not check_python_version(args.backend):
         all_passed = False
     print()
 

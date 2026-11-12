@@ -10,7 +10,6 @@ notice = "recipes/opentrons-shared-data/NOTICE"
 [packages.pylabrobot]
 version = "1.0.0b1+unilabos.5c17d1956fe5"
 url = "https://github.com/Xuwznln/pylabrobot/archive/5c17d1956fe597b354d9231e2f1f1e838a6ee77b.tar.gz"
-# 待此维护提交发布后计算远端源码包 SHA256；空值使构建显式失败，禁止回退旧包。
-sha256 = ""
+sha256 = "21c1929120d69284223ea4b68dcf422fee20df18d8add25c0e239678669482b7"
 patches = [".conda/pylabrobot/unilab-version.patch", ".conda/pylabrobot/opentrons-dependency.patch"]
 requires = ["opentrons-shared-data==9.1.0+unilabos.np2.1"]

@@ -16,6 +16,17 @@ import httpx
 
 from .utils.envelope import EnvelopeError, is_envelope, unwrap_envelope
 
+#: 信封业务码：依赖暂不可用。带 ``Retry-After`` 时是瞬时状态（Host 子进程启动 / 重启中）。
+SERVICE_UNAVAILABLE_CODE = 5001
+
+
+class _TransientEnvelopeError(Exception):
+    """可重试的 5001 信封错误；重试用尽时抛出原 :class:`EnvelopeError`。"""
+
+    def __init__(self, error: EnvelopeError):
+        super().__init__(str(error))
+        self.error = error
+
 
 def _looks_like_json(response: httpx.Response) -> bool:
     return "json" in str(response.headers.get("content-type") or "").lower()
@@ -107,10 +118,21 @@ class HTTPClient:
                     raise httpx.HTTPStatusError(
                         f"HTTP {response.status_code}", request=response.request, response=response
                     )
-                return self._decode(response, path, use_envelope)
+                try:
+                    return self._decode(response, path, use_envelope)
+                except EnvelopeError as exc:
+                    # 例外：Host 子进程启动 / 重启中，Host 专有路由回 HTTP 200 + 5001 并带 Retry-After，
+                    # 与原先的 HTTP 503 一样是瞬时不可用，按同样的退避重试。
+                    if (
+                        exc.code == SERVICE_UNAVAILABLE_CODE
+                        and "retry-after" in response.headers
+                        and retries < self.config.max_retries
+                    ):
+                        raise _TransientEnvelopeError(exc) from exc
+                    raise
 
-            except (httpx.HTTPError, EnvelopeError) as e:
-                last_error = e
+            except (httpx.HTTPError, EnvelopeError, _TransientEnvelopeError) as e:
+                last_error = e.error if isinstance(e, _TransientEnvelopeError) else e
 
                 # 业务错误和 4xx 不重试
                 if isinstance(e, EnvelopeError):

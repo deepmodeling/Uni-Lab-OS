@@ -555,8 +555,19 @@ def _wait_process_group_exit(group: int, timeout: float = 10.0) -> None:
         time.sleep(0.1)
 
 
+SERVICE_UNAVAILABLE_CODE = 5001
+
+
+class ServiceUnavailable(RuntimeError):
+    """信封业务码 5001：依赖暂不可用（如 Host 子进程启动 / 重启中），轮询时按瞬时错误重试。"""
+
+
 def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, *, method: str | None = None) -> Any:
-    """请求管理 API；``{"code":0,"data":...}`` 信封自动解包，其余原样返回。"""
+    """请求管理 API；``{"code":0,"data":...}`` 信封自动解包，其余原样返回。
+
+    Host 专有路由在 Host 子进程就绪前返回 HTTP 200 + 5001（V1 信封约定，原 dev 为 HTTP 503），
+    抛 :class:`ServiceUnavailable`，由 :func:`wait_until` 当作瞬时错误重试。
+    """
 
     url = f"http://127.0.0.1:{port}/api/v1{path}"
     data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -568,6 +579,8 @@ def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, 
     with urllib.request.urlopen(request, timeout=5) as response:
         body = json.loads(response.read().decode("utf-8"))
     if isinstance(body, dict) and "code" in body:
+        if body["code"] == SERVICE_UNAVAILABLE_CODE:
+            raise ServiceUnavailable(f"管理 API {path} 暂不可用: {body}")
         if body["code"] != 0:
             raise RuntimeError(f"管理 API {path} 返回错误: {body}")
         return body.get("data")
@@ -591,7 +604,7 @@ def wait_until(
             raise RuntimeError(f"等待 {description or 'condition'} 期间被中止")
         try:
             value = predicate()
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, OSError, ServiceUnavailable) as exc:
             last_error = exc
             value = None
         if value:

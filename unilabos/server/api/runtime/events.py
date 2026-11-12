@@ -11,12 +11,20 @@ REST 读取当前状态，不需要回放历史。
   ``id`` 为新水位，连接保持，客户端必须重读 REST。
 
 保留窗口边界与事件页在同一 SQL 快照内读取，每页都检查，慢连接也不会被清理静默越过。
+
+事件名按 V1 合同输出（:func:`to_v1_event`）：持久库里 dev 的细粒度事件
+``workflow.task|node_run|node_job|manual_confirmation|resource.changed`` 一律发成
+``workflow.runtime.changed``，原事件的种类放进 ``data.kind``（``task`` / ``node_run`` /
+``node_job`` / ``manual_confirmation`` / ``resource``），原载荷字段保留；作者态与工作流
+定义变更发成 ``workflow.authoring.changed``。游标与 ``stream.reset`` 协议不变。
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+
+from typing import Any, Dict
 
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import Response, StreamingResponse
@@ -27,6 +35,34 @@ from unilabos.server.lifecycle import shutting_down
 from unilabos.utils.log_notices import LOG_NOTICE_EVENT, log_notices, merge_notices
 
 STREAM_RESET_EVENT = "stream.reset"
+#: V1 前端事件名（``/api/v1/events``）
+RUNTIME_CHANGED_EVENT = "workflow.runtime.changed"
+AUTHORING_CHANGED_EVENT = "workflow.authoring.changed"
+ERROR_HANDLING_CHANGED_EVENT = "station.error_handling.changed"
+
+#: dev 持久事件名 → (V1 事件名, data.kind)。不在表里的事件名原样发送。
+_V1_EVENTS: Dict[str, tuple[str, str | None]] = {
+    "workflow.task.changed": (RUNTIME_CHANGED_EVENT, "task"),
+    "workflow.node_run.changed": (RUNTIME_CHANGED_EVENT, "node_run"),
+    "workflow.node_job.changed": (RUNTIME_CHANGED_EVENT, "node_job"),
+    "workflow.manual_confirmation.changed": (RUNTIME_CHANGED_EVENT, "manual_confirmation"),
+    "workflow.resource.changed": (RUNTIME_CHANGED_EVENT, "resource"),
+    "workflow.changed": (AUTHORING_CHANGED_EVENT, "workflow"),
+    "workflow.definition.changed": (AUTHORING_CHANGED_EVENT, "definition"),
+}
+
+
+def to_v1_event(event: Dict[str, Any]) -> Dict[str, Any]:
+    """持久通知 → V1 事件名；dev 细粒度种类放进 ``data.kind``，其余载荷字段不动。"""
+
+    mapped = _V1_EVENTS.get(str(event.get("event") or ""))
+    if mapped is None:
+        return event
+    name, kind = mapped
+    data = dict(event.get("data") or {}) if isinstance(event.get("data"), dict) else {"value": event.get("data")}
+    if kind is not None:
+        data["kind"] = kind
+    return {**event, "event": name, "data": data}
 
 
 async def runtime_event_stream(
@@ -78,7 +114,7 @@ async def runtime_event_stream(
                         continue
                     for event in events[:100]:
                         cursor = event["id"]
-                        yield format_sse_event(event)
+                        yield format_sse_event(to_v1_event(event))
                     if len(events) > 100:
                         next_workflow = now
             try:

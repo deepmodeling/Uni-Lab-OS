@@ -521,3 +521,607 @@ def enrich_jobs(service: Any, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]
         result.append(enriched)
     return result
 
+
+
+# ── 任务观测：展示投影、删除、单步候选、执行锁、运行日志、等待图 ─────────────
+
+
+def _node_index(task: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """执行计划节点 + 图快照里的名称 / 动作 / 设备，合成 V1 控制台需要的紧凑节点。"""
+
+    snapshot_nodes = {
+        str(node.get("uuid")): node
+        for node in (task.get("workflow_snapshot") or {}).get("nodes") or []
+        if isinstance(node, dict)
+    }
+    result: Dict[str, Dict[str, Any]] = {}
+    for planned in (task.get("execution_plan") or {}).get("nodes") or []:
+        if not isinstance(planned, dict):
+            continue
+        uuid = str(planned.get("uuid"))
+        source = snapshot_nodes.get(uuid, {})
+        meta = source.get("meta_data") if isinstance(source.get("meta_data"), dict) else {}
+        result[uuid] = {
+            "uuid": uuid,
+            "name": source.get("name") or planned.get("name") or uuid,
+            "kind": planned.get("kind") or source.get("type") or "device_action",
+            "action_name": source.get("action_name") or planned.get("action_name"),
+            "device_id": meta.get("target_device_id") or planned.get("device_id"),
+            "material_uuid": planned.get("material_uuid") or source.get("material_uuid"),
+            "topological_index": planned.get("topological_index"),
+        }
+    return result
+
+
+def _compact_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """V1 ``_task_presentation_row``：裁掉完整图与参数，只留矩阵绘制所需字段。"""
+
+    workflow = (task.get("workflow_snapshot") or {}).get("workflow") or {}
+    plan = task.get("execution_plan") or {}
+    nodes = sorted(_node_index(task).values(), key=lambda node: (node["topological_index"] is None,
+                                                                node["topological_index"] or 0))
+    compact = {
+        key: task[key]
+        for key in (
+            "uuid", "create_time", "update_time", "meta_data", "description", "workflow_uuid", "execution_kind",
+            "priority", "status", "run_mode", "execution_mode", "dispatch_gate", "control_status",
+            "cleanup_status", "wait_reason", "trace_context", "input", "error_info", "attention_reason",
+            "started_at", "finished_at", "target_node_uuid",
+        )
+        if key in task
+    }
+    compact["workflow_snapshot"] = {"workflow": {key: workflow.get(key) for key in ("uuid", "name", "revision")}}
+    compact["execution_plan"] = {
+        "run_mode": plan.get("run_mode"),
+        "target_node_uuid": plan.get("target_node_uuid"),
+        "nodes": nodes,
+        "edges": [
+            {"source_node_uuid": edge.get("source_node_uuid"), "target_node_uuid": edge.get("target_node_uuid")}
+            for edge in plan.get("edges") or []
+            if isinstance(edge, dict)
+        ],
+    }
+    return compact
+
+
+_COMPACT_JOB_FIELDS = (
+    "uuid", "create_time", "update_time", "workflow_task_uuid", "workflow_node_uuid", "workflow_node_run_uuid",
+    "status", "attempt", "attempt_no", "current_attempt", "topological_index", "executor_kind", "start_state",
+    "execution_source", "uncertainty_reason", "started_at", "finished_at", "wait_reason", "error_info",
+    "manual_confirmation", "material_uuid",
+)
+
+
+class TaskObservability:
+    """V1 任务观测与删除接口的读写实现（runtime.db 同一连接与写锁）。"""
+
+    def __init__(self, service: Any) -> None:
+        self.service = service
+
+    # 展示投影 -------------------------------------------------------------
+
+    def presentations(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        workflow_uuid: Optional[str] = None,
+        execution_kind: str = "",
+        status: str = "",
+        cleanup_status: str = "",
+        view: str = "",
+        terminal_limit: int = 20,
+    ) -> Dict[str, Any]:
+        service = self.service
+        view = (view or "").strip().lower()
+        if view not in {"", "matrix"}:
+            raise _invalid()
+        if view == "matrix":
+            if status or cleanup_status or page != 1:
+                raise _invalid("矩阵视图不接受状态筛选与翻页")
+            if isinstance(terminal_limit, bool) or not 0 <= terminal_limit <= 100:
+                raise _invalid()
+            listing = self._matrix(workflow_uuid=workflow_uuid, execution_kind=execution_kind,
+                                   terminal_limit=terminal_limit)
+        else:
+            listing = service.list_workflow_tasks(
+                page=page, page_size=page_size, workflow_uuid=workflow_uuid,
+                execution_kind=execution_kind, status=status, cleanup_status=cleanup_status,
+            )
+        items = []
+        for task in listing["items"]:
+            jobs = enrich_jobs(service, service.list_jobs(task["uuid"]))
+            compact = _compact_task(task)
+            compact["jobs"] = [{key: job[key] for key in _COMPACT_JOB_FIELDS if key in job} for job in jobs]
+            items.append(compact)
+        return {**listing, "items": items}
+
+    def _matrix(self, *, workflow_uuid: Optional[str], execution_kind: str, terminal_limit: int) -> Dict[str, Any]:
+        service = self.service
+        if workflow_uuid is not None:
+            workflow_uuid = _uuid(workflow_uuid)
+        execution_kind = (execution_kind or "").strip().lower()
+        if execution_kind and execution_kind not in {"workflow", "ad_hoc_device_action"}:
+            raise _invalid()
+        filters, values = ["deleted_at IS NULL"], []
+        if workflow_uuid:
+            filters.append("workflow_uuid = ?")
+            values.append(workflow_uuid)
+        if execution_kind:
+            filters.append("execution_kind = ?")
+            values.append(execution_kind)
+        where = " AND ".join(filters)
+        with service.write_lock:
+            rows = service.connection.execute(
+                f"""
+                SELECT * FROM workflow_task WHERE {where} AND (
+                    status IN ('pending', 'running', 'canceling') OR cleanup_status = 'requires_attention'
+                    OR uuid IN (
+                        SELECT uuid FROM workflow_task WHERE {where}
+                          AND cleanup_status <> 'requires_attention'
+                          AND status IN ('succeeded', 'failed', 'canceled', 'timeout')
+                        ORDER BY COALESCE(finished_at, update_time, create_time) DESC, uuid DESC LIMIT ?
+                    )
+                ) ORDER BY create_time DESC, uuid
+                """,
+                (*values, *values, terminal_limit),
+            ).fetchall()
+            items = [service._task_row(row) for row in rows]
+        return {"items": items, "total": len(items), "page": 1, "page_size": len(items), "has_more": False}
+
+    # 删除 -----------------------------------------------------------------
+
+    @staticmethod
+    def _eligibility(conn: sqlite3.Connection, row: sqlite3.Row) -> Dict[str, Any]:
+        task_uuid = str(row["uuid"])
+        status = str(row["status"] or "")
+        cleanup = str(row["cleanup_status"] or "none")
+        if row["deleted_at"] is not None:
+            return {"can_delete": False, "already_deleted": True, "delete_blockers": [], "status": status,
+                    "cleanup_status": cleanup, "deleted_at": row["deleted_at"]}
+        blockers: List[str] = []
+        if status not in TERMINAL_TASK:
+            blockers.append(f"任务状态为 {status or 'unknown'}，尚未进入终态")
+        if cleanup not in {"none", "settled"}:
+            blockers.append(f"任务清理状态为 {cleanup}，资源尚未完全收敛")
+
+        def count(sql: str) -> int:
+            return int(conn.execute(sql, (task_uuid,)).fetchone()[0])
+
+        checks = (
+            ("SELECT COUNT(*) FROM workflow_node_job WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+             "AND status NOT IN ('succeeded', 'failed', 'skipped', 'canceled', 'timeout')", "个 Job 未进入终态"),
+            ("SELECT COUNT(*) FROM workflow_node_job WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+             "AND COALESCE(uncertainty_reason, '') <> ''", "个 Job 存在结果不确定原因"),
+            ("SELECT COUNT(*) FROM workflow_execution_claim WHERE task_uuid=? AND state!='released'",
+             "个执行 Claim 未释放"),
+            ("SELECT COUNT(*) FROM workflow_resource_interval WHERE task_uuid=? AND state!='released'",
+             "个区间资源占用未释放"),
+            ("SELECT COUNT(*) FROM workflow_resource_waiter WHERE task_uuid=?", "个资源锁请求在等待"),
+            ("SELECT COUNT(*) FROM workflow_device_tenancy WHERE task_uuid=? AND state!='released'",
+             "个设备托管未释放"),
+            ("SELECT COUNT(*) FROM workflow_task_command WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+             "AND status='pending'", "个任务控制命令待处理"),
+            ("SELECT COUNT(*) FROM workflow_intervention WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+             "AND status IN ('open', 'selected')", "个人工干预未关闭"),
+            ("SELECT COUNT(*) FROM workflow_manual_confirmation WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+             "AND status='pending'", "个人工确认未完成"),
+            ("SELECT COUNT(*) FROM workflow_human_interaction WHERE task_uuid=? AND status='pending'",
+             "个人工交互未完成"),
+        )
+        for sql, label in checks:
+            amount = count(sql)
+            if amount:
+                blockers.append(f"仍有 {amount} {label}")
+        return {"can_delete": not blockers, "already_deleted": False, "delete_blockers": blockers,
+                "status": status, "cleanup_status": cleanup, "deleted_at": None}
+
+    def delete_eligibility(self, task_uuid: str) -> Dict[str, Any]:
+        identity = _uuid(task_uuid)
+        service = self.service
+        with service.write_lock:
+            row = service.connection.execute("SELECT * FROM workflow_task WHERE uuid=?", (identity,)).fetchone()
+            if row is None:
+                raise _not_found()
+            result = self._eligibility(service.connection, row)
+        return {"workflow_task_uuid": identity, **result}
+
+    def delete(self, task_uuid: str) -> Dict[str, Any]:
+        """软删除已终态且资源全部收敛的任务；重复请求返回 ``already_deleted``。"""
+
+        identity = _uuid(task_uuid)
+        service = self.service
+        with service.transaction() as conn:
+            row = conn.execute("SELECT * FROM workflow_task WHERE uuid=?", (identity,)).fetchone()
+            if row is None:
+                raise _not_found()
+            eligibility = self._eligibility(conn, row)
+            if eligibility["already_deleted"]:
+                return {"status": "already_deleted", "workflow_task_uuid": identity,
+                        "deleted_at": eligibility["deleted_at"]}
+            if not eligibility["can_delete"]:
+                raise _conflict("任务当前不能删除：" + "；".join(eligibility["delete_blockers"]))
+            now = utc_now()
+            conn.execute("UPDATE workflow_task SET deleted_at=?, update_time=? WHERE uuid=? AND deleted_at IS NULL",
+                         (now, now, identity))
+            service._append_event(conn, event="workflow.task.changed",
+                                  data={"workflow_task_uuid": identity, "event": "task_deleted"}, now=now)
+        return {"status": "deleted", "workflow_task_uuid": identity, "deleted_at": now}
+
+    # 单步候选 -------------------------------------------------------------
+
+    def step_state(self, task_uuid: str) -> Dict[str, Any]:
+        """V1 单步候选：暂停且无在途动作时，前置依赖都已完成的待运行节点。"""
+
+        service = self.service
+        task = service.get_workflow_task(task_uuid)
+        execution_mode = task["execution_mode"]
+        base = {"workflow_task_uuid": task["uuid"], "execution_mode": execution_mode,
+                "control_status": task["control_status"]}
+        if task["status"] in TERMINAL_TASK or task["status"] == "canceling":
+            return {**base, "in_flight_job_count": 0, "requires_selection": False, "can_step": False,
+                    "candidates": []}
+        with service.write_lock:
+            conn = service.connection
+            in_flight = TaskCommands._in_flight(conn, task["uuid"])
+            runs = {
+                row["workflow_node_uuid"]: row["status"]
+                for row in conn.execute(
+                    "SELECT workflow_node_uuid, status FROM workflow_node_run WHERE workflow_task_uuid=? "
+                    "AND deleted_at IS NULL",
+                    (task["uuid"],),
+                ).fetchall()
+            }
+        paused = task["control_status"] == "paused" and (
+            execution_mode == "step" or task["dispatch_gate"] == "paused"
+        )
+        candidates: List[Dict[str, Any]] = []
+        if paused and not in_flight:
+            nodes = _node_index(task)
+            depends: Dict[str, List[str]] = {}
+            for planned in (task.get("execution_plan") or {}).get("nodes") or []:
+                policy = planned.get("execution_policy") if isinstance(planned.get("execution_policy"), dict) else {}
+                depends[str(planned.get("uuid"))] = [str(item) for item in policy.get("depends_on") or []]
+            for edge in (task.get("execution_plan") or {}).get("edges") or []:
+                if isinstance(edge, dict) and edge.get("target_node_uuid"):
+                    depends.setdefault(str(edge["target_node_uuid"]), []).append(str(edge.get("source_node_uuid")))
+            for uuid, node in sorted(nodes.items(), key=lambda item: item[1]["topological_index"] or 0):
+                if runs.get(uuid) != "pending":
+                    continue
+                if any(runs.get(parent) not in {"succeeded", "skipped"} for parent in depends.get(uuid, [])
+                       if parent in runs):
+                    continue
+                candidates.append({
+                    "node_uuid": uuid,
+                    "name": str(node["name"]),
+                    "kind": str(node["kind"]),
+                    "device_id": str(node["device_id"] or ""),
+                    "action_name": str(node["action_name"] or ""),
+                })
+        return {**base, "in_flight_job_count": in_flight, "requires_selection": len(candidates) > 1,
+                "can_step": bool(candidates), "candidates": candidates}
+
+    # 执行锁 ---------------------------------------------------------------
+
+    @staticmethod
+    def lease_uuid(claim_uuid: str, lock_key: str) -> str:
+        """dev 的租约以 lock_key 为主键；对外给 V1 需要的稳定租约 uuid（claim + lock_key 派生）。"""
+
+        return str(uuid5(NAMESPACE_URL, f"unilab:execution-lease:{claim_uuid}:{lock_key}"))
+
+    def _leases(self, conn: sqlite3.Connection, task_uuid: str) -> List[Dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT claim.claim_uuid, claim.job_uuid, claim.task_uuid, claim.state AS claim_state,
+                   claim.acquired_at, claim.released_at, claim.fences, lease.lock_key, lease.token,
+                   job.status AS job_status, job.uncertainty_reason, job.workflow_node_uuid,
+                   run.material_uuid
+            FROM workflow_execution_claim AS claim
+            JOIN workflow_execution_lease AS lease ON lease.claim_uuid = claim.claim_uuid
+            JOIN workflow_node_job AS job ON job.uuid = claim.job_uuid
+            LEFT JOIN workflow_node_run AS run ON run.uuid = job.workflow_node_run_uuid
+            WHERE claim.task_uuid = ? AND claim.state != 'released'
+            ORDER BY claim.acquired_at, lease.lock_key
+            """,
+            (task_uuid,),
+        ).fetchall()
+        return [
+            {
+                "uuid": self.lease_uuid(row["claim_uuid"], row["lock_key"]),
+                "lock_key": row["lock_key"],
+                "material_uuid": row["material_uuid"],
+                "workflow_task_uuid": row["task_uuid"],
+                "workflow_node_job_uuid": row["job_uuid"],
+                "workflow_node_uuid": row["workflow_node_uuid"],
+                "state": row["claim_state"],
+                "claim_uuid": row["claim_uuid"],
+                "fencing_token": int(row["token"]),
+                "acquired_at": row["acquired_at"],
+                "job_status": row["job_status"],
+                "claim_state": row["claim_state"],
+                "_uncertainty": str(row["uncertainty_reason"] or ""),
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _block_reason(task_status: str, lease: Dict[str, Any], tenancies: int) -> Optional[str]:
+        if task_status not in ABNORMAL_TERMINAL_TASK:
+            return "只有失败、取消或超时任务才能人工释放执行锁"
+        if lease["job_status"] not in {"failed", "canceled", "timeout"}:
+            return "只有终态作业才能人工释放执行锁"
+        if lease["_uncertainty"]:
+            return "作业仍有结果不确定原因，不能人工释放执行锁"
+        if lease["claim_state"] == "uncertain":
+            return "Claim 处于结果不确定状态，必须先完成物理结算"
+        if tenancies:
+            return "任务仍有活动设备托管，不能人工释放执行锁"
+        return None
+
+    def execution_locks(self, task_uuid: str) -> Dict[str, Any]:
+        service = self.service
+        task = service.get_workflow_task(task_uuid)
+        with service.write_lock:
+            conn = service.connection
+            leases = self._leases(conn, task["uuid"])
+            tenancies = int(conn.execute(
+                "SELECT COUNT(*) FROM workflow_device_tenancy WHERE task_uuid=? AND state!='released'",
+                (task["uuid"],),
+            ).fetchone()[0])
+        locks = []
+        for lease in leases:
+            reason = self._block_reason(task["status"], lease, tenancies)
+            lease.pop("_uncertainty")
+            locks.append({**lease, "can_release": reason is None, "release_block_reason": reason})
+        return {"workflow_task_uuid": task["uuid"], "task_status": task["status"], "locks": locks,
+                "active_device_tenancy_count": tenancies}
+
+    def force_release(
+        self,
+        task_uuid: str,
+        lease_uuid: str,
+        *,
+        expected_claim_uuid: str,
+        expected_fencing_token: int,
+        reason: str,
+        physical_settlement_confirmed: bool,
+        operator_id: str = "",
+    ) -> Dict[str, Any]:
+        """确认现场安全且 Claim / Fence CAS 一致后，释放目标作业的全部执行锁。"""
+
+        service = self.service
+        task_identity = service.get_workflow_task(task_uuid)["uuid"]
+        lease_identity = _uuid(lease_uuid)
+        expected_claim = _uuid(expected_claim_uuid)
+        reason = str(reason or "").strip()
+        if (isinstance(expected_fencing_token, bool) or not isinstance(expected_fencing_token, int)
+                or expected_fencing_token <= 0 or not reason or len(reason) > 500):
+            raise _invalid()
+        job_uuid = ""
+        with service.transaction() as conn:
+            task = service.get_task(task_identity)
+            leases = self._leases(conn, task_identity)
+            lease = next((item for item in leases if item["uuid"] == lease_identity), None)
+            if lease is None:
+                released = conn.execute(
+                    "SELECT claim_uuid FROM workflow_execution_claim WHERE task_uuid=? AND state='released' "
+                    "AND claim_uuid=?",
+                    (task_identity, expected_claim),
+                ).fetchone()
+                if released is not None:
+                    return {"status": "already_released", "workflow_task_uuid": task_identity,
+                            "lease_uuid": lease_identity, "claim_uuid": expected_claim}
+                raise _not_found(f"执行锁租约不存在：{lease_identity}")
+            tenancies = int(conn.execute(
+                "SELECT COUNT(*) FROM workflow_device_tenancy WHERE task_uuid=? AND state!='released'",
+                (task_identity,),
+            ).fetchone()[0])
+            block = self._block_reason(task["status"], lease, tenancies)
+            if block:
+                raise _conflict(block)
+            if not physical_settlement_confirmed:
+                raise _conflict("必须确认设备已停止且物理现场已安全")
+            if lease["claim_uuid"] != expected_claim:
+                raise _conflict("Claim 已变化，请刷新任务锁列表后重试")
+            if lease["fencing_token"] != expected_fencing_token:
+                raise _conflict("Fence 已变化，请刷新任务锁列表后重试")
+            job_uuid = lease["workflow_node_job_uuid"]
+            released_locks = [item["uuid"] for item in leases if item["claim_uuid"] == lease["claim_uuid"]]
+            now = utc_now()
+            conn.execute("DELETE FROM workflow_execution_lease WHERE claim_uuid=?", (lease["claim_uuid"],))
+            conn.execute("UPDATE workflow_execution_claim SET state='released', released_at=? WHERE claim_uuid=?",
+                         (now, lease["claim_uuid"]))
+            service._append_event(conn, event="workflow.resource.changed", data={
+                "workflow_task_uuid": task_identity, "operation": "force_release_execution_lock",
+                "workflow_node_job_uuid": job_uuid, "claim_uuid": lease["claim_uuid"], "reason": reason,
+                "operator_id": operator_id or "local-workspace", "released_lock_uuids": released_locks,
+            }, now=now)
+        releaser = getattr(service, "_task_resource_releaser", None)
+        if releaser is not None:
+            try:
+                releaser(task_identity, [job_uuid])
+            except Exception:  # noqa: BLE001 - 持久事实已释放
+                logger.exception("执行锁已人工释放，调度器内存占用释放失败")
+        listener = getattr(service, "_resource_change_listener", None)
+        if listener is not None:
+            try:
+                listener()
+            except Exception:  # noqa: BLE001
+                logger.exception("执行锁已人工释放，等待调度器恢复")
+        return {"status": "released", "workflow_task_uuid": task_identity, "lease_uuid": lease_identity,
+                "claim_uuid": expected_claim, "workflow_node_job_uuid": job_uuid,
+                "released_lock_uuids": released_locks, "reason": reason}
+
+    # 运行日志 -------------------------------------------------------------
+
+    _EVENT_KINDS = {
+        "workflow.task.changed": "task_transition",
+        "workflow.node_run.changed": "node_run_transition",
+        "workflow.node_job.changed": "job_transition",
+        "workflow.manual_confirmation.changed": "manual_confirmation",
+        "workflow.resource.changed": "resource",
+    }
+
+    def task_events(self, task_uuid: str, *, after_sequence: int = 0, limit: int = 100) -> Dict[str, Any]:
+        """任务运行日志（V1 ``after_sequence`` 游标），由持久前端通知按任务归集。"""
+
+        service = self.service
+        task_identity = service.get_workflow_task(task_uuid)["uuid"]
+        if (isinstance(after_sequence, bool) or not isinstance(after_sequence, int) or after_sequence < 0
+                or isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500):
+            raise _invalid()
+        with service.write_lock:
+            rows = service.connection.execute(
+                """
+                SELECT event.sequence, event.type, event.payload, event.create_time,
+                       job.uuid AS job_uuid, job.workflow_node_uuid, job.attempt_no, job.param,
+                       job.return_info, job.error_info, run.executor_kind
+                FROM frontend_event AS event
+                LEFT JOIN workflow_node_job AS job
+                  ON job.uuid = json_extract(event.payload, '$.workflow_node_job_uuid')
+                LEFT JOIN workflow_node_run AS run ON run.uuid = job.workflow_node_run_uuid
+                WHERE event.sequence > ? AND (
+                    json_extract(event.payload, '$.workflow_task_uuid') = ? OR job.workflow_task_uuid = ?
+                    OR (event.aggregate_uuid = ? AND event.type LIKE 'workflow.%')
+                )
+                ORDER BY event.sequence LIMIT ?
+                """,
+                (after_sequence, task_identity, task_identity, task_identity, limit + 1),
+            ).fetchall()
+        selected = rows[:limit]
+        items = []
+        for row in selected:
+            data = _load(row["payload"], {})
+            kind = self._EVENT_KINDS.get(row["type"], row["type"])
+            item: Dict[str, Any] = {
+                "sequence": row["sequence"], "workflow_task_uuid": task_identity, "kind": kind,
+                "data": data, "create_time": row["create_time"],
+            }
+            if row["job_uuid"] is not None:
+                item.update({"workflow_node_job_uuid": row["job_uuid"],
+                             "workflow_node_uuid": row["workflow_node_uuid"], "attempt": row["attempt_no"]})
+                if row["executor_kind"] is not None:
+                    item["executor_kind"] = row["executor_kind"]
+            to_status = data.get("status") if isinstance(data, dict) else None
+            if to_status:
+                item["to_status"] = to_status
+            if kind == "job_transition" and to_status in {"dispatched", "running"} and row["param"] is not None:
+                item["param"] = _load(row["param"], {})
+            if kind == "job_transition" and to_status in TERMINAL_JOB and row["job_uuid"] is not None:
+                item["return_info"] = _load(row["return_info"], {})
+                item["error_info"] = _load(row["error_info"], [])
+            items.append(item)
+        return {"items": items, "next_cursor": selected[-1]["sequence"] if selected else after_sequence,
+                "has_more": len(rows) > limit}
+
+    # 等待图 ---------------------------------------------------------------
+
+    def wait_graph(self) -> Dict[str, Any]:
+        """整站作业等待图：持久等待记录（等锁的作业 → 持锁的作业）及环路诊断。"""
+
+        service = self.service
+        with service.write_lock:
+            conn = service.connection
+            waiters = conn.execute(
+                """
+                SELECT waiter.job_uuid, waiter.task_uuid, waiter.lock_keys, waiter.blockers
+                FROM workflow_resource_waiter AS waiter
+                JOIN workflow_node_job AS job ON job.uuid = waiter.job_uuid
+                JOIN workflow_task AS task ON task.uuid = waiter.task_uuid
+                WHERE job.status = 'pending' AND task.deleted_at IS NULL AND task.status IN ('pending', 'running')
+                ORDER BY task.create_time, task.uuid, waiter.job_uuid
+                """
+            ).fetchall()
+            holders: Dict[str, set] = {}
+            for row in conn.execute(
+                "SELECT lease.lock_key, claim.job_uuid FROM workflow_execution_lease AS lease "
+                "JOIN workflow_execution_claim AS claim ON claim.claim_uuid = lease.claim_uuid "
+                "WHERE claim.state != 'released'"
+            ).fetchall():
+                holders.setdefault(row["lock_key"], set()).add(row["job_uuid"])
+            for row in conn.execute("SELECT lock_key, job_uuid FROM workflow_resource_use").fetchall():
+                holders.setdefault(row["lock_key"], set()).add(row["job_uuid"])
+        nodes: List[Dict[str, Any]] = []
+        edges: List[Dict[str, str]] = []
+        adjacency: Dict[str, set] = {}
+        for row in waiters:
+            job_uuid = str(row["job_uuid"])
+            blocking = sorted({
+                holder for key in _load(row["lock_keys"], []) for holder in holders.get(key, ())
+                if holder != job_uuid
+            })
+            node: Dict[str, Any] = {"job_uuid": job_uuid, "task_uuid": row["task_uuid"],
+                                    "wait_code": "resource_busy", "waiting_since": "",
+                                    "blocking_task_uuids": _load(row["blockers"], [])}
+            if blocking:
+                node["blocking_job_uuid"] = blocking[0]
+            for holder in blocking:
+                adjacency.setdefault(job_uuid, set()).add(holder)
+                edges.append({"waiting_job_uuid": job_uuid, "blocking_job_uuid": holder})
+            nodes.append(node)
+        cycles = _cycles(adjacency)
+        in_cycle = {job for cycle in cycles for job in cycle}
+        for node in nodes:
+            node["deadlock_cycle"] = node["job_uuid"] in in_cycle
+        return {"nodes": nodes, "edges": sorted(edges, key=lambda e: (e["waiting_job_uuid"], e["blocking_job_uuid"])),
+                "cycles": cycles, "deadlock_detected": bool(cycles)}
+
+    # 过程反馈 -------------------------------------------------------------
+
+    def feedback(self, job_uuid: str, *, page: int = 1, page_size: int = 20) -> Dict[str, Any]:
+        service = self.service
+        identity = service.get_workflow_node_job(job_uuid)["uuid"]
+        page, page_size = service._normalize_page(page, page_size)
+        with service.write_lock:
+            conn = service.connection
+            total = int(conn.execute(
+                "SELECT COUNT(*) FROM workflow_node_job_feedback_history WHERE workflow_node_job_uuid=? "
+                "AND deleted_at IS NULL",
+                (identity,),
+            ).fetchone()[0])
+            rows = conn.execute(
+                "SELECT * FROM workflow_node_job_feedback_history WHERE workflow_node_job_uuid=? "
+                "AND deleted_at IS NULL ORDER BY sequence LIMIT ? OFFSET ?",
+                (identity, page_size, (page - 1) * page_size),
+            ).fetchall()
+            items = [service._job_feedback_row(row) for row in rows]
+        return {"items": items, "total": total, "page": page, "page_size": page_size,
+                "has_more": page * page_size < total}
+
+
+def _cycles(adjacency: Dict[str, set]) -> List[List[str]]:
+    """Tarjan 强连通分量：大小 > 1 或自环的分量即死锁环。"""
+
+    index: Dict[str, int] = {}
+    low: Dict[str, int] = {}
+    stack: List[str] = []
+    on_stack: set = set()
+    result: List[List[str]] = []
+    counter = [0]
+
+    def visit(node: str) -> None:
+        index[node] = low[node] = counter[0]
+        counter[0] += 1
+        stack.append(node)
+        on_stack.add(node)
+        for nxt in sorted(adjacency.get(node, ())):
+            if nxt not in index:
+                visit(nxt)
+                low[node] = min(low[node], low[nxt])
+            elif nxt in on_stack:
+                low[node] = min(low[node], index[nxt])
+        if low[node] == index[node]:
+            component = []
+            while True:
+                item = stack.pop()
+                on_stack.discard(item)
+                component.append(item)
+                if item == node:
+                    break
+            if len(component) > 1 or node in adjacency.get(node, ()):
+                result.append(sorted(component))
+
+    for node in sorted(adjacency):
+        if node not in index:
+            visit(node)
+    return sorted(result)

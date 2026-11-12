@@ -73,7 +73,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("workflow.task.interventions", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/interventions", "task 的干预记录", "any"),
     Operation("workflow.job.get", "workflow", "GET", "/api/v1/workflow-node-jobs/{job_uuid}", "节点作业详情", "any"),
     Operation("workflow.job.results", "workflow", "GET", "/api/v1/workflow-node-jobs/{job_uuid}/results", "job 执行结果", "any"),
-    Operation("workflow.job.feedback-history", "workflow", "GET", "/api/v1/workflow-node-jobs/{job_uuid}/feedback-history", "job 反馈归档", "any"),
+    Operation("workflow.job.feedback", "workflow", "GET", "/api/v1/workflow-node-jobs/{job_uuid}/feedback", "job 过程反馈（V1 分页 page / page_size）", "any"),
     Operation("workflow.authoring.get", "workflow", "GET", "/api/v1/workflows/{workflow_uuid}/authoring", "Authoring 状态机聚合（Draft/Candidate）", "any"),
     Operation("workflow.authoring.draft", "workflow", "PUT", "/api/v1/workflows/{workflow_uuid}/authoring/draft", "保存 Draft 源码（hash+revision 前置校验）", "any"),
     Operation("workflow.authoring.apply", "workflow", "POST", "/api/v1/workflows/{workflow_uuid}/authoring/apply", "Apply Candidate 到 Graph", "any"),

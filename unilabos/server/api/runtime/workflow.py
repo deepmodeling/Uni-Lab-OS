@@ -915,17 +915,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             service.list_node_job_results(job_uuid, limit=limit, offset=offset)
         )
 
-    @router.get("/workflow-node-jobs/{job_uuid}/feedback-history")
-    def list_node_job_feedback_history(
-        job_uuid: str,
-        limit: Optional[int] = Query(default=None, ge=1),
-        offset: int = Query(default=0, ge=0),
-    ) -> JSONResponse:
-        return _success(
-            service.list_node_job_feedback_history(
-                job_uuid, limit=limit, offset=offset
-            )
-        )
+    # 作业过程反馈按 V1 在 ``GET /workflow-node-jobs/{job_uuid}/feedback``（page / page_size，见 tasks_v1.py）。
 
     @router.get("/workflows/{workflow_uuid}/authoring")
     def get_authoring(workflow_uuid: str) -> JSONResponse:

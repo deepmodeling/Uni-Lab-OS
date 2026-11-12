@@ -347,3 +347,33 @@ def test_settled_aliquot_is_a_consumption_of_the_source_contents(tmp_path) -> No
         assert [item["uuid"] for item in reads.list_substance(reagent["uuid"])] == [fact["uuid"]]
     finally:
         materials.close()
+
+
+def test_workflow_client_sdk_reaches_the_seam_routes(seam) -> None:
+    from unilabos.client.runtime.workflow import HTTPWorkflowClient
+
+    stack, materials = seam
+
+    class _Through:
+        """把 SDK 的相对路径请求转给测试应用，并像 HTTPClient 一样解一次信封。"""
+
+        def get(self, path: str, **_kwargs: Any) -> Any:
+            return ok_data(stack.client.get(f"/api/v1{path}"))
+
+        def post(self, path: str, **kwargs: Any) -> Any:
+            return ok_data(stack.client.post(f"/api/v1{path}", json=kwargs.get("json")))
+
+        def close(self) -> None:
+            pass
+
+    run = _running_job(stack)
+    _reserve_lot(materials, run["job"], 10)
+    _finish(stack, run)
+    client = HTTPWorkflowClient("http://microbackend:8002", http_client=_Through(),
+                                notice_connector=lambda *_args: None)
+    job_uuid = run["job"]["uuid"]
+    job = client.reconcile_job_quantity(job_uuid, [_lot_item(8)], reason="复核")
+    assert job["inventory_consumptions"][0]["actual_quantity"] == 8
+    assert client.list_job_inventory_consumptions(job_uuid) == job["inventory_consumptions"]
+    assert client.list_task_inventory_consumptions(run["task"]["uuid"]) == job["inventory_consumptions"]
+    assert client.list_reagent_inventory_consumptions(str(uuid4())) == []

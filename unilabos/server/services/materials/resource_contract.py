@@ -471,6 +471,46 @@ class ResourceContract:
         return {"items": items, "total": total, "page": page, "page_size": page_size,
                 "has_more": page * page_size < total}
 
+    def list_resources(self, *, page: int = 0, page_size: int = 0) -> list[dict[str, Any]]:
+        """V1 旧版 ``GET /resources``：全部未删除物料按树压平（深度优先、父在前），V1 返回全部。
+
+        ``page<=0``（缺省）返回全部；``page>=1`` 时按 ``page_size``（缺省 20、上限 100）切片。每项是
+        :meth:`material_row` 的物料 DTO，另附 V1 资源树节点的 ``id``（resource_id）与 ``parent``（父物料的
+        resource_id）。
+        """
+
+        aggregates = self.materials.list_materials()
+        by_uuid = {item.material.material_uuid: item for item in aggregates}
+        children: dict[Optional[str], list[Any]] = {}
+        for item in aggregates:
+            parent = item.material.parent_material_uuid
+            children.setdefault(parent if parent in by_uuid else None, []).append(item)
+        for siblings in children.values():
+            siblings.sort(key=lambda item: (item.material.ordinal, item.material.created_at_ms,
+                                            item.material.material_uuid))
+        ordered: list[Any] = []
+        stack = list(reversed(children.get(None, [])))
+        while stack:
+            item = stack.pop()
+            ordered.append(item)
+            stack.extend(reversed(children.get(item.material.material_uuid, [])))
+        if page >= 1:
+            size = 20 if page_size <= 0 else min(page_size, 100)
+            ordered = ordered[(page - 1) * size: page * size]
+        templates: dict[str, Optional[ResourceTemplateRead]] = {}
+        rows = []
+        for item in ordered:
+            material = item.material
+            if material.template_uuid not in templates:
+                templates[material.template_uuid] = self._template_meta(material.template_uuid)
+            parent = by_uuid.get(material.parent_material_uuid or "")
+            rows.append({
+                **self.material_row(item, template=templates[material.template_uuid]),
+                "id": material.resource_id,
+                "parent": parent.material.resource_id if parent is not None else None,
+            })
+        return rows
+
     def _resource_id(self, name: str) -> str:
         if MaterialsRepository.get_material_by_resource_id(self.materials, name) is None:
             return name

@@ -265,3 +265,39 @@ def test_adjust_lot_requires_audit_and_keeps_reserved_quantity(stack) -> None:
     replay = _run(client, "material.adjust", {"lot_id": "lot-1", "new_total": 400, "reason": "盘点"},
                   command_id="adjust-1", expected_version=lot.version)
     assert replay["replayed"] is True and service.get_inventory_lot("lot-1").version == after.version
+
+
+def test_legacy_resources_list_is_the_flattened_material_tree(stack) -> None:
+    _service, client = stack
+    _templates(client)
+    rack = _rack(client)
+    bottle = _instance(client, barcode="BC-7", parent_uuid=rack, slot_id="A2")
+    loose = _instance(client, barcode="BC-8")
+    resources = ok_data(client.get("/api/v1/resources"))
+    assert isinstance(resources, list)
+    order = [item["uuid"] for item in resources]
+    assert set(order) == {rack, bottle["edge_uuid"], loose["edge_uuid"]}
+    assert order.index(rack) < order.index(bottle["edge_uuid"])  # 父在前
+    child = next(item for item in resources if item["uuid"] == bottle["edge_uuid"])
+    assert child["parent_uuid"] == rack and child["parent"] == "架" and child["id"] == child["resource_id"]
+    assert {"class", "type", "name", "config", "data", "resource_template_uuid"} <= set(child)
+    paged = ok_data(client.get("/api/v1/resources", params={"page": 2, "page_size": 2}))
+    assert [item["uuid"] for item in paged] == order[2:]
+    assert ok_data(client.get("/api/v1/resources", params={"page": 1, "page_size": 500})) == resources
+
+
+def test_http_materials_gateway_sends_typed_commands(stack, monkeypatch) -> None:
+    from tests.server.test_v1_inventory_api import _TestClientOpener
+    from unilabos.client.materials import HTTPMaterialsClient
+
+    _service, client = stack
+    _templates(client)
+    monkeypatch.setattr("unilabos.client.materials.core.urlopen", _TestClientOpener(client))
+    gateway = HTTPMaterialsClient("http://testserver")
+    command = {"command_id": "sdk-1", "type": "inventory.inbound", "actor": "sdk",
+               "payload": {"kind": "instance", "template_id": "bottle", "barcode": "SDK-1"}}
+    first = gateway.inventory_command(command)
+    assert first["status"] == "completed" and first["result"]["barcode"] == "SDK-1"
+    assert gateway.inventory_command(command)["replayed"] is True
+    rejected = gateway.inventory_command({**command, "command_id": "sdk-2"})
+    assert rejected["status"] == "rejected" and rejected["code"] == 6010

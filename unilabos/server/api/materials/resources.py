@@ -231,6 +231,12 @@ def create_v1_resource_router(
         return contract.list_materials(page=page, page_size=page_size, name=name, barcode=barcode,
                                        resource_template_uuid=resource_template_uuid or None)
 
+    @router.get("/resources")
+    def list_resources(page: int = Query(default=0), page_size: int = Query(default=0)) -> Any:
+        """V1 旧版资源列表（V1 用旧 ``Resp`` 信封、返回全部节点）：物料树压平；``page>=1`` 才分页。"""
+
+        return contract.list_resources(page=page, page_size=page_size)
+
     @router.get("/materials/graph")
     def material_graph() -> Any:
         return contract.material_graph()

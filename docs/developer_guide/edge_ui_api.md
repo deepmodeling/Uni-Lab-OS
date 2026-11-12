@@ -162,7 +162,8 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - `/api/v1/device-processes`（带执行面的 Host）：受管设备进程。一条规格 = 设备节点列表
   （服务端展开为 slave 图，uuid 沿用物料权威已有设备身份）+ 要挂载的驱动包 + 重启策略；
   `start` 以 `python -m unilabos --is_slave --host_node_ip … -g <图>` 拉起本机子进程，经
-  HostLink 接回本 Host；`never / on-failure / always` 三种看护策略，退避重启、超过
+  HostLink 接回本 Host（数据库根目录为各自的 `<working_dir>/device_processes/<id>/database`，不与
+  Host / 权威共用）；`never / on-failure / always` 三种看护策略，退避重启、超过
   `max_restarts` 停在 `crashed`；`auto_start` 的进程随 Host 启动拉起、Host 退出时终止；
   受管日志统一经 `GET /api/v1/hostlink/logs?source_id=managed:<id>` 读取。驱动崩溃只影响该子进程，Host 与物料权威不受影响。
   这两组路由只在 Host 上挂载（Backend 返回 404），前端按能力缺失降级。协议细节见

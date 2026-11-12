@@ -56,6 +56,23 @@ unilab --disable-browser
 保留旧环境以便复现实验，不要直接删除 ROS 包、复制旧 site-packages 或在
 Humble/Jazzy 间原地切换。旧 Python 3.11、NumPy 1 消息扩展不能混入 cp314/NumPy 2 环境。
 
+## 一个数据库根目录只归一个实例
+
+微后端的四个 SQLite 数据库（`runtime.db`、`materials.db`、`telemetry.db`、`history.db`）所在的
+根目录同一时间只能由一个进程打开。每个要开库的进程启动早期先独占根目录下的 `unilab.lock`
+（Linux / macOS 用 `fcntl`，Windows 用 `msvcrt` 的操作系统级独占锁），之后才打开任何数据库；锁随进程
+结束（含崩溃、强制结束）由操作系统释放，不需要清理。默认 `unilab` 的调度权威持有 `<根目录>`，它拉起的
+Host 子进程持有 `<根目录>/edge`，`--role backend` 持有 `<根目录>/backend`；`--check_mode` 不开库也不取锁。
+
+对同一根目录再启动第二个实例（另一个 `unilab`、遗留的 Host、同机 Slave 未换目录等）会在打开任何数据库
+之前以退出码 73 失败：
+
+```text
+[ERROR] 数据库根目录 /home/lab/.unilabos/database 已被另一个 Uni-Lab-OS 进程占用（pid 12345，调度权威，2026-11-13 09:30:12 启动，命令行 …）。一个数据库根目录同一时间只能由一个实例使用：请先停止该进程；要并行运行另一个实例，请用 --working_dir 或 --server_database_root 指定另一个目录。锁文件：/home/lab/.unilabos/database/unilab.lock
+```
+
+各启动方式对应的根目录与排查方法见[配置指南](../advanced_usage/configuration.md)的「一个数据库根目录只归一个实例」。
+
 ## Windows DLL 兼容
 
 仅 ROS2 后端需要处理 ROS 原生 DLL。发行版优先从当前环境的

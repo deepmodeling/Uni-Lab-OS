@@ -23,7 +23,11 @@ Host 子进程（设备、HostLink、遥测、驱动包、受管设备进程；`
   （含 ``TerminateProcess``），子进程及其受管设备子进程一起被系统回收；
 - POSIX：SIGTERM / SIGHUP 转发给子进程，让它走正常退出链路；
 - Host 子进程建在独立进程组，控制台 Ctrl+C 到不了它；权威停机时用 Ctrl+Break /
-  SIGTERM 有序停掉它（uvicorn 当 SIGBREAK 处理，Host 的 finally / atexit 都会跑）。
+  SIGTERM 有序停掉它（uvicorn 当 SIGBREAK 处理，Host 的 finally / atexit 都会跑）；
+- 数据库根目录锁（``server/database/root_lock.py``）：权威独占 ``<根目录>``，Host 子进程独占
+  ``<根目录>/edge``，各取各的、互不等待。锁随进程退出由操作系统释放，再拉起的下一代 Host
+  最多等 ``RELAUNCH_ROOT_LOCK_WAIT_S`` 让上一代释放；根目录被别的进程占着时以
+  ``DATABASE_ROOT_LOCKED_EXIT_CODE`` 退出，按崩溃退避再拉起。
 
 ``--no-safe-restart`` 关闭全部编排：单进程（调度权威与 Host 同进程）、重启只退出，
 便于附加调试器。一次性 CLI 子命令、``--check_mode`` 和 ``--is_slave``（没有管理 API；
@@ -47,6 +51,11 @@ logger = logging.getLogger(__name__)
 RESTART_EXIT_CODE = 75
 # 98 = EADDRINUSE：管理端口被占（Host 子进程不监听端口，只在单进程 / 权威自己身上出现）
 PORT_IN_USE_EXIT_CODE = 98
+# 73 = EX_CANTCREAT：数据库根目录已被另一个进程独占（一个根目录只归一个实例）
+DATABASE_ROOT_LOCKED_EXIT_CODE = 73
+#: 被看护的进程重新拉起时，等上一代进程释放数据库根目录锁的上限。上一代已经退出，POSIX 上锁随
+#: 进程立即释放；Windows 释放字节锁可能稍有延迟。顶层启动不等，第二个实例立即失败。
+RELAUNCH_ROOT_LOCK_WAIT_S = 10.0
 # 进程编排环境变量与配置覆盖共用 UNILABOS_ 前缀；新增时同步登记到
 # config.config._NON_CONFIG_ENV_KEYS，否则配置加载会告警"未找到类"。
 SUPERVISOR_INNER_ENV = "UNILABOS_SUPERVISOR_INNER"
@@ -268,11 +277,16 @@ def host_child_command(
 
     后出现的同名参数覆盖前面的（argparse 语义），所以只需在末尾追加：Host 连回
     本机权威（--address / 物料权威）、四库落独立目录避免与权威跨进程写同一份 SQLite；
+    权威命令行里的单库覆盖（``--runtime_db`` 等）是给权威的，Host 子进程置空后四库全部落在
+    ``database_root`` 下——绝对路径的覆盖若被继承，两个进程会打开同一个文件；
     环境检查权威已经做过，浏览器由权威打开。Host 子进程不监听端口（管理 API 经控制面
     WS 在进程内执行），所以不给 --port。
     """
 
     authority = f"http://127.0.0.1:{authority_port}"
+    database_overrides = [
+        item for key in ("runtime", "materials", "telemetry", "history") for item in (f"--{key}_db", "")
+    ]
     return [
         sys.executable,
         "-m",
@@ -284,6 +298,7 @@ def host_child_command(
         authority,
         "--server_database_root",
         database_root,
+        *database_overrides,
         "--skip_env_check",
         "--disable_browser",
     ]
@@ -442,7 +457,14 @@ class HostChildSupervisor:
                 logger.error("[HostChild] Host 连续崩溃 %d 次 (最近 code=%s)，停止看护", self.crash_count, code)
                 return
             delay = _CRASH_BACKOFF_S[min(self.crash_count - 1, len(_CRASH_BACKOFF_S) - 1)]
-            logger.error("[HostChild] Host 子进程异常退出 code=%s，%.0fs 后再拉起", code, delay)
+            if code == DATABASE_ROOT_LOCKED_EXIT_CODE:
+                logger.error(
+                    "[HostChild] Host 子进程的数据库根目录被其他进程占用（占用者见上方 Host 输出，"
+                    "常见于上次遗留的 Host 进程仍在运行），%.0fs 后再拉起",
+                    delay,
+                )
+            else:
+                logger.error("[HostChild] Host 子进程异常退出 code=%s，%.0fs 后再拉起", code, delay)
             if self._stopping.wait(delay):
                 return
 
@@ -460,9 +482,11 @@ def _request_graceful_exit(child: subprocess.Popen[Any]) -> None:
 
 __all__ = [
     "CHILD_EXIT_GRACE_S",
+    "DATABASE_ROOT_LOCKED_EXIT_CODE",
     "HOST_CHILD_ENV",
     "HostChildSupervisor",
     "PORT_IN_USE_EXIT_CODE",
+    "RELAUNCH_ROOT_LOCK_WAIT_S",
     "RESTART_EXIT_CODE",
     "SUPERVISOR_INNER_ENV",
     "host_child_command",

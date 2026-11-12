@@ -87,6 +87,10 @@ def test_create_writes_graph_and_command(service: dpx.DeviceProcessService, tmp_
     assert command[command.index("--devices") + 1] == str(tmp_path / "acme_devices")
     assert command[command.index("-g") + 1] == str(graph)
     assert command[command.index("--host_node_ip") + 1] == "127.0.0.1"
+    # 一个数据库根目录只归一个进程：受管 Slave 不与 Host / 权威共用 <working_dir>/database
+    assert command[command.index("--server_database_root") + 1] == str(
+        dpx.process_dir(tmp_path, view["id"]) / "database"
+    )
 
     with pytest.raises(dpx.DeviceProcessError):
         service.create(_payload(package_names=["ghost"]))

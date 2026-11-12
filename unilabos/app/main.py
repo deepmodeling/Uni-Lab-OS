@@ -114,9 +114,7 @@ def _materialize_graph_from_authority(
     文件再启动。
     """
 
-    from unilabos.server.startup import resolve_database_paths
-
-    paths = resolve_database_paths(args_dict, working_dir=working_dir)
+    paths = _own_database_paths(args_dict, working_dir)
     record = None
     if _graph_authority_is_remote():
         # 权威的 Host 子进程：Graph Authority 在权威的 materials.db，经 HTTP 读取
@@ -152,6 +150,23 @@ def _materialize_graph_from_authority(
         "info",
     )
     return cache_path
+
+
+def _own_database_paths(args_dict: Dict[str, Any], working_dir: str):
+    """本进程自己的四库路径（``--role backend`` 落 ``<根目录>/backend``）；开库前先独占根目录。
+
+    启动入口已经取过锁时 ``claim_database_root`` 返回同一把（进程内可重入）。
+    """
+
+    from unilabos.server.database import claim_database_root
+    from unilabos.server.startup import process_database_root, resolve_database_paths
+
+    root = process_database_root(args_dict, working_dir=working_dir)
+    paths = resolve_database_paths(
+        {**args_dict, "server_database_root": root}, working_dir=working_dir
+    )
+    claim_database_root(paths.root)
+    return paths
 
 
 def _graph_authority_is_remote() -> bool:
@@ -225,7 +240,7 @@ def _register_graph_file_to_authority(
         权威 payload 的缓存文件路径。
     """
 
-    from unilabos.server.startup import resolve_database_paths
+    from unilabos.server.database import DatabaseRootLockError
     from unilabos.server.services.materials.graph import GraphError, GraphService
 
     if graph_payload is None:
@@ -233,7 +248,9 @@ def _register_graph_file_to_authority(
 
     graph_name = Path(str(file_path)).stem
     try:
-        paths = resolve_database_paths(args_dict, working_dir=working_dir)
+        paths = _own_database_paths(args_dict, working_dir)
+    except DatabaseRootLockError:
+        raise
     except Exception as exc:
         print_status(f"Graph Authority 不可用，无法登记启动图: {exc}", "error")
         os._exit(1)
@@ -405,8 +422,10 @@ def main():
     """运行 Uni-Lab-OS CLI，并在需要时启动设备运行时。
 
     数据库无法迁移 / 迁移失败属于数据保护类错误：只给出可操作的说明并以退出码 1 结束，
-    不打印调用栈，也不会继续用空库启动。
+    不打印调用栈，也不会继续用空库启动。数据库根目录已被另一个实例占用同样只打印说明，
+    以退出码 73 结束（看护进程据此区分“根目录被占”与普通崩溃）。
     """
+    from unilabos.server.database import DatabaseRootLocked, DatabaseRootLockError
     from unilabos.server.database.schema import DatabaseMigrationFailed, DatabaseMigrationRequired
 
     try:
@@ -414,6 +433,58 @@ def main():
     except (DatabaseMigrationRequired, DatabaseMigrationFailed) as exc:
         print_status(str(exc), "error")
         raise SystemExit(1) from None
+    except DatabaseRootLockError as exc:
+        from unilabos.app.supervisor import DATABASE_ROOT_LOCKED_EXIT_CODE
+
+        print_status(str(exc), "error")
+        raise SystemExit(
+            DATABASE_ROOT_LOCKED_EXIT_CODE if isinstance(exc, DatabaseRootLocked) else 1
+        ) from None
+
+
+def _database_root_role(args_dict: Dict[str, Any]) -> str:
+    """写进数据库根目录锁的进程角色，冲突提示里给第二个实例看。"""
+
+    from unilabos.app.supervisor import is_host_child
+
+    if args_dict.get("is_slave"):
+        return "Slave"
+    if args_dict.get("role") == "backend":
+        return "调度权威（--role backend）"
+    if is_host_child():
+        return "Host 子进程"
+    if str(HTTPConfig.remote_addr or "").strip():
+        return "Host"
+    if args_dict.get("no_safe_restart"):
+        return "调度权威 + Host（--no-safe-restart 单进程）"
+    return "调度权威"
+
+
+def _claim_process_database_root(args_dict: Dict[str, Any], working_dir: str) -> None:
+    """一个数据库根目录只归一个实例：本进程要打开的根目录在碰任何库之前先独占。
+
+    - 默认 ``unilab``（权威）、``--address`` 顶层 Host、``--no-safe-restart``：``<根目录>``；
+    - ``--role backend``：``<根目录>/backend``；
+    - 权威拉起的 Host 子进程：命令行带的 ``<根目录>/edge``，与权威各持各的锁；
+    - ``--is_slave``：Slave 把 ``-g`` 图登记进本机 Graph Authority（materials.db），同样要独占；
+    - ``--check_mode`` 只校验注册表、不开库，不取锁。
+
+    被看护的进程（Host 子进程、薄监督下的 Host、受管 Slave）重新拉起时上一代刚退出，给锁的
+    释放留几秒；顶层启动不等，第二个实例立即失败。
+    """
+
+    if args_dict.get("check_mode"):
+        return
+    from unilabos.app.supervisor import RELAUNCH_ROOT_LOCK_WAIT_S, is_supervised
+    from unilabos.server.database import claim_database_root
+    from unilabos.server.startup import process_database_root
+
+    lock = claim_database_root(
+        process_database_root(args_dict, working_dir=working_dir),
+        role=_database_root_role(args_dict),
+        wait_s=RELAUNCH_ROOT_LOCK_WAIT_S if is_supervised() else 0.0,
+    )
+    print_status(f"数据库根目录 {lock.root}（本进程独占，锁文件 {lock.path.name}）", "info")
 
 
 def _run_main():
@@ -608,6 +679,9 @@ def _run_main():
 
     # 显示启动横幅
     print_unilab_banner(args_dict)
+
+    # 打开任何数据库之前先独占本进程的数据库根目录：第二个实例在这里就失败，不碰任何库
+    _claim_process_database_root(args_dict, working_dir)
 
     # Step -1: 预读取 graph 中的 community.* class，并在 build_registry 前挂载社区设备包
     if not check_mode:

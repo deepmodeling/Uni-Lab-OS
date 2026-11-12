@@ -307,6 +307,39 @@ Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/b
 或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
 单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
 
+#### 一个数据库根目录只归一个实例
+
+同一个数据库根目录同一时间只能由一个进程打开。每个要开库的进程在打开任何数据库之前，先独占根目录下的
+锁文件 `unilab.lock`（操作系统级独占锁：Linux / macOS 用 `fcntl`，Windows 用 `msvcrt`）：
+
+| 启动方式 | 独占的根目录 |
+| --- | --- |
+| 默认 `unilab`（调度权威） | `<根目录>` |
+| 权威拉起的 Host 子进程 | `<根目录>/edge` |
+| `--role backend` | `<根目录>/backend` |
+| `--address`（接远端权威的 Host）、`--no-safe-restart`（单进程） | `<根目录>` |
+| `--is_slave`（Slave 把 `-g` 图登记进本机 Graph Authority） | `<根目录>` |
+| 受管设备进程（Host 拉起的 Slave） | `<工作目录>/device_processes/<进程 id>/database` |
+| `--check_mode` | 不打开数据库，不取锁 |
+
+- 锁随进程结束由操作系统释放，包括崩溃、`kill -9`、任务管理器结束进程，不需要手动删除锁文件；
+  锁文件留在目录里不代表被占用，也不要手动删除正在运行的实例的锁文件。
+- 权威与 Host 子进程各持各的锁。Host 子进程安静点重启（退出码 75）后，新拉起的一代等上一代释放
+  （最多 10 秒）再取锁。
+- 第二个实例在打开任何数据库之前就以退出码 73 失败，并说明是谁占着：
+
+  ```text
+  [ERROR] 数据库根目录 /home/lab/.unilabos/database 已被另一个 Uni-Lab-OS 进程占用（pid 12345，调度权威，2026-11-13 09:30:12 启动，命令行 python …/unilabos/app/main.py --port 8002 …）。一个数据库根目录同一时间只能由一个实例使用：请先停止该进程；要并行运行另一个实例，请用 --working_dir 或 --server_database_root 指定另一个目录。锁文件：/home/lab/.unilabos/database/unilab.lock
+  ```
+
+  先确认该 pid 是不是忘了关的 `unilab`。默认拓扑里权威被强制结束（`kill -9`）时，Linux / macOS 上
+  Host 子进程可能遗留下来并继续占着 `<根目录>/edge`，新权威拉起的 Host 子进程会因此失败并按崩溃退避
+  重试，结束遗留进程即可。要在同一台机器上并行运行第二套实验室或一个 Slave，给它另一个
+  `--working_dir` 或 `--server_database_root`。
+- 锁只覆盖根目录：用 `--runtime_db` 等把单个库指到根目录之外时，需自行保证不与其他实例共用同一个文件。
+  默认拓扑下这些单库覆盖只作用于调度权威，Host 子进程的四库总在 `<根目录>/edge`。
+- 根目录应放在本地磁盘；网络文件系统上的文件锁不一定可靠。
+
 四个数据库的结构版本（`PRAGMA user_version`）在 0.13 发布线上都从 v1 开始。0.13 之前的开发版建的库
 结构版本更高或结构不同，首次启动时会被改名为 `<文件>.bak-<时间戳>`（连同 `-wal` / `-shm`）保留，再按 v1 重建空库；
 确认旧数据不再需要后可以删除这些备份。

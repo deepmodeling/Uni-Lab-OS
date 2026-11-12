@@ -74,8 +74,13 @@ def run_backend_process(
         EdgeControlService,
         set_edge_control_service,
     )
+    from unilabos.server.database import claim_database_root
     from unilabos.server.services.runtime.registry import get_registry_service
-    from unilabos.server.startup import configured_database_root, resolve_database_paths
+    from unilabos.server.startup import (
+        BACKEND_DATABASE_DIRNAME,
+        configured_database_root,
+        resolve_database_paths,
+    )
 
     base_root = os.path.expanduser(
         configured_database_root(args_dict, working_dir=working_dir)
@@ -91,11 +96,14 @@ def run_backend_process(
             print_status(exc.strerror or str(exc), "error")
             raise SystemExit(1) from exc
     else:
-        authority_root = os.path.join(base_root, "backend")
+        authority_root = os.path.join(base_root, BACKEND_DATABASE_DIRNAME)
         edge_root = ""
         port = int(args_dict.get("port_management") or HTTPConfig.backend_port)
     args_dict["server_database_root"] = authority_root
     paths = resolve_database_paths(args_dict, working_dir=working_dir)
+    # 先独占权威自己的根目录再开库（启动入口已取过时是同一把锁）。<根目录>/edge 归 Host 子进程，
+    # 由子进程自己取锁，权威运行期间不碰它。
+    claim_database_root(paths.root, role="调度权威" if launch_host else "调度权威（--role backend）")
 
     from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
     if (paths.root / "reset-pending.json").exists():
@@ -273,7 +281,12 @@ def run_backend_process(
         if reset_controller is not None and reset_controller.pending:
             if host_child is not None and host_child.alive():
                 raise RuntimeError("Host 未退出，拒绝清空数据库")
-            reset_controller.finish()
+            # Host 子进程已停且不再拉起：归档前独占 <根目录>/edge，确认没有遗留的 Host 进程还开着这些库
+            edge_lock = claim_database_root(edge_root, role="调度权威（全量重置归档）", wait_s=5.0)
+            try:
+                reset_controller.finish()
+            finally:
+                edge_lock.release()
             print_status(f"全部数据已移至 {reset_controller.backup}；重置完成。请不带旧 -g 重新启动 unilab。", "info")
         configure_reset(None)
 

@@ -155,6 +155,9 @@ def test_host_child_command_points_back_to_authority() -> None:
     assert tail[tail.index("--address") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--material_microbackend_addr") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--server_database_root") + 1] == "/root/edge"
+    # 权威的单库覆盖不传给 Host 子进程：四库全部落在 edge 根目录下，不与权威打开同一个文件
+    for key in ("runtime", "materials", "telemetry", "history"):
+        assert tail[tail.index(f"--{key}_db") + 1] == ""
     assert "--skip_env_check" in tail and "--disable_browser" in tail
     # Host 子进程不监听端口：不再给它 --port
     assert "--port" not in tail

@@ -109,8 +109,8 @@ def print_slave_launch_hint() -> None:
     print_status(f"在其他机器上启动 Slave 接入本 Host：{command}", "info")
     if hostlink_enabled:
         print_status(
-            "同一台机器上可把 --host_node_ip 改为 127.0.0.1；"
-            "需要加载驱动包时追加 --devices <目录>。",
+            "同一台机器上可把 --host_node_ip 改为 127.0.0.1，并用 --server_database_root 指定另一个"
+            "数据库目录（一个数据库根目录只能由一个实例使用）；需要加载驱动包时追加 --devices <目录>。",
             "info",
         )
     else:

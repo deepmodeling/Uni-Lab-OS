@@ -7,7 +7,9 @@
 Host 本体、物料权威和调度都不受影响；改驱动、改配置也只需重启这个子进程。
 
 持久化：``<working_dir>/device_processes.json``（规格）与 ``<working_dir>/device_processes/<id>/``
-（图文件、日志）；working_dir 即 BasicConfig.working_dir（unilabos_data 目录）。
+（图文件、日志，以及该 Slave 自己的数据库根目录 ``database/``）；working_dir 即
+BasicConfig.working_dir（unilabos_data 目录）。一个数据库根目录只归一个进程，受管 Slave 不能与
+Host / 权威共用 ``<working_dir>/database``，所以每个受管进程各有一个。
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ from unilabos.server.services.host_mutations import HostMutationBusy, get_host_m
 
 SPEC_FILENAME = "device_processes.json"
 PROCESS_DIRNAME = "device_processes"
+#: 受管 Slave 的数据库根目录（在各自的进程目录下）：Slave 把启动图登记进本机 Graph Authority
+PROCESS_DATABASE_DIRNAME = "database"
 STOP_GRACE_S = 8.0
 RESTART_BACKOFF_S = (2.0, 4.0, 8.0, 15.0, 30.0)
 RESTART_POLICIES = ("never", "on-failure", "always")
@@ -229,6 +233,9 @@ class DeviceProcessService:
             target["host"],
             "--hostlink_port",
             str(target["port"]),
+            # 不落在 Host / 权威独占的 <working_dir>/database：每个受管 Slave 自己一个根目录
+            "--server_database_root",
+            str(process_dir(self.working_dir, spec.id) / PROCESS_DATABASE_DIRNAME),
             "-g",
             str(graph_file),
         ]

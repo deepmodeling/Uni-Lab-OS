@@ -212,7 +212,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="845bfd03a03db91b96128104aba34e4b1e647e49",
+        ref="5b4bc69ea24649a606f0da6db1c5a977dd2e9b6b",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",

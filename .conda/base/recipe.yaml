@@ -55,7 +55,7 @@ requirements:
     - uvicorn >=0.30
     - pyserial >=3.5
     - pymodbus >=3.6.9,<4
-    - pylabrobot-unilab ==1.0.0b1+unilabos.d8153b8b3e06.ot10 py314_0
+    - pylabrobot-unilab ==1.0.0b1+unilabos.6a8f3dda7642.ot10 py314_0
     - opentrons-shared-data ==10.1.0+unilabos.np2.1 py314_np2_1
 tests:
   - python:

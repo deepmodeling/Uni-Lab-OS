@@ -1,10 +1,10 @@
 # 与配套 wheel 共用提交和版本补丁，pip check 也能识别 fork，不能复用旧构建坐标。
 package:
   name: pylabrobot-unilab
-  version: 1.0.0b1+unilabos.d8153b8b3e06.ot10
+  version: 1.0.0b1+unilabos.6a8f3dda7642.ot10
 source:
-  url: https://github.com/Xuwznln/pylabrobot/archive/d8153b8b3e06df6a0d3f602ffaec75912fbeeb66.tar.gz
-  sha256: fb59ff94eebdecddaa542170f3f92f6a30efb8010d3ddaf59ae2a710a1fed6cc
+  url: https://github.com/Xuwznln/pylabrobot/archive/6a8f3dda76429823ea5cdde8ff504864cc2b6560.tar.gz
+  sha256: df1e3fa41ddc1a88bdd034c2addd04364219ad9f9b1faa77acaa33c0cce0288e
   patches:
     - unilab-version.patch
     - opentrons-dependency.patch
@@ -30,7 +30,7 @@ tests:
         - pylabrobot.resources
       pip_check: true
   - script:
-      - python -c "import importlib.metadata as m; assert m.version('pylabrobot') == '1.0.0b1+unilabos.d8153b8b3e06.ot10'"
+      - python -c "import importlib.metadata as m; assert m.version('pylabrobot') == '1.0.0b1+unilabos.6a8f3dda7642.ot10'"
       - python -c "import numpy as np; from opentrons_shared_data.labware import labware_definition as ld; from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat; assert int(np.__version__.split('.')[0]) == 2; assert ld.trapezoid([1, 2, 3]) == 4; assert corning_96_wellplate_360ul_flat('conda_check').num_items == 96"
 about:
   license: MIT

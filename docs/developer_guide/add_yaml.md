@@ -1,5 +1,7 @@
 # yaml 注册表编写指南
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库只保留框架依赖的内置设备代码（工作站基类、虚拟设备、抽象液体处理器）；厂商驱动和新设备都放在独立驱动包里，详见 {doc}`add_device` 开头的说明。下文 `module:` 示例中的 `my_device_pkg.xxx` 指你的驱动包模块路径。
+
 ## 快速开始：使用注册表编辑器
 
 推荐使用 Uni-Lab-OS 自带的可视化编辑器，它能帮你自动生成大部分配置，省去手写的麻烦。
@@ -67,7 +69,7 @@ new_device: # 设备名，要唯一
     action_value_mappings: # 动作配置（后面会详细说）
       action_name:
         # 具体的动作设置
-    module: unilabos.devices.your_module.new_device:NewDeviceClass # 你的 Python 类
+    module: my_device_pkg.new_device:NewDeviceClass # 你的 Python 类
     status_types: # 状态类型（系统会自动生成）
       status: str
       temperature: float
@@ -406,7 +408,7 @@ my_temperature_controller:
           type: object
         feedback: {}
 
-    module: unilabos.devices.temperature.my_controller:MyTemperatureController
+    module: my_device_pkg.my_controller:MyTemperatureController
     status_types:
       current_temperature: float
       target_temperature: float
@@ -474,7 +476,7 @@ my_temperature_controller:
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -528,7 +530,7 @@ class MyDevice(DeviceBase):
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     action_value_mappings:
       # 自定义动作

@@ -1,7 +1,7 @@
 # Uni-Lab-OS 设备接入指南（AI 专用·自包含版）
 
 > **本文件是完全自包含的。** 即使你无法访问 Uni-Lab-OS 仓库，也能根据本指南正确生成设备驱动。
-> 如果你能访问仓库，建议搜索 `unilabos/devices/` 目录获取最新的已有设备实现。
+> 厂商设备驱动不在 Uni-Lab-OS 主仓库里，而是放在独立的外部驱动包中（见下方 LabDeviceTemplate）。主仓库 `unilabos/devices/` 只保留框架内置代码：虚拟设备 `virtual/`、工作站基类 `workstation/workstation_base.py`、抽象液体处理器 `liquid_handling/liquid_handler_abstract.py`。新驱动一律写进驱动包，不要加到 `unilabos/devices/`。
 
 端到端向导，通过**设备类别（物模型）** 和 **通信协议** 两个维度引导设备接入。
 
@@ -135,7 +135,7 @@ unilab --devices ./my_package --external_devices_only -g graph.json
 
 > **此步骤是强制性的，不可跳过。** 跳过此步会导致参数名不匹配、status 字符串不一致等问题。
 
-1. 搜索 `unilabos/devices/` 目录找到同类别的已有设备实现
+1. 找同类别的已有设备实现：主仓库 `unilabos/devices/virtual/` 中的虚拟设备（如搅拌、加热、泵阀）、已安装驱动包里的设备类，以及本指南的「设备类别参考」
 2. 对照已有设备的 `@property` + `@topic_config()` 属性和动作方法签名
 3. **参数名必须与已有设备完全一致**（最常出错的地方）
 4. **status 字符串值必须与已有设备一致**
@@ -144,7 +144,7 @@ unilab --devices ./my_package --external_devices_only -g graph.json
 
 ## 第五步：创建设备驱动文件
 
-文件路径：`unilabos/devices/<category>/<device_name>.py`
+文件路径：驱动包内 `<package_name>/<device_name>.py`（不要放进主仓库 `unilabos/devices/`）
 
 ### 核心结构（使用装饰器，无需手写 YAML）
 
@@ -341,13 +341,13 @@ async def transfer(self, source: ResourceSlot, target: ResourceSlot, volume: flo
 
 ```bash
 # 1. 模块可导入
-python -c "from unilabos.devices.<category>.<file> import <ClassName>"
+python -c "from <package_name>.<file> import <ClassName>"
 
 # 2. 启动测试（AST 自动扫描，无需 YAML）
 unilab -g <graph>.json
 
-# 3. 仅检查注册表
-unilab --check_mode --skip_env_check
+# 3. 仅检查注册表（只扫描驱动包）
+unilab --check_mode --skip_env_check --devices <包目录> --external_devices_only
 ```
 
 ### 何时仍需 YAML？
@@ -365,7 +365,7 @@ YAML 最小配置（如确实需要）：
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.<category>.<file>:MyDevice
+    module: <package_name>.<file>:MyDevice
     type: python
 ```
 
@@ -403,8 +403,8 @@ my_device:
 - [ ] 1. 确定设备类别（物模型）+ 单位约定
 - [ ] 2. 确定通信协议
 - [ ] 3. 收集指令协议（SDK/文档/口述）
-- [ ] 4. 对齐同类设备接口（搜索 unilabos/devices/ 目录）
-- [ ] 5. 创建驱动 unilabos/devices/<category>/<file>.py（使用 @device 装饰器）
+- [ ] 4. 对齐同类设备接口（虚拟设备 unilabos/devices/virtual/、已有驱动包）
+- [ ] 5. 在驱动包中创建驱动 <package_name>/<file>.py（使用 @device 装饰器）
 - [ ] 6. 验证可导入 + 启动测试（无需 YAML）
 - [ ] 7. 配置图文件（如需要）
 ```
@@ -587,7 +587,7 @@ class MySolenoidValve:
 ### motor — 电机设备
 
 已有设备：`zdt_x42`（闭环步进电机）
-驱动类：`unilabos.devices.motor.zdt_x42:ZDTX42Motor`
+驱动类：`ZDTX42Motor`（外部驱动包）
 
 **status_types：**
 
@@ -599,7 +599,7 @@ class MySolenoidValve:
 ### sensor — 传感器
 
 已有设备：`xkc_level_sensor`（液位传感器）
-驱动类：`unilabos.devices.sensor.xkc_level_sensor:XKCLevelSensor`
+驱动类：`XKCLevelSensor`（外部驱动包）
 
 **status_types：**
 

@@ -65,6 +65,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | I01 库存增量 | #358 已实现基础，未合并 | 单位换算、整批虚拟余量预检、容量、计数盘点；先解决 C01，再合入。 |
 | I02 内容物数量共享与补料 | V1 语义尚未对齐 | 对接 Dev lot/material/substance，补多任务数量预留、Saga、补料分支和失败补偿。数量预留不能用 M02 的物理锁代替。 |
 | I03 物理效果结算 | 未移植完整 | 搬运/分装按真实结果结算、与通用扣减去重、测量 Job 证据自动盘点；未知执行不能当“未消耗”回补。 |
+| I04 废弃枪头仍留在物料权威 | 未修复；以 strict xfail 回归保留 | 设备侧拿起枪头后不放回（`TipSpot.get_tip()` + `empty()` + `tracker.commit()`，枪头被丢弃），再用 `DeviceNode.update_resource` 同步台面：本地 PLR 树里已没有这支 Tip，但权威里它仍是该 TipSpot 的子物料。原因是快照路径（`resource_tree_to_snapshot` → `apply_snapshot`）只更新既有物料、不删除缺席的子节点，从权威恢复（重启、跨设备 transfer 重新实例化）时会凭空多出一支枪头。2026-11-12 基线中 `tests/backend/hostlink/test_prcxi_material_e2e.py` 阶段 9 的断言 `_tip_children(tip_spot) == []` 即因此失败；该测试只能跑在 PRCXI 驱动上，已随驱动迁出主仓库（`fix/p6-devices`）；同一场景改用测试夹具（`tests/plr_fixtures.py` 的 `SiteDeck` + PLR 枪头盒）保留为 `tests/backend/hostlink/test_material_creation_flows_e2e.py::test_discarded_tip_is_removed_from_authority`（strict xfail）。关闭条件：快照能表达结构孩子的移除（或废弃枪头走显式 discard/销毁），该用例转为通过并去掉 xfail。 |
 | P01 运行预检 | #358 已有 Dev API；正式 FE 未兼容 | 复用 Dev 执行计划/输入/当前库存，无业务写入；保留运行时 deferred 检查。先修 F02/F03，绑定修订并回归只读性。 |
 | R01 启动许可 / fencing | 尚未移植 | 设备调用前确认当前 attempt 的开始权限并持久化；处理消息重发、旧 epoch、应答丢失和重启。许可不是执行成功或实际用量证据。 |
 | R02 持久 Claim/Lease 与恢复 | Dev 有锁恢复/人工裁决基础；未完全等同 V1 | 保留 Dev 的未知执行和人工裁决；围绕 R01/M02/A03/I03 设计持久事实和迁移，补 Host/权威重启与重放回归。 |

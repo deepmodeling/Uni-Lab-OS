@@ -2,6 +2,8 @@
 
 本文档说明如何为设备创建和配置注册表，包括基本结构、特殊类型识别、动作配置等内容。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库只保留框架依赖的内置设备代码（工作站基类、虚拟设备、抽象液体处理器）；厂商驱动和新设备都放在独立驱动包里，详见 {doc}`add_device` 开头的说明。下文 `module:` 示例中的 `my_device_pkg.xxx` 指你的驱动包模块路径。
+
 ## 概述
 
 注册表（Registry）是 Uni-Lab 的设备配置系统，采用 YAML 格式定义设备的：
@@ -63,7 +65,7 @@ class 是核心部分，包含这些内容：
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     status_types:
       status: str
@@ -150,7 +152,7 @@ unilab -g dev.json --complete_registry --registry_path ./my_registry
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -525,7 +527,7 @@ config_info: # 嵌套配置，用于包含子设备
 ### Python 驱动代码
 
 ```python
-# unilabos/devices/my_lab/liquid_handler.py
+# my_device_pkg/liquid_handler.py
 
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 from typing import List, Dict, Any, Optional
@@ -586,7 +588,7 @@ class AdvancedLiquidHandler:
 
 advanced_liquid_handler:
   class:
-    module: unilabos.devices.my_lab.liquid_handler:AdvancedLiquidHandler
+    module: my_device_pkg.liquid_handler:AdvancedLiquidHandler
     type: python
 
     # 自动提取的状态类型
@@ -755,7 +757,7 @@ my_temperature_controller:
           type: object
         feedback: {}
 
-    module: unilabos.devices.temperature.my_controller:MyTemperatureController
+    module: my_device_pkg.my_controller:MyTemperatureController
     status_types:
       current_temperature: float
       target_temperature: float
@@ -859,7 +861,7 @@ class MyDevice:
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -881,7 +883,7 @@ my_device:
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     action_value_mappings:
       # 自定义动作
@@ -928,7 +930,7 @@ cat unilabos/registry/devices/my_device.yaml
 
 ```bash
 # 确认模块路径正确
-python -c "from unilabos.devices.my_module.my_device import MyDevice"
+python -c "from my_device_pkg.my_device import MyDevice"
 ```
 
 ## 常见问题

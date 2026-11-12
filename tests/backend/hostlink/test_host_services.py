@@ -27,11 +27,6 @@ import pytest
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import HostLinkConfig
 from unilabos.backend.runtime.async_utils import run_node_coroutine
-from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300Deck
-from unilabos.devices.liquid_handling.prcxi.prcxi_labware import (
-    PRCXI_300ul_Tips,
-    PRCXI_BioER_96_wellplate,
-)
 from unilabos.backend.hostlink.backend import HostLinkBackend
 from unilabos.backend.hostlink.host_services import (
     HOST_SERVICE_ACTIONS,
@@ -40,10 +35,10 @@ from unilabos.backend.hostlink.host_services import (
 from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.registry.registry import lab_registry
 from unilabos.resources import materials
-from unilabos.resources.objects.site import ResourceSite
 from unilabos.server.backend.composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials import MaterialNotFoundError
+from tests.plr_fixtures import PLATE_MODULE, SiteDeck, plate, registry_entry, site_deck, tip_rack
 
 
 DEV_A = "warehouse_a"
@@ -96,31 +91,8 @@ def _host_node_registry_entry() -> dict:
     }
 
 
-def _build_deck(deck_uuid: str, name: str, labels: tuple = ("T1", "T2")) -> PRCXI9300Deck:
-    def _site(index: int, label: str, x: float) -> ResourceSite:
-        return ResourceSite(
-            uuid=str(uuid4()),
-            template_name="PRCXI9300Deck",
-            material_uuid=deck_uuid,
-            index=index,
-            label=label,
-            pose={
-                "position": {"x": x, "y": 0.0, "z": 0.0},
-                "position3d": {"x": x, "y": 0.0, "z": 0.0},
-                "size": {"width": 128.0, "height": 86.0, "depth": 0.0},
-            },
-            allowed_resource_categories=["plate", "tip_rack", "container"],
-        )
-
-    deck = PRCXI9300Deck(
-        name=name,
-        size_x=542.0,
-        size_y=374.0,
-        size_z=0.0,
-        sites=[_site(i, label, 138.0 * i) for i, label in enumerate(labels)],
-    )
-    deck.unilabos_uuid = deck_uuid
-    return deck
+def _build_deck(deck_uuid: str, name: str, labels: tuple = ("T1", "T2")) -> SiteDeck:
+    return site_deck(deck_uuid, name, labels)
 
 
 def _site_by_label(service: MaterialsService, root_uuid: str, label: str):
@@ -238,8 +210,8 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
             )
         deck_a_inst = node_a.resource_tracker.uuid_to_resources[deck_a_uuid]
         deck_b_inst = node_b.resource_tracker.uuid_to_resources[deck_b_uuid]
-        assert isinstance(deck_a_inst, PRCXI9300Deck)
-        assert isinstance(deck_b_inst, PRCXI9300Deck)
+        assert isinstance(deck_a_inst, SiteDeck)
+        assert isinstance(deck_b_inst, SiteDeck)
         # 根树上台面即登记归属（append_resource 写根 extra，快照落权威），
         # 之后 transfer/discard/deduct 的设备参数全部可自动推断
         assert materials.owner_device_of(deck_a_uuid, gateway=gateway) == DEV_A
@@ -247,7 +219,7 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
 
         # ---- apply_deduct_resource：仅登记（未指定挂载目标） ----
         # 输入语义与 HostNode 一致：服务端已扣减的物料（整树带权威 uuid）
-        tips = materials.create(PRCXI_300ul_Tips(name="tips_out"), gateway=gateway)
+        tips = materials.create(tip_rack("tips_out"), gateway=gateway)
         tips_uuid = tips.unilabos_uuid
         register_only = host.call_action(
             "host_node",
@@ -287,23 +259,15 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
         # 动作路径无需前端先调 instantiate 端点：类名 + 实例名 -> 权威发号 -> 挂载
         monkeypatch.setitem(
             lab_registry.resource_type_registry,
-            "PRCXI_BioER_96_wellplate",
-            {
-                "class": {
-                    "module": (
-                        "unilabos.devices.liquid_handling.prcxi."
-                        "prcxi_labware:PRCXI_BioER_96_wellplate"
-                    ),
-                    "type": "pylabrobot",
-                }
-            },
+            "test_deep_well_plate",
+            registry_entry(PLATE_MODULE),
         )
         # device_id 免传：由挂载目标 deckA 的归属自动推断为 devA
         created_out = host.call_action(
             "host_node",
             "apply_deduct_resource",
             resource=None,
-            registry_class="PRCXI_BioER_96_wellplate",
+            registry_class="test_deep_well_plate",
             material_name="fresh_plate",
             mount_resource={"uuid": deck_a_uuid},
             slot_on_deck="T2",
@@ -325,15 +289,13 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
                 "host_node",
                 "apply_deduct_resource",
                 resource={"uuid": tips_uuid},
-                registry_class="PRCXI_BioER_96_wellplate",
+                registry_class="test_deep_well_plate",
                 material_name="dup",
             )
 
         # ---- set_substance：权威拉取 plate，写 A1 内容物并快照回权威 ----
-        plate = materials.create(
-            PRCXI_BioER_96_wellplate(name="plate_sub"), gateway=gateway
-        )
-        plate_uuid = plate.unilabos_uuid
+        plate_sub = materials.create(plate("plate_sub"), gateway=gateway)
+        plate_uuid = plate_sub.unilabos_uuid
         substance_result = host.call_action(
             "host_node",
             "set_substance",
@@ -343,7 +305,7 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
             slots=["A1"],
         )
         assert substance_result["resource"]
-        a1_uuid = plate.get_well("A1").unilabos_uuid
+        a1_uuid = plate_sub.get_well("A1").unilabos_uuid
         a1_node = next(
             item
             for item in service.get_tree(plate_uuid).nodes

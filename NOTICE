@@ -10,8 +10,21 @@ This project uses a dual licensing structure:
 
 See [LICENSE](LICENSE) for details.
 
-## 2. Device Drivers - DP Technology Proprietary License
+## 2. Built-in Device Code - DP Technology Proprietary License
 
 - unilabos/devices/
 
+This folder only holds the built-in code the framework depends on:
+
+- unilabos/devices/workstation/workstation_base.py (WorkstationBase, WorkStationContainer)
+- unilabos/devices/virtual/ (virtual devices for protocol compilers, test mode and examples)
+- unilabos/devices/liquid_handling/liquid_handler_abstract.py and rviz_backend.py
+- unilabos/devices/ros_dev/liquid_handler_joint_publisher.py, liquid_handler_joint_publisher_node.py
+  and lh_joint_config.json
+
 See [unilabos/devices/LICENSE](unilabos/devices/LICENSE) for details.
+
+## 3. Vendor Device Drivers
+
+Vendor drivers are not part of this repository. They are distributed as external driver packages
+(installed with `unilab package`), and each package states its own license.

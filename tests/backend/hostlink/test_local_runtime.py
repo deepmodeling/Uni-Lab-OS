@@ -191,27 +191,12 @@ def test_driver_instantiation_supports_config_and_flat_styles() -> None:
 
 
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
-    from concurrent.futures import ThreadPoolExecutor
-
-    from unilabos.registry.ast_registry_scanner import scan_directory
-    from unilabos.registry.registry import Registry
-
     yaml_registry = yaml.safe_load(
         Path("unilabos/registry/devices/liquid_handler.yaml").read_text(
             encoding="utf-8"
         )
     )
     entries = {"liquid_handler": yaml_registry["liquid_handler"]}
-
-    # prcxi 已迁到 @device 装饰器（无 YAML 条目）：按 AST 扫描结果构建注册表条目。
-    prcxi_dir = Path("unilabos/devices/liquid_handling/prcxi").resolve()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        scanned = scan_directory(
-            prcxi_dir, python_path=prcxi_dir.parents[3], executor=executor
-        )
-    entries["liquid_handler.prcxi"] = Registry()._build_device_entry_from_ast(
-        "liquid_handler.prcxi", scanned["devices"]["liquid_handler.prcxi"]
-    )
 
     for name, entry in entries.items():
         class_config = entry["class"]

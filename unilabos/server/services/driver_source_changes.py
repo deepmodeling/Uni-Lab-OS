@@ -229,8 +229,12 @@ def get_source_changes(working_dir: str | Path) -> DriverSourceChanges:
         return monitor
 
 
-def source_roots(scan_dirs: list[str], records: Any, *, external_only: bool) -> tuple[list[str], list[str]]:
-    """按实际挂载目录追踪源码及项目定义，覆盖 data 缓存和外部开发目录。"""
+def source_roots(scan_dirs: list[str], records: Any) -> tuple[list[str], list[str]]:
+    """按实际挂载目录追踪源码及项目定义，覆盖 data 缓存和外部开发目录。
+
+    厂商驱动都在外部驱动包里；``unilabos/devices`` 只剩随框架发布的内置代码
+    （虚拟设备、工作站基类、抽象液体处理器），改动它等同改框架，不在驱动源码监视范围。
+    """
     roots = {str(Path(item).resolve()) for item in scan_dirs}
     packages = []
     for record in records.values():
@@ -238,6 +242,4 @@ def source_roots(scan_dirs: list[str], records: Any, *, external_only: bool) -> 
             packages.append(record.name)
             if record.package_root:
                 roots.add(str(Path(record.package_root).resolve()))
-    if not external_only:
-        roots.add(str(Path(__file__).resolve().parents[2] / "devices"))
     return sorted(roots), packages

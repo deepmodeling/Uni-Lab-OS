@@ -129,7 +129,7 @@ class MyWorkstation(WorkstationBase):
         heater.set_temperature(80)
 ```
 
-> 参考实现：`unilabos/devices/workstation/bioyond_studio/reaction_station/reaction_station.py` 中通过 `self._ros_node.sub_devices.get(reactor_id)` 获取子反应器实例并更新数据。
+> 参考实现：Bioyond 驱动包的反应站（原 `unilabos/devices/workstation/bioyond_studio/reaction_station/reaction_station.py`）中通过 `self._ros_node.sub_devices.get(reactor_id)` 获取子反应器实例并更新数据。
 
 ---
 
@@ -414,7 +414,7 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 | TCP Socket           | `host`, `port`                 | stdlib     | 自定义                     |
 | HTTP API             | `url`, `token`                 | `requests` | `device_comms/rpc.py`      |
 
-参考实现：`unilabos/test/experiments/Grignard_flow_batchreact_single_pumpvalve.json`
+参考实现：README 列出的 [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)（`hardware_interface` 代理：多个子设备共享串口 / Modbus 通信设备）
 
 ---
 
@@ -433,7 +433,7 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 ```json
 "config": {
     "deck": {
-        "_resource_type": "unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Deck",
+        "_resource_type": "prcxi_driver_pkg.prcxi:PRCXI9300Deck",
         "_resource_child_name": "PRCXI_Deck"
     }
 }
@@ -606,7 +606,7 @@ class MyPlate(Plate):
 
 子物料（Bottle、Plate、TipRack 等）放到 Deck 上后，系统会自动将其同步到前端的 Deck 视图。只需保证资源类正确实现了 `serialize()` / `serialize_state()` 和反序列化即可。
 
-### 6. 图文件配置（参考 prcxi_9320_slim.json）
+### 6. 图文件配置（参考 PRCXI 驱动包的示例图）
 
 ```json
 {
@@ -691,10 +691,10 @@ Deck 节点要点：
 
 ```bash
 # 模块可导入
-python -c "from unilabos.devices.workstation.<name>.<name> import <ClassName>"
+python -c "from <package_name>.<name> import <ClassName>"
 
-# 启动测试（AST 自动扫描）
-unilab -g <graph>.json
+# 启动测试（AST 自动扫描，挂载驱动包）
+unilab -g <graph>.json --devices <包目录>
 ```
 
 ---
@@ -707,4 +707,4 @@ unilab -g <graph>.json
 | Bioyond 反应站 | `BioyondReactionStation`      | 外部系统 |
 | 纽扣电池组装   | `CoinCellAssemblyWorkstation` | 硬件控制 |
 
-参考路径：`unilabos/devices/workstation/` 目录下各工作站实现。
+`WorkstationBase` / `ProtocolNode` 在主仓库 `unilabos/devices/workstation/workstation_base.py`；Bioyond、纽扣电池等具体工作站已迁到各自的外部驱动包。新工作站同样写进驱动包（见 `create-device-package` skill），不要加到主仓库 `unilabos/devices/`。

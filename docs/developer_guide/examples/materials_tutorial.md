@@ -3,6 +3,7 @@
 > **文档类型**：物料系统完整教程  
 > **适用场景**：物料格式转换、多系统物料对接、资源结构理解  
 > **前置知识**：Python 基础 | JSON 数据结构
+> **驱动位置**：本文涉及的厂商驱动与物料预设（Bioyond 工作站及其测试数据）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 本教程面向 Uni-Lab-OS 的开发者，讲解"物料"的核心概念、3种物料格式（Uni-Lab-OS、PyLabRobot、奔耀Bioyond）及其相互转换方法，并说明4种 children 结构表现形式及使用场景。
 

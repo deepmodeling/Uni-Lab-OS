@@ -341,18 +341,21 @@ class WorkstationNodeCreator(DeviceClassCreator[T]):
         return super().create_instance(params)
 
 
+# 按类名（含基类）识别需要 PyLabRobotCreator 的驱动：外部驱动包里的
+# LiquidHandlerAbstract 子类（如 PRCXI、LaiYu）无需在框架里登记具体类名。
+# LiquidHandlerBiomek 不继承 LiquidHandlerAbstract，外部包沿用原类名时仍按此识别。
+_PYLABROBOT_CREATOR_CLASS_NAMES = frozenset(
+    {"LiquidHandlerAbstract", "LiquidHandlerBiomek", "OpcUaClient"}
+)
+
+
 def uses_pylabrobot_creator(driver_class: Type[Any]) -> bool:
     """Return whether a driver needs graph child/resource resolution."""
 
-    return driver_class.__module__.startswith(
-        "pylabrobot"
-    ) or driver_class.__name__ in {
-        "LiquidHandlerAbstract",
-        "LiquidHandlerBiomek",
-        "PRCXI9300Handler",
-        "TransformXYZHandler",
-        "OpcUaClient",
-    }
+    return driver_class.__module__.startswith("pylabrobot") or any(
+        base.__name__ in _PYLABROBOT_CREATOR_CLASS_NAMES
+        for base in getattr(driver_class, "__mro__", (driver_class,))
+    )
 
 
 def is_workstation_driver(driver_class: Type[Any]) -> bool:

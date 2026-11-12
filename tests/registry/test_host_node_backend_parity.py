@@ -46,7 +46,7 @@ host = next(
 definition = _template_definition(host, expected_type="device")
 
 _data, _complete, yaml_valid, yaml_ids = registry._load_single_device_file(
-    root / "unilabos" / "registry" / "devices" / "temperature.yaml",
+    root / "unilabos" / "registry" / "devices" / "virtual_device.yaml",
     complete_registry=False,
 )
 print(

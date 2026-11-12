@@ -465,7 +465,7 @@ class DriverPackageService:
     def configure(self, scan_dirs: List[str], external_only: bool, *, watch: bool = False) -> None:
         self._scan_dirs = [str(Path(item).resolve()) for item in scan_dirs if item]
         self._external_only = external_only
-        roots, packages = source_roots(self._scan_dirs, load_ledger(self.working_dir), external_only=external_only)
+        roots, packages = source_roots(self._scan_dirs, load_ledger(self.working_dir))
         self.source_changes.register("host", kind="host", name="Host", pid=os.getpid(), roots=roots, packages=packages)
         if watch:
             self.source_changes.start()

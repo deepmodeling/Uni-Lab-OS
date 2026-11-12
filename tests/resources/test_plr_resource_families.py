@@ -56,20 +56,34 @@ def test_native_resource_families_roundtrip(kind, monkeypatch):
         assert restored.children[0].children[0].unilabos_uuid == child.children[0].unilabos_uuid
 
 
-@pytest.mark.parametrize("kind", ["bottle", "magazine", "plate", "material_plate", "bioyond_tips"])
+def _bottle_carrier(name: str):
+    """2x3 瓶架，每个位点放一只按载架名前缀命名的瓶子（厂商预设的通用形态）。"""
+    from pylabrobot.resources import ResourceHolder
+    from pylabrobot.resources.utils import create_ordered_items_2d
+
+    from unilabos.resources.presets.itemized_carrier import Bottle, BottleCarrier
+
+    sites = create_ordered_items_2d(
+        name_prefix=name, klass=ResourceHolder, num_items_x=3, num_items_y=2,
+        dx=10.0, dy=10.0, dz=5.0, item_dx=40.0, item_dy=35.0,
+        size_x=20.0, size_y=20.0, size_z=50.0,
+    )
+    carrier = BottleCarrier(name=name, size_x=127.8, size_y=85.5, size_z=50.0, sites=sites)
+    for index, label in enumerate(["A1", "B1", "A2", "B2", "A3", "B3"]):
+        carrier[index] = Bottle(f"{name}_{label}", diameter=20.0, height=60.0, max_volume=30000.0)
+    return carrier
+
+
+@pytest.mark.parametrize("kind", ["bottle_carrier", "warehouse", "plate", "tip_rack"])
 def test_two_presets_can_share_one_tree(kind):
-    from unilabos.resources.presets.bioyond.bottle_carriers import BIOYOND_PolymerStation_6StockCarrier
-    from unilabos.resources.presets.bioyond.bottles import BIOYOND_PolymerStation_TipBox
-    from unilabos.resources.presets.battery.magazine import MagazineHolder_4_Cathode
-    from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import MaterialPlate
-    from unilabos.devices.liquid_handling.prcxi import prcxi_labware
+    from tests.plr_fixtures import plate, tip_rack
+    from unilabos.resources.presets.warehouse import warehouse_factory
 
     factories = {
-        "bioyond_tips": BIOYOND_PolymerStation_TipBox,
-        "bottle": BIOYOND_PolymerStation_6StockCarrier,
-        "magazine": MagazineHolder_4_Cathode,
-        "material_plate": lambda name: MaterialPlate(name, 120, 100, 10, fill=True),
-        "plate": prcxi_labware.PRCXI_96_DeepWell,
+        "bottle_carrier": _bottle_carrier,
+        "warehouse": lambda name: warehouse_factory(name, num_items_x=2, num_items_y=2, num_items_z=1),
+        "plate": plate,
+        "tip_rack": tip_rack,
     }
     root = Resource("bench", 1000, 1000, 1000)
     for i, name in enumerate(("first", "second")):

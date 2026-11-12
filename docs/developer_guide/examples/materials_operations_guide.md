@@ -3,7 +3,7 @@
 > **文档类型**：物料系统操作教程（新权威架构）
 > **适用场景**：物料创建、挂载、换位、跨设备转移、内容物管理、状态同步
 > **前置知识**：PyLabRobot 基础 | HostLink 概念
-> **可运行参照**：`tests/backend/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/backend/hostlink/test_prcxi_material_e2e.py`（14 阶段全链路）。本文所有示例均从这两个端到端测试提炼，可直接运行对照。
+> **可运行参照**：`tests/backend/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/backend/hostlink/test_host_services.py`（host_node 物料动作）。原 14 阶段 PRCXI 全链路测试已随 PRCXI 驱动迁出主仓库。文中 PRCXI 耗材只是示例，换成任意驱动包或 PLR 自带的耗材类同样适用。
 
 ---
 
@@ -47,7 +47,7 @@ runtime 注入的节点对象）；`gateway=` 参数在设备运行时内部自�
 
 ```python
 from unilabos.resources import materials
-from unilabos.devices.liquid_handling.prcxi.prcxi_labware import PRCXI_BioER_96_wellplate
+from prcxi_driver_pkg.prcxi_labware import PRCXI_BioER_96_wellplate  # 驱动包中的耗材工厂
 
 # 形态 1：本地草稿实例（不带 uuid）
 draft = PRCXI_BioER_96_wellplate(name="plate_1")

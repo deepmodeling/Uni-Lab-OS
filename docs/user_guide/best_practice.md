@@ -156,26 +156,20 @@ unilab --ak your_ak --sk your_sk -g path/to/graph.json
 Uni-Lab-OS 在安装时已经预置了大量真实的设备图文件示例，无需下载或创建，直接使用 `-g` 参数指定即可：
 
 ```bash
-# 使用简单的工作台示例（推荐新手）
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/workshop.json
+# 使用虚拟设备集（推荐新手，无需真实硬件）
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_all.json
 
-# 使用 PRCXI 液体处理工作站示例
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/prcxi_9320_slim.json
+# 使用虚拟有机合成反应器示例（抽真空/充气）
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 
-# 使用格林纳德反应工作站示例（有机合成）
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/Grignard_flow_batchreact_single_pumpvalve.json
-
-# 使用 Bioyond 配液站示例
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/dispensing_station_bioyond.json
-
-# 使用 HPLC 分析系统示例
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/HPLC.json
+# 使用 PyLabRobot 液体处理示例
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/plr_test.json
 
 # 使用空设备配置（最小化配置）
 unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/empty_devices.json
 ```
 
-**更多可用示例**：系统预置了 40+ 个组态图文件，涵盖液体处理、有机合成、分析检测等多个领域。完整列表请查看 `unilabos/test/experiments/` 目录。
+**更多可用示例**：主仓库只预置使用虚拟设备和内置设备的组态图（协议测试站、虚拟工作台、虚拟加热台等），完整列表请查看 `unilabos/test/experiments/` 目录。PRCXI、Bioyond、HPLC 等真实设备的组态图随各自的外部驱动包发布。
 
 **方案 2：创建一个空的组态图**
 
@@ -259,41 +253,32 @@ unilab --ak your_ak --sk your_sk -g graph.json
 
 Uni-Lab-OS 在安装时已经包含了大量真实的设备图文件，位于 `unilabos/test/experiments/` 目录，涵盖：
 
-- 液体处理：PRCXI、Biomek 等自动化移液工作站
-- 有机合成：格林纳德反应、流动化学等工作站
-- 分析检测：HPLC、光谱仪等分析仪器
-- 生物实验：Bioyond 配液站、反应站等
+- 液体处理：基于 PyLabRobot 的抽象液体处理器
+- 有机合成：虚拟反应器、协议测试工作站
 - 协议测试：各种实验协议的测试工作站
 - 虚拟设备：用于开发调试的 mock 设备
+
+真实设备（PRCXI、Biomek、Bioyond、HPLC 等）的示例组态图随各自的外部驱动包发布。
 
 **常用示例组态图：**
 
 | 组态图文件                                       | 说明                 | 适合场景             |
 | ------------------------------------------------ | -------------------- | -------------------- |
-| `workshop.json`                                  | 综合工作台           | 新手入门推荐         |
+| `mock_devices/mock_all.json`                     | 完整虚拟设备集       | 新手入门推荐，离线测试 |
 | `empty_devices.json`                             | 空设备配置           | 最小化配置，快速启动 |
-| `prcxi_9320_slim.json`                           | PRCXI 液体处理工作站 | 液体处理自动化       |
-| `Grignard_flow_batchreact_single_pumpvalve.json` | 格林纳德反应工作站   | 有机合成流动化学     |
-| `dispensing_station_bioyond.json`                | Bioyond 配液站       | 生物样品配液         |
-| `reaction_station_bioyond.json`                  | Bioyond 反应站       | 生物化学反应         |
-| `HPLC.json`                                      | HPLC 分析系统        | 色谱分析             |
+| `mock_reactor.json`                              | 虚拟有机合成反应器   | 抽真空/充气协议      |
+| `Protocol_Test_Station/*.json`                   | 协议测试工作站       | 各类实验协议调试     |
+| `virtual_bench.json`                             | 虚拟工作台           | 机械臂/加热台流程演示 |
 | `plr_test.json`                                  | PyLabRobot 测试      | PyLabRobot 集成测试  |
-| `mock_devices/mock_all.json`                     | 完整虚拟设备集       | 开发调试，离线测试   |
 
 **使用方法：**
 
 ```bash
-# 使用简单工作台（推荐新手第一次启动）
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/workshop.json
-
-# 使用 PRCXI 液体处理工作站
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/prcxi_9320_slim.json
-
-# 使用格林纳德反应工作站（有机合成）
-unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/Grignard_flow_batchreact_single_pumpvalve.json
-
-# 使用虚拟设备（无需真实硬件，用于学习和测试）
+# 使用虚拟设备（推荐新手第一次启动，无需真实硬件）
 unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_all.json
+
+# 使用虚拟有机合成反应器
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 ```
 
 **注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。
@@ -1480,12 +1465,12 @@ io_snrd:
   description: 'IO Board with 16 IOs via Modbus'
 ```
 
-**使用通信的设备注册表**（`devices/pump_and_valve.yaml`）：
+**使用通信的设备注册表**（驱动包内 `registry/devices/pump_and_valve.yaml`）：
 
 ```yaml
 syringe_pump_with_valve.runze.SY03B-T06:
   class:
-    module: unilabos.devices.pump_and_valve.runze_backbone:RunzeSyringePump
+    module: my_device_pkg.runze_backbone:RunzeSyringePump
     type: python
 
     # hardware_interface.name 初始化时是通信设备的设备名（字符串）
@@ -1501,7 +1486,7 @@ syringe_pump_with_valve.runze.SY03B-T06:
 
 solenoid_valve:
   class:
-    module: unilabos.devices.pump_and_valve.solenoid_valve:SolenoidValve
+    module: my_device_pkg.solenoid_valve:SolenoidValve
     type: python
 
     # 使用 io_device_port 字段接收通信设备名

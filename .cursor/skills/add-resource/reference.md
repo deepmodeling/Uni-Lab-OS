@@ -289,4 +289,4 @@ def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
 | Bioyond 物料转换 | `unilabos/resources/graphio.py` |
 | Bioyond 仓库定义 | `unilabos/resources/bioyond/warehouses.py` |
 | 电池资源 | `unilabos/resources/battery/` |
-| PLR 注册 | `unilabos/resources/plr_additional_res_reg.py` |
+| PLR 注册 | 驱动包导入时调用 `unilabos/resources/plr_additional_res_reg.py` 的 `register_plr_module()` / `@register_plr_class` |

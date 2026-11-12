@@ -3,6 +3,7 @@
 > **文档类型**：实际应用案例  
 > **适用场景**：使用 PLC 控制的电池装配工站接入  
 > **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **驱动位置**：本文涉及的厂商驱动与物料预设（纽扣电池装配工站、电池物料）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 本指南以电池装配工站为例，说明 PLC 驱动、寄存器读写、Registry 校验和启动配置。
 

@@ -444,6 +444,16 @@ def _station_handling_v11(connection) -> None:
         connection.execute(statement)
 
 
+def _workspace_host_v12(connection) -> None:
+    from unilabos.server.database.tables.runtime.workspace_host import (
+        WORKSPACE_HOST_V12,
+        WORKSPACE_HOST_V12_INDEXES,
+    )
+
+    for statement in (*WORKSPACE_HOST_V12, *WORKSPACE_HOST_V12_INDEXES):
+        connection.execute(statement)
+
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -472,5 +482,6 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     Migration(9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）", _workflow_authoring_v9),
     Migration(10, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互", _task_lifecycle_v10),
     Migration(11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误", _station_handling_v11),
+    Migration(12, "V1 Workspace Host：工作区操作记录与快照修订号", _workspace_host_v12),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

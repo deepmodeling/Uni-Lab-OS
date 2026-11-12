@@ -59,6 +59,9 @@ EXPECTED_TABLES = {
         "registry_entry_state",
         "registry_report",
         "lab_layout",
+        # schema v12：V1 Workspace Host 操作记录与快照修订号
+        "workspace_host_operation",
+        "workspace_host_state",
     },
     "materials": {
         "schema_identity",
@@ -217,13 +220,14 @@ def test_total_table_count_stays_small() -> None:
     # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
     # runtime v9：workflow_operation_category（V1 实验操作类别），42 → 43；
     # runtime v10：V1 结构化人工交互 workflow_human_interaction，43 → 44；
-    # runtime v11：V1 工站错误处置（工站控制 / 控制命令 / 处置会话 / 工站错误），44 → 48。
+    # runtime v11：V1 工站错误处置（工站控制 / 控制命令 / 处置会话 / 工站错误），44 → 48；
+    # runtime v12：V1 Workspace Host（工作区操作记录 / 快照修订号），48 → 50。
     # materials v6（V1.0 库存概念）：试剂 / 样品 / 当前内容物角色、内容物历史、状态历史、
     # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，V1 命令幂等结果，16 → 26。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 48,
+        "runtime": 50,
         "materials": 26,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 81
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 83

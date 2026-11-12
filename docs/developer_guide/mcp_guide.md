@@ -62,6 +62,7 @@ default_tools_approval_mode = "writes"
 | 物料、内容物、位置、库存 | `materials_v1_instances_list`、`materials_v1_instances_tree`、`materials_v1_lots_list` |
 | 动作锁与物料锁 | `system_scheduler_resources`，再核对任务与设备审计结果 |
 | Host/Slave 日志 | `system_log_sources_list`、`system_logs_read` |
+| 进程树与工作区操作（V1 Workspace Host） | `workspace_host_snapshot`，写操作用 `workspace_host_operations_submit`（自带幂等 `operationId`，可带快照 `revision` 作 `expectedRevision`）后以 `workspace_host_operations_get` 轮询；组件日志尾部 `workspace_host_logs_tail` |
 | 注册表、图、包、进程、遥测、历史 | `protocol_search` 按业务域检索，写操作先确认授权 |
 
 辅助工具分别是 `protocol_guide`、`protocol_search`、`protocol_inspect`、

@@ -57,15 +57,55 @@ def test_resuming_drain_preserves_reset_and_restart_gates(stack):
     assert not scheduler.dispatch_paused
 
 
+def _pending_restart(coordinator, monkeypatch):
+    """经真实 request 登记重启（暂停 restart 来源）；安静点由测试直接驱动，不启动执行。"""
+
+    monkeypatch.setattr(coordinator, "_watch", lambda generation: None)
+    coordinator.request()
+
+
+def _execute_at_quiescence(coordinator):
+    """与 _watch 到达安静点后一致：本轮仍在等待时标记 restarting，再通知 Edge 重启。"""
+
+    with coordinator._lock:
+        assert coordinator._pending
+        coordinator._restarting = True
+    coordinator._execute_edge_restart()
+
+
 def test_runtime_reconnect_only_releases_restart_gate(stack, monkeypatch):
     scheduler, backend, lifecycle = stack
     lifecycle.begin_drain()
-    scheduler.pause_dispatch(reason="restart")
     coordinator = RestartCoordinator(lambda: backend, lambda: scheduler)
+    _pending_restart(coordinator, monkeypatch)
+    assert lifecycle.status().pause_reasons == ["drain", "restart"]
     monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", lambda *a, **kw: SimpleNamespace(status_code=200))
-    monkeypatch.setattr(coordinator, "_wait_edge_reconnected", lambda: True)
-    coordinator._execute_edge_restart()
+    monkeypatch.setattr(coordinator, "_wait_edge_reconnected", lambda **_: True)
+    _execute_at_quiescence(coordinator)
     assert lifecycle.status().pause_reasons == ["drain"]
+    assert not coordinator.status()["pending"]
+
+
+def test_superseded_edge_restart_keeps_the_newer_restart_gate(stack, monkeypatch):
+    """等待重连期间重启被取消并重新登记：旧一轮的重连结果不能解除新一轮的暂停。"""
+
+    scheduler, backend, lifecycle = stack
+    coordinator = RestartCoordinator(lambda: backend, lambda: scheduler)
+    _pending_restart(coordinator, monkeypatch)
+    monkeypatch.setattr(
+        "unilabos.server.api.edge_proxy.edge_http",
+        lambda *a, **kw: SimpleNamespace(status_code=200, body=b"{}"),
+    )
+
+    def reconnect_after_new_request(**_):
+        coordinator.cancel()
+        coordinator.request()
+        return True
+
+    monkeypatch.setattr(coordinator, "_wait_edge_reconnected", reconnect_after_new_request)
+    _execute_at_quiescence(coordinator)
+    assert lifecycle.status().pause_reasons == ["restart"]
+    assert coordinator.status()["pending"]
 
 
 def test_unknown_execution_blocks_drain_but_manual_confirmation_does_not(stack):

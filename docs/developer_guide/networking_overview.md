@@ -141,6 +141,41 @@ unilab -g slave.json --backend hostlink --is-slave \
   --host-node-ip 192.168.1.10 --hostlink-port 7302
 ```
 
+#### 启动顺序：Host 端口先开，Slave 不必等 Host 就绪
+
+`hostlink` Host 进程读完配置就打开 HostLink 端口，早于注册表构建、设备图加载、物料权威
+装配与设备启动；默认「调度权威 → Host 子进程」拓扑里由 Host 子进程打开，`--no-safe-restart`
+单进程模式由该进程打开。设备 runtime 启动时 `HostLinkBackend` 接管同一个 server，Host 的启动
+顺序是：
+
+1. 打开 HostLink 端口（进程启动之初；预绑定失败时由设备 runtime 启动时再绑定一次）；
+2. 构建注册表、加载设备图、装配物料权威并完成开机物料对齐；
+3. 设备 runtime 接管 server、装配请求处理器 → `materials` 阶段就绪；
+4. 装配并启动本机设备（含 Workstation `post_init`）、注册内置 host 服务 → `devices` 阶段就绪。
+
+Host 启动期间 Slave 看到的是：
+
+- 握手（HELLO）、设备登记、心跳、状态与日志通知、Topic 订阅/发布随时可用，Slave 的设备
+  立刻出现在 Host 的在线表里；HELLO / PING 应答的 `pending_stages` 列出 Host 尚未就绪的阶段；
+- 物料请求在 `materials` 就绪前、设备 Action 与 Service 调用在 `devices` 就绪前，Host 在执行
+  处理器之前回「Host 启动中」应答（`ok=false`，顶层 `not_ready=<阶段>`、`retry_after`，
+  `error_info.code=host_not_ready`）。请求没有任何副作用，Slave 按退避原样重试，Host 就绪后
+  拿到正常结果，不会拿到错误结果；
+- 门控只针对 Host 自己的拒绝：嵌套调用失败转发回来的 `error_info` 即使带 `host_not_ready`
+  也不会触发重试，避免把执行过一半的动作再跑一遍。
+
+Slave 可以先于 Host 启动：连接失败按退避重试（间隔从 0.5 秒翻倍，封顶 2 秒），直到
+`--hostlink-host-wait-timeout`（`HostLinkConfig.host_wait_timeout`，默认 120 秒）仍连不上才
+报错退出，报错带 Host 地址、最后一次连接错误和可调参数。「Host 启动中」的重试同样以该值
+为上限，超时抛 `HostNotReadyError`（属于 `LinkError`）。`--hostlink-connect-timeout` 只是单次
+TCP 连接 / 握手的超时。Host 重启（退出码 75 后以相同参数拉起）时新进程同样在启动之初重绑端口，
+已连接的 Slave 在约 2 秒内重连并重新登记，不必等新 Host 的设备全部起来。因此启动脚本和测试
+不需要先轮询 HostLink 端口再拉起 Slave。
+
+ROS2 backend 的 HostLink listener 由 Host 微后端在 `setup_host_server_stack` 里打开（早于
+ROS 设备启动，物料处理器在打开时已就绪），ROS2 Slave 在 `rclpy.init` 前无限期等待 Host
+（`--slave_no_host` 除外），不受上述连接上限影响。
+
 驱动通过 `post_init(node)` 获得通用 `DeviceNode`，可使用日志、异步等待、任务调度、
 Action、Service、状态通知、Topic 发布/订阅、物料更新/查询和跨设备动作调用。Workstation
 也按所选 backend 初始化对应 node，并使用同一 backend 初始化 sub-device；它不是只能在
@@ -158,8 +193,8 @@ HostLink 启动时会直接提示该驱动不支持，而不是在导入过程�
 
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
-终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连，但不会
-自动重放动作。Host 连接进程内或独立部署的微后端物料中心，设备侧只访问微后端边界；
+终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连（间隔封顶
+2 秒），但不会自动重放动作。Host 连接进程内或独立部署的微后端物料中心，设备侧只访问微后端边界；
 ROS 内部资源树通知也由 `ResourceService` 处理。
 
 HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS 或双方身份认证。
@@ -188,7 +223,8 @@ HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS �
 | `--disable-hostlink` | Host + Slave | 否 | 仅 ROS2 可用：禁用 HostLink 并回退原 ROS2 发现；不能和 `--backend hostlink` 同用 |
 | `--hostlink-heartbeat-interval` | Slave | `5` 秒 | 心跳发送间隔 |
 | `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间 |
-| `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时 |
+| `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时（不是等 Host 的总时长） |
+| `--hostlink-host-wait-timeout` | Slave | `120` 秒 | 等 Host 的上限：启动时退避重连直到端口可连，以及 Host 启动中「未就绪」请求的重试，各自计时 |
 | `--hostlink-request-timeout` | Host + Slave | `10` 秒 | 控制请求/设备 RPC 超时 |
 | `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
 | `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |

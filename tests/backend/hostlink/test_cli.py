@@ -28,6 +28,15 @@ def test_disable_browser_can_be_combined_with_management_port() -> None:
     assert args.disable_browser is True
 
 
+@pytest.mark.parametrize(
+    "option", ["--hostlink-host-wait-timeout", "--hostlink_host_wait_timeout"]
+)
+def test_host_wait_timeout_flag_accepts_both_spellings(option) -> None:
+    args = build_parser().parse_args(["--is_slave", option, "45"])
+
+    assert args.hostlink_host_wait_timeout == 45.0
+
+
 def test_networking_cli_accepts_host_and_domain_aliases() -> None:
     args = build_parser().parse_args(
         [
@@ -107,6 +116,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
     monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 5.0)
     monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 15.0)
     monkeypatch.setattr(HostLinkConfig, "connect_timeout", 5.0)
+    monkeypatch.setattr(HostLinkConfig, "host_wait_timeout", 120.0)
     monkeypatch.setattr(HostLinkConfig, "request_timeout", 10.0)
     monkeypatch.setattr(HostLinkConfig, "ros_static_peers", "")
     monkeypatch.setattr(HostLinkConfig, "ros_discovery_port", 0)
@@ -122,6 +132,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
             "hostlink_heartbeat_interval": 2.5,
             "hostlink_heartbeat_timeout": 8,
             "hostlink_connect_timeout": 3,
+            "hostlink_host_wait_timeout": 45,
             "hostlink_request_timeout": 6,
             "ros_domain_id": None,
             "ros_discovery_range": None,
@@ -141,6 +152,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
     assert HostLinkConfig.heartbeat_interval == 2.5
     assert HostLinkConfig.heartbeat_timeout == 8.0
     assert HostLinkConfig.connect_timeout == 3.0
+    assert HostLinkConfig.host_wait_timeout == 45.0
     assert HostLinkConfig.request_timeout == 6.0
     assert HostLinkConfig.ros_static_peers == "10.0.0.8;10.0.0.9"
     assert HostLinkConfig.ros_discovery_port == 7600
@@ -153,6 +165,7 @@ def test_detailed_hostlink_cli_overrides(monkeypatch) -> None:
         {"hostlink_port": 0},
         {"hostlink_port": 65536},
         {"hostlink_connect_timeout": 0},
+        {"hostlink_host_wait_timeout": 0},
         {"ros_discovery_port": -1},
         {"ros_discovery_port": 65536},
     ],

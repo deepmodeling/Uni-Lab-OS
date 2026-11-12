@@ -1,12 +1,25 @@
-"""HostLink 启动参数应用与校验。"""
+"""HostLink 启动参数应用与校验，以及 Host 进程尽早打开 HostLink 端口。
+
+Host 的 HostLink 端口从进程启动之初就可连：配置一就绪就预绑定（:func:`prebind_host_server`），
+设备 runtime 启动时由 ``HostLinkBackend`` 接管同一个 server。依赖 Host 状态的请求（物料权威、
+本机设备与 host 服务）在对应阶段就绪前回「Host 启动中」，由 Slave 按退避重试。
+"""
 
 from __future__ import annotations
 
 import os
-from typing import Any, Mapping
+import threading
+from typing import Any, Mapping, Optional
 
 from unilabos.config.config import HostLinkConfig
 from unilabos.backend.hostlink.ros_assist import parse_host_target, validate_domain_id
+from unilabos.backend.hostlink.server import (
+    HOST_STARTUP_GATES,
+    HostLinkServer,
+    get_hostlink_server,
+    set_hostlink_server,
+)
+from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
 
 
@@ -53,6 +66,7 @@ def apply_hostlink_cli(args: Mapping[str, Any], *, is_slave: bool) -> None:
         "hostlink_heartbeat_interval": "heartbeat_interval",
         "hostlink_heartbeat_timeout": "heartbeat_timeout",
         "hostlink_connect_timeout": "connect_timeout",
+        "hostlink_host_wait_timeout": "host_wait_timeout",
         "hostlink_request_timeout": "request_timeout",
     }
     for argument, field in timeout_fields.items():
@@ -100,7 +114,111 @@ def validate_hostlink_backend(args: Mapping[str, Any], *, is_slave: bool) -> Non
         )
 
 
+def create_host_server() -> HostLinkServer:
+    """按 ``HostLinkConfig`` 构造尚未监听的 Host server，并进入启动期门控。
+
+    门控见 :data:`~unilabos.backend.hostlink.server.HOST_STARTUP_GATES`：HELLO / 心跳 /
+    状态上报随时可用；物料请求等 ``materials``、设备与 service 调用等 ``devices`` 阶段。
+    """
+
+    server = HostLinkServer(
+        bind=HostLinkConfig.bind,
+        port=HostLinkConfig.port,
+        heartbeat_timeout=HostLinkConfig.heartbeat_timeout,
+        request_timeout=HostLinkConfig.request_timeout,
+    )
+    server.hello_payload = {"backend": "hostlink", "role": "host", "devices": []}
+    server.hold_until_ready(HOST_STARTUP_GATES)
+    return server
+
+
+def should_prebind_host_server(
+    args: Mapping[str, Any],
+    *,
+    is_slave: bool,
+    check_mode: bool,
+    runs_local_authority: bool,
+) -> bool:
+    """本进程是否是会监听 HostLink 的 hostlink Host（设备 runtime 在本进程）。
+
+    默认拓扑里调度权威进程不监听 HostLink（它的 Host 子进程监听）；``--role backend``、
+    Slave、``--check_mode`` 和 ROS2 backend（端口由 ``setup_host_network_service`` 打开）
+    都不预绑定。
+    """
+
+    return (
+        not check_mode
+        and not is_slave
+        and not runs_local_authority
+        and args.get("role") != "backend"
+        and str(args.get("backend") or "") == "hostlink"
+        and bool(HostLinkConfig.enable)
+    )
+
+
+_prebound_lock = threading.Lock()
+_prebound_server: Optional[HostLinkServer] = None
+
+
+def prebind_host_server() -> Optional[HostLinkServer]:
+    """Host 进程配置就绪后立刻打开 HostLink 端口，不等注册表、设备图与设备启动。
+
+    Slave 随即可以握手、登记设备并维持心跳；需要 Host 状态的请求在就绪前回「Host 启动中」。
+    绑定失败（端口仍被上一个正在退出的 Host 占着等）不在这里终止进程：放弃预绑定，由设备
+    runtime 启动时按原有路径再绑一次并沿用原来的报错与退出码。
+    """
+
+    global _prebound_server
+    with _prebound_lock:
+        if _prebound_server is not None:
+            return _prebound_server
+        server = create_host_server()
+        try:
+            server.start()
+        except OSError as exc:
+            server.stop()
+            logger.warning(
+                "[HostLink] 提前打开 HostLink 端口失败：%s；设备 runtime 启动时再绑定一次", exc
+            )
+            return None
+        _prebound_server = server
+    set_hostlink_server(server)
+    logger.info(
+        "[HostLink] Host 端口已在启动之初打开：%s:%d；Slave 可立即连接，"
+        "物料与设备请求在 Host 就绪前回「Host 启动中」并由 Slave 自动重试",
+        HostLinkConfig.bind,
+        server.port,
+    )
+    return server
+
+
+def adopt_prebound_host_server() -> Optional[HostLinkServer]:
+    """设备 runtime 接管预绑定的 server（只交出一次）；没有预绑定时返回 None。"""
+
+    global _prebound_server
+    with _prebound_lock:
+        server, _prebound_server = _prebound_server, None
+    return server
+
+
+def release_prebound_host_server() -> None:
+    """本进程不会启动设备 runtime 时（如驱动包操作待人工确认）关闭预绑定的端口。"""
+
+    server = adopt_prebound_host_server()
+    if server is None:
+        return
+    server.stop()
+    if get_hostlink_server() is server:
+        set_hostlink_server(None)
+    logger.info("[HostLink] 设备 runtime 不启动，已关闭提前打开的 HostLink 端口")
+
+
 __all__ = [
+    "adopt_prebound_host_server",
     "apply_hostlink_cli",
+    "create_host_server",
+    "prebind_host_server",
+    "release_prebound_host_server",
+    "should_prebind_host_server",
     "validate_hostlink_backend",
 ]

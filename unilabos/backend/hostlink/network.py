@@ -561,6 +561,7 @@ def setup_slave_network_client(
                 heartbeat_interval=HostLinkConfig.heartbeat_interval,
                 connect_timeout=HostLinkConfig.connect_timeout,
                 request_timeout=HostLinkConfig.request_timeout,
+                host_wait_timeout=HostLinkConfig.host_wait_timeout,
             )
             set_hostlink_client(client)
             _register_process_cleanup()

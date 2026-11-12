@@ -240,10 +240,17 @@ unilab -g slave.json --is-slave \
 - `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。配置了 `--address`（backend-controlled 模式）时，浏览器打开的是 backend 管理页；本进程 `/` 只保留指向调度权威的路标页和设备侧 API 文档入口。
 - `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
 - `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
+- `--hostlink-host-wait-timeout`：Slave 等 Host 的上限，默认 `120` 秒。
 - `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
 - `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。
 - `--no-ros-assist`：仅用于 ROS2 backend；保留 HostLink 设备发现，不覆盖 Slave 的 ROS2 环境。
 - `--disable-hostlink`：完全关闭 HostLink，使用 ROS2/DDS 默认发现流程。
+
+Host 和 Slave 不分先后启动。`hostlink` Host 进程读完配置就打开 HostLink 端口（早于注册表、
+设备图与设备启动），Slave 随即可以连上并登记设备；Host 的物料权威或本机设备还没就绪时，
+相关请求会收到「Host 启动中」并由 Slave 自动重试。Slave 先启动时按退避重连，最多等
+`--hostlink-host-wait-timeout` 秒（默认 120）仍连不上才报错退出。详见
+[组网概览](../developer_guide/networking_overview.md)。
 
 选择 `--backend hostlink` 时不能使用 `--disable-hostlink`，Slave 也必须提供
 `--host-node-ip`。`7302` 只供 Host/Slave 进程通信，不提供浏览器页面；Host 进程的

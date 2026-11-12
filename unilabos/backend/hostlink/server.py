@@ -15,7 +15,7 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     TimeoutError as FutureTimeoutError,
 )
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 from unilabos.backend.hostlink.protocol import (
     ActionType,
@@ -23,16 +23,56 @@ from unilabos.backend.hostlink.protocol import (
     LineReader,
     LinkError,
     PROTOCOL_VERSION,
-    RemoteError,
+    new_not_ready_response,
     new_request,
     new_response,
     read_message,
+    response_error,
     send_message,
     send_response_or_reject,
 )
 from unilabos.utils import logger
 
 Handler = Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
+
+
+class HostStage:
+    """Host 启动期间 HostLink 请求依赖的就绪阶段。"""
+
+    #: 端口已开、设备 runtime 尚未接管：该请求的处理器还没装配
+    STARTUP = "startup"
+    #: 物料权威已接入，Host 开机物料对齐已完成
+    MATERIALS = "materials"
+    #: 本机设备已全部启动（含 Workstation post_init），内置 host 服务已注册
+    DEVICES = "devices"
+
+
+#: Host 启动期间要等对应阶段就绪才处理的请求。HELLO / PING / 状态与日志通知 /
+#: Topic 订阅与发布 / 动作反馈与取消不依赖 Host 的设备与物料状态，端口一开即可处理。
+HOST_STARTUP_GATES: Dict[str, tuple[str, ...]] = {
+    HostStage.MATERIALS: (
+        ActionType.MATERIAL_TEMPLATE_LIST,
+        ActionType.MATERIAL_TEMPLATE_CREATE,
+        ActionType.MATERIAL_CREATE,
+        ActionType.MATERIAL_GET_TREE,
+        ActionType.MATERIAL_GET_BY_RESOURCE_ID,
+        ActionType.MATERIAL_SEARCH,
+        ActionType.MATERIAL_DATA_PUT,
+        ActionType.MATERIAL_MOVE,
+        ActionType.MATERIAL_TRANSFER,
+        ActionType.MATERIAL_DELETE,
+        ActionType.MATERIAL_COMPARE_SNAPSHOT,
+        ActionType.MATERIAL_APPLY_SNAPSHOT,
+        ActionType.MATERIAL_APPLY_DELTA,
+    ),
+    HostStage.DEVICES: (
+        ActionType.DEVICE_CALL,
+        ActionType.SERVICE_CALL,
+    ),
+}
+
+#: 「Host 启动中」应答建议的重试间隔（秒）
+NOT_READY_RETRY_AFTER = 0.5
 
 
 class _Pending:
@@ -147,10 +187,7 @@ class _PeerSession:
     @staticmethod
     def _response_data(response: Dict[str, Any]) -> Any:
         if not response.get("ok"):
-            raise RemoteError(
-                str(response.get("error") or "remote error"),
-                response.get("error_info"),
-            )
+            raise response_error(response)
         return response.get("data")
 
     def resolve_response(self, message: Dict[str, Any]) -> None:
@@ -272,6 +309,11 @@ class HostLinkServer:
             max_workers=16,
             thread_name_prefix="hostlink-host-rpc",
         )
+        # 启动期门控：阶段 -> 是否就绪（按声明顺序），请求 -> 所需阶段。
+        # 未声明任何阶段时（ROS2 组网微后端、单测里的裸 server）行为与原来一致。
+        self._gate_lock = threading.Lock()
+        self._stage_ready: Dict[str, bool] = {}
+        self._action_stages: Dict[str, str] = {}
         self.register_handler(ActionType.HELLO, self._handle_hello)
         self.register_handler(ActionType.PING, self._handle_ping)
         self.register_handler(ActionType.LOG_CHANGED, self._handle_log_changed)
@@ -321,6 +363,56 @@ class HostLinkServer:
 
     def register_handler(self, action_type: str, handler: Handler) -> None:
         self.handlers[action_type] = handler
+
+    # ------------------------------------------------------------------
+    # 启动期门控：端口先开，依赖 Host 状态的请求等对应阶段就绪
+    # ------------------------------------------------------------------
+
+    def hold_until_ready(self, gates: Mapping[str, Iterable[str]]) -> None:
+        """进入启动期：``gates`` 里的请求在对应阶段 :meth:`mark_ready` 之前一律回「Host 启动中」。
+
+        启动期内还没有处理器的请求同样回「Host 启动中」（处理器稍后由 backend 装配），
+        全部阶段就绪后才按未知请求拒绝。拒绝发生在处理器执行之前，对端可以原样重试。
+        """
+
+        with self._gate_lock:
+            for stage, actions in gates.items():
+                self._stage_ready.setdefault(str(stage), False)
+                for action in actions:
+                    self._action_stages[str(action)] = str(stage)
+
+    def mark_ready(self, stage: str) -> None:
+        """标记某个启动阶段就绪；之后依赖它的请求正常处理。"""
+
+        with self._gate_lock:
+            changed = self._stage_ready.get(stage) is not True
+            self._stage_ready[stage] = True
+            pending = [name for name, ready in self._stage_ready.items() if not ready]
+        if changed:
+            logger.info(
+                "[HostLink] Host 启动阶段已就绪：%s%s",
+                stage,
+                f"（仍在等待：{', '.join(pending)}）" if pending else "，Host 已完全就绪",
+            )
+
+    def pending_stages(self) -> List[str]:
+        """尚未就绪的启动阶段（按声明顺序）；空列表表示 Host 已完全就绪。"""
+
+        with self._gate_lock:
+            return [name for name, ready in self._stage_ready.items() if not ready]
+
+    @property
+    def starting(self) -> bool:
+        return bool(self.pending_stages())
+
+    def _not_ready_stage(self, action: str) -> Optional[str]:
+        with self._gate_lock:
+            stage = self._action_stages.get(action)
+            if stage is not None and not self._stage_ready.get(stage, True):
+                return stage
+            if action not in self.handlers and not all(self._stage_ready.values()):
+                return HostStage.STARTUP
+        return None
 
     def register_session(
         self,
@@ -498,6 +590,12 @@ class HostLinkServer:
                 error=f"unsupported protocol version: {message.get('v')!r}",
             )
         action = str(message.get("action_type") or "")
+        stage = self._not_ready_stage(action)
+        if stage is not None:
+            logger.debug(f"[HostLink] {action} from {peer_key}: Host 启动中，等待 {stage}")
+            return new_not_ready_response(
+                request_id, action, stage, NOT_READY_RETRY_AFTER
+            )
         handler = self.handlers.get(action)
         if handler is None:
             return new_response(request_id, False, error=f"unknown action: {action}")
@@ -685,6 +783,8 @@ class HostLinkServer:
             **self.hello_payload,
             "assigned_node_id": peer.get("node_id"),
             "device_ids": list(peer.get("device_ids") or []),
+            # 附加字段：Host 仍在启动时列出未就绪阶段，Slave 据此提示而不是当作故障
+            "pending_stages": self.pending_stages(),
         }
 
     def _handle_log_changed(self, data: Dict[str, Any], peer: Dict[str, Any]) -> Dict[str, Any]:
@@ -704,6 +804,7 @@ class HostLinkServer:
             "pong": True,
             "server_time": time.time(),
             "devices": list(self.hello_payload.get("devices") or []),
+            "pending_stages": self.pending_stages(),
         }
 
     def _handle_ros_info(
@@ -740,9 +841,12 @@ def get_hostlink_server() -> Optional[HostLinkServer]:
 
 
 __all__ = [
+    "HOST_STARTUP_GATES",
     "Handler",
     "HostLinkPortInUseError",
     "HostLinkServer",
+    "HostStage",
+    "NOT_READY_RETRY_AFTER",
     "get_hostlink_server",
     "set_hostlink_server",
 ]

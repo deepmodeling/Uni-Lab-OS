@@ -675,6 +675,22 @@ def _run_main():
         args_dict.get("host_node_name") or BasicConfig.host_node_name
     )
 
+    # hostlink Host 在配置就绪后立刻打开 HostLink 端口，不等注册表、设备图与设备启动：
+    # Slave 可以马上连上并登记，物料 / 设备请求在 Host 就绪前回「Host 启动中」由 Slave 重试。
+    # 设备 runtime 启动时 HostLinkBackend 接管同一个 server。
+    from unilabos.backend.hostlink.startup import (
+        prebind_host_server,
+        should_prebind_host_server,
+    )
+
+    if should_prebind_host_server(
+        args_dict,
+        is_slave=is_slave,
+        check_mode=check_mode,
+        runs_local_authority=_runs_local_authority(args_dict),
+    ):
+        prebind_host_server()
+
     from unilabos.registry.registry import build_registry
 
     # 显示启动横幅

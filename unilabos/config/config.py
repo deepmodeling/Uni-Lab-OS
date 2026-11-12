@@ -151,7 +151,9 @@ class HostLinkConfig:
     advertise_ip = ""  # Host 下发给 Slave 的可达地址；空时自动探测
     heartbeat_interval = 5.0
     heartbeat_timeout = 15.0
-    connect_timeout = 5.0
+    connect_timeout = 5.0  # 单次 TCP 连接 / HELLO 握手超时
+    # Slave 等 Host 的上限（秒）：启动时等端口可连、以及 Host 启动中「未就绪」请求的重试，各自计时
+    host_wait_timeout = 120.0
     request_timeout = 10.0
     ros_assist_apply = True
     ros_domain_id = ""  # 空时沿用 ROS_DOMAIN_ID

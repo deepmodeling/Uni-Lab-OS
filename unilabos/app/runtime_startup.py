@@ -15,7 +15,7 @@ BACKEND_READY_TIMEOUT_S = 120.0
 
 
 def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> bool:
-    """等设备执行适配器注册（HostLink 已监听 / ROS HostNode 已建）或 backend 线程退出。"""
+    """等设备执行适配器注册（HostLink 设备与 host 服务已就绪 / ROS HostNode 已建）或 backend 线程退出。"""
 
     from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
 
@@ -32,8 +32,9 @@ def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> boo
 def _announce_ready_and_start_managed(backend_thread: threading.Thread) -> None:
     """设备 runtime 真正就绪后才打就绪横幅、拉起受管 Slave（在后台线程运行）。
 
-    ``start_backend`` 只是起了线程：这时 HostLink 端口还没绑上，先打"已就绪"再拉 Slave
-    会让 Slave 连到一个不存在（或上次没退干净）的 Host；runtime 起不来时更不该拉起任何东西。
+    ``start_backend`` 只是起了线程：HostLink 端口虽已在进程启动之初打开（Slave 连上后会
+    等 Host 就绪），设备与 host 服务还没起来，这时打"已就绪"横幅为时过早；runtime 起不来时
+    更不该拉起任何东西。
     """
 
     ready = _wait_backend_ready(backend_thread, BACKEND_READY_TIMEOUT_S)
@@ -212,6 +213,10 @@ def run_runtime(args: dict[str, Any]) -> None:
         state = get_driver_package_service().mutation_gate.status()
         if state['unresolved_operations'] or state['error']:
             print_status('包操作恢复尚未人工确认：仅启动管理服务，设备 runtime 与托管 slave 保持停止；确认后手动重启 Host。', 'warning')
+            # 设备 runtime 不会启动：关掉进程启动时提前打开的 HostLink 端口，别让 Slave 空等
+            from unilabos.backend.hostlink.startup import release_prebound_host_server
+
+            release_prebound_host_server()
             _start_management_server()
             return
 

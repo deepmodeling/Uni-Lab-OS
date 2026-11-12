@@ -233,6 +233,16 @@ def _register_hostlink_arguments(parser: argparse.ArgumentParser) -> None:
     )
     _add(
         group,
+        "--hostlink_host_wait_timeout",
+        type=float,
+        default=None,
+        help=(
+            "Slave 等 Host 的上限（秒），默认 120：启动时按退避重连直到 Host 端口可连，"
+            "以及 Host 启动中「未就绪」的请求按退避重试，两者各自计时。"
+        ),
+    )
+    _add(
+        group,
         "--hostlink_request_timeout",
         type=float,
         default=None,

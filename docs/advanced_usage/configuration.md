@@ -80,6 +80,8 @@ class HostLinkConfig:
     port = 7302
     bind = "0.0.0.0"
     advertise_ip = ""  # Host 多网卡时显式填写 Slave 可达 IP
+    connect_timeout = 5.0  # 单次 TCP 连接 / 握手超时
+    host_wait_timeout = 120.0  # Slave 等 Host 端口可连、等 Host 启动就绪的上限（秒）
     ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
     ros_discovery_range = ""
     ros_static_peers = ""
@@ -196,7 +198,8 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `HostLinkConfig` | `enable`       | `--disable-hostlink` | 禁用 HostLink                    |
 | `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
 | `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
-| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | TCP 连接/握手超时          |
+| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | 单次 TCP 连接/握手超时     |
+| `HostLinkConfig` | `host_wait_timeout` | `--hostlink-host-wait-timeout` | Slave 等 Host 的上限（默认 120 秒）：启动时退避重连、Host 启动中请求的重试 |
 | `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求/设备 RPC 超时      |
 | `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
 | `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |

@@ -20,7 +20,11 @@ from unilabos.backend.hostlink.topic import (
 from unilabos.backend.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.backend.hostlink.protocol import ActionType, LinkError
-from unilabos.backend.hostlink.server import HostLinkServer, set_hostlink_server
+from unilabos.backend.hostlink.server import (
+    HostLinkServer,
+    HostStage,
+    set_hostlink_server,
+)
 from unilabos.utils import logger
 
 
@@ -76,6 +80,10 @@ class HostLinkBackend:
         与持有的物料，需要 HostLink 已连上 Host；与 Host / ROS2 Slave「先对齐权威、再
         建设备」的顺序一致。设备仍由 ``local.start()`` 反向启动（工作站 post_init 前
         其子设备已就绪），随后把完整设备描述立刻通告 Host。
+
+        Host 先开端口再装配设备：接管进程启动时预绑定的 server（没有则当场绑定），
+        Slave 从此可以握手、登记与心跳；物料请求在物料权威接入后放行，设备 / service
+        调用在本机设备全部启动、host 服务注册后放行，之前一律回「Host 启动中」。
         """
 
         if self._started:
@@ -107,11 +115,16 @@ class HostLinkBackend:
                     get_materials_gateway,
                 )
 
+                # 1) 端口最先可连：Slave 的握手、登记与心跳从这里起就被接受
+                server = self._attach_host_server()
                 self.local.set_resource_service(
                     AuthorityResourceService(
                         gateway_provider=get_materials_gateway
                     )
                 )
+                # 2) 物料权威与 Host 开机物料对齐都在设备 runtime 启动前完成
+                #    （app/main.py），Slave 的物料请求从此放行
+                server.mark_ready(HostStage.MATERIALS)
                 if populate is not None:
                     populate(self.local)
                 self.local.start()
@@ -120,20 +133,39 @@ class HostLinkBackend:
                 from unilabos.backend.hostlink.host_services import register_host_services
 
                 register_host_services(self)
-                self._start_host()
+                self._bind_material_transfer_dispatcher()
+                # 3) 本机设备与 host 服务全部就绪：放行设备 / service 调用
+                server.hello_payload["devices"] = self.local.descriptors()
+                server.mark_ready(HostStage.DEVICES)
+                logger.info(
+                    "[HostLink backend] Host 已就绪：%s:%d，本地设备=%s",
+                    HostLinkConfig.bind,
+                    server.port,
+                    sorted(self.local.devices),
+                )
         except Exception:
             self.stop()
             raise
         self._started = True
 
-    def _start_host(self) -> None:
-        self.server = HostLinkServer(
-            bind=HostLinkConfig.bind,
-            port=HostLinkConfig.port,
-            heartbeat_timeout=HostLinkConfig.heartbeat_timeout,
-            request_timeout=HostLinkConfig.request_timeout,
+    def _attach_host_server(self) -> HostLinkServer:
+        """接管进程启动时预绑定的 HostLink server（没有则当场绑定），并装配请求处理器。
+
+        server 处于启动期门控：依赖物料权威 / 本机设备的请求在 :meth:`start` 标记对应
+        阶段就绪前回「Host 启动中」，Slave 原样重试，不会拿到错误结果。
+        """
+
+        from unilabos.backend.hostlink.startup import (
+            adopt_prebound_host_server,
+            create_host_server,
         )
-        self.server.hello_payload = {
+
+        server = adopt_prebound_host_server()
+        prebound = server is not None
+        if server is None:
+            server = create_host_server()
+        self.server = server
+        server.hello_payload = {
             "backend": "hostlink",
             "role": "host",
             "devices": self.local.descriptors(),
@@ -218,15 +250,17 @@ class HostLinkBackend:
             ActionType.MATERIAL_APPLY_DELTA,
             self._handle_material_apply_delta,
         )
-        self.server.start()
-        set_hostlink_server(self.server)
-        self._bind_material_transfer_dispatcher()
+        if not prebound:
+            server.start()
+            set_hostlink_server(server)
         logger.info(
-            "[HostLink backend] Host 已启动：%s:%d，本地设备=%s",
+            "[HostLink backend] Host 端口%s：%s:%d；等待 %s 就绪后放行物料与设备请求",
+            "已在进程启动时打开" if prebound else "已打开",
             HostLinkConfig.bind,
-            self.server.port,
-            sorted(self.local.devices),
+            server.port,
+            "、".join(server.pending_stages()) or "（无）",
         )
+        return server
 
     @staticmethod
     def _handle_material_template_list(
@@ -540,6 +574,7 @@ class HostLinkBackend:
             device_descriptors=self.local.descriptors(),
             heartbeat_payload_provider=self._heartbeat_payload,
             on_status_change=self._on_client_status_change,
+            host_wait_timeout=HostLinkConfig.host_wait_timeout,
         )
         from unilabos.client.materials import HostLinkMaterialsClient
 
@@ -594,10 +629,26 @@ class HostLinkBackend:
         if client is None:
             raise RuntimeError("HostLink Slave client 尚未创建")
         host = str(HostLinkConfig.host or "").strip()
+        wait_timeout = float(HostLinkConfig.host_wait_timeout)
         if BasicConfig.slave_no_host:
             client.start()
-        elif not client.connect_blocking(HostLinkConfig.connect_timeout):
-            raise LinkError(f"无法连接 HostLink Host：{host}:{HostLinkConfig.port}")
+        else:
+            # Host 可能晚于 Slave 启动（或正在重启）：按退避重连直到端口可连，而不是一次
+            # 连接超时就放弃。Host 端口在其进程启动之初就打开，通常几秒内即可连上。
+            logger.info(
+                "[HostLink backend] 正在连接 Host=%s:%d（未就绪时按退避重试，最长 %gs）",
+                host,
+                HostLinkConfig.port,
+                wait_timeout,
+            )
+            if not client.connect_blocking(wait_timeout):
+                reason = client.last_error or "未收到 HELLO 应答"
+                raise LinkError(
+                    f"{wait_timeout:g}s 内无法连接 HostLink Host {host}:{HostLinkConfig.port}"
+                    f"（最后一次错误：{reason}）。请确认 Host 已启动、--host_node_ip / "
+                    "--hostlink_port 与 Host 一致且端口未被防火墙拦截；Host 启动较慢时可调大 "
+                    "HostLinkConfig.host_wait_timeout（--hostlink_host_wait_timeout）"
+                )
         logger.info(
             "[HostLink backend] Slave 已连上 Host=%s:%d，本地设备=%s",
             host,

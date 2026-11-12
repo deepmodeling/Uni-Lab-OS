@@ -453,6 +453,20 @@ _INVENTORY_LOT_V6_INDEXES = (
             """,
 )
 
+# v8：作业 / 试剂消费读模型（V1 inventory-consumptions）按作业与内容物身份查账本、内容物预留与历史。
+_INVENTORY_LEDGER_JOB_V8_INDEX = """
+            CREATE INDEX IF NOT EXISTS idx_inventory_ledger_job
+            ON inventory_ledger(job_uuid, sequence) WHERE job_uuid IS NOT NULL
+            """
+_MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX = """
+            CREATE INDEX IF NOT EXISTS idx_material_content_reservation_job
+            ON material_content_reservation(job_uuid, status) WHERE job_uuid IS NOT NULL
+            """
+_MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX = """
+            CREATE INDEX IF NOT EXISTS idx_material_content_history_subject
+            ON material_content_history(subject_uuid, recorded_at_ms, history_uuid)
+            """
+
 MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(2, "新增化学品定义表 chemical", _CHEMICAL_V2, *_CHEMICAL_V2_INDEXES),
     rebuild_table_migration(
@@ -490,6 +504,13 @@ MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
         table="inventory_lot",
         create_sql=_INVENTORY_LOT_V6,
         indexes=_INVENTORY_LOT_V6_INDEXES,
+    ),
+    sql_migration(
+        8,
+        "作业 / 试剂消费读模型索引：账本按作业、内容物预留按作业、内容物历史按内容物",
+        _INVENTORY_LEDGER_JOB_V8_INDEX,
+        _MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX,
+        _MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX,
     ),
 )
 MATERIALS_SCHEMA_VERSION = MATERIALS_MIGRATIONS[-1].version

@@ -16,8 +16,11 @@
 3. **dev 独有能力保留。** V1 没有的 dev 路由（如资源区间、借还、托管、包操作恢复、
    执行许可）保持现有路径，但响应信封与业务码也改为下述 V1 约定。
 4. **写操作保留 dev 控制面 token。** 前端改为在请求头 `X-UniLab-Token` 中携带 token。
-   `Authorization: Bearer` 留给 V1 工站调用的 api_key（`/stations/*` 调用），
-   控制面中间件不再读取 Bearer，避免两者冲突。dev 内部客户端统一改用 `X-UniLab-Token`。
+   `Authorization: Bearer` 留给 V1 工站调用的 api_key（`POST /api/v1/station/workflow-invocations`），
+   控制面中间件不再把 Bearer 当控制面 token，避免两者冲突。dev 内部客户端统一改用 `X-UniLab-Token`。
+   工站密钥（p7-d）：`BasicConfig.station_api_key`（环境变量 `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的
+   `UNILABOS_EDGECONTROLCONFIG_API_KEY`），为空时读 `<working_dir>/station_api_key`，不自动生成；都没有时工站入口一律
+   401。中间件对工站入口只认有效工站密钥（HTTP 401 + 1002），控制面 token 不能代替它，它也不能代替控制面 token。
 5. **全部 JSON API 使用 V1 信封与业务码**，包括物料、runtime、telemetry、history 等原来
    直出 DTO 的路由。
 6. **V1 独有领域全部迁移**：工站异常处理、试剂/样品/当前内容物/入站、工作区与布局、
@@ -138,6 +141,25 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   校正，适用于质量 / 体积批次与已隔离批次。
 - 化学品：V1 `/reagent-infos` 是 `chemical` 表的 V1 视图；dev `/chemicals`（带 `expected_version` 的写入）保留。
 - Workspace Host（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）尚未迁移：dev 没有独立的工作区监督进程。
+
+## 作业与库存接缝（p7-d 落地）
+
+- materials.db 升到 **schema v8**：只加索引（账本按 `job_uuid`、内容物预留按 `job_uuid`、内容物历史按
+  `subject_uuid`），供消费读模型按作业 / 内容物查询；runtime.db 不变（仍是 v11）。
+- **消费事实**（`/workflow-tasks|workflow-node-jobs|reagents/{uuid}/inventory-consumptions`）是 materials.db 现有事实的
+  只读投影（`services/materials/consumption.py`），不另建 V1 的消费台账：批次 = 作业库存预留按生命周期结算的
+  预留量减去实际用量校正（`inventory_type: lot`，dev 扩展值）；容器内容物 = 已结算的内容物数量预留（实际量与前后
+  余量记在 `material_content_history` 的 `consume` 扩展里）；物理分装 = 已结算 `material_execution` 的来源内容物
+  （无计划量）。批次账本的预留结算记录携带 `reservation_uuid` / `job_uuid` / 前后总量。
+- **数量核对**（`reconcile-quantity`）对任何已有结果或结果未知的作业生效；批次实际用量与物理回执结算共用
+  `MaterialExecutions.apply_actual_lot_quantity`（效果键 `(job_uuid, physical.inventory:<lot>)`），同量重放、异量
+  3003，先后任意都不会重复扣减；内容物预留只结算一次。全部写入同一 materials.db 事务。
+- **结果未知处置**（`resolve-uncertain`）只接受 `canceled`，经 `ErrorDecisionDesk` 投递 `abort`；物理结果未知的
+  动作终止后仍保留物料 / 库位占用，直到物理恢复核实结算。
+- **库存命令**补齐 V1 的实例类型（实例入库、上台、内容物写 / 清、消耗、标为已使用、批次调整），V1 实例状态映射见
+  `services/materials/inventory_commands.py` 模块说明。
+- `GET /api/v1/resources` 按 V1 文档仍在用的旧资源列表实现为物料树的薄读（信封，`page=0` 返回全部）；
+  `POST /api/v1/jobs/{job_id}/finish` 是 V1 设备执行端回报结果的内部通道，dev 由运行时传输承担，按设计不移植。
 
 ## 同路径不同语义的处理（V1 合同优先）
 

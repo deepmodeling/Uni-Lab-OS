@@ -21,6 +21,9 @@ from unilabos.server.database.tables.base import (
 from unilabos.server.database.tables.materials_migrations import (
     MATERIALS_MIGRATIONS,
     MATERIALS_SCHEMA_VERSION,
+    _INVENTORY_LEDGER_JOB_V8_INDEX,
+    _MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX,
+    _MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX,
     _LAB_META_V6,
     _LAB_PLACEMENT_V6,
     _LAB_PLACEMENT_V6_INDEXES,
@@ -1492,6 +1495,7 @@ MATERIALS_TABLES = (
             CREATE INDEX IF NOT EXISTS idx_inventory_ledger_aggregate
             ON inventory_ledger(aggregate_type, aggregate_uuid, sequence)
             """,
+            _INVENTORY_LEDGER_JOB_V8_INDEX,
         ),
     ),
     TableSpec(
@@ -1559,12 +1563,16 @@ MATERIALS_TABLES += (
     )"""),
     # schema v6：V1.0 库存概念（表结构与迁移共用 materials_migrations 中冻结的语句）
     TableSpec("material_content", _MATERIAL_CONTENT_V6, _MATERIAL_CONTENT_V6_INDEXES),
-    TableSpec("material_content_history", _MATERIAL_CONTENT_HISTORY_V6, _MATERIAL_CONTENT_HISTORY_V6_INDEXES),
+    TableSpec(
+        "material_content_history",
+        _MATERIAL_CONTENT_HISTORY_V6,
+        (*_MATERIAL_CONTENT_HISTORY_V6_INDEXES, _MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX),
+    ),
     TableSpec("material_state_history", _MATERIAL_STATE_V6, _MATERIAL_STATE_V6_INDEXES),
     TableSpec(
         "material_content_reservation",
         _MATERIAL_CONTENT_RESERVATION_V6,
-        _MATERIAL_CONTENT_RESERVATION_V6_INDEXES,
+        (*_MATERIAL_CONTENT_RESERVATION_V6_INDEXES, _MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX),
     ),
     TableSpec("material_source_binding", _MATERIAL_SOURCE_BINDING_V6, _MATERIAL_SOURCE_BINDING_V6_INDEXES),
     TableSpec(
@@ -1600,7 +1608,8 @@ MATERIALS_DATABASE = DatabaseSpec(
     # schema v4：material_substance.chemical_unlinked（显式解除后不再自动匹配）；
     # schema v5：物理动作冻结计划与结算回执；
     # schema v6：V1.0 库存概念（试剂 / 样品 / 当前内容物、状态历史、内容物预留、来源绑定、
-    # 工站入站、实验室布局、批次库位、条码唯一）。迁移链见 materials_migrations.py。
+    # 工站入站、实验室布局、批次库位、条码唯一）；
+    # schema v8：作业 / 试剂消费读模型索引。迁移链见 materials_migrations.py。
     schema_version=MATERIALS_SCHEMA_VERSION,
     migrations=MATERIALS_MIGRATIONS,
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。

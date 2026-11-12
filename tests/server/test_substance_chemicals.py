@@ -771,10 +771,10 @@ def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 7
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 8
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
         history = [tuple(row) for row in peek.execute("SELECT version, description FROM schema_migration")]
-        assert [version for version, _ in history] == [3, 4, 5, 6, 7]
+        assert [version for version, _ in history] == [3, 4, 5, 6, 7, 8]
         indexes = {row[0] for row in peek.execute(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'material_substance'"
         )}
@@ -844,9 +844,9 @@ def test_v3_materials_database_migrates_to_v4_keeping_links(tmp_path) -> None:
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 7
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 8
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
-        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4, 5, 6, 7]
+        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4, 5, 6, 7, 8]
         with pytest.raises(sqlite3.IntegrityError):
             peek.execute("UPDATE material_substance SET chemical_unlinked = 1, chemical_uuid = 'c-water'")
     finally:

@@ -427,6 +427,43 @@ class HTTPWorkflowClient:
     def get_job(self, job_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflow-node-jobs/{job_uuid}")
 
+    def list_task_inventory_consumptions(self, task_uuid: str) -> list[dict[str, Any]]:
+        """V1：任务的数量型库存消费事实（批次 / 试剂 / 当前内容物）。"""
+
+        return self._http.get(f"/workflow-tasks/{task_uuid}/inventory-consumptions")
+
+    def list_job_inventory_consumptions(self, job_uuid: str) -> list[dict[str, Any]]:
+        return self._http.get(f"/workflow-node-jobs/{job_uuid}/inventory-consumptions")
+
+    def list_reagent_inventory_consumptions(self, reagent_uuid: str) -> list[dict[str, Any]]:
+        """V1：一份试剂（内容物）的工作流消费谱系，新在前。"""
+
+        return self._http.get(f"/reagents/{reagent_uuid}/inventory-consumptions")
+
+    def reconcile_job_quantity(
+        self, job_uuid: str, consumptions: list[dict[str, Any]], *, reason: str,
+    ) -> dict[str, Any]:
+        """V1：人工核对作业实际用量；每项 ``{inventory_type, inventory_uuid, actual_quantity, quantity_unit}``。
+
+        同一核对可安全重放；已落账的不同用量返回 3003（不会重复扣减）。返回作业并附 ``inventory_consumptions``。
+        """
+
+        return self._http.post(
+            f"/workflow-node-jobs/{job_uuid}/reconcile-quantity",
+            json={"consumptions": consumptions, "reason": reason},
+        )
+
+    def resolve_uncertain_job(
+        self, job_uuid: str, *, reason: str, resolution: str = "canceled",
+        device_command_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """V1：结果未知作业的人工处置；``pending_edge_confirmation`` 为真时执行面尚未确认停止。"""
+
+        body: dict[str, Any] = {"resolution": resolution, "reason": reason}
+        if device_command_id is not None:
+            body["device_command_id"] = device_command_id
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/resolve-uncertain", json=body)
+
     def get_authoring(self, workflow_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflows/{workflow_uuid}/authoring")
 

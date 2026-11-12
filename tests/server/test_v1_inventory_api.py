@@ -138,7 +138,7 @@ def test_typed_lot_commands_inbound_correct_reconcile_and_reads(stack) -> None:
         "payload": {"lot_id": "lot-naoh", "measured_count": 3, "reason": "盘点"}}).json()
     assert rejected["status"] == "rejected" and rejected["code"] == 1000
     unsupported = client.post("/api/v1/inventory/commands", json={
-        "command_id": "cmd-x", "type": "material.deploy", "payload": {}}).json()
+        "command_id": "cmd-x", "type": "material.teleport", "payload": {}}).json()
     assert unsupported["status"] == "rejected" and unsupported["error_code"] == "unsupported_command"
     processed = ok_data(client.get("/api/v1/inventory/commands/processed"))["commands"]
     assert {"cmd-inbound-1", "cmd-correct-1", "cmd-reconcile-1"} <= {item["command_id"] for item in processed}

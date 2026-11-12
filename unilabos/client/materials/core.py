@@ -458,6 +458,18 @@ class HTTPMaterialsClient:
     def _get(self, path: str) -> Any:
         return self._request("GET", path, root=True)
 
+    def inventory_command(self, command: dict[str, Any]) -> dict[str, Any]:
+        """V1 类型化库存命令（``{command_id, type, payload, expected_version?, actor?}``），原样返回裸结果。
+
+        ``status`` 为 ``completed`` / ``rejected``；同一 ``command_id`` 重放返回首次结果（``replayed``）。
+        业务拒绝不抛异常，由调用方按 ``status`` 判断。
+        """
+
+        response = self._request("POST", "/inventory/commands", command, root=True, envelope=False)
+        if not isinstance(response, dict) or response.get("status") not in {"completed", "rejected"}:
+            raise MaterialsHTTPError(502, "库存命令返回了无法解析的响应")
+        return response
+
     def _command(self, mutation: InventoryMutation, value: Any, *, target_uuid: Optional[str] = None) -> Any:
         """``materials.v1`` 变更经统一命令入口；拒绝结果按业务码还原成 HTTP 语义的异常。"""
 

@@ -1,4 +1,4 @@
-"""已发布的 materials.db 结构夹具：由当前声明还原 v5（去掉 v6 / v7 新增的表、列与索引）。
+"""已发布的 materials.db 结构夹具：由当前声明还原 v5（去掉 v6 / v7 / v8 新增的表、列与索引）。
 
 旧版本迁移测试都从这里取 v5 基线，再按各自版本继续回退。
 """
@@ -9,7 +9,10 @@ from dataclasses import replace
 
 from unilabos.server.database import DATABASE_SPECS
 from unilabos.server.database.schema import TableSpec
-from unilabos.server.database.tables.materials_migrations import _MATERIAL_BARCODE_V6_INDEX
+from unilabos.server.database.tables.materials_migrations import (
+    _INVENTORY_LEDGER_JOB_V8_INDEX,
+    _MATERIAL_BARCODE_V6_INDEX,
+)
 
 #: v5 发布时的结构指纹（materials schema v5，#360 + p5）。
 MATERIALS_V5_CHECKSUM = "4dc3673d7e70579826e6b5d532c4383525e41d8eae6dd68ab22a18a849e43df5"
@@ -41,6 +44,8 @@ def _v5_table(table: TableSpec) -> TableSpec:
         return replace(table, create_sql=create_sql)
     if table.name == "material":
         return replace(table, indexes=tuple(item for item in table.indexes if item != _MATERIAL_BARCODE_V6_INDEX))
+    if table.name == "inventory_ledger":
+        return replace(table, indexes=tuple(item for item in table.indexes if item != _INVENTORY_LEDGER_JOB_V8_INDEX))
     return table
 
 

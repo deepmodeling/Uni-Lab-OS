@@ -56,8 +56,8 @@ def rpc(client, method, params=None, request_id=1):
 
 def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
-    assert len(OPERATIONS) == 132
-    assert len(protocol.tools) == 138
+    assert len(OPERATIONS) == 138
+    assert len(protocol.tools) == 144
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -100,7 +100,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 138
+        assert len(rpc(client, "tools/list")["tools"]) == 144
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})
@@ -214,20 +214,22 @@ def test_material_defaults_and_idempotency_use_real_http_authority(tmp_path, con
             "payload": {"name": "mcp-water"},
         }}))
         assert not created.isError, created
-        # body 是统一信封：data 为 MutationResult，其 data 才是模板
-        template_uuid = created.structuredContent["body"]["data"]["data"]["template_uuid"]
+        # 写入经统一库存命令入口：body 是 V1 裸命令结果，result 为 MutationResult，其 data 才是模板
+        assert created.structuredContent["body"]["status"] == "completed"
+        template_uuid = created.structuredContent["body"]["result"]["data"]["template_uuid"]
         arguments = {"body": {"command_uuid": "lot-command", "effect_key": "lot-effect", "operation": "inbound_inventory_lot",
                                "payload": {"template_uuid": template_uuid, "unit": "ul", "quantity": 500}}}
         result = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
         assert not result.isError, result
-        assert result.structuredContent["body"]["data"]["data"]["quantity_total"] == 500
+        assert result.structuredContent["body"]["result"]["data"]["quantity_total"] == 500
         replay = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert not replay.isError and replay.structuredContent["body"]["data"]["replayed"]
-        assert replay.structuredContent["body"]["data"]["data"]["quantity_total"] == 500
+        assert not replay.isError and replay.structuredContent["body"]["replayed"]
+        assert replay.structuredContent["body"]["result"]["data"]["quantity_total"] == 500
         arguments["body"]["payload"]["quantity"] = 600
         conflict = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        # 同幂等键不同请求：HTTP 200 + 物料冲突 4002，MCP 按 code != 0 标 isError
+        # 同幂等键不同请求：HTTP 200 + 拒绝结果（业务码 4002），MCP 按 code != 0 标 isError
         assert conflict.isError and conflict.structuredContent["http_status"] == 200
+        assert conflict.structuredContent["body"]["status"] == "rejected"
         assert conflict.structuredContent["body"]["code"] == 4002
     finally:
         service.close()

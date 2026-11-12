@@ -646,7 +646,7 @@ class ResourceContract:
             position = self._position_from_v1(values["relative_position"])
             try:
                 self.materials.put_position(
-                    new_mutation("put_material_position", payload=position.model_dump(mode="json", exclude_none=False)),
+                    new_mutation("put_position", payload=position.model_dump(mode="json", exclude_none=False)),
                     material_uuid, position,
                 )
             except MaterialNoChangeError:

@@ -24,7 +24,8 @@ def test_install_server_apis_mounts_all_database_namespaces(tmp_path) -> None:
 
         with TestClient(app) as client:
             error_of(client.get("/api/v1/runtime/jobs/missing"), 4001)
-            error_of(client.get("/api/v1/materials/instances/missing"), 6000)
+            error_of(client.get("/api/v1/materials/missing"), 6000)
+            error_of(client.get("/api/v1/inventory/instances/missing"), 6000)
             error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
             error_of(client.get("/api/v1/history/events/missing"), 4001)
     finally:

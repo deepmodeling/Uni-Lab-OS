@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 from fastapi import FastAPI
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_result, error_of, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.protocol.materials import InventoryMutation, MaterialDelete, MaterialTreeCreate
 from unilabos.server.api.materials import install_materials_api
@@ -25,14 +25,14 @@ def _mutation(operation: str, payload: dict) -> dict:
 
 
 async def _create(client: httpx.AsyncClient, name: str) -> str:
-    response = await client.post("/api/v1/materials/trees", json=_mutation(
+    response = await client.post("/api/v1/inventory/commands", json=_mutation(
         "create_material_tree", {"nodes": [{"client_ref": name, "identity": {
             "resource_id": name, "name": name, "resource_type": "container",
             "class_name": "Container", "template_name": "event-test-container",
             "config": {"type": "Container"},
         }}]},
     ))
-    return ok_data(response)["data"]["root_material_uuid"]
+    return command_result(response)["data"]["root_material_uuid"]
 
 
 class _Stream:
@@ -107,7 +107,7 @@ def test_first_connection_does_not_swallow_writes_after_headers(tmp_path):
 
             async def after_headers():
                 # 浏览器 onopen 后的 HTTP 校准与设备写入穿插，首连不能追平掉这次写入。
-                assert len(ok_data(await client.get("/api/v1/materials/instances"))) == 1
+                assert len(ok_data(await client.get("/api/v1/inventory/instances"))["instances"]) == 1
                 created.append(await _create(client, "during-open"))
 
             stream = await _Stream(app, on_headers=after_headers).start()
@@ -116,7 +116,7 @@ def test_first_connection_does_not_swallow_writes_after_headers(tmp_path):
                 assert row["operation"] == "create"
                 assert row["aggregate_uuid"] != old_uuid
                 assert all(event["sequence"] > baseline for event in stream.received)
-                assert len(ok_data(await client.get("/api/v1/materials/instances"))) == 2
+                assert len(ok_data(await client.get("/api/v1/inventory/instances"))["instances"]) == 2
             finally:
                 await stream.close()
 
@@ -139,15 +139,15 @@ def test_two_subscribers_receive_create_delete_and_replay(tmp_path):
                 uuid = await _create(client, "two-tabs")
                 first, second = await asyncio.gather(a.until(uuid), b.until(uuid))
                 assert first == second
-                ok_data(await client.get(f"/api/v1/materials/instances/{uuid}"))
+                ok_data(await client.get(f"/api/v1/inventory/instances/{uuid}"))
                 await a.close()
-                response = await client.request("DELETE", f"/api/v1/materials/instances/{uuid}",
+                response = await client.post("/api/v1/inventory/commands",
                     json=_mutation("delete_material", {"material_uuid": uuid}))
-                ok_data(response)
+                command_result(response)
                 deleted = await b.until(uuid)
                 assert deleted["operation"] == "delete"
                 # 删除后读取：物料不存在 6000
-                error_of(await client.get(f"/api/v1/materials/instances/{uuid}"), 6000)
+                error_of(await client.get(f"/api/v1/inventory/instances/{uuid}"), 6000)
                 replay = await _Stream(app, last_id=first["sequence"]).start()
                 try:
                     assert await replay.until(uuid) == deleted

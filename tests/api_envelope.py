@@ -33,4 +33,22 @@ def envelope(data: Any = None) -> dict[str, Any]:
     return {"code": 0} if data is None else {"code": 0, "data": data}
 
 
-__all__ = ["envelope", "error_of", "ok_data"]
+def command_result(response: Any) -> Any:
+    """断言 ``POST /api/v1/inventory/commands`` 已完成（V1 裸结果，不包信封）并返回 ``result``。"""
+
+    assert response.status_code == 200, (response.status_code, response.text[:500])
+    body = response.json()
+    assert isinstance(body, dict) and body.get("status") == "completed", body
+    return body["result"]
+
+
+def command_rejected(response: Any, code: int) -> dict[str, Any]:
+    """断言库存命令被拒绝（HTTP 200 + ``status=rejected``，业务码 ``code``）并返回结果体。"""
+
+    assert response.status_code == 200, (response.status_code, response.text[:500])
+    body = response.json()
+    assert isinstance(body, dict) and body.get("status") == "rejected" and body.get("code") == code, body
+    return body
+
+
+__all__ = ["command_rejected", "command_result", "envelope", "error_of", "ok_data"]

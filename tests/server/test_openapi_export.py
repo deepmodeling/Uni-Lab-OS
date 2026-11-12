@@ -32,7 +32,9 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     assert "GET /api/v1/scheduler/drain" in operations
     assert "POST /api/v1/scheduler/drain" in operations
     assert "POST /api/v1/scheduler/drain/resume" in operations
-    assert "GET /api/v1/materials/instances" in operations
+    assert "GET /api/v1/inventory/instances" in operations
+    assert "GET /api/v1/materials/{material_uuid}" in operations
+    assert "GET /api/v1/materials/instances" not in operations
     assert "GET /api/v1/workflow-tasks/{task_uuid}/node-runs" in operations
     assert "GET /api/v1/events" in operations  # SSE 在 OpenAPI 里是 GET
 

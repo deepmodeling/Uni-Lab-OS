@@ -268,6 +268,8 @@ _RAW_ALLOWED = {
     "/api/v1/edge/http-responses/{request_uuid}",
     # 物料 3D 模型资产是文件下载（V1 缺失时 HTTP 404）
     "/api/v1/material-models/{asset_path:path}",
+    # 库存命令入口按 V1 原样返回裸结果 {command_id, status, ...}（V1 控制台按 status 判断）
+    "/api/v1/inventory/commands",
 }
 
 
@@ -332,16 +334,16 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
         with TestClient(app) as client:
             missing = "5b1c2f0e-8a8b-4c39-9a51-0d4f3c9a7e21"
             error_of(client.get(f"/api/v1/workflow-tasks/{missing}"), 3002)
-            error_of(client.get("/api/v1/materials/instances/missing"), 6000)
+            error_of(client.get("/api/v1/inventory/instances/missing"), 6000)
             error_of(client.get("/api/v1/runtime/jobs/missing"), 4001)
             error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
             error_of(client.get("/api/v1/history/events/missing"), 4001)
             error_of(client.get("/api/v1/graphs/missing"), 4001)
             error_of(client.get("/api/v1/scheduler/drain"), 5001)
             error_of(client.post("/api/v1/workflows", json={}), 1000)
-            error_of(client.put("/api/v1/lab/layout", content=b"[", headers={"content-type": "application/json"}), 1000)
-            assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
-            assert ok_data(client.delete("/api/v1/lab/layout")) is None
+            error_of(client.put("/api/v1/lab/profile", content=b"[", headers={"content-type": "application/json"}), 1000)
+            assert ok_data(client.get("/api/v1/lab/profile"))["grid"]["revision"] == 0
+            assert ok_data(client.get("/api/v1/lab/layout"))["placements"] == []
             assert client.get("/api/v1/health").json()["status"] == "ok"
     finally:
         for closer in closers:

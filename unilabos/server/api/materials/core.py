@@ -1,9 +1,16 @@
-"""``materials.v1`` FastAPI 路由；HTTP 仅做协议校验。
+"""dev 独有的 ``/api/v1/materials/*`` 路由（V1 合同没有对应能力的部分）。
 
-响应走统一信封（``api/envelope.py``，资源口径）；物料服务的领域异常直接抛给信封路由，
-按 ``envelope.DOMAIN_ERRORS`` 换算业务码：物料 / 库位 / 模板不存在为 6000 / 6006 / 6001，
-其余不存在 4001；库位占用 6007、未结算动作占用 6011、其余冲突 4002；校验失败 1000；
-设备投影未收敛 5001。
+V1 已覆盖的能力改由 V1 路径提供，dev 旧路径删除（不保留双路径）：
+
+- 全部 ``materials.v1`` 幂等变更（模板、批次入库 / 盘点 / 校正、预留与结算、建树、实例化、
+  改标识 / 位置 / 数据、删除、移动、转运、快照应用、增量）→ ``POST /api/v1/inventory/commands``；
+- 读：模板 → ``/api/v1/inventory/templates``、批次 → ``/inventory/lots``、预留 → ``/inventory/reservations``、
+  物料聚合 → ``/inventory/instances``、拓扑边 → ``/inventory/relations``、账本 → ``/inventory/ledger``；
+  V1 Backend DTO 的模板 / 物料见 ``/api/v1/resource-templates``、``/api/v1/materials``。
+
+这里保留：按 Job 读预留、registry 资源类目录、按 resource_id 读物料、物料树快照、
+库存预检、拓扑边写入、快照比对、设备通知、账本确认、物料 SSE、物理动作执行（``/executions``）。
+响应走统一信封（资源口径），领域异常按 ``envelope.DOMAIN_ERRORS`` 换算业务码。
 """
 
 from __future__ import annotations
@@ -19,26 +26,7 @@ from unilabos.server.api.envelope import RESOURCE, envelope_router
 
 from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 from unilabos.server.lifecycle import shutting_down, sleep_unless_shutting_down
-from unilabos.protocol.materials import InventoryMutation
-from unilabos.protocol.materials import (
-    InventoryRequirement,
-    InventoryStocktake,
-    InventoryLotInbound,
-    InventoryReservationCreate,
-    InventoryReservationTransition,
-    InventoryTaskReservationCreate,
-    MaterialDataWrite,
-    MaterialDelete,
-    MaterialDelta,
-    MaterialInstantiate,
-    MaterialMove,
-    MaterialPatch,
-    MaterialPosition,
-    MaterialSnapshot,
-    MaterialTreeCreate,
-    MaterialTransfer,
-    ResourceTemplateWrite,
-)
+from unilabos.protocol.materials import InventoryRequirement, MaterialSnapshot
 from unilabos.server.services.materials import MaterialsService
 
 
@@ -75,13 +63,6 @@ class MaterialLinkUpsert(ServerObject):
     extra: dict = Field(default_factory=dict)
 
 
-def _payload(mutation: InventoryMutation, model: type):
-    try:
-        return model.model_validate(mutation.payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
 def _call(function, *args, **kwargs):
     """调用物料服务；领域异常原样上抛，由信封路由按 ``DOMAIN_ERRORS`` 换算业务码。"""
 
@@ -93,177 +74,13 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
     from .execution import create_material_execution_router
     router.include_router(create_material_execution_router(service))
 
-    @router.put("/templates/{template_uuid}")
-    async def put_template(template_uuid: str, mutation: InventoryMutation):
-        value = _payload(mutation, ResourceTemplateWrite)
-        if value.template_uuid != template_uuid:
-            raise HTTPException(status_code=422, detail="template UUID path mismatch")
-        return _call(service.put_template, mutation, value)
-
-    @router.post("/templates")
-    async def create_template(mutation: InventoryMutation):
-        value = _payload(mutation, ResourceTemplateWrite)
-        if value.template_uuid is not None:
-            raise HTTPException(
-                status_code=422,
-                detail="POST template lets the materials authority allocate UUID",
-            )
-        return _call(service.put_template, mutation, value)
-
-    @router.get("/templates")
-    async def list_templates(
-        name: Optional[str] = Query(
-            default=None,
-            description="按模板 name 精确筛选：存在性检查 / 按名取 uuid 只回 0 或 1 条。",
-        ),
-        include_definition: bool = Query(
-            default=False,
-            description=(
-                "默认只返回名称 / uuid / 类型 / 分类 / 位点 / 版本 / definition_hash 等"
-                "目录字段（前端选择器、存在性检查、变更判定够用）；true 时附带 registry "
-                "全量 definition（全注册表可达十几 MB），只在确实要读 definition 正文时开。"
-            ),
-        ),
-    ):
-        # 筛选与目录模式都在 SQL 层完成：前端每隔几秒轮询一次，不能每次都反序列化
-        # 并校验十几 MB 的 definition 再丢掉
-        return _call(
-            service.list_templates, name=name, include_definition=include_definition
-        )
-
-    @router.get("/templates/{template_uuid}")
-    async def get_template(template_uuid: str):
-        return _call(service.get_template, template_uuid)
-
-    @router.delete("/templates/{template_uuid}")
-    async def delete_template(template_uuid: str, mutation: InventoryMutation):
-        expected = {"template_uuid": template_uuid}
-        if mutation.payload and mutation.payload != expected:
-            raise HTTPException(status_code=422, detail="template UUID path mismatch")
-        mutation = mutation.model_copy(update={"payload": expected})
-        return _call(service.delete_template, mutation, template_uuid)
-
-    @router.post("/lots/inbound")
-    async def inbound_inventory_lot(mutation: InventoryMutation):
-        return _call(
-            service.inbound_inventory_lot,
-            mutation,
-            _payload(mutation, InventoryLotInbound),
-        )
-
-    @router.get("/lots")
-    async def list_inventory_lots(
-        template_uuid: str | None = Query(default=None),
-        unit: str | None = Query(default=None),
-        include_quarantined: bool = Query(default=False),
-    ):
-        return _call(
-            service.list_inventory_lots,
-            template_uuid=template_uuid,
-            unit=unit,
-            include_quarantined=include_quarantined,
-        )
-
-    @router.post("/lots/{lot_uuid}/stocktake")
-    def stocktake_inventory_lot(lot_uuid: str, mutation: InventoryMutation):
-        value = _payload(mutation, InventoryStocktake)
-        if value.lot_uuid != lot_uuid:
-            raise HTTPException(status_code=422, detail="盘点批次与路径不一致")
-        return _call(service.stocktake_inventory_lot, mutation, value)
-
-    @router.get("/lots/{lot_uuid}")
-    async def get_inventory_lot(lot_uuid: str):
-        return _call(service.get_inventory_lot, lot_uuid)
-
     @router.post("/inventory/preview")
     def preview_inventory(body: InventoryPreviewRequest):
         return _call(service.preview_inventory, body.requirements)
 
-    @router.post("/reservations")
-    async def reserve_inventory(mutation: InventoryMutation):
-        return _call(
-            service.reserve_inventory,
-            mutation,
-            _payload(mutation, InventoryReservationCreate),
-        )
-
-    @router.post("/reservations/batch")
-    async def reserve_task_inventory(mutation: InventoryMutation):
-        return _call(
-            service.reserve_task_inventory,
-            mutation,
-            _payload(mutation, InventoryTaskReservationCreate),
-        )
-
-    @router.get("/reservations")
-    async def list_inventory_reservations(
-        task_uuid: str | None = Query(default=None),
-        status: str | None = Query(default=None),
-    ):
-        return _call(
-            service.list_inventory_reservations,
-            task_uuid=task_uuid,
-            status=status,
-        )
-
     @router.get("/reservations/by-job/{job_uuid}")
     async def get_inventory_reservation_by_job(job_uuid: str):
         return _call(service.get_inventory_reservation_by_job, job_uuid)
-
-    @router.get("/reservations/{reservation_uuid}")
-    async def get_inventory_reservation(reservation_uuid: str):
-        return _call(service.get_inventory_reservation, reservation_uuid)
-
-    def reservation_transition(
-        reservation_uuid: str,
-        mutation: InventoryMutation,
-        method,
-    ):
-        value = _payload(mutation, InventoryReservationTransition)
-        if value.reservation_uuid != reservation_uuid:
-            raise HTTPException(
-                status_code=422,
-                detail="inventory reservation UUID path mismatch",
-            )
-        return _call(method, mutation, value)
-
-    @router.post("/reservations/{reservation_uuid}/consume")
-    async def consume_inventory_reservation(
-        reservation_uuid: str, mutation: InventoryMutation
-    ):
-        return reservation_transition(
-            reservation_uuid,
-            mutation,
-            service.consume_inventory_reservation,
-        )
-
-    @router.post("/reservations/{reservation_uuid}/release")
-    async def release_inventory_reservation(
-        reservation_uuid: str, mutation: InventoryMutation
-    ):
-        return reservation_transition(
-            reservation_uuid,
-            mutation,
-            service.release_inventory_reservation,
-        )
-
-    @router.post("/reservations/{reservation_uuid}/quarantine")
-    async def quarantine_inventory_reservation(
-        reservation_uuid: str, mutation: InventoryMutation
-    ):
-        return reservation_transition(
-            reservation_uuid,
-            mutation,
-            service.quarantine_inventory_reservation,
-        )
-
-    @router.post("/trees")
-    async def create_tree(mutation: InventoryMutation):
-        return _call(
-            service.create_tree,
-            mutation,
-            _payload(mutation, MaterialTreeCreate),
-        )
 
     @router.get("/registry-classes")
     def list_registry_classes():
@@ -292,136 +109,13 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             )
         return sorted(items, key=lambda item: item["registry_class"])
 
-    @router.post("/instantiate")
-    def instantiate_material(mutation: InventoryMutation):
-        """物料出库/实例化：按 registry 资源类实例化草稿 → 权威登记（权威发 uuid）。
-
-        微前端出库入口——前端只提供「资源类 + 实例名」，实例化发生在微后端
-        （Host 进程内已加载 registry/PLR）。产物以 ResourceSlot 引用 {id, uuid}
-        写回动作参数（unilabos_deduct_resource 选择器），再由 apply_deduct_resource
-        等动作消费。（def 端点走线程池，registry 实例化为阻塞调用。）
-        """
-        value = _payload(mutation, MaterialInstantiate)
-        from pylabrobot.resources.resource import Resource as ResourcePLR
-
-        from unilabos.resources.graphio import initialize_resource
-        from unilabos.resources.adapters.plr_materials import plr_resources_to_create
-
-        draft = initialize_resource(
-            {"name": value.name, "class": value.registry_class},
-            resource_type=ResourcePLR,
-        )
-        if not isinstance(draft, ResourcePLR):
-            raise HTTPException(
-                status_code=422,
-                detail=f"registry 资源类不可实例化: {value.registry_class}",
-            )
-        # 底层落库统一走 create_material_tree；effect_key 保留调用方原值维持幂等。
-        # payload 重绑为展开后的树（service 校验 payload 与 typed body 一致）。
-        tree_create = plr_resources_to_create([draft])
-        if value.barcode:
-            # 条码只落在出库产物的根节点（子节点如 tip spot 不带条码）。
-            for node in tree_create.nodes:
-                if node.parent_client_ref is None:
-                    node.identity.barcode = value.barcode
-                    break
-        create_mutation = mutation.model_copy(
-            update={
-                "operation": "create_material_tree",
-                "payload": tree_create.model_dump(mode="json", exclude_none=False),
-            }
-        )
-        return _call(service.create_tree, create_mutation, tree_create)
-
-    @router.get("/instances")
-    async def list_materials(
-        roots_only: bool = Query(default=False),
-        name: Optional[str] = Query(default=None, description="按名称精确搜索；未命中返回 []"),
-    ):
-        if name is not None:
-            return _call(service.search_materials, name)
-        return _call(service.list_materials, roots_only=roots_only)
-
     @router.get("/instances/by-resource-id/{resource_id:path}")
     async def get_material_by_resource_id(resource_id: str):
         return _call(service.get_material_by_resource_id, resource_id)
 
-    @router.get("/instances/{material_uuid}")
-    async def get_material(material_uuid: str):
-        return _call(service.get_material, material_uuid)
-
     @router.get("/instances/{material_uuid}/tree")
     async def get_tree(material_uuid: str):
         return _call(service.get_tree, material_uuid)
-
-    @router.patch("/instances/{material_uuid}")
-    async def patch_material(material_uuid: str, mutation: InventoryMutation):
-        return _call(
-            service.patch_material,
-            mutation,
-            material_uuid,
-            _payload(mutation, MaterialPatch),
-        )
-
-    @router.put("/instances/{material_uuid}/position")
-    async def put_position(material_uuid: str, mutation: InventoryMutation):
-        return _call(
-            service.put_position,
-            mutation,
-            material_uuid,
-            _payload(mutation, MaterialPosition),
-        )
-
-    @router.put("/instances/{material_uuid}/data")
-    async def put_data(material_uuid: str, mutation: InventoryMutation):
-        return _call(
-            service.put_data,
-            mutation,
-            material_uuid,
-            _payload(mutation, MaterialDataWrite),
-        )
-
-    @router.delete("/instances/{material_uuid}")
-    async def delete_material(material_uuid: str, mutation: InventoryMutation):
-        value = _payload(mutation, MaterialDelete)
-        if value.material_uuid != material_uuid:
-            raise HTTPException(status_code=422, detail="material UUID path mismatch")
-        return _call(service.delete_material, mutation, value)
-
-    @router.post("/move")
-    async def move_material(mutation: InventoryMutation):
-        return _call(
-            service.move_material,
-            mutation,
-            _payload(mutation, MaterialMove),
-        )
-
-    @router.post("/transfer")
-    def transfer_material(mutation: InventoryMutation):
-        """transfer 提交权威位置后同步等设备完成 unload/load 投影；设备在此期间会回头
-        读权威（tree.get），所以必须走线程池（def），不能占住事件循环。"""
-
-        return _call(
-            service.transfer_material,
-            mutation,
-            _payload(mutation, MaterialTransfer),
-        )
-
-    @router.get("/links")
-    async def list_links(
-        material_uuid: str = Query(default=""),
-        source_material_uuid: str = Query(default=""),
-        target_material_uuid: str = Query(default=""),
-        link_type: Optional[str] = Query(default=None),
-    ):
-        """拓扑边查询：物料/设备节点间的连接关系（node-link 的 link 行）。"""
-        return _call(
-            service.list_links,
-            material_uuid=material_uuid or None,
-            source_material_uuid=source_material_uuid or None,
-            target_material_uuid=target_material_uuid or None,
-            link_type=link_type,
-        )
 
     @router.post("/links")
     async def upsert_link(value: MaterialLinkUpsert):
@@ -447,23 +141,6 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
     async def compare_snapshot(snapshot: MaterialSnapshot):
         return _call(service.compare_snapshot, snapshot)
 
-    @router.post("/snapshots/apply")
-    async def apply_snapshot(mutation: InventoryMutation):
-        return _call(
-            service.apply_snapshot,
-            mutation,
-            _payload(mutation, MaterialSnapshot),
-        )
-
-    @router.post("/snapshots/delta")
-    async def apply_delta(mutation: InventoryMutation):
-        """设备增量上报：只带变了的节点 / 段，权威按段合并（乐观锁在节点内）。"""
-        return _call(
-            service.apply_delta,
-            mutation,
-            _payload(mutation, MaterialDelta),
-        )
-
     @router.post("/notify-device", response_model=ResourceTreeNotifyResult)
     def notify_device(value: ResourceTreeNotify):
         """把权威已完成的物料变更分发到目标设备（本进程直调 / 跨机 HostLink）。
@@ -479,13 +156,6 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             value.device_id, value.action, list(value.resource_uuids)
         )
         return ResourceTreeNotifyResult(notified=notified)
-
-    @router.get("/changes")
-    async def changes(
-        after_sequence: int = Query(default=0, ge=0),
-        limit: int = Query(default=100, ge=1, le=1000),
-    ):
-        return service.changes(after_sequence=after_sequence, limit=limit)
 
     @router.post("/changes/ack")
     async def acknowledge_changes(value: LedgerAcknowledge):
@@ -560,12 +230,14 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
 
 def install_materials_api(app: FastAPI, service: MaterialsService) -> None:
     """dev 物料路由在前，V1 资源 / 内容物合同在后：V1 的 ``/materials/{material_uuid}``
-    不能抢走 dev 的字面量路由（``/materials/lots``、``/materials/changes`` …）。"""
+    不能抢走 dev 的字面量路由（``/materials/registry-classes``、``/materials/events`` …）。"""
 
     from unilabos.server.api.materials.contents import create_v1_content_router
+    from unilabos.server.api.materials.inventory import create_inventory_router
     from unilabos.server.api.materials.resources import create_v1_resource_router
 
     app.include_router(create_materials_router(service))
+    app.include_router(create_inventory_router(service))
     app.include_router(create_v1_resource_router(service))
     app.include_router(create_v1_content_router(service))
 

@@ -1,8 +1,8 @@
 """V1.0 资源合同路由：资源模板、物料、库位、物料状态历史、物料外形与模型资产。
 
 路径与 DTO 以 V1（``app/scheduler/inventory/backend_api.py``）为准，统一信封（资源口径）。
-``/materials/{material_uuid}`` 等 UUID 路由必须在 dev 的字面量路由（``/materials/lots``、
-``/materials/changes`` …）之后挂载：:func:`install_v1_resource_api` 由 ``install_materials_api``
+``/materials/{material_uuid}`` 等 UUID 路由必须在 dev 的字面量路由（``/materials/events``、
+``/materials/executions`` …）之后挂载：:func:`install_v1_resource_api` 由 ``install_materials_api``
 在 dev 路由之后调用。
 """
 

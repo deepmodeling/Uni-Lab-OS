@@ -146,8 +146,10 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
 
 
 def test_literal_dev_routes_are_not_captured_by_material_uuid_route(client) -> None:
-    assert isinstance(ok_data(client.get("/api/v1/materials/changes")), list)
-    assert isinstance(ok_data(client.get("/api/v1/materials/lots")), list)
+    # dev 独有的字面量路由先于 V1 的 /materials/{material_uuid} 注册
+    assert isinstance(ok_data(client.get("/api/v1/materials/registry-classes")), list)
+    assert ok_data(client.get("/api/v1/materials/executions")) == []
+    error_of(client.get("/api/v1/materials/reservations/by-job/none"), 4001)
 
 
 def test_material_states_append_list_latest(client) -> None:

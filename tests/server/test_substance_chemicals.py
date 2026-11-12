@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_rejected, command_result, error_of, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import (
@@ -164,12 +164,12 @@ def test_unknown_or_deleted_chemical_is_rejected_as_invalid(stack) -> None:
     install_materials_api(app, service)
     request = bind_payload(_mutation("put_data"), body)
     with TestClient(app) as client:
-        response = client.put(
-            f"/api/v1/materials/instances/{material.material.material_uuid}/data",
-            json=request.model_dump(mode="json"),
+        response = client.post(
+            "/api/v1/inventory/commands",
+            json={**request.model_dump(mode="json"), "target_uuid": material.material.material_uuid},
         )
-    # 引用已删除化学品：物料校验失败 1000，说明在 error.msg
-    assert "不存在或已删除" in error_of(response, 1000)["msg"]
+    # 引用已删除化学品：物料校验失败 1000，说明在命令拒绝结果的 error
+    assert "不存在或已删除" in command_rejected(response, 1000)["error"]
 
 
 def test_existing_link_survives_chemical_deletion(stack) -> None:
@@ -315,7 +315,7 @@ def test_tree_read_attaches_summaries_in_one_lookup(stack, monkeypatch) -> None:
     install_materials_api(app, service)
     tube_b = next(node for node in read.nodes if node.material.name == "tube-b")
     with TestClient(app) as client:
-        body = ok_data(client.get(f"/api/v1/materials/instances/{tube_b.material.material_uuid}"))
+        body = ok_data(client.get(f"/api/v1/inventory/instances/{tube_b.material.material_uuid}"))
     substance = body["data"]["substances"][0]
     assert substance["chemical_uuid"] == water["chemical_uuid"]
     assert set(substance["chemical"]) == SUMMARY_KEYS and substance["chemical"]["cas"] == "7732-18-5"
@@ -442,13 +442,13 @@ def test_payload_forms_pass_the_completeness_check_and_replay(stack, variant) ->
     app = FastAPI()
     install_materials_api(app, service)
     with TestClient(app) as client:
-        url = f"/api/v1/materials/instances/{FIXED_MATERIAL_UUID}/data"
-        first = client.put(url, json=_fixed_put_mutation(payload))
-        first_result = ok_data(first)
+        url = "/api/v1/inventory/commands"
+        first = client.post(url, json={**_fixed_put_mutation(payload), "target_uuid": FIXED_MATERIAL_UUID})
+        first_result = command_result(first)
         assert first_result["replayed"] is False
         assert [item.get("chemical_uuid") for item in first_result["data"]["data"]["substances"]] == [expected, None]
-        replay = client.put(url, json=_fixed_put_mutation(payload))
-        assert ok_data(replay)["replayed"] is True
+        replay = client.post(url, json={**_fixed_put_mutation(payload), "target_uuid": FIXED_MATERIAL_UUID})
+        assert command_result(replay)["replayed"] is True
 
     effect = service.get_effect("put-fixed", "put_data:put-fixed")
     if variant == "old_client":

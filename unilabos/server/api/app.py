@@ -10,13 +10,14 @@ import threading
 import webbrowser
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.config.control_token import TOKEN_HEADER, authority_token, token_accepted
+from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -107,7 +108,16 @@ class ConfiguredCORSMiddleware:
                 allow_origins=cors_allow_origins(),
                 allow_credentials=True,
                 allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-                allow_headers=["Authorization", "Content-Type", "Accept", "Last-Event-ID", TOKEN_HEADER],
+                # Authorization 留给 V1 工站 api_key；控制面 token 只认 X-UniLab-Token
+                allow_headers=[
+                    "Authorization",
+                    "Content-Type",
+                    "Accept",
+                    "Last-Event-ID",
+                    "Idempotency-Key",
+                    "X-Workflow-Filename",
+                    TOKEN_HEADER,
+                ],
             )
         await self._inner(scope, receive, send)
 
@@ -119,11 +129,12 @@ TOKEN_EXEMPT_PATHS = ("/mcp",)
 
 
 class ControlTokenMiddleware:
-    """管理 API 的写请求必须出示控制面 token（``X-UniLab-Token`` 或 ``Authorization: Bearer``）。
+    """管理 API 的写请求必须在请求头 ``X-UniLab-Token`` 出示控制面 token。
 
     CORS 默认放行所有来源，任何网页都能向本机后端发请求；没有 token 时，随便打开的一个网页就能
     创建任务、启动设备。token 见 ``unilabos/config/control_token.py``；本进程没有 token（单元测试、
-    嵌入式装配）时不检查。被拒的请求返回 HTTP 401 + ``{"code": 4001, ...}``，经外层 CORS 中间件
+    嵌入式装配）时不检查。``Authorization: Bearer`` 留给 V1 工站调用的 api_key，这里不读取。
+    被拒的请求返回 HTTP 401 + 信封 ``{"code": 1002, "error": {"msg": ...}}``，经外层 CORS 中间件
     补上跨域头，浏览器能读到原因。
     """
 
@@ -143,13 +154,14 @@ class ControlTokenMiddleware:
 
             if not token_accepted(Headers(scope=scope)):
                 message = (
-                    "写操作需要控制面 token：请求头 X-UniLab-Token 或 Authorization: Bearer <token>。"
+                    f"写操作需要控制面 token：请求头 {TOKEN_HEADER}: <token>。"
                     "在运行 unilab 的机器上执行 `unilab token` 查看"
                 )
-                response = JSONResponse(
-                    status_code=401,
-                    content={"code": 4001, "error": {"msg": message}, "detail": "control token missing or invalid"},
-                    headers={"WWW-Authenticate": 'Bearer realm="unilab"'},
+                response = error_response(
+                    UNAUTHORIZED,
+                    message,
+                    http_status=401,
+                    headers={"WWW-Authenticate": f'{TOKEN_HEADER} realm="unilab"'},
                 )
                 await response(scope, receive, send)
                 return
@@ -184,7 +196,8 @@ async def reset_maintenance_gate(request: Request, call_next):
     controller = get_reset_controller()
     if controller is not None and controller.pending and request.method != "OPTIONS":
         if request.url.path not in ("/api/v1/reset", "/api/v1/health"):
-            return JSONResponse({"detail": "正在全量重置，停止接受业务请求"}, status_code=503)
+            # 进程级维护闸门（不是某个路由的业务失败）：保留 HTTP 503，正文仍是信封 5001
+            return error_response(SERVICE_UNAVAILABLE, "正在全量重置，停止接受业务请求", http_status=503)
     return await call_next(request)
 
 

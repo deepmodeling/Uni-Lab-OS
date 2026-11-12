@@ -79,7 +79,7 @@ tests:
       pip_check: true
   - script:
       # ROS 启动按应用约定先修复 DLL，首次修补后必须在新进程验证。
-      - python -c "import subprocess, sys; code = 'from unilabos.app.utils import patch_rclpy_dll_windows; patch_rclpy_dll_windows(); import rclpy; from rosidl_generator_py import import_type_support_impl; import_type_support_impl.import_type_support(\'unilabos_msgs\'); rclpy.init(); node = rclpy.create_node(\'conda_full_test\'); node.destroy_node(); rclpy.shutdown()'; process = subprocess.run([sys.executable, '-c', code]); assert process.returncode in (0, 75), process.returncode; process = subprocess.run([sys.executable, '-c', code]) if process.returncode == 75 else process; assert process.returncode == 0, process.returncode"
+      - python -m unilabos.backend.ros2.conda_smoke
       # 构建器重定向 USERPROFILE，但不会创建 Windows 已知文件夹；不触碰真实用户目录。
       - if: win
         then:

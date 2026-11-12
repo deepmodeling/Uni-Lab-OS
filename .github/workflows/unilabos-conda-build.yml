@@ -9,6 +9,9 @@ on:
       - 'scripts/build_conda_release.py'
       - '.github/workflows/unilabos-conda-build.yml'
       - 'setup.py'
+      - 'unilabos/utils/requirements.txt'
+      - 'unilabos_msgs/**'
+      - 'unilabos/backend/ros2/conda_smoke.py'
   # 默认发行链与 ROS msgs 脱钩；dev CI 仅构建验证，正式 Release 才自动发布。
   workflow_run:
     workflows: ["CI Check"]
@@ -96,6 +99,8 @@ jobs:
           - os: windows-2022
             platform: win-64
     runs-on: ${{ matrix.os }}
+    # 正常最慢的 macOS Intel 约 30 分钟；挂起的 ROS 冒烟测试由脚本 180 秒超时兜底。
+    timeout-minutes: 120
     defaults:
       run:
         shell: bash -l {0}

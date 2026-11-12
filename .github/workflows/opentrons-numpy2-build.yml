@@ -3,7 +3,7 @@ name: Opentrons NumPy 2 Build
 on:
   push:
     branches:
-    - feat/python314-jazzy
+    - dev
     tags:
     - opentrons-numpy2-v*
     paths:

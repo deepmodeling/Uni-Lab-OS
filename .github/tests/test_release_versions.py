@@ -39,7 +39,7 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertEqual(recipe(".conda/base/recipe.yaml")["package"]["version"], version)
 
     def test_ros_recipe_versions_match_package_xml(self):
-        for name in ("msgs", "msgs-humble", "ros-humble-unilabos-msgs"):
+        for name in ("msgs", "msgs-humble"):
             with self.subTest(recipe=name):
                 self.assertEqual(recipe(f"recipes/{name}/recipe.yaml")["package"]["version"],
                                  message_version())

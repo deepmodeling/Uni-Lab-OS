@@ -30,7 +30,7 @@ requirements:
     - ros-humble-unilabos-msgs ==0.12.2
 tests:
   - script:
-    - python -c "import subprocess, sys; code = 'from unilabos.app.utils import patch_rclpy_dll_windows; patch_rclpy_dll_windows(); import rclpy; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support(\'unilabos_msgs\'); rclpy.init(); node = rclpy.create_node(\'conda_cp314_test\'); publisher = node.create_publisher(Resource, \'conda_cp314_resource\', 1); node.destroy_node(); rclpy.shutdown()'; process = subprocess.run([sys.executable, '-c', code]); assert process.returncode in (0, 75), process.returncode; process = subprocess.run([sys.executable, '-c', code]) if process.returncode == 75 else process; assert process.returncode == 0, process.returncode"
+    - python -m unilabos.backend.ros2.conda_smoke
 about:
   license: GPL-3.0-only
   description: Optional UniLabOS ROS 2 humble transport (CPython 3.14)

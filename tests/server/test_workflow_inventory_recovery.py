@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.protocol.materials import InventoryRequirement, InventoryReservationCreate, InventoryReservationTransition
 from unilabos.registry.workflows import upsert_workflow
@@ -310,15 +311,13 @@ def test_report_endpoint_exposes_preserved_and_failed_reconciliation(stack):
     scheduler = BackendScheduler(stack.workflow, _ListenerOnlyBackend(), materials_gateway=stack.client)
     try:
         with TestClient(create_backend_app(lambda: scheduler, lambda: None)) as client:
-            response = client.get("/api/v1/scheduler/inventory-recovery")
-            assert response.status_code == 200
-            assert response.json()["held"][0]["job_uuid"] == job
-            assert response.json()["held"][0]["task_uuid"] == task['uuid']
+            report = ok_data(client.get("/api/v1/scheduler/inventory-recovery"))
+            assert report["held"][0]["job_uuid"] == job
+            assert report["held"][0]["task_uuid"] == task['uuid']
             # 前端重复请求对账不代表确认设备完成，不得改变未核实的库存。
             for _ in range(2):
-                retry = client.post('/api/v1/scheduler/inventory-recovery/reconcile')
-                assert retry.status_code == 200
-                assert retry.json()['held'][0]['job_uuid'] == job
+                retry = ok_data(client.post('/api/v1/scheduler/inventory-recovery/reconcile'))
+                assert retry['held'][0]['job_uuid'] == job
                 assert stack.quantities() == (20, 15, 5)
     finally:
         scheduler.stop()

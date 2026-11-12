@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 import pytest
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.registry.workflows import upsert_workflow
 from unilabos.server.backend.scheduler.service import BackendScheduler
 from tests.server.test_workflow_inventory_recovery import Stack
@@ -286,12 +287,12 @@ def test_host_pending_physical_error_api_requires_reason_and_disallows_retry(tmp
     )
     try:
         with TestClient(create_backend_app(lambda: scheduler, lambda: host)) as client:
-            report = client.get("/api/v1/error-decisions").json()["items"][0]
+            report = ok_data(client.get("/api/v1/error-decisions"))["items"][0]
             assert report["category"] == "physical_settlement"
             assert report["material_execution"]["request"]["aliquot"]["source_material_uuid"] == source
             assert {item["action"] for item in report["options"]} == {"abort", "operator_intervention"}
             for decision in ({"action": "retry", "reason": "重试"}, {"action": "abort"}):
-                assert client.post("/api/v1/error-decisions/host-pending", json=decision).status_code == 409
+                error_of(client.post("/api/v1/error-decisions/host-pending", json=decision), 3003)
             assert len(executor.dispatched) == 1
     finally:
         scheduler.stop()

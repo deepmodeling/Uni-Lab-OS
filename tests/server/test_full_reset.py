@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.server.api.runtime.diagnostics import create_backend_router
@@ -85,13 +86,13 @@ def test_http_preview_confirm_and_shutdown(tmp_path, monkeypatch):
     app.include_router(create_backend_router(lambda: None, lambda: None))
     try:
         with TestClient(app) as client:
-            preview = client.get("/api/v1/reset").json()
+            preview = ok_data(client.get("/api/v1/reset"))
             assert preview["supported"]
-            assert client.post("/api/v1/reset", json={"confirmation_token": "x", "confirmation": "清空全部数据"}).status_code == 409
+            # 确认令牌不对：状态冲突 3003（HTTP 200 信封），不停机
+            error_of(client.post("/api/v1/reset", json={"confirmation_token": "x", "confirmation": "清空全部数据"}), 3003)
             assert not stopped
             reply = client.post("/api/v1/reset", json={"confirmation_token": preview["confirmation_token"], "confirmation": "清空全部数据"})
-            assert reply.status_code == 202
-            assert reply.json()["pending"]
+            assert ok_data(reply, status=202)["pending"]
             assert stopped == [True]
             assert not reset.backup.exists()
     finally:

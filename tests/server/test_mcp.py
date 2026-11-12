@@ -214,18 +214,21 @@ def test_material_defaults_and_idempotency_use_real_http_authority(tmp_path, con
             "payload": {"name": "mcp-water"},
         }}))
         assert not created.isError, created
-        template_uuid = created.structuredContent["body"]["data"]["template_uuid"]
+        # body 是统一信封：data 为 MutationResult，其 data 才是模板
+        template_uuid = created.structuredContent["body"]["data"]["data"]["template_uuid"]
         arguments = {"body": {"command_uuid": "lot-command", "effect_key": "lot-effect", "operation": "inbound_inventory_lot",
                                "payload": {"template_uuid": template_uuid, "unit": "ul", "quantity": 500}}}
         result = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
         assert not result.isError, result
-        assert result.structuredContent["body"]["data"]["quantity_total"] == 500
+        assert result.structuredContent["body"]["data"]["data"]["quantity_total"] == 500
         replay = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert not replay.isError and replay.structuredContent["body"]["replayed"]
-        assert replay.structuredContent["body"]["data"]["quantity_total"] == 500
+        assert not replay.isError and replay.structuredContent["body"]["data"]["replayed"]
+        assert replay.structuredContent["body"]["data"]["data"]["quantity_total"] == 500
         arguments["body"]["payload"]["quantity"] = 600
         conflict = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert conflict.isError and conflict.structuredContent["http_status"] == 409
+        # 同幂等键不同请求：HTTP 200 + 物料冲突 4002，MCP 按 code != 0 标 isError
+        assert conflict.isError and conflict.structuredContent["http_status"] == 200
+        assert conflict.structuredContent["body"]["code"] == 4002
     finally:
         service.close()
 

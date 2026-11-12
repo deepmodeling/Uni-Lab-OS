@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.history import install_history_api
 from unilabos.client.history import (
     HTTPHistoryClient,
@@ -156,7 +157,7 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
                     actor_uuid="operator-1",
                 ).model_dump(mode="json"),
             )
-            assert mismatch.status_code == 422
+            error_of(mismatch, 1000)
 
             body = ManualResultReplacement(
                 supersedes_event_uuid="result-1",
@@ -175,7 +176,7 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
                 "/api/v1/history/events/result-1/replacement",
                 json={**body, "event_uuid": "fork"},
             )
-            assert conflict.status_code == 409
+            error_of(conflict, 3003)
     finally:
         service.close()
 

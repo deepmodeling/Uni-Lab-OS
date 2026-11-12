@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import ok_data
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
@@ -180,15 +181,15 @@ def test_scheduler_drain_finishes_current_action_and_resumes_waiting_work(stack)
     task = create_task(client, devices=["device-a", "device-b"])
     wait_for(lambda: len(executor.dispatched) == 1)
     with TestClient(create_backend_app(lambda: scheduler, lambda: executor)) as management:
-        status = management.post("/api/v1/scheduler/drain", json={}).json()
+        status = ok_data(management.post("/api/v1/scheduler/drain", json={}))
         assert status["phase"] == "draining"
         assert status["active_device_job_ids"] == [executor.dispatched[0]["job_id"]]
         executor.finish(0)
         wait_for(lambda: bool(scheduler._waiting_resource_jobs))
-        assert management.get("/api/v1/scheduler/drain").json()["phase"] == "drained"
+        assert ok_data(management.get("/api/v1/scheduler/drain"))["phase"] == "drained"
         assert len(executor.dispatched) == 1
         assert task_of(service, task)["status"] == "running"
-        management.post("/api/v1/scheduler/drain/resume", json={})
+        ok_data(management.post("/api/v1/scheduler/drain/resume", json={}))
         wait_for(lambda: len(executor.dispatched) == 2)
         executor.finish(1)
         wait_for(lambda: task_of(service, task)["status"] == "succeeded")
@@ -210,13 +211,13 @@ def test_drain_observes_job_before_runtime_accepts_dispatch(stack, monkeypatch):
         assert entered.wait(timeout=5)
         assert executor.dispatched == []
         with TestClient(create_backend_app(lambda: scheduler, lambda: executor)) as management:
-            status = management.post("/api/v1/scheduler/drain", json={}).json()
+            status = ok_data(management.post("/api/v1/scheduler/drain", json={}))
             assert status["phase"] == "draining"
             assert status["active_device_job_count"] == 1
             release.set()
             wait_for(lambda: len(executor.dispatched) == 1)
             executor.finish(0)
             wait_for(lambda: task_of(service, task)["status"] == "succeeded")
-            assert management.get("/api/v1/scheduler/drain").json()["phase"] == "drained"
+            assert ok_data(management.get("/api/v1/scheduler/drain"))["phase"] == "drained"
     finally:
         release.set()

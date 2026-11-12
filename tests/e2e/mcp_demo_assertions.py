@@ -10,6 +10,12 @@ from pathlib import Path
 from tests.e2e.readme_demos import api_request
 
 
+def _body_data(body):
+    """MCP 回包 body：信封取 ``data``，其他形状原样返回。"""
+
+    return body.get("data", body) if isinstance(body, dict) and "code" in body else body
+
+
 def _events(output: Path) -> list[dict]:
     return [json.loads(line) for line in (output / "codex" / "events.jsonl").read_text(encoding="utf-8").splitlines()
             if line.startswith("{")]
@@ -226,7 +232,8 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     topped_up = next(index for index, call in enumerate(calls) if index > failed_seen[0]
                     and call.get("tool") == "materials_v1_lots_inbound"
                     and call.get("arguments", {}).get("body", {}).get("payload", {}).get("quantity") == 10000)
-    rollback_reads = [_result(call).get("body", {}) for call in calls[failed_seen[0] + 1:topped_up]]
+    # MCP 回包 body 是统一信封 {code, data}：比对的是 data 里的物料 / 批次
+    rollback_reads = [_body_data(_result(call).get("body", {})) for call in calls[failed_seen[0] + 1:topped_up]]
     plates = [body["material"] for body in rollback_reads if isinstance(body, dict)
               and body.get("material", {}).get("name") in {"flow_plate_01", "flow_plate_02"}]
     assert {plate["name"] for plate in plates} == {"flow_plate_01", "flow_plate_02"}

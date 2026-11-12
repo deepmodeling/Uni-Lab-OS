@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.services import driver_packages as dp
 from unilabos.server.services.host_mutations import HostMutationBusy, get_host_mutation_gate
 
@@ -81,13 +82,13 @@ def test_process_crash_reconciles_source_and_ledger_once_and_requires_confirmati
     app.include_router(create_driver_packages_router())
     with TestClient(app) as client:
         url = f"/api/v1/driver-packages/operations/{operation['operation_id']}/confirm"
-        assert client.post(url, json={'expected_version': operation['version'] + 1, 'reason': '已核实'}).status_code == 409
-        assert client.post(url, json={'expected_version': operation['version'], 'reason': ' '}).status_code == 422
+        # 版本过期 → 状态冲突 3003；核实说明为空 → 参数不合法 1000（HTTP 200 信封）
+        error_of(client.post(url, json={'expected_version': operation['version'] + 1, 'reason': '已核实'}), 3003)
+        error_of(client.post(url, json={'expected_version': operation['version'], 'reason': ' '}), 1000)
         body = {'expected_version': operation['version'], 'reason': '已核实源码、台账和共享依赖，允许后续操作'}
-        confirmed = client.post(url, json=body)
-        assert confirmed.status_code == 200
-        assert not confirmed.json()['requires_confirmation']
-        assert client.post(url, json=body).json() == confirmed.json()
+        confirmed = ok_data(client.post(url, json=body))
+        assert not confirmed['requires_confirmation']
+        assert ok_data(client.post(url, json=body)) == confirmed
     with gate.hold('slave_start'):
         pass
     assert not dp.DriverPackageService(tmp_path).operations()[0]['requires_confirmation']

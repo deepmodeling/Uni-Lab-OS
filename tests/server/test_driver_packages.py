@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.driver_packages import create_driver_packages_router
 from unilabos.server.services import driver_packages as dp
 
@@ -75,15 +76,15 @@ def test_busy_mutations_return_conflict_and_reads_stay_available(service, tmp_pa
         assert started.status_code == 202
         try:
             assert entered.wait(3)
-            assert client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}).status_code == 409
-            assert client.delete("/api/v1/driver-packages/demo").status_code == 409
-            assert client.post("/api/v1/driver-packages/install", json={"spec": str(source)}).status_code == 409
-            assert client.get("/api/v1/driver-packages").status_code == 200
+            error_of(client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}), 3003)
+            error_of(client.delete("/api/v1/driver-packages/demo"), 3003)
+            error_of(client.post("/api/v1/driver-packages/install", json={"spec": str(source)}), 3003)
+            ok_data(client.get("/api/v1/driver-packages"))
             assert len(service.operations()) == 1
         finally:
             release.set()
-        assert _wait(service, started.json()["operation_id"])["status"] == "succeeded"
-        assert client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}).status_code == 200
+        assert _wait(service, ok_data(started)["operation_id"])["status"] == "succeeded"
+        ok_data(client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}))
     assert set(dp.load_ledger(service.working_dir)) == {"demo", "another"}
 
 
@@ -430,24 +431,24 @@ def test_router_endpoints(service: dp.DriverPackageService, tmp_path: Path, monk
 
     response = client.get("/api/v1/driver-packages")
     assert response.status_code == 200
-    body = response.json()
+    body = ok_data(response)
     assert body["scan_dirs"] and body["external_only"] is True
     assert body["packages"] == [] and body["packages_root"].endswith("driver_packages")
 
     monkeypatch.setattr(dp.DriverPackageService, "_index_url", staticmethod(lambda: ""))
-    assert client.get("/api/v1/driver-packages/catalog").json()["packages"] == []
-    assert client.post("/api/v1/driver-packages/install", json={"spec": ""}).status_code == 422
-    assert client.post("/api/v1/driver-packages/install", json={"spec": str(tmp_path / "missing")}).status_code == 422
-    assert client.post("/api/v1/driver-packages/install", json={"spec": "https://example.com/page"}).status_code == 422
-    assert client.get("/api/v1/driver-packages/operations/unknown").status_code == 404
-    assert client.put("/api/v1/driver-packages/ghost/enabled", json={"enabled": True}).status_code == 404
+    assert ok_data(client.get("/api/v1/driver-packages/catalog"))["packages"] == []
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": ""}), 1000)
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": str(tmp_path / "missing")}), 1000)
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": "https://example.com/page"}), 1000)
+    error_of(client.get("/api/v1/driver-packages/operations/unknown"), 4001)
+    error_of(client.put("/api/v1/driver-packages/ghost/enabled", json={"enabled": True}), 4001)
 
     source = tmp_path / "via_api"
     _write_source_tree(source, name="via-api", version="0.0.1", package="via_api", device_id="api_dev", deps=[])
     monkeypatch.setattr(service, "_install_dependencies", lambda deps, upgrade, log: "")
     accepted = client.post("/api/v1/driver-packages/install", json={"spec": str(source)})
     assert accepted.status_code == 202
-    done = _wait(service, accepted.json()["operation_id"])
+    done = _wait(service, ok_data(accepted)["operation_id"])
     assert done["status"] == "succeeded", done
-    assert client.get("/api/v1/driver-packages/operations").json()[0]["operation_id"] == accepted.json()["operation_id"]
-    assert client.delete("/api/v1/driver-packages/via-api").status_code == 202
+    assert ok_data(client.get("/api/v1/driver-packages/operations"))[0]["operation_id"] == ok_data(accepted)["operation_id"]
+    ok_data(client.delete("/api/v1/driver-packages/via-api"), status=202)

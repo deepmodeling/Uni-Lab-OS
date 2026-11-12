@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.backend.hostlink.client import HostLinkClient
 from unilabos.backend.hostlink.protocol import ActionType, RemoteError
 from unilabos.backend.hostlink.server import HostLinkServer
@@ -138,7 +139,7 @@ def test_http_validation(local_service, monkeypatch: pytest.MonkeyPatch, query: 
     app = FastAPI()
     app.include_router(api_logs.create_runtime_logs_router())
     with TestClient(app) as client:
-        assert client.get(f"/api/v1/hostlink/logs?source_id=host&{query}").status_code == 422
+        error_of(client.get(f"/api/v1/hostlink/logs?source_id=host&{query}"), 1000)
 
 
 def test_http_shape_cache_and_errors(local_service, monkeypatch: pytest.MonkeyPatch):
@@ -149,11 +150,11 @@ def test_http_shape_cache_and_errors(local_service, monkeypatch: pytest.MonkeyPa
         sources = client.get("/api/v1/hostlink/log-sources")
         assert sources.status_code == 200 and sources.headers["cache-control"] == "no-store"
         result = client.get("/api/v1/hostlink/logs", params={"source_id": "host", "limit": 10})
-        assert result.status_code == 200 and result.json()["pid"] == os.getpid()
-        assert result.json()["lines"][0]["offset"] == 0
-        assert client.get("/api/v1/hostlink/logs?source_id=missing").status_code == 404
+        assert result.status_code == 200 and ok_data(result)["pid"] == os.getpid()
+        assert ok_data(result)["lines"][0]["offset"] == 0
+        error_of(client.get("/api/v1/hostlink/logs?source_id=missing"), 4001)
         monkeypatch.setattr(log_config, "_log_file_path", None)
-        assert client.get("/api/v1/hostlink/logs?source_id=host").status_code == 503
+        error_of(client.get("/api/v1/hostlink/logs?source_id=host"), 5001)
 
 
 def test_hostlink_logs_roundtrip_without_optional_capability_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

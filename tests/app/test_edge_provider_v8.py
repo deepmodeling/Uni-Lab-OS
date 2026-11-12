@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import ok_data
 from unilabos.server.api.runtime import create_backend_router
 from unilabos.server.backend.execution import JobExecutionBackend
 from unilabos.server.backend.incidents import StatusIncidentManager
@@ -123,7 +124,7 @@ def test_status_incident_rest_contract_uses_backend_execution_service():
     app.include_router(create_backend_router(lambda: None, lambda: Backend()))
     client = TestClient(app)
 
-    snapshot = client.get("/api/v1/status-incidents").json()
+    snapshot = ok_data(client.get("/api/v1/status-incidents"))
     assert snapshot["host_ready"] is True
     assert snapshot["incidents"][0]["incident_id"] == incident["incident_id"]
     assert snapshot["holds"][0]["hold_token"] == incident["hold_token"]
@@ -132,8 +133,7 @@ def test_status_incident_rest_contract_uses_backend_execution_service():
         f"/api/v1/status-incidents/{incident['incident_id']}",
         json={"action": "resume", "reason": "现场已恢复"},
     )
-    assert decision.status_code == 200
-    assert decision.json() == {
+    assert ok_data(decision) == {
         "incident_id": incident["incident_id"],
         "status": "delivered",
         "state": "resolved",

@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.runtime.lab import LabLayoutWrite, LabZone
 from unilabos.server.api import install_server_apis
 from unilabos.server.api.runtime.lab import install_lab_api
@@ -81,23 +82,23 @@ def test_router_roundtrip(service: LabLayoutService) -> None:
     install_lab_api(app, service)
     client = TestClient(app)
 
-    initial = client.get("/api/v1/lab/layout").json()
+    initial = ok_data(client.get("/api/v1/lab/layout"))
     assert initial["revision"] == 0 and initial["layout_key"] == "default"
 
     body = {"revision": 0, "cell_size": 100, "zones": [{"id": "z1", "name": "洗涤区", "color": "#0e9f6e", "cells": ["2,2"]}], "walls": ["0,0"]}
     saved = client.put("/api/v1/lab/layout", json=body)
     assert saved.status_code == 200, saved.text
-    assert saved.json()["revision"] == 1
+    assert ok_data(saved)["revision"] == 1
 
     stale = client.put("/api/v1/lab/layout", json=body)
-    assert stale.status_code == 409
-    assert "revision 1" in stale.json()["detail"]
+    assert "revision 1" in error_of(stale, 3003)["msg"]
 
     invalid = client.put("/api/v1/lab/layout", json={**body, "revision": 1, "walls": ["2,2"]})
-    assert invalid.status_code == 422
+    error_of(invalid, 1000)
 
-    assert client.delete("/api/v1/lab/layout").status_code == 204
-    assert client.get("/api/v1/lab/layout").json()["revision"] == 0
+    # 重置是无数据命令：HTTP 200 + {"code": 0}
+    assert client.delete("/api/v1/lab/layout").json() == {"code": 0}
+    assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
 
 
 def test_server_services_mount_lab_layout(tmp_path) -> None:
@@ -107,6 +108,6 @@ def test_server_services_mount_lab_layout(tmp_path) -> None:
     try:
         assert "/api/v1/lab/layout" in app.openapi()["paths"]
         with TestClient(app) as client:
-            assert client.get("/api/v1/lab/layout").json()["revision"] == 0
+            assert ok_data(client.get("/api/v1/lab/layout"))["revision"] == 0
     finally:
         services.close()

@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from tests.api_envelope import envelope
 from unilabos.client.runtime import HTTPLifecycleClient, SchedulerDrainTimeout
 from unilabos.config.config import BasicConfig
 from unilabos.protocol.runtime.lifecycle import RestartRequest, ResetRequest, SchedulerDrainStatus
@@ -73,7 +74,7 @@ def test_drain_wait_polls_until_idle():
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, json=_status(active=len(requests) < 3))
+        return httpx.Response(200, json=envelope(_status(active=len(requests) < 3)))
 
     with HTTPLifecycleClient("http://localhost:8002") as client:
         _mock_http(client, handler)
@@ -87,7 +88,7 @@ def test_drain_timeout_keeps_pause_and_does_not_stop_runtime():
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, json=_status())
+        return httpx.Response(200, json=envelope(_status()))
 
     with HTTPLifecycleClient("http://localhost:8002") as client:
         _mock_http(client, handler)

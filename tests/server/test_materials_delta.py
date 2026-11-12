@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.materials import (
     InventoryMutation,
     MaterialDataDelta,
@@ -262,13 +263,12 @@ def test_delta_over_http_uses_mutation_payload(deck) -> None:
     )
     with TestClient(app) as client:
         response = client.post("/api/v1/materials/snapshots/delta", json=mutation.model_dump(mode="json"))
-        assert response.status_code == 200, response.text
-        body = response.json()
+        body = ok_data(response)
         assert body["data"]["applied_material_uuids"] == [w1.material.material_uuid]
         assert body["affected"][0]["version"] == 2
         # 同一 command 重放：幂等返回
         replay = client.post("/api/v1/materials/snapshots/delta", json=mutation.model_dump(mode="json"))
-        assert replay.status_code == 200 and replay.json()["replayed"] is True
+        assert ok_data(replay)["replayed"] is True
     assert service.get_material(w1.material.material_uuid).data.data == {"volume": 7.0}
 
 

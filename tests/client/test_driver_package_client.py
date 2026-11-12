@@ -3,6 +3,7 @@
 import httpx
 import pytest
 
+from tests.api_envelope import envelope
 from unilabos.client.runtime.driver_packages import DriverPackageWaitTimeout, HTTPDriverPackageClient
 from unilabos.protocol.runtime.driver_packages import DriverPackageInstallRequest
 
@@ -40,7 +41,7 @@ def test_wait_timeout_does_not_resubmit_or_cancel_operation():
 
     def handler(request):
         requests.append(request)
-        return httpx.Response(200, json={"operation_id": "active-op", "status": "running"})
+        return httpx.Response(200, json=envelope({"operation_id": "active-op", "status": "running"}))
 
     with HTTPDriverPackageClient("http://host:8002") as client:
         _transport(client, handler)
@@ -68,7 +69,8 @@ def test_invalid_wait_budget_sends_no_request(timeout):
 ])
 def test_bad_operation_response_is_not_a_success(payload):
     with HTTPDriverPackageClient("http://host:8002") as client:
-        _transport(client, lambda request: httpx.Response(200, json=payload))
+        # 信封本身合法、data 的身份或状态不对：仍不能判定为完成
+        _transport(client, lambda request: httpx.Response(200, json=envelope(payload)))
         with pytest.raises(ValueError, match="响应身份或状态无效"):
             client.wait_operation("op", timeout=1)
         with pytest.raises(ValueError, match="响应身份或状态无效"):

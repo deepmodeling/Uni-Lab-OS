@@ -58,15 +58,18 @@ def test_writes_need_the_token_reads_do_not() -> None:
         rejected = client.post("/api/v1/things", json={}, headers={"Origin": "https://evil.example"})
         assert rejected.status_code == 401
         body = rejected.json()
-        assert body["code"] == 4001 and "unilab token" in body["error"]["msg"]
-        assert rejected.headers["www-authenticate"].startswith("Bearer")
+        assert body["code"] == 1002 and "unilab token" in body["error"]["msg"]
+        assert set(body) == {"code", "error"}
+        assert rejected.headers["www-authenticate"].startswith("X-UniLab-Token")
         # 外层 CORS 补了跨域头：浏览器能读到 401 的原因
         assert rejected.headers["access-control-allow-origin"] == "https://evil.example"
 
         assert client.delete("/api/v1/things/1").status_code == 401
         assert client.post("/api/v1/things", json={}, headers={"X-UniLab-Token": "wrong"}).status_code == 401
         assert client.post("/api/v1/things", json={}, headers={"X-UniLab-Token": "secret"}).json() == {"created": True}
-        assert client.delete("/api/v1/things/1", headers={"Authorization": "Bearer secret"}).status_code == 200
+        # Authorization: Bearer 留给 V1 工站 api_key，控制面不再接受
+        assert client.delete("/api/v1/things/1", headers={"Authorization": "Bearer secret"}).status_code == 401
+        assert client.delete("/api/v1/things/1", headers={"X-UniLab-Token": "secret"}).status_code == 200
 
 
 def test_preflight_and_mcp_are_not_blocked() -> None:
@@ -123,7 +126,7 @@ def test_internal_http_clients_send_the_token(monkeypatch) -> None:
             return False
 
         def read(self) -> bytes:
-            return b"{}"
+            return b'{"code":0,"data":{}}'
 
     def fake_urlopen(request, timeout=None):
         captured.append({key.lower(): value for key, value in request.header_items()})

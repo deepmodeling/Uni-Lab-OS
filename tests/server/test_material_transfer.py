@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.server.api.materials import create_materials_router
 from unilabos.protocol.materials import InventoryMutation
@@ -217,8 +218,7 @@ def test_materials_api_exposes_authoritative_transfer(tmp_path) -> None:
             ),
         )
 
-        assert response.status_code == 200
-        assert response.json()["data"]["material_uuids"] == [material_uuid]
+        assert ok_data(response)["data"]["material_uuids"] == [material_uuid]
         assert service.get_material(material_uuid).material.parent_material_uuid == (
             target_uuid
         )

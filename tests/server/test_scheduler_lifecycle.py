@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.config.config import BasicConfig
 from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.runtime.diagnostics import create_backend_app
@@ -62,7 +63,9 @@ def test_runtime_reconnect_only_releases_restart_gate(stack, monkeypatch):
     lifecycle.begin_drain()
     scheduler.pause_dispatch(reason="restart")
     coordinator = RestartCoordinator(lambda: backend, lambda: scheduler)
-    monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", lambda *a, **kw: SimpleNamespace(status_code=200))
+    # Host 的 /restart 回统一信封
+    accepted = SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":0,"data":{"pending":true}}')
+    monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", lambda *a, **kw: accepted)
     monkeypatch.setattr(coordinator, "_wait_edge_reconnected", lambda: True)
     coordinator._execute_edge_restart()
     assert lifecycle.status().pause_reasons == ["drain"]
@@ -99,19 +102,27 @@ def test_drain_api_authentication_readiness_and_idempotency(stack, monkeypatch):
     app = create_backend_app(lambda: scheduler, lambda: backend)
     app.add_middleware(ControlTokenMiddleware)
     with TestClient(app) as client:
-        assert client.get("/api/v1/scheduler/drain").json()["phase"] == "running"
+        assert ok_data(client.get("/api/v1/scheduler/drain"))["phase"] == "running"
+        # 就绪 / 存活探针不包信封，仍按 HTTP 状态码判定
         assert client.get("/api/v1/readiness").status_code == 200
-        assert client.post("/api/v1/scheduler/drain", json={}).status_code == 401
+        error_of(client.post("/api/v1/scheduler/drain", json={}), 1002, status=401)
         assert not scheduler.dispatch_paused
         headers = {"X-UniLab-Token": "test-lifecycle-token"}
+        # Bearer 留给 V1 工站 api_key，不能代替控制面 token
+        error_of(
+            client.post("/api/v1/scheduler/drain", json={}, headers={"Authorization": "Bearer test-lifecycle-token"}),
+            1002,
+            status=401,
+        )
+        assert not scheduler.dispatch_paused
         first = client.post("/api/v1/scheduler/drain", json={}, headers=headers)
         second = client.post("/api/v1/scheduler/drain", json={}, headers=headers)
-        assert first.status_code == 200 and first.json() == second.json()
+        assert ok_data(first) == ok_data(second)
         assert client.get("/api/v1/readiness").status_code == 503
         assert client.get("/api/v1/health").status_code == 200
-        assert client.post("/api/v1/scheduler/drain/resume", json={}).status_code == 401
+        error_of(client.post("/api/v1/scheduler/drain/resume", json={}), 1002, status=401)
         assert scheduler.dispatch_paused
-        assert client.post("/api/v1/scheduler/drain/resume", json={}, headers=headers).json()["phase"] == "running"
+        assert ok_data(client.post("/api/v1/scheduler/drain/resume", json={}, headers=headers))["phase"] == "running"
         assert client.get("/api/v1/readiness").status_code == 200
 
 
@@ -122,4 +133,5 @@ def test_drain_api_authentication_readiness_and_idempotency(stack, monkeypatch):
 ])
 def test_runtime_without_scheduler_does_not_claim_to_be_drained(method, path):
     with TestClient(create_backend_app()) as client:
-        assert client.request(method, path).status_code == 503
+        # 没有调度器：依赖暂不可用 5001（HTTP 200 信封），不伪装成已排空
+        error_of(client.request(method, path), 5001)

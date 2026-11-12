@@ -9,6 +9,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import ok_data
 from unilabos.server.services.driver_source_changes import DriverSourceChanges, source_snapshot
 from unilabos.server.services import driver_packages as dp, device_processes as dpx
 from unilabos.server.api.driver_packages import create_driver_packages_router
@@ -207,16 +208,16 @@ def test_slave_restart_clears_only_its_notice_and_api_returns_impact(services, t
     app.include_router(create_driver_packages_router())
     app.include_router(create_device_processes_router())
     with TestClient(app) as client:
-        payload = client.get("/api/v1/driver-packages/changes").json()
+        payload = ok_data(client.get("/api/v1/driver-packages/changes"))
         assert len(payload["notices"]) == 1
         assert payload["notices"][0]["name"] == "泵站"
         assert payload["notices"][0]["target"] == "slave"
-        assert client.get("/api/v1/driver-packages").json()["restart_required"]
-        assert client.get(f'/api/v1/device-processes/{view["id"]}').json()["restart_required"]
+        assert ok_data(client.get("/api/v1/driver-packages"))["restart_required"]
+        assert ok_data(client.get(f'/api/v1/device-processes/{view["id"]}'))["restart_required"]
         # 查询没有偷偷替用户重启，执行已有重启命令后才建立新基线。
         assert processes._procs[view["id"]].poll() is None
         processes.restart(view["id"])
-        assert client.get("/api/v1/driver-packages/changes").json()["notices"] == []
+        assert ok_data(client.get("/api/v1/driver-packages/changes"))["notices"] == []
         code.write_text("again")
         settled(packages.source_changes)
         processes.stop(view["id"])

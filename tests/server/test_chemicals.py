@@ -100,7 +100,8 @@ def test_http_envelope(service) -> None:
     created = client.post("/api/v1/chemicals", json=WATER)
     assert created.status_code == 201 and created.json()["code"] == 0
     chemical = created.json()["data"]
-    assert client.post("/api/v1/chemicals", json=WATER).json()["code"] == 3003
+    # 重复 CAS：化学品（V1 试剂信息）按资源口径，冲突为 4002
+    assert client.post("/api/v1/chemicals", json=WATER).json()["code"] == 4002
     assert client.post("/api/v1/chemicals", json={"name": "坏的", "cas": "1-1-1"}).json()["code"] == 1000
     assert client.get("/api/v1/chemicals", params={"q": "water"}).json()["data"]["total"] == 1
 
@@ -108,10 +109,10 @@ def test_http_envelope(service) -> None:
                            json={"expected_version": chemical["version"], "description": "去离子"})
     assert patched.json()["data"]["description"] == "去离子"
     assert client.delete(f"/api/v1/chemicals/{chemical['chemical_uuid']}",
-                         params={"expected_version": chemical["version"]}).json()["code"] == 3003
+                         params={"expected_version": chemical["version"]}).json()["code"] == 4002
     assert client.delete(f"/api/v1/chemicals/{chemical['chemical_uuid']}",
                          params={"expected_version": patched.json()["data"]["version"]}).json()["code"] == 0
-    assert client.get(f"/api/v1/chemicals/{chemical['chemical_uuid']}").json()["code"] == 3002
+    assert client.get(f"/api/v1/chemicals/{chemical['chemical_uuid']}").json()["code"] == 4001
 
 
 def test_v1_materials_database_migrates_to_current(tmp_path) -> None:

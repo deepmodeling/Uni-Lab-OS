@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import (
@@ -166,7 +167,8 @@ def test_unknown_or_deleted_chemical_is_rejected_as_invalid(stack) -> None:
             f"/api/v1/materials/instances/{material.material.material_uuid}/data",
             json=request.model_dump(mode="json"),
         )
-    assert response.status_code == 422 and "不存在或已删除" in response.json()["detail"]
+    # 引用已删除化学品：物料校验失败 1000，说明在 error.msg
+    assert "不存在或已删除" in error_of(response, 1000)["msg"]
 
 
 def test_existing_link_survives_chemical_deletion(stack) -> None:
@@ -312,7 +314,7 @@ def test_tree_read_attaches_summaries_in_one_lookup(stack, monkeypatch) -> None:
     install_materials_api(app, service)
     tube_b = next(node for node in read.nodes if node.material.name == "tube-b")
     with TestClient(app) as client:
-        body = client.get(f"/api/v1/materials/instances/{tube_b.material.material_uuid}").json()
+        body = ok_data(client.get(f"/api/v1/materials/instances/{tube_b.material.material_uuid}"))
     substance = body["data"]["substances"][0]
     assert substance["chemical_uuid"] == water["chemical_uuid"]
     assert set(substance["chemical"]) == SUMMARY_KEYS and substance["chemical"]["cas"] == "7732-18-5"
@@ -441,11 +443,11 @@ def test_payload_forms_pass_the_completeness_check_and_replay(stack, variant) ->
     with TestClient(app) as client:
         url = f"/api/v1/materials/instances/{FIXED_MATERIAL_UUID}/data"
         first = client.put(url, json=_fixed_put_mutation(payload))
-        assert first.status_code == 200, first.text
-        assert first.json()["replayed"] is False
-        assert [item.get("chemical_uuid") for item in first.json()["data"]["data"]["substances"]] == [expected, None]
+        first_result = ok_data(first)
+        assert first_result["replayed"] is False
+        assert [item.get("chemical_uuid") for item in first_result["data"]["data"]["substances"]] == [expected, None]
         replay = client.put(url, json=_fixed_put_mutation(payload))
-        assert replay.status_code == 200 and replay.json()["replayed"] is True
+        assert ok_data(replay)["replayed"] is True
 
     effect = service.get_effect("put-fixed", "put_data:put-fixed")
     if variant == "old_client":

@@ -8,6 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import envelope
 from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_cli_command
 from unilabos.client.http import HTTPClient
@@ -59,15 +60,15 @@ def test_restart_targets_edge_and_reset_defaults_to_preview(tmp_path, monkeypatc
     def handler(request):
         calls.append(request)
         if request.url.path.endswith("/reset"):
-            return httpx.Response(200, json={
+            return httpx.Response(200, json=envelope({
                 "supported": True, "pending": False, "confirmation_token": "preview-token",
                 "backup_path": "", "detail": "预览",
-            })
-        return httpx.Response(200, json={
+            }))
+        return httpx.Response(200, json=envelope({
             "pending": True, "mode": "quiescent", "scope": "edge", "effective_scope": "edge",
             "requested_at": 1.0, "restarting": False, "safe_restart": True,
             "active_jobs": [], "dispatch_paused": True,
-        })
+        }))
 
     def connect(self, config, get_auth_secret=None):
         original(self, config, get_auth_secret)

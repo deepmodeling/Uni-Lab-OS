@@ -5,6 +5,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.materials import (
     InventoryMutation, InventoryLotInbound, InventoryRequirement, InventoryReservationCreate,
     InventoryReservationTransition, InventoryStocktake, MaterialIdentityWrite, MaterialNodeCreate,
@@ -117,7 +118,7 @@ def test_inventory_preview_http_reports_all_shortages_without_mutation(service):
         {"key": "two", "kind": "lot", "template_uuid": "stock", "quantity": 2, "unit": "g"},
     ]})
     assert response.status_code == 200, response.text
-    assert len(response.json()["shortages"]) == 2
+    assert len(ok_data(response)["shortages"]) == 2
     assert service.connection.execute("SELECT total_changes()").fetchone()[0] == before
 
 

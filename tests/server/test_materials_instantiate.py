@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.registry.registry import lab_registry
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
@@ -60,7 +61,7 @@ def test_registry_classes_lists_instantiable_entries(
             assert listed.status_code == 200
             row = next(
                 item
-                for item in listed.json()
+                for item in ok_data(listed)
                 if item["registry_class"] == REGISTRY_CLASS
             )
             assert row["display_name"] == "PRCXI 300ul 枪头盒"
@@ -82,7 +83,7 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
                 ),
             )
             assert resp.status_code == 200, resp.text
-            tree = resp.json()["data"]
+            tree = ok_data(resp)["data"]
             root_uuid = tree["root_material_uuid"]
             assert root_uuid
             root = next(
@@ -96,7 +97,7 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
 
             fetched = client.get(f"/api/v1/materials/instances/{root_uuid}")
             assert fetched.status_code == 200
-            assert fetched.json()["material"]["name"] == "tips_outbound_1"
+            assert ok_data(fetched)["material"]["name"] == "tips_outbound_1"
     finally:
         service.close()
 
@@ -122,7 +123,7 @@ def test_instantiate_with_barcode_writes_root_barcode(
                 ),
             )
             assert resp.status_code == 200, resp.text
-            tree = resp.json()["data"]
+            tree = ok_data(resp)["data"]
             root_uuid = tree["root_material_uuid"]
             root = next(
                 node
@@ -139,7 +140,7 @@ def test_instantiate_with_barcode_writes_root_barcode(
 
             fetched = client.get(f"/api/v1/materials/instances/{root_uuid}")
             assert fetched.status_code == 200
-            assert fetched.json()["material"]["barcode"] == "BC-20260830-001"
+            assert ok_data(fetched)["material"]["barcode"] == "BC-20260830-001"
     finally:
         service.close()
 
@@ -157,6 +158,7 @@ def test_instantiate_unknown_registry_class_rejected(tmp_path) -> None:
                     {"registry_class": "not_exist_class", "name": "x"},
                 ),
             )
-            assert resp.status_code == 422
+            # registry 资源类不可实例化：参数不合法 1000
+            error_of(resp, 1000)
     finally:
         service.close()

@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.materials import install_materials_api
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.protocol.materials import InventoryMutation
@@ -44,13 +45,13 @@ def test_http_protocol_uses_mutation_payload(tmp_path) -> None:
                 json=mutation.model_dump(mode="json"),
             )
             assert response.status_code == 200, response.text
-            assert response.json()["data"]["definition_hash"]
+            assert ok_data(response)["data"]["definition_hash"]
 
             fetched = client.get(
                 "/api/v1/materials/templates/beaker-template"
             )
             assert fetched.status_code == 200
-            assert fetched.json()["name"] == "beaker"
+            assert ok_data(fetched)["name"] == "beaker"
 
             # 列表按 name 精确筛选，默认目录模式：存在性检查只回一条、不带 definition
             listed = client.get(
@@ -58,11 +59,11 @@ def test_http_protocol_uses_mutation_payload(tmp_path) -> None:
                 params={"name": "beaker"},
             )
             assert listed.status_code == 200
-            assert [item["template_uuid"] for item in listed.json()] == ["beaker-template"]
-            assert listed.json()[0]["definition"] == {}
-            assert client.get(
+            assert [item["template_uuid"] for item in ok_data(listed)] == ["beaker-template"]
+            assert ok_data(listed)[0]["definition"] == {}
+            assert ok_data(client.get(
                 "/api/v1/materials/templates", params={"name": "flask"}
-            ).json() == []
+            )) == []
     finally:
         service.close()
 
@@ -116,7 +117,7 @@ def test_notify_device_dispatches_via_downlink_and_returns_receipt(
                 },
             )
         assert response.status_code == 200, response.text
-        assert response.json()["notified"] is True
+        assert ok_data(response)["notified"] is True
         assert calls == [("edge-device", "add", ["uuid-1", "uuid-2"])]
     finally:
         service.close()
@@ -138,7 +139,7 @@ def test_notify_device_reports_skip_when_device_unreachable(tmp_path) -> None:
                 },
             )
         assert response.status_code == 200, response.text
-        assert response.json()["notified"] is None
+        assert ok_data(response)["notified"] is None
     finally:
         service.close()
 
@@ -172,7 +173,7 @@ def test_post_tree_resolves_template_name_and_allocates_all_uuids(tmp_path) -> N
             )
 
         assert response.status_code == 200, response.text
-        body = response.json()["data"]
+        body = ok_data(response)["data"]
         assert body["root_material_uuid"]
         assert body["nodes"][0]["material"]["template_uuid"]
     finally:

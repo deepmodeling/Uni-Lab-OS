@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.device_processes import create_device_processes_router
 from unilabos.server.services import device_processes as dpx
 from unilabos.server.services import driver_packages as dp
@@ -173,11 +174,11 @@ def test_router_roundtrip(service: dpx.DeviceProcessService) -> None:
     app.include_router(create_device_processes_router())
     client = TestClient(app)
 
-    listing = client.get("/api/v1/device-processes").json()
+    listing = ok_data(client.get("/api/v1/device-processes"))
     assert listing["hostlink"]["host"] == "127.0.0.1"
     assert listing["processes"] == []
 
-    classes = client.get("/api/v1/device-processes/device-classes").json()
+    classes = ok_data(client.get("/api/v1/device-processes/device-classes"))
     assert any(item["id"] == "acme_pump" and item["package"] == "acme-devices" for item in classes)
 
     created = client.post(
@@ -189,13 +190,14 @@ def test_router_roundtrip(service: dpx.DeviceProcessService) -> None:
             "external_only": True,
         },
     )
-    assert created.status_code == 201, created.text
-    process_id = created.json()["id"]
-    assert created.json()["graph_nodes"][0]["template_name"] == "acme_pump"
+    created = ok_data(created, status=201)
+    process_id = created["id"]
+    assert created["graph_nodes"][0]["template_name"] == "acme_pump"
 
-    assert client.post(f"/api/v1/device-processes/{process_id}/start").json()["status"] == "running"
-    assert client.post(f"/api/v1/device-processes/{process_id}/start").status_code == 409
+    assert ok_data(client.post(f"/api/v1/device-processes/{process_id}/start"))["status"] == "running"
+    error_of(client.post(f"/api/v1/device-processes/{process_id}/start"), 3003)
+    # 日志路由不存在：框架默认 404（没有匹配的合同，不是业务信封）
     assert client.get(f"/api/v1/device-processes/{process_id}/logs?tail=10").status_code == 404
-    assert client.post(f"/api/v1/device-processes/{process_id}/stop").json()["status"] == "stopped"
-    assert client.delete(f"/api/v1/device-processes/{process_id}").status_code == 204
-    assert client.get(f"/api/v1/device-processes/{process_id}").status_code == 404
+    assert ok_data(client.post(f"/api/v1/device-processes/{process_id}/stop"))["status"] == "stopped"
+    assert ok_data(client.delete(f"/api/v1/device-processes/{process_id}")) is None
+    error_of(client.get(f"/api/v1/device-processes/{process_id}"), 4001)

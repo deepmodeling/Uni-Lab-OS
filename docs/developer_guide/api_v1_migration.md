@@ -41,6 +41,31 @@
 统一入口：`unilabos/server/api/envelope.py`。V1 的 `backend_response.py` / `_success` / `_error`
 不另行复制。
 
+### 实现机制（基础层，2026-11-12）
+
+- **路由器一律用 `envelope_router(...)` 创建**（或给 `APIRouter` 传 `route_class=envelope_route_class(...)`）。
+  路由类 `EnvelopeRoute` 把返回的 DTO / dict / list 包成 `{"code":0,"data":...}`，返回 `None` 时输出
+  `{"code":0}`，OpenAPI 响应模型同步为 `Envelope[原模型]`；声明 `status_code=204` 的命令改为 200。
+  已经是信封的响应（`ok_response` / `error_response` / `EnvelopeResponse`）原样返回。
+- **失败只抛异常**：`ApiError(业务码常量, msg, symbol=?, details=?)`；dev 服务层异常登记在
+  `envelope.DOMAIN_ERRORS`（按异常类完整路径沿 MRO 匹配）；过渡期的 `HTTPException` 按路由器的错误口径
+  换算：`WORKFLOW`（404→3002）、`RESOURCE`（404→4001、409→4002）、`GENERIC`（404→4001、409→3003）；
+  400 / 422→1000，401→1002（保留 HTTP 401），403→1001，503→5001，其余→1。请求校验失败与非法 JSON 在
+  路由类里就地换成 1000，不再依赖应用级异常处理器或路径前缀登记。未登记的异常照常 HTTP 500（服务端缺陷）。
+- **不包信封**的端点用 `@raw_response` 标记：`/api/v1/health`、`/api/v1/readiness`（探针看 HTTP 状态码）；
+  SSE、文件下载等非 JSON 响应与生成器端点自动透传。Host↔权威内部通道 `/api/v1/edge/http-responses/*`
+  （以及 `/api/v1` 之外的 `/edge/commands/*`）保持普通路由：Host 回送结果时按 HTTP 状态判断成败。
+  `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001。
+- **中间件级拒绝**保留 HTTP 状态码、正文是信封：控制面 token 401 + 1002，全量重置维护闸门 503 + 5001。
+- 契约测试 `tests/server/test_api_envelope_contract.py` 会装配全部路由，断言每个 `/api/v1` JSON 路由都是
+  信封路由（白名单只有上面的探针与内部通道）。新增路由器忘了用 `envelope_router` 会直接失败。
+- dev 内部调用方统一解包一次：`HTTPClient`（`envelope=False` 只给探针）、`client/utils/envelope.py` 的
+  `request_json` / `decode_json_body`（urllib 客户端）、`edge_proxy.edge_response_data`（权威经控制面读 Host）。
+  失败抛 `EnvelopeError(code, error, symbol, details, http_status)`；各领域客户端错误（`RuntimeHTTPError`
+  等）的 `status_code` 按业务码换算回 HTTP 语义，`business_code` 保留原码。
+- 字段转换工具在 `unilabos/server/api/v1_fields.py`：`ms_to_iso` / `iso_to_ms` 与声明式 `FieldMap`
+  （`to_v1` 响应、`to_dev` 请求体）。
+
 ## 业务码表（V1 为准）
 
 | 码 | 含义 | 来源 |
@@ -62,7 +87,18 @@
 | 5004 | 模板数据冲突 | V1 |
 | 6000–6011 | 物料：不存在、模板不存在或不可变、父级不存在或成环、库位不存在或已占用、模板不允许、库位成环、身份冲突、活动占用冲突 | V1 `backend_contract.py` |
 
-dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由散写数字。
+dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由散写数字。命名常量与码表一一对应
+（`INVALID_PARAMETER`、`OPERATION_NOT_ALLOWED`、`UNAUTHORIZED`、`WORKFLOW_NOT_FOUND`、`STATE_CONFLICT`、
+`RESOURCE_NOT_FOUND`、`RESOURCE_DATA_CONFLICT`、`SERVICE_UNAVAILABLE`、`MATERIAL_*` 等）。
+
+- 工作流领域错误按 V1 `_business_code` 分类，dev 独有的 `local_task_authority_forbidden` 归 1001；
+  `workflow_identity_mismatch`、`debug_not_allowed`、`debug_task_conflict`、`device_action_not_allowed`、
+  `preflight_failed` 同时输出 `error.code` 符号码。
+- 物料服务只有一个 `MaterialNotFoundError`：消息以 `material` / `site` / `template` / `parent` 开头的分别为
+  6000 / 6006 / 6001 / 6003，其余 4001；异常带 `subject` 属性时以它为准。冲突默认 4002，库位占用 6007、
+  未结算动作占用 6011、`material uuid already exists` 6010；异常带整数 `business_code` 属性时以它为准。
+  物料域迁移时应改为显式 `subject` / `business_code`，不再依赖消息文字。
+- 化学品（V1 的试剂信息）与设备图按资源口径：不存在 4001、冲突 4002。
 
 ## 字段约定（API 层转换，存储保持 dev）
 
@@ -74,7 +110,10 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - **SSE**：`/api/v1/events` 游标协议不变，事件名改为 V1：`workflow.runtime.changed`、
   `workflow.authoring.changed`、`station.error_handling.changed` 等。dev 细粒度事件
   （`workflow.task|node_run|node_job|manual_confirmation|resource.changed`）作为 `data.kind`
-  放进 V1 事件，不再单独发事件名。CLI `workflow watch` 同步修改。
+  （`task` / `node_run` / `node_job` / `manual_confirmation` / `resource`）放进 V1 事件，不再单独发事件名；
+  原载荷字段保留。换名在 API 层（`api/runtime/events.py:to_v1_event`）做，`frontend_event` 表仍存 dev 名。
+  `runtime.logs.changed`（无 id 的日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
+  V1 合同里，暂保持原名。CLI `workflow watch` 同步修改。
 
 ## 同路径不同语义的处理（V1 合同优先）
 

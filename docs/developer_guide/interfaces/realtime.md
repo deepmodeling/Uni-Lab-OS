@@ -62,7 +62,9 @@ function subscribeMaterials(baseUrl, render, reportError) {
         dirty = false;
         const response = await fetch(`${baseUrl}/api/v1/materials/instances`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const materials = await response.json(); // 直出列表，不是 code 信封
+        const body = await response.json(); // 统一信封 {code, data}
+        if (body.code !== 0) throw new Error(body.error?.msg ?? `code ${body.code}`);
+        const materials = body.data;
         if (!closed) render(materials);
       }
     } catch (error) {
@@ -96,10 +98,12 @@ function subscribeMaterials(baseUrl, render, reportError) {
 每个事务最多删 1,000 条）。只删连续的旧前缀，始终保留最新一条作为水位；这些是清理目标，
 不是每次插入后的硬上限。慢连接的游标被清理越过时收到 `cursor_expired`。
 
-持久事件包括 `workflow.task.changed`、`workflow.node_run.changed`、
-`workflow.node_job.changed`、`workflow.manual_confirmation.changed` 等。
-data 为相应对象身份、状态等失效信息；例如 node job 事件带 workflow_node_job_uuid、
-workflow_node_run_uuid、attempt_no、status。未知事件名应安全忽略或触发相关 HTTP 校准，不能让整个流崩溃。
+持久事件按 V1 事件名发送：任务、节点运行、节点作业、人工确认与资源区间 / 借还 / 托管的变化一律为
+`workflow.runtime.changed`，`data.kind` 区分种类（`task` / `node_run` / `node_job` /
+`manual_confirmation` / `resource`）；作者态（草稿、候选、应用）为 `workflow.authoring.changed`。
+`station.error_handling.changed` 是 V1 工站异常处理的事件名，迁移该领域后出现。
+data 为相应对象身份、状态等失效信息（库里存的 dev 载荷原样保留）；例如 node job 事件带
+`kind:"node_job"`、workflow_node_job_uuid、workflow_node_run_uuid、attempt_no、status。未知事件名应安全忽略或触发相关 HTTP 校准，不能让整个流崩溃。
 有 `event:` 名称的 SSE 必须用 addEventListener 注册；仅设置 onmessage 接不到这些命名事件。
 
 ## Host / 本机和远端 Slave 日志
@@ -120,7 +124,7 @@ workflow_node_run_uuid、attempt_no、status。未知事件名应安全忽略或
 cursor 是不透明字符串，当前形态为 24 位十六进制 stream id 加冒号和偏移量；
 limit 默认 300，范围 1–1000。offset 不是时间，也不能跨文件排序。
 reset 表示文件轮转/进程重启等导致游标重新定位；truncated 表示历史缺口，应在界面提示，不能伪装日志连续。
-无此源返回 404，暂不可用返回 503（可带 Retry-After）。
+无此源返回业务码 4001，暂不可用返回 5001（HTTP 200，可带 Retry-After）。
 
 日志通知**没有 SSE id、没有日志正文、不落持久工作流事件表**。
 突发追加会合并通知，所以通知数量不等于新增行数。日志读取不消费数据，两个页面应各自持有 cursor。
@@ -135,8 +139,8 @@ reset 表示文件轮转/进程重启等导致游标重新定位；truncated 表
 WebSocket 消息统一为 `{"action":"...","data":{...}}`。不是 HostLink 的 req/resp 信封。
 
 **鉴权。** 控制 WebSocket、`GET /edge/commands/{uuid}` 与 `POST /api/v1/edge/http-responses/{uuid}` 都要求
-控制面 token（请求头 `X-UniLab-Token`，或 `Authorization: Bearer <token>`）：握手缺失或不符时以 HTTP 403 拒绝，
-HTTP 路由返回 401。token 的来源见 [配置指南](../../advanced_usage/configuration.md) 的「控制面 token」。
+控制面 token（只认请求头 `X-UniLab-Token`；`Authorization: Bearer` 留给 V1 工站 api_key）：握手缺失或不符时以
+HTTP 403 拒绝，HTTP 路由返回 401。这两条 Host↔权威内部 HTTP 通道不包信封。token 的来源见 [配置指南](../../advanced_usage/configuration.md) 的「控制面 token」。
 
 | action | 方向 | data 模型 / 含义 |
 | --- | --- | --- |

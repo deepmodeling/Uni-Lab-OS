@@ -15,6 +15,7 @@ from unilabos.config.config import BasicConfig
 from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 
 def _run(tmp_path, capsys, *argv):
@@ -30,7 +31,10 @@ def _run(tmp_path, capsys, *argv):
 def test_status_drain_resume_use_existing_scheduler(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(BasicConfig, "control_token", "runtime-cli-test")
     monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
-    scheduler = BackendScheduler(MagicMock(), MagicMock())
+    # 调度器启动即按 runtime.db 做库存/执行对账：用真实（空的）WorkflowService，
+    # MagicMock 的查询结果恒为真值，会被当成遗留派发而暂停派发。
+    workflow = WorkflowService(":memory:")
+    scheduler = BackendScheduler(workflow, MagicMock())
     backend = SimpleNamespace(device_manager=SimpleNamespace(get_active_jobs=lambda: []))
     app = create_backend_app(lambda: scheduler, lambda: backend)
     app.add_middleware(ControlTokenMiddleware)
@@ -43,13 +47,17 @@ def test_status_drain_resume_use_existing_scheduler(tmp_path, monkeypatch, capsy
 
     monkeypatch.setattr(HTTPClient, "__init__", connect)
     monkeypatch.setattr("subprocess.Popen", lambda *a, **k: pytest.fail("runtime 查询和排空不得启动进程"))
-    assert _run(tmp_path, capsys, "status")["drain"]["phase"] == "running"
-    assert _run(tmp_path, capsys, "drain", "--wait")["phase"] == "drained"
-    status = _run(tmp_path, capsys, "status")
-    assert status["readiness"]["status"] == "not_ready"
-    assert scheduler.dispatch_paused
-    assert _run(tmp_path, capsys, "resume")["phase"] == "running"
-    assert not scheduler.dispatch_paused
+    try:
+        assert _run(tmp_path, capsys, "status")["drain"]["phase"] == "running"
+        assert _run(tmp_path, capsys, "drain", "--wait")["phase"] == "drained"
+        status = _run(tmp_path, capsys, "status")
+        assert status["readiness"]["status"] == "not_ready"
+        assert scheduler.dispatch_paused
+        assert _run(tmp_path, capsys, "resume")["phase"] == "running"
+        assert not scheduler.dispatch_paused
+    finally:
+        scheduler.stop()
+        workflow.close()
 
 
 def test_restart_targets_edge_and_reset_defaults_to_preview(tmp_path, monkeypatch, capsys):

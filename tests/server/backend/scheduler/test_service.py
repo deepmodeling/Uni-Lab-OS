@@ -7,6 +7,7 @@ import pytest
 from unilabos.protocol.materials import InventoryAllocation
 from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState
 from unilabos.server.backend.scheduler.service import BackendScheduler, allocation_arguments
+from unilabos.server.services.runtime.workflow.store import WorkflowStore
 
 
 @pytest.fixture(autouse=True)
@@ -21,22 +22,44 @@ def isolated_claim_storage(monkeypatch):
     claims = Mock()
     claims.restore_requests.return_value = []
     claims.unclaimed_active_jobs.return_value = []
-    claims.reserve.return_value = {"claim_uuid": "unit-claim", "attempt_no": 1, "fences": {}}
+    # 与 ExecutionClaims 一致：reserve 之后同一 attempt 的 get 读回该 Claim，之前为 None。
+    reserved: dict[str, dict[str, Any]] = {}
+    claims.reserve.side_effect = lambda request, **_: reserved.setdefault(
+        request.owner_uuid,
+        {"claim_uuid": "unit-claim", "attempt_no": 1, "fences": {}, "request": request.model_dump(mode="json")},
+    )
     claims.release_if_terminal.return_value = True
-    claims.get.return_value = None
+    claims.get.side_effect = reserved.get
     claims.activate_authority.return_value = "unit-epoch"
     claims.seal_dispatch.return_value = {}
     monkeypatch.setattr("unilabos.server.services.runtime.workflow.execution_claim.ExecutionClaims", lambda _store: claims)
 
 
 class _Workflow:
-    """WorkflowService 桩：节点运行/attempt 事实的最小实现（store 契约见 test_workflow_node_run_attempts）。"""
+    """WorkflowService 桩：节点运行/attempt 事实的最小实现（store 契约见 test_workflow_node_run_attempts）。
+
+    生产 WorkflowService 继承 WorkflowStore：库存/物理恢复经 ``write_lock``、
+    ``connection``、``transaction()`` 直接读 runtime.db。桩持有一个空的
+    内存 runtime.db（真实表结构），表示"没有遗留派发与待结算事实"。
+    """
 
     def __init__(self) -> None:
+        self._store = WorkflowStore(":memory:")
         self.running: list[str] = []
         self.terminal: list[tuple[str, str, dict[str, Any]]] = []
         self.runs: dict[str, dict[str, Any]] = {}
         self.jobs: dict[str, str] = {}  # job uuid -> run uuid
+
+    @property
+    def connection(self):
+        return self._store.connection
+
+    @property
+    def write_lock(self):
+        return self._store.write_lock
+
+    def transaction(self):
+        return self._store.transaction()
 
     def add_run(self, run_uuid: str, job_uuid: str) -> None:
         self.runs[run_uuid] = {
@@ -84,6 +107,20 @@ class _Workflow:
         run["status"] = "intervention_required"
         run["pending_decision"] = report.get("decision_id")
         return dict(run)
+
+
+class _Materials:
+    """库存权威桩：库存预留只能来自权威，带预留的派发须先在权威冻结物理执行记录。"""
+
+    def __init__(self) -> None:
+        self.prepared: list[Any] = []
+
+    def list_inventory_reservations(self, **_filters: Any) -> list[Any]:
+        return []
+
+    def prepare_material_execution(self, value: Any) -> dict[str, Any]:
+        self.prepared.append(value)
+        return {"job_uuid": value.job_uuid, "claim_uuid": value.claim_uuid, "plan_hash": "plan-of-" + value.job_uuid}
 
 
 class _Executor:
@@ -173,7 +210,8 @@ def test_one_scheduler_serializes_the_complete_action_and_material_set() -> None
 def test_reserved_warehouse_material_is_part_of_the_same_resource_request() -> None:
     workflow = _Workflow()
     executor = _Executor()
-    scheduler = BackendScheduler(workflow, executor)  # type: ignore[arg-type]
+    materials = _Materials()
+    scheduler = BackendScheduler(workflow, executor, materials_gateway=materials)  # type: ignore[arg-type]
     task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
     node = DagNode(node_id="run-warehouse", device_id="device-a", action="use")
     _attach(scheduler, workflow, task, node)
@@ -191,6 +229,12 @@ def test_reserved_warehouse_material_is_part_of_the_same_resource_request() -> N
     assert [item.kind for item in identifiers] == ["action", "material"]
     assert identifiers[1].material_uuid == "allocated-material"
     assert executor.dispatched[0]["inventory_reservation_uuid"] == "reservation-1"
+    # 库存在开始时按预留扣减：派发前权威按 attempt/Claim 冻结执行记录，载荷携带其身份。
+    (prepared,) = materials.prepared
+    assert (prepared.job_uuid, prepared.task_uuid, prepared.inventory_reservation_uuid) == (
+        "run-warehouse-a1", "task-1", "reservation-1",
+    )
+    assert executor.dispatched[0]["material_execution"]["job_uuid"] == "run-warehouse-a1"
 
 
 def test_cancelled_attempt_settles_as_canceled_not_failed() -> None:

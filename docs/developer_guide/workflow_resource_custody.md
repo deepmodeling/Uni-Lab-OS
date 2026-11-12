@@ -26,7 +26,9 @@ v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管
 装载动作准入时先记 `reserved`，成功变为 `loaded`；失败或未知变为 `retained`。
 托管转换与动作的终态（或 `execution_unknown`）在同一个 runtime.db 事务里提交：节点一旦显示
 `succeeded`，`/workflow-device-tenancies` 同时已是 `loaded` / 已释放，不需要轮询等待。等待决策的
-`intervention_required` 不是结算，托管保持原样。
+`intervention_required` 不是结算，托管保持原样。动作因超时结算而驱动仍在执行时（ADR 0008），
+托管同样保持原样，直到驱动真实返回或执行锁被人工强制释放后再按已结算的状态收敛；持有期间
+不能人工释放该托管。
 转移期间源设备和目标设备均保留托管；只有成功结果释放准入时钉住的源托管 UUID。
 迟到结果不能释放后来建立的新托管。已证明未派发的 pending 撤回只撤销新预占，
 不释放原先已装载的源设备。

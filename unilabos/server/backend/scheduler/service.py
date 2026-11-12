@@ -1354,10 +1354,19 @@ class BackendScheduler:
                 self._physical_retrying = False
 
     def _release_job_resources(self, job_uuid: str, *, canceled: bool) -> None:
-        """释放一个 attempt 持有的资源申请。"""
+        """释放一个 attempt 持有的资源申请。
+
+        超时后仍持有锁的 attempt（ADR 0008）只退出在途集合：动作 / 物料锁与持久占用
+        保留到驱动真实返回（:meth:`publish_job_late_outcome`）或人工强制释放。
+        """
 
         self._reconcile_inventory()
         if not self._execution_claims.release_if_terminal(job_uuid):
+            if self._execution_claims.held_after_timeout(job_uuid):
+                with self._guard:
+                    self._waiting_resource_jobs.pop(job_uuid, None)
+                    self._dispatched_jobs.discard(job_uuid)
+                    self._manual_confirmation_jobs.discard(job_uuid)
             return
         self._intervals.release_job(job_uuid)
         try:
@@ -2213,11 +2222,11 @@ class BackendScheduler:
             job_status = "canceled"
         else:
             job_status = "failed"
-        resolution = (
-            (return_info or {}).get("error_resolution")
-            if isinstance(return_info, dict)
-            else None
-        )
+        info = return_info if isinstance(return_info, dict) else {}
+        resolution = info.get("error_resolution")
+        # 执行面在超时闸门结算、驱动尚未返回时附 timeout_hold：attempt 照常结算，锁继续持有。
+        timeout_hold = info.get("timeout_hold")
+        late_outcome = info.get("late_outcome")
         self._settle_attempt(
             job_id,
             job_status=job_status,
@@ -2230,6 +2239,8 @@ class BackendScheduler:
                 [] if job_status != "failed" else [_failure_error_info(return_info)]
             ),
             resolution=resolution if isinstance(resolution, dict) else None,
+            timeout_hold=timeout_hold if isinstance(timeout_hold, dict) else None,
+            late_outcome=late_outcome if isinstance(late_outcome, dict) else None,
         )
         for task_uuid in {pending["task_uuid"] for _decision_id, pending in stale}:
             self._settle_task_reconciliation(task_uuid)
@@ -2242,8 +2253,14 @@ class BackendScheduler:
         return_info: Dict[str, Any],
         error_info: list[Dict[str, Any]],
         resolution: Optional[Dict[str, Any]],
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """attempt 终态收敛的唯一入口：执行器回报与重启后的人工裁决都走这里。"""
+        """attempt 终态收敛的唯一入口：执行器回报与重启后的人工裁决都走这里。
+
+        ``timeout_hold`` 非空：终态由超时闸门决定、驱动尚未返回。attempt 照常结算，
+        工作流按决策 / 超时策略继续，但它的锁不释放（ADR 0008）。
+        """
 
         with self._guard:
             run_uuid = self._job_runs.get(job_id)
@@ -2264,14 +2281,26 @@ class BackendScheduler:
             self._reconcile_lost_attempt(job_id, {"uncertainty_reason": str(error)})
             return
         # attempt 终态先落表并投影到节点运行；retry 决策由 store 在同一事务里追加新 attempt
+        hold_kwargs: Dict[str, Any] = {}
+        if timeout_hold is not None:
+            hold_kwargs["timeout_hold"] = timeout_hold
+        if late_outcome is not None:
+            hold_kwargs["late_outcome"] = late_outcome
         outcome = self.workflow.record_workflow_node_job_terminal(
             job_id,
             status=job_status,
             return_info=return_info,
             error_info=error_info,
             error_resolution=resolution,
+            **hold_kwargs,
         )
         run = outcome["run"]
+        if timeout_hold is not None:
+            logger.warning(
+                "作业 %s 已按超时结算为 %s，驱动仍在执行：锁继续持有，直到驱动真实返回或人工强制释放",
+                job_id,
+                job_status,
+            )
         self._release_job_resources(job_id, canceled=False)
 
         if recovery_waiter is not None:
@@ -2317,6 +2346,35 @@ class BackendScheduler:
 
         if run["status"] in _RUN_TERMINAL:
             runner.notify_terminal(run_uuid, _run_status_to_state(str(run["status"])))
+
+    def publish_job_late_outcome(self, report: Dict[str, Any], item: Any = None) -> bool:
+        """执行面结果桥：超时结算后驱动真实返回（迟到结果）。
+
+        迟到结果只记录在 attempt 的 ``control_data.late_outcome``，不改变已结算的状态与
+        结果；该 attempt 仍按超时持有的锁在同一事务释放，随后释放内存锁并唤醒等待者。
+        以持久事实为准，不依赖调度器内存：权威重启后、任务已结束时同样生效。
+        """
+
+        job_uuid = str(report.get("job_id") or getattr(item, "job_id", "") or "")
+        if not job_uuid:
+            return False
+        outcome = {
+            key: deepcopy(report[key])
+            for key in ("status", "return_info", "received_at", "timeout_kind", "timed_out_at")
+            if key in report
+        }
+        try:
+            result = self.workflow.record_workflow_node_job_late_outcome(job_uuid, outcome)
+        except Exception:  # noqa: BLE001 - 非本权威的 job 或已删除：只记日志
+            logger.exception("作业 %s 的迟到结果记录失败", job_uuid)
+            return False
+        if not result.get("released"):
+            logger.info("作业 %s 的迟到结果（%s）已记录，没有需要释放的超时持有",
+                        job_uuid, outcome.get("status"))
+            return True
+        logger.info("作业 %s 的驱动迟到返回（%s），释放超时持有的锁", job_uuid, outcome.get("status"))
+        self._release_job_resources(job_uuid, canceled=False)
+        return True
 
     def publish_job_error_decision_required(self, report: Dict[str, Any]) -> bool:
         """执行面决策桥：本机派发的 attempt 失败并挂起等待决策。"""

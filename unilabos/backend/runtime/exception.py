@@ -26,11 +26,14 @@ class ActionTimeoutBase(RuntimeError):
         device_id: str = "",
         elapsed_seconds: Optional[float] = None,
         message: str = "",
+        driver_still_running: bool = False,
     ) -> None:
         self.action_name = action_name
         self.device_id = device_id
         self.timeout_seconds = float(timeout_seconds)
         self.elapsed_seconds = elapsed_seconds
+        # 同步驱动的线程杀不掉：超时报出时它仍在执行，执行面据此继续持有锁（ADR 0008）
+        self.driver_still_running = bool(driver_still_running)
         super().__init__(message or self._default_message())
 
     def _default_message(self) -> str:
@@ -57,6 +60,8 @@ class ActionTimeoutBase(RuntimeError):
         }
         if self.elapsed_seconds is not None:
             info["elapsed_seconds"] = float(self.elapsed_seconds)
+        if self.driver_still_running:
+            info["driver_still_running"] = True
         return info
 
 

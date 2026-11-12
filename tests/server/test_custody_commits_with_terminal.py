@@ -2,7 +2,7 @@
 
 每次提交后立即用**另一条** SQLite 连接读库（模拟 ``/workflow-device-tenancies`` 等观察者），
 断言作业状态一旦可见，由它派生的托管转换、使用权 / 准入与执行 Claim 已经同时可见；崩溃在
-"终态已落、后续释放未跑"之间也不会留下不一致。
+"终态已落、后续释放未跑"之间也不会留下不一致。超时后仍持有锁的 attempt（ADR 0008）托管保持原样。
 """
 
 from __future__ import annotations
@@ -163,6 +163,33 @@ def test_decision_pending_does_not_move_custody(stack) -> None:
     assert read_state(path, load.owner_uuid)["tenancies"] == {"acquire_uuid": "reserved"}
     service.record_workflow_node_job_terminal(load.owner_uuid, status="succeeded", return_info={}, error_info=[])
     assert read_state(path, load.owner_uuid)["tenancies"] == {"acquire_uuid": "loaded"}
+
+
+def test_timed_out_attempt_keeps_custody_until_the_late_outcome(stack) -> None:
+    service, path, intervals, claims, epoch = stack
+    task = make_task(service, ("robot", "robot"))
+    load = tenancy_request(service, task, 0, str(uuid4()), acquire="reactor")
+    start(service, intervals, claims, epoch, load)
+    snapshots = observe_commits(service, path, load.owner_uuid)
+    service.record_workflow_node_job_terminal(
+        load.owner_uuid, status="failed", return_info={}, error_info=[{"code": "action_timeout"}],
+        timeout_hold={"kind": "timeout", "timeout_seconds": 5, "timed_out_at": time.time()},
+    )
+    (committed,) = snapshots
+    # attempt 已结算，但托管与锁都原样保留
+    assert committed["status"] == "failed" and committed["claim"] == "timed_out"
+    assert committed["tenancies"] == {"acquire_uuid": "reserved"} and committed["transition"] == "prepared"
+    assert committed["uses"] == 3 and committed["admission"] == "active"
+    # 其他路径的收敛（恢复、别的作业触发的区间收敛）都不会动它
+    intervals.recover()
+    intervals.release_job(load.owner_uuid)
+    assert read_state(path, load.owner_uuid) == committed
+
+    service.record_workflow_node_job_late_outcome(load.owner_uuid, {"status": "success"})
+    released = snapshots[-1]
+    # 驱动返回后按已结算的失败收敛：托管转待核实，锁放开
+    assert released["status"] == "failed" and released["claim"] == "released"
+    assert released["tenancies"] == {"acquire_uuid": "retained"} and released["uses"] == 0
 
 
 # ── 调度器：终态之后不再有单独的托管 / 区间事务 ───────────────────

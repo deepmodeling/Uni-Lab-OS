@@ -118,6 +118,15 @@ execution_timeout)`，软超时表达式（如 `duration * 1.5 + 30`）用最终
 写回节点运行的 `execution_timeout_seconds` 供前端展示。硬超时到期由执行面协作式取消动作并以
 `TimeoutException` 进入本决策链，节点运行 `error_info[0].code=action_timeout`。
 
+硬超时是工作流的自动继续规则，但不是释放资源的证据（ADR 0008）：执行面在驱动尚未返回时给终态附
+`return_info.timeout_hold`，调度器照常结算 attempt、按决策继续，同时在同一事务里把该 attempt 的执行
+Claim 转为 `timed_out`——动作 / 物料锁、使用权与准入、资源区间和设备托管都不随终态收回。后续需要
+这些锁的作业（同任务后续节点、该节点的重试、其他任务）在区间准入处等待，`/scheduler/resources` 以
+超时的 attempt 为阻塞者。驱动真实返回时执行面把结果作为迟到结果交给 owner（本机调度器的
+`publish_job_late_outcome`；Backend-controlled 下为 runtime.v1 事件 `execution.late_outcome`），调度器
+记入 `control_data.late_outcome`、不改已结算的结果，并释放这些锁；操作员也可以在核实现场后用
+`execution-locks/{lease_uuid}/force-release` 释放。`timed_out` 是持久状态，跨调度权威重启保留。
+
 attempt 状态与由它派生的占用收敛（Claim 释放、使用权 / 准入、区间、设备托管）在同一个 runtime.db
 事务里提交；`_release_job_resources` 随后只释放调度器内存锁并唤醒等待者，`ResourceIntervals.recover()`
 仍在启动时兜底。

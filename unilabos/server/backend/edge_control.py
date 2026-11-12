@@ -591,6 +591,25 @@ class EdgeControlService:
                 except Exception:  # noqa: BLE001 - 单个 bridge 失败不影响决策登记
                     logger.exception("[EdgeControl] publish_job_error_decision_required 失败")
 
+    def _record_late_outcome(self, notice: EdgeChangeNotice, *, final_attempt: bool = False) -> None:
+        """超时结算后驱动真实返回：转交调度权威记录迟到结果并释放该 attempt 仍持有的锁。"""
+
+        job_uuid = notice.job_uuid or notice.aggregate_uuid
+        detail = self._event_detail(notice, final_attempt=final_attempt)
+        report = dict(detail.get("report") or {}) if isinstance(detail, dict) else {}
+        report["job_id"] = job_uuid
+        if isinstance(detail, dict):
+            report.setdefault("status", detail.get("status"))
+            report.setdefault("return_info", detail.get("return_info") or {})
+        logger.info("[EdgeControl] job %s 超时后驱动返回迟到结果 %s", job_uuid, report.get("status"))
+        for bridge in list(self.result_bridges):
+            callback = getattr(bridge, "publish_job_late_outcome", None)
+            if callable(callback):
+                try:
+                    callback(deepcopy(report))
+                except Exception:  # noqa: BLE001 - 单个 bridge 失败不影响其他 bridge
+                    logger.exception("[EdgeControl] publish_job_late_outcome 失败")
+
     def wait_idle(self, timeout: float = 5.0) -> bool:
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -980,6 +999,9 @@ class EdgeControlService:
             return
         if notice.event_type == "execution.error_resumed":
             self._record_error_resumed(notice)
+            return
+        if notice.event_type == "execution.late_outcome":
+            self._record_late_outcome(notice, final_attempt=final_attempt)
             return
         terminal = _TERMINAL_EVENT_STATUS.get(notice.event_type)
         if terminal is None:

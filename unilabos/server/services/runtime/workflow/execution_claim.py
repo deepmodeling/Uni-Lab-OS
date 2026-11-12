@@ -1,4 +1,10 @@
-"""完整资源申请在派发前落库；未知执行的占用不按时间自动释放。"""
+"""完整资源申请在派发前落库；未知执行的占用不按时间自动释放。
+
+Claim 状态：``reserved``（已取得租约、尚未派发）→ ``running``（已派发）→ ``released``；
+结果不确定时为 ``uncertain``（物理结算或人工核对前保留）；``timed_out`` 表示 attempt 已按
+超时闸门结算、但驱动尚未真实返回——锁继续由该 attempt 持有，只有驱动真实返回（迟到结果）
+或人工强制释放才放开（ADR 0008）。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -82,7 +88,7 @@ class ExecutionClaims:
                 raise StoreConflict("过期、取消或已结束的尝试不能取得执行资源")
             prior = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (request.owner_uuid,)).fetchone()
             if prior is not None:
-                if _json(SchedulerResourceRequest.model_validate(_load(prior["request"])).model_dump(mode="json")) != request_json or prior["state"] in {"released", "uncertain"}:
+                if _json(SchedulerResourceRequest.model_validate(_load(prior["request"])).model_dump(mode="json")) != request_json or prior["state"] in {"released", "uncertain", "timed_out"}:
                     raise StoreConflict("资源声明已失效或同一尝试的资源集合发生变化")
                 return self._read(conn, prior)
             if request.interval_admission:
@@ -134,7 +140,9 @@ class ExecutionClaims:
 
     def mark_uncertain(self, job_uuid: str) -> None:
         with self.store.transaction() as conn:
-            conn.execute("UPDATE workflow_execution_claim SET state='uncertain' WHERE job_uuid=? AND state!='released'", (job_uuid,))
+            # 超时后仍持有的 Claim 只等驱动返回或人工释放，不降级为待物理结算。
+            conn.execute("UPDATE workflow_execution_claim SET state='uncertain' WHERE job_uuid=? "
+                         "AND state NOT IN ('released','timed_out')", (job_uuid,))
 
     @staticmethod
     def _release(conn, row) -> None:
@@ -144,10 +152,16 @@ class ExecutionClaims:
 
     @classmethod
     def release_terminal(cls, conn, job_uuid: str) -> bool:
-        """事务内按 attempt 终态放开 Claim；返回 Claim 是否已不再占用。"""
+        """事务内按 attempt 终态放开 Claim；返回 Claim 是否已不再占用。
+
+        超时后仍持有（``timed_out``）的 Claim 不随终态释放：驱动可能仍在动作，
+        只有迟到结果或人工强制释放才能放开。
+        """
         row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()
         if row is None or row["state"] == "released":
             return True
+        if row["state"] == "timed_out":
+            return False
         job = cls._job(conn, job_uuid)
         if job["status"] not in _TERMINAL:
             return False
@@ -156,9 +170,34 @@ class ExecutionClaims:
         return True
 
     def release_if_terminal(self, job_uuid: str) -> bool:
-        """只有已核实的 attempt 终态才能放锁；停进程或回执丢失均不算终态。"""
+        """只有已核实的 attempt 终态才能放锁；停进程、回执丢失或超时均不算放锁证据。"""
         with self.store.transaction() as conn:
             return self.release_terminal(conn, job_uuid)
+
+    @staticmethod
+    def hold_after_timeout(conn, job_uuid: str) -> bool:
+        """事务内把 attempt 的 Claim 转为 ``timed_out``：终态已结算，锁继续持有。"""
+        return bool(conn.execute(
+            "UPDATE workflow_execution_claim SET state='timed_out' WHERE job_uuid=? AND state!='released'",
+            (job_uuid,),
+        ).rowcount)
+
+    @classmethod
+    def release_timeout_hold(cls, conn, job_uuid: str) -> bool:
+        """驱动真实返回后放开超时持有的 Claim；不是 ``timed_out`` 时不动并返回 False。"""
+        row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()
+        if row is None or row["state"] != "timed_out":
+            return False
+        cls._read(conn, row)
+        cls._release(conn, row)
+        return True
+
+    def held_after_timeout(self, job_uuid: str) -> bool:
+        with self.store.write_lock:
+            row = self.store.connection.execute(
+                "SELECT state FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,),
+            ).fetchone()
+        return bool(row and row["state"] == "timed_out")
 
     def unclaimed_active_jobs(self) -> list[str]:
         """旧库在飞尝试没有冻结的资源集合，升级后必须先核实再开放新派发。"""
@@ -174,14 +213,17 @@ class ExecutionClaims:
         return [str(row[0]) for row in rows]
 
     def restore_requests(self) -> list[SchedulerResourceRequest]:
-        """先恢复全部冻结的占用，再允许任务竞争；已落终态但未放锁的崩溃窗口可收敛。"""
+        """先恢复全部冻结的占用，再允许任务竞争；已落终态但未放锁的崩溃窗口可收敛。
+
+        超时后仍持有的 Claim 虽然 attempt 已终态，仍按原申请恢复占用（ADR 0008）。
+        """
         requests = []
         with self.store.transaction() as conn:
             rows = conn.execute("SELECT * FROM workflow_execution_claim WHERE state!='released' ORDER BY acquired_at, claim_uuid").fetchall()
             for row in rows:
                 claim = self._read(conn, row)
                 job = self._job(conn, row["job_uuid"])
-                if job["status"] in _TERMINAL:
+                if job["status"] in _TERMINAL and row["state"] != "timed_out":
                     self._release(conn, row)
                 else:
                     requests.append(SchedulerResourceRequest.model_validate(claim["request"]))

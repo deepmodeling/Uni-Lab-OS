@@ -1662,6 +1662,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         return_info: Optional[Dict[str, Any]] = None,
         error_info: Optional[List[Dict[str, Any]]] = None,
         error_resolution: Optional[Dict[str, Any]] = None,
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """attempt 终态 + 节点运行投影；返回 ``{"job", "run", "next_job"}``（见 store）。"""
 
@@ -1671,7 +1673,16 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             return_info=return_info or {},
             error_info=error_info or [],
             error_resolution=error_resolution,
+            timeout_hold=timeout_hold,
+            late_outcome=late_outcome,
         )
+
+    def record_workflow_node_job_late_outcome(
+        self, job_uuid: str, outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """超时结算后驱动的迟到结果：只记录，并放开仍持有的锁（见 store）。"""
+
+        return self.record_job_late_outcome(job_uuid, outcome)
 
     def begin_workflow_loop_iteration(
         self,

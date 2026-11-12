@@ -119,8 +119,12 @@ class JobExecutionBackend:
         self._pending_action_error_decisions_lock = threading.RLock()
         # @action(timeout / execution_timeout) 看门狗：job_id -> {"hard": Timer, "soft": Timer, ...}
         self._job_timeouts: Dict[str, Dict[str, Any]] = {}
-        # 终态已由超时闸门决定的 job：之后设备迟到的 feedback / 结果一律忽略
+        # 终态已由超时闸门决定的 job：之后设备迟到的 feedback 一律忽略
         self._superseded_jobs: Set[str] = set()
+        # 超时闸门已取代、驱动尚未真实返回的 job（ADR 0008）：job_id -> 记录。终态放行时
+        # 附 timeout_hold，调度权威据此结算 attempt 但继续持有锁；驱动真实返回后作为迟到结果
+        # 转交 owner bridge（publish_job_late_outcome），由它释放锁。
+        self._overrun_jobs: Dict[str, Dict[str, Any]] = {}
         # 已交给驱动执行的 job；对它们的取消只是请求，驱动真实返回后才收口（锁也随之释放）
         self._cancel_state_lock = threading.Lock()
         self._goal_sent_jobs: Set[str] = set()
@@ -527,6 +531,136 @@ class JobExecutionBackend:
         with self._timeout_lock:
             return job_id in self._superseded_jobs
 
+    # ── 超时后驱动未返回（ADR 0008） ─────────────────────────
+
+    def _register_overrun(self, job_id: str, item: QueueItem, kind: str, seconds: Any) -> None:
+        """超时闸门决定了终态而驱动线程还在跑（Python 杀不掉它）：登记，等它真实返回。"""
+
+        with self._timeout_lock:
+            self._overrun_jobs.setdefault(
+                job_id,
+                {
+                    "item": item,
+                    "kind": kind,
+                    "timeout_seconds": seconds,
+                    "timed_out_at": time.time(),
+                    "releasing": False,
+                    "released": False,
+                    "late": None,
+                },
+            )
+
+    def _overrun_terminal_extras(self, job_id: str) -> Dict[str, Any]:
+        """终态放行前调用：驱动未返回则附 ``timeout_hold``，已返回则附 ``late_outcome``。"""
+
+        with self._timeout_lock:
+            entry = self._overrun_jobs.get(job_id)
+            if entry is None or entry["releasing"] or entry["released"]:
+                return {}
+            if entry["late"] is not None:
+                self._overrun_jobs.pop(job_id, None)
+                return {"late_outcome": deepcopy(entry["late"])}
+            entry["releasing"] = True
+            return {
+                "timeout_hold": {
+                    "kind": entry["kind"],
+                    "timeout_seconds": entry["timeout_seconds"],
+                    "timed_out_at": entry["timed_out_at"],
+                    "reason": "driver_still_running",
+                }
+            }
+
+    def _overrun_terminal_released(self, job_id: str) -> None:
+        """带 ``timeout_hold`` 的终态已入队：此后到达的迟到结果排在终态之后转交。"""
+
+        with self._timeout_lock:
+            entry = self._overrun_jobs.get(job_id)
+            if entry is None or not entry["releasing"]:
+                return
+            entry["released"] = True
+            if entry["late"] is not None:
+                self._overrun_jobs.pop(job_id, None)
+                self._put_event(("late_outcome", entry["item"], deepcopy(entry["late"])))
+
+    def _take_late_outcome(
+        self,
+        job_id: str,
+        status: str,
+        return_info: Optional[Dict[str, Any]],
+        feedback_data: Optional[Dict[str, Any]],
+    ) -> bool:
+        """驱动在超时之后真实返回：记录迟到结果；返回 True 表示已接管这次回报。"""
+
+        error_info = (return_info or {}).get("error_info") if isinstance(return_info, dict) else None
+        with self._timeout_lock:
+            entry = self._overrun_jobs.get(job_id)
+            if entry is None:
+                return False
+            if isinstance(error_info, dict) and error_info.get("driver_still_running"):
+                # 运行时自己的超时报告（看门狗已先一步结算）：驱动仍未返回，不是迟到结果
+                return True
+            if entry["late"] is None:
+                entry["late"] = {
+                    "status": status,
+                    "return_info": deepcopy(return_info) if isinstance(return_info, dict) else {},
+                    "feedback_data": deepcopy(dict(feedback_data or {})),
+                    "received_at": time.time(),
+                    "timeout_kind": entry["kind"],
+                    "timed_out_at": entry["timed_out_at"],
+                }
+            if entry["released"]:
+                self._overrun_jobs.pop(job_id, None)
+                # 经 worker 队列转交：与终态事件保持先后顺序
+                self._put_event(("late_outcome", entry["item"], deepcopy(entry["late"])))
+        logger.info(
+            "[JobExecutionBackend] 超时的 job %s 驱动迟到返回（%s），按迟到结果转交", job_id, status
+        )
+        return True
+
+    def _handle_late_outcome(self, item: QueueItem, late: Dict[str, Any]) -> None:
+        report = {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "node_id": str(getattr(item, "node_id", "") or ""),
+            "node_run_uuid": str(getattr(item, "node_run_uuid", "") or ""),
+            "device_id": item.device_id,
+            "action_name": item.action_name,
+            **late,
+        }
+        for bridge in self._bridges_for(item):
+            callback = getattr(bridge, "publish_job_late_outcome", None)
+            if callable(callback):
+                try:
+                    callback(deepcopy(report), item)
+                except Exception:  # noqa: BLE001 - 单个 bridge 失败不影响其他 bridge
+                    logger.exception(
+                        "[JobExecutionBackend] job %s 的迟到结果转交失败", item.job_id
+                    )
+        if self._monitor is not None:
+            try:
+                self._monitor.emit("action", "job_late_outcome", report)
+            except Exception:  # noqa: BLE001 - 观测不能阻断执行链路
+                logger.exception("[JobExecutionBackend] 迟到结果观测事件发送失败")
+
+    def _release_overrun_cancel(self, job: JobInfo) -> bool:
+        """取消一个超时后驱动未返回、终态尚未放行的 job：立即按取消结算并继续持有锁。"""
+
+        with self._timeout_lock:
+            entry = self._overrun_jobs.get(job.job_id)
+            if entry is None or entry["releasing"] or entry["released"]:
+                return False
+        self._cancel_pending_error_decisions({job.job_id})
+        item = self._queue_item_for(job)
+        item.trace_context = getattr(job, "trace_context", {}) or {}
+        cancel_info = serialize_result_info(
+            "Job was cancelled",
+            False,
+            {},
+            suc_type=SUCCESS_TYPE_CANCELLATION,
+        )
+        self._release_terminal(item, "failed", cancel_info, {})
+        return True
+
     def _pending_soft_timeout_for(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._pending_action_error_decisions_lock:
             for pending in self._pending_action_error_decisions.values():
@@ -783,6 +917,8 @@ class JobExecutionBackend:
         job = self.device_manager.get_job_info(job_id)
         if job is None:
             return False
+        if self._release_overrun_cancel(job):
+            return True
         self._forget_job_timeouts(job_id)
         if self._goal_sent(job_id):
             self._request_running_cancel(job_id)
@@ -820,6 +956,10 @@ class JobExecutionBackend:
             if job.task_id == task_id
         ]
         jobs_by_id = {job.job_id: job for job in jobs}
+        # 超时后驱动未返回、正等决策的 job：立即按取消结算并继续持有锁，不等驱动
+        for job_id in [job_id for job_id, job in jobs_by_id.items() if self._release_overrun_cancel(job)]:
+            jobs_by_id.pop(job_id)
+        jobs = list(jobs_by_id.values())
         for job_id in jobs_by_id:
             self._forget_job_timeouts(job_id)
         # 已在执行的只请求取消，等驱动返回；其余（排队中）立即结束
@@ -903,10 +1043,15 @@ class JobExecutionBackend:
     ) -> None:
         """Receive a raw adapter result and advance the canonical job lifecycle."""
 
+        if status in ("success", "failed", "canceled") and self._take_late_outcome(
+            item.job_id, status, return_info, feedback_data
+        ):
+            # 超时闸门之后驱动真实返回：不改已结算的 attempt，只作为迟到结果转交并释放锁
+            return
         if self.device_manager.get_job_info(item.job_id) is None:
             return
         if self._is_superseded(item.job_id):
-            # 终态已由 timeout / execution_timeout 闸门决定：设备迟到的 feedback 与结果只记日志
+            # 终态已由 timeout / execution_timeout 闸门决定：设备迟到的 feedback 只记日志
             logger.debug(
                 "[JobExecutionBackend] ignore late %s from device for timed-out job %s",
                 status,
@@ -941,6 +1086,13 @@ class JobExecutionBackend:
                     feedback_data = dict(feedback_data or {})
                     if "return_info" in feedback_data:
                         feedback_data["return_info"] = json.dumps(return_info, ensure_ascii=False)
+        reported = (return_info or {}).get("error_info") if isinstance(return_info, dict) else None
+        if status == "failed" and isinstance(reported, dict) and reported.get("driver_still_running"):
+            # 运行时先于看门狗报出硬超时，但同步驱动线程仍在跑（ADR 0008）：与看门狗同一口径，
+            # attempt 照常进决策链结算，锁继续持有，线程返回后作为迟到结果释放
+            self._supersede_job(item.job_id)
+            kind = "execution_timeout" if reported.get("exception_type") == "ExecutionTimeoutException" else "timeout"
+            self._register_overrun(item.job_id, item, kind, reported.get("timeout_seconds"))
         with self._cancel_state_lock:
             cancel_requested = item.job_id in self._cancel_requested_jobs
         if cancel_requested and status != "success":
@@ -1114,6 +1266,11 @@ class JobExecutionBackend:
         """Publish exactly the terminal result released by the microbackend."""
 
         self._forget_cancel_state(item.job_id)
+        extras = self._overrun_terminal_extras(item.job_id)
+        if extras:
+            return_info = {**return_info, **extras}
+            if isinstance(result_data.get("return_info"), str):
+                result_data = {**result_data, "return_info": json.dumps(return_info, ensure_ascii=False)}
         self._publish_to_result_bridges(result_data, item, status, return_info)
 
         ret_value = None
@@ -1125,6 +1282,8 @@ class JobExecutionBackend:
             ("finished", item.job_id, status == "success", ret_value, suc_type, return_info),
             context=parent,
         )
+        if "timeout_hold" in extras:
+            self._overrun_terminal_released(item.job_id)
 
     def _begin_action_error_decision(
         self,
@@ -1489,6 +1648,10 @@ class JobExecutionBackend:
                 "timer": None,
                 "soft_timeout": bool(report.get("action_still_running")),
             }
+        if report.get("timeout_kind") == "timeout":
+            # 硬超时决策跨 Host 重启恢复：原驱动已随进程结束、不会再返回，放行后锁继续持有，
+            # 只能由人工核实现场后强制释放（ADR 0008）
+            self._register_overrun(job_id, item, "timeout", report.get("timeout_seconds"))
         return True
 
     def host_ready(self) -> bool:
@@ -1661,8 +1824,12 @@ class JobExecutionBackend:
                 )
                 return True
             if late_result is None:
-                # 动作仍在执行：任何终态选项都先协作式取消，再按失败 / 替换结果收口
+                # 动作仍在执行：任何终态选项都先协作式取消，再按失败 / 替换结果收口；
+                # 驱动返回前锁继续由该 attempt 持有（与硬超时同一口径）
                 self._supersede_job(job_id)
+                self._register_overrun(
+                    job_id, item, "execution_timeout", pending.get("report", {}).get("timeout_seconds"),
+                )
                 adapter = self._host_node_getter()
                 if adapter is not None:
                     try:
@@ -1753,6 +1920,8 @@ class JobExecutionBackend:
                             self._handle_hard_timeout(event[1], float(event[2]))
                         elif event[0] == "execution_timeout":
                             self._handle_execution_timeout(event[1], float(event[2]))
+                        elif event[0] == "late_outcome":
+                            self._handle_late_outcome(event[1], event[2])
             except Exception:  # noqa: BLE001 - worker 不允许死
                 logger.exception("[JobExecutionBackend] event %s failed", event[0])
             finally:
@@ -1903,6 +2072,8 @@ class JobExecutionBackend:
                 reason="hard_timeout",
             )
         self._supersede_job(job_id)
+        # 同步驱动的线程杀不掉：取消只是请求，attempt 结算后锁继续由它持有，直到驱动真实返回
+        self._register_overrun(job_id, item, "timeout", seconds)
         adapter = self._host_node_getter()
         if adapter is not None:
             try:

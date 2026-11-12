@@ -931,23 +931,31 @@ class HostLinkDeviceNode(DeviceNode):
         hard_timeout = self._hard_timeout_seconds(mapping)
         try:
             context.raise_if_cancelled()
-            if inspect.iscoroutinefunction(action):
+            threaded = not inspect.iscoroutinefunction(action)
+            if not threaded:
                 pending: Any = action(**kwargs)
             else:
-                pending = asyncio.to_thread(action, **kwargs)
+                pending = asyncio.ensure_future(asyncio.to_thread(action, **kwargs))
             try:
                 if hard_timeout is not None:
-                    # @action(timeout=...) 硬超时：协程动作被真正取消；同步动作只能放弃等待，
-                    # 线程继续跑完但结果被丢弃。两种情况都以 TimeoutException 进入决策链。
-                    result = await asyncio.wait_for(pending, timeout=hard_timeout)
+                    # @action(timeout=...) 硬超时：协程动作被真正取消；同步动作的线程杀不掉，只能放弃
+                    # 等待。两种情况都以 TimeoutException 进入决策链；线程仍在跑时异常带
+                    # driver_still_running，执行面据此继续持有锁，线程返回后作为迟到结果回报（ADR 0008）。
+                    result = await asyncio.wait_for(
+                        asyncio.shield(pending) if threaded else pending, timeout=hard_timeout
+                    )
                 else:
                     result = await pending
             except asyncio.TimeoutError as exc:
                 context.request_cancel()
+                still_running = threaded and not pending.done()
+                if still_running:
+                    pending.add_done_callback(lambda done: self._report_late_result(context, done))
                 raise TimeoutException(
                     getattr(action, "__name__", "action"),
                     hard_timeout or 0.0,
                     device_id=self.device_id,
+                    driver_still_running=still_running,
                 ) from exc
             if inspect.isawaitable(result):
                 result = await result
@@ -960,6 +968,20 @@ class HostLinkDeviceNode(DeviceNode):
                 feedback_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await feedback_task
+
+    @staticmethod
+    def _report_late_result(context: ActionContext, done: "asyncio.Future[Any]") -> None:
+        """超时后才结束的驱动线程：把真实返回交给动作上下文（总是取走异常，避免未取回告警）。"""
+
+        if done.cancelled():
+            value, error = None, asyncio.CancelledError()
+        else:
+            error = done.exception()
+            value = None if error is not None else done.result()
+        try:
+            context.publish_late_result(value, error)
+        except Exception:  # noqa: BLE001 - 回报失败只影响锁的自动释放
+            logging.getLogger(__name__).exception("动作 %s 的迟到结果回报失败", context.action_id)
 
     def call_action(
         self,

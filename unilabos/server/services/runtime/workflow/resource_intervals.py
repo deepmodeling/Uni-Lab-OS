@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 _TERMINAL = {"succeeded", "skipped", "failed", "canceled", "timeout"}
 _UNRESOLVED = {"running", "dispatched", "cancel_requested", "execution_unknown", "intervention_required"}
+# 已终态、但仍按超时持有锁的 attempt（ADR 0008）：使用权与准入不随终态收回。
+_NOT_HELD_AFTER_TIMEOUT = ("NOT EXISTS (SELECT 1 FROM workflow_execution_claim c "
+                           "WHERE c.job_uuid=workflow_node_job.uuid AND c.state='timed_out')")
 
 
 def _json(value: Any) -> str:
@@ -233,11 +236,13 @@ class ResourceIntervals:
         DeviceTenancies.reconcile(conn, task_uuid)
         task = conn.execute("SELECT status,execution_plan FROM workflow_task WHERE uuid=?", (task_uuid,)).fetchone()
         runs = cls._rows(conn, task_uuid)
-        # 已落终态而尚未清理的崩溃窗口可以收敛；未知执行不会命中。
+        # 已落终态而尚未清理的崩溃窗口可以收敛；未知执行与超时后仍持有锁的 attempt 不会命中。
         conn.execute("DELETE FROM workflow_resource_use WHERE job_uuid IN (SELECT uuid FROM workflow_node_job "
-                     "WHERE workflow_task_uuid=? AND status IN ('succeeded','skipped','failed','canceled','timeout'))", (task_uuid,))
+                     "WHERE workflow_task_uuid=? AND status IN ('succeeded','skipped','failed','canceled','timeout') "
+                     "AND " + _NOT_HELD_AFTER_TIMEOUT + ")", (task_uuid,))
         conn.execute("UPDATE workflow_resource_admission SET state='released' WHERE job_uuid IN (SELECT uuid FROM workflow_node_job "
-                     "WHERE workflow_task_uuid=? AND status IN ('succeeded','skipped','failed','canceled','timeout'))", (task_uuid,))
+                     "WHERE workflow_task_uuid=? AND status IN ('succeeded','skipped','failed','canceled','timeout') "
+                     "AND " + _NOT_HELD_AFTER_TIMEOUT + ")", (task_uuid,))
         ResourceLoans.reconcile(conn, task_uuid)
         conn.execute("DELETE FROM workflow_resource_waiter WHERE job_uuid IN (SELECT uuid FROM workflow_node_job WHERE status!='pending')")
         aborted = task["status"] in _TERMINAL | {"canceling"} or any(row["status"] in {"failed","canceled","timeout"} for row in runs.values())
@@ -272,8 +277,8 @@ class ResourceIntervals:
     def settle_jobs(cls, conn, job_uuids: Iterable[str]) -> None:
         """在写入 attempt 状态的同一事务里收敛由该状态派生的占用。
 
-        终态 attempt 放开执行 Claim，再按任务收敛使用权、准入、区间与设备托管；
-        ``execution_unknown`` 只把托管转为待核实。观察者因此看不到
+        终态 attempt 放开执行 Claim（超时后仍持有的除外），再按任务收敛使用权、准入、
+        区间与设备托管；``execution_unknown`` 只把托管转为待核实。观察者因此看不到
         "节点已成功、托管仍是 reserved" 这类中间态，崩溃也不会把两步拆开。收敛本身出错
         （如区间引用损坏）只回滚到保存点并记日志：状态事实照常提交，之后的
         ``release_job`` / ``recover()`` 仍会重试并按原口径报错。
@@ -387,6 +392,9 @@ class ResourceIntervals:
             for admission in conn.execute("SELECT a.*,j.status FROM workflow_resource_admission a JOIN workflow_node_job j ON j.uuid=a.job_uuid"):
                 if owner_uuid in _load(admission["ownerships"]).values() and admission["status"] not in _TERMINAL:
                     raise StoreConflict("区间仍有未收敛动作，请先核实执行结果")
+            if conn.execute("SELECT 1 FROM workflow_resource_use u JOIN workflow_execution_claim c ON c.job_uuid=u.job_uuid "
+                            "WHERE u.owner_uuid=? AND c.state='timed_out'", (owner_uuid,)).fetchone():
+                raise StoreConflict("区间仍被超时后驱动尚未返回的动作占用，请等待驱动返回或先强制释放执行锁")
             conn.execute("UPDATE workflow_resource_interval SET state='released',version=version+1,released_at=?,release_reason=? WHERE owner_uuid=?", (utc_now(),reason,owner_uuid))
             released = conn.execute("SELECT * FROM workflow_resource_interval WHERE owner_uuid=?", (owner_uuid,)).fetchone()
             return {**dict(released), "definition": _load(released["definition"])}

@@ -661,6 +661,40 @@ class WorkflowBusinessCoordinator:
             {"status": target_status},
         )
 
+    def publish_job_late_outcome(self, report: dict[str, Any], item: Any = None) -> bool:
+        """超时结算后驱动真实返回（ADR 0008）：存证并以 ``execution.late_outcome`` 上报调度权威。
+
+        execution_job 已是终态，不再改动；迟到结果只是附加事实，由调度权威据此释放该 attempt
+        仍持有的锁。
+        """
+
+        job = self._owned_job(item, "late_outcome") if item is not None else None
+        if job is None:
+            return False
+        status = str(report.get("status") or "")
+        payload = self._store_json({"status": status, "return_info": report.get("return_info") or {},
+                                    "report": report})
+        event_uuid = str(uuid.uuid4())
+        self.history.append_event(
+            HistoryEventAppend(
+                event_uuid=event_uuid,
+                event_type="job_result",
+                job_uuid=job.job_uuid,
+                endpoint_uuid=job.endpoint_uuid,
+                device_uuid=job.device_uuid,
+                action_name=job.action_name,
+                event_key="late_outcome",
+                payload_uuid=payload.payload_uuid,
+                summary={"status": status, "effective": False},
+                actor_type="device",
+                actor_uuid=job.device_uuid,
+            )
+        )
+        self._enqueue_backend_event(
+            job, event_uuid, "execution.late_outcome", payload.payload_uuid, {"status": status}
+        )
+        return True
+
     def publish_job_error_pending(
         self,
         report: dict[str, Any],

@@ -300,6 +300,9 @@ class HostNode(HostAdapterBase):
         context = ActionContext(
             action_id=item.job_id,
             feedback_callback=lambda _action_id, feedback: self._publish_feedback(item, feedback),
+            late_result_callback=lambda _action_id, value, error: self._publish_late_result(
+                item, action_type, value, error
+            ),
         )
         kwargs = self._prepare_action_kwargs(item, action_kwargs, sample_material)
         with self._contexts_lock:
@@ -390,6 +393,32 @@ class HostNode(HostAdapterBase):
             result_data = self._result_data(item, {}, return_info)
 
         self._publish_terminal_result(item, status, return_info, result_data)
+
+    def _publish_late_result(
+        self,
+        item: "QueueItem",
+        action_type: str,
+        value: Any,
+        error: Optional[BaseException],
+    ) -> None:
+        """硬超时之后驱动线程才返回：按真实结果回报，执行面把它当迟到结果处理（ADR 0008）。"""
+
+        try:
+            if error is None:
+                status, return_info = self._normalize_result(item, action_type, value)
+                result_data = self._result_data(item, value, return_info)
+            else:
+                status = "failed"
+                error_text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+                error_info = self._exception_error_info(item.action_name, error, error_text)
+                return_info = serialize_result_info(error_text, False, {}, error_info=error_info)
+                result_data = self._result_data(item, {}, return_info)
+            for bridge in execution_result_bridges(self.bridges):
+                publish_status = getattr(bridge, "publish_job_status", None)
+                if callable(publish_status):
+                    publish_status(result_data, item, status, return_info)
+        except Exception:  # noqa: BLE001 - 迟到结果回报失败只影响锁的自动释放，可人工强制释放
+            self.lab_logger().exception(f"作业 {item.job_id} 的迟到结果回报失败")
 
     def _result_data(
         self,
@@ -530,7 +559,11 @@ class HostNode(HostAdapterBase):
             info.setdefault("error_message", str(exc))
             info.setdefault("traceback", error_text)
             return info
+        to_error_info = getattr(exc, "to_error_info", None)
+        structured = to_error_info() if callable(to_error_info) else {}
         info: Dict[str, Any] = {
+            # 超时异常自带结构化身份（timeout_seconds、driver_still_running 等）
+            **(structured if isinstance(structured, dict) else {}),
             "action_name": action_name,
             "exception_type": type(exc).__name__,
             "exception_mro": [kind.__name__ for kind in type(exc).__mro__],

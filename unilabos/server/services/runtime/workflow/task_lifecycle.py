@@ -413,6 +413,15 @@ class TaskCommands:
                 "UPDATE workflow_execution_claim SET state='released', released_at=? WHERE claim_uuid=?",
                 (now, row["claim_uuid"]),
             )
+            if row["state"] == "timed_out":
+                # 超时后仍持有的锁随整组解锁一并放开，在作业上留痕（ADR 0008）
+                job = conn.execute("SELECT control_data FROM workflow_node_job WHERE uuid=?", (row["job_uuid"],)).fetchone()
+                control = _load(job["control_data"], {}) if job is not None else {}
+                if isinstance(control.get("timeout_hold"), dict):
+                    control["timeout_hold"].update(state="force_released", released_at=now,
+                                                   release_reason="unlock_resources")
+                    conn.execute("UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+                                 (_json(control), now, row["job_uuid"]))
         intervals = conn.execute(
             "UPDATE workflow_resource_interval SET state='released' WHERE task_uuid=? AND state!='released'",
             (task_uuid,),
@@ -422,6 +431,11 @@ class TaskCommands:
             "version=version+1 WHERE task_uuid=? AND state!='released'",
             (now, task_uuid),
         ).rowcount
+        if any(row["state"] == "timed_out" for row in claims):
+            from .resource_intervals import ResourceIntervals
+
+            # 超时持有的使用权与准入此前不随终态收回，这里同事务收敛
+            ResourceIntervals.settle_jobs(conn, [row["job_uuid"] for row in claims if row["state"] == "timed_out"])
         conn.execute(
             "UPDATE workflow_task SET cleanup_status='settled', update_time=? WHERE uuid=? "
             "AND cleanup_status IN ('pending', 'canceling', 'requires_attention')",
@@ -846,6 +860,14 @@ class TaskObservability:
 
     @staticmethod
     def _block_reason(task_status: str, lease: Dict[str, Any], tenancies: int) -> Optional[str]:
+        if lease["claim_state"] == "timed_out":
+            # 超时后仍持有的锁（ADR 0008）：attempt 已结算、任务可能仍在运行（如重试正等这把锁），
+            # 只要操作员确认设备已停止即可释放；本 attempt 的托管随释放按已结算状态收敛。
+            if lease["job_status"] not in TERMINAL_JOB:
+                return "只有终态作业才能人工释放执行锁"
+            if lease["_uncertainty"]:
+                return "作业仍有结果不确定原因，不能人工释放执行锁"
+            return None
         if task_status not in ABNORMAL_TERMINAL_TASK:
             return "只有失败、取消或超时任务才能人工释放执行锁"
         if lease["job_status"] not in {"failed", "canceled", "timeout"}:
@@ -889,6 +911,7 @@ class TaskObservability:
     ) -> Dict[str, Any]:
         """确认现场安全且 Claim / Fence CAS 一致后，释放目标作业的全部执行锁。
 
+        也用于超时后仍持有锁的 attempt（Claim ``timed_out``，ADR 0008）：此时任务不必已终结。
         Claim 释放与由此派生的使用权、区间、设备托管收敛在同一事务提交。
         """
 
@@ -930,10 +953,20 @@ class TaskObservability:
                 raise _conflict("Fence 已变化，请刷新任务锁列表后重试")
             job_uuid = lease["workflow_node_job_uuid"]
             released_locks = [item["uuid"] for item in leases if item["claim_uuid"] == lease["claim_uuid"]]
+            timeout_hold = lease["claim_state"] == "timed_out"
             now = utc_now()
             conn.execute("DELETE FROM workflow_execution_lease WHERE claim_uuid=?", (lease["claim_uuid"],))
             conn.execute("UPDATE workflow_execution_claim SET state='released', released_at=? WHERE claim_uuid=?",
                          (now, lease["claim_uuid"]))
+            if timeout_hold:
+                row = conn.execute("SELECT control_data FROM workflow_node_job WHERE uuid=?", (job_uuid,)).fetchone()
+                control = _load(row["control_data"], {}) if row is not None else {}
+                hold = control.get("timeout_hold")
+                if isinstance(hold, dict):
+                    hold.update(state="force_released", released_at=now, release_reason=reason,
+                                operator_id=operator_id or "local-workspace")
+                    conn.execute("UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+                                 (_json(control), now, job_uuid))
             from .resource_intervals import ResourceIntervals
 
             ResourceIntervals.settle_jobs(conn, [job_uuid])
@@ -941,6 +974,7 @@ class TaskObservability:
                 "workflow_task_uuid": task_identity, "operation": "force_release_execution_lock",
                 "workflow_node_job_uuid": job_uuid, "claim_uuid": lease["claim_uuid"], "reason": reason,
                 "operator_id": operator_id or "local-workspace", "released_lock_uuids": released_locks,
+                "timeout_hold": timeout_hold,
             }, now=now)
         releaser = getattr(service, "_task_resource_releaser", None)
         if releaser is not None:

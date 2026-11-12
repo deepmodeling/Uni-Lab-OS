@@ -362,7 +362,7 @@ async def heat_to(self, temperature: float = 25.0, duration: float = 60.0) -> Di
 
 | 参数 | 取值 | 到期行为 |
 |---|---|---|
-| `timeout` | 正数秒 | 执行面对动作发起协作式取消（HostLink 本地运行时同时用 `asyncio.wait_for` 真正取消协程动作；同步方法的线程无法被杀死，只是结果被丢弃）；attempt 以 `exception_type=TimeoutException`（`category=timeout`）进入决策链，选项与普通失败相同 |
+| `timeout` | 正数秒 | 执行面对动作发起协作式取消（HostLink 本地运行时同时用 `asyncio.wait_for` 真正取消协程动作；同步方法的线程无法被杀死）；attempt 以 `exception_type=TimeoutException`（`category=timeout`）进入决策链，选项与普通失败相同。工作流按决策继续，但驱动真实返回之前该 attempt 的设备 / 物料锁一直保留（ADR 0008），需要同一设备的后续动作排队等待；线程返回后结果作为迟到结果记录，不改变已结算的 attempt |
 | `execution_timeout` | 正数秒，或只引用**本动作入参**的四则运算表达式（`+ - * /`、括号、一元负号、数字字面量，如 `"duration * 1.5 + 30"`） | 动作**不被取消**；执行面以 `exception_type=ExecutionTimeoutException`（`severity=warning`，报告带 `action_still_running=true`）打开一条决策，选项前置 `wait`（继续等待并按同样秒数重新计时）；选 `abort` / `retry` / `operator_intervention` 时才取消动作。动作在等待期间真实完成则真实结果优先，决策自动收回 |
 
 表达式在声明期只校验语法与参数名（引用了非入参名会在 `@action` 或 `--check_mode` 时报错），
@@ -373,6 +373,10 @@ async def heat_to(self, temperature: float = 25.0, duration: float = 60.0) -> Di
 
 > `error_policy.options` 按异常类名匹配：需要给超时定制选项时，用 `"TimeoutException"` /
 > `"ExecutionTimeoutException"` 作为键。两个超时可以同时声明，软超时应小于硬超时，否则永远不会先触发。
+>
+> 超时之后设备可能被长时间锁住：同步驱动最好在长循环里调用 `context.raise_if_cancelled()`
+> 配合取消，让驱动尽快真正返回；否则只能等它自然返回，或由操作员在现场核实后经
+> `POST /api/v1/workflow-tasks/{uuid}/execution-locks/{lease_uuid}/force-release` 强制释放。
 
 ### 返回值设计指南
 

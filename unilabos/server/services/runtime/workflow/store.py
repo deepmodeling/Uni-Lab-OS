@@ -2908,11 +2908,18 @@ class WorkflowStore:
         return_info: Dict[str, Any],
         error_info: List[Dict[str, Any]],
         error_resolution: Optional[Dict[str, Any]] = None,
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """持久化 attempt 终态并投影到节点运行；``retry`` 决策在同一事务里追加新 attempt。
 
         由终态派生的占用收敛（执行 Claim、使用权与准入、区间、设备托管）在**同一事务**
         里提交，观察者不会读到"终态已落、托管还没跟上"的中间态。
+
+        ``timeout_hold`` 非空表示终态由超时闸门决定而驱动尚未返回（ADR 0008）：attempt
+        照常结算、工作流照常继续，但 Claim 转 ``timed_out``，锁与托管保持原样，直到
+        :meth:`record_job_late_outcome` 或人工强制释放。``late_outcome`` 是超时后、终态放行
+        前已经到达的驱动真实结果，只作记录，不改变本次结算。
 
         返回 ``{"job", "run", "next_job"}``：``next_job`` 非空表示节点运行没有终结，
         调度器应以它为新的执行器 job 重新申请资源并下发；否则以 ``run["status"]``
@@ -2985,6 +2992,10 @@ class WorkflowStore:
                     (next_job_uuid, now, run_uuid),
                 )
             run = self._sync_run_projection(conn, run_uuid, now)
+            if timeout_hold is not None or late_outcome is not None:
+                self._annotate_timeout_hold(
+                    conn, job_uuid, timeout_hold=timeout_hold, late_outcome=late_outcome, now=now,
+                )
             from .resource_intervals import ResourceIntervals
 
             ResourceIntervals.settle_jobs(conn, [job_uuid])
@@ -3003,6 +3014,84 @@ class WorkflowStore:
                 else None
             )
         return {"job": job, "run": run, "next_job": next_job}
+
+    def _annotate_timeout_hold(
+        self,
+        conn: sqlite3.Connection,
+        job_uuid: str,
+        *,
+        timeout_hold: Optional[Dict[str, Any]],
+        late_outcome: Optional[Dict[str, Any]],
+        now: str,
+    ) -> None:
+        """终态事务内记录超时持有与迟到结果（``control_data``），不改动结算结果本身。"""
+
+        from .execution_claim import ExecutionClaims
+
+        row = conn.execute(
+            "SELECT control_data FROM workflow_node_job WHERE uuid=?", (job_uuid,)
+        ).fetchone()
+        control_data = _load(row["control_data"], {})
+        if late_outcome is not None:
+            control_data["late_outcome"] = {**dict(late_outcome), "recorded_at": now}
+        if timeout_hold is not None and ExecutionClaims.hold_after_timeout(conn, job_uuid):
+            control_data["timeout_hold"] = {**dict(timeout_hold), "state": "held", "held_at": now}
+        conn.execute(
+            "UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+            (_json(control_data), now, job_uuid),
+        )
+
+    def record_job_late_outcome(
+        self, job_uuid: str, outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """超时结算之后驱动真实返回：记录迟到结果，并放开该 attempt 仍持有的锁。
+
+        迟到结果不改变已结算 attempt 的状态与结果，只写入 ``control_data.late_outcome``；
+        Claim 为 ``timed_out`` 时同一事务释放 Claim，并按已结算的状态收敛使用权、区间与
+        设备托管（失败 / 超时的装卸转 ``retained`` 待核实）。重复投递幂等。返回
+        ``{"job", "released"}``，``released`` 表示本次放开了超时持有。
+        """
+
+        from .execution_claim import ExecutionClaims
+        from .resource_intervals import ResourceIntervals
+
+        now = utc_now()
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM workflow_node_job WHERE uuid=? AND deleted_at IS NULL",
+                (job_uuid,),
+            ).fetchone()
+            if row is None:
+                raise StoreNotFound(f"workflow node job {job_uuid} not found")
+            control_data = _load(row["control_data"], {})
+            if not isinstance(control_data.get("late_outcome"), dict):
+                control_data["late_outcome"] = {**dict(outcome), "recorded_at": now}
+            released = ExecutionClaims.release_timeout_hold(conn, job_uuid)
+            hold = control_data.get("timeout_hold")
+            if released and isinstance(hold, dict):
+                hold.update(state="released", released_at=now, release_reason="late_outcome")
+            conn.execute(
+                "UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+                (_json(control_data), now, job_uuid),
+            )
+            if released:
+                ResourceIntervals.settle_jobs(conn, [job_uuid])
+            self._append_event(
+                conn,
+                event="workflow.resource.changed",
+                data={
+                    "workflow_task_uuid": row["workflow_task_uuid"],
+                    "workflow_node_job_uuid": job_uuid,
+                    "operation": "late_outcome_recorded",
+                    "late_status": str(outcome.get("status") or ""),
+                    "timeout_hold_released": released,
+                },
+                now=now,
+            )
+            job = self._job_row(
+                conn.execute("SELECT * FROM workflow_node_job WHERE uuid=?", (job_uuid,)).fetchone()
+            )
+        return {"job": job, "released": released}
 
     def begin_loop_iteration(
         self,

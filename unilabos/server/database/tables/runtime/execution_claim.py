@@ -43,7 +43,7 @@ EXECUTION_CLAIM_TABLES = (
             attempt_no INTEGER NOT NULL CHECK (attempt_no >= 1),
             request TEXT NOT NULL CHECK (json_valid(request) AND json_type(request) = 'object'),
             fences TEXT NOT NULL CHECK (json_valid(fences) AND json_type(fences) = 'object'),
-            state TEXT NOT NULL CHECK (state IN ('reserved', 'running', 'uncertain', 'released')),
+            state TEXT NOT NULL CHECK (state IN ('reserved', 'running', 'uncertain', 'timed_out', 'released')),
             acquired_at TEXT NOT NULL,
             released_at TEXT,
             FOREIGN KEY(job_uuid) REFERENCES workflow_node_job(uuid),

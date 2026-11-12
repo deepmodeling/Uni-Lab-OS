@@ -35,9 +35,10 @@ Host 重启（升级驱动包、进程崩溃恢复）比真正的现场事故更
 
 ## 已知缺口
 
-- 硬超时（`server/backend/execution.py` `_handle_hard_timeout`）在 abort / retry 后会释放资源，
-  而同步驱动可能仍在执行，与本 ADR“超时不构成释放证据”的原则冲突。作为后续修复项跟踪
-  （差异核查编号 SC-N5）。
+- ~~硬超时（`server/backend/execution.py` `_handle_hard_timeout`）在 abort / retry 后会释放资源，
+  而同步驱动可能仍在执行，与本 ADR“超时不构成释放证据”的原则冲突（差异核查编号 SC-N5）。~~
+  已由 [0008](0008-timeout-settles-attempt-but-keeps-locks.md) 解决：attempt 照常结算，锁保留到
+  驱动真实返回或人工强制释放，并跨调度权威重启保留。
 - 已证明从未开始的 attempt（`workflow_execution_dispatch.invocation_uuid IS NULL`）目前也进入
   人工核对，未来可自动取消以减少核对量（差异核查编号 R02）。
 

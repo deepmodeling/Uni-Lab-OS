@@ -44,4 +44,5 @@ adr/0003-task-scoped-pause.md
 adr/0005-runtime-restart-fails-station-tasks.md
 adr/0006-frontend-event-subscription.md
 adr/0007-host-restart-reconciles-instead-of-failing.md
+adr/0008-timeout-settles-attempt-but-keeps-locks.md
 ```

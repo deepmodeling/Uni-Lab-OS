@@ -111,7 +111,11 @@ def exception_error_info(exc: BaseException) -> Dict[str, Any]:
         info = dict(exc.error_info)
         info.setdefault("error_message", str(exc))
         return info
+    to_error_info = getattr(exc, "to_error_info", None)
+    structured = to_error_info() if callable(to_error_info) else {}
     info: Dict[str, Any] = {
+        # 超时异常自带结构化身份（timeout_seconds、driver_still_running 等）
+        **(structured if isinstance(structured, dict) else {}),
         "exception_type": type(exc).__name__,
         "exception_mro": [kind.__name__ for kind in type(exc).__mro__],
         "error_message": str(exc),

@@ -114,11 +114,13 @@ class DeviceTenancies:
 
         成功：装载转 ``loaded``、卸载转 ``released``。终态失败 / 取消 / 超时 / 跳过与
         ``execution_unknown``：涉及的托管转 ``retained`` 待人工核实。等待决策的
-        ``intervention_required`` 尚未结算，托管保持原样。
+        ``intervention_required`` 尚未结算，托管保持原样。超时后仍持有锁的 attempt
+        （Claim 为 ``timed_out``）托管也保持原样，直到驱动真实返回或人工强制释放。
         """
         rows = conn.execute("SELECT t.*,j.status,j.uncertainty_reason FROM workflow_tenancy_transition t "
                             "JOIN workflow_node_job j ON j.uuid=t.job_uuid WHERE j.workflow_task_uuid=? "
-                            "AND t.state IN ('prepared','retained')", (task_uuid,)).fetchall()
+                            "AND t.state IN ('prepared','retained') AND NOT EXISTS (SELECT 1 FROM workflow_execution_claim c "
+                            "WHERE c.job_uuid=t.job_uuid AND c.state='timed_out')", (task_uuid,)).fetchall()
         for row in rows:
             if row["status"] == "succeeded":
                 if row["acquire_uuid"]:
@@ -164,6 +166,9 @@ class DeviceTenancies:
                         "WHERE (t.acquire_uuid=? OR t.release_uuid=?) AND j.status NOT IN ('succeeded','failed','canceled','timeout','skipped')",
                         (tenancy_uuid,tenancy_uuid)).fetchone():
             raise StoreConflict("托管仍有关联的未收敛动作")
+        if conn.execute("SELECT 1 FROM workflow_tenancy_transition t JOIN workflow_execution_claim c ON c.job_uuid=t.job_uuid "
+                        "WHERE (t.acquire_uuid=? OR t.release_uuid=?) AND c.state='timed_out'", (tenancy_uuid,tenancy_uuid)).fetchone():
+            raise StoreConflict("托管关联的动作超时后驱动尚未返回，请等待驱动返回或先强制释放执行锁")
         conn.execute("UPDATE workflow_device_tenancy SET state='released',version=version+1,released_at=?,release_reason=? WHERE tenancy_uuid=?",
                      (utc_now(),reason,tenancy_uuid))
         return dict(conn.execute("SELECT * FROM workflow_device_tenancy WHERE tenancy_uuid=?", (tenancy_uuid,)).fetchone())

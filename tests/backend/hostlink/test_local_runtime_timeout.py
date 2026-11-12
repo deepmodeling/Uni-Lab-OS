@@ -8,6 +8,7 @@ import time
 import pytest
 
 from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.backend.runtime.action import ActionContext
 from unilabos.backend.runtime.exception import TimeoutException
 
 
@@ -93,5 +94,32 @@ def test_hostlink_hard_timeout_abandons_sync_action_thread() -> None:
         while not driver.sync_finished and time.time() < deadline:
             time.sleep(0.01)
         assert driver.sync_finished is True
+    finally:
+        runtime.stop()
+
+
+def test_sync_thread_outliving_the_timeout_is_reported_and_its_late_result_delivered() -> None:
+    """同步线程超时后仍在跑：异常带 driver_still_running，线程返回后真实结果经动作上下文交回（ADR 0008）。"""
+
+    runtime = _runtime()
+    runtime.start()
+    late: list = []
+    try:
+        context = ActionContext(late_result_callback=lambda action_id, value, error: late.append((value, error)))
+        with pytest.raises(TimeoutException) as exc_info:
+            runtime.call_action("slow", "slow_sync", action_context=context, duration=0.3)
+        info = exc_info.value.to_error_info()
+        assert exc_info.value.driver_still_running is True and info["driver_still_running"] is True
+        assert late == []
+        deadline = time.time() + 2.0
+        while not late and time.time() < deadline:
+            time.sleep(0.01)
+        assert late == [("done", None)]
+
+        # 协程动作被真正取消，不算"驱动仍在执行"
+        with pytest.raises(TimeoutException) as exc_info:
+            runtime.call_action("slow", "slow_async", duration=1.0)
+        assert exc_info.value.driver_still_running is False
+        assert "driver_still_running" not in exc_info.value.to_error_info()
     finally:
         runtime.stop()

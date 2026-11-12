@@ -66,7 +66,7 @@ def test_all_public_operations_use_current_protocol(contract, application):
         assert operation.method.lower() in contract["paths"][operation.path]
     operations = {(op.method, op.path) for op in OPERATIONS}
     for method, path in operations:
-        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/history/")):
+        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/edge/history/")):
             assert method == "GET", (method, path)
         assert "/snapshots/" not in path
         assert "/reservations" not in path or method == "GET"

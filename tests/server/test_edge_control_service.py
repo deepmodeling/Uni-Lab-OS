@@ -356,7 +356,7 @@ def test_payload_client_reads_history_payload_via_backend_http() -> None:
     def _edge_side() -> None:
         message = service.outgoing.get(timeout=2)
         request = BackendHttpRequest.model_validate(message["data"])
-        assert request.path == "/api/v1/history/payloads/payload-9"
+        assert request.path == "/api/v1/edge/history/payloads/payload-9"
         service.complete_http_response(
             EdgeHttpResponse(
                 request_uuid=request.request_uuid,

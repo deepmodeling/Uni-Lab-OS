@@ -109,7 +109,7 @@ These matter more than any single route. Each item gives evidence from both tree
 
 Adopting V1's contract on any of these breaks something DEV already relies on.
 
-1. **`/api/v1/history/*`.** DEV owns it as the event and payload store (`api/history.py:42`). DEV's own clients use it (`client/history.py:70`, `backend/edge_control.py:103`), and the edge proxy forwards the whole prefix to the Host (`api/edge_proxy.py:23-31`). V1's `/history/workflows|jobs` would be proxied to the Host and 404 there. Adopting them needs a carve-out, or better, new paths.
+1. **`/api/v1/history/*`.** DEV owns it as the event and payload store (`api/history.py:42`). DEV's own clients use it (`client/history.py:70`, `backend/edge_control.py:103`), and the edge proxy forwards the whole prefix to the Host (`api/edge_proxy.py:23-31`). V1's `/history/workflows|jobs` would be proxied to the Host and 404 there. Adopting them needs a carve-out, or better, new paths. **Resolved (p7-b):** DEV's store moved to `/api/v1/edge/history/*` (edge proxy prefix `edge/history`, `HTTPHistoryClient`, `EdgeControlService` payload pull, MCP catalog); V1's three routes are served by the authority.
 2. **`GET /api/v1/lab/layout`.** In DEV it's a revisioned grid document `{layout_key, revision, cell_size, zones, walls}` with PUT/DELETE (`runtime/lab.py:21`). In V1 it's a read view `{zones, placements, storage_summary}` over placed instances, and zones and placements are separate resources (`scheduler/inventory/layout.py:447`).
 3. **`POST /api/v1/resource-templates`.** In DEV this is the Registry Authority intake the Host calls at startup (`runtime/registry.py:52`). It versions entries and returns a registry report, with HTTP 400/422 on error. V1 returns an id→uuid identity receipt in the envelope. The request shape `{resources:[..]}` is compatible, so only the response needs care. DEV's `legacy_adaptor/sync/instances.py:186` already speaks V1's form as an upstream client.
 4. **`/api/v1/error-decisions`.**
@@ -145,7 +145,7 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 - **Materials:**
   - `/api/v1/materials/*` (42 routes: templates, lots, stocktake, reservations, executions, trees, instantiate, instances, links, snapshots, notify-device, changes, events, registry-classes, inventory/preview).
   - `/api/v1/chemicals` (5) and `/api/v1/graphs` (6).
-- **Host data plane:** `/api/v1/runtime/*` (27), `/api/v1/telemetry/*` (6), `/api/v1/history/*` (7). All served on the Host and proxied by the authority.
+- **Host data plane:** `/api/v1/runtime/*` (27), `/api/v1/telemetry/*` (6), `/api/v1/edge/history/*` (7, moved from `/api/v1/history/*`). All served on the Host and proxied by the authority.
 - **Operations:**
   - `/api/v1/driver-packages/*` (14), `/api/v1/device-processes/*` (9), `/api/v1/hostlink/{logs,log-sources,material-sync,notify-device}`.
   - `/api/v1/restart` (3), `/api/v1/reset` (2), `/ping`, `/scheduler/resources`, `/scheduler/inventory-recovery` (2), `/scheduler/physical-recovery` (3), `/status-incidents` (2), `/api/v1/debug/databases` (2).
@@ -226,9 +226,9 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 | DTO-DIFF | `GET /api/v1/workflow-tasks/{task_uuid}` | unilabos/app/workflow_api.py:1922 | GET /api/v1/workflow-tasks/{task_uuid} | DEV task has no priority or inventory_bindings (UNVERIFIED full diff) |
 | DTO-DIFF | `POST /api/v1/workflow-tasks/{task_uuid}/commands` | unilabos/app/workflow_api.py:1961 | POST /api/v1/workflow-tasks/{task_uuid}/commands | DEV requires expected_revision, which V1 clients don't send, and forbids the target_node_uuid, description and meta_data that the V1 console sends. DEV has no switch_to_step or unlock_resources. V1 returns 201, DEV 200 |
 | DTO-DIFF | `GET /api/v1/workflow-tasks/{task_uuid}/jobs` | unilabos/app/workflow_api.py:1982 | GET /api/v1/workflow-tasks/{task_uuid}/jobs | F04: no topological_index or executor_kind. DEV returns a flat attempt view |
-| PATH-DIFF | `GET /api/v1/history/jobs` | unilabos/app/scheduler/api.py:410 | GET /api/v1/workflow-tasks/{uuid}/jobs; GET /api/v1/runtime/jobs | CONFLICT: same as the row above |
-| PATH-DIFF | `GET /api/v1/history/workflows` | unilabos/app/scheduler/api.py:377 | GET /api/v1/workflow-tasks?status= | CONFLICT: DEV owns /api/v1/history/* (event and payload store) and the edge proxy forwards the whole prefix to the Host |
-| PATH-DIFF | `GET /api/v1/history/workflows/{workflow_id}` | unilabos/app/scheduler/api.py:396 | GET /api/v1/workflow-tasks/{task_uuid} | CONFLICT: same as the row above |
+| PATH-DIFF | `GET /api/v1/history/jobs` | unilabos/app/scheduler/api.py:410 | GET /api/v1/workflow-tasks/{uuid}/jobs; GET /api/v1/runtime/jobs | **Ported (p7-b): served by the authority from runtime.db view job_runs; dev event store moved to /api/v1/edge/history/*.** CONFLICT: same as the row above |
+| PATH-DIFF | `GET /api/v1/history/workflows` | unilabos/app/scheduler/api.py:377 | GET /api/v1/workflow-tasks?status= | **Ported (p7-b): runtime.db view workflow_runs, {runs, stats}.** CONFLICT: DEV owns /api/v1/history/* (event and payload store) and the edge proxy forwards the whole prefix to the Host |
+| PATH-DIFF | `GET /api/v1/history/workflows/{workflow_id}` | unilabos/app/scheduler/api.py:396 | GET /api/v1/workflow-tasks/{task_uuid} | **Ported (p7-b): run + spec + jobs; unknown id → 3002.** CONFLICT: same as the row above |
 | PATH-DIFF | `POST /api/v1/jobs/{job_id}/finish` | unilabos/app/scheduler/api.py:225 | POST /api/v1/runtime/jobs/{job_uuid}/transitions | Internal |
 | PATH-DIFF | `GET /api/v1/workflow-interventions` | unilabos/app/workflow_api.py:2171 | GET /api/v1/workflow-tasks/{task_uuid}/interventions | DEV lists per task only; V1 is a global open list. Used by the V1 console |
 | PATH-DIFF | `GET /api/v1/workflow-node-jobs/{job_uuid}/feedback` | unilabos/app/workflow_api.py:2074 | GET /api/v1/workflow-node-jobs/{job_uuid}/feedback-history | V1 paginates with page/page_size; DEV uses limit/offset |

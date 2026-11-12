@@ -20,13 +20,13 @@ def test_install_server_apis_mounts_all_database_namespaces(tmp_path) -> None:
         assert any(path.startswith("/api/v1/runtime/") for path in paths)
         assert any(path.startswith("/api/v1/materials/") for path in paths)
         assert any(path.startswith("/api/v1/telemetry/") for path in paths)
-        assert any(path.startswith("/api/v1/history/") for path in paths)
+        assert any(path.startswith("/api/v1/edge/history/") for path in paths)
 
         with TestClient(app) as client:
             error_of(client.get("/api/v1/runtime/jobs/missing"), 4001)
             error_of(client.get("/api/v1/materials/instances/missing"), 6000)
             error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
-            error_of(client.get("/api/v1/history/events/missing"), 4001)
+            error_of(client.get("/api/v1/edge/history/events/missing"), 4001)
     finally:
         services.close()
 
@@ -40,6 +40,6 @@ def test_install_server_apis_can_exclude_local_materials_authority(tmp_path) -> 
         assert any(path.startswith("/api/v1/runtime/") for path in paths)
         assert not any(path.startswith("/api/v1/materials/") for path in paths)
         assert any(path.startswith("/api/v1/telemetry/") for path in paths)
-        assert any(path.startswith("/api/v1/history/") for path in paths)
+        assert any(path.startswith("/api/v1/edge/history/") for path in paths)
     finally:
         services.close()

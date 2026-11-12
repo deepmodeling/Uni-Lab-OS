@@ -925,6 +925,10 @@ def install_workflow_api(app: FastAPI, service: WorkflowService) -> None:
     # 同进程后装配 Workflow Authority 时替换无工作流读取器的公共通知路由。
     app.router.routes[:] = [route for route in app.router.routes if getattr(route, "name", "") != "runtime_events"]
     app.include_router(create_workflow_router(service))
+    # V1 任务生命周期 / 观测 / 异常处置路由与 Workflow Authority 同进程装配
+    from unilabos.server.api.runtime.lifecycle_v1 import install_lifecycle_v1_api
+
+    install_lifecycle_v1_api(app, service)
 
 
 def create_workflow_app(service: WorkflowService) -> FastAPI:

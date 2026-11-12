@@ -356,7 +356,7 @@ Store 基座负责 SQL 与事务，Service 负责幂等和状态机。Scheduler 
 | `/api/v1/runtime` | RuntimeService 数据面 |
 | `/api/v1/materials` | MaterialsService 数据面；外置 Materials 时不重复挂本地写 API |
 | `/api/v1/telemetry` | TelemetryService 数据面 |
-| `/api/v1/history` | HistoryService 数据面 |
+| `/api/v1/edge/history` | HistoryService 数据面 |
 | `/api/v1/health` | Scheduler 位置和执行器 readiness |
 | `/api/v1/hostlink/peers` | Host/Slave 连接诊断 |
 | `/api/v1/status-incidents` | 状态联锁事件与人工决策 |

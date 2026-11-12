@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 EDGE_ROUTE_PREFIXES = (
     "runtime",
     "telemetry",
-    "history",
+    # dev 事件 / 载荷存储；``/api/v1/history/*`` 归 V1 运行历史，由权威自己回答
+    "edge/history",
     "hostlink",
     "status-incidents",
     "driver-packages",

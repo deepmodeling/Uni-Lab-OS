@@ -379,7 +379,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
 
     host_app = FastAPI()
 
-    @host_app.get("/api/v1/history/payloads/p1")
+    @host_app.get("/api/v1/edge/history/payloads/p1")
     async def payload():
         return {"inline_payload": "e30="}
 
@@ -400,7 +400,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
     monkeypatch.setattr(client, "_post_http_response", capture)
     asyncio.run(
         client._serve_backend_http(
-            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/history/payloads/p1", "timeout_seconds": 5}
+            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/edge/history/payloads/p1", "timeout_seconds": 5}
         )
     )
     assert waited == [5.0]
@@ -412,7 +412,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
     # 路由就绪后同一请求正常执行
     monkeypatch.setattr(app_module, "wait_routes_ready", lambda timeout: True)
     asyncio.run(
-        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/history/payloads/p1"})
+        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/edge/history/payloads/p1"})
     )
     assert posted[-1].status_code == 200
 

@@ -77,7 +77,7 @@ def _positive_seconds(value: Any) -> Optional[float]:
 
 
 def _decode_payload_document(body: Any) -> Optional[Any]:
-    """``GET /api/v1/history/payloads/{uuid}`` 的正文 → 原始 JSON。"""
+    """``GET /api/v1/edge/history/payloads/{uuid}`` 的正文 → 原始 JSON。"""
 
     if not isinstance(body, dict):
         return None
@@ -100,7 +100,7 @@ class EdgePayloadClient:
 
     def fetch_json(self, payload_uuid: str) -> Optional[Any]:
         response = self._service.http_request(
-            "GET", f"/api/v1/history/payloads/{payload_uuid}", timeout=self.timeout
+            "GET", f"/api/v1/edge/history/payloads/{payload_uuid}", timeout=self.timeout
         )
         if response is None:
             logger.warning("[EdgeControl] 拉取 payload %s 失败: Edge 未响应", payload_uuid)

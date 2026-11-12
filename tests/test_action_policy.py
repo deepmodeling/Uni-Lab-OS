@@ -24,6 +24,9 @@ from unilabos.registry.ast_registry_scanner import (
     _extract_class_body,
 )
 from unilabos.registry.decorators import action, get_action_meta
+# 本模块覆盖 ROS 2 HostNode 的动作策略；无 ROS 运行时（HostLink-only 环境）整体跳过。
+pytest.importorskip("rclpy", reason="需要 ROS 2 运行时")
+
 from unilabos.backend.ros2.base_device_node import (
     _coerce_device_error_info,
     _native_driver_result_failed,

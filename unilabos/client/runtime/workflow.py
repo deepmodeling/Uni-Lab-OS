@@ -315,12 +315,14 @@ class HTTPWorkflowClient:
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
         workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """与 ``WorkflowService.save_graph`` 同签名，便于 ``registry.workflows.upsert_workflow``
         经 HTTP 向远端 Workflow Authority 写入实例化后的工作流。"""
 
         return self.save_workflow_graph(
-            workflow_uuid, revision=revision, nodes=nodes, edges=edges, workflow_io=workflow_io
+            workflow_uuid, revision=revision, nodes=nodes, edges=edges, workflow_io=workflow_io,
+            resource_scopes=resource_scopes,
         )
 
     def get_workflow_graph(self, workflow_uuid: str) -> dict[str, Any]:
@@ -334,11 +336,14 @@ class HTTPWorkflowClient:
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
         workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        # 资源作用域与节点、I/O 同一次 PUT 原子保存，避免图已更新而作用域仍引用旧节点。
         return self._http.put(
             f"/workflows/{workflow_uuid}/graph",
             json={"revision": revision, "nodes": nodes, "edges": edges,
-                  **({"workflow_io": workflow_io} if workflow_io is not None else {})},
+                  **({"workflow_io": workflow_io} if workflow_io is not None else {}),
+                  **({"resource_scopes": resource_scopes} if resource_scopes is not None else {})},
         )
 
     def inspect_workflow(self, workflow_uuid: str) -> dict[str, Any]:

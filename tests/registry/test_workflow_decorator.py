@@ -289,7 +289,7 @@ def test_step_inventory_requirements_land_in_node_meta_data() -> None:
     with pytest.raises(ValueError):
         # lot 需求缺 quantity/unit：声明时即拒绝，而不是等到任务启动
         ctx.run("device-1/dispense", {}, inventory=[{"key": "water", "kind": "lot", "lot_uuid": "x"}])
-    with pytest.raises(ValueError, match="key 重复"):
+    with pytest.raises(ValueError, match="key 不能重复"):
         ctx.run("device-1/dispense", {}, inventory=[requirement, requirement])
 
 
@@ -369,6 +369,51 @@ def test_upsert_over_http_like_client_survives_bodiless_get(monkeypatch) -> None
         upsert_workflow(reporter, payload)
         assert service.get_workflow(payload["workflow_uuid"])["revision"] >= 2
         assert len(service.get_graph(payload["workflow_uuid"])["nodes"]) == 1
+    finally:
+        service.close()
+
+
+def test_upsert_over_http_keeps_resource_scopes(monkeypatch) -> None:
+    """回归：upsert 经 HTTPWorkflowClient 写图时须把资源作用域一并 PUT。
+
+    ``upsert_workflow`` 向 ``save_graph`` 传 ``resource_scopes``；HTTP 客户端曾不接受该参数，
+    Host 子进程向远端权威登记带作用域的 ``@workflow`` 模板时直接 TypeError。
+    """
+
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+
+    from unilabos.client.http import HTTPClient, HTTPClientConfig
+    from unilabos.client.runtime.workflow import HTTPWorkflowClient
+    from unilabos.server.api.runtime.workflow import create_workflow_app
+
+    @workflow(display_name="HTTP 上报作用域流", tags=["demo"])
+    def scoped(ctx: WorkflowBuildContext) -> None:
+        with ctx.resource_scope("device-1", name="reaction"):
+            ctx.run("device-1/succeed", {"value": 5})
+
+    template = build_workflow_template_payload(next(iter(get_registered_workflows().values())))
+    service = WorkflowService(":memory:")
+    base_url = "http://testserver/api/v1"
+    http = HTTPClient(HTTPClientConfig(base_url=base_url))
+    http._client.close()
+    http._client = TestClient(create_workflow_app(service), base_url=base_url)
+    reporter = HTTPWorkflowClient("http://testserver", http_client=http)
+    try:
+        payload = materialize_workflow_template(template, _catalog())
+        assert payload.get("resource_scopes"), "模板实例化应带出显式资源作用域"
+        authority_materials = SimpleNamespace(list_materials=lambda: [{"material": {
+            "material_uuid": payload["nodes"][0]["material_uuid"],
+            "resource_id": "device-1", "template_name": "demo_class",
+        }}])
+        authority_registry = SimpleNamespace(action_definition=lambda klass, action: {
+            "schema": {"properties": {"goal": {"type": "object", "properties": {"value": {"type": "integer"}}}}},
+        } if (klass, action) == ("demo_class", "succeed") else None)
+        monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: authority_materials)
+        monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: authority_registry)
+        upsert_workflow(reporter, payload)
+        stored = service.get_graph(payload["workflow_uuid"])["workflow"]["meta_data"]["unilab"]["resource_scopes"]
+        assert [scope.get("scope_id") for scope in stored] == ["reaction"]
     finally:
         service.close()
 

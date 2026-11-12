@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +80,10 @@ def _inspect_backend(backend: str) -> dict:
     return json.loads(line.removeprefix(prefix))
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("rosidl_parser") is None or importlib.util.find_spec("rclpy") is None,
+    reason="对比 ros2 后端需要 ROS 2 运行时",
+)
 def test_host_node_registry_definition_is_backend_neutral(tmp_path) -> None:
     from unilabos.server.services.runtime.registry import RegistryService
 

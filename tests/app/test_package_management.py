@@ -109,9 +109,12 @@ def test_changes_cli_returns_process_and_changed_file(package_stack, tmp_path, c
 
 def test_server_operation_failure_returns_nonzero(package_stack, tmp_path, capsys):
     service, _ = package_stack
+    # 操作记录以持久台账为准（查询读 journal），内存表需同步落盘。
     service._operations["failed-op"] = dp.DriverPackageOperation(
         operation_id="failed-op", kind="install", spec="source", status="failed", error="依赖安装失败",
     )
+    service._order.append("failed-op")
+    service._persist_operations()
     with pytest.raises(SystemExit) as exc:
         _run(tmp_path, capsys, "operation", "failed-op", "--wait")
     assert exc.value.code == 1

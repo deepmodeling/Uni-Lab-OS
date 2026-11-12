@@ -21,6 +21,7 @@ MATERIALS_V6_TABLES = frozenset({
     "material_content_reservation",
     "material_source_binding",
     "station_ingress_reservation",
+    "inventory_processed_command",
     "lab_meta",
     "lab_zone",
     "lab_placement",

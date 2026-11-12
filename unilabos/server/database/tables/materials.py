@@ -25,6 +25,8 @@ from unilabos.server.database.tables.materials_migrations import (
     _LAB_PLACEMENT_V6,
     _LAB_PLACEMENT_V6_INDEXES,
     _LAB_ZONE_V6,
+    _INVENTORY_PROCESSED_COMMAND_V6,
+    _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
     _MATERIAL_BARCODE_V6_INDEX,
     _MATERIAL_CONTENT_HISTORY_V6,
     _MATERIAL_CONTENT_HISTORY_V6_INDEXES,
@@ -772,6 +774,22 @@ class StationIngressReservationRecord(TableObject, table=True):
     revision: PositiveVersion = 1
 
 
+class InventoryProcessedCommandRecord(TableObject, table=True):
+    """V1 类型化库存命令的首次结果（按 command_id 幂等重放）。"""
+
+    __tablename__: ClassVar[str] = "inventory_processed_command"
+    command_id: NonEmptyStr = Field(primary_key=True)
+    command_type: NonEmptyStr
+    request_hash: NonEmptyStr
+    status: Literal["completed", "rejected"] = Field(sa_type=Text)
+    result: JsonValue = Field(default=None, sa_column=json_text_column("result_json", default_json="{}"))
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    business_code: Optional[int] = None
+    actor: str = ""
+    processed_at_ms: UnixMilliseconds
+
+
 class LabMetaRecord(TableObject, table=True):
     """实验室档案键值（名称、领域包、网格设置）。"""
 
@@ -837,6 +855,7 @@ MATERIALS_TABLE_MODELS = (
     MaterialContentReservationRecord,
     MaterialSourceBindingRecord,
     StationIngressReservationRecord,
+    InventoryProcessedCommandRecord,
     LabMetaRecord,
     LabZoneRecord,
     LabPlacementRecord,
@@ -1552,6 +1571,11 @@ MATERIALS_TABLES += (
         "station_ingress_reservation",
         _STATION_INGRESS_RESERVATION_V6,
         _STATION_INGRESS_RESERVATION_V6_INDEXES,
+    ),
+    TableSpec(
+        "inventory_processed_command",
+        _INVENTORY_PROCESSED_COMMAND_V6,
+        _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
     ),
     TableSpec("lab_meta", _LAB_META_V6),
     TableSpec("lab_zone", _LAB_ZONE_V6),

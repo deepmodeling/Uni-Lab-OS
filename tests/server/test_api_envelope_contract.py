@@ -262,7 +262,13 @@ def test_code_table_matches_v1() -> None:
 # ── 完整装配后的路由审计 ─────────────────────────────────────────
 
 #: 允许不走信封的 ``/api/v1`` 路由：探针、Host↔权威内部通道（见 docs/developer_guide/api_v1_migration.md）。
-_RAW_ALLOWED = {"/api/v1/health", "/api/v1/readiness", "/api/v1/edge/http-responses/{request_uuid}"}
+_RAW_ALLOWED = {
+    "/api/v1/health",
+    "/api/v1/readiness",
+    "/api/v1/edge/http-responses/{request_uuid}",
+    # 物料 3D 模型资产是文件下载（V1 缺失时 HTTP 404）
+    "/api/v1/material-models/{asset_path:path}",
+}
 
 
 def _full_app(tmp_path) -> tuple[FastAPI, list]:

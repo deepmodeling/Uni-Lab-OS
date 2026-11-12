@@ -163,6 +163,7 @@ _MATERIAL_EXECUTION_V5 = (
 # - material_content_reservation：容器内容物数量预留，防止并发任务超量抽取同一瓶；
 # - material_source_binding：任务准入时冻结的物料来源绑定（task_exclusive / shared_source）；
 # - station_ingress_reservation：工站入站库位预留；
+# - inventory_processed_command：V1 类型化库存命令的幂等结果；
 # - lab_meta / lab_zone / lab_placement：实验室档案、分区与在台摆放；
 # - inventory_lot 增加库位（location_site_uuid）与仓储分区（warehouse_zone_id）；
 # - material.barcode 非空且未删除时唯一（迁移前把重复条码让给最早创建的物料）。
@@ -339,6 +340,28 @@ _STATION_INGRESS_RESERVATION_V6_INDEXES = (
             ON station_ingress_reservation(state, expires_at_ms, reservation_uuid)
             """,
 )
+# V1 ``POST /inventory/commands`` 的类型化命令（试剂分装、内容物预留、来源绑定 …）按 command_id
+# 幂等：首次结果（完成或拒绝）原样留存，重放直接返回；也是 ``/inventory/commands/processed`` 的来源。
+_INVENTORY_PROCESSED_COMMAND_V6 = """
+        CREATE TABLE IF NOT EXISTS inventory_processed_command (
+            command_id TEXT PRIMARY KEY CHECK (TRIM(command_id) <> ''),
+            command_type TEXT NOT NULL CHECK (TRIM(command_type) <> ''),
+            request_hash TEXT NOT NULL CHECK (TRIM(request_hash) <> ''),
+            status TEXT NOT NULL CHECK (status IN ('completed','rejected')),
+            result_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result_json)),
+            error_code TEXT,
+            error_message TEXT,
+            business_code INTEGER,
+            actor TEXT NOT NULL DEFAULT '',
+            processed_at_ms INTEGER NOT NULL CHECK (processed_at_ms >= 0)
+        )
+        """
+_INVENTORY_PROCESSED_COMMAND_V6_INDEXES = (
+    """
+            CREATE INDEX IF NOT EXISTS idx_inventory_processed_command_time
+            ON inventory_processed_command(processed_at_ms DESC, command_id)
+            """,
+)
 _LAB_META_V6 = """
         CREATE TABLE IF NOT EXISTS lab_meta (
             meta_key TEXT PRIMARY KEY CHECK (TRIM(meta_key) <> ''),
@@ -457,6 +480,7 @@ MATERIALS_MIGRATIONS: tuple[Migration, ...] = (
         _MATERIAL_CONTENT_RESERVATION_V6, *_MATERIAL_CONTENT_RESERVATION_V6_INDEXES,
         _MATERIAL_SOURCE_BINDING_V6, *_MATERIAL_SOURCE_BINDING_V6_INDEXES,
         _STATION_INGRESS_RESERVATION_V6, *_STATION_INGRESS_RESERVATION_V6_INDEXES,
+        _INVENTORY_PROCESSED_COMMAND_V6, *_INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
         _LAB_META_V6, _LAB_ZONE_V6, _LAB_PLACEMENT_V6, *_LAB_PLACEMENT_V6_INDEXES,
         _MATERIAL_BARCODE_V6_DEDUP, _MATERIAL_BARCODE_V6_INDEX,
     ),

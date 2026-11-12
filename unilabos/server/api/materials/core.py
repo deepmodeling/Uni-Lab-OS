@@ -559,7 +559,15 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
 
 
 def install_materials_api(app: FastAPI, service: MaterialsService) -> None:
+    """dev 物料路由在前，V1 资源 / 内容物合同在后：V1 的 ``/materials/{material_uuid}``
+    不能抢走 dev 的字面量路由（``/materials/lots``、``/materials/changes`` …）。"""
+
+    from unilabos.server.api.materials.contents import create_v1_content_router
+    from unilabos.server.api.materials.resources import create_v1_resource_router
+
     app.include_router(create_materials_router(service))
+    app.include_router(create_v1_resource_router(service))
+    app.include_router(create_v1_content_router(service))
 
 
 __all__ = [

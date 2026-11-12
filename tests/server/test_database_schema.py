@@ -79,6 +79,7 @@ EXPECTED_TABLES = {
         "material_content_reservation",
         "material_source_binding",
         "station_ingress_reservation",
+        "inventory_processed_command",
         "lab_meta",
         "lab_zone",
         "lab_placement",
@@ -209,11 +210,11 @@ def test_total_table_count_stays_small() -> None:
     # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
     # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
     # materials v6（V1.0 库存概念）：试剂 / 样品 / 当前内容物角色、内容物历史、状态历史、
-    # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，16 → 25。
+    # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，V1 命令幂等结果，16 → 26。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 42,
-        "materials": 25,
+        "materials": 26,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 74
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 75

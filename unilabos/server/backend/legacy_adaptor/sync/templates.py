@@ -191,14 +191,14 @@ class TemplateSynchronizer:
             "Content-Encoding": "gzip",
             **client_headers(),
         }
-        url = f"{self.backend_api}/resource-templates"
+        url = f"{self.backend_api}/registry/reports"
         target = urlsplit(url)
         with span(
             "edge.http.template.sync",
             kind="client",
             attributes={
                 "http.request.method": "POST",
-                "http.route": "/api/v1/resource-templates",
+                "http.route": "/api/v1/registry/reports",
                 "server.address": target.hostname or "",
                 **attributes,
             },

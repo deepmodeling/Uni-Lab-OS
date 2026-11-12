@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from unilabos.protocol.runtime.resource_intervals import ResourceLoanRequest, ResourceIntervalReleaseRequest, WorkflowResourceScopesRequest
 from unilabos.protocol.runtime.execution_start import ExecutionBeginRequest, ExecutionStartReceipt
-from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json
+from unilabos.protocol.utils.json_codec import decode_json_bytes
 from unilabos.protocol.runtime.workflow import (
     WorkflowEdgeWrite,
     WorkflowNodeWrite,

@@ -404,8 +404,10 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
         )
     )
     assert waited == [5.0]
-    assert posted[-1].status_code == 503
-    assert "not mounted" in json.loads(posted[-1].body_bytes())["detail"]
+    # 路由未挂好：与「Host 不在线」同形，HTTP 200 + 业务码 5001
+    reply = json.loads(posted[-1].body_bytes())
+    assert posted[-1].status_code == 200 and reply["code"] == 5001
+    assert "尚未挂载" in reply["error"]["msg"]
 
     # 路由就绪后同一请求正常执行
     monkeypatch.setattr(app_module, "wait_routes_ready", lambda timeout: True)

@@ -275,7 +275,8 @@ def test_runtime_v6_upgrade_preserves_workflows_and_records_backup(tmp_path):
             (7, "区间资源所有权和单次动作使用清单"), (8, "设备托管、资源借还和等待环路"),
             (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）"),
             (10, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互"),
-            (11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误")]
+            (11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误"),
+            (12, "V1 Workspace Host：工作区操作记录与快照修订号")]
         assert list(tmp_path.glob(f"runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak"))
         assert with_service.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:

@@ -460,10 +460,9 @@ def action(
         raise ValueError("资源合同必须绑定 typed 动作")
 
     def decorator(func: F) -> F:
-        import asyncio as _asyncio
         import inspect as _inspect
 
-        if _asyncio.iscoroutinefunction(func):
+        if _inspect.iscoroutinefunction(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
                 return await func(*args, **kwargs)

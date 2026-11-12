@@ -293,7 +293,7 @@ class PropertyPublisher:
         return value
 
     def get_property(self):
-        if asyncio.iscoroutinefunction(self.get_method):
+        if inspect.iscoroutinefunction(self.get_method):
             # 如果是异步函数，运行事件循环并等待结果
             self.node.lab_logger().trace(f"【.get_property】获取异步属性: {self.name}")
             loop = self.__loop
@@ -1264,7 +1264,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             future = None
             if not error_skip:
                 # 将阻塞操作放入线程池执行
-                if asyncio.iscoroutinefunction(ACTION):
+                if inspect.iscoroutinefunction(ACTION):
                     try:
                         self.lab_logger().trace(f"异步执行动作 {ACTION}")
 
@@ -1334,7 +1334,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                     for msg_name, attr_name in action_value_mapping["feedback"].items():
                         if hasattr(self.driver_instance, f"get_{attr_name}"):
                             method = getattr(self.driver_instance, f"get_{attr_name}")
-                            if not asyncio.iscoroutinefunction(method):
+                            if not inspect.iscoroutinefunction(method):
                                 feedback_values[msg_name] = method()
                         elif hasattr(self.driver_instance, attr_name):
                             feedback_values[msg_name] = getattr(self.driver_instance, attr_name)
@@ -1679,7 +1679,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             assert callable(
                 function
             ), f"执行动作时JSON中的function_name对应的函数不可调用: {function_name}\n原JSON: {string}"
-            assert asyncio.iscoroutinefunction(
+            assert inspect.iscoroutinefunction(
                 function
             ), f"执行动作时JSON中的function并非异步: {function_name}\n原JSON: {string}"
 

@@ -75,7 +75,7 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 ## Code Conventions
 
 - Code comments and log messages in simplified Chinese
-- Python 3.14+, type hints expected
+- Python 3.14 only (CPython cp314, not free-threaded), type hints expected
 - Pydantic models for data validation (`resource_tracker.py`)
 - Singleton pattern via `@singleton` decorator (`utils/decorator.py`)
 - Dynamic class loading via `utils/import_manager.py` — device classes resolved at runtime from registry YAML paths

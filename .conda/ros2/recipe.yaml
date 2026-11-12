@@ -10,7 +10,8 @@ build:
 requirements:
   run:
     - unilabos ==0.12.4 py314_0
-    - python ==3.14.10
+    - python >=3.14,<3.15
+    - python_abi 3.14.* *_cp314
     - opencv
     - transforms3d
     - ros2-distro-mutex 0.20.* jazzy_*

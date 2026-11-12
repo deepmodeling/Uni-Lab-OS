@@ -195,7 +195,7 @@ build-backend = "setuptools.build_meta"
 name = "<package_name>"
 version = "0.1.0"
 description = "<description>"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     # 用户指定的依赖
 ]
@@ -222,7 +222,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge,robostack-jazzy,uni-lab
           channel-priority: strict
           activate-environment: unilab

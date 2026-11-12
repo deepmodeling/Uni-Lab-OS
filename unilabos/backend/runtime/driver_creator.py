@@ -275,7 +275,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
 
     def post_create(self) -> None:
         setup = getattr(self.device_instance, "setup", None)
-        if self.task_scheduler is None or not asyncio.iscoroutinefunction(setup):
+        if self.task_scheduler is None or not inspect.iscoroutinefunction(setup):
             return
 
         future = schedule_async_func(

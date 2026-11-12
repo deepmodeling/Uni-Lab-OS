@@ -275,6 +275,9 @@ class BackendScheduler:
         controller = getattr(self.workflow, "set_task_controller", None)
         if callable(controller):
             controller(self._on_task_control)
+        releaser = getattr(self.workflow, "set_task_resource_releaser", None)
+        if callable(releaser):
+            releaser(self._release_unlocked_task_resources)
         self._release_confirmed_custody_inventory()
 
     @property
@@ -1479,6 +1482,13 @@ class BackendScheduler:
             ]
         for job_uuid in job_uuids:
             self._release_job_resources(job_uuid, canceled=True)
+
+    def _release_unlocked_task_resources(self, task_uuid: str, job_uuids: list[str]) -> None:
+        """V1 ``unlock_resources`` 已在库内释放异常终态任务的占用：同步释放内存资源账本。"""
+
+        for job_uuid in job_uuids:
+            self._release_job_resources(job_uuid, canceled=True)
+        self._cleanup_task_resources(task_uuid)
 
     def _on_resource_change(self) -> None:
         if self._stopping:

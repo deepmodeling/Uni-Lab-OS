@@ -51,11 +51,9 @@ def test_workflow_runtime_read_routes_keep_empty_and_not_found_semantics():
 
     task_paths = (
         f"/api/v1/workflow-tasks/{task['uuid']}/manual-confirmations",
-        f"/api/v1/workflow-tasks/{task['uuid']}/interventions",
     )
     job_paths = (
         f"/api/v1/workflow-node-jobs/{job['uuid']}/results",
-        f"/api/v1/workflow-node-jobs/{job['uuid']}/feedback-history",
     )
     for path in (*task_paths, *job_paths):
         response = client.get(path)
@@ -64,6 +62,18 @@ def test_workflow_runtime_read_routes_keep_empty_and_not_found_semantics():
         invalid_window = client.get(path, params={"limit": 0})
         assert invalid_window.status_code == 200
         assert invalid_window.json()["code"] == 1000
+
+    # V1 全局干预列表（按状态）与任务的人工交互
+    assert client.get("/api/v1/workflow-interventions").json() == {"code": 0, "data": []}
+    assert client.get("/api/v1/workflow-interventions", params={"status": "bogus"}).json()["code"] == 1000
+    assert client.get(f"/api/v1/workflow-tasks/{task['uuid']}/human-interactions").json() == {"code": 0, "data": []}
+    # V1 过程反馈：page / page_size 分页（越界页码按 V1 归一到合法范围）
+    feedback = client.get(f"/api/v1/workflow-node-jobs/{job['uuid']}/feedback")
+    assert feedback.json() == {"code": 0, "data": {"items": [], "total": 0, "page": 1, "page_size": 20,
+                                                   "has_more": False}}
+    clamped = client.get(f"/api/v1/workflow-node-jobs/{job['uuid']}/feedback", params={"page": 0, "page_size": 500})
+    assert clamped.json()["data"]["page"] == 1 and clamped.json()["data"]["page_size"] == 100
+    assert client.get(f"/api/v1/workflow-node-jobs/{uuid4()}/feedback").json()["code"] == 3002
 
     missing = client.get(f"/api/v1/workflow-node-jobs/{uuid4()}/results")
     assert missing.status_code == 200

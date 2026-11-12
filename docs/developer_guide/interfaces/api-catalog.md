@@ -205,8 +205,8 @@ ManualConfirmationDecisionRequest 必填 action，可带 confirmed_by、comment�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/error-decisions` | — | `{items:[...]}`；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
-| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision | `{decision_id,status:"resolved"}`；过期/拒绝可返回 409 |
+| GET | `/api/v1/error-decisions` | — | `{decisions:[...]}`（V1）；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
+| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision（V1 ErrorDecisionIn：action / option / result / reason；可选 operator_id、Idempotency-Key 头） | `{decision_id,status:"delivered"}`；不在等待（处理过 / 超时 / 设备离线）为"不存在"（4001） |
 | GET | `/api/v1/status-incidents` | Q: device_id=""、include_terminal=false | `{host_ready,incidents,holds}`；状态策略不可用时 503 |
 | POST | `/api/v1/status-incidents/{incident_id}` | B: StatusIncidentDecision | incident 的 ack；不存在 404、冲突 409、无效选择 422 |
 
@@ -396,13 +396,13 @@ state、properties、connection_state、alarms 使用公共 JSON 字段，不要
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
-| POST | `/api/v1/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
-| GET | `/api/v1/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
-| POST | `/api/v1/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
-| GET | `/api/v1/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
-| POST | `/api/v1/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
-| GET | `/api/v1/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
+| GET | `/api/v1/edge/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
+| POST | `/api/v1/edge/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
+| GET | `/api/v1/edge/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
+| POST | `/api/v1/edge/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
+| GET | `/api/v1/edge/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
+| POST | `/api/v1/edge/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
+| GET | `/api/v1/edge/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
 
 事件类型为 job_transition/action_availability/job_feedback/job_result/job_log/error_snapshot/decision_audit。
 HistoryEventAppend 关联 job/endpoint/device、payload、版本和来源；人工替换保留 actor 与原始事件。

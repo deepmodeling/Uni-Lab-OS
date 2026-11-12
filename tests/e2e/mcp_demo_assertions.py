@@ -113,7 +113,7 @@ def assert_closed_loops(spec, source: Path, evidence: dict, output: Path, port: 
                     elif call.get("tool") == "decisions_error_decisions_list":
                         body = result.get("body", {})
                         data = body.get("data", body)
-                        items = data.get("items", [])
+                        items = data.get("decisions", [])
                     else:
                         continue
                     matching += [item for item in items if item.get("task_id") == proof["task_uuid"]]

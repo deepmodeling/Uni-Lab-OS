@@ -67,7 +67,7 @@ def test_pause_between_adjacent_actions_and_restart_keep_interval(tmp_path):
     competitor = make_task(service, ("reactor",))
     scheduler.submit(owner["uuid"])
     wait_for(lambda: len(executor.dispatched) == 1)
-    assert command(client, owner, "pause").status_code == 200
+    assert command(client, owner, "pause").status_code == 201
     executor.finish(0)
     wait_for(lambda: len(scheduler._waiting_step_nodes) == 1)
     intervals = ResourceIntervals(service)
@@ -95,7 +95,7 @@ def test_pause_between_adjacent_actions_and_restart_keep_interval(tmp_path):
         wait_for(lambda: owner["uuid"] not in scheduler._scheduled)
         assert service.get_workflow_task(owner["uuid"])["control_status"] == "paused"
         assert executor.dispatched == []
-        assert command(client, owner, "resume").status_code == 200
+        assert command(client, owner, "resume").status_code == 201
         wait_for(lambda: len(executor.dispatched) == 1)
         assert executor.dispatched[0]["task_id"] == owner["uuid"]
         assert ResourceIntervals(service).snapshot(owner["uuid"])[0]["owner_uuid"] == held[0]["owner_uuid"]
@@ -180,7 +180,7 @@ def test_unknown_execution_retains_explicit_scope_and_cannot_be_manually_release
             ResourceIntervals(service).confirm_release(row["owner_uuid"], expected_version=row["version"], reason="核实请求")
         assert ExecutionClaims(service).get(job)["state"] == "uncertain"
         # 迟到的真实完成回执收敛 attempt，但不代替显式作用域的物理清场确认。
-        assert command(TestClient(create_workflow_app(service)), task, "cancel").status_code == 200
+        assert command(TestClient(create_workflow_app(service)), task, "cancel").status_code == 201
         executor.finish(0, cancelled=True)
         wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "canceled")
         assert ResourceIntervals(service).snapshot()[0]["state"] == "retained"
@@ -273,8 +273,10 @@ def test_runtime_v6_upgrade_preserves_workflows_and_records_backup(tmp_path):
         assert with_service.connection.execute("PRAGMA user_version").fetchone()[0] == RUNTIME_DATABASE.schema_version
         assert [tuple(row) for row in with_service.connection.execute("SELECT version,description FROM schema_migration")] == [
             (7, "区间资源所有权和单次动作使用清单"), (8, "设备托管、资源借还和等待环路"),
-            (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）")]
-        assert list(tmp_path.glob("runtime.db.pre-v9-*.bak"))
+            (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）"),
+            (10, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互"),
+            (11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误")]
+        assert list(tmp_path.glob(f"runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak"))
         assert with_service.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         with_service.close()

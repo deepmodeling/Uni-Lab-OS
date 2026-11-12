@@ -324,7 +324,7 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
             error_of(client.get("/api/v1/materials/instances/missing"), 6000)
             error_of(client.get("/api/v1/runtime/jobs/missing"), 4001)
             error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
-            error_of(client.get("/api/v1/history/events/missing"), 4001)
+            error_of(client.get("/api/v1/edge/history/events/missing"), 4001)
             error_of(client.get("/api/v1/graphs/missing"), 4001)
             error_of(client.get("/api/v1/scheduler/drain"), 5001)
             error_of(client.post("/api/v1/workflows", json={}), 1000)

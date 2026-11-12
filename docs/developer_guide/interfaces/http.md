@@ -215,7 +215,7 @@ GET events 返回事件数组；GET states 返回 DeviceStateLatestRecord 数组
 
 ### History：正文、事件与替换链
 
-`POST /history/payloads` 的 PayloadWrite 分两种：
+`POST /edge/history/payloads` 的 PayloadWrite 分两种：
 
 | storage_kind | 内容 | 约束 |
 | --- | --- | --- |
@@ -225,11 +225,11 @@ GET events 返回事件数组；GET states 返回 DeviceStateLatestRecord 数组
 两者都可带 encoding/compression、created_at_ms/expires_at_ms；返回 PayloadObjectRead。
 Python bytes 与 HTTP Base64 要经过协议序列化，不能直接按 UTF-8 文本猜测二进制。
 
-`POST /history/events` 用 HistoryEventAppend 关联 job、endpoint、device、payload、state_version 与来源；
+`POST /edge/history/events` 用 HistoryEventAppend 关联 job、endpoint、device、payload、state_version 与来源；
 返回 HistoryEventRecord，sequence 由服务器分配。事件类型包含 job_transition/action_availability/
 job_feedback/job_result/job_log/error_snapshot/decision_audit。
 查询可按 after_sequence、job、设备、类型与时间窗口过滤，详情和 replacement-chain 有独立 GET。
-人工替换用 `POST /history/events/{uuid}/replacement`，supersedes_event_uuid 必须与路径相同，
+人工替换用 `POST /edge/history/events/{uuid}/replacement`，supersedes_event_uuid 必须与路径相同，
 保留 actor 及原始事件；不提供历史事件/正文的通用覆盖或删除。
 
 ## 驱动包、受管进程与维护

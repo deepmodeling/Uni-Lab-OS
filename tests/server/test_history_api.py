@@ -138,7 +138,7 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
     try:
         with TestClient(app) as client:
             original = client.post(
-                "/api/v1/history/events",
+                "/api/v1/edge/history/events",
                 json=HistoryEventAppend(
                     event_uuid="result-1",
                     event_type="job_result",
@@ -151,7 +151,7 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
             assert original.status_code == 200, original.text
 
             mismatch = client.post(
-                "/api/v1/history/events/result-1/replacement",
+                "/api/v1/edge/history/events/result-1/replacement",
                 json=ManualResultReplacement(
                     supersedes_event_uuid="other-result",
                     actor_uuid="operator-1",
@@ -168,12 +168,12 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
             ).model_dump(mode="json")
             assert (
                 client.post(
-                    "/api/v1/history/events/result-1/replacement", json=body
+                    "/api/v1/edge/history/events/result-1/replacement", json=body
                 ).status_code
                 == 200
             )
             conflict = client.post(
-                "/api/v1/history/events/result-1/replacement",
+                "/api/v1/edge/history/events/result-1/replacement",
                 json={**body, "event_uuid": "fork"},
             )
             error_of(conflict, 3003)

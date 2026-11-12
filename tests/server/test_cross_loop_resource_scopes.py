@@ -154,7 +154,7 @@ def test_paused_loop_owner_survives_database_reopen_and_blocks_competitor(tmp_pa
     try:
         scheduler.submit(owner['uuid'])
         wait_for(lambda: len(executor.dispatched) == 1)
-        assert command(client, owner, 'pause').status_code == 200
+        assert command(client, owner, 'pause').status_code == 201
         executor.finish(0)
         wait_for(lambda: not service.connection.execute('SELECT 1 FROM workflow_resource_use').fetchone())
         held = ResourceIntervals(service).snapshot(owner['uuid'])
@@ -173,7 +173,7 @@ def test_paused_loop_owner_survives_database_reopen_and_blocks_competitor(tmp_pa
         scheduler.submit(competitor['uuid'])
         wait_for(lambda: bool(scheduler._waiting_interval_jobs))
         assert not executor.dispatched
-        assert command(client, owner, 'resume').status_code == 200
+        assert command(client, owner, 'resume').status_code == 201
         for index in range(2):
             wait_for(lambda: len(executor.dispatched) > index)
             assert executor.dispatched[index]['task_id'] == owner['uuid']

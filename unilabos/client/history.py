@@ -65,12 +65,13 @@ class HistoryHTTPError(APIHTTPError):
 class HTTPHistoryClient:
     def __init__(self, base_url: str, *, timeout: float = 30.0):
         base = base_url.rstrip("/")
-        if base.endswith("/api/v1/history"):
+        # dev 事件 / 载荷存储在 /api/v1/edge/history；/api/v1/history 归 V1 运行历史
+        if base.endswith("/api/v1/edge/history"):
             self.base_url = base
         elif base.endswith("/api/v1"):
-            self.base_url = base + "/history"
+            self.base_url = base + "/edge/history"
         else:
-            self.base_url = base + "/api/v1/history"
+            self.base_url = base + "/api/v1/edge/history"
         self.timeout = timeout
 
     def _request(self, method: str, path: str, body: Optional[Any] = None) -> Any:

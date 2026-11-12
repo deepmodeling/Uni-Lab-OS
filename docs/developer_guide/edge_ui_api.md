@@ -114,7 +114,7 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   写请求应显式填 `actor_type: "human"`，不要依赖默认值 `edge`（`edge` 应展示为
   "Edge 上报"，取值表见 `examples/materials_operations_guide.md §2.2.1`）；
 - `/api/v1/telemetry`：设备最新状态和事件；
-- `/api/v1/history`：payload 与统一历史事件；
+- `/api/v1/edge/history`：payload 与统一历史事件（`/api/v1/history` 归 V1 运行历史）；
 - `/api/v1/lab/layout`：实验室布局（区域 / 围墙像素格，叠在物料权威设备位置之上）。runtime.db
   `lab_layout` 单行文档，一个 Host 一份、所有前端共享：`GET` 从未保存时返回 `revision 0` 的空布局
   （不是 404），`PUT {revision, cell_size, zones, walls}` 整份替换、revision 乐观锁不匹配 409，

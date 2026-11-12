@@ -3,12 +3,12 @@ error-decisions / restart 干预入口），不复制 Runtime 数据面。"""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
+from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from unilabos.server.api.envelope import envelope_router, raw_response
 from unilabos.protocol.runtime.lifecycle import (
@@ -36,14 +36,16 @@ class StatusIncidentDecision(BaseModel):
 
 
 class ErrorDecision(BaseModel):
-    action: str = "abort"
-    option: Optional[dict[str, Any]] = None
+    """V1 ``ErrorDecisionIn``：人工审批结果（与云端 ws job_error_decision 消息同语义）。
+
+    字段与缺省值同 V1，未知字段忽略；``operator_id`` 是 dev 的可选扩展（缺省取请求上下文）。
+    """
+
+    action: str = ""  # retry / skip / abort / 其它已配置 option
+    option: Optional[dict[str, Any]] = None  # 或直接回传选中的 option 对象
+    result: Any = None  # operator_intervention 的服务端结果
     reason: str = ""
-    result: Any = None
-    scheduler_updated: bool = True
-    job_id: str = ""
-    device_id: str = ""
-    extra: dict[str, Any] = Field(default_factory=dict)
+    operator_id: Optional[str] = None
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
@@ -312,73 +314,47 @@ def create_backend_router(
             raise HTTPException(status_code=404, detail="status incident not found")
         return result["ack"]
 
+    from unilabos.server.services.runtime.error_decisions import ErrorDecisionDesk
+
+    desk = ErrorDecisionDesk(get_scheduler, get_execution_backend)
+
     @router.get("/error-decisions")
     def error_decisions() -> dict[str, Any]:
         """待人工决策的清单：执行面挂起的失败 attempt + 调度器在重启后接管的
-        执行态未知 / 决策上下文丢失的 attempt，两者报告同形。"""
+        执行态未知 / 决策上下文丢失的 attempt，两者报告同形（V1 清单键 ``decisions``）。"""
 
-        from unilabos.server.backend.edge_control import get_edge_control_service
-
-        backend = get_execution_backend()
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        if backend is None and scheduler is None and edge_control is None:
-            raise HTTPException(
-                status_code=503,
-                detail="backend execution service is not ready",
-            )
-        items: list[dict[str, Any]] = []
-        if backend is not None:
-            items.extend(backend.list_error_decisions())
-        elif edge_control is not None:
-            # 执行面在 Host 进程：它打开终态闸门、等本进程放行的失败登记在控制面服务里
-            items.extend(edge_control.list_error_decisions())
-        lister = getattr(scheduler, "list_reconciliation_decisions", None)
-        if callable(lister):
-            items.extend(lister())
-        # 执行端仍在等待决策时也展示冻结物理范围，不能把未知物理结果提供为普通重试。
-        recovery = getattr(scheduler, "_physical_recovery", None)
-        if recovery is not None:
-            for item in items:
-                job_uuid = item.get("job_id")
-                record = recovery.get(job_uuid) if job_uuid else None
-                if record and (record["request"].get("moves") or record["request"].get("aliquot")):
-                    item["category"] = "physical_settlement"
-                    item["material_execution"] = record
-                    item["options"] = [option for option in item.get("options", []) if option.get("action") in {"operator_intervention", "abort"}]
-        return {"items": items}
+        return {"decisions": desk.items()}
 
     @router.post("/error-decisions/{decision_id}")
     def resolve_error_decision(
         decision_id: str,
         body: ErrorDecision,
+        request: Request,
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        decision = body.model_dump(exclude_none=True)
-        extra = decision.pop("extra", {})
-        if isinstance(extra, Mapping):
-            decision.update(extra)
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        """V1：放行一项决策，``{"decision_id", "status": "delivered"}``；已不在等待时按 V1 的 404。
 
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        report = next((item for item in error_decisions()["items"] if item.get("decision_id") == decision_id), None)
-        if report and report.get("category") == "physical_settlement":
-            if decision.get("action") not in {"operator_intervention", "abort"} or not str(decision.get("reason") or "").strip():
-                raise HTTPException(status_code=409, detail="物理结果未知，须填写核实说明并补记实际结果或终止任务，禁止直接重试")
-        owns = getattr(scheduler, "has_reconciliation_decision", None)
-        if callable(owns) and owns(decision_id):
-            resolved = scheduler.resolve_reconciliation_decision(decision_id, decision)
-        elif get_execution_backend() is None and edge_control is not None:
-            # 执行面在 Host 进程：本进程是调度权威，经 runtime.v1 命令放行终态闸门
-            resolved = edge_control.resolve_error_decision(decision_id, decision)
-        else:
-            resolved = execution().resolve_error_decision(decision_id, decision)
-        if not resolved:
-            raise HTTPException(
-                status_code=409,
-                detail="error decision was rejected or no longer pending",
+        载荷与 V1 同组装：``reason`` 恒带，``option`` / ``action`` / ``result`` 给出才带。
+        dev 扩展（可选）：``Idempotency-Key`` 同键同内容重放首次结果；操作员身份随载荷记录。
+        """
+
+        from unilabos.server.api.runtime.tasks_v1 import operator_identity
+        from unilabos.server.services.runtime.error_decisions import ErrorDecisionNotPending
+
+        payload: dict[str, Any] = {"reason": body.reason}
+        if body.option is not None:
+            payload["option"] = body.option
+        if body.action:
+            payload["action"] = body.action
+        if body.result is not None:
+            payload["result"] = body.result
+        try:
+            return desk.resolve(
+                decision_id, payload, idempotency_key=idempotency_key,
+                operator_id=body.operator_id or operator_identity(request),
             )
-        return {"decision_id": decision_id, "status": "resolved"}
+        except ErrorDecisionNotPending as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # ── 安静点重启（调试用） ─────────────────────────────────
 

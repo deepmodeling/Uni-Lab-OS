@@ -23,7 +23,7 @@ Uni-Lab-OS 的 `8002` 端口提供微后端 API 和入口导航页。用户界�
 | `/api/v1/runtime/*` | Job、执行尝试及运行时状态 |
 | `/api/v1/materials/*` | 物料模板、实例（按件登记 `instantiate`）、位置和液体数据；按量库存 `lots`、调度预留 `reservations`、变更账本 `changes` |
 | `/api/v1/telemetry/*` | 高频设备状态与遥测事件 |
-| `/api/v1/history/*` | 可长期保留的运行历史 |
+| `/api/v1/edge/history/*` | 可长期保留的事件 / 载荷历史（Host 数据面）；`/api/v1/history/*` 是 V1 工作流 / 作业运行历史 |
 | `/api/v1/graphs/*` | 设备图快照与实时拓扑 |
 | `/api/v1/workflows/*` | 本地调度模式的工作流定义与任务 |
 | `/api/v1/error-decisions/*` | 后端协调后的错误决策观测/释放协议 |

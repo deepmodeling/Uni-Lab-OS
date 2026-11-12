@@ -56,8 +56,8 @@ def rpc(client, method, params=None, request_id=1):
 
 def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
-    assert len(OPERATIONS) == 155  # +23：V1 工作流作者 / 设备目录路由
-    assert len(protocol.tools) == 161
+    assert len(OPERATIONS) == 154  # +23 V1 工作流作者 / 设备目录；-1 V1 任务生命周期合并重复路由
+    assert len(protocol.tools) == 160
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -66,7 +66,7 @@ def test_all_public_operations_use_current_protocol(contract, application):
         assert operation.method.lower() in contract["paths"][operation.path]
     operations = {(op.method, op.path) for op in OPERATIONS}
     for method, path in operations:
-        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/history/")):
+        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/edge/history/")):
             assert method == "GET", (method, path)
         assert "/snapshots/" not in path
         assert "/reservations" not in path or method == "GET"
@@ -100,7 +100,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 161
+        assert len(rpc(client, "tools/list")["tools"]) == 160
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})

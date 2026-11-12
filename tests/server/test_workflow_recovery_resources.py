@@ -95,7 +95,7 @@ def test_cancel_then_restart_waits_for_every_old_parallel_action(tmp_path):
     scheduler.submit(task["uuid"])
     wait_for(lambda: len(executor.dispatched) == 2)
     jobs = [payload["job_id"] for payload in executor.dispatched]
-    assert command(client, task, "cancel").status_code == 200
+    assert command(client, task, "cancel").status_code == 201
     scheduler.stop()
     service.close()
     service = WorkflowService(path)

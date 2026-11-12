@@ -380,6 +380,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         self._task_submitter: Optional[Callable[[str], None]] = None
         self._task_controller: Optional[Callable[[str], None]] = None
         self._resource_change_listener: Optional[Callable[[], None]] = None
+        self._task_resource_releaser: Optional[Callable[[str, List[str]], None]] = None
         # Scheduler 绑定此回调消费 durable 人工确认决策；Service 本身不依赖调度器。
         self._manual_confirmation_resolver: Optional[
             Callable[[Dict[str, Any]], None]
@@ -476,27 +477,27 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
 
     def command_workflow_task(
         self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
+        idempotency_key: str, expected_revision: Optional[int] = None,
+        target_node_uuid: Optional[str] = None, description: Optional[str] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        if not self._authority_profile.can_create_local_workflow_task:
-            raise WorkflowError("local_task_authority_forbidden")
-        task_uuid = self.get_workflow_task(task_uuid)["uuid"]
-        if (command_type not in {"step", "resume", "pause", "cancel"} or not idempotency_key.strip()
-                or type(expected_revision) is not int or expected_revision < 0):
-            raise WorkflowError("invalid_input")
+        """V1 任务控制命令（状态机见 ``task_lifecycle.TaskCommands``），返回命令投影。"""
+
+        from .task_lifecycle import TaskCommands
+
         try:
-            result = self.apply_task_command(task_uuid, command_type=command_type,
-                                             expected_revision=expected_revision,
-                                             idempotency_key=idempotency_key)
+            return TaskCommands(self).apply(
+                task_uuid, command_type=command_type, target_node_uuid=target_node_uuid,
+                idempotency_key=idempotency_key, description=description,
+                meta_data=dict(meta_data or {}), expected_revision=expected_revision,
+            )
         except StoreConflict as exc:
             raise WorkflowConflict("conflict", detail=str(exc)) from None
-        if self._task_controller is not None:
-            try:
-                self._task_controller(task_uuid)
-            except Exception:
-                # 命令已落库，执行器暂时不可用时不能误报提交失败；恢复时重新消费。
-                logger.exception("任务 %s 控制已持久化，等待调度器恢复", task_uuid)
-        return result
+
+    def set_task_resource_releaser(self, releaser: Optional[Callable[[str, List[str]], None]]) -> None:
+        """绑定 ``unlock_resources`` 持久释放后的调度器内存占用释放（任务 uuid, 作业 uuid 列表）。"""
+
+        self._task_resource_releaser = releaser
 
     def mark_workflow_node_job_cancel_requested(self, job_uuid: str) -> bool:
         return self.mark_job_cancel_requested(job_uuid)
@@ -1300,10 +1301,19 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         meta_data: Dict[str, Any],
         idempotency_key: Optional[str] = None,
         expected_revision: Optional[int] = None,
+        priority: str = "normal",
+        inventory_bindings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
         workflow_uuid = self.get_workflow(workflow_uuid)["uuid"]
+        from .task_lifecycle import normalize_inventory_bindings, normalize_task_priority
+
+        try:
+            priority = normalize_task_priority(priority)
+            bindings = normalize_inventory_bindings(inventory_bindings)
+        except ValueError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
         run_mode = "normal" if run_mode == "" else run_mode
         if run_mode not in {"normal", "step", "single_node"}:
             raise WorkflowError("invalid_input")
@@ -1337,6 +1347,11 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 semantics["input"] = input_value
             if expected_revision is not None:
                 semantics["expected_revision"] = expected_revision
+            # V1 字段取默认值时不进指纹，与既有任务保持同一指纹
+            if priority != "normal":
+                semantics["priority"] = priority
+            if bindings:
+                semantics["inventory_bindings"] = bindings
             fingerprint = _sha256(_canonical_json(semantics))
             existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
             if existing is not None:
@@ -1374,6 +1389,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 ),
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
+                priority=priority,
+                inventory_bindings=bindings,
             )
         except StoreConflict:
             if idempotency_key is not None:
@@ -1706,8 +1723,12 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         workflow_uuid: Optional[str] = None,
         status: str = "",
         cleanup_status: str = "",
+        execution_kind: str = "",
     ) -> Dict[str, Any]:
         page, page_size = self._normalize_page(page, page_size)
+        execution_kind = execution_kind.strip().lower()
+        if execution_kind and execution_kind not in {"workflow", "ad_hoc_device_action"}:
+            raise WorkflowError("invalid_input")
         if workflow_uuid is not None:
             try:
                 workflow_uuid = validate_uuid(workflow_uuid)
@@ -1739,6 +1760,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             workflow_uuid=workflow_uuid,
             status=status,
             cleanup_status=cleanup_status,
+            execution_kind=execution_kind,
         )
 
     def list_workflow_node_runs(self, task_uuid: str) -> List[Dict[str, Any]]:
@@ -1760,16 +1782,20 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
     def list_workflow_node_jobs(self, task_uuid: str) -> List[Dict[str, Any]]:
         """attempt（物理执行）平铺视图。"""
 
+        from .task_lifecycle import enrich_jobs
+
         identity = self.get_workflow_task(task_uuid)["uuid"]
-        return self.list_jobs(identity)
+        return enrich_jobs(self, self.list_jobs(identity))
 
     def get_workflow_node_job(self, job_uuid: str) -> Dict[str, Any]:
+        from .task_lifecycle import enrich_jobs
+
         try:
             identity = validate_uuid(job_uuid)
         except ValueError:
             raise WorkflowError("invalid_input") from None
         try:
-            return self.get_job(identity)
+            return enrich_jobs(self, [self.get_job(identity)])[0]
         except StoreNotFound:
             raise WorkflowError("not_found") from None
 

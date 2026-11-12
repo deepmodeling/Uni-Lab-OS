@@ -342,7 +342,7 @@ def _await_workflow(
     if expectation.error_decision:
 
         def pending_decision():
-            items = api_request(port, "/error-decisions")["items"]
+            items = api_request(port, "/error-decisions")["decisions"]
             matches = [item for item in items if item.get("task_id") == task_uuid]
             return matches[0] if matches else None
 
@@ -353,14 +353,14 @@ def _await_workflow(
             f"/error-decisions/{report['decision_id']}",
             {**expectation.error_decision, "job_id": report["job_id"], "device_id": report["device_id"]},
         )
-        assert resolved["status"] == "resolved", resolved
+        assert resolved["status"] == "delivered", resolved
         decision = {**report, "resolved_action": expectation.error_decision["action"]}
 
     def terminal_task():
         current = api_request(port, f"/workflow-tasks/{task_uuid}")
         if current.get("status") not in TERMINAL_TASK_STATUSES:
             pending = [
-                item for item in api_request(port, "/error-decisions")["items"] if item.get("task_id") == task_uuid
+                item for item in api_request(port, "/error-decisions")["decisions"] if item.get("task_id") == task_uuid
             ]
             assert not pending, f"工作流 {expectation.name!r} 出现未预期的错误决策：{pending}"
         return current if current.get("status") in TERMINAL_TASK_STATUSES else None

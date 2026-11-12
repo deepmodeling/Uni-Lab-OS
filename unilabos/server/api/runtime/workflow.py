@@ -8,7 +8,6 @@ from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, FastAPI, Query, Request
 from fastapi.responses import JSONResponse, Response
-from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from unilabos.protocol.runtime.resource_intervals import ResourceLoanRequest, ResourceIntervalReleaseRequest, WorkflowResourceScopesRequest
@@ -20,7 +19,13 @@ from unilabos.protocol.runtime.workflow import (
     normalize_json_array,
     normalize_json_object,
 )
-from unilabos.server.api.envelope import business_code, install_envelope_validation
+from unilabos.server.api.envelope import (
+    WORKFLOW,
+    EnvelopeResponse,
+    envelope_route_class,
+    ok_response,
+    to_api_error,
+)
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
 
 
@@ -44,8 +49,8 @@ _GO_WHITE_SPACE = (
 )
 
 
-class _BackendJSONRoute(APIRoute):
-    """Preload JSON with the frozen Backend depth and error-envelope rules."""
+class _BackendJSONRoute(envelope_route_class(WORKFLOW)):
+    """信封路由（工作流口径：404 → 3002）之上，按冻结的 Backend 深度规则预解析 JSON 请求体。"""
 
     def get_route_handler(self):
         route_handler = super().get_route_handler()
@@ -325,11 +330,8 @@ class ApplyRequest(_StrictModel):
     expected_candidate_hash: HashToken
 
 
-class _BackendJSONResponse(JSONResponse):
-    """Render deeply nested Backend JSON without process-global recursion state."""
-
-    def render(self, content: Any) -> bytes:
-        return encode_json(content)
+#: 兼容旧名：信封响应（有界非递归 JSON 编码）统一由 ``api/envelope.py`` 提供。
+_BackendJSONResponse = EnvelopeResponse
 
 
 def _public_data(data: Any) -> Any:
@@ -345,44 +347,14 @@ def _public_data(data: Any) -> Any:
     return result
 
 
-def _success(data: Any = None, *, status: int = 200) -> _BackendJSONResponse:
-    content: Dict[str, Any] = {"code": 0}
-    if data is not None:
-        content["data"] = _public_data(data)
-    return _BackendJSONResponse(status_code=status, content=content)
+def _success(data: Any = None, *, status: int = 200) -> EnvelopeResponse:
+    return ok_response(_public_data(data) if data is not None else None, status_code=status)
 
 
-def _error(error: WorkflowError) -> _BackendJSONResponse:
-    conflict_codes = {
-        "conflict",
-        "draft_hash_conflict",
-        "workflow_revision_conflict",
-        "candidate_hash_conflict",
-        "template_catalog_conflict",
-        "candidate_not_ready",
-        "draft_invalid",
-        "candidate_invalid",
-        "manual_confirmation_not_assignee",
-        "manual_confirmation_decided",
-        "manual_confirmation_key_used",
-    }
-    if error.code in {"invalid_input", "template_binding_invalid", "site_binding_invalid"}:
-        category = "invalid"
-    elif error.code in {"not_found", "workflow_not_found", "workflow_template_not_found"}:
-        category = "not_found"
-    elif error.code in conflict_codes:
-        category = "conflict"
-    elif error.code in {"template_catalog_unavailable", "workflow_template_unavailable"}:
-        category = "unavailable"
-    else:
-        category = "internal"
-    return _BackendJSONResponse(
-        status_code=200,
-        content={
-            "code": business_code(category),
-            "error": {"msg": error.message},
-        },
-    )
+def _error(error: WorkflowError) -> EnvelopeResponse:
+    """工作流领域错误 → 失败信封（码表与符号码见 ``api/envelope.py``）。"""
+
+    return to_api_error(error, WORKFLOW).to_response()
 
 
 def format_sse_event(event: Dict[str, Any]) -> str:
@@ -425,7 +397,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
     def bind_sites(nodes: List[Any], *, mapped_paths: Optional[Dict[str, List[str]]] = None) -> List[Any]:
         from unilabos.server.backend.composition import get_materials_service
         from unilabos.server.composition import get_server_services
-        from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
         from unilabos.server.services.runtime.registry import get_registry_service
         from unilabos.server.services.runtime.workflow.site_bindings import (
             SiteBindingError, resolve_workflow_sites,
@@ -438,10 +411,14 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 # 分进程时 endpoint 数据面在 Host 的库；和浏览器读取同一个入口，
                 # 不读取调度权威里为空（或过期）的同名表。
                 response = edge_http("GET", "/api/v1/runtime/endpoints?state=online&limit=1000", timeout=5.0)
-                if response is None or response.status_code != 200:
+                if response is None:
                     raise SiteBindingError("Host 动作能力暂不可用，请稍后重试，或用 site_binding_mode=preserve 保存草稿")
                 try:
-                    endpoints = json.loads(response.body_bytes())
+                    endpoints = edge_response_data(response)
+                except EnvelopeError as exc:
+                    raise SiteBindingError(
+                        "Host 动作能力暂不可用，请稍后重试，或用 site_binding_mode=preserve 保存草稿"
+                    ) from exc
                 except (ValueError, UnicodeError) as exc:
                     raise SiteBindingError("Host 动作能力响应无效，不能校验 Site 绑定") from exc
                 if not isinstance(endpoints, list):
@@ -940,27 +917,10 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
 
 
 def install_workflow_api(app: FastAPI, service: WorkflowService) -> None:
-    """Install error mapping and routes into an OS FastAPI application."""
+    """Install routes into an OS FastAPI application.
 
-    @app.exception_handler(WorkflowError)
-    async def workflow_error_handler(
-        _request: Request,
-        error: WorkflowError,
-    ) -> JSONResponse:
-        return _error(error)
-
-    # 请求校验失败也回信封（1000）：与 graphs / chemicals 共用同一个处理器
-    install_envelope_validation(app, (
-        "/api/v1/workflows",
-        "/api/v1/workflow-tasks",
-        "/api/v1/workflow-resource-intervals",
-        "/api/v1/workflow-resource-loans",
-        "/api/v1/workflow-device-tenancies",
-        "/api/v1/workflow-node-jobs",
-        "/api/v1/workflow-manual-confirmations",
-        "/api/v1/workflow-publications",
-        "/api/v1/events",
-    ))
+    WorkflowError、请求校验失败等由信封路由类就地换算，不再登记应用级异常处理器。
+    """
 
     # 同进程后装配 Workflow Authority 时替换无工作流读取器的公共通知路由。
     app.router.routes[:] = [route for route in app.router.routes if getattr(route, "name", "") != "runtime_events"]

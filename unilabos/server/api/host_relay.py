@@ -12,12 +12,13 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.materials import MaterialDeviceSync
 from unilabos.server.api.materials.core import ResourceTreeNotify, ResourceTreeNotifyResult
 
 
 def create_host_relay_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/hostlink", tags=["hostlink"], include_in_schema=False)
+    router = envelope_router(prefix="/api/v1/hostlink", tags=["hostlink"], include_in_schema=False)
 
     @router.post("/material-sync")
     def material_sync(command: MaterialDeviceSync) -> Dict[str, Any]:

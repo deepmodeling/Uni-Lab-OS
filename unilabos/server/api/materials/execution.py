@@ -1,6 +1,8 @@
 """材料执行协议入口；人工释放由调度权威复验当前 attempt 后调用。"""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import HTTPException
+
+from unilabos.server.api.envelope import RESOURCE, envelope_router
 from unilabos.protocol.material_execution import (
     MaterialExecutionPrepare,
     MaterialExecutionReceipt,
@@ -11,7 +13,7 @@ from unilabos.protocol.material_execution import (
 def create_material_execution_router(service):
     from .core import _call
 
-    router = APIRouter(prefix="/executions")
+    router = envelope_router(prefix="/executions", profile=RESOURCE)
 
     @router.get("")
     def list_executions():

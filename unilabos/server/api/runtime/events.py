@@ -22,6 +22,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import Response, StreamingResponse
 
 from unilabos.protocol.runtime.logs import RuntimeLogNotice
+from unilabos.server.api.envelope import WORKFLOW, envelope_router
 from unilabos.server.lifecycle import shutting_down
 from unilabos.utils.log_notices import LOG_NOTICE_EVENT, log_notices, merge_notices
 
@@ -95,7 +96,8 @@ async def runtime_event_stream(
 
 
 def create_runtime_events_router(service=None) -> APIRouter:
-    router = APIRouter(tags=["runtime-events"])
+    # SSE 流本身不包信封；游标非法等失败仍回工作流口径的失败信封
+    router = envelope_router(tags=["runtime-events"], profile=WORKFLOW)
 
     @router.get("/events", name="runtime_events")
     async def events(

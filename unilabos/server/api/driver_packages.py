@@ -10,6 +10,8 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
+
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.runtime.driver_packages import (
     DriverPackageEnableRequest,
     DriverPackageInstallRequest,
@@ -24,7 +26,7 @@ from unilabos.server.services.driver_packages import (
 
 
 def create_driver_packages_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/driver-packages", tags=["driver-packages"])
+    router = envelope_router(prefix="/api/v1/driver-packages", tags=["driver-packages"])
 
     def _call(function, *args, **kwargs):
         try:

@@ -17,8 +17,10 @@ import gzip
 import json
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import ValidationError
+
+from unilabos.server.api.envelope import envelope_router
 
 from unilabos.protocol.runtime.registry import RegistryDigest, RegistryReport
 from unilabos.server.services.runtime.registry import (
@@ -27,7 +29,7 @@ from unilabos.server.services.runtime.registry import (
     get_registry_service,
 )
 
-router = APIRouter(tags=["Registry"])
+router = envelope_router(tags=["Registry"])
 
 
 def _require_service() -> RegistryService:
@@ -37,12 +39,14 @@ def _require_service() -> RegistryService:
     return service
 
 
-def _ok(data: Any) -> dict[str, Any]:
-    return {"code": 0, "data": data}
+def _ok(data: Any) -> Any:
+    """成功载荷；信封由路由类统一包装（``api/envelope.py``）。"""
+
+    return data
 
 
 @router.get("/api/v1/registry/digest")
-def get_registry_digest() -> dict[str, Any]:
+def get_registry_digest() -> Any:
     """权威持有的条目内容哈希索引：Host 上报前先取，只为权威没有的哈希附完整定义。"""
 
     digest = _require_service().digest()
@@ -50,7 +54,7 @@ def get_registry_digest() -> dict[str, Any]:
 
 
 @router.post("/api/v1/resource-templates")
-async def report_resource_templates(request: Request) -> dict[str, Any]:
+async def report_resource_templates(request: Request) -> Any:
     """Edge 全量上报（条目级替换：变了才升该条目版本，冲突挂起待确认）。"""
 
     service = _require_service()
@@ -99,7 +103,7 @@ async def report_resource_templates(request: Request) -> dict[str, Any]:
 
 
 @router.get("/api/v1/registry/workflow-templates")
-def list_registry_workflow_templates() -> dict[str, Any]:
+def list_registry_workflow_templates() -> Any:
     """生效的工作流模板（设备包 ``@workflow``）：前端模板面板与脚本实例化的数据源。"""
 
     return _ok({"templates": _require_service().list_workflow_templates()})
@@ -108,21 +112,21 @@ def list_registry_workflow_templates() -> dict[str, Any]:
 @router.get("/api/v1/registry/entries")
 def list_registry_entries(
     status: str = Query(default=""),
-) -> dict[str, Any]:
+) -> Any:
     """条目状态列表；``status`` 过滤 active/pending/removed/unusable。"""
 
     return _ok({"entries": _require_service().list_entries(status=status)})
 
 
 @router.get("/api/v1/registry/pending-impacts")
-def list_registry_pending_impacts() -> dict[str, Any]:
+def list_registry_pending_impacts() -> Any:
     """挂起条目影响面：冲突明细 + 受影响 workflow 节点（画布徽标数据源）。"""
 
     return _ok({"impacts": _require_service().pending_impacts()})
 
 
 @router.get("/api/v1/registry/entries/{name}")
-def get_registry_entry(name: str) -> dict[str, Any]:
+def get_registry_entry(name: str) -> Any:
     """条目详情：状态 + 生效 payload + 挂起 payload 与冲突明细。"""
 
     try:
@@ -132,7 +136,7 @@ def get_registry_entry(name: str) -> dict[str, Any]:
 
 
 @router.get("/api/v1/registry/entries/{name}/versions")
-def list_registry_entry_versions(name: str) -> dict[str, Any]:
+def list_registry_entry_versions(name: str) -> Any:
     try:
         return _ok({"versions": _require_service().entry_versions(name)})
     except RegistryAuthorityError as exc:
@@ -140,7 +144,7 @@ def list_registry_entry_versions(name: str) -> dict[str, Any]:
 
 
 @router.get("/api/v1/registry/entries/{name}/versions/{version}")
-def get_registry_entry_version(name: str, version: int) -> dict[str, Any]:
+def get_registry_entry_version(name: str, version: int) -> Any:
     try:
         return _ok(_require_service().get_entry_version(name, version))
     except RegistryAuthorityError as exc:
@@ -148,7 +152,7 @@ def get_registry_entry_version(name: str, version: int) -> dict[str, Any]:
 
 
 @router.post("/api/v1/registry/entries/{name}/apply")
-def apply_registry_entry(name: str) -> dict[str, Any]:
+def apply_registry_entry(name: str) -> Any:
     """把挂起版本切换为生效版本。"""
 
     try:
@@ -158,7 +162,7 @@ def apply_registry_entry(name: str) -> dict[str, Any]:
 
 
 @router.post("/api/v1/registry/entries/{name}/dismiss")
-def dismiss_registry_entry(name: str) -> dict[str, Any]:
+def dismiss_registry_entry(name: str) -> Any:
     """忽略挂起版本（历史保留，生效版本不动）。"""
 
     try:
@@ -168,7 +172,7 @@ def dismiss_registry_entry(name: str) -> dict[str, Any]:
 
 
 @router.post("/api/v1/registry/entries/{name}/restore/{version}")
-def restore_registry_entry(name: str, version: int) -> dict[str, Any]:
+def restore_registry_entry(name: str, version: int) -> Any:
     """把历史版本内容还原为新的生效版本（条目版本号继续自增）。"""
 
     try:
@@ -181,7 +185,7 @@ def restore_registry_entry(name: str, version: int) -> dict[str, Any]:
 def list_registry_reports(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
-) -> dict[str, Any]:
+) -> Any:
     """上报批次统计（新增/更新/挂起/移除/复活/不可用计数与明细）。"""
 
     reports, total = _require_service().list_reports(page=page, page_size=page_size)

@@ -28,6 +28,14 @@ Generated 2026-11-12 by statically reading dev (#360 + 98f8c0d1) and V1.0 (tag v
 
 ## Cross-cutting conventions
 
+> **Status (branch `fix/p7-foundation`, 2026-11-12):** the foundation resolves conventions 1, 2 and 3 and the SSE
+> naming in 7. Every DEV `/api/v1` JSON route now goes through `server/api/envelope.py` (`envelope_router` /
+> `EnvelopeRoute`): `{code:0,data}` on success, HTTP 200 + `{code,error:{msg[,code,details]}}` on failure, V1's
+> code table with `unauthorized` moved to 1002, validation errors as 1000. The control token is read only from
+> `X-UniLab-Token`; CORS allows `Idempotency-Key` and `X-Workflow-Filename`. `/api/v1/events` emits
+> `workflow.runtime.changed` with the DEV kind in `data.kind`. The findings below describe the state *before* that
+> branch and remain the input for the per-domain ports (paths, DTO field names, V1-only routes).
+
 These matter more than any single route. Each item gives evidence from both trees.
 
 **1. Response envelope.** Both sides mix conventions, and the split falls in different places.

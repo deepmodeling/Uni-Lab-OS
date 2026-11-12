@@ -22,8 +22,9 @@ def _app(tmp_path) -> TestClient:
 
 
 def test_code_table_is_shared() -> None:
+    # 旧类别名保留给外部调用方；unauthorized 按 V1 码表改为 1002（4001 是 V1 的「资源不存在」）
     assert BUSINESS_CODES == {
-        "ok": 0, "internal": 1, "invalid": 1000, "unauthorized": 4001, "not_found": 3002, "conflict": 3003,
+        "ok": 0, "internal": 1, "invalid": 1000, "unauthorized": 1002, "not_found": 3002, "conflict": 3003,
         "unavailable": 5001,
     }
 
@@ -31,11 +32,11 @@ def test_code_table_is_shared() -> None:
 def test_graph_and_chemical_errors_use_the_shared_shape(tmp_path) -> None:
     client = _app(tmp_path)
     missing_graph = client.get("/api/v1/graphs/gone").json()
-    assert missing_graph["code"] == 3002 and isinstance(missing_graph["error"]["msg"], str)
+    assert missing_graph["code"] == 4001 and isinstance(missing_graph["error"]["msg"], str)
 
     created = client.post("/api/v1/chemicals", json={"name": "水", "cas": "7732-18-5"}).json()
     duplicate = client.post("/api/v1/chemicals", json={"name": "水", "cas": "7732-18-5"}).json()
-    assert created["code"] == 0 and duplicate["code"] == 3003 and duplicate["error"]["msg"]
+    assert created["code"] == 0 and duplicate["code"] == 4002 and duplicate["error"]["msg"]
 
 
 def test_request_validation_returns_the_envelope_on_envelope_routes(tmp_path) -> None:

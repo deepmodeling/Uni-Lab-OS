@@ -78,6 +78,10 @@ def derive_workflow_websocket_url(
 
 
 STREAM_RESET_EVENT = "stream.reset"
+#: V1 事件名：任务 / 节点 / 作业 / 人工确认 / 资源变化都发成它，dev 细粒度种类在 ``data.kind``
+RUNTIME_CHANGED_EVENT = "workflow.runtime.changed"
+#: 作者态（草稿 / 候选 / 定义）变化，与任务运行状态无关
+AUTHORING_CHANGED_EVENT = "workflow.authoring.changed"
 _STREAM_CLOSED = object()
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
@@ -583,6 +587,8 @@ class HTTPWorkflowClient:
         notice: Mapping[str, Any],
         task_uuid: str,
     ) -> bool:
+        if notice.get("action") == AUTHORING_CHANGED_EVENT:
+            return False
         data = cls._notice_data(notice)
         direct_ids = {
             str(data.get(key) or "") for key in ("workflow_task_uuid", "task_uuid")

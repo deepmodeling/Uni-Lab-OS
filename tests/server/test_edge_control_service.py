@@ -361,7 +361,8 @@ def test_payload_client_reads_history_payload_via_backend_http() -> None:
             EdgeHttpResponse(
                 request_uuid=request.request_uuid,
                 status_code=200,
-                body_base64=__import__("base64").b64encode(json.dumps(document).encode()).decode(),
+                # Host 的 history 路由输出统一信封，权威解包 data
+                body_base64=__import__("base64").b64encode(json.dumps({"code": 0, "data": document}).encode()).decode(),
             )
         )
 

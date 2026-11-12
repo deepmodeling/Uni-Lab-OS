@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from unilabos.server.api.envelope import envelope_router, raw_response
 from unilabos.protocol.runtime.lifecycle import (
     HealthStatus,
     ReadinessStatus,
@@ -88,7 +89,7 @@ def create_backend_router(
 ) -> APIRouter:
     """创建不复制 Runtime/History/Telemetry 数据面的诊断路由。"""
 
-    router = APIRouter(prefix="/api/v1", tags=["backend"])
+    router = envelope_router(prefix="/api/v1", tags=["backend"])
     router.include_router(create_scheduler_lifecycle_router(get_scheduler, get_execution_backend))
 
     @router.get("/reset", response_model=ResetStatus)
@@ -167,18 +168,23 @@ def create_backend_router(
         }
 
     @router.get("/readiness", response_model=ReadinessStatus, responses={503: {"model": ReadinessStatus}})
+    @raw_response
     def readiness() -> JSONResponse:
         """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同）。
 
         与 ``/health``（进程存活，恒 200）不同：Host 子进程启动 / 安静点重启期间、执行适配器
         尚未注册时返回 503；全量重置期间维护闸门同样返回 503。响应只含状态摘要。
+        探针按 HTTP 状态码判定，所以本端点不包信封（``raw_response``）。
         """
 
         ready, summary = _readiness()
         return JSONResponse(status_code=200 if ready else 503, content=summary)
 
     @router.get("/health", response_model=HealthStatus)
+    @raw_response
     def health() -> dict[str, str]:
+        """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。"""
+
         return {
             "status": "ok",
             "scheduler": "local" if get_scheduler() is not None else "remote",

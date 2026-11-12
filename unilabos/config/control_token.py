@@ -12,8 +12,9 @@
   ``BasicConfig.control_token``（或设上面的环境变量）为权威那份 token；同一台机器、同一工作
   目录时直接读 ``<working_dir>/control_token``。
 
-请求头用 ``X-UniLab-Token``（``Authorization`` 已被旧云端的 ``Lab <ak:sk>`` 占用）；
-也接受 ``Authorization: Bearer <token>``。本模块不依赖 FastAPI，SDK 与 Host 都可以用。
+请求头只认 ``X-UniLab-Token``：``Authorization`` 已被旧云端的 ``Lab <ak:sk>`` 占用，
+``Authorization: Bearer`` 又留给 V1 工站调用的 api_key（``/stations/*``），控制面不读取它。
+本模块不依赖 FastAPI，SDK 与 Host 都可以用。
 """
 
 from __future__ import annotations
@@ -97,16 +98,10 @@ def client_headers() -> dict[str, str]:
 
 
 def presented_token(headers: Mapping[str, str]) -> str:
-    """从请求头取出对方出示的 token（``X-UniLab-Token`` 或 ``Authorization: Bearer``）。"""
+    """从请求头 ``X-UniLab-Token`` 取出对方出示的 token；``Authorization`` 一概不看。"""
 
     value = headers.get(TOKEN_HEADER) or headers.get(TOKEN_HEADER.lower())
-    if value:
-        return str(value).strip()
-    authorization = str(headers.get("authorization") or headers.get("Authorization") or "")
-    scheme, _, credential = authorization.partition(" ")
-    if scheme.lower() == "bearer":
-        return credential.strip()
-    return ""
+    return str(value).strip() if value else ""
 
 
 def token_accepted(headers: Mapping[str, str]) -> bool:

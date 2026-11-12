@@ -50,10 +50,18 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     assert meta["api_version"] == "v1" and meta["api_prefix"] == "/api/v1"
     assert meta["sse"] == ["/api/v1/events", "/api/v1/materials/events"]
     assert all(path.startswith("/api/v1/") for path in document["paths"])
+    # 统一信封：响应模型是 Envelope[SchedulerDrainStatus]，data 字段引用原 DTO
     assert operations["GET /api/v1/scheduler/drain"]["responses"]["200"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/SchedulerDrainStatus"
+        "$ref": "#/components/schemas/Envelope_SchedulerDrainStatus_"
     }
     schemas = document["components"]["schemas"]
+    drain_envelope = schemas["Envelope_SchedulerDrainStatus_"]
+    assert set(drain_envelope["properties"]) == {"code", "data"}
+    assert drain_envelope["properties"]["data"] == {"$ref": "#/components/schemas/SchedulerDrainStatus"}
+    # 探针不包信封：/health 仍直接引用 HealthStatus
+    assert operations["GET /api/v1/health"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/HealthStatus"
+    }
     assert {"HealthStatus", "ReadinessStatus", "RestartRequest", "RestartStatus", "ResetRequest", "ResetStatus"} <= schemas.keys()
 
 

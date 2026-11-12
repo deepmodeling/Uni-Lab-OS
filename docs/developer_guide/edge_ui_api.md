@@ -29,7 +29,7 @@ graphs / lab / scheduler / restart / health；Host 专有的 `runtime`、`teleme
 `hostlink`、`status-incidents`、`driver-packages`、`device-processes` 由
 `unilabos/server/api/edge_proxy.py` 作为 runtime.v1 的 `backend_http` 通知经 WS 下发，Host 对
 自己的 ASGI 应用在进程内执行后 `POST /api/v1/edge/http-responses/{request_uuid}` 送回，权威再
-回给浏览器（Host 不在线返回 503）。权威拉 durable 事件正文、通知 Host 重启、物料投影中继
+回给浏览器（Host 不在线返回 HTTP 200 + 业务码 5001）。权威拉 durable 事件正文、通知 Host 重启、物料投影中继
 （`/api/v1/hostlink/{material-sync,notify-device}`）走的是同一条通道。Host 子进程的 `-g <uuid|名称>` 与启动图登记经 HTTP 走权威的
 Graph Authority（`POST /graphs` 可随请求带 `device_site_templates`，用 Host 自己的注册表实例化
 模板 Site；启动登记带 `on_existing="adopt"`——权威已有该图时以权威为准只补新增，前端 / CLI
@@ -88,12 +88,12 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - 路径 `/api/v1/<复数 kebab-case 集合>[/{snake_case_uuid}][/<子集合>][/<动词>]`；领域动作用
   `POST …/<动词>`（`/start`、`/apply`、`/launch`），不在路径里放 CRUD 动词；
 - 方法语义：PUT 整体设定、PATCH 局部、DELETE 幂等；空体请求不要求 `Content-Type: application/json`；
-- 状态码：201 同步创建、202 异步长操作（返回 operation 资源供轮询）、204 无正文删除、
-  404 不存在或未挂载、409 状态冲突、422 一切可修正的请求错误（不用 400）、503 能力未装配；
-  直出 DTO 域的错误正文统一 `{"detail": …}`；
-- 响应形态按域固定：直出 DTO；Backend 信封 `{code, data | error: {msg}}`（workflow / graphs / chemicals
-  业务失败 HTTP 恒 200，业务码表见 [HTTP 约定](interfaces/http.md)，只追加；registry 成功走信封、
-  错误用 HTTP 4xx）；materials.v1 写信封 `InventoryMutation → MutationResult`；
+- 状态码：201 同步创建、202 异步长操作（返回 operation 资源供轮询），无数据命令 200 + `{"code":0}`；
+  业务失败一律 HTTP 200 + 业务码（不存在 3002 / 4001、冲突 3003 / 4002、请求错误 1000、能力未装配 5001），
+  路由里抛 `HTTPException` 时由信封路由按状态码换算；
+- 响应形态统一为 V1 信封 `{code, data | error: {msg[, code, details]}}`（`unilabos/server/api/envelope.py`
+  的 `envelope_router` / `EnvelopeRoute`，业务码表见 [HTTP 约定](interfaces/http.md)，只追加）；
+  materials.v1 写入的 `InventoryMutation → MutationResult` 放在信封 `data` 里；探针、SSE、文件下载不包信封；
 - 字段 snake_case；权威身份 `*_uuid`；新增时间字段一律 `*_at_ms`（UTC epoch 毫秒整数）；
   枚举小写；新增枚举值算加法变更，客户端必须容忍；
 - 列表：人看的用 `page / page_size → {items, total, page, page_size}`；子记录用 `limit / offset`；

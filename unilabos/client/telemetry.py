@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from typing import Any, Optional
-from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
+
+from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
 
 from unilabos.config.control_token import client_headers
 
@@ -76,11 +77,8 @@ class LocalTelemetryClient:
         return self.service.list_device_states(endpoint_uuid)
 
 
-class TelemetryHTTPError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(f"telemetry API returned {status_code}: {detail}")
-        self.status_code = status_code
-        self.detail = detail
+class TelemetryHTTPError(APIHTTPError):
+    api_name = "telemetry"
 
 
 class HTTPTelemetryClient:
@@ -109,15 +107,9 @@ class HTTPTelemetryClient:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-                return json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            try:
-                detail = json.loads(raw).get("detail", raw)
-            except ValueError:
-                detail = raw
-            raise TelemetryHTTPError(exc.code, str(detail)) from exc
+            return request_json(request, timeout=self.timeout, opener=urlopen)
+        except EnvelopeError as exc:
+            raise TelemetryHTTPError.from_envelope_error(exc) from exc
 
     def ingest(self, request: TelemetryIngestRequest) -> TelemetryIngestResult:
         return TelemetryIngestResult.model_validate(

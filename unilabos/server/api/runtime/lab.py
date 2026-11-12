@@ -1,22 +1,23 @@
-"""实验室布局 API（``/api/v1/lab/layout``，直出 DTO，runtime.db）。
+"""实验室布局 API（``/api/v1/lab/layout``，统一信封，runtime.db）。
 
 一个 Host 一份布局文档，所有连接同一微后端的浏览器共享：
 
 - ``GET``：从未保存时返回 ``revision = 0`` 的空布局；
-- ``PUT``：整份替换，``revision`` 乐观锁，不匹配 409（正文 ``detail`` 带当前版本）；
-- ``DELETE``：重置为未保存状态 → 204。
+- ``PUT``：整份替换，``revision`` 乐观锁，不匹配为业务码 3003（``error.msg`` 带当前版本）；
+- ``DELETE``：重置为未保存状态 → ``{"code": 0}``。
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, FastAPI, HTTPException, Response
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.runtime.lab import LabLayoutRead, LabLayoutWrite
 from unilabos.server.services.runtime.lab import LabLayoutConflict, LabLayoutService
 
 
 def create_lab_router(service: LabLayoutService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/lab", tags=["lab-v1"])
+    router = envelope_router(prefix="/api/v1/lab", tags=["lab-v1"])
 
     @router.get("/layout", response_model=LabLayoutRead)
     async def get_layout() -> LabLayoutRead:

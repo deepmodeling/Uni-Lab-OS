@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.services.device_processes import (
     DeviceProcessError,
     DeviceProcessBusyError,
@@ -57,7 +58,7 @@ class DeviceProcessWrite(BaseModel):
 
 
 def create_device_processes_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/device-processes", tags=["device-processes"])
+    router = envelope_router(prefix="/api/v1/device-processes", tags=["device-processes"])
 
     def _call(function, *args, **kwargs):
         try:

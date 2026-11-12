@@ -279,7 +279,8 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 
 管理 API 的一切写操作（POST / PUT / PATCH / DELETE），以及 Host 专属的控制面（控制 WebSocket
 `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`），都要求请求头
-`X-UniLab-Token`（也接受 `Authorization: Bearer <token>`），否则 WebSocket 握手被拒（HTTP 403）、HTTP 返回 401。
+`X-UniLab-Token`（只认这个请求头；`Authorization: Bearer` 留给 V1 工站 api_key），否则 WebSocket 握手被拒
+（HTTP 403）、HTTP 返回 401 + 业务码 1002。
 读操作不需要。浏览器前端在连接设置里填写 token；`unilab token` 打印它。
 
 - 调度权威：`control_token` 留空时首次启动生成 `<工作目录>/control_token`（权限 0600），之后沿用；启动日志会打印它的位置。

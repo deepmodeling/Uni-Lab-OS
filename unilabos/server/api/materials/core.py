@@ -1,4 +1,10 @@
-"""``materials.v1`` FastAPI 路由；HTTP 仅做协议校验和错误映射。"""
+"""``materials.v1`` FastAPI 路由；HTTP 仅做协议校验。
+
+响应走统一信封（``api/envelope.py``，资源口径）；物料服务的领域异常直接抛给信封路由，
+按 ``envelope.DOMAIN_ERRORS`` 换算业务码：物料 / 库位 / 模板不存在为 6000 / 6006 / 6001，
+其余不存在 4001；库位占用 6007、未结算动作占用 6011、其余冲突 4002；校验失败 1000；
+设备投影未收敛 5001。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,8 @@ from typing import Literal, Optional
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import Field
+
+from unilabos.server.api.envelope import RESOURCE, envelope_router
 
 from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 from unilabos.server.lifecycle import shutting_down, sleep_unless_shutting_down
@@ -31,16 +39,9 @@ from unilabos.protocol.materials import (
     MaterialTransfer,
     ResourceTemplateWrite,
 )
-from unilabos.server.services.materials import (
-    MaterialConflictError,
-    MaterialNoChangeError,
-    MaterialNotFoundError,
-    MaterialValidationError,
-    MaterialTransferSyncError,
-    MaterialsService,
-    InsufficientInventoryError,
-    RejectedMutationError,
-)
+from unilabos.server.services.materials import MaterialsService
+
+
 class InventoryPreviewRequest(ServerObject):
     requirements: list[InventoryRequirement]
 
@@ -82,26 +83,13 @@ def _payload(mutation: InventoryMutation, model: type):
 
 
 def _call(function, *args, **kwargs):
-    try:
-        return function(*args, **kwargs)
-    except MaterialNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except (
-        MaterialConflictError,
-        MaterialNoChangeError,
-        InsufficientInventoryError,
-    ) as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RejectedMutationError as exc:
-        raise HTTPException(status_code=410, detail=str(exc)) from exc
-    except MaterialValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except MaterialTransferSyncError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    """调用物料服务；领域异常原样上抛，由信封路由按 ``DOMAIN_ERRORS`` 换算业务码。"""
+
+    return function(*args, **kwargs)
 
 
 def create_materials_router(service: MaterialsService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/materials", tags=["materials-v1"])
+    router = envelope_router(prefix="/api/v1/materials", tags=["materials-v1"], profile=RESOURCE)
     from .execution import create_material_execution_router
     router.include_router(create_material_execution_router(service))
 

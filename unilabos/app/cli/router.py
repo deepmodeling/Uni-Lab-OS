@@ -484,7 +484,7 @@ def _cmd_token(values: dict[str, Any], session_manager: Any) -> None:
         return
     print(token)
     print(
-        f"（来自 {path}；写请求带请求头 X-UniLab-Token 或 Authorization: Bearer <token>，"
+        f"（来自 {path}；写请求带请求头 X-UniLab-Token: <token>，"
         "OpenLabSite 在连接设置的「控制令牌」里填写）",
         file=sys.stderr,
     )

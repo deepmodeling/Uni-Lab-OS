@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.runtime.lifecycle import SchedulerDrainStatus
 from unilabos.server.backend.lifecycle import SchedulerLifecycle, SchedulerUnavailable
 
@@ -15,7 +16,7 @@ def create_scheduler_lifecycle_router(
     get_scheduler: Callable[[], Any],
     get_execution_backend: Callable[[], Any],
 ) -> APIRouter:
-    router = APIRouter()
+    router = envelope_router()
     lifecycle = SchedulerLifecycle(get_scheduler, get_execution_backend)
 
     def call(operation: Callable[[], SchedulerDrainStatus]) -> SchedulerDrainStatus:

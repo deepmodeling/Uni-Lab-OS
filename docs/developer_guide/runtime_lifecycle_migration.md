@@ -29,7 +29,7 @@
 | `POST /api/v1/scheduler/drain` | 新增，幂等阻止新派发；已经获得许可的动作继续完成 |
 | `POST /api/v1/scheduler/drain/resume` | 新增，仅解除显式 drain |
 
-写请求使用现有 `X-UniLab-Token` 或 Bearer token；没有本地 Scheduler 的 Host 返回 503，客户端应连接 backend。三个 drain 路径和 `phase/active_device_job_count/active_device_job_ids` 保留 V1 最小合同，附加 `requested/dispatch_paused/pause_reasons`。已有 restart/reset DTO 的 diagnostics import 仍可用。
+写请求使用请求头 `X-UniLab-Token`（不再接受 Bearer）；没有本地 Scheduler 的 Host 返回业务码 5001，客户端应连接 backend。三个 drain 路径和 `phase/active_device_job_count/active_device_job_ids` 保留 V1 最小合同，附加 `requested/dispatch_paused/pause_reasons`。已有 restart/reset DTO 的 diagnostics import 仍可用。
 
 `phase` 的含义：未暂停为 running；已暂停且有在途作业为 draining；已暂停且无在途作业为 drained。drained 表示设备执行端排空，不代表所有工作流完成。排队节点、任务级暂停和人工确认等待都保留。执行态未知的设备 attempt 阻止排空，需先裁决。
 

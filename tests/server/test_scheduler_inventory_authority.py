@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
@@ -354,7 +355,7 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                 ).model_dump(mode="json", exclude_none=False),
             )
             assert response.status_code == 200, response.text
-            reservation_uuid = response.json()["data"]["reservation_uuid"]
+            reservation_uuid = ok_data(response)["data"]["reservation_uuid"]
 
             transition = InventoryReservationTransition(
                 reservation_uuid=reservation_uuid,
@@ -371,10 +372,10 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                 ).model_dump(mode="json", exclude_none=False),
             )
             assert response.status_code == 200, response.text
-            assert response.json()["data"]["status"] == "consumed"
-            assert client.get(
+            assert ok_data(response)["data"]["status"] == "consumed"
+            assert ok_data(client.get(
                 "/api/v1/materials/reservations/by-job/job-http"
-            ).json()["status"] == "consumed"
+            ))["status"] == "consumed"
     finally:
         service.close()
 

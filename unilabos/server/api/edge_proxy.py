@@ -5,14 +5,16 @@
 （物料 / 注册表 / 工作流上报、请求结果回送）和维持一条控制 WS。浏览器请求 Host 专有的
 路由（设备、遥测、历史、HostLink、驱动包、受管进程）时，权威把请求作为 ``backend_http``
 下发到 Host，Host 对自己的 ASGI 应用执行后用 HTTP 把结果 POST 回权威，这里再回给浏览器。
-Host 不在线时返回 503，前端按能力面降级。
+
+转发是字节级透传：Host 自己的路由已经输出统一信封（``api/envelope.py``），这里不再包装。
+Host 不在线时返回 HTTP 200 + 业务码 5001（带 ``Retry-After``），前端按能力面降级。
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request, Response
 
@@ -51,7 +53,7 @@ _DROP_RESPONSE_HEADERS = {
 }
 #: 受管进程启动 / 驱动包卸载这类同步动作可能要几秒
 PROXY_TIMEOUT_S = 60.0
-_UNAVAILABLE_DETAIL = "host execution process is not available (starting or restarting)"
+_UNAVAILABLE_DETAIL = "Host 执行进程暂不可用（启动或重启中），请稍后重试"
 
 _enabled = False
 # Host 启动 / 重启期间前端每秒轮询多条 Host 路由，逐条打日志只会淹掉控制台：
@@ -109,11 +111,24 @@ def edge_http(
     return service.http_request(method, path, headers=headers, body=body, timeout=timeout)
 
 
+def edge_response_data(response: EdgeHttpResponse) -> Any:
+    """Host 执行结果 → 信封 ``data``。
+
+    Host 自己的路由输出统一信封，进程内调用方（权威经控制面读 Host 数据）用它解包；
+    ``code != 0`` 或非信封的 HTTP 错误抛 ``EnvelopeError``（``status_code`` 为 HTTP 语义状态码）。
+    """
+
+    from unilabos.client.utils.envelope import decode_json_body
+
+    return decode_json_body(response.body_bytes(), http_status=response.status_code)
+
+
 def _unavailable() -> Response:
-    return Response(
-        content=f'{{"detail": "{_UNAVAILABLE_DETAIL}"}}',
-        status_code=503,
-        media_type="application/json",
+    from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, error_response
+
+    return error_response(
+        SERVICE_UNAVAILABLE,
+        _UNAVAILABLE_DETAIL,
         headers={"Retry-After": "3"},
     )
 
@@ -162,7 +177,10 @@ async def _forward(request: Request) -> Response:
 
 
 def create_edge_proxy_router() -> APIRouter:
-    """Host 专有路由的透传路由器；必须先于本进程其它路由挂载才能优先匹配。"""
+    """Host 专有路由的透传路由器；必须先于本进程其它路由挂载才能优先匹配。
+
+    普通 ``APIRouter``（不是信封路由）：响应体是 Host 已经包好信封的原始字节。
+    """
 
     router = APIRouter(include_in_schema=False)
 
@@ -181,4 +199,5 @@ __all__ = [
     "create_edge_proxy_router",
     "edge_http",
     "edge_proxy_enabled",
+    "edge_response_data",
 ]

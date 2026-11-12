@@ -239,7 +239,8 @@ def test_http_import_reads_subdevice_endpoint_capabilities(authority, monkeypatc
     if split:
         def forward(method, path, **kwargs):
             assert method == "GET" and path == "/api/v1/runtime/endpoints?state=online&limit=1000"
-            return SimpleNamespace(status_code=200, body_bytes=lambda: json.dumps(snapshots).encode())
+            # Host 自己的 runtime 路由输出统一信封，权威解包 data
+            return SimpleNamespace(status_code=200, body_bytes=lambda: json.dumps({"code": 0, "data": snapshots}).encode())
         monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_proxy_enabled", lambda: True)
         monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", forward)
         runtime.list_endpoint_snapshots = lambda **_: pytest.fail("分进程不能读取调度权威自己的 endpoint 表")
@@ -255,8 +256,13 @@ def test_http_import_reads_subdevice_endpoint_capabilities(authority, monkeypatc
     assert saved["data"]["nodes"][0]["param"] == {"value": 3}
 
 
-@pytest.mark.parametrize("response", [None, SimpleNamespace(status_code=503),
+@pytest.mark.parametrize("response", [None,
+    # Host 路由暂不可用：信封业务码 5001（HTTP 200），或没有信封正文的 HTTP 503
+    SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":5001,"error":{"msg":"Host unavailable"}}'),
+    SimpleNamespace(status_code=503, body_bytes=lambda: b''),
+    # 不是信封 / data 不是列表 / 不是 JSON：一律当作无效响应
     SimpleNamespace(status_code=200, body_bytes=lambda: b'{}'),
+    SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":0,"data":{}}'),
     SimpleNamespace(status_code=200, body_bytes=lambda: b'invalid-json'),
 ])
 def test_unavailable_host_capabilities_do_not_modify_workflows(authority, monkeypatch, response):

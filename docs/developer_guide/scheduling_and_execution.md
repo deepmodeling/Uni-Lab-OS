@@ -80,7 +80,8 @@ attempt_count` 是当前 attempt 的投影，只由 store 在同一事务里随 
 - `GET /api/v1/workflow-tasks/{uuid}/jobs`、`/workflow-node-jobs/{job_uuid}`
   （含 `/results`、`/feedback-history`）：attempt 粒度，与 `/error-decisions` 报告里的
   `job_id` 一致；报告同时携带 `node_run_uuid`。
-- 事件：`workflow.node_run.changed`（节点级）与 `workflow.node_job.changed`（attempt 级）。
+- 事件：`/api/v1/events` 上的 `workflow.runtime.changed`，`data.kind` 为 `node_run`（节点级）或
+  `node_job`（attempt 级）；库内仍按 `workflow.node_run.changed` / `workflow.node_job.changed` 记录。
 
 派发以执行适配器就绪为前提：`JobExecutionBackend.host_ready()` 为假（ROS 2 host node 在
 全部设备初始化后才注册适配器，晚于管理 API 与 `@workflow` 模板就绪）时，已持有资源的节点

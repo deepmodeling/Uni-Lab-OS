@@ -255,7 +255,8 @@ def test_http_ping_hits_the_ping_endpoint(monkeypatch, default_address) -> None:
 
     def fake_urlopen(url: str, timeout: float):
         seen.append(url)
-        return _Response(json.dumps({"client_timestamp": 1.5, "server_timestamp": 42.0}).encode())
+        # /api/v1/ping 走统一信封
+        return _Response(json.dumps({"code": 0, "data": {"client_timestamp": 1.5, "server_timestamp": 42.0}}).encode())
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     session = _Session()

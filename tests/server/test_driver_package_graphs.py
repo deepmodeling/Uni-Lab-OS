@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.driver_package_graphs import create_driver_package_graphs_router
 from unilabos.server.services import device_processes as dpx
 from unilabos.server.services import driver_package_graphs as dpg
@@ -205,13 +206,13 @@ def test_router_endpoints(lab) -> None:
     client = TestClient(app)
 
     listed = client.get("/api/v1/driver-packages/lock_demo/graphs")
-    assert listed.status_code == 200 and [item["name"] for item in listed.json()] == ["lock_demo"]
-    assert client.get("/api/v1/driver-packages/ghost/graphs").status_code == 404
-    assert client.get("/api/v1/driver-packages/lock_demo/graphs/missing").status_code == 404
+    assert listed.status_code == 200 and [item["name"] for item in ok_data(listed)] == ["lock_demo"]
+    error_of(client.get("/api/v1/driver-packages/ghost/graphs"), 4001)
+    error_of(client.get("/api/v1/driver-packages/lock_demo/graphs/missing"), 4001)
     payload = client.get("/api/v1/driver-packages/lock_demo/graphs/lock_demo")
-    assert payload.status_code == 200 and len(payload.json()["nodes"]) == 2
+    assert payload.status_code == 200 and len(ok_data(payload)["nodes"]) == 2
 
     launched = client.post("/api/v1/driver-packages/lock_demo/graphs/lock_demo/launch")
     assert launched.status_code == 200
-    assert launched.json()["created"] is True
-    assert launched.json()["process"]["status"] == "running"
+    assert ok_data(launched)["created"] is True
+    assert ok_data(launched)["process"]["status"] == "running"

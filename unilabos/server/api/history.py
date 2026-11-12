@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.database.tables.history import HistoryEventRecord
 from unilabos.protocol.history import (
     HistoryEventAppend,
@@ -39,7 +40,7 @@ def _payload_read(value) -> PayloadObjectRead:
 
 
 def create_history_router(service: HistoryService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/history", tags=["history-v1"])
+    router = envelope_router(prefix="/api/v1/history", tags=["history-v1"])
 
     @router.post("/payloads", response_model=PayloadObjectRead)
     async def store_payload(value: PayloadWrite):

@@ -43,21 +43,19 @@ class HTTPLifecycleClient:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("HTTP 超时必须为有限正数")
         # 重启/重置在响应丢失后不能盲目重试，调用方应重新查询状态。
+        # 管理 API 统一信封；只有 /health、/readiness 两个探针是裸 JSON。
         self._http = HTTPClient(
-            HTTPClientConfig(
-                normalize_api_address(base_url), timeout=timeout, max_retries=0,
-                response_envelope=False,
-            ),
+            HTTPClientConfig(normalize_api_address(base_url), timeout=timeout, max_retries=0),
             get_auth_secret=get_auth_secret,
         )
         self._timeout = timeout
 
     def health(self) -> HealthStatus:
-        return HealthStatus.model_validate(self._http.get("/health"))
+        return HealthStatus.model_validate(self._http.get("/health", envelope=False))
 
     def readiness(self) -> ReadinessStatus:
         try:
-            payload = self._http.get("/readiness")
+            payload = self._http.get("/readiness", envelope=False)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code != 503:
                 raise

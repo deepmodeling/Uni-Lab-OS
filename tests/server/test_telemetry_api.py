@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.telemetry import (
     create_telemetry_router,
     install_telemetry_api,
@@ -67,7 +68,7 @@ def test_router_install_exposes_ingest_and_all_read_surfaces(tmp_path) -> None:
                 json=request.model_dump(mode="json"),
             )
             assert accepted.status_code == 200, accepted.text
-            assert accepted.json()["event"]["sequence"] == 1
+            assert ok_data(accepted)["event"]["sequence"] == 1
 
             event = client.get("/api/v1/telemetry/events/event-1")
             cursor = client.get("/api/v1/telemetry/sources/endpoint/cursor")
@@ -82,11 +83,11 @@ def test_router_install_exposes_ingest_and_all_read_surfaces(tmp_path) -> None:
             )
 
             assert event.status_code == 200
-            assert event.json()["event_uuid"] == "event-1"
-            assert cursor.json()["source_sequence"] == 1
-            assert state.json()["state"] == {"status": "running"}
-            assert [item["device_uuid"] for item in states.json()] == ["device"]
-            assert [item["event_uuid"] for item in events.json()] == ["event-1"]
+            assert ok_data(event)["event_uuid"] == "event-1"
+            assert ok_data(cursor)["source_sequence"] == 1
+            assert ok_data(state)["state"] == {"status": "running"}
+            assert [item["device_uuid"] for item in ok_data(states)] == ["device"]
+            assert [item["event_uuid"] for item in ok_data(events)] == ["event-1"]
     finally:
         service.close()
 
@@ -124,18 +125,12 @@ def test_router_maps_replay_conflict_validation_and_not_found(tmp_path) -> None:
 
             assert first.status_code == 200
             assert replay.status_code == 200
-            assert replay.json()["replayed"] is True
-            assert conflict.status_code == 409
-            assert invalid_range.status_code == 422
-            assert client.get("/api/v1/telemetry/events/missing").status_code == 404
-            assert (
-                client.get("/api/v1/telemetry/sources/missing/cursor").status_code
-                == 404
-            )
-            assert (
-                client.get("/api/v1/telemetry/states/endpoint/missing").status_code
-                == 404
-            )
+            assert ok_data(replay)["replayed"] is True
+            error_of(conflict, 3003)
+            error_of(invalid_range, 1000)
+            error_of(client.get("/api/v1/telemetry/events/missing"), 4001)
+            error_of(client.get("/api/v1/telemetry/sources/missing/cursor"), 4001)
+            error_of(client.get("/api/v1/telemetry/states/endpoint/missing"), 4001)
     finally:
         service.close()
 

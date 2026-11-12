@@ -102,15 +102,23 @@ class EdgePayloadClient:
         response = self._service.http_request(
             "GET", f"/api/v1/history/payloads/{payload_uuid}", timeout=self.timeout
         )
-        if response is None or response.status_code != 200:
+        if response is None:
+            logger.warning("[EdgeControl] 拉取 payload %s 失败: Edge 未响应", payload_uuid)
+            return None
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_response_data
+
+        try:
+            return _decode_payload_document(edge_response_data(response))
+        except EnvelopeError as exc:
             logger.warning(
-                "[EdgeControl] 拉取 payload %s 失败: %s",
+                "[EdgeControl] 拉取 payload %s 失败: 业务码 %s（HTTP %s）%s",
                 payload_uuid,
-                "Edge 未响应" if response is None else f"HTTP {response.status_code}",
+                exc.code,
+                response.status_code,
+                exc.error,
             )
             return None
-        try:
-            return _decode_payload_document(json.loads(response.body_bytes().decode("utf-8")))
         except (ValueError, UnicodeDecodeError):
             logger.warning("[EdgeControl] payload %s 正文不是合法 JSON", payload_uuid)
             return None

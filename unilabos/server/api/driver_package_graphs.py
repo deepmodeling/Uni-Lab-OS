@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.services.device_processes import (
     DeviceProcessError,
     get_device_process_service,
@@ -26,7 +27,7 @@ from unilabos.server.services.driver_packages import (
 
 
 def create_driver_package_graphs_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/driver-packages", tags=["driver-packages"])
+    router = envelope_router(prefix="/api/v1/driver-packages", tags=["driver-packages"])
 
     def _working_dir():
         return get_driver_package_service().working_dir

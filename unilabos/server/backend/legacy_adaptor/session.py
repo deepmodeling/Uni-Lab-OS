@@ -227,8 +227,10 @@ class BaseBackendClient(ABC):
         base = self.http_base_url()
         url = f"{base}/api/v1/ping?client_timestamp={time.time()!r}"
         try:
+            from unilabos.client.utils.envelope import unwrap_envelope
+
             with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310 - 目标是配置的 Backend
-                payload = json.loads(response.read().decode("utf-8"))
+                payload = unwrap_envelope(json.loads(response.read().decode("utf-8")))
             return float(payload["server_timestamp"])
         except Exception as exc:  # noqa: BLE001 - 诊断失败不能影响主流程
             logger.debug("[BackendSession] HTTP ping 失败 %s: %s", url, exc)

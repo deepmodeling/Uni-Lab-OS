@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.database import ServerDatabasePaths
 
 _INTERNAL_TABLE_PREFIX = "sqlite_"
@@ -54,7 +55,7 @@ def _json_value(value: Any) -> Any:
 def create_debug_router(paths: ServerDatabasePaths) -> APIRouter:
     """创建只读 db 调试 router；配合 ``/api/docs`` 直接在浏览器里查库。"""
 
-    router = APIRouter(prefix="/api/v1/debug", tags=["debug"])
+    router = envelope_router(prefix="/api/v1/debug", tags=["debug"])
 
     @router.get("/databases")
     async def list_databases():

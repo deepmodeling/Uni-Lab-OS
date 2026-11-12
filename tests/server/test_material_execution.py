@@ -6,6 +6,7 @@ import json
 from uuid import uuid4
 import pytest
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.material_execution import (
     MaterialExecutionPrepare,
     MaterialExecutionReceipt,
@@ -336,26 +337,27 @@ def test_material_execution_http_validation_is_read_only_and_stale_release_confl
         install_materials_api(app, service)
         with TestClient(app) as client:
             assert (
-                client.get("/api/v1/materials/instances/by-resource-id/reactor%2Fgripper%231").json()["material"][
+                ok_data(client.get("/api/v1/materials/instances/by-resource-id/reactor%2Fgripper%231"))["material"][
                     "material_uuid"
                 ]
                 == other
             )
             prefix = "/api/v1/materials/executions"
             body = receipt(record, amounts=[(target, 4, "ul")]).model_dump(mode="json")
-            assert client.post(prefix + "/validate", json=body).status_code == 200
+            ok_data(client.post(prefix + "/validate", json=body))
             assert contents(service, source) == {"water": 20}
             assert service.executions.get(record["job_uuid"])["state"] == "prepared"
-            assert (
+            # 版本过期的释放：物料冲突（资源口径 4002）
+            error_of(
                 client.post(
                     prefix + "/" + record["job_uuid"] + "/release",
                     json={"expected_version": 9, "reason": "现场确认", "outcome": "physically_verified"},
-                ).status_code
-                == 409
+                ),
+                4002,
             )
-            assert client.post(prefix + "/settle", json=body).status_code == 200
-            assert client.get(prefix + "/" + record["job_uuid"]).json()["state"] == "settled"
-            assert client.get(prefix + "/absent").status_code == 404
+            ok_data(client.post(prefix + "/settle", json=body))
+            assert ok_data(client.get(prefix + "/" + record["job_uuid"]))["state"] == "settled"
+            error_of(client.get(prefix + "/absent"), 4001)
             assert contents(service, source) == {"water": 16}
     finally:
         service.close()

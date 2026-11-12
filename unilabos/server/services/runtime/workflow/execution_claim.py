@@ -142,18 +142,23 @@ class ExecutionClaims:
         conn.execute("UPDATE workflow_execution_claim SET state='released', released_at=? WHERE claim_uuid=?",
                      (utc_now(), row["claim_uuid"]))
 
+    @classmethod
+    def release_terminal(cls, conn, job_uuid: str) -> bool:
+        """事务内按 attempt 终态放开 Claim；返回 Claim 是否已不再占用。"""
+        row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()
+        if row is None or row["state"] == "released":
+            return True
+        job = cls._job(conn, job_uuid)
+        if job["status"] not in _TERMINAL:
+            return False
+        cls._read(conn, row)
+        cls._release(conn, row)
+        return True
+
     def release_if_terminal(self, job_uuid: str) -> bool:
         """只有已核实的 attempt 终态才能放锁；停进程或回执丢失均不算终态。"""
         with self.store.transaction() as conn:
-            row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()
-            if row is None or row["state"] == "released":
-                return True
-            job = self._job(conn, job_uuid)
-            if job["status"] not in _TERMINAL:
-                return False
-            self._read(conn, row)
-            self._release(conn, row)
-            return True
+            return self.release_terminal(conn, job_uuid)
 
     def unclaimed_active_jobs(self) -> list[str]:
         """旧库在飞尝试没有冻结的资源集合，升级后必须先核实再开放新派发。"""

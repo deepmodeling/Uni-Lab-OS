@@ -887,7 +887,10 @@ class TaskObservability:
         physical_settlement_confirmed: bool,
         operator_id: str = "",
     ) -> Dict[str, Any]:
-        """确认现场安全且 Claim / Fence CAS 一致后，释放目标作业的全部执行锁。"""
+        """确认现场安全且 Claim / Fence CAS 一致后，释放目标作业的全部执行锁。
+
+        Claim 释放与由此派生的使用权、区间、设备托管收敛在同一事务提交。
+        """
 
         service = self.service
         task_identity = service.get_workflow_task(task_uuid)["uuid"]
@@ -931,6 +934,9 @@ class TaskObservability:
             conn.execute("DELETE FROM workflow_execution_lease WHERE claim_uuid=?", (lease["claim_uuid"],))
             conn.execute("UPDATE workflow_execution_claim SET state='released', released_at=? WHERE claim_uuid=?",
                          (now, lease["claim_uuid"]))
+            from .resource_intervals import ResourceIntervals
+
+            ResourceIntervals.settle_jobs(conn, [job_uuid])
             service._append_event(conn, event="workflow.resource.changed", data={
                 "workflow_task_uuid": task_identity, "operation": "force_release_execution_lock",
                 "workflow_node_job_uuid": job_uuid, "claim_uuid": lease["claim_uuid"], "reason": reason,

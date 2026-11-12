@@ -110,6 +110,12 @@ class DeviceTenancies:
 
     @staticmethod
     def reconcile(conn, task_uuid: str) -> None:
+        """按动作的持久状态收敛托管转换；调用方与该状态写在同一事务里。
+
+        成功：装载转 ``loaded``、卸载转 ``released``。终态失败 / 取消 / 超时 / 跳过与
+        ``execution_unknown``：涉及的托管转 ``retained`` 待人工核实。等待决策的
+        ``intervention_required`` 尚未结算，托管保持原样。
+        """
         rows = conn.execute("SELECT t.*,j.status,j.uncertainty_reason FROM workflow_tenancy_transition t "
                             "JOIN workflow_node_job j ON j.uuid=t.job_uuid WHERE j.workflow_task_uuid=? "
                             "AND t.state IN ('prepared','retained')", (task_uuid,)).fetchall()
@@ -123,7 +129,7 @@ class DeviceTenancies:
                     conn.execute("UPDATE workflow_device_tenancy SET state='released',version=version+1,released_at=?,release_reason=? "
                                  "WHERE tenancy_uuid=? AND state!='released'", (utc_now(), 'unloaded:' + row["job_uuid"], row["release_uuid"]))
                 conn.execute("UPDATE workflow_tenancy_transition SET state='settled' WHERE job_uuid=?", (row["job_uuid"],))
-            elif row["status"] in {"failed","canceled","timeout","skipped","execution_unknown","intervention_required"} or row["uncertainty_reason"]:
+            elif row["status"] in {"failed","canceled","timeout","skipped","execution_unknown"} or row["uncertainty_reason"]:
                 for identity in (row["acquire_uuid"], row["release_uuid"]):
                     conn.execute("UPDATE workflow_device_tenancy SET state='retained',version=version+1 "
                                  "WHERE tenancy_uuid=? AND state IN ('reserved','loaded')", (identity,))

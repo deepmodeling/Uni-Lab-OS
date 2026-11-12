@@ -92,7 +92,7 @@ def test_step_state_lists_ready_candidates_only_when_paused(stack: Stack) -> Non
     assert target not in {item["node_uuid"] for item in after["candidates"]} and len(after["candidates"]) == 2
 
 
-def test_execution_locks_list_and_force_release_with_cas(stack: Stack) -> None:
+def test_execution_locks_list_and_force_release_with_cas(stack: Stack, monkeypatch: pytest.MonkeyPatch) -> None:
     task = stack.create_task(["device-a"])
     wait_for(lambda: len(stack.executor.dispatched) == 1)
     locks = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/execution-locks"))
@@ -107,8 +107,10 @@ def test_execution_locks_list_and_force_release_with_cas(stack: Stack) -> None:
     error_of(stack.client.post(url, json={**body, "physical_settlement_confirmed": "yes"}), 1000)
     error_of(stack.client.post(url, json={**body, "expected_fencing_token": 0}), 1000)
 
-    # 失败作业遗留的 Claim（模拟调度器未能在终态时释放）才可以人工释放
-    stack.scheduler._execution_claims.release_if_terminal = lambda job_uuid: False
+    # 失败作业遗留的 Claim（模拟终态时未能释放；Claim 现与终态同事务经 release_terminal 释放）才可以人工释放
+    from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
+
+    monkeypatch.setattr(ExecutionClaims, "release_terminal", classmethod(lambda cls, conn, job_uuid: False))
     stack.executor.finish(0, success=False)
     wait_for(lambda: stack.task(task)["status"] == "failed")
     locks = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/execution-locks"))

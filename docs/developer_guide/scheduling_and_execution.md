@@ -118,6 +118,10 @@ execution_timeout)`，软超时表达式（如 `duration * 1.5 + 30`）用最终
 写回节点运行的 `execution_timeout_seconds` 供前端展示。硬超时到期由执行面协作式取消动作并以
 `TimeoutException` 进入本决策链，节点运行 `error_info[0].code=action_timeout`。
 
+attempt 状态与由它派生的占用收敛（Claim 释放、使用权 / 准入、区间、设备托管）在同一个 runtime.db
+事务里提交；`_release_job_resources` 随后只释放调度器内存锁并唤醒等待者，`ResourceIntervals.recover()`
+仍在启动时兜底。
+
 任务恢复（进程重启）以节点运行为判定单元：在飞的 attempt 与其节点运行同时转
 `execution_unknown`；历史 failed attempt 不参与判定。设备是否已经做过这一步无法证明，
 所以调度器**不重放**这些 attempt，而是把它们当成异常交给人处理：

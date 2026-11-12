@@ -1,7 +1,8 @@
 """持久区间所有权与单次动作使用权；没有定时过期或推测性释放。"""
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Iterable
 from uuid import NAMESPACE_URL, uuid5
 
 from unilabos.protocol.utils.json_codec import encode_json, decode_json_bytes
@@ -12,6 +13,8 @@ from .errors import StoreConflict
 from .device_tenancy import DeviceTenancies
 from .resource_loans import ResourceLoans
 from .store import WorkflowStore, utc_now
+
+logger = logging.getLogger(__name__)
 
 _TERMINAL = {"succeeded", "skipped", "failed", "canceled", "timeout"}
 _UNRESOLVED = {"running", "dispatched", "cancel_requested", "execution_unknown", "intervention_required"}
@@ -264,6 +267,40 @@ class ResourceIntervals:
                 conn.execute("UPDATE workflow_resource_interval SET state='retained',version=version+1 WHERE owner_uuid=?", (owner["owner_uuid"],))
             elif owner["state"] == "held" and done and not ResourceLoans.active(conn, owner["owner_uuid"]) and not conn.execute("SELECT 1 FROM workflow_resource_use WHERE owner_uuid=?", (owner["owner_uuid"],)).fetchone():
                 conn.execute("UPDATE workflow_resource_interval SET state='released',version=version+1,released_at=?,release_reason='interval_completed' WHERE owner_uuid=?", (utc_now(),owner["owner_uuid"]))
+
+    @classmethod
+    def settle_jobs(cls, conn, job_uuids: Iterable[str]) -> None:
+        """在写入 attempt 状态的同一事务里收敛由该状态派生的占用。
+
+        终态 attempt 放开执行 Claim，再按任务收敛使用权、准入、区间与设备托管；
+        ``execution_unknown`` 只把托管转为待核实。观察者因此看不到
+        "节点已成功、托管仍是 reserved" 这类中间态，崩溃也不会把两步拆开。收敛本身出错
+        （如区间引用损坏）只回滚到保存点并记日志：状态事实照常提交，之后的
+        ``release_job`` / ``recover()`` 仍会重试并按原口径报错。
+        """
+        from .execution_claim import ExecutionClaims
+
+        tasks: dict[str, None] = {}
+        jobs = list(dict.fromkeys(str(job) for job in job_uuids))
+        conn.execute("SAVEPOINT settle_job_resources")
+        try:
+            for job_uuid in jobs:
+                row = conn.execute("SELECT workflow_task_uuid,status FROM workflow_node_job WHERE uuid=?",
+                                   (job_uuid,)).fetchone()
+                if row is None:
+                    continue
+                if row["status"] in _TERMINAL:
+                    ExecutionClaims.release_terminal(conn, job_uuid)
+                elif row["status"] == "execution_unknown":
+                    conn.execute("UPDATE workflow_execution_claim SET state='uncertain' WHERE job_uuid=? "
+                                 "AND state IN ('reserved','running')", (job_uuid,))
+                tasks[row["workflow_task_uuid"]] = None
+            for task_uuid in tasks:
+                cls.reconcile(conn, task_uuid)
+        except Exception:  # noqa: BLE001 - 状态事实优先提交，占用由 release_job / recover() 兜底
+            conn.execute("ROLLBACK TO SAVEPOINT settle_job_resources")
+            logger.exception("attempt %s 的占用未能与状态同事务收敛，留给后续释放与恢复", ",".join(jobs))
+        conn.execute("RELEASE SAVEPOINT settle_job_resources")
 
     def release_job(self, job_uuid: str) -> None:
         with self.store.transaction() as conn:

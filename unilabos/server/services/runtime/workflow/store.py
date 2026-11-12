@@ -2511,6 +2511,10 @@ class WorkflowStore:
             if not updated:
                 return False
             self._sync_run_projection(conn, row["run_uuid"], now)
+            # 托管转待核实、执行声明转不确定，与 execution_unknown 同事务可见。
+            from .resource_intervals import ResourceIntervals
+
+            ResourceIntervals.settle_jobs(conn, [job_uuid])
             conn.execute(
                 """
                 UPDATE workflow_task
@@ -2613,6 +2617,9 @@ class WorkflowStore:
                         (reason, now, run["current_job_uuid"]),
                     )
                     self._sync_run_projection(conn, run["uuid"], now)
+                from .resource_intervals import ResourceIntervals
+
+                ResourceIntervals.settle_jobs(conn, [run["current_job_uuid"] for run in in_flight_runs])
                 # 只可能从 active 进入；记住恢复目标，裁决完成后回到它
                 conn.execute(
                     """
@@ -2904,6 +2911,9 @@ class WorkflowStore:
     ) -> Dict[str, Any]:
         """持久化 attempt 终态并投影到节点运行；``retry`` 决策在同一事务里追加新 attempt。
 
+        由终态派生的占用收敛（执行 Claim、使用权与准入、区间、设备托管）在**同一事务**
+        里提交，观察者不会读到"终态已落、托管还没跟上"的中间态。
+
         返回 ``{"job", "run", "next_job"}``：``next_job`` 非空表示节点运行没有终结，
         调度器应以它为新的执行器 job 重新申请资源并下发；否则以 ``run["status"]``
         收敛 DAG 节点。已终态的 attempt 幂等返回，不重复投影。
@@ -2975,6 +2985,9 @@ class WorkflowStore:
                     (next_job_uuid, now, run_uuid),
                 )
             run = self._sync_run_projection(conn, run_uuid, now)
+            from .resource_intervals import ResourceIntervals
+
+            ResourceIntervals.settle_jobs(conn, [job_uuid])
             job = self._job_row(
                 conn.execute(
                     "SELECT * FROM workflow_node_job WHERE uuid=?", (job_uuid,)

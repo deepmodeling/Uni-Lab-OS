@@ -81,7 +81,8 @@ RESOURCE_APPEND 挂载到 Slave 上的 prcxi 设备，双端断言。
           plate.A1 tracker.remove_liquid(50) -> plate.A2 add_liquid(Water 50)，
           枪头不放回（废弃）
         · node.update_resource([deck1, deck2]) -> _update_sync 快照落库；
-          TipSpot 的 tip/pending_tip 运行态不属于 substances，随 data_json 落库
+          枪头是 TipSpot 的结构孩子（独立 Tip 物料，带权威 uuid），不属于
+          substances，也不再是孔位 data_json 里的 tip/pending_tip
 
     [G] 跨设备 transfer（slave->slave / slave->host / host->host 三形态）
         拓扑：host 进程自带两台本地设备（prcxi_host_a/b），另有两台独立
@@ -106,7 +107,7 @@ RESOURCE_APPEND 挂载到 Slave 上的 prcxi 设备，双端断言。
           uuid_to_resources 与实例一一对应；源端 uuid 映射随 remove 清理
         · site：T1/T2 空、T3 == tips；S1/U1/H1/G1 均已释放，G2 == plate
         · plate.A1 == Water 50ul，A2 == Buffer 60 + Water 50（双端一致）；
-          tips.A1 spot data_json["tip"] == None（已废弃），其余 spot 保留
+          tips.A1 spot 下没有 Tip 物料（已废弃），其余 spot 各保留一支
         · slave 上行 get_tree 回读的 ResourceDict.substances 与权威一致
 """
 
@@ -514,7 +515,7 @@ def test_prcxi_deck_tiprack_plate_e2e_host_plus_slave(tmp_path, monkeypatch) -> 
 
         # ================= 阶段 9：移液 A1 -> A2，废弃一个枪头 =================
         tip_spot = tips_inst.get_item("A1")
-        # tip 初始状态（with_tips 填满）经权威 data_json round-trip 保留到 slave
+        # tip 初始状态（with_tips 填满）经权威 Tip 子物料 round-trip 保留到 slave
         assert tip_spot.has_tip()
         picked_tip = tip_spot.get_tip()  # 物理拿起枪头
         assert picked_tip is not None
@@ -553,20 +554,25 @@ def test_prcxi_deck_tiprack_plate_e2e_host_plus_slave(tmp_path, monkeypatch) -> 
             (entry.name, entry.quantity, entry.quantity_unit)
             for entry in a2_after.data.substances
         ) == [("Buffer", 60.0, "ul"), ("Water", 50.0, "ul")]
-        # 权威终态：废弃枪头的 spot 落库为无 tip（tip 状态在 data_json），
-        # 其余 spot 不受影响（抽查 A2）
-        spot_node = next(
-            item
-            for item in service.get_tree(deck_uuid).nodes
-            if item.material.material_uuid == tip_spot.unilabos_uuid
+        # 权威终态：枪头是孔位的结构孩子（独立 Tip 物料，维护版 PLR 起不再是孔位
+        # data_json 里的 tip 状态）。其余孔位不受影响（抽查 A2），废弃枪头的孔位
+        # 下不再有 Tip
+        deck_nodes = service.get_tree(deck_uuid).nodes
+
+        def _tip_children(spot) -> list[str]:
+            return [
+                item.material.material_uuid
+                for item in deck_nodes
+                if item.material.parent_material_uuid == spot.unilabos_uuid
+                and item.material.resource_type == "tip"
+            ]
+
+        other_spot = tips_inst.get_item("A2")
+        assert _tip_children(other_spot) == [other_spot.get_tip().unilabos_uuid]
+        assert _tip_children(tip_spot) == [], (
+            "废弃的枪头仍挂在权威 A1 孔位下：本地移出 PLR 树的 Tip 没有同步到权威"
+            "（快照只能更新既有物料、不能删除），从权威恢复会多出一支枪头"
         )
-        assert spot_node.data.data.get("tip") is None
-        other_node = next(
-            item
-            for item in service.get_tree(deck_uuid).nodes
-            if item.material.material_uuid == tips_inst.get_item("A2").unilabos_uuid
-        )
-        assert other_node.data.data.get("tip") is not None
 
         # ================= 阶段 10：各端再各备一块 deck（三种 transfer 的目标） =================
         deck3_uuid = str(uuid4())

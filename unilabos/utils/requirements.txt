@@ -19,7 +19,6 @@ httpx>=0.27.0
 mcp>=1.30,<2
 uvicorn>=0.30
 pyserial>=3.5
-crcmod-plus>=2.3.1
 pymodbus>=3.6.9,<4
 # 修正版随发行包的 wheelhouse 分发，不上传 PyPI；安装时须提供 --find-links。
 # 本地版本号区分 UniLabOS fork 与同版本上游，且不包含离线时仍会联网的源码 URL。

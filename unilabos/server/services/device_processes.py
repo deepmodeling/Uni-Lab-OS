@@ -256,7 +256,7 @@ class DeviceProcessService:
         child_dir = resolve_working_dir(absolute(args.working_dir), absolute(args.config), cwd=str(self.working_dir))
         records = {**load_ledger(self.working_dir), **load_ledger(child_dir)}
         dirs = [absolute(item) for item in args.devices or []] + enabled_package_dirs(child_dir)
-        roots, packages = source_roots(dirs, records, external_only=args.external_devices_only)
+        roots, packages = source_roots(dirs, records)
         self.source_changes.register(spec.id, kind="slave", name=spec.name, pid=None, roots=roots,
                                      packages=packages, auto_start=spec.auto_start)
 

@@ -54,7 +54,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "solenoid_valve.mock",
+            "class": "virtual_solenoid_valve",
             "position": {
                 "x": 620.6111111111111,
                 "y": 171,
@@ -72,7 +72,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "solenoid_valve.mock",
+            "class": "virtual_solenoid_valve",
             "position": {
                 "x": 780,
                 "y": 171,
@@ -90,7 +90,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "vacuum_pump.mock",
+            "class": "virtual_vacuum_pump",
             "position": {
                 "x": 500,
                 "y": 171,
@@ -108,7 +108,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "gas_source.mock",
+            "class": "virtual_gas_source",
             "position": {
                 "x": 900,
                 "y": 171,

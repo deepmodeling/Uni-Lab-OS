@@ -127,7 +127,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLanDemo",
         url="https://github.com/Xuwznln/LabDeviceLanDemo",
-        ref="86bc3673f01f8c265a5eb98042374e129213369d",
+        ref="25d587942f58ed1ef300e82ced47b98d0c5eee8b",
         package="lan_demo",
         host_graph="examples/host.json",
         slave_graph="examples/slave.json",
@@ -185,7 +185,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceComplexWorkflowDemo",
         url="https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo",
-        ref="48a9aaa1ff1950dc0e0c479b7f208006def14992",
+        ref="59b0fb6b9db21a064cccdcb5bccfb1653750c616",
         package="complex_workflow_demo",
         host_graph="graph/complex_workflow_demo.json",
         # 循环容器：循环体节点每轮一个 attempt（trigger=loop_iteration），循环节点自身 1 个 attempt；
@@ -217,7 +217,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="dbdccedcd45f2d926796336592499f7406ae9c7a",
+        ref="d1e8192e59ca8b2180238307b2c914d596f7040b",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",

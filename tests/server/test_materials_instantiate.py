@@ -91,8 +91,27 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
                 if node["material"]["material_uuid"] == root_uuid
             )
             assert root["material"]["name"] == "tips_outbound_1"
-            # tip rack 带 96 个 tip spot 子节点（整棵树权威登记）
-            assert len(tree["nodes"]) == 97
+            # tip rack 带 96 个 tip spot 子节点，每个孔位下一支已命名的 Tip：
+            # 维护版 PLR 起枪头是孔位的结构孩子，与孔位一样整棵树权威登记（1 + 96 + 96）
+            materials = {
+                node["material"]["material_uuid"]: node["material"]
+                for node in tree["nodes"]
+            }
+            spots = [
+                item
+                for item in materials.values()
+                if item["parent_material_uuid"] == root_uuid
+            ]
+            tips = [
+                item for item in materials.values() if item["resource_type"] == "tip"
+            ]
+            assert len(spots) == 96
+            assert {item["resource_type"] for item in spots} == {"tip_spot"}
+            assert len(tips) == 96
+            assert sorted(item["parent_material_uuid"] for item in tips) == sorted(
+                item["material_uuid"] for item in spots
+            )
+            assert len(tree["nodes"]) == 1 + 96 + 96
 
             fetched = client.get(f"/api/v1/materials/instances/{root_uuid}")
             assert fetched.status_code == 200

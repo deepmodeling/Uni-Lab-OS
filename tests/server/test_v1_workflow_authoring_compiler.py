@@ -30,7 +30,8 @@ def flow(ctx, *, amount: float = 2.0):
 
 
 @pytest.fixture
-def api(tmp_path):
+def api(tmp_path, source_write_backend):
+    # source_write_backend：源码回写在 Linux lease 与可移植两种后端下各跑一遍
     catalog = DeviceCatalog()
     catalog.add("pump-1", "pump", PUMP_UUID)
     service = WorkflowService(tmp_path / "runtime.db")

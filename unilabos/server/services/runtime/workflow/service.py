@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import os
@@ -10,12 +11,13 @@ import signal
 import stat
 import struct
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 from uuid import UUID, uuid4
 
 try:  # Linux authoring CAS 使用 file lease；Windows 仍需支持 Workflow Runtime。
@@ -100,6 +102,7 @@ from unilabos.server.services.runtime.workflow.workflow_io import (
     validate_workflow_graph_io,
 )
 from unilabos.server.database.sqlite_domain import DomainDatabase
+from unilabos.utils.file_lock import acquire_exclusive_file_lock, release_file_lock
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +176,79 @@ _NO_EXPECTED_HASH = object()
 _F_SETOWN_EX = getattr(fcntl, "F_SETOWN_EX", 15) if fcntl is not None else 15
 _F_OWNER_TID = 0
 _LEASE_BREAK_SIGNAL = getattr(signal, "SIGRTMAX", signal.SIGTERM)
+
+# 源码回写后端 -----------------------------------------------------------------
+# linux_lease：Linux file lease + dir_fd 的强路径（_compare_and_replace）；
+# portable：macOS / Windows 的路径版实现（_portable_atomic_write），外部契约相同，
+# 但检测不到“外部编辑器在比较与替换之间写入”，差异见 _portable_atomic_write。
+#: 仅供测试强制可移植路径：``UNILABOS_SOURCE_WRITE_BACKEND=portable``
+_SOURCE_WRITE_BACKEND_ENV = "UNILABOS_SOURCE_WRITE_BACKEND"
+_SOURCE_WRITE_LEASE = "linux_lease"
+_SOURCE_WRITE_PORTABLE = "portable"
+#: 可移植路径等待 sidecar 锁的上限；超时按并发修改返回 draft_hash_conflict
+_PORTABLE_LOCK_TIMEOUT_SECONDS = 10.0
+_PORTABLE_LOCK_POLL_SECONDS = 0.02
+#: Windows 名称代理型重解析点（符号链接、目录联接、挂载点）标志位
+_REPARSE_TAG_NAME_SURROGATE = 0x20000000
+_O_BINARY = getattr(os, "O_BINARY", 0)
+_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+#: 目标缺失时的不覆盖发布：Windows 的 rename 不替换已有文件；POSIX 用 link（已存在即失败）
+_NO_CLOBBER_RENAME = os.name == "nt"
+
+
+def _linux_lease_write_supported() -> bool:
+    """Linux 强路径所需原语是否齐备（缺任何一项都不能走强路径）。
+
+    需要 file lease（``F_SETLEASE`` / ``F_SETSIG``）、同步消费 lease 通知的
+    ``signal.sigtimedwait`` / ``pthread_sigmask`` 与实时信号，以及 ``O_DIRECTORY`` /
+    ``O_NOFOLLOW`` 和 ``dir_fd`` 相对的 open / stat / mkdir / link / unlink / rename
+    （``os.replace`` 与 ``os.rename`` 共用 dir_fd 支持）。
+    """
+
+    if fcntl is None or not all(
+        hasattr(fcntl, name) for name in ("F_SETLEASE", "F_SETSIG", "F_WRLCK", "F_UNLCK")
+    ):
+        return False
+    if not all(hasattr(signal, name) for name in ("sigtimedwait", "pthread_sigmask", "SIGRTMAX")):
+        return False
+    if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC")):
+        return False
+    supported = os.supports_dir_fd
+    return all(
+        function in supported
+        for function in (os.open, os.stat, os.mkdir, os.link, os.unlink, os.rename)
+    )
+
+
+def _select_source_write_backend(environ: Optional[Mapping[str, str]] = None) -> str:
+    """按平台能力选择源码回写后端；模块加载时调用一次，结果存入 ``_SOURCE_WRITE_BACKEND``。"""
+
+    requested = (
+        (os.environ if environ is None else environ).get(_SOURCE_WRITE_BACKEND_ENV, "").strip().lower()
+    )
+    if requested == _SOURCE_WRITE_PORTABLE:
+        return _SOURCE_WRITE_PORTABLE
+    if requested not in {"", "auto"}:
+        logger.warning(
+            "忽略未知的 %s=%r，按平台能力选择源码回写后端",
+            _SOURCE_WRITE_BACKEND_ENV,
+            requested,
+        )
+    return _SOURCE_WRITE_LEASE if _linux_lease_write_supported() else _SOURCE_WRITE_PORTABLE
+
+
+_SOURCE_WRITE_BACKEND = _select_source_write_backend()
+
+
+def _is_redirecting_entry(stat_result: os.stat_result) -> bool:
+    """lstat 结果是否为符号链接或会把路径重定向到别处的 Windows 重解析点。"""
+
+    if stat.S_ISLNK(stat_result.st_mode):
+        return True
+    return bool(getattr(stat_result, "st_reparse_tag", 0) & _REPARSE_TAG_NAME_SURROGATE)
+
+
 _WORKFLOW_READ_FIELDS = {
     "uuid",
     "create_time",
@@ -3163,7 +3239,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 self.delete_workflow(identity)
             if registration is not None:
                 with suppress(Exception):
-                    self._source_path(registration)[1].unlink(missing_ok=True)
+                    self._discard_source_file(registration)
             raise
         return self.get_graph(identity)
 
@@ -3208,6 +3284,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         self,
         registration: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_read_source(registration)
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         with self._source_parent_fd(
@@ -3264,6 +3342,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
     ) -> Tuple[Any, ...]:
         """返回无需读取文件内容的稳定性签名，供 Draft 监视器去抖。"""
 
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_source_signature(registration)
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         with self._source_parent_fd(
@@ -3301,6 +3381,9 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         *,
         expected_hash: Any = _NO_EXPECTED_HASH,
     ) -> None:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            self._portable_atomic_write(registration, content, expected_hash=expected_hash)
+            return
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         # 先以目录 FD 安全地创建（如有需要）固定的 workflows 目录。
@@ -3615,16 +3698,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         *,
         create: bool,
     ) -> Iterator[Optional[Tuple[int, str]]]:
-        relative = PurePosixPath(registration["relative_path"])
-        if (
-            relative.is_absolute()
-            or len(relative.parts) != 2
-            or relative.parts[0] != "workflows"
-            or any(part in {"", ".", ".."} for part in relative.parts)
-            or relative.suffix != ".py"
-            or not relative.stem
-        ):
-            raise WorkflowError("invalid_input")
+        relative = cls._checked_source_relative(registration)
 
         root_fd = cls._open_directory_chain(Path(registration["package_root"]))
         parent_fd = -1
@@ -3656,6 +3730,22 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             if parent_fd >= 0:
                 os.close(parent_fd)
             os.close(root_fd)
+
+    @staticmethod
+    def _checked_source_relative(registration: Dict[str, Any]) -> PurePosixPath:
+        """登记的相对路径只能是 ``workflows/<名称>.py``，两条回写后端共用。"""
+
+        relative = PurePosixPath(registration["relative_path"])
+        if (
+            relative.is_absolute()
+            or len(relative.parts) != 2
+            or relative.parts[0] != "workflows"
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or relative.suffix != ".py"
+            or not relative.stem
+        ):
+            raise WorkflowError("invalid_input")
+        return relative
 
     @staticmethod
     def _open_directory_chain(path: Path) -> int:
@@ -3723,6 +3813,430 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             raise WorkflowError("invalid_input")
         if not allow_missing and not target.exists():
             raise WorkflowError("invalid_input")
+
+    # 可移植源码回写（macOS / Windows）-------------------------------------
+
+    def _portable_read_source(
+        self,
+        registration: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """路径版 ``_read_source``：逐级 lstat 校验后读取，不依赖 dir_fd。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return None
+        parent, filename = source_parent
+        try:
+            raw, stat_result = self._portable_read_regular(parent / filename)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeError:
+            raise WorkflowError("invalid_input") from None
+        return {
+            "python_source": source,
+            "draft_hash": _sha256(raw),
+            "update_time": _mtime_rfc3339(stat_result.st_mtime),
+        }
+
+    def _portable_source_signature(
+        self,
+        registration: Dict[str, Any],
+    ) -> Tuple[Any, ...]:
+        """路径版 ``source_signature``：只 lstat，不跟随符号链接。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return ("missing",)
+        parent, filename = source_parent
+        try:
+            stat_result = os.lstat(parent / filename)
+        except FileNotFoundError:
+            return ("missing",)
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        if _is_redirecting_entry(stat_result) or not stat.S_ISREG(stat_result.st_mode):
+            raise WorkflowError("invalid_input")
+        return (
+            "file",
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+            stat_result.st_ctime_ns,
+        )
+
+    def _portable_atomic_write(
+        self,
+        registration: Dict[str, Any],
+        content: bytes,
+        *,
+        expected_hash: Any,
+    ) -> None:
+        """macOS / Windows 的源码回写，外部契约与 Linux lease 路径（``_compare_and_replace``）相同。
+
+        相同的契约：按 ``expected_hash`` 做内容 CAS（目标缺失而期望哈希非空、或目标存在而
+        期望为 None 都是 ``draft_hash_conflict``）；同目录临时文件 fsync 后 ``os.replace``
+        原子发布（POSIX 与 Windows 均为原子替换）；只写登记包根内固定的
+        ``workflows/<名称>.py``，逐级 lstat 拒绝符号链接与目录联接等重解析点；失败不留下
+        临时文件；``os.replace`` 一旦发布，绝不覆盖或删除无法证明属于本进程的内容。
+
+        步骤：持目标旁 sidecar 锁 ``.<名称>.py.lock``（``utils/file_lock``：POSIX flock，
+        Windows msvcrt）→ 写临时文件并 fsync → 读目标、比对哈希 → 写 fsync 过的 ``.cas``
+        备份 → 再次确认目标仍是同一文件且哈希未变 → ``os.replace`` → fsync 目录（Windows
+        跳过）→ 验证目标哈希等于新内容 → 删除备份。锁文件常驻，不随写入删除。
+
+        与 Linux 的保证差异：没有 file lease，无法发现外部编辑器仍持有目标的打开句柄，也检测
+        不到外部程序在“最后一次哈希确认”与 ``os.replace`` 之间写入的内容——这部分写入会被
+        本次发布覆盖（备份里也没有它）。Linux 上 lease 会让这两种情况都返回冲突。本仓库的
+        进程之间由 sidecar 锁串行化；外部写入只有发生在 replace 之后、发布后验证之前，才会
+        被发现（返回冲突并保留 ``.cas`` 备份供人工恢复）。Windows 上目标被其他程序打开而
+        使 ``os.replace`` 抛 PermissionError 时，同样按 ``draft_hash_conflict`` 处理。
+        """
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=True)
+        if source_parent is None:  # pragma: no cover - create=True 时目录必然存在
+            raise WorkflowError("invalid_input")
+        parent, filename = source_parent
+        try:
+            with self._portable_source_lock(parent, filename):
+                # 等锁期间路径链可能已被替换：持锁后重新校验一次。
+                self._assert_contained_regular_target(root, target, allow_missing=True)
+                if self._portable_source_parent(registration, create=False) != source_parent:
+                    raise WorkflowError("invalid_input")
+                temporary = parent / f".{filename}.{uuid4().hex}.tmp"
+                try:
+                    self._portable_write_new_file(temporary, content)
+                    if expected_hash is _NO_EXPECTED_HASH:
+                        self._portable_replace(temporary, parent / filename)
+                    else:
+                        self._portable_compare_and_replace(
+                            parent=parent,
+                            target_name=filename,
+                            temporary=temporary,
+                            replacement_hash=_sha256(content),
+                            expected_hash=expected_hash,
+                        )
+                    self._portable_fsync_directory(parent)
+                finally:
+                    self._portable_discard(temporary)
+        except WorkflowError:
+            raise
+        except OSError:
+            raise WorkflowError("internal_error") from None
+
+    @staticmethod
+    def _portable_compare_and_replace(
+        *,
+        parent: Path,
+        target_name: str,
+        temporary: Path,
+        replacement_hash: str,
+        expected_hash: Optional[str],
+    ) -> None:
+        """sidecar 锁内的 CAS：读-哈希-比较 → 备份原稿 → 原子发布 → 发布后验证。
+
+        与 Linux 路径相同的规则：``os.replace()`` 成功发布后，异常路径无法证明 canonical
+        仍是本进程写入的内容（外部程序可能已在发布后写入或再次替换），此时绝不用 ``.cas``
+        备份覆盖或删除它，只保留 fsync 过的备份供人工 / Git 恢复。
+        """
+
+        target = parent / target_name
+        backup = parent / f".{target_name}.{uuid4().hex}.cas"
+        backup_pending = False
+        published = False
+        try:
+            staged, _staged_stat = WorkflowService._portable_read_regular(temporary)
+            if _sha256(staged) != replacement_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            try:
+                original, original_stat = WorkflowService._portable_read_regular(target)
+            except FileNotFoundError:
+                if expected_hash is not None:
+                    raise WorkflowConflict("draft_hash_conflict") from None
+                WorkflowService._portable_publish_new(temporary, target)
+                published = True
+                WorkflowService._portable_verify_published(target, replacement_hash)
+                return
+            except PermissionError:
+                # Windows：目标被其他程序以独占方式打开。
+                raise WorkflowConflict("draft_hash_conflict") from None
+            if expected_hash is None or _sha256(original) != expected_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+
+            backup_pending = True
+            WorkflowService._portable_write_new_file(backup, original)
+            WorkflowService._portable_fsync_directory(parent)
+            # 发布前最后确认目标仍是刚才校验的同一文件且内容未变，尽量缩小外部写入窗口。
+            WorkflowService._portable_assert_unchanged(target, original_stat, expected_hash)
+            WorkflowService._portable_replace(temporary, target)
+            published = True
+            WorkflowService._portable_fsync_directory(parent)
+            WorkflowService._portable_verify_published(target, replacement_hash)
+            with suppress(OSError):
+                os.unlink(backup)
+                backup_pending = False
+                WorkflowService._portable_fsync_directory(parent)
+        except Exception:
+            # 未发布时备份只是本进程的副本，可以删除；已发布则保留供人工恢复。
+            if backup_pending and not published:
+                with suppress(OSError):
+                    os.unlink(backup)
+            raise
+
+    @staticmethod
+    def _portable_replace(source: Path, target: Path) -> None:
+        """原子替换；PermissionError（Windows 上目标被其他程序打开）按并发修改处理。"""
+
+        try:
+            os.replace(source, target)
+        except PermissionError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+
+    @staticmethod
+    def _portable_publish_new(source: Path, target: Path) -> None:
+        """目标缺失时不覆盖地发布：POSIX 用 link，Windows 用不带替换语义的 rename。"""
+
+        try:
+            if _NO_CLOBBER_RENAME:
+                os.rename(source, target)
+            else:
+                os.link(source, target)
+        except FileExistsError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+        except PermissionError:
+            if _NO_CLOBBER_RENAME:
+                raise WorkflowConflict("draft_hash_conflict") from None
+            raise
+
+    @staticmethod
+    def _portable_assert_unchanged(
+        target: Path,
+        original_stat: os.stat_result,
+        expected_hash: str,
+    ) -> None:
+        try:
+            current, current_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if (
+            not os.path.samestat(current_stat, original_stat)
+            or _sha256(current) != expected_hash
+        ):
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_verify_published(target: Path, replacement_hash: str) -> None:
+        """发布后验证：目标必须是普通文件且哈希等于新内容，否则视为外部并发写入。"""
+
+        try:
+            published, _published_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError, WorkflowError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if _sha256(published) != replacement_hash:
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_read_regular(path: Path) -> Tuple[bytes, os.stat_result]:
+        """先 lstat 拒绝符号链接、重解析点与非普通文件，再打开、比对文件身份后读取。
+
+        ``FileNotFoundError`` / ``PermissionError`` 等 OSError 原样抛出，由调用方映射。
+        """
+
+        before = os.lstat(path)
+        if _is_redirecting_entry(before) or not stat.S_ISREG(before.st_mode):
+            raise WorkflowError("invalid_input")
+        descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY)
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
+                # lstat 与 open 之间路径被换成了别的文件（Windows 没有 O_NOFOLLOW）。
+                raise WorkflowConflict("draft_hash_conflict")
+            return WorkflowService._read_regular_fd(descriptor), opened
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _portable_write_new_file(path: Path, content: bytes) -> None:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    @staticmethod
+    def _portable_discard(path: Path) -> None:
+        """尽力删除本进程创建的临时文件；删除失败只记录，不掩盖原始异常。"""
+
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("未能删除源码回写临时文件 %s", path, exc_info=True)
+
+    @staticmethod
+    def _portable_fsync_directory(path: Path) -> None:
+        """POSIX 上 fsync 目录以持久化 rename / link；Windows 无法以 os.open 打开目录，跳过。"""
+
+        if os.name == "nt":
+            return
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _O_CLOEXEC)
+        try:
+            os.fsync(descriptor)
+        except OSError as exc:
+            # 部分文件系统不支持目录 fsync，视同平台不支持。
+            if exc.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+                raise
+        finally:
+            os.close(descriptor)
+
+    @classmethod
+    def _portable_source_parent(
+        cls,
+        registration: Dict[str, Any],
+        *,
+        create: bool,
+    ) -> Optional[Tuple[Path, str]]:
+        """路径版 ``_source_parent_fd``：逐级 lstat 拒绝符号链接与重解析点，返回固定 workflows 目录。"""
+
+        relative = cls._checked_source_relative(registration)
+        root = Path(os.path.abspath(registration["package_root"]))
+        parent = root / relative.parts[0]
+        try:
+            cls._portable_assert_plain_directories(root)
+            try:
+                parent_stat = os.lstat(parent)
+            except FileNotFoundError:
+                if not create:
+                    return None
+                with suppress(FileExistsError):
+                    os.mkdir(parent, 0o755)
+                parent_stat = os.lstat(parent)
+            if _is_redirecting_entry(parent_stat) or not stat.S_ISDIR(parent_stat.st_mode):
+                raise WorkflowError("invalid_input")
+            # 兜底：解析后的目录仍须位于解析后的包根内。
+            Path(os.path.realpath(parent)).relative_to(Path(os.path.realpath(root)))
+        except WorkflowError:
+            raise
+        except (OSError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        return parent, relative.parts[1]
+
+    @staticmethod
+    def _portable_assert_plain_directories(path: Path) -> None:
+        """从盘符 / 根起逐级 lstat：每一级都必须是目录，且不是符号链接或重解析点。"""
+
+        absolute = Path(os.path.abspath(path))
+        current = Path(absolute.anchor)
+        for part in absolute.parts[1:]:
+            current = current / part
+            entry = os.lstat(current)
+            if _is_redirecting_entry(entry) or not stat.S_ISDIR(entry.st_mode):
+                raise WorkflowError("invalid_input")
+
+    @staticmethod
+    def _portable_lock_path(parent: Path, filename: str) -> Path:
+        return parent / f".{filename}.lock"
+
+    @staticmethod
+    @contextmanager
+    def _portable_source_lock(parent: Path, filename: str) -> Iterator[None]:
+        """目标旁 sidecar 锁文件上的跨进程排他锁，覆盖读-哈希-比较-替换全过程。
+
+        flock / msvcrt 锁按打开的文件生效，同一进程的不同线程也互斥。持锁后确认路径
+        仍指向所锁文件（锁文件被持锁者删除时重新打开）；等待超过上限按并发修改处理。
+        """
+
+        lock_path = WorkflowService._portable_lock_path(parent, filename)
+        deadline = time.monotonic() + _PORTABLE_LOCK_TIMEOUT_SECONDS
+        while True:
+            stream = WorkflowService._portable_open_lock_file(lock_path)
+            locked = False
+            try:
+                while True:
+                    try:
+                        acquire_exclusive_file_lock(stream, blocking=False)
+                        locked = True
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise WorkflowConflict("draft_hash_conflict") from None
+                        time.sleep(_PORTABLE_LOCK_POLL_SECONDS)
+                if WorkflowService._portable_lock_file_current(lock_path, stream):
+                    yield
+                    return
+            finally:
+                if locked:
+                    with suppress(OSError):
+                        release_file_lock(stream)
+                stream.close()
+            if time.monotonic() >= deadline:
+                raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_open_lock_file(lock_path: Path) -> BinaryIO:
+        try:
+            existing = os.lstat(lock_path)
+        except FileNotFoundError:
+            pass
+        else:
+            if _is_redirecting_entry(existing) or not stat.S_ISREG(existing.st_mode):
+                raise WorkflowError("invalid_input")
+        descriptor = os.open(
+            lock_path,
+            os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        try:
+            return os.fdopen(descriptor, "r+b")
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _portable_lock_file_current(lock_path: Path, stream: BinaryIO) -> bool:
+        try:
+            current = os.lstat(lock_path)
+        except FileNotFoundError:
+            return False
+        if _is_redirecting_entry(current):
+            raise WorkflowError("invalid_input")
+        opened = os.fstat(stream.fileno())
+        return stat.S_ISREG(opened.st_mode) and os.path.samestat(current, opened)
+
+    def _discard_source_file(self, registration: Dict[str, Any]) -> None:
+        """导入失败时删除本次创建的源码文件；可移植后端持锁一并删除 sidecar 锁文件。"""
+
+        target = self._source_path(registration)[1]
+        if _SOURCE_WRITE_BACKEND != _SOURCE_WRITE_PORTABLE:
+            target.unlink(missing_ok=True)
+            return
+        lock_path = self._portable_lock_path(target.parent, target.name)
+        with self._portable_source_lock(target.parent, target.name):
+            target.unlink(missing_ok=True)
+            if os.name != "nt":
+                # POSIX 持锁删除：等待者拿到锁后发现路径已不指向所锁文件，会重新打开。
+                with suppress(OSError):
+                    os.unlink(lock_path)
+        if os.name == "nt":
+            # Windows 不能删除仍被打开的文件：释放后再删；其他进程仍打开着它时删除失败，
+            # 正好不会破坏对方的锁。
+            with suppress(OSError):
+                os.unlink(lock_path)
 
     def _compile(
         self,

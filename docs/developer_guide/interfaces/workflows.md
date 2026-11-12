@@ -319,6 +319,32 @@ HTTP 记录确认后由调度器消费，不是 handler 内直接执行下一个
 
 这三个比较分别防止草稿、编译候选和图的并发覆盖，不能只传一个 revision。
 
+### 源码回写与平台差异
+
+保存草稿、应用后写回规范化源码、恢复待回写记录时，后端把 Python 源码写回登记的源码文件
+（托管源码在 `<db 根>/workflow_sources/workflows/*.py`，设备包源码在包根下的 `workflows/<名称>.py`）。
+`WorkflowService` 在模块加载时按平台能力选一次回写后端（`_SOURCE_WRITE_BACKEND`），两个后端对外契约相同：
+
+- 按 `expected_draft_hash` 做内容比较后交换（CAS）：内容与期望哈希不符、期望有文件但文件已缺失、
+  期望无文件但文件已存在，都返回 `draft_hash_conflict`（“草稿已被其他程序修改”）；
+- 在同目录写临时文件并 fsync，再原子替换；失败不留下临时文件；
+- 只写登记包根内固定的 `workflows/<名称>.py`，不跟随符号链接；
+- 替换前保留原稿 `.cas` 备份，替换后验证成功才删除。替换一旦发布，异常路径绝不覆盖或删除
+  无法证明属于本进程的内容，备份留给人工或 Git 恢复。
+
+| 后端 | 平台 | 并发检测 |
+|---|---|---|
+| `linux_lease` | Linux（`F_SETLEASE`、`signal.sigtimedwait`、`O_DIRECTORY` 与 `dir_fd` 齐备） | 目录 FD 相对操作；在写 lease 下比较并替换：目标已被其他进程打开时拿不到 lease，期间有进程打开或写入会打断 lease，两种情况都返回冲突 |
+| `portable` | macOS、Windows，以及缺上述任一原语的平台 | 按路径操作，逐级 lstat 拒绝符号链接与目录联接；目标旁 sidecar 锁 `.<名称>.py.lock`（`utils/file_lock`：POSIX flock，Windows msvcrt）在读-哈希-比较-替换全程持有；替换后验证内容哈希 |
+
+可移植后端的保证较弱。没有 lease，就发现不了外部编辑器仍打开着源码文件，也检测不到外部程序在
+最后一次哈希确认与替换之间写入的内容，这部分写入会被覆盖。本仓库的进程之间由 sidecar 锁串行化；
+外部写入只有发生在替换之后、发布后验证之前，才会返回冲突并保留 `.cas` 备份。
+Windows 上目标被其他程序打开导致替换失败（PermissionError）同样返回 `draft_hash_conflict`；
+Windows 不支持目录 fsync，跳过这一步。sidecar 锁文件常驻，不随写入删除。
+在外部编辑器里改源码时，先在编辑器里保存，再到浏览器保存或应用；遇到冲突按提示刷新查看差异。
+测试用 `UNILABOS_SOURCE_WRITE_BACKEND=portable` 在 Linux 上强制可移植后端。
+
 设备包 `@workflow` 是另一种声明入口：ctx.run/ctx.run_template 声明步骤，
 ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件。
 循环变量 `{{loop.index}}`、`{{loop.iteration}}`、`{{loop.count}}` 由运行时处理。

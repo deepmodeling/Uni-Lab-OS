@@ -165,6 +165,11 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 > `WorkflowAuthoringCompiler` over `registry/workflow_ast` (one compiler for device-package templates and authoring).
 > Not done here: the scheduler does not yet read `node.manual_confirmation.timeout_seconds` (task-lifecycle branch);
 > structural node templates (condition / repeat_until / material_io) are not projected.
+> Source write-back (draft save, normalized source after apply, pending write-back recovery) picks a backend once per
+> process: Linux uses file leases with `dir_fd` operations; macOS and Windows use the portable backend (path-based
+> containment checks, a sidecar lock next to the source, atomic replace with post-replace verification). The external
+> contract is the same, but the portable backend cannot detect an external editor that writes between the last hash
+> check and the replace. See `interfaces/workflows.md`, "源码回写与平台差异".
 
 | class | V1 route | V1 handler | DEV counterpart | note |
 |---|---|---|---|---|

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from typing import Any, Optional
-from urllib.error import HTTPError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
+from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
 from unilabos.config.control_token import client_headers
 
 from unilabos.protocol.materials import InventoryChange, InventoryMutation, MutationResult
@@ -389,11 +389,13 @@ class HostLinkMaterialsClient:
         return MutationResult[MaterialDeltaResult].model_validate(response)
 
 
-class MaterialsHTTPError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(f"materials API returned {status_code}: {detail}")
-        self.status_code = status_code
-        self.detail = detail
+class MaterialsHTTPError(APIHTTPError):
+    """物料 API 失败；``status_code`` 按业务码换算（4001 / 6000 / 6006 … → 404）。"""
+
+    api_name = "materials"
+
+    def __init__(self, status_code: int, detail: str, **kwargs: Any):
+        super().__init__(status_code, detail, **kwargs)
         # 与本地物料异常保持一致，HostLink 可识别 ensure 的正常不存在结果。
         self.code = "not_found" if status_code == 404 else "materials_http_error"
 
@@ -426,15 +428,9 @@ class HTTPMaterialsClient:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-                return json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            try:
-                detail = json.loads(raw).get("detail", raw)
-            except ValueError:
-                detail = raw
-            raise MaterialsHTTPError(exc.code, str(detail)) from exc
+            return request_json(request, timeout=self.timeout, opener=urlopen)
+        except EnvelopeError as exc:
+            raise MaterialsHTTPError.from_envelope_error(exc) from exc
 
     def put_template(
         self, mutation: InventoryMutation, value: ResourceTemplateWrite

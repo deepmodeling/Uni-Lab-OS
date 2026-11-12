@@ -42,7 +42,8 @@ def remote_device_relay() -> bool:
 def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     import json
 
-    from unilabos.server.api.edge_proxy import edge_http
+    from unilabos.client.utils.envelope import EnvelopeError
+    from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
     response = edge_http(
         "POST",
@@ -53,15 +54,12 @@ def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     )
     if response is None:
         raise RuntimeError(f"Host 进程不在线，无法经控制面执行 {path}")
-    text = response.body_bytes().decode("utf-8", errors="replace")
     try:
-        parsed = json.loads(text) if text else None
-    except ValueError:
-        parsed = None
-    if response.status_code >= 300:
-        detail = parsed.get("detail", text) if isinstance(parsed, dict) else text
-        raise RuntimeError(f"Host 中继 {path} 返回 HTTP {response.status_code}: {detail}")
-    return parsed
+        return edge_response_data(response)
+    except EnvelopeError as exc:
+        raise RuntimeError(f"Host 中继 {path} 失败（业务码 {exc.code}）: {exc.error}") from exc
+    except ValueError as exc:
+        raise RuntimeError(f"Host 中继 {path} 返回无效响应（HTTP {response.status_code}）") from exc
 
 
 def remote_material_sync_dispatcher(command: Any) -> Dict[str, Any]:

@@ -144,12 +144,17 @@ class RestartCoordinator:
 
     def cancel(self) -> dict[str, Any]:
         if self._edge_restart_requested:
-            from unilabos.server.api.edge_proxy import edge_http
+            from unilabos.client.utils.envelope import EnvelopeError
+            from unilabos.server.api.edge_proxy import edge_http, edge_response_data
             response = edge_http('DELETE', '/api/v1/restart', timeout=10)
-            if response is None or response.status_code >= 300:
+            if response is None:
                 return self.status()
-            import json
-            state = json.loads(response.body)
+            try:
+                state = edge_response_data(response)
+            except (EnvelopeError, ValueError):
+                return self.status()
+            if not isinstance(state, dict):
+                return self.status()
             if state.get('pending') or state.get('restarting'):
                 return self.status()
             with self._lock:

@@ -147,7 +147,7 @@ class ProtocolMCP:
                         "truncated": True, "characters": len(encoded), "expires_in_seconds": self.CACHE_TTL,
                         "preview": encoded[:1200],
                         "outline": self.outline(value),
-                        "next": "protocol_result_read，按 outline 选择 pointer（如 /body/0/device_routes），limit 最大 50"}, error=error)
+                        "next": "protocol_result_read，按 outline 选择 pointer（如 /body/data/0/device_routes），limit 最大 50"}, error=error)
 
     @classmethod
     def outline(cls, value: Any, depth: int = 3) -> Any:

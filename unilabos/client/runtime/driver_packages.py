@@ -38,10 +38,7 @@ class HTTPDriverPackageClient:
             raise ValueError("HTTP 超时必须为有限正数")
         # 安装/卸载没有请求幂等键，响应丢失后必须查询，不能自动重发。
         self._http = HTTPClient(
-            HTTPClientConfig(
-                normalize_api_address(base_url), timeout=timeout,
-                max_retries=0, response_envelope=False,
-            ),
+            HTTPClientConfig(normalize_api_address(base_url), timeout=timeout, max_retries=0),
             get_auth_secret=get_auth_secret,
         )
         self._timeout = timeout

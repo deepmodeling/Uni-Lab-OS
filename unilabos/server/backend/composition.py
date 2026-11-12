@@ -221,15 +221,18 @@ def _stop_event_retention() -> None:
 
 def read_preflight_endpoints() -> list[dict[str, Any]]:
     """与浏览器共享当前 Host 的在线能力快照，避免读取权威进程的空遥测镜像。"""
-    import json
-    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled
+    from unilabos.client.utils.envelope import EnvelopeError
+    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
     from unilabos.server.composition import get_server_services
 
     if edge_proxy_enabled():
         response = edge_http("GET", "/api/v1/runtime/endpoints?limit=1000", timeout=5.0)
-        if response is None or response.status_code != 200:
+        if response is None:
             raise RuntimeError("Host 在线能力暂不可用")
-        result = json.loads(response.body_bytes())
+        try:
+            result = edge_response_data(response)
+        except EnvelopeError as exc:
+            raise RuntimeError(f"Host 在线能力暂不可用：{exc.error}") from exc
     else:
         services = get_server_services()
         if services is None:
@@ -248,24 +251,24 @@ def make_device_state_reader(execution_backend: Any):
     ``GET /api/v1/telemetry/states`` 再按 device_uuid 取最新一条。
     """
 
-    import json
-
     projection = getattr(execution_backend, "device_state", None)
     latest_for = getattr(projection, "latest_for", None)
     if callable(latest_for):
         return latest_for
 
     def read_via_host(device_id: str) -> dict[str, Any]:
-        from unilabos.server.api.edge_proxy import edge_http
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
         response = edge_http("GET", "/api/v1/telemetry/states", timeout=5.0)
         if response is None:
             raise RuntimeError("Host 未接入控制面，读不到设备状态")
-        if response.status_code != 200:
+        try:
+            states = edge_response_data(response)
+        except (EnvelopeError, ValueError) as exc:
             raise RuntimeError(
-                f"Host 遥测接口返回 {response.status_code}，读不到设备状态"
-            )
-        states = json.loads(response.body_bytes().decode("utf-8") or "[]")
+                f"Host 遥测接口失败（HTTP {response.status_code}），读不到设备状态：{exc}"
+            ) from exc
         latest: Optional[dict[str, Any]] = None
         for state in states if isinstance(states, list) else []:
             if not isinstance(state, dict) or str(state.get("device_uuid")) != str(device_id):

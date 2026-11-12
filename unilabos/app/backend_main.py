@@ -187,17 +187,24 @@ def run_backend_process(
                 try:
                     if active_device_job_ids(scheduler, None):
                         raise ResetConflict("仍有活跃作业，请先结束或裁决作业后重置")
-                    response = edge_control.http_request("GET", "/api/v1/hostlink/peers")
-                    import json
-                    if response is None or response.status_code != 200:
-                        raise ResetConflict("无法核对 Host 状态，请等待 Host 上线")
-                    peer_status = json.loads(response.body_bytes())
+                    from unilabos.client.utils.envelope import EnvelopeError
+                    from unilabos.server.api.edge_proxy import edge_response_data
+
+                    def host_data(path: str, unavailable: str) -> dict:
+                        response = edge_control.http_request("GET", path)
+                        if response is None:
+                            raise ResetConflict(unavailable)
+                        try:
+                            data = edge_response_data(response)
+                        except (EnvelopeError, ValueError) as exc:
+                            raise ResetConflict(f"{unavailable}：{exc}") from exc
+                        return data if isinstance(data, dict) else {}
+
+                    peer_status = host_data("/api/v1/hostlink/peers", "无法核对 Host 状态，请等待 Host 上线")
                     if any(peer.get("online", False) for peer in peer_status.get("peers", [])):
                         raise ResetConflict("仍有在线 Slave，请先停止全部受管设备进程及外部 Slave 后重置")
-                    response = edge_control.http_request("GET", "/api/v1/driver-packages")
-                    if response is None or response.status_code != 200:
-                        raise ResetConflict("无法核对驱动包操作状态")
-                    if any(op.get("status") == "running" for op in json.loads(response.body_bytes()).get("operations", [])):
+                    inventory = host_data("/api/v1/driver-packages", "无法核对驱动包操作状态")
+                    if any(op.get("status") == "running" for op in inventory.get("operations", [])):
                         raise ResetConflict("请等待驱动包安装或卸载完成")
                 except Exception as exc:
                     scheduler.resume_dispatch(reason="reset")

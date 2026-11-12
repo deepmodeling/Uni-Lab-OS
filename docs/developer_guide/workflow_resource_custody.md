@@ -72,12 +72,13 @@ v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管
 
 ## 持久化与验证
 
-runtime.db 升到 v8，新增 `workflow_resource_loan`、`workflow_device_tenancy`、
-`workflow_tenancy_transition`、`workflow_resource_waiter`。v7 的有效占用、Claim 和开始协议
-保持可读，缺省新增字段经模型归一化，迁移前保留数据库备份。
+runtime.db 记录借还与托管的四张表：`workflow_resource_loan`、`workflow_device_tenancy`、
+`workflow_tenancy_transition`、`workflow_resource_waiter`（0.13 发布线的 schema v1 基线，
+开发期的 v7 → v8 迁移已随迁移链压平删除）。
 
 回归覆盖成功卸载、错误样品、失败/取消/超时/跳过、未知结果和迟到成功、撤回未派发转移、
-并发连接、等待环路、重启、人工归还/释放、v7 活动 Claim 升级、旧驱动合同拒绝及库存清理。
+并发连接、等待环路、重启、人工归还/释放、旧驱动合同拒绝及库存清理（当时还含 v7 活动 Claim 升级，
+该升级测试已随迁移链压平删除）。
 相关回归 507 passed / 2 skipped（包含本文件对应的 23 项资源借还/托管测试）。
 双进程 smoke 的 9 个任务成功，46 次设备尝试和准入、13 个已释放区间、1 次已归还借用、
 1 条已释放设备托管，实际使用残留为 0。证据文件见交付目录 validation.json。

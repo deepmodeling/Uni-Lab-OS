@@ -44,7 +44,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | D02 | 生命周期协议已本地迁移；业务协议待归位 | 状态/重启/重置 DTO 与 SDK 归入 protocol/runtime、client/runtime；drain 三个接口接入 server/backend 与 server/api/runtime。保留 Dev 主进程监督；布局、模板及旧操作日志尚不能判为已消解。 |
 | D03 | 拓扑按设计消解，现场验收待做 | 一个 backend 对应一个主 Host/runtime，下接多个 slave；符合本轮用户确认，不再把多主 Host 列为缺失能力。现有 supervisor、device-processes、driver-packages、HostLink 覆盖基本路径，真实工站验收列 T02。 |
 | D04 | 按设计消解 | 保留并行任务和任务级单步；不将 V1 当前工站级单步准入策略直接复制过来。 |
-| D05 | 按设计消解 | 保留原生授锁插件可选、加载失败回退 Python；保留已建立的版本化数据库迁移。 |
+| D05 | 按设计消解 | 保留原生授锁插件可选、加载失败回退 Python；保留版本化数据库迁移机制。0.13 发布线四个库都从 schema v1 开始（2026-11-13 把开发期 runtime v2–v12、materials v2–v8 迁移链压平为 v1 基线），旧开发库启动时备份后重建；发布后改结构从 v2 起追加迁移。 |
 | D06 | 已配置 | WSL 的 `git.dp.tech` 使用 Windows Git Credential Manager；站点代理 `http://127.0.0.1:3897`。克隆成功，无需再次网页登录；凭据不写入报告或 patch。 |
 
 ## 功能消解清单

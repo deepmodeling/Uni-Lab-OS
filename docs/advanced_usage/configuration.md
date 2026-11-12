@@ -307,6 +307,10 @@ Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/b
 或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
 单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
 
+四个数据库的结构版本（`PRAGMA user_version`）在 0.13 发布线上都从 v1 开始。0.13 之前的开发版建的库
+结构版本更高或结构不同，首次启动时会被改名为 `<文件>.bak-<时间戳>`（连同 `-wal` / `-shm`）保留，再按 v1 重建空库；
+确认旧数据不再需要后可以删除这些备份。
+
 #### 日志级别选项
 
 - `TRACE` - 追踪级别（最详细）

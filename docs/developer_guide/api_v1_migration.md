@@ -7,7 +7,9 @@
 
 1. **目录与启动沿用 dev。** 路由放在 `unilabos/server/api/<领域>/`，业务逻辑在
    `unilabos/server/services/`，数据表在 dev 的数据库（`runtime.db`、`materials.db`、
-   `history.db`、`telemetry.db`），新表或新列走现有版本化迁移。不新建 V1 的
+   `history.db`、`telemetry.db`），新表或新列直接写进对应库的表声明：0.13 发布线四个库都以 schema v1
+   为基线（开发期的 runtime v2–v12、materials v2–v8 迁移链已压平，没有迁移），发布后改结构才从 v2 起
+   追加版本化迁移。不新建 V1 的
    `app/scheduler`、`workflow/`、`workspace_host/` 等目录，也不新建第二套库存库。
 2. **只提供 V1 路径。** 路径、方法、请求/响应 DTO 以 V1.0 为准。dev 中能力相同但路径或 DTO
    不同的路由直接改为 V1 合同，删除 dev 旧路径，并同步修改 dev 内部调用方：Host→权威
@@ -137,21 +139,20 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 
 ## 库存与工作区（p7-c 落地）
 
-- materials.db 升到 **schema v7**：v6 把 V1 inventory.db 的概念并入为表——`material_content`（试剂 / 样品 /
+- materials.db 把 V1 inventory.db 的概念并入为表——`material_content`（试剂 / 样品 /
   当前内容物是 `material_substance` 行上的角色，数量仍以 substance 为唯一权威）、`material_content_history`、
   `material_state_history`、`material_content_reservation`（容器内容物数量预留，防并发超量抽取）、
   `material_source_binding`（`task_exclusive` / `shared_source`）、`station_ingress_reservation`、
-  `inventory_processed_command`、`lab_meta` / `lab_zone` / `lab_placement`，以及未删除非空条码唯一索引（迁移时重复条码
-  留给最早创建的物料，其余清空并记入 `extra_json.duplicate_barcode`）；v7 重建 `inventory_lot` 增加
-  `location_site_uuid` / `warehouse_zone_id`。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
+  `inventory_processed_command`、`lab_meta` / `lab_zone` / `lab_placement`，以及未删除非空条码唯一索引；
+  `inventory_lot` 带 `location_site_uuid` / `warehouse_zone_id`。这些都在 schema v1 基线里。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
   校正，适用于质量 / 体积批次与已隔离批次。
 - 化学品：V1 `/reagent-infos` 是 `chemical` 表的 V1 视图；dev `/chemicals`（带 `expected_version` 的写入）保留。
 - Workspace Host（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）见下文「Workspace Host（p8 落地）」。
 
 ## 作业与库存接缝（p7-d 落地）
 
-- materials.db 升到 **schema v8**：只加索引（账本按 `job_uuid`、内容物预留按 `job_uuid`、内容物历史按
-  `subject_uuid`），供消费读模型按作业 / 内容物查询；runtime.db 不变（仍是 v11）。
+- materials.db 的读模型索引（账本按 `job_uuid`、内容物预留按 `job_uuid`、内容物历史按
+  `subject_uuid`）供消费读模型按作业 / 内容物查询；runtime.db 结构不变。
 - **消费事实**（`/workflow-tasks|workflow-node-jobs|reagents/{uuid}/inventory-consumptions`）是 materials.db 现有事实的
   只读投影（`services/materials/consumption.py`），不另建 V1 的消费台账：批次 = 作业库存预留按生命周期结算的
   预留量减去实际用量校正（`inventory_type: lot`，dev 扩展值）；容器内容物 = 已结算的内容物数量预留（实际量与前后

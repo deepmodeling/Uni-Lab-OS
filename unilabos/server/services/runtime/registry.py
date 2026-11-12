@@ -752,6 +752,24 @@ class RegistryService(SqliteDomain):
         templates.sort(key=lambda item: (str(item.get("display_name") or ""), str(item.get("id"))))
         return templates
 
+    def active_payloads(self, registry_type: str = "") -> List[Dict[str, Any]]:
+        """生效条目 payload（按名称排序）；``registry_type`` 非空时只取该类型（如 ``device``）。"""
+
+        with self._lock:
+            payloads = [
+                dict(payload)
+                for _name, payload in sorted(self._active.items())
+                if not registry_type or str(payload.get("registry_type") or "") == registry_type
+            ]
+        return payloads
+
+    def active_fingerprint(self) -> str:
+        """生效条目集合的内容指纹（名称 + 内容哈希）；模板投影据此判断是否需要重算。"""
+
+        with self._lock:
+            pairs = sorted(self._active_hashes.items())
+        return canonical_hash(pairs)
+
     def get_workflow_template(self, template_uuid: str) -> Optional[Dict[str, Any]]:
         """按模板 uuid 取生效模板；找不到（或已软移除）返回 None。"""
 

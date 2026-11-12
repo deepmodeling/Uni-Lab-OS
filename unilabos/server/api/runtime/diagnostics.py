@@ -91,6 +91,10 @@ def create_backend_router(
 
     router = envelope_router(prefix="/api/v1", tags=["backend"])
     router.include_router(create_scheduler_lifecycle_router(get_scheduler, get_execution_backend))
+    from unilabos.server.api.runtime.device_state import create_device_state_router
+
+    # V1 设备状态视图（Host 数据面；分进程时由 edge 代理按 device-state 前缀转发）
+    router.include_router(create_device_state_router(get_execution_backend))
 
     @router.get("/reset", response_model=ResetStatus)
     def reset_preview() -> dict[str, Any]:

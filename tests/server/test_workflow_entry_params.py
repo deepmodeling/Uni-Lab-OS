@@ -96,8 +96,22 @@ def _node(node_uuid: str, name: str, param: dict, *, device: str, depends_on=())
     }
 
 
+def _insert(client, service, parent_uuid: str, revision: int, child_uuid: str, **body) -> Any:
+    """V1 组合调用：按子工作流最新发布合同插入；成功时返回父工作流完整图（含私有子图）。"""
+
+    publications = client.get(f"/api/v1/workflows/{child_uuid}/publications").json()["data"]
+    response = client.post(f"/api/v1/workflows/{parent_uuid}/composite-invocations", json={
+        "revision": revision, "contract_uuid": publications[-1]["uuid"], **body,
+    })
+    if response.json()["code"] != 0:
+        return response
+    _ok(response)
+    return service.get_graph(parent_uuid)
+
+
 def _workflow(client, name: str, nodes: list[dict]) -> dict:
-    workflow = _ok(client.post("/api/v1/workflows", json={"name": name}), 201)
+    # V1：只有实验操作可以被引用；子工作流都以实验操作创建
+    workflow = _ok(client.post("/api/v1/workflows", json={"name": name, "workflow_type": "experiment_operation"}), 201)
     return _ok(client.put(
         f"/api/v1/workflows/{workflow['uuid']}/graph",
         json={"revision": workflow["revision"], "nodes": nodes, "edges": [],
@@ -236,10 +250,8 @@ def test_canvas_child_receives_parent_entry_parameter(stack) -> None:
         input_contract=_contract({"name": "amount", "schema": NUMBER, "required": True}),
     ))
     invocation = str(uuid4())
-    inserted = _ok(client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json={
-        "revision": parent_graph["workflow"]["revision"], "child_workflow_uuid": child_uuid,
-        "invocation_uuid": invocation, "arguments": {"volume": ref("amount")},
-    }), 201)["graph"]
+    inserted = _insert(client, service, parent["uuid"], parent_graph["workflow"]["revision"], child_uuid,
+                       invocation_uuid=invocation, param={"volume": ref("amount")})
     leaf = expanded_node_uuid(invocation, inner)
     by_uuid = {node["uuid"]: node for node in inserted["nodes"]}
     # 透传：子工作流的引用改指父工作流入口参数
@@ -272,17 +284,13 @@ def test_canvas_child_receives_parent_entry_parameter(stack) -> None:
     # 静态实参：插入时直接写进内部节点
     other = _ok(client.post("/api/v1/workflows", json={"name": "静态父流程"}), 201)
     static_invocation = str(uuid4())
-    static = _ok(client.post(f"/api/v1/workflows/{other['uuid']}/composite-invocations", json={
-        "revision": other["revision"], "child_workflow_uuid": child_uuid,
-        "invocation_uuid": static_invocation, "arguments": {"volume": 4},
-    }), 201)["graph"]
+    static = _insert(client, service, other["uuid"], other["revision"], child_uuid,
+                     invocation_uuid=static_invocation, param={"volume": 4})
     static_leaf = expanded_node_uuid(static_invocation, inner)
     assert {node["uuid"]: node for node in static["nodes"]}[static_leaf]["param"] == {"volume": 4}
     # 引用父工作流未声明的入口参数被拒绝
-    rejected = client.post(f"/api/v1/workflows/{other['uuid']}/composite-invocations", json={
-        "revision": static["workflow"]["revision"], "child_workflow_uuid": child_uuid,
-        "arguments": {"volume": ref("amount")},
-    })
+    rejected = _insert(client, service, other["uuid"], static["workflow"]["revision"], child_uuid,
+                       param={"volume": ref("amount")})
     assert _code(rejected) == 1000
 
 
@@ -305,10 +313,8 @@ def test_published_child_condition_references_its_expanded_nodes(stack) -> None:
     _ok(client.post(f"/api/v1/workflows/{child_uuid}/publications", json={"revision": child["workflow"]["revision"]}), 201)
     parent = _ok(client.post("/api/v1/workflows", json={"name": "条件父流程"}), 201)
     invocation = str(uuid4())
-    inserted = _ok(client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json={
-        "revision": parent["revision"], "child_workflow_uuid": child_uuid,
-        "invocation_uuid": invocation, "arguments": {},
-    }), 201)["graph"]
+    inserted = _insert(client, service, parent["uuid"], parent["revision"], child_uuid,
+                       invocation_uuid=invocation, param={})
     nodes = {node["uuid"]: node for node in inserted["nodes"]}
     expanded_condition = expanded_node_uuid(invocation, condition)
     expanded_probe = expanded_node_uuid(invocation, probe)
@@ -436,7 +442,8 @@ def test_v3_runtime_database_migrates_task_commands_to_v4(tmp_path) -> None:
                            (5, "持久化派发资源声明、租约与栅栏计数"),
                            (6, "执行代次、一次开始许可与不可变开始回执"),
                            (7, "区间资源所有权和单次动作使用清单"),
-                           (8, "设备托管、资源借还和等待环路")]
+                           (8, "设备托管、资源借还和等待环路"),
+                           (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）")]
     finally:
         connection.close()
 

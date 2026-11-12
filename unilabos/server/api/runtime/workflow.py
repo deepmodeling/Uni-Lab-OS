@@ -18,6 +18,7 @@ from unilabos.protocol.runtime.workflow import (
     WorkflowNodeWrite,
     normalize_json_array,
     normalize_json_object,
+    validate_uuid,
 )
 from unilabos.server.api.envelope import (
     WORKFLOW,
@@ -94,14 +95,13 @@ def _parse_non_negative_int64_decimal(value: str) -> int:
     return int(significant, 10)
 
 
-class WorkflowCreateRequest(_BackendModel):
+class WorkflowWriteRequest(_BackendModel):
+    """V1 创建 / 更新工作流共用的根字段。"""
+
     name: str
     tags: List[Any] = Field(default_factory=list)
     description: Optional[str] = None
     meta_data: Dict[str, Any] = Field(default_factory=dict)
-    #: 可选的稳定 uuid：Host 子进程上报 ``@workflow`` 默认子工作流时用声明式 uuid
-    #: 幂等 upsert（同 uuid 已存在返回冲突，调用方转 PUT）。浏览器创建时不传。
-    workflow_uuid: Optional[str] = None
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -114,8 +114,21 @@ class WorkflowCreateRequest(_BackendModel):
         return normalize_json_object(value)
 
 
-class WorkflowUpdateRequest(WorkflowCreateRequest):
-    pass
+class WorkflowCreateRequest(WorkflowWriteRequest):
+    """V1：省略类型时创建普通工作流；实验操作可带类别（省略按旧标签推导，显式 null 不分类）。"""
+
+    workflow_type: Literal["normal", "experiment_operation"] = "normal"
+    operation_category_uuid: Optional[str] = None
+    #: dev 扩展：可选的稳定 uuid。Host 子进程上报 ``@workflow`` 默认子工作流时用声明式 uuid
+    #: 幂等 upsert（同 uuid 已存在返回冲突，调用方转 PUT）。浏览器创建时不传。
+    workflow_uuid: Optional[str] = None
+
+
+class WorkflowUpdateRequest(WorkflowWriteRequest):
+    """V1：类型可省略或重复当前值，不能转换；类别省略保持、显式 null 清空。"""
+
+    workflow_type: Optional[Literal["normal", "experiment_operation"]] = None
+    operation_category_uuid: Optional[str] = None
 
 
 class WorkflowFromTemplateRequest(_BackendModel):
@@ -174,7 +187,11 @@ class GraphWriteRequest(_BackendModel):
     nodes: List[WorkflowNodeWrite] = Field(default_factory=list)
     edges: List[WorkflowEdgeWrite] = Field(default_factory=list)
     site_binding_mode: Literal["resolve", "preserve"] = Field(
-        default="resolve", description="SiteSlot 导入策略；浏览器保存草稿必须传 preserve，确认后参数中存放 site_uuid。"
+        default="preserve",
+        description=(
+            "SiteSlot 导入策略。默认 preserve（V1：原样保存草稿）；程序化导入显式传 resolve，"
+            "按目标物料把 Site 标签解析为 site_uuid。"
+        ),
     )
 
     @field_validator("nodes", "edges", mode="before")
@@ -216,20 +233,21 @@ class WorkflowPublishRequest(_StrictModel):
 
 
 class CompositeInvocationRequest(_StrictModel):
-    """把已发布子工作流作为组合调用插入父图（父图 revision 乐观锁）。
+    """V1：在父图中插入一个已发布实验操作调用（父图 revision 乐观锁）。
 
-    ``child_revision`` 缺省取子工作流最新发布；``arguments`` 为子工作流输入的实参：
-    静态 JSON 值，或 ``{"kind": "workflow_input", "parameter": 父工作流输入名}``。
+    ``contract_uuid`` 是 ``POST /publications`` 返回的发布合同 uuid；子工作流与子修订由服务端
+    从合同推导。``param`` 为子工作流输入的实参：静态 JSON 值，或
+    ``{"kind": "workflow_input", "parameter": 父工作流输入名}``。
     """
 
     revision: int = Field(ge=1, le=_INT64_MAX, strict=True)
-    child_workflow_uuid: str
-    child_revision: Optional[int] = Field(default=None, ge=1, le=_INT64_MAX, strict=True)
+    contract_uuid: str
     invocation_uuid: Optional[str] = None
+    device_bindings: Dict[str, str] = Field(default_factory=dict)
     pose: Dict[str, Any] = Field(default_factory=dict)
-    arguments: Dict[str, Any] = Field(default_factory=dict)
+    param: Dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("pose", "arguments", mode="before")
+    @field_validator("device_bindings", "pose", "param", mode="before")
     @classmethod
     def _json_object(cls, value: Any) -> Dict[str, Any]:
         return {} if value is None else normalize_json_object(value)
@@ -268,11 +286,43 @@ class WorkflowTaskCreateRequest(_StrictModel):
         return normalize_json_object(value)
 
 
-class WorkflowPreflightRequest(_StrictModel):
-    run_mode: Literal["normal", "step", "single_node"] = "normal"
+class WorkflowInventoryBindingRequest(_StrictModel):
+    """V1：把一个逻辑库存需求绑定到本次任务实际使用的库存实例（dev 预检接收并原样回显）。"""
+
+    requirement_key: str
+    inventory_type: Literal["reagent", "current_substance"]
+    inventory_uuid: str
+    reserved_quantity: float = Field(gt=0, allow_inf_nan=False)
+    quantity_unit: str
+
+    @field_validator("inventory_uuid")
+    @classmethod
+    def _inventory_uuid(cls, value: str) -> str:
+        return validate_uuid(value)
+
+    @field_validator("requirement_key", "quantity_unit")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
+class WorkflowPreflightRequest(_BackendModel):
+    """V1 预检请求：``run_mode`` 为字符串（服务端裁决）、可带 ``inventory_bindings``。"""
+
+    run_mode: str = "normal"
     target_node_uuid: Optional[str] = None
     input: Dict[str, Any] = Field(default_factory=dict)
+    inventory_bindings: List[WorkflowInventoryBindingRequest] = Field(default_factory=list)
+    #: dev 扩展：工作流修订乐观锁（V1 无此字段）
     expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def _json_object(cls, value: Any) -> Dict[str, Any]:
+        return {} if value is None else normalize_json_object(value)
 
 
 class WorkflowTaskInputEditRequest(_StrictModel):
@@ -321,13 +371,9 @@ class DraftWriteRequest(_StrictModel):
 
 
 class ApplyRequest(_StrictModel):
-    expected_draft_hash: HashToken
-    expected_workflow_revision: int = Field(
-        ge=1,
-        le=_INT64_MAX,
-        strict=True,
-    )
-    expected_candidate_hash: HashToken
+    """V1：只携带服务端签发的候选哈希；草稿哈希与基线修订由服务端从候选推导。"""
+
+    candidate_hash: HashToken
 
 
 #: 兼容旧名：信封响应（有界非递归 JSON 编码）统一由 ``api/envelope.py`` 提供。
@@ -435,12 +481,36 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         except SiteBindingError as exc:
             raise WorkflowError("site_binding_invalid", detail=str(exc)) from exc
 
+    def public_workflow(record: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 工作流读模型：``workflow_type`` / ``operation_category_uuid`` / ``status``。"""
+
+        return service.public_workflow(record)
+
+    def with_workflow_status(payload: Any) -> Any:
+        """V1 图投影：工作流补派生状态与类别，节点 / 连线只呈现当前层（组合调用私有子图隐藏）。"""
+
+        from unilabos.server.services.runtime.workflow.definition_edit import definition_graph
+
+        if not isinstance(payload, dict):
+            return payload
+        workflow = payload.get("workflow")
+        if not isinstance(workflow, dict) or not isinstance(workflow.get("uuid"), str):
+            return payload
+        projected = dict(payload)
+        projected["workflow"] = public_workflow(workflow)
+        projected.setdefault("inventory_requirements", [])
+        return definition_graph(projected)
+
+    def write_payload(body: BaseModel) -> Dict[str, Any]:
+        payload = body.model_dump()
+        # 区分"未提供类别"与"显式 null 清空类别"
+        if "operation_category_uuid" not in body.model_fields_set:
+            payload.pop("operation_category_uuid", None)
+        return payload
+
     @router.post("/workflows")
     def create_workflow(body: WorkflowCreateRequest) -> JSONResponse:
-        return _success(
-            service.create_workflow(**body.model_dump()),
-            status=201,
-        )
+        return _success(public_workflow(service.create_workflow(**write_payload(body))), status=201)
 
     @router.post("/workflows/from-template")
     def create_workflow_from_template(body: WorkflowFromTemplateRequest) -> JSONResponse:
@@ -539,37 +609,56 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             raise
         return _success({"workflow": service.get_workflow(record["uuid"]), "bindings": payload["bindings"]}, status=201)
 
-    def browser_workflow(record: Dict[str, Any]) -> Dict[str, Any]:
-        # dev 的工作流都是普通流程；发布状态按当前修订的真实发布记录判断。
-        published = service.find_workflow_publication(record["uuid"], record["revision"])
-        return dict(record, workflow_type="workflow", status="published" if published else "source")
+    def workflow_page(result: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "items": [public_workflow(item) for item in result["items"]],
+            "has_more": result["page"] * result["page_size"] < result["total"],
+            "page": result["page"],
+            "page_size": result["page_size"],
+        }
 
     @router.get("/workflows")
     def list_workflows(
         page: int = Query(default=1),
         page_size: int = Query(default=20),
-        name: str = Query(default=""),
+        keyword: str = Query(default="", description="兼容旧前端的名称模糊搜索；name 未传时生效"),
+        name: Optional[str] = Query(default=None, description="按名称模糊搜索；同时传 keyword 时以本字段为准"),
+        workflow_type: Optional[Literal["normal", "experiment_operation"]] = Query(default=None),
+        status: Optional[Literal["source", "published"]] = Query(default=None),
+        operation_category_uuid: Optional[str] = Query(default=None),
     ) -> JSONResponse:
-        result = service.list_workflows(page=page, page_size=page_size, name=name)
-        return _success(dict(
-            result, items=[browser_workflow(item) for item in result["items"]],
-            has_more=result["page"] * result["page_size"] < result["total"],
-        ))
+        """V1 工作流列表：类型 / 当前发布状态 / 实验操作类别筛选，返回 ``{items, has_more, page, page_size}``。"""
+
+        result = service.list_workflows(
+            page=page,
+            page_size=page_size,
+            name=keyword if name is None else name,
+            workflow_type=workflow_type,
+            status=status,
+            operation_category_uuid=operation_category_uuid,
+        )
+        return _success(workflow_page(result))
+
+    @router.get("/workflows/{workflow_uuid}/referenced-by")
+    def list_referencing_workflows(
+        workflow_uuid: str,
+        page: int = Query(default=1),
+        page_size: int = Query(default=20),
+    ) -> JSONResponse:
+        """引用该实验操作（组合调用）的父工作流摘要页。"""
+
+        return _success(workflow_page(service.list_referencing_workflows(workflow_uuid, page=page, page_size=page_size)))
 
     @router.get("/workflows/{workflow_uuid}")
     def get_workflow(workflow_uuid: str) -> JSONResponse:
-        return _success(browser_workflow(service.get_workflow(workflow_uuid)))
+        return _success(public_workflow(service.get_workflow(workflow_uuid)))
 
     @router.put("/workflows/{workflow_uuid}")
     def update_workflow(
         workflow_uuid: str,
         body: WorkflowUpdateRequest,
     ) -> JSONResponse:
-        return _success(
-            service.update_workflow(
-                workflow_uuid, **body.model_dump(exclude={"workflow_uuid"})
-            )
-        )
+        return _success(public_workflow(service.update_workflow(workflow_uuid, **write_payload(body))))
 
     @router.delete("/workflows/{workflow_uuid}")
     def delete_workflow(workflow_uuid: str) -> JSONResponse:
@@ -578,7 +667,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
 
     @router.get("/workflows/{workflow_uuid}/graph")
     def get_graph(workflow_uuid: str) -> JSONResponse:
-        return _success(service.get_graph(workflow_uuid))
+        return _success(with_workflow_status(service.get_graph(workflow_uuid)))
 
     @router.put("/workflows/{workflow_uuid}/graph")
     def save_graph(
@@ -597,14 +686,17 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                     if path and path != "ready":
                         mapped_paths.setdefault(edge.target_node_uuid, []).append(path)
             nodes = bind_sites(body.nodes, mapped_paths=mapped_paths)
+        node_values = [item.model_dump(mode="json") if isinstance(item, BaseModel) else item for item in nodes]
         return _success(
-            service.save_graph(
-                workflow_uuid,
-                revision=body.revision,
-                nodes=nodes,
-                edges=body.edges,
-                workflow_io=body.workflow_io.model_dump(mode="json") if body.workflow_io is not None else None,
-                resource_scopes=body.resource_scopes,
+            with_workflow_status(
+                service.save_definition_graph(
+                    workflow_uuid,
+                    revision=body.revision,
+                    nodes=node_values,
+                    edges=[item.model_dump(mode="json") for item in body.edges],
+                    workflow_io=body.workflow_io.model_dump(mode="json") if body.workflow_io is not None else None,
+                    resource_scopes=body.resource_scopes,
+                )
             )
         )
 
@@ -625,7 +717,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         """把当前修订冻结为不可变发布。"""
 
         return _success(
-            service.publish_workflow(workflow_uuid, revision=body.revision),
+            service.publish_workflow_contract(workflow_uuid, revision=body.revision),
             status=201,
         )
 
@@ -639,25 +731,55 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
 
         return _success(service.list_published_workflows())
 
+    @router.get("/published-workflow-contracts", include_in_schema=False)
+    def list_published_workflow_contracts(
+        page: int = Query(default=1),
+        page_size: int = Query(default=20),
+        keyword: str = Query(default=""),
+    ) -> JSONResponse:
+        """V1 已弃用但 V1 控制台仍在调用：每个工作流的最新发布合同。新前端改用工作流列表筛选。"""
+
+        return _success(service.list_published_workflow_contracts(page=page, page_size=page_size, keyword=keyword))
+
     @router.post("/workflows/{workflow_uuid}/composite-invocations")
     def insert_composite_invocation(
         workflow_uuid: str,
         body: CompositeInvocationRequest,
     ) -> JSONResponse:
-        """插入组合调用：子工作流按冻结发布内联展开，父图 revision +1。"""
+        """V1：按发布合同插入已发布实验操作，子工作流内联展开，父图 revision +1；返回父图（HTTP 200）。"""
 
-        return _success(
-            service.insert_composite_invocation(workflow_uuid, **body.model_dump()),
-            status=201,
-        )
+        return _success(with_workflow_status(service.insert_composite_workflow(workflow_uuid, **body.model_dump())))
+
+    def preflight_response(report: Any) -> JSONResponse:
+        response = _success(report)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @router.get("/workflows/{workflow_uuid}/run-preflight")
+    def get_workflow_run_preflight(
+        workflow_uuid: str,
+        run_mode: str = Query(default="normal"),
+        target_node_uuid: Optional[str] = Query(default=None),
+    ) -> JSONResponse:
+        """V1：不创建任务、不占资源的候选运行检查（无入口参数）。"""
+
+        return preflight_response(service.preflight_workflow(
+            workflow_uuid=workflow_uuid, run_mode=run_mode, target_node_uuid=target_node_uuid,
+            input_value={}, expected_revision=None,
+        ))
 
     @router.post("/workflows/{workflow_uuid}/run-preflight")
     def preflight_workflow(workflow_uuid: str, body: WorkflowPreflightRequest) -> JSONResponse:
-        return _success(service.preflight_workflow(
+        """V1：按候选入口参数执行零写入预检；``inventory_bindings`` 原样回显（dev 预检不消费库存绑定）。"""
+
+        report = service.preflight_workflow(
             workflow_uuid=workflow_uuid, run_mode=body.run_mode,
             target_node_uuid=body.target_node_uuid, input_value=body.input,
             expected_revision=body.expected_revision,
-        ))
+        )
+        if body.inventory_bindings and isinstance(report, dict):
+            report = dict(report, inventory_bindings=[item.model_dump() for item in body.inventory_bindings])
+        return preflight_response(report)
 
     @router.post("/workflow-tasks")
     def create_workflow_task(
@@ -900,14 +1022,11 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         workflow_uuid: str,
         body: ApplyRequest,
     ) -> JSONResponse:
-        return _success(
-            service.apply_authoring(
-                workflow_uuid,
-                expected_draft_hash=body.expected_draft_hash,
-                expected_workflow_revision=body.expected_workflow_revision,
-                expected_candidate_hash=body.expected_candidate_hash,
-            )
-        )
+        return _success(service.apply_authoring_by_candidate(workflow_uuid, candidate_hash=body.candidate_hash))
+
+    from unilabos.server.api.runtime.workflow_definition import add_definition_routes
+
+    add_definition_routes(router, service, success=_success, with_workflow_status=with_workflow_status)
 
     from unilabos.server.api.runtime.events import create_runtime_events_router
 

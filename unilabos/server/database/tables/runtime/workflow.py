@@ -45,6 +45,23 @@ class WorkflowRecord(TableObject, table=True):
         sa_column=json_text_column("tags", default_json="[]"),
     )
     revision: int = Field(default=1, ge=1)
+    #: V1 工作流类型：normal（普通工作流）| experiment_operation（实验操作）。
+    workflow_type: str = "normal"
+    #: 实验操作类别；普通工作流恒为空。
+    operation_category_uuid: Optional[str] = None
+
+
+class WorkflowOperationCategoryRecord(TableObject, table=True):
+    """实验操作类别（V1 ``/experiment-operation-categories``）；删除为软删除，默认类别不会被重新补种。"""
+
+    __tablename__: ClassVar[str] = "workflow_operation_category"
+
+    uuid: NonEmptyStr = Field(primary_key=True)
+    create_time: NonEmptyStr
+    update_time: NonEmptyStr
+    deleted_at: Optional[str] = None
+    name: NonEmptyStr
+    sort_order: int = Field(default=100, ge=0, le=10_000)
 
 
 class WorkflowNodeTemplateRecord(TableObject, table=True):
@@ -152,6 +169,11 @@ class WorkflowNodeRecord(TableObject, table=True):
     disabled: int = Field(ge=0, le=1)
     minimized: int = Field(ge=0, le=1)
     script: Optional[str] = None
+    #: V1 节点人工确认配置（``{"timeout_seconds": N}``）；空对象表示未配置。
+    manual_confirmation: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("manual_confirmation", default_json="{}"),
+    )
 
 
 class WorkflowEdgeRecord(TableObject, table=True):
@@ -581,6 +603,7 @@ class FrontendEventRecord(TableObject, table=True):
 
 WORKFLOW_TABLE_MODELS = (
     WorkflowRecord,
+    WorkflowOperationCategoryRecord,
     WorkflowNodeTemplateRecord,
     WorkflowHandleTemplateRecord,
     WorkflowNodeRecord,
@@ -687,7 +710,11 @@ WORKFLOW_TABLES = (
             meta_data TEXT NOT NULL,
             name TEXT NOT NULL,
             tags TEXT NOT NULL,
-            revision INTEGER NOT NULL DEFAULT 1
+            revision INTEGER NOT NULL DEFAULT 1,
+            workflow_type TEXT NOT NULL DEFAULT 'normal' CHECK (
+                workflow_type IN ('normal', 'experiment_operation')
+            ),
+            operation_category_uuid TEXT
         )
         """,
         (
@@ -695,7 +722,24 @@ WORKFLOW_TABLES = (
             CREATE INDEX IF NOT EXISTS idx_workflow_created_active
             ON workflow(create_time DESC, uuid DESC) WHERE deleted_at IS NULL
             """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_type_active
+            ON workflow(workflow_type, operation_category_uuid) WHERE deleted_at IS NULL
+            """,
         ),
+    ),
+    TableSpec(
+        "workflow_operation_category",
+        """
+        CREATE TABLE IF NOT EXISTS workflow_operation_category (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            deleted_at TEXT,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 100 CHECK (sort_order BETWEEN 0 AND 10000)
+        )
+        """,
     ),
     TableSpec(
         "workflow_node_template",
@@ -811,6 +855,7 @@ WORKFLOW_TABLES = (
             disabled INTEGER NOT NULL,
             minimized INTEGER NOT NULL,
             script TEXT,
+            manual_confirmation TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid)
         )
         """,

@@ -35,6 +35,9 @@ GUIDE = """# 本机 MCP / protocol
 3. 模板复用用 workflow_workflow_from_template（template_uuid、bindings、可选 name）；
    创建新的流程用 workflow_workflow_create → workflow_graph_save。
    保存图必须带当前 revision、完整 nodes/edges、正确端口；定义只保存不执行。
+   程序化保存图时传 site_binding_mode="resolve"（V1 默认 preserve 只原样存草稿，不解析 Site 标签）。
+   也可用 workflow_node_create 按 workflow_node_templates_list 的模板逐个加节点，或
+   workflow_authoring_draft 写 @workflow 源码后 workflow_authoring_apply（只传 candidate_hash）。
    device_action 节点必须绑定非空 material_uuid（从物料设备行读取实际 uuid），
    同时在 meta_data.target_device_id 写执行设备 ID。host_node 是虚拟控制入口，没有自身的物料行；
    调其物料服务动作时以实际目标设备（如 bench）的 material_uuid 作为上下文，

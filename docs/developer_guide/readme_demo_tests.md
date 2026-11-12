@@ -52,7 +52,7 @@ Slave 在物料和服务初始化完成前仅登记通信归属，不进入调�
 
 ## Site 与业务断言
 
-API 导入默认 `site_binding_mode=resolve`。标记为 Site 的 `T3` / `T4` 会被解析为权威 UUID；动作回报 UUID 是正常契约。
+API 导入（`from-template`，以及显式传 `site_binding_mode=resolve` 的 `PUT /graph`）使用 `resolve`。标记为 Site 的 `T3` / `T4` 会被解析为权威 UUID；动作回报 UUID 是正常契约。
 测试必须验证 UUID 对应的 label、owner 和实际占位物料，不应取消绑定、退回旧的 `type` / `class_name` 字段或只断言 succeeded。
 浏览器仍需确认物料/Site 绑定；自动导入和人工确认的区别见 [UI API](edge_ui_api.md)。
 

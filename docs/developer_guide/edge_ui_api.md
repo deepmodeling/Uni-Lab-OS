@@ -270,8 +270,9 @@ UI 的恢复基线来自四库 API，而不是进程内事件缓存：
 #### 当前请求合同
 
 `POST /api/v1/workflows/from-template` 和 `PUT /api/v1/workflows/{uuid}/graph` 接受
-`site_binding_mode: "resolve" | "preserve"`，默认 `resolve`。脚本 / CLI / MCP 默认自动解析；
-浏览器的草稿与确认后保存都显式传 `preserve`，不允许一次 HTTP 保存自动替用户确认。
+`site_binding_mode: "resolve" | "preserve"`。`from-template` 默认 `resolve`；`PUT /graph` 按 V1 合同默认
+`preserve`（原样保存草稿），脚本 / CLI / MCP 等程序化导入显式传 `resolve` 自动解析（`client/runtime/workflow.py`
+的 `save_workflow_graph` 已这样做）。浏览器的草稿与确认后保存都按 `preserve` 保存，不允许一次 HTTP 保存自动替用户确认。
 未登记目标设备或尚无生效动作声明时，`resolve` 返回 Backend 业务码 `1000`（HTTP 200），
 要求先登记或显式存为待校验草稿。缺失/歧义 Site 的错误同样包含节点、参数及原因。
 

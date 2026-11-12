@@ -210,7 +210,13 @@ def test_api_template_and_graph_import_resolve_but_ui_preserves(authority):
     assert saved["code"] == 0, saved
     assert saved["data"]["nodes"][0]["param"]["site"] == "T1"
     body["revision"] = saved["data"]["workflow"]["revision"]
+    # V1：省略 site_binding_mode 时按 preserve 原样保存草稿；程序化导入显式传 resolve
     body.pop("site_binding_mode")
+    omitted = api.put(url, json=body).json()
+    assert omitted["code"] == 0, omitted
+    assert omitted["data"]["nodes"][0]["param"]["site"] == "T1"
+    body["revision"] = omitted["data"]["workflow"]["revision"]
+    body["site_binding_mode"] = "resolve"
     resolved = api.put(url, json=body).json()
     assert resolved["code"] == 0, resolved
     assert resolved["data"]["nodes"][0]["param"]["site"] == site_uuid
@@ -225,7 +231,8 @@ def test_failed_import_leaves_existing_graph_unchanged(authority):
     nodes = deepcopy(before["nodes"])
     nodes[0]["param"]["site"] = "T404"
     failed = api.put(f"/api/v1/workflows/{workflow_uuid}/graph", json={
-        "revision": before["workflow"]["revision"], "nodes": nodes, "edges": []}).json()
+        "revision": before["workflow"]["revision"], "nodes": nodes, "edges": [],
+        "site_binding_mode": "resolve"}).json()
     assert failed["code"] == 1000 and "T404" in failed["error"]["msg"], failed
     assert service.get_graph(workflow_uuid) == before
 

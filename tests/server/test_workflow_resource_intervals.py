@@ -272,8 +272,9 @@ def test_runtime_v6_upgrade_preserves_workflows_and_records_backup(tmp_path):
         assert ResourceIntervals(with_service).snapshot() == []
         assert with_service.connection.execute("PRAGMA user_version").fetchone()[0] == RUNTIME_DATABASE.schema_version
         assert [tuple(row) for row in with_service.connection.execute("SELECT version,description FROM schema_migration")] == [
-            (7, "区间资源所有权和单次动作使用清单"), (8, "设备托管、资源借还和等待环路")]
-        assert list(tmp_path.glob("runtime.db.pre-v8-*.bak"))
+            (7, "区间资源所有权和单次动作使用清单"), (8, "设备托管、资源借还和等待环路"),
+            (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）")]
+        assert list(tmp_path.glob("runtime.db.pre-v9-*.bak"))
         assert with_service.connection.execute("PRAGMA foreign_key_check").fetchall() == []
     finally:
         with_service.close()

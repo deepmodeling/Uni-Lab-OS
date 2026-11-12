@@ -192,6 +192,57 @@ def list_registry_reports(
     return _ok({"reports": reports, "total": total, "page": page, "page_size": page_size})
 
 
+# ── V1 设备目录（权威合成：物料设备根 + 生效注册表 + Host endpoint 能力） ──────────
+
+
+def _devices():
+    from unilabos.server.services.runtime.devices import current_device_directory
+
+    return current_device_directory()
+
+
+@router.get("/api/v1/devices")
+def list_devices() -> Any:
+    """V1：与 Go Backend ``GET /devices`` 同形的设备读模型（binding / material / 在线 / 动作模板 UUID）。"""
+
+    return _devices().backend_devices()
+
+
+@router.get("/api/v1/authoring/device-catalog")
+def get_authoring_device_catalog() -> Any:
+    """V1：创作工具使用的富设备目录（动作输入输出 Schema、状态 Schema、在线与忙闲）。"""
+
+    return _devices().authoring_catalog()
+
+
+@router.get("/api/v1/online-devices")
+def list_online_devices() -> Any:
+    """V1：在线设备（Host endpoint 在线且含该设备路由或能力）。"""
+
+    return _devices().online_devices()
+
+
+@router.get("/api/v1/actions")
+def list_all_actions() -> Any:
+    """V1：所有设备的可用动作与忙闲。"""
+
+    return _devices().all_actions()
+
+
+@router.get("/api/v1/devices/{device_id}/actions")
+def list_device_actions(device_id: str) -> Any:
+    """V1：单个设备的动作列表；``device_id`` 为设备 ID（物料 resource_id）或设备物料 UUID。"""
+
+    return _devices().device_actions(device_id)
+
+
+@router.get("/api/v1/devices/{device_id}/actions/{action_name}/schema")
+def get_device_action_schema(device_id: str, action_name: str) -> Any:
+    """V1：动作参数 Schema / 默认值 / 类型（注册表声明优先，回退 Host 能力描述）。"""
+
+    return _devices().action_schema(device_id, action_name)
+
+
 def install_registry_api(app: FastAPI) -> None:
     app.include_router(router)
 

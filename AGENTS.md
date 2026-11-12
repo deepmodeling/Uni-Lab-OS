@@ -83,5 +83,5 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 
 ## Licensing
 
-- Framework code: GPL-3.0
-- Built-in device code (`unilabos/devices/`): DP Technology Proprietary License — do not redistribute. Do not move it into GPL framework folders, and do not add vendor drivers here; they belong in external driver packages, which carry their own license.
+- The whole repository, including the built-ins in `unilabos/devices/`, is GPL-3.0.
+- Do not add vendor drivers to `unilabos/devices/`: they belong in external driver packages, which carry their own license.

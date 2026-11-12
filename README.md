@@ -252,17 +252,12 @@ If you use [Uni-Lab-OS](https://arxiv.org/abs/2512.21766) in academic research, 
 
 ## License
 
-This project uses a dual licensing structure:
-
-- **Main Framework**: GPL-3.0 - see [LICENSE](LICENSE)
-- **Built-in device code** (`unilabos/devices/`): DP Technology Proprietary License. Only the code the
-  framework depends on ships here: the workstation base class, the virtual devices, the abstract liquid
-  handler with its RViz backend, and the ROS liquid-handler joint publisher.
+Uni-Lab-OS is licensed under GPL-3.0; see [LICENSE](LICENSE). `unilabos/devices/` only keeps the
+built-ins the framework depends on: the workstation base class, the virtual devices, the abstract liquid
+handler with its RViz backend, and the ROS liquid-handler joint publisher.
 
 Vendor device drivers are not bundled. They live in external driver packages, each under its own license;
 install them with `unilab package` and create new ones with `.cursor/skills/create-device-package`.
-
-See [NOTICE](NOTICE) for complete licensing details.
 
 ## Project Statistics
 

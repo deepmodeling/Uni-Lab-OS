@@ -198,13 +198,13 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 
 | class | V1 route | V1 handler | DEV counterpart | note |
 |---|---|---|---|---|
-| MISSING | `GET /api/v1/monitor/events` | unilabos/app/scheduler/api.py:265 | (partial) SSE /api/v1/events log notices; SSE /api/v1/materials/events | V1 has 4 channels (material, device, action, scheduler) |
-| MISSING | `GET /api/v1/monitor/snapshot` | unilabos/app/scheduler/api.py:313 | (partial) GET /api/v1/scheduler/resources |  |
+| MISSING | `GET /api/v1/monitor/events` | unilabos/app/scheduler/api.py:265 | (partial) SSE /api/v1/events log notices; SSE /api/v1/materials/events | **Ported (p7-b): SSE {seq, ts, channel, type, data} projected from frontend_event (action / scheduler / device); material channel empty (materials events stay on /materials/events); follow=false for one-shot backlog.** V1 has 4 channels (material, device, action, scheduler) |
+| MISSING | `GET /api/v1/monitor/snapshot` | unilabos/app/scheduler/api.py:313 | (partial) GET /api/v1/scheduler/resources | **Ported (p7-b): devices (busy/idle from jobs), scheduler {workflow_states, inflight, reschedule_count}, recent per channel.** |
 | MISSING | `GET /api/v1/reagents/{reagent_uuid}/inventory-consumptions` | unilabos/app/workflow_api.py:1799 | - |  |
-| MISSING | `POST /api/v1/reschedule` | unilabos/app/scheduler/api.py:231 | - | Manual re-dispatch |
-| MISSING | `GET /api/v1/scheduler/time-plan` | unilabos/app/scheduler/api.py:258 | - | Used by the V1 console (timeScheduleClient) |
+| MISSING | `POST /api/v1/reschedule` | unilabos/app/scheduler/api.py:231 | - | **Ported (p7-b): re-runs resource reconcile + wakes active tasks; {dispatched: [job ids observed]}; no local scheduler → 5001.** Manual re-dispatch |
+| MISSING | `GET /api/v1/scheduler/time-plan` | unilabos/app/scheduler/api.py:258 | - | **Ported (p7-b): no time-planning engine in the open tree → V1 no-engine shape {enabled: false, algorithm: stable-ready-order}; DEV scheduler dispatches in DAG ready order and is not exposed as a candidate plan.** Used by the V1 console (timeScheduleClient) |
 | MISSING | `POST /api/v1/station/workflow-invocations` | unilabos/app/workflow_api.py:1740 | (partial) POST /api/v1/workflow-tasks idempotency_key | Bearer EdgeControlConfig.api_key, which clashes with DEV's Bearer control token |
-| MISSING | `GET /api/v1/timeline` | unilabos/app/scheduler/api.py:253 | - | Swimlane timeline |
+| MISSING | `GET /api/v1/timeline` | unilabos/app/scheduler/api.py:253 | - | **Ported (p7-b): running = persisted in-flight jobs, completed = job_runs view in window; estimated_s = observed mean per device:action (estimate_source observed|unknown); estimator.mode observed.** Swimlane timeline |
 | MISSING | `POST /api/v1/workflow-human-interactions/{interaction_uuid}/reply` | unilabos/app/workflow_api.py:2164 | - | **Ported (p7-b): V1 reply validation per kind; replay of the same answer is idempotent; ended/timed-out → 3003.** Reply shapes: choice, text, values, x/y, corner_x/y. Used by the V1 console |
 | MISSING | `GET /api/v1/workflow-interventions/{intervention_uuid}` | unilabos/app/workflow_api.py:2180 | - | **Ported (p7-b).** |
 | MISSING | `POST /api/v1/workflow-interventions/{intervention_uuid}/decisions` | unilabos/app/workflow_api.py:2184 | - | **Ported (p7-b): revision + option_id + Idempotency-Key; 201 new / 200 replay; delivered through the same release channel as /error-decisions; undelivered → 3003 (retry with the same key).** Idempotency-Key header; returns 201 or 200. Used by the V1 console |

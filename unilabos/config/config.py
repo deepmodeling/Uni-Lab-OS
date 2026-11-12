@@ -25,7 +25,7 @@ _NON_CONFIG_ENV_KEYS = frozenset(
 
 
 # 值不进日志的配置字段（小写）。
-_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token"})
+_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token", "station_api_key"})
 
 
 class BasicConfig:
@@ -38,6 +38,11 @@ class BasicConfig:
     # 见 unilabos/config/control_token.py。权威留空时首次启动生成并保存在 <working_dir>/control_token；
     # Host 子进程由权威经环境变量传入；远端 Host（--address 指向另一台机器）在这里填权威那份 token。
     control_token = ""
+    # V1 工站调用（``POST /api/v1/station/workflow-invocations``）的协议密钥，对应 V1 的
+    # ``EdgeControlConfig.api_key``：上游 Backend 以 ``Authorization: Bearer <key>`` 调用。
+    # 留空时读 <working_dir>/station_api_key（不自动生成）；都没有则工站调用一律 401。
+    # 见 unilabos/config/station_key.py。
+    station_api_key = ""
     # 允许跨域访问管理 API 的来源，逗号分隔（如 "https://xuwznln.github.io,http://localhost:5173"）；
     # "*" 为全部允许（默认）。
     cors_allow_origins = "*"

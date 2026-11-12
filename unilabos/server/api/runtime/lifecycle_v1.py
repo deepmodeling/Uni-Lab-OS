@@ -17,9 +17,11 @@ def install_lifecycle_v1_api(app: FastAPI, service) -> None:
     app.include_router(create_task_observability_router(service))
     app.include_router(create_interventions_router(service))
     from unilabos.server.api.runtime.scheduling_v1 import create_scheduling_router
+    from unilabos.server.api.runtime.station_invocations_v1 import create_station_invocation_router
     from unilabos.server.api.runtime.stations import create_station_router
 
     app.include_router(create_station_router(service))
+    app.include_router(create_station_invocation_router(service))
     app.include_router(create_scheduling_router(service))
     app.include_router(create_run_history_router(service))
 

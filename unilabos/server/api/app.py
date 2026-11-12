@@ -17,6 +17,7 @@ from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.config.control_token import TOKEN_HEADER, authority_token, token_accepted
+from unilabos.config.station_key import is_station_path, station_key_accepted
 from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
@@ -133,7 +134,8 @@ class ControlTokenMiddleware:
 
     CORS 默认放行所有来源，任何网页都能向本机后端发请求；没有 token 时，随便打开的一个网页就能
     创建任务、启动设备。token 见 ``unilabos/config/control_token.py``；本进程没有 token（单元测试、
-    嵌入式装配）时不检查。``Authorization: Bearer`` 留给 V1 工站调用的 api_key，这里不读取。
+    嵌入式装配）时不检查。``Authorization: Bearer`` 留给 V1 工站调用的 api_key（``station_key.py``）：
+    工站入口（``STATION_KEY_PATHS``）只认有效工站密钥放行、缺失或错误一律 401，不接受控制面 token。
     被拒的请求返回 HTTP 401 + 信封 ``{"code": 1002, "error": {"msg": ...}}``，经外层 CORS 中间件
     补上跨域头，浏览器能读到原因。
     """
@@ -142,6 +144,22 @@ class ControlTokenMiddleware:
         self._app = app
 
     async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") == "http" and scope.get("method") in WRITE_METHODS and is_station_path(scope.get("path", "")):
+            # V1 工站调用只认工站密钥（Authorization: Bearer <station_api_key>），控制面 token 不能代替；
+            # 与控制面 token 是否启用无关：未配置工站密钥时工站入口一律拒绝（V1 同口径）。
+            from starlette.datastructures import Headers
+
+            if station_key_accepted(Headers(scope=scope)):
+                await self._app(scope, receive, send)
+                return
+            response = error_response(
+                UNAUTHORIZED,
+                "工站调用凭据无效：请求头 Authorization: Bearer <station_api_key>",
+                http_status=401,
+                headers={"WWW-Authenticate": 'Bearer realm="unilab-station"'},
+            )
+            await response(scope, receive, send)
+            return
         if (
             scope.get("type") == "http"
             and scope.get("method") in WRITE_METHODS

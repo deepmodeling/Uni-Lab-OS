@@ -19,7 +19,7 @@ def _without_execution_guard(service: MaterialsService) -> None:
     service.executions.guard_mutation = lambda *_: None
 
 
-def test_v5_materials_database_migrates_to_v7(tmp_path) -> None:
+def test_v5_materials_database_migrates_to_latest(tmp_path) -> None:
     v5 = materials_spec_v5()
     assert v5.checksum == MATERIALS_V5_CHECKSUM  # 夹具确实是发布过的 v5 结构
     path = tmp_path / "materials.db"
@@ -51,8 +51,8 @@ def test_v5_materials_database_migrates_to_v7(tmp_path) -> None:
     try:
         spec = DATABASE_SPECS["materials"]
         conn = service.connection
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 7
-        assert [row[0] for row in conn.execute("SELECT version FROM schema_migration")] == [6, 7]
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 8
+        assert [row[0] for row in conn.execute("SELECT version FROM schema_migration")] == [6, 7, 8]
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert MATERIALS_V6_TABLES <= tables
         # 重复条码让给最早创建的物料，后来者条码清空并保留原值供复核
@@ -73,7 +73,7 @@ def test_v5_materials_database_migrates_to_v7(tmp_path) -> None:
         lot = service.get_inventory_lot("lot-a")
         assert (lot.quantity_total, lot.location_site_uuid, lot.warehouse_zone_id) == (25, None, "")
         assert service.latest_ledger_sequence() == sequence
-        assert len(list(tmp_path.glob("materials.db.pre-v7-*.bak"))) == 1
+        assert len(list(tmp_path.glob("materials.db.pre-v8-*.bak"))) == 1
     finally:
         service.close()
 

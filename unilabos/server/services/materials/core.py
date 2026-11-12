@@ -1275,10 +1275,16 @@ class MaterialsService(MaterialsRepository):
                         previous_version=lot.version,
                         aggregate_version=updated_lot.version,
                         state_hash=lot_hash,
+                        # 预留与作业身份、扣减前后总量随账本保存，供作业消费读模型还原（预留可能由不带
+                        # job_uuid 的命令结算）
                         delta={
                             "quantity": quantity,
                             "unit": lot.unit,
                             "reason": value.reason,
+                            "reservation_uuid": current.reservation_uuid,
+                            "job_uuid": current.job_uuid,
+                            "quantity_total_before": lot.quantity_total,
+                            "quantity_total_after": updated_lot.quantity_total,
                         },
                         timestamp=timestamp,
                     ))

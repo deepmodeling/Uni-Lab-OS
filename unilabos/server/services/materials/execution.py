@@ -419,54 +419,72 @@ class MaterialExecutions:
             used = self._convert(usage.actual_quantity, usage.quantity_unit, item.unit)
             deltas[item.lot_uuid] = deltas.get(item.lot_uuid, 0) + item.quantity - used
         for identity, difference in deltas.items():
-            if not math.isfinite(difference):
-                raise MaterialConflictError("库存实际用量合计必须为有限数值")
-            from .core import _Applied
-            from unilabos.protocol.materials import AggregateVersion, InventoryLotRead, MutationResult
+            self.apply_actual_lot_quantity(plan.job_uuid, reservation.reservation_uuid, identity, difference)
 
-            mutation = self._mutation(plan, "inventory:" + identity, "settle_actual_inventory")
+    def apply_actual_lot_quantity(self, job_uuid: str, reservation_uuid: str, lot_uuid: str, difference: float):
+        """按实际用量校正一个批次（``difference`` = 预留量 − 实际量，正数退回）。
 
-            def apply(timestamp):
-                lot = self.service.get_lot(identity)
-                updated = self.service._advance_lot(
-                    lot, total_delta=difference, available_delta=difference, timestamp=timestamp
-                )
-                self.service.update_lot(updated)
-                state_hash = self.service._lot_state_hash(updated)
-                sequence = self.service._ledger(
-                    mutation,
-                    aggregate_type="lot",
-                    aggregate_uuid=identity,
-                    operation="inventory.actual_quantity",
-                    previous_version=lot.version,
-                    aggregate_version=updated.version,
-                    state_hash=state_hash,
-                    delta={
-                        "quantity_delta": difference,
-                        "unit": lot.unit,
-                        "reservation_uuid": reservation.reservation_uuid,
-                    },
-                    timestamp=timestamp,
-                )
-                return _Applied(
-                    self.service._lot_read(updated),
-                    [
-                        AggregateVersion(
-                            aggregate_type="lot",
-                            aggregate_uuid=identity,
-                            version=updated.version,
-                            state_hash=state_hash,
-                        )
-                    ],
-                    [sequence],
-                )
+        物理回执结算与人工数量核对（``reconcile-quantity``）共用这一条幂等路径：效果键固定为
+        ``(job_uuid, physical.inventory:<lot>)``、请求只含批次 / 差额 / 预留。同一差额重放不再改账，
+        不同差额按 ``command_uuid/effect_key`` 冲突拒绝，因此同一作业的同一批次最多校正一次，绝不重复扣减。
+        """
 
-            self.service._run_mutation(
-                mutation,
-                {"lot_uuid": identity, "quantity_delta": difference, "reservation_uuid": reservation.reservation_uuid},
-                MutationResult[InventoryLotRead],
-                apply,
+        from .core import MaterialConflictError, _Applied
+        from unilabos.protocol.materials import AggregateVersion, InventoryLotRead, MutationResult
+
+        if not math.isfinite(difference):
+            raise MaterialConflictError("库存实际用量合计必须为有限数值")
+        mutation = InventoryMutation(
+            command_uuid=job_uuid,
+            effect_key="physical.inventory:" + lot_uuid,
+            operation="settle_actual_inventory",
+            actor_type="scheduler",
+            job_uuid=job_uuid,
+        )
+
+        def apply(timestamp):
+            lot = self.service.get_lot(lot_uuid)
+            updated = self.service._advance_lot(
+                lot, total_delta=difference, available_delta=difference, timestamp=timestamp
             )
+            self.service.update_lot(updated)
+            state_hash = self.service._lot_state_hash(updated)
+            sequence = self.service._ledger(
+                mutation,
+                aggregate_type="lot",
+                aggregate_uuid=lot_uuid,
+                operation="inventory.actual_quantity",
+                previous_version=lot.version,
+                aggregate_version=updated.version,
+                state_hash=state_hash,
+                delta={
+                    "quantity_delta": difference,
+                    "unit": lot.unit,
+                    "reservation_uuid": reservation_uuid,
+                    "quantity_total_before": lot.quantity_total,
+                    "quantity_total_after": updated.quantity_total,
+                },
+                timestamp=timestamp,
+            )
+            return _Applied(
+                self.service._lot_read(updated),
+                [
+                    AggregateVersion(
+                        aggregate_type="lot",
+                        aggregate_uuid=lot_uuid,
+                        version=updated.version,
+                        state_hash=state_hash,
+                    )
+                ],
+                [sequence],
+            )
+
+        return self.service._run_mutation(
+            mutation,
+            {"lot_uuid": lot_uuid, "quantity_delta": difference, "reservation_uuid": reservation_uuid},
+            MutationResult[InventoryLotRead],
+            apply,
+        )
 
     def release(self, job_uuid: str, value: MaterialExecutionRelease) -> dict:
         from .core import MaterialConflictError

@@ -235,7 +235,7 @@ class ContentContract:
         return aggregate, substances
 
     def _put_substances(self, material_uuid: str, substances: list[MaterialSubstance], *,
-                        observed_at_ms: Optional[int] = None) -> Any:
+                        observed_at_ms: Optional[int] = None, job_uuid: Optional[str] = None) -> Any:
         aggregate = self.materials.get_material(material_uuid)
         data = aggregate.data
         value = MaterialDataWrite(
@@ -243,8 +243,12 @@ class ContentContract:
             unknown_counter=data.unknown_counter, state_status=data.state_status,
             observed_at_ms=max(observed_at_ms or 0, data.observed_at_ms),
         )
+        mutation = new_mutation("put_data")
+        if job_uuid:
+            # 作业结算产生的内容物变化在账本上带作业身份（任务物料变化 / 消费读模型按作业筛选）
+            mutation = mutation.model_copy(update={"job_uuid": job_uuid, "actor_type": "workflow"})
         try:
-            return self.materials.put_data(new_mutation("put_data"), material_uuid, value).data
+            return self.materials.put_data(mutation, material_uuid, value).data
         except MaterialNoChangeError:
             return aggregate
 
@@ -1028,20 +1032,36 @@ class ContentContract:
                 amount = converted[0] if converted else used
                 if amount > target.quantity + quantity_tolerance(target.quantity, amount):
                     raise MaterialConflictError("consumption exceeds the container content", conflict="state")
-                updated = target.model_copy(update={"quantity": max(0.0, target.quantity - amount)})
-                self._put_substances(row["material_uuid"], [updated if item.substance_uuid == target.substance_uuid else item for item in substances])
+                balance_after = max(0.0, target.quantity - amount)
+                updated = target.model_copy(update={"quantity": balance_after})
+                self._put_substances(row["material_uuid"],
+                                     [updated if item.substance_uuid == target.substance_uuid else item for item in substances],
+                                     job_uuid=row["job_uuid"])
                 kind = self.connection.execute(
                     "SELECT content_kind FROM material_content WHERE substance_uuid=?", (target.substance_uuid,)
                 ).fetchone()
                 if kind is not None:
                     self._update_content(target.substance_uuid, now)
-                    self._append_history(
-                        material_uuid=row["material_uuid"],
-                        subject_type={"current": "current_substance"}.get(kind[0], kind[0]),
-                        subject_uuid=target.substance_uuid, event_type="consume", quantity_delta=-amount,
-                        quantity_unit=target.quantity_unit, revision=None, previous=None, result=None,
-                        operator_type="workflow", task_uuid=row["task_uuid"], job_uuid=row["job_uuid"],
-                    )
+                # 消费事实（计划量、上报量、按内容物单位的实际量与前后余量）写进历史扩展，作业 / 试剂消费
+                # 读模型据此还原；没有角色的内容物按 current_substance 记
+                self._append_history(
+                    material_uuid=row["material_uuid"],
+                    subject_type={"current": "current_substance"}.get(kind[0], kind[0]) if kind else "current_substance",
+                    subject_uuid=target.substance_uuid, event_type="consume", quantity_delta=-amount,
+                    quantity_unit=target.quantity_unit, revision=None, previous=None, result=None,
+                    extension={
+                        "reservation_uuid": reservation_uuid,
+                        "planned_quantity": float(row["quantity"]),
+                        "planned_quantity_unit": row["quantity_unit"],
+                        "reported_quantity": used,
+                        "reported_quantity_unit": row["quantity_unit"],
+                        "actual_quantity": amount,
+                        "quantity_unit": target.quantity_unit,
+                        "balance_before": target.quantity,
+                        "balance_after": balance_after,
+                    },
+                    operator_type="workflow", task_uuid=row["task_uuid"], job_uuid=row["job_uuid"],
+                )
         return self.get_content_reservation(reservation_uuid)
 
     def list_content_reservations(self, *, status: str = "", task_uuid: str = "", limit: int = 500) -> list[dict[str, Any]]:

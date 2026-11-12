@@ -227,6 +227,7 @@ plate.get_well("A2").tracker.commit()
 # 枪头（物理动作完成后 commit）
 tip_spot = tips.get_item("A1")
 tip = tip_spot.get_tip(); tip_spot.empty(); tip_spot.tracker.commit()
+# 不放回即为丢弃：下一次上报台面时，这支枪头在权威里退役（retired + 软删除），恢复时不会复活
 ```
 
 **同步语义（重要）**——本地改了状态，权威什么时候知道：

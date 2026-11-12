@@ -564,6 +564,8 @@ def _normalize_plr_resources(resources: Any) -> list[Any]:
 def _existing_tree_set(resources: Any) -> ResourceTreeSet:
     if isinstance(resources, ResourceTreeSet):
         tree_set = ResourceTreeSet.load(resources.dump())
+        # dump/load 只复制节点；运行时证据（设备仍持有哪些物料）随树集一起带上
+        tree_set.runtime_material_uuids = resources.runtime_material_uuids
     else:
         tree_set = ResourceTreeSet.from_plr_resources(
             _normalize_plr_resources(resources)
@@ -863,6 +865,11 @@ class AuthorityResourceService:
             )
             by_root[root_uuid].append(instance.res_content)
 
+        # 运行时证据：设备仍持有的物料（含上报树之外、同一 PLR 顶层祖先下的物料）
+        # 加上本次上报的全部节点——枪头若被上报到另一棵根树，就不是被丢弃。
+        held = runtime.runtime_material_uuids
+        if held is not None:
+            held = held | seen_runtime_uuids
         authoritative = ResourceTreeSet([])
         for root_uuid, changed_resources in by_root.items():
             current = self._push_root_snapshot(
@@ -873,6 +880,7 @@ class AuthorityResourceService:
                 changed_resources,
                 allow_partial=allow_partial,
                 conflict_retries=conflict_retries,
+                runtime_material_uuids=held,
             )
             authoritative.trees.extend(
                 material_tree_to_resource_tree(current).trees
@@ -891,6 +899,7 @@ class AuthorityResourceService:
         *,
         allow_partial: bool,
         conflict_retries: int | None = None,
+        runtime_material_uuids: frozenset[str] | None = None,
     ) -> Any:
         """把一组节点投影进单棵权威根树，带乐观锁冲突重试。
 
@@ -904,6 +913,9 @@ class AuthorityResourceService:
         观察者严格快照走该模式：``changed_resources`` 是排队时刻的冻结态，
         权威被并发 mutation 推进后旧冻结不可重放，必须由观察者重新冻结最新
         runtime 树再提交。
+
+        ``runtime_material_uuids`` 是设备运行时仍持有的物料；上报父节点下缺席、
+        又不在其中的枪头视为已丢弃，随同一快照退役（见 ``resource_tree_to_snapshot``）。
         """
 
         from unilabos.server.services.materials.snapshot import compare_material_snapshot
@@ -920,6 +932,7 @@ class AuthorityResourceService:
                     changed_resources,
                     base,
                     allow_partial=allow_partial,
+                    runtime_material_uuids=runtime_material_uuids,
                 )
             except SnapshotUuidMismatchError:
                 if refreshed_for_drift:

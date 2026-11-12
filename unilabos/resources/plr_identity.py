@@ -44,6 +44,35 @@ def material_children(resource: Any) -> list[Any]:
     return children
 
 
+def runtime_material_uuids(resources: Any) -> frozenset[str]:
+    """设备运行时仍持有的物料 UUID：从每个资源的 PLR 顶层祖先出发遍历物料孩子。
+
+    上报的往往只是台面或其中一块板；旧式液体处理器是台面的 PLR 父节点，通道上的
+    枪头不在上报树里，却仍被设备持有。快照据此区分“枪头已丢弃”与“枪头在上报树
+    之外被持有”，后者不能退役。
+    """
+
+    tops: dict[int, Any] = {}
+    for resource in resources:
+        top = resource
+        while getattr(top, "parent", None) is not None:
+            top = top.parent
+        tops[id(top)] = top
+    uuids: set[str] = set()
+    visited: set[int] = set()
+    stack = list(tops.values())
+    while stack:
+        node = stack.pop()
+        if id(node) in visited:
+            continue
+        visited.add(id(node))
+        uid = str(getattr(node, "unilabos_uuid", "") or "")
+        if uid:
+            uuids.add(uid)
+        stack.extend(material_children(node))
+    return frozenset(uuids)
+
+
 def material_serialization(resource: Any) -> tuple[dict, dict]:
     """生成规范结构和状态；UUID 由调用方从对应实例读取。"""
     from pylabrobot.resources import Resource, Tip, TipSpot

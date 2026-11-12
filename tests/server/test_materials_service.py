@@ -621,3 +621,189 @@ def test_search_materials_by_name_returns_list(tmp_path) -> None:
         assert service.search_materials("missing-name") == []
     finally:
         service.close()
+
+
+def _typed_node(ref: str, resource_type: str, *, parent: str | None = None):
+    """按业务类型建节点；模板名随类型，由建树自动登记。"""
+
+    return MaterialNodeCreate(
+        client_ref=ref,
+        parent_client_ref=parent,
+        identity=MaterialIdentityWrite(
+            resource_id=f"resource-{ref}",
+            name=ref,
+            resource_type=resource_type,
+            class_name=resource_type.title().replace("_", ""),
+            template_name=f"{resource_type}-template",
+        ),
+        data=MaterialDataWrite(),
+    )
+
+
+def _tip_rack(service: MaterialsService):
+    """rack -> spot-1/spot-2 -> tip-1/tip-2，另挂一个非枪头的 tube。"""
+
+    created = service.create_tree(
+        _mutation("create_material_tree"),
+        MaterialTreeCreate(
+            nodes=[
+                _typed_node("rack", "tip_rack"),
+                _typed_node("spot-1", "tip_spot", parent="rack"),
+                _typed_node("tip-1", "tip", parent="spot-1"),
+                _typed_node("spot-2", "tip_spot", parent="rack"),
+                _typed_node("tip-2", "tip", parent="spot-2"),
+                _typed_node("tube", "container", parent="rack"),
+            ]
+        ),
+    )
+    return created.data.root_material_uuid, created.data.client_ref_map
+
+
+def _snapshot_with(base, updates):
+    nodes = []
+    for node in base.nodes:
+        update = updates.get(node.material.material_uuid)
+        nodes.append(update(node) if update is not None else node)
+    return MaterialSnapshot(root_material_uuid=base.root_material_uuid, nodes=nodes)
+
+
+def _retired(node):
+    return node.model_copy(
+        update={
+            "material": node.material.model_copy(
+                update={"lifecycle_status": "retired", "parent_material_uuid": None}
+            )
+        }
+    )
+
+
+def test_snapshot_retires_discarded_tip_with_the_rest_of_the_snapshot(tmp_path) -> None:
+    """被丢弃的枪头与同一快照里的其他变化在同一个写事务里落库：退役 = retired + 软删除。"""
+
+    from unilabos.server.services.materials import MaterialNotFoundError
+
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        root_uuid, ids = _tip_rack(service)
+        base = service.get_tree(root_uuid)
+        snapshot = _snapshot_with(
+            base,
+            {
+                ids["tip-1"]: _retired,
+                ids["spot-1"]: lambda node: node.model_copy(
+                    update={"data": node.data.model_copy(update={"data": {"emptied": True}})}
+                ),
+            },
+        )
+
+        diff = service.compare_snapshot(snapshot)
+        assert {(c.aggregate_uuid, c.section, tuple(c.changed_fields)) for c in diff.changes} == {
+            (ids["tip-1"], "identity", ("lifecycle_status", "parent_material_uuid")),
+            (ids["spot-1"], "data", ("data",)),
+        }
+
+        result = service.apply_snapshot(_mutation("apply_material_snapshot"), snapshot)
+
+        # 同一事务：两处变化共用一次 mutation 的账本区间
+        assert {item.aggregate_uuid for item in result.affected} == {ids["tip-1"], ids["spot-1"]}
+        tree_uuids = {node.material.material_uuid for node in result.data.nodes}
+        assert ids["tip-1"] not in tree_uuids
+        assert ids["tip-2"] in tree_uuids
+        spot_1 = next(n for n in result.data.nodes if n.material.material_uuid == ids["spot-1"])
+        assert spot_1.data.data == {"emptied": True}
+        with pytest.raises(MaterialNotFoundError):
+            service.get_material(ids["tip-1"])
+        assert [m.material.material_uuid for m in service.list_materials(roots_only=True)] == [root_uuid]
+
+        retire = [c for c in service.changes(limit=1000) if c.aggregate_uuid == ids["tip-1"]][-1]
+        assert retire.operation == "retire"
+        assert result.ledger_sequence_start <= retire.sequence <= result.ledger_sequence_end
+        assert retire.delta["lifecycle_status"] == "retired"
+        assert retire.delta["deleted"] is True
+        assert retire.delta["reason"] == "tip_discarded"
+        assert retire.delta["previous_lifecycle_status"] == "active"
+        assert retire.delta["parent_material_uuid"] == ids["spot-1"]
+
+        # 软删除不占 resource_id / 根名唯一索引：同名枪头可以再登记
+        again = service.create_tree(
+            _mutation("create_material_tree"),
+            MaterialTreeCreate(nodes=[_typed_node("tip-1", "tip")]),
+        )
+        assert again.data.root_material_uuid != ids["tip-1"]
+    finally:
+        service.close()
+
+
+def test_precondition_on_retired_tip_is_a_conflict_not_a_missing_reference(tmp_path) -> None:
+    """基线读取后枪头被另一次快照退役：旧基线的前置条件是版本冲突（调用方重读），不是找不到。"""
+
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        root_uuid, ids = _tip_rack(service)
+        stale = service.get_tree(root_uuid)
+        service.apply_snapshot(
+            _mutation("apply_material_snapshot"), _snapshot_with(stale, {ids["tip-1"]: _retired})
+        )
+        preconditions = [
+            AggregatePrecondition(
+                aggregate_type="material",
+                aggregate_uuid=node.material.material_uuid,
+                expected_version=node.material.version,
+            )
+            for node in stale.nodes
+        ]
+        with pytest.raises(MaterialConflictError, match="was deleted"):
+            service.apply_snapshot(
+                _mutation("apply_material_snapshot", preconditions=preconditions),
+                _snapshot_with(stale, {ids["tip-1"]: _retired}),
+            )
+    finally:
+        service.close()
+
+
+def test_snapshot_still_cannot_delete_other_materials_or_claimed_tips(tmp_path) -> None:
+    """快照退役只对被丢弃的枪头开放；其他类型照旧不能借快照删除。"""
+
+    from unilabos.protocol.materials import MaterialPatch
+    from unilabos.server.services.materials import MaterialValidationError
+
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        root_uuid, ids = _tip_rack(service)
+        base = service.get_tree(root_uuid)
+
+        with pytest.raises(MaterialValidationError, match="cannot create or delete"):
+            service.apply_snapshot(
+                _mutation("apply_material_snapshot"),
+                _snapshot_with(base, {ids["tube"]: _retired}),
+            )
+        with pytest.raises(MaterialValidationError, match="cannot change"):
+            service.apply_snapshot(
+                _mutation("apply_material_snapshot"),
+                _snapshot_with(
+                    base,
+                    {
+                        ids["tip-1"]: lambda node: _retired(node).model_copy(
+                            update={"position": MaterialPosition(position_x=1, position_y=2, position_z=3)}
+                        )
+                    },
+                ),
+            )
+
+        service.patch_material(
+            _mutation("patch_material"), ids["tip-2"], MaterialPatch(lifecycle_status="reserved")
+        )
+        base = service.get_tree(root_uuid)
+        with pytest.raises(MaterialConflictError, match="reserved"):
+            service.apply_snapshot(
+                _mutation("apply_material_snapshot"),
+                _snapshot_with(base, {ids["tip-2"]: _retired}),
+            )
+
+        after = service.get_tree(root_uuid)
+        assert {n.material.material_uuid for n in after.nodes} == set(ids.values())
+        assert all(
+            n.material.lifecycle_status != "retired" for n in after.nodes
+        )
+    finally:
+        service.close()

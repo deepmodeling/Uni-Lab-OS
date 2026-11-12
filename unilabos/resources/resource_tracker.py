@@ -18,7 +18,13 @@ from unilabos.resources.objects.resource import (
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
 from unilabos.resources.plr_additional_res_reg import register
-from unilabos.resources.plr_identity import material_children, material_serialization, prepare_plr_restore, restore_tip_counters
+from unilabos.resources.plr_identity import (
+    material_children,
+    material_serialization,
+    prepare_plr_restore,
+    restore_tip_counters,
+    runtime_material_uuids,
+)
 from unilabos.resources.objects.pose import (
     ResourceDictPositionObject,
     ResourceDictPositionSizeType,
@@ -903,6 +909,11 @@ class ResourceTreeSet(object):
         Raises:
             TypeError: 当传入不支持的类型时
         """
+        #: 运行时证据：生成本树集时设备仍持有的全部物料 UUID（见
+        #: ``plr_identity.runtime_material_uuids``）。只有 ``from_plr_resources``
+        #: 从运行时 PLR 实例序列化时才填写；``None`` 表示树集来自原始字典 / 权威读，
+        #: 不能据此判断某个结构孩子已从设备上消失。
+        self.runtime_material_uuids: Optional[frozenset[str]] = None
         if not resource_list:
             self.trees: List[ResourceTreeInstance] = []
         elif isinstance(resource_list[0], ResourceTreeInstance):
@@ -1198,7 +1209,11 @@ class ResourceTreeSet(object):
             )
             tree_instance = ResourceTreeInstance(root_instance)
             trees.append(tree_instance)
-        return cls(trees)
+        tree_set = cls(trees)
+        if not known_random_uuid:
+            # 创建草稿只是 client_ref，不是设备上报；只有已登记的运行时实例才记录证据
+            tree_set.runtime_material_uuids = runtime_material_uuids(resources)
+        return tree_set
 
     def to_plr_resources(self, skip_devices=True) -> List["PLRResource"]:
         """

@@ -68,6 +68,7 @@ from unilabos.protocol.materials import (
     ResourceTemplateWrite,
     SiteCreate,
     SiteRead,
+    snapshot_retirable,
 )
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
@@ -408,9 +409,21 @@ class MaterialsService(MaterialsRepository):
         self, preconditions: list[AggregatePrecondition]
     ) -> None:
         for condition in preconditions:
-            version, state_hash = self._aggregate_version_hash(
-                condition.aggregate_type, condition.aggregate_uuid
-            )
+            try:
+                version, state_hash = self._aggregate_version_hash(
+                    condition.aggregate_type, condition.aggregate_uuid
+                )
+            except MaterialNotFoundError:
+                # 读基线之后被软删除（delete / 快照退役枪头）：调用方的基线已过期，
+                # 是版本冲突而不是引用错误，调用方应重读后再算
+                if not self._aggregate_was_deleted(
+                    condition.aggregate_type, condition.aggregate_uuid
+                ):
+                    raise
+                raise MaterialConflictError(
+                    f"{condition.aggregate_type} {condition.aggregate_uuid} was deleted",
+                    conflict="state",
+                ) from None
             if condition.expected_version is not None and (
                 version != condition.expected_version
             ):
@@ -424,6 +437,17 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialConflictError(
                     f"{condition.aggregate_type} {condition.aggregate_uuid} state changed"
                 )
+
+    def _aggregate_was_deleted(self, aggregate_type: str, aggregate_uuid: str) -> bool:
+        """聚合曾存在、现已软删除（区别于从未存在的引用）。"""
+
+        if aggregate_type == "material":
+            record = MaterialsRepository.get_material(self, aggregate_uuid, include_deleted=True)
+        elif aggregate_type == "site":
+            record = self.get_site(aggregate_uuid, include_deleted=True)
+        else:
+            return False
+        return record is not None and record.deleted_at_ms is not None
 
     def _aggregate_version_hash(
         self, aggregate_type: str, aggregate_uuid: str
@@ -3054,6 +3078,184 @@ class MaterialsService(MaterialsRepository):
 
     # -- Delete / Snapshot ------------------------------------------------
 
+    def _release_sites(
+        self,
+        mutation: InventoryMutation,
+        sites: Mapping[str, SiteRecord],
+        *,
+        deleting: set[str],
+        timestamp: int,
+        affected: list[AggregateVersion],
+        sequences: list[int],
+    ) -> None:
+        """清空一组 Site 的占用；``deleting`` 中的 Site 随所属物料一起软删除。"""
+
+        self.clear_site_occupants(sorted(sites))
+        for site_uuid in sorted(sites):
+            current = sites[site_uuid]
+            removed = site_uuid in deleting
+            updated = SiteRecord.model_validate(
+                {
+                    **current.model_dump(mode="json"),
+                    "occupied_material_uuid": None,
+                    "changed_by_job_uuid": mutation.job_uuid,
+                    "changed_by_command_uuid": mutation.command_uuid,
+                    "changed_at_ms": timestamp,
+                    "updated_at_ms": timestamp,
+                    "deleted_at_ms": timestamp if removed else None,
+                    "version": current.version + 1,
+                }
+            )
+            self.update_site(updated)
+            state_hash = self._site_state_hash(updated)
+            affected.append(
+                AggregateVersion(
+                    aggregate_type="site",
+                    aggregate_uuid=site_uuid,
+                    version=updated.version,
+                    state_hash=state_hash,
+                )
+            )
+            sequences.append(
+                self._ledger(
+                    mutation,
+                    aggregate_type="site",
+                    aggregate_uuid=site_uuid,
+                    operation="delete" if removed else "vacate",
+                    previous_version=current.version,
+                    aggregate_version=updated.version,
+                    state_hash=state_hash,
+                    delta={
+                        "deleted": removed,
+                        "occupied_material_uuid": None,
+                    },
+                    timestamp=timestamp,
+                )
+            )
+
+    def _retire_material_record(
+        self,
+        mutation: InventoryMutation,
+        current: MaterialRecord,
+        *,
+        timestamp: int,
+        operation: str,
+        delta: dict[str, Any],
+        affected: list[AggregateVersion],
+        sequences: list[int],
+    ) -> None:
+        """物料退场：``lifecycle_status=retired`` 并软删除（保留记录、父节点与账本）。
+
+        显式 delete 与快照退役被丢弃的枪头共用这一种表示；退场后不再出现在
+        get/tree/list 读取里，单物料台账（``/materials/{uuid}/ledger``）仍可查。
+        """
+
+        updated = MaterialRecord.model_validate(
+            {
+                **current.model_dump(mode="json"),
+                "lifecycle_status": "retired",
+                "deleted_at_ms": timestamp,
+                "updated_at_ms": timestamp,
+                "version": current.version + 1,
+            }
+        )
+        self.update_material(updated)
+        position = self.get_position(current.material_uuid)
+        data = self.get_data(current.material_uuid)
+        if position is None or data is None:
+            raise MaterialValidationError("material aggregate is incomplete")
+        identity = self._identity_read(updated)
+        position_read = self._position_read(position)
+        data_read = self._data_read(data)
+        state_hash = self._material_state_hash(identity, position_read, data_read)
+        affected.append(
+            AggregateVersion(
+                aggregate_type="material",
+                aggregate_uuid=current.material_uuid,
+                version=updated.version,
+                state_hash=state_hash,
+            )
+        )
+        sequences.append(
+            self._ledger(
+                mutation,
+                aggregate_type="material",
+                aggregate_uuid=current.material_uuid,
+                operation=operation,
+                previous_version=current.version,
+                aggregate_version=updated.version,
+                state_hash=state_hash,
+                delta=delta,
+                timestamp=timestamp,
+            )
+        )
+
+    #: 快照可以退役的枪头当前状态：预留中（等待作业消费）、隔离、已消耗的枪头不由设备快照改写。
+    _SNAPSHOT_RETIRE_FROM = frozenset({"active", "in_use", "retired"})
+
+    @classmethod
+    def _snapshot_retirements(
+        cls,
+        root_material_uuid: str,
+        current_nodes: Mapping[str, MaterialAggregateRead],
+        desired_nodes: Mapping[str, MaterialAggregateRead],
+        changes_by_material: Mapping[str, Mapping[str, set[str]]],
+    ) -> set[str]:
+        """快照中要随本次快照退役的、被设备丢弃的枪头。
+
+        快照以 ``lifecycle_status="retired"`` + ``parent_material_uuid=None`` 表达“这支
+        枪头已从父节点的运行时结构中消失”。只有可由快照退役的类型（枪头）能这样写；
+        其他类型这样写等同借快照删除物料，拒绝。
+        """
+
+        retiring: set[str] = set()
+        for material_uuid, desired in desired_nodes.items():
+            current = current_nodes[material_uuid]
+            if (
+                material_uuid == root_material_uuid
+                or desired.material.lifecycle_status != "retired"
+                or desired.material.parent_material_uuid is not None
+                or current.material.parent_material_uuid is None
+            ):
+                continue
+            if not snapshot_retirable(current.material.resource_type):
+                raise MaterialValidationError(
+                    "snapshot cannot create or delete material/site aggregates; "
+                    f"only discarded tips can be retired (material {material_uuid} is "
+                    f"{current.material.resource_type!r})"
+                )
+            if current.material.lifecycle_status not in cls._SNAPSHOT_RETIRE_FROM:
+                raise MaterialConflictError(
+                    f"tip {material_uuid} is {current.material.lifecycle_status}, "
+                    "cannot be retired by a device snapshot",
+                    conflict="state",
+                )
+            sections = changes_by_material.get(material_uuid, {})
+            extra_fields = {
+                field
+                for section, fields in sections.items()
+                for field in (fields if section == "identity" else {section})
+            } - {"lifecycle_status", "parent_material_uuid"}
+            if extra_fields:
+                raise MaterialValidationError(
+                    f"retiring tip {material_uuid} cannot change {sorted(extra_fields)}"
+                )
+            if current.sites:
+                raise MaterialValidationError(
+                    f"retiring tip {material_uuid} cannot own sites"
+                )
+            retiring.add(material_uuid)
+        for material_uuid, desired in desired_nodes.items():
+            if (
+                material_uuid not in retiring
+                and desired.material.parent_material_uuid in retiring
+            ):
+                raise MaterialValidationError(
+                    f"material {material_uuid} is still a child of retiring tip "
+                    f"{desired.material.parent_material_uuid}"
+                )
+        return retiring
+
     def delete_material(
         self, mutation: InventoryMutation, value: MaterialDelete
     ) -> MutationResult[MaterialDeleteResult]:
@@ -3081,95 +3283,28 @@ class MaterialsService(MaterialsRepository):
                 for site in self.sites_occupied_by(material_uuids)
             }
             changed_sites = {**occupied_sites, **owned_sites}
-            self.clear_site_occupants(sorted(changed_sites))
             # 拓扑边随节点退场：边不是 ledger 聚合，事务内物理清理即可。
             self.delete_links_for_materials(material_uuids)
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
-            for site_uuid in sorted(changed_sites):
-                current = changed_sites[site_uuid]
-                deleting = site_uuid in owned_sites
-                updated = SiteRecord.model_validate(
-                    {
-                        **current.model_dump(mode="json"),
-                        "occupied_material_uuid": None,
-                        "changed_by_job_uuid": mutation.job_uuid,
-                        "changed_by_command_uuid": mutation.command_uuid,
-                        "changed_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "deleted_at_ms": timestamp if deleting else None,
-                        "version": current.version + 1,
-                    }
-                )
-                self.update_site(updated)
-                state_hash = self._site_state_hash(updated)
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="site",
-                        aggregate_uuid=site_uuid,
-                        version=updated.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="site",
-                        aggregate_uuid=site_uuid,
-                        operation="delete" if deleting else "vacate",
-                        previous_version=current.version,
-                        aggregate_version=updated.version,
-                        state_hash=state_hash,
-                        delta={
-                            "deleted": deleting,
-                            "occupied_material_uuid": None,
-                        },
-                        timestamp=timestamp,
-                    )
-                )
-
+            self._release_sites(
+                mutation,
+                changed_sites,
+                deleting=set(owned_sites),
+                timestamp=timestamp,
+                affected=affected,
+                sequences=sequences,
+            )
             for current in reversed(records):
-                updated = MaterialRecord.model_validate(
-                    {
-                        **current.model_dump(mode="json"),
-                        "lifecycle_status": "retired",
-                        "deleted_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "version": current.version + 1,
-                    }
-                )
-                self.update_material(updated)
-                position = self.get_position(current.material_uuid)
-                data = self.get_data(current.material_uuid)
-                if position is None or data is None:
-                    raise MaterialValidationError("material aggregate is incomplete")
-                identity = self._identity_read(updated)
-                position_read = self._position_read(position)
-                data_read = self._data_read(data)
-                state_hash = self._material_state_hash(
-                    identity, position_read, data_read
-                )
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="material",
-                        aggregate_uuid=current.material_uuid,
-                        version=updated.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="material",
-                        aggregate_uuid=current.material_uuid,
-                        operation="delete",
-                        previous_version=current.version,
-                        aggregate_version=updated.version,
-                        state_hash=state_hash,
-                        delta={"lifecycle_status": "retired", "deleted": True},
-                        timestamp=timestamp,
-                    )
+                self._retire_material_record(
+                    mutation,
+                    current,
+                    timestamp=timestamp,
+                    operation="delete",
+                    delta={"lifecycle_status": "retired", "deleted": True},
+                    affected=affected,
+                    sequences=sequences,
                 )
             return _Applied(
                 MaterialDeleteResult(
@@ -3199,6 +3334,11 @@ class MaterialsService(MaterialsRepository):
 
         快照只更新既有聚合。新增树走 ``create_tree``，删除走显式 delete；这样
         不会把一次设备状态上报误解释成库存创建或销毁。
+
+        唯一例外是被设备丢弃的枪头：快照节点写成 ``lifecycle_status="retired"`` +
+        ``parent_material_uuid=None`` 时（规则见 ``_snapshot_retirements``），该枪头在
+        同一事务内退役，表示与显式 delete 相同（retired + 软删除，保留记录与账本），
+        账本操作记为 ``retire``。
         """
 
         if mutation.operation != "apply_material_snapshot":
@@ -3231,12 +3371,16 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialValidationError("snapshot material set differs")
 
             changes_by_material: dict[str, set[str]] = {}
+            changed_fields: dict[str, dict[str, set[str]]] = {}
             changed_site_uuids: set[str] = set()
             for change in diff.changes:
                 if change.aggregate_type == "material":
                     changes_by_material.setdefault(change.aggregate_uuid, set()).add(
                         change.section
                     )
+                    changed_fields.setdefault(change.aggregate_uuid, {}).setdefault(
+                        change.section, set()
+                    ).update(change.changed_fields)
                 else:
                     changed_site_uuids.add(change.aggregate_uuid)
 
@@ -3286,12 +3430,28 @@ class MaterialsService(MaterialsRepository):
                         "snapshot cannot change Site owner_material_uuid"
                     )
 
+            retiring = self._snapshot_retirements(
+                value.root_material_uuid, current_nodes, desired_nodes, changed_fields
+            )
+            # 退役枪头占用的 Site：本树内的必须由快照自己清空；树外的随退役一起清空
+            outside_sites: dict[str, SiteRecord] = {}
+            for site in self.sites_occupied_by(sorted(retiring)):
+                if site.site_uuid in desired_sites:
+                    if desired_sites[site.site_uuid].occupied_material_uuid in retiring:
+                        raise MaterialValidationError(
+                            f"Site {site.site_uuid} is still occupied by a retiring tip"
+                        )
+                else:
+                    outside_sites[site.site_uuid] = site
+
             # 先清空将变化的占用关系，随后改 parent，最后恢复新的占用关系。
             # 整个过程在同一事务内，对读者不可见，Site 也只增长一个版本。
             self.clear_site_occupants(sorted(changed_site_uuids))
 
             changed_material_records: dict[str, tuple[MaterialRecord, MaterialRecord]] = {}
             for material_uuid, sections in changes_by_material.items():
+                if material_uuid in retiring:
+                    continue
                 desired_node = desired_nodes[material_uuid]
                 current_record = MaterialsRepository.get_material(self, material_uuid)
                 current_position = self.get_position(material_uuid)
@@ -3433,6 +3593,39 @@ class MaterialsService(MaterialsRepository):
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
+            if retiring:
+                # 被丢弃的枪头随同一快照退役：与显式 delete 同一种表示，账本记为 retire
+                self.delete_links_for_materials(sorted(retiring))
+                self._release_sites(
+                    mutation,
+                    outside_sites,
+                    deleting=set(),
+                    timestamp=timestamp,
+                    affected=affected,
+                    sequences=sequences,
+                )
+                for material_uuid in sorted(retiring):
+                    current_record = MaterialsRepository.get_material(self, material_uuid)
+                    if current_record is None:
+                        raise MaterialNotFoundError(
+                            f"material not found: {material_uuid}", subject="material"
+                        )
+                    self._retire_material_record(
+                        mutation,
+                        current_record,
+                        timestamp=timestamp,
+                        operation="retire",
+                        delta={
+                            "lifecycle_status": "retired",
+                            "deleted": True,
+                            "reason": "tip_discarded",
+                            "previous_lifecycle_status": current_record.lifecycle_status,
+                            "parent_material_uuid": current_record.parent_material_uuid,
+                            "observed_state_hash": diff.observed_state_hash,
+                        },
+                        affected=affected,
+                        sequences=sequences,
+                    )
             for material_uuid, (before, after) in changed_material_records.items():
                 aggregate = self._aggregate(material_uuid)
                 affected.append(

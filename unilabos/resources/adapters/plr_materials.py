@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Protocol, Sequence
+from typing import Any, Collection, Mapping, Optional, Protocol, Sequence
 
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children, material_serialization
-from unilabos.protocol.materials import InventoryMutation, MutationResult
+from unilabos.protocol.materials import InventoryMutation, MutationResult, snapshot_retirable
 from unilabos.protocol.materials import (
     MaterialAggregateRead,
     MaterialDataDelta,
@@ -422,11 +422,41 @@ class SnapshotUuidMismatchError(ValueError):
     """
 
 
+def discarded_tip_uuids(
+    runtime_uuids: Collection[str],
+    base: MaterialTreeRead,
+    runtime_material_uuids: Optional[Collection[str]],
+) -> set[str]:
+    """权威基线里已被设备丢弃的枪头。
+
+    规则（同时满足）：权威节点的 ``resource_type`` 可由快照退役（枪头）；它的权威
+    父节点在本次上报里（父节点的运行时结构孩子是完整的）；它本身既不在上报里，
+    也不在设备运行时仍持有的物料中（``runtime_material_uuids``）。
+
+    ``runtime_material_uuids`` 为 ``None`` 表示上报不是从运行时 PLR 实例序列化来的
+    （原始字典、权威读回的树），缺席不能证明丢弃，一律不退役。未上报父节点下的
+    缺席节点（``allow_partial`` 的局部上报）同样不退役。
+    """
+
+    if runtime_material_uuids is None:
+        return set()
+    return {
+        node.material.material_uuid
+        for node in base.nodes
+        if snapshot_retirable(node.material.resource_type)
+        and node.material.material_uuid != base.root_material_uuid
+        and node.material.parent_material_uuid in runtime_uuids
+        and node.material.material_uuid not in runtime_uuids
+        and node.material.material_uuid not in runtime_material_uuids
+    }
+
+
 def resource_tree_to_snapshot(
     value: ResourceTreeSet | Sequence[Any],
     base: MaterialTreeRead,
     *,
     allow_partial: bool = False,
+    runtime_material_uuids: Optional[Collection[str]] = None,
 ) -> MaterialSnapshot:
     """用运行时资源覆盖下载基线。
 
@@ -436,8 +466,15 @@ def resource_tree_to_snapshot(
 
     ``allow_partial`` 用于设备仅上报孔位或子树的场景；未上报的权威节点保持
     不变。无论是否局部更新，运行时都不能夹带权威树之外的 UUID。
+
+    唯一的结构缺席例外是被丢弃的枪头（规则见 :func:`discarded_tip_uuids`）：快照把
+    它写成 ``lifecycle_status="retired"``、``parent_material_uuid=None``，由权威在同一
+    事务内退役。``runtime_material_uuids`` 缺省取 ``ResourceTreeSet`` 自带的运行时
+    证据；序列输入必须由调用方显式传入，否则不推断丢弃。
     """
 
+    if runtime_material_uuids is None and isinstance(value, ResourceTreeSet):
+        runtime_material_uuids = value.runtime_material_uuids
     resources = (
         [item.res_content for item in value.all_nodes]
         if isinstance(value, ResourceTreeSet)
@@ -451,13 +488,21 @@ def resource_tree_to_snapshot(
         raise SnapshotUuidMismatchError(
             "runtime tree contains material UUIDs outside downloaded tree"
         )
-    if not allow_partial and runtime.keys() != authoritative_uuids:
+    discarded = discarded_tip_uuids(runtime.keys(), base, runtime_material_uuids)
+    if not allow_partial and runtime.keys() | discarded != authoritative_uuids:
         raise SnapshotUuidMismatchError(
             "runtime tree does not match downloaded material UUID set"
         )
     nodes: list[MaterialAggregateRead] = []
     for node in base.nodes:
         resource = runtime.get(node.material.material_uuid)
+        if node.material.material_uuid in discarded:
+            retired = node.model_copy(deep=True)
+            retired.material = retired.material.model_copy(
+                update={"lifecycle_status": "retired", "parent_material_uuid": None}
+            )
+            nodes.append(retired)
+            continue
         if resource is None:
             nodes.append(node.model_copy(deep=True))
             continue
@@ -596,6 +641,7 @@ __all__ = [
     "MaterialGateway",
     "SUBSTANCE_METADATA_EXTRA",
     "create_plr_materials",
+    "discarded_tip_uuids",
     "material_tree_to_plr_resources",
     "material_tree_to_resource_tree",
     "plr_resources_to_create",

@@ -753,6 +753,19 @@ class MaterialSnapshot(ServerObject):
     state_hash: Optional[NonEmptyStr] = None
 
 
+#: 快照唯一可以退役的物料类型。设备丢弃的枪头从父节点的运行时结构中消失；
+#: 快照把该节点写成 ``lifecycle_status="retired"`` 且 ``parent_material_uuid=None``，
+#: 权威在同一写事务内将其退役（软删除：保留记录与账本）。其他类型仍不能借快照
+#: 创建或删除。
+SNAPSHOT_RETIRABLE_RESOURCE_TYPES = frozenset({"tip"})
+
+
+def snapshot_retirable(resource_type: str) -> bool:
+    """该业务类型的物料能否由设备快照退役（目前只有被丢弃的枪头）。"""
+
+    return str(resource_type or "").casefold() in SNAPSHOT_RETIRABLE_RESOURCE_TYPES
+
+
 class MaterialSnapshotChange(ServerObject):
     aggregate_type: Literal["material", "site"]
     aggregate_uuid: NonEmptyStr
@@ -918,5 +931,7 @@ __all__ = [
     "SiteDelta",
     "SiteRead",
     "SiteWrite",
+    "SNAPSHOT_RETIRABLE_RESOURCE_TYPES",
     "SUBSTANCE_CHEMICAL_FIELDS",
+    "snapshot_retirable",
 ]

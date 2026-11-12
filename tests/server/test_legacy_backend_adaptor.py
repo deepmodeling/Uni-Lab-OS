@@ -827,6 +827,20 @@ def test_material_mirror_incremental_sync_groups_by_root_and_discards(monkeypatc
     assert mirror.sync_once() == 0
 
 
+def test_material_mirror_discards_tips_retired_by_device_snapshot(monkeypatch):
+    """快照退役的枪头（账本 retire）与显式 delete 一样上报旧后端废弃，不按根树重发。"""
+
+    session = _Session({("POST", "/edge/material/bench/discard"): _Response(200, {"code": 0})})
+    client = LegacyBackendHTTPClient("https://legacy.example", session=session)
+    gateway = _Gateway()
+    mirror = LegacyMaterialMirror(client=client, gateway=gateway)
+    gateway.ledger = [
+        SimpleNamespace(sequence=1, aggregate_type="material", aggregate_uuid="tip-1", operation="retire"),
+    ]
+    assert mirror.sync_once() == 1
+    assert [c[:2] for c in session.calls] == [("POST", "/edge/material/bench/discard")]
+
+
 def test_material_mirror_backfills_authority_templates_and_uses_template_as_class(monkeypatch):
     """运行期在权威登记的模板不在 Edge Registry 里：先补报模板，节点 class 取模板名。"""
 

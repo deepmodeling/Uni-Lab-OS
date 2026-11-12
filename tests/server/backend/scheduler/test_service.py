@@ -9,6 +9,14 @@ from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState
 from unilabos.server.backend.scheduler.service import BackendScheduler, allocation_arguments
 from unilabos.server.services.runtime.workflow.store import WorkflowStore
 
+# 这些模块在顶层 ``from ...execution_claim import ExecutionClaims``，而 BackendScheduler 只在
+# 运行时才惰性导入它们。若首次导入发生在下方 autouse 夹具的 monkeypatch 生效期间，模块会把
+# Mock 工厂永久绑定为 ExecutionClaims，污染之后所有用真实调度器的测试（CI 按
+# tests/server 顺序运行时稳定复现）。在打补丁前先导入，确保它们绑定真实类。
+import unilabos.server.backend.scheduler.attempt_inventory  # noqa: E402,F401
+import unilabos.server.backend.scheduler.inventory_recovery  # noqa: E402,F401
+import unilabos.server.backend.scheduler.physical_recovery  # noqa: E402,F401
+
 
 @pytest.fixture(autouse=True)
 def isolated_claim_storage(monkeypatch):

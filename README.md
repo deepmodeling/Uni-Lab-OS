@@ -31,7 +31,7 @@ Detailed documentation can be found at:
 
 ## Supported Runtime
 
-The default installation and runtime are **Python 3.12 + NumPy 2 + HostLink,
+The default installation and runtime are **Python 3.14 + NumPy 2 + HostLink,
 without ROS**. ROS 2 Jazzy/Humble remain explicit optional backends. Ordinary
 Python drivers, Host/Slave, Workstation/sub-devices, materials, workflows,
 HTTP/WS APIs and MCP do not require ROS. MoveIt, RViz and ROS-native drivers or
@@ -57,17 +57,17 @@ unilab --disable-browser
 ```
 
 Alternatively, extract the platform-specific companion wheel bundle and run
-`python install_wheel_release.py` with Python 3.12. It creates a new environment,
+`python install_wheel_release.py` with Python 3.14. It creates a new environment,
 installs all default dependencies offline and verifies an Opentrons 96-well plate.
 The patched Opentrons and pinned PLR wheels are release assets, not PyPI uploads.
 Bare `pip install unilabos` against PyPI cannot discover these companion wheels;
 use the installer or `--find-links <bundle>/wheelhouse`. Source development uses
 the helper above to build them first. See the [installation guide](docs/user_guide/installation.md).
 
-For the **0.12.3+ default Conda package**, once published:
+For the **0.12.4+ default Conda package**, once published:
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 mamba activate unilab
 unilab --disable-browser
 ```

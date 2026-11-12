@@ -34,8 +34,8 @@ extras = {
 
 setup(
     name=package_name,
-    python_requires='>=3.12,<3.15',
-    version='0.12.3',
+    python_requires='>=3.14,<3.15',
+    version='0.12.4',
     packages=[
         name for name in find_namespace_packages(
             include=['unilabos', 'unilabos.*'],

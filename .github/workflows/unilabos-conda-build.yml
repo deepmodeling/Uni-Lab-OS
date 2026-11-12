@@ -1,6 +1,14 @@
 name: UniLabOS Conda Build
 
 on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.conda/**'
+      - 'recipes/**'
+      - 'scripts/build_conda_release.py'
+      - '.github/workflows/unilabos-conda-build.yml'
+      - 'setup.py'
   # 默认发行链与 ROS msgs 脱钩；dev CI 仅构建验证，正式 Release 才自动发布。
   workflow_run:
     workflows: ["CI Check"]
@@ -51,7 +59,7 @@ jobs:
         id: source
         uses: actions/github-script@v8
         env:
-          REQUESTED_REF: ${{ inputs.source_ref || github.event.release.tag_name }}
+          REQUESTED_REF: ${{ inputs.source_ref || github.event.release.tag_name || github.event.pull_request.head.sha }}
         with:
           script: |
             core.setOutput("should_continue", "false");
@@ -92,8 +100,8 @@ jobs:
       run:
         shell: bash -l {0}
     env:
-      ROS_DISTROS: ${{ inputs.ros_distros }}
-      BUILD_FULL: ${{ inputs.build_full == true }}
+      ROS_DISTROS: ${{ github.event_name == 'pull_request' && 'jazzy,humble' || inputs.ros_distros }}
+      BUILD_FULL: ${{ github.event_name == 'pull_request' || inputs.build_full == true }}
       EXTENSIONS_ONLY: ${{ inputs.extensions_only == true }}
       PYTHONUTF8: '1'
       ANACONDA_CLIENT_FORCE_STANDALONE: '1'
@@ -117,7 +125,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge
           channel-priority: strict
           activate-environment: build-env
@@ -137,7 +145,7 @@ jobs:
           extra=()
           if [[ "$BUILD_FULL" == "true" ]]; then extra+=(--full); fi
           if [[ "$EXTENSIONS_ONLY" == "true" ]]; then extra+=(--extensions-only); fi
-          python scripts/build_conda_release.py build --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" "${extra[@]}"
+          python scripts/build_conda_release.py build --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" --output-dir "$RUNNER_TEMP/c" "${extra[@]}"
       - name: Upload packages after successful tests
         if: steps.should_build.outputs.should_build == 'true' && (github.event_name == 'release' || inputs.upload_to_anaconda == true)
         env:
@@ -146,7 +154,7 @@ jobs:
           extra=()
           if [[ "$BUILD_FULL" == "true" ]]; then extra+=(--full); fi
           if [[ "$EXTENSIONS_ONLY" == "true" ]]; then extra+=(--extensions-only); fi
-          python scripts/build_conda_release.py upload --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" "${extra[@]}"
+          python scripts/build_conda_release.py upload --platform "${{ matrix.platform }}" --ros-distros "$ROS_DISTROS" --output-dir "$RUNNER_TEMP/c" "${extra[@]}"
       - uses: actions/upload-artifact@v6
         if: steps.should_build.outputs.should_build == 'true'
         with:

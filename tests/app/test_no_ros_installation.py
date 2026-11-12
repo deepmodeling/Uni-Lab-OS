@@ -54,19 +54,21 @@ def test_module_entrypoint_help_without_ros(module):
                + repr(module) + ", run_name='__main__')\n")
 
 
-@pytest.mark.parametrize("minor,backend,expected", [
-    (12, "hostlink", True), (13, "hostlink", True), (14, "hostlink", True),
-    (11, "hostlink", False), (15, "hostlink", False),
-    (12, "ros2", True), (14, "ros2", False),
+@pytest.mark.parametrize("minor,gil_disabled,expected", [
+    (14, 0, True), (14, 1, False),
+    (12, 0, False), (13, 0, False), (15, 0, False),
 ])
-def test_installation_python_version_boundary(monkeypatch, minor, backend, expected):
+def test_installation_python_version_boundary(monkeypatch, minor, gil_disabled, expected):
+    """HostLink 与 ROS 2 统一只接受普通 CPython 3.14。"""
     from types import SimpleNamespace
     from scripts import verify_installation as verifier
 
     monkeypatch.setattr(verifier, "sys", SimpleNamespace(
         version_info=SimpleNamespace(major=3, minor=minor, micro=0),
     ))
-    assert verifier.check_python_version(backend) is expected
+    monkeypatch.setattr(verifier.sysconfig, "get_config_var",
+                        lambda name: gil_disabled if name == "Py_GIL_DISABLED" else None)
+    assert verifier.check_python_version() is expected
 
 
 @pytest.mark.parametrize("backend_args", [[], ["--backend", "hostlink"], ["--backend", "ros2"]])
@@ -91,7 +93,9 @@ class Counter:
 def test_conda_build_default_has_no_ros_channels():
     from scripts.build_conda_release import FULL_SUPPORT_RECIPES, recipes
 
-    assert recipes() == [(name, []) for name in ("msgcenterpy", "pylabrobot", "mcp", "base")]
+    assert recipes() == [(name, []) for name in (
+        "opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base"
+    )]
     assert recipes("jazzy")[-1] == ("ros2", ["robostack-jazzy"])
     with pytest.raises(ValueError, match="显式"):
         recipes(full=True)
@@ -99,6 +103,7 @@ def test_conda_build_default_has_no_ros_channels():
         recipes(extensions_only=True)
     assert recipes("jazzy", full=True, extensions_only=True) == [
         *((name, []) for name in FULL_SUPPORT_RECIPES),
+        ("msgs", ["robostack-jazzy"]),
         ("ros2", ["robostack-jazzy"]), ("full", ["robostack-jazzy"]),
     ]
 
@@ -106,7 +111,7 @@ def test_conda_build_default_has_no_ros_channels():
 def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_path):
     from scripts import build_conda_release
 
-    for name in ("unilabos-0.12.3-py312_0.conda", "unilabos-full-0.12.3-jazzy_0.conda"):
+    for name in ("unilabos-0.12.4-py314_0.conda", "unilabos-full-0.12.4-jazzy_0.conda"):
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
@@ -122,7 +127,19 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
                         lambda command, **kw: uploads.append(Path(command[-1]).name)
                         or subprocess.CompletedProcess(command, 0))
     build_conda_release.main()
-    assert uploads == [support.name, "unilabos-full-0.12.3-jazzy_0.conda"]
+    assert uploads == [support.name, "unilabos-full-0.12.4-jazzy_0.conda"]
+
+
+def test_conda_abi_upgrade_builds_message_packages_before_consumers():
+    """消息扩展不能靠频道中尚不存在或 ABI 不同的产物通过求解。"""
+    from scripts.build_conda_release import EXTERNAL_RECIPES, recipes
+
+    ordered = [name for name, _ in recipes("jazzy,humble", full=True)]
+    assert ordered.index("opentrons-shared-data") < ordered.index("pylabrobot")
+    for suffix in ("", "-humble"):
+        assert ordered.index(f"msgs{suffix}") < ordered.index(f"ros2{suffix}")
+        assert ordered.index(f"ros2{suffix}") < ordered.index(f"full{suffix}")
+        assert (Path(__file__).resolve().parents[2] / EXTERNAL_RECIPES[f"msgs{suffix}"]).is_file()
 
 
 def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypatch, tmp_path):
@@ -130,8 +147,8 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
 
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
-        "win-64/mcp-1.30.0-py312_0.conda": True,
-        "win-64/unilabos-0.12.3-py312_0.conda": False,
+        "win-64/mcp-1.30.0-py314_0.conda": True,
+        "win-64/unilabos-0.12.4-py314_0.conda": False,
     }
     for name in packages:
         package = tmp_path / name
@@ -391,9 +408,13 @@ def test_full_conda_support_packages_and_closed_dependency_validation():
         assert {"if": "win", "then": "pyautogui >=0.9.54"} in dependencies
         assert any(test.get("python", {}).get("pip_check") is True for test in full["tests"])
         commands = next(test["script"] for test in full["tests"] if "script" in test)
-        assert commands[0]["if"] == "win"
-        assert all("%USERPROFILE%\\AppData\\" in command for command in commands[0]["then"])
-        assert "import rinoh_typeface_dejavuserif" in commands[1]
+        windows = next(command for command in commands if isinstance(command, dict) and command.get("if") == "win")
+        assert all("%USERPROFILE%\\AppData\\" in command for command in windows["then"])
+        assert any("import rinoh_typeface_dejavuserif" in command for command in commands if isinstance(command, str))
+        assert "patch_rclpy_dll_windows" in commands[0]
+        validation = next(command for command in commands if isinstance(command, str) and "reqs =" in command)
+        assert "['ruff', '--version']" in validation
+        assert "r.specifier.contains" in validation
 
 
 def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp_path):

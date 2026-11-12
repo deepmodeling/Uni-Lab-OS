@@ -1,20 +1,24 @@
 # 运行时与 ABI 基线
 
-从 0.12.3 起，默认安装、运行、Conda 发布和离线包都采用无 ROS 的 HostLink。
+当前源码基线为普通 CPython 3.14（`cp314`），保留 GIL；不是自由线程
+`cp314t`。Jazzy 使用 mutex `0.20.*`，Humble 使用 `0.11.*`。升级时创建新环境，
+并重新构建对应发行版的 `unilabos_msgs`，不要复用旧 cp312 原生扩展。
+
+从 0.12.4 起，默认安装、运行、Conda 发布和离线包都采用无 ROS 的 HostLink。
 旧版 0.12.2 的已发布包不覆盖；新版本发布前可从当前源码安装。
 
 ## 支持矩阵
 
 | 组件 | 默认 HostLink | 显式 ROS2 Jazzy | 显式 ROS2 Humble |
 | --- | --- | --- | --- |
-| Python | >=3.12,<3.13（构建解释器 3.12.13） | 3.12.13（cp312） | 3.12.13（cp312） |
+| Python | >=3.14,<3.15（构建解释器 3.14.10） | 3.14.10（cp314） | 3.14.10（cp314） |
 | NumPy | >=2,<3 | >=2,<3 | >=2,<3 |
-| 入口包 | unilabos | unilabos-ros2，jazzy_0 | unilabos-ros2，humble_0 |
-| 核心应用构建 | py312_0 | 同一核心包 | 同一核心包 |
+| 入口包 | unilabos | unilabos-ros2，jazzy_1 | unilabos-ros2，humble_1 |
+| 核心应用构建 | py314_0 | 同一核心包 | 同一核心包 |
 | 环境依赖 | 默认包直接声明 | 默认依赖加 ROS 扩展 | 默认依赖加 ROS 扩展 |
 | RoboStack channel | 不需要 | robostack-jazzy | robostack-humble |
-| distro mutex | 不需要 | 0.15.* / jazzy_* | 0.9.* / humble_* |
-| UniLabOS 消息包 | 不需要 | ros-jazzy-unilabos-msgs 0.12.1 | ros-humble-unilabos-msgs 0.12.1 |
+| distro mutex | 不需要 | 0.20.* / jazzy_* | 0.11.* / humble_* |
+| UniLabOS 消息包 | 不需要 | ros-jazzy-unilabos-msgs 0.12.2 | ros-humble-unilabos-msgs 0.12.2 |
 | 启动选择 | 不传 backend 或 --backend hostlink | --backend ros2 | --backend ros2 |
 
 Python 核心应用不再按 ROS 发行版重复打包。ROS2 包只是显式选装扩展，
@@ -41,7 +45,7 @@ Workstation/sub-device 初始化，以及 Host/Slave 跨进程和跨机器通信
 完整命令见[安装指南](installation.md)。默认不添加 RoboStack channel：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 mamba activate unilab
 unilab --disable-browser
 ```
@@ -50,7 +54,7 @@ unilab --disable-browser
 并在运行时显式传 `--backend ros2`。`unilabos-full` 仍是可选桌面/仿真套件。
 
 保留旧环境以便复现实验，不要直接删除 ROS 包、复制旧 site-packages 或在
-Humble/Jazzy 间原地切换。旧 Python 3.11、NumPy 1 消息扩展不能混入 cp312/NumPy 2 环境。
+Humble/Jazzy 间原地切换。旧 Python 3.11、NumPy 1 消息扩展不能混入 cp314/NumPy 2 环境。
 
 ## Windows DLL 兼容
 

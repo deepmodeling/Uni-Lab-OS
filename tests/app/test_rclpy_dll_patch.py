@@ -69,7 +69,7 @@ def test_supported_distros_apply_same_patch_after_dll_load_failure(
     rpyutils_dll.parent.mkdir(parents=True)
     rclpy_impl.write_text("ORIGINAL_RCLPY = True\n", encoding="utf-8")
     rpyutils_dll.write_text("ORIGINAL_RPYUTILS = True\n", encoding="utf-8")
-    (rclpy_dir / "_rclpy_pybind11.cp312-win_amd64.pyd").write_bytes(b"")
+    (rclpy_dir / "_rclpy_pybind11.cp314-win_amd64.pyd").write_bytes(b"")
 
     original_import = builtins.__import__
 

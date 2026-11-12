@@ -7,16 +7,16 @@ source:
   sha256: 076f7dbbd0201b0d44f4c77e4f7070474e1365152dc8509b5cded04c1648308a
 build:
   noarch: python
-  number: 0
+  number: 1
   script: python -m pip install . --no-deps --no-build-isolation
 requirements:
   host:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - pip
     - setuptools >=68
     - wheel
   run:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - rinohtype >=0.5.4
 tests:
   # 单个字体构建时其余字体尚未构建；这里验证字体数据和入口，full 再验证完整依赖闭环。

@@ -1,6 +1,6 @@
 package:
   name: ros-humble-unilabos-msgs
-  version: 0.12.1
+  version: 0.12.2
 source:
   path: ../../unilabos_msgs
   folder: ros-humble-unilabos-msgs/src/work
@@ -9,7 +9,7 @@ build:
   script:
     sel(win): bld_ament_cmake.bat
     sel(unix): build_ament_cmake.sh
-  number: 0
+  number: 1
 about:
   home: https://www.ros.org/
   license: BSD-3-Clause
@@ -38,8 +38,8 @@ requirements:
     - sel(build_platform != target_platform): cross-python_{{ target_platform }}
     - sel(build_platform != target_platform): numpy
   host:
-    - python ==3.12.13
-    - python_abi 3.12.* *_cp312
+    - python ==3.14.10
+    - python_abi 3.14.* *_cp314
     - numpy >=2,<3
     - pip
     - sel(build_platform == target_platform): pkg-config
@@ -52,15 +52,15 @@ requirements:
     - robostack-humble::ros-humble-rosidl-default-generators
     - robostack-humble::ros-humble-std-msgs
     - robostack-humble::ros-humble-geometry-msgs
-    - robostack-humble::ros2-distro-mutex=0.9.*
+    - robostack-humble::ros2-distro-mutex=0.11.*
   run:
-    - python >=3.12,<3.13
-    - python_abi 3.12.* *_cp312
+    - python >=3.14,<3.15
+    - python_abi 3.14.* *_cp314
     - numpy >=2,<3
     - robostack-humble::ros-humble-action-msgs
     - robostack-humble::ros-humble-ros-workspace
     - robostack-humble::ros-humble-rosidl-default-runtime
     - robostack-humble::ros-humble-std-msgs
     - robostack-humble::ros-humble-geometry-msgs
-    - robostack-humble::ros2-distro-mutex=0.9.*
+    - robostack-humble::ros2-distro-mutex=0.11.*
     - sel(osx and x86_64): __osx >={{ MACOSX_DEPLOYMENT_TARGET|default('10.14') }}

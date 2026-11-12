@@ -3,16 +3,16 @@
 
 package:
   name: unilabos-full
-  version: 0.12.3
+  version: 0.12.4
 
 build:
-  number: 0
-  string: jazzy_0
+  number: 1
+  string: jazzy_1
 
 requirements:
   run:
   # 完整 ROS2 运行时，默认依赖直接由 unilabos 声明，不再发布 unilabos-env。
-  - unilabos-ros2 ==0.12.3 jazzy_0
+  - unilabos-ros2 ==0.12.4 jazzy_1
   # Documentation tools
   - sphinx >=7
   - sphinx_rtd_theme >=2
@@ -68,7 +68,7 @@ requirements:
 tests:
   - python:
       imports:
-        - rclpy
+        - unilabos.backend.hostlink.local_runtime
         - unilabos_msgs.action
         - sphinx
         - myst_parser
@@ -78,13 +78,16 @@ tests:
         - opcua
       pip_check: true
   - script:
+      # ROS 启动按应用约定先修复 DLL，首次修补后必须在新进程验证。
+      - python -c "import subprocess, sys; code = 'from unilabos.app.utils import patch_rclpy_dll_windows; patch_rclpy_dll_windows(); import rclpy; from rosidl_generator_py import import_type_support_impl; import_type_support_impl.import_type_support(\'unilabos_msgs\'); rclpy.init(); node = rclpy.create_node(\'conda_full_test\'); node.destroy_node(); rclpy.shutdown()'; process = subprocess.run([sys.executable, '-c', code]); assert process.returncode in (0, 75), process.returncode; process = subprocess.run([sys.executable, '-c', code]) if process.returncode == 75 else process; assert process.returncode == 0, process.returncode"
       # 构建器重定向 USERPROFILE，但不会创建 Windows 已知文件夹；不触碰真实用户目录。
       - if: win
         then:
           - if not exist "%USERPROFILE%\AppData\Local" mkdir "%USERPROFILE%\AppData\Local"
           - if not exist "%USERPROFILE%\AppData\Roaming" mkdir "%USERPROFILE%\AppData\Roaming"
       - python -c "import rinoh_typeface_dejavuserif, rinoh_typeface_texgyrecursor, rinoh_typeface_texgyreheros, rinoh_typeface_texgyrepagella"
-      - python -c "from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(version(r.name))]; assert not missing, missing"
+      # conda-forge 的 Ruff 是原生可执行文件，无 Python dist-info，仍须校验实际版本。
+      - python -c "import subprocess; from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(subprocess.check_output(['ruff', '--version'], text=True).split()[1] if r.name == 'ruff' else version(r.name))]; assert not missing, missing"
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only

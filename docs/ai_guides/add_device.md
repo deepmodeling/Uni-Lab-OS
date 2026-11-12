@@ -44,7 +44,7 @@ class MyDevice:
 
 ```bash
 # 创建 conda 环境并安装 unilabos
-mamba create -n unilab python=3.12.13 -c conda-forge -y
+mamba create -n unilab python=3.14.10 -c conda-forge -y
 mamba activate unilab
 mamba install uni-lab::unilabos -c uni-lab -c robostack-staging -c conda-forge -y
 

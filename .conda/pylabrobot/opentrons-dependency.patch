@@ -9,7 +9,7 @@ diff --git a/pyproject.toml b/pyproject.toml
 +dependencies = [
 +  "typing_extensions",
 +  "websockets>=14",
-+  "opentrons-shared-data==9.1.0+unilabos.np2.1",
++  "opentrons-shared-data==10.1.0+unilabos.np2.1",
 +]
  
  [project.scripts]

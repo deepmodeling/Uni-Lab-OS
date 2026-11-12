@@ -110,7 +110,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge
           channel-priority: strict
           activate-environment: build-env

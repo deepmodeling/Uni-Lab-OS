@@ -6,13 +6,13 @@ gazebo:
 libpqxx:
   - 6
 numpy:
-  - 1.26.*
+  - 2.*
   
 cdt_name:  # [linux]
   - cos7   # [linux]
 
 python:
- - 3.12.* *_cpython
+ - 3.14.* *_cpython
 python_impl:
   - cpython
 

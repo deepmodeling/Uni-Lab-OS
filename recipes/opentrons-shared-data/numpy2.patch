@@ -6,7 +6,7 @@ diff --git a/pyproject.toml b/pyproject.toml
  
 +# Modified by UniLabOS contributors in 2026 for NumPy 2 compatibility.
  name = "opentrons_shared_data"
-+version = "9.1.0+unilabos.np2.1"
++version = "10.1.0+unilabos.np2.1"
  description = """\
  A bundle of data and python binding that supports the Opentrons API.\
  Does not need to be installed manually; only a dependency of the \
@@ -54,7 +54,7 @@ diff --git a/pyproject.toml b/pyproject.toml
 -
 -[tool.hatch.version.raw-options]
 -root = '..'
--git_describe_command = 'git describe --dirty --tags --long --match=v*'
+-git_describe_command = 'git describe --dirty --tags --long --match=v[0-9]*.[0-9]*'
 -fallback_version='0.0.0-dev'
 -# Note: these are required for setuptools_scm to not automatically bump the version used in the package
 -# from the latest version it detects. This would actually be kind of useful, but we can only do it if
@@ -83,10 +83,10 @@ diff --git a/python/opentrons_shared_data/_version.py b/python/opentrons_shared_
 @@ -19,6 +20,6 @@ commit_id: str | None
  __commit_id__: str | None
  
--__version__ = version = '9.1.0'
--__version_tuple__ = version_tuple = (9, 1, 0)
-+__version__ = version = '9.1.0+unilabos.np2.1'
-+__version_tuple__ = version_tuple = (9, 1, 0, 'unilabos.np2.1')
+-__version__ = version = '10.1.0'
+-__version_tuple__ = version_tuple = (10, 1, 0)
++__version__ = version = '10.1.0+unilabos.np2.1'
++__version_tuple__ = version_tuple = (10, 1, 0, 'unilabos.np2.1')
  
  __commit_id__ = commit_id = None
 diff --git a/python/opentrons_shared_data/labware/labware_definition.py b/python/opentrons_shared_data/labware/labware_definition.py

@@ -19,6 +19,7 @@ Usage:
 """
 
 import sys
+import sysconfig
 import os
 import argparse
 
@@ -77,20 +78,17 @@ def check_package(package_name: str, display_name: str | None = None) -> bool:
         return False
 
 
-def check_python_version(backend: str = "hostlink") -> bool:
-    """HostLink 支持 3.12–3.14；当前 ROS 发行环境仍要求 cp312 ABI。"""
+def check_python_version() -> bool:
+    """HostLink 与 ROS 2 统一要求普通 CPython 3.14（cp314，非 free-threaded）。"""
     version = sys.version_info
     version_str = f"{version.major}.{version.minor}.{version.micro}"
 
-    supported = version.major == 3 and (
-        version.minor == 12 if backend == "ros2" else 12 <= version.minor < 15
-    )
-    if supported:
+    if (version.major == 3 and version.minor == 14
+            and not sysconfig.get_config_var("Py_GIL_DISABLED")):
         print(f"  {CHECK_MARK} Python {version_str}")
         return True
     else:
-        required = "Python 3.12 / cp312 ABI" if backend == "ros2" else "Python 3.12–3.14"
-        print(f"  {CROSS_MARK} Python {version_str} (requires {required})")
+        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.14 / cp314 ABI)")
         return False
 
 
@@ -143,7 +141,7 @@ def main():
 
     # Check Python version
     print("Checking Python version...")
-    if not check_python_version(args.backend):
+    if not check_python_version():
         all_passed = False
     print()
 

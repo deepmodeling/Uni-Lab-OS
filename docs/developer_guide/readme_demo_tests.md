@@ -16,7 +16,7 @@
 
 ## 运行方式
 
-默认使用独立 Python 3.12 环境，安装默认包和 `pytest` / `pytest-asyncio`，不安装 ROS。
+默认使用独立 Python 3.14 环境，安装默认包和 `pytest` / `pytest-asyncio`，不安装 ROS。
 开发者可直接使用 `python scripts/dev_install.py --extras full`。ROS2 测试另用
 Jazzy/Humble 环境，需要该发行版的原生 `rclpy`、DDS 与 `unilabos_msgs`，不能只安装消息占位包。
 

@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from cgi import print_arguments
 from doctest import debug
 from typing import Dict, Any, List, Optional
 import requests

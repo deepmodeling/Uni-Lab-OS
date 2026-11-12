@@ -31,7 +31,7 @@ Uni-Lab-OS 是一个用于实验室自动化的综合平台，旨在连接和控
 
 ## 支持的运行时
 
-默认安装和运行统一为 **Python 3.12 + NumPy 2 + HostLink，不需要 ROS**。
+默认安装和运行统一为 **Python 3.14 + NumPy 2 + HostLink，不需要 ROS**。
 ROS 2 Jazzy/Humble 改为显式选装。普通 Python 驱动、Host/Slave、Workstation/
 sub-device、物料、工作流、HTTP/WS API 和 MCP 都可以在无 ROS 环境运行。
 MoveIt、RViz、ROS 原生驱动和图像管线仍需要相应 ROS 环境。
@@ -55,16 +55,16 @@ python scripts/dev_install.py
 unilab --disable-browser
 ```
 
-也可解压对应平台的配套 wheel 包，用 Python 3.12 执行 `python install_wheel_release.py`：
+也可解压对应平台的配套 wheel 包，用 Python 3.14 执行 `python install_wheel_release.py`：
 自动新建环境、离线安装全部默认依赖，并实际验证 Opentrons 96 孔板创建。
 修正版 Opentrons 和固定 PLR wheel 随发行附件分发，不上传 PyPI；仅对公共源执行
 `pip install unilabos` 找不到它们，需要安装入口或 `--find-links <配套包>/wheelhouse`。
 上面的源码安装工具会先构建配套依赖。详见[安装指南](docs/user_guide/installation.md)。
 
-**0.12.3+ 默认 Conda 包发布后**：
+**0.12.4+ 默认 Conda 包发布后**：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
 mamba activate unilab
 unilab --disable-browser
 ```

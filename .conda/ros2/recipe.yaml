@@ -2,18 +2,18 @@
 # channel 在安装/构建命令中指定，不能写入成品包的运行依赖。
 package:
   name: unilabos-ros2
-  version: 0.12.3
+  version: 0.12.4
 build:
   noarch: generic
-  number: 0
-  string: jazzy_0
+  number: 1
+  string: jazzy_1
 requirements:
   run:
-    - unilabos ==0.12.3 py312_0
-    - python ==3.12.13
+    - unilabos ==0.12.4 py314_0
+    - python ==3.14.10
     - opencv
     - transforms3d
-    - ros2-distro-mutex 0.15.* jazzy_*
+    - ros2-distro-mutex 0.20.* jazzy_*
     - ros-jazzy-ros-core
     - ros-jazzy-action-msgs
     - ros-jazzy-std-msgs
@@ -26,7 +26,10 @@ requirements:
     - ros-jazzy-moveit-msgs
     - ros-jazzy-tf2-ros
     - ros-jazzy-tf2-ros-py
-    - ros-jazzy-unilabos-msgs ==0.12.1
+    - ros-jazzy-unilabos-msgs ==0.12.2
+tests:
+  - script:
+    - python -c "import subprocess, sys; code = 'from unilabos.app.utils import patch_rclpy_dll_windows; patch_rclpy_dll_windows(); import rclpy; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support(\'unilabos_msgs\'); rclpy.init(); node = rclpy.create_node(\'conda_cp314_test\'); publisher = node.create_publisher(Resource, \'conda_cp314_resource\', 1); node.destroy_node(); rclpy.shutdown()'; process = subprocess.run([sys.executable, '-c', code]); assert process.returncode in (0, 75), process.returncode; process = subprocess.run([sys.executable, '-c', code]) if process.returncode == 75 else process; assert process.returncode == 0, process.returncode"
 about:
   license: GPL-3.0-only
-  description: Optional UniLabOS ROS 2 jazzy transport (CPython 3.12)
+  description: Optional UniLabOS ROS 2 jazzy transport (CPython 3.14)

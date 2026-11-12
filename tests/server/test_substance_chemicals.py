@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import replace
 from typing import Any, Optional
@@ -657,21 +658,66 @@ MATERIAL_SUBSTANCE_V2 = TableSpec(
 )
 MATERIALS_V2_CHECKSUM = "40eaebcd605c6eb334dcfb8aa548370386e6f1575c048f464f824cb6ea306e63"
 
+#: v5 新增的表（物理动作占用与结算回执）；v2 / v3 / v4 的库里都没有。
+MATERIALS_V5_TABLES = frozenset({"material_execution", "material_execution_hold"})
+
+
+def _published_materials_spec(version: int, material_substance: TableSpec):
+    """按当前声明还原已发布的 v2 / v3：换回当时的 material_substance，去掉之后才新增的表。"""
+
+    spec = DATABASE_SPECS["materials"]
+    return replace(
+        spec,
+        tables=tuple(
+            material_substance if table.name == "material_substance" else table
+            for table in spec.tables
+            if table.name not in MATERIALS_V5_TABLES
+        ),
+        schema_version=version,
+        migrations=spec.migrations[: version - 1],
+    )
+
+
+def _without_v5_execution_guard(service: MaterialsService) -> None:
+    """用旧版本写入语义构造旧库：v5 之前没有物理占用守卫（也没有 material_execution_hold 表）。"""
+
+    service.executions.guard_mutation = lambda *_: None
+
+
+def _ddl(path) -> dict[tuple[str, str], str]:
+    """库内全部表 / 索引 / 触发器的建表语句（含 CHECK）；忽略空白、引号与 IF NOT EXISTS。"""
+
+    connection = sqlite3.connect(path)
+    try:
+        rows = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name <> 'schema_migration'"
+        ).fetchall()
+    finally:
+        connection.close()
+    normalized = {}
+    for kind, name, sql in rows:
+        text = re.sub(r"\s*([(),])\s*", r"\1", re.sub(r"\s+", " ", sql).strip()).replace('"', "")
+        normalized[(kind, name)] = text.replace("IF NOT EXISTS ", "")
+    return normalized
+
+
+def _assert_same_ddl_as_fresh(migrated_path, tmp_path) -> None:
+    fresh = tmp_path / "fresh" / "materials.db"
+    fresh.parent.mkdir()
+    initialize_database(fresh, DATABASE_SPECS["materials"]).close()
+    assert _ddl(migrated_path) == _ddl(fresh)
+
 
 def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -> None:
     spec = DATABASE_SPECS["materials"]
-    v2 = replace(
-        spec,
-        tables=tuple(MATERIAL_SUBSTANCE_V2 if table.name == "material_substance" else table for table in spec.tables),
-        schema_version=2,
-        migrations=spec.migrations[:1],
-    )
+    v2 = _published_materials_spec(2, MATERIAL_SUBSTANCE_V2)
     assert v2.checksum == MATERIALS_V2_CHECKSUM  # 夹具确实是发布过的 v2 结构
     path = tmp_path / "materials.db"
 
     connection = initialize_database(path, v2)
     try:
         legacy = MaterialsService(connection)
+        _without_v5_execution_guard(legacy)
         legacy.put_template(
             _mutation("put_template"),
             ResourceTemplateWrite(template_uuid="tube-template", name="tube", resource_type="container",
@@ -721,10 +767,10 @@ def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 4
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 5
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
         history = [tuple(row) for row in peek.execute("SELECT version, description FROM schema_migration")]
-        assert [version for version, _ in history] == [3, 4]
+        assert [version for version, _ in history] == [3, 4, 5]
         indexes = {row[0] for row in peek.execute(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'material_substance'"
         )}
@@ -735,9 +781,10 @@ def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -
     finally:
         peek.close()
     assert list(tmp_path.glob("materials.db.pre-v*-*.bak"))
+    _assert_same_ddl_as_fresh(path, tmp_path)  # 迁移终点与新建库逐条 DDL 一致（含 CHECK）
 
 
-# ── materials.db v3 → v4 ─────────────────────────────────────
+# ── materials.db v3 → v4（→ 最新）─────────────────────────────
 
 #: v3 发布的结构指纹（tests/server/test_database_schema_versions.py 曾经固定的值）。
 MATERIALS_V3_CHECKSUM = "cc857e09f440d87eaab792134ff8b0d3a5501f76ad59915bddeb322505ce1300"
@@ -746,18 +793,14 @@ MATERIALS_V3_CHECKSUM = "cc857e09f440d87eaab792134ff8b0d3a5501f76ad59915bddeb322
 def test_v3_materials_database_migrates_to_v4_keeping_links(tmp_path) -> None:
     spec = DATABASE_SPECS["materials"]
     v3_table = TableSpec("material_substance", _MATERIAL_SUBSTANCE_V3, _MATERIAL_SUBSTANCE_V3_INDEXES)
-    v3 = replace(
-        spec,
-        tables=tuple(v3_table if table.name == "material_substance" else table for table in spec.tables),
-        schema_version=3,
-        migrations=spec.migrations[:2],
-    )
+    v3 = _published_materials_spec(3, v3_table)
     assert v3.checksum == MATERIALS_V3_CHECKSUM  # 夹具确实是发布过的 v3 结构
     path = tmp_path / "materials.db"
 
     connection = initialize_database(path, v3)
     try:
         legacy = MaterialsService(connection)
+        _without_v5_execution_guard(legacy)
         legacy.put_template(
             _mutation("put_template"),
             ResourceTemplateWrite(template_uuid="tube-template", name="tube", resource_type="container",
@@ -797,10 +840,11 @@ def test_v3_materials_database_migrates_to_v4_keeping_links(tmp_path) -> None:
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 4
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 5
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
-        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4]
+        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4, 5]
         with pytest.raises(sqlite3.IntegrityError):
             peek.execute("UPDATE material_substance SET chemical_unlinked = 1, chemical_uuid = 'c-water'")
     finally:
         peek.close()
+    _assert_same_ddl_as_fresh(path, tmp_path)

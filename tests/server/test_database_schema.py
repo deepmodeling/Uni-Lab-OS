@@ -69,6 +69,9 @@ EXPECTED_TABLES = {
         "inventory_command_effect",
         "inventory_ledger",
         "chemical",
+        # schema v5：物理动作的冻结计划 / 结算回执 + 未结算动作对物料或库位的唯一占用
+        "material_execution",
+        "material_execution_hold",
     },
     "telemetry": {
         "schema_identity",
@@ -193,10 +196,12 @@ def test_total_table_count_stays_small() -> None:
     # workflow 节点执行为两级：workflow_node_run（节点运行）+ workflow_node_job（attempt）；
     # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
+    # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
+    # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 42,
-        "materials": 14,
+        "materials": 16,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 63
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 65

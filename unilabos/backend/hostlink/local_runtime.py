@@ -7,7 +7,6 @@ import contextlib
 import inspect
 import logging
 import threading
-import types
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -18,9 +17,6 @@ from typing import (
     Iterable,
     Optional,
     Type,
-    Union,
-    get_args,
-    get_origin,
 )
 
 from unilabos.backend.runtime.action import ActionContext
@@ -31,6 +27,7 @@ from unilabos.backend.runtime.driver_creator import (
 )
 from unilabos.backend.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.backend.runtime.resource import ResourceService
+from unilabos.backend.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
 from unilabos.backend.hostlink.service import (
     DeviceService,
     DeviceServiceClient,
@@ -137,38 +134,6 @@ class _StatusBinding:
     print_publish: bool
     qos: int
     configured: bool
-
-
-def _resource_slot_shape(annotation: Any) -> Optional[str]:
-    """Return ``single``/``list`` for ResourceSlot-compatible annotations."""
-
-    if annotation is inspect.Parameter.empty:
-        return None
-    if isinstance(annotation, str):
-        normalized = annotation.replace(" ", "").replace("typing.", "")
-        if "ResourceSlot" not in normalized:
-            return None
-        if normalized.startswith(("list[", "List[")):
-            return "list"
-        return "single"
-
-    origin = get_origin(annotation)
-    if origin is list:
-        arguments = get_args(annotation)
-        if arguments and _resource_slot_shape(arguments[0]) == "single":
-            return "list"
-        return None
-    if origin in (Union, types.UnionType):
-        shapes = {
-            shape
-            for item in get_args(annotation)
-            if item is not type(None) and (shape := _resource_slot_shape(item))
-        }
-        return shapes.pop() if len(shapes) == 1 else None
-
-    name = str(getattr(annotation, "__qualname__", "") or "")
-    module = str(getattr(annotation, "__module__", "") or "")
-    return "single" if name == "ResourceSlot" and module else None
 
 
 def instantiate_driver(

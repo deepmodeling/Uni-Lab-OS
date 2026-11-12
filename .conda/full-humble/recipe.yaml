@@ -27,10 +27,6 @@ requirements:
   - opcua >=0.98.13
   - pandas >=2.2
   - matplotlib-base >=3.8
-  - pylibftdi >=0.22
-  - pprp >=0.2.7
-  - if: win
-    then: pyautogui >=0.9.54
   - if: win
     then: pywinauto >=0.6.8
   - gradio

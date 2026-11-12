@@ -28,14 +28,10 @@ requirements:
   - rinoh-typeface-texgyreheros
   - rinoh-typeface-texgyrepagella
   - sphinx-simplepdf >=1.6
-  # 内置驱动 Python SDK
+  # 通信适配器（device_comms）与数据分析依赖；厂商驱动 SDK 随各驱动包声明
   - opcua >=0.98.13
   - pandas >=2.2
   - matplotlib-base >=3.8
-  - pylibftdi >=0.22
-  - pprp >=0.2.7
-  - if: win
-    then: pyautogui >=0.9.54
   - if: win
     then: pywinauto >=0.6.8
   # Web UI

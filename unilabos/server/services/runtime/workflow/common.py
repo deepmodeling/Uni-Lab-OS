@@ -24,9 +24,8 @@
 - 所有 create_resource 节点的 parent_uuid 指向 Group 节点，minimized=true
 - 生成参数:
     res_id: plate_slot_{slot}
-    device_id: /PRCXI
-    class_name: PRCXI_BioER_96_wellplate
-    parent: /PRCXI/PRCXI_Deck
+    device_id / class_name / parent: 取 CREATE_RESOURCE_DEFAULTS（内置抽象移液站 + 内置 96 孔板），
+    驱动包场景由 create_resource_defaults 覆盖（例如 PRCXI 的 /PRCXI、/PRCXI/PRCXI_Deck）
     slot_on_deck: "{slot}"
 - 输出端口: labware（用于连接 set_liquid_from_plate）
 - 控制流: create_resource 之间通过 ready 端口串联
@@ -89,8 +88,8 @@ transfer_liquid:
 每个节点都有 device_name 字段，指定在哪个设备上执行:
 - create_resource: device_name = 本机 host 服务设备实例名（默认 host_node，
   支持 --host_node_id 重命名，见 host_device_name()）
-- set_liquid_from_plate: device_name = "PRCXI"（可配置，见 DEVICE_NAME_DEFAULT）
-- transfer_liquid 等动作: device_name = "PRCXI"（可配置，见 DEVICE_NAME_DEFAULT）
+- set_liquid_from_plate: device_name = "liquid_handler"（可配置，见 DEVICE_NAME_DEFAULT）
+- transfer_liquid 等动作: device_name = "liquid_handler"（可配置，见 DEVICE_NAME_DEFAULT）
 
 ==================== 校验规则 ====================
 
@@ -112,7 +111,7 @@ Json = Dict[str, Any]
 # ==================== 默认配置 ====================
 
 # 设备名配置
-DEVICE_NAME_DEFAULT = "PRCXI"  # transfer_liquid, set_liquid_from_plate 等动作的默认设备名
+DEVICE_NAME_DEFAULT = "liquid_handler"  # transfer_liquid, set_liquid_from_plate 等动作的默认设备名（内置抽象移液站）
 
 
 def host_device_name() -> str:
@@ -127,11 +126,13 @@ def host_device_name() -> str:
 # 节点类型
 NODE_TYPE_DEFAULT = "ILab"  # 所有节点的默认类型
 
-# create_resource 节点默认参数
+# create_resource 节点默认参数：内置抽象移液站与内置 96 孔板。厂商移液站（PRCXI 等）已移出核心，
+# 由调用方通过 create_resource_defaults 覆盖，例如
+# {"device_id": "/PRCXI", "parent_template": "/PRCXI/PRCXI_Deck", "class_name": "PRCXI_BioER_96_wellplate"}。
 CREATE_RESOURCE_DEFAULTS = {
-    "device_id": "/PRCXI",
-    "parent_template": "/PRCXI/PRCXI_Deck",
-    "class_name": "PRCXI_BioER_96_wellplate",
+    "device_id": "/liquid_handler",
+    "parent_template": "/liquid_handler/deck",
+    "class_name": "corning_96_wellplate_360ul_flat",
 }
 
 # 默认液体体积 (uL)
@@ -371,6 +372,7 @@ def build_protocol_graph(
     workstation_name: str,
     action_resource_mapping: Optional[Dict[str, str]] = None,
     labware_defs: Optional[List[Dict[str, Any]]] = None,
+    create_resource_defaults: Optional[Dict[str, str]] = None,
 ) -> WorkflowGraph:
     """统一的协议图构建函数，根据设备类型自动选择构建逻辑
 
@@ -380,7 +382,9 @@ def build_protocol_graph(
         workstation_name: 工作站名称
         action_resource_mapping: action 到 resource_name 的映射字典，可选
         labware_defs: labware 定义列表，格式为 [{"name": "...", "slot": "1", "type": "lab_xxx"}, ...]
+        create_resource_defaults: 覆盖 CREATE_RESOURCE_DEFAULTS 的 device_id / parent_template / class_name
     """
+    resource_defaults = {**CREATE_RESOURCE_DEFAULTS, **(create_resource_defaults or {})}
     G = WorkflowGraph()
     resource_last_writer = {}  # reagent_name -> "node_id:port"
     slot_to_create_resource = {}  # slot -> create_resource node_id
@@ -411,7 +415,7 @@ def build_protocol_graph(
             continue  # 跳过空 slot 或已处理的 slot
 
         lw_name = lw.get("name", f"slot {slot}")
-        lw_type = lw.get("type", CREATE_RESOURCE_DEFAULTS["class_name"])
+        lw_type = lw.get("type", resource_defaults["class_name"])
         res_id = f"plate_slot_{slot}"
 
         res_index += 1
@@ -430,9 +434,9 @@ def build_protocol_graph(
             minimized=True,
             param={
                 "res_id": res_id,
-                "device_id": CREATE_RESOURCE_DEFAULTS["device_id"],
+                "device_id": resource_defaults["device_id"],
                 "class_name": lw_type,
-                "parent": CREATE_RESOURCE_DEFAULTS["parent_template"],
+                "parent": resource_defaults["parent_template"],
                 "bind_locations": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "slot_on_deck": slot,
             },
@@ -476,14 +480,18 @@ def build_protocol_graph(
         node_id = str(uuid.uuid4())
         set_liquid_index += 1
 
+        # 设液节点落在与移液动作相同的移液站上：默认内置 liquid_handler，驱动包场景由映射覆盖
+        set_liquid_resource = (action_resource_mapping or {}).get("set_liquid_from_plate") or (
+            action_resource_mapping or {}
+        ).get("transfer_liquid", "liquid_handler")
         G.add_node(
             node_id,
             template_name="set_liquid_from_plate",
-            resource_name="liquid_handler.prcxi",
+            resource_name=set_liquid_resource,
             name=f"SetLiquid {set_liquid_index}",
             description=f"Set liquid: {labware_id}",
             lab_node_type="Reagent",
-            footer="set_liquid_from_plate-liquid_handler.prcxi",
+            footer=f"set_liquid_from_plate-{set_liquid_resource}",
             device_name=DEVICE_NAME_DEFAULT,
             type=NODE_TYPE_DEFAULT,
             parent_uuid=set_liquid_group_id,  # 指向 Group 节点

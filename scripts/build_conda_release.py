@@ -12,7 +12,7 @@ import sys
 
 # 公共 channel 缺失的纯 Python/字体包，仅 full 需要，不增加用户安装档位。
 FULL_SUPPORT_RECIPES = (
-    "pprp", "opcua", "rinoh-typeface-dejavuserif", "rinoh-typeface-texgyrecursor",
+    "opcua", "rinoh-typeface-dejavuserif", "rinoh-typeface-texgyrecursor",
     "rinoh-typeface-texgyreheros", "rinoh-typeface-texgyrepagella",
 )
 

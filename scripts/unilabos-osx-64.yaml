@@ -23,7 +23,6 @@ dependencies:
   # Device communication
   - pyserial
   - pyusb
-  - pylibftdi
   - pymodbus >=3.6.9,<4
   - python-can
   - pyvisa
@@ -67,5 +66,4 @@ dependencies:
   - jinja2
   - pip:
       - paho-mqtt
-      - pprp>=0.2.7
       - git+https://github.com/Xuwznln/pylabrobot

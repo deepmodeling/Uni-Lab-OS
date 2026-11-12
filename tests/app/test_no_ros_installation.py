@@ -376,7 +376,8 @@ def test_full_conda_profiles_cover_python_extras(monkeypatch):
     runpy.run_path(str(root / "setup.py"))
     conda_names = {"build": "python-build", "matplotlib": "matplotlib-base"}
     for distro, suffix in (("jazzy", ""), ("humble", "-humble")):
-        assert ("pprp", []) in recipes(distro, full=True)
+        # 厂商驱动 SDK（pprp / pylibftdi / pyautogui）随驱动包声明，不再进入 full
+        assert ("pprp", []) not in recipes(distro, full=True)
         full = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text())
         ros2 = yaml.safe_load((root / f".conda/ros2{suffix}/recipe.yaml").read_text())
         # Windows SDK 的选择使 full 成为平台包，不能把它发布成同名不同内容的 noarch。
@@ -405,7 +406,8 @@ def test_full_conda_support_packages_and_closed_dependency_validation():
         dependencies = full["requirements"]["run"]
         assert "colcon-notification" in dependencies
         assert set(FULL_SUPPORT_RECIPES) <= {dep.split()[0] for dep in dependencies if isinstance(dep, str)}
-        assert {"if": "win", "then": "pyautogui >=0.9.54"} in dependencies
+        assert {"if": "win", "then": "pywinauto >=0.6.8"} in dependencies
+        assert not any("pyautogui" in str(dep) or "pprp" in str(dep) or "pylibftdi" in str(dep) for dep in dependencies)
         assert any(test.get("python", {}).get("pip_check") is True for test in full["tests"])
         commands = next(test["script"] for test in full["tests"] if "script" in test)
         windows = next(command for command in commands if isinstance(command, dict) and command.get("if") == "win")

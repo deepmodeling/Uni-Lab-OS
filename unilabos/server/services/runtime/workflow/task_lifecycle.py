@@ -71,7 +71,7 @@ import logging  # noqa: E402
 import sqlite3  # noqa: E402
 from uuid import NAMESPACE_URL, uuid4, uuid5  # noqa: E402
 
-from unilabos.server.services.runtime.workflow.errors import StoreConflict, StoreNotFound  # noqa: E402
+from unilabos.server.services.runtime.workflow.errors import StoreConflict  # noqa: E402
 from unilabos.server.services.runtime.workflow.store import _json, _load, utc_now  # noqa: E402
 
 logger = logging.getLogger(__name__)

@@ -20,7 +20,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import sqlite3
 from typing import Any, Callable, Dict, List, Mapping, Optional

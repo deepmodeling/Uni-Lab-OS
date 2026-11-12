@@ -16,6 +16,12 @@ def source_symbols(fn: Callable[..., Any]) -> tuple[dict[str, str], dict[str, as
         raise ValueError("工作流合同需要可读取的源码文件")
     with tokenize.open(filename) as stream:
         tree = ast.parse(stream.read())
+    return module_symbols(tree)
+
+
+def module_symbols(tree: ast.Module) -> tuple[dict[str, str], dict[str, ast.ClassDef]]:
+    """模块级 ``from x import y`` 与类定义（结果记录）；不导入、不求值。"""
+
     imports: dict[str, str] = {}
     records: dict[str, ast.ClassDef] = {}
     for item in tree.body:
@@ -29,10 +35,18 @@ def source_symbols(fn: Callable[..., Any]) -> tuple[dict[str, str], dict[str, as
 
 
 def parse_workflow_contract(fn: Callable[..., Any], function: ast.FunctionDef) -> tuple[dict[str, Any], dict[str, Any]]:
+    imports, records = source_symbols(fn)
+    return parse_workflow_contract_symbols(function, imports=imports, records=records)
+
+
+def parse_workflow_contract_symbols(
+    function: ast.FunctionDef, *, imports: dict[str, str], records: dict[str, ast.ClassDef],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """按函数签名（仅关键字参数注解 + 返回注解）解析输入输出合同；作者源码文本即可，无需函数对象。"""
+
     args = function.args
     if len(args.args) != 1 or args.posonlyargs or args.vararg or args.kwarg or args.defaults:
         raise ValueError("静态工作流只接受一个 ctx 位置参数；工作流输入使用带注解的仅关键字参数")
-    imports, records = source_symbols(fn)
     parameters = []
     for arg, default in zip(args.kwonlyargs, args.kw_defaults):
         if arg.annotation is None:

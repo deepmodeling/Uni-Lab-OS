@@ -16,7 +16,7 @@ from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 try:  # Linux authoring CAS 使用 file lease；Windows 仍需支持 Workflow Runtime。
     import fcntl  # type: ignore[import-not-found]
@@ -166,6 +166,9 @@ _MANUAL_CONFIRMATION_CONFLICTS = {
     "decision_idempotency_key already used": "manual_confirmation_key_used",
 }
 _HASH_TOKEN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+#: 本机托管源码工作区的包身份与可导入文件名
+MANAGED_SOURCE_PACKAGE = "local"
+_SOURCE_FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,100}\.py\Z")
 _NO_EXPECTED_HASH = object()
 _F_SETOWN_EX = getattr(fcntl, "F_SETOWN_EX", 15) if fcntl is not None else 15
 _F_OWNER_TID = 0
@@ -3059,7 +3062,121 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         try:
             return self.get_source_registration(workflow_uuid)
         except StoreNotFound:
-            raise WorkflowError("workflow_not_found") from None
+            pass
+        root = getattr(self, "_managed_source_root", None)
+        if root is None:
+            raise WorkflowError("workflow_not_found")
+        # 本机托管源码工作区：任何工作流第一次进入作者态时登记 workflows/wf_<uuid>.py（文件按需创建）
+        return self._register_managed_source(workflow_uuid, f"wf_{UUID(workflow_uuid).hex}.py")
+
+    def _register_managed_source(self, workflow_uuid: str, file_name: str) -> Dict[str, Any]:
+        root = Path(self._managed_source_root)
+        (root / "workflows").mkdir(parents=True, exist_ok=True)
+        return self.register_editable_source(
+            workflow_uuid=workflow_uuid,
+            package_id=MANAGED_SOURCE_PACKAGE,
+            package_root=root,
+            relative_path=f"workflows/{file_name}",
+        )
+
+    def configure_authoring(
+        self,
+        *,
+        compiler: Optional[AuthoringCompiler],
+        source_root: Optional[str | Path] = None,
+    ) -> None:
+        """装配作者编译器与本机托管源码工作区（``<source_root>/workflows/*.py``）。"""
+
+        self.compiler = compiler
+        self._managed_source_root = Path(source_root) if source_root is not None else None
+
+    def import_python_workflow(self, *, file_name: str, python_source: str) -> Dict[str, Any]:
+        """V1 ``POST /local/workflows/import-python``：静态编译并原子导入一个 ``@workflow`` 源码文件。
+
+        新建工作流 → 登记托管源码 ``workflows/<文件名>`` → 写入草稿并签发候选 → 按候选哈希应用。
+        任一步失败都删除本次新建的工作流与源码文件，不留下半个定义。源码只进静态编译器，不执行。
+        """
+
+        from unilabos.registry.workflow_ast import WorkflowSourceError, compile_workflow_source
+
+        if self.compiler is None or getattr(self, "_managed_source_root", None) is None:
+            raise WorkflowError("template_catalog_unavailable")
+        name = str(file_name or "").strip()
+        if (
+            not _SOURCE_FILE_NAME.fullmatch(name)
+            or name in {".py"}
+        ):
+            raise WorkflowError("invalid_input", detail="文件名必须是不含路径的 .py 文件名（字母、数字、下划线、短横线）")
+        try:
+            program = compile_workflow_source(python_source)
+        except WorkflowSourceError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=program.display_name or Path(name).stem,
+            tags=list(program.tags),
+            description=program.description or None,
+            meta_data={},
+        )
+        identity = record["uuid"]
+        target = Path(self._managed_source_root) / "workflows" / f"{Path(name).stem}_{UUID(identity).hex[:8]}.py"
+        registration: Optional[Dict[str, Any]] = None
+        try:
+            registration = self._register_managed_source(identity, target.name)
+            authoring = self.save_draft(
+                identity, python_source=python_source, expected_draft_hash=None,
+                expected_workflow_revision=record["revision"],
+            )
+            candidate = authoring.get("candidate")
+            if candidate is None:
+                diagnostics = ((authoring.get("draft") or {}).get("diagnostics")) or []
+                message = next((item.get("message") for item in diagnostics if item.get("message")), "")
+                raise WorkflowError("draft_invalid", detail=message)
+            self.apply_authoring_by_candidate(identity, candidate_hash=candidate["candidate_hash"])
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(identity)
+            if registration is not None:
+                with suppress(Exception):
+                    self._source_path(registration)[1].unlink(missing_ok=True)
+            raise
+        return self.get_graph(identity)
+
+    def import_legacy_workflow(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 ``POST /workflows/import``：旧版 JSON 图（直接或 ``data`` 包装）重建身份后原子导入。"""
+
+        from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
+
+        definition = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        name = definition.get("name") or definition.get("workflow_name")
+        if not isinstance(name, str) or not name.strip():
+            raise WorkflowError("invalid_input", detail="缺少工作流名称（name 或 workflow_name）")
+        nodes = definition.get("nodes")
+        edges = definition.get("edges") or []
+        if not isinstance(nodes, list) or not nodes or not isinstance(edges, list):
+            raise WorkflowError("invalid_input", detail="nodes 必须是至少包含一个节点的数组，edges 必须是数组")
+        if definition.get("inventory_requirements") not in (None, []):
+            raise WorkflowError("invalid_input", detail="暂不支持在导入图中携带 inventory_requirements")
+        try:
+            for index, node in enumerate(nodes):
+                if not isinstance(node, dict):
+                    raise ValueError(f"nodes[{index}] 必须是对象")
+                validate_uuid(node.get("uuid"))
+            new_nodes, new_edges, _requirements = duplicate_graph({"nodes": nodes, "edges": edges})
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=name,
+            tags=list(definition.get("tags") or []),
+            description=definition.get("description"),
+            meta_data={key: value for key, value in (definition.get("meta_data") or {}).items() if key != "unilab"},
+            workflow_type=str(definition.get("workflow_type") or "normal"),
+        )
+        try:
+            return self.save_graph(record["uuid"], revision=record["revision"], nodes=new_nodes, edges=new_edges)
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(record["uuid"])
+            raise
 
     def _read_source(
         self,

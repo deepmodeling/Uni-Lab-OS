@@ -7,14 +7,17 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from fastapi import APIRouter, Header, Query, Request
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from unilabos.protocol.runtime.workflow import normalize_json_object
+from unilabos.protocol.runtime.workflow import normalize_json_object, validate_uuid
 from unilabos.server.services.runtime.workflow.service import WorkflowService
+
+logger = logging.getLogger(__name__)
 
 
 class _StrictModel(BaseModel):
@@ -133,6 +136,76 @@ _LEGACY_JOB_STATUS = {
 }
 
 
+class LegacyWorkflowImportRequest(_BackendModel):
+    """V1 旧版 JSON 工作流导入：直接字段或 ``data`` 包装。"""
+
+    workflow_name: str = ""
+    name: str = ""
+    tags: List[Any] = Field(default_factory=list)
+    description: Optional[str] = None
+    meta_data: Dict[str, Any] = Field(default_factory=dict)
+    workflow_type: str = "normal"
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    edges: List[Dict[str, Any]] = Field(default_factory=list)
+    inventory_requirements: List[Dict[str, Any]] = Field(default_factory=list)
+    data: Optional[Dict[str, Any]] = None
+
+
+class _AuthoringTransformRequest(_StrictModel):
+    """V1 三个可信创作转换的共同身份合同。"""
+
+    workflow_uuid: str = Field(strict=True)
+    revision: int = Field(ge=1, le=(1 << 63) - 1, strict=True)
+    source_uri: str = Field(strict=True, min_length=1)
+
+    @field_validator("workflow_uuid")
+    @classmethod
+    def _valid_workflow_uuid(cls, value: str) -> str:
+        return validate_uuid(value)
+
+    def _check_graph(self, graph: Dict[str, Any]) -> None:
+        workflow = graph.get("workflow")
+        if not isinstance(workflow, dict):
+            raise ValueError("工作流图缺少工作流身份")
+        if validate_uuid(workflow.get("uuid")) != self.workflow_uuid or workflow.get("revision") != self.revision:
+            raise ValueError("工作流图身份或修订不一致")
+        for key in ("nodes", "edges", "node_templates", "handle_templates"):
+            if not isinstance(graph.get(key, []), list):
+                raise ValueError(f"工作流图 {key} 必须是数组")
+
+
+class AuthoringCompileRequest(_AuthoringTransformRequest):
+    python_source: str = Field(strict=True)
+    applied_graph: Dict[str, Any]
+
+    @model_validator(mode="after")
+    def _matching_graph(self) -> "AuthoringCompileRequest":
+        self._check_graph(self.applied_graph)
+        return self
+
+
+class AuthoringGeneratePythonRequest(_AuthoringTransformRequest):
+    graph: Dict[str, Any]
+
+    @model_validator(mode="after")
+    def _matching_graph(self) -> "AuthoringGeneratePythonRequest":
+        self._check_graph(self.graph)
+        return self
+
+
+class AuthoringValidateRequest(AuthoringGeneratePythonRequest):
+    python_source: str = Field(strict=True)
+
+
+def _full_graph(graph: Dict[str, Any]) -> Dict[str, Any]:
+    """V1 旧客户端可能只发五集合图中的一部分：缺的集合按空数组补齐。"""
+
+    result = dict(graph)
+    for key in ("nodes", "edges", "node_templates", "handle_templates"):
+        result.setdefault(key, [])
+    return result
+
+
 class OperationCategoryCreateRequest(_StrictModel):
     name: str = Field(min_length=1, max_length=64)
     sort_order: int = Field(default=100, ge=0, le=10_000, strict=True)
@@ -225,6 +298,84 @@ def add_definition_routes(
     def delete_workflow_edge(edge_uuid: str) -> Any:
         service.delete_workflow_edge(edge_uuid)
         return success()
+
+    # ── 导入 ──────────────────────────────────────────────────────
+
+    @router.post("/workflows/import")
+    def import_legacy_workflow(body: LegacyWorkflowImportRequest) -> Any:
+        """V1：旧版 JSON 工作流图重建节点 / 连线身份后原子导入，返回整图（HTTP 201）。"""
+
+        return success(with_workflow_status(service.import_legacy_workflow(payload=body.model_dump())), status=201)
+
+    @router.post("/local/workflows/import-python")
+    async def import_python_workflow(
+        request: Request,
+        file_name: str = Header(alias="X-Workflow-Filename"),
+    ) -> Any:
+        """V1：请求体是原始 ``.py`` 文件（UTF-8），``X-Workflow-Filename`` 是不含路径的文件名。
+
+        源码只进静态编译器（``registry/workflow_ast``），不 import、不执行；成功返回新工作流整图（HTTP 201）。
+        """
+
+        from unilabos.server.services.runtime.workflow.service import WorkflowError
+
+        raw = await request.body()
+        try:
+            python_source = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            raise WorkflowError("invalid_input", detail="上传文件不是有效的 UTF-8 文本") from None
+        imported = service.import_python_workflow(file_name=file_name, python_source=python_source)
+        return success(with_workflow_status(imported), status=201)
+
+    # ── 可信创作纯转换（不写库） ───────────────────────────────────────
+
+    def transform(operation: str, values: Dict[str, Any], *, require_unchanged: bool) -> Any:
+        from unilabos.server.services.runtime.workflow.service import WorkflowError
+
+        compiler = service.compiler
+        if compiler is None or not callable(getattr(compiler, operation, None)):
+            raise WorkflowError("template_catalog_unavailable")
+        try:
+            result = getattr(compiler, operation)(**values)
+        except Exception:  # noqa: BLE001 - 与 V1 一致：转换内部失败不泄露细节
+            logger.exception("可信工作流创作纯转换失败")
+            raise WorkflowError("internal_error") from None
+        if any(item.get("code") == "template_catalog_unavailable" for item in result.get("diagnostics") or []):
+            raise WorkflowError("template_catalog_unavailable")
+        if require_unchanged and result.get("changeset") and result["changeset"]["kind"] != "source_only":
+            raise WorkflowError("internal_error")
+        return success({key: result.get(key) for key in (
+            "diagnostics", "graph", "normalized_python_source", "source_map", "changeset",
+            "compiler_version", "template_catalog_fingerprint",
+        )})
+
+    @router.post("/authoring/compile")
+    def compile_authoring(body: AuthoringCompileRequest) -> Any:
+        """V1：编译工作流源码，返回候选图或结构化诊断。"""
+
+        return transform("compile", {
+            "workflow_uuid": body.workflow_uuid, "workflow_revision": body.revision,
+            "python_source": body.python_source, "source_uri": body.source_uri,
+            "applied_graph": _full_graph(body.applied_graph),
+        }, require_unchanged=False)
+
+    @router.post("/authoring/generate-python")
+    def generate_authoring_python(body: AuthoringGeneratePythonRequest) -> Any:
+        """V1：由候选图生成规范 Python（回编译后图不变）；表达不了的结构返回诊断。"""
+
+        return transform("generate_python", {
+            "workflow_uuid": body.workflow_uuid, "workflow_revision": body.revision,
+            "graph": _full_graph(body.graph), "source_uri": body.source_uri,
+        }, require_unchanged=True)
+
+    @router.post("/authoring/validate")
+    def validate_authoring(body: AuthoringValidateRequest) -> Any:
+        """V1：图与源码的语义固定点校验。"""
+
+        return transform("validate", {
+            "workflow_uuid": body.workflow_uuid, "workflow_revision": body.revision,
+            "graph": _full_graph(body.graph), "python_source": body.python_source, "source_uri": body.source_uri,
+        }, require_unchanged=True)
 
     # ── 设备单动作 ──────────────────────────────────────────────
 

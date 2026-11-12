@@ -939,8 +939,12 @@ def materialize_workflow_template(
     name: str = "",
     instance_uuid: Optional[str] = None,
     node_params: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    node_uuids: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """把模板按角色绑定实例化为权威可落库的 node-link 载荷。
+
+    ``node_uuids``（步骤 key → 节点 UUID）覆盖默认的确定性节点身份；工作流作者编译器用它
+    保留源码 ``# unilab:node_uuid`` 锚点声明的身份。
 
     Returns:
         {"workflow_uuid", "name", "description", "tags", "nodes", "edges", "bindings"}
@@ -968,19 +972,26 @@ def materialize_workflow_template(
         if key in overrides and input_binding_locations(overrides[key]) != input_binding_locations(node.get("param") or {}):
             raise ValueError(f"步骤 {key!r} 的工作流输入引用属于流程定义，不能在默认参数中修改")
     key_to_index = {str(node.get("key")): index for index, node in enumerate(template_nodes)}
+    explicit_uuids = {str(key): str(uuid_module.UUID(value)) for key, value in (node_uuids or {}).items()}
+    if len(set(explicit_uuids.values())) != len(explicit_uuids):
+        raise ValueError("节点 UUID 重复")
+
+    def uuid_at(index: int) -> str:
+        return explicit_uuids.get(str(template_nodes[index].get("key"))) or _step_node_uuid(workflow_uuid_value, index)
+
     depends_on: Dict[int, List[str]] = {}
     for edge in template.get("edges") or []:
         source = key_to_index.get(str(edge.get("source")))
         target = key_to_index.get(str(edge.get("target")))
         if source is None or target is None:
             raise ValueError(f"模板边引用了不存在的节点：{edge}")
-        depends_on.setdefault(target, []).append(_step_node_uuid(workflow_uuid_value, source))
+        depends_on.setdefault(target, []).append(uuid_at(source))
 
     def node_uuid_of_key(key: Any) -> str:
         index = key_to_index.get(str(key))
         if index is None:
             raise ValueError(f"模板引用了不存在的节点 key：{key!r}")
-        return _step_node_uuid(workflow_uuid_value, index)
+        return uuid_at(index)
 
     nodes: List[Dict[str, Any]] = []
     for index, node in enumerate(template_nodes):
@@ -996,7 +1007,7 @@ def materialize_workflow_template(
             ]
         parent_uuid = node_uuid_of_key(node["parent"]) if node.get("parent") else None
         if kind == "group":
-            entry = {"uuid": _step_node_uuid(workflow_uuid_value, index),
+            entry = {"uuid": uuid_at(index),
                 "name": str(node.get("name") or "分组"), "type": "group", "param": {},
                 "meta_data": {"unilab": {"group_mode": (node.get("param") or {}).get("mode", "sequence")}},
                 "pose": {}, "execution_policy": {}}
@@ -1006,7 +1017,7 @@ def materialize_workflow_template(
             param = remap_expression(dict(node.get("param") or {}), node_uuid_of_key, reference_key="node_key")
             condition_references(param)
             entry = {
-                "uuid": _step_node_uuid(workflow_uuid_value, index),
+                "uuid": uuid_at(index),
                 "name": str(node.get("name") or "条件"), "type": "condition",
                 "param": param, "meta_data": {}, "pose": {},
                 "execution_policy": execution_policy,
@@ -1025,7 +1036,7 @@ def materialize_workflow_template(
                 param["condition"] = dict(condition, device_id=resolved.get(device_id, device_id))
             parse_loop_spec(param)
             entry: Dict[str, Any] = {
-                "uuid": _step_node_uuid(workflow_uuid_value, index),
+                "uuid": uuid_at(index),
                 "name": str(node.get("name") or "循环"),
                 "type": LOOP_NODE_TYPE,
                 "param": param,
@@ -1043,7 +1054,7 @@ def materialize_workflow_template(
                     dict(item) for item in node["inventory_requirements"]
                 ]
             entry = {
-                "uuid": _step_node_uuid(workflow_uuid_value, index),
+                "uuid": uuid_at(index),
                 "name": str(node.get("name") or f"{device_id}.{action}"),
                 "type": "device_action",
                 "material_uuid": catalog.material_uuid_of(device_id),

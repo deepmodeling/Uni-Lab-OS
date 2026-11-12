@@ -164,6 +164,13 @@ def setup_local_scheduler(
         services.runtime,
         authority_profile=SchedulerAuthorityProfile.LOCAL_SCHEDULER,
     )
+    from unilabos.server.services.runtime.workflow.authoring_compiler import WorkflowAuthoringCompiler
+
+    # 工作流作者：设备包 @workflow 同一静态编译器；源码托管在数据库根目录旁的 workflow_sources/
+    service.configure_authoring(
+        compiler=WorkflowAuthoringCompiler(),
+        source_root=services.paths.root / "workflow_sources",
+    )
     scheduler = BackendScheduler(
         service,
         execution_backend,

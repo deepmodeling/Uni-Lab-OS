@@ -11,6 +11,13 @@ def test_environment_limits_discovery_to_localhost_without_overriding_explicit_v
     assert env["PATH"] == "/bin"
 
 
+def test_environment_uses_only_the_variable_of_the_active_distro():
+    jazzy = conda_smoke.smoke_environment({"ROS_DISTRO": "jazzy"})
+    assert jazzy["ROS_AUTOMATIC_DISCOVERY_RANGE"] == "LOCALHOST" and "ROS_LOCALHOST_ONLY" not in jazzy
+    humble = conda_smoke.smoke_environment({"ROS_DISTRO": "humble"})
+    assert humble["ROS_LOCALHOST_ONLY"] == "1" and "ROS_AUTOMATIC_DISCOVERY_RANGE" not in humble
+
+
 def test_hanging_child_fails_with_timeout_instead_of_blocking():
     assert conda_smoke.main("import time; time.sleep(30)", timeout=1) == conda_smoke.TIMEOUT_EXIT_CODE
 

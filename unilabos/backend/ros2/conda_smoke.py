@@ -48,8 +48,13 @@ def smoke_environment(base: Optional[Mapping[str, str]] = None) -> dict[str, str
     """返回限定本机发现的环境；已显式设置的变量保持不变。"""
 
     env = dict(os.environ if base is None else base)
-    env.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")  # Jazzy 及以后
-    env.setdefault("ROS_LOCALHOST_ONLY", "1")  # Humble
+    distro = env.get("ROS_DISTRO", "")
+    # Jazzy 起用 ROS_AUTOMATIC_DISCOVERY_RANGE；同时设置 ROS_LOCALHOST_ONLY 会触发弃用告警。
+    # Humble 只认 ROS_LOCALHOST_ONLY。未知发行版两者都设，以本机为准。
+    if distro != "humble":
+        env.setdefault("ROS_AUTOMATIC_DISCOVERY_RANGE", "LOCALHOST")
+    if distro in ("humble", ""):
+        env.setdefault("ROS_LOCALHOST_ONLY", "1")
     env.setdefault("CYCLONEDDS_URI", CYCLONEDDS_LOCAL_ONLY)
     return env
 

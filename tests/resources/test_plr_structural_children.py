@@ -45,9 +45,9 @@ def test_missing_serialized_child_fails_instead_of_silent_truncation():
 
 
 def test_tip_identity_and_contents_roundtrip(monkeypatch):
-    from unilabos.devices.liquid_handling.prcxi.prcxi_labware import PRCXI_300ul_Tips
+    from tests.plr_fixtures import tip_rack
 
-    rack = PRCXI_300ul_Tips("tips")
+    rack = tip_rack("tips")
     tree = ResourceTreeSet.from_plr_resources([rack], known_random_uuid=True)
     for spot, node in zip(rack.children, tree.root_nodes[0].children):
         assert node.res_content.uuid == spot.unilabos_uuid

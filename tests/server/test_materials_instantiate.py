@@ -19,7 +19,7 @@ from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.server.services.materials import MaterialsService
 
-REGISTRY_CLASS = "test_prcxi_300ul_tips"
+REGISTRY_CLASS = "test_tip_rack_300ul"
 
 
 @pytest.fixture()
@@ -29,13 +29,10 @@ def registry_entry(monkeypatch: pytest.MonkeyPatch) -> None:
         REGISTRY_CLASS,
         {
             "class": {
-                "module": (
-                    "unilabos.devices.liquid_handling.prcxi."
-                    "prcxi_labware:PRCXI_300ul_Tips"
-                ),
+                "module": "pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_300ul",
                 "type": "pylabrobot",
             },
-            "display_name": "PRCXI 300ul 枪头盒",
+            "display_name": "300ul 枪头盒",
         },
     )
 
@@ -64,7 +61,7 @@ def test_registry_classes_lists_instantiable_entries(
                 for item in ok_data(listed)
                 if item["registry_class"] == REGISTRY_CLASS
             )
-            assert row["display_name"] == "PRCXI 300ul 枪头盒"
+            assert row["display_name"] == "300ul 枪头盒"
     finally:
         service.close()
 

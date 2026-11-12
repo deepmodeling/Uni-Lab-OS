@@ -334,7 +334,7 @@ def test_bundled_experiment_without_strict_identity_is_rejected_at_edge_import()
         / "unilabos"
         / "test"
         / "experiments"
-        / "prcxi_9320_slim.json"
+        / "plr_test_converted_slim.json"
     )
     raw = json.loads(experiment_path.read_text(encoding="utf-8"))
     nodes = deepcopy(raw["nodes"])
@@ -524,7 +524,7 @@ def test_itemized_carrier_uses_native_sites_and_injected_extra_metadata():
     set_plr_template_name(carrier, "StrictCarrier")
     assert carrier.unilabos_extra[EXTRA_RESOURCE_CLASS] == "StrictCarrier"
 
-    # 与 PRCXI9300Deck 一致：PLR payload 不承载 canonical Site。
+    # 与带 Site 的 Deck 一致：PLR payload 不承载 canonical Site。
     assert "sites" not in carrier.serialize()
 
     backend_sites = [
@@ -797,16 +797,13 @@ def test_resource_site_storage_is_structural_and_requires_exact_match():
         apply_plr_site_metadata(FakeDeck(mismatched), {"deck": [site]})
 
 
-def test_prcxi_deck_uses_resource_sites_without_extending_plr_serialize():
-    prcxi = pytest.importorskip(
-        "unilabos.devices.liquid_handling.prcxi.prcxi",
-        reason="PRCXI 驱动导入依赖 ROS Jazzy 运行时",
-        exc_type=ImportError,
-    )
+def test_site_deck_uses_resource_sites_without_extending_plr_serialize():
+    from tests.plr_fixtures import SiteDeck
+
     owner_uuid = str(uuid4())
     site = ResourceSite(
         uuid=str(uuid4()),
-        template_name="PRCXI9300Deck",
+        template_name="SiteDeck",
         material_uuid=owner_uuid,
         index=0,
         label="T1",
@@ -817,7 +814,7 @@ def test_prcxi_deck_uses_resource_sites_without_extending_plr_serialize():
         },
         allowed_resource_categories=["plate"],
     )
-    deck = prcxi.PRCXI9300Deck(
+    deck = SiteDeck(
         name="deck",
         size_x=100,
         size_y=100,
@@ -847,17 +844,12 @@ def test_prcxi_deck_uses_resource_sites_without_extending_plr_serialize():
     assert deck.sites[0].occupied_material_uuid is None
 
 
-def test_prcxi_resource_sites_remain_canonical_for_constructor():
-    pytest.importorskip(
-        "unilabos.devices.liquid_handling.prcxi.prcxi",
-        reason="PRCXI 驱动导入依赖 ROS Jazzy 运行时",
-        exc_type=ImportError,
-    )
+def test_deck_resource_sites_remain_canonical_for_constructor():
     owner_uuid = str(uuid4())
     occupant_uuid = str(uuid4())
     site = ResourceSite(
         uuid=str(uuid4()),
-        template_name="PRCXI9300Deck",
+        template_name="SiteDeck",
         material_uuid=owner_uuid,
         index=0,
         label="T1",

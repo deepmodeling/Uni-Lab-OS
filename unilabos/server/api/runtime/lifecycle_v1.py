@@ -23,6 +23,9 @@ def install_lifecycle_v1_api(app: FastAPI, service) -> None:
     app.include_router(create_station_router(service))
     app.include_router(create_station_invocation_router(service))
     app.include_router(create_scheduling_router(service))
+    from unilabos.server.api.runtime.inventory_seam_v1 import create_inventory_seam_router
+
+    app.include_router(create_inventory_seam_router(service))
     app.include_router(create_run_history_router(service))
 
 

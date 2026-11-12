@@ -187,21 +187,35 @@ def test_literal_input_markers_and_loop_placeholders_are_not_reinterpreted():
         stack.close()
 
 
+def _as_operation(service, workflow_uuid: str) -> None:
+    """V1 只允许实验操作作为子工作流；模板实例化出的普通工作流在测试里改标为实验操作。"""
+
+    service.operation_categories.set_workflow_kind(workflow_uuid, workflow_type="experiment_operation", category=None)
+
+
+def _insert(client, service, parent_uuid: str, revision: int, child_uuid: str, param: dict):
+    """V1 组合调用（``contract_uuid`` + ``param``）；返回响应与父工作流完整图。"""
+
+    publications = client.get(f"/api/v1/workflows/{child_uuid}/publications").json()["data"]
+    response = client.post(f"/api/v1/workflows/{parent_uuid}/composite-invocations", json={
+        "revision": revision, "contract_uuid": publications[-1]["uuid"], "param": param})
+    return response, service.get_graph(parent_uuid)
+
+
 def test_published_typed_child_preserves_nested_parent_input_and_output(stack):
     service, executor, client = stack
     _, payload = payload_for(nested_flow)
     child = upsert_workflow(service, payload)
+    _as_operation(service, child["uuid"])
     published = client.post(f"/api/v1/workflows/{child['uuid']}/publications", json={"revision": child["revision"]})
     assert published.status_code == 201, published.text
     parent = client.post("/api/v1/workflows", json={"name": "父流程"}).json()["data"]
     declared = client.put(f"/api/v1/workflows/{parent['uuid']}/io", json={"revision": parent["revision"],
         "input_contract": {"version": 1, "parameters": [{"name": "count", "schema": {"type": "integer"}, "required": True}]}})
     assert declared.json()["code"] == 0, declared.text
-    inserted = client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json={
-        "revision": declared.json()["data"]["workflow"]["revision"], "child_workflow_uuid": child["uuid"],
-        "arguments": {"amount": {"kind": "workflow_input", "parameter": "count"}, "label": "parent"}})
-    assert inserted.status_code == 201, inserted.text
-    graph = inserted.json()["data"]["graph"]
+    inserted, graph = _insert(client, service, parent["uuid"], declared.json()["data"]["workflow"]["revision"], child["uuid"],
+                              {"amount": {"kind": "workflow_input", "parameter": "count"}, "label": "parent"})
+    assert inserted.json()["code"] == 0, inserted.text
     invocation = next(node for node in graph["nodes"] if node["type"] == "workflow")
     boundary = next(handle["uuid"] for handle in graph["handle_templates"] if handle["io_type"] == "source" and handle["handle_key"] == "payload")
     declared = client.put(f"/api/v1/workflows/{parent['uuid']}/io", json={
@@ -247,11 +261,11 @@ def test_published_child_condition_uses_its_static_argument(stack):
     service, executor, client = stack
     _, payload = payload_for(flow)
     child = upsert_workflow(service, payload)
+    _as_operation(service, child["uuid"])
     assert client.post(f"/api/v1/workflows/{child['uuid']}/publications", json={"revision": child["revision"]}).status_code == 201
     parent = client.post("/api/v1/workflows", json={"name": "父条件"}).json()["data"]
-    result = client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json={
-        "revision": parent["revision"], "child_workflow_uuid": child["uuid"], "arguments": {"enabled": False}})
-    assert result.status_code == 201, result.text
+    result, _graph = _insert(client, service, parent["uuid"], parent["revision"], child["uuid"], {"enabled": False})
+    assert result.json()["code"] == 0, result.text
     task = submit(service, parent, {})
     wait_for(lambda: len(executor.dispatched) == 1)
     assert executor.dispatched[0]["action_args"] == {"value": "no"}

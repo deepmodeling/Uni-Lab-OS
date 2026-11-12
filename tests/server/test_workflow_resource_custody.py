@@ -306,11 +306,11 @@ def test_v7_live_admission_migrates_without_releasing_resources(tmp_path):
     try:
         ResourceIntervals(service).recover()
         assert ExecutionClaims(service).get(request.owner_uuid)['claim_uuid']==claim['claim_uuid']
-        assert service.connection.execute('PRAGMA user_version').fetchone()[0]==8
+        assert service.connection.execute('PRAGMA user_version').fetchone()[0]==9
         competitor=make_task(service,('reactor',))
         epoch=ExecutionClaims(service).activate_authority()
         assert not ResourceIntervals(service).admit(request_for(service,competitor),epoch)
-        assert list(tmp_path.glob('runtime.db.pre-v8-*.bak'))
+        assert list(tmp_path.glob('runtime.db.pre-v9-*.bak'))
     finally:
         service.close()
 

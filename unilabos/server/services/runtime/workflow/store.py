@@ -196,12 +196,29 @@ class WorkflowStore:
         page: int,
         page_size: int,
         name: str = "",
+        workflow_type: Optional[str] = None,
+        operation_category_uuid: Optional[str] = None,
+        published: Optional[bool] = None,
     ) -> Dict[str, Any]:
         where = "deleted_at IS NULL"
         values: List[Any] = []
         if name:
             where += " AND name LIKE ?"
             values.append(f"%{name}%")
+        if workflow_type is not None:
+            where += " AND workflow_type = ?"
+            values.append(workflow_type)
+        if operation_category_uuid is not None:
+            where += " AND operation_category_uuid = ?"
+            values.append(operation_category_uuid)
+        if published is not None:
+            # V1 status：当前修订已发布为 published，否则 source
+            where += (
+                (" AND " if published else " AND NOT ")
+                + "EXISTS (SELECT 1 FROM workflow_publication AS publication "
+                "WHERE publication.workflow_uuid = workflow.uuid "
+                "AND publication.revision = workflow.revision)"
+            )
         offset = (page - 1) * page_size
         with self._lock:
             total = self._conn.execute(
@@ -587,6 +604,7 @@ class WorkflowStore:
             int(node.disabled),
             int(node.minimized),
             node.script,
+            _json(node.manual_confirmation),
         )
         if existing is None:
             conn.execute(
@@ -596,9 +614,9 @@ class WorkflowStore:
                     meta_data, workflow_uuid, workflow_node_template_uuid,
                     parent_uuid, material_uuid, name, status, type, icon, pose,
                     param, footer, action_name, action_type, execution_policy,
-                    disabled, minimized, script
+                    disabled, minimized, script, manual_confirmation
                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (node.uuid, now, now, *values),
             )
@@ -612,7 +630,7 @@ class WorkflowStore:
                 material_uuid = ?, name = ?, status = ?, type = ?, icon = ?,
                 pose = ?, param = ?, footer = ?, action_name = ?,
                 action_type = ?, execution_policy = ?, disabled = ?,
-                minimized = ?, script = ?
+                minimized = ?, script = ?, manual_confirmation = ?
             WHERE uuid = ?
             """,
             (now, *values, node.uuid),
@@ -3834,6 +3852,10 @@ class WorkflowStore:
             "action_type",
             "script",
         )
+        # V1：人工确认配置只在非空时输出
+        manual_confirmation = _load(row["manual_confirmation"], {}) if "manual_confirmation" in row.keys() else {}
+        if manual_confirmation:
+            result["manual_confirmation"] = manual_confirmation
         return result
 
     @classmethod

@@ -66,7 +66,8 @@ def test_create_independent_instances_with_rebound_conditions_and_parameters(sta
     assert template == original
     listing = client.get("/api/v1/workflows?page_size=1").json()["data"]
     assert listing["has_more"] is True
-    assert listing["items"][0]["workflow_type"] == "workflow"
+    assert listing["items"][0]["workflow_type"] == "normal"  # V1：normal | experiment_operation
+    assert listing["items"][0]["operation_category_uuid"] is None
     assert listing["items"][0]["status"] == "source"
     assert client.get("/api/v1/workflows?page_size=1&page=2").json()["data"]["has_more"] is False
 

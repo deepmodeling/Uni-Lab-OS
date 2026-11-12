@@ -33,6 +33,8 @@ EDGE_ROUTE_PREFIXES = (
     "status-incidents",
     "driver-packages",
     "device-processes",
+    # V1 设备状态视图：数据在 Host 的 telemetry.db
+    "device-state",
 )
 
 _ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]

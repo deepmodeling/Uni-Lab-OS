@@ -345,7 +345,8 @@ class HTTPWorkflowClient:
         # 资源作用域与节点、I/O 同一次 PUT 原子保存，避免图已更新而作用域仍引用旧节点。
         return self._http.put(
             f"/workflows/{workflow_uuid}/graph",
-            json={"revision": revision, "nodes": nodes, "edges": edges,
+            # 程序化导入（模板实例化 / CLI 上传）显式要求按目标物料解析 Site 标签；V1 默认 preserve
+            json={"revision": revision, "nodes": nodes, "edges": edges, "site_binding_mode": "resolve",
                   **({"workflow_io": workflow_io} if workflow_io is not None else {}),
                   **({"resource_scopes": resource_scopes} if resource_scopes is not None else {})},
         )

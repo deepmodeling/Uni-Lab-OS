@@ -20,6 +20,7 @@ EXPECTED_TABLES = {
         # workflow authority（调度产物与运行控制同库）
         "workflow",
         "workflow_node_template",
+        "workflow_operation_category",
         "workflow_handle_template",
         "workflow_node",
         "workflow_edge",
@@ -198,10 +199,11 @@ def test_total_table_count_stays_small() -> None:
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
     # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
+    # runtime v9：workflow_operation_category（V1 实验操作类别），42 → 43。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 42,
+        "runtime": 43,
         "materials": 16,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 65
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 66

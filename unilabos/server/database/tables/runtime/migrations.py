@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from unilabos.server.database.schema import Migration, rebuild_table_migration, sql_migration
 
 # v2：整图任务也可携带幂等键（与单点设备动作同一套 idempotency_key + request_fingerprint）。
@@ -331,6 +333,45 @@ _RESOURCE_CUSTODY_V8 = (
     """,
 )
 
+# v9：V1 工作流作者合同——工作流类型 / 实验操作类别、节点人工确认配置、类别表。
+#: (表, 列, ADD COLUMN 定义)；已存在的列跳过，迁移可在部分已升级的库上重放。
+_WORKFLOW_AUTHORING_V9_COLUMNS = (
+    (
+        "workflow",
+        "workflow_type",
+        "workflow_type TEXT NOT NULL DEFAULT 'normal' CHECK ("
+        " workflow_type IN ('normal', 'experiment_operation'))",
+    ),
+    ("workflow", "operation_category_uuid", "operation_category_uuid TEXT"),
+    ("workflow_node", "manual_confirmation", "manual_confirmation TEXT NOT NULL DEFAULT '{}'"),
+)
+_WORKFLOW_AUTHORING_V9_STATEMENTS = (
+    """
+            CREATE INDEX IF NOT EXISTS idx_workflow_type_active
+            ON workflow(workflow_type, operation_category_uuid) WHERE deleted_at IS NULL
+    """,
+    """
+        CREATE TABLE IF NOT EXISTS workflow_operation_category (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            deleted_at TEXT,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 100 CHECK (sort_order BETWEEN 0 AND 10000)
+        )
+    """,
+)
+
+
+def _workflow_authoring_v9(connection: sqlite3.Connection) -> None:
+    for table, column, definition in _WORKFLOW_AUTHORING_V9_COLUMNS:
+        existing = {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
+        if column not in existing:
+            connection.execute(f'ALTER TABLE "{table}" ADD COLUMN {definition}')
+    for statement in _WORKFLOW_AUTHORING_V9_STATEMENTS:
+        connection.execute(statement)
+
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -356,5 +397,6 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(6, "执行代次、一次开始许可与不可变开始回执", *_EXECUTION_START_V6),
     sql_migration(7, "区间资源所有权和单次动作使用清单", *_RESOURCE_INTERVAL_V7),
     sql_migration(8, "设备托管、资源借还和等待环路", *_RESOURCE_CUSTODY_V8),
+    Migration(9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）", _workflow_authoring_v9),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

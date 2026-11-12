@@ -1125,3 +1125,116 @@ def _cycles(adjacency: Dict[str, set]) -> List[List[str]]:
         if node not in index:
             visit(node)
     return sorted(result)
+
+
+# ── 任务物料变化（V1 /workflow-tasks/{uuid}/material-events） ─────────────────
+
+
+def task_material_events(service: Any, task_uuid: str, materials: Any, *, page_limit: int = 1000,
+                         max_pages: int = 50) -> List[Dict[str, Any]]:
+    """任务造成的物料变化：物料权威台账里 ``job_uuid`` 属于本任务作业的变更，标注节点与上级步骤。
+
+    台账在 materials.db（物料域拥有）；这里只按作业身份筛选并投影，不写库。未装配物料权威时为空。
+    """
+
+    from unilabos.server.api.v1_fields import ms_to_iso
+
+    task = service.get_workflow_task(task_uuid)
+    if materials is None:
+        return []
+    jobs = {job["uuid"]: job for job in service.list_jobs(task["uuid"])}
+    nodes = {str(node.get("uuid")): node for node in (task.get("workflow_snapshot") or {}).get("nodes") or []
+             if isinstance(node, dict)}
+
+    def step_path(node_uuid: str) -> List[str]:
+        path: List[str] = []
+        seen: set = set()
+        parent = str((nodes.get(node_uuid) or {}).get("parent_uuid") or "")
+        while parent and parent in nodes and parent not in seen:
+            seen.add(parent)
+            if nodes[parent].get("name"):
+                path.append(str(nodes[parent]["name"]))
+            parent = str(nodes[parent].get("parent_uuid") or "")
+        return list(reversed(path))
+
+    result: List[Dict[str, Any]] = []
+    after = 0
+    for _ in range(max_pages):
+        changes = materials.changes(after_sequence=after, limit=page_limit)
+        if not changes:
+            break
+        for change in changes:
+            after = max(after, change.sequence)
+            if change.job_uuid not in jobs:
+                continue
+            node_uuid = str(jobs[change.job_uuid].get("workflow_node_uuid") or "")
+            node = nodes.get(node_uuid) or {}
+            result.append({
+                "sequence": change.sequence, "event_uuid": change.event_uuid, "kind": change.operation,
+                "aggregate_type": change.aggregate_type,
+                "material_uuid": change.aggregate_uuid if change.aggregate_type == "material" else None,
+                "aggregate_uuid": change.aggregate_uuid, "delta": change.delta,
+                "occurred_at": ms_to_iso(change.occurred_at_ms), "actor_type": change.actor_type,
+                "workflow_node_job_uuid": change.job_uuid, "workflow_task_uuid": task["uuid"],
+                "workflow_node_uuid": node_uuid or None, "node_name": node.get("name"),
+                "step_path": step_path(node_uuid) if node_uuid else [],
+            })
+        if len(changes) < page_limit:
+            break
+    return result
+
+
+# ── 暂停任务修改未下发作业参数（V1 PATCH /workflow-tasks/{t}/jobs/{j}/param） ───────
+
+
+def patch_pending_job_param(service: Any, task_uuid: str, job_uuid: str, param: Dict[str, Any]) -> Dict[str, Any]:
+    """顶层合并参数补丁到暂停任务中尚未派发的当前 attempt（同时更新节点运行与计划节点）。
+
+    任务必须暂停（普通模式关闸或单步暂停）；作业必须属于该任务、仍为 pending 且是节点运行的
+    当前 attempt。在途或已下发的作业绝不改写；工作流拓扑不变。
+    """
+
+    task_identity = service.get_workflow_task(task_uuid)["uuid"]
+    job_identity = _uuid(job_uuid)
+    try:
+        patch = normalize_json_object(param)
+    except ValueError:
+        raise _invalid() from None
+    now = utc_now()
+    with service.transaction() as conn:
+        task = service.get_task(task_identity)
+        if task["status"] not in {"pending", "running"} or task["control_status"] != "paused":
+            raise _conflict("只有暂停中的任务可以修改未下发参数")
+        job = conn.execute(
+            "SELECT job.*, run.current_job_uuid, run.param AS run_param FROM workflow_node_job AS job "
+            "JOIN workflow_node_run AS run ON run.uuid = job.workflow_node_run_uuid "
+            "WHERE job.uuid=? AND job.deleted_at IS NULL",
+            (job_identity,),
+        ).fetchone()
+        if job is None or job["workflow_task_uuid"] != task_identity:
+            raise _not_found("作业不属于该任务")
+        if job["status"] != "pending" or job["current_job_uuid"] != job_identity:
+            raise _conflict("作业已离开 pending，不能修改参数")
+        merged = {**_load(job["param"], {}), **patch}
+        run_param = {**_load(job["run_param"], {}), **patch}
+        conn.execute("UPDATE workflow_node_job SET param=?, update_time=? WHERE uuid=?", (_json(merged), now, job_identity))
+        conn.execute("UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?",
+                     (_json(run_param), now, job["workflow_node_run_uuid"]))
+        plan = task["execution_plan"]
+        for planned in plan.get("nodes") or []:
+            if isinstance(planned, dict) and planned.get("uuid") == job["workflow_node_uuid"]:
+                planned["param"] = {**(planned.get("param") or {}), **patch}
+        conn.execute("UPDATE workflow_task SET execution_plan=?, update_time=? WHERE uuid=?",
+                     (_json(plan), now, task_identity))
+        service._append_event(conn, event="workflow.node_job.changed", data={
+            "workflow_node_job_uuid": job_identity, "workflow_task_uuid": task_identity, "status": "pending",
+            "param_updated": True,
+        }, now=now)
+    controller = getattr(service, "_task_controller", None)
+    if controller is not None:
+        try:
+            controller(task_identity)
+        except Exception:  # noqa: BLE001 - 参数已落库，调度器恢复时按库内参数重载
+            logger.exception("任务 %s 参数已修改，等待调度器重载", task_identity)
+    return {"task": service.get_workflow_task(task_identity),
+            "job": enrich_jobs(service, [service.get_job(job_identity)])[0]}

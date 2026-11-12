@@ -130,3 +130,25 @@ def test_unlock_resources_requires_confirmation_and_abnormal_terminal(stack: Sta
             (task["uuid"],),
         ).fetchone()[0]
     assert active == 0
+
+
+def test_patch_pending_job_param_only_while_paused(stack: Stack) -> None:
+    task = stack.create_task(["device-a", "device-b"])
+    wait_for(lambda: len(stack.executor.dispatched) == 1)
+    jobs = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/jobs"))
+    first, second = jobs
+    url = f"/api/v1/workflow-tasks/{task['uuid']}/jobs/{second['uuid']}/param"
+    error_of(stack.client.patch(url, json={"param": {"index": 9}}), 3003)  # 未暂停
+    ok_data(stack.command(task, "pause"), status=201)
+    error_of(stack.client.patch(f"/api/v1/workflow-tasks/{task['uuid']}/jobs/{first['uuid']}/param",
+                                json={"param": {"index": 9}}), 3003)  # 已下发
+    updated = ok_data(stack.client.patch(url, json={"param": {"index": 9, "speed": 2}}))
+    assert updated["job"]["param"] == {"index": 9, "speed": 2}
+    planned = {node["uuid"]: node for node in updated["task"]["execution_plan"]["nodes"]}
+    assert planned[second["workflow_node_uuid"]]["param"] == {"index": 9, "speed": 2}
+    error_of(stack.client.patch(f"/api/v1/workflow-tasks/{task['uuid']}/jobs/{uuid4()}/param",
+                                json={"param": {}}), 3002)
+    stack.executor.finish(0)
+    ok_data(stack.command(task, "resume"), status=201)
+    wait_for(lambda: len(stack.executor.dispatched) == 2)
+    assert stack.executor.dispatched[1]["action_args"] == {"index": 9, "speed": 2}

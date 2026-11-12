@@ -15,6 +15,13 @@ _INT64_MAX = (1 << 63) - 1
 _DECIMAL = re.compile(r"[+-]?[0-9]+\Z")
 
 
+class WorkflowTaskJobParamUpdateRequest(BaseModel):
+    """V1：暂停任务中尚未派发作业的参数补丁（顶层合并）。"""
+
+    model_config = ConfigDict(extra="forbid")
+    param: Dict[str, Any]
+
+
 class WorkflowTaskExecutionLockReleaseRequest(BaseModel):
     """V1：执行锁人工释放；必须携带物理安全确认和 Claim / Fence 快照。"""
 
@@ -81,6 +88,13 @@ def create_task_observability_router(service: Any) -> APIRouter:
 
         return observability.delete(task_uuid)
 
+    @router.patch("/workflow-tasks/{task_uuid}/jobs/{job_uuid}/param", summary="修改暂停任务的未下发参数")
+    def patch_workflow_node_job_param(task_uuid: str, job_uuid: str,
+                                      body: WorkflowTaskJobParamUpdateRequest) -> Dict[str, Any]:
+        from unilabos.server.services.runtime.workflow.task_lifecycle import patch_pending_job_param
+
+        return patch_pending_job_param(service, task_uuid, job_uuid, body.param)
+
     @router.get("/workflow-tasks/{task_uuid}/step-state", summary="单步候选")
     def get_workflow_task_step_state(task_uuid: str) -> Dict[str, Any]:
         return observability.step_state(task_uuid)
@@ -118,6 +132,15 @@ def create_task_observability_router(service: Any) -> APIRouter:
     @router.get("/workflow-runtime/wait-graph", summary="整站作业等待图")
     def get_execution_wait_graph() -> Dict[str, Any]:
         return observability.wait_graph()
+
+    @router.get("/workflow-tasks/{task_uuid}/material-events", summary="任务造成的物料变化")
+    def list_task_material_events(task_uuid: str) -> list:
+        """物料权威台账中由本任务作业产生的变化（搬运、消耗、标为已使用…），标注节点与步骤路径。"""
+
+        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.services.runtime.workflow.task_lifecycle import task_material_events
+
+        return task_material_events(service, task_uuid, get_materials_service())
 
     @router.get("/workflow-node-jobs/{job_uuid}/feedback", summary="作业过程反馈")
     def list_workflow_node_job_feedback(

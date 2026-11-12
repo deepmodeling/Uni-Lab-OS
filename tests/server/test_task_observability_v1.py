@@ -161,3 +161,33 @@ def test_wait_graph_reports_resource_waiters(stack: Stack) -> None:
     stack.executor.finish(1)
     wait_for(lambda: stack.task(waiting)["status"] == "succeeded")
     assert stack.task(holder)["status"] == "succeeded"
+
+
+def test_material_events_filter_the_materials_ledger_by_task_jobs(stack: Stack, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    task = stack.create_task(["device-a"])
+    wait_for(lambda: len(stack.executor.dispatched) == 1)
+    job_uuid = stack.executor.dispatched[0]["job_id"]
+
+    def change(sequence, job):
+        return SimpleNamespace(sequence=sequence, event_uuid=f"e{sequence}", operation="move_material",
+                               aggregate_type="material", aggregate_uuid="vial-1", delta={"to": "site-2"},
+                               occurred_at_ms=1_700_000_000_000, actor_type="device", job_uuid=job)
+
+    ledger = [change(1, job_uuid), change(2, "other-job"), change(3, None)]
+
+    class Materials:
+        def changes(self, *, after_sequence=0, limit=100):
+            return [item for item in ledger if item.sequence > after_sequence][:limit]
+
+    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: Materials())
+    events = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/material-events"))
+    assert [event["sequence"] for event in events] == [1]
+    event = events[0]
+    assert event["kind"] == "move_material" and event["material_uuid"] == "vial-1"
+    assert event["workflow_node_job_uuid"] == job_uuid and event["node_name"] == "动作0"
+    assert event["occurred_at"].endswith("Z") and event["step_path"] == []
+    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: None)
+    assert ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/material-events")) == []
+    error_of(stack.client.get(f"/api/v1/workflow-tasks/{uuid4()}/material-events"), 3002)

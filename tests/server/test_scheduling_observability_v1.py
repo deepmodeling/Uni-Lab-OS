@@ -64,3 +64,36 @@ def test_monitor_snapshot_and_event_backlog(stack: Stack) -> None:
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/event-stream")
     frames = [block for block in response.text.split("\n\n") if block.startswith("id: ")]
     assert frames and all("event: action" in block for block in frames)
+
+
+def test_settle_material_transfer_maps_to_physical_recovery(stack: Stack, monkeypatch) -> None:
+    from uuid import uuid4
+
+    calls = []
+
+    class Recovery:
+        def get(self, job_uuid):
+            return {"version": 3, "job_uuid": job_uuid}
+
+        def confirm_terminal_settlement(self, job_uuid, expected_version, reason, result):
+            calls.append((job_uuid, expected_version, reason, result))
+            return {"settled": True}
+
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("unilabos.server.api.runtime.scheduling_v1._default_scheduler",
+                        lambda: SimpleNamespace(_physical_recovery=Recovery()))
+    task = stack.create_task(["device-a"])
+    wait_for(lambda: len(stack.executor.dispatched) == 1)
+    job_uuid = stack.executor.dispatched[0]["job_id"]
+    body = {"actual_change_set": {"kind": "material_transfer", "material_uuid": "vial-1",
+                                  "target_owner_material_uuid": "rack-1", "target_site_uuid": "site-2"},
+            "reason": "现场核实在 rack-1/site-2"}
+    result = ok_data(stack.client.post(f"/api/v1/workflow-node-jobs/{job_uuid}/settle-material-transfer", json=body))
+    assert result == {"job_uuid": job_uuid, "settlement": {"settled": True}}
+    assert calls == [(job_uuid, 3, body["reason"], {"material_transfer_receipts": [
+        {"material_uuid": "vial-1", "target_owner_uuid": "rack-1", "target_site_uuid": "site-2"}]})]
+    error_of(stack.client.post(f"/api/v1/workflow-node-jobs/{job_uuid}/settle-material-transfer",
+                               json={**body, "actual_change_set": {**body["actual_change_set"], "kind": "x"}}), 1000)
+    error_of(stack.client.post(f"/api/v1/workflow-node-jobs/{uuid4()}/settle-material-transfer", json=body), 3002)
+    assert task["uuid"]

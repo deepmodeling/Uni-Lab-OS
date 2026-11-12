@@ -217,7 +217,8 @@ class RestartCoordinator:
 
         import json
 
-        from unilabos.server.api.edge_proxy import edge_http
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
         logger.warning("[Restart] 执行端已安静，经控制面通知 Edge 进程整进程重启")
         service = self._edge_control_service()
@@ -230,11 +231,20 @@ class RestartCoordinator:
             body=json.dumps({"mode": "immediate", "scope": "process"}).encode("utf-8"),
             timeout=10,
         )
-        if response is None or response.status_code >= 300:
+        failure = "Edge 未在线" if response is None else ""
+        if response is not None:
+            # Host 的 /restart 走统一信封：业务拒绝是 HTTP 200 + code != 0
+            try:
+                edge_response_data(response)
+            except EnvelopeError as exc:
+                failure = f"业务码 {exc.code}（HTTP {response.status_code}）：{exc.error}"
+            except ValueError:
+                failure = f"HTTP {response.status_code} 响应无效"
+        if failure:
             logger.error(
                 "[Restart] 无法通知 Edge 重启（%s），派发保持暂停；"
                 "确认 Edge 状态后可 DELETE /api/v1/restart 手动恢复",
-                "Edge 未在线" if response is None else f"HTTP {response.status_code}",
+                failure,
             )
             with self._lock:
                 self._restarting = False

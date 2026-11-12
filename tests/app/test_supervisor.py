@@ -246,6 +246,16 @@ def test_host_child_supervisor_backs_off_after_crash(monkeypatch: pytest.MonkeyP
     child._thread.join(timeout=5)
     assert launched == 3
     assert child.crash_count == 2
+    # V1 Workspace Host 快照的 edge 组件据此推导阶段：子进程已正常退出、不再看护
+    assert child.state() == {
+        "pid": None,
+        "alive": False,
+        "supervising": False,
+        "stop_requested": False,
+        "restart_count": 0,
+        "crash_count": 2,
+        "last_exit_code": 0,
+    }
 
 
 def test_host_child_supervisor_stop_requests_graceful_exit(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -323,6 +323,8 @@ class HostChildSupervisor:
         self._thread: Optional[threading.Thread] = None
         self.restart_count = 0
         self.crash_count = 0
+        #: 最近一次 Host 子进程的退出码（尚未退出过为 None）
+        self.last_exit_code: Optional[int] = None
 
     # ── 查询 ──
 
@@ -334,6 +336,22 @@ class HostChildSupervisor:
 
     def alive(self) -> bool:
         return self.pid is not None
+
+    def state(self) -> dict[str, Any]:
+        """看护状态快照（V1 Workspace Host 快照的 ``edge`` 组件据此推导阶段）。"""
+
+        pid = self.pid
+        thread = self._thread
+        return {
+            "pid": pid,
+            "alive": pid is not None,
+            # 看护线程仍在：崩溃退避或安静点重启的间隙里子进程暂时不在，但会被再拉起
+            "supervising": thread is not None and thread.is_alive(),
+            "stop_requested": self._stopping.is_set(),
+            "restart_count": self.restart_count,
+            "crash_count": self.crash_count,
+            "last_exit_code": self.last_exit_code,
+        }
 
     # ── 生命周期 ──
 
@@ -408,6 +426,7 @@ class HostChildSupervisor:
         while not self._stopping.is_set():
             child = self._launch()
             code = _wait(child)
+            self.last_exit_code = code
             if self._stopping.is_set():
                 return
             if code == RESTART_EXIT_CODE:

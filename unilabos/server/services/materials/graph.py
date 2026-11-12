@@ -12,7 +12,9 @@
   身份；携带 uuid 的图与既有记录冲突时拒绝。返回 ``summary``
   （新建/更新/移除/不变/发号统计）；
 - ``live_payload`` 从物料权威实时序列化当前真实拓扑（节点 + 边），
-  与快照 payload（上传时刻存档）互补。
+  与快照 payload（上传时刻存档）互补；
+- ``load_graph_payload`` 把权威 payload 装配成 Host 启动结构（``ResourceTreeSet``、
+  backend 连线、协议编译器用的物理拓扑图），``unilab -g`` 只走这一条装配路径。
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from unilabos.protocol.base import canonical_hash
@@ -32,6 +34,9 @@ from unilabos.server.database.tables.materials import (
 )
 
 if TYPE_CHECKING:
+    import networkx as nx
+
+    from unilabos.resources.resource_tracker import ResourceTreeSet
     from unilabos.server.services.materials import MaterialsService
 
 #: 图名 -> uuid5 的稳定命名空间；跨机器/跨次启动同名同 uuid。
@@ -737,13 +742,266 @@ class GraphService(MaterialsRepository):
         return {"nodes": nodes, "links": links}
 
 
+# ── 运行时装配：权威 payload → Host 启动结构 ─────────────────────────
+#
+# ``unilab -g`` 的读取链路：本地 JSON 先经 legacy 适配层升级旧格式、再由
+# :meth:`GraphService.upsert_graph` 对账发号；Host 拿到的永远是权威 payload，
+# 由 :func:`load_graph_payload` 装配成资源树、backend 连线与协议编译器用的
+# 物理拓扑图。GraphML 不再支持。
+
+#: 设备与通信设备之间 ``communication`` 边可识别的通信设备模板。
+_COMMUNICATION_TEMPLATES = ("serial", "io_device", "plc", "io")
+
+
+class LoadedGraph(NamedTuple):
+    """:func:`load_graph_payload` 的结果。"""
+
+    #: 设备与物料资源树（Host 的 ``devices_config`` / ``resources_config``）。
+    resource_tree_set: "ResourceTreeSet"
+    #: backend 形态的连线（``sourceHandle`` / ``targetHandle`` / ``id``）。
+    links: list[dict[str, Any]]
+    #: 协议编译器（:mod:`unilabos.experiments.compile`）读取的物理拓扑图。
+    physical_setup_graph: "nx.Graph"
+
+
+def _graph_resource_node(node: dict[str, Any]) -> dict[str, Any]:
+    """把 payload 节点就地整理成 ``ResourceDict`` 输入并返回。
+
+    - 必须带 uuid（或 ``data.unilabos_uuid``）；``children`` 是派生字段，丢弃；
+    - 缺 ``type`` 视为设备，缺 ``name`` 取 ``id``；
+    - 根级 ``position`` 不属于当前契约；根级 ``x/y/z`` 折叠进 ``pose.position``；
+    - ``sample_id`` 不受支持，丢弃；其余非 ``ResourceDict`` 根字段收进 ``config``。
+    """
+
+    from unilabos.resources.objects.resource import RESOURCE_ROOT_FIELDS
+    from unilabos.utils.banner_print import print_status
+    from unilabos.utils.log import logger
+
+    label = node.get("id", node.get("name"))
+    if not node.get("uuid"):
+        transport_uuid = (node.get("data") or {}).get("unilabos_uuid")
+        if not transport_uuid:
+            raise ValueError(f"资源 {label} 缺少 UUID；-g strict import 必须携带资源/Site UUID")
+        node["uuid"] = str(transport_uuid)
+    # 父子关系只由 parent/parent_uuid 表达；children 是派生字段，读取时丢弃。
+    node.pop("children", None)
+    if not isinstance(node.get("config"), dict):
+        node["config"] = {}
+    if not node.get("type"):
+        node["type"] = "device"
+        print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'type', defaulting to 'device'", "warning")
+    if node.get("name", None) is None:
+        node["name"] = node.get("id")
+        print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'name', defaulting to {node['name']}", "warning")
+    if "position" in node:
+        raise ValueError(f"资源 {label} 的根字段 position 不受支持，请使用 pose.position")
+    legacy_position = {axis: node.pop(axis) for axis in ("x", "y", "z") if node.get(axis) is not None}
+    if legacy_position:
+        raw_pose = copy.deepcopy(node.get("pose") or {})
+        if not isinstance(raw_pose, dict):
+            raise ValueError(f"资源 {label} 的 pose 必须是对象")
+        if raw_pose.get("position") not in (None, legacy_position):
+            raise ValueError(f"资源 {label} 的 pose.position 与旧 x/y/z 坐标冲突")
+        raw_pose["position"] = legacy_position
+        node["pose"] = raw_pose
+    if "sample_id" in node:
+        sample_id = node.pop("sample_id")
+        if sample_id:
+            logger.error(f"{node} 的 sample_id 参数不受支持，已忽略: {sample_id}")
+    for key in list(node.keys()):
+        if key not in RESOURCE_ROOT_FIELDS:
+            node["config"][key] = node.pop(key)
+    return node
+
+
+def graph_resource_tree(nodes: list[dict[str, Any]]) -> "ResourceTreeSet":
+    """payload 节点列表 → ``ResourceTreeSet``（层级按 ``parent_uuid`` / ``parent``）。
+
+    节点就地整理（见 :func:`_graph_resource_node`）；任何节点不合法都整体拒绝。
+    """
+
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+    from unilabos.utils.banner_print import print_status
+
+    print_status(f"{len(nodes)} Resources loaded", "info")
+    return ResourceTreeSet.from_raw_dict_list([_graph_resource_node(node) for node in nodes])
+
+
+def _canonicalize_link_ports(
+    links: list[dict[str, Any]], resource_tree_set: "ResourceTreeSet"
+) -> list[dict[str, Any]]:
+    """补齐边的端点 id / uuid，并把 ``port`` 规范成 ``{端点 id: 端口}``。
+
+    - 只带 ``source``/``target`` 或只带 ``*_uuid`` 的边按节点集合补出另一方；
+      端点不在节点集合中的边丢弃；
+    - ``port`` 为 ``"A"`` / ``"(A,B)"`` / 整数时转成字典，非法形态置空；
+      带 ``port`` 的 ``physical`` 边视为 ``fluid``；
+    - 一端端口缺失时取反向边的端口并丢弃本边；没有反向边则两端同名。
+    """
+
+    from unilabos.utils.log import logger
+
+    id_to_uuid: dict[str, str] = {}
+    uuid_to_id: dict[str, str] = {}
+    for node in resource_tree_set.all_nodes:
+        id_to_uuid[node.res_content.id] = node.res_content.uuid
+        uuid_to_id[node.res_content.uuid] = node.res_content.id
+
+    resolved: list[dict[str, Any]] = []
+    for link in links:
+        source_id = link.get("source")
+        target_id = link.get("target")
+        if source_id and source_id in id_to_uuid:
+            link["source_uuid"] = id_to_uuid[source_id]
+        if target_id and target_id in id_to_uuid:
+            link["target_uuid"] = id_to_uuid[target_id]
+        source_uuid = link.get("source_uuid")
+        target_uuid = link.get("target_uuid")
+        if source_uuid and source_uuid in uuid_to_id:
+            link["source"] = uuid_to_id[source_uuid]
+        if target_uuid and target_uuid in uuid_to_id:
+            link["target"] = uuid_to_id[target_uuid]
+        if not link.get("source") or not link.get("target"):
+            logger.warning(f"[Graph] 边 {link} 的端点不在节点集合中，已忽略")
+            continue
+        resolved.append(link)
+
+    for link in resolved:
+        port = link.get("port")
+        if port is None:
+            continue
+        if link.get("type", "physical") == "physical":
+            link["type"] = "fluid"
+        if isinstance(port, int):
+            port = str(port)
+        if isinstance(port, str):
+            port_str = port.strip()
+            if port_str.startswith("(") and port_str.endswith(")"):
+                # "(A,B)"：两端端口
+                parts = [part.strip() for part in port_str[1:-1].strip().split(",", 1)]
+                source_port = parts[0]
+                target_port = parts[1] if len(parts) > 1 else None
+            else:
+                # "A"：只有 source 端口
+                source_port = port_str
+                target_port = None
+            link["port"] = {link["source"]: source_port, link["target"]: target_port}
+        elif not isinstance(port, dict):
+            link["port"] = {link["source"]: None, link["target"]: None}
+
+    ports_by_edge = {(link["source"], link["target"]): link["port"] for link in resolved if link.get("port")}
+    # 借用了反向边端口的边随后丢弃（端口信息已并入反向边那一侧的图边）。
+    dropped: set[int] = set()
+    for index, link in enumerate(resolved):
+        source, target = link["source"], link["target"]
+        current_port = link.get("port")
+        if current_port is None or current_port.get(target) is not None:
+            continue
+        reverse_port = ports_by_edge.get((target, source))
+        if reverse_port:
+            reverse_source = reverse_port.get(source)
+            if reverse_source is not None:
+                current_port[target] = reverse_source
+                dropped.add(index)
+        else:
+            current_port[target] = current_port[source]
+    return [link for index, link in enumerate(resolved) if index not in dropped]
+
+
+def _apply_communication_links(graph: "nx.Graph") -> None:
+    """``communication`` 边把通信设备写进设备 config（串口名 / IO 端口号）。"""
+
+    from unilabos.utils.log import logger
+
+    for (left, right), edge in graph.edges.items():
+        if edge.get("type", "physical") != "communication":
+            continue
+        if graph.nodes[left].get("template_name") in _COMMUNICATION_TEMPLATES:
+            device_comm, device = left, right
+        elif graph.nodes[right].get("template_name") in _COMMUNICATION_TEMPLATES:
+            device_comm, device = right, left
+        else:
+            continue
+        comm_template = graph.nodes[device_comm].get("template_name")
+        if comm_template == "serial":
+            graph.nodes[device]["config"]["port"] = device_comm
+        elif comm_template == "io_device":
+            logger.warning(f"Modify {device}'s io_device_port to {edge['port'][device_comm]}")
+            graph.nodes[device]["config"]["io_device_port"] = int(edge["port"][device_comm])
+
+
+def _backend_links(links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """规范边 → backend 连线：``port`` 拆成 ``sourceHandle`` / ``targetHandle`` 并生成边 id。"""
+
+    for edge in links:
+        port = edge.pop("port", {})
+        source = edge["source"]
+        target = edge["target"]
+        if source in port:
+            edge["sourceHandle"] = port[source]
+        elif "source_port" in edge:
+            edge["sourceHandle"] = edge.pop("source_port")
+        elif "source_handle" in edge:
+            edge["sourceHandle"] = edge.pop("source_handle")
+        elif edge.get("type") == "communication":
+            continue
+        if target in port:
+            edge["targetHandle"] = port[target]
+        elif "target_port" in edge:
+            edge["targetHandle"] = edge.pop("target_port")
+        elif "target_handle" in edge:
+            edge["targetHandle"] = edge.pop("target_handle")
+        elif edge.get("type") == "communication":
+            continue
+        edge["id"] = f"reactflow__edge-{source}-{edge['sourceHandle']}-{target}-{edge['targetHandle']}"
+        for key in ("source_port", "target_port"):
+            edge.pop(key, None)
+    return links
+
+
+def load_graph_payload(payload: Mapping[str, Any], *, machine_name: str) -> LoadedGraph:
+    """把 Graph Authority 的 node-link payload 装配成 Host 启动结构。
+
+    ``payload`` 原地使用（节点 / 边会被整理），调用方需要保留原件时自行拷贝。
+    ``machine_name`` 写到未声明归属机器的设备树节点上（物料归权威管理，不写）。
+    """
+
+    import networkx as nx
+
+    resource_tree_set = graph_resource_tree(list(payload.get("nodes") or []))
+    links = _canonicalize_link_ports(
+        list(payload.get("links", payload.get("edges")) or []), resource_tree_set
+    )
+    graph = nx.node_link_graph(
+        {
+            "nodes": [node.res_content.model_dump(by_alias=True) for node in resource_tree_set.all_nodes],
+            "links": links,
+        },
+        edges="links",
+        multigraph=False,
+    )
+    _apply_communication_links(graph)
+
+    for tree in resource_tree_set.trees:
+        if tree.root_node.res_content.type != "device":
+            continue
+        for node in tree.get_all_nodes():
+            if not node.res_content.machine_name:
+                node.res_content.machine_name = machine_name
+
+    return LoadedGraph(resource_tree_set, _backend_links(links), graph)
+
+
 __all__ = [
     "GRAPH_NAMESPACE",
     "GraphError",
     "GraphService",
+    "LoadedGraph",
     "adopt_graph_payload",
+    "graph_resource_tree",
     "graph_uuid_for_name",
     "link_payload",
+    "load_graph_payload",
     "reconcile_graph_payload",
     "validate_graph_payload",
 ]

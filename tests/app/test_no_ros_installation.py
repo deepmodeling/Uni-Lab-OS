@@ -41,7 +41,8 @@ def test_default_runtime_imports_do_not_need_ros():
 from unilabos.config.config import BasicConfig
 from unilabos.app.cli.parser import build_parser
 assert BasicConfig.backend == build_parser().parse_args([]).backend == 'hostlink'
-import unilabos.resources.graphio
+import unilabos.server.services.materials.graph as graph_authority
+graph_authority.load_graph_payload({"nodes": [], "links": []}, machine_name="no-ros")
 import unilabos.registry.registry
 import unilabos.server.api.app
 import unilabos.backend.hostlink.local_runtime

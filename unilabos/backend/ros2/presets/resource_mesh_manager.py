@@ -22,7 +22,6 @@ from rclpy.action import ActionServer
 from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
 from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode,DeviceNodeResourceTracker
-from unilabos.resources.graphio import initialize_resources
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
@@ -158,7 +157,7 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         registry = lab_registry
         resource_config = json.loads(resource_config_str.replace("'",'"'))
         
-        if resource_config['id'] in self.resource_config_dict:
+        if any(item['id'] == resource_config['id'] for item in self.resource_config_dict.values()):
             self.get_logger().info(f'资源 {resource_config["id"]} 已存在')
             return
         if resource_config['class'] in registry.resource_type_registry.keys():
@@ -172,8 +171,17 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                         'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['children_mesh']}",
                         'mesh_tf': model_config['children_mesh_tf']
                     }
-        resources = initialize_resources([resource_config])
-        resource_dict = {item['id']: item for item in resources}
+        resources = [resource_config]
+        if resource_config.get('class') in registry.resource_type_registry:
+            # registry 资源类：实例化 PLR 草稿，经 ResourceTreeSet 展开为带父子 uuid 的扁平节点
+            from unilabos.resources.materials import instantiate_registry_resource
+            from unilabos.resources.resource_tracker import ResourceTreeSet
+
+            draft = instantiate_registry_resource(resource_config['class'], resource_config['name'])
+            tree_set = ResourceTreeSet.from_plr_resources([draft], known_random_uuid=True)
+            resources = [node for tree in tree_set.dump() for node in tree]
+        # 与 __init__ 一致按 uuid 建索引：resource_mesh_setup 按 parent_uuid 查父节点
+        resource_dict = {item.get('uuid') or item['id']: item for item in resources}
         self.resource_config_dict = {**self.resource_config_dict,**resource_dict}
         tf_dict = self.resource_mesh_setup(resource_dict)
         self.resource_tf_dict = {**self.resource_tf_dict,**tf_dict}

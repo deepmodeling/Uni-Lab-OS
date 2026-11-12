@@ -1,4 +1,4 @@
-"""旧后端导出图 / 旧示例图只在 legacy 适配层转换；微后端与 graphio 只认当前契约。
+"""旧后端导出图 / 旧示例图只在 legacy 适配层转换；微后端与 Graph Authority 装配只认当前契约。
 
 覆盖旧 Backend ``/edge/material/download`` 与 dev 分支示例图的形状：``class``
 无 ``template_name``、根级 ``position``、``pose.position_3d``、``children``、
@@ -273,24 +273,18 @@ def test_material_nodes_batch_resolves_occupied_by_and_fills_defaults():
     assert plate["parent_uuid"] == deck_uuid and plate["template_name"] == "host_node"
 
 
-# ── 微后端 / graphio 只认当前契约 ───────────────────────────────
+# ── 微后端 / Graph Authority 装配只认当前契约 ───────────────────
 
 
-@pytest.fixture
-def graphio():
-    return pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+def test_graph_loader_loads_converted_export_but_rejects_raw_legacy_shape():
+    from unilabos.server.services.materials.graph import load_graph_payload
 
-
-def test_graphio_loads_converted_export_but_rejects_raw_legacy_shape(graphio):
     payload, ids = _legacy_export()
     with pytest.raises(ValueError, match="根字段 position 不受支持"):
-        graphio.read_node_link_json(payload)
+        load_graph_payload(payload, machine_name="lab-pc")
 
-    graph, tree, links = graphio.read_node_link_json(normalize_legacy_graph(payload))
+    loaded = load_graph_payload(normalize_legacy_graph(payload), machine_name="lab-pc")
+    tree, links = loaded.resource_tree_set, loaded.links
     assert len(tree.all_nodes) == 6
     by_uuid = {node.res_content.uuid: node for node in tree.all_nodes}
     assert by_uuid[ids["well_a"]].res_content.parent.uuid == ids["plate_a"]

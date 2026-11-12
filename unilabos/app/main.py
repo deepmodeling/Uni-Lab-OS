@@ -6,11 +6,11 @@ import shutil
 import signal
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING
 import yaml
 
-if TYPE_CHECKING:  # networkx 导入要 0.6s，运行期只用于一个局部变量标注
-    import networkx as nx
+if TYPE_CHECKING:
+    from unilabos.server.services.materials.graph import LoadedGraph
 
 # Windows 中文系统 stdout 默认 GBK，无法编码 banner / emoji 日志中的 Unicode 字符
 # 强制 stdout/stderr 用 UTF-8，避免 print 触发 UnicodeEncodeError 导致进程崩溃
@@ -71,6 +71,26 @@ def _resolve_graph_file_path(file_path: str | None) -> str | None:
         print_status(f"使用相对路径{temp_file_path}", "info")
         return temp_file_path
     return file_path
+
+
+def _require_node_link_json(file_path: str) -> None:
+    """``-g`` 只接受 node-link JSON；GraphML 等其它格式直接拒绝启动。"""
+
+    if file_path.lower().endswith(".graphml"):
+        print_status(
+            f"-g {file_path}: 不再支持 GraphML 设备图。请把它转换为 node-link JSON"
+            "（顶层 nodes + links，层级用 parent 表达，格式见 docs/user_guide/graph_files.md）"
+            "后用 unilab -g <文件>.json 启动",
+            "error",
+        )
+        os._exit(1)
+    if os.path.isfile(file_path) and not file_path.endswith(".json"):
+        print_status(
+            f"-g {file_path}: 设备图文件必须是 node-link JSON（.json），"
+            "格式见 docs/user_guide/graph_files.md",
+            "error",
+        )
+        os._exit(1)
 
 
 def _load_graph_json_preview(file_path: str | None) -> Dict[str, Any] | None:
@@ -295,6 +315,57 @@ def _print_graph_registration(stored: Dict[str, Any]) -> None:
         "文件对既有节点的修改不生效，改图请用前端或 unilab graph upload",
         "info",
     )
+
+
+def _load_startup_graph(
+    args_dict: Dict[str, Any], working_dir: str, *, is_slave: bool
+) -> "LoadedGraph":
+    """Host 启动图：``-g`` → Graph Authority → 资源树 / backend 连线 / 物理拓扑图。
+
+    本地 JSON 文件在读取边界由 legacy 适配层升级旧格式，再登记到 Graph Authority；
+    之后一律以权威 payload（缓存文件）经 ``load_graph_payload`` 装配。不带 ``-g``
+    时以空图启动（只有 host_node）。物理拓扑图同时交给协议编译器使用。
+    """
+
+    from unilabos.backend.runtime.workstation_protocol import set_physical_setup_graph
+    from unilabos.server.services.materials.graph import load_graph_payload
+
+    file_path = args_dict.get("_graph_file_path")
+    if file_path is None:
+        file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
+    if file_path is None:
+        # 不带 -g：Host 以空图启动（只有 host_node），设备随后经驱动包 / 受管设备进程
+        # 或其它 Slave 接入；Slave 没有设备就没有存在意义，仍然要求 -g。
+        if is_slave:
+            print_status("Slave 必须用 -g 指定要接入的设备图", "error")
+            os._exit(1)
+        print_status(
+            "未指定 -g，以空图启动（仅 host_node）。设备可稍后从驱动包页安装并作为受管进程接入，"
+            "或用 unilab -g <图文件.json> 重启。",
+            "info",
+        )
+        payload: Dict[str, Any] = {"nodes": [], "links": []}
+    else:
+        _require_node_link_json(file_path)
+        if not args_dict.get("_graph_from_authority") and os.path.isfile(file_path):
+            # -g 本地 JSON 是创建入口：旧格式图在读取边界由 legacy 适配层转成
+            # 当前契约，注册表就绪后登记到 Graph Authority（权威没有则创建，已有则
+            # 以权威为准只补新增，冲突 / 不可达拒绝启动），再以权威 payload 装配。
+            from unilabos.server.backend.legacy_adaptor.legacy.startup import (
+                upgrade_startup_graph_payload,
+            )
+
+            graph_payload = upgrade_startup_graph_payload(_read_graph_json(file_path), file_path)
+            file_path = _register_graph_file_to_authority(
+                file_path, args_dict, working_dir, graph_payload
+            )
+            args_dict["_graph_file_path"] = file_path
+            args_dict["_graph_from_authority"] = True
+        payload = _read_graph_json(file_path)
+
+    loaded = load_graph_payload(payload, machine_name=BasicConfig.machine_name or "本地")
+    set_physical_setup_graph(loaded.physical_setup_graph)
+    return loaded
 
 
 def _first_run_confirmed(check_mode: bool) -> bool:
@@ -541,6 +612,8 @@ def _run_main():
     # Step -1: 预读取 graph 中的 community.* class，并在 build_registry 前挂载社区设备包
     if not check_mode:
         graph_file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
+        if graph_file_path is not None:
+            _require_node_link_json(graph_file_path)
         # 非文件参数按 uuid 或名称从本机 Graph Authority 解析。
         if graph_file_path is not None and not os.path.isfile(graph_file_path):
             materialized_path = _materialize_graph_from_authority(
@@ -657,61 +730,12 @@ def _run_main():
         return
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
-    from unilabos.resources.graphio import (
-        read_node_link_json,
-        read_graphml,
-        modify_to_backend_format,
-    )
     from unilabos.server.backend.legacy_adaptor import get_backend_client
-    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
+    from unilabos.resources.resource_tracker import ResourceDict
 
-    graph: "nx.Graph"
-    resource_tree_set: ResourceTreeSet
-    resource_links: List[Dict[str, Any]]
-
-    file_path = args_dict.get("_graph_file_path")
-    if file_path is None:
-        file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
-    if file_path is None:
-        # 不带 -g：Host 以空图启动（只有 host_node），设备随后经驱动包 / 受管设备进程
-        # 或其它 Slave 接入；Slave 没有设备就没有存在意义，仍然要求 -g。
-        if is_slave:
-            print_status("Slave 必须用 -g 指定要接入的设备图", "error")
-            os._exit(1)
-        print_status(
-            "未指定 -g，以空图启动（仅 host_node）。设备可稍后从驱动包页安装并作为受管进程接入，"
-            "或用 unilab -g <图文件.json> 重启。",
-            "info",
-        )
-        graph, resource_tree_set, resource_links = read_node_link_json({"nodes": [], "links": []})
-    else:
-        if (
-            file_path.endswith(".json")
-            and not args_dict.get("_graph_from_authority")
-            and os.path.isfile(file_path)
-        ):
-            # -g 本地 JSON 是创建入口：旧格式图在读取边界由 legacy 适配层转成
-            # 当前契约，注册表就绪后登记到 Graph Authority（权威没有则创建，已有则
-            # 以权威为准只补新增，冲突 / 不可达拒绝启动），再以权威 payload 装配。
-            from unilabos.server.backend.legacy_adaptor.legacy.startup import (
-                upgrade_startup_graph_payload,
-            )
-
-            graph_payload = upgrade_startup_graph_payload(_read_graph_json(file_path), file_path)
-            file_path = _register_graph_file_to_authority(
-                file_path, args_dict, working_dir, graph_payload
-            )
-            args_dict["_graph_file_path"] = file_path
-            args_dict["_graph_from_authority"] = True
-            graph, resource_tree_set, resource_links = read_node_link_json(file_path)
-        elif file_path.endswith(".json"):
-            graph, resource_tree_set, resource_links = read_node_link_json(file_path)
-        else:
-            graph, resource_tree_set, resource_links = read_graphml(file_path)
-    import unilabos.resources.graphio as graph_res
-
-    graph_res.physical_setup_graph = graph
-    resource_edge_info = modify_to_backend_format(resource_links)
+    loaded_graph = _load_startup_graph(args_dict, working_dir, is_slave=is_slave)
+    resource_tree_set = loaded_graph.resource_tree_set
+    resource_edge_info = loaded_graph.links
     # 模板 handle 表只在校验图中的边时才需要；设备条目的投影要几百毫秒，空图 / 无边不算
     materials: Dict[str, Any] = {}
     if resource_edge_info:
@@ -762,7 +786,7 @@ def _run_main():
     # 使用 ResourceTreeSet 代替 list
     args_dict["resources_config"] = resource_tree_set
     args_dict["devices_config"] = resource_tree_set
-    args_dict["graph"] = graph_res.physical_setup_graph
+    args_dict["graph"] = loaded_graph.physical_setup_graph
 
     if args_dict["controllers"] is not None:
         args_dict["controllers_config"] = yaml.safe_load(open(args_dict["controllers"], encoding="utf-8"))

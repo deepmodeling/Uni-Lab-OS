@@ -4,13 +4,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest
-
-graphio = pytest.importorskip(
-    "unilabos.resources.graphio",
-    reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-    exc_type=ImportError,
-)
+from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.server.services.materials.graph import graph_resource_tree
 
 
 def _node(node_id: str, parent: str | None = None, **overrides):
@@ -30,8 +25,8 @@ def _node(node_id: str, parent: str | None = None, **overrides):
     return payload
 
 
-def test_canonicalize_builds_hierarchy_from_parent_only():
-    tree = graphio.canonicalize_nodes_data(
+def test_graph_loader_builds_hierarchy_from_parent_only():
+    tree = graph_resource_tree(
         [_node("root"), _node("child", parent="root"), _node("leaf", parent="child")]
     )
 
@@ -41,9 +36,9 @@ def test_canonicalize_builds_hierarchy_from_parent_only():
     assert all("children" not in dumped for dumped in tree.dump()[0])
 
 
-def test_canonicalize_ignores_legacy_children_lists():
+def test_graph_loader_ignores_legacy_children_lists():
     """旧图 children 列表与 parent 不一致时以 parent 为准，且 children 不会落进 config。"""
-    tree = graphio.canonicalize_nodes_data(
+    tree = graph_resource_tree(
         [
             _node("root", children=["stranger"]),
             _node("child", parent="root", children=[]),
@@ -57,40 +52,25 @@ def test_canonicalize_ignores_legacy_children_lists():
     assert all("children" not in node.res_content.config for node in tree.all_nodes)
 
 
-def test_tree_to_list_and_dict_to_tree_roundtrip_via_parent():
-    nested = [
-        {
-            "id": "root",
-            "type": "deck",
-            "children": [
-                {"id": "a", "type": "plate", "children": [{"id": "a1", "type": "well", "children": []}]},
-                {"id": "b", "type": "plate", "children": []},
-            ],
-        }
-    ]
+def test_flat_dump_roundtrips_hierarchy_via_parent_uuid():
+    """扁平 dump 只靠 parent_uuid 表达层级，重新加载后树结构不变。"""
+    root = _node("root", type="deck")
+    plate_a = _node("a", parent="root", type="plate")
+    well = _node("a1", parent="a", type="well")
+    plate_b = _node("b", parent="root", type="plate")
+    tree = ResourceTreeSet.from_raw_dict_list([root, plate_a, well, plate_b])
 
-    flat = graphio.tree_to_list(nested)
+    (flat,) = tree.dump()
     assert [node["id"] for node in flat] == ["root", "a", "a1", "b"]
     assert all("children" not in node for node in flat)
-    assert {node["id"]: node["parent"] for node in flat} == {
+    assert {node["id"]: node["parent_uuid"] for node in flat} == {
         "root": None,
-        "a": "root",
-        "a1": "a",
-        "b": "root",
+        "a": root["uuid"],
+        "a1": plate_a["uuid"],
+        "b": root["uuid"],
     }
 
-    rebuilt = graphio.dict_to_tree({node["id"]: dict(node) for node in flat})
-    assert [node["id"] for node in rebuilt] == ["root"]
-    assert [child["id"] for child in rebuilt[0]["children"]] == ["a", "b"]
-    assert [leaf["id"] for leaf in rebuilt[0]["children"][0]["children"]] == ["a1"]
-
-
-def test_dict_to_tree_falls_back_to_legacy_children_lists():
-    legacy = {
-        "root": {"id": "root", "type": "deck", "children": ["a"]},
-        "a": {"id": "a", "type": "plate", "children": []},
-    }
-
-    rebuilt = graphio.dict_to_tree(legacy)
-    assert [node["id"] for node in rebuilt] == ["root"]
-    assert [child["id"] for child in rebuilt[0]["children"]] == ["a"]
+    rebuilt = ResourceTreeSet.load([flat])
+    (rebuilt_root,) = rebuilt.root_nodes
+    assert [child.res_content.id for child in rebuilt_root.children] == ["a", "b"]
+    assert [leaf.res_content.id for leaf in rebuilt_root.children[0].children] == ["a1"]

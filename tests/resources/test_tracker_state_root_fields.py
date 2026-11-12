@@ -62,12 +62,7 @@ def test_from_plr_resources_only_generates_missing_uuids_for_tests():
     assert tree.root_nodes[0].children[0].res_content.uuid == child.unilabos_uuid
 
 
-def test_graphio_accepts_sparse_plr_serialization(monkeypatch):
-    graphio = pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+def test_resource_tree_set_accepts_sparse_plr_serialization(monkeypatch):
     resource = RegularContainer(
         name="sparse_root",
         size_x=10,
@@ -86,18 +81,17 @@ def test_graphio_accepts_sparse_plr_serialization(monkeypatch):
 
     monkeypatch.setattr(resource, "serialize", serialize_without_default_geometry)
 
-    graph_payload = graphio.resource_plr_to_ulab(resource)
-    assert graph_payload["children"] == []
-    graph_resource = ResourceDict.model_validate(graph_payload)
+    tree = ResourceTreeSet.from_plr_resources([resource])
+    (root,) = tree.root_nodes
+    assert root.children == []
+    graph_resource = ResourceDict.model_validate(tree.dump()[0][0])
     assert graph_resource.pose.position is None
     assert graph_resource.pose.rotation.model_dump() == {"x": 0.0, "y": 0.0, "z": 0.0}
     assert graph_resource.parent is None
 
 
 @pytest.mark.parametrize("position", [None, Coordinate(1, 2, 3)])
-def test_graphio_does_not_persist_duplicate_state_location(position, monkeypatch):
-    from unilabos.resources import graphio
-
+def test_resource_tree_set_does_not_persist_duplicate_state_location(position, monkeypatch):
     resource = Resource(name="position_root", size_x=10, size_y=20, size_z=30)
     resource.unilabos_uuid = str(uuid4())
     resource.location = position
@@ -107,10 +101,10 @@ def test_graphio_does_not_persist_duplicate_state_location(position, monkeypatch
         return {**original_state(), "location": position.serialize() if position else None}
 
     monkeypatch.setattr(resource, "serialize_state", state_with_location)
-    payload = graphio.resource_plr_to_ulab(resource)
+    payload = ResourceTreeSet.from_plr_resources([resource]).dump()[0][0]
     assert "location" not in payload["data"]
     assert payload["pose"].get("position") == (
-        {"x": 1, "y": 2, "z": 3} if position else None
+        {"x": 1.0, "y": 2.0, "z": 3.0} if position else None
     )
 
 
@@ -476,58 +470,6 @@ def test_resource_tree_set_missing_metadata_sidecar_promotes_nested_metadata(
     assert tree_resource.meta_data == nested_meta_data
     assert "meta_data" not in tree_resource.config
     assert "meta_data" not in tree_resource.data
-
-
-@pytest.mark.parametrize("source_location", ["config", "data"])
-def test_graphio_plr_missing_metadata_sidecar_promotes_nested_metadata(
-    monkeypatch, source_location
-):
-    graphio = pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
-    container = RegularContainer(
-        name=f"nested_graphio_{source_location}_beaker",
-        size_x=10,
-        size_y=10,
-        size_z=20,
-        max_volume=100.0,
-    )
-    container.unilabos_uuid = str(uuid4())
-    container.unilabos_extra = {EXTRA_RESOURCE_CLASS: "BeakerTemplate"}
-    nested_meta_data = {"vendor": {"lot": f"nested-{source_location}"}}
-
-    if source_location == "config":
-        original_serialize = container.serialize
-
-        def serialize_with_nested_meta_data():
-            serialized = original_serialize()
-            serialized["meta_data"] = nested_meta_data
-            return serialized
-
-        monkeypatch.setattr(container, "serialize", serialize_with_nested_meta_data)
-    else:
-        original_serialize_state = container.serialize_state
-
-        def serialize_state_with_nested_meta_data():
-            return {
-                **original_serialize_state(),
-                "meta_data": nested_meta_data,
-            }
-
-        monkeypatch.setattr(
-            container,
-            "serialize_state",
-            serialize_state_with_nested_meta_data,
-        )
-
-    graph_payload = graphio.resource_plr_to_ulab(container)
-    assert "meta_data" not in graph_payload
-    graph_resource = ResourceDict.model_validate(graph_payload)
-    assert graph_resource.meta_data == nested_meta_data
-    assert "meta_data" not in graph_resource.config
-    assert "meta_data" not in graph_resource.data
 
 
 def test_authority_capacity_round_trips_without_becoming_a_plr_constructor_argument():

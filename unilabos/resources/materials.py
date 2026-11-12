@@ -607,23 +607,30 @@ def resolve(
     return resources[0]
 
 
-def _instantiate_registry_resource(class_name: str, name: str) -> Any:
-    """按 registry 资源类名实例化本地草稿（发给权威创建前的载体）。
+def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
+    """按 registry 资源类名实例化本地 PLR 草稿（无 uuid，发给权威创建前的载体）。
 
-    与微后端库存命令 ``instantiate_material``（``POST /api/v1/inventory/commands``）同款实例化入口；随后的
-    权威登记同样走 create_tree，两条路径语义一致。
+    ``materials.create("类名", name=...)`` 与微后端库存命令 ``instantiate_material``
+    （``POST /api/v1/inventory/commands``）共用此入口；随后的权威登记同样走
+    create_tree，两条路径语义一致。需要 dict 形态时交给
+    ``ResourceTreeSet.from_plr_resources``。只有 ``class.type == "pylabrobot"`` 的
+    registry 资源类可实例化。
     """
 
     if not str(name or "").strip():
         raise ValueError("按资源类名创建物料时必须提供 name")
-    from pylabrobot.resources.resource import Resource as ResourcePLR
+    import importlib
 
-    from unilabos.resources.graphio import initialize_resource
+    from unilabos.registry.registry import lab_registry
 
-    draft = initialize_resource(
-        {"name": str(name), "class": class_name}, resource_type=ResourcePLR
-    )
-    if not isinstance(draft, ResourcePLR):
+    entry = lab_registry.resource_type_registry.get(class_name)
+    class_info = entry.get("class") if isinstance(entry, dict) else None
+    if not isinstance(class_info, dict) or class_info.get("type") != "pylabrobot":
+        raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
+    module_name, _, attribute = str(class_info.get("module") or "").partition(":")
+    resource_class = getattr(importlib.import_module(module_name), attribute)
+    draft = resource_class(name=str(name))
+    if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
     return draft
 
@@ -664,7 +671,7 @@ def create(
     """
 
     if isinstance(plr_resource, str):
-        plr_resource = _instantiate_registry_resource(plr_resource, name)
+        plr_resource = instantiate_registry_resource(plr_resource, name)
     resources = (
         list(plr_resource)
         if isinstance(plr_resource, (list, tuple))
@@ -1047,6 +1054,7 @@ __all__ = [
     "ensure",
     "from_str",
     "get",
+    "instantiate_registry_resource",
     "material_uuid",
     "owner_device_of",
     "remove",

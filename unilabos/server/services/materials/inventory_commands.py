@@ -74,14 +74,13 @@ class UnsupportedCommand(MaterialValidationError):
 def instantiate_tree(value: MaterialInstantiate) -> MaterialTreeCreate:
     """registry 资源类 → 物料创建树（Host 进程内已加载 registry / PLR）。"""
 
-    from pylabrobot.resources.resource import Resource as ResourcePLR
-
     from unilabos.resources.adapters.plr_materials import plr_resources_to_create
-    from unilabos.resources.graphio import initialize_resource
+    from unilabos.resources.materials import instantiate_registry_resource
 
-    draft = initialize_resource({"name": value.name, "class": value.registry_class}, resource_type=ResourcePLR)
-    if not isinstance(draft, ResourcePLR):
-        raise MaterialValidationError(f"registry 资源类不可实例化: {value.registry_class}")
+    try:
+        draft = instantiate_registry_resource(value.registry_class, value.name)
+    except ValueError as exc:
+        raise MaterialValidationError(str(exc)) from exc
     tree = plr_resources_to_create([draft])
     if value.barcode:
         # 条码只落在出库产物的根节点（子节点如 tip spot 不带条码）

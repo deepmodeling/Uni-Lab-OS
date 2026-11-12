@@ -982,28 +982,22 @@ def test_site_snapshot_merge_is_uuid_based_and_never_deletes_missing_sites():
         merge_resource_sites(current, conflicting)
 
 
-def test_graphio_does_not_promote_class_to_template_name():
-    """graphio 只认当前契约：class 不再回填 template_name（旧图由 legacy 适配层转换）。"""
-    graphio = pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+def test_graph_loader_does_not_promote_class_to_template_name():
+    """图装配只认当前契约：class 不再回填 template_name（旧图由 legacy 适配层转换）。"""
+    from unilabos.server.services.materials.graph import graph_resource_tree
+
     node = _resource_payload(**{"class": "virtual_workbench"})
     node.pop("template_name", None)
-    dumped = graphio.canonicalize_nodes_data([node]).dump()[0][0]
+    dumped = graph_resource_tree([node]).dump()[0][0]
 
     assert dumped["class"] == "virtual_workbench"
     # template_name 只按 ResourceDict 自己的规则推导（这里来自 config.type）。
     assert dumped["template_name"] == "StrictCarrier"
 
 
-def test_graphio_keeps_protocol_fields_at_resource_root():
-    graphio = pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+def test_graph_loader_keeps_protocol_fields_at_resource_root():
+    from unilabos.server.services.materials.graph import graph_resource_tree
+
     owner_uuid = str(uuid4())
     node = _resource_payload(
         uuid=owner_uuid,
@@ -1022,7 +1016,7 @@ def test_graphio_keeps_protocol_fields_at_resource_root():
         sites_initialized=True,
         vendor_config="driver-only",
     )
-    tree = graphio.canonicalize_nodes_data([node])
+    tree = graph_resource_tree([node])
     dumped = tree.dump()[0][0]
 
     assert dumped["template_name"] == "StrictCarrier"
@@ -1042,33 +1036,30 @@ def test_graphio_keeps_protocol_fields_at_resource_root():
         uuid="",
         data={"unilabos_uuid": transport_uuid},
     )
-    transport_tree = graphio.canonicalize_nodes_data([transport_node])
+    transport_tree = graph_resource_tree([transport_node])
     transported = transport_tree.dump()[0][0]
     assert transported["uuid"] == transport_uuid
     assert "unilabos_uuid" not in transported["data"]
 
     unknown_position = _resource_payload(pose={"position": None})
-    unknown_tree = graphio.canonicalize_nodes_data([unknown_position])
+    unknown_tree = graph_resource_tree([unknown_position])
     assert unknown_tree.dump()[0][0]["pose"]["position"] is None
 
     # 根级 position 不属于当前契约（旧格式图在 -g 读取边界由 legacy 适配层转换）。
     legacy_root_position = _resource_payload(position={"x": 1, "y": 2, "z": 3})
     with pytest.raises(ValueError, match="根字段 position 不受支持"):
-        graphio.canonicalize_nodes_data([legacy_root_position])
+        graph_resource_tree([legacy_root_position])
 
     conflicting_xyz = _resource_payload(x=1)
     with pytest.raises(ValueError, match="与旧 x/y/z 坐标冲突"):
-        graphio.canonicalize_nodes_data([conflicting_xyz])
+        graph_resource_tree([conflicting_xyz])
 
 
-def test_graphio_keeps_graph_defined_host_node_and_links():
+def test_graph_loader_keeps_graph_defined_host_node_and_links():
     """图可显式声明 host_node（多主机设计），导入导出必须保留其身份与连接。"""
 
-    graphio = pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+    from unilabos.server.services.materials.graph import load_graph_payload
+
     host_uuid = str(uuid4())
     device = _resource_payload(
         id="device-1",
@@ -1079,7 +1070,7 @@ def test_graphio_keeps_graph_defined_host_node_and_links():
         parent_uuid=host_uuid,
         **{"class": "dummy_device"},
     )
-    graph, tree, links = graphio.read_node_link_json(
+    loaded = load_graph_payload(
         {
             "nodes": [
                 {
@@ -1100,13 +1091,17 @@ def test_graphio_keeps_graph_defined_host_node_and_links():
                     "type": "communication",
                 }
             ],
-        }
+        },
+        machine_name="lab-pc",
     )
+    tree, links, graph = loaded.resource_tree_set, loaded.links, loaded.physical_setup_graph
 
     assert [node.res_content.id for node in tree.root_nodes] == ["host_node"]
     host_root = tree.root_nodes[0]
     assert host_root.res_content.uuid == host_uuid
     assert [child.res_content.id for child in host_root.children] == ["device-1"]
+    # 设备树节点打上本机 machine_name
+    assert {node.res_content.machine_name for node in tree.all_nodes} == {"lab-pc"}
     assert set(graph.nodes) == {"host_node", "device-1"}
     assert len(links) == 1
     assert links[0]["source_uuid"] == host_uuid

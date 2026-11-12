@@ -219,18 +219,16 @@ def run_runtime(args: dict[str, Any]) -> None:
         _run_management_or_wait(start_backend(**args))
         return
 
-    from unilabos.resources.graphio import dict_from_graph
-
-    devices_and_resources = dict_from_graph(args["graph"])
-    if devices_and_resources is None:
-        _run_management_or_wait(start_backend(**args))
-        return
-
     from unilabos.device_mesh.resource_visalization import ResourceVisualization
 
+    resource_tree_set = args["resources_config"]
+    # 可视化按节点 id 查设备 / 物料模型；节点 dict 即 ResourceTreeSet 的 dump 形态。
+    devices_and_resources = {
+        node["id"]: node for tree in resource_tree_set.dump() for node in tree
+    }
     visualization = ResourceVisualization(
         devices_and_resources,
-        [node.res_content for node in args["resources_config"].all_nodes],
+        [node.res_content for node in resource_tree_set.all_nodes],
         enable_rviz=args["visual"] == "rviz",
     )
     args["resources_mesh_config"] = visualization.resource_model

@@ -149,7 +149,7 @@ class WareHouse(ItemizedCarrier):
             **kwargs,
         )
 
-        # 保存排序方式，供graphio.py的坐标映射使用
+        # 保存排序方式，随序列化结果一起输出供坐标映射使用
         # 使用独立属性避免与父类的layout冲突
         self.ordering_layout = ordering_layout
 

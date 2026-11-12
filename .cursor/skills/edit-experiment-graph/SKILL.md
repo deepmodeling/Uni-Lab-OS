@@ -152,4 +152,4 @@ unilab -g unilabos/test/experiments/<name>.json
 | 子节点没挂到父节点下 | 检查子节点 `parent` 是否等于父节点 `id`（`children` 不会被读取） |
 | `_resource_child_name` 不匹配 | 必须与 Deck 节点 `id` 一致 |
 
-详见 [reference.md](reference.md)：ResourceDict schema、Pose 标准化、Handle 验证、GraphML 格式。
+详见 [reference.md](reference.md)：ResourceDict schema、Pose 标准化、Handle 验证（图文件只支持 node-link JSON，GraphML 已不再支持）。

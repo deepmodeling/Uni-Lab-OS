@@ -84,7 +84,7 @@ Uni-Lab 的启动过程分为以下几个阶段：
 
 支持两种方式：
 
-- **本地文件**：使用 `-g` 指定图谱文件（支持 JSON 和 GraphML 格式）
+- **本地文件**：使用 `-g` 指定图谱文件（仅支持 node-link JSON；GraphML 已不再支持）
 - **远程资源**：不指定本地文件即可
 
 ### 7. 注册表构建
@@ -126,7 +126,7 @@ unilab --config path/to/your/config.py
 
 ### 1. 组态&拓扑图
 
-使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前支持 GraphML 和 node-link JSON 两种格式。格式可参照 `tests/experiments` 下的启动文件。
+使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前只支持 node-link JSON 格式（GraphML 需先转换为 node-link JSON，`-g foo.graphml` 会拒绝启动）。格式可参照 `unilabos/test/experiments` 下的启动文件。
 
 `-g <文件>.json` 是**创建入口，不是运行真相**。启动时文件先登记到 Graph Authority
 （materials.db 的图快照），随后一切从权威拉取——设备的位点、持有的物料都以权威为准：

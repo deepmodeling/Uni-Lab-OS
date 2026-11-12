@@ -29,13 +29,12 @@ def test_structural_children_match_by_name_not_runtime_order(monkeypatch):
         children[1].unilabos_uuid,
     ]
     assert not hasattr(children[0], "unilabos_uuid")
-    from unilabos.resources.graphio import resource_plr_to_ulab
-
-    graph = resource_plr_to_ulab(root)
-    assert [node["uuid"] for node in graph["children"]] == [
+    (flat,) = tree.dump()
+    assert [node["uuid"] for node in flat[1:]] == [
         children[2].unilabos_uuid,
         children[1].unilabos_uuid,
     ]
+    assert {node["parent_uuid"] for node in flat[1:]} == {root.unilabos_uuid}
 
 
 def test_missing_serialized_child_fails_instead_of_silent_truncation():

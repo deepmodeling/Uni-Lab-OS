@@ -63,7 +63,6 @@ from unilabos.registry.utils.tools import (
     resolve_registry_display_name,
     SIMPLE_TYPE_MAP,
 )
-from unilabos.resources.graphio import resource_plr_to_ulab, tree_to_list
 from unilabos.resources.resource_tracker import ResourceTreeSet, RETURN_UNILABOS_SAMPLES
 from unilabos.resources.objects.site import normalize_available_sites
 from unilabos.utils import logger

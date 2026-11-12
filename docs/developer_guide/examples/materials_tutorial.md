@@ -257,128 +257,70 @@
 }
 ```
 
-这些结构之间可使用 `graphio.py` 中的工具函数互转（见下一节）。
+当前运行时只认 `parent` / `parent_uuid` 表达层级，`children` 是派生字段：读取时忽略，
+导出时不写。上面几种形态之间的互转统一经 `ResourceTreeSet` 完成（见下一节）。
 
 ---
 
 ## 4. 转换函数及调用
 
-核心代码文件：`unilabos/resources/graphio.py`
+核心代码文件：`unilabos/resources/resource_tracker.py`（`ResourceTreeSet`）。早期
+`graphio.py` 里的互转函数（`dict_to_tree`、`tree_to_list`、`convert_resources_to_type`、
+`resource_plr_to_ulab`、`initialize_resource` 等）已删除，统一使用下列 API。
 
-### 4.1 结构互转（list/dict/tree/nestdict）
+### 4.1 扁平列表 ↔ 资源树
 
-代码引用：
+```python
+from unilabos.resources.resource_tracker import ResourceTreeSet
 
-```217:239:unilabos/resources/graphio.py
-def dict_to_tree(nodes: dict, devices_only: bool = False) -> list[dict]:
-    # ... 由扁平 dict（id->node）生成树（children 为对象列表）
+# 扁平节点列表（层级用 parent_uuid / parent 表达）-> 资源树集合
+tree_set = ResourceTreeSet.from_raw_dict_list(nodes)
+tree_set.root_nodes            # 每棵树的根（ResourceDictInstance，.children 为子节点）
+tree_set.all_nodes             # 深度优先的全部节点
+tree_set.find_by_uuid(uuid)
+
+# 资源树 -> 每棵树一组扁平节点（parent_uuid，无 children），可 JSON 序列化
+dumped = tree_set.dump()       # list[list[dict]]
+restored = ResourceTreeSet.load(dumped)
 ```
 
-```241:267:unilabos/resources/graphio.py
-def dict_to_nested_dict(nodes: dict, devices_only: bool = False) -> dict:
-    # ... 由扁平 dict 生成嵌套字典（children 为 {id:node}）
-```
-
-```270:273:unilabos/resources/graphio.py
-def list_to_nested_dict(nodes: list[dict]) -> dict:
-    # ... 由扁平列表（children 为 id 列表）转嵌套字典
-```
-
-```275:286:unilabos/resources/graphio.py
-def tree_to_list(tree: list[dict]) -> list[dict]:
-    # ... 由树形列表转回扁平列表（children 还原为 id 列表）
-```
-
-```289:337:unilabos/resources/graphio.py
-def nested_dict_to_list(nested_dict: dict) -> list[dict]:
-    # ... 由嵌套字典转回扁平列表
-```
-
-常见路径：
-
-- Uni-Lab-OS 扁平列表 → 树：`dict_to_tree({r["id"]: r for r in resources})`
-- 树 → Uni-Lab-OS 扁平列表：`tree_to_list(resources_tree)`
-- 扁平列表 ↔ 嵌套字典：`list_to_nested_dict` / `nested_dict_to_list`
+设备图（node-link JSON）不直接走这里：`unilab -g` 先登记到 Graph Authority，再由
+`unilabos.server.services.materials.graph.load_graph_payload` 装配成
+`ResourceTreeSet`、backend 连线与协议编译器用的物理拓扑图，详见 [设备图文件说明](../../user_guide/graph_files.md)。
 
 ### 4.2 Uni-Lab-OS ↔ PyLabRobot（PLR）
 
-高层封装：
+```python
+from unilabos.resources.resource_tracker import ResourceTreeSet
 
-```339:368:unilabos/resources/graphio.py
-def convert_resources_to_type(resources_list: list[dict], resource_type: Union[type, list[type]], *, plr_model: bool = False):
-    # Uni-Lab-OS -> (NestedDict or PLR)
+# PLR 资源对象 -> 资源树（每个资源须已带权威分配的 unilabos_uuid）
+tree_set = ResourceTreeSet.from_plr_resources([plr_root])
+ulab_flat = tree_set.dump()[0]
+
+# 资源树 -> PLR 资源对象（按 config.type 查找 PLR 类）
+plr_root = tree_set.to_plr_resources()[0]
 ```
 
-```371:395:unilabos/resources/graphio.py
-def convert_resources_from_type(resources_list, resource_type: Union[type, list[type]], *, is_plr: bool = False):
-    # (NestedDict or PLR) -> Uni-Lab-OS 扁平列表
-```
+`from_plr_resources(..., known_random_uuid=True)` 只用于尚未登记的草稿 / 测试：它为缺少
+UUID 的资源生成临时 UUID，真正的身份仍以微后端创建后返回的为准。
 
-底层转换：
-
-```398:441:unilabos/resources/graphio.py
-def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
-    # Uni-Lab-OS 单节点(树根) -> PLR Resource 对象
-```
-
-```443:481:unilabos/resources/graphio.py
-def resource_plr_to_ulab(resource_plr: "ResourcePLR", parent_name: str = None, with_children=True):
-    # PLR Resource -> Uni-Lab-OS 单节点(dict)
-```
-
-示例：
+### 4.3 按注册表资源类创建
 
 ```python
-from unilabos.resources.graphio import convert_resources_to_type, convert_resources_from_type
-from pylabrobot.resources.resource import Resource as ResourcePLR
+from unilabos.resources import materials
 
-# Uni-Lab-OS 扁平列表 -> PLR 根资源对象
-plr_root = convert_resources_to_type(resources_list=ulab_list, resource_type=ResourcePLR)
+# 只实例化本地 PLR 草稿（无 uuid）
+draft = materials.instantiate_registry_resource("my_plate_class", "plate_1")
 
-# PLR 资源对象 -> Uni-Lab-OS 扁平列表（用于保存/上传）
-ulab_flat = convert_resources_from_type(resources_list=plr_root, resource_type=ResourcePLR)
+# 实例化并在权威登记，返回带 uuid 的权威 PLR 对象
+plate = materials.create("my_plate_class", name="plate_1")
 ```
 
-可选项：
+### 4.4 第三方格式（如奔耀 Bioyond）
 
-- `plr_model=True`：保留 `model` 字段（默认会移除）。
-- `with_children=False`：`resource_plr_to_ulab` 仅转换当前节点。
-
-### 4.3 奔耀（Bioyond）→ PLR（及进一步到 Uni-Lab-OS）
-
-转换入口：
-
-```483:527:unilabos/resources/graphio.py
-def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: dict = {}, deck: Any = None) -> list[dict]:
-    # Bioyond 列表 -> PLR 资源列表，并可根据 deck.warehouses 将资源落位
-```
-
-使用示例：
-
-```python
-import json
-from unilabos.resources.graphio import resource_bioyond_to_plr, convert_resources_from_type
-from pylabrobot.resources.resource import Resource as ResourcePLR
-
-resp = json.load(open("unilabos/devices/workstation/bioyond_cell/bioyond_test_yibin.json", encoding="utf-8"))
-materials = resp["data"]
-
-# 将第三方类型name映射到 PLR 资源类名（需根据现场定义）
-type_mapping = {
-    "液": "RegularContainer",
-    "加样头(大)": "RegularContainer"
-}
-
-plr_list = resource_bioyond_to_plr(materials, type_mapping=type_mapping, deck=None)
-
-# 如需上传云端（Uni-Lab-OS 扁平格式）：
-ulab_flat = convert_resources_from_type(plr_list, [ResourcePLR])
-```
-
-说明：
-
-- `type_mapping` 必须由开发者根据设备/物料种类人工维护。
-- 如传入 `deck`，且 `deck.warehouses` 命名与 `whName` 对应，可将物料安放到仓库坐标（x/y/z）。
+第三方物料格式的映射属于外部驱动包：驱动先按自己的 `type_mapping` 构造 PLR 资源树，
+再经 `materials.create` / `materials.ensure` 登记到权威，或用
+`ResourceTreeSet.from_plr_resources` 得到扁平格式。
 
 ---
 
@@ -386,29 +328,19 @@ ulab_flat = convert_resources_from_type(plr_list, [ResourcePLR])
 
 - **云端/持久化**：使用 Uni-Lab-OS 物料格式（扁平 `nodes` 列表，children 为 id 列表）。便于版本化、可视化与网络传输。
 - **实验工作流执行**：使用 PyLabRobot（PLR）格式。PLR 运行时依赖严格的树形资源结构与对象 API。
-- **第三方设备/系统（Bioyond）输入**：保持来源格式不变，使用 `resource_bioyond_to_plr` + 人工 `type_mapping` 将其转换为 PLR（必要时再转 Uni-Lab-OS）。
+- **第三方设备/系统（Bioyond）输入**：保持来源格式不变，由驱动包按人工维护的 `type_mapping` 构造 PLR 资源树，再登记到权威（必要时经 `ResourceTreeSet` 转 Uni-Lab-OS）。
 
 ---
 
 ## 6. 常见问题与注意事项
 
-- **children 形态不一致**：不同函数期望不同 children 形态，注意在进入转换前先用“结构互转”工具函数标准化形态。
-- **devices_only**：`dict_to_tree/dict_to_nested_dict` 支持仅保留 `type == device` 的节点。
-- **模型/类型字段**：PLR 对象序列化参数有所差异，`resource_ulab_to_plr` 内部会根据构造签名移除不兼容字段（如 `category`）。
-- **驱动初始化**：`initialize_resource(s)` 支持从注册表/类路径创建 PLR/Uni-Lab-OS 资源或列表。
+- **children 形态不一致**：`ResourceTreeSet` 只按 `parent_uuid` / `parent` 建立层级，`children` 列表会被忽略；旧格式图（`children` id 列表、根级 `position` 等）在 `-g` / `unilab graph upload` 读取边界由 legacy 适配层统一转换。
+- **UUID**：`from_raw_dict_list` / `load` / `from_plr_resources` 都要求每个节点带权威 UUID（或 `data.unilabos_uuid`），不会随机生成。
+- **PLR 类型**：`to_plr_resources` 只按 `config.type` 查找 PLR 类，不回退到 `class` / `template_name`。
+- **按注册表创建**：`materials.instantiate_registry_resource` 只支持 `class.type == "pylabrobot"` 的注册表资源类。
 
 参考代码：
 
-```530:577:unilabos/resources/graphio.py
-def initialize_resource(resource_config: dict, resource_type: Any = None) -> Union[list[dict], ResourcePLR]:
-    # 从注册类/模块反射创建资源，或将 Uni-Lab-OS 字典包装为列表
-```
-
-```580:597:unilabos/resources/graphio.py
-def initialize_resources(resources_config) -> list[dict]:
-    # 批量初始化
-```
-
-
-
-
+- `unilabos/resources/resource_tracker.py`（`ResourceTreeSet`）
+- `unilabos/resources/materials.py`（`create`、`instantiate_registry_resource`）
+- `unilabos/server/services/materials/graph.py`（`load_graph_payload`）

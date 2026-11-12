@@ -16,8 +16,8 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
 
 这些形状只在**接收旧数据的边界**被识别并一次性转换：``-g`` 启动文件与
 ``unilab graph upload`` 的读取入口（:func:`upgrade_legacy_graph_payload`）、旧后端
-物料通知的拉取（:func:`normalize_legacy_material_nodes`）。graphio、Graph
-Authority、物料权威只接受当前契约，不认识这里列出的任何旧字段；剥离旧后端支持
+物料通知的拉取（:func:`normalize_legacy_material_nodes`）。Graph Authority
+（含其 ``load_graph_payload`` 运行时装配）、物料权威只接受当前契约，不认识这里列出的任何旧字段；剥离旧后端支持
 时删除本模块及其调用点即可。
 """
 

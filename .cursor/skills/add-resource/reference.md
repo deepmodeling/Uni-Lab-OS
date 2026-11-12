@@ -121,8 +121,8 @@ class Bottle(Well):
 
 | 函数 | 位置 | 方向 |
 |------|------|------|
-| `resource_bioyond_to_plr(materials, type_mapping, deck)` | `graphio.py` | Bioyond → PLR |
-| `resource_plr_to_bioyond(resources, type_mapping, warehouse_mapping)` | `graphio.py` | PLR → Bioyond |
+| `resource_bioyond_to_plr(materials, type_mapping, deck)` | 外部 Bioyond 驱动包（不在本仓库） | Bioyond → PLR |
+| `resource_plr_to_bioyond(resources, type_mapping, warehouse_mapping)` | 外部 Bioyond 驱动包（不在本仓库） | PLR → Bioyond |
 
 ### `resource_bioyond_to_plr` 流程
 
@@ -131,7 +131,7 @@ Bioyond 物料列表
     ↓ reverse_type_mapping: {typeName → (model, UUID)}
     ↓ 对每个物料:
        typeName → 查映射 → model (如 "BIOYOND_PolymerStation_Reactor")
-       initialize_resource({"name": unique_name, "class": model})
+       materials.instantiate_registry_resource(model, unique_name)
     ↓ 设置 unilabos_extra (material_bioyond_id, material_bioyond_name 等)
     ↓ 处理 detail (子物料/坐标)
     ↓ 按 locationName 放入 deck.warehouses 对应槽位
@@ -286,7 +286,8 @@ def bioyond_warehouse_5x3x1(name: str, row_offset: int = 0) -> WareHouse:
 | Bottle/Carrier 基类 | `unilabos/resources/itemized_carrier.py` |
 | WareHouse 类 + 工厂 | `unilabos/resources/warehouse.py` |
 | ResourceTreeSet 转换 | `unilabos/resources/resource_tracker.py` |
-| Bioyond 物料转换 | `unilabos/resources/graphio.py` |
+| Bioyond 物料转换 | 外部 Bioyond 驱动包（不在本仓库） |
+| 按注册表类实例化 PLR 草稿 | `unilabos/resources/materials.py` (`instantiate_registry_resource`) |
 | Bioyond 仓库定义 | `unilabos/resources/bioyond/warehouses.py` |
 | 电池资源 | `unilabos/resources/battery/` |
 | PLR 注册 | 驱动包导入时调用 `unilabos/resources/plr_additional_res_reg.py` 的 `register_plr_module()` / `@register_plr_class` |

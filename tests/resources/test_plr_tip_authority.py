@@ -134,13 +134,13 @@ def test_legacy_head_tip_identity_roundtrip(head_field, monkeypatch, tmp_path):
     ResourceTreeSet.from_plr_resources([restored])
 
 
-def test_graphio_tip_identity_roundtrip(monkeypatch):
-    from unilabos.resources.graphio import resource_plr_to_ulab, resource_ulab_to_plr
-
+def test_tip_identity_survives_flat_dump_roundtrip(monkeypatch):
+    """PLR → 扁平 dump → load → PLR：内嵌枪头的身份不丢失。"""
+    monkeypatch.setattr("unilabos.resources.resource_tracker.register", lambda: None)
     root = make_root()
-    ResourceTreeSet.from_plr_resources([root], known_random_uuid=True)
+    tree = ResourceTreeSet.from_plr_resources([root], known_random_uuid=True)
     tip_uuid = root.children[0].tip.unilabos_uuid
-    restored = resource_ulab_to_plr(resource_plr_to_ulab(root), plr_model=True)
+    restored = ResourceTreeSet.load(tree.dump()).to_plr_resources(skip_devices=False)[0]
     assert restored.children[0].tip.unilabos_uuid == tip_uuid
 
 

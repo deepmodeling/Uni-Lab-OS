@@ -8,8 +8,8 @@ patches = ["recipes/opentrons-shared-data/numpy2.patch"]
 notice = "recipes/opentrons-shared-data/NOTICE"
 
 [packages.pylabrobot]
-version = "1.0.0b1+unilabos.5c17d1956fe5.ot10"
-url = "https://github.com/Xuwznln/pylabrobot/archive/5c17d1956fe597b354d9231e2f1f1e838a6ee77b.tar.gz"
-sha256 = "21c1929120d69284223ea4b68dcf422fee20df18d8add25c0e239678669482b7"
+version = "1.0.0b1+unilabos.d8153b8b3e06.ot10"
+url = "https://github.com/Xuwznln/pylabrobot/archive/d8153b8b3e06df6a0d3f602ffaec75912fbeeb66.tar.gz"
+sha256 = "fb59ff94eebdecddaa542170f3f92f6a30efb8010d3ddaf59ae2a710a1fed6cc"
 patches = [".conda/pylabrobot/unilab-version.patch", ".conda/pylabrobot/opentrons-dependency.patch"]
 requires = ["opentrons-shared-data==10.1.0+unilabos.np2.1"]

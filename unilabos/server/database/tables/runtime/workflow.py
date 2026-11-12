@@ -224,6 +224,15 @@ class WorkflowTaskRecord(TableObject, table=True):
     execution_kind: str = "workflow"
     idempotency_key: Optional[str] = None
     request_fingerprint: str = ""
+    #: V1 任务优先级（normal / high），只随任务持久化，排序由调度器负责
+    priority: str = "normal"
+    #: V1 库存绑定：逻辑需求键 → 具体库存实例与预留量（创建时冻结）
+    inventory_bindings: JsonArray = Field(
+        default_factory=list,
+        sa_column=json_text_column("inventory_bindings", default_json="[]"),
+    )
+    #: V1 普通模式的派发闸门：pause 关闸但不改执行模式
+    dispatch_gate: str = "active"
 
 
 class WorkflowNodeRunRecord(TableObject, table=True):
@@ -935,6 +944,11 @@ WORKFLOW_TABLES = (
             ),
             idempotency_key TEXT,
             request_fingerprint TEXT NOT NULL DEFAULT '',
+            priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'high')),
+            inventory_bindings TEXT NOT NULL DEFAULT '[]' CHECK (
+                json_valid(inventory_bindings) AND json_type(inventory_bindings) = 'array'
+            ),
+            dispatch_gate TEXT NOT NULL DEFAULT 'active' CHECK (dispatch_gate IN ('active', 'paused')),
             FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid),
             CHECK (
                 (
@@ -1197,7 +1211,9 @@ WORKFLOW_TABLES = (
                 json_valid(meta_data) AND json_type(meta_data) = 'object'
             ),
             workflow_task_uuid TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')),
+            type TEXT NOT NULL CHECK (type IN (
+                'step', 'pause', 'resume', 'cancel', 'edit_input', 'switch_to_step', 'unlock_resources'
+            )),
             target_node_uuid TEXT,
             idempotency_key TEXT NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'rejected')),

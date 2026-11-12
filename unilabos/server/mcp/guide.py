@@ -43,7 +43,7 @@ GUIDE = """# 本机 MCP / protocol
    库存需求写节点 meta_data.inventory_requirements，格式直接取 protocol 的 InventoryRequirement。
 4. workflow_task_create 的 body 用 workflow_uuid 和 run_mode=normal 或 step 提交。
    单点动作也用该入口，execution_kind=ad_hoc_device_action、device_id、action_name、param。
-5. step 模式经 workflow_task_command 发 step 或 resume，带 expected_revision 与 idempotency_key。
+5. 任务控制经 workflow_task_command 发 step / pause / switch_to_step / resume / cancel，带 idempotency_key（expected_revision 可选）；返回命令投影，status=rejected 时看 result.reason。
 6. workflow_task_get / workflow_task_node_runs / workflow_task_jobs 跟踪真实结果，
    不以提交成功等同执行成功；检查每次 attempt 和返回信息。protocol_wait_task 有界等待，
    遇到待人工决策会立即返回，不能在等待期间自动替用户审批。

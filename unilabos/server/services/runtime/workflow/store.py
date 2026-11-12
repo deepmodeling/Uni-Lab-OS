@@ -1075,8 +1075,13 @@ class WorkflowStore:
         idempotency_key: Optional[str] = None,
         request_fingerprint: str = "",
         input_builder: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        priority: str = "normal",
+        inventory_bindings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """``input_builder`` 按同一事务内的图求有效任务输入（先于 ``plan_builder`` 调用）。"""
+        """``input_builder`` 按同一事务内的图求有效任务输入（先于 ``plan_builder`` 调用）。
+
+        ``priority`` / ``inventory_bindings`` 是 V1 创建字段，随任务原样冻结。
+        """
 
         now = utc_now()
         with self.transaction() as conn:
@@ -1094,9 +1099,9 @@ class WorkflowStore:
                     meta_data, workflow_uuid, status, workflow_snapshot,
                     execution_plan, run_mode, target_node_uuid, control_status,
                     cleanup_status, trace_context, input, output, error_info,
-                    idempotency_key, request_fingerprint
+                    idempotency_key, request_fingerprint, priority, inventory_bindings
                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, ?, ?, ?,
-                          'none', '{}', ?, '{}', '[]', ?, ?)
+                          'none', '{}', ?, '{}', '[]', ?, ?, ?, ?)
                 """,
                 (
                     task_uuid,
@@ -1113,6 +1118,8 @@ class WorkflowStore:
                     _json(input_value),
                     idempotency_key,
                     request_fingerprint if idempotency_key is not None else "",
+                    priority,
+                    _json(list(inventory_bindings or [])),
                 ),
             )
             for spec in jobs:
@@ -1418,85 +1425,6 @@ class WorkflowStore:
             "WHERE workflow_task_uuid=? AND deleted_at IS NULL", (task_uuid,)
         ).fetchone()[0])
 
-    def apply_task_command(
-        self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
-    ) -> Dict[str, Any]:
-        """原子受理单点放行 / 转自动 / 暂停；同键重传幂等，旧版本与在飞步进拒绝。"""
-
-        now = utc_now()
-        with self.transaction() as conn:
-            task = self.get_task(task_uuid)
-            previous = conn.execute(
-                "SELECT * FROM workflow_task_command WHERE workflow_task_uuid=? "
-                "AND idempotency_key=? AND deleted_at IS NULL",
-                (task_uuid, idempotency_key),
-            ).fetchone()
-            if previous is not None:
-                if (previous["type"] != command_type or
-                        _load(previous["meta_data"], {}).get("expected_revision") != expected_revision):
-                    raise StoreConflict("command idempotency key already used")
-                return task
-            if command_type not in {"step", "resume", "pause", "cancel"}:
-                raise StoreConflict("unsupported task command")
-            if command_type == "cancel" and task["status"] in {"pending", "running"}:
-                # 取消对单点设备动作同样适用；不检查控制态与节点状态，任何时候都能停
-                self._apply_cancel(conn, task, idempotency_key=idempotency_key,
-                                   expected_revision=expected_revision, now=now)
-                return self.get_task(task_uuid)
-            if task["execution_kind"] != "workflow":
-                raise StoreConflict("only workflow tasks accept execution control")
-            if command_type not in {"pause", "cancel"} and task["run_mode"] != "step":
-                raise StoreConflict("only step workflows accept execution control")
-            if task["status"] not in {"pending", "running"}:
-                raise StoreConflict("task is no longer executable")
-            if task["control_revision"] != expected_revision:
-                raise StoreRevisionConflict("task control revision changed")
-            if conn.execute(
-                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL "
-                "AND status NOT IN ('succeeded', 'skipped', 'failed', 'timeout', 'canceled') LIMIT 1",
-                (task_uuid,),
-            ).fetchone() is None:
-                raise StoreConflict("all nodes have already finished")
-            if command_type == "pause":
-                self._apply_pause(conn, task, idempotency_key=idempotency_key,
-                                  expected_revision=expected_revision, now=now)
-                return self.get_task(task_uuid)
-            if task["control_status"] not in {"active", "paused"}:
-                raise StoreConflict("task requires intervention or reconciliation")
-            if command_type == "step" and task["control_status"] != "paused":
-                raise StoreConflict("a step is already pending or executing")
-            if conn.execute(
-                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? "
-                "AND deleted_at IS NULL AND status IN "
-                "('execution_unknown', 'intervention_required', 'cancel_requested', 'failed', 'timeout', 'canceled') LIMIT 1",
-                (task_uuid,),
-            ).fetchone() is not None:
-                raise StoreConflict("resolve the current node before continuing")
-            conn.execute(
-                "INSERT INTO workflow_task_command(uuid, create_time, update_time, "
-                "workflow_task_uuid, type, idempotency_key, status, meta_data, consumed_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (str(uuid4()), now, now, task_uuid, command_type, idempotency_key,
-                 "pending" if command_type == "step" else "succeeded",
-                 _json({"expected_revision": expected_revision}),
-                 None if command_type == "step" else now),
-            )
-            if command_type == "resume":
-                # 转自动也收拢尚未完成的许可，之后完成回调不能把自动任务重新暂停。
-                conn.execute(
-                    "UPDATE workflow_task_command SET status='succeeded', consumed_at=?, update_time=? "
-                    "WHERE workflow_task_uuid=? AND status='pending' AND type='step' AND deleted_at IS NULL",
-                    (now, now, task_uuid),
-                )
-            conn.execute(
-                "UPDATE workflow_task SET run_mode=?, control_status='active', update_time=? WHERE uuid=?",
-                ("step" if command_type == "step" else "normal", now, task_uuid),
-            )
-            self._append_event(conn, event="workflow.task.changed",
-                               data={"workflow_task_uuid": task_uuid}, now=now)
-            return self.get_task(task_uuid)
-
     def _apply_pause(
         self, conn: sqlite3.Connection, task: Dict[str, Any], *,
         idempotency_key: str, expected_revision: int, now: str,
@@ -1731,7 +1659,8 @@ class WorkflowStore:
             if task["status"] not in {"pending", "running"}:
                 return False  # canceling / 终态：不再派发
             if task["run_mode"] != "step":
-                return True
+                # V1 pause：普通模式关派发闸门，执行模式不变
+                return task.get("dispatch_gate", "active") != "paused"
             if task["control_status"] != "active":
                 return False
             command = conn.execute(
@@ -1749,6 +1678,9 @@ class WorkflowStore:
                 "AND status='pending' AND deleted_at IS NULL", (job_uuid, task_uuid),
             ).fetchone()
             if job is None:
+                return False
+            # V1 step 指定了目标节点时，许可只给该节点
+            if command["target_node_uuid"] and command["target_node_uuid"] != job["workflow_node_uuid"]:
                 return False
             conn.execute(
                 "UPDATE workflow_task_command SET target_node_uuid=?, result=?, update_time=? WHERE uuid=?",
@@ -1787,6 +1719,7 @@ class WorkflowStore:
         workflow_uuid: Optional[str] = None,
         status: str = "",
         cleanup_status: str = "",
+        execution_kind: str = "",
     ) -> Dict[str, Any]:
         clauses = ["deleted_at IS NULL"]
         values: List[Any] = []
@@ -1794,6 +1727,7 @@ class WorkflowStore:
             ("workflow_uuid", workflow_uuid),
             ("status", status),
             ("cleanup_status", cleanup_status),
+            ("execution_kind", execution_kind),
         ):
             if value:
                 clauses.append(f"{field} = ?")
@@ -1818,6 +1752,7 @@ class WorkflowStore:
             "total": total,
             "page": page,
             "page_size": page_size,
+            "has_more": offset + len(rows) < total,
         }
 
     def list_node_runs(
@@ -3931,6 +3866,13 @@ class WorkflowStore:
         fingerprint = row["request_fingerprint"]
         if fingerprint:
             result["request_fingerprint"] = fingerprint
+        # V1 字段：run_mode 是 dev 的当前模式，V1 的 execution_mode 与之同义；单步模式恒关闸。
+        execution_mode = "step" if row["run_mode"] == "step" else "normal"
+        result["priority"] = row["priority"]
+        result["inventory_bindings"] = _load(row["inventory_bindings"], [])
+        result["execution_mode"] = execution_mode
+        result["dispatch_gate"] = "paused" if execution_mode == "step" else row["dispatch_gate"]
+        result["wait_reason"] = {}
         return result
 
     @classmethod

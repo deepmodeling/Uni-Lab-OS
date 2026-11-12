@@ -235,6 +235,31 @@ class CompositeInvocationRequest(_StrictModel):
         return {} if value is None else normalize_json_object(value)
 
 
+class WorkflowInventoryBindingRequest(_StrictModel):
+    """V1：把一个逻辑库存需求绑定到本次任务实际使用的库存实例（试剂或当前内容物）。"""
+
+    requirement_key: str
+    inventory_type: Literal["reagent", "current_substance"]
+    inventory_uuid: str
+    reserved_quantity: float = Field(gt=0, allow_inf_nan=False)
+    quantity_unit: str
+
+    @field_validator("inventory_uuid")
+    @classmethod
+    def _inventory_uuid(cls, value: str) -> str:
+        from unilabos.protocol.runtime.workflow import validate_uuid
+
+        return validate_uuid(value)
+
+    @field_validator("requirement_key", "quantity_unit")
+    @classmethod
+    def _required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value must not be blank")
+        return normalized
+
+
 class WorkflowTaskCreateRequest(_StrictModel):
     """整图运行与单点设备动作共用的提交体。
 
@@ -261,6 +286,10 @@ class WorkflowTaskCreateRequest(_StrictModel):
     idempotency_key: Optional[str] = None
     #: 整图任务的入口参数（工作流 input_contract）；未声明合同的工作流只接受 {}。
     input: Dict[str, Any] = Field(default_factory=dict)
+    #: V1 任务优先级：normal 普通任务，high 高优先级任务（随任务持久化，排序由调度器负责）
+    priority: Literal["normal", "high"] = "normal"
+    #: V1 库存绑定：随任务冻结，库存实例的预留由库存域负责
+    inventory_bindings: List[WorkflowInventoryBindingRequest] = Field(default_factory=list)
 
     @field_validator("meta_data", "param", "execution_policy", "input", mode="before")
     @classmethod
@@ -289,16 +318,25 @@ class WorkflowTaskInputEditRequest(_StrictModel):
 
 
 class WorkflowTaskCommandRequest(_StrictModel):
-    """step 放行一个动作；resume 切回自动；pause 转单步并停止派发新动作（已下发的照常跑完）；
-    cancel 取消任务：不再派发，正在执行的动作收到取消请求，设备真实返回后任务落 canceled
-    （期间任务为 canceling，设备锁保持）。
+    """V1 任务控制命令：``step`` 放行一个节点（可指定 ``target_node_uuid``）；``pause`` 普通模式
+    关派发闸门（已下发的照常跑完）；``switch_to_step`` 转单步；``resume`` 恢复；``cancel`` 取消
+    （任务 canceling，设备真实返回后落 canceled）；``unlock_resources`` 异常终态任务整组解锁
+    （``meta_data.confirmed_physical_safe`` 与 ``description`` 必填）。
 
-    版本与幂等键防止跨页面重复放行。
+    幂等键防止跨页面重复放行；``expected_revision`` 可选，给出时按任务控制版本做 CAS。
     """
 
-    type: Literal["step", "resume", "pause", "cancel"]
-    expected_revision: int = Field(ge=0, le=_INT64_MAX, strict=True)
-    idempotency_key: str = Field(min_length=1, max_length=200)
+    type: str
+    target_node_uuid: Optional[str] = None
+    idempotency_key: str
+    description: Optional[str] = None
+    meta_data: Dict[str, Any] = Field(default_factory=dict)
+    expected_revision: Optional[int] = Field(default=None, ge=0, le=_INT64_MAX, strict=True)
+
+    @field_validator("meta_data", mode="before")
+    @classmethod
+    def _json_object(cls, value: Any) -> Dict[str, Any]:
+        return normalize_json_object(value)
 
 
 class ManualConfirmationDecisionRequest(_BackendModel):
@@ -666,6 +704,11 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         if body.execution_kind == "ad_hoc_device_action":
             if body.input:
                 raise WorkflowError("invalid_input", detail="单点设备动作不接受 input")
+            # V1 的优先级与库存绑定只属于整图任务；单点动作给出非默认值时拒绝，而不是静默丢弃
+            if body.priority != "normal":
+                raise WorkflowError("invalid_input", detail="单点设备动作不接受 priority")
+            if body.inventory_bindings:
+                raise WorkflowError("invalid_input", detail="单点设备动作不接受 inventory_bindings")
             return _success(
                 service.create_ad_hoc_device_action_task(
                     device_id=body.device_id,
@@ -692,6 +735,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
                 description=body.description,
                 meta_data=body.meta_data,
                 idempotency_key=body.idempotency_key,
+                priority=body.priority,
+                inventory_bindings=[binding.model_dump() for binding in body.inventory_bindings],
             ),
             status=201,
         )
@@ -701,6 +746,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         page: int = Query(default=1),
         page_size: int = Query(default=20),
         workflow_uuid: Optional[str] = Query(default=None),
+        execution_kind: str = Query(default=""),
         status: str = Query(default=""),
         cleanup_status: str = Query(default=""),
     ) -> JSONResponse:
@@ -708,6 +754,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             page=page,
             page_size=page_size,
             workflow_uuid=workflow_uuid,
+            execution_kind=execution_kind,
             status=status,
             cleanup_status=cleanup_status,
         )
@@ -723,10 +770,13 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
 
     @router.post("/workflow-tasks/{task_uuid}/commands")
     def command_workflow_task(task_uuid: str, body: WorkflowTaskCommandRequest) -> JSONResponse:
+        """V1：幂等提交一次任务控制命令，返回命令投影（HTTP 201；业务拒绝为 status=rejected）。"""
+
         return _success(service.command_workflow_task(
             task_uuid, command_type=body.type, expected_revision=body.expected_revision,
-            idempotency_key=body.idempotency_key,
-        ))
+            idempotency_key=body.idempotency_key, target_node_uuid=body.target_node_uuid,
+            description=body.description, meta_data=body.meta_data,
+        ), status=201)
 
     @router.patch("/workflow-tasks/{task_uuid}/input")
     def edit_workflow_task_input(task_uuid: str, body: WorkflowTaskInputEditRequest) -> JSONResponse:

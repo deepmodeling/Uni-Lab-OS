@@ -331,6 +331,68 @@ _RESOURCE_CUSTODY_V8 = (
     """,
 )
 
+# v9：V1 任务生命周期。workflow_task 增加优先级、库存绑定与普通模式派发闸门；任务命令增加
+# switch_to_step / unlock_resources；新增结构化人工交互表。
+_WORKFLOW_TASK_COMMAND_V9 = """
+        CREATE TABLE IF NOT EXISTS workflow_task_command (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            deleted_at TEXT,
+            description TEXT,
+            meta_data TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data) AND json_type(meta_data) = 'object'
+            ),
+            workflow_task_uuid TEXT NOT NULL,
+            type TEXT NOT NULL CHECK (type IN (
+                'step', 'pause', 'resume', 'cancel', 'edit_input', 'switch_to_step', 'unlock_resources'
+            )),
+            target_node_uuid TEXT,
+            idempotency_key TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'rejected')),
+            result TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(result) AND json_type(result) = 'object'
+            ),
+            trace_context TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(trace_context) AND json_type(trace_context) = 'object'
+            ),
+            consumed_at TEXT,
+            FOREIGN KEY(workflow_task_uuid) REFERENCES workflow_task(uuid) ON DELETE CASCADE
+        )
+        """
+_WORKFLOW_TASK_V9_COLUMNS = (
+    "ALTER TABLE workflow_task ADD COLUMN priority TEXT NOT NULL DEFAULT 'normal' "
+    "CHECK (priority IN ('normal', 'high'))",
+    "ALTER TABLE workflow_task ADD COLUMN inventory_bindings TEXT NOT NULL DEFAULT '[]' "
+    "CHECK (json_valid(inventory_bindings) AND json_type(inventory_bindings) = 'array')",
+    "ALTER TABLE workflow_task ADD COLUMN dispatch_gate TEXT NOT NULL DEFAULT 'active' "
+    "CHECK (dispatch_gate IN ('active', 'paused'))",
+)
+
+
+def _task_lifecycle_v9(connection) -> None:
+    from unilabos.server.database.tables.runtime.task_lifecycle import (
+        HUMAN_INTERACTION_V9,
+        HUMAN_INTERACTION_V9_INDEXES,
+    )
+
+    columns = {row[1] for row in connection.execute('PRAGMA table_info("workflow_task")')}
+    for column, statement in zip(("priority", "inventory_bindings", "dispatch_gate"), _WORKFLOW_TASK_V9_COLUMNS):
+        # 重放安全：从更早版本整段重放迁移链时列可能已存在
+        if column not in columns:
+            connection.execute(statement)
+    rebuild_table_migration(
+        9,
+        "",
+        table="workflow_task_command",
+        create_sql=_WORKFLOW_TASK_COMMAND_V9,
+        indexes=_WORKFLOW_TASK_COMMAND_V4_INDEXES,
+    ).apply(connection)
+    connection.execute(HUMAN_INTERACTION_V9)
+    for statement in HUMAN_INTERACTION_V9_INDEXES:
+        connection.execute(statement)
+
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -356,5 +418,6 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(6, "执行代次、一次开始许可与不可变开始回执", *_EXECUTION_START_V6),
     sql_migration(7, "区间资源所有权和单次动作使用清单", *_RESOURCE_INTERVAL_V7),
     sql_migration(8, "设备托管、资源借还和等待环路", *_RESOURCE_CUSTODY_V8),
+    Migration(9, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互", _task_lifecycle_v9),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

@@ -394,14 +394,25 @@ class HTTPWorkflowClient:
         return self._http.get(f"/workflow-tasks/{task_uuid}")
 
     def command_task(
-        self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
+        self, task_uuid: str, *, command_type: str, idempotency_key: str,
+        expected_revision: Optional[int] = None, target_node_uuid: Optional[str] = None,
+        description: Optional[str] = None, meta_data: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        """step 放行一个动作 / resume 转自动；调用者保留幂等键供网络重传。"""
-        return self._http.post(f"/workflow-tasks/{task_uuid}/commands", json={
-            "type": command_type, "expected_revision": expected_revision,
-            "idempotency_key": idempotency_key,
-        })
+        """V1 任务控制命令（step / switch_to_step / pause / resume / cancel / unlock_resources）。
+
+        返回命令投影：``status`` 为 ``rejected`` 时 ``result.reason`` 给出业务原因。调用者保留
+        幂等键供网络重传；``expected_revision`` 可选，给出时做任务控制版本 CAS。
+        """
+        body: dict[str, Any] = {"type": command_type, "idempotency_key": idempotency_key}
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        if target_node_uuid is not None:
+            body["target_node_uuid"] = target_node_uuid
+        if description is not None:
+            body["description"] = description
+        if meta_data:
+            body["meta_data"] = meta_data
+        return self._http.post(f"/workflow-tasks/{task_uuid}/commands", json=body)
 
     def list_task_jobs(self, task_uuid: str) -> list[dict[str, Any]]:
         return self._http.get(f"/workflow-tasks/{task_uuid}/jobs")

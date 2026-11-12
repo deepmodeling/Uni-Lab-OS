@@ -62,7 +62,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("workflow.task.create", "workflow", "POST", "/api/v1/workflow-tasks", "提交运行：整图（workflow）或单点设备动作（ad_hoc_device_action）", "any"),
     Operation("workflow.task.list", "workflow", "GET", "/api/v1/workflow-tasks", "运行分页列表（status/workflow_uuid 过滤）", "any"),
     Operation("workflow.task.get", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}", "运行详情", "any"),
-    Operation("workflow.task.command", "workflow", "POST", "/api/v1/workflow-tasks/{task_uuid}/commands", "逐步任务：放行一个动作或转为自动执行（版本校验与幂等）", "any"),
+    Operation("workflow.task.command", "workflow", "POST", "/api/v1/workflow-tasks/{task_uuid}/commands", "任务控制（V1）：step / switch_to_step / pause / resume / cancel / unlock_resources，幂等键必填，返回命令投影", "any"),
     Operation("workflow.task.jobs", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/jobs", "运行的全部 attempt（节点作业）平铺列表", "any"),
     Operation("workflow.task.node-runs", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/node-runs", "运行的节点运行视图：每节点一条，当前 attempt 结果 + attempts 历史", "any"),
     Operation("workflow.node-run.get", "workflow", "GET", "/api/v1/workflow-node-runs/{run_uuid}", "节点运行详情（含 attempts）", "any"),

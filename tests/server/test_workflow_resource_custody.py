@@ -17,6 +17,7 @@ from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from tests.server.test_workflow_resource_intervals import make_task, request_for, service
 from tests.server.test_workflow_task_cancel import Executor, command, wait_for
+from unilabos.server.database.tables.runtime import RUNTIME_DATABASE
 
 
 def finish(service, intervals, request, status="succeeded"):
@@ -159,7 +160,7 @@ def test_explicit_idle_loan_blocks_lender_until_borrowed_interval_returns(servic
             lender, borrower = make_task(service), make_task(service)
             scheduler.submit(lender["uuid"])
             wait_for(lambda: len(executor.dispatched)==1)
-            assert command(client,lender,"pause").status_code == 200
+            assert command(client,lender,"pause").status_code == 201
             executor.finish(0)
             wait_for(lambda: len(scheduler._waiting_step_nodes)==1)
             owner = ResourceIntervals(service).snapshot(lender["uuid"])[0]
@@ -171,7 +172,7 @@ def test_explicit_idle_loan_blocks_lender_until_borrowed_interval_returns(servic
             assert response.status_code==200, response.text
             wait_for(lambda: len(executor.dispatched)==2)
             assert client.post(url,json=body).json()["code"]==0
-            assert command(client,lender,"resume").status_code==200
+            assert command(client,lender,"resume").status_code==201
             executor.finish(1)
             wait_for(lambda: len(executor.dispatched)==3)
             assert executor.dispatched[2]["task_id"]==borrower["uuid"]
@@ -306,11 +307,11 @@ def test_v7_live_admission_migrates_without_releasing_resources(tmp_path):
     try:
         ResourceIntervals(service).recover()
         assert ExecutionClaims(service).get(request.owner_uuid)['claim_uuid']==claim['claim_uuid']
-        assert service.connection.execute('PRAGMA user_version').fetchone()[0]==8
+        assert service.connection.execute('PRAGMA user_version').fetchone()[0]==RUNTIME_DATABASE.schema_version
         competitor=make_task(service,('reactor',))
         epoch=ExecutionClaims(service).activate_authority()
         assert not ResourceIntervals(service).admit(request_for(service,competitor),epoch)
-        assert list(tmp_path.glob('runtime.db.pre-v8-*.bak'))
+        assert list(tmp_path.glob(f'runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak'))
     finally:
         service.close()
 

@@ -346,7 +346,8 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
 
     # 运行中（未暂停）不能改
     assert _code(_edit(client, task, {"temperature": 30})) == 3003
-    assert _ok(_command(client, task, "pause"))["control_status"] == "paused"
+    assert _ok(_command(client, task, "pause"), 201)["status"] == "succeeded"
+    assert service.get_workflow_task(task["uuid"])["control_status"] == "paused"
     revision = service.get_workflow_task(task["uuid"])["control_revision"]
 
     assert _code(_edit(client, task, {"temperature": 30}, revision=revision - 1)) == 3003
@@ -368,7 +369,8 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
     executor.finish(0)
     time.sleep(0.1)
     assert len(executor.dispatched) == 1, "暂停中不派发后继"
-    assert _ok(_command(client, task, "resume"))["control_status"] == "active"
+    assert _ok(_command(client, task, "resume"), 201)["status"] == "succeeded"
+    assert service.get_workflow_task(task["uuid"])["control_status"] == "active"
     wait_for(lambda: len(executor.dispatched) == 2)
     assert executor.dispatched[1]["node_id"] == second
     assert executor.dispatched[1]["action_args"] == {"temperature": 30}
@@ -436,7 +438,8 @@ def test_v3_runtime_database_migrates_task_commands_to_v4(tmp_path) -> None:
                            (5, "持久化派发资源声明、租约与栅栏计数"),
                            (6, "执行代次、一次开始许可与不可变开始回执"),
                            (7, "区间资源所有权和单次动作使用清单"),
-                           (8, "设备托管、资源借还和等待环路")]
+                           (8, "设备托管、资源借还和等待环路"),
+                           (9, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互")]
     finally:
         connection.close()
 

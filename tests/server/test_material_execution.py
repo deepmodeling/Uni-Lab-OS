@@ -272,12 +272,15 @@ def test_v4_upgrade_preserves_materials_contents_and_ledger(tmp_path, monkeypatc
     from unilabos.server.database.tables.materials import MATERIALS_DATABASE
     from unilabos.server.services.materials import store
 
+    from tests.server.materials_published_specs import materials_spec_v5
+
+    v5 = materials_spec_v5()
     old = replace(
-        MATERIALS_DATABASE,
+        v5,
         schema_version=4,
         tables=tuple(
             table
-            for table in MATERIALS_DATABASE.tables
+            for table in v5.tables
             if table.name not in {"material_execution", "material_execution_hold"}
         ),
         migrations=tuple(item for item in MATERIALS_DATABASE.migrations if item.version <= 4),
@@ -298,9 +301,9 @@ def test_v4_upgrade_preserves_materials_contents_and_ledger(tmp_path, monkeypatc
     try:
         assert contents(current, source) == {"water": 50}
         assert current.latest_ledger_sequence() == sequence
-        assert current.connection.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert current.connection.execute("PRAGMA user_version").fetchone()[0] == MATERIALS_DATABASE.schema_version
         assert current.executions.list() == []
-        assert len(list(tmp_path.glob("materials.db.pre-v5-*.bak"))) == 1
+        assert len(list(tmp_path.glob(f"materials.db.pre-v{MATERIALS_DATABASE.schema_version}-*.bak"))) == 1
     finally:
         current.close()
 

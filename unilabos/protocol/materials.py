@@ -559,6 +559,25 @@ class InventoryLotInbound(ServerObject):
     unit: NonEmptyStr
     quantity: float = Field(gt=0)
     expiry_at_ms: Optional[int] = Field(default=None, ge=0)
+    # 批次所在库位与仓储分区（V1 lot location / warehouse zone）；补充入库时不改变既有位置
+    location_site_uuid: Optional[NonEmptyStr] = None
+    warehouse_zone_id: str = ""
+
+
+class InventoryLotCorrection(ServerObject):
+    """批次数量与位置校正：适用于任意计量单位（含质量 / 体积）与已隔离批次。
+
+    ``measured_quantity`` 为空时只改位置；给出时按实测总量校正，可用量随差额调整，
+    不能低于已预留量。``quarantined`` 给出时同时设置或解除批次隔离。
+    """
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_quantity: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: Optional[str] = None
+    quarantined: Optional[bool] = None
+    reason: NonEmptyStr
 
 
 class InventoryStocktake(ServerObject):
@@ -583,6 +602,8 @@ class InventoryLotRead(ServerObject):
     created_at_ms: int = Field(ge=0)
     updated_at_ms: int = Field(ge=0)
     version: int = Field(ge=1)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: str = ""
 
 
 class InventoryRequirement(ServerObject):
@@ -854,6 +875,7 @@ __all__ = [
     "ChemicalSummary",
     "InventoryAllocation",
     "InventoryChange",
+    "InventoryLotCorrection",
     "InventoryLotInbound",
     "InventoryLotRead",
     "InventoryMutation",

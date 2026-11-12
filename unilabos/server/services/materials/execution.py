@@ -113,7 +113,7 @@ class MaterialExecutions:
                 ):
                     raise MaterialValidationError("搬运目标库位不属于目标容器")
                 if destination.occupied_material_uuid not in (None, move.material_uuid):
-                    raise MaterialConflictError("搬运目标库位已被占用")
+                    raise MaterialConflictError("搬运目标库位已被占用", conflict="site_occupied")
             if value.aliquot:
                 material_ids.update([value.aliquot.source_material_uuid, *value.aliquot.target_material_uuids])
             # 复用真实移动约束作事务内预检；只回滚这个保存点，不留下账本或位置变更。
@@ -158,7 +158,7 @@ class MaterialExecutions:
                     "SELECT 1 FROM material_execution_hold WHERE aggregate_type=? AND aggregate_uuid=?",
                     (kind, identity),
                 ).fetchone():
-                    raise MaterialConflictError(f"物理动作尚未结算：{kind}/{identity}")
+                    raise MaterialConflictError(f"物理动作尚未结算：{kind}/{identity}", conflict="active_claim")
             now = service._now_ms()
             conn.execute(
                 "INSERT INTO material_execution (job_uuid,task_uuid,claim_uuid,request_json,request_hash,snapshot_json,state,version,created_at_ms,updated_at_ms) "
@@ -192,7 +192,7 @@ class MaterialExecutions:
                     (item.aggregate_uuid,),
                 ).fetchone()
             ):
-                raise MaterialConflictError("模板仍被未结算物理动作使用")
+                raise MaterialConflictError("模板仍被未结算物理动作使用", conflict="active_claim")
             row = self.service.connection.execute(
                 "SELECT job_uuid FROM material_execution_hold WHERE aggregate_type=? AND aggregate_uuid=?",
                 (item.aggregate_type, item.aggregate_uuid),
@@ -205,7 +205,7 @@ class MaterialExecutions:
                 "quarantine_inventory_reservation",
             }
             if not own_settlement and not lifecycle:
-                raise MaterialConflictError(f"物料或库位仍由未结算动作 {row[0]} 占用")
+                raise MaterialConflictError(f"物料或库位仍由未结算动作 {row[0]} 占用", conflict="active_claim")
 
     def validate(self, receipt: MaterialExecutionReceipt) -> dict:
         with self.service._transfer_lock, self.service.write() as conn:

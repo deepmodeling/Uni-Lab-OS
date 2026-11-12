@@ -371,43 +371,38 @@ def _fixed(code: int) -> Callable[[Any], ApiError]:
     return mapper
 
 
-#: 物料「不存在」按消息前缀判断对象（服务层统一写成 ``<对象> not found: <uuid>``）；
-#: 异常带 ``subject`` 属性时以它为准，物料域迁移时可逐处补上。
-_MATERIAL_NOT_FOUND_SUBJECTS = (
-    ("material", MATERIAL_NOT_FOUND),
-    ("site", MATERIAL_SITE_NOT_FOUND),
-    ("template", MATERIAL_TEMPLATE_NOT_FOUND),
-    ("parent", MATERIAL_PARENT_NOT_FOUND),
-)
-#: 已知含义的物料冲突文案片段 → V1 6000 段业务码；其余冲突为 4002。
-_MATERIAL_CONFLICT_MARKERS = (
-    ("occupied", MATERIAL_SITE_OCCUPIED),
-    ("已被占用", MATERIAL_SITE_OCCUPIED),
-    ("未结算", MATERIAL_ACTIVE_CLAIM_CONFLICT),
-    ("material uuid already exists", MATERIAL_IDENTITY_CONFLICT),
-)
+#: 物料「不存在」按异常的 ``subject`` 换算（服务层抛出时显式给出，不再按消息文字判断）。
+_MATERIAL_NOT_FOUND_SUBJECTS: Dict[str, int] = {
+    "material": MATERIAL_NOT_FOUND,
+    "site": MATERIAL_SITE_NOT_FOUND,
+    "template": MATERIAL_TEMPLATE_NOT_FOUND,
+    "parent": MATERIAL_PARENT_NOT_FOUND,
+    "resource_template": RESOURCE_TEMPLATE_NOT_FOUND,
+}
+#: 物料冲突按异常的 ``conflict`` 类别换算；未给类别的一般冲突为 4002。
+_MATERIAL_CONFLICT_KINDS: Dict[str, int] = {
+    "site_occupied": MATERIAL_SITE_OCCUPIED,
+    "active_claim": MATERIAL_ACTIVE_CLAIM_CONFLICT,
+    "identity": MATERIAL_IDENTITY_CONFLICT,
+    "template_immutable": MATERIAL_TEMPLATE_IMMUTABLE,
+    "parent_cycle": MATERIAL_PARENT_CYCLE,
+    "site_template": MATERIAL_SITE_TEMPLATE_NOT_ALLOWED,
+    "site_cycle": MATERIAL_SITE_CYCLE,
+    "database": DATABASE_CONFLICT,
+    "reagent_info_in_use": REAGENT_INFO_IN_USE,
+    "template_data": TEMPLATE_DATA_CONFLICT,
+    "state": STATE_CONFLICT,
+}
 
 
 def _material_not_found(exc: Any) -> ApiError:
-    message = str(exc)
-    subject = str(getattr(exc, "subject", "") or "").lower()
-    lowered = message.lower()
-    for name, code in _MATERIAL_NOT_FOUND_SUBJECTS:
-        if subject == name or (not subject and lowered.startswith(name)):
-            return ApiError(code, message)
-    return ApiError(RESOURCE_NOT_FOUND, message)
+    subject = str(getattr(exc, "subject", "") or "")
+    return ApiError(_MATERIAL_NOT_FOUND_SUBJECTS.get(subject, RESOURCE_NOT_FOUND), str(exc))
 
 
 def _material_conflict(exc: Any) -> ApiError:
-    message = str(exc)
-    explicit = getattr(exc, "business_code", None)
-    if isinstance(explicit, int):
-        return ApiError(explicit, message)
-    lowered = message.lower()
-    for marker, code in _MATERIAL_CONFLICT_MARKERS:
-        if marker in lowered:
-            return ApiError(code, message)
-    return ApiError(RESOURCE_DATA_CONFLICT, message)
+    kind = str(getattr(exc, "conflict", "") or "")
+    return ApiError(_MATERIAL_CONFLICT_KINDS.get(kind, RESOURCE_DATA_CONFLICT), str(exc))
 
 
 def _message_not_found(fallback: int) -> Callable[[Any], ApiError]:

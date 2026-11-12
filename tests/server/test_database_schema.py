@@ -72,6 +72,16 @@ EXPECTED_TABLES = {
         # schema v5：物理动作的冻结计划 / 结算回执 + 未结算动作对物料或库位的唯一占用
         "material_execution",
         "material_execution_hold",
+        # schema v6：V1.0 库存概念并入 materials.db
+        "material_content",
+        "material_content_history",
+        "material_state_history",
+        "material_content_reservation",
+        "material_source_binding",
+        "station_ingress_reservation",
+        "lab_meta",
+        "lab_zone",
+        "lab_placement",
     },
     "telemetry": {
         "schema_identity",
@@ -198,10 +208,12 @@ def test_total_table_count_stays_small() -> None:
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
     # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
+    # materials v6（V1.0 库存概念）：试剂 / 样品 / 当前内容物角色、内容物历史、状态历史、
+    # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，16 → 25。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 42,
-        "materials": 16,
+        "materials": 25,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 65
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 74

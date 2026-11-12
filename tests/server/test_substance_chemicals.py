@@ -667,7 +667,9 @@ MATERIALS_V5_TABLES = frozenset({"material_execution", "material_execution_hold"
 def _published_materials_spec(version: int, material_substance: TableSpec):
     """按当前声明还原已发布的 v2 / v3：换回当时的 material_substance，去掉之后才新增的表。"""
 
-    spec = DATABASE_SPECS["materials"]
+    from tests.server.materials_published_specs import materials_spec_v5
+
+    spec = materials_spec_v5()
     return replace(
         spec,
         tables=tuple(
@@ -769,10 +771,10 @@ def test_v2_materials_database_migrates_to_latest_keeping_substances(tmp_path) -
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 5
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 7
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
         history = [tuple(row) for row in peek.execute("SELECT version, description FROM schema_migration")]
-        assert [version for version, _ in history] == [3, 4, 5]
+        assert [version for version, _ in history] == [3, 4, 5, 6, 7]
         indexes = {row[0] for row in peek.execute(
             "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'material_substance'"
         )}
@@ -842,9 +844,9 @@ def test_v3_materials_database_migrates_to_v4_keeping_links(tmp_path) -> None:
 
     peek = sqlite3.connect(path)
     try:
-        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 5
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 7
         assert peek.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
-        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4, 5]
+        assert [row[0] for row in peek.execute("SELECT version FROM schema_migration")] == [4, 5, 6, 7]
         with pytest.raises(sqlite3.IntegrityError):
             peek.execute("UPDATE material_substance SET chemical_unlinked = 1, chemical_uuid = 'c-water'")
     finally:

@@ -182,13 +182,18 @@ def test_raw_endpoints_streams_and_unknown_exceptions_are_not_enveloped() -> Non
         (lambda: _workflow_error("template_catalog_unavailable"), 5001, None),
         (lambda: _workflow_error("local_task_authority_forbidden"), 1001, None),
         (lambda: _workflow_error("internal_error"), 1, None),
-        (lambda: _materials("MaterialNotFoundError", "material not found: m1"), 6000, None),
-        (lambda: _materials("MaterialNotFoundError", "material root not found: m1"), 6000, None),
-        (lambda: _materials("MaterialNotFoundError", "site not found: s1"), 6006, None),
-        (lambda: _materials("MaterialNotFoundError", "template not found: t1"), 6001, None),
-        (lambda: _materials("MaterialNotFoundError", "inventory lot not found: l1"), 4001, None),
-        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied"), 6007, None),
-        (lambda: _materials("MaterialConflictError", "物料或库位仍由未结算动作 j1 占用"), 6011, None),
+        # 物料域：业务码由异常显式携带的 subject / conflict 决定，消息文字不再参与判断
+        (lambda: _materials("MaterialNotFoundError", "material not found: m1", subject="material"), 6000, None),
+        (lambda: _materials("MaterialNotFoundError", "material root not found: m1", subject="material"), 6000, None),
+        (lambda: _materials("MaterialNotFoundError", "site not found: s1", subject="site"), 6006, None),
+        (lambda: _materials("MaterialNotFoundError", "template not found: t1", subject="template"), 6001, None),
+        (lambda: _materials("MaterialNotFoundError", "parent not found: p1", subject="parent"), 6003, None),
+        (lambda: _materials("MaterialNotFoundError", "inventory lot not found: l1", subject="lot"), 4001, None),
+        (lambda: _materials("MaterialNotFoundError", "material not found: m1"), 4001, None),
+        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied", conflict="site_occupied"), 6007, None),
+        (lambda: _materials("MaterialConflictError", "物料或库位仍由未结算动作 j1 占用", conflict="active_claim"), 6011, None),
+        (lambda: _materials("MaterialConflictError", "material uuid already exists: m1", conflict="identity"), 6010, None),
+        (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied"), 4002, None),
         (lambda: _materials("MaterialConflictError", "material m1 state changed"), 4002, None),
         (lambda: _materials("MaterialValidationError", "bad"), 1000, None),
         (lambda: _materials("MaterialTransferSyncError", "device"), 5001, None),
@@ -214,10 +219,10 @@ def _workflow_error(code: str):
     return WorkflowError(code)
 
 
-def _materials(name: str, message: str):
+def _materials(name: str, message: str, **kwargs):
     from unilabos.server.services.materials import core
 
-    return getattr(core, name)(message)
+    return getattr(core, name)(message, **kwargs)
 
 
 def _graph(code: str):

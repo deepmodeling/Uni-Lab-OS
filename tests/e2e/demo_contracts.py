@@ -96,7 +96,7 @@ class DemoContracts:
                 if index in {1, 3}:
                     # API 导入已经把 SiteSlot 绑定成 uuid，驱动会原样回报该 uuid。
                     # 按权威核对 UUID 和实际占位，保留原始返回值并提供 label -> UUID 绑定。
-                    deck = api_request(self.port, f"/materials/instances/{smoke.DECK_UUID}")
+                    deck = api_request(self.port, f"/inventory/instances/{smoke.DECK_UUID}")
                     label = "T3" if index == 1 else "T4"
                     site = next(site for site in deck["sites"] if site["label"] == label)
                     projected = deepcopy(proof)
@@ -107,7 +107,7 @@ class DemoContracts:
                 functions[index](projected)
             elif package == "inventory_demo":
                 # 每步完成后、下一步提交前直查；不能用整个运行期间出现过的值充当这一刻的证据。
-                proof["lot"] = api_request(self.port, f"/materials/lots/{smoke.WATER_LOT_UUID}")
+                proof["lot"] = api_request(self.port, f"/inventory/lots/{smoke.WATER_LOT_UUID}")
                 [smoke.assert_restock, smoke.assert_dispense_ok, smoke.assert_dispense_short, smoke.assert_audit][
                     index
                 ](proof)

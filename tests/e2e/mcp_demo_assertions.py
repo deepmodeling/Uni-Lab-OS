@@ -194,15 +194,16 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     assert fill["substances"] == [["Water", 1200, "ul"]]
     assert report["sites"]["T1"] == fill["plate_name"] and report["sites"]["T2"] == ""
     assert report["sites"]["T3"] == "bench_plate_r1" and report["sites"]["T4"] == "bench_plate_r2"
-    totals = [lot for event in observations if event["kind"] == "lots" for lot in event["data"]]
+    totals = [lot for event in observations if event["kind"] == "lots" for lot in event["data"]["lots"]]
     for quantity in (500, 10500, 9300):
         assert any(lot["quantity_total"] == quantity and lot["quantity_available"] == quantity
                    and lot["quantity_reserved"] == 0 for lot in totals), f"未观察到 {quantity}/{quantity}/0"
     proof_path = output / "materials-authority.json"
     if port is not None:
-        failed_reservations = api_request(port, f"/materials/reservations?task_uuid={failed['task']['uuid']}")
-        succeeded_reservations = api_request(port, f"/materials/reservations?task_uuid={succeeded['task']['uuid']}")
-        deck = api_request(port, "/materials/instances?name=bench_deck")[0]
+        # V1 合同：库存读接口在 /inventory 下，列表带命名数组
+        failed_reservations = api_request(port, f"/inventory/reservations?task_uuid={failed['task']['uuid']}")["reservations"]
+        succeeded_reservations = api_request(port, f"/inventory/reservations?task_uuid={succeeded['task']['uuid']}")["reservations"]
+        deck = api_request(port, "/inventory/instances?name=bench_deck")["instances"][0]
         selected_uuid = next(site["occupied_material_uuid"] for site in deck["sites"] if site["label"] == "T1")
         selected = api_request(port, f"/materials/instances/{selected_uuid}/tree")
         proof = {"deck": deck, "selected_tree": selected, "failed_reservations": failed_reservations,

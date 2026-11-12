@@ -96,6 +96,11 @@ def test_recovered_attempt_keeps_the_device_until_it_is_reconciled(tmp_path) -> 
             assert [(item["task_uuid"], item["acquired_job_uuid"]) for item in held] == [
                 (first["uuid"], decision["job_id"])
             ]
+            # 观测面：被区间准入拦下的申请在 /scheduler/resources 里是 waiting，阻塞者是遗留 attempt。
+            waiting = [item for item in scheduler.resource_snapshot().requests
+                       if item.task_uuid == second["uuid"] and item.status == "waiting"]
+            assert len(waiting) == 1 and waiting[0].blockers == [decision["job_id"]]
+            assert {identifier.kind for identifier in waiting[0].identifiers} <= {"action", "material"}
 
             assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "abort"})
             wait_for(lambda: len(executor.dispatched) == 1)

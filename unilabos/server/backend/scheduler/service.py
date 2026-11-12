@@ -49,6 +49,7 @@ from unilabos.server.backend.scheduler.models import (
     ActionLockClaim,
     MaterialLockClaim,
     SchedulerResourceRequest,
+    SchedulerResourceRequestRecord,
 )
 from unilabos.server.backend.scheduler.parameters import (
     ParamResolveError,
@@ -248,6 +249,8 @@ class BackendScheduler:
         self._job_runs: Dict[str, str] = {}
         self._waiting_resource_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
         self._waiting_interval_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
+        # 区间准入未通过时的完整资源申请，仅供 /scheduler/resources 观测排队与阻塞者。
+        self._waiting_interval_requests: Dict[str, SchedulerResourceRequest] = {}
         self._dispatched_jobs: set[str] = set()
         # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
         self._manual_confirmation_jobs: set[str] = set()
@@ -980,6 +983,7 @@ class BackendScheduler:
         if not self._intervals.admit(resource_request, self._authority_epoch):
             with self._guard:
                 self._waiting_interval_jobs[job_uuid] = (task, node)
+                self._waiting_interval_requests[job_uuid] = resource_request
             return
         with self._guard:
             self._waiting_interval_jobs.pop(job_uuid, None)
@@ -1508,8 +1512,33 @@ class BackendScheduler:
 
         from unilabos.server.services.runtime.workflow.resource_loans import ResourceLoans
         from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
+        with self._guard:
+            for stale in set(self._waiting_interval_requests) - set(self._waiting_interval_jobs):
+                self._waiting_interval_requests.pop(stale, None)
+            interval_waiting = dict(self._waiting_interval_requests)
         with self.workflow.write_lock:
-            return self.resources.snapshot().model_copy(update={"intervals": self._intervals.snapshot(),
+            snapshot = self.resources.snapshot()
+            # 跨任务独占由持久区间准入先裁决，被拦下的申请尚未进入内存锁队列；
+            # 这里补成 waiting 记录，blockers 为当前占用同一锁键的 attempt，保持观测面完整。
+            known = {item.owner_uuid for item in snapshot.requests}
+            sequence = max(snapshot.sequence, 1)
+            waiting = [
+                SchedulerResourceRequestRecord(
+                    request_uuid=request.request_uuid,
+                    owner_uuid=request.owner_uuid,
+                    task_uuid=request.task_uuid,
+                    identifiers=request.identifiers,
+                    status="waiting",
+                    blockers=self._intervals.blocking_jobs(request),
+                    created_sequence=sequence,
+                    updated_sequence=sequence,
+                    version=1,
+                )
+                for job_uuid, request in sorted(interval_waiting.items())
+                if job_uuid not in known
+            ]
+            return snapshot.model_copy(update={"requests": [*snapshot.requests, *waiting],
+                "intervals": self._intervals.snapshot(),
                 "loans": ResourceLoans.snapshot(self.workflow.connection),
                 "tenancies": DeviceTenancies.snapshot(self.workflow.connection)})
 

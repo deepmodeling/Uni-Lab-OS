@@ -302,6 +302,22 @@ class ResourceIntervals:
                 "AND j.status IN ('running','dispatched','cancel_requested','execution_unknown','intervention_required') "
                 "AND NOT EXISTS (SELECT 1 FROM workflow_resource_admission a WHERE a.job_uuid=c.job_uuid)")]
 
+    def blocking_jobs(self, request: SchedulerResourceRequest) -> list[str]:
+        """区间准入未通过的申请此刻被哪些 attempt 挡住：实际使用者与其他任务的区间获得者。"""
+
+        blockers: set[str] = set()
+        with self.store.write_lock:
+            conn = self.store.connection
+            for key in sorted(physical_keys(request)):
+                for row in conn.execute("SELECT job_uuid FROM workflow_resource_use WHERE lock_key=?", (key,)):
+                    if row["job_uuid"] != request.owner_uuid:
+                        blockers.add(row["job_uuid"])
+                held = conn.execute("SELECT task_uuid,acquired_job_uuid FROM workflow_resource_interval "
+                                    "WHERE lock_key=? AND state!='released'", (key,)).fetchone()
+                if held and held["task_uuid"] != request.task_uuid and held["acquired_job_uuid"] != request.owner_uuid:
+                    blockers.add(held["acquired_job_uuid"])
+        return sorted(blockers)
+
     def snapshot(self, task_uuid: str | None = None) -> list[dict[str, Any]]:
         with self.store.write_lock:
             return [{**dict(row), "definition": _load(row["definition"])} for row in self.store.connection.execute(

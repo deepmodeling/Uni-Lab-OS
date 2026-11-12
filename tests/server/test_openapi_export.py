@@ -51,7 +51,17 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     meta = document["info"]["x-openlab-protocol"]
     assert meta["api_version"] == "v1" and meta["api_prefix"] == "/api/v1"
     assert meta["sse"] == ["/api/v1/events", "/api/v1/materials/events"]
-    assert all(path.startswith("/api/v1/") for path in document["paths"])
+    # V1 Workspace Host 四个路由按 V1 原样不带 /api 前缀（裸 JSON），其余都在 /api/v1 下
+    assert all(path.startswith(("/api/v1/", "/v1/")) for path in document["paths"])
+    assert sorted(path for path in document["paths"] if path.startswith("/v1/")) == [
+        "/v1/logs/{component}", "/v1/operations", "/v1/operations/{operation_id}", "/v1/snapshot",
+    ]
+    assert roles["POST /v1/operations"] == "any"
+    assert meta["workspace_host_prefix"] == "/v1"
+    assert operations["POST /v1/operations"]["requestBody"]["content"]["application/json"]["schema"]["required"] == [
+        "operationId", "command",
+    ]
+    assert {item["name"] for item in operations["GET /v1/logs/{component}"]["parameters"]} == {"component", "maxBytes"}
     # 统一信封：响应模型是 Envelope[SchedulerDrainStatus]，data 字段引用原 DTO
     assert operations["GET /api/v1/scheduler/drain"]["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/Envelope_SchedulerDrainStatus_"

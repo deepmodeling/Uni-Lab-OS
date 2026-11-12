@@ -25,6 +25,8 @@ from fastapi import FastAPI
 import unilabos
 
 API_PREFIX = "/api/v1"
+#: V1 Workspace Host 路由按 V1 原样不带 ``/api`` 前缀（见 ``server/api/workspace_host.py``）。
+WORKSPACE_HOST_PREFIX = "/v1"
 
 # 路径前缀 → 角色。只在带设备执行面的 Host 进程挂载的路由标 host；
 # 只在 --role backend 调度权威进程挂载的标 backend；其余两种角色都挂，标 any。
@@ -63,6 +65,7 @@ def build_contract_app(workdir: Path) -> Tuple[FastAPI, Any]:
     from unilabos.server.api.runtime.logs import create_runtime_logs_router
     from unilabos.server.api.runtime.registry import install_registry_api
     from unilabos.server.api.runtime.workflow import install_workflow_api
+    from unilabos.server.api.workspace_host import install_workspace_host_api
     from unilabos.server.composition import ServerServices
     from unilabos.server.database import ServerDatabasePaths
     from unilabos.server.services.runtime.workflow.service import WorkflowService
@@ -80,8 +83,11 @@ def build_contract_app(workdir: Path) -> Tuple[FastAPI, Any]:
     )
     services = ServerServices.open(ServerDatabasePaths.resolve(workdir))
     install_server_apis(app, services)
-    install_workflow_api(app, WorkflowService(":memory:"))
+    workflow = WorkflowService(":memory:")
+    install_workflow_api(app, workflow)
     install_registry_api(app)
+    # V1 Workspace Host（/v1/*，裸 JSON）：与 Workflow Authority 同归属
+    install_workspace_host_api(app, workflow)
     # 诊断路由（health / hostlink / scheduler / restart / 人工决策）：handler 里才会取真实对象
     app.include_router(create_backend_router(lambda: None, lambda: None))
     app.include_router(create_driver_packages_router())
@@ -106,6 +112,8 @@ def annotate(document: Dict[str, Any]) -> Dict[str, Any]:
         "unilabos_version": unilabos.__version__,
         "roles": ["host", "backend", "any"],
         "sse": [f"{API_PREFIX}/events", f"{API_PREFIX}/materials/events"],
+        # 不带 /api 前缀、裸 JSON 的 V1 Workspace Host 路由
+        "workspace_host_prefix": WORKSPACE_HOST_PREFIX,
     }
     return document
 

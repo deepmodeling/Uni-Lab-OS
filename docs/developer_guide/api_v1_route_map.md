@@ -110,8 +110,8 @@ These matter more than any single route. Each item gives evidence from both tree
 Adopting V1's contract on any of these breaks something DEV already relies on.
 
 1. **`/api/v1/history/*`.** DEV owns it as the event and payload store (`api/history.py:42`). DEV's own clients use it (`client/history.py:70`, `backend/edge_control.py:103`), and the edge proxy forwards the whole prefix to the Host (`api/edge_proxy.py:23-31`). V1's `/history/workflows|jobs` would be proxied to the Host and 404 there. Adopting them needs a carve-out, or better, new paths.
-2. **`GET /api/v1/lab/layout`.** In DEV it's a revisioned grid document `{layout_key, revision, cell_size, zones, walls}` with PUT/DELETE (`runtime/lab.py:21`). In V1 it's a read view `{zones, placements, storage_summary}` over placed instances, and zones and placements are separate resources (`scheduler/inventory/layout.py:447`).
-3. **`POST /api/v1/resource-templates`.** In DEV this is the Registry Authority intake the Host calls at startup (`runtime/registry.py:52`). It versions entries and returns a registry report, with HTTP 400/422 on error. V1 returns an id→uuid identity receipt in the envelope. The request shape `{resources:[..]}` is compatible, so only the response needs care. DEV's `legacy_adaptor/sync/instances.py:186` already speaks V1's form as an upstream client.
+2. **`GET /api/v1/lab/layout`.** *(Resolved in p7-c: V1 view; dev grid is `grid` in `/lab/profile`.)* In DEV it's a revisioned grid document `{layout_key, revision, cell_size, zones, walls}` with PUT/DELETE (`runtime/lab.py:21`). In V1 it's a read view `{zones, placements, storage_summary}` over placed instances, and zones and placements are separate resources (`scheduler/inventory/layout.py:447`).
+3. **`POST /api/v1/resource-templates`.** *(Resolved in p7-c: V1 identity receipt; Host registry report moved to `POST /api/v1/registry/reports`.)* In DEV this is the Registry Authority intake the Host calls at startup (`runtime/registry.py:52`). It versions entries and returns a registry report, with HTTP 400/422 on error. V1 returns an id→uuid identity receipt in the envelope. The request shape `{resources:[..]}` is compatible, so only the response needs care. DEV's `legacy_adaptor/sync/instances.py:186` already speaks V1's form as an upstream client.
 4. **`/api/v1/error-decisions`.**
    - List: V1 `{decisions}` vs DEV `{items}`.
    - Resolve: V1 `delivered`/404 vs DEV `resolved`/409, and DEV defaults the action to `abort`.
@@ -124,9 +124,9 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 7. **`POST /workflows/{uuid}/authoring/apply`.** V1 takes `{candidate_hash}`; DEV takes a triple CAS. Adopting V1 drops DEV's draft/revision guard unless the server derives those values.
 8. **`PUT /workflows/{uuid}/graph`.** DEV defaults `site_binding_mode=resolve` for programmatic importers. A V1 FE omits the field, so it gets resolve, and can fail where it expects a plain save. Flipping the default breaks DEV's import scripts (UNVERIFIED which scripts).
 9. **`GET /api/v1/events` names.** Renaming DEV events to V1's breaks DEV's own CLI `workflow watch` (`tests/app/test_workflow_watch_sse.py:33-144`). The safe fix is additive: also emit `workflow.runtime.changed`.
-10. **`GET /api/v1/readiness` and `/health`.** DEV's readiness is a Kubernetes-style `ready|not_ready` contract. V1's status is `ready|starting|failed` with `capabilities` and `workflowProgress`. Adding V1's fields is safe; changing the `status` enum is not. The `/health` `scheduler` enums differ too (`ready|disabled` vs `local|remote`).
+10. **`GET /api/v1/readiness` and `/health`.** *(Resolved in p7-c: V1 fields and enums, dev probe summary kept as extension fields; both raw.)* DEV's readiness is a Kubernetes-style `ready|not_ready` contract. V1's status is `ready|starting|failed` with `capabilities` and `workflowProgress`. Adding V1's fields is safe; changing the `status` enum is not. The `/health` `scheduler` enums differ too (`ready|disabled` vs `local|remote`).
 11. **Code 4001 and the Bearer header.** Both mean different things on each side (see conventions 2 and 3).
-12. **The `/api/v1/materials` namespace.** V1's `GET /materials/{material_uuid}` takes a UUID-typed path parameter (`backend_api.py:316`). If it is registered before DEV's materials router, it captures `/materials/lots`, `/templates`, `/instances`, `/links`, `/changes`, `/events`, `/reservations`, `/executions` and `/registry-classes`. FastAPI does not fall through on a validation failure. So V1 material routes must be mounted after DEV's.
+12. **The `/api/v1/materials` namespace.** *(Resolved in p7-c: V1 routes mounted after dev literals; dev duplicates removed, dev writes moved to `/inventory/commands`.)* V1's `GET /materials/{material_uuid}` takes a UUID-typed path parameter (`backend_api.py:316`). If it is registered before DEV's materials router, it captures `/materials/lots`, `/templates`, `/instances`, `/links`, `/changes`, `/events`, `/reservations`, `/executions` and `/registry-classes`. FastAPI does not fall through on a validation failure. So V1 material routes must be mounted after DEV's.
     - DEV's own `RemoteMaterialsClient` depends on DEV's plain-DTO shapes (`client/materials/core.py:404`).
     - DEV's `InventoryMutation` writes are their own convention (`protocol/materials.py:82`).
     - Therefore V1's shapes must be added alongside DEV's, not in place of them.
@@ -245,86 +245,94 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 
 ## Inventory and materials
 
-| class | V1 route | V1 handler | DEV counterpart | note |
-|---|---|---|---|---|
-| MISSING | `GET /api/v1/compounds/{cas}` | unilabos/app/scheduler/inventory/reagent_api.py:529 | (partial) GET /api/v1/chemicals?cas= (local data only) | V1 uses an external compound source (PubChem). Used by the V1 console |
-| MISSING | `GET /api/v1/current-substances` | unilabos/app/scheduler/inventory/content_api.py:116 | - |  |
-| MISSING | `POST /api/v1/current-substances` | unilabos/app/scheduler/inventory/content_api.py:106 | (partial) PUT /api/v1/materials/instances/{uuid}/data substances |  |
-| MISSING | `DELETE /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:143 | - |  |
-| MISSING | `GET /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:129 | - |  |
-| MISSING | `PUT /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:133 | - |  |
-| MISSING | `GET /api/v1/inventory/commands/processed` | unilabos/app/scheduler/inventory/api.py:200 | - | DEV has idempotency by command_uuid but no listing |
-| MISSING | `GET /api/v1/inventory/contents` | unilabos/app/scheduler/inventory/api.py:169 | (partial) substances inside material data | Container contents |
-| MISSING | `GET /api/v1/inventory/health` | unilabos/app/scheduler/inventory/api.py:55 | (trivial) GET /api/v1/health |  |
-| MISSING | `POST /api/v1/inventory/ingress-reservations` | unilabos/app/scheduler/inventory/ingress_api.py:116 | - | Station ingress |
-| MISSING | `GET /api/v1/inventory/ingress-reservations/{reservation_uuid}` | unilabos/app/scheduler/inventory/ingress_api.py:126 | - |  |
-| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/cancel` | unilabos/app/scheduler/inventory/ingress_api.py:162 | - |  |
-| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/in-transit` | unilabos/app/scheduler/inventory/ingress_api.py:136 | - |  |
-| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/receive` | unilabos/app/scheduler/inventory/ingress_api.py:149 | - |  |
-| MISSING | `GET /api/v1/inventory/sync/cursors` | unilabos/app/scheduler/inventory/api.py:210 | (partial) POST /api/v1/materials/changes/ack |  |
-| MISSING | `GET /api/v1/material-models/{asset_path:path}` | unilabos/app/scheduler/inventory/backend_api.py:444 | - |  |
-| MISSING | `GET /api/v1/material-shapes` | unilabos/app/scheduler/inventory/backend_api.py:435 | - | Material 3D or 2D shapes |
-| MISSING | `GET /api/v1/material-states/{state_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:408 | - |  |
-| MISSING | `POST /api/v1/materials/sites/resolve-identities` | unilabos/app/scheduler/inventory/backend_api.py:309 | - |  |
-| MISSING | `GET /api/v1/materials/{material_uuid}/current-substance` | unilabos/app/scheduler/inventory/content_api.py:151 | (partial) GET /api/v1/materials/instances/{uuid} data |  |
-| MISSING | `GET /api/v1/materials/{material_uuid}/reagent-history` | unilabos/app/scheduler/inventory/reagent_api.py:709 | - | Used by the V1 console |
-| MISSING | `GET /api/v1/materials/{material_uuid}/states` | unilabos/app/scheduler/inventory/backend_api.py:389 | - | No state history |
-| MISSING | `GET /api/v1/materials/{material_uuid}/substance-history` | unilabos/app/scheduler/inventory/content_api.py:155 | - |  |
-| MISSING | `GET /api/v1/reagent-history/{history_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:705 | - |  |
-| MISSING | `POST /api/v1/reagent-infos/batch` | unilabos/app/scheduler/inventory/reagent_api.py:560 | - |  |
-| MISSING | `POST /api/v1/reagent-infos/import` | unilabos/app/scheduler/inventory/reagent_api.py:573 | - |  |
-| MISSING | `GET /api/v1/reagent-infos/{reagent_info_uuid}/structure-3d` | unilabos/app/scheduler/inventory/reagent_api.py:600 | - |  |
-| MISSING | `GET /api/v1/reagents` | unilabos/app/scheduler/inventory/reagent_api.py:664 | - | Used by the V1 console |
-| MISSING | `POST /api/v1/reagents` | unilabos/app/scheduler/inventory/reagent_api.py:618 | (partial) lots or material data substances | F05. Used by the V1 console |
-| MISSING | `POST /api/v1/reagents/batch` | unilabos/app/scheduler/inventory/reagent_api.py:628 | - |  |
-| MISSING | `POST /api/v1/reagents/import` | unilabos/app/scheduler/inventory/reagent_api.py:641 | - |  |
-| MISSING | `DELETE /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:701 | - |  |
-| MISSING | `GET /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:687 | - |  |
-| MISSING | `PUT /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:691 | - |  |
-| MISSING | `GET /api/v1/samples` | unilabos/app/scheduler/inventory/content_api.py:69 | - |  |
-| MISSING | `POST /api/v1/samples` | unilabos/app/scheduler/inventory/content_api.py:61 | - |  |
-| MISSING | `DELETE /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:102 | - |  |
-| MISSING | `GET /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:90 | - |  |
-| MISSING | `PUT /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:94 | - |  |
-| MISSING | `GET /api/v1/sites/{site_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:412 | - |  |
-| MISSING | `GET /api/v1/substance-history/{history_uuid}` | unilabos/app/scheduler/inventory/content_api.py:147 | - |  |
-| DTO-DIFF | `POST /api/v1/resource-templates` | unilabos/app/scheduler/inventory/backend_api.py:215 | POST /api/v1/resource-templates (registry.py:52) | CONFLICT. Both take {resources:[..]}. V1 returns an id→uuid identity receipt (envelope, code 1000 on error); DEV returns a Registry Authority report with HTTP 400/422 errors. The DEV Host depends on this route |
-| PATH-DIFF | `POST /api/v1/inventory/commands` | unilabos/app/scheduler/inventory/api.py:59 | M<..> on /api/v1/materials/{templates,lots/inbound,lots/{uuid}/stocktake,reservations,reservations/{uuid}/consume\|release\|quarantine} | V1 command types: template.upsert/delete, inbound, reserve, release, consume, quarantine, reconcile_count. DEV covers them but as one route per operation. Used by the V1 console |
-| PATH-DIFF | `GET /api/v1/inventory/instances` | unilabos/app/scheduler/inventory/api.py:92 | GET /api/v1/materials/instances | No status filter in DEV. F05 says 'path missing'; the capability exists |
-| PATH-DIFF | `GET /api/v1/inventory/instances/{edge_uuid}` | unilabos/app/scheduler/inventory/api.py:127 | GET /api/v1/materials/instances/{material_uuid} |  |
-| PATH-DIFF | `GET /api/v1/inventory/ledger` | unilabos/app/scheduler/inventory/api.py:178 | GET /api/v1/materials/changes |  |
-| PATH-DIFF | `GET /api/v1/inventory/lots` | unilabos/app/scheduler/inventory/api.py:75 | GET /api/v1/materials/lots | V1 returns {lots:[..]}; DEV returns a plain list |
-| PATH-DIFF | `GET /api/v1/inventory/lots/{lot_id}` | unilabos/app/scheduler/inventory/api.py:81 | GET /api/v1/materials/lots/{lot_uuid} |  |
-| PATH-DIFF | `GET /api/v1/inventory/outbox/backlog` | unilabos/app/scheduler/inventory/api.py:185 | GET /api/v1/runtime/backend-events | UNVERIFIED equivalence (upstream outbox) |
-| PATH-DIFF | `GET /api/v1/inventory/outbox/events` | unilabos/app/scheduler/inventory/api.py:192 | GET /api/v1/runtime/backend-events | UNVERIFIED |
-| PATH-DIFF | `GET /api/v1/inventory/relations` | unilabos/app/scheduler/inventory/api.py:165 | GET /api/v1/materials/links |  |
-| PATH-DIFF | `GET /api/v1/inventory/reservations` | unilabos/app/scheduler/inventory/api.py:100 | GET /api/v1/materials/reservations |  |
-| PATH-DIFF | `GET /api/v1/inventory/reservations/{reservation_id}` | unilabos/app/scheduler/inventory/api.py:142 | GET /api/v1/materials/reservations/{reservation_uuid} |  |
-| PATH-DIFF | `GET /api/v1/inventory/snapshot` | unilabos/app/scheduler/inventory/api.py:173 | GET /api/v1/graphs/live/payload | UNVERIFIED shape |
-| PATH-DIFF | `GET /api/v1/inventory/templates` | unilabos/app/scheduler/inventory/api.py:108 | GET /api/v1/materials/templates |  |
-| PATH-DIFF | `GET /api/v1/inventory/templates/{template_id}` | unilabos/app/scheduler/inventory/api.py:114 | GET /api/v1/materials/templates/{template_uuid} |  |
-| PATH-DIFF | `GET /api/v1/inventory/workflows/{workflow_id}/reservations` | unilabos/app/scheduler/inventory/api.py:155 | GET /api/v1/materials/reservations?task_uuid= |  |
-| PATH-DIFF | `GET /api/v1/materials` | unilabos/app/scheduler/inventory/backend_api.py:286 | GET /api/v1/materials/instances | DEV has no pagination, no barcode filter and exact name match only. Used by the V1 console |
-| PATH-DIFF | `POST /api/v1/materials` | unilabos/app/scheduler/inventory/backend_api.py:278 | POST /api/v1/materials/trees \| /instantiate (M<..>) | Direct body vs mutation envelope. Used by the V1 console |
-| PATH-DIFF | `GET /api/v1/materials/graph` | unilabos/app/scheduler/inventory/backend_api.py:305 | GET /api/v1/graphs/live/payload | Node-link shape is incompatible. F05 calls it 'missing'. Used by the V1 console |
-| PATH-DIFF | `DELETE /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:343 | DELETE /api/v1/materials/instances/{material_uuid} (M<MaterialDelete>) |  |
-| PATH-DIFF | `GET /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:315 | GET /api/v1/materials/instances/{material_uuid} | Used by the V1 console |
-| PATH-DIFF | `PUT /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:319 | PATCH /api/v1/materials/instances/{uuid}; PUT .../position; PUT .../data |  |
-| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/ledger` | unilabos/app/scheduler/inventory/backend_api.py:354 | GET /api/v1/materials/changes (global, no per-material filter) | Used by the V1 console |
-| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/sites` | unilabos/app/scheduler/inventory/backend_api.py:369 | GET /api/v1/materials/instances/{uuid} (aggregate includes sites, UNVERIFIED) |  |
-| PATH-DIFF | `POST /api/v1/materials/{material_uuid}/states` | unilabos/app/scheduler/inventory/backend_api.py:378 | PUT /api/v1/materials/instances/{uuid}/data | Append in V1, overwrite in DEV |
-| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/states/latest` | unilabos/app/scheduler/inventory/backend_api.py:404 | GET /api/v1/materials/instances/{uuid} (data) |  |
-| PATH-DIFF | `GET /api/v1/reagent-infos` | unilabos/app/scheduler/inventory/reagent_api.py:541 | GET /api/v1/chemicals | Used by the V1 console |
-| PATH-DIFF | `POST /api/v1/reagent-infos` | unilabos/app/scheduler/inventory/reagent_api.py:533 | POST /api/v1/chemicals | Fields are near-identical (cas, name, aliases, formula, smiles, inchi_key, mw, density, physical_state). DEV names the key chemical_uuid |
-| PATH-DIFF | `DELETE /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:614 | DELETE /api/v1/chemicals/{chemical_uuid}?expected_version= | DEV requires expected_version |
-| PATH-DIFF | `GET /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:596 | GET /api/v1/chemicals/{chemical_uuid} |  |
-| PATH-DIFF | `PUT /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:604 | PATCH /api/v1/chemicals/{chemical_uuid} | Method differs; DEV requires expected_version |
-| PATH-DIFF | `GET /api/v1/resource-templates` | unilabos/app/scheduler/inventory/backend_api.py:219 | GET /api/v1/materials/templates | DEV has no page, keyword or resource_type params, returns a plain list, and names the key template_uuid where V1 uses uuid. Used by the V1 console |
-| PATH-DIFF | `DELETE /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:274 | DELETE /api/v1/materials/templates/{template_uuid} (InventoryMutation body) |  |
-| PATH-DIFF | `GET /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:234 | GET /api/v1/materials/templates/{template_uuid} | Plain DTO vs V1 envelope |
-| PATH-DIFF | `PUT /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:238 | PUT /api/v1/materials/templates/{template_uuid} (M<ResourceTemplateWrite>) | V1 edits only display fields |
-| PATH-DIFF | `GET /api/v1/resources` | unilabos/app/web/api.py:1256 | GET /api/v1/materials/instances | Uses the legacy Resp envelope |
-| V1-DEPRECATED | `POST /api/v1/edge/material/query` | unilabos/app/scheduler/inventory/api.py:234 | GET /api/v1/materials/instances/{uuid}/tree; /instances/by-resource-id/{id} | Compat route 'already used by HostNode' |
+> **Status (branch `fix/p7-c-inventory`, 2026-11-12):** materials.db is now at schema **v7** (v6: V1 inventory
+> concepts as tables; v7: lot location columns). All rows below except `GET /api/v1/resources` are ported (see the
+> status column). Writes: every dev `materials.v1` mutation and the V1 typed commands go through
+> `POST /api/v1/inventory/commands` (raw V1 result, not enveloped); dev's per-operation write routes and the dev reads
+> that V1 covers (`/materials/{templates,lots,reservations,instances,links,changes}`) are removed. V1's
+> `/materials/{material_uuid}` routes are registered after the remaining dev literal routes. Reagents, samples and
+> current substances are roles (`material_content`) over `material_substance`, which stays the only quantity authority.
+
+| class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
+|---|---|---|---|---|---|
+| MISSING | `GET /api/v1/compounds/{cas}` | unilabos/app/scheduler/inventory/reagent_api.py:529 | (partial) GET /api/v1/chemicals?cas= (local data only) | V1 uses an external compound source (PubChem). Used by the V1 console | PORTED: local CAS registry, then optional PubChem (`UNILABOS_PUBCHEM_ADDR`, `off` disables) |
+| MISSING | `GET /api/v1/current-substances` | unilabos/app/scheduler/inventory/content_api.py:116 | - |  | PORTED |
+| MISSING | `POST /api/v1/current-substances` | unilabos/app/scheduler/inventory/content_api.py:106 | (partial) PUT /api/v1/materials/instances/{uuid}/data substances |  | PORTED |
+| MISSING | `DELETE /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:143 | - |  | PORTED |
+| MISSING | `GET /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:129 | - |  | PORTED |
+| MISSING | `PUT /api/v1/current-substances/{substance_uuid}` | unilabos/app/scheduler/inventory/content_api.py:133 | - |  | PORTED |
+| MISSING | `GET /api/v1/inventory/commands/processed` | unilabos/app/scheduler/inventory/api.py:200 | - | DEV has idempotency by command_uuid but no listing | PORTED: V1 typed commands + recent materials.v1 effects |
+| MISSING | `GET /api/v1/inventory/contents` | unilabos/app/scheduler/inventory/api.py:169 | (partial) substances inside material data | Container contents | PORTED: substances per container from material_substance |
+| MISSING | `GET /api/v1/inventory/health` | unilabos/app/scheduler/inventory/api.py:55 | (trivial) GET /api/v1/health |  | PORTED |
+| MISSING | `POST /api/v1/inventory/ingress-reservations` | unilabos/app/scheduler/inventory/ingress_api.py:116 | - | Station ingress | PORTED: materials.db `station_ingress_reservation` |
+| MISSING | `GET /api/v1/inventory/ingress-reservations/{reservation_uuid}` | unilabos/app/scheduler/inventory/ingress_api.py:126 | - |  | PORTED |
+| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/cancel` | unilabos/app/scheduler/inventory/ingress_api.py:162 | - |  | PORTED |
+| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/in-transit` | unilabos/app/scheduler/inventory/ingress_api.py:136 | - |  | PORTED |
+| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/receive` | unilabos/app/scheduler/inventory/ingress_api.py:149 | - |  | PORTED: receive = dev move_material into the reserved Site |
+| MISSING | `GET /api/v1/inventory/sync/cursors` | unilabos/app/scheduler/inventory/api.py:210 | (partial) POST /api/v1/materials/changes/ack |  | PORTED: read view over the materials ledger acknowledgement |
+| MISSING | `GET /api/v1/material-models/{asset_path:path}` | unilabos/app/scheduler/inventory/backend_api.py:444 | - |  | PORTED: raw file route; 404 until a workspace model catalog is wired |
+| MISSING | `GET /api/v1/material-shapes` | unilabos/app/scheduler/inventory/backend_api.py:435 | - | Material 3D or 2D shapes | PORTED: empty list until workspace shapes are wired |
+| MISSING | `GET /api/v1/material-states/{state_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:408 | - |  | PORTED: `material_state_history` |
+| MISSING | `POST /api/v1/materials/sites/resolve-identities` | unilabos/app/scheduler/inventory/backend_api.py:309 | - |  | PORTED |
+| MISSING | `GET /api/v1/materials/{material_uuid}/current-substance` | unilabos/app/scheduler/inventory/content_api.py:151 | (partial) GET /api/v1/materials/instances/{uuid} data |  | PORTED |
+| MISSING | `GET /api/v1/materials/{material_uuid}/reagent-history` | unilabos/app/scheduler/inventory/reagent_api.py:709 | - | Used by the V1 console | PORTED: `material_content_history` |
+| MISSING | `GET /api/v1/materials/{material_uuid}/states` | unilabos/app/scheduler/inventory/backend_api.py:389 | - | No state history | PORTED |
+| MISSING | `GET /api/v1/materials/{material_uuid}/substance-history` | unilabos/app/scheduler/inventory/content_api.py:155 | - |  | PORTED |
+| MISSING | `GET /api/v1/reagent-history/{history_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:705 | - |  | PORTED |
+| MISSING | `POST /api/v1/reagent-infos/batch` | unilabos/app/scheduler/inventory/reagent_api.py:560 | - |  | PORTED |
+| MISSING | `POST /api/v1/reagent-infos/import` | unilabos/app/scheduler/inventory/reagent_api.py:573 | - |  | PORTED: JSON / CSV / TSV |
+| MISSING | `GET /api/v1/reagent-infos/{reagent_info_uuid}/structure-3d` | unilabos/app/scheduler/inventory/reagent_api.py:600 | - |  | PORTED: returns `pending` (no local 3D generator) |
+| MISSING | `GET /api/v1/reagents` | unilabos/app/scheduler/inventory/reagent_api.py:664 | - | Used by the V1 console | PORTED |
+| MISSING | `POST /api/v1/reagents` | unilabos/app/scheduler/inventory/reagent_api.py:618 | (partial) lots or material data substances | F05. Used by the V1 console | PORTED: quantity lives in material_substance (role row in material_content) |
+| MISSING | `POST /api/v1/reagents/batch` | unilabos/app/scheduler/inventory/reagent_api.py:628 | - |  | PORTED |
+| MISSING | `POST /api/v1/reagents/import` | unilabos/app/scheduler/inventory/reagent_api.py:641 | - |  | PORTED |
+| MISSING | `DELETE /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:701 | - |  | PORTED |
+| MISSING | `GET /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:687 | - |  | PORTED |
+| MISSING | `PUT /api/v1/reagents/{reagent_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:691 | - |  | PORTED: cannot go below active content reservations |
+| MISSING | `GET /api/v1/samples` | unilabos/app/scheduler/inventory/content_api.py:69 | - |  | PORTED |
+| MISSING | `POST /api/v1/samples` | unilabos/app/scheduler/inventory/content_api.py:61 | - |  | PORTED |
+| MISSING | `DELETE /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:102 | - |  | PORTED |
+| MISSING | `GET /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:90 | - |  | PORTED |
+| MISSING | `PUT /api/v1/samples/{sample_uuid}` | unilabos/app/scheduler/inventory/content_api.py:94 | - |  | PORTED |
+| MISSING | `GET /api/v1/sites/{site_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:412 | - |  | PORTED |
+| MISSING | `GET /api/v1/substance-history/{history_uuid}` | unilabos/app/scheduler/inventory/content_api.py:147 | - |  | PORTED |
+| DTO-DIFF | `POST /api/v1/resource-templates` | unilabos/app/scheduler/inventory/backend_api.py:215 | POST /api/v1/resource-templates (registry.py:52) | CONFLICT. Both take {resources:[..]}. V1 returns an id→uuid identity receipt (envelope, code 1000 on error); DEV returns a Registry Authority report with HTTP 400/422 errors. The DEV Host depends on this route | PORTED: identity receipt; Host registry report moved to `POST /api/v1/registry/reports` |
+| PATH-DIFF | `POST /api/v1/inventory/commands` | unilabos/app/scheduler/inventory/api.py:59 | M<..> on /api/v1/materials/{templates,lots/inbound,lots/{uuid}/stocktake,reservations,reservations/{uuid}/consume\|release\|quarantine} | V1 command types: template.upsert/delete, inbound, reserve, release, consume, quarantine, reconcile_count. DEV covers them but as one route per operation. Used by the V1 console | PORTED: raw V1 result (not enveloped). Carries every dev `materials.v1` mutation (dev write routes removed) and V1 types reagent.dispense, inventory.template.*, inventory.inbound (lot), inventory.reserve/release/consume/quarantine, inventory.reconcile_count, material.move/detach/set_parent/discard; new inventory.lot.correct, content.*, source.*. Not ported: material.deploy, material.content.set/clear, material.consume, material.mark_used, material.adjust, instance inbound |
+| PATH-DIFF | `GET /api/v1/inventory/instances` | unilabos/app/scheduler/inventory/api.py:92 | GET /api/v1/materials/instances | No status filter in DEV. F05 says 'path missing'; the capability exists | PORTED: dev `GET /materials/instances` removed |
+| PATH-DIFF | `GET /api/v1/inventory/instances/{edge_uuid}` | unilabos/app/scheduler/inventory/api.py:127 | GET /api/v1/materials/instances/{material_uuid} |  | PORTED: dev `GET /materials/instances/{uuid}` removed |
+| PATH-DIFF | `GET /api/v1/inventory/ledger` | unilabos/app/scheduler/inventory/api.py:178 | GET /api/v1/materials/changes |  | PORTED: dev `GET /materials/changes` removed |
+| PATH-DIFF | `GET /api/v1/inventory/lots` | unilabos/app/scheduler/inventory/api.py:75 | GET /api/v1/materials/lots | V1 returns {lots:[..]}; DEV returns a plain list | PORTED: dev `GET /materials/lots` removed |
+| PATH-DIFF | `GET /api/v1/inventory/lots/{lot_id}` | unilabos/app/scheduler/inventory/api.py:81 | GET /api/v1/materials/lots/{lot_uuid} |  | PORTED: dev route removed |
+| PATH-DIFF | `GET /api/v1/inventory/outbox/backlog` | unilabos/app/scheduler/inventory/api.py:185 | GET /api/v1/runtime/backend-events | UNVERIFIED equivalence (upstream outbox) | PORTED: materials ledger delivery status |
+| PATH-DIFF | `GET /api/v1/inventory/outbox/events` | unilabos/app/scheduler/inventory/api.py:192 | GET /api/v1/runtime/backend-events | UNVERIFIED | PORTED |
+| PATH-DIFF | `GET /api/v1/inventory/relations` | unilabos/app/scheduler/inventory/api.py:165 | GET /api/v1/materials/links |  | PORTED: parent/Site relations + topology links; dev `GET /materials/links` removed |
+| PATH-DIFF | `GET /api/v1/inventory/reservations` | unilabos/app/scheduler/inventory/api.py:100 | GET /api/v1/materials/reservations |  | PORTED: lot/material + content reservations + source bindings; dev route removed |
+| PATH-DIFF | `GET /api/v1/inventory/reservations/{reservation_id}` | unilabos/app/scheduler/inventory/api.py:142 | GET /api/v1/materials/reservations/{reservation_uuid} |  | PORTED: dev route removed |
+| PATH-DIFF | `GET /api/v1/inventory/snapshot` | unilabos/app/scheduler/inventory/api.py:173 | GET /api/v1/graphs/live/payload | UNVERIFIED shape | PORTED |
+| PATH-DIFF | `GET /api/v1/inventory/templates` | unilabos/app/scheduler/inventory/api.py:108 | GET /api/v1/materials/templates |  | PORTED: dev `GET /materials/templates` removed |
+| PATH-DIFF | `GET /api/v1/inventory/templates/{template_id}` | unilabos/app/scheduler/inventory/api.py:114 | GET /api/v1/materials/templates/{template_uuid} |  | PORTED: dev route removed |
+| PATH-DIFF | `GET /api/v1/inventory/workflows/{workflow_id}/reservations` | unilabos/app/scheduler/inventory/api.py:155 | GET /api/v1/materials/reservations?task_uuid= |  | PORTED |
+| PATH-DIFF | `GET /api/v1/materials` | unilabos/app/scheduler/inventory/backend_api.py:286 | GET /api/v1/materials/instances | DEV has no pagination, no barcode filter and exact name match only. Used by the V1 console | PORTED |
+| PATH-DIFF | `POST /api/v1/materials` | unilabos/app/scheduler/inventory/backend_api.py:278 | POST /api/v1/materials/trees \| /instantiate (M<..>) | Direct body vs mutation envelope. Used by the V1 console | PORTED: dev `/materials/trees` and `/instantiate` moved into `/inventory/commands` |
+| PATH-DIFF | `GET /api/v1/materials/graph` | unilabos/app/scheduler/inventory/backend_api.py:305 | GET /api/v1/graphs/live/payload | Node-link shape is incompatible. F05 calls it 'missing'. Used by the V1 console | PORTED: dev `/graphs` (Graph Authority) kept |
+| PATH-DIFF | `DELETE /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:343 | DELETE /api/v1/materials/instances/{material_uuid} (M<MaterialDelete>) |  | PORTED |
+| PATH-DIFF | `GET /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:315 | GET /api/v1/materials/instances/{material_uuid} | Used by the V1 console | PORTED: registered after dev literal routes |
+| PATH-DIFF | `PUT /api/v1/materials/{material_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:319 | PATCH /api/v1/materials/instances/{uuid}; PUT .../position; PUT .../data |  | PORTED |
+| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/ledger` | unilabos/app/scheduler/inventory/backend_api.py:354 | GET /api/v1/materials/changes (global, no per-material filter) | Used by the V1 console | PORTED |
+| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/sites` | unilabos/app/scheduler/inventory/backend_api.py:369 | GET /api/v1/materials/instances/{uuid} (aggregate includes sites, UNVERIFIED) |  | PORTED |
+| PATH-DIFF | `POST /api/v1/materials/{material_uuid}/states` | unilabos/app/scheduler/inventory/backend_api.py:378 | PUT /api/v1/materials/instances/{uuid}/data | Append in V1, overwrite in DEV | PORTED |
+| PATH-DIFF | `GET /api/v1/materials/{material_uuid}/states/latest` | unilabos/app/scheduler/inventory/backend_api.py:404 | GET /api/v1/materials/instances/{uuid} (data) |  | PORTED |
+| PATH-DIFF | `GET /api/v1/reagent-infos` | unilabos/app/scheduler/inventory/reagent_api.py:541 | GET /api/v1/chemicals | Used by the V1 console | PORTED: over the `chemical` table; dev `/chemicals` kept (dev-only expected_version writes) |
+| PATH-DIFF | `POST /api/v1/reagent-infos` | unilabos/app/scheduler/inventory/reagent_api.py:533 | POST /api/v1/chemicals | Fields are near-identical (cas, name, aliases, formula, smiles, inchi_key, mw, density, physical_state). DEV names the key chemical_uuid | PORTED |
+| PATH-DIFF | `DELETE /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:614 | DELETE /api/v1/chemicals/{chemical_uuid}?expected_version= | DEV requires expected_version | PORTED: 4000 while referenced |
+| PATH-DIFF | `GET /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:596 | GET /api/v1/chemicals/{chemical_uuid} |  | PORTED |
+| PATH-DIFF | `PUT /api/v1/reagent-infos/{reagent_info_uuid}` | unilabos/app/scheduler/inventory/reagent_api.py:604 | PATCH /api/v1/chemicals/{chemical_uuid} | Method differs; DEV requires expected_version | PORTED |
+| PATH-DIFF | `GET /api/v1/resource-templates` | unilabos/app/scheduler/inventory/backend_api.py:219 | GET /api/v1/materials/templates | DEV has no page, keyword or resource_type params, returns a plain list, and names the key template_uuid where V1 uses uuid. Used by the V1 console | PORTED |
+| PATH-DIFF | `DELETE /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:274 | DELETE /api/v1/materials/templates/{template_uuid} (InventoryMutation body) |  | PORTED |
+| PATH-DIFF | `GET /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:234 | GET /api/v1/materials/templates/{template_uuid} | Plain DTO vs V1 envelope | PORTED |
+| PATH-DIFF | `PUT /api/v1/resource-templates/{template_uuid}` | unilabos/app/scheduler/inventory/backend_api.py:238 | PUT /api/v1/materials/templates/{template_uuid} (M<ResourceTemplateWrite>) | V1 edits only display fields | PORTED |
+| PATH-DIFF | `GET /api/v1/resources` | unilabos/app/web/api.py:1256 | GET /api/v1/materials/instances | Uses the legacy Resp envelope | NOT PORTED: legacy `Resp` page API, not called by the V1 console; use `/materials` or `/inventory/instances` |
+| V1-DEPRECATED | `POST /api/v1/edge/material/query` | unilabos/app/scheduler/inventory/api.py:234 | GET /api/v1/materials/instances/{uuid}/tree; /instances/by-resource-id/{id} | Compat route 'already used by HostNode' | SKIPPED (V1-DEPRECATED) |
 
 ## Devices and registry
 
@@ -380,32 +388,36 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 
 ## Workspace and lifecycle
 
-| class | V1 route | V1 handler | DEV counterpart | note |
-|---|---|---|---|---|
-| MISSING | `GET /api/v1/file-browser` | unilabos/app/web/api.py:1185 | - | Listed under Workspace in the V1 manual. Uses the legacy Resp envelope |
-| MISSING | `POST /api/v1/lab/demo` | unilabos/app/scheduler/inventory/layout.py:485 | - | Demo seeding |
-| MISSING | `POST /api/v1/lab/placements` | unilabos/app/scheduler/inventory/layout.py:467 | (partial) PUT /api/v1/materials/instances/{uuid}/position |  |
-| MISSING | `DELETE /api/v1/lab/placements/{subject_id}` | unilabos/app/scheduler/inventory/layout.py:474 | - |  |
-| MISSING | `GET /api/v1/lab/profile` | unilabos/app/scheduler/inventory/layout.py:439 | - |  |
-| MISSING | `PUT /api/v1/lab/profile` | unilabos/app/scheduler/inventory/layout.py:443 | - |  |
-| MISSING | `GET /api/v1/lab/warehouse` | unilabos/app/scheduler/inventory/layout.py:451 | - |  |
-| MISSING | `GET /api/v1/workspace/package-mounts` | unilabos/app/workspace_authoring_api.py:25 | (analog) GET /api/v1/driver-packages | The Workspace Host probes it for readiness |
-| MISSING | `POST /v1/operations` | unilabos/workspace_host/host.py:2201 | (partial) POST /api/v1/restart, /api/v1/reset, /device-processes/{id}/start\|stop\|restart | Material layout preview/apply has no DEV analog |
-| MISSING | `GET /v1/operations/{operation_id}` | unilabos/workspace_host/host.py:2176 | - |  |
-| MISSING | `GET /v1/snapshot` | unilabos/workspace_host/host.py:2173 | (partial) /api/v1/health, /readiness, /restart | Workspace Host supervisor state |
-| DTO-DIFF | `GET /api/v1/health` | unilabos/app/scheduler/api.py:550 | GET /api/v1/health | Standalone scheduler app only, not mounted in the product. Same difference as the web /health row |
-| DTO-DIFF | `GET /api/v1/health` | unilabos/app/web/api.py:1266 | GET /api/v1/health | V1 scheduler is ready\|disabled; DEV scheduler is local\|remote and DEV adds execution |
-| DTO-DIFF | `GET /api/v1/lab/layout` | unilabos/app/scheduler/inventory/layout.py:447 | GET /api/v1/lab/layout | CONFLICT. V1 returns {zones, placements, storage_summary}, a view of placed instances. DEV returns {layout_key, revision, cell_size, zones, walls, *_at_ms}, a grid document |
-| DTO-DIFF | `GET /api/v1/readiness` | unilabos/app/web/server.py:243 | GET /api/v1/readiness | V1 returns {status: ready\|starting\|failed, capabilities{can_edit_definitions, can_view_drafts, can_run_unpublished, can_debug, can_execute_device_actions}, phase, workflowRuntime, workflowProgress, observability?, error?}. DEV returns {status: ready\|not_ready, scheduler, execution, reasons}. Both use 200/503. The V1 console gates the UI on capabilities |
-| PATH-DIFF | `GET /api/v1/lab/assembly/{subject_id}` | unilabos/app/scheduler/inventory/layout.py:478 | GET /api/v1/materials/instances/{uuid}/tree |  |
-| PATH-DIFF | `POST /api/v1/lab/zones` | unilabos/app/scheduler/inventory/layout.py:456 | PUT /api/v1/lab/layout (whole document with revision) | Zone models differ |
-| PATH-DIFF | `DELETE /api/v1/lab/zones/{zone_id}` | unilabos/app/scheduler/inventory/layout.py:463 | PUT /api/v1/lab/layout |  |
-| PATH-DIFF | `GET /v1/logs/{component}?maxBytes=` | unilabos/workspace_host/host.py:2180 | GET /api/v1/hostlink/log-sources + /api/v1/hostlink/logs?source_id=&cursor=&limit= |  |
-| SAME | `GET /api/v1/hostlink/peers` | unilabos/app/scheduler/api.py:155 | GET /api/v1/hostlink/peers | DEV adds host_node_id. On the authority the edge proxy forwards it to the Host child (503 while the Host is down) |
-| SAME | `GET /api/v1/scheduler/drain` | unilabos/app/scheduler/api.py:235 | GET /api/v1/scheduler/drain | DEV SchedulerDrainStatus is a superset of V1's fields |
-| SAME | `POST /api/v1/scheduler/drain` | unilabos/app/scheduler/api.py:241 | POST /api/v1/scheduler/drain | Superset |
-| SAME | `POST /api/v1/scheduler/drain/resume` | unilabos/app/scheduler/api.py:247 | POST /api/v1/scheduler/drain/resume | Superset |
-| V1-DEPRECATED | `GET /api/v1/health` | unilabos/app/web/server.py:500 | GET /api/v1/health | Dead code for backend mode |
+> **Status (branch `fix/p7-c-inventory`, 2026-11-12):** lab, package mounts, file browser, `/health` and `/readiness`
+> are ported. The four Workspace Host routes (`/v1/snapshot`, `/v1/operations`, `/v1/operations/{id}`,
+> `/v1/logs/{component}`) remain: dev has no separate workspace supervisor process.
+
+| class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
+|---|---|---|---|---|---|
+| MISSING | `GET /api/v1/file-browser` | unilabos/app/web/api.py:1185 | - | Listed under Workspace in the V1 manual. Uses the legacy Resp envelope | PORTED: Host route behind the edge proxy (`file-browser` prefix); V1 envelope instead of legacy Resp; confined to the working dir |
+| MISSING | `POST /api/v1/lab/demo` | unilabos/app/scheduler/inventory/layout.py:485 | - | Demo seeding | PORTED: seeds zones, device placements, demo templates and zone-assigned lots |
+| MISSING | `POST /api/v1/lab/placements` | unilabos/app/scheduler/inventory/layout.py:467 | (partial) PUT /api/v1/materials/instances/{uuid}/position |  | PORTED: materials.db `lab_placement` |
+| MISSING | `DELETE /api/v1/lab/placements/{subject_id}` | unilabos/app/scheduler/inventory/layout.py:474 | - |  | PORTED |
+| MISSING | `GET /api/v1/lab/profile` | unilabos/app/scheduler/inventory/layout.py:439 | - |  | PORTED: includes dev grid document as `grid` |
+| MISSING | `PUT /api/v1/lab/profile` | unilabos/app/scheduler/inventory/layout.py:443 | - |  | PORTED: `grid` writes dev grid (revision CAS), `grid: null` resets |
+| MISSING | `GET /api/v1/lab/warehouse` | unilabos/app/scheduler/inventory/layout.py:451 | - |  | PORTED |
+| MISSING | `GET /api/v1/workspace/package-mounts` | unilabos/app/workspace_authoring_api.py:25 | (analog) GET /api/v1/driver-packages | The Workspace Host probes it for readiness | PORTED: `workspace-package-mounts/v1` projection over the dev driver-package ledger (`editable` is always false); Host route behind the edge proxy |
+| MISSING | `POST /v1/operations` | unilabos/workspace_host/host.py:2201 | (partial) POST /api/v1/restart, /api/v1/reset, /device-processes/{id}/start\|stop\|restart | Material layout preview/apply has no DEV analog | NOT PORTED (remaining): Workspace Host supervisor. Dev analogs: `/restart`, `/reset`, `/device-processes/*`; material layout preview/apply maps to dev `/materials/snapshots/compare` + `apply_material_snapshot` command |
+| MISSING | `GET /v1/operations/{operation_id}` | unilabos/workspace_host/host.py:2176 | - |  | NOT PORTED (remaining): see `/v1/operations` |
+| MISSING | `GET /v1/snapshot` | unilabos/workspace_host/host.py:2173 | (partial) /api/v1/health, /readiness, /restart | Workspace Host supervisor state | NOT PORTED (remaining): dev analogs `/health`, `/readiness`, `/restart` |
+| DTO-DIFF | `GET /api/v1/health` | unilabos/app/scheduler/api.py:550 | GET /api/v1/health | Standalone scheduler app only, not mounted in the product. Same difference as the web /health row | PORTED: same route as the web `/health` row |
+| DTO-DIFF | `GET /api/v1/health` | unilabos/app/web/api.py:1266 | GET /api/v1/health | V1 scheduler is ready\|disabled; DEV scheduler is local\|remote and DEV adds execution | PORTED: V1 `scheduler` = ready\|disabled; dev local/remote moved to `scheduler_mode`; `execution` kept; raw (probe) |
+| DTO-DIFF | `GET /api/v1/lab/layout` | unilabos/app/scheduler/inventory/layout.py:447 | GET /api/v1/lab/layout | CONFLICT. V1 returns {zones, placements, storage_summary}, a view of placed instances. DEV returns {layout_key, revision, cell_size, zones, walls, *_at_ms}, a grid document | PORTED: V1 placed-instances view (+ `grid`); dev `PUT\|DELETE /lab/layout` removed |
+| DTO-DIFF | `GET /api/v1/readiness` | unilabos/app/web/server.py:243 | GET /api/v1/readiness | V1 returns {status: ready\|starting\|failed, capabilities{can_edit_definitions, can_view_drafts, can_run_unpublished, can_debug, can_execute_device_actions}, phase, workflowRuntime, workflowProgress, observability?, error?}. DEV returns {status: ready\|not_ready, scheduler, execution, reasons}. Both use 200/503. The V1 console gates the UI on capabilities | PORTED: V1 `status` ready\|starting\|failed + `capabilities`, `phase`, `workflowRuntime`; dev `scheduler`/`execution`/`reasons` kept as extensions; raw (probe), 200/503 |
+| PATH-DIFF | `GET /api/v1/lab/assembly/{subject_id}` | unilabos/app/scheduler/inventory/layout.py:478 | GET /api/v1/materials/instances/{uuid}/tree |  | PORTED: dev `/materials/instances/{uuid}/tree` kept (consistency snapshot) |
+| PATH-DIFF | `POST /api/v1/lab/zones` | unilabos/app/scheduler/inventory/layout.py:456 | PUT /api/v1/lab/layout (whole document with revision) | Zone models differ | PORTED |
+| PATH-DIFF | `DELETE /api/v1/lab/zones/{zone_id}` | unilabos/app/scheduler/inventory/layout.py:463 | PUT /api/v1/lab/layout |  | PORTED |
+| PATH-DIFF | `GET /v1/logs/{component}?maxBytes=` | unilabos/workspace_host/host.py:2180 | GET /api/v1/hostlink/log-sources + /api/v1/hostlink/logs?source_id=&cursor=&limit= |  | NOT PORTED (remaining): dev `/hostlink/log-sources` + `/hostlink/logs` kept |
+| SAME | `GET /api/v1/hostlink/peers` | unilabos/app/scheduler/api.py:155 | GET /api/v1/hostlink/peers | DEV adds host_node_id. On the authority the edge proxy forwards it to the Host child (503 while the Host is down) | unchanged (SAME) |
+| SAME | `GET /api/v1/scheduler/drain` | unilabos/app/scheduler/api.py:235 | GET /api/v1/scheduler/drain | DEV SchedulerDrainStatus is a superset of V1's fields | unchanged (SAME) |
+| SAME | `POST /api/v1/scheduler/drain` | unilabos/app/scheduler/api.py:241 | POST /api/v1/scheduler/drain | Superset | unchanged (SAME) |
+| SAME | `POST /api/v1/scheduler/drain/resume` | unilabos/app/scheduler/api.py:247 | POST /api/v1/scheduler/drain/resume | Superset | unchanged (SAME) |
+| V1-DEPRECATED | `GET /api/v1/health` | unilabos/app/web/server.py:500 | GET /api/v1/health | Dead code for backend mode | SKIPPED (V1-DEPRECATED) |
 
 ## Misc (edge transport, legacy pages)
 

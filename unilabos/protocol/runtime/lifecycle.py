@@ -6,19 +6,57 @@ Host 是一个 backend 对应的主 runtime；slave 属于该 runtime 的设备�
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Literal, Optional, Self
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class HealthStatus(BaseModel):
+    """``GET /api/v1/health``（V1 字段）：``scheduler`` 为 V1 的 ``ready | disabled``。
+
+    dev 原来的本机 / 远端调度归属改名为 ``scheduler_mode``，执行面状态 ``execution`` 保留。
+    """
+
     status: Literal["ok"]
-    scheduler: Literal["local", "remote"]
+    scheduler: Literal["ready", "disabled"]
+    scheduler_mode: Literal["local", "remote"]
     execution: Literal["ready", "restarting", "disabled"]
 
 
+class RuntimeCapabilities(BaseModel):
+    """V1 Runtime 能力投影（``/readiness.capabilities``）；本地默认全开放。"""
+
+    can_edit_definitions: bool = True
+    can_view_drafts: bool = True
+    can_run_unpublished: bool = True
+    can_debug: bool = True
+    can_execute_device_actions: bool = True
+
+
+class WorkflowProgress(BaseModel):
+    loaded: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+
+class ReadinessError(BaseModel):
+    code: str
+    message: str
+
+
 class ReadinessStatus(BaseModel):
-    status: Literal["ready", "not_ready"]
+    """``GET /api/v1/readiness``（V1 字段 + dev 探针摘要）：就绪 HTTP 200，否则 503。
+
+    ``status``：``ready`` 可派发；``starting`` 执行面启动 / 重启中或派发暂停；``failed`` 启动失败。
+    ``scheduler`` / ``execution`` / ``reasons`` 是 dev 的探针摘要（V1 没有，作为扩展字段保留）。
+    """
+
+    status: Literal["ready", "starting", "failed"]
+    capabilities: RuntimeCapabilities = Field(default_factory=RuntimeCapabilities)
+    phase: str
+    workflowRuntime: str
+    workflowProgress: Optional[WorkflowProgress] = None
+    observability: Optional[dict] = None
+    error: Optional[ReadinessError] = None
     scheduler: Literal["local", "remote"]
     execution: Literal["ready", "starting", "restarting", "disabled"]
     reasons: list[str]

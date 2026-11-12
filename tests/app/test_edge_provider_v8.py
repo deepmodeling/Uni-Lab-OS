@@ -82,9 +82,11 @@ def test_embedded_backend_scheduler_marks_health_local():
     response = TestClient(app).get("/api/v1/health")
 
     assert response.status_code == 200
+    # V1：scheduler 为 ready / disabled；dev 的本机 / 远端归属在 scheduler_mode
     assert response.json() == {
         "status": "ok",
-        "scheduler": "local",
+        "scheduler": "ready",
+        "scheduler_mode": "local",
         "execution": "ready",
     }
 

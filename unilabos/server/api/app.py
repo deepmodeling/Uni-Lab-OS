@@ -449,6 +449,10 @@ def setup_server() -> FastAPI:
             app.include_router(create_driver_package_graphs_router())
             app.include_router(create_device_processes_router())
             app.include_router(create_runtime_logs_router())
+            from unilabos.server.api.workspace import create_workspace_router
+
+            # V1 工作区只读面（驱动包挂载 / 工作目录浏览）
+            app.include_router(create_workspace_router())
             # 调度权威（materials 权威）把物料投影下行经这里送到设备
             app.include_router(create_host_relay_router())
             driver_packages_mounted = True

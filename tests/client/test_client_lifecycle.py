@@ -34,7 +34,7 @@ def _mock_http(client, handler):
     client._http._client = httpx.Client(base_url=config.base_url, transport=httpx.MockTransport(handler))
 
 
-def test_sdk_roundtrip_reuses_authority_token_and_handles_not_ready(monkeypatch):
+def test_sdk_roundtrip_reuses_authority_token_and_handles_starting(monkeypatch):
     monkeypatch.setattr(BasicConfig, "control_token", "test-sdk-token")
     workflow = MagicMock()
     workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
@@ -48,7 +48,7 @@ def test_sdk_roundtrip_reuses_authority_token_and_handles_not_ready(monkeypatch)
         assert client.readiness().status == "ready"
         assert client.drain_status().phase == "running"
         assert client.begin_drain().phase == "drained"
-        assert client.readiness().status == "not_ready"
+        assert client.readiness().status == "starting"
         assert client.resume_from_drain().phase == "running"
 
 

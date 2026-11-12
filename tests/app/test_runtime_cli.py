@@ -52,7 +52,7 @@ def test_status_drain_resume_use_existing_scheduler(tmp_path, monkeypatch, capsy
         assert _run(tmp_path, capsys, "status")["drain"]["phase"] == "running"
         assert _run(tmp_path, capsys, "drain", "--wait")["phase"] == "drained"
         status = _run(tmp_path, capsys, "status")
-        assert status["readiness"]["status"] == "not_ready"
+        assert status["readiness"]["status"] == "starting"
         assert scheduler.dispatch_paused
         assert _run(tmp_path, capsys, "resume")["phase"] == "running"
         assert not scheduler.dispatch_paused

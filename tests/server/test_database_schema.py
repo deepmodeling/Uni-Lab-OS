@@ -59,9 +59,9 @@ EXPECTED_TABLES = {
         "registry_entry_state",
         "registry_report",
         "lab_layout",
-        # schema v12：V1 Workspace Host 操作记录与快照修订号
-        "workspace_host_operation",
-        "workspace_host_state",
+        # schema v12：V1 进程管理操作记录与快照修订号
+        "process_management_operation",
+        "process_management_state",
     },
     "materials": {
         "schema_identity",
@@ -224,7 +224,7 @@ def test_total_table_count_stays_small() -> None:
     # 内容物历史、状态历史、内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，
     # V1 命令幂等结果）。
     # runtime：V1 实验操作类别、结构化人工交互、工站错误处置（工站控制 / 控制命令 /
-    # 处置会话 / 工站错误）与 Workspace Host（工作区操作记录 / 快照修订号）。
+    # 处置会话 / 工站错误）与进程管理（工作区操作记录 / 快照修订号）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 50,
         "materials": 26,

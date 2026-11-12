@@ -55,7 +55,7 @@ class RestartCoordinator:
         self._edge_restart_requested = False
         self._watch_generation = 0
         # 最近一次请求的结局（成功 / 失败 / 取消），带登记时的代次与单调序号；
-        # V1 Workspace Host 的 os.restart 操作据此判断自己提交的那次重启怎么结束。
+        # V1 进程管理协议的 os.restart 操作据此判断自己提交的那次重启怎么结束。
         self._outcome: Optional[dict[str, Any]] = None
         self._outcome_sequence = 0
 

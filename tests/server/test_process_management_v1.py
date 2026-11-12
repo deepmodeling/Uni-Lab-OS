@@ -1,8 +1,8 @@
-"""V1 Workspace Host 四个路由在 dev 进程管理上的合同与行为。
+"""V1 进程管理的四个路由在 dev 进程管理上的合同与行为。
 
 对应 V1 ``unilabos/workspace_host/host.py`` 的 ``/v1/snapshot``、``/v1/operations``、
 ``/v1/operations/{operation_id}``、``/v1/logs/{component}?maxBytes=``，以及 V1
-``tests/workspace_host/test_workspace_host.py`` / ``test_scheduler_drain_lifecycle.py`` 中的幂等、
+``tests/workspace_host/test_process_management.py`` / ``test_scheduler_drain_lifecycle.py`` 中的幂等、
 FIFO、排空后停止等用例。进程用替身（Host 子进程看护者、控制面、Host 访问口），重启走真实
 ``RestartCoordinator`` 路径，排空走真实 ``BackendScheduler`` + ``SchedulerLifecycle``。
 """
@@ -24,20 +24,20 @@ from fastapi.testclient import TestClient
 import unilabos.server.backend.restart as restart_module
 from unilabos.config.config import BasicConfig
 from unilabos.config.control_token import TOKEN_HEADER
-from unilabos.protocol.runtime.workspace_host import SCHEMA_VERSION, WorkspaceHostError
+from unilabos.protocol.runtime.process_management import SCHEMA_VERSION, ProcessManagementError
 from unilabos.server.api.app import ControlTokenMiddleware
-from unilabos.server.api.workspace_host import install_workspace_host_api
+from unilabos.server.api.process_management import install_process_management_api
 from unilabos.server.backend.restart import RestartCoordinator
 from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
-from unilabos.server.services.workspace_host import (
+from unilabos.server.services.process_management import (
     HostGateway,
-    WorkspaceHostContext,
-    WorkspaceHostService,
+    ProcessManagementContext,
+    ProcessManagementService,
     request_hash,
 )
 
-TOKEN = "workspace-host-test-token"
+TOKEN = "process-management-test-token"
 
 
 class FakeEdge:
@@ -104,7 +104,7 @@ class FakeGateway(HostGateway):
 
     def _check(self) -> None:
         if self.offline:
-            raise WorkspaceHostError("host_unreachable", "Host 未接入控制面或未在预算内响应")
+            raise ProcessManagementError("host_unreachable", "Host 未接入控制面或未在预算内响应")
 
     def list_processes(self, *, timeout: float = 5.0) -> list[dict[str, Any]]:
         self._check()
@@ -114,7 +114,7 @@ class FakeGateway(HostGateway):
         self._check()
         self.actions.append((process_id, action))
         if process_id != "proc-1":
-            raise WorkspaceHostError("host_resource_not_found", f"device process not found: {process_id}")
+            raise ProcessManagementError("host_resource_not_found", f"device process not found: {process_id}")
         return {**self.processes[0], "status": "running" if action != "stop" else "stopped"}
 
     def install_package(self, spec: str, enable: bool, upgrade: bool, name: str) -> dict[str, Any]:
@@ -131,7 +131,7 @@ class FakeGateway(HostGateway):
     def read_log(self, source_id: str, *, limit: int = 1000) -> dict[str, Any]:
         self._check()
         if source_id not in self.logs:
-            raise WorkspaceHostError("host_resource_not_found", "日志来源不存在，请刷新进程列表")
+            raise ProcessManagementError("host_resource_not_found", "日志来源不存在，请刷新进程列表")
         return self.logs[source_id]
 
 
@@ -163,7 +163,7 @@ class Stack:
         self.supervisor = FakeSupervisor(self.edge)
         self.gateway = FakeGateway()
         self.materials = None
-        self.context = WorkspaceHostContext(
+        self.context = ProcessManagementContext(
             management_port=8002, supervisor=self.supervisor, database_root=str(tmp_path), edge_database_root=str(tmp_path / "edge"),
         )
         self.app = FastAPI()
@@ -171,8 +171,8 @@ class Stack:
         self.service = self.install(self.app)
         self.client = TestClient(self.app)
 
-    def install(self, app: FastAPI) -> WorkspaceHostService:
-        return install_workspace_host_api(
+    def install(self, app: FastAPI) -> ProcessManagementService:
+        return install_process_management_api(
             app, self.workflow, context=self.context, gateway=self.gateway,
             get_scheduler=lambda: self.scheduler, get_execution_backend=lambda: self.backend,
             get_edge_control=lambda: self.edge, get_restart_coordinator=lambda: self.coordinator,
@@ -299,7 +299,7 @@ def test_expected_revision_conflict_reports_actual(stack: Stack) -> None:
     stale = stack.submit("scheduler.resume", expected_revision=revision + 5)
     assert stale.status_code == 409
     assert stale.json()["error"] == {
-        "code": "revision_conflict", "message": "Workspace Host revision 已变化",
+        "code": "revision_conflict", "message": "进程管理 revision 已变化",
         "details": {"expected": revision + 5, "actual": revision},
     }
     # 提交前先观测进程状态：Host 子进程换了 pid，旧修订号即失效
@@ -376,7 +376,7 @@ def test_unsupported_and_resident_commands_fail_with_stable_codes(stack: Stack) 
 def test_interrupted_operations_are_failed_on_restart_of_the_authority(stack: Stack) -> None:
     with stack.workflow.transaction() as conn:
         conn.execute(
-            "INSERT INTO workspace_host_operation(operation_id, command, parameters, request_hash, phase, submitted_at, "
+            "INSERT INTO process_management_operation(operation_id, command, parameters, request_hash, phase, submitted_at, "
             "started_at, progress) VALUES ('pkg', 'driver-package.install', '{}', 'h', 'running', 't', 't', ?)",
             (json.dumps({"packageOperationId": "pkg-op-9"}),),
         )
@@ -590,7 +590,7 @@ def test_layout_without_materials_authority_fails(stack: Stack) -> None:
 # ── MCP：目录登记的四个工具经进程内 ASGI 调到同一组路由 ────────────────
 
 
-def test_mcp_tools_reach_the_workspace_host_routes(stack: Stack, monkeypatch) -> None:
+def test_mcp_tools_reach_the_process_management_routes(stack: Stack, monkeypatch) -> None:
     import asyncio
 
     from unilabos.server.mcp.server import ProtocolMCP
@@ -598,24 +598,24 @@ def test_mcp_tools_reach_the_workspace_host_routes(stack: Stack, monkeypatch) ->
 
     monkeypatch.setattr("unilabos.config.control_token.client_token", lambda: TOKEN)
     protocol = ProtocolMCP(stack.app, export_openapi())
-    snapshot = asyncio.run(protocol.call_tool("workspace_host_snapshot", {}))
+    snapshot = asyncio.run(protocol.call_tool("process_management_snapshot", {}))
     assert not snapshot.isError and snapshot.structuredContent["body"]["schemaVersion"] == SCHEMA_VERSION
-    submitted = asyncio.run(protocol.call_tool("workspace_host_operations_submit", {
+    submitted = asyncio.run(protocol.call_tool("process_management_operations_submit", {
         "body": {"operationId": "mcp-drain", "command": "scheduler.drain", "parameters": {}},
     }))
     assert not submitted.isError and submitted.structuredContent["http_status"] == 202
     assert stack.wait("mcp-drain")["phase"] == "succeeded"
-    fetched = asyncio.run(protocol.call_tool("workspace_host_operations_get", {"path": {"operation_id": "mcp-drain"}}))
+    fetched = asyncio.run(protocol.call_tool("process_management_operations_get", {"path": {"operation_id": "mcp-drain"}}))
     assert fetched.structuredContent["body"]["phase"] == "succeeded"
-    logs = asyncio.run(protocol.call_tool("workspace_host_logs_tail", {
+    logs = asyncio.run(protocol.call_tool("process_management_logs_tail", {
         "path": {"component": "plc"}, "query": {"maxBytes": 1024},
     }))
     assert logs.structuredContent["body"] == {"component": "plc", "logPath": None, "content": ""}
-    missing = asyncio.run(protocol.call_tool("workspace_host_operations_get", {"path": {"operation_id": "nope"}}))
+    missing = asyncio.run(protocol.call_tool("process_management_operations_get", {"path": {"operation_id": "nope"}}))
     assert missing.isError and missing.structuredContent["http_status"] == 404
 
 
-# ── SDK：HTTPLifecycleClient 的 Workspace Host 方法（V1 WorkspaceHostClient 用例） ──
+# ── SDK：HTTPLifecycleClient 的进程管理方法（V1 WorkspaceHostClient 用例） ──
 
 
 def _lifecycle_client(stack: Stack):
@@ -635,21 +635,21 @@ def test_sdk_executes_and_normalizes_one_operation(stack: Stack) -> None:
     assert result["phase"] == "succeeded" and result["result"]["phase"] == "drained"
     assert client.workspace_operation("sdk-drain") == result
     assert client.workspace_logs("renderer", max_bytes=10) == {"component": "renderer", "logPath": None, "content": ""}
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         client.submit_workspace_operation("scheduler.resume", operation_id="sdk-drain")
     assert caught.value.code == "operation_conflict"
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         client.workspace_logs("backend", max_bytes=0)
     assert caught.value.code == "invalid_request"
 
 
 def test_sdk_raises_the_operation_failure(stack: Stack) -> None:
     client = _lifecycle_client(stack)
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         client.execute_workspace_operation("backend.restart", timeout=5)
     assert caught.value.code == "authority_resident"
     stack.active[:] = ["job-busy"]
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         client.execute_workspace_operation("workspace.stop", parameters={"timeoutSeconds": 0.1}, timeout=5)
     assert caught.value.code == "workspace_drain_timeout"
     assert caught.value.details["active_device_job_ids"] == ["job-busy"]
@@ -673,11 +673,11 @@ def test_host_gateway_uses_the_control_plane_and_envelopes(monkeypatch) -> None:
     gateway = HostGateway()
     assert gateway.remote() is True
     assert gateway.list_processes() == [{"id": "p"}]
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         gateway.process_action("p/x", "stop")
     assert caught.value.code == "host_resource_not_found" and caught.value.details["businessCode"] == 4001
     assert gateway.read_log("managed:p") == {"lines": []}
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         gateway.package_operation("missing")
     assert caught.value.code == "host_unreachable"
     assert calls[1] == ("POST", "/api/v1/device-processes/p%2Fx/stop", b"{}")

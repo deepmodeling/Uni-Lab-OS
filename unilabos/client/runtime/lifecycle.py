@@ -20,7 +20,7 @@ from unilabos.protocol.runtime.lifecycle import (
     RestartStatus,
     SchedulerDrainStatus,
 )
-from unilabos.protocol.runtime.workspace_host import DEFAULT_LOG_MAX_BYTES, WorkspaceHostError
+from unilabos.protocol.runtime.process_management import DEFAULT_LOG_MAX_BYTES, ProcessManagementError
 from unilabos.utils.address import normalize_api_address
 
 #: V1 ``WorkspaceHostClient.execute`` 的缺省等待预算（秒）。
@@ -54,7 +54,7 @@ class HTTPLifecycleClient:
             HTTPClientConfig(api_root, timeout=timeout, max_retries=0),
             get_auth_secret=get_auth_secret,
         )
-        # V1 Workspace Host 路由不带 /api 前缀：同一服务根地址下的 /v1/*
+        # V1 进程管理路由不带 /api 前缀：同一服务根地址下的 /v1/*
         self._service_root = api_root.removesuffix("/api/v1")
         self._timeout = timeout
 
@@ -127,7 +127,7 @@ class HTTPLifecycleClient:
                 raise SchedulerDrainTimeout(status)
             time.sleep(min(poll_interval, remaining))
 
-    # ── V1 Workspace Host（/v1/*，裸 JSON；失败抛 WorkspaceHostError） ──────────
+    # ── V1 进程管理协议（/v1/*，裸 JSON；失败抛 ProcessManagementError） ──────────
 
     def _workspace(self, method: str, path: str, *, json: Any = None, timeout: float | None = None) -> dict[str, Any]:
         kwargs: dict[str, Any] = {"envelope": False, "timeout": timeout or self._timeout}
@@ -140,15 +140,15 @@ class HTTPLifecycleClient:
                 failure = exc.response.json().get("error") or {}
             except (ValueError, AttributeError):
                 failure = {}
-            raise WorkspaceHostError(
+            raise ProcessManagementError(
                 str(failure.get("code") or "host_request_failed"),
-                str(failure.get("message") or f"Workspace Host HTTP {exc.response.status_code}"),
+                str(failure.get("message") or f"进程管理 HTTP {exc.response.status_code}"),
                 details=failure.get("details"),
             ) from exc
         except httpx.HTTPError as exc:
-            raise WorkspaceHostError("host_unreachable", f"Workspace Host 不可达：{self._service_root}") from exc
+            raise ProcessManagementError("host_unreachable", f"进程管理服务不可达：{self._service_root}") from exc
         if not isinstance(payload, dict):
-            raise WorkspaceHostError("host_protocol_invalid", "Workspace Host 响应无效")
+            raise ProcessManagementError("host_protocol_invalid", "进程管理响应无效")
         return payload
 
     def workspace_snapshot(self) -> dict[str, Any]:
@@ -186,7 +186,7 @@ class HTTPLifecycleClient:
             if latest.get("phase") in {"succeeded", "failed"}:
                 return latest
             time.sleep(poll_interval)
-        raise WorkspaceHostError("operation_timeout", f"等待操作完成超时：{operation_id}", details=latest)
+        raise ProcessManagementError("operation_timeout", f"等待操作完成超时：{operation_id}", details=latest)
 
     def execute_workspace_operation(
         self,
@@ -197,24 +197,24 @@ class HTTPLifecycleClient:
         expected_revision: int | None = None,
         timeout: float = WORKSPACE_OPERATION_TIMEOUT_S,
     ) -> dict[str, Any]:
-        """提交并等待一个工作区操作；失败按操作记录里的 error 抛 ``WorkspaceHostError``（V1 同口径）。"""
+        """提交并等待一个工作区操作；失败按操作记录里的 error 抛 ``ProcessManagementError``（V1 同口径）。"""
         submitted = self.submit_workspace_operation(
             command, parameters=parameters, operation_id=operation_id, expected_revision=expected_revision
         )
         accepted_id = submitted.get("operationId")
         if not isinstance(accepted_id, str) or not accepted_id:
-            raise WorkspaceHostError("host_protocol_invalid", "Workspace Host 操作未返回 operationId")
+            raise ProcessManagementError("host_protocol_invalid", "进程管理操作未返回 operationId")
         result = self.wait_workspace_operation(accepted_id, timeout=timeout)
         if result.get("phase") != "failed":
             return result
         failure = result.get("error")
         if isinstance(failure, dict):
-            raise WorkspaceHostError(
+            raise ProcessManagementError(
                 str(failure.get("code") or "operation_failed"),
-                str(failure.get("message") or "Workspace Host 操作失败"),
+                str(failure.get("message") or "进程管理操作失败"),
                 details=failure.get("details"),
             )
-        raise WorkspaceHostError("operation_failed", "Workspace Host 操作失败")
+        raise ProcessManagementError("operation_failed", "进程管理操作失败")
 
     def workspace_logs(self, component: str, *, max_bytes: int = DEFAULT_LOG_MAX_BYTES) -> dict[str, Any]:
         """``GET /v1/logs/{component}?maxBytes=``：组件日志尾部。"""

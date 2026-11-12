@@ -83,7 +83,7 @@ workflow_routes_mounted = False
 registry_routes_mounted = False
 driver_packages_mounted = False
 edge_proxy_mounted = False
-workspace_host_mounted = False
+process_management_mounted = False
 
 def cors_allow_origins() -> list[str]:
     """``BasicConfig.cors_allow_origins``：逗号分隔的来源；空或含 ``*`` 即全部允许（默认）。"""
@@ -128,8 +128,8 @@ class ConfiguredCORSMiddleware:
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 #: 不经 token 检查的写入口：MCP 端点自带 Host 白名单并拒绝一切浏览器 Origin（见 server/mcp）。
 TOKEN_EXEMPT_PATHS = ("/mcp",)
-#: V1 Workspace Host 路由（``api/workspace_host.py``）：裸 JSON，写操作同样要控制面 token。
-V1_WORKSPACE_HOST_PREFIX = "/v1/"
+#: V1 进程管理路由（``api/process_management.py``）：裸 JSON，写操作同样要控制面 token。
+V1_PROCESS_MANAGEMENT_PREFIX = "/v1/"
 
 
 class ControlTokenMiddleware:
@@ -178,8 +178,8 @@ class ControlTokenMiddleware:
                     f"写操作需要控制面 token：请求头 {TOKEN_HEADER}: <token>。"
                     "在运行 unilab 的机器上执行 `unilab token` 查看"
                 )
-                if scope.get("path", "").startswith(V1_WORKSPACE_HOST_PREFIX):
-                    # V1 Workspace Host 路由不走信封：拒绝正文按 V1 的 {"error": {"code": "unauthorized"}}
+                if scope.get("path", "").startswith(V1_PROCESS_MANAGEMENT_PREFIX):
+                    # V1 进程管理路由不走信封：拒绝正文按 V1 的 {"error": {"code": "unauthorized"}}
                     from starlette.responses import JSONResponse
 
                     response = JSONResponse(
@@ -453,7 +453,7 @@ def setup_server() -> FastAPI:
     """幂等挂载当前运行角色所需的 API 路由。"""
     global edge_routes_mounted, materials_routes_mounted, server_routes_mounted
     global workflow_routes_mounted, registry_routes_mounted, driver_packages_mounted
-    global edge_proxy_mounted, workspace_host_mounted
+    global edge_proxy_mounted, process_management_mounted
 
     from unilabos.server.api.edge_proxy import create_edge_proxy_router, edge_proxy_enabled
 
@@ -524,20 +524,20 @@ def setup_server() -> FastAPI:
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Microbackend] 挂载本机 Workflow Authority 失败: {exc}")
 
-    # V1 Workspace Host（/v1/snapshot、/v1/operations、/v1/logs）：调度权威就是 dev 的工作区监督者，
+    # V1 进程管理协议（/v1/snapshot、/v1/operations、/v1/logs）：调度权威就是 dev 的工作区监督者，
     # 与 Workflow Authority 同归属；操作记录落 runtime.db。
-    if not workspace_host_mounted:
+    if not process_management_mounted:
         try:
             from unilabos.server.backend.composition import get_workflow_service
 
             workflow_service = get_workflow_service()
             if workflow_service is not None:
-                from unilabos.server.api.workspace_host import install_workspace_host_api
+                from unilabos.server.api.process_management import install_process_management_api
 
-                install_workspace_host_api(app, workflow_service)
-                workspace_host_mounted = True
+                install_process_management_api(app, workflow_service)
+                process_management_mounted = True
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
-            error(f"[Microbackend] 挂载 Workspace Host 路由失败: {exc}")
+            error(f"[Microbackend] 挂载进程管理路由失败: {exc}")
 
     # Registry Authority 与 Workflow Authority 同归属：调度权威随本进程装配时挂载
     # 条目级注册表版本 API；只提供执行面的 Host 不挂载。

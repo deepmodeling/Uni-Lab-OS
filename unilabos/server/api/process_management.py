@@ -1,4 +1,4 @@
-"""V1 Workspace Host 路由：``/v1/snapshot``、``/v1/operations``、``/v1/operations/{id}``、``/v1/logs/{component}``。
+"""V1 进程管理路由：``/v1/snapshot``、``/v1/operations``、``/v1/operations/{id}``、``/v1/logs/{component}``。
 
 按 V1 原样：路径不带 ``/api`` 前缀；成功是裸 JSON（快照 / 操作文档 / 日志尾部，提交操作 HTTP 202），
 失败用 HTTP 状态码 + ``{"error": {"code", "message", "details"?}}``（不存在 404、冲突 409、其余 400；
@@ -22,12 +22,12 @@ from fastapi import APIRouter, FastAPI, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
-from unilabos.protocol.runtime.workspace_host import (
+from unilabos.protocol.runtime.process_management import (
     DEFAULT_LOG_MAX_BYTES,
     MAX_LOG_MAX_BYTES,
     MAX_REQUEST_BYTES,
-    WorkspaceHostError,
-    WorkspaceHostErrorBody,
+    ProcessManagementError,
+    ProcessManagementErrorBody,
     WorkspaceLogTail,
     WorkspaceOperation,
     WorkspaceOperationRequest,
@@ -37,7 +37,7 @@ from unilabos.protocol.runtime.workspace_host import (
 
 _NO_STORE = {"Cache-Control": "no-store"}
 _ERRORS: dict[int | str, dict[str, Any]] = {
-    400: {"model": WorkspaceHostErrorBody, "description": "参数无效（error.code 如 invalid_request / component_invalid）"},
+    400: {"model": ProcessManagementErrorBody, "description": "参数无效（error.code 如 invalid_request / component_invalid）"},
 }
 
 
@@ -45,23 +45,23 @@ def _json(status: int, payload: Any) -> JSONResponse:
     return JSONResponse(content=payload, status_code=status, headers=_NO_STORE)
 
 
-def error_response(error: WorkspaceHostError) -> JSONResponse:
+def error_response(error: ProcessManagementError) -> JSONResponse:
     return _json(error_http_status(error.code), {"error": error.as_dict()})
 
 
-def create_workspace_host_router(get_service: Callable[[], Any]) -> APIRouter:
-    router = APIRouter(tags=["workspace-host"])
+def create_process_management_router(get_service: Callable[[], Any]) -> APIRouter:
+    router = APIRouter(tags=["process-management"])
 
     def service() -> Any:
         value = get_service()
         if value is None:
-            raise WorkspaceHostError("host_not_found", "本进程没有 Workspace Host 服务")
+            raise ProcessManagementError("host_not_found", "本进程没有进程管理服务")
         return value
 
     @router.get(
         "/v1/snapshot",
         response_model=None,
-        summary="工作区进程树快照（V1 Workspace Host）",
+        summary="工作区进程树快照（V1 进程管理协议）",
         responses={200: {"model": WorkspaceSnapshot}},
     )
     def snapshot() -> JSONResponse:
@@ -69,18 +69,18 @@ def create_workspace_host_router(get_service: Callable[[], Any]) -> APIRouter:
 
         try:
             return _json(200, service().snapshot())
-        except WorkspaceHostError as exc:
+        except ProcessManagementError as exc:
             return error_response(exc)
 
     @router.post(
         "/v1/operations",
         response_model=None,
         status_code=202,
-        summary="提交幂等工作区操作（V1 Workspace Host）",
+        summary="提交幂等工作区操作（V1 进程管理协议）",
         responses={
             202: {"model": WorkspaceOperation},
             **_ERRORS,
-            409: {"model": WorkspaceHostErrorBody, "description": "operation_conflict / revision_conflict"},
+            409: {"model": ProcessManagementErrorBody, "description": "operation_conflict / revision_conflict"},
         },
         openapi_extra={
             "requestBody": {
@@ -95,39 +95,39 @@ def create_workspace_host_router(get_service: Callable[[], Any]) -> APIRouter:
         try:
             raw = await request.body()
             if not 1 <= len(raw) <= MAX_REQUEST_BYTES:
-                raise WorkspaceHostError("invalid_request", "请求体大小无效")
+                raise ProcessManagementError("invalid_request", "请求体大小无效")
             try:
                 payload = json.loads(raw)
             except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                raise WorkspaceHostError("invalid_request", "请求体不是有效 JSON") from exc
+                raise ProcessManagementError("invalid_request", "请求体不是有效 JSON") from exc
             return _json(202, await run_in_threadpool(service().submit, payload))
-        except WorkspaceHostError as exc:
+        except ProcessManagementError as exc:
             return error_response(exc)
 
     @router.get(
         "/v1/operations/{operation_id}",
         response_model=None,
-        summary="查询工作区操作（V1 Workspace Host）",
+        summary="查询工作区操作（V1 进程管理协议）",
         responses={
             200: {"model": WorkspaceOperation},
             **_ERRORS,
-            404: {"model": WorkspaceHostErrorBody, "description": "operation_not_found"},
+            404: {"model": ProcessManagementErrorBody, "description": "operation_not_found"},
         },
     )
     def operation(operation_id: str) -> JSONResponse:
         try:
             return _json(200, service().operation(operation_id))
-        except WorkspaceHostError as exc:
+        except ProcessManagementError as exc:
             return error_response(exc)
 
     @router.get(
         "/v1/logs/{component}",
         response_model=None,
-        summary="有界读取组件日志尾部（V1 Workspace Host）",
+        summary="有界读取组件日志尾部（V1 进程管理协议）",
         responses={
             200: {"model": WorkspaceLogTail},
             **_ERRORS,
-            503: {"model": WorkspaceHostErrorBody, "description": "component_unavailable：Host 不在线或日志暂不可读"},
+            503: {"model": ProcessManagementErrorBody, "description": "component_unavailable：Host 不在线或日志暂不可读"},
         },
         openapi_extra={
             "parameters": [
@@ -154,9 +154,9 @@ def create_workspace_host_router(get_service: Callable[[], Any]) -> APIRouter:
             try:
                 max_bytes = DEFAULT_LOG_MAX_BYTES if raw is None else int(raw)
             except ValueError as exc:
-                raise WorkspaceHostError("invalid_request", "请求参数无效") from exc
+                raise ProcessManagementError("invalid_request", "请求参数无效") from exc
             return _json(200, service().log_tail(component, max_bytes))
-        except WorkspaceHostError as exc:
+        except ProcessManagementError as exc:
             return error_response(exc)
 
     @router.api_route("/v1/{path:path}", methods=["GET", "POST"], include_in_schema=False)
@@ -167,15 +167,15 @@ def create_workspace_host_router(get_service: Callable[[], Any]) -> APIRouter:
     return router
 
 
-def install_workspace_host_api(app: FastAPI, workflow_service: Any, **service_options: Any) -> Any:
-    """在调度权威应用上挂载 V1 Workspace Host 路由；服务实例挂在 ``app.state.workspace_host``。"""
+def install_process_management_api(app: FastAPI, workflow_service: Any, **service_options: Any) -> Any:
+    """在调度权威应用上挂载 V1 进程管理路由；服务实例挂在 ``app.state.process_management``。"""
 
-    from unilabos.server.services.workspace_host import WorkspaceHostService
+    from unilabos.server.services.process_management import ProcessManagementService
 
-    service = WorkspaceHostService(workflow_service, **service_options)
-    app.state.workspace_host = service
-    app.include_router(create_workspace_host_router(lambda: service))
+    service = ProcessManagementService(workflow_service, **service_options)
+    app.state.process_management = service
+    app.include_router(create_process_management_router(lambda: service))
     return service
 
 
-__all__ = ["create_workspace_host_router", "error_response", "install_workspace_host_api"]
+__all__ = ["create_process_management_router", "error_response", "install_process_management_api"]

@@ -419,8 +419,8 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 > `/v1/operations`, `/v1/operations/{id}`, `/v1/logs/{component}`) are ported onto dev's process management, not as a
 > separate supervisor: the resident `unilab` authority is the supervisor (it already supervises the Host child through
 > `HostChildSupervisor`). Served at V1's exact paths (no `/api` prefix) on the authority's management app, raw JSON like
-> V1 (an envelope exception, see api_v1_migration.md "Workspace Host"). Storage: runtime.db
-> (`workspace_host_operation`, `workspace_host_state`). MCP `workspace-host.*` (4), SDK `HTTPLifecycleClient.workspace_*`.
+> V1 (an envelope exception, see api_v1_migration.md "进程管理协议"). Storage: runtime.db
+> (`process_management_operation`, `process_management_state`). MCP `process-management.*` (4), SDK `HTTPLifecycleClient.workspace_*`.
 
 | class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
 |---|---|---|---|---|---|

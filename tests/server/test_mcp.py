@@ -58,7 +58,7 @@ def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
     # +23 V1 工作流作者 / 设备目录；-1 V1 任务生命周期合并重复路由；+6 V1 库存 / 工作区；
     # +12 V1 作业 / 库存接缝（消费事实、数量核对、结果未知处置、类型化实例命令）；
-    # +4 V1 Workspace Host（快照、提交 / 查询操作、组件日志）
+    # +4 V1 进程管理协议（快照、提交 / 查询操作、组件日志）
     assert len(OPERATIONS) == 176
     assert len(protocol.tools) == 182
     for tool in protocol.tools:

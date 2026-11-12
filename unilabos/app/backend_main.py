@@ -231,10 +231,10 @@ def run_backend_process(
                 f"Edge 侧配置 --address http://127.0.0.1:{port} 接入（Edge 只需出向连接）",
                 "info",
             )
-        from unilabos.server.services.workspace_host import configure_workspace_host
+        from unilabos.server.services.process_management import configure_process_management
 
-        # V1 Workspace Host 快照 / 操作的运行形态：本进程是监督者，Host 子进程由 host_child 看护
-        configure_workspace_host(
+        # V1 进程管理快照 / 操作的运行形态：本进程是监督者，Host 子进程由 host_child 看护
+        configure_process_management(
             management_port=port,
             supervisor=host_child,
             database_root=str(paths.root),
@@ -256,9 +256,9 @@ def run_backend_process(
         except KeyboardInterrupt:
             print_status("收到中断，正在停止调度权威进程", "info")
     finally:
-        from unilabos.server.services.workspace_host import configure_workspace_host
+        from unilabos.server.services.process_management import configure_process_management
 
-        configure_workspace_host()
+        configure_process_management()
         set_local_log_source(previous_log_source)
         if unsubscribe_shutdown is not None:
             unsubscribe_shutdown()

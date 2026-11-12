@@ -36,7 +36,7 @@ from unilabos.protocol.materials import (
     MaterialSnapshot,
     MaterialTreeRead,
 )
-from unilabos.protocol.runtime.workspace_host import WorkspaceHostError
+from unilabos.protocol.runtime.process_management import ProcessManagementError
 from unilabos.server.services.materials.snapshot import material_sections, snapshot_state_hash
 
 LAYOUT_CHANGE_SCHEMA = "unilab-material-layout-change/v1"
@@ -57,7 +57,7 @@ class MaterialLayout:
         workspace: Optional[str | Path] = None,
     ) -> None:
         if materials is None:
-            raise WorkspaceHostError("layout_unavailable", "本进程没有物料权威，不能编辑布局")
+            raise ProcessManagementError("layout_unavailable", "本进程没有物料权威，不能编辑布局")
         self.materials = materials
         self.root_material_uuid = root_material_uuid or None
         self.workspace = Path(workspace).expanduser().resolve() if workspace else None
@@ -76,7 +76,7 @@ class MaterialLayout:
             try:
                 trees.append(self.materials.get_tree(root))
             except MaterialNotFoundError as exc:
-                raise WorkspaceHostError("layout_source_not_found", f"布局根物料不存在：{root}") from exc
+                raise ProcessManagementError("layout_source_not_found", f"布局根物料不存在：{root}") from exc
         return trees
 
     def inspect(self) -> dict[str, Any]:
@@ -115,7 +115,7 @@ class MaterialLayout:
             ],
         }
         artifact["previewArtifact"] = {
-            "storage": "runtime.db:workspace_host_operation",
+            "storage": "runtime.db:process_management_operation",
             "sha256": hashlib.sha256(_canonical_json(artifact)).hexdigest(),
         }
         return artifact
@@ -142,7 +142,7 @@ class MaterialLayout:
                 actual_revision = layout_revision(trees)
                 _require_revision(expected_revision, actual_revision)
                 if preview.get("sourceRevision") != actual_revision:
-                    raise WorkspaceHostError(
+                    raise ProcessManagementError(
                         "layout_revision_conflict",
                         "布局源已在 preview 后变化，拒绝覆盖",
                         details={
@@ -155,11 +155,11 @@ class MaterialLayout:
                 candidate, changed = _apply_changes(trees, normalized)
                 candidate_revision = layout_revision(candidate)
                 if candidate_revision != preview.get("candidateRevision"):
-                    raise WorkspaceHostError("layout_preview_invalid", "布局 preview 与规范化候选摘要不一致")
+                    raise ProcessManagementError("layout_preview_invalid", "布局 preview 与规范化候选摘要不一致")
                 diagnostics = _layout_diagnostics(_layout_nodes(candidate), changed)
                 blocking = [item for item in diagnostics if item.get("severity") == "error"]
                 if blocking:
-                    raise WorkspaceHostError(
+                    raise ProcessManagementError(
                         "layout_candidate_invalid", "布局候选包含阻塞诊断", details={"diagnostics": blocking}
                     )
                 originals = {tree.root_material_uuid: tree for tree in trees}
@@ -203,13 +203,13 @@ class MaterialLayout:
                     })
                 revision = layout_revision(self._trees())
         except MaterialValidationError as exc:
-            raise WorkspaceHostError("layout_candidate_invalid", f"物料权威拒绝布局候选：{exc}") from exc
+            raise ProcessManagementError("layout_candidate_invalid", f"物料权威拒绝布局候选：{exc}") from exc
         except MaterialConflictError as exc:
-            raise WorkspaceHostError(
+            raise ProcessManagementError(
                 "layout_apply_conflict", f"物料状态冲突，布局未写入：{exc}", details={"previewId": preview_id}
             ) from exc
         except MaterialsServiceError as exc:
-            raise WorkspaceHostError("layout_apply_failed", f"布局写入失败：{exc}") from exc
+            raise ProcessManagementError("layout_apply_failed", f"布局写入失败：{exc}") from exc
         return {
             "schemaVersion": LAYOUT_APPLY_SCHEMA,
             "previewId": preview_id,
@@ -252,9 +252,9 @@ def _canonical_json(value: object) -> bytes:
 
 def _require_revision(expected: object, actual: str) -> None:
     if not isinstance(expected, str) or not expected.strip():
-        raise WorkspaceHostError("invalid_request", "expectedRevision 必须是非空字符串")
+        raise ProcessManagementError("invalid_request", "expectedRevision 必须是非空字符串")
     if expected != actual:
-        raise WorkspaceHostError(
+        raise ProcessManagementError(
             "layout_revision_conflict",
             "布局 revision 已变化，拒绝覆盖",
             details={"expected": expected, "actual": actual},
@@ -312,35 +312,35 @@ def _resolve_source(trees: Sequence[MaterialTreeRead], value: str, index: int) -
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
-        raise WorkspaceHostError(
+        raise ProcessManagementError(
             "layout_source_ambiguous",
             f"nodes[{index}].sourceNodeId 在布局范围内对应多个物料，请改用 material_uuid：{value}",
             details={"candidates": sorted(matches)},
         )
-    raise WorkspaceHostError("layout_source_not_found", f"布局节点不存在：{value}")
+    raise ProcessManagementError("layout_source_not_found", f"布局节点不存在：{value}")
 
 
 def _normalize_change_set(
     value: object, trees: Sequence[MaterialTreeRead], workspace: Optional[Path]
 ) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise WorkspaceHostError("layout_change_invalid", "布局 change set 必须是 object")
+        raise ProcessManagementError("layout_change_invalid", "布局 change set 必须是 object")
     if value.get("schemaVersion", LAYOUT_CHANGE_SCHEMA) != LAYOUT_CHANGE_SCHEMA:
-        raise WorkspaceHostError("layout_change_invalid", "布局 change set schemaVersion 无效")
+        raise ProcessManagementError("layout_change_invalid", "布局 change set schemaVersion 无效")
     raw_nodes = value.get("nodes")
     if not isinstance(raw_nodes, Sequence) or isinstance(raw_nodes, (str, bytes)):
-        raise WorkspaceHostError("layout_change_invalid", "布局 change set.nodes 必须是数组")
+        raise ProcessManagementError("layout_change_invalid", "布局 change set.nodes 必须是数组")
     nodes: list[dict[str, Any]] = []
     identities: set[str] = set()
     for index, raw_node in enumerate(raw_nodes):
         if not isinstance(raw_node, Mapping):
-            raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}] 必须是 object")
+            raise ProcessManagementError("layout_change_invalid", f"nodes[{index}] 必须是 object")
         requested = str(raw_node.get("sourceNodeId") or "").strip()
         if not requested:
-            raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}].sourceNodeId 缺失或重复")
+            raise ProcessManagementError("layout_change_invalid", f"nodes[{index}].sourceNodeId 缺失或重复")
         source_id = _resolve_source(trees, requested, index)
         if source_id in identities:
-            raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}].sourceNodeId 缺失或重复")
+            raise ProcessManagementError("layout_change_invalid", f"nodes[{index}].sourceNodeId 缺失或重复")
         identities.add(source_id)
         node: dict[str, Any] = {"sourceNodeId": source_id}
         if "positionMm" in raw_node:
@@ -350,7 +350,7 @@ def _normalize_change_set(
         if "assetRef" in raw_node:
             node["assetRef"] = _asset_ref(raw_node["assetRef"], workspace, index)
         if len(node) == 1:
-            raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}] 没有布局变更")
+            raise ProcessManagementError("layout_change_invalid", f"nodes[{index}] 没有布局变更")
         nodes.append(node)
     result: dict[str, Any] = {"schemaVersion": LAYOUT_CHANGE_SCHEMA, "nodes": nodes}
     if value.get("view") is not None:
@@ -360,30 +360,30 @@ def _normalize_change_set(
 
 def _vector(value: object, field: str) -> list[float]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)) or len(value) != 3:
-        raise WorkspaceHostError("layout_change_invalid", f"{field} 必须是三个有限数")
+        raise ProcessManagementError("layout_change_invalid", f"{field} 必须是三个有限数")
     result: list[float] = []
     for item in value:
         if isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(item):
-            raise WorkspaceHostError("layout_change_invalid", f"{field} 必须是三个有限数")
+            raise ProcessManagementError("layout_change_invalid", f"{field} 必须是三个有限数")
         result.append(float(item))
     return result
 
 
 def _asset_ref(value: object, workspace: Optional[Path], index: int) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}].assetRef 必须是 object")
+        raise ProcessManagementError("layout_change_invalid", f"nodes[{index}].assetRef 必须是 object")
     path = str(value.get("path") or "").strip()
     if not path:
-        raise WorkspaceHostError("layout_change_invalid", f"nodes[{index}].assetRef.path 缺失")
+        raise ProcessManagementError("layout_change_invalid", f"nodes[{index}].assetRef.path 缺失")
     if not path.startswith(ASSET_ROUTE_PREFIX) or "\\" in path or ".." in PurePosixPath(path).parts:
-        raise WorkspaceHostError("layout_asset_invalid", "模板资产必须使用 /api/v1/material-models/ 公共路由")
+        raise ProcessManagementError("layout_asset_invalid", "模板资产必须使用 /api/v1/material-models/ 公共路由")
     source_path = str(value.get("sourcePath") or "").strip()
     if source_path:
         if workspace is None:
-            raise WorkspaceHostError("layout_asset_not_found", f"没有工作目录，无法核对模板资产：{source_path}")
+            raise ProcessManagementError("layout_asset_not_found", f"没有工作目录，无法核对模板资产：{source_path}")
         candidate = (workspace / source_path).resolve()
         if not candidate.is_relative_to(workspace) or not candidate.is_file():
-            raise WorkspaceHostError("layout_asset_not_found", f"模板资产不在工作区或不存在：{source_path}")
+            raise ProcessManagementError("layout_asset_not_found", f"模板资产不在工作区或不存在：{source_path}")
     result: dict[str, Any] = {"path": path}
     if source_path:
         result["sourcePath"] = source_path
@@ -395,24 +395,24 @@ def _asset_ref(value: object, workspace: Optional[Path], index: int) -> dict[str
 
 def _view(value: object) -> dict[str, Any]:
     if not isinstance(value, Mapping):
-        raise WorkspaceHostError("layout_change_invalid", "view 必须是 object")
+        raise ProcessManagementError("layout_change_invalid", "view 必须是 object")
     mode = str(value.get("mode") or "2.5d")
     if mode not in {"2d", "2.5d", "3d", "split"}:
-        raise WorkspaceHostError("layout_change_invalid", "view.mode 无效")
+        raise ProcessManagementError("layout_change_invalid", "view.mode 无效")
     camera = str(value.get("cameraPreset") or "default")
     if camera not in {"default", "top"}:
-        raise WorkspaceHostError("layout_change_invalid", "view.cameraPreset 无效")
+        raise ProcessManagementError("layout_change_invalid", "view.cameraPreset 无效")
     result: dict[str, Any] = {"mode": mode, "cameraPreset": camera}
     viewport = value.get("viewport")
     if viewport is not None:
         if not isinstance(viewport, Mapping):
-            raise WorkspaceHostError("layout_change_invalid", "view.viewport 必须是 object")
+            raise ProcessManagementError("layout_change_invalid", "view.viewport 必须是 object")
         width = viewport.get("width")
         height = viewport.get("height")
         if isinstance(width, bool) or not isinstance(width, int) or not 320 <= width <= 4096:
-            raise WorkspaceHostError("layout_change_invalid", "view.viewport.width 无效")
+            raise ProcessManagementError("layout_change_invalid", "view.viewport.width 无效")
         if isinstance(height, bool) or not isinstance(height, int) or not 240 <= height <= 4096:
-            raise WorkspaceHostError("layout_change_invalid", "view.viewport.height 无效")
+            raise ProcessManagementError("layout_change_invalid", "view.viewport.height 无效")
         result["viewport"] = {"width": width, "height": height}
     return result
 
@@ -423,16 +423,16 @@ def _apply_changes(
     """把规范化变更集应用到树副本；返回候选树（state_hash 为候选快照哈希）与变化节点。"""
 
     if not isinstance(change_set, Mapping) or not isinstance(change_set.get("nodes"), list):
-        raise WorkspaceHostError("layout_preview_invalid", "preview change set 无效")
+        raise ProcessManagementError("layout_preview_invalid", "preview change set 无效")
     changes = {}
     for change in change_set["nodes"]:
         if not isinstance(change, Mapping) or not change.get("sourceNodeId"):
-            raise WorkspaceHostError("layout_preview_invalid", "preview change set 无效")
+            raise ProcessManagementError("layout_preview_invalid", "preview change set 无效")
         changes[str(change["sourceNodeId"])] = change
     known = {node.material.material_uuid for tree in trees for node in tree.nodes}
     missing = sorted(set(changes) - known)
     if missing:
-        raise WorkspaceHostError("layout_source_not_found", f"布局节点不存在：{missing[0]}")
+        raise ProcessManagementError("layout_source_not_found", f"布局节点不存在：{missing[0]}")
     candidate: list[MaterialTreeRead] = []
     for tree in trees:
         nodes = []

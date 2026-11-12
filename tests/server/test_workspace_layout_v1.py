@@ -19,7 +19,7 @@ from unilabos.protocol.materials import (
     MaterialTreeCreate,
     ResourceTemplateWrite,
 )
-from unilabos.protocol.runtime.workspace_host import WorkspaceHostError
+from unilabos.protocol.runtime.process_management import ProcessManagementError
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials.workspace_layout import (
     LAYOUT_CHANGE_SCHEMA,
@@ -126,12 +126,12 @@ def test_apply_rejects_a_concurrent_edit(layout: MaterialLayout, materials: Mate
     )
     other.apply(other_preview, expected_revision=revision, command_uuid="other")
 
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         layout.apply(preview, expected_revision=revision, command_uuid="stale")
     assert caught.value.code == "layout_revision_conflict"
     # 带上新的修订号也不行：preview 的源修订已经过期
     current = layout.inspect()["revision"]
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         layout.apply(preview, expected_revision=current, command_uuid="stale-2")
     assert caught.value.code == "layout_revision_conflict"
     assert caught.value.details["previewId"] == preview["previewId"]
@@ -139,7 +139,7 @@ def test_apply_rejects_a_concurrent_edit(layout: MaterialLayout, materials: Mate
 
 
 def test_preview_requires_the_current_revision(layout: MaterialLayout, materials: MaterialsService) -> None:
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         layout.preview(
             {"nodes": [{"sourceNodeId": materials.device_a, "positionMm": [0, 0, 0]}]},
             expected_revision="sha256:" + "0" * 64,
@@ -187,7 +187,7 @@ def test_change_targets_source_identity_and_validates_template_asset(
         ({"sourceNodeId": materials.device_a, "positionMm": [0, 0]}, "layout_change_invalid"),
         ({"sourceNodeId": materials.device_a}, "layout_change_invalid"),
     ):
-        with pytest.raises(WorkspaceHostError) as caught:
+        with pytest.raises(ProcessManagementError) as caught:
             layout.preview({"nodes": [change]}, expected_revision=layout.inspect()["revision"])
         assert caught.value.code == code, change
 
@@ -198,7 +198,7 @@ def test_root_scope_limits_sources_and_revision(materials: MaterialsService, tmp
     assert scoped_revision == layout_revision([materials.get_tree(materials.device_b)])
     assert [node["resourceId"] for node in scoped.inspect()["nodes"]] == ["device-b"]
     # 范围外的节点（即使 resource_id 存在）不能作为目标
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         scoped.preview({"nodes": [{"sourceNodeId": "device-a", "positionMm": [1, 1, 1]}]}, expected_revision=scoped_revision)
     assert caught.value.code == "layout_source_not_found"
     preview = scoped.preview(
@@ -214,7 +214,7 @@ def test_root_scope_limits_sources_and_revision(materials: MaterialsService, tmp
     whole.apply(other, expected_revision=other["sourceRevision"], command_uuid="outside")
     assert scoped.inspect()["revision"] == scoped_revision
     scoped.apply(preview, expected_revision=scoped_revision, command_uuid="inside")
-    with pytest.raises(WorkspaceHostError) as caught:
+    with pytest.raises(ProcessManagementError) as caught:
         MaterialLayout(materials, root_material_uuid="missing-root").inspect()
     assert caught.value.code == "layout_source_not_found"
 

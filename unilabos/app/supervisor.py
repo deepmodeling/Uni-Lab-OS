@@ -338,7 +338,7 @@ class HostChildSupervisor:
         return self.pid is not None
 
     def state(self) -> dict[str, Any]:
-        """看护状态快照（V1 Workspace Host 快照的 ``edge`` 组件据此推导阶段）。"""
+        """看护状态快照（V1 进程管理快照的 ``edge`` 组件据此推导阶段）。"""
 
         pid = self.pid
         thread = self._thread

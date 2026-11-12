@@ -1,4 +1,4 @@
-"""V1 Workspace Host 协议（``/v1/snapshot``、``/v1/operations``、``/v1/logs/{component}``）。
+"""进程管理协议（沿用 V1 Workspace Host 的线上合同：``/v1/snapshot``、``/v1/operations``、``/v1/logs/{component}``）。
 
 V1 的 Workspace Host 是独立的工作区监督进程；统一分支里它对应 dev 已有的进程管理：
 ``unilab`` 调度权威进程（``app/backend_main.py``）就是监督者，直接看护 Host 子进程
@@ -76,8 +76,8 @@ UNSUPPORTED_V1_COMMANDS = {
 }
 
 
-class WorkspaceHostError(RuntimeError):
-    """稳定的 Workspace Host 错误：``code`` 是 V1 符号码，``details`` 原样给调用方。"""
+class ProcessManagementError(RuntimeError):
+    """稳定的进程管理错误：``code`` 是 V1 符号码，``details`` 原样给调用方。"""
 
     def __init__(self, code: str, message: str, *, details: Any = None) -> None:
         super().__init__(message)
@@ -175,14 +175,14 @@ class WorkspaceLogTail(BaseModel):
     content: str
 
 
-class WorkspaceHostErrorDetail(BaseModel):
+class ProcessManagementErrorDetail(BaseModel):
     code: str
     message: str = ""
     details: Any = None
 
 
-class WorkspaceHostErrorBody(BaseModel):
-    error: WorkspaceHostErrorDetail
+class ProcessManagementErrorBody(BaseModel):
+    error: ProcessManagementErrorDetail
 
 
 __all__ = [
@@ -200,9 +200,9 @@ __all__ = [
     "UNSUPPORTED_V1_COMMANDS",
     "V1_COMPONENT_NAMES",
     "WorkspaceComponent",
-    "WorkspaceHostError",
-    "WorkspaceHostErrorBody",
-    "WorkspaceHostErrorDetail",
+    "ProcessManagementError",
+    "ProcessManagementErrorBody",
+    "ProcessManagementErrorDetail",
     "WorkspaceLogTail",
     "WorkspaceOperation",
     "WorkspaceOperationRequest",

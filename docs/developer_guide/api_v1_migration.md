@@ -47,12 +47,12 @@
   可选 `observability`；dev 的探针摘要 `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，
   dev 原来的 `not_ready` 改为 V1 的 `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端
   归属改名 `scheduler_mode`，`execution` 保留。
-- V1 Workspace Host 四个路由（`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、`/v1/logs/{component}`）按 V1
+- V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、`/v1/logs/{component}`）按 V1
   原样：路径不带 `/api` 前缀、成功是裸 JSON（提交操作 HTTP 202），失败是 HTTP 状态码 + `{"error": {code, message,
   details?}}`（不存在 404、`operation_conflict` / `revision_conflict` 409、其余 400；dev 增加日志暂不可读 503
   `component_unavailable`）。写操作仍要 `X-UniLab-Token`，被拒时是 HTTP 401 + V1 形状的
   `{"error": {"code": "unauthorized"}}`（不是信封 1002）；读操作与其它 dev GET 一样不需要 token。详见下文
-  「Workspace Host（p8 落地）」。
+  「进程管理协议（p8 落地）」。
 - `POST /api/v1/inventory/commands` 按 V1 原样返回裸结果 `{command_id, status, result | error, error_code, replayed}`
   （V1 控制台按 `status` 判断，业务拒绝也是 HTTP 200）；拒绝结果另带 `code`（本表业务码）。它同时是 dev 全部
   `materials.v1` 幂等变更的唯一写入口（body 为带 `protocol_version` / `command_uuid` / `operation` 的变更信封，
@@ -147,7 +147,7 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   `inventory_lot` 带 `location_site_uuid` / `warehouse_zone_id`。这些都在 schema v1 基线里。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
   校正，适用于质量 / 体积批次与已隔离批次。
 - 化学品：V1 `/reagent-infos` 是 `chemical` 表的 V1 视图；dev `/chemicals`（带 `expected_version` 的写入）保留。
-- Workspace Host（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）见下文「Workspace Host（p8 落地）」。
+- 进程管理协议（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）见下文「进程管理协议（p8 落地）」。
 
 ## 作业与库存接缝（p7-d 落地）
 
@@ -168,23 +168,25 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - `GET /api/v1/resources` 按 V1 文档仍在用的旧资源列表实现为物料树的薄读（信封，`page=0` 返回全部）；
   `POST /api/v1/jobs/{job_id}/finish` 是 V1 设备执行端回报结果的内部通道，dev 由运行时传输承担，按设计不移植。
 
-## Workspace Host（p8 落地）
+## 进程管理协议（p8 落地）
 
 V1 的 Workspace Host 是每个工作区一个独立监督进程（`unilabos/workspace_host/host.py`），拉起 / 看护 Backend、Edge、
 PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `unilab` 调度权威进程常驻、持有管理端口，并直接看护 Host
 子进程（`app/backend_main.py` + `app/supervisor.py:HostChildSupervisor`），它就是监督者。四个 V1 路由挂在权威的管理
-应用上（`server/api/workspace_host.py`，与 Workflow Authority 同归属：默认 `unilab`、`--role backend`、
-`--no-safe-restart` 单进程都有；`--address` 的 Host 子进程没有），逻辑在 `server/services/workspace_host.py`。
+应用上（`server/api/process_management.py`，与 Workflow Authority 同归属：默认 `unilab`、`--role backend`、
+`--no-safe-restart` 单进程都有；`--address` 的 Host 子进程没有），逻辑在 `server/services/process_management.py`。
+统一分支不再有 Workspace Host 这一概念，代码、表名（`process_management_*`）和 MCP 操作（`process-management.*`）
+都叫进程管理；只有线上合同沿用 V1：路径、错误码和 `schemaVersion: "unilab-workspace-host/v1"` 不变，V1 客户端无需改动。
 
 | V1 | dev |
 |---|---|
-| Workspace Host 进程（`host` 段） | 常驻的调度权威进程（pid、管理地址、控制面 token 文件） |
+| V1 Workspace Host 进程（`host` 段） | 常驻的调度权威进程（pid、管理地址、控制面 token 文件） |
 | 组件 `backend` | 调度权威本身（常驻；`metadata.scheduler` = 排空状态，`metadata.restart` = 重启协调器状态） |
 | 组件 `edge` | Host：默认拓扑是 `HostChildSupervisor` 看护的子进程（pid / 崩溃次数 / 退出码 + 控制面连接推导阶段）；`--role backend` 是经控制面接入的远端 Host（不受本进程看护）；单进程时就是本进程 |
 | （无） | 组件 `managed:<process_id>`：Host 的受管设备进程（`services/device_processes.py`），与 `/hostlink/log-sources` 的来源标识一致 |
 | 组件 `plc` / `renderer` | dev 不运行：快照里恒为 `idle`（`metadata.supported=false`），日志为空 |
-| `revision` / `eventCursor`（内存计数） | runtime.db `workspace_host_state`：观测到的进程状态指纹（各组件阶段 / pid / 代次、排空阶段、重启登记）变化或写操作成功时递增；`expectedRevision` 提交前先重新观测 |
-| 操作文件 `operations/<id>.json` | runtime.db `workspace_host_operation`（幂等指纹、阶段、结果 / 错误、`progress` 挂接既有事实）；权威重启后未完成的记为 `operation_interrupted` 失败 |
+| `revision` / `eventCursor`（内存计数） | runtime.db `process_management_state`：观测到的进程状态指纹（各组件阶段 / pid / 代次、排空阶段、重启登记）变化或写操作成功时递增；`expectedRevision` 提交前先重新观测 |
+| 操作文件 `operations/<id>.json` | runtime.db `process_management_operation`（幂等指纹、阶段、结果 / 错误、`progress` 挂接既有事实）；权威重启后未完成的记为 `operation_interrupted` 失败 |
 | `workspace.start` / `os.start` | `HostChildSupervisor.start()` 并等 Host 接入控制面；`workspace.start` 另外解除排空（V1 同口径） |
 | `workspace.stop` / `os.stop` | 先排空（`SchedulerLifecycle`，超时 `workspace_drain_timeout` 且 Host 保持运行），再 `HostChildSupervisor.stop()`；排空闸门保留到 `workspace.start` / `scheduler.resume`（V1 的 `os.stop` 不排空，dev 一律先排空） |
 | `workspace.restart` / `os.restart` | `RestartCoordinator.request(scope=edge)`：安静点后 Host 退出码 75 被原参数再拉起，以 Host 新进程身份重连为成功；`DELETE /api/v1/restart` 取消时操作失败 `restart_canceled` |
@@ -197,7 +199,7 @@ PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `uni
 
 时间字段（`submittedAt` 等）是 ISO 8601 UTC 毫秒（V1 为秒）。客户端：`HTTPLifecycleClient.workspace_snapshot` /
 `submit_workspace_operation` / `workspace_operation` / `wait_workspace_operation` / `execute_workspace_operation` /
-`workspace_logs`（失败抛 `protocol.runtime.workspace_host.WorkspaceHostError`）；MCP：`workspace-host.*` 四个操作。
+`workspace_logs`（失败抛 `protocol.runtime.process_management.ProcessManagementError`）；MCP：`process-management.*` 四个操作。
 
 ## 同路径不同语义的处理（V1 合同优先）
 

@@ -1,4 +1,4 @@
-"""以 dev 统一管理 API 取代 Workspace Host 管理入口。"""
+"""以 dev 统一管理 API 管理运行中的进程；不需要 V1 那种独立的 Workspace Host 监督进程。"""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from unilabos.protocol.runtime.lifecycle import ResetRequest, RestartRequest
 def register_runtime_commands(subparsers: Any) -> None:
     parser = subparsers.add_parser(
         "runtime", help="管理 dev backend/Host：状态、排空、恢复、重启和重置",
-        description="启动使用 unilab；本命令只连接管理 API，不启动独立 Workspace Host。",
+        description="启动使用 unilab；本命令只连接管理 API，不启动额外的监督进程。",
     )
     actions = parser.add_subparsers(dest="runtime_action", required=True)
     for action in ("status", "drain", "resume", "restart", "reset"):

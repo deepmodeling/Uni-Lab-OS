@@ -56,8 +56,8 @@ def rpc(client, method, params=None, request_id=1):
 
 def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
-    assert len(OPERATIONS) == 132
-    assert len(protocol.tools) == 138
+    assert len(OPERATIONS) == 131
+    assert len(protocol.tools) == 137
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -100,7 +100,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 138
+        assert len(rpc(client, "tools/list")["tools"]) == 137
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})

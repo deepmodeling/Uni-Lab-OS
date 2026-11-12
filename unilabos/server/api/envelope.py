@@ -463,6 +463,10 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.history.HistoryNotFoundError": _fixed(RESOURCE_NOT_FOUND),
     f"{_SERVICES}.history.HistoryConflictError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.history.HistoryValidationError": _fixed(INVALID_PARAMETER),
+    # 动作异常决策（/error-decisions）与工站异常处置（/stations/*）
+    f"{_SERVICES}.runtime.error_decisions.ErrorDecisionInvalid": _fixed(INVALID_PARAMETER),
+    f"{_SERVICES}.runtime.error_decisions.ErrorDecisionConflict": _fixed(STATE_CONFLICT),
+    f"{_SERVICES}.runtime.error_decisions.ErrorDecisionUnavailable": _fixed(SERVICE_UNAVAILABLE),
     # Host 驱动包 / 受管设备进程
     f"{_SERVICES}.driver_packages.DriverPackageBusyError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.driver_packages.DriverPackageError": _message_not_found(INVALID_PARAMETER),

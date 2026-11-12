@@ -11,9 +11,11 @@ from fastapi import FastAPI
 
 def install_lifecycle_v1_api(app: FastAPI, service) -> None:
     from unilabos.server.api.runtime.run_history import create_run_history_router
+    from unilabos.server.api.runtime.interventions_v1 import create_interventions_router
     from unilabos.server.api.runtime.tasks_v1 import create_task_observability_router
 
     app.include_router(create_task_observability_router(service))
+    app.include_router(create_interventions_router(service))
     app.include_router(create_run_history_router(service))
 
 

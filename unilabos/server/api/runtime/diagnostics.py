@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
+from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -36,7 +36,12 @@ class StatusIncidentDecision(BaseModel):
 
 
 class ErrorDecision(BaseModel):
-    action: str = "abort"
+    """V1 ``ErrorDecisionIn``（action / option / result / reason）+ dev 的放行上下文字段。
+
+    ``action`` 不再默认 ``abort``：action 与 option 都缺省时按参数错误拒绝。
+    """
+
+    action: str = ""
     option: Optional[dict[str, Any]] = None
     reason: str = ""
     result: Any = None
@@ -308,73 +313,38 @@ def create_backend_router(
             raise HTTPException(status_code=404, detail="status incident not found")
         return result["ack"]
 
+    from unilabos.server.services.runtime.error_decisions import ErrorDecisionDesk
+
+    desk = ErrorDecisionDesk(get_scheduler, get_execution_backend)
+
     @router.get("/error-decisions")
     def error_decisions() -> dict[str, Any]:
         """待人工决策的清单：执行面挂起的失败 attempt + 调度器在重启后接管的
-        执行态未知 / 决策上下文丢失的 attempt，两者报告同形。"""
+        执行态未知 / 决策上下文丢失的 attempt，两者报告同形（清单键 ``items``）。"""
 
-        from unilabos.server.backend.edge_control import get_edge_control_service
-
-        backend = get_execution_backend()
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        if backend is None and scheduler is None and edge_control is None:
-            raise HTTPException(
-                status_code=503,
-                detail="backend execution service is not ready",
-            )
-        items: list[dict[str, Any]] = []
-        if backend is not None:
-            items.extend(backend.list_error_decisions())
-        elif edge_control is not None:
-            # 执行面在 Host 进程：它打开终态闸门、等本进程放行的失败登记在控制面服务里
-            items.extend(edge_control.list_error_decisions())
-        lister = getattr(scheduler, "list_reconciliation_decisions", None)
-        if callable(lister):
-            items.extend(lister())
-        # 执行端仍在等待决策时也展示冻结物理范围，不能把未知物理结果提供为普通重试。
-        recovery = getattr(scheduler, "_physical_recovery", None)
-        if recovery is not None:
-            for item in items:
-                job_uuid = item.get("job_id")
-                record = recovery.get(job_uuid) if job_uuid else None
-                if record and (record["request"].get("moves") or record["request"].get("aliquot")):
-                    item["category"] = "physical_settlement"
-                    item["material_execution"] = record
-                    item["options"] = [option for option in item.get("options", []) if option.get("action") in {"operator_intervention", "abort"}]
-        return {"items": items}
+        return {"items": desk.items()}
 
     @router.post("/error-decisions/{decision_id}")
     def resolve_error_decision(
         decision_id: str,
         body: ErrorDecision,
+        request: Request,
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ) -> dict[str, Any]:
+        """放行一项决策：``{"decision_id", "status": "resolved"}``；已不在等待时 3003。
+
+        ``Idempotency-Key`` 同键同内容重放返回首次结果；操作员身份随决策载荷记录。
+        """
+
+        from unilabos.server.api.runtime.tasks_v1 import operator_identity
+
         decision = body.model_dump(exclude_none=True)
         extra = decision.pop("extra", {})
         if isinstance(extra, Mapping):
             decision.update(extra)
-        from unilabos.server.backend.edge_control import get_edge_control_service
-
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        report = next((item for item in error_decisions()["items"] if item.get("decision_id") == decision_id), None)
-        if report and report.get("category") == "physical_settlement":
-            if decision.get("action") not in {"operator_intervention", "abort"} or not str(decision.get("reason") or "").strip():
-                raise HTTPException(status_code=409, detail="物理结果未知，须填写核实说明并补记实际结果或终止任务，禁止直接重试")
-        owns = getattr(scheduler, "has_reconciliation_decision", None)
-        if callable(owns) and owns(decision_id):
-            resolved = scheduler.resolve_reconciliation_decision(decision_id, decision)
-        elif get_execution_backend() is None and edge_control is not None:
-            # 执行面在 Host 进程：本进程是调度权威，经 runtime.v1 命令放行终态闸门
-            resolved = edge_control.resolve_error_decision(decision_id, decision)
-        else:
-            resolved = execution().resolve_error_decision(decision_id, decision)
-        if not resolved:
-            raise HTTPException(
-                status_code=409,
-                detail="error decision was rejected or no longer pending",
-            )
-        return {"decision_id": decision_id, "status": "resolved"}
+        return desk.resolve(
+            decision_id, decision, idempotency_key=idempotency_key, operator_id=operator_identity(request),
+        )
 
     # ── 安静点重启（调试用） ─────────────────────────────────
 

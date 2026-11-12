@@ -2789,6 +2789,10 @@ class WorkflowStore:
                 decision_id=report.get("decision_id"),
             )
             self._sync_run_projection(conn, row["workflow_node_run_uuid"], now)
+            # V1 工作流干预：同一事务持久化决策报告（/workflow-interventions）
+            from .interventions import open_for_decision
+
+            open_for_decision(conn, row, report, now)
         return self.get_job(job_uuid)
 
     def set_node_run_execution_timeout(self, run_uuid: str, seconds: int) -> Dict[str, Any]:
@@ -2862,6 +2866,9 @@ class WorkflowStore:
                 resumed=True,
             )
             self._sync_run_projection(conn, row["workflow_node_run_uuid"], now)
+            from .interventions import supersede_for_job
+
+            supersede_for_job(conn, job_uuid, now)
         return self.get_job(job_uuid)
 
     def record_job_terminal(
@@ -2917,6 +2924,9 @@ class WorkflowStore:
             )
             self._emit_job_changed(conn, row, status, now)
             self._finish_task_step(conn, row, now)
+            from .interventions import supersede_for_job
+
+            supersede_for_job(conn, job_uuid, now)
             next_job_uuid: Optional[str] = None
             if retry_requested:
                 # 失败 attempt 保留为事实；同一节点运行追加下一 attempt 并切换 current，

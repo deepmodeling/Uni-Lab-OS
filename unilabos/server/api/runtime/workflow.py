@@ -339,15 +339,6 @@ class WorkflowTaskCommandRequest(_StrictModel):
         return normalize_json_object(value)
 
 
-class ManualConfirmationDecisionRequest(_BackendModel):
-    """人工确认决策；``confirmed_by`` 缺省时仅 unrestricted 单可用默认操作员。"""
-
-    action: str
-    confirmed_by: Optional[str] = None
-    comment: Optional[str] = None
-    decision_idempotency_key: Optional[str] = None
-
-
 class DraftWriteRequest(_StrictModel):
     python_source: str
     expected_draft_hash: Optional[HashToken]
@@ -855,55 +846,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
     def get_manual_confirmation(confirmation_uuid: str) -> JSONResponse:
         return _success(service.get_workflow_manual_confirmation(confirmation_uuid))
 
-    @router.post("/workflow-manual-confirmations/{confirmation_uuid}/decision")
-    def decide_manual_confirmation(
-        confirmation_uuid: str,
-        body: ManualConfirmationDecisionRequest,
-    ) -> JSONResponse:
-        """原子记录人工确认决策；调度器消费后才推进对应 workflow job。"""
-
-        return _success(
-            service.decide_workflow_manual_confirmation(
-                confirmation_uuid,
-                action=body.action,
-                confirmed_by=body.confirmed_by,
-                comment=body.comment,
-                decision_idempotency_key=body.decision_idempotency_key,
-            )
-        )
-
-    @router.post(
-        "/workflow-tasks/{task_uuid}/manual-confirmations/{confirmation_uuid}/decision"
-    )
-    def decide_task_manual_confirmation(
-        task_uuid: str,
-        confirmation_uuid: str,
-        body: ManualConfirmationDecisionRequest,
-    ) -> JSONResponse:
-        """task 维度兼容入口：先校验确认单确实属于该 task。"""
-
-        confirmation = service.get_workflow_manual_confirmation(confirmation_uuid)
-        if confirmation["workflow_task_uuid"] != service.get_workflow_task(task_uuid)["uuid"]:
-            raise WorkflowError("not_found")
-        return _success(
-            service.decide_workflow_manual_confirmation(
-                confirmation_uuid,
-                action=body.action,
-                confirmed_by=body.confirmed_by,
-                comment=body.comment,
-                decision_idempotency_key=body.decision_idempotency_key,
-            )
-        )
-
-    @router.get("/workflow-tasks/{task_uuid}/interventions")
-    def list_task_interventions(
-        task_uuid: str,
-        limit: Optional[int] = Query(default=None, ge=1),
-        offset: int = Query(default=0, ge=0),
-    ) -> JSONResponse:
-        return _success(
-            service.list_task_interventions(task_uuid, limit=limit, offset=offset)
-        )
+    # 人工确认决策按 V1 在 ``POST /workflow-node-jobs/{job_uuid}/manual-confirmation``；
+    # 工作流干预按 V1 在全局 ``/workflow-interventions``（见 interventions_v1.py）。
 
     @router.get("/workflow-node-jobs/{job_uuid}/results")
     def list_node_job_results(

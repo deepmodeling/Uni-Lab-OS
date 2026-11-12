@@ -56,7 +56,7 @@ def test_builder_requires_plain_cpython_314(tmp_path, monkeypatch, version, gil_
         assert not calls
 
 
-def fake_wheel(directory: Path, name="unilabos", version="0.12.4", dependencies=()) -> Path:
+def fake_wheel(directory: Path, name="unilabos", version="0.13.0rc1", dependencies=()) -> Path:
     path = directory / f"{name}-{version}-py3-none-any.whl"
     with ZipFile(path, "w") as wheel:
         metadata = f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
@@ -118,7 +118,7 @@ def test_single_root_install_does_not_preinstall_dependencies(monkeypatch, tmp_p
         calls.append(command)
 
     monkeypatch.setattr(builder, "run", record)
-    root = "pylabrobot==0.2.2" if materials_only else "unilabos==0.12.4"
+    root = "pylabrobot==0.2.2" if materials_only else "unilabos==0.13.0rc1"
     builder.verify_single_root(tmp_path / "wheels", tmp_path / "env", tmp_path / "verify.py",
                                root, materials_only=materials_only)
     assert "venv" in calls[0]
@@ -176,7 +176,7 @@ def test_metadata_ignores_vendored_dist_info(tmp_path):
     wheel = fake_wheel(tmp_path)
     with ZipFile(wheel, "a") as archive:
         archive.writestr("vendor/dependency.dist-info/METADATA", "Name: vendored\nVersion: 1.0\n")
-    assert builder.wheel_metadata(wheel)[:2] == ("unilabos", "0.12.4")
+    assert builder.wheel_metadata(wheel)[:2] == ("unilabos", "0.13.0rc1")
 
 
 def test_source_cache_is_verified_before_reuse(monkeypatch, tmp_path):
@@ -222,7 +222,7 @@ def bundle(tmp_path, monkeypatch):
     fake_wheel(wheels)
     (tmp_path / "requirements.lock").write_text(builder.lock_wheels(wheels), encoding="utf-8")
     (tmp_path / "verify_installation.py").write_text("pass", encoding="utf-8")
-    manifest = {"schema_version": 1, "kind": "offline-wheelhouse", "version": "0.12.4",
+    manifest = {"schema_version": 1, "kind": "offline-wheelhouse", "version": "0.13.0rc1",
                 "python": "3.14", "platform": installer.platform_id(),
                 "files": {p.relative_to(tmp_path).as_posix(): installer.sha256(p)
                           for p in tmp_path.rglob("*") if p.is_file()}}

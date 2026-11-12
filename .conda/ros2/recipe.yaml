@@ -2,14 +2,14 @@
 # channel 在安装/构建命令中指定，不能写入成品包的运行依赖。
 package:
   name: unilabos-ros2
-  version: 0.12.4
+  version: 0.13.0rc1
 build:
   noarch: generic
   number: 1
   string: jazzy_1
 requirements:
   run:
-    - unilabos ==0.12.4 py314_0
+    - unilabos ==0.13.0rc1 py314_0
     - python >=3.14,<3.15
     - python_abi 3.14.* *_cp314
     - opencv

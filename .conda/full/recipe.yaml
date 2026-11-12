@@ -3,7 +3,7 @@
 
 package:
   name: unilabos-full
-  version: 0.12.4
+  version: 0.13.0rc1
 
 build:
   number: 1
@@ -12,7 +12,7 @@ build:
 requirements:
   run:
   # 完整 ROS2 运行时，默认依赖直接由 unilabos 声明，不再发布 unilabos-env。
-  - unilabos-ros2 ==0.12.4 jazzy_1
+  - unilabos-ros2 ==0.13.0rc1 jazzy_1
   # Documentation tools
   - sphinx >=7
   - sphinx_rtd_theme >=2

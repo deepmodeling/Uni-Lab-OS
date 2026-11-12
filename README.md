@@ -64,10 +64,10 @@ Bare `pip install unilabos` against PyPI cannot discover these companion wheels;
 use the installer or `--find-links <bundle>/wheelhouse`. Source development uses
 the helper above to build them first. See the [installation guide](docs/user_guide/installation.md).
 
-For the **0.12.4+ default Conda package**, once published:
+For the **0.13+ default Conda package**, once published:
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.4"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
 mamba activate unilab
 unilab --disable-browser
 ```

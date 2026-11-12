@@ -148,8 +148,9 @@ default_tools_approval_mode = "writes"
 Site 参数的导入行为遵循 [工作流模板参数绑定规范](edge_ui_api.md#工作流模板参数预填确认与-api-导入)：
 前端即使预填 `T1` 并唯一匹配，也必须由用户在绑定界面确认实际物料与 Site；MCP / CLI 等
 程序化 API 导入则应在明确目标物料后自动将标签解析为 UUID，不弹前端确认界面。
-`workflow_workflow_from_template` / `workflow_graph_save` 的 `body.site_binding_mode` 默认
-`resolve`：缺少目标或动作声明、标签不存在或存在歧义时返回绑定错误，不能选第一个同名 Site。
+`workflow_workflow_from_template` 的 `body.site_binding_mode` 默认 `resolve`；`workflow_graph_save` 按 V1 合同默认
+`preserve`，程序化导入必须显式传 `"site_binding_mode": "resolve"`：缺少目标或动作声明、标签不存在或存在歧义时返回
+绑定错误，不能选第一个同名 Site。
 只保存待校验草稿可显式传 `preserve`，不能将其当作已确认可执行的图。
 转换成功后仍应读回图，核对 `param` 的 UUID 与 `meta_data.site_bindings` 中的 owner。
 默认作用域为目标设备子树；可用节点 `meta_data.site_binding_owners[参数名]` 明确物料 UUID。

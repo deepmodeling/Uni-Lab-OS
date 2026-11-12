@@ -155,6 +155,16 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 
 ## Workflow authoring
 
+> **Status (branch `fix/p7-a-authoring`, 2026-11-12):** every MISSING / DTO-DIFF / PATH-DIFF row below is ported
+> (rows marked **Done (p7-a)**). Storage: runtime.db **v9** (`workflow.workflow_type`, `workflow.operation_category_uuid`,
+> `workflow_node.manual_confirmation`, table `workflow_operation_category`). Dev bodies removed: composite-invocations
+> `{child_workflow_uuid, child_revision, arguments}` and authoring/apply `{expected_draft_hash, expected_workflow_revision,
+> expected_candidate_hash}`. Dev-only routes kept: `/workflows/from-template`, `/template-catalog`, `/template-instances`,
+> `PUT /io`, `PUT /resource-scopes`, `GET /workflows/{uuid}/publications`, `/workflow-publications`. Authoring compile is
+> `WorkflowAuthoringCompiler` over `registry/workflow_ast` (one compiler for device-package templates and authoring).
+> Not done here: the scheduler does not yet read `node.manual_confirmation.timeout_seconds` (task-lifecycle branch);
+> structural node templates (condition / repeat_until / material_io) are not projected.
+
 | class | V1 route | V1 handler | DEV counterpart | note |
 |---|---|---|---|---|
 | MISSING | `POST /api/v1/authoring/compile` | unilabos/app/workflow_authoring_transform.py:391 | - | **Done (p7-a)**: `services/runtime/workflow/authoring_compiler.py` (`WorkflowAuthoringCompiler`, the `AuthoringCompiler` implementation) on top of `registry/workflow_ast.compile_workflow_source` — the same static compiler the device-package `@workflow(compiler="ast")` templates use, now also accepting source text. V1 request DTO (strict, identity/revision checked); response is the closed transform DTO. The dev authoring syntax is the `@workflow` / `ctx.run` DSL, not V1's `device()` engine. Tests: `tests/server/test_v1_workflow_authoring_compiler.py`. |
@@ -327,6 +337,12 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 | V1-DEPRECATED | `POST /api/v1/edge/material/query` | unilabos/app/scheduler/inventory/api.py:234 | GET /api/v1/materials/instances/{uuid}/tree; /instances/by-resource-id/{id} | Compat route 'already used by HostNode' |
 
 ## Devices and registry
+
+> **Status (branch `fix/p7-a-authoring`, 2026-11-12):** all rows ported. The device views are composed on the authority
+> from device root materials + active registry + Host endpoint capabilities (`services/runtime/devices.py`); the
+> `/device-state*` views run on the Host (edge-proxy prefix `device-state`). Dev's broader routes stay as dev-only
+> capabilities: `/runtime/endpoints`, `/telemetry/*`, `/registry/entries/*`. `POST /workflow-tasks
+> execution_kind=ad_hoc_device_action` is left to the task-lifecycle branch, which owns `/workflow-tasks`.
 
 | class | V1 route | V1 handler | DEV counterpart | note |
 |---|---|---|---|---|

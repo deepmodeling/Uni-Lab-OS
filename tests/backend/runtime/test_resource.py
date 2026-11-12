@@ -285,6 +285,33 @@ def test_partial_update_derives_roots_locally(tmp_path) -> None:
         materials.close()
 
 
+def test_device_held_tree_set_derives_roots_locally(tmp_path) -> None:
+    """append_resource 回报的台面树（根 parent 投影为本设备）：归属本地即可确定。
+
+    设备之下那棵树就是快照根（与 ``_root_material_uuid`` 停在设备物料之下同一规则），
+    不能逐节点 get_material 反查——带枪头的整台面有数百节点，经 HostLink 逐个往返
+    会把一次挂载拖过下行超时。
+    """
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        root = _deck_with_wells(materials, service)
+        root.children[1].tracker.set_liquids([("water", 5.0, "ul")])
+        tree_set = ResourceTreeSet.from_plr_resources([root])
+        tree_set.trees[0].root_node.res_content.parent_uuid = "device-uuid"
+        gateway.reset()
+
+        service.update_resources_sync("device-1", "device-uuid", tree_set)
+
+        assert gateway.calls == {"get_tree": 1, "apply_snapshot": 1}
+        stored = materials.get_material(root.children[1].unilabos_uuid)
+        assert [(s.name, s.quantity) for s in stored.data.substances] == [("water", 5.0)]
+        assert materials.get_material(root.unilabos_uuid).material.parent_material_uuid is None
+    finally:
+        materials.close()
+
+
 def test_stale_baseline_is_refetched_on_conflict_and_after_authority_moves(tmp_path) -> None:
     """外部改了权威（版本前进 / 结构变化）：靠 precondition 冲突和下行作废基线各重拉一次。"""
     from unilabos.protocol.materials import MaterialMove

@@ -773,20 +773,28 @@ class AuthorityResourceService:
         return root_uuid
 
     @staticmethod
-    def _local_roots(resources: Any, runtime: ResourceTreeSet) -> dict[str, str]:
+    def _local_roots(
+        resources: Any, runtime: ResourceTreeSet, device_uuid: str = ""
+    ) -> dict[str, str]:
         """不问权威就能确定的 ``节点 uuid → 快照根 uuid``。
 
         - 传入 PLR 实例：沿 ``.parent`` 到 PLR 顶层即根，其子树全部归它；
-        - 传入 ResourceTreeSet：``uuid_parent`` 为空的树根就是根（观察者冻结的整棵
-          持有树即此形态）。父在权威里但不在本地树里的子树（脚本传来的局部权威树）
-          留给 ``_root_material_uuid`` 反查。
+        - 传入 ResourceTreeSet：``uuid_parent`` 为空、或就是本设备物料的树根就是根
+          （观察者冻结的整棵持有树；append_resource 挂到设备上、根 parent 投影为
+          设备的台面树）——与 ``_root_material_uuid`` 停在设备物料之下同一规则。
+          父在权威里但不在本地树里的子树（脚本传来的局部权威树）留给
+          ``_root_material_uuid`` 反查：那里每个节点至少一次权威往返，整棵台面
+          （带枪头时数百节点）逐个反查会把一次挂载拖到超时。
         """
 
         roots: dict[str, str] = {}
         if isinstance(resources, ResourceTreeSet):
             for tree in runtime.trees:
                 root = tree.root_node.res_content
-                if root.uuid_parent is None and root.uuid:
+                parent_uuid = root.uuid_parent
+                if root.uuid and (
+                    parent_uuid is None or (device_uuid and parent_uuid == device_uuid)
+                ):
                     for node in tree.get_all_nodes():
                         roots[node.res_content.uuid] = root.uuid
             return roots
@@ -837,7 +845,9 @@ class AuthorityResourceService:
         runtime = _existing_tree_set(resources)
         gateway = self._gateway()
         aggregate_cache: dict[str, Any] = {}
-        root_cache: dict[str, str] = self._local_roots(resources, runtime)
+        root_cache: dict[str, str] = self._local_roots(
+            resources, runtime, str(device_uuid or "")
+        )
         by_root: dict[str, list[Any]] = defaultdict(list)
         seen_runtime_uuids: set[str] = set()
         for instance in runtime.all_nodes:

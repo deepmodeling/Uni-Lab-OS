@@ -49,7 +49,7 @@ unilab package operation <operation_id> --wait --timeout 300
 
 Host 内的 `server/services/driver_source_changes.py` 观察源码，不启动新守护进程。策略为 **先提示、手动确认后调用现有重启接口**；修改文件和查询提示都不会自动停止设备。
 
-观察目录来自 Host 本次启动的挂载目录、包台账中的源码根，以及每个受管 slave 实际启动命令和工作目录的挂载目录。因此覆盖 `<working_dir>/driver_packages/...`（包括 `unilabos_data`）、原地登记的外部开发目录和 `--devices` 指定目录；没有限定在仓库的 `unilabos/devices`。未加载、未登记的任意 data 文件不推断进程归属。未使用 `--external_devices_only` 时也观察内置设备源码。
+观察目录来自 Host 本次启动的挂载目录、包台账中的源码根，以及每个受管 slave 实际启动命令和工作目录的挂载目录。因此覆盖 `<working_dir>/driver_packages/...`（包括 `unilabos_data`）、原地登记的外部开发目录和 `--devices` 指定目录；不观察仓库的 `unilabos/devices`：厂商驱动都在外部驱动包里，该目录只剩随框架发布的内置代码，改动它与改框架一样需要整体重启。未加载、未登记的任意 data 文件不推断进程归属。
 
 每 2 秒检查内容摘要，连续两次内容一致后发布，通常在保存后 2–4 秒提示。支持新增、修改、删除及同大小/同时间戳改写；观察 `.py/.pyi/.yaml/.yml/.toml/.json/.ini/.cfg/.xml/.xdl/.pyd/.so/.dll`，忽略日志、数据库、缓存、`.git`、虚拟环境和事务临时目录。源码读取失败显示 `scan_error`，不清除已有提示。包事务期间暂停文件通知，避免把临时移动和回滚当成稳定改动。
 

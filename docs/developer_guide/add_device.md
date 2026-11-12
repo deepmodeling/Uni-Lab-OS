@@ -2,6 +2,12 @@
 
 在 Uni-Lab 中，设备（Device）是实验操作的基础单元。Uni-Lab 使用**注册表机制**来兼容管理种类繁多的设备驱动程序。抽象的设备对外拥有【话题】【服务】【动作】三种通信机制，因此将设备添加进 Uni-Lab，实际上是将设备驱动中的这三种机制映射到 Uni-Lab 标准指令集上。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库不再内置厂商驱动（PRCXI、LaiYu、Bioyond 工作站、HPLC、天平、机械臂等）。新设备请按 `.cursor/skills/create-device-package`（基于 LabDeviceTemplate）建立独立驱动包，用 `unilab package install <GitHub 仓库/归档/源码目录>` 安装，开发时也可用 `--devices <包目录>` 直接挂载。驱动包的注册表放在包内 `registry/{devices,resources}/`，结构与 `unilabos/registry` 相同；用 `@device` 装饰器时通常无需手写 YAML。下文示例中的 `my_device_pkg.xxx:Class` 就是你的驱动包里的模块路径。
+>
+> `unilabos/devices/` 只保留框架依赖的内置代码：`workstation/workstation_base.py`（`WorkstationBase`、`WorkStationContainer`）、`virtual/`（虚拟设备，供协议编译器、`--test_mode`、示例图和测试使用）、`liquid_handling/liquid_handler_abstract.py` 与 `rviz_backend.py`、`ros_dev/liquid_handler_joint_publisher*.py`。驱动包可以继承这些基类，但不要把新驱动加进这个目录。
+>
+> 驱动包自定义的 PLR 资源类或液体处理后端如果不在注册表条目里，需在包导入时调用 `unilabos.resources.plr_additional_res_reg.register_plr_module("<模块路径>")`（或给类加 `@register_plr_class`），物料反序列化才能找到它们。
+
 > **💡 提示：** 本文档介绍如何使用已有的设备驱动（SDK）。若设备没有现成的驱动程序，需要自己开发驱动，请参考 {doc}`add_old_device`。
 
 ## 支持的驱动类型
@@ -147,14 +153,15 @@ public class MockGripper
 ```yaml
 my_device: # 设备唯一标识符
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice # Python 类路径
+    module: my_device_pkg.my_device:MyDevice # Python 类路径
     type: python # 驱动类型
 ```
 
 **注册表文件位置：**
 
-- 默认路径：`unilabos/registry/devices`
+- 驱动包内：`<包根>/registry/devices`（随 `unilab package install` 或 `--devices <包目录>` 自动加载）
 - 自定义路径：启动时使用 `--registry_path` 参数指定
+- `unilabos/registry/devices` 只放内置设备（虚拟设备、工作站、抽象液体处理器等）的注册表
 - 可将多个设备写在同一个 YAML 文件中
 
 **系统自动生成的内容：**
@@ -171,7 +178,7 @@ my_device: # 设备唯一标识符
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     status_types: {} # 自动生成
     action_value_mappings: {} # 自动生成

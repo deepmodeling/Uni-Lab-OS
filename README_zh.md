@@ -241,7 +241,11 @@ Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 
 本项目采用双许可证结构：
 
 - **主框架**：GPL-3.0 - 详见 [LICENSE](LICENSE)
-- **设备驱动** (`unilabos/devices/`)：深势科技专有许可证
+- **内置设备代码** (`unilabos/devices/`)：深势科技专有许可证。这里只保留框架依赖的代码：工作站基类、
+  虚拟设备、抽象液体处理器及其 RViz 后端、ROS 液体处理器关节发布器。
+
+厂商设备驱动不再随主仓库发布，而是放在各自的外部驱动包中（许可证由驱动包自行声明）；
+用 `unilab package` 安装，新建驱动包参见 `.cursor/skills/create-device-package`。
 
 完整许可证说明请参阅 [NOTICE](NOTICE)。
 

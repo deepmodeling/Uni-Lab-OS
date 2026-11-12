@@ -26,8 +26,8 @@ unilab workflow upload -f <workflow.json> -n <name> --tags tag1 tag2
 
 # Tests
 pytest tests/                              # all tests
-pytest tests/resources/test_resourcetreeset.py  # single test file
-pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # single test
+pytest tests/resources/test_resourcetreeset_groups.py  # single test file
+pytest tests/resources/test_resourcetreeset_groups.py::test_name  # single test
 ```
 
 ## Architecture
@@ -42,7 +42,7 @@ pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # si
 
 **Resource Tracking** (`unilabos/resources/resource_tracker.py`): Pydantic-based `ResourceDict` → `ResourceDictInstance` → `ResourceTreeSet` hierarchy. `ResourceTreeSet` is the canonical in-memory representation of all devices and resources, used throughout the system. Graph I/O is in `resources/graphio.py` (reads JSON/GraphML device topology files into `nx.Graph` + `ResourceTreeSet`).
 
-**Device Drivers** (`unilabos/devices/`): 30+ hardware drivers organized by device type (liquid_handling, hplc, balance, arm, etc.). Each driver is a Python class that gets wrapped by `backend/ros2/device_node_wrapper.py:ros2_device_node()` to become a ROS2 node with publishers, subscribers, and action servers.
+**Device Drivers**: vendor drivers (PRCXI, LaiYu, Bioyond, HPLC, balances, arms, …) are not in this repository. They live in external driver packages, installed with `unilab package install` (`app/cli/package.py`, `server/services/driver_packages.py`) or mounted with `--devices`; create new ones with `.cursor/skills/create-device-package`. A driver is a Python class with `@device` / `@action` decorators that the runtime wraps as a HostLink or ROS 2 device node. Driver packages that define PLR resource or backend classes outside their registry entries register them with `register_plr_module()` / `@register_plr_class` from `resources/plr_additional_res_reg.py`, so `ResourceTreeSet.to_plr_resources()` can deserialize them. `unilabos/devices/` keeps only the built-ins the framework depends on: `workstation/workstation_base.py` (`WorkstationBase`, `WorkStationContainer`), `virtual/*` (used by the protocol compilers, `--test_mode`, example graphs and tests), `liquid_handling/liquid_handler_abstract.py` with `rviz_backend.py`, and `ros_dev/liquid_handler_joint_publisher*.py`.
 
 **Device Runtime** (`unilabos/backend/runtime/`): Transport-neutral device execution kernel shared by HostLink and ROS 2 — `DeviceNode`, action routing, resource service, and runtime exceptions (`DeviceActionError`, `DeviceClassInvalid`, `ActionResultError`).
 
@@ -50,7 +50,7 @@ pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # si
 
 **Experiment Protocols** (`unilabos/experiments/`): `models.py` holds Pydantic parameter models for XDL-style experiment actions (mirroring `unilabos_msgs` ROS actions); `compile/` holds 20+ protocol compilers (add, centrifuge, dissolve, filter, heatchill, stir, pump, etc.) that expand protocol steps into device action sequences at execution time (consumed by the `workstation` preset node). One-shot workflow import converters (`from_xdl.py`, `from_python_script.py`, legacy JSON) live in `scripts/workflow/`, not in the runtime packages.
 
-**Communication** (`unilabos/device_comms/`): Hardware communication adapters — OPC-UA client, Modbus PLC, RPC, and a universal driver. `app/communication.py` provides a factory pattern for WebSocket client connections to the cloud.
+**Communication** (`unilabos/device_comms/`): Hardware communication adapters that external driver packages build on — OPC-UA client, Modbus PLC, RPC, and a universal driver. `app/communication.py` provides a factory pattern for WebSocket client connections to the cloud.
 
 **Microbackend HTTP API** (`unilabos/server/api/`): FastAPI routers and the Host management application. It exposes runtime, materials, telemetry, history, and scheduler observation APIs on port 8002 by default.
 
@@ -84,4 +84,4 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 ## Licensing
 
 - Framework code: GPL-3.0
-- Device drivers (`unilabos/devices/`): DP Technology Proprietary License — do not redistribute
+- Built-in device code (`unilabos/devices/`): DP Technology Proprietary License — do not redistribute. Do not move it into GPL framework folders, and do not add vendor drivers here; they belong in external driver packages, which carry their own license.

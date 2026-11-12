@@ -3,6 +3,7 @@
 > **文档类型**：架构设计指南与实战案例  
 > **适用场景**：大型工作站接入、子设备管理、物料系统集成  
 > **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **驱动位置**：本文涉及的厂商驱动与物料预设（Bioyond 工作站、`workstation_http_service.py` 等）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 > **Backend 边界**：Workstation 不是 ROS2 专属设备。选择 `hostlink` 时，运行时会
 > 初始化对应的 HostLink node，并以 HostLink 初始化其 sub-device；普通 Python 驱动的

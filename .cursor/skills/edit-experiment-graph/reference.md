@@ -133,7 +133,7 @@ physical_setup_graph + handle_communications
 
 ### 外部系统工作站完整 config
 
-以 `reaction_station_bioyond.json` 为例，工作站 `config` 中的关键字段：
+以 Bioyond 反应站图文件（随 Bioyond 驱动包发布，原 `reaction_station_bioyond.json`）为例，工作站 `config` 中的关键字段：
 
 ```json
 {
@@ -250,6 +250,6 @@ physical_setup_graph + handle_communications
 | ResourceDict 模型 | `unilabos/resources/resource_tracker.py` |
 | 图加载 + 标准化 | `unilabos/resources/graphio.py` |
 | Handle 验证 | `unilabos/app/main.py` (449-481 行) |
-| 反应站图文件 | `unilabos/test/experiments/reaction_station_bioyond.json` |
-| 配液站图文件 | `unilabos/test/experiments/dispensing_station_bioyond.json` |
+| 协议工作站图文件 | `unilabos/test/experiments/Protocol_Test_Station/*.json` |
+| 虚拟反应器图文件 | `unilabos/test/experiments/mock_reactor.json` |
 | 用户文档 | `docs/user_guide/graph_files.md` |

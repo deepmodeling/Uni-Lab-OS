@@ -1,6 +1,5 @@
 """借还和样品托管必须跨暂停、异常、进程恢复保持物理互斥。"""
 from __future__ import annotations
-import json
 from dataclasses import replace
 from types import SimpleNamespace
 from uuid import uuid4
@@ -17,7 +16,6 @@ from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from tests.server.test_workflow_resource_intervals import make_task, request_for, service
 from tests.server.test_workflow_task_cancel import Executor, command, wait_for
-from unilabos.server.database.tables.runtime import RUNTIME_DATABASE
 
 
 def finish(service, intervals, request, status="succeeded"):
@@ -280,40 +278,6 @@ def test_device_contract_resolves_material_uuid_to_readable_device_id():
     assert result["device_claims"]==["reactor"]
     assert result["device_tenancy"].acquire_device_id=="reactor"
     assert result["device_tenancy"].material_uuid==sample
-
-
-def test_v7_live_admission_migrates_without_releasing_resources(tmp_path):
-    import sqlite3
-    path=tmp_path/'runtime.db'
-    service=WorkflowService(path)
-    task=make_task(service)
-    request=request_for(service,task)
-    claims=ExecutionClaims(service)
-    epoch=claims.activate_authority()
-    assert ResourceIntervals(service).admit(request,epoch)
-    claim=claims.reserve(request,authority_epoch=epoch)
-    service.close()
-    with sqlite3.connect(path) as conn:
-        for table in ('workflow_resource_waiter','workflow_tenancy_transition','workflow_device_tenancy','workflow_resource_loan'):
-            conn.execute(f'DROP TABLE {table}')
-        legacy=request.model_dump(mode='json')
-        for field in ('device_claims','device_tenancy','operate_in_place'):
-            legacy.pop(field)
-        for table in ('workflow_resource_admission','workflow_execution_claim'):
-            conn.execute(f'UPDATE {table} SET request=?',(json.dumps(legacy),))
-        conn.execute("UPDATE schema_identity SET checksum='c8c8b2e291f09b5e22b31b4d530774dea0f205459d3a8b24abde670925a28536' WHERE database_key='runtime'")
-        conn.execute('PRAGMA user_version=7')
-    service=WorkflowService(path)
-    try:
-        ResourceIntervals(service).recover()
-        assert ExecutionClaims(service).get(request.owner_uuid)['claim_uuid']==claim['claim_uuid']
-        assert service.connection.execute('PRAGMA user_version').fetchone()[0]==RUNTIME_DATABASE.schema_version
-        competitor=make_task(service,('reactor',))
-        epoch=ExecutionClaims(service).activate_authority()
-        assert not ResourceIntervals(service).admit(request_for(service,competitor),epoch)
-        assert list(tmp_path.glob(f'runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak'))
-    finally:
-        service.close()
 
 
 def test_concurrent_tenancy_acquire_has_single_winner(tmp_path):

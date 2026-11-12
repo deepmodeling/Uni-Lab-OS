@@ -123,8 +123,11 @@ def test_database_v1_schema_is_complete_and_replay_safe(tmp_path, key: str) -> N
         }
         assert tables == EXPECTED_TABLES[key]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+        # 新库直接按当前声明建成：记为当前版本，不产生迁移记录、不留迁移前备份
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version
     finally:
         connection.close()
+    assert not list(tmp_path.glob(f"{spec.filename}*.bak*"))
 
 
 def test_aggregate_fields_and_material_storage_exceptions(tmp_path) -> None:
@@ -216,14 +219,12 @@ def test_total_table_count_stays_small() -> None:
     # workflow 节点执行为两级：workflow_node_run（节点运行）+ workflow_node_job（attempt）；
     # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
-    # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
-    # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
-    # runtime v9：workflow_operation_category（V1 实验操作类别），42 → 43；
-    # runtime v10：V1 结构化人工交互 workflow_human_interaction，43 → 44；
-    # runtime v11：V1 工站错误处置（工站控制 / 控制命令 / 处置会话 / 工站错误），44 → 48；
-    # runtime v12：V1 Workspace Host（工作区操作记录 / 快照修订号），48 → 50。
-    # materials v6（V1.0 库存概念）：试剂 / 样品 / 当前内容物角色、内容物历史、状态历史、
-    # 内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，V1 命令幂等结果，16 → 26。
+    # materials：material_execution（物理动作冻结计划与结算回执）+ material_execution_hold
+    # （未结算动作对物料 / 库位的唯一占用）；V1.0 库存概念（试剂 / 样品 / 当前内容物角色、
+    # 内容物历史、状态历史、内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，
+    # V1 命令幂等结果）。
+    # runtime：V1 实验操作类别、结构化人工交互、工站错误处置（工站控制 / 控制命令 /
+    # 处置会话 / 工站错误）与 Workspace Host（工作区操作记录 / 快照修订号）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
         "runtime": 50,
         "materials": 26,

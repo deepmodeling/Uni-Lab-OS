@@ -682,10 +682,6 @@ class MaterialsRepository:
         )
         # V1 内容物角色（试剂 / 样品 / 当前内容物）挂在 substance_uuid 上：被替换掉的内容物
         # 同步移除角色行与仍活动的数量预留；保留下来的 substance_uuid 角色不变。
-        # （按旧版结构构造夹具库时没有 v6 表，此时跳过。）
-        if not self._has_content_roles():
-            self._insert_substances(records)
-            return
         kept = [record.substance_uuid for record in records]
         placeholders = ",".join("?" for _ in kept) or "''"
         self.connection.execute(
@@ -700,15 +696,6 @@ class MaterialsRepository:
             (material_uuid, *kept),
         )
         self._insert_substances(records)
-
-    def _has_content_roles(self) -> bool:
-        cached = getattr(self, "_content_roles_present", None)
-        if cached is None:
-            cached = self.connection.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_content'"
-            ).fetchone() is not None
-            self._content_roles_present = cached
-        return cached
 
     def _insert_substances(self, records: Sequence[MaterialSubstanceRecord]) -> None:
         for record in records:

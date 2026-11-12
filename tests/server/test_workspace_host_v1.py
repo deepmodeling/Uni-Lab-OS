@@ -10,7 +10,6 @@ FIFO、排空后停止等用例。进程用替身（Host 子进程看护者、�
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -586,37 +585,6 @@ def test_layout_preview_and_apply_compare_and_set(stack: Stack, tmp_path: Path) 
 
 def test_layout_without_materials_authority_fails(stack: Stack) -> None:
     assert stack.execute("material.layout.inspect")["error"]["code"] == "layout_unavailable"
-
-
-# ── 迁移：runtime.db v11 → v12 ─────────────────────────────────────
-
-
-def test_runtime_v11_database_migrates_to_v12(tmp_path: Path) -> None:
-    from dataclasses import replace
-
-    from unilabos.server.database import DATABASE_SPECS, initialize_database
-
-    spec = DATABASE_SPECS["runtime"]
-    v11 = replace(
-        spec,
-        tables=tuple(table for table in spec.tables if not table.name.startswith("workspace_host_")),
-        schema_version=11,
-        migrations=spec.migrations[:-1],
-    )
-    path = tmp_path / "runtime.db"
-    initialize_database(path, v11).close()
-    connection = initialize_database(path, spec)
-    try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 12
-        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert {"workspace_host_operation", "workspace_host_state"} <= tables
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "INSERT INTO workspace_host_operation(operation_id, command, parameters, request_hash, phase, submitted_at) "
-                "VALUES ('x', 'c', '{}', 'h', 'done', 't')"
-            )
-    finally:
-        connection.close()
 
 
 # ── MCP：目录登记的四个工具经进程内 ASGI 调到同一组路由 ────────────────

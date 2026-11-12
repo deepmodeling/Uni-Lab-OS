@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import replace
 from uuid import uuid4
 
 import pytest
@@ -13,8 +12,6 @@ from unilabos.registry.workflows import upsert_workflow
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.backend.scheduler.models import ActionLockClaim, SchedulerResourceRequest
 from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.database import initialize_database
-from unilabos.server.database.tables.runtime import RUNTIME_DATABASE, RUNTIME_MIGRATIONS
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
@@ -254,33 +251,6 @@ def test_lost_actual_use_or_frozen_scope_cannot_authorize_new_execution(service)
         conn.execute("DELETE FROM workflow_resource_use")
     with pytest.raises(StoreConflict, match="使用权"):
         claims.restore_requests()
-
-
-def test_runtime_v6_upgrade_preserves_workflows_and_records_backup(tmp_path):
-    path = tmp_path / "runtime.db"
-    v6 = replace(RUNTIME_DATABASE, tables=tuple(t for t in RUNTIME_DATABASE.tables if t.name not in {"workflow_resource_interval", "workflow_resource_admission", "workflow_resource_use", "workflow_resource_loan", "workflow_device_tenancy", "workflow_tenancy_transition", "workflow_resource_waiter"}),
-                 schema_version=6, migrations=RUNTIME_MIGRATIONS[:5])
-    conn = initialize_database(path, v6)
-    workflow = str(uuid4())
-    with conn:
-        conn.execute("INSERT INTO workflow(uuid,create_time,update_time,meta_data,name,tags,revision) "
-                     "VALUES (?, 't', 't', '{}', '原有流程', '[]', 8)", (workflow,))
-    conn.close()
-    with_service = WorkflowService(path)
-    try:
-        assert with_service.get_workflow(workflow)["revision"] == 8
-        assert ResourceIntervals(with_service).snapshot() == []
-        assert with_service.connection.execute("PRAGMA user_version").fetchone()[0] == RUNTIME_DATABASE.schema_version
-        assert [tuple(row) for row in with_service.connection.execute("SELECT version,description FROM schema_migration")] == [
-            (7, "区间资源所有权和单次动作使用清单"), (8, "设备托管、资源借还和等待环路"),
-            (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）"),
-            (10, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互"),
-            (11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误"),
-            (12, "V1 Workspace Host：工作区操作记录与快照修订号")]
-        assert list(tmp_path.glob(f"runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak"))
-        assert with_service.connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
-        with_service.close()
 
 
 def test_hostlink_loop_rounds_have_distinct_owners_and_release_all():

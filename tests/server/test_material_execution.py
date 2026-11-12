@@ -267,47 +267,6 @@ def test_actual_lot_overdraw_rolls_back_then_replenishment_allows_same_receipt(t
         stack.close()
 
 
-def test_v4_upgrade_preserves_materials_contents_and_ledger(tmp_path, monkeypatch):
-    from dataclasses import replace
-    from unilabos.server.database.tables.materials import MATERIALS_DATABASE
-    from unilabos.server.services.materials import store
-
-    from tests.server.materials_published_specs import materials_spec_v5
-
-    v5 = materials_spec_v5()
-    old = replace(
-        v5,
-        schema_version=4,
-        tables=tuple(
-            table
-            for table in v5.tables
-            if table.name not in {"material_execution", "material_execution_hold"}
-        ),
-        migrations=tuple(item for item in MATERIALS_DATABASE.migrations if item.version <= 4),
-        on_unmigratable="refuse",
-    )
-    path = tmp_path / "materials.db"
-    with monkeypatch.context() as patch:
-        patch.setattr(store, "MATERIALS_DATABASE", old)
-        previous = MaterialsService(path)
-        # 用 v4 写入语义构造旧库；该版本没有物理占用守卫。
-        patch.setattr(previous.executions, "guard_mutation", lambda *_: None)
-        _template(previous, "container-template", "container")
-        source = _material(previous, "container")
-        fill(previous, source, [("water", 50)])
-        sequence = previous.latest_ledger_sequence()
-        previous.close()
-    current = MaterialsService(path)
-    try:
-        assert contents(current, source) == {"water": 50}
-        assert current.latest_ledger_sequence() == sequence
-        assert current.connection.execute("PRAGMA user_version").fetchone()[0] == MATERIALS_DATABASE.schema_version
-        assert current.executions.list() == []
-        assert len(list(tmp_path.glob(f"materials.db.pre-v{MATERIALS_DATABASE.schema_version}-*.bak"))) == 1
-    finally:
-        current.close()
-
-
 def test_material_execution_http_validation_is_read_only_and_stale_release_conflicts(tmp_path):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

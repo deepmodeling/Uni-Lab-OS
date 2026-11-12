@@ -1,4 +1,4 @@
-"""V1 Workspace Host 的持久事实（runtime.db v12）：工作区操作记录与快照修订号。
+"""V1 Workspace Host 的持久事实（runtime.db）：工作区操作记录与快照修订号。
 
 V1 把每个操作写成 ``.unilabos/runtime/workbench/operations/<id>.json``、修订号只在内存里；
 dev 的监督者是常驻的调度权威进程，操作记录与修订号落 runtime.db：
@@ -46,9 +46,9 @@ class WorkspaceHostStateRecord(TableObject, table=True):
     updated_at: NonEmptyStr
 
 
-#: v12 冻结的建表语句：迁移与当前规格共用。
-WORKSPACE_HOST_V12 = (
-    """
+WORKSPACE_HOST_MODELS = (WorkspaceHostOperationRecord, WorkspaceHostStateRecord)
+WORKSPACE_HOST_TABLES = (
+    TableSpec("workspace_host_operation", """
         CREATE TABLE IF NOT EXISTS workspace_host_operation (
             operation_id TEXT PRIMARY KEY CHECK (length(operation_id) BETWEEN 1 AND 200),
             command TEXT NOT NULL CHECK (length(command) >= 1),
@@ -64,33 +64,24 @@ WORKSPACE_HOST_V12 = (
             error TEXT CHECK (error IS NULL OR (json_valid(error) AND json_type(error) = 'object')),
             preview_id TEXT
         )
-    """,
-    """
+    """, (
+        """CREATE INDEX IF NOT EXISTS idx_workspace_host_operation_phase ON workspace_host_operation(phase, submitted_at)""",
+        """CREATE INDEX IF NOT EXISTS idx_workspace_host_operation_preview ON workspace_host_operation(preview_id) """
+        """WHERE preview_id IS NOT NULL""",
+    )),
+    TableSpec("workspace_host_state", """
         CREATE TABLE IF NOT EXISTS workspace_host_state (
             singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
             revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
             fingerprint TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL
         )
-    """,
-)
-WORKSPACE_HOST_V12_INDEXES = (
-    """CREATE INDEX IF NOT EXISTS idx_workspace_host_operation_phase ON workspace_host_operation(phase, submitted_at)""",
-    """CREATE INDEX IF NOT EXISTS idx_workspace_host_operation_preview ON workspace_host_operation(preview_id) """
-    """WHERE preview_id IS NOT NULL""",
-)
-
-WORKSPACE_HOST_MODELS = (WorkspaceHostOperationRecord, WorkspaceHostStateRecord)
-WORKSPACE_HOST_TABLES = (
-    TableSpec("workspace_host_operation", WORKSPACE_HOST_V12[0], WORKSPACE_HOST_V12_INDEXES),
-    TableSpec("workspace_host_state", WORKSPACE_HOST_V12[1]),
+    """),
 )
 
 __all__ = [
     "WORKSPACE_HOST_MODELS",
     "WORKSPACE_HOST_TABLES",
-    "WORKSPACE_HOST_V12",
-    "WORKSPACE_HOST_V12_INDEXES",
     "WorkspaceHostOperationRecord",
     "WorkspaceHostStateRecord",
 ]

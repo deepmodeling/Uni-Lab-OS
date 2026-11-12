@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 from uuid import uuid4
@@ -12,12 +11,6 @@ from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.database import DATABASE_SPECS
-from unilabos.server.database.schema import rebuild_table_migration
-from unilabos.server.database.tables.runtime.migrations import (
-    _WORKFLOW_TASK_COMMAND_V4,
-    _WORKFLOW_TASK_COMMAND_V4_INDEXES,
-)
 from unilabos.server.services.runtime.workflow.authoring_identity import expanded_node_uuid
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -385,72 +378,6 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
     jobs = {job["workflow_node_uuid"]: job for job in service.list_workflow_node_jobs(task["uuid"])}
     assert jobs[second]["param"] == {"temperature": 30}
     assert _code(_edit(client, task, {"temperature": 40})) == 3003
-
-
-_V3_COMMAND_CHECK = "type IN ('step', 'pause', 'resume', 'cancel')"
-
-
-def test_v3_runtime_database_migrates_task_commands_to_v4(tmp_path) -> None:
-    path = tmp_path / "runtime.db"
-    service = WorkflowService(path)
-    workflow = service.create_workflow(name="迁移", tags=[], description=None, meta_data={})
-    service.save_graph(workflow["uuid"], revision=1, nodes=[
-        _node(str(uuid4()), "加样", {"volume": 1}, device="pump-1"),
-    ], edges=[])
-    task = service.create_workflow_task(
-        workflow_uuid=workflow["uuid"], run_mode="step", target_node_uuid=None,
-        input_value={}, description=None, meta_data={},
-    )
-    service.command_workflow_task(task["uuid"], command_type="resume",
-                                  expected_revision=0, idempotency_key="resume-1")
-    service.close()
-
-    v3_sql = _WORKFLOW_TASK_COMMAND_V4.replace(
-        "type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')", _V3_COMMAND_CHECK,
-    )
-    assert v3_sql != _WORKFLOW_TASK_COMMAND_V4
-    connection = sqlite3.connect(path, isolation_level=None)
-    try:
-        connection.execute("PRAGMA foreign_keys = OFF")
-        connection.execute("BEGIN IMMEDIATE")
-        rebuild_table_migration(
-            3, "test downgrade", table="workflow_task_command",
-            create_sql=v3_sql, indexes=_WORKFLOW_TASK_COMMAND_V4_INDEXES,
-        ).apply(connection)
-        connection.execute("UPDATE schema_identity SET checksum = 'runtime-v3' WHERE database_key = 'runtime'")
-        connection.execute("PRAGMA user_version = 3")
-        connection.execute("COMMIT")
-    finally:
-        connection.close()
-
-    service = WorkflowService(path)
-    try:
-        migrated = service.get_workflow_task(task["uuid"])
-        assert migrated["control_revision"] == 1
-        with service.transaction() as conn:
-            conn.execute(
-                "INSERT INTO workflow_task_command(uuid, create_time, update_time, workflow_task_uuid, "
-                "type, idempotency_key, status) VALUES (?, 't', 't', ?, 'edit_input', 'edit-1', 'succeeded')",
-                (str(uuid4()), task["uuid"]),
-            )
-        assert service.get_workflow_task(task["uuid"])["control_revision"] == 2
-    finally:
-        service.close()
-    connection = sqlite3.connect(path)
-    try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SPECS["runtime"].schema_version
-        history = [tuple(row) for row in connection.execute("SELECT version, description FROM schema_migration")]
-        assert history == [(4, "workflow_task_command 允许 edit_input（暂停时修改入口参数）"),
-                           (5, "持久化派发资源声明、租约与栅栏计数"),
-                           (6, "执行代次、一次开始许可与不可变开始回执"),
-                           (7, "区间资源所有权和单次动作使用清单"),
-                           (8, "设备托管、资源借还和等待环路"),
-                           (9, "工作流类型、实验操作类别与节点人工确认配置（V1 作者合同）"),
-                           (10, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互"),
-                           (11, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误"),
-                           (12, "V1 Workspace Host：工作区操作记录与快照修订号")]
-    finally:
-        connection.close()
 
 
 def test_task_list_omits_output_but_detail_keeps_it(stack) -> None:

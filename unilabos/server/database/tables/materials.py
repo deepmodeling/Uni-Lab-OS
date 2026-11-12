@@ -18,32 +18,6 @@ from unilabos.server.database.tables.base import (
     UnixMilliseconds,
     json_text_column,
 )
-from unilabos.server.database.tables.materials_migrations import (
-    MATERIALS_MIGRATIONS,
-    MATERIALS_SCHEMA_VERSION,
-    _INVENTORY_LEDGER_JOB_V8_INDEX,
-    _MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX,
-    _MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX,
-    _LAB_META_V6,
-    _LAB_PLACEMENT_V6,
-    _LAB_PLACEMENT_V6_INDEXES,
-    _LAB_ZONE_V6,
-    _INVENTORY_PROCESSED_COMMAND_V6,
-    _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
-    _MATERIAL_BARCODE_V6_INDEX,
-    _MATERIAL_CONTENT_HISTORY_V6,
-    _MATERIAL_CONTENT_HISTORY_V6_INDEXES,
-    _MATERIAL_CONTENT_RESERVATION_V6,
-    _MATERIAL_CONTENT_RESERVATION_V6_INDEXES,
-    _MATERIAL_CONTENT_V6,
-    _MATERIAL_CONTENT_V6_INDEXES,
-    _MATERIAL_SOURCE_BINDING_V6,
-    _MATERIAL_SOURCE_BINDING_V6_INDEXES,
-    _MATERIAL_STATE_V6,
-    _MATERIAL_STATE_V6_INDEXES,
-    _STATION_INGRESS_RESERVATION_V6,
-    _STATION_INGRESS_RESERVATION_V6_INDEXES,
-)
 from unilabos.server.database.schema import (
     SCHEMA_IDENTITY_TABLE,
     DatabaseSpec,
@@ -159,7 +133,7 @@ class InventoryLotRecord(TableObject, table=True):
     created_at_ms: UnixMilliseconds
     updated_at_ms: UnixMilliseconds
     version: PositiveVersion = 1
-    # v6：批次所在库位与仓储分区（V1 lot location / warehouse zone）
+    # 批次所在库位与仓储分区（V1 lot location / warehouse zone）
     location_site_uuid: Optional[NonEmptyStr] = None
     warehouse_zone_id: str = ""
 
@@ -1012,7 +986,10 @@ MATERIALS_TABLES = (
             ON material(resource_id)
             WHERE deleted_at_ms IS NULL
             """,
-            _MATERIAL_BARCODE_V6_INDEX,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_material_barcode_active
+            ON material(barcode) WHERE deleted_at_ms IS NULL AND barcode <> ''
+            """,
             """
             CREATE INDEX IF NOT EXISTS idx_material_parent
             ON material(parent_material_uuid, ordinal, material_uuid)
@@ -1495,7 +1472,10 @@ MATERIALS_TABLES = (
             CREATE INDEX IF NOT EXISTS idx_inventory_ledger_aggregate
             ON inventory_ledger(aggregate_type, aggregate_uuid, sequence)
             """,
-            _INVENTORY_LEDGER_JOB_V8_INDEX,
+            """
+            CREATE INDEX IF NOT EXISTS idx_inventory_ledger_job
+            ON inventory_ledger(job_uuid, sequence) WHERE job_uuid IS NOT NULL
+            """,
         ),
     ),
     TableSpec(
@@ -1561,33 +1541,286 @@ MATERIALS_TABLES += (
         aggregate_uuid TEXT NOT NULL, job_uuid TEXT NOT NULL REFERENCES material_execution(job_uuid),
         PRIMARY KEY(aggregate_type,aggregate_uuid)
     )"""),
-    # schema v6：V1.0 库存概念（表结构与迁移共用 materials_migrations 中冻结的语句）
-    TableSpec("material_content", _MATERIAL_CONTENT_V6, _MATERIAL_CONTENT_V6_INDEXES),
+    # V1.0 库存概念并入 materials.db（单一库存权威，不另建 inventory.db）：试剂 / 样品 / 当前内容物
+    # 是 material_substance 行上的角色扩展（数量仍以 material_substance 为唯一权威）；另有内容物与
+    # 状态历史、内容物预留、来源绑定、工站入站预留、V1 类型化库存命令的幂等结果与实验室布局。
+    TableSpec(
+        "material_content",
+        """
+        CREATE TABLE IF NOT EXISTS material_content (
+            substance_uuid TEXT PRIMARY KEY CHECK (TRIM(substance_uuid) <> ''),
+            material_uuid TEXT NOT NULL CHECK (TRIM(material_uuid) <> ''),
+            content_kind TEXT NOT NULL CHECK (content_kind IN ('reagent','sample','current')),
+            concentration_value REAL,
+            concentration_unit TEXT,
+            density_g_per_ml REAL CHECK (density_g_per_ml IS NULL OR density_g_per_ml > 0),
+            density_source TEXT,
+            code TEXT,
+            sample_type TEXT,
+            source TEXT,
+            collected_at_ms INTEGER CHECK (collected_at_ms IS NULL OR collected_at_ms >= 0),
+            expires_at_ms INTEGER CHECK (expires_at_ms IS NULL OR expires_at_ms >= 0),
+            description TEXT NOT NULL DEFAULT '',
+            revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
+            CHECK (
+                (concentration_value IS NULL AND concentration_unit IS NULL)
+                OR (concentration_value IS NOT NULL AND concentration_unit IS NOT NULL)
+            ),
+            CHECK (content_kind = 'sample' OR code IS NULL),
+            CHECK (expires_at_ms IS NULL OR collected_at_ms IS NULL OR expires_at_ms >= collected_at_ms)
+        )
+        """,
+        (
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_material_content_kind
+            ON material_content(material_uuid, content_kind)
+            """,
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_material_content_sample_code
+            ON material_content(LOWER(code)) WHERE code IS NOT NULL
+            """,
+        ),
+    ),
     TableSpec(
         "material_content_history",
-        _MATERIAL_CONTENT_HISTORY_V6,
-        (*_MATERIAL_CONTENT_HISTORY_V6_INDEXES, _MATERIAL_CONTENT_HISTORY_SUBJECT_V8_INDEX),
+        """
+        CREATE TABLE IF NOT EXISTS material_content_history (
+            history_uuid TEXT PRIMARY KEY CHECK (TRIM(history_uuid) <> ''),
+            material_uuid TEXT NOT NULL CHECK (TRIM(material_uuid) <> ''),
+            subject_type TEXT NOT NULL CHECK (subject_type IN ('reagent','sample','current_substance')),
+            subject_uuid TEXT NOT NULL CHECK (TRIM(subject_uuid) <> ''),
+            event_type TEXT NOT NULL CHECK (TRIM(event_type) <> ''),
+            operator_type TEXT NOT NULL DEFAULT 'system',
+            quantity_delta REAL,
+            quantity_unit TEXT,
+            revision INTEGER,
+            changes_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(changes_json) AND json_type(changes_json) = 'object'
+            ),
+            extension_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(extension_json) AND json_type(extension_json) = 'object'
+            ),
+            workflow_task_uuid TEXT,
+            workflow_node_job_uuid TEXT,
+            trace_id TEXT,
+            causation_id TEXT,
+            recorded_at_ms INTEGER NOT NULL CHECK (recorded_at_ms >= 0)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_content_history_material
+            ON material_content_history(material_uuid, subject_type, recorded_at_ms, history_uuid)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_content_history_subject
+            ON material_content_history(subject_uuid, recorded_at_ms, history_uuid)
+            """,
+        ),
     ),
-    TableSpec("material_state_history", _MATERIAL_STATE_V6, _MATERIAL_STATE_V6_INDEXES),
+    TableSpec(
+        "material_state_history",
+        """
+        CREATE TABLE IF NOT EXISTS material_state_history (
+            state_uuid TEXT PRIMARY KEY CHECK (TRIM(state_uuid) <> ''),
+            material_uuid TEXT NOT NULL CHECK (TRIM(material_uuid) <> ''),
+            status TEXT,
+            state_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(state_data_json) AND json_type(state_data_json) = 'object'
+            ),
+            source TEXT,
+            description TEXT,
+            meta_data_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_data_json) AND json_type(meta_data_json) = 'object'
+            ),
+            observed_at_ms INTEGER NOT NULL CHECK (observed_at_ms >= 0),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_state_history_timeline
+            ON material_state_history(material_uuid, observed_at_ms DESC, state_uuid DESC)
+            """,
+        ),
+    ),
     TableSpec(
         "material_content_reservation",
-        _MATERIAL_CONTENT_RESERVATION_V6,
-        (*_MATERIAL_CONTENT_RESERVATION_V6_INDEXES, _MATERIAL_CONTENT_RESERVATION_JOB_V8_INDEX),
+        """
+        CREATE TABLE IF NOT EXISTS material_content_reservation (
+            reservation_uuid TEXT PRIMARY KEY CHECK (TRIM(reservation_uuid) <> ''),
+            substance_uuid TEXT NOT NULL CHECK (TRIM(substance_uuid) <> ''),
+            material_uuid TEXT NOT NULL CHECK (TRIM(material_uuid) <> ''),
+            task_uuid TEXT NOT NULL CHECK (TRIM(task_uuid) <> ''),
+            node_uuid TEXT NOT NULL DEFAULT '',
+            job_uuid TEXT,
+            quantity REAL NOT NULL CHECK (quantity > 0),
+            quantity_unit TEXT NOT NULL CHECK (TRIM(quantity_unit) <> ''),
+            status TEXT NOT NULL CHECK (status IN ('active','consumed','released')),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_content_reservation_active
+            ON material_content_reservation(substance_uuid, status)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_content_reservation_task
+            ON material_content_reservation(task_uuid, status)
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_content_reservation_job
+            ON material_content_reservation(job_uuid, status) WHERE job_uuid IS NOT NULL
+            """,
+        ),
     ),
-    TableSpec("material_source_binding", _MATERIAL_SOURCE_BINDING_V6, _MATERIAL_SOURCE_BINDING_V6_INDEXES),
+    TableSpec(
+        "material_source_binding",
+        """
+        CREATE TABLE IF NOT EXISTS material_source_binding (
+            binding_uuid TEXT PRIMARY KEY CHECK (TRIM(binding_uuid) <> ''),
+            task_uuid TEXT NOT NULL CHECK (TRIM(task_uuid) <> ''),
+            node_uuid TEXT NOT NULL CHECK (TRIM(node_uuid) <> ''),
+            attempt INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),
+            material_uuid TEXT NOT NULL CHECK (TRIM(material_uuid) <> ''),
+            template_uuid TEXT NOT NULL CHECK (TRIM(template_uuid) <> ''),
+            custody_policy TEXT NOT NULL CHECK (custody_policy IN ('task_exclusive','shared_source')),
+            selector_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(selector_json) AND json_type(selector_json) = 'object'
+            ),
+            status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','released')),
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            released_at_ms INTEGER CHECK (released_at_ms IS NULL OR released_at_ms >= created_at_ms),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            UNIQUE(task_uuid, node_uuid, attempt)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_material_source_binding_material
+            ON material_source_binding(material_uuid, custody_policy, status)
+            """,
+        ),
+    ),
     TableSpec(
         "station_ingress_reservation",
-        _STATION_INGRESS_RESERVATION_V6,
-        _STATION_INGRESS_RESERVATION_V6_INDEXES,
+        """
+        CREATE TABLE IF NOT EXISTS station_ingress_reservation (
+            reservation_uuid TEXT PRIMARY KEY CHECK (TRIM(reservation_uuid) <> ''),
+            idempotency_key TEXT NOT NULL UNIQUE CHECK (TRIM(idempotency_key) <> ''),
+            request_hash TEXT NOT NULL CHECK (TRIM(request_hash) <> ''),
+            backend_task_uuid TEXT,
+            invocation_key TEXT,
+            carrier_material_uuid TEXT NOT NULL CHECK (TRIM(carrier_material_uuid) <> ''),
+            site_uuid TEXT,
+            state TEXT NOT NULL CHECK (
+                state IN ('reserved','in_transit','received','expired','canceled')
+            ),
+            expires_at_ms INTEGER NOT NULL CHECK (expires_at_ms >= 0),
+            transport_started_at_ms INTEGER,
+            received_at_ms INTEGER,
+            canceled_at_ms INTEGER,
+            cancel_reason TEXT,
+            created_at_ms INTEGER NOT NULL CHECK (created_at_ms >= 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= created_at_ms),
+            revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)
+        )
+        """,
+        (
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_station_ingress_active_site
+            ON station_ingress_reservation(site_uuid)
+            WHERE site_uuid IS NOT NULL AND state IN ('reserved','in_transit')
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_station_ingress_state_expiry
+            ON station_ingress_reservation(state, expires_at_ms, reservation_uuid)
+            """,
+        ),
     ),
+    # V1 ``POST /inventory/commands`` 的类型化命令（试剂分装、内容物预留、来源绑定 …）按 command_id
+    # 幂等：首次结果（完成或拒绝）原样留存，重放直接返回；也是 ``/inventory/commands/processed`` 的来源。
     TableSpec(
         "inventory_processed_command",
-        _INVENTORY_PROCESSED_COMMAND_V6,
-        _INVENTORY_PROCESSED_COMMAND_V6_INDEXES,
+        """
+        CREATE TABLE IF NOT EXISTS inventory_processed_command (
+            command_id TEXT PRIMARY KEY CHECK (TRIM(command_id) <> ''),
+            command_type TEXT NOT NULL CHECK (TRIM(command_type) <> ''),
+            request_hash TEXT NOT NULL CHECK (TRIM(request_hash) <> ''),
+            status TEXT NOT NULL CHECK (status IN ('completed','rejected')),
+            result_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(result_json)),
+            error_code TEXT,
+            error_message TEXT,
+            business_code INTEGER,
+            actor TEXT NOT NULL DEFAULT '',
+            processed_at_ms INTEGER NOT NULL CHECK (processed_at_ms >= 0)
+        )
+        """,
+        (
+            """
+            CREATE INDEX IF NOT EXISTS idx_inventory_processed_command_time
+            ON inventory_processed_command(processed_at_ms DESC, command_id)
+            """,
+        ),
     ),
-    TableSpec("lab_meta", _LAB_META_V6),
-    TableSpec("lab_zone", _LAB_ZONE_V6),
-    TableSpec("lab_placement", _LAB_PLACEMENT_V6, _LAB_PLACEMENT_V6_INDEXES),
+    TableSpec(
+        "lab_meta",
+        """
+        CREATE TABLE IF NOT EXISTS lab_meta (
+            meta_key TEXT PRIMARY KEY CHECK (TRIM(meta_key) <> ''),
+            meta_value_json TEXT NOT NULL DEFAULT 'null' CHECK (json_valid(meta_value_json)),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
+        )
+        """,
+    ),
+    TableSpec(
+        "lab_zone",
+        """
+        CREATE TABLE IF NOT EXISTS lab_zone (
+            zone_id TEXT PRIMARY KEY CHECK (TRIM(zone_id) <> ''),
+            name TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL DEFAULT 'bench',
+            x REAL NOT NULL DEFAULT 0,
+            y REAL NOT NULL DEFAULT 0,
+            w REAL NOT NULL DEFAULT 100,
+            h REAL NOT NULL DEFAULT 100,
+            meta_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_json) AND json_type(meta_json) = 'object'
+            ),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
+        )
+        """,
+    ),
+    TableSpec(
+        "lab_placement",
+        """
+        CREATE TABLE IF NOT EXISTS lab_placement (
+            subject_id TEXT PRIMARY KEY CHECK (TRIM(subject_id) <> ''),
+            subject_kind TEXT NOT NULL DEFAULT 'container',
+            zone_id TEXT NOT NULL DEFAULT '',
+            x REAL NOT NULL DEFAULT 0,
+            y REAL NOT NULL DEFAULT 0,
+            w REAL NOT NULL DEFAULT 40,
+            h REAL NOT NULL DEFAULT 40,
+            rotation REAL NOT NULL DEFAULT 0,
+            label TEXT NOT NULL DEFAULT '',
+            meta_json TEXT NOT NULL DEFAULT '{}' CHECK (
+                json_valid(meta_json) AND json_type(meta_json) = 'object'
+            ),
+            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
+        )
+        """,
+        (
+            "CREATE INDEX IF NOT EXISTS idx_lab_placement_zone ON lab_placement(zone_id)",
+        ),
+    ),
 )
 
 
@@ -1597,21 +1830,11 @@ MATERIALS_DATABASE = DatabaseSpec(
     role="resource, material, site, topology link and lab graph authority",
     synchronous="FULL",
     tables=MATERIALS_TABLES,
-    # v2：inventory_command_effect 的请求信封改为携带 actor_type=registry /
-    # actor_uuid=<模板名>，且 sync_template 的 command_uuid 改为按整条请求派生；
-    # 旧库中的效果行与新请求同键不同哈希，必须整库重建。
-    # v3：material.resource_id 的唯一约束改为只对未删除行生效（部分唯一索引）：
-    # 删除是软删除，被删物料的 resource_id 不该永久占坑，否则同名重建一律 409。
-    contract_version=3,
-    # schema v2：化学品定义表 chemical（CAS / InChIKey 可空唯一键）；
-    # schema v3：material_substance.chemical_uuid（内容物引用化学品，可空）；
-    # schema v4：material_substance.chemical_unlinked（显式解除后不再自动匹配）；
-    # schema v5：物理动作冻结计划与结算回执；
-    # schema v6：V1.0 库存概念（试剂 / 样品 / 当前内容物、状态历史、内容物预留、来源绑定、
-    # 工站入站、实验室布局、批次库位、条码唯一）；
-    # schema v8：作业 / 试剂消费读模型索引。迁移链见 materials_migrations.py。
-    schema_version=MATERIALS_SCHEMA_VERSION,
-    migrations=MATERIALS_MIGRATIONS,
+    # 0.13 发布线的基线：schema v1、contract v1，没有迁移。之后改 DDL 或行内容契约
+    # （contract_version）时提升 schema_version 并在 migrations 里补 v2 起的迁移。
+    contract_version=1,
+    schema_version=1,
+    migrations=(),
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。
     # 开发期没有迁移路径时备份后重建；正式发布前改为 "refuse"（拒绝启动、保留旧库）。
     on_unmigratable="rebuild",

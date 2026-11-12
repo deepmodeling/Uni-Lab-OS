@@ -1,11 +1,11 @@
-"""V1 任务生命周期新增的持久事实（runtime.db v10）。
+"""V1 任务生命周期新增的持久事实（runtime.db）。
 
 - ``workflow_human_interaction``：设备 / 工作流命令向操作员发起的结构化人工交互
   （choose / text / numbers / sketch / review）及其回复，V1 ``human_commands.py`` 同形。
 
 ``workflow_task`` 的 ``priority`` / ``inventory_bindings`` / ``dispatch_gate`` 三列与
 ``workflow_task_command`` 新增的 ``switch_to_step`` / ``unlock_resources`` 类型在
-``tables/runtime/workflow.py`` 的表规格里，迁移见 ``migrations.py`` 的 v10。
+``tables/runtime/workflow.py`` 的表规格里。
 """
 
 from __future__ import annotations
@@ -33,8 +33,11 @@ class WorkflowHumanInteractionRecord(TableObject, table=True):
     decided_at: Optional[str] = None
 
 
-#: v10 冻结的建表语句：迁移与当前规格共用（之后演进时迁移里改为冻结副本）。
-HUMAN_INTERACTION_V10 = """
+TASK_LIFECYCLE_MODELS = (WorkflowHumanInteractionRecord,)
+TASK_LIFECYCLE_TABLES = (
+    TableSpec(
+        "workflow_human_interaction",
+        """
         CREATE TABLE IF NOT EXISTS workflow_human_interaction (
             uuid TEXT PRIMARY KEY,
             job_uuid TEXT NOT NULL UNIQUE,
@@ -49,22 +52,17 @@ HUMAN_INTERACTION_V10 = """
             FOREIGN KEY(job_uuid) REFERENCES workflow_node_job(uuid),
             FOREIGN KEY(task_uuid) REFERENCES workflow_task(uuid)
         )
-        """
-HUMAN_INTERACTION_V10_INDEXES = (
-    """
+        """,
+        (
+            """
             CREATE INDEX IF NOT EXISTS idx_workflow_human_interaction_task
             ON workflow_human_interaction(task_uuid, opened_at)
             """,
-)
-
-TASK_LIFECYCLE_MODELS = (WorkflowHumanInteractionRecord,)
-TASK_LIFECYCLE_TABLES = (
-    TableSpec("workflow_human_interaction", HUMAN_INTERACTION_V10, HUMAN_INTERACTION_V10_INDEXES),
+        ),
+    ),
 )
 
 __all__ = [
-    "HUMAN_INTERACTION_V10",
-    "HUMAN_INTERACTION_V10_INDEXES",
     "TASK_LIFECYCLE_MODELS",
     "TASK_LIFECYCLE_TABLES",
     "WorkflowHumanInteractionRecord",

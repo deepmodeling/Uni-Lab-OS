@@ -190,8 +190,22 @@ def test_unknown_older_schema_is_refused_and_left_untouched(tmp_path) -> None:
 def test_newer_database_than_code_is_refused(tmp_path) -> None:
     path = tmp_path / "demo.db"
     initialize_database(path, V2).close()
-    with pytest.raises(DatabaseMigrationRequired, match="不低于代码版本"):
+    with pytest.raises(DatabaseMigrationRequired, match="高于代码版本"):
         initialize_database(path, V1)
+
+
+def test_newer_database_is_refused_even_when_the_fingerprint_matches(tmp_path) -> None:
+    """版本基线压平后：旧开发库的结构可能与新基线逐字相同，但库内版本更高，不能直接复用。"""
+    path = tmp_path / "demo.db"
+    _seed_v1(path)
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA user_version = 5")
+    connection.close()
+
+    with pytest.raises(DatabaseMigrationRequired, match="高于代码版本"):
+        initialize_database(path, V1)
+    assert _peek(path, "PRAGMA user_version") == [(5,)]
+    assert _peek(path, "SELECT name FROM item") == [("plate",)]
 
 
 @pytest.mark.parametrize("versions", [(3,), (2, 4)])

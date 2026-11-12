@@ -111,24 +111,24 @@ def test_contract_version_bump_without_migration_is_refused_under_refuse_policy(
     from dataclasses import replace
 
     spec = _refusing("materials")
-    previous = replace(spec, contract_version=spec.contract_version - 1)
-    assert previous.checksum != spec.checksum
+    upcoming = replace(spec, contract_version=spec.contract_version + 1)
+    assert upcoming.checksum != spec.checksum
     path = tmp_path / spec.filename
-    initialize_database(path, previous).close()
+    initialize_database(path, spec).close()
 
     with pytest.raises(DatabaseMigrationRequired):
-        initialize_database(path, spec)
+        initialize_database(path, upcoming)
 
 
 def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) -> None:
     from dataclasses import replace
 
     spec = DATABASE_SPECS["materials"]
-    previous = replace(spec, contract_version=spec.contract_version - 1)
-    # 在当前版本之上再加一步迁移（与库的真实版本号无关）
+    # 在当前基线之上再加一步迁移（与库的真实版本号无关）
     next_version = spec.schema_version + 1
     current = replace(
         spec,
+        contract_version=spec.contract_version + 1,
         schema_version=next_version,
         migrations=spec.migrations + (
             sql_migration(next_version, "drop effects derived with the old request envelope",
@@ -136,7 +136,7 @@ def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) ->
         ),
     )
     path = tmp_path / spec.filename
-    connection = initialize_database(path, previous)
+    connection = initialize_database(path, spec)
     with connection:
         for command, operation in (("old", "sync_template"), ("keep", "patch")):
             connection.execute(
@@ -161,6 +161,55 @@ def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) ->
     finally:
         connection.close()
     assert len(list(tmp_path.glob(f"{spec.filename}.pre-v{next_version}-*.bak"))) == 1
+
+
+@pytest.mark.parametrize("key", ["runtime", "materials", "telemetry", "history"])
+@pytest.mark.parametrize(
+    ("stored_version", "same_checksum"),
+    [(12, True), (8, False), (0, False)],
+    ids=["newer-same-fingerprint", "newer-drifted", "unversioned-drifted"],
+)
+def test_database_from_before_the_v1_baseline_is_backed_up_and_rebuilt(
+    tmp_path, key, stored_version, same_checksum
+) -> None:
+    """0.13 之前的开发库（库内版本更高或没有版本、带旧迁移记录）：改名备份后按 v1 基线重建。
+
+    指纹一致但库内版本更高也不复用：旧迁移记录会与之后同号的迁移冲突。
+    """
+    spec = DATABASE_SPECS[key]
+    path = tmp_path / spec.filename
+    connection = initialize_database(path, spec)
+    with connection:
+        connection.execute(
+            "CREATE TABLE schema_migration (version INTEGER PRIMARY KEY, description TEXT NOT NULL, "
+            "from_checksum TEXT NOT NULL, to_checksum TEXT NOT NULL, applied_at_ms INTEGER NOT NULL)"
+        )
+        connection.executemany(
+            "INSERT INTO schema_migration VALUES (?, 'pre-baseline', 'old', 'old', 0)",
+            [(version,) for version in range(2, stored_version + 1)],
+        )
+        connection.execute("CREATE TABLE pre_baseline_marker(x TEXT)")
+        if not same_checksum:
+            connection.execute(f"UPDATE schema_identity SET checksum='pre-baseline' WHERE database_key='{key}'")
+    connection.execute(f"PRAGMA user_version = {stored_version}")
+    connection.close()
+
+    connection = initialize_database(path, spec)
+    try:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 1
+        assert tuple(connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()) == (
+            key, spec.checksum,
+        )
+    finally:
+        connection.close()
+    assert not {"pre_baseline_marker", "schema_migration"} & _table_set(path)
+    backups = [item for item in tmp_path.glob(f"{spec.filename}.bak-*") if not item.name.endswith(("-wal", "-shm"))]
+    assert len(backups) == 1 and "pre_baseline_marker" in _table_set(backups[0])
+    peek = sqlite3.connect(backups[0])
+    try:
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == stored_version
+    finally:
+        peek.close()
 
 
 def test_unidentified_database_is_rebuilt_for_derived_databases(tmp_path) -> None:

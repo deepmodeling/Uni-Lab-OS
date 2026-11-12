@@ -3,15 +3,12 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from dataclasses import replace
 from uuid import uuid4
 
 import pytest
 from unilabos.registry.workflows import upsert_workflow
 from unilabos.server.backend.scheduler.models import ActionLockClaim, MaterialLockClaim, SchedulerResourceRequest
 from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.database import initialize_database
-from unilabos.server.database.tables.runtime import RUNTIME_DATABASE, RUNTIME_MIGRATIONS
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.service import WorkflowService
@@ -153,26 +150,6 @@ def test_uncertain_dispatch_and_scheduler_stop_keep_locks_until_late_result(tmp_
         assert ExecutionClaims(service).get(job1)["state"] == "released"
     finally:
         scheduler.stop()
-        service.close()
-
-
-def test_runtime_v4_migration_preserves_workflow_and_adds_claim_tables(tmp_path):
-    path = tmp_path / "runtime.db"
-    v4 = replace(RUNTIME_DATABASE, tables=tuple(t for t in RUNTIME_DATABASE.tables if not t.name.startswith(("workflow_execution_", "workflow_resource_"))),
-                 schema_version=4, migrations=RUNTIME_MIGRATIONS[:3])
-    conn = initialize_database(path, v4)
-    with conn:
-        conn.execute("INSERT INTO workflow(uuid,create_time,update_time,meta_data,name,tags,revision) "
-                     "VALUES ('82000000-0000-4000-8000-000000000001', 't', 't', '{}', '已有流程', '[]', 7)")
-    conn.close()
-    service = WorkflowService(path)
-    try:
-        assert service.get_workflow("82000000-0000-4000-8000-000000000001")["revision"] == 7
-        assert ExecutionClaims(service).restore_requests() == []
-        assert service.connection.execute("PRAGMA user_version").fetchone()[0] == RUNTIME_DATABASE.schema_version
-        assert list(tmp_path.glob(f"runtime.db.pre-v{RUNTIME_DATABASE.schema_version}-*.bak"))
-        assert service.connection.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
         service.close()
 
 

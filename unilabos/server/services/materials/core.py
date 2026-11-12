@@ -494,13 +494,9 @@ class MaterialsService(MaterialsRepository):
 
     @staticmethod
     def _lot_state_hash(record: InventoryLotRecord) -> str:
-        # v6 的库位字段为缺省值时不参与哈希，升级前写入账本的批次 state_hash 保持可比
-        excluded = {"created_at_ms", "updated_at_ms", "version"}
-        if record.location_site_uuid is None:
-            excluded.add("location_site_uuid")
-        if not record.warehouse_zone_id:
-            excluded.add("warehouse_zone_id")
-        return canonical_hash(record.model_dump(mode="json", exclude=excluded))
+        return canonical_hash(
+            record.model_dump(mode="json", exclude={"created_at_ms", "updated_at_ms", "version"})
+        )
 
     @staticmethod
     def _reservation_state_hash(record: InventoryReservationRecord) -> str:

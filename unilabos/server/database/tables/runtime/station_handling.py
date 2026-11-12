@@ -1,4 +1,4 @@
-"""V1 工站错误处置的持久事实（runtime.db v11）：工站控制、控制命令、处置会话与工站错误。"""
+"""V1 工站错误处置的持久事实（runtime.db）：工站控制、控制命令、处置会话与工站错误。"""
 
 from __future__ import annotations
 
@@ -76,9 +76,14 @@ class WorkflowStationErrorRecord(TableObject, table=True):
     resolved_at: Optional[str] = None
 
 
-#: v11 冻结的建表语句：迁移与当前规格共用。
-STATION_HANDLING_V11 = (
-    """
+STATION_HANDLING_MODELS = (
+    WorkflowStationControlRecord,
+    WorkflowStationControlCommandRecord,
+    WorkflowErrorSessionRecord,
+    WorkflowStationErrorRecord,
+)
+STATION_HANDLING_TABLES = (
+    TableSpec("workflow_station_control", """
         CREATE TABLE IF NOT EXISTS workflow_station_control (
             station_id TEXT PRIMARY KEY,
             mode TEXT NOT NULL DEFAULT 'RUNNING' CHECK (mode IN ('RUNNING', 'PAUSED')),
@@ -88,8 +93,8 @@ STATION_HANDLING_V11 = (
             last_control_command_uuid TEXT,
             updated_at TEXT NOT NULL
         )
-    """,
-    """
+    """),
+    TableSpec("workflow_station_control_command", """
         CREATE TABLE IF NOT EXISTS workflow_station_control_command (
             command_uuid TEXT PRIMARY KEY,
             station_id TEXT NOT NULL,
@@ -107,8 +112,8 @@ STATION_HANDLING_V11 = (
             applied_at TEXT,
             UNIQUE(station_id, operation, idempotency_key)
         )
-    """,
-    """
+    """),
+    TableSpec("workflow_error_session", """
         CREATE TABLE IF NOT EXISTS workflow_error_session (
             session_id TEXT PRIMARY KEY,
             station_id TEXT NOT NULL,
@@ -122,8 +127,8 @@ STATION_HANDLING_V11 = (
             completed_at TEXT,
             resolved_at TEXT
         )
-    """,
-    """
+    """),
+    TableSpec("workflow_station_error", """
         CREATE TABLE IF NOT EXISTS workflow_station_error (
             decision_id TEXT PRIMARY KEY,
             station_id TEXT NOT NULL,
@@ -143,29 +148,13 @@ STATION_HANDLING_V11 = (
             decided_at TEXT,
             resolved_at TEXT
         )
-    """,
-)
-STATION_HANDLING_V11_INDEXES = (
-    """CREATE INDEX IF NOT EXISTS idx_station_error_open ON workflow_station_error(station_id, stage, opened_at)""",
-    """CREATE INDEX IF NOT EXISTS idx_station_error_job ON workflow_station_error(workflow_node_job_uuid)""",
-)
-
-STATION_HANDLING_MODELS = (
-    WorkflowStationControlRecord,
-    WorkflowStationControlCommandRecord,
-    WorkflowErrorSessionRecord,
-    WorkflowStationErrorRecord,
-)
-STATION_HANDLING_TABLES = (
-    TableSpec("workflow_station_control", STATION_HANDLING_V11[0]),
-    TableSpec("workflow_station_control_command", STATION_HANDLING_V11[1]),
-    TableSpec("workflow_error_session", STATION_HANDLING_V11[2]),
-    TableSpec("workflow_station_error", STATION_HANDLING_V11[3], STATION_HANDLING_V11_INDEXES),
+    """, (
+        """CREATE INDEX IF NOT EXISTS idx_station_error_open ON workflow_station_error(station_id, stage, opened_at)""",
+        """CREATE INDEX IF NOT EXISTS idx_station_error_job ON workflow_station_error(workflow_node_job_uuid)""",
+    )),
 )
 
 __all__ = [
     "STATION_HANDLING_MODELS",
     "STATION_HANDLING_TABLES",
-    "STATION_HANDLING_V11",
-    "STATION_HANDLING_V11_INDEXES",
 ]

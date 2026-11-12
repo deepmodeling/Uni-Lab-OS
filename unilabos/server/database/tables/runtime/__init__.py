@@ -7,17 +7,13 @@ runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
 - ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
 - ``registry``：Edge 注册表快照（条目级版本模型三表）；
 - ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）；
-- ``workspace_host``：V1 Workspace Host 的操作记录与快照修订号（v12）。
+- ``workspace_host``：V1 Workspace Host 的操作记录与快照修订号。
 
 对外导入只看表：一律 ``from unilabos.server.database.tables.runtime
 import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在此聚合。
 """
 
 from unilabos.server.database.schema import SCHEMA_IDENTITY_TABLE, DatabaseSpec
-from unilabos.server.database.tables.runtime.migrations import (
-    RUNTIME_MIGRATIONS,
-    RUNTIME_SCHEMA_VERSION,
-)
 from unilabos.server.database.tables.runtime.lab import (
     LAB_TABLES,
     LAB_TABLE_MODELS,
@@ -124,8 +120,10 @@ RUNTIME_DATABASE = DatabaseSpec(
         *STATION_HANDLING_TABLES,
         *WORKSPACE_HOST_TABLES,
     ),
-    schema_version=RUNTIME_SCHEMA_VERSION,
-    migrations=RUNTIME_MIGRATIONS,
+    # 0.13 发布线的基线：schema v1，没有迁移。之后改 DDL / contract_version 时提升
+    # schema_version 并在 migrations 里补 v2 起的迁移。
+    schema_version=1,
+    migrations=(),
     # 工作流定义、任务与注册表记录：结构变化必须带迁移。开发期没有迁移路径时备份后重建；
     # 正式发布前改为 "refuse"（拒绝启动、保留旧库）。
     on_unmigratable="rebuild",

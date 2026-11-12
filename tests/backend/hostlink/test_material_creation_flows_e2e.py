@@ -46,6 +46,8 @@ import asyncio
 import time
 from uuid import uuid4
 
+import pytest
+
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.backend.hostlink.backend import HostLinkBackend
@@ -479,6 +481,64 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
         assert result["success"] is True
         assert _site_by_label(service, deck_uuid, "T1").occupied_material_uuid is None
         assert _site_by_label(service, deck_uuid, "T3").occupied_material_uuid == tips.unilabos_uuid
+    finally:
+        backend.stop()
+        set_materials_gateway(None)
+        service.close()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "I04（docs/developer_guide/v1_dev_reconciliation.md）：快照只更新既有物料、"
+        "不删除缺席的结构孩子，废弃的枪头仍挂在权威孔位下"
+    ),
+)
+def test_discarded_tip_is_removed_from_authority(tmp_path, monkeypatch) -> None:
+    """拿起枪头不放回（废弃）后同步台面，权威里该孔位下不应再有 Tip。
+
+    原 PRCXI 14 阶段端到端测试的阶段 9；驱动迁出后改用测试夹具保留这条回归。
+    """
+
+    service = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(service)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+
+    local = HostLinkLocalRuntime()
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=str(uuid4())))
+    backend = HostLinkBackend(local, is_slave=False)
+    backend.start()
+    try:
+        deck_uuid = str(uuid4())
+        materials.ensure(_build_deck(deck_uuid), gateway=gateway)
+        materials.assign(node, deck_uuid)
+        deck = node.resource_tracker.uuid_to_resources[deck_uuid]
+
+        tips = materials.create(tip_rack("tips_discard"), node=node)
+        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+
+        spot = tips.get_item("A1")
+        other = tips.get_item("A2")
+        assert spot.has_tip()
+        spot.get_tip()  # 物理拿起枪头
+        spot.empty()
+        spot.tracker.commit()  # 枪头不放回（废弃）
+        asyncio.run(node.update_resource([deck]))
+        assert not spot.has_tip()
+
+        def _tip_children(tip_spot) -> list[str]:
+            return [
+                item.material.material_uuid
+                for item in service.get_tree(deck_uuid).nodes
+                if item.material.parent_material_uuid == tip_spot.unilabos_uuid
+                and item.material.resource_type == "tip"
+            ]
+
+        assert _tip_children(other) == [other.get_tip().unilabos_uuid]
+        assert _tip_children(spot) == [], "废弃的枪头仍挂在权威 A1 孔位下"
     finally:
         backend.stop()
         set_materials_gateway(None)

@@ -153,7 +153,7 @@ def test_error_decisions_items_resolved_and_idempotency_key() -> None:
         error_of(client.post("/api/v1/error-decisions/d-1", json={"reason": "缺少处理方式"}), 1000)
         headers = {"Idempotency-Key": "decide-1", "X-UniLab-Operator": "alice"}
         result = ok_data(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}, headers=headers))
-        assert result == {"decision_id": "d-1", "status": "resolved", "operator_id": "alice"}
+        assert result == {"decision_id": "d-1", "status": "resolved"}
         assert backend.resolved[0][1]["operator_id"] == "alice" and backend.resolved[0][1]["action"] == "retry"
         # 同键同内容重放：返回首次结果，不再投递
         assert ok_data(client.post("/api/v1/error-decisions/d-1", json={"action": "retry"}, headers=headers)) == result

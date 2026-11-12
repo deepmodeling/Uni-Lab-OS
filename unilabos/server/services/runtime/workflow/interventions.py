@@ -85,6 +85,7 @@ def open_for_decision(conn: sqlite3.Connection, job: sqlite3.Row, report: Mappin
     ).fetchone()
     if current is not None and _load(current["meta_data"], {}).get("decision_id") == decision_id:
         return
+    intervention_uuid = str(uuid4())
     if current is not None and current["status"] == "open":
         conn.execute("UPDATE workflow_intervention SET status='superseded', update_time=? WHERE uuid=?",
                      (now, current["uuid"]))
@@ -101,7 +102,7 @@ def open_for_decision(conn: sqlite3.Connection, job: sqlite3.Row, report: Mappin
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)
         """,
         (
-            str(uuid4()), now, now,
+            intervention_uuid, now, now,
             _json({
                 "decision_id": decision_id,
                 "job_id": job_uuid,
@@ -118,6 +119,10 @@ def open_for_decision(conn: sqlite3.Connection, job: sqlite3.Row, report: Mappin
             _json(_normalize_options(report.get("options"))), resume, now,
         ),
     )
+    # 同一失败同时是 V1 工站错误（/stations/{id}/error-handling）
+    from unilabos.server.services.runtime.station_handling import open_station_error
+
+    open_station_error(conn, job, report, intervention_uuid, now)
 
 
 def supersede_for_job(conn: sqlite3.Connection, job_uuid: str, now: str) -> None:
@@ -128,6 +133,9 @@ def supersede_for_job(conn: sqlite3.Connection, job_uuid: str, now: str) -> None
         "WHERE workflow_node_job_uuid=? AND status='open' AND deleted_at IS NULL",
         (now, job_uuid),
     )
+    from unilabos.server.services.runtime.station_handling import resolve_station_errors
+
+    resolve_station_errors(conn, job_uuid, now, reason="job_settled")
 
 
 class WorkflowInterventions:

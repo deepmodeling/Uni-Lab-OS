@@ -1658,6 +1658,10 @@ class WorkflowStore:
             task = self.get_task(task_uuid)
             if task["status"] not in {"pending", "running"}:
                 return False  # canceling / 终态：不再派发
+            # V1 工站手动处理期间整站暂停普通派发，只放行本工站会话的手动动作
+            if (task["meta_data"].get("execution_source") != "error_manual"
+                    and conn.execute("SELECT 1 FROM workflow_station_control WHERE mode='PAUSED' LIMIT 1").fetchone()):
+                return False
             if task["run_mode"] != "step":
                 # V1 pause：普通模式关派发闸门，执行模式不变
                 return task.get("dispatch_gate", "active") != "paused"

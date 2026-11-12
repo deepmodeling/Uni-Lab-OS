@@ -41,6 +41,10 @@ EXPECTED_TABLES = {
         "workflow_tenancy_transition",
         "workflow_resource_waiter",
         "workflow_human_interaction",
+        "workflow_station_control",
+        "workflow_station_control_command",
+        "workflow_error_session",
+        "workflow_station_error",
         "workflow_node_job_result",
         "workflow_node_job_feedback_history",
         "workflow_intervention",
@@ -199,11 +203,12 @@ def test_total_table_count_stays_small() -> None:
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     # materials v5（#360）：material_execution（物理动作冻结计划与结算回执）+
     # material_execution_hold（未结算动作对物料 / 库位的唯一占用），14 → 16。
-    # runtime v9：V1 结构化人工交互 workflow_human_interaction，42 → 43。
+    # runtime v9：V1 结构化人工交互 workflow_human_interaction，42 → 43；
+    # runtime v10：V1 工站错误处置（工站控制 / 控制命令 / 处置会话 / 工站错误），43 → 47。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 43,
+        "runtime": 47,
         "materials": 16,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 66
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 70

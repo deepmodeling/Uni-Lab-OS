@@ -393,6 +393,16 @@ def _task_lifecycle_v9(connection) -> None:
         connection.execute(statement)
 
 
+def _station_handling_v10(connection) -> None:
+    from unilabos.server.database.tables.runtime.station_handling import (
+        STATION_HANDLING_V10,
+        STATION_HANDLING_V10_INDEXES,
+    )
+
+    for statement in (*STATION_HANDLING_V10, *STATION_HANDLING_V10_INDEXES):
+        connection.execute(statement)
+
+
 RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     rebuild_table_migration(
         2,
@@ -419,5 +429,6 @@ RUNTIME_MIGRATIONS: tuple[Migration, ...] = (
     sql_migration(7, "区间资源所有权和单次动作使用清单", *_RESOURCE_INTERVAL_V7),
     sql_migration(8, "设备托管、资源借还和等待环路", *_RESOURCE_CUSTODY_V8),
     Migration(9, "V1 任务生命周期：优先级、库存绑定、派发闸门、命令类型与人工交互", _task_lifecycle_v9),
+    Migration(10, "V1 工站错误处置：工站控制、控制命令、处置会话与工站错误", _station_handling_v10),
 )
 RUNTIME_SCHEMA_VERSION = RUNTIME_MIGRATIONS[-1].version

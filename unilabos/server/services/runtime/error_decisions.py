@@ -161,9 +161,8 @@ class ErrorDecisionDesk:
                 raise ErrorDecisionConflict("物理结果未知，须填写核实说明并补记实际结果或终止任务，禁止直接重试")
         if not self.deliver(decision_id, decision):
             raise ErrorDecisionConflict("error decision was rejected or no longer pending")
+        # 响应保持 V1 形状；操作员身份随决策载荷交给执行面记录
         result = {"decision_id": decision_id, "status": "resolved"}
-        if operator_id:
-            result["operator_id"] = operator_id
         if key:
             _LEDGER.put(key, decision_id, fingerprint, result)
         return result

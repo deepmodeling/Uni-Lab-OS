@@ -6,7 +6,7 @@
 >
 > `unilabos/devices/` 只保留框架依赖的内置代码：`workstation/workstation_base.py`（`WorkstationBase`、`WorkStationContainer`）、`virtual/`（虚拟设备，供协议编译器、`--test_mode`、示例图和测试使用）、`liquid_handling/liquid_handler_abstract.py` 与 `rviz_backend.py`、`ros_dev/liquid_handler_joint_publisher*.py`。驱动包可以继承这些基类，但不要把新驱动加进这个目录。
 >
-> 驱动包自定义的 PLR 资源类或液体处理后端如果不在注册表条目里，需在包导入时调用 `unilabos.resources.plr_additional_res_reg.register_plr_module("<模块路径>")`（或给类加 `@register_plr_class`），物料反序列化才能找到它们。
+> 驱动包自定义的 PLR 资源类或液体处理后端如果不在注册表条目里，需在包导入时调用 `unilabos.resources.plr_additional_res_reg.register_plr_module("<模块路径>")`（或给类加 `@register_plr_class`），物料反序列化才能找到它们。框架自己的预设类（`unilabos.resources.presets` 里的 `RegularContainer`、`Bottle`、`ItemizedCarrier`、`BottleCarrier`、`WareHouse`）已内置登记，直接使用或继承它们不需要再登记。
 
 > **💡 提示：** 本文档介绍如何使用已有的设备驱动（SDK）。若设备没有现成的驱动程序，需要自己开发驱动，请参考 {doc}`add_old_device`。
 

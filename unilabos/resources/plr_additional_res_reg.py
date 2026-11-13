@@ -27,7 +27,9 @@ PLR 资源类、后端类必须在反序列化前被导入，否则报"找不到
   :func:`unilabos.resources.resource_tracker.find_plr_resource_class` 按需懒加载，
   不必额外登记；本钩子覆盖不在注册表里的类（如自定义 Deck 子类、液体处理后端）。
 
-内置的 ``WorkStationContainer``、``UniLiquidHandlerRvizBackend`` 同样经本钩子登记。
+内置的 ``WorkStationContainer``、``UniLiquidHandlerRvizBackend`` 与 ``unilabos.resources.presets``
+里的预设类（``RegularContainer``、``Bottle``、``ItemizedCarrier``、``BottleCarrier``、``WareHouse``）
+同样经本钩子登记：新进程里没有代码先 import 它们时也能反序列化。
 """
 
 from __future__ import annotations
@@ -44,6 +46,9 @@ T = TypeVar("T", bound=type)
 _BUILTIN_PLR_MODULES: Tuple[str, ...] = (
     "unilabos.devices.workstation.workstation_base",  # WorkStationContainer
     "unilabos.devices.liquid_handling.rviz_backend",  # UniLiquidHandlerRvizBackend
+    "unilabos.resources.presets.container",  # RegularContainer
+    "unilabos.resources.presets.itemized_carrier",  # Bottle、ItemizedCarrier、BottleCarrier
+    "unilabos.resources.presets.warehouse",  # WareHouse
 )
 
 _lock = threading.Lock()

@@ -792,21 +792,31 @@ class TCPDevice:
 
 ```python
 from pymodbus.client import ModbusTcpClient
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
 
 class ModbusDevice:
     def __init__(self, config: Dict[str, Any]):
         self.host = config['host']
         self.port = config.get('port', 502)
+        self.slave_id = config.get('slave_id', 1)
         self.client = ModbusTcpClient(self.host, port=self.port)
         self.client.connect()
 
     def read_register(self, address: int) -> int:
-        result = self.client.read_holding_registers(address, 1)
+        result = call_with_slave(self.client.read_holding_registers, address, count=1, slave=self.slave_id)
         return result.registers[0]
 
     def write_register(self, address: int, value: int):
-        self.client.write_register(address, value)
+        call_with_slave(self.client.write_register, address, value, slave=self.slave_id)
 ```
+
+核心允许 `pymodbus>=3.6.9,<4`（3.8.0 / 3.8.1 除外：它们在 Python 3.14 上无法创建同步客户端），这个范围里接口变过：
+
+- 从站地址关键字 3.6.9–3.9 叫 `slave`，3.10 起叫 `device_id`，用错名字直接 `TypeError`。直接调用 pymodbus 时用 `call_with_slave(方法, ..., slave=N)`，它按方法签名选名字。
+- 3.8 起 `count` 等参数只能按关键字传（`read_holding_registers(address, count=1)`）。
+- `convert_from_registers` / `convert_to_registers` 3.8 之前没有 `word_order`；`modbus.py` 的同名函数在老版本上自行交换字序。
+
+核心的 `device_comms/modbus_plc`（`TCPClient` / `RTUClient` 与 `Coil`、`HoldRegister` 等节点）已经处理这些差异，节点的 `read(..., slave=N)` / `write(..., slave=N)` 在整个范围内可用。
 
 ### 4. OPC UA
 

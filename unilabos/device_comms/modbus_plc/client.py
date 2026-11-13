@@ -5,7 +5,10 @@ from typing import Any, Union, List, Dict, Callable, Optional, Tuple
 from pydantic import BaseModel
 
 from pymodbus.client import ModbusSerialClient, ModbusTcpClient
-from pymodbus.framer import FramerType
+try:
+    from pymodbus.framer import FramerType
+except ImportError:  # pymodbus 3.6.x 叫 Framer（3.7 改名 FramerType）
+    from pymodbus.framer import Framer as FramerType
 from typing import TypedDict
 
 from unilabos.device_comms.modbus_plc.modbus import DeviceType, HoldRegister, Coil, InputRegister, DiscreteInputs, DataType, WorderOrder

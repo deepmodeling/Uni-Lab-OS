@@ -58,6 +58,12 @@ def _is_conflict_error(exc: BaseException) -> bool:
     return _is_service_error(exc, "conflict", "MaterialConflictError")
 
 
+def _is_not_found_error(exc: BaseException) -> bool:
+    """权威里没有这个物料（被并发删除）。"""
+
+    return _is_service_error(exc, "not_found", "MaterialNotFoundError")
+
+
 def _is_no_change_error(exc: BaseException) -> bool:
     """权威判定快照与其状态一致（本地基线已过期到"刚好一致"的竞态）。"""
 
@@ -1041,7 +1047,9 @@ class AuthorityResourceService:
                 with self._baseline_lock:
                     known = self._versions.get(node_uuid)
                 if known is None:
-                    raise ValueError(f"物料 {node_uuid} 不在权威根树 {root_uuid} 里")
+                    # 重拉根树后仍没有：权威在这期间删掉或移走了它（排队中的状态上报晚于删除 / 转移）。
+                    # 这是结构漂移，不是错误：观察者放弃本次提交，结构变化本身会触发新的回调收敛。
+                    raise SnapshotUuidMismatchError(f"物料 {node_uuid} 不在权威根树 {root_uuid} 里")
                 serialized = (
                     ResourceTreeSet.from_plr_resources([node]).trees[0].root_node.res_content
                 )
@@ -1059,7 +1067,9 @@ class AuthorityResourceService:
             except Exception as exc:
                 if _is_no_change_error(exc):
                     return False
-                if not _is_conflict_error(exc):
+                # 版本冲突，或增量里的节点已被并发删除：作废版本表重拉一次；被删的节点重拉后不在根树里，
+                # 下一轮按结构漂移（SnapshotUuidMismatchError）交给观察者放弃本次提交
+                if not (_is_conflict_error(exc) or _is_not_found_error(exc)):
                     raise
                 conflicts += 1
                 self.invalidate_baselines(root_uuid)

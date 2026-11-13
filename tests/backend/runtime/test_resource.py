@@ -14,6 +14,8 @@ from unilabos.backend.runtime.resource import (
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.client.materials import LocalMaterialsClient
+from unilabos.protocol.materials import InventoryMutation, MaterialDelete
+from unilabos.resources.adapters.plr_materials import SnapshotUuidMismatchError
 from unilabos.server.services.materials import MaterialsService
 
 
@@ -543,5 +545,43 @@ def test_liquid_handler_deck_partial_update_derives_root_locally(tmp_path) -> No
         assert "get_material" not in gateway.calls
         assert gateway.calls == {"get_tree": 1, "apply_snapshot": 1}
         assert materials.get_material(well.unilabos_uuid).data.substances[0].name == "buffer"
+    finally:
+        materials.close()
+
+
+def test_queued_state_delta_for_a_material_deleted_meanwhile_is_dropped(tmp_path) -> None:
+    """排队中的状态上报晚于权威删除：按结构漂移放弃，不记为观察者错误（仓库库位测试曾因此偶发失败）。"""
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        root = _deck_with_wells(materials, service)
+        well = root.children[1]
+        # 先建版本表，再由别处在权威里删掉这个孔（本地实例还挂在台面上）
+        well.tracker.set_liquids([("a", 1.0, "ul")])
+        assert service.apply_node_deltas_sync("device-1", "device-uuid", root, [well]) is True
+        materials.delete_material(
+            InventoryMutation(command_uuid=str(uuid4()), effect_key="delete", operation="delete_material"),
+            MaterialDelete(material_uuid=well.unilabos_uuid, recursive=True),
+        )
+        service._forget_tree(root.unilabos_uuid)
+
+        well.tracker.set_liquids([("b", 2.0, "ul")])
+        with pytest.raises(SnapshotUuidMismatchError):
+            service.apply_node_deltas_sync("device-1", "device-uuid", root, [well])
+
+        async def run() -> None:
+            observer = MaterialSnapshotObserver(
+                service,
+                device_id=lambda: "device-1",
+                device_uuid=lambda: "device-uuid",
+                schedule=asyncio.create_task,
+            )
+            observer.observe(root)
+            well.tracker.set_liquids([("c", 3.0, "ul")])
+            await observer.wait_idle()
+            assert observer.errors == ()
+
+        asyncio.run(run())
     finally:
         materials.close()

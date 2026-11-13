@@ -735,6 +735,12 @@ source.class_    # "corning_96_wellplate_360ul_flat"
 
 - **触壁（`touch_tip`）**：`transfer_liquid`、`add_liquid`、`remove_liquid` 只在参数 `touch_tip=True` 时触壁，默认不触壁。`touch_tip()` 接受单个孔或孔列表，用当前装着枪头的通道在孔的左右两壁各做一次 0 uL 吸液；0 uL 吸液不改变枪头里记录的样品。后端做不了触壁的设备设 `support_touch_tip = False`，`touch_tip()` 即什么都不做。
 - **耗材**：`aspirate()` / `dispense()` 用 `unilabos_extra` 记录样品 uuid，直接用 PLR 工厂建的耗材（没有 `unilabos_extra`）也可以吸排；`use_channels=None` 时与 PLR 一样取前 N 个通道。
+- **枪头**：`transfer_liquid(tip_racks=...)` 直接使用传入的枪头盒，不需要先调用 `set_tiprack`；与上一次相同的枪头盒（同一对象或同一物料 uuid）接着上次的位置往后取，不同的枪头盒从它第一个有枪头的位置取，空列表沿用 `set_tiprack` 设定的枪头盒。PLR 默认不跟踪枪头（取走的位置 `has_tip()` 仍为 True），所以连续调用不会回到 A1；`set_tiprack` 则明确从头开始，开启 PLR 枪头跟踪时跳过已取走的位置。`add_liquid` / `remove_liquid` 不带枪头盒参数，使用 `set_tiprack` 设定的枪头盒。没有可用枪头盒或枪头用完时报 `RuntimeError`。
+- **体积**：`asp_vols` / `dis_vols` 可以是单个体积（标量或单元素列表），按模式展开：一对一两者都展开到每一对；一对多的 `dis_vols` 展开到每个目标（`asp_vols` 仍是总吸液量）；多对一的 `asp_vols` 展开到每个源（`dis_vols` 仍是汇总体积）。`add_liquid` / `remove_liquid` 的单个体积对所有目标 / 源通用，`add_liquid` 的单个试剂源也对所有目标通用。
+- **通道**：`transfer_liquid`、`add_liquid`、`remove_liquid` 的 `use_channels` 缺省为设备全部通道（`channel_num`），在这些通道上取枪头、吸排、丢枪头。
+- **混匀（`mix`）**：在每个目标孔内吸排 `mix_time` 次（需已装枪头、需要 `mix_vol`）；用当前装着枪头的通道，每孔一个通道同时混匀，孔多于通道时分批。`offsets` 可以是一个 `Coordinate` 或与目标等长的列表。
+
+子类覆盖这些方法时保留同样的调用方式：基类内部按关键字调用 `self.mix(targets=..., mix_time=..., mix_vol=..., offsets=..., height_to_bottom=..., mix_rate=...)`、`self.touch_tip(targets)` 与 `self.set_tiprack(tip_racks)`。
 
 ## 支持的通信方式
 

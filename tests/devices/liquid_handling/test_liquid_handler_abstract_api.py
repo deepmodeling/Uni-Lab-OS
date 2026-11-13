@@ -1,10 +1,12 @@
-"""LiquidHandlerAbstract 在真实 PLR 台面 + chatterbox 后端上的接口回归（FRAMEWORK_GAPS #6）。
+"""LiquidHandlerAbstract 在真实 PLR 台面 + chatterbox 后端上的接口回归（FRAMEWORK_GAPS #6、#34）。
 
 test_transfer_liquid.py 用替身覆盖了 aspirate / mix / touch_tip，只校验调用序列；这里不覆盖任何方法，
 后端记录实际下发的 PLR 操作，校验子类（莱羽、PRCXI）不再需要的绕行：
 
 - #6：一对一转移只在 ``touch_tip=True`` 时触壁；``touch_tip()`` 能对单孔 / 多孔执行；直接用 PLR 工厂
   建的耗材（没有 ``unilabos_extra``）也能吸排。
+- #34：``transfer_liquid`` 直接用传入的 ``tip_racks``；同一组枪头盒连续调用不回到 A1；单个体积按模式展开；
+  ``mix`` 逐孔、按装了枪头的通道执行；``add_liquid`` 不给 ``use_channels`` 也能运行。
 """
 
 from __future__ import annotations
@@ -235,3 +237,190 @@ def test_aspirate_and_dispense_work_on_labware_built_from_plr_factories():
     assert dispensed["samples"] == [{"name": "plate_well_A2", EXTRA_SAMPLE_UUID: "sample-1"}]
     assert target.unilabos_extra[EXTRA_SAMPLE_UUID] == "sample-1"
     assert target.tracker.get_used_volume() == 60.0
+
+
+# ---------------------------------------------------------------- #34 枪头盒、体积、混匀、通道
+
+
+def test_transfer_liquid_takes_tips_from_the_given_racks_without_set_tiprack(lh):
+    _fill(lh, A1=500.0)
+
+    asyncio.run(
+        lh.transfer_liquid(
+            [_well(lh, "A1")], [_well(lh, "B1")], [lh.deck.get_resource("rack")], asp_vols=[10.0], dis_vols=[10.0]
+        )
+    )
+
+    assert _names(lh, "pick_up_tips") == ["rack_A1"]
+    assert _volume(lh, "B1") == 10.0
+
+
+def test_consecutive_transfers_with_the_same_racks_do_not_restart_at_a1(lh):
+    """PLR 枪头跟踪关闭时取走的位置 has_tip() 仍为 True：每次调用都重设迭代器会回到 A1 重复取枪头。"""
+
+    _fill(lh, A1=500.0)
+    rack = lh.deck.get_resource("rack")
+    for target in ("B1", "B2", "B3"):
+        asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, target)], [rack], asp_vols=10.0, dis_vols=10.0))
+
+    assert _names(lh, "pick_up_tips") == ["rack_A1", "rack_B1", "rack_C1"]
+
+
+def test_other_racks_switch_the_tip_supply(lh):
+    _fill(lh, A1=500.0)
+    rack, rack2 = lh.deck.get_resource("rack"), lh.deck.get_resource("rack2")
+    for racks in ([rack], [rack2], [rack2]):
+        asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, "B1")], racks, asp_vols=10.0, dis_vols=10.0))
+
+    assert _names(lh, "pick_up_tips") == ["rack_A1", "rack2_A1", "rack2_B1"]
+
+
+def test_set_tiprack_skips_spots_already_emptied_when_tip_tracking_is_on(lh):
+    rack = lh.deck.get_resource("rack")
+    set_tip_tracking(enabled=True)
+    try:
+        lh.set_tiprack([rack])
+        asyncio.run(lh.pick_up_tips(next(lh.current_tip)))
+        asyncio.run(lh.discard_tips())
+        lh.set_tiprack([rack])
+        asyncio.run(lh.pick_up_tips(next(lh.current_tip)))
+    finally:
+        set_tip_tracking(enabled=False)
+
+    assert _names(lh, "pick_up_tips") == ["rack_A1", "rack_B1"]
+
+
+def test_missing_tip_racks_fail_clearly(lh):
+    with pytest.raises(RuntimeError, match="set_tiprack"):
+        asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, "B1")], [], asp_vols=10.0, dis_vols=10.0))
+    with pytest.raises(RuntimeError, match="set_tiprack"):
+        asyncio.run(lh.add_liquid(10.0, 10.0, [_well(lh, "A1")], [_well(lh, "B1")]))
+
+
+def test_running_out_of_tips_fails_clearly(lh):
+    _fill(lh, A1=500.0)
+    lh.set_tiprack([lh.deck.get_resource("rack")])
+    lh.current_tip = iter([[lh.deck.get_resource("rack").get_item("A1")]])
+
+    asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, "B1")], [], asp_vols=10.0, dis_vols=10.0))
+    with pytest.raises(RuntimeError, match="枪头已用完"):
+        asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, "B2")], [], asp_vols=10.0, dis_vols=10.0))
+
+
+@pytest.mark.parametrize("volume", [25.0, [25.0]], ids=["scalar", "one-element-list"])
+def test_one_to_one_expands_a_single_volume(lh, volume):
+    _fill(lh, A1=500.0, A2=500.0)
+
+    asyncio.run(
+        lh.transfer_liquid(
+            [_well(lh, "A1"), _well(lh, "A2")],
+            [_well(lh, "C1"), _well(lh, "C2")],
+            [lh.deck.get_resource("rack")],
+            asp_vols=volume,
+            dis_vols=volume,
+        )
+    )
+
+    assert (_volume(lh, "C1"), _volume(lh, "C2")) == (25.0, 25.0)
+    assert (_volume(lh, "A1"), _volume(lh, "A2")) == (475.0, 475.0)
+
+
+def test_one_to_many_and_many_to_one_expand_a_single_volume(lh):
+    _fill(lh, A1=500.0, A2=500.0, A3=500.0)
+    rack = lh.deck.get_resource("rack")
+
+    # 一对多：一次吸液，每个目标分一份
+    asyncio.run(lh.transfer_liquid([_well(lh, "A1")], [_well(lh, "F1"), _well(lh, "F2")], [rack], asp_vols=40.0, dis_vols=20.0))
+    # 多对一：每个源吸一份
+    asyncio.run(lh.transfer_liquid([_well(lh, "A2"), _well(lh, "A3")], [_well(lh, "G1")], [rack], asp_vols=15.0, dis_vols=30.0))
+
+    assert (_volume(lh, "F1"), _volume(lh, "F2"), _volume(lh, "G1")) == (20.0, 20.0, 30.0)
+    assert (_volume(lh, "A2"), _volume(lh, "A3")) == (485.0, 485.0)
+
+
+def test_mix_runs_per_target_on_the_tipped_channel(lh):
+    """mix 原来把整个目标列表当成一个资源，且吸排不带通道。"""
+
+    _fill(lh, H1=100.0, H2=100.0)
+
+    async def run():
+        await lh.pick_up_tips([lh.deck.get_resource("rack").get_item("A1")])
+        await lh.mix([_well(lh, "H1"), _well(lh, "H2")], mix_time=2, mix_vol=30)
+
+    asyncio.run(run())
+    assert [(op[0], op[1], op[2], op[3]) for op in _ops(lh)[1:]] == [
+        ("aspirate", "plate_well_H1", 30, 0),
+        ("dispense", "plate_well_H1", 30, 0),
+        ("aspirate", "plate_well_H1", 30, 0),
+        ("dispense", "plate_well_H1", 30, 0),
+        ("aspirate", "plate_well_H2", 30, 0),
+        ("dispense", "plate_well_H2", 30, 0),
+        ("aspirate", "plate_well_H2", 30, 0),
+        ("dispense", "plate_well_H2", 30, 0),
+    ]
+    assert (_volume(lh, "H1"), _volume(lh, "H2")) == (100.0, 100.0)
+
+
+def test_mix_after_dispense_in_a_transfer(lh):
+    _fill(lh, A1=500.0)
+
+    asyncio.run(
+        lh.transfer_liquid(
+            [_well(lh, "A1")],
+            [_well(lh, "G2")],
+            [lh.deck.get_resource("rack")],
+            asp_vols=[100.0],
+            dis_vols=[100.0],
+            mix_stage="after",
+            mix_times=[2],
+            mix_vol=30,
+        )
+    )
+
+    assert [op[:2] for op in _ops(lh)[1:7]] == [
+        ("aspirate", "plate_well_A1"),
+        ("dispense", "plate_well_G2"),
+        ("aspirate", "plate_well_G2"),
+        ("dispense", "plate_well_G2"),
+        ("aspirate", "plate_well_G2"),
+        ("dispense", "plate_well_G2"),
+    ]
+    assert _volume(lh, "G2") == 100.0
+
+
+def test_mix_uses_all_tipped_channels_at_once():
+    lh = _make_handler(channel_num=8)
+    rack = lh.deck.get_resource("rack")
+    wells = [_well(lh, f"{row}5") for row in "ABCDEFGH"]
+    for well in wells:
+        well.set_liquids([("water", 100.0)])
+
+    async def run():
+        await lh.pick_up_tips(rack["A1:H1"], use_channels=list(range(8)))
+        await lh.mix(wells, mix_time=1, mix_vol=20)
+
+    asyncio.run(run())
+    aspirates = _ops(lh, "aspirate")
+    assert [(op[1], op[3]) for op in aspirates] == [(well.name, channel) for channel, well in enumerate(wells)]
+
+
+def test_add_liquid_without_use_channels_and_with_scalar_volumes(lh):
+    _fill(lh, A1=500.0)
+    lh.set_tiprack([lh.deck.get_resource("rack")])
+
+    asyncio.run(lh.add_liquid(30.0, 30.0, [_well(lh, "A1")], [_well(lh, "H5"), _well(lh, "H6")]))
+
+    assert (_volume(lh, "H5"), _volume(lh, "H6")) == (30.0, 30.0)
+    assert _names(lh, "aspirate") == ["plate_well_A1", "plate_well_A1"]
+    assert _names(lh, "pick_up_tips") == ["rack_A1", "rack_B1"]
+
+
+def test_remove_liquid_without_use_channels_and_with_a_scalar_volume(lh):
+    """remove_liquid 与 add_liquid 同样在 use_channels=None 时 len(None) 失败。"""
+
+    _fill(lh, A1=100.0, A2=100.0)
+    lh.set_tiprack([lh.deck.get_resource("rack")])
+
+    asyncio.run(lh.remove_liquid(20.0, [_well(lh, "A1"), _well(lh, "A2")], _well(lh, "H12")))
+
+    assert (_volume(lh, "A1"), _volume(lh, "A2"), _volume(lh, "H12")) == (80.0, 80.0, 40.0)

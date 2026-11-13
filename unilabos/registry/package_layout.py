@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Union
 
@@ -42,6 +43,169 @@ def find_project_root(start: PathLike, max_up: int = 6) -> Optional[Path]:
             break
         current = current.parent
     return None
+
+
+def declared_registry_paths(project_root: PathLike) -> List[Path]:
+    """pyproject ``[tool.unilabos.registry].paths``：相对包根解析，只返回存在的目录。"""
+
+    import tomllib
+
+    pyproject = Path(project_root) / "pyproject.toml"
+    if not pyproject.is_file():
+        return []
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    tool = data.get("tool") if isinstance(data, dict) else None
+    registry_config = (((tool or {}).get("unilabos") or {}).get("registry") or {}) if isinstance(tool, dict) else {}
+    raw_paths = registry_config.get("paths") if isinstance(registry_config, dict) else None
+    if not isinstance(raw_paths, list):
+        return []
+    paths: List[Path] = []
+    for raw_path in raw_paths:
+        if isinstance(raw_path, str):
+            candidate = (Path(project_root) / raw_path).resolve()
+            if candidate.is_dir():
+                paths.append(candidate)
+    return paths
+
+
+def is_registry_root(path: PathLike) -> bool:
+    """目录是否为注册表根：含 ``devices/`` ``device_comms/`` ``resources/`` 任一子目录且其中有 YAML。"""
+
+    root = Path(path)
+    if not root.is_dir():
+        return False
+    for sub in ("devices", "device_comms", "resources"):
+        sub_path = root / sub
+        if sub_path.is_dir() and next(sub_path.rglob("*.yaml"), None) is not None:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class RegistryRoot:
+    """一个驱动包挂载目录对应的 YAML 注册表根。
+
+    ``recursive``：``devices/`` 与 ``device_comms/`` 是否包含子目录（挂载目录本身兜底当注册表根时
+    只读顶层，不进驱动代码目录）。
+    """
+
+    path: Path
+    recursive: bool = True
+
+
+def registry_roots_for_mount(mount: PathLike) -> List[RegistryRoot]:
+    """一个 ``--devices`` 目录（或 ``package install`` 登记的包目录）内嵌的 YAML 注册表根。
+
+    注册表根与 ``unilabos/registry`` 同构（``ROOT/{devices,device_comms,resources}/**/*.yaml``）。
+    候选按顺序、去重，只返回确实含 YAML 的根：
+
+    1. ``<挂载目录>/registry``、``<挂载目录>/unilabos_registry``；
+    2. 包根（向上找 ``pyproject.toml``）声明的 ``[tool.unilabos.registry].paths``；
+    3. ``<包根>/registry``、``<包根>/unilabos_registry``；
+    4. ``<挂载目录>`` 本身（直接挂载注册表根的兜底，只读顶层）。
+
+    运行时、``package inspect`` 与 ``package install`` 台账都用这一份规则。
+    """
+
+    base = Path(mount).resolve()
+    candidates: List[RegistryRoot] = [RegistryRoot(base / "registry"), RegistryRoot(base / "unilabos_registry")]
+    project_root = find_project_root(base)
+    if project_root is not None:
+        candidates.extend(RegistryRoot(path) for path in declared_registry_paths(project_root))
+        candidates.append(RegistryRoot(project_root / "registry"))
+        candidates.append(RegistryRoot(project_root / "unilabos_registry"))
+    candidates.append(RegistryRoot(base, recursive=False))
+
+    roots: List[RegistryRoot] = []
+    seen: set = set()
+    for candidate in candidates:
+        resolved = candidate.path.resolve()
+        if resolved in seen or not is_registry_root(resolved):
+            continue
+        seen.add(resolved)
+        roots.append(RegistryRoot(resolved, candidate.recursive))
+    return roots
+
+
+def device_yaml_files(root: RegistryRoot) -> List[Path]:
+    """注册表根下的设备 YAML：``devices/`` 与 ``device_comms/``（与 ``Registry.load_device_types`` 一致）。"""
+
+    pattern = "**/*.yaml" if root.recursive else "*.yaml"
+    files: List[Path] = []
+    for sub in ("devices", "device_comms"):
+        files.extend(sorted((root.path / sub).glob(pattern)))
+    return files
+
+
+def community_registry_file(mount: PathLike) -> Optional[Path]:
+    """挂载目录根的 ``registry.yaml`` / ``registry.yml``（社区包单文件注册表），没有返回 ``None``。"""
+
+    for name in ("registry.yaml", "registry.yml"):
+        candidate = Path(mount) / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _read_device_entries_from_files(files: Iterable[Path]) -> Dict[str, Dict[str, Any]]:
+    import yaml
+
+    from unilabos.registry.utils.yaml_ref import resolve_yaml_refs
+    from unilabos.utils import logger
+
+    entries: Dict[str, Dict[str, Any]] = {}
+    for yaml_path in files:
+        try:
+            data = resolve_yaml_refs(yaml.safe_load(yaml_path.read_text(encoding="utf-8")), base_file=yaml_path)
+        except Exception as exc:  # noqa: BLE001 - 单个文件损坏不影响其它条目
+            logger.warning(f"[package] 解析注册表 {yaml_path} 失败: {exc}")
+            continue
+        if not isinstance(data, dict):
+            continue
+        for device_id, entry in data.items():
+            if not isinstance(entry, dict) or str(device_id) in entries:
+                continue
+            cls = entry.get("class") if isinstance(entry.get("class"), dict) else {}
+            if cls.get("module") or entry.get("resource_type") == "device":
+                entries[str(device_id)] = entry
+    return entries
+
+
+def read_yaml_device_entries(roots: Iterable[RegistryRoot]) -> Dict[str, Dict[str, Any]]:
+    """读取注册表根里的设备条目（展开跨文件 ``$ref``），返回 {device_id: 条目}；先出现的 id 优先。
+
+    只采纳带 ``class.module`` 或显式 ``resource_type: device`` 的条目，与运行时加载口径一致。
+    """
+
+    return _read_device_entries_from_files(path for root in roots for path in device_yaml_files(root))
+
+
+def package_registry_roots(mounts: Iterable[PathLike]) -> List[RegistryRoot]:
+    """一组挂载目录的注册表根（去重，保持顺序）。"""
+
+    roots: List[RegistryRoot] = []
+    seen: set = set()
+    for mount in mounts:
+        for root in registry_roots_for_mount(mount):
+            if root.path not in seen:
+                seen.add(root.path)
+                roots.append(root)
+    return roots
+
+
+def package_device_ids(mounts: Iterable[PathLike]) -> List[str]:
+    """一组挂载目录在运行时会注册的设备 id：``@device`` AST 扫描 ∪ 根目录 ``registry.yaml`` ∪
+    注册表根里的 YAML（与 ``Registry.setup`` 对 ``--devices`` 的加载范围一致）。"""
+
+    mounts = [Path(item) for item in mounts]
+    ids = set(scan_package_dirs(mounts).get("devices", {}))
+    community_files = [path for path in (community_registry_file(mount) for mount in mounts) if path is not None]
+    ids.update(_read_device_entries_from_files(community_files))
+    ids.update(read_yaml_device_entries(package_registry_roots(mounts)))
+    return sorted(ids)
 
 
 def scan_package_dirs(
@@ -87,8 +251,17 @@ def format_scan_errors(errors: List[Dict[str, str]]) -> str:
 
 
 __all__ = [
+    "RegistryRoot",
+    "community_registry_file",
+    "declared_registry_paths",
+    "device_yaml_files",
     "find_import_root",
     "find_project_root",
     "format_scan_errors",
+    "is_registry_root",
+    "package_device_ids",
+    "package_registry_roots",
+    "read_yaml_device_entries",
+    "registry_roots_for_mount",
     "scan_package_dirs",
 ]

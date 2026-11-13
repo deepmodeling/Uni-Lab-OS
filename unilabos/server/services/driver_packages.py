@@ -888,7 +888,10 @@ class DriverPackageService:
             source_dirs = detect_package_dirs(root, project["include"])
             if not source_dirs:
                 raise DriverPackageError(f"源码树里没有可挂载的 Python 包目录（含 __init__.py）：{root}")
-            device_ids = scan_device_ids(source_dirs)
+            # 台账记录运行时挂载这些目录后会注册的全部设备：@device 与注册表 YAML
+            from unilabos.registry.package_layout import package_device_ids
+
+            device_ids = package_device_ids(source_dirs)
             if dependencies:
                 # 安装器失败也可能已部分改变共享环境，因此提前标记受影响进程。
                 self.source_changes.package_changed(name, reason="shared_dependencies_changed", shared_dependencies=True)

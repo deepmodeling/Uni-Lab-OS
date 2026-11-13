@@ -2671,6 +2671,8 @@ class Registry:
     def _load_community_device_registries(self, devices_dirs=None):
         """加载社区设备包根目录下的 registry.yaml（device_id -> 条目）。
         """
+        from unilabos.registry.package_layout import community_registry_file
+
         if not devices_dirs:
             return
 
@@ -2679,12 +2681,7 @@ class Registry:
             d_path = Path(d).resolve()
             if not d_path.is_dir():
                 continue
-            reg_file = None
-            for name in ("registry.yaml", "registry.yml"):
-                candidate = d_path / name
-                if candidate.is_file():
-                    reg_file = candidate
-                    break
+            reg_file = community_registry_file(d_path)
             if reg_file is None:
                 continue
 
@@ -2710,54 +2707,17 @@ class Registry:
         if loaded_total:
             logger.info(f"[Uni-Lab-OS Registry] 社区包 registry.yaml 设备加载完成: 共 {loaded_total} 个")
 
-    @staticmethod
-    def _is_registry_root(p: Path) -> bool:
-        """目录是否为注册表根：含 devices/ device_comms/ resources/ 任一子目录且其中有 *.yaml。"""
-        if not p.is_dir():
-            return False
-        for sub in ("devices", "device_comms", "resources"):
-            subp = p / sub
-            if subp.is_dir() and next(subp.rglob("*.yaml"), None) is not None:
-                return True
-        return False
-
-    @staticmethod
-    def _find_package_root(start: Path, max_up: int = 6) -> Optional[Path]:
-        """从 start 起（含自身）向上最多 max_up 层，定位含 pyproject.toml 的包根。"""
-        cur = start
-        for _ in range(max_up + 1):
-            if (cur / "pyproject.toml").is_file():
-                return cur
-            if cur.parent == cur:
-                break
-            cur = cur.parent
-        return None
-
-    def _registry_root_candidates(self, base: Path) -> List[Path]:
-        """给定一个 --devices 目录，推导其内嵌注册表根的候选目录。
-
-        约定 registry 与 unilabos/registry 同构（ROOT/{devices,resources,device_comms}/*.yaml）：
-        - <devices_dir>/registry：--devices 指向包根（社区包）或 registry 直接放在 --devices 下；
-        - <包根>/registry：--devices 指向 python 子包时（如模板的 device_package_example），
-          向上按 pyproject.toml 锚定 ROOT 再取 ROOT/registry；
-        - <devices_dir>/unilabos_registry 或 <包根>/unilabos_registry：目录化设备包的固定注册表目录；
-        - <devices_dir> 本身：--devices 直接指向 registry 根的兜底。
-        """
-        candidates = [base / "registry", base / "unilabos_registry"]
-        pkg_root = self._find_package_root(base)
-        if pkg_root is not None:
-            candidates.append(pkg_root / "registry")
-            candidates.append(pkg_root / "unilabos_registry")
-        candidates.append(base)
-        return candidates
-
     def _load_devices_dir_registries(self, devices_dirs=None, upload_registry=False, complete_registry=False):
         """为每个 --devices 目录自动加载其内嵌的、与 unilabos/registry 同构的注册表。
 
-        约定：内嵌注册表与内置注册表结构一致（ROOT/registry/{devices,device_comms,resources}/*.yaml）。
+        注册表根的发现规则见 ``package_layout.registry_roots_for_mount``（``registry/``、
+        ``unilabos_registry/``、pyproject ``[tool.unilabos.registry].paths``、包根下同名目录、
+        挂载目录本身兜底），``package inspect`` 与 ``package install`` 台账用同一份规则。
         命中即复用 load_device_types / load_resource_types 加载。external_only 模式下同样加载——
         外部设备包自带的注册表不应被跳过。
         """
+        from unilabos.registry.package_layout import registry_roots_for_mount
+
         if not devices_dirs:
             return
 
@@ -2766,15 +2726,15 @@ class Registry:
             base = Path(d).resolve()
             if not base.is_dir():
                 continue
-            for candidate in self._registry_root_candidates(base):
-                root = candidate.resolve()
+            for registry_root in registry_roots_for_mount(base):
+                root = registry_root.path
                 key = str(root)
-                if key in seen or not self._is_registry_root(root):
+                if key in seen:
                     continue
                 seen.add(key)
                 logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}")
                 # --devices 目录本身兜底当注册表根：只读 devices/ 顶层，不进驱动代码子目录
-                self.load_device_types(root, complete_registry=complete_registry, recursive=root != base)
+                self.load_device_types(root, complete_registry=complete_registry, recursive=registry_root.recursive)
                 if BasicConfig.enable_resource_load:
                     self.load_resource_types(root, upload_registry, complete_registry=complete_registry)
                 else:

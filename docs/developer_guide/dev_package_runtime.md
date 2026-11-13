@@ -11,6 +11,12 @@
 （`<仓库>/<包>/x.py` → `<包>.x:类名`，不带仓库目录名）；扫描失败的文件会让 inspect 报错退出，而不是从
 `resources.json` 里悄悄丢掉设备。不传 `--out` 时归档和清单写到包目录自己的 `dist/`（归档时排除）。
 
+驱动包的 YAML 注册表在运行时（`--devices`）、`package inspect` 和 `package install` 台账（`package list` 的
+`device_ids` / `loaded_device_ids`）三处按同一规则发现（`registry/package_layout.py:registry_roots_for_mount`）：
+挂载目录与包根（含 `pyproject.toml`）下的 `registry/`、`unilabos_registry/`，以及 pyproject 声明的
+`[tool.unilabos.registry].paths`（相对包根，与默认位置叠加而非替换）；每个注册表根下 `devices/`、`device_comms/`
+递归读取。三处都把 YAML 设备与 `@device` 设备合并，同一 id 以 `@device` 为准。
+
 ```bash
 # 本地静态检查，不需要后端或设备运行
 unilab package inspect --path /absolute/path/to/driver

@@ -1064,12 +1064,12 @@ class TaskObservability:
             conn = service.connection
             waiters = conn.execute(
                 """
-                SELECT waiter.job_uuid, waiter.task_uuid, waiter.lock_keys, waiter.blockers
+                SELECT waiter.job_uuid, waiter.task_uuid, waiter.lock_keys, waiter.blockers, waiter.enqueued_at
                 FROM workflow_resource_waiter AS waiter
                 JOIN workflow_node_job AS job ON job.uuid = waiter.job_uuid
                 JOIN workflow_task AS task ON task.uuid = waiter.task_uuid
                 WHERE job.status = 'pending' AND task.deleted_at IS NULL AND task.status IN ('pending', 'running')
-                ORDER BY task.create_time, task.uuid, waiter.job_uuid
+                ORDER BY waiter.enqueued_at, task.create_time, task.uuid, waiter.job_uuid
                 """
             ).fetchall()
             holders: Dict[str, set] = {}
@@ -1091,7 +1091,7 @@ class TaskObservability:
                 if holder != job_uuid
             })
             node: Dict[str, Any] = {"job_uuid": job_uuid, "task_uuid": row["task_uuid"],
-                                    "wait_code": "resource_busy", "waiting_since": "",
+                                    "wait_code": "resource_busy", "waiting_since": row["enqueued_at"],
                                     "blocking_task_uuids": _load(row["blockers"], [])}
             if blocking:
                 node["blocking_job_uuid"] = blocking[0]

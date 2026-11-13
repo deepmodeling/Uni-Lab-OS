@@ -273,7 +273,7 @@ def test_database_from_before_the_v1_baseline_is_backed_up_and_rebuilt(
 
     connection = initialize_database(path, spec)
     try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version
         assert tuple(connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()) == (
             key, spec.checksum,
         )

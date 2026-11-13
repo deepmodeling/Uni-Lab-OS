@@ -137,6 +137,10 @@ class DatabaseSpec:
     派生规则、枚举取值等）；它计入结构指纹。``schema_version`` 是迁移序号，从 1
     （无迁移的基线）开始：DDL 或 ``contract_version`` 变化时把它 +1，并在
     ``migrations`` 里给出对应迁移。
+
+    ``released_checksums`` 是已发布版本的结构指纹 ``(版本, 指纹)``：库内是这些版本时指纹也必须
+    一致才执行迁移。同号不同指纹的库（例如版本基线压平前、恰好停在同一序号的开发库）没有迁移
+    路径，按 ``on_unmigratable`` 处理，而不是迁移到一半再因结构核对失败回滚。不计入结构指纹。
     """
 
     key: str
@@ -148,6 +152,7 @@ class DatabaseSpec:
     schema_version: int = 1
     migrations: tuple[Migration, ...] = field(default=())
     on_unmigratable: Literal["refuse", "rebuild"] = "rebuild"
+    released_checksums: tuple[tuple[int, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version < 1:
@@ -269,6 +274,12 @@ def _inspect(connection: sqlite3.Connection, spec: DatabaseSpec) -> _SchemaState
     if stored_checksum == spec.checksum:
         return _SchemaState("current", stored_version, stored_checksum)
     if 1 <= stored_version < spec.schema_version:
+        released = dict(spec.released_checksums).get(stored_version)
+        if released is not None and stored_checksum != released:
+            return _SchemaState(
+                "unmigratable", stored_version, stored_checksum,
+                f"库内版本 v{stored_version} 的结构指纹不是已发布的 v{stored_version}（版本基线压平前的开发库）",
+            )
         return _SchemaState("migratable", stored_version, stored_checksum)
     if stored_version == 0:
         reason = "库内没有迁移版本且结构指纹不同（迁移机制之前的旧结构）"

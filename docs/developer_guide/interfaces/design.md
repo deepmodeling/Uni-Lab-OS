@@ -100,8 +100,8 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 实体自身的版本、命令身份和来源游标用于协调跨库/跨进程变更，不能拿一个库的 sequence 当作全系统事务号。
 
 每个库声明 `schema_version` 和一串线性迁移，库内版本记在 `PRAGMA user_version`。0.13 发布线上四个库的结构都从
-**v1** 开始：开发期的迁移链（runtime v2–v12、materials v2–v8）已压平为 v1 基线，目前没有任何迁移；发布后改表时
-从 v2 起追加。库内版本较低且迁移连续时，启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，
+**v1** 开始：开发期的迁移链（runtime v2–v12、materials v2–v8）已压平为 v1 基线，之后改表从 v2 起追加
+（`runtime.db` v2：资源等待记录加 `enqueued_at`，见 `tables/runtime/migrations.py`）。库内版本较低且迁移连续时，启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，
 并与当前声明逐表核对结构，不符就整体回滚。
 改表必须提升 `schema_version` 并补迁移（`tests/server/test_database_schema_versions.py` 固定各库版本与指纹）。
 改 CHECK / 列约束用 `rebuild_table_migration`（建新表 → 拷贝同名列 → 删旧表 → 改名 → 重建索引，依赖视图与触发器原样重建），

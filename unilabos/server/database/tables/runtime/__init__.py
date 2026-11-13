@@ -77,6 +77,7 @@ from .resource_interval import RESOURCE_INTERVAL_TABLES, RESOURCE_INTERVAL_MODEL
 
 
 from .resource_custody import RESOURCE_CUSTODY_TABLES, RESOURCE_CUSTODY_MODELS
+from .migrations import RUNTIME_MIGRATIONS, RUNTIME_RELEASED_CHECKSUMS
 
 
 from .task_lifecycle import TASK_LIFECYCLE_TABLES, TASK_LIFECYCLE_MODELS
@@ -120,10 +121,11 @@ RUNTIME_DATABASE = DatabaseSpec(
         *STATION_HANDLING_TABLES,
         *PROCESS_MANAGEMENT_TABLES,
     ),
-    # 0.13 发布线的基线：schema v1，没有迁移。之后改 DDL / contract_version 时提升
-    # schema_version 并在 migrations 里补 v2 起的迁移。
-    schema_version=1,
-    migrations=(),
+    # 0.13 发布线的基线是 schema v1；之后改 DDL / contract_version 时提升 schema_version，
+    # 并在 migrations.py 里补对应迁移（v2：资源等待记录的入队时间）。
+    schema_version=2,
+    migrations=RUNTIME_MIGRATIONS,
+    released_checksums=RUNTIME_RELEASED_CHECKSUMS,
     # 工作流定义、任务与注册表记录：结构变化必须带迁移。没有迁移路径时拒绝启动、保留旧库；
     # 确认旧数据不再需要时由 BasicConfig.database_rebuild_on_mismatch 显式允许备份后重建。
     on_unmigratable="refuse",

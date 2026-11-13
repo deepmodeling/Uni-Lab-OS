@@ -12,6 +12,7 @@ from unilabos.server.backend.scheduler.resource_plan import deserialize_resource
 from .errors import StoreConflict
 from .device_tenancy import DeviceTenancies
 from .resource_loans import ResourceLoans
+from .resource_waiters import older_conflicting_waiter
 from .store import WorkflowStore, utc_now
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,15 @@ class ResourceIntervals:
             if blockers or len(mapped) != len(wanted):
                 return ResourceLoans.wait(conn, request, blockers)
             now = utc_now()
+            # 资源此刻都空闲：仍要留给排在前面、同样需要它们的等待者（持久老化优先级 FIFO）。
+            waiting = conn.execute("SELECT enqueued_at FROM workflow_resource_waiter WHERE job_uuid=?",
+                                   (request.owner_uuid,)).fetchone()
+            ahead = older_conflicting_waiter(conn, job_uuid=request.owner_uuid, task_uuid=request.task_uuid,
+                                             requested_keys=set(wanted) | actual,
+                                             enqueued_at=waiting["enqueued_at"] if waiting else now, now_iso=now)
+            if ahead is not None:
+                # 记下排在前面的任务供等待图展示；它不会经等待图回到本任务（让行前已排除环路）。
+                return ResourceLoans.wait(conn, request, {ahead})
             # 托管准备、所有区间、借用身份与实际使用权在同一事务中提交。
             DeviceTenancies.prepare(conn, request)
             for key, (owner, definition) in wanted.items():

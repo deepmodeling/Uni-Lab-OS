@@ -316,6 +316,8 @@ Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/b
 确认旧数据不再需要时，在 `local_config.py` 设 `BasicConfig.database_rebuild_on_mismatch = True`
 （或环境变量 `UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true`），旧库会改名为 `.bak-<时间戳>` 后重建；
 也可以用 `--server_database_root` 换一个新目录。`telemetry.db` 与 `history.db` 不拒绝，自动备份后重建。
+0.13 建立的库之后升级时走正常迁移：启动先备份为 `<file>.pre-v<N>-<时间戳>.bak` 再迁移，例如 `runtime.db` v1 → v2
+（资源等待记录加入队时间，迁移时清空瞬态的等待记录，由调度器重新排队）。
 
 #### 一个数据库根目录只归一个实例
 

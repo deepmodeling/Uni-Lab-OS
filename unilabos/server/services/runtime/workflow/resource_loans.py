@@ -102,15 +102,15 @@ class ResourceLoans:
             if task not in seen:
                 seen.add(task)
                 todo.extend(graph.get(task, ()))
-        from .resource_intervals import ResourceIntervals
+        from .resource_intervals import ResourceIntervals, physical_keys
         from .execution_claim import ExecutionClaims
-        from unilabos.server.backend.scheduler.resource_keys import device_lock_key
+        # 区间键 + 实际使用键（设备、物料、托管；always_free 动作不含当前设备）：排队与环路判定都按它。
         keys = set(ResourceIntervals._requirements(conn,request,ExecutionClaims._job(conn,request.owner_uuid)))
-        if request.current_action:
-            keys.add(device_lock_key(request.current_action.device_id))
-        conn.execute("INSERT INTO workflow_resource_waiter(job_uuid,task_uuid,lock_keys,blockers) VALUES (?,?,?,?) "
+        keys.update(physical_keys(request))
+        # 入队时间只在第一次等待时写入：重试、重启都保留原排队位置。
+        conn.execute("INSERT INTO workflow_resource_waiter(job_uuid,task_uuid,lock_keys,blockers,enqueued_at) VALUES (?,?,?,?,?) "
                      "ON CONFLICT(job_uuid) DO UPDATE SET lock_keys=excluded.lock_keys,blockers=excluded.blockers",
-                     (request.owner_uuid,request.task_uuid,_json(sorted(keys)),_json(sorted(blockers))))
+                     (request.owner_uuid,request.task_uuid,_json(sorted(keys)),_json(sorted(blockers)),utc_now()))
         return False
 
     @staticmethod

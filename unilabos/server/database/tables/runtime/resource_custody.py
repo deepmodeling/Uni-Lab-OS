@@ -49,6 +49,8 @@ class WorkflowResourceWaiterRecord(TableObject, table=True):
     task_uuid: NonEmptyStr
     lock_keys: list[str] = Field(sa_column=json_text_column("lock_keys", default_json="[]"))
     blockers: list[str] = Field(sa_column=json_text_column("blockers", default_json="[]"))
+    #: 第一次等待的时间：准入按老化优先级 + 入队时间排队，重试与重启都保留原位置。
+    enqueued_at: NonEmptyStr
 
 
 RESOURCE_CUSTODY_MODELS = (WorkflowResourceLoanRecord, WorkflowDeviceTenancyRecord,
@@ -97,7 +99,8 @@ RESOURCE_CUSTODY_TABLES = (
             job_uuid TEXT PRIMARY KEY REFERENCES workflow_node_job(uuid),
             task_uuid TEXT NOT NULL REFERENCES workflow_task(uuid),
             lock_keys TEXT NOT NULL CHECK(json_valid(lock_keys) AND json_type(lock_keys)='array'),
-            blockers TEXT NOT NULL CHECK(json_valid(blockers) AND json_type(blockers)='array')
+            blockers TEXT NOT NULL CHECK(json_valid(blockers) AND json_type(blockers)='array'),
+            enqueued_at TEXT NOT NULL CHECK(enqueued_at <> '')
         )
     """),
 )

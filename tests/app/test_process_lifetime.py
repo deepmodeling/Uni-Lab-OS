@@ -272,6 +272,34 @@ def test_shutdown_deadline_forces_exit_and_repeated_signals_are_ignored(tmp_path
     assert "测试：" in result.stdout and "强制结束进程" in result.stdout
 
 
+def test_shutdown_deadline_exits_even_when_reporting_blocks(tmp_path: Path) -> None:
+    """限时不能依赖输出流：卡住的线程占着 stdout 的锁时，打印报告会永远阻塞，进程仍须按时退出。
+
+    CI 曾见过权威被强杀后 Host 子进程在 20 s 限时之后还在重连、日志里没有"强制结束"——
+    限时线程卡在打印上，os._exit 没执行到。
+    """
+
+    script = textwrap.dedent(
+        """
+        import threading, time
+        from unilabos.app import lifetime
+
+        lifetime.print_status = lambda *args, **kwargs: threading.Event().wait()  # 输出永远阻塞
+        assert lifetime.begin_shutdown(7, reason="测试", deadline=0.3) is True
+        threading.Thread(target=threading.Event().wait).start()
+        time.sleep(60)
+        """
+    )
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, "-c", script], env=_env(), capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=60,
+    )
+    assert result.returncode == 7, result.stdout + result.stderr
+    assert time.monotonic() - started < 15
+    assert "强制结束进程" in result.stderr and "绕过缓冲区" in result.stderr
+
+
 def test_exit_now_runs_atexit_and_does_not_join_busy_worker_threads(tmp_path: Path) -> None:
     """有序收尾之后不再让解释器 join 线程池：等 Host 路由 / 跑设备动作的工作线程曾把退出拖上几分钟。"""
 

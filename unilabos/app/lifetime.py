@@ -53,6 +53,8 @@ PARENT_DEATH_SIGNAL_ENV = "UNILABOS_PARENT_DEATH_SIGNAL"
 SHUTDOWN_DEADLINE_S = 20.0
 #: 父进程轮询间隔
 PARENT_POLL_S = 0.5
+#: 限时到点后，打印"强制结束"报告最多等多久（输出流被卡住的线程占着时不再等）
+EXIT_REPORT_TIMEOUT_S = 2.0
 #: 父进程消失、或停机超时被强制结束时的退出码（没有人再看这个码，只为日志里可辨认）
 PARENT_LOST_EXIT_CODE = 1
 
@@ -95,11 +97,28 @@ def arm_exit_deadline(seconds: float, code: int, *, reason: str) -> None:
 
     def _expire() -> None:
         time.sleep(seconds)
-        try:
-            print_status(f"{reason}：{seconds:.0f}s 内未完成退出，强制结束进程", "error")
-        finally:
+        message = f"{reason}：{seconds:.0f}s 内未完成退出，强制结束进程"
+
+        def _report() -> None:
+            print_status(message, "error")
             _flush_std_streams()
-            os._exit(code)
+
+        # 限时是最后的保证，不能被任何 Python 层的锁拖住：卡住的线程若正持有 stdout / stderr 的
+        # 缓冲区锁，print / flush 会永远等下去，os._exit 就永远执行不到。报告放到另一个线程里限时等。
+        reported = False
+        try:
+            reporter = threading.Thread(target=_report, name="UniLabExitReport", daemon=True)
+            reporter.start()
+            reporter.join(EXIT_REPORT_TIMEOUT_S)
+            reported = not reporter.is_alive()
+        except RuntimeError:  # 解释器已在收尾，起不了新线程
+            pass
+        if not reported:
+            try:
+                os.write(2, f"[ERROR] {message}（输出流被占用，绕过缓冲区直接写）\n".encode("utf-8", "replace"))
+            except OSError:
+                pass
+        os._exit(code)
 
     threading.Thread(target=_expire, name="UniLabExitDeadline", daemon=True).start()
 

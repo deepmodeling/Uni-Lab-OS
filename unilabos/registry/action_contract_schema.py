@@ -896,11 +896,13 @@ def parse_action_contract(
     action: ast.FunctionDef | ast.AsyncFunctionDef,
     *,
     module_name: str,
+    is_package: bool = False,
 ) -> ParsedActionContract:
     """从真实定义模块 AST 解析完整规范动作合同（Action Contract）。
 
     参数说明：``module`` 是不执行作者代码的完整 Python 语法树；``action`` 是该
-    语法树中的动作函数；``module_name`` 是解析可信导入绑定所需的模块身份。返回：
+    语法树中的动作函数；``module_name`` 是解析可信导入绑定所需的模块身份，``is_package``
+    表示该模块是包的 ``__init__.py``（决定相对导入的基准包）。返回：
     包含输入、输出、物料锁、库位选择（Site Selection）和展示信息的不可变合同。
 
     异常说明：动作形状、注解、导入绑定、文档注释或合同不变量非法时抛出
@@ -911,7 +913,7 @@ def parse_action_contract(
         _fail("/action")
     _validate_action_shape(action)
     try:
-        scope = resolve_module_scope(module, module_name=module_name)
+        scope = resolve_module_scope(module, module_name=module_name, is_package=is_package)
     except ModuleScopeError as error:
         _fail(error.path, code=error.code, message=error.message)
     except RecursionError:

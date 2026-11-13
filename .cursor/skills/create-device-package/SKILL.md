@@ -175,6 +175,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 外部设备包验证走 `unilab --check_mode --devices ./<package_name> --external_devices_only`，registry 会静态扫描 Python AST 构建设备 schema：
 
 - 只识别来自 `unilabos.registry.decorators` 的 `@device`、`@action`、`@topic_config`、`@not_action`、`@always_free`。
+- 包内模块之间可以用相对导入（`from .labware import Deck`、`from ..common import helper`）：扫描器按包结构（`__init__.py`）把它们解析成绝对模块路径，typed 合同动作同样适用；越过顶层包的相对导入会让该文件扫描失败。
 - `@device` 类会生成设备条目；`id/category/description/handles/model/hardware_interface` 来自装饰器。
 - `__init__` 参数、类型注解、默认值和 docstring 会进入 `init_param_schema.config`。
 - 带 `@action` 的方法会进入 `action_value_mappings`；未加 `@action` 的 public 方法会生成 `auto-<method_name>` 动作。

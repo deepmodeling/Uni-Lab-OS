@@ -205,6 +205,13 @@ class ItemizedCarrier(Carrier[ResourceHolder]):
             reassign=reassign,
             spot=idx,
         )
+        # holder 上的放取（直接经 holder，而不经本载架）同样要更新 canonical Site 占用；
+        # 绑定方法随 deepcopy 一起重新绑定到副本
+        for register in (
+            site_holder.register_did_assign_resource_callback,
+            site_holder.register_did_unassign_resource_callback,
+        ):
+            register(self._sync_site_occupancy)
         self._ordering[label] = site_holder
         self.child_locations[label] = site_holder.location
         self.child_size[label] = {
@@ -268,6 +275,31 @@ class ItemizedCarrier(Carrier[ResourceHolder]):
             if not getattr(holder, "unilabos_uuid", ""):
                 holder.unilabos_uuid = site.uuid
         self.resource_sites = normalized
+
+    def _sync_site_occupancy(self, _resource: Optional[ResourcePLR] = None) -> None:
+        """按各 holder 实际承载的物料刷新 canonical Site 的占用。
+
+        物料可能直接经 holder 放取（驱动代码、设备侧按权威父节点挂到 holder 上）：
+        不刷新的话 Site 仍记着已经移走的物料（快照报“占用物料不在树中”），或漏记新放上
+        的物料。没有微后端 uuid 的物料不改动原记录（它本就不能放进 Site）。
+        """
+
+        if self.resource_sites is None:
+            return
+        for spot, holder in self.sites.items():
+            if not isinstance(spot, int) or not 0 <= spot < len(self.resource_sites):
+                continue
+            occupant = holder.resource
+            if occupant is None:
+                occupied_uuid = None
+            else:
+                occupied_uuid = str(getattr(occupant, "unilabos_uuid", "") or "") or None
+                if occupied_uuid is None:
+                    continue
+            if self.resource_sites[spot].occupied_material_uuid != occupied_uuid:
+                self.resource_sites[spot] = self.resource_sites[spot].model_copy(
+                    update={"occupied_material_uuid": occupied_uuid}
+                )
 
     @property
     def capacity(self):

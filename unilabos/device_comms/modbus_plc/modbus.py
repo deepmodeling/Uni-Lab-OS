@@ -191,7 +191,8 @@ class Coil(Base):
 
 class DiscreteInputs(Base):
     def __init__(self, client,name, address: int, data_type: DataType):
-        super().__init__(client, name, address, DeviceType.COIL, data_type)
+        # 原来线圈以外的节点也报 COIL，同名节点再次注册时被判成类型冲突
+        super().__init__(client, name, address, DeviceType.DISCRETE_INPUTS, data_type)
 
     def read(self, value, data_type: Optional[DataType] = None, word_order: WorderOrder = WorderOrder.BIG, slave = 1,) -> Tuple[Union[int, float, str, list[bool], list[int], list[float]], bool]:
         # 离散输入是位（与线圈相同），应答在 bits 里；原实现按寄存器解码，永远得到空结果
@@ -203,7 +204,8 @@ class DiscreteInputs(Base):
 
 class HoldRegister(Base):
     def __init__(self, client,name, address: int, data_type: DataType):
-        super().__init__(client, name, address, DeviceType.COIL, data_type)
+        # 原来线圈以外的节点也报 COIL，同名节点再次注册时被判成类型冲突
+        super().__init__(client, name, address, DeviceType.HOLD_REGISTER, data_type)
 
     def read(self, value, data_type: Optional[DataType] = None, word_order: WorderOrder = WorderOrder.BIG, slave = 1,) -> Tuple[Union[int, float, str, list[bool], list[int], list[float]], bool]:
         if not data_type and not self._data_type:
@@ -240,7 +242,8 @@ class HoldRegister(Base):
 
 class InputRegister(Base):
     def __init__(self, client,name, address: int, data_type: DataType):
-        super().__init__(client, name, address, DeviceType.COIL, data_type)
+        # 原来线圈以外的节点也报 COIL，同名节点再次注册时被判成类型冲突
+        super().__init__(client, name, address, DeviceType.INPUT_REGISTER, data_type)
 
 
     def read(self, value, data_type: Optional[DataType] = None, word_order: WorderOrder = WorderOrder.BIG, slave = 1) -> Tuple[Union[int, float, str, list[bool], list[int], list[float]], bool]:

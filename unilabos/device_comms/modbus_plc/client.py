@@ -15,7 +15,6 @@ from unilabos.device_comms.modbus_plc.modbus import DeviceType, HoldRegister, Co
 from unilabos.device_comms.modbus_plc.modbus import Base as ModbusNodeBase
 from unilabos.device_comms.universal_driver import UniversalDriver
 from unilabos.utils.log import logger
-import pandas as pd
 
 
 class ModbusNode(BaseModel):
@@ -92,11 +91,15 @@ class ExecuteProcedureJson(TypedDict):
 
 class BaseClient(UniversalDriver):
     client: Optional[Union[ModbusSerialClient, ModbusTcpClient]] = None
-    _node_registry: Dict[str, ModbusNodeBase] = {}
     DEFAULT_ADDRESS_PATH = ""
 
     def __init__(self):
         super().__init__()
+        # 节点表、函数表、工作流表每个客户端一份。原来声明为类属性字典，经 self 原地修改时所有客户端共用，
+        # 第二个客户端会沿用第一个客户端（连着另一台 PLC）的同名节点
+        self._node_registry: Dict[str, ModbusNodeBase] = {}
+        self.function_name: Dict[str, Callable[[Callable[[str], ModbusNodeBase]], bool]] = {}
+        self.workflow_name: Dict[str, ModbusWorkflow] = {}
         # self.register_node_list_from_csv_path()
 
     def _set_client(self, client: Optional[Union[ModbusSerialClient, ModbusTcpClient]]) -> None:
@@ -118,6 +121,9 @@ class BaseClient(UniversalDriver):
 
     @classmethod
     def load_csv(cls, file_path: str):
+        # pandas 只有读地址表才用到（drivers 可选依赖），不在导入模块时要求
+        import pandas as pd
+
         df = pd.read_csv(file_path)
         df = df.drop_duplicates(subset='Name', keep='first') # FIXME: 重复的数据应该报错
         data_dict = df.set_index('Name').to_dict(orient='index')
@@ -274,8 +280,6 @@ class BaseClient(UniversalDriver):
 
         return True
 
-    function_name: dict[str, Callable[[Callable[[str], ModbusNodeBase]], bool]] = {}
-
     @classmethod
     def pack_func(cls, func, value="UNDEFINED"):
         def execute_pack_func(use_node: Callable[[str], ModbusNodeBase]):
@@ -363,8 +367,6 @@ class BaseClient(UniversalDriver):
             cleanup = self.create_cleanup_function(**data["create_cleanup_function"])
         return WorkflowAction(init=init, start=start, stop=stop, cleanup=cleanup)
     
-    workflow_name = {}
-
     def create_workflow_from_json(self, data: list[WorkflowCreateJson]):
         for ind, flow in enumerate(data):
             print("正在创建 workflow", ind, flow["name"])

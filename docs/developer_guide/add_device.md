@@ -818,6 +818,8 @@ class ModbusDevice:
 
 核心的 `device_comms/modbus_plc`（`TCPClient` / `RTUClient` 与 `Coil`、`HoldRegister` 等节点）已经处理这些差异，节点的 `read(..., slave=N)` / `write(..., slave=N)` 在整个范围内可用。
 
+每个 `TCPClient` / `RTUClient` 实例有自己的节点表、函数表和工作流表（`opcua_client` 的客户端同样），一个驱动里连多台 PLC、或一个进程里跑多个工作站时互不影响；读地址表的 `load_csv` 需要 pandas（`drivers` 可选依赖），导入客户端模块本身不需要。
+
 ### 4. OPC UA
 
 ```python

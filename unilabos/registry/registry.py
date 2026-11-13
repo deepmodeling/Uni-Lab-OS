@@ -1884,6 +1884,11 @@ class Registry:
 
                 for action_name_key, action_config in action_mappings.items():
                     type_obj = action_config.get("type")
+                    # AST / YAML 已给出的 schema 就是运行时使用的那一份（typed 合同还带
+                    # x-unilabos-action-contract 与注解约束）；导入期签名只补缺失的 schema，
+                    # 不覆盖，否则 check_mode 校验的会是另一份 schema。
+                    if action_config.get("contract_kind") == "typed" or action_config.get("schema"):
+                        continue
                     if isinstance(type_obj, str) and type_obj in (
                         "UniLabJsonCommand", "UniLabJsonCommandAsync"
                     ):
@@ -1898,7 +1903,7 @@ class Registry:
                                 method_info["args"],
                                 docstring=getattr(actual_method, "__doc__", None),
                             )
-                            action_config["schema"] = schema
+                            action_config["schema"] = wrap_action_schema(schema, action_name_key)
             except Exception as e:
                 logger.debug(f"[Registry] 设备 {device_id} 动态增强失败: {e}")
 

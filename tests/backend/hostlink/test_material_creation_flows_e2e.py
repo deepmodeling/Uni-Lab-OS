@@ -17,7 +17,7 @@
     [2] 本地正常创建 + assign 上台面
         materials.create("类名", name=..., node=node, gateway=...)
           -> registry 实例化草稿 -> 权威发 uuid -> node= 自动登记 tracker
-        materials.assign(node, tips, parent="PRCXI_Deck", slot="T2")
+        materials.assign(node, tips, parent="Bench_Deck", slot="T2")
           -> node.append_resource：uuid 已在 tracker -> 复用本地实例
              （不重复触发 resource_tree_add）-> transfer_to_new_resource assign
           -> 权威 move（parent_material_uuid + Site 占用）-> update_resource 快照
@@ -48,25 +48,20 @@ from uuid import uuid4
 
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.devices.liquid_handling.prcxi.prcxi import PRCXI9300Deck
-from unilabos.devices.liquid_handling.prcxi.prcxi_labware import (
-    PRCXI_300ul_Tips,
-    PRCXI_BioER_96_wellplate,
-)
 from unilabos.backend.hostlink.backend import HostLinkBackend
 from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.backend.hostlink.protocol import ActionType
 from unilabos.resources import materials
-from unilabos.resources.objects.site import ResourceSite
 from unilabos.server.backend.composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
+from tests.plr_fixtures import TIP_RACK_MODULE, SiteDeck, plate, registry_entry, site_deck, tip_rack
 
 
-DEVICE_ID = "prcxi_flow"
-DEVICE_UUID = "prcxi-flow-device-uuid"
+DEVICE_ID = "bench_flow"
+DEVICE_UUID = "bench-flow-device-uuid"
 
 
-class _PrcxiDriver:
+class _BenchDriver:
     """记录物料回调的最小设备驱动替身。"""
 
     def __init__(self, **_kwargs) -> None:
@@ -89,34 +84,8 @@ def _wait_until(predicate, timeout: float = 8.0) -> bool:
     return bool(predicate())
 
 
-def _build_deck(deck_uuid: str) -> PRCXI9300Deck:
-    def _site(index: int, label: str, x: float) -> ResourceSite:
-        return ResourceSite(
-            uuid=str(uuid4()),
-            template_name="PRCXI9300Deck",
-            material_uuid=deck_uuid,
-            index=index,
-            label=label,
-            pose={
-                "position": {"x": x, "y": 0.0, "z": 0.0},
-                "position3d": {"x": x, "y": 0.0, "z": 0.0},
-                "size": {"width": 128.0, "height": 86.0, "depth": 0.0},
-            },
-            allowed_resource_categories=["plate", "tip_rack", "container"],
-        )
-
-    deck = PRCXI9300Deck(
-        name="PRCXI_Deck",
-        size_x=542.0,
-        size_y=374.0,
-        size_z=0.0,
-        sites=[
-            _site(i, label, 138.0 * i)
-            for i, label in enumerate(("T1", "T2", "T3", "T4"))
-        ],
-    )
-    deck.unilabos_uuid = deck_uuid
-    return deck
+def _build_deck(deck_uuid: str) -> SiteDeck:
+    return site_deck(deck_uuid, "Bench_Deck", ("T1", "T2", "T3", "T4"))
 
 
 def _append_via_hostlink(
@@ -189,7 +158,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
     host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
     slave_runtime = HostLinkLocalRuntime()
     node = slave_runtime.add_driver(
-        HostLinkDriverSpec(DEVICE_ID, _PrcxiDriver, {}, resource_uuid=DEVICE_UUID)
+        HostLinkDriverSpec(DEVICE_ID, _BenchDriver, {}, resource_uuid=DEVICE_UUID)
     )
     slave = HostLinkBackend(slave_runtime, is_slave=True)
 
@@ -197,7 +166,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         host.start()
         assert host.server is not None
         HostLinkConfig.port = host.server.port
-        monkeypatch.setattr(BasicConfig, "machine_name", "prcxi-flow-slave")
+        monkeypatch.setattr(BasicConfig, "machine_name", "bench-flow-slave")
         slave.start()
         assert _wait_until(lambda: DEVICE_ID in host.devices(), timeout=3.0)
         assert slave.client is not None
@@ -209,16 +178,8 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
 
         monkeypatch.setitem(
             lab_registry.resource_type_registry,
-            "PRCXI_300ul_Tips",
-            {
-                "class": {
-                    "module": (
-                        "unilabos.devices.liquid_handling.prcxi."
-                        "prcxi_labware:PRCXI_300ul_Tips"
-                    ),
-                    "type": "pylabrobot",
-                }
-            },
+            "test_tip_rack_300ul",
+            registry_entry(TIP_RACK_MODULE),
         )
 
         # ---- 台面：ensure 一块 deck（T1/T2/T3）并挂到 slave 设备 ----
@@ -232,7 +193,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
 
         # ================= 场景 1：Syncer（本地接管外部物料系统，实时上报） =================
         # 外部系统出现一块板（本地草稿无 uuid，A1 已有 40ul Water）
-        syncer_draft = PRCXI_BioER_96_wellplate(name="syncer_plate")
+        syncer_draft = plate("syncer_plate")
         materials.set_substance_on_target(syncer_draft.get_well("A1"), "Water", 40.0)
 
         # 注册+接管：slave 侧经 HostLink 上行创建，权威发 uuid；输入草稿不被
@@ -277,7 +238,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         # ================= 场景 2：本地正常创建 + assign 上台面 =================
         # 按 registry 类名创建（后端发号回来实例化）；node= 自动登记 tracker
         local_tips = materials.create(
-            "PRCXI_300ul_Tips",
+            "test_tip_rack_300ul",
             name="local_tips",
             node=node,
             gateway=slave_gateway,
@@ -286,7 +247,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         assert node.resource_tracker.uuid_to_resources[tips_uuid] is local_tips
 
         # 挂载门面：与 Host 下发 RESOURCE_APPEND 同语义（node.append_resource）
-        materials.assign(node, local_tips, parent="PRCXI_Deck", slot="T2")
+        materials.assign(node, local_tips, parent="Bench_Deck", slot="T2")
         # 本地已持有 -> append_resource 复用同一实例，不重复 resource_tree_add
         assert node.resource_tracker.uuid_to_resources[tips_uuid] is local_tips
         assert local_tips.parent is deck_inst
@@ -312,7 +273,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
 
         # ================= 场景 3：微后端仓储系统扣减创建 =================
         # -- 分支 A：库存已在权威（服务端建库存 -> 扣减单下发同 uuid 实体） --
-        stock_draft = PRCXI_BioER_96_wellplate(name="stock_plate")
+        stock_draft = plate("stock_plate")
         materials.set_substance_on_target(stock_draft.get_well("A1"), "Water", 80.0)
         stock_plate = materials.create(stock_draft, gateway=gateway)  # 仓储库存
         stock_uuid = stock_plate.unilabos_uuid
@@ -331,7 +292,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         assert service.get_material(stock_uuid).material.version == stock_version
 
         # 第二步：RESOURCE_APPEND 挂载（本地未命中 -> 从权威加载实例）
-        _append_via_hostlink(host, stock_uuid, bind_parent_id="PRCXI_Deck", slot="T3")
+        _append_via_hostlink(host, stock_uuid, bind_parent_id="Bench_Deck", slot="T3")
         stock_inst = node.resource_tracker.uuid_to_resources[stock_uuid]
         assert stock_inst.parent is deck_inst
         assert len(node.driver.added_batches) == 2  # 新实例 -> resource_tree_add
@@ -349,7 +310,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
 
         # -- 分支 B：扣减产物权威缺失（云端扣减单带全树 uuid） -> adopt 创建 --
         deducted_uuid = str(uuid4())
-        deducted_draft = PRCXI_300ul_Tips(name="deducted_tips")
+        deducted_draft = tip_rack("deducted_tips")
         deducted_draft.unilabos_uuid = deducted_uuid
         for descendant in deducted_draft.get_all_children():
             descendant.unilabos_uuid = str(uuid4())
@@ -360,7 +321,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
 
         # 挂载门面接受裸 uuid 字符串，并在本地未命中时从权威加载实例。
         materials.assign(
-            node, deducted_uuid, parent="PRCXI_Deck", slot="T1"
+            node, deducted_uuid, parent="Bench_Deck", slot="T1"
         )
         deducted_inst = node.resource_tracker.uuid_to_resources[deducted_uuid]
         assert deducted_inst.parent is deck_inst
@@ -465,7 +426,7 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
     )]))
 
     local = HostLinkLocalRuntime()
-    node = local.add_driver(HostLinkDriverSpec("bench", _PrcxiDriver, {}, resource_uuid=device_uuid))
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=device_uuid))
     backend = HostLinkBackend(local, is_slave=False)
     backend.start()
     try:
@@ -475,7 +436,7 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
 
         assert service.get_material(deck_uuid).material.parent_material_uuid == device_uuid
         device_tree = service.get_tree(device_uuid)
-        assert [n.material.name for n in device_tree.nodes] == ["物料工作台", "PRCXI_Deck"]
+        assert [n.material.name for n in device_tree.nodes] == ["物料工作台", "Bench_Deck"]
         assert [s.label for n in device_tree.nodes for s in n.sites] == ["T1", "T2", "T3", "T4"]
         assert [m.material.name for m in service.list_materials(roots_only=True)] == ["物料工作台"]
 
@@ -486,12 +447,11 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
         # 台面上的耗材照常：create + assign 上 T1，快照按设备根树提交，transfer 换到 T3
         from unilabos.registry.registry import lab_registry
 
-        monkeypatch.setitem(lab_registry.resource_type_registry, "PRCXI_300ul_Tips", {"class": {
-            "module": "unilabos.devices.liquid_handling.prcxi.prcxi_labware:PRCXI_300ul_Tips",
-            "type": "pylabrobot",
-        }})
-        tips = materials.create("PRCXI_300ul_Tips", name="tips_r1", node=node)
-        materials.assign(node, tips, parent="PRCXI_Deck", slot="T1")
+        monkeypatch.setitem(
+            lab_registry.resource_type_registry, "test_tip_rack_300ul", registry_entry(TIP_RACK_MODULE)
+        )
+        tips = materials.create("test_tip_rack_300ul", name="tips_r1", node=node)
+        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
         assert service.get_material(tips.unilabos_uuid).material.parent_material_uuid == deck_uuid
         assert _site_by_label(service, deck_uuid, "T1").occupied_material_uuid == tips.unilabos_uuid
 
@@ -503,9 +463,9 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
 
         # 观察者自动快照（孔位加液同款：本地 state 变化 + commit -> 自动上报）在台面挂设备后
         # 照常到达权威：hydrate_well 之前卡死就是因为根被解析成设备、快照集合对不上
-        plate = materials.create(PRCXI_BioER_96_wellplate(name="plate_r1"), node=node)
-        materials.assign(node, plate, parent="PRCXI_Deck", slot="T2")
-        well = plate.get_well("A1")
+        plate_r1 = materials.create(plate("plate_r1"), node=node)
+        materials.assign(node, plate_r1, parent="Bench_Deck", slot="T2")
+        well = plate_r1.get_well("A1")
         well.tracker.add_liquid("Buffer", 25.0)
         well.tracker.commit()
         assert _wait_until(
@@ -519,6 +479,202 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
         assert result["success"] is True
         assert _site_by_label(service, deck_uuid, "T1").occupied_material_uuid is None
         assert _site_by_label(service, deck_uuid, "T3").occupied_material_uuid == tips.unilabos_uuid
+    finally:
+        backend.stop()
+        set_materials_gateway(None)
+        service.close()
+
+
+def test_discarded_tip_is_removed_from_authority(tmp_path, monkeypatch) -> None:
+    """拿起枪头不放回（废弃）后同步台面，权威里该孔位下不应再有 Tip。
+
+    原 PRCXI 14 阶段端到端测试的阶段 9；驱动迁出后改用测试夹具保留这条回归。
+    """
+
+    service = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(service)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+
+    local = HostLinkLocalRuntime()
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=str(uuid4())))
+    backend = HostLinkBackend(local, is_slave=False)
+    backend.start()
+    try:
+        deck_uuid = str(uuid4())
+        materials.ensure(_build_deck(deck_uuid), gateway=gateway)
+        materials.assign(node, deck_uuid)
+        deck = node.resource_tracker.uuid_to_resources[deck_uuid]
+
+        tips = materials.create(tip_rack("tips_discard"), node=node)
+        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+
+        spot = tips.get_item("A1")
+        other = tips.get_item("A2")
+        assert spot.has_tip()
+        spot.get_tip()  # 物理拿起枪头
+        spot.empty()
+        spot.tracker.commit()  # 枪头不放回（废弃）
+        asyncio.run(node.update_resource([deck]))
+        assert not spot.has_tip()
+
+        def _tip_children(tip_spot) -> list[str]:
+            return [
+                item.material.material_uuid
+                for item in service.get_tree(deck_uuid).nodes
+                if item.material.parent_material_uuid == tip_spot.unilabos_uuid
+                and item.material.resource_type == "tip"
+            ]
+
+        assert _tip_children(other) == [other.get_tip().unilabos_uuid]
+        assert _tip_children(spot) == [], "废弃的枪头仍挂在权威 A1 孔位下"
+    finally:
+        backend.stop()
+        set_materials_gateway(None)
+        service.close()
+
+
+def _retire_operations(service: MaterialsService, material_uuid: str) -> list[str]:
+    return [
+        change.operation
+        for change in service.changes(limit=10_000)
+        if change.aggregate_uuid == material_uuid and change.operation == "retire"
+    ]
+
+
+def _is_retired(service: MaterialsService, material_uuid: str) -> bool:
+    """退役 = retired + 软删除：读接口不再返回，账本留有 retire 记录。"""
+
+    from unilabos.server.services.materials import MaterialNotFoundError
+
+    try:
+        service.get_material(material_uuid)
+    except MaterialNotFoundError:
+        return bool(_retire_operations(service, material_uuid))
+    return False
+
+
+def test_slave_observer_retires_discarded_tip_over_hostlink(tmp_path, monkeypatch) -> None:
+    """Slave 设备的快照观察者经 HostLink 上报：丢弃枪头不调用 update_resource 也会退役。"""
+
+    from unilabos.backend.runtime.async_utils import run_node_coroutine
+
+    service = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(service)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "host", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 0.05)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 1.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 5.0)
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
+    slave_runtime = HostLinkLocalRuntime()
+    node = slave_runtime.add_driver(
+        HostLinkDriverSpec(DEVICE_ID, _BenchDriver, {}, resource_uuid=DEVICE_UUID)
+    )
+    slave = HostLinkBackend(slave_runtime, is_slave=True)
+    try:
+        host.start()
+        assert host.server is not None
+        HostLinkConfig.port = host.server.port
+        monkeypatch.setattr(BasicConfig, "machine_name", "bench-tip-slave")
+        slave.start()
+        assert _wait_until(lambda: DEVICE_ID in host.devices(), timeout=3.0)
+        assert slave.client is not None
+        slave_gateway = HostLinkMaterialsClient(slave.client)
+
+        deck_uuid = str(uuid4())
+        materials.ensure(_build_deck(deck_uuid), gateway=gateway)
+        _append_via_hostlink(host, deck_uuid, bind_parent_id=DEVICE_ID)
+        tips = materials.create(tip_rack("tips_slave"), node=node, gateway=slave_gateway)
+        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+        observer = node.resource_tracker._material_snapshot_observer
+        assert observer is not None
+
+        spot, other = tips.get_item("A1"), tips.get_item("A2")
+        tip_uuid = spot.tip.unilabos_uuid
+
+        async def discard() -> None:
+            # 在设备执行线程上一次完成取下 + commit（驱动动作同款），观察者不会冻结到
+            # 未提交的中间态
+            spot.tracker.remove_tip(commit=True)
+
+        run_node_coroutine(node, discard())
+        assert _wait_until(lambda: _is_retired(service, tip_uuid)), "观察者未经 HostLink 退役被丢弃的枪头"
+        assert observer.errors == ()
+        assert [
+            node.material.material_uuid
+            for node in service.get_tree(deck_uuid).nodes
+            if node.material.parent_material_uuid == other.unilabos_uuid
+        ] == [other.tip.unilabos_uuid]
+        assert len(_retire_operations(service, tip_uuid)) == 1
+    finally:
+        slave.stop()
+        host.stop()
+        set_materials_gateway(None)
+        service.close()
+
+
+def test_retired_tip_does_not_come_back_on_restore(tmp_path, monkeypatch) -> None:
+    """退役的枪头不会在重新实例化（transfer 的 unload/load）或从权威恢复时复活。"""
+
+    service = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(service)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
+
+    local = HostLinkLocalRuntime()
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=str(uuid4())))
+    backend = HostLinkBackend(local, is_slave=False)
+    backend.start()
+    try:
+        deck_uuid = str(uuid4())
+        materials.ensure(_build_deck(deck_uuid), gateway=gateway)
+        materials.assign(node, deck_uuid)
+        deck = node.resource_tracker.uuid_to_resources[deck_uuid]
+        tips = materials.create(tip_rack("tips_restore"), node=node)
+        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+
+        spot = tips.get_item("A1")
+        discarded = spot.tip
+        kept_uuid = tips.get_item("A2").tip.unilabos_uuid
+        spot.tracker.remove_tip(commit=True)
+        asyncio.run(node.update_resource([deck]))
+        assert _is_retired(service, discarded.unilabos_uuid)
+
+        # 重新实例化：transfer 先按权威落位，再 unload 旧实例、按权威 load 新实例
+        result = asyncio.run(
+            materials.transfer(
+                tips.unilabos_uuid, "bench", deck_uuid, "T3", source_device_id="bench", gateway=gateway
+            )
+        )
+        assert result["success"] is True
+        reloaded = node.resource_tracker.uuid_to_resources[tips.unilabos_uuid]
+        assert reloaded is not tips
+        assert reloaded.get_item("A1").tip is None
+        assert not reloaded.get_item("A1").has_tip()
+        assert reloaded.get_item("A2").tip.unilabos_uuid == kept_uuid
+        # 孔位发号随权威恢复：再发的枪头不与已退役的同名
+        assert reloaded.get_item("A1").make_tip().name != discarded.name
+
+        # 从权威恢复（重启）同样没有这支枪头
+        restored = materials.get(deck_uuid, gateway=gateway).to_plr_resources()[0]
+        restored_spot = restored.get_resource("tips_restore").get_item("A1")
+        assert restored_spot.tip is None
+        assert discarded.unilabos_uuid not in {
+            item.material.material_uuid for item in service.get_tree(deck_uuid).nodes
+        }
+        assert _is_retired(service, discarded.unilabos_uuid)
     finally:
         backend.stop()
         set_materials_gateway(None)

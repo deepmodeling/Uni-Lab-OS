@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import command_result, error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
@@ -324,12 +325,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
         )
         with TestClient(app) as client:
             response = client.post(
-                "/api/v1/materials/lots/inbound",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("inbound_inventory_lot"), inbound
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
+            command_result(response)
 
             request = InventoryReservationCreate(
                 task_uuid="task-http",
@@ -347,21 +348,20 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                 ],
             )
             response = client.post(
-                "/api/v1/materials/reservations",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("reserve_inventory", job_uuid="job-http"),
                     request,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            reservation_uuid = response.json()["data"]["reservation_uuid"]
+            reservation_uuid = command_result(response)["data"]["reservation_uuid"]
 
             transition = InventoryReservationTransition(
                 reservation_uuid=reservation_uuid,
                 reason="action_start",
             )
             response = client.post(
-                f"/api/v1/materials/reservations/{reservation_uuid}/consume",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation(
                         "consume_inventory_reservation",
@@ -370,11 +370,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                     transition,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            assert response.json()["data"]["status"] == "consumed"
-            assert client.get(
+            assert command_result(response)["data"]["status"] == "consumed"
+            assert ok_data(client.get(
                 "/api/v1/materials/reservations/by-job/job-http"
-            ).json()["status"] == "consumed"
+            ))["status"] == "consumed"
+            listed = ok_data(client.get("/api/v1/inventory/reservations", params={"task_uuid": "task-http"}))
+            assert [item["reservation_id"] for item in listed["reservations"]] == [reservation_uuid]
     finally:
         service.close()
 
@@ -674,11 +675,12 @@ class _ListenerOnlyBackend:
 def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> None:
     service = MaterialsService(tmp_path / "materials.db")
     client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
     try:
         _template(service, "reagent-template", "reagent")
         _inbound(service, lot_uuid="lot-a", quantity=5)
         scheduler = BackendScheduler(
-            object(),
+            workflow,
             _ListenerOnlyBackend(),
             materials_gateway=client,
         )
@@ -725,12 +727,14 @@ def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> N
         }
 
         scheduler._release_unconsumed_task_inventory("task-local")  # noqa: SLF001
+        # 没有 runtime 尝试事实的外部预留不能仅凭清理调用返还；真实终态由恢复测试覆盖。
         assert [
             item.status
             for item in service.list_inventory_reservations(task_uuid="task-local")
-        ] == ["released", "released"]
-        assert service.get_inventory_lot("lot-a").quantity_available == 5
+        ] == ["active", "active"]
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
     finally:
+        workflow.close()
         service.close()
 
 

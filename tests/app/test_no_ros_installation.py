@@ -41,7 +41,8 @@ def test_default_runtime_imports_do_not_need_ros():
 from unilabos.config.config import BasicConfig
 from unilabos.app.cli.parser import build_parser
 assert BasicConfig.backend == build_parser().parse_args([]).backend == 'hostlink'
-import unilabos.resources.graphio
+import unilabos.server.services.materials.graph as graph_authority
+graph_authority.load_graph_payload({"nodes": [], "links": []}, machine_name="no-ros")
 import unilabos.registry.registry
 import unilabos.server.api.app
 import unilabos.backend.hostlink.local_runtime
@@ -52,6 +53,23 @@ import unilabos.backend.hostlink.local_runtime
 def test_module_entrypoint_help_without_ros(module):
     run_python("import runpy\nsys.argv = ['unilab', '--help']\nrunpy.run_module("
                + repr(module) + ", run_name='__main__')\n")
+
+
+@pytest.mark.parametrize("minor,gil_disabled,expected", [
+    (14, 0, True), (14, 1, False),
+    (12, 0, False), (13, 0, False), (15, 0, False),
+])
+def test_installation_python_version_boundary(monkeypatch, minor, gil_disabled, expected):
+    """HostLink 与 ROS 2 统一只接受普通 CPython 3.14。"""
+    from types import SimpleNamespace
+    from scripts import verify_installation as verifier
+
+    monkeypatch.setattr(verifier, "sys", SimpleNamespace(
+        version_info=SimpleNamespace(major=3, minor=minor, micro=0),
+    ))
+    monkeypatch.setattr(verifier.sysconfig, "get_config_var",
+                        lambda name: gil_disabled if name == "Py_GIL_DISABLED" else None)
+    assert verifier.check_python_version() is expected
 
 
 @pytest.mark.parametrize("backend_args", [[], ["--backend", "hostlink"], ["--backend", "ros2"]])
@@ -76,7 +94,9 @@ class Counter:
 def test_conda_build_default_has_no_ros_channels():
     from scripts.build_conda_release import FULL_SUPPORT_RECIPES, recipes
 
-    assert recipes() == [(name, []) for name in ("msgcenterpy", "pylabrobot", "mcp", "base")]
+    assert recipes() == [(name, []) for name in (
+        "opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base"
+    )]
     assert recipes("jazzy")[-1] == ("ros2", ["robostack-jazzy"])
     with pytest.raises(ValueError, match="显式"):
         recipes(full=True)
@@ -84,6 +104,7 @@ def test_conda_build_default_has_no_ros_channels():
         recipes(extensions_only=True)
     assert recipes("jazzy", full=True, extensions_only=True) == [
         *((name, []) for name in FULL_SUPPORT_RECIPES),
+        ("msgs", ["robostack-jazzy"]),
         ("ros2", ["robostack-jazzy"]), ("full", ["robostack-jazzy"]),
     ]
 
@@ -91,7 +112,7 @@ def test_conda_build_default_has_no_ros_channels():
 def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_path):
     from scripts import build_conda_release
 
-    for name in ("unilabos-0.12.3-py312_0.conda", "unilabos-full-0.12.3-jazzy_0.conda"):
+    for name in ("unilabos-0.13.0rc1-py314_0.conda", "unilabos-full-0.13.0rc1-jazzy_0.conda"):
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
@@ -107,7 +128,19 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
                         lambda command, **kw: uploads.append(Path(command[-1]).name)
                         or subprocess.CompletedProcess(command, 0))
     build_conda_release.main()
-    assert uploads == [support.name, "unilabos-full-0.12.3-jazzy_0.conda"]
+    assert uploads == [support.name, "unilabos-full-0.13.0rc1-jazzy_0.conda"]
+
+
+def test_conda_abi_upgrade_builds_message_packages_before_consumers():
+    """消息扩展不能靠频道中尚不存在或 ABI 不同的产物通过求解。"""
+    from scripts.build_conda_release import EXTERNAL_RECIPES, recipes
+
+    ordered = [name for name, _ in recipes("jazzy,humble", full=True)]
+    assert ordered.index("opentrons-shared-data") < ordered.index("pylabrobot")
+    for suffix in ("", "-humble"):
+        assert ordered.index(f"msgs{suffix}") < ordered.index(f"ros2{suffix}")
+        assert ordered.index(f"ros2{suffix}") < ordered.index(f"full{suffix}")
+        assert (Path(__file__).resolve().parents[2] / EXTERNAL_RECIPES[f"msgs{suffix}"]).is_file()
 
 
 def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypatch, tmp_path):
@@ -115,8 +148,8 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
 
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
-        "win-64/mcp-1.30.0-py312_0.conda": True,
-        "win-64/unilabos-0.12.3-py312_0.conda": False,
+        "win-64/mcp-1.30.0-py314_0.conda": True,
+        "win-64/unilabos-0.13.0rc1-py314_0.conda": False,
     }
     for name in packages:
         package = tmp_path / name
@@ -344,7 +377,8 @@ def test_full_conda_profiles_cover_python_extras(monkeypatch):
     runpy.run_path(str(root / "setup.py"))
     conda_names = {"build": "python-build", "matplotlib": "matplotlib-base"}
     for distro, suffix in (("jazzy", ""), ("humble", "-humble")):
-        assert ("pprp", []) in recipes(distro, full=True)
+        # 厂商驱动 SDK（pprp / pylibftdi / pyautogui）随驱动包声明，不再进入 full
+        assert ("pprp", []) not in recipes(distro, full=True)
         full = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text())
         ros2 = yaml.safe_load((root / f".conda/ros2{suffix}/recipe.yaml").read_text())
         # Windows SDK 的选择使 full 成为平台包，不能把它发布成同名不同内容的 noarch。
@@ -373,12 +407,23 @@ def test_full_conda_support_packages_and_closed_dependency_validation():
         dependencies = full["requirements"]["run"]
         assert "colcon-notification" in dependencies
         assert set(FULL_SUPPORT_RECIPES) <= {dep.split()[0] for dep in dependencies if isinstance(dep, str)}
-        assert {"if": "win", "then": "pyautogui >=0.9.54"} in dependencies
+        assert {"if": "win", "then": "pywinauto >=0.6.8"} in dependencies
+        assert not any("pyautogui" in str(dep) or "pprp" in str(dep) or "pylibftdi" in str(dep) for dep in dependencies)
         assert any(test.get("python", {}).get("pip_check") is True for test in full["tests"])
         commands = next(test["script"] for test in full["tests"] if "script" in test)
-        assert commands[0]["if"] == "win"
-        assert all("%USERPROFILE%\\AppData\\" in command for command in commands[0]["then"])
-        assert "import rinoh_typeface_dejavuserif" in commands[1]
+        windows = next(command for command in commands if isinstance(command, dict) and command.get("if") == "win")
+        assert all("%USERPROFILE%\\AppData\\" in command for command in windows["then"])
+        assert any("import rinoh_typeface_dejavuserif" in command for command in commands if isinstance(command, str))
+        # ROS 冒烟测试统一走 conda_smoke 模块（本机发现 + 超时），模块内先修补 Windows DLL 路径。
+        assert commands[0] == "python -m unilabos.backend.ros2.conda_smoke"
+        validation = next(command for command in commands if isinstance(command, str) and "reqs =" in command)
+        assert "['ruff', '--version']" in validation
+        assert "r.specifier.contains" in validation
+    from unilabos.backend.ros2 import conda_smoke
+    assert "patch_rclpy_dll_windows()" in conda_smoke.CHILD_CODE
+    for name in ("ros2", "ros2-humble"):
+        ros2 = yaml.safe_load((root / f".conda/{name}/recipe.yaml").read_text(encoding="utf-8"))
+        assert ros2["tests"][0]["script"] == ["python -m unilabos.backend.ros2.conda_smoke"]
 
 
 def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp_path):
@@ -389,3 +434,48 @@ def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp
     monkeypatch.setattr(pack_conda_release.subprocess, "check_output", lambda *a, **kw: "2" * 40)
     with pytest.raises(RuntimeError, match="SHA"):
         pack_conda_release.main()
+
+
+def test_windows_gui_helper_dependencies_are_declared(monkeypatch):
+    """``utils/pywinauto_util`` 在模块级导入的第三方包（psutil、pywinauto）都要由 full 扩展与 conda
+    full 配方以 Windows 条件声明；其它平台导入它得到明确的错误，而不是缺包。"""
+
+    import ast
+    import runpy
+    import sys
+
+    import setuptools
+    import yaml
+    from packaging.requirements import Requirement
+
+    root = Path(__file__).resolve().parents[2]
+    helper = root / "unilabos/utils/pywinauto_util.py"
+    tree = ast.parse(helper.read_text(encoding="utf-8"))
+    imported = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            imported.add(node.module.split(".")[0])
+    third_party = imported - set(sys.stdlib_module_names) - {"pywinauto_recorder"}
+    assert {"psutil", "pywinauto"} <= third_party
+
+    captured = {}
+    monkeypatch.setattr(setuptools, "setup", lambda **kwargs: captured.update(kwargs))
+    runpy.run_path(str(root / "setup.py"))
+    full = {Requirement(raw).name: Requirement(raw) for raw in captured["extras_require"]["full"]}
+    for name in third_party:
+        assert name in full, f"{name} 未在 full 扩展中声明"
+        assert full[name].marker is not None and full[name].marker.evaluate({"sys_platform": "win32"})
+        assert not full[name].marker.evaluate({"sys_platform": "linux"})
+    for suffix in ("", "-humble"):
+        recipe = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text(encoding="utf-8"))
+        windows = {dep["then"].split()[0] for dep in recipe["requirements"]["run"] if isinstance(dep, dict) and dep.get("if") == "win"}
+        assert third_party <= windows, f".conda/full{suffix} 缺少 {sorted(third_party - windows)}"
+
+    if sys.platform != "win32":
+        import importlib
+
+        sys.modules.pop("unilabos.utils.pywinauto_util", None)
+        with pytest.raises(ImportError, match="Windows"):
+            importlib.import_module("unilabos.utils.pywinauto_util")

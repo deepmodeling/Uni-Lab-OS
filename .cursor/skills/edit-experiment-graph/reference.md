@@ -1,6 +1,6 @@
 # 实验图高级参考
 
-本文件是 SKILL.md 的补充，包含 ResourceDict 完整 schema、Handle 验证、GraphML 格式、Pose 标准化规则和复杂图文件结构。Agent 在需要处理这些场景时按需阅读。
+本文件是 SKILL.md 的补充，包含 ResourceDict 完整 schema、Handle 验证、Pose 标准化规则和复杂图文件结构（GraphML 已不再支持）。Agent 在需要处理这些场景时按需阅读。
 
 ---
 
@@ -62,9 +62,9 @@
 
 ### 标准化流程
 
-1. **graphio.py `canonicalize_nodes_data`**：若 `position` 不是 dict，从节点顶层提取 `x/y/z` 填入 `pose.position`
-2. **resource_tracker.py `get_resource_instance_from_dict`**：若 `position.x` 存在（旧格式），转为 `{"position": {"x":..., "y":..., "z":...}}`
-3. `pose.size` 从 `config.size_x/size_y/size_z` 自动填充
+1. **legacy 适配层**（`server/backend/legacy_adaptor/legacy/graph.py`）：`-g` / `unilab graph upload` 读取边界把根级 `position` 折叠进 `pose.position`
+2. **Graph Authority `load_graph_payload`**（`server/services/materials/graph.py`）：从节点顶层提取 `x/y/z` 填入 `pose.position`；仍带根级 `position` 的节点拒绝
+3. **resource_tracker.py `get_resource_instance_from_dict`**：`pose.size` 从 `config.size_x/size_y/size_z` 自动填充
 
 ---
 
@@ -103,29 +103,11 @@ my_device:
 
 ---
 
-## 4. GraphML 格式支持
+## 4. GraphML 不再支持
 
-除 JSON 外，系统也支持 GraphML 格式（`unilabos/resources/graphio.py::read_graphml`）。
-
-### 与 JSON 的关键差异
-
-| 特性 | JSON | GraphML |
-|------|------|---------|
-| 父子关系 | 子节点 `parent` 字段 | `::` 分隔的节点 ID（如 `station::pump_1`） |
-| 加载后 | 直接解析 | 先 `nx.read_graphml` 再转 JSON 格式 |
-| 输出 | 不生成副本 | 自动生成等价的 `.json` 文件 |
-
-### GraphML 转换流程
-
-```
-nx.read_graphml(file)
-    ↓ 用 label 重映射节点名
-    ↓ 从 "::" 推断 parent_relation
-nx.relabel_nodes + nx.node_link_data
-    ↓ canonicalize_nodes_data + canonicalize_links_ports
-    ↓ 写出等价 JSON 文件
-physical_setup_graph + handle_communications
-```
+设备图只接受 node-link JSON。`unilab -g foo.graphml` 会直接拒绝启动，并提示把图转换为
+node-link JSON：节点 id 用真实设备名，GraphML 里 `父::子` 的层级改写成子节点的
+`parent` 字段，顶层 `x/y/z` 可以保留（加载时折叠进 `pose.position`）。
 
 ---
 
@@ -133,7 +115,7 @@ physical_setup_graph + handle_communications
 
 ### 外部系统工作站完整 config
 
-以 `reaction_station_bioyond.json` 为例，工作站 `config` 中的关键字段：
+以 Bioyond 反应站图文件（随 Bioyond 驱动包发布，原 `reaction_station_bioyond.json`）为例，工作站 `config` 中的关键字段：
 
 ```json
 {
@@ -225,7 +207,7 @@ physical_setup_graph + handle_communications
 
 ## 6. Link 端口标准化
 
-`graphio.py::canonicalize_links_ports` 处理 `port` 字段的多种格式：
+`server/services/materials/graph.py::_canonicalize_link_ports`（由 `load_graph_payload` 调用）处理 `port` 字段的多种格式：
 
 ```python
 # 输入: 字符串格式 "(A,B)"
@@ -248,8 +230,10 @@ physical_setup_graph + handle_communications
 | 内容 | 路径 |
 |------|------|
 | ResourceDict 模型 | `unilabos/resources/resource_tracker.py` |
-| 图加载 + 标准化 | `unilabos/resources/graphio.py` |
+| 旧格式图升级 | `unilabos/server/backend/legacy_adaptor/legacy/graph.py` |
+| 图登记 + 运行时装配 | `unilabos/server/services/materials/graph.py` (`GraphService.upsert_graph`, `load_graph_payload`) |
+| `-g` 启动入口 | `unilabos/app/main.py` (`_load_startup_graph`) |
 | Handle 验证 | `unilabos/app/main.py` (449-481 行) |
-| 反应站图文件 | `unilabos/test/experiments/reaction_station_bioyond.json` |
-| 配液站图文件 | `unilabos/test/experiments/dispensing_station_bioyond.json` |
+| 协议工作站图文件 | `unilabos/test/experiments/Protocol_Test_Station/*.json` |
+| 虚拟反应器图文件 | `unilabos/test/experiments/mock_reactor.json` |
 | 用户文档 | `docs/user_guide/graph_files.md` |

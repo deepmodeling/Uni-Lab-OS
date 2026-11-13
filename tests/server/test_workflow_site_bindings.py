@@ -210,7 +210,13 @@ def test_api_template_and_graph_import_resolve_but_ui_preserves(authority):
     assert saved["code"] == 0, saved
     assert saved["data"]["nodes"][0]["param"]["site"] == "T1"
     body["revision"] = saved["data"]["workflow"]["revision"]
+    # V1：省略 site_binding_mode 时按 preserve 原样保存草稿；程序化导入显式传 resolve
     body.pop("site_binding_mode")
+    omitted = api.put(url, json=body).json()
+    assert omitted["code"] == 0, omitted
+    assert omitted["data"]["nodes"][0]["param"]["site"] == "T1"
+    body["revision"] = omitted["data"]["workflow"]["revision"]
+    body["site_binding_mode"] = "resolve"
     resolved = api.put(url, json=body).json()
     assert resolved["code"] == 0, resolved
     assert resolved["data"]["nodes"][0]["param"]["site"] == site_uuid
@@ -225,7 +231,8 @@ def test_failed_import_leaves_existing_graph_unchanged(authority):
     nodes = deepcopy(before["nodes"])
     nodes[0]["param"]["site"] = "T404"
     failed = api.put(f"/api/v1/workflows/{workflow_uuid}/graph", json={
-        "revision": before["workflow"]["revision"], "nodes": nodes, "edges": []}).json()
+        "revision": before["workflow"]["revision"], "nodes": nodes, "edges": [],
+        "site_binding_mode": "resolve"}).json()
     assert failed["code"] == 1000 and "T404" in failed["error"]["msg"], failed
     assert service.get_graph(workflow_uuid) == before
 
@@ -239,7 +246,8 @@ def test_http_import_reads_subdevice_endpoint_capabilities(authority, monkeypatc
     if split:
         def forward(method, path, **kwargs):
             assert method == "GET" and path == "/api/v1/runtime/endpoints?state=online&limit=1000"
-            return SimpleNamespace(status_code=200, body_bytes=lambda: json.dumps(snapshots).encode())
+            # Host 自己的 runtime 路由输出统一信封，权威解包 data
+            return SimpleNamespace(status_code=200, body_bytes=lambda: json.dumps({"code": 0, "data": snapshots}).encode())
         monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_proxy_enabled", lambda: True)
         monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", forward)
         runtime.list_endpoint_snapshots = lambda **_: pytest.fail("分进程不能读取调度权威自己的 endpoint 表")
@@ -255,8 +263,13 @@ def test_http_import_reads_subdevice_endpoint_capabilities(authority, monkeypatc
     assert saved["data"]["nodes"][0]["param"] == {"value": 3}
 
 
-@pytest.mark.parametrize("response", [None, SimpleNamespace(status_code=503),
+@pytest.mark.parametrize("response", [None,
+    # Host 路由暂不可用：信封业务码 5001（HTTP 200），或没有信封正文的 HTTP 503
+    SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":5001,"error":{"msg":"Host unavailable"}}'),
+    SimpleNamespace(status_code=503, body_bytes=lambda: b''),
+    # 不是信封 / data 不是列表 / 不是 JSON：一律当作无效响应
     SimpleNamespace(status_code=200, body_bytes=lambda: b'{}'),
+    SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":0,"data":{}}'),
     SimpleNamespace(status_code=200, body_bytes=lambda: b'invalid-json'),
 ])
 def test_unavailable_host_capabilities_do_not_modify_workflows(authority, monkeypatch, response):

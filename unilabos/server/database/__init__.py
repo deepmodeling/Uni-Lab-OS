@@ -5,6 +5,13 @@ from unilabos.server.database.layout import (
     ServerDatabasePaths,
     validate_distinct_database_paths,
 )
+from unilabos.server.database.root_lock import (
+    DatabaseRootLock,
+    DatabaseRootLockError,
+    DatabaseRootLocked,
+    claim_database_root,
+    release_database_root,
+)
 from unilabos.server.database.schema import (
     DatabaseIdentityConflict,
     DatabaseMigrationFailed,
@@ -40,6 +47,9 @@ __all__ = [
     "DATABASE_TABLE_MODELS",
     "DatabaseLayoutConflict",
     "DatabaseIdentityConflict",
+    "DatabaseRootLock",
+    "DatabaseRootLockError",
+    "DatabaseRootLocked",
     "DatabaseMigrationFailed",
     "DatabaseMigrationRequired",
     "DatabaseSpec",
@@ -50,7 +60,9 @@ __all__ = [
     "TELEMETRY_DATABASE",
     "Migration",
     "TableSpec",
+    "claim_database_root",
     "initialize_database",
+    "release_database_root",
     "sql_migration",
     "validate_distinct_database_paths",
 ]

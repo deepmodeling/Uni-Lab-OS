@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.history import install_history_api
 from unilabos.client.history import (
     HTTPHistoryClient,
@@ -137,7 +138,7 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
     try:
         with TestClient(app) as client:
             original = client.post(
-                "/api/v1/history/events",
+                "/api/v1/edge/history/events",
                 json=HistoryEventAppend(
                     event_uuid="result-1",
                     event_type="job_result",
@@ -150,13 +151,13 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
             assert original.status_code == 200, original.text
 
             mismatch = client.post(
-                "/api/v1/history/events/result-1/replacement",
+                "/api/v1/edge/history/events/result-1/replacement",
                 json=ManualResultReplacement(
                     supersedes_event_uuid="other-result",
                     actor_uuid="operator-1",
                 ).model_dump(mode="json"),
             )
-            assert mismatch.status_code == 422
+            error_of(mismatch, 1000)
 
             body = ManualResultReplacement(
                 supersedes_event_uuid="result-1",
@@ -167,15 +168,15 @@ def test_http_router_maps_conflict_and_path_mismatch(tmp_path) -> None:
             ).model_dump(mode="json")
             assert (
                 client.post(
-                    "/api/v1/history/events/result-1/replacement", json=body
+                    "/api/v1/edge/history/events/result-1/replacement", json=body
                 ).status_code
                 == 200
             )
             conflict = client.post(
-                "/api/v1/history/events/result-1/replacement",
+                "/api/v1/edge/history/events/result-1/replacement",
                 json={**body, "event_uuid": "fork"},
             )
-            assert conflict.status_code == 409
+            error_of(conflict, 3003)
     finally:
         service.close()
 

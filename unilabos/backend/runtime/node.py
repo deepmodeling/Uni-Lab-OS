@@ -11,7 +11,12 @@ import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterator, List, Optional
 
-from unilabos.backend.runtime.async_utils import DeviceAsyncMutex, schedule_async_func
+from unilabos.backend.runtime.async_utils import (
+    CommitPoint,
+    DeviceAsyncMutex,
+    run_node_coroutine,
+    schedule_async_func,
+)
 
 if TYPE_CHECKING:
     from unilabos.backend.runtime.resource import ResourceService
@@ -404,6 +409,52 @@ class DeviceNode(ABC):
             f"本地目标物料 {getattr(parent, 'name', parent)!r} 不存在 Site {selector!r}"
         )
 
+    @classmethod
+    def _carrier_placement(
+        cls, parent: Any, selector: Any | None
+    ) -> tuple[Any, int] | None:
+        """物料要经 PLR 载架的 Site 放置时返回 ``(载架, spot)``，否则 None。
+
+        PLR ``Carrier``（含 ``ItemizedCarrier`` / ``WareHouse``）的直接子节点只能是槽位
+        holder，物料只能经 ``assign_resource_to_site`` 放到 holder 上（载架同时登记
+        Site 占用）。两种目标都走这里：
+
+        - ``parent`` 是载架本身：按 ``selector``（Site uuid / label / 索引）解析 spot，
+          不指定 Site 时报错；
+        - ``parent`` 是载架某个 Site 的 holder（权威把载架 Site 上的物料挂在 holder
+          下）：spot 就是这个 holder 的位置，``selector`` 若给出必须指向同一个 Site。
+        """
+
+        from pylabrobot.resources import ResourceHolder
+        from pylabrobot.resources.carrier import Carrier
+
+        if isinstance(parent, Carrier):
+            spot = cls._site_spot(parent, selector)
+            if spot is None:
+                raise ValueError(
+                    f"载架 {parent.name!r} 只能按 Site 放置物料，请指定 site 或 slot"
+                )
+            return parent, spot
+        carrier = getattr(parent, "parent", None)
+        if not isinstance(parent, ResourceHolder) or not isinstance(carrier, Carrier):
+            return None
+        holder_spot = next(
+            (spot for spot, holder in carrier.sites.items() if holder is parent), None
+        )
+        if holder_spot is None:
+            return None
+        if selector is not None and str(selector).strip() != "":
+            try:
+                selected = cls._site_spot(carrier, selector)
+            except ValueError:
+                selected = None
+            if selected is not None and selected != holder_spot:
+                raise ValueError(
+                    f"Site {selector!r} 不是载架 {carrier.name!r} 上 holder "
+                    f"{parent.name!r} 所在的 Site"
+                )
+        return carrier, holder_spot
+
     async def _attach_local_materials(
         self,
         material_uuids: list[str],
@@ -450,9 +501,19 @@ class DeviceNode(ABC):
                 )
                 if observer is not None:
                     observer.unobserve(resource)
-                spot = self._site_spot(parent, site)
-                assign_site = getattr(parent, "assign_resource_to_site", None)
+                placement = self._carrier_placement(parent, site)
+                spot = (
+                    placement[1]
+                    if placement is not None
+                    else self._site_spot(parent, site)
+                )
+                assign_site = getattr(
+                    placement[0] if placement is not None else parent,
+                    "assign_resource_to_site",
+                    None,
+                )
                 if callable(assign_site) and spot is not None:
+                    # 载架 Site：经载架放到 holder 上（权威父节点可能是载架或其 holder）
                     assign_site(resource, spot)
                 else:
                     assign = parent.assign_child_resource
@@ -472,6 +533,29 @@ class DeviceNode(ABC):
         if attached:
             await self._invoke_resource_hook("resource_tree_add", attached)
         return attached
+
+    async def _report_loaded_poses(self, resources: list[Any]) -> None:
+        """transfer load 之后把物料在新父节点下的位姿按增量报给权威。
+
+        权威只提交了父子与 Site 占用；位姿（holder 的默认子位置、台面 Site 坐标）由本地
+        assign 决定，而投影期间观察者被抑制。从未有过位姿的物料不补报，下次从权威反序列化
+        时报“没有 location”。在 load 返回前完成，transfer 结束时权威树即可反序列化；
+        补报失败只记日志，不撤销已经提交的位置。
+        """
+
+        service = self.__dict__.get("_device_resource_service")
+        apply_deltas = getattr(service, "apply_node_deltas", None)
+        if not callable(apply_deltas):
+            return
+        for resource in resources:
+            if getattr(resource, "parent", None) is None:
+                continue
+            try:
+                await apply_deltas(self.device_id, self.resource_uuid, resource, [resource])
+            except Exception as exc:  # noqa: BLE001 - 位置已提交，位姿补报失败不影响转移结果
+                self.lab_logger().warning(
+                    f"[物料同步] 物料 {getattr(resource, 'name', resource)} load 后位姿补报失败：{exc}"
+                )
 
     async def material_sync(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """微后端 transfer 的设备侧投影（unload/load），幂等（按 transfer_uuid+action）。
@@ -518,13 +602,15 @@ class DeviceNode(ABC):
                             raise ValueError(
                                 "material_sync 的物料与 Site 数量必须一致"
                             )
-                        await self._attach_local_materials(
+                        attached = await self._attach_local_materials(
                             material_uuids, sites
                         )
                     else:
                         raise ValueError(
                             f"未知 material_sync action：{action!r}"
                         )
+                if action == "load":
+                    await self._report_loaded_poses(attached)
                 if sync_key:
                     completed.add(sync_key)
         return {
@@ -659,8 +745,10 @@ class DeviceNode(ABC):
                 additional_add_params["slot"] = extra["update_resource_site"]
             # site 只承载权威 Site uuid；slot 承载 label / 0-based 索引
             selector = additional_add_params.get("site") or additional_add_params.get("slot")
+            # PLR 载架（仓库等）只能经 Site 放物料；目标也可能是载架 Site 的 holder
+            placement = self._carrier_placement(parent_resource, selector)
             spec = inspect.signature(parent_resource.assign_child_resource)
-            if "spot" in spec.parameters:
+            if placement is None and "spot" in spec.parameters:
                 # _site_spot 解析 uuid、label 或索引；未指定时由父级选择默认位置，
                 # 无法解析的显式选择器直接报错。
                 additional_params["spot"] = self._site_spot(parent_resource, selector)
@@ -689,7 +777,14 @@ class DeviceNode(ABC):
             if observer is not None:
                 observer.unobserve(plr_resource)
 
-            parent_resource.assign_child_resource(plr_resource, location=None, **additional_params)
+            if placement is not None:
+                carrier, spot = placement
+                self.lab_logger().info(f"物料{plr_resource}经载架{carrier}放到 Site[{spot}]")
+                carrier.assign_resource_to_site(plr_resource, spot)
+                # 上报从载架起：它的 Site 占用随同一棵树回报
+                parent_resource = carrier
+            else:
+                parent_resource.assign_child_resource(plr_resource, location=None, **additional_params)
 
             func = getattr(self._resource_driver(), "resource_tree_transfer", None)
             if callable(func):
@@ -733,18 +828,47 @@ class DeviceNode(ABC):
     def _occupied_site_uuid(
         tree_set: Any, owner_uuid: str, occupant_uuid: str
     ) -> Optional[str]:
-        """在快照树中找 owner 物料上被 occupant 占用的 Site uuid（无则 None）。"""
+        """在快照树中找被 occupant 占用的 Site uuid（无则 None）。
 
+        先找 owner 物料自己的 Site；owner 是载架 Site 的 holder 时，Site 在它的父载架上，
+        退回到整棵快照树里找。
+        """
+
+        fallback: Optional[str] = None
         for tree in tree_set.trees:
             for node in tree.get_all_nodes():
-                if node.res_content.uuid != owner_uuid:
-                    continue
                 for site in node.res_content.sites or []:
-                    if site.occupied_material_uuid == occupant_uuid:
+                    if site.occupied_material_uuid != occupant_uuid:
+                        continue
+                    if node.res_content.uuid == owner_uuid:
                         return site.uuid
-        return None
+                    fallback = fallback or site.uuid
+        return fallback
 
-    async def append_resource(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def append_resource_blocking(
+        self, payload: Dict[str, Any], timeout: float = 30.0
+    ) -> Dict[str, Any]:
+        """从非执行器线程阻塞执行 :meth:`append_resource`（``materials.assign`` 与 Host 下行共用）。
+
+        ``timeout`` 只约束提交点之前（等锁、从权威拉取物料）：本地挂上之后，权威 move 与
+        快照回报一定走完，不被超时取消。大台面（上千个物料）的整树快照要几十秒，取消它
+        只会留下本地已挂、权威半截的状态。越过超时继续等待与取消都会写日志。
+        """
+
+        commit_point = CommitPoint()
+        return run_node_coroutine(
+            self,
+            self.append_resource(payload, commit_point=commit_point),
+            timeout,
+            commit_point=commit_point,
+        )
+
+    async def append_resource(
+        self,
+        payload: Dict[str, Any],
+        *,
+        commit_point: Optional[CommitPoint] = None,
+    ) -> Dict[str, Any]:
         """把微后端权威已创建的物料（带 uuid）assign 到本设备的目标父物料下。
 
         物料创建只发生在微后端，设备侧不做本地 initialize、不发 "add" 上报。四步：
@@ -764,6 +888,9 @@ class DeviceNode(ABC):
         与 MATERIAL_MOVE 的 destination_site_uuid 同一标识，免反查直传权威）；
         ``slot`` 是字符串——优先按 Site label 匹配（如 "A1"），非 label 且为
         纯数字（isdigit）时按 0-based 索引找对应 Site。
+
+        ``commit_point``：跨线程等待方（:meth:`append_resource_blocking`）的提交点握手。
+        第 2 步本地挂载之前进入提交点；等待方已超时放弃时直接退出，不做任何改动。
         """
 
         from pylabrobot.resources import Coordinate
@@ -780,12 +907,15 @@ class DeviceNode(ABC):
         loc = payload.get("bind_location") or {}
         bind_location = Coordinate(loc.get("x", 0.0), loc.get("y", 0.0), loc.get("z", 0.0))
         tag = ",".join(map(str, resource_uuids))
+        stage = "等待挂载锁"
         await self._append_resource_mutex().acquire(self, tag=tag)
         resource_locks: List[DeviceAsyncMutex] = []
         try:
+            stage = "等待物料锁"
             # 与资源树同步共享 uuid 锁：防止挂载与创建分发(notify add)并发处理同一物料
             resource_locks = await self._acquire_resource_tree_uuid_locks(resource_uuids, tag=f"append:{tag}")
             # 1. materials：按 uuid 从权威拉取（uuid 不存在时直接失败）
+            stage = "从权威拉取物料"
             tree_set = await self.get_resource(resources_uuid=resource_uuids, with_children=True)
             if len(tree_set.trees) != len(resource_uuids):
                 raise ValueError(
@@ -799,6 +929,10 @@ class DeviceNode(ABC):
                 else self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
             )
             drafts = tree_set.to_plr_resources()
+            # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
+            if commit_point is not None and not commit_point.enter():
+                raise TimeoutError("等待方已超时放弃，挂载未执行")
+            stage = "本地挂载"
             plr_instances: List[Any] = []
             added_instances: List[Any] = []
             report_roots: List[Any] = []
@@ -844,6 +978,7 @@ class DeviceNode(ABC):
             #    的新树分组对齐。挂到设备自身（台面 Deck、驱动运行期 ensure 的根树）同样
             #    要落 parent=设备物料：否则它在权威里仍是独立根，前端设备卡片下看不到它
             #    的 sites，materials.owner_device_of 也只能靠 extra 推断。
+            stage = "权威 move"
             if parent_uuid != self.resource_uuid:
                 for material_uuid in resource_uuids:
                     # site 参数即权威 Site uuid，直传；slot/未指定则从挂载快照反查
@@ -861,6 +996,7 @@ class DeviceNode(ABC):
                 for material_uuid in resource_uuids:
                     await self._attach_root_to_device(material_uuid)
             # 4. 同步：挂载后的父树经 update_resource 直连权威（权威已有 create 记录，严禁 add）
+            stage = "快照回报"
             for tree in report_tree_set.trees:
                 if tree.root_node.res_content.uuid_parent is None:
                     tree.root_node.res_content.parent_uuid = self.resource_uuid
@@ -872,7 +1008,14 @@ class DeviceNode(ABC):
                 "substance_resource_tree": [],
             }
         except Exception as ex:
-            self.lab_logger().error(f"[AR:{tag}] 挂载权威物料(append_resource)出错: {ex}\n{traceback.format_exc()}")
+            self.lab_logger().error(
+                f"[AR:{tag}] 挂载权威物料(append_resource)在「{stage}」阶段出错: {ex}\n{traceback.format_exc()}"
+            )
+            raise
+        except BaseException as ex:  # CancelledError 等：不是 Exception，同样必须留痕
+            self.lab_logger().error(
+                f"[AR:{tag}] 挂载权威物料(append_resource)在「{stage}」阶段被取消（{type(ex).__name__}）"
+            )
             raise
         finally:
             self._release_resource_tree_uuid_locks(resource_locks)

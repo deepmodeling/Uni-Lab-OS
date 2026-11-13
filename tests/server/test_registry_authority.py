@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.base import canonical_hash
 from unilabos.server.api.runtime.registry import install_registry_api
 from unilabos.server.services.runtime.registry import (
@@ -517,7 +518,7 @@ class TestRegistryApi:
             json.dumps({"resources": [_device("pump")]}).encode("utf-8")
         )
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             content=body,
             headers={
                 "Content-Type": "application/json",
@@ -535,9 +536,9 @@ class TestRegistryApi:
         assert data["summary"]["counts"]["added"] == 1
 
     def test_entry_endpoints(self, client, refs) -> None:
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a", goal={"v": 1})]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("a", goal={"v": 1})]})
         refs.append(_ref_row("a", "run"))
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a", goal={"v": 2})]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("a", goal={"v": 2})]})
 
         pending = client.get("/api/v1/registry/entries", params={"status": "pending"}).json()["data"]
         assert [e["name"] for e in pending["entries"]] == ["a"]
@@ -563,24 +564,43 @@ class TestRegistryApi:
         assert reports["total"] == 2
 
     def test_apply_without_pending_returns_409(self, client) -> None:
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a")]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("a")]})
         response = client.post("/api/v1/registry/entries/a/apply")
-        assert response.status_code == 409
+        # 没有挂起版本：状态冲突 3003（HTTP 200 信封）
+        error_of(response, 3003)
 
     def test_invalid_body_rejected(self, client) -> None:
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             content=b"not-json",
             headers={"Content-Type": "application/json"},
         )
-        assert response.status_code == 400
+        error_of(response, 1000)
 
     def test_missing_service_returns_503(self, service) -> None:
         app = FastAPI()
         install_registry_api(app)
         set_registry_service(None)
         response = TestClient(app).get("/api/v1/registry/entries")
-        assert response.status_code == 503
+        error_of(response, 5001)
+
+    @pytest.mark.parametrize("malformed", [False, True])
+    def test_condition_template_report_validates_branch_references(self, client, service, malformed) -> None:
+        template = _workflow_template("demo.workflows:conditional", "条件演示")
+        action = template["nodes"][0]
+        template["nodes"] = [
+            {"key": "condition", "kind": "condition", "name": "判定",
+             "param": {"version": 1, "expression": {"lit": True}}},
+            {**action, "condition_guards": [{"node_key": "missing" if malformed else "condition", "equals": True}]},
+        ]
+        template["edges"] = [{"source": "condition", "target": "step-0"}]
+        response = client.post("/api/v1/registry/reports", json={"resources": [], "workflow_templates": [template]})
+        assert response.status_code == 200
+        if malformed:
+            assert service.list_workflow_templates() == []
+            assert service.entry_detail(template["id"])["unusable_reason"] == "invalid-condition-node"
+        else:
+            assert service.get_workflow_template(template["uuid"])["nodes"] == template["nodes"]
 
     def test_workflow_templates_ride_the_snapshot_report(self, client, service) -> None:
         """包里的 @workflow 模板随同一份快照上报（独立键，旧权威忽略），与设备条目同一套
@@ -588,7 +608,7 @@ class TestRegistryApi:
 
         template = _workflow_template("demo.workflows:tour", "位点操作演示")
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={"resources": [_device("pump")], "workflow_templates": [template]},
         ).json()
         assert response["code"] == 0
@@ -610,7 +630,7 @@ class TestRegistryApi:
             "nodes": [{**template["nodes"][0], "description": "把样品放到 A1"}],
         }
         client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={
                 "resources": [_device("pump")],
                 "workflow_templates": [template, broken, bad_guide, guided],
@@ -629,20 +649,20 @@ class TestRegistryApi:
         assert stored_guided["nodes"][0]["description"] == "把样品放到 A1"
 
         # 包卸载：快照里没有模板 → 软移除，列表为空；再上报复活
-        client.post("/api/v1/resource-templates", json={"resources": [_device("pump")]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("pump")]})
         assert service.list_workflow_templates() == []
         assert "removed" in service.entry_detail("demo.workflows:tour")["status"]
         client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={"resources": [_device("pump")], "workflow_templates": [template]},
         )
         assert [item["uuid"] for item in service.list_workflow_templates()] == [template["uuid"]]
 
-        # 只认 resources 的旧客户端形状照常工作；workflow_templates 不是列表则 400
-        assert client.post(
-            "/api/v1/resource-templates",
+        # 只认 resources 的旧客户端形状照常工作；workflow_templates 不是列表则 1000
+        error_of(client.post(
+            "/api/v1/registry/reports",
             json={"resources": [_device("pump")], "workflow_templates": {"x": 1}},
-        ).status_code == 400
+        ), 1000)
 
     def test_digest_and_hashed_report_shapes(self, client) -> None:
         pump = _device("pump")
@@ -650,7 +670,7 @@ class TestRegistryApi:
         assert digest == {"protocol_version": "runtime.v1", "active": {}, "pending": {}}
 
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={
                 "protocol_version": "runtime.v1",
                 "edge_uuid": "host-a",
@@ -665,7 +685,7 @@ class TestRegistryApi:
 
         # 只发哈希：对得上就"未变"，对不上进 missing
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={"entries": [
                 {"id": "pump", "content_sha256": canonical_hash(pump)},
                 {"id": "stirrer", "content_sha256": canonical_hash(_device("stirrer"))},
@@ -673,11 +693,11 @@ class TestRegistryApi:
         ).json()["data"]
         assert response["summary"]["counts"]["unchanged"] == 1 and response["missing"] == ["stirrer"]
 
-        # 形状错误（entries 不是列表 / 条目缺字段）→ 400
-        assert client.post("/api/v1/resource-templates", json={"entries": {"x": 1}}).status_code == 400
-        assert client.post(
-            "/api/v1/resource-templates", json={"entries": [{"content_sha256": "x"}]}
-        ).status_code == 400
+        # 形状错误（entries 不是列表 / 条目缺字段）→ 1000
+        error_of(client.post("/api/v1/registry/reports", json={"entries": {"x": 1}}), 1000)
+        error_of(client.post(
+            "/api/v1/registry/reports", json={"entries": [{"content_sha256": "x"}]}
+        ), 1000)
 
 
 class _SessionOverTestClient:

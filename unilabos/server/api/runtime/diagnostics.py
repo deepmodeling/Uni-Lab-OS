@@ -6,9 +6,28 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException
+from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+from unilabos.config.config import BasicConfig
+from unilabos.server.api.envelope import envelope_router, raw_response
+from unilabos.protocol.runtime.lifecycle import (
+    HealthStatus,
+    ReadinessStatus,
+    ResetRequest,
+    ResetStatus,
+    RestartRequest,
+    RestartStatus,
+)
+from unilabos.server.api.runtime.lifecycle import create_scheduler_lifecycle_router
+
+
+from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest
+
+
+class PhysicalSettlementConfirmation(ResourceIntervalReleaseRequest):
+    result: dict[str, Any]
 
 
 class StatusIncidentDecision(BaseModel):
@@ -18,39 +37,26 @@ class StatusIncidentDecision(BaseModel):
 
 
 class ErrorDecision(BaseModel):
-    action: str = "abort"
-    option: Optional[dict[str, Any]] = None
-    reason: str = ""
-    result: Any = None
-    scheduler_updated: bool = True
-    job_id: str = ""
-    device_id: str = ""
-    extra: dict[str, Any] = Field(default_factory=dict)
+    """V1 ``ErrorDecisionIn``：人工审批结果（与云端 ws job_error_decision 消息同语义）。
 
-
-class RestartRequest(BaseModel):
-    """安静点重启请求。
-
-    mode: quiescent 等执行端安静；immediate 跳过等待立即重启。
-    scope: auto 按运行形态选择（调度权威进程 → edge，只重启 Host；其它 → process）；
-    edge 只重启 Host 进程，调度权威与管理端口常驻；process 本进程整体重启。
+    字段与缺省值同 V1，未知字段忽略；``operator_id`` 是 dev 的可选扩展（缺省取请求上下文）。
     """
 
-    mode: str = "quiescent"
-    scope: str = "auto"
+    action: str = ""  # retry / skip / abort / 其它已配置 option
+    option: Optional[dict[str, Any]] = None  # 或直接回传选中的 option 对象
+    result: Any = None  # operator_intervention 的服务端结果
+    reason: str = ""
+    operator_id: Optional[str] = None
 
 
-class ResetRequest(BaseModel):
-    confirmation_token: str = Field(min_length=1, max_length=128)
-    confirmation: str = Field(min_length=1, max_length=64)
+def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
+    """本进程设备 runtime 跳过的设备；本进程不带 HostLink runtime 时为 None。"""
 
+    from unilabos.backend.hostlink import main_hostlink_run
 
-class ResetStatus(BaseModel):
-    supported: bool
-    pending: bool
-    confirmation_token: str
-    backup_path: str
-    detail: str
+    if main_hostlink_run.get_runtime() is None:
+        return None
+    return main_hostlink_run.unavailable_devices()
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
@@ -63,6 +69,8 @@ def _hostlink_snapshot() -> dict[str, Any]:
     result: dict[str, Any] = {
         "role": role,
         "peers": link_server.peers() if link_server else [],
+        # 设备图中因 backend 不支持而跳过的本机设备（原因、支持的 backend）
+        "unavailable_devices": _local_unavailable_devices() or [],
         "client": (
             {
                 "online": link_client.online,
@@ -96,7 +104,12 @@ def create_backend_router(
 ) -> APIRouter:
     """创建不复制 Runtime/History/Telemetry 数据面的诊断路由。"""
 
-    router = APIRouter(prefix="/api/v1", tags=["backend"])
+    router = envelope_router(prefix="/api/v1", tags=["backend"])
+    router.include_router(create_scheduler_lifecycle_router(get_scheduler, get_execution_backend))
+    from unilabos.server.api.runtime.device_state import create_device_state_router
+
+    # V1 设备状态视图（Host 数据面；分进程时由 edge 代理按 device-state 前缀转发）
+    router.include_router(create_device_state_router(get_execution_backend))
 
     @router.get("/reset", response_model=ResetStatus)
     def reset_preview() -> dict[str, Any]:
@@ -162,32 +175,82 @@ def create_backend_router(
         elif execution == "restarting":
             reasons.append("Host 子进程未接入控制面（启动或重启中）")
         # disabled：纯调度权威（--role backend），执行由远端 Edge 接入，不在本进程判定
-        ready = execution in {"ready", "disabled"}
-        return ready, {
-            "status": "ready" if ready else "not_ready",
+        scheduler = get_scheduler()
+        if bool(getattr(scheduler, "dispatch_paused", False)):
+            reasons.append("调度派发已暂停（排空、重启或维护中）")
+        ready = execution in {"ready", "disabled"} and not reasons
+        if ready:
+            phase = "ready"
+        elif execution == "starting":
+            phase = "execution_starting"
+        elif execution == "restarting":
+            phase = "host_restarting"
+        else:
+            phase = "dispatch_paused"
+        from unilabos.protocol.runtime.lifecycle import RuntimeCapabilities
+
+        summary: dict[str, Any] = {
+            # V1 合同字段（V1 控制台按 status / capabilities 判定）
+            "status": "ready" if ready else "starting",
+            "capabilities": RuntimeCapabilities().model_dump(),
+            "phase": phase,
+            "workflowRuntime": _workflow_runtime_state(),
+            # dev 探针摘要（扩展字段）
             "scheduler": "local" if get_scheduler() is not None else "remote",
             "execution": execution,
             "reasons": reasons,
         }
+        trace_ui = str(getattr(BasicConfig, "trace_ui_url", "") or "").strip()
+        if trace_ui:
+            summary["observability"] = {"traceUiUrl": trace_ui}
+        return ready, summary
 
-    @router.get("/readiness")
+    def _workflow_runtime_state() -> str:
+        """本进程是否承载工作流运行时：调度权威为 ready，仅执行面的 Host 为 disabled。"""
+
+        try:
+            from unilabos.server.backend.composition import get_workflow_service
+
+            return "ready" if get_workflow_service() is not None else "disabled"
+        except Exception:  # noqa: BLE001 - 探针不因装配查询失败而失败
+            return "disabled"
+
+    @router.get("/readiness", response_model=ReadinessStatus, responses={503: {"model": ReadinessStatus}})
+    @raw_response
     def readiness() -> JSONResponse:
         """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同）。
 
         与 ``/health``（进程存活，恒 200）不同：Host 子进程启动 / 安静点重启期间、执行适配器
         尚未注册时返回 503；全量重置期间维护闸门同样返回 503。响应只含状态摘要。
+        探针按 HTTP 状态码判定，所以本端点不包信封（``raw_response``）。
         """
 
         ready, summary = _readiness()
         return JSONResponse(status_code=200 if ready else 503, content=summary)
 
-    @router.get("/health")
-    def health() -> dict[str, str]:
-        return {
+    # unavailable_devices 只在非空时出现：不让 response_model 用缺省值把它补成 []
+    @router.get("/health", response_model=HealthStatus, response_model_exclude_unset=True)
+    @raw_response
+    def health() -> dict[str, Any]:
+        """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。
+
+        ``unavailable_devices``（dev 扩展，只在非空时出现）：本进程设备 runtime 跳过的设备（设备图里有、
+        当前 backend 跑不了）及原因。存活探针只读本进程数据、不经控制面问 Host（前端每几秒轮询一次，
+        不能让它等 Host）；默认两进程拓扑下 Host 子进程跳过的设备见 ``GET /api/v1/hostlink/peers``。
+        """
+
+        local = get_scheduler() is not None
+        payload: dict[str, Any] = {
             "status": "ok",
-            "scheduler": "local" if get_scheduler() is not None else "remote",
+            # V1：本进程装配了调度器为 ready，否则 disabled；dev 的 local / remote 归属在 scheduler_mode
+            "scheduler": "ready" if local else "disabled",
+            "scheduler_mode": "local" if local else "remote",
             "execution": _execution_state(),
         }
+        unavailable = _local_unavailable_devices()
+        if unavailable:
+            payload["unavailable_devices"] = unavailable
+        return payload
 
     @router.get("/ping")
     def ping(client_timestamp: Optional[float] = None) -> dict[str, Any]:
@@ -221,6 +284,48 @@ def create_backend_router(
             mode="json",
             exclude_none=True,
         )
+
+    @router.get("/scheduler/inventory-recovery")
+    def inventory_recovery() -> dict[str, Any]:
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        return scheduler.inventory_recovery_snapshot()
+
+    @router.post("/scheduler/inventory-recovery/reconcile")
+    def reconcile_inventory() -> dict[str, Any]:
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        scheduler._reconcile_inventory()
+        return scheduler.inventory_recovery_snapshot()
+
+    @router.get("/scheduler/physical-recovery")
+    def physical_recovery():
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        return scheduler._physical_recovery.snapshot()
+
+    @router.post("/scheduler/physical-recovery/{job_uuid}/release")
+    def release_physical(job_uuid: str, body: ResourceIntervalReleaseRequest):
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        try:
+            return scheduler._physical_recovery.release_verified(job_uuid, body.expected_version, body.reason)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @router.post("/scheduler/physical-recovery/{job_uuid}/settle")
+    def settle_physical(job_uuid: str, body: PhysicalSettlementConfirmation):
+        scheduler = get_scheduler()
+        if scheduler is None:
+            raise HTTPException(status_code=503, detail="scheduler authority is remote")
+        try:
+            return scheduler._physical_recovery.confirm_terminal_settlement(job_uuid, body.expected_version, body.reason, body.result)
+        except (ValueError, RuntimeError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @router.get("/status-incidents")
     def status_incidents(
@@ -264,63 +369,51 @@ def create_backend_router(
             raise HTTPException(status_code=404, detail="status incident not found")
         return result["ack"]
 
+    from unilabos.server.services.runtime.error_decisions import ErrorDecisionDesk
+
+    desk = ErrorDecisionDesk(get_scheduler, get_execution_backend)
+
     @router.get("/error-decisions")
     def error_decisions() -> dict[str, Any]:
         """待人工决策的清单：执行面挂起的失败 attempt + 调度器在重启后接管的
-        执行态未知 / 决策上下文丢失的 attempt，两者报告同形。"""
+        执行态未知 / 决策上下文丢失的 attempt，两者报告同形（V1 清单键 ``decisions``）。"""
 
-        from unilabos.server.backend.edge_control import get_edge_control_service
-
-        backend = get_execution_backend()
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        if backend is None and scheduler is None and edge_control is None:
-            raise HTTPException(
-                status_code=503,
-                detail="backend execution service is not ready",
-            )
-        items: list[dict[str, Any]] = []
-        if backend is not None:
-            items.extend(backend.list_error_decisions())
-        elif edge_control is not None:
-            # 执行面在 Host 进程：它打开终态闸门、等本进程放行的失败登记在控制面服务里
-            items.extend(edge_control.list_error_decisions())
-        lister = getattr(scheduler, "list_reconciliation_decisions", None)
-        if callable(lister):
-            items.extend(lister())
-        return {"items": items}
+        return {"decisions": desk.items()}
 
     @router.post("/error-decisions/{decision_id}")
     def resolve_error_decision(
         decision_id: str,
         body: ErrorDecision,
+        request: Request,
+        idempotency_key: str = Header(default="", alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        decision = body.model_dump(exclude_none=True)
-        extra = decision.pop("extra", {})
-        if isinstance(extra, Mapping):
-            decision.update(extra)
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        """V1：放行一项决策，``{"decision_id", "status": "delivered"}``；已不在等待时按 V1 的 404。
 
-        scheduler = get_scheduler()
-        edge_control = get_edge_control_service()
-        owns = getattr(scheduler, "has_reconciliation_decision", None)
-        if callable(owns) and owns(decision_id):
-            resolved = scheduler.resolve_reconciliation_decision(decision_id, decision)
-        elif get_execution_backend() is None and edge_control is not None:
-            # 执行面在 Host 进程：本进程是调度权威，经 runtime.v1 命令放行终态闸门
-            resolved = edge_control.resolve_error_decision(decision_id, decision)
-        else:
-            resolved = execution().resolve_error_decision(decision_id, decision)
-        if not resolved:
-            raise HTTPException(
-                status_code=409,
-                detail="error decision was rejected or no longer pending",
+        载荷与 V1 同组装：``reason`` 恒带，``option`` / ``action`` / ``result`` 给出才带。
+        dev 扩展（可选）：``Idempotency-Key`` 同键同内容重放首次结果；操作员身份随载荷记录。
+        """
+
+        from unilabos.server.api.runtime.tasks_v1 import operator_identity
+        from unilabos.server.services.runtime.error_decisions import ErrorDecisionNotPending
+
+        payload: dict[str, Any] = {"reason": body.reason}
+        if body.option is not None:
+            payload["option"] = body.option
+        if body.action:
+            payload["action"] = body.action
+        if body.result is not None:
+            payload["result"] = body.result
+        try:
+            return desk.resolve(
+                decision_id, payload, idempotency_key=idempotency_key,
+                operator_id=body.operator_id or operator_identity(request),
             )
-        return {"decision_id": decision_id, "status": "resolved"}
+        except ErrorDecisionNotPending as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     # ── 安静点重启（调试用） ─────────────────────────────────
 
-    @router.post("/restart")
+    @router.post("/restart", response_model=RestartStatus)
     def request_restart(body: RestartRequest) -> dict[str, Any]:
         """登记重启：暂停新派发，active job 清空后按 scope 重启并自动恢复。"""
         from unilabos.server.backend.restart import get_restart_coordinator
@@ -330,13 +423,13 @@ def create_backend_router(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    @router.get("/restart")
+    @router.get("/restart", response_model=RestartStatus)
     def restart_status() -> dict[str, Any]:
         from unilabos.server.backend.restart import get_restart_coordinator
 
         return get_restart_coordinator().status()
 
-    @router.delete("/restart")
+    @router.delete("/restart", response_model=RestartStatus)
     def cancel_restart() -> dict[str, Any]:
         from unilabos.server.backend.restart import get_restart_coordinator
 

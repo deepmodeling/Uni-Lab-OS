@@ -242,3 +242,72 @@ def test_hostlink_workstation_configures_shared_hardware_proxy() -> None:
         ("read", {"slave_id": 7}),
         ("write", "hello", {"slave_id": 7}),
     ]
+
+
+class _DeckStation(WorkstationBase):
+    def __init__(self, deck=None, **_kwargs):
+        super().__init__(deck)
+
+
+def _station_with_deck_child():
+    from unilabos.server.services.materials.graph import graph_resource_tree
+
+    tree = graph_resource_tree(
+        [
+            {"id": "station", "uuid": "00000000-0000-4000-8000-0000000000a1", "type": "device",
+             "class": "station", "template_name": "station", "parent": None, "config": {}},
+            {"id": "deck", "uuid": "00000000-0000-4000-8000-0000000000a2", "type": "deck", "class": "Deck",
+             "template_name": "Deck", "parent": "station",
+             "config": {"type": "Deck", "size_x": 100.0, "size_y": 100.0, "size_z": 10.0}},
+            {"id": "spare", "uuid": "00000000-0000-4000-8000-0000000000a3", "type": "deck", "class": "Deck",
+             "template_name": "Deck", "parent": "station",
+             "config": {"type": "Deck", "size_x": 50.0, "size_y": 50.0, "size_z": 5.0}},
+        ]
+    )
+    return tree.trees[0].root_node
+
+
+def test_workstation_creator_registers_the_graph_deck_once() -> None:
+    """FRAMEWORK_GAPS #25：工作站构造器建好的台面不能被 attach_resource 再实例化一份。"""
+
+    from pylabrobot.resources import Deck
+
+    station_node = _station_with_deck_child()
+    tracker = DeviceNodeResourceTracker()
+    creator = select_driver_creator(
+        _DeckStation, children=list(station_node.children), resource_tracker=tracker
+    ).creator
+
+    driver = creator.create_instance(
+        {"deck": {"data": {"_resource_child_name": "deck", "_resource_type": "pylabrobot.resources:Deck"}}}
+    )
+
+    assert isinstance(driver.deck, Deck)
+    assert [item for item in tracker.resources if item.name == "deck"] == [driver.deck]
+    assert tracker.uuid_to_resources["00000000-0000-4000-8000-0000000000a2"] is driver.deck
+    # 驱动没有引用的非设备子节点照常登记一次
+    assert [item.name for item in tracker.resources if item.name == "spare"] == ["spare"]
+
+
+class _ConfigAndFlatDriver:
+    def __init__(self, config=None, debug_mode=False, address="10.0.0.1", deck=None, device_id=None):
+        self.config = config
+        self.debug_mode = debug_mode
+        self.address = address
+        self.deck = deck
+        self.device_id = device_id
+
+
+def test_hostlink_config_parameter_does_not_swallow_other_declared_parameters() -> None:
+    """FRAMEWORK_GAPS #24：声明了 ``config`` 的构造函数，其他具名参数仍按名取节点配置。"""
+
+    from unilabos.backend.hostlink.local_runtime import instantiate_driver
+
+    node_config = {"debug_mode": True, "address": "127.0.0.1", "vendor_option": 3}
+    driver = instantiate_driver(_ConfigAndFlatDriver, "cell", node_config)
+
+    assert driver.debug_mode is True
+    assert driver.address == "127.0.0.1"
+    assert driver.device_id == "cell"
+    # config 仍是整份节点配置（旧驱动从 config 里读参数的写法不变）
+    assert driver.config == node_config

@@ -38,6 +38,35 @@ def _authority_listening(port: int) -> bool:
         probe.close()
 
 
+def _stop_on_signal(signum: int, frame: Any) -> None:
+    """SIGTERM / SIGHUP：与 Ctrl+C 走同一条有序停机路径。
+
+    uvicorn 服务期间这两个信号由它自己接住；它优雅停机后会恢复原处理器并**重新抛出**收到的
+    信号——原处理器若是默认动作，进程就在那一刻被信号直接杀掉，下面 ``finally`` 里停 Host
+    子进程、关库都不会执行，Host 子进程成了孤儿。所以权威给这两个信号装上本处理器：uvicorn
+    还在服务就请它停机，否则（启动阶段、uvicorn 停完后重新抛出）抛 KeyboardInterrupt 让主线程
+    沿 ``finally`` 收尾。
+    """
+
+    from unilabos.server.api.app import request_server_shutdown
+
+    # 信号处理器里不打印：主线程可能正持有 stdout 的缓冲锁，重入写会抛 RuntimeError
+    if request_server_shutdown():
+        return
+    raise KeyboardInterrupt
+
+
+def _install_stop_signals() -> None:
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, _stop_on_signal)
+    # 控制台 Ctrl+Break（含关闭控制台窗口）也走 Ctrl+C 的优雅停机路径（uvicorn 停机后会重新抛出信号）
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signal.signal(sigbreak, signal.default_int_handler)
+
+
 def run_backend_process(
     args_dict: Dict[str, Any],
     registry: Any,
@@ -74,9 +103,16 @@ def run_backend_process(
         EdgeControlService,
         set_edge_control_service,
     )
+    from unilabos.server.database import claim_database_root
     from unilabos.server.services.runtime.registry import get_registry_service
-    from unilabos.server.startup import configured_database_root, resolve_database_paths
+    from unilabos.server.startup import (
+        BACKEND_DATABASE_DIRNAME,
+        configured_database_root,
+        resolve_database_paths,
+    )
 
+    # 最先装停机信号：启动阶段收到 SIGTERM 也要沿 finally 收尾（停已拉起的 Host、关库）
+    _install_stop_signals()
     base_root = os.path.expanduser(
         configured_database_root(args_dict, working_dir=working_dir)
     )
@@ -91,11 +127,14 @@ def run_backend_process(
             print_status(exc.strerror or str(exc), "error")
             raise SystemExit(1) from exc
     else:
-        authority_root = os.path.join(base_root, "backend")
+        authority_root = os.path.join(base_root, BACKEND_DATABASE_DIRNAME)
         edge_root = ""
         port = int(args_dict.get("port_management") or HTTPConfig.backend_port)
     args_dict["server_database_root"] = authority_root
     paths = resolve_database_paths(args_dict, working_dir=working_dir)
+    # 先独占权威自己的根目录再开库（启动入口已取过时是同一把锁）。<根目录>/edge 归 Host 子进程，
+    # 由子进程自己取锁，权威运行期间不碰它。
+    claim_database_root(paths.root, role="调度权威" if launch_host else "调度权威（--role backend）")
 
     from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
     if (paths.root / "reset-pending.json").exists():
@@ -104,6 +143,7 @@ def run_backend_process(
 
     host_child: Optional[Any] = None
     unsubscribe_shutdown: Optional[Any] = None
+    unsubscribe_edge_waiters: Optional[Any] = None
     from unilabos.utils.log_notices import set_local_log_source
 
     previous_log_source = set_local_log_source(None)
@@ -176,32 +216,38 @@ def run_backend_process(
             host_child.start()
             def reset_preflight() -> None:
                 from unilabos.server.backend.composition import get_scheduler
+                from unilabos.server.backend.lifecycle import active_device_job_ids
                 from unilabos.server.backend.restart import get_restart_coordinator
 
                 restart = get_restart_coordinator().status()
                 if restart["pending"] or restart["restarting"]:
                     raise ResetConflict("请等待当前重启完成")
                 scheduler = get_scheduler()
-                already_paused = scheduler.dispatch_paused
-                scheduler.pause_dispatch()
+                scheduler.pause_dispatch(reason="reset")
                 try:
-                    if edge_control.active_job_ids():
+                    if active_device_job_ids(scheduler, None):
                         raise ResetConflict("仍有活跃作业，请先结束或裁决作业后重置")
-                    response = edge_control.http_request("GET", "/api/v1/hostlink/peers")
-                    import json
-                    if response is None or response.status_code != 200:
-                        raise ResetConflict("无法核对 Host 状态，请等待 Host 上线")
-                    peer_status = json.loads(response.body_bytes())
+                    from unilabos.client.utils.envelope import EnvelopeError
+                    from unilabos.server.api.edge_proxy import edge_response_data
+
+                    def host_data(path: str, unavailable: str) -> dict:
+                        response = edge_control.http_request("GET", path)
+                        if response is None:
+                            raise ResetConflict(unavailable)
+                        try:
+                            data = edge_response_data(response)
+                        except (EnvelopeError, ValueError) as exc:
+                            raise ResetConflict(f"{unavailable}：{exc}") from exc
+                        return data if isinstance(data, dict) else {}
+
+                    peer_status = host_data("/api/v1/hostlink/peers", "无法核对 Host 状态，请等待 Host 上线")
                     if any(peer.get("online", False) for peer in peer_status.get("peers", [])):
                         raise ResetConflict("仍有在线 Slave，请先停止全部受管设备进程及外部 Slave 后重置")
-                    response = edge_control.http_request("GET", "/api/v1/driver-packages")
-                    if response is None or response.status_code != 200:
-                        raise ResetConflict("无法核对驱动包操作状态")
-                    if any(op.get("status") == "running" for op in json.loads(response.body_bytes()).get("operations", [])):
+                    inventory = host_data("/api/v1/driver-packages", "无法核对驱动包操作状态")
+                    if any(op.get("status") == "running" for op in inventory.get("operations", [])):
                         raise ResetConflict("请等待驱动包安装或卸载完成")
                 except Exception as exc:
-                    if not already_paused:
-                        scheduler.resume_dispatch()
+                    scheduler.resume_dispatch(reason="reset")
                     if isinstance(exc, ResetConflict):
                         raise
                     raise ResetConflict(f"无法确认安全重置条件：{exc}") from exc
@@ -209,7 +255,7 @@ def run_backend_process(
             reset_controller = ResetController(paths, working_dir, reset_preflight)
             configure_reset(reset_controller)
             # 权威一收到 Ctrl+C / SIGTERM 就请 Host 开始退出，两边并行收尾；
-            # finally 里的 stop() 只负责等它结束。
+            # finally 里的 stop() 只负责等它结束（超时强制结束）。
             from unilabos.server import lifecycle
 
             unsubscribe_shutdown = lifecycle.on_shutdown(host_child.request_stop)
@@ -225,10 +271,20 @@ def run_backend_process(
                 f"Edge 侧配置 --address http://127.0.0.1:{port} 接入（Edge 只需出向连接）",
                 "info",
             )
-        # 控制台 Ctrl+Break 也走 Ctrl+C 的优雅停机路径（uvicorn 停机后会重新抛出信号）
-        sigbreak = getattr(signal, "SIGBREAK", None)
-        if sigbreak is not None:
-            signal.signal(sigbreak, signal.default_int_handler)
+        from unilabos.server.services.process_management import configure_process_management
+
+        # V1 进程管理快照 / 操作的运行形态：本进程是监督者，Host 子进程由 host_child 看护
+        configure_process_management(
+            management_port=port,
+            supervisor=host_child,
+            database_root=str(paths.root),
+            edge_database_root=edge_root,
+        )
+        # 停机一开始就让等 Host 回 backend_http 的请求失败返回：浏览器请求、调度线程不必等到超时，
+        # uvicorn 的优雅停机与事件循环的线程池收尾也就不会被这些等待拖住
+        from unilabos.server import lifecycle as server_lifecycle
+
+        unsubscribe_edge_waiters = server_lifecycle.on_shutdown(edge_control.fail_pending_http_requests)
         try:
             start_server(
                 host="0.0.0.0",
@@ -241,7 +297,12 @@ def run_backend_process(
         except KeyboardInterrupt:
             print_status("收到中断，正在停止调度权威进程", "info")
     finally:
+        from unilabos.server.services.process_management import configure_process_management
+
+        configure_process_management()
         set_local_log_source(previous_log_source)
+        if unsubscribe_edge_waiters is not None:
+            unsubscribe_edge_waiters()
         if unsubscribe_shutdown is not None:
             unsubscribe_shutdown()
         if host_child is not None:
@@ -255,7 +316,12 @@ def run_backend_process(
         if reset_controller is not None and reset_controller.pending:
             if host_child is not None and host_child.alive():
                 raise RuntimeError("Host 未退出，拒绝清空数据库")
-            reset_controller.finish()
+            # Host 子进程已停且不再拉起：归档前独占 <根目录>/edge，确认没有遗留的 Host 进程还开着这些库
+            edge_lock = claim_database_root(edge_root, role="调度权威（全量重置归档）", wait_s=5.0)
+            try:
+                reset_controller.finish()
+            finally:
+                edge_lock.release()
             print_status(f"全部数据已移至 {reset_controller.backup}；重置完成。请不带旧 -g 重新启动 unilab。", "info")
         configure_reset(None)
 

@@ -16,6 +16,8 @@ def singleton(cls):
             instances[cls] = cls(*args, **kwargs)
         return instances[cls]
 
+    # 原始类：测试等需要独立实例时用 ``Cls.__wrapped__()``，不影响全局单例
+    get_instance.__wrapped__ = cls
     return get_instance
 
 
@@ -116,11 +118,18 @@ def get_all_subscriptions(instance) -> list:
     Returns:
         包含 (method_name, method, config) 元组的列表
     """
+    import functools
+    import inspect
+
     subscriptions = []
     for attr_name in dir(instance):
         if attr_name.startswith("_"):
             continue
         try:
+            # property 不会是订阅回调；用 getattr 扫描会在启动时调用状态 getter（可能阻塞在硬件 IO 上）
+            static = inspect.getattr_static(instance, attr_name, None)
+            if isinstance(static, (property, functools.cached_property)):
+                continue
             attr = getattr(instance, attr_name)
             if callable(attr):
                 config = get_subscribe_config(attr)

@@ -24,7 +24,7 @@
 | --- | --- |
 | template_name | 注册表/模板名称，不是 PLR Python 实现类 |
 | config.type | **PLR 反序列化唯一允许读取的实现类信息** |
-| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR |
+| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR。它来自 PLR `category`，是物料实例的属性：同一模板（如按类名共用的组件模板 `Well`）的物料可以有不同的 resource_type，模板上的值只是按模板新建物料时的默认值，建树不再要求两者一致 |
 | class_name / ResourceDict.klass（JSON alias 为 class） | 当前模型仍存在的字段；不能当作 config.type 的兜底 |
 | category | `ResourceTemplateWrite.category: list[str]`；不是所有 MaterialIdentity 都有同名字段 |
 | allowed_resource_categories | Site 的前端匹配提示；不是 allowed_resource_template_uuids 白名单 |
@@ -223,6 +223,7 @@ ResourceDict/PLR 侧可以使用 `(名称, 数量, 单位)` 三元组，经适�
 `snapshots/compare` 返回差异而不落库；apply 用完整同构快照更新既有聚合，
 **不允许借快照创建/删除物料或 Site**。新增走 create，删除走显式 delete，跨设备走 transfer。
 delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch 当成合法 delta。
+
 本地 observer 对 assign/unassign 与状态变化形成快照/diff，然后通过权威写入；普通 Python 属性赋值本身不是远端写入确认。
 
 前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表。
@@ -231,6 +232,37 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 
 `/changes` 的完整账本提供来源 actor、command/job、版本、delta 与投递状态。
 `/changes/ack` 是同步消费者确认，不是浏览器关闭提示的接口。
+
+### 被丢弃的枪头随快照退役
+
+“不允许借快照删除物料”只有一个例外：**被设备丢弃的枪头**（`resource_type` 为 `tip`）。
+例如拿起后丢进废料槽，或从孔位取下不放回。
+快照里该节点写成 `lifecycle_status="retired"` 且 `parent_material_uuid=null`，其余字段与权威一致。
+权威在同一写事务内将其退役，与快照里的其他变化一起成功或失败：
+
+- 表示与显式 delete 相同：`lifecycle_status=retired` 加软删除（`deleted_at_ms`）。
+  物料行、最后所在的父节点与账本都保留，不做硬删除；它不再占用 `resource_id` 和根名唯一索引。
+- 账本操作为 `retire`，delta 含 `reason: "tip_discarded"`、`previous_lifecycle_status`、`parent_material_uuid`。
+  `snapshots/compare` 把它显示为 identity 段变化（`lifecycle_status`、`parent_material_uuid`）。
+- 退役后，实例、树、列表读取不再返回它（GET 单个实例为 404），从权威恢复时也不会再出现。
+  `GET /api/v1/materials/{uuid}/ledger`、`/changes` 与 SSE `materials.changed`（`operation=retire`）仍可见。
+- 只有非根的枪头可以这样写；其他类型返回 `validation_error`（cannot create or delete）。
+  退役枪头不能同时改位置、内容或其他身份字段。
+  处于 reserved / quarantined / consumed 的枪头返回 `conflict:state`。
+  被未结算物理动作占用的枪头照常以 `active_claim` 拒绝。
+
+设备侧由 `resource_tree_to_snapshot` 生成这种节点，条件是同时满足下面三条：
+
+1. 枪头在权威里的父节点在本次上报里。
+2. 枪头本身不在上报里。
+3. 枪头不在设备运行时仍持有的物料里（`ResourceTreeSet.runtime_material_uuids`）。
+
+第 3 条的取值是从上报资源的 PLR 顶层祖先遍历出的全部物料。
+例如只上报台面时，旧式液体处理器通道上拿着的枪头仍算“持有”，不会被退役。
+父节点不在上报里、局部上报没有覆盖的子树，都不推断丢弃。
+树集来自原始字典或权威读回时（`runtime_material_uuids` 为 None）同样不推断。
+`update_resource` / `materials.update` 与 HostLink、ROS2 的快照观察者共用这条路径。
+退役与 `material.mark_used` / `material.consume` 一样只改变实例的生命周期，不扣减 lot 数量。
 
 ## 库存与物料锁
 
@@ -254,9 +286,9 @@ CAS 登记号与 InChIKey 是可空的唯一键，只在未删除的行之间唯
 CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写；另有名称、英文名、别名、分子式、SMILES、
 分子量、密度与物态（liquid / solid / gas / unknown）。修改与删除带 `expected_version`，过期返回 3003。
 
-物料内容物通过可空的 `MaterialSubstance.chemical_uuid` 引用化学品定义（materials.db v3，
-`material_substance.chemical_uuid`；化学品是软删除，故不设外键）。v4 增加 `chemical_unlinked`：
-显式解除过关联的内容物不再按名称自动匹配。四条内容写入路径（建树、put_data、快照、增量）落库前统一确定引用。
+物料内容物通过可空的 `MaterialSubstance.chemical_uuid` 引用化学品定义（materials.db
+`material_substance.chemical_uuid`；化学品是软删除，故不设外键）。`chemical_unlinked` 记录显式解除：
+解除过关联的内容物不再按名称自动匹配。四条内容写入路径（建树、put_data、快照、增量）落库前统一确定引用。
 下文"同名的已有内容物"指同一物料上名称相同（不区分大小写）、已关联或已解除的一份（多份同名时优先同位次）。
 `chemical_uuid` 的三种写法：
 
@@ -269,8 +301,6 @@ CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写
    设备按名称上报内容物既不会丢掉关联，也不会让已解除的重新关联；
 4. 省略且没有可沿用的状态：内容物名称与化学品的名称、英文名、任一别名或 CAS 不区分大小写精确相等，
    且恰好一个未删除化学品命中时自动关联；歧义或无命中保持未关联。
-
-v3 的库升级到 v4 时所有内容物都是未解除（v3 存不下"解除过"），与升级前的行为一致。
 
 两个字段只在显式给出时才进入请求 dump：旧载荷与旧版本存下的请求哈希不变（升级前发出的命令升级后重发仍是幂等重放），
 “省略”与“显式 null”是两个不同的请求。快照 / 增量的内容比较不看引用；只有显式给出且与现值不同的引用才算变化。

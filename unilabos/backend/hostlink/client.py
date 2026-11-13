@@ -18,18 +18,27 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from unilabos.backend.hostlink.protocol import (
     ActionType,
     exception_error_info,
+    HostNotReadyError,
     LineReader,
     LinkError,
     PROTOCOL_VERSION,
-    RemoteError,
     new_request,
     new_response,
     read_message,
+    response_error,
     send_message,
     send_response_or_reject,
 )
 from unilabos.backend.hostlink.ros_assist import RosNetworkInfo
 from unilabos.utils import logger
+
+#: 等 Host 的默认上限（秒）：连接阶段与 Host 启动中的就绪等待各自计时
+DEFAULT_HOST_WAIT_TIMEOUT = 120.0
+#: 重连退避封顶（秒）：Host 重启后端口很快重新打开，Slave 不应再空等十秒
+DEFAULT_RECONNECT_MAX_BACKOFF = 2.0
+#: 「Host 启动中」应答后的重试退避（秒）：起步值翻倍到封顶值
+_NOT_READY_FIRST_DELAY = 0.2
+_NOT_READY_MAX_DELAY = 2.0
 
 
 class _Pending:
@@ -71,10 +80,11 @@ class HostLinkClient:
         heartbeat_interval: float = 5.0,
         connect_timeout: float = 5.0,
         request_timeout: float = 10.0,
-        reconnect_max_backoff: float = 10.0,
+        reconnect_max_backoff: float = DEFAULT_RECONNECT_MAX_BACKOFF,
         on_status_change: Optional[Callable[[bool], None]] = None,
         device_descriptors: Optional[Iterable[Dict[str, Any]]] = None,
         heartbeat_payload_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+        host_wait_timeout: float = DEFAULT_HOST_WAIT_TIMEOUT,
     ) -> None:
         if not str(host or "").strip():
             raise ValueError("HostLink host cannot be empty")
@@ -82,9 +92,14 @@ class HostLinkClient:
         self.port = int(port)
         self.machine_name = str(machine_name or "").strip() or f"slave-{uuid.uuid4().hex}"
         self.heartbeat_interval = float(heartbeat_interval)
+        # 单次 TCP 连接 / HELLO 握手的超时；等 Host 起来的总时长由 host_wait_timeout 决定
         self.connect_timeout = float(connect_timeout)
         self.request_timeout = float(request_timeout)
         self.reconnect_max_backoff = float(reconnect_max_backoff)
+        # Host 仍在启动时（「Host 启动中」应答）单个请求最多重试多久
+        self.host_wait_timeout = float(host_wait_timeout)
+        #: 最近一次连接失败的原因，供启动超时时给出可操作的报错
+        self.last_error = ""
         self.on_status_change = on_status_change
         self.heartbeat_payload_provider = heartbeat_payload_provider
         # 节点身份由 machine_name 指定，不能由设备列表推导或随设备增删改变。
@@ -259,6 +274,89 @@ class HostLinkClient:
         *,
         require_online: bool,
     ) -> Any:
+        """发请求；Host 启动中拒绝时按退避原样重试，直到就绪或超过 ``host_wait_timeout``。"""
+
+        started: Optional[float] = None
+        delay = _NOT_READY_FIRST_DELAY
+        while True:
+            try:
+                return self._request_once(
+                    action_type,
+                    data,
+                    timeout,
+                    require_online=require_online,
+                )
+            except HostNotReadyError as exc:
+                started, wait = self._not_ready_backoff(exc, action_type, started, delay)
+            if self._stop.wait(wait):
+                raise LinkError(f"HostLink client 已关闭，放弃等待 Host 就绪：{action_type}")
+            delay = min(delay * 2, _NOT_READY_MAX_DELAY)
+
+    async def _request_async(
+        self,
+        action_type: str,
+        data: Optional[Dict[str, Any]],
+        timeout: Optional[float],
+        *,
+        require_online: bool,
+    ) -> Any:
+        started: Optional[float] = None
+        delay = _NOT_READY_FIRST_DELAY
+        while True:
+            try:
+                return await self._request_once_async(
+                    action_type,
+                    data,
+                    timeout,
+                    require_online=require_online,
+                )
+            except HostNotReadyError as exc:
+                started, wait = self._not_ready_backoff(exc, action_type, started, delay)
+            await asyncio.sleep(wait)
+            if self._stop.is_set():
+                raise LinkError(f"HostLink client 已关闭，放弃等待 Host 就绪：{action_type}")
+            delay = min(delay * 2, _NOT_READY_MAX_DELAY)
+
+    def _not_ready_backoff(
+        self,
+        exc: HostNotReadyError,
+        action_type: str,
+        started: Optional[float],
+        delay: float,
+    ) -> tuple[float, float]:
+        """返回 (首次被拒时刻, 本次等待秒数)；超过等待上限时抛出可操作的 HostNotReadyError。"""
+
+        now = time.monotonic()
+        if started is None:
+            started = now
+            logger.info(
+                "[HostLink] Host %s:%s 仍在启动（等待 %s 就绪），%s 按退避重试，最长 %gs",
+                self.host,
+                self.port,
+                exc.stage,
+                action_type,
+                self.host_wait_timeout,
+            )
+        remaining = started + self.host_wait_timeout - now
+        if remaining <= 0:
+            raise HostNotReadyError(
+                f"Host {self.host}:{self.port} 在 {self.host_wait_timeout:g}s 内仍未就绪"
+                f"（等待 {exc.stage}），放弃 {action_type}；Host 设备启动较慢时可调大 "
+                "HostLinkConfig.host_wait_timeout（--hostlink_host_wait_timeout）",
+                exc.error_info,
+                stage=exc.stage,
+            ) from exc
+        wait = max(delay, min(exc.retry_after, _NOT_READY_MAX_DELAY))
+        return started, min(wait, remaining)
+
+    def _request_once(
+        self,
+        action_type: str,
+        data: Optional[Dict[str, Any]],
+        timeout: Optional[float],
+        *,
+        require_online: bool,
+    ) -> Any:
         request_id, pending = self._begin_request(
             action_type,
             data,
@@ -278,7 +376,7 @@ class HostLinkClient:
             self._remove_pending(request_id, pending)
         return self._response_data(response)
 
-    async def _request_async(
+    async def _request_once_async(
         self,
         action_type: str,
         data: Optional[Dict[str, Any]],
@@ -339,21 +437,32 @@ class HostLinkClient:
     @staticmethod
     def _response_data(response: Dict[str, Any]) -> Any:
         if not response.get("ok"):
-            raise RemoteError(
-                str(response.get("error") or "remote error"),
-                response.get("error_info"),
-            )
+            raise response_error(response)
         return response.get("data")
 
     def _run(self) -> None:
         backoff = 0.5
+        failed_attempts = 0
         while not self._stop.is_set():
+            connected = False
             try:
                 self._connect_once()
+                connected = True
                 backoff = 0.5
+                failed_attempts = 0
                 self._heartbeat_loop()
             except (OSError, LinkError) as exc:
-                logger.debug(f"[HostLink] connection cycle ended: {exc}")
+                if connected:
+                    logger.debug(f"[HostLink] connection cycle ended: {exc}")
+                else:
+                    self.last_error = str(exc) or type(exc).__name__
+                    failed_attempts += 1
+                    # 同一轮连续失败只提示一次，其余降为 debug，避免 Host 未起时刷屏
+                    log = logger.info if failed_attempts == 1 else logger.debug
+                    log(
+                        f"[HostLink] Host {self.host}:{self.port} 暂不可连（{self.last_error}），"
+                        f"按退避重试（间隔封顶 {self.reconnect_max_backoff:g}s）"
+                    )
             self._set_online(False)
             self._teardown_socket()
             if not self._stop.is_set():
@@ -382,11 +491,19 @@ class HostLinkClient:
             require_online=False,
         )
         self.hello_info = dict(data or {})
+        self.last_error = ""
         self._set_online(True)
         logger.info(
             f"[HostLink] connected to {self.host}:{self.port}; "
             f"machine_name={self.machine_name}; node_id={self.node_id}; devices={self.device_ids}"
         )
+        pending = [str(item) for item in self.hello_info.get("pending_stages") or []]
+        if pending:
+            logger.info(
+                "[HostLink] Host 仍在启动（未就绪：%s）；已登记本节点，"
+                "依赖这些阶段的请求会在 Host 就绪前自动重试",
+                ", ".join(pending),
+            )
 
     def heartbeat_now(self) -> None:
         """立刻发一次心跳：把当前设备描述与状态推给 Host，不等下一个心跳周期。

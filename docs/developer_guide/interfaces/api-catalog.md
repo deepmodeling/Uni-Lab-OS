@@ -14,8 +14,10 @@
 operation、完整默认字段、幂等键和 MutationResult 见 [物料写请求](materials.md)。
 其余 `B: 类型名` 为该类型的直接 JSON，不能外面再套一个 data。
 
-未特别标注的成功通常为 HTTP 200。表中的“信封”指 `{code,data}`，必须进一步检查 code；
-“直出”不经过此信封。错误与 201/202/204 例外见 [响应规则](http.md)。
+未特别标注的成功通常为 HTTP 200。**所有 JSON 路由都走统一信封** `{code,data}`，必须先检查 code；
+表中“直出 X”指信封 `data` 就是 X（不再额外包装）。不包信封的只有探针 `/health`、`/readiness`、SSE 与文件下载。
+业务失败为 HTTP 200 + 业务码，见 [响应规则](http.md)；下文的“404 / 409 / 422 / 503”按该页的换算表对应
+4001（或 3002）/ 3003（或 4002）/ 1000 / 5001。
 OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每个角色都挂载全体路由。
 
 ## 平台状态、重启与诊断
@@ -26,8 +28,8 @@ OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/health` | — | 直出 status、scheduler、execution；execution 可为 ready/restarting/disabled |
-| GET | `/api/v1/readiness` | — | 就绪探针：能接收并执行任务时 200，否则 503；body 含 status（ready/not_ready）、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
+| GET | `/api/v1/health` | — | 裸 JSON（不包信封）：status、scheduler、execution；execution 可为 ready/restarting/disabled |
+| GET | `/api/v1/readiness` | — | 就绪探针（不包信封）：能接收并执行任务时 200，否则 503；body 含 status（ready/not_ready）、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
 | GET | `/api/v1/ping` | Q: client_timestamp?: number | 回显客户端时间与服务端秒级时间戳，不是任务心跳 |
 | GET | `/api/v1/scheduler/resources` | — | 调度资源快照；本进程无调度权威时 503 |
 | GET | `/api/v1/restart` | — | 当前重启请求状态 |
@@ -203,8 +205,8 @@ ManualConfirmationDecisionRequest 必填 action，可带 confirmed_by、comment�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/error-decisions` | — | `{items:[...]}`；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
-| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision | `{decision_id,status:"resolved"}`；过期/拒绝可返回 409 |
+| GET | `/api/v1/error-decisions` | — | `{decisions:[...]}`（V1）；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
+| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision（V1 ErrorDecisionIn：action / option / result / reason；可选 operator_id、Idempotency-Key 头） | `{decision_id,status:"delivered"}`；不在等待（处理过 / 超时 / 设备离线）为"不存在"（4001） |
 | GET | `/api/v1/status-incidents` | Q: device_id=""、include_terminal=false | `{host_ready,incidents,holds}`；状态策略不可用时 503 |
 | POST | `/api/v1/status-incidents/{incident_id}` | B: StatusIncidentDecision | incident 的 ack；不存在 404、冲突 409、无效选择 422 |
 
@@ -283,7 +285,7 @@ transfer 还需识别设备投影失败。不要收到错误后直接改数据�
 
 面向执行适配器和诊断工具。下面的“job”是执行层记录，不能替代前端提交 workflow-task 的业务入口。
 所有列表的 limit 默认 100，范围 1..1000；标有 after_sequence 的接口默认 0 且 >=0。
-其他 `?` 筛选默认不设。返回直出，未找到 404、状态冲突 409、协议无效 422。
+其他 `?` 筛选默认不设。成功 `data` 为记录本身；未找到 4001、状态冲突 3003、协议无效 1000。
 
 源码：[Runtime 路由](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/data.py)、
 [请求模型](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/protocol/runtime/data.py)、
@@ -394,13 +396,13 @@ state、properties、connection_state、alarms 使用公共 JSON 字段，不要
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
-| POST | `/api/v1/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
-| GET | `/api/v1/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
-| POST | `/api/v1/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
-| GET | `/api/v1/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
-| POST | `/api/v1/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
-| GET | `/api/v1/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
+| GET | `/api/v1/edge/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
+| POST | `/api/v1/edge/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
+| GET | `/api/v1/edge/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
+| POST | `/api/v1/edge/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
+| GET | `/api/v1/edge/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
+| POST | `/api/v1/edge/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
+| GET | `/api/v1/edge/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
 
 事件类型为 job_transition/action_availability/job_feedback/job_result/job_log/error_snapshot/decision_audit。
 HistoryEventAppend 关联 job/endpoint/device、payload、版本和来源；人工替换保留 actor 与原始事件。

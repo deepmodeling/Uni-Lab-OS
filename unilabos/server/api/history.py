@@ -1,4 +1,8 @@
-"""``history.v1`` FastAPI 路由；历史流只允许追加，不暴露覆盖或删除。"""
+"""``history.v1`` FastAPI 路由；历史流只允许追加，不暴露覆盖或删除。
+
+路径在 ``/api/v1/edge/history/*``：``/api/v1/history/*`` 归 V1 合同（工作流与作业运行历史，
+见 ``api/runtime/history_v1.py``），dev 的事件 / 载荷存储让出该前缀。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.database.tables.history import HistoryEventRecord
 from unilabos.protocol.history import (
     HistoryEventAppend,
@@ -21,6 +26,10 @@ from unilabos.server.services.history import (
     HistoryService,
     HistoryValidationError,
 )
+
+
+#: dev 事件 / 载荷存储的路由前缀（Host 数据面，经 edge 代理转发）
+HISTORY_PREFIX = "/api/v1/edge/history"
 
 
 def _call(function, *args, **kwargs):
@@ -39,7 +48,7 @@ def _payload_read(value) -> PayloadObjectRead:
 
 
 def create_history_router(service: HistoryService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/history", tags=["history-v1"])
+    router = envelope_router(prefix=HISTORY_PREFIX, tags=["history-v1"])
 
     @router.post("/payloads", response_model=PayloadObjectRead)
     async def store_payload(value: PayloadWrite):
@@ -111,4 +120,4 @@ def install_history_api(app: FastAPI, service: HistoryService) -> None:
     app.include_router(create_history_router(service))
 
 
-__all__ = ["create_history_router", "install_history_api"]
+__all__ = ["HISTORY_PREFIX", "create_history_router", "install_history_api"]

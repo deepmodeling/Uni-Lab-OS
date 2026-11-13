@@ -39,7 +39,7 @@ class ReleaseVersionTests(unittest.TestCase):
         self.assertEqual(recipe(".conda/base/recipe.yaml")["package"]["version"], version)
 
     def test_ros_recipe_versions_match_package_xml(self):
-        for name in ("msgs", "msgs-humble", "ros-humble-unilabos-msgs"):
+        for name in ("msgs", "msgs-humble"):
             with self.subTest(recipe=name):
                 self.assertEqual(recipe(f"recipes/{name}/recipe.yaml")["package"]["version"],
                                  message_version())
@@ -51,7 +51,7 @@ class ReleaseVersionTests(unittest.TestCase):
             self.assertNotIn("ros-", dependency)
             self.assertNotIn("robostack", dependency)
             self.assertNotIn("unilabos-env", dependency)
-        self.assertEqual(core["build"]["string"], "py312_0")
+        self.assertEqual(core["build"]["string"], "py314_0")
 
     def test_optional_ros_variants_pin_matching_core_and_messages(self):
         for distro, suffix in (("jazzy", ""), ("humble", "-humble")):
@@ -66,8 +66,8 @@ class ReleaseVersionTests(unittest.TestCase):
                     f"ros-{distro}-unilabos-msgs =={message_version()}",
                     recipes["ros2"]["requirements"]["run"],
                 )
-                self.assertIn(f"unilabos =={python_version()} py312_0", recipes["ros2"]["requirements"]["run"])
-                self.assertIn(f"unilabos-ros2 =={python_version()} {distro}_0", recipes["full"]["requirements"]["run"])
+                self.assertIn(f"unilabos =={python_version()} py314_0", recipes["ros2"]["requirements"]["run"])
+                self.assertIn(f"unilabos-ros2 =={python_version()} {distro}_1", recipes["full"]["requirements"]["run"])
                 for item in recipes.values():
                     # Conda 包的 depends 不能携带构建器专用的 channel 匹配信息。
                     for dep in item["requirements"]["run"]:

@@ -49,6 +49,7 @@ from unilabos.server.backend.scheduler.models import (
     ActionLockClaim,
     MaterialLockClaim,
     SchedulerResourceRequest,
+    SchedulerResourceRequestRecord,
 )
 from unilabos.server.backend.scheduler.parameters import (
     ParamResolveError,
@@ -137,7 +138,9 @@ class BackendSchedulingError(RuntimeError):
     """A persisted execution plan cannot be mapped to the local executor."""
 
 
-def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
+def allocation_arguments(
+    items: Any, *, action_schema: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Dict[str, Any]]:
     """把权威的 InventoryAllocation 列表按需求 key 归并成动作参数值。
 
     - ``material``：一个需求恰好选出一个物料实例，值是 ResourceSlot 引用形态
@@ -146,9 +149,15 @@ def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
       值给出合计数量与 lot 明细 ``{"quantity", "unit", "lots": [{"lot_uuid", "quantity"}]}``。
     """
 
+    from unilabos.server.services.materials.quantity import convert_quantity
+
+    fields = (action_schema or {}).get("properties", {}).get("goal", {}).get("properties", {})
     arguments: Dict[str, Dict[str, Any]] = {}
     for item in items:
         if item.kind == "material":
+            if "x-unilabos-material-lock" in fields.get(item.key, {}):
+                arguments[item.key] = {"uuid": item.material_uuid}
+                continue
             arguments[item.key] = {
                 "key": item.key,
                 "kind": "material",
@@ -167,8 +176,12 @@ def allocation_arguments(items: Any) -> Dict[str, Dict[str, Any]]:
                 "lots": [],
             },
         )
-        current["quantity"] = float(current["quantity"]) + float(item.quantity or 0)
-        current["lots"].append({"lot_uuid": item.lot_uuid, "quantity": float(item.quantity or 0)})
+        # 预留记录保持各批次原单位；给动作的合计和明细统一为首个批次单位。
+        converted = convert_quantity(float(item.quantity or 0), item.unit, current["unit"])
+        if converted is None:
+            raise BackendSchedulingError(f"库存需求 {item.key} 的批次单位无法合并")
+        current["quantity"] = float(current["quantity"]) + converted[0]
+        current["lots"].append({"lot_uuid": item.lot_uuid, "quantity": converted[0]})
     return arguments
 
 
@@ -198,6 +211,21 @@ class BackendScheduler:
         self.executor = executor
         self.materials_gateway = materials_gateway
         self.resources = resource_manager or SchedulerResourceManager()
+        from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
+
+        self._execution_claims = ExecutionClaims(workflow)
+        self._authority_epoch = self._execution_claims.activate_authority()
+        configure_start = getattr(executor, "configure_execution_authority", None)
+        if callable(configure_start):
+            configure_start(self._execution_claims)
+        # 所有遗留占用先于任何任务恢复，不能由任务遍历顺序决定谁先拿锁。
+        for request in self._execution_claims.restore_requests():
+            if self.resources.acquire(request).status != "held":
+                raise BackendSchedulingError("持久资源声明与内存占用冲突，不能启动调度")
+        from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
+        self._intervals = ResourceIntervals(workflow)
+        self._intervals.recover()
+        self._stopping = False
         self._materials_need_lock_resolver = materials_need_lock_resolver
         # while 循环的设备状态条件：device_id -> {field: value}。缺省从执行适配器的
         # 设备状态投影读（telemetry 最新快照）。
@@ -207,6 +235,8 @@ class BackendScheduler:
         self._started = threading.Event()
         self._guard = threading.RLock()
         self._runners: Dict[str, TaskDagRunner] = {}
+        # 恢复先核实旧副作用，不能依赖新版本仍能解释整张工作流图。
+        self._recovery_waiters: Dict[str, tuple[asyncio.AbstractEventLoop, asyncio.Event]] = {}
         self._scheduled: set[str] = set()
         self._control_wakeups: set[str] = set()
         # 已满足 DAG 依赖、尚未获得单点许可的叶节点；此时不申请动作/物料锁。
@@ -218,42 +248,88 @@ class BackendScheduler:
         # 以下以当前 attempt 的 job uuid 为键（资源 owner / 执行器 job_id）
         self._job_runs: Dict[str, str] = {}
         self._waiting_resource_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
+        self._waiting_interval_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
+        # 区间准入未通过时的完整资源申请，仅供 /scheduler/resources 观测排队与阻塞者。
+        self._waiting_interval_requests: Dict[str, SchedulerResourceRequest] = {}
         self._dispatched_jobs: set[str] = set()
         # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
         self._manual_confirmation_jobs: set[str] = set()
         # 进程重启后执行态未知 / 决策上下文丢失的 attempt：decision_id -> 待裁决记录。
         # 与执行面的失败决策一起从 /error-decisions 暴露，由本调度器直接收敛。
         self._reconciliation_decisions: Dict[str, Dict[str, Any]] = {}
-        self._dispatch_paused = False
+        self._dispatch_pause_reasons: set[str] = set()
+        if self._execution_claims.unclaimed_active_jobs():
+            self._dispatch_pause_reasons.add("legacy_execution_reconciliation")
+        if self._intervals.unadmitted_active_claims():
+            self._dispatch_pause_reasons.add("legacy_resource_reconciliation")
+        from .inventory_recovery import InventoryRecovery
+        self._inventory_recovery = InventoryRecovery(workflow, materials_gateway, self._authority_epoch)
+        from .physical_recovery import PhysicalRecovery
+        self._physical_recovery = PhysicalRecovery(workflow, materials_gateway, self._authority_epoch)
+        self._physical_retrying = False
+        self._reconcile_inventory()
         self.executor.add_job_finished_listener(self._on_executor_finished)
         resolver = getattr(self.workflow, "set_manual_confirmation_resolver", None)
         if callable(resolver):
             resolver(self._on_manual_confirmation_decided)
+        resource_listener = getattr(self.workflow, "set_resource_change_listener", None)
+        if callable(resource_listener):
+            resource_listener(self._on_resource_change)
         controller = getattr(self.workflow, "set_task_controller", None)
         if callable(controller):
             controller(self._on_task_control)
+        releaser = getattr(self.workflow, "set_task_resource_releaser", None)
+        if callable(releaser):
+            releaser(self._release_unlocked_task_resources)
+        self._release_confirmed_custody_inventory()
 
     @property
     def dispatch_paused(self) -> bool:
-        return self._dispatch_paused
-
-    def pause_dispatch(self) -> None:
-        """暂停新 Job 派发（安静点重启用）；已派发的 Job 不受影响。"""
         with self._guard:
-            self._dispatch_paused = True
+            return bool(self._dispatch_pause_reasons)
 
-    def resume_dispatch(self) -> None:
-        """恢复派发并立即重算等待集合，被闸门拦下的 Job 原样继续。"""
+    @property
+    def dispatch_pause_reasons(self) -> tuple[str, ...]:
         with self._guard:
-            if not self._dispatch_paused:
+            return tuple(sorted(self._dispatch_pause_reasons))
+
+    def pause_dispatch(self, *, reason: str = "manual") -> None:
+        """按来源暂停新 Job；同一来源重复请求幂等，已派发的 Job 不受影响。"""
+        with self._guard:
+            self._dispatch_pause_reasons.add(reason)
+
+    def resume_dispatch(self, *, reason: str = "manual") -> None:
+        """仅解除本来源的暂停；最后一个来源解除后才重算等待集合。"""
+        if reason == "legacy_resource_reconciliation" and self._intervals.unadmitted_active_claims():
+            return
+        if reason == "legacy_execution_reconciliation" and self._execution_claims.unclaimed_active_jobs():
+            return
+        with self._guard:
+            if reason not in self._dispatch_pause_reasons:
                 return
-            self._dispatch_paused = False
+            self._dispatch_pause_reasons.remove(reason)
+            if self._dispatch_pause_reasons:
+                return
         self._reconcile_resources()
+
+    def active_device_job_ids(self) -> list[str]:
+        """已获派发许可到终态落账之间的设备作业，包含执行态待裁决项。
+
+        人工确认没有设备执行，不阻止 runtime 排空；排空也不取消这类等待。
+        """
+        with self._guard:
+            return sorted(
+                (self._dispatched_jobs - self._manual_confirmation_jobs)
+                | {item["job_uuid"] for item in self._reconciliation_decisions.values()}
+            )
 
     def start(self, *, recover: bool = True) -> None:
         with self._guard:
             if self._thread is not None and self._thread.is_alive():
                 return
+            if self._stopping:
+                self._authority_epoch = self._execution_claims.activate_authority()
+            self._stopping = False
             self._started.clear()
             self._thread = threading.Thread(
                 target=self._run_loop,
@@ -359,6 +435,23 @@ class BackendScheduler:
             return {}
         task = prepared["task"]
         runs = prepared["runs"]
+        if any(run["status"] in _RUN_NEEDS_RECONCILIATION for run in runs):
+            await self._reconcile_before_planning(task, runs)
+            task = self.workflow.get_workflow_task(task_uuid)
+            runs = self.workflow.list_workflow_node_runs(task_uuid)
+            failed = {run["status"] for run in runs} & {"failed", "timeout", "canceled"}
+            if failed:
+                for run in runs:
+                    if run["status"] not in _RUN_TERMINAL:
+                        self.workflow.close_workflow_node_run(str(run["uuid"]), status="canceled")
+                self.workflow.finish_workflow_task(
+                    task_uuid, status="failed" if "failed" in failed else "timeout" if "timeout" in failed else "canceled",
+                    error_info=[{"code": "node_execution_failed"}],
+                )
+                self._release_unconsumed_task_inventory(task_uuid)
+                return {}
+            # 全部成功也走正常收尾，保留工作流声明输出的求值与校验。
+            # 重试产生的新 pending attempt 仍须经过下方完整计划和库存检查。
         try:
             dag, specs = self._build_dag(task, runs)
             self._reserve_task_inventory(task, specs)
@@ -430,8 +523,9 @@ class BackendScheduler:
             )
             return result
         finally:
-            self._cleanup_task_resources(task_uuid)
-            self._release_unconsumed_task_inventory(task_uuid)
+            if not self._stopping:
+                self._cleanup_task_resources(task_uuid)
+                self._release_unconsumed_task_inventory(task_uuid)
             with self._guard:
                 self._runners.pop(task_uuid, None)
                 for run_uuid in specs:
@@ -442,6 +536,7 @@ class BackendScheduler:
                     for job_uuid in spec.get("job_uuids", ()):
                         self._job_runs.pop(job_uuid, None)
                         self._waiting_resource_jobs.pop(job_uuid, None)
+                        self._waiting_interval_jobs.pop(job_uuid, None)
                         self._dispatched_jobs.discard(job_uuid)
                         self._manual_confirmation_jobs.discard(job_uuid)
                 for decision_id, pending in list(self._reconciliation_decisions.items()):
@@ -451,26 +546,11 @@ class BackendScheduler:
             self._settle_task_reconciliation(task_uuid)
 
     def stop(self) -> None:
+        # 停止调度进程不等于取消实验；在飞尝试与资源声明留给恢复和人工核实。
         with self._guard:
-            runners = list(self._runners.items())
+            self._stopping = True
+            self._execution_claims.deactivate_authority(self._authority_epoch)
             loop = self._loop
-            # 人工确认是可跨进程恢复的 pending 事实；优雅停机时不要把它
-            # 误转成 canceled，下一进程会按 job_uuid 幂等读回原确认单。
-            manual_task_ids = {
-                task_uuid
-                for job_uuid in self._manual_confirmation_jobs
-                if (run_uuid := self._job_runs.get(job_uuid)) is not None
-                if (task_uuid := self._run_to_task.get(run_uuid)) is not None
-            }
-            step_candidates = {
-                str(task["uuid"]) for task, _node in self._run_context.values()
-                if task.get("run_mode") == "step"
-            } | {str(task["uuid"]) for task, _node in self._waiting_step_nodes.values()}
-        for task_uuid, runner in runners:
-            # 单步等待/在飞的许可已持久化。停进程不等于取消实验，恢复时未知执行仍走裁决。
-            preserve_step = task_uuid in step_candidates and self.workflow.get_workflow_task(task_uuid)["run_mode"] == "step"
-            if task_uuid not in manual_task_ids and not preserve_step:
-                runner.cancel()
         if loop is not None and loop.is_running():
             loop.call_soon_threadsafe(loop.stop)
         thread = self._thread
@@ -486,6 +566,7 @@ class BackendScheduler:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         self._loop = loop
+        loop.create_task(self._inventory_recovery_loop())
         self._started.set()
         try:
             loop.run_forever()
@@ -498,6 +579,101 @@ class BackendScheduler:
                     asyncio.gather(*pending, return_exceptions=True)
                 )
             loop.close()
+
+    def _reconcile_inventory(self) -> dict[str, Any]:
+        report = self._inventory_recovery.reconcile()
+        try:
+            self._physical_recovery.reconcile_unstarted()
+        except Exception as error:
+            report["issues"].append({"reason": f"物理占用恢复失败：{error}"})
+        with self._guard:
+            self._inventory_recovery_report = report
+            if report["issues"]:
+                self._dispatch_pause_reasons.add("inventory_reconciliation")
+            else:
+                self._dispatch_pause_reasons.discard("inventory_reconciliation")
+        return report
+
+    def inventory_recovery_snapshot(self) -> dict[str, Any]:
+        with self._guard:
+            return deepcopy(getattr(self, "_inventory_recovery_report", self._inventory_recovery.snapshot()))
+
+    async def _inventory_recovery_loop(self) -> None:
+        """终态库存写入失败时持续重试；恢复成功后唤醒原排队动作。"""
+        while not self._stopping:
+            await asyncio.sleep(5)
+            if not self._stopping:
+                self._reconcile_resources()
+
+    async def _reconcile_before_planning(
+        self, task: Dict[str, Any], runs: list[Dict[str, Any]],
+    ) -> None:
+        """先独立接管在飞尝试，再解释计划、预留库存或响应取消。
+
+        图格式、驱动注册表或库存服务变化不能证明旧动作已经停止。核实只使用持久
+        Claim 和 attempt 身份，既能接迟到结果，也能走原有人工裁决；重试仅追加新
+        attempt，等全部旧动作收敛后再经过完整计划检查。
+        """
+        task_uuid = str(task["uuid"])
+        waiter = asyncio.Event()
+        recovered = [run for run in runs if run["status"] in _RUN_NEEDS_RECONCILIATION]
+        with self._guard:
+            self._recovery_waiters[task_uuid] = (asyncio.get_running_loop(), waiter)
+            for run in recovered:
+                run_uuid = str(run["uuid"])
+                job_uuid = str(run["current_job_uuid"])
+                self._run_to_task[run_uuid] = task_uuid
+                self._job_runs[job_uuid] = run_uuid
+                self._run_specs[run_uuid] = {
+                    "workflow_node_uuid": str(run["workflow_node_uuid"]),
+                    "current_job_uuid": job_uuid,
+                    "attempt_no": int(run.get("attempt_count") or 1),
+                    "job_uuids": [job_uuid],
+                }
+        try:
+            for run in recovered:
+                run_uuid = str(run["uuid"])
+                spec = self._run_specs[run_uuid]
+                claim = self._execution_claims.get(spec["current_job_uuid"])
+                action = (claim["request"].get("current_action") or {}) if claim else {}
+                # 旧版本没有 Claim 时只回退到持久快照，用于展示，绝不用于下发。
+                snapshot = task.get("workflow_snapshot") or {}
+                sources = snapshot.get("nodes", []) if isinstance(snapshot, dict) and not claim else []
+                sources = sources if isinstance(sources, list) else []
+                source = next((node for node in sources if isinstance(node, dict)
+                               and node.get("uuid") == run["workflow_node_uuid"]), {})
+                metadata = source.get("meta_data")
+                metadata = metadata if isinstance(metadata, dict) else {}
+                device_id = action.get("device_id") or metadata.get("target_device_id") or run.get("material_uuid") or "unknown"
+                action_name = action.get("action_name") or source.get("action_name") or "unknown"
+                node = DagNode(node_id=run_uuid, device_id=str(device_id), action=str(action_name))
+                if claim:
+                    self._execution_claims.mark_uncertain(spec["current_job_uuid"])
+                with self._guard:
+                    self._run_context[run_uuid] = (task, node)
+                persisted = self._physical_recovery.pending().get(spec["current_job_uuid"])
+                if persisted:
+                    self._settle_attempt(spec["current_job_uuid"], **{key: persisted[key] for key in ("job_status", "return_info", "error_info", "resolution")})
+                    if self.workflow.get_workflow_node_job(spec["current_job_uuid"])["status"] in _RUN_TERMINAL:
+                        continue
+                self._open_reconciliation_decision(task, node, spec, str(run["status"]))
+            if not any(run["status"] in _RUN_NEEDS_RECONCILIATION
+                       for run in self.workflow.list_workflow_node_runs(task_uuid)):
+                waiter.set()
+            await waiter.wait()
+        finally:
+            with self._guard:
+                self._recovery_waiters.pop(task_uuid, None)
+                for run in recovered:
+                    run_uuid = str(run["uuid"])
+                    self._run_specs.pop(run_uuid, None)
+                    self._run_to_task.pop(run_uuid, None)
+                    self._run_context.pop(run_uuid, None)
+                    self._job_runs.pop(str(run["current_job_uuid"]), None)
+                for decision_id, pending in list(self._reconciliation_decisions.items()):
+                    if pending["task_uuid"] == task_uuid:
+                        self._reconciliation_decisions.pop(decision_id, None)
+        self._settle_task_reconciliation(task_uuid)
 
     def _build_dag(
         self,
@@ -546,6 +722,13 @@ class BackendScheduler:
                     loop_spec=loop_spec.model_dump(mode="json"),
                     action_args=param,
                 )
+            elif run["executor_kind"] == "condition":
+                from unilabos.protocol.runtime.condition import condition_references
+
+                condition_references(param)
+                dag_nodes[run_uuid] = DagNode(
+                    node_id=run_uuid, device_id="", action="", kind="condition", action_args=param,
+                )
             elif run["executor_kind"] != "device_action":
                 raise BackendSchedulingError(
                     f"executor_kind {run['executor_kind']!r} is not wired locally"
@@ -591,6 +774,7 @@ class BackendScheduler:
                 # 节点级超时（冻结语义 execution_timeout_seconds / 新增 timeout_seconds，0 = 未声明）
                 "execution_policy": dict(policy),
                 "base_param": param,
+                "param_schema": planned.get("param_schema"),
                 "edges": list(plan.get("edges") or []),
                 "runs_by_node": {
                     node_uuid: str(node_run["uuid"])
@@ -599,10 +783,13 @@ class BackendScheduler:
                 "inventory_requirements": list(
                     planned.get("inventory_requirements") or []
                 ),
+                "inventory_template": list(planned.get("inventory_requirements") or []),
+                "inventory_deferred": bool(planned.get("inventory_deferred")),
                 "reserved_material_uuids": [],
                 "scheduler_revision": scheduler_revision,
                 # 当前 attempt：执行器 job_id / 资源 owner / 库存 reservation 的键
                 "current_job_uuid": current_job_uuid,
+                "inventory_job_status": run["status"],
                 "attempt_no": attempt_no,
                 "retry_of_job_uuid": (
                     str(retry_of_job_uuid) if retry_of_job_uuid else None
@@ -704,6 +891,13 @@ class BackendScheduler:
         """
 
         spec = self._run_specs[node.node_id]
+        local_state = self._run_condition_control(task, node)
+        if local_state is not None:
+            with self._guard:
+                runner = self._runners.get(str(task["uuid"]))
+            if runner is not None:
+                runner.notify_terminal(node.node_id, local_state)
+            return
         recovered_status = spec.pop("recovered_status", None)
         if recovered_status is not None:
             # 重启前在飞的 attempt：设备可能仍停在中间态，裁决前继续占着它的锁，后来的任务排队
@@ -714,13 +908,25 @@ class BackendScheduler:
         # 判定与登记在同一把锁里，避免与 step / resume 唤醒交错而漏掉这个节点。
         with self._guard:
             if self._dispatch_gate_closed(task, spec["current_job_uuid"]):
+                self._waiting_interval_jobs.pop(spec["current_job_uuid"], None)
                 self._waiting_step_nodes[node.node_id] = (task, node)
                 return
             self._waiting_step_nodes.pop(node.node_id, None)
+        if spec.get("inventory_deferred") and not self._reserve_ready_inventory(task, node):
+            with self._guard:
+                self._waiting_interval_jobs[spec["current_job_uuid"]] = (task, node)
+            return
         args = self._resolve_action_args(node.node_id)
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
         # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
         args.update(spec.get("inventory_allocations") or {})
+        from unilabos.registry.typed_contract import validate_action_values
+
+        args = validate_action_values(spec.get("param_schema"), args, managed_resources=True)
+        if spec.get("param_schema"):
+            from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+            validate_resource_values(spec["param_schema"], args, self.materials_gateway)
         parameter_names = self._material_lock_parameters(
             node.device_id,
             node.action,
@@ -729,14 +935,30 @@ class BackendScheduler:
             material_uuids_for_parameters(parameter_names, args)
         )
         material_uuids.update(spec.get("reserved_material_uuids") or ())
+        from .physical_contract import resolve_physical_contract
+        physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        material_uuids.update(physical.get("material_ids", []))
+        spec["physical_contract"] = physical
         spec["resolved_action_args"] = args
         spec["materials_need_lock"] = parameter_names
         spec["always_free"] = self._action_always_free(node, spec)
         job_uuid = spec["current_job_uuid"]
         # 资源申请以当前 attempt 为 owner：acquire 对同一 owner 幂等重放，重试
         # 的新 attempt 必须是新的申请才能重新排队获取。
-        record = self.resources.acquire(
-            SchedulerResourceRequest(
+        from .tenancy_contract import resolve_tenancy_contract
+        tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        if physical:
+            tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
+            if physical.get("device_tenancy"):
+                if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
+                    raise ValueError("搬运托管与显式设备托管合同不一致")
+                tenancy["device_tenancy"] = physical["device_tenancy"]
+        if self._physical_recovery.blockers(job_uuid, material_uuids, {node.device_id, *tenancy.get("device_claims", [])}):
+            with self._guard:
+                self._waiting_interval_jobs[job_uuid] = (task, node)
+            return
+        resource_request = SchedulerResourceRequest(
+                **tenancy,
                 request_uuid=f"resource:{job_uuid}",
                 owner_uuid=job_uuid,
                 task_uuid=str(task["uuid"]),
@@ -745,12 +967,27 @@ class BackendScheduler:
                     action_name=node.action,
                 ),
                 always_free=spec["always_free"],
+                interval_admission=True,
                 material_lock_claims=[
                     MaterialLockClaim(material_uuid=material_uuid)
                     for material_uuid in sorted(material_uuids)
                 ],
             )
-        )
+        prior_claim = self._execution_claims.get(job_uuid)
+        if prior_claim and not prior_claim["request"].get("interval_admission"):
+            resource_request = resource_request.model_copy(update={"interval_admission": False})
+        spec["resource_request"] = resource_request
+        with self._guard:
+            self._run_context[node.node_id] = (task, node)
+            self._job_runs[job_uuid] = node.node_id
+        if not self._intervals.admit(resource_request, self._authority_epoch):
+            with self._guard:
+                self._waiting_interval_jobs[job_uuid] = (task, node)
+                self._waiting_interval_requests[job_uuid] = resource_request
+            return
+        with self._guard:
+            self._waiting_interval_jobs.pop(job_uuid, None)
+        record = self.resources.acquire(resource_request)
         with self._guard:
             self._run_context[node.node_id] = (task, node)
             self._job_runs[job_uuid] = node.node_id
@@ -792,11 +1029,16 @@ class BackendScheduler:
             if not self.resources.withdraw(job_uuid, reason="task_paused"):
                 return False
             self._waiting_resource_jobs.pop(job_uuid, None)
+            self._intervals.withdraw(job_uuid)
             self._waiting_step_nodes[node.node_id] = (task, node)
             return True
 
     def _gate_waiting_resource_jobs(self, task_uuid: str) -> None:
         with self._guard:
+            for job_uuid, (task, node) in list(self._waiting_interval_jobs.items()):
+                if str(task["uuid"]) == task_uuid and self._dispatch_gate_closed(task, job_uuid):
+                    self._waiting_interval_jobs.pop(job_uuid, None)
+                    self._waiting_step_nodes[node.node_id] = (task, node)
             queued = [
                 (job_uuid, task, node)
                 for job_uuid, (task, node) in self._waiting_resource_jobs.items()
@@ -816,7 +1058,7 @@ class BackendScheduler:
         with self._guard:
             spec = self._run_specs[node.node_id]
             job_uuid = spec["current_job_uuid"]
-            if self._dispatch_paused or not self._executor_ready():
+            if self._dispatch_pause_reasons or not self._executor_ready():
                 # 安静点重启闸门 / 执行适配器尚未就绪（ROS2 host node 在设备初始化
                 # 完成后才注册）：节点保持在等待集合并继续持有资源，resume /
                 # host ready 后由 _reconcile_resources 原样派发，不产生失败。
@@ -874,7 +1116,25 @@ class BackendScheduler:
                 except ResourceNotFound:
                     pass
                 raise
+        dispatch_invoked = False
         try:
+            self._execution_claims.reserve(spec["resource_request"], authority_epoch=self._authority_epoch)
+            material_execution = None
+            if spec.get("physical_contract") or spec.get("inventory_reservation_uuid"):
+                from .physical_contract import resolve_physical_contract
+                from unilabos.protocol.material_execution import MaterialExecutionPrepare
+                from unilabos.protocol.base import canonical_hash
+                physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+                if physical.get("material_ids", []) != (spec.get("physical_contract") or {}).get("material_ids", []):
+                    raise ValueError("等待期间物理资源范围变化，请重新创建尝试")
+                claim = self._execution_claims.get(job_uuid)
+                material_execution = self.materials_gateway.prepare_material_execution(MaterialExecutionPrepare(
+                    job_uuid=job_uuid, task_uuid=str(task["uuid"]), claim_uuid=claim["claim_uuid"], attempt_no=spec["attempt_no"],
+                    parameter_hash=canonical_hash(args), fences=claim["fences"], moves=physical.get("moves", []),
+                    aliquot=physical.get("aliquot"), safety_material_uuids=physical.get("material_ids", []),
+                    safety_device_ids=sorted({node.device_id, *physical.get("device_ids", [])}) if physical else [],
+                    reserved_site_uuids=physical.get("reserved_site_uuids", []),
+                    inventory_reservation_uuid=spec.get("inventory_reservation_uuid")))
             self.workflow.mark_workflow_node_job_running(job_uuid)
             payload = build_job_start_payload(
                 job_id=job_uuid,
@@ -898,21 +1158,37 @@ class BackendScheduler:
                 retry_count=spec.get("retry_count"),
             )
             payload["always_free"] = spec.get("always_free", node.always_free)
+            if material_execution is not None:
+                payload["material_execution"] = {key: material_execution[key] for key in ("job_uuid", "claim_uuid", "plan_hash")}
+
+            contract = ((spec.get("param_schema") or {}).get("x-unilabos-action-contract") or {}).get("resource_contract")
+            if contract:
+                payload["resource_contract"] = contract
             timeouts = self._action_timeouts(node, spec, args)
             if timeouts.get("timeout") is not None:
                 payload["timeout_seconds"] = float(timeouts["timeout"])
             if timeouts.get("execution_timeout") is not None:
                 payload["execution_timeout_seconds"] = float(timeouts["execution_timeout"])
             self._persist_node_run_timeouts(node.node_id, timeouts)
+            payload["execution_permit"] = self._execution_claims.seal_dispatch(job_uuid, payload, self._authority_epoch)
+            dispatch_invoked = True
             self.executor.dispatch(payload)
-        except Exception:
+        except Exception as error:
+            if dispatch_invoked:
+                # 执行器可能已经发出动作；通信异常不证明设备没有执行，保留全部资源等核实。
+                self._execution_claims.mark_uncertain(job_uuid)
+                self._reconcile_lost_attempt(job_uuid, {"uncertainty_reason": f"派发回执不确定：{error}"})
+                logger.exception("作业 %s 派发回执不确定，已保留资源并请求核实", job_uuid)
+                return
+            self.workflow.record_workflow_node_job_terminal(
+                job_uuid, status="failed", return_info={},
+                error_info=[{"code": "dispatch_not_sent", "message": str(error)}],
+            )
             with self._guard:
                 self._dispatched_jobs.discard(job_uuid)
             try:
-                self.resources.cancel_owner(
-                    job_uuid,
-                    reason="dispatch_failed",
-                )
+                if self._execution_claims.get(job_uuid) is None:
+                    self.resources.cancel_owner(job_uuid, reason="dispatch_failed")
             except ResourceNotFound:
                 pass
             raise
@@ -921,6 +1197,30 @@ class BackendScheduler:
         """重算等待集合；只下发本轮已获得完整资源的 attempt。"""
 
         with self._guard:
+            if self._stopping:
+                return
+        self._reconcile_inventory()
+        self._retry_physical_outcomes()
+        with self._guard:
+            if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
+                    and not self._intervals.unadmitted_active_claims()):
+                self._dispatch_pause_reasons.discard("legacy_resource_reconciliation")
+            interval_candidates = list(self._waiting_interval_jobs.items())
+        for job_uuid, (task, node) in interval_candidates:
+            with self._guard:
+                if self._waiting_interval_jobs.pop(job_uuid, None) is None:
+                    continue
+            try:
+                self._start_node(task, node)
+            except Exception:
+                logger.exception("资源区间等待节点 %s 无法继续", job_uuid)
+                with self._guard:
+                    self._waiting_interval_jobs.pop(job_uuid, None)
+                self._notify_start_failure(node.node_id)
+        with self._guard:
+            if ("legacy_execution_reconciliation" in self._dispatch_pause_reasons
+                    and not self._execution_claims.unclaimed_active_jobs()):
+                self._dispatch_pause_reasons.discard("legacy_execution_reconciliation")
             candidates = list(self._waiting_resource_jobs.items())
         for job_uuid, (task, node) in candidates:
             try:
@@ -1041,9 +1341,34 @@ class BackendScheduler:
                 "failed to persist execution_timeout_seconds for node run %s", run_uuid
             )
 
-    def _release_job_resources(self, job_uuid: str, *, canceled: bool) -> None:
-        """释放一个 attempt 持有的资源申请。"""
+    def _retry_physical_outcomes(self) -> None:
+        with self._guard:
+            if self._physical_retrying:
+                return
+            self._physical_retrying = True
+        try:
+            for job_uuid, outcome in self._physical_recovery.pending().items():
+                self._settle_attempt(job_uuid, **{key: outcome[key] for key in ("job_status", "return_info", "error_info", "resolution")})
+        finally:
+            with self._guard:
+                self._physical_retrying = False
 
+    def _release_job_resources(self, job_uuid: str, *, canceled: bool) -> None:
+        """释放一个 attempt 持有的资源申请。
+
+        超时后仍持有锁的 attempt（ADR 0008）只退出在途集合：动作 / 物料锁与持久占用
+        保留到驱动真实返回（:meth:`publish_job_late_outcome`）或人工强制释放。
+        """
+
+        self._reconcile_inventory()
+        if not self._execution_claims.release_if_terminal(job_uuid):
+            if self._execution_claims.held_after_timeout(job_uuid):
+                with self._guard:
+                    self._waiting_resource_jobs.pop(job_uuid, None)
+                    self._dispatched_jobs.discard(job_uuid)
+                    self._manual_confirmation_jobs.discard(job_uuid)
+            return
+        self._intervals.release_job(job_uuid)
         try:
             record = self.resources.request_for_owner(job_uuid)
         except ResourceNotFound:
@@ -1051,6 +1376,7 @@ class BackendScheduler:
                 self._waiting_resource_jobs.pop(job_uuid, None)
                 self._dispatched_jobs.discard(job_uuid)
                 self._manual_confirmation_jobs.discard(job_uuid)
+            self._reconcile_resources()
             return
         if record.status not in {"released", "canceled"}:
             if canceled:
@@ -1091,6 +1417,10 @@ class BackendScheduler:
             ]
             for node_id in waiting_steps:
                 self._waiting_step_nodes.pop(node_id, None)
+            interval_waiters = [(job, node.node_id) for job, (task, node) in self._waiting_interval_jobs.items()
+                                if str(task["uuid"]) == task_uuid]
+            for job, _node in interval_waiters:
+                self._waiting_interval_jobs.pop(job, None)
             manual_jobs = [
                 job_uuid
                 for job_uuid in self._manual_confirmation_jobs
@@ -1098,7 +1428,11 @@ class BackendScheduler:
                 and self._run_to_task.get(run_uuid) == task_uuid
             ]
         # 排队等锁的 attempt 退出队列；等单步许可的节点直接收口
+        for _job, run_uuid in interval_waiters:
+            if runner is not None:
+                runner.notify_terminal(run_uuid, NodeState.CANCELLED)
         for job_uuid, run_uuid in queued:
+            self._intervals.withdraw(job_uuid)
             try:
                 if not self.resources.withdraw(job_uuid, reason="task_canceled"):
                     self.resources.cancel_owner(job_uuid, reason="task_canceled")
@@ -1162,10 +1496,60 @@ class BackendScheduler:
         for job_uuid in job_uuids:
             self._release_job_resources(job_uuid, canceled=True)
 
+    def _release_unlocked_task_resources(self, task_uuid: str, job_uuids: list[str]) -> None:
+        """V1 ``unlock_resources`` 已在库内释放异常终态任务的占用：同步释放内存资源账本。"""
+
+        for job_uuid in job_uuids:
+            self._release_job_resources(job_uuid, canceled=True)
+        self._cleanup_task_resources(task_uuid)
+
+    def _on_resource_change(self) -> None:
+        if self._stopping:
+            return
+        self._reconcile_resources()
+        self._release_confirmed_custody_inventory()
+
+    def _release_confirmed_custody_inventory(self) -> None:
+        with self.workflow.write_lock:
+            tasks = [row[0] for row in self.workflow.connection.execute(
+                "SELECT uuid FROM workflow_task WHERE attention_reason='device_tenancy_released'")]
+        for task_uuid in tasks:
+            self._release_unconsumed_task_inventory(task_uuid)
+
     def resource_snapshot(self):
         """返回当前统一动作/物料锁快照，供诊断 API 使用。"""
 
-        return self.resources.snapshot()
+        from unilabos.server.services.runtime.workflow.resource_loans import ResourceLoans
+        from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
+        with self._guard:
+            for stale in set(self._waiting_interval_requests) - set(self._waiting_interval_jobs):
+                self._waiting_interval_requests.pop(stale, None)
+            interval_waiting = dict(self._waiting_interval_requests)
+        with self.workflow.write_lock:
+            snapshot = self.resources.snapshot()
+            # 跨任务独占由持久区间准入先裁决，被拦下的申请尚未进入内存锁队列；
+            # 这里补成 waiting 记录，blockers 为当前占用同一锁键的 attempt，保持观测面完整。
+            known = {item.owner_uuid for item in snapshot.requests}
+            sequence = max(snapshot.sequence, 1)
+            waiting = [
+                SchedulerResourceRequestRecord(
+                    request_uuid=request.request_uuid,
+                    owner_uuid=request.owner_uuid,
+                    task_uuid=request.task_uuid,
+                    identifiers=request.identifiers,
+                    status="waiting",
+                    blockers=self._intervals.blocking_jobs(request),
+                    created_sequence=sequence,
+                    updated_sequence=sequence,
+                    version=1,
+                )
+                for job_uuid, request in sorted(interval_waiting.items())
+                if job_uuid not in known
+            ]
+            return snapshot.model_copy(update={"requests": [*snapshot.requests, *waiting],
+                "intervals": self._intervals.snapshot(),
+                "loans": ResourceLoans.snapshot(self.workflow.connection),
+                "tenancies": DeviceTenancies.snapshot(self.workflow.connection)})
 
     @staticmethod
     def _inventory_command_uuid(task_uuid: str, suffix: str = "") -> str:
@@ -1181,6 +1565,7 @@ class BackendScheduler:
         targets: list[tuple[str, Dict[str, Any]]],
         *,
         command_suffix: str = "",
+        ready: bool = False,
     ) -> None:
         """为若干 (attempt job uuid, spec) 建库存 reservation，all-or-nothing。
 
@@ -1197,7 +1582,8 @@ class BackendScheduler:
                 requirements=spec["inventory_requirements"],
             )
             for job_uuid, spec in targets
-            if spec["inventory_requirements"]
+            if spec["inventory_requirements"] and (ready or not spec.get("inventory_deferred"))
+            and spec.get("inventory_job_status", "pending") not in _RUN_TERMINAL
         ]
         if not requests:
             return
@@ -1206,21 +1592,34 @@ class BackendScheduler:
                 "workflow declares inventory requirements but materials authority "
                 "is unavailable"
             )
+        from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+        from unilabos.protocol.base import canonical_hash
         task_uuid = str(task["uuid"])
-        value = InventoryTaskReservationCreate(
-            task_uuid=task_uuid,
-            scheduler_revision=requests[0].scheduler_revision,
-            reservations=requests,
-        )
-        mutation = InventoryMutation(
-            command_uuid=self._inventory_command_uuid(task_uuid, command_suffix),
-            effect_key="inventory.task.reserve",
-            operation="reserve_task_inventory",
-            actor_type="scheduler",
-        )
-        result = self.materials_gateway.reserve_task_inventory(mutation, value)
+        existing = {item.job_uuid: item for item in self.materials_gateway.list_inventory_reservations(task_uuid=task_uuid)}
+        recovered, missing = [], []
+        for request in requests:
+            reservation = existing.get(request.job_uuid)
+            if reservation is None:
+                missing.append(request)
+                continue
+            ExecutionInventoryCoordinator._validate_reservation(reservation, {
+                "task_id": task_uuid, "job_id": request.job_uuid, "node_id": request.node_uuid,
+                "scheduler_revision": request.scheduler_revision, "inventory_requirements": request.requirements,
+            }, allowed_statuses=frozenset({"active"}))
+            recovered.append(reservation)
+        if missing:
+            value = InventoryTaskReservationCreate(task_uuid=task_uuid,
+                scheduler_revision=missing[0].scheduler_revision,
+                reservations=sorted(missing, key=lambda item: item.job_uuid))
+            # 重试、循环和部分节点已完成会改变预留集合；同一集合保持固定幂等身份。
+            digest = canonical_hash(value.model_dump(mode="json", exclude_none=False))
+            mutation = InventoryMutation(
+                command_uuid=self._inventory_command_uuid(task_uuid, ":batch:" + digest + (command_suffix if ready else "")),
+                effect_key="inventory.task.reserve", operation="reserve_task_inventory", actor_type="scheduler")
+            result = self.materials_gateway.reserve_task_inventory(mutation, value)
+            recovered.extend(result.data.reservations)
         specs_by_job = {job_uuid: spec for job_uuid, spec in targets}
-        for reservation in result.data.reservations:
+        for reservation in recovered:
             spec = specs_by_job.get(reservation.job_uuid)
             if spec is not None:
                 spec["inventory_reservation_uuid"] = reservation.reservation_uuid
@@ -1233,7 +1632,49 @@ class BackendScheduler:
                     }
                 )
                 # 权威解析出的出库内容：按需求 key 归并，派发时注入同名动作参数
-                spec["inventory_allocations"] = allocation_arguments(reservation.items)
+                spec["inventory_allocations"] = allocation_arguments(
+                    reservation.items, action_schema=spec.get("param_schema"),
+                )
+
+    def _reserve_ready_inventory(self, task: Dict[str, Any], node: DagNode) -> bool:
+        from .attempt_inventory import freeze_inventory, inventory_wait
+        from unilabos.protocol.runtime.input_binding import map_input_bindings, literal_input
+        from unilabos.protocol.runtime.value_binding import resolve_result_bindings
+
+        spec = self._run_specs[node.node_id]
+        job_uuid = spec["current_job_uuid"]
+        if spec.get("inventory_reservation_uuid"):
+            return True
+        def resolve():
+            current = self.workflow.get_workflow_task(str(task["uuid"]))
+            values = current.get("input") or {}
+            def entry(name):
+                if name not in values:
+                    raise ValueError(f"库存缺少入口参数：{name}")
+                return literal_input(values[name])
+            requirements = map_input_bindings(spec["inventory_template"], entry)
+            return resolve_result_bindings(requirements, lambda source: self._condition_result(spec, source),
+                                           read_path=json_get_exists)
+        spec["inventory_requirements"] = freeze_inventory(self.workflow, self._authority_epoch, job_uuid, resolve)
+        from unilabos.protocol.materials import InventoryRequirement
+        existing = self.materials_gateway.list_inventory_reservations(task_uuid=str(task["uuid"]))
+        if not any(item.job_uuid == job_uuid for item in existing):
+            preview = self.materials_gateway.preview_inventory([
+                InventoryRequirement.model_validate(item) for item in spec["inventory_requirements"]])
+            if not preview["available"]:
+                reason = "；".join(str(item.get("message") or "库存不足") for item in preview["shortages"])
+                inventory_wait(self.workflow, self._authority_epoch, job_uuid, reason)
+                return False
+        generation = (self._current_job_metadata(job_uuid).get("control_data") or {}).get("inventory_generation", 0)
+        try:
+            self._reserve_inventory(task, [(job_uuid, spec)], ready=True, command_suffix=f":ready:{generation}")
+        except Exception as error:
+            if getattr(error, "code", None) != "insufficient_inventory":
+                raise
+            inventory_wait(self.workflow, self._authority_epoch, job_uuid, str(error), advance=True)
+            return False
+        inventory_wait(self.workflow, self._authority_epoch, job_uuid, None)
+        return True
 
     def _reserve_task_inventory(
         self,
@@ -1246,44 +1687,8 @@ class BackendScheduler:
         )
 
     def _release_unconsumed_task_inventory(self, task_uuid: str) -> None:
-        if self.materials_gateway is None:
-            return
-        try:
-            reservations = self.materials_gateway.list_inventory_reservations(
-                task_uuid=task_uuid,
-                status="active",
-            )
-        except Exception:  # noqa: BLE001 - task result must remain persisted
-            logger.exception(
-                "failed to list active inventory reservations for task %s",
-                task_uuid,
-            )
-            return
-        command_uuid = self._inventory_command_uuid(task_uuid)
-        for reservation in reservations:
-            try:
-                value = InventoryReservationTransition(
-                    reservation_uuid=reservation.reservation_uuid,
-                    reason="workflow_terminal",
-                )
-                mutation = InventoryMutation(
-                    command_uuid=command_uuid,
-                    effect_key=(
-                        f"inventory.release:{reservation.reservation_uuid}"
-                    ),
-                    operation="release_inventory_reservation",
-                    actor_type="scheduler",
-                    job_uuid=reservation.job_uuid,
-                )
-                self.materials_gateway.release_inventory_reservation(
-                    mutation,
-                    value,
-                )
-            except Exception:  # noqa: BLE001 - ledger can be reconciled and retried
-                logger.exception(
-                    "failed to release inventory reservation %s",
-                    reservation.reservation_uuid,
-                )
+        # 持久 attempt 事实决定补扣、释放或隔离；不能把 task 终态等同于全部动作未执行。
+        self._reconcile_inventory()
 
     def _resolve_action_args(self, run_uuid: str) -> Dict[str, Any]:
         spec = self._run_specs[run_uuid]
@@ -1324,6 +1729,10 @@ class BackendScheduler:
         if context is not None:
             # 循环体节点的 {{loop.index}} / {{loop.iteration}} / {{loop.count}}：取最内层循环的当前轮
             result = substitute_loop_placeholders(result, context)
+        from unilabos.protocol.runtime.value_binding import resolve_result_bindings
+
+        result = resolve_result_bindings(result, lambda source: self._condition_result(spec, source),
+                                         read_path=json_get_exists)
         return dict(result)
 
     def _loop_context_for(self, run_uuid: str) -> Optional[Dict[str, Any]]:
@@ -1338,6 +1747,62 @@ class BackendScheduler:
                     return dict(context)
                 parent = loop_spec.get("parent_run_uuid")
         return None
+
+    def _condition_result(self, spec: Dict[str, Any], node_uuid: str) -> Any:
+        """条件读取当前节点运行的成功结果；不接受上一轮或被跳过的结果。"""
+        run_uuid = spec["runs_by_node"].get(node_uuid)
+        if not run_uuid:
+            raise ValueError(f"条件引用的节点不存在：{node_uuid}")
+        run = self.workflow.get_workflow_node_run(run_uuid)
+        info = run.get("return_info") or {}
+        if run["status"] != "succeeded" or "return_value" not in info:
+            raise ValueError(f"条件引用的节点没有成功结果：{node_uuid}")
+        return info["return_value"]
+
+    def _run_condition_control(self, task: Dict[str, Any], node: DagNode) -> Optional[NodeState]:
+        """本地判定和跳过不消费单步许可；只有被选择的设备动作申请资源与许可。"""
+        from unilabos.protocol.runtime.condition import condition_guards, evaluate_condition, strict_bool
+
+        spec = self._run_specs[node.node_id]
+        guards = condition_guards(spec.get("execution_policy") or {})
+        if not guards and node.kind != "condition":
+            return None
+        if self._task_cancelled(task):
+            return NodeState.CANCELLED
+        status = "succeeded"
+        value: Dict[str, Any] = {}
+        errors: list[Dict[str, Any]] = []
+        try:
+            for guard in guards:
+                result = self._condition_result(spec, guard["node_uuid"])
+                if not isinstance(result, Mapping) or "matched" not in result:
+                    raise ValueError("条件节点缺少 matched 结果")
+                if strict_bool(result["matched"]) != guard["equals"]:
+                    status = "skipped"
+                    value = {"reason": "condition_not_selected", "condition_node_uuid": guard["node_uuid"]}
+                    break
+            if status != "skipped":
+                if node.kind != "condition":
+                    return None
+                self.workflow.mark_workflow_node_job_running(str(spec["current_job_uuid"]))
+                current_input = self.workflow.get_workflow_task(str(task["uuid"])).get("input") or {}
+                value = {"matched": evaluate_condition(spec["base_param"], lambda key: self._condition_result(spec, key),
+                                                       read_input=current_input.__getitem__)}
+        except (ValueError, TypeError, KeyError) as exc:
+            status = "failed"
+            errors = [{"code": "condition_failed", "message": str(exc)}]
+        self.workflow.record_workflow_node_job_terminal(
+            str(spec["current_job_uuid"]), status=status,
+            return_info={"suc": status == "succeeded", "suc_type": "condition", "return_value": value},
+            error_info=errors,
+        )
+        if status == "skipped" and node.is_loop:
+            for child in spec.get("body_run_uuids") or []:
+                self.workflow.record_workflow_node_job_terminal(
+                    str(self._run_specs[child]["current_job_uuid"]), status="skipped",
+                    return_info={"suc": False, "suc_type": "condition", "return_value": value}, error_info=[],
+                )
+        return _run_status_to_state(status)
 
     # ── 循环容器 ──────────────────────────────────────────────
 
@@ -1359,6 +1824,9 @@ class BackendScheduler:
         """
 
         spec = self._run_specs[node.node_id]
+        local_state = self._run_condition_control(task, node)
+        if local_state is not None:
+            return local_state
         loop_spec = LoopSpec.model_validate(node.loop_spec)
         job_uuid = str(spec["current_job_uuid"])
         body_runs: list[str] = list(spec.get("body_run_uuids") or [])
@@ -1535,6 +2003,7 @@ class BackendScheduler:
         """把 spec 的当前 attempt 切到 store 追加的新 attempt（retry / 循环下一轮共用）。"""
 
         spec["current_job_uuid"] = str(next_job["uuid"])
+        spec["inventory_job_status"] = "pending"
         spec["attempt_no"] = int(next_job.get("attempt_no") or spec["attempt_no"] + 1)
         spec["retry_of_job_uuid"] = (
             str(next_job.get("retry_of_job_uuid") or retry_of) if retry_of else None
@@ -1548,6 +2017,8 @@ class BackendScheduler:
             spec["retry_count"] = 0
         spec["job_uuids"].append(str(next_job["uuid"]))
         spec.pop("inventory_reservation_uuid", None)
+        spec.pop("inventory_allocations", None)
+        spec["inventory_requirements"] = list(spec.get("inventory_template") or [])
         spec["reserved_material_uuids"] = []
 
     def _evaluate_loop_condition(
@@ -1751,11 +2222,11 @@ class BackendScheduler:
             job_status = "canceled"
         else:
             job_status = "failed"
-        resolution = (
-            (return_info or {}).get("error_resolution")
-            if isinstance(return_info, dict)
-            else None
-        )
+        info = return_info if isinstance(return_info, dict) else {}
+        resolution = info.get("error_resolution")
+        # 执行面在超时闸门结算、驱动尚未返回时附 timeout_hold：attempt 照常结算，锁继续持有。
+        timeout_hold = info.get("timeout_hold")
+        late_outcome = info.get("late_outcome")
         self._settle_attempt(
             job_id,
             job_status=job_status,
@@ -1768,6 +2239,8 @@ class BackendScheduler:
                 [] if job_status != "failed" else [_failure_error_info(return_info)]
             ),
             resolution=resolution if isinstance(resolution, dict) else None,
+            timeout_hold=timeout_hold if isinstance(timeout_hold, dict) else None,
+            late_outcome=late_outcome if isinstance(late_outcome, dict) else None,
         )
         for task_uuid in {pending["task_uuid"] for _decision_id, pending in stale}:
             self._settle_task_reconciliation(task_uuid)
@@ -1780,8 +2253,14 @@ class BackendScheduler:
         return_info: Dict[str, Any],
         error_info: list[Dict[str, Any]],
         resolution: Optional[Dict[str, Any]],
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """attempt 终态收敛的唯一入口：执行器回报与重启后的人工裁决都走这里。"""
+        """attempt 终态收敛的唯一入口：执行器回报与重启后的人工裁决都走这里。
+
+        ``timeout_hold`` 非空：终态由超时闸门决定、驱动尚未返回。attempt 照常结算，
+        工作流按决策 / 超时策略继续，但它的锁不释放（ADR 0008）。
+        """
 
         with self._guard:
             run_uuid = self._job_runs.get(job_id)
@@ -1789,18 +2268,48 @@ class BackendScheduler:
             runner = self._runners.get(task_uuid or "")
             context = self._run_context.get(run_uuid or "")
             spec = self._run_specs.get(run_uuid or "")
-        if run_uuid is None or task_uuid is None or runner is None or spec is None:
+        with self._guard:
+            recovery_waiter = self._recovery_waiters.get(task_uuid or "")
+        if run_uuid is None or task_uuid is None or spec is None or (runner is None and recovery_waiter is None):
+            return
+        from .physical_recovery import PhysicalSettlementPending
+        try:
+            self._physical_recovery.settle(job_id, job_status=job_status, return_info=return_info,
+                error_info=error_info, resolution=resolution)
+        except PhysicalSettlementPending as error:
+            self._execution_claims.mark_uncertain(job_id)
+            self._reconcile_lost_attempt(job_id, {"uncertainty_reason": str(error)})
             return
         # attempt 终态先落表并投影到节点运行；retry 决策由 store 在同一事务里追加新 attempt
+        hold_kwargs: Dict[str, Any] = {}
+        if timeout_hold is not None:
+            hold_kwargs["timeout_hold"] = timeout_hold
+        if late_outcome is not None:
+            hold_kwargs["late_outcome"] = late_outcome
         outcome = self.workflow.record_workflow_node_job_terminal(
             job_id,
             status=job_status,
             return_info=return_info,
             error_info=error_info,
             error_resolution=resolution,
+            **hold_kwargs,
         )
         run = outcome["run"]
+        if timeout_hold is not None:
+            logger.warning(
+                "作业 %s 已按超时结算为 %s，驱动仍在执行：锁继续持有，直到驱动真实返回或人工强制释放",
+                job_id,
+                job_status,
+            )
         self._release_job_resources(job_id, canceled=False)
+
+        if recovery_waiter is not None:
+            # 取消和单个分支失败都不能提前结束其他待核实动作。
+            remaining = self.workflow.list_workflow_node_runs(task_uuid)
+            if not any(item["status"] in _RUN_NEEDS_RECONCILIATION for item in remaining):
+                recovery_waiter[0].call_soon_threadsafe(recovery_waiter[1].set)
+            self._reconcile_resources()
+            return
 
         next_job = outcome.get("next_job")
         if next_job is not None and context is not None:
@@ -1837,6 +2346,35 @@ class BackendScheduler:
 
         if run["status"] in _RUN_TERMINAL:
             runner.notify_terminal(run_uuid, _run_status_to_state(str(run["status"])))
+
+    def publish_job_late_outcome(self, report: Dict[str, Any], item: Any = None) -> bool:
+        """执行面结果桥：超时结算后驱动真实返回（迟到结果）。
+
+        迟到结果只记录在 attempt 的 ``control_data.late_outcome``，不改变已结算的状态与
+        结果；该 attempt 仍按超时持有的锁在同一事务释放，随后释放内存锁并唤醒等待者。
+        以持久事实为准，不依赖调度器内存：权威重启后、任务已结束时同样生效。
+        """
+
+        job_uuid = str(report.get("job_id") or getattr(item, "job_id", "") or "")
+        if not job_uuid:
+            return False
+        outcome = {
+            key: deepcopy(report[key])
+            for key in ("status", "return_info", "received_at", "timeout_kind", "timed_out_at")
+            if key in report
+        }
+        try:
+            result = self.workflow.record_workflow_node_job_late_outcome(job_uuid, outcome)
+        except Exception:  # noqa: BLE001 - 非本权威的 job 或已删除：只记日志
+            logger.exception("作业 %s 的迟到结果记录失败", job_uuid)
+            return False
+        if not result.get("released"):
+            logger.info("作业 %s 的迟到结果（%s）已记录，没有需要释放的超时持有",
+                        job_uuid, outcome.get("status"))
+            return True
+        logger.info("作业 %s 的驱动迟到返回（%s），释放超时持有的锁", job_uuid, outcome.get("status"))
+        self._release_job_resources(job_uuid, canceled=False)
+        return True
 
     def publish_job_error_decision_required(self, report: Dict[str, Any]) -> bool:
         """执行面决策桥：本机派发的 attempt 失败并挂起等待决策。"""
@@ -1885,6 +2423,8 @@ class BackendScheduler:
             return
         if not self.workflow.mark_workflow_node_job_execution_unknown(job_id, reason):
             return
+        self._execution_claims.mark_uncertain(job_id)
+        self._intervals.release_job(job_id)
         task, node = context
         self._open_reconciliation_decision(task, node, spec, "execution_unknown")
 
@@ -1896,13 +2436,15 @@ class BackendScheduler:
     ) -> None:
         """进程重启后，为待裁决的遗留 attempt 重新登记它的动作锁 / 物料锁。
 
-        锁表只在内存里：重启后若不重新占用，别的任务会在操作员核对设备之前就派发到同一台
-        设备、同一份物料上。这里以该 attempt 为 owner 重新申请（不进等待派发集合，不会被
-        重新下发），裁决收敛（retry / skip / 人工结果 / abort）时随 attempt 终态释放。
-        物料参数解析失败时只保留设备动作锁。
+        新版本以派发前冻结的持久声明为准，启动时已恢复全部占用，不重新解释驱动注册表。
+        旧库没有声明的在飞尝试按历史计划展示；核实完成前全局派发闸门保持关闭。
         """
 
         job_uuid = str(spec["current_job_uuid"])
+        claim = self._execution_claims.get(job_uuid)
+        if claim is not None:
+            self._execution_claims.mark_uncertain(job_uuid)
+            return
         material_uuids: set[str] = set()
         try:
             args = self._resolve_action_args(node.node_id)
@@ -1994,6 +2536,12 @@ class BackendScheduler:
             "severity": "warning",
             "recovered_status": recovered_status,
         }
+        physical = self._physical_recovery.get(job_uuid)
+        if physical and (physical["request"].get("moves") or physical["request"].get("aliquot")):
+            report["category"] = "physical_settlement"
+            report["error_message"] = str((job.get("control_data") or {}).get("physical_outcome", {}).get("error") or error_message)
+            report["options"] = [option for option in report["options"] if option["action"] in {"operator_intervention", "abort"}]
+            report["material_execution"] = physical
         with self._guard:
             self._run_context[node.node_id] = (task, node)
             self._job_runs[job_uuid] = node.node_id
@@ -2067,6 +2615,8 @@ class BackendScheduler:
                     decision[key] = option[key]
         else:
             selected = str(decision.get("action") or option or "")
+        if report.get("category") == "physical_settlement" and not str(decision.get("reason") or "").strip():
+            return False
         if selected not in {str(item["action"]) for item in report["options"]}:
             return False
         if selected == "retry" and int(report["retry_count"]) >= int(report["max_retries"]):
@@ -2130,7 +2680,7 @@ class BackendScheduler:
             resolution=resolution,
         )
         self._settle_task_reconciliation(pending["task_uuid"])
-        return True
+        return self.workflow.get_workflow_node_job(job_uuid)["status"] in _RUN_TERMINAL
 
     def _settle_task_reconciliation(self, task_uuid: str) -> None:
         settle = getattr(self.workflow, "settle_workflow_task_reconciliation", None)

@@ -87,8 +87,8 @@ AST 扫描器自动从代码中提取：
 
 ### 阶段 4：自动生成（无需暂停）
 
-1. **对齐同类设备接口** — 搜索 `unilabos/devices/` 找已有实现
-2. **生成驱动代码** — `unilabos/devices/<category>/<name>.py`（使用 `@device` 装饰器）
+1. **对齐同类设备接口** — 参考 `unilabos/devices/virtual/` 的虚拟设备和已有驱动包
+2. **生成驱动代码** — 写进外部驱动包 `<package_name>/<name>.py`（使用 `@device` 装饰器；主仓库 `unilabos/devices/` 只放内置代码）
 3. **生成图文件** — `unilabos/test/experiments/<name>.json`
 
 **注意：无需生成 YAML 注册表文件。** `@device` 装饰器 + AST 扫描自动完成注册。

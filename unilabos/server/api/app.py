@@ -7,16 +7,19 @@ from urllib.parse import quote
 import socket
 import sys
 import threading
+import time
 import webbrowser
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.config.control_token import TOKEN_HEADER, authority_token, token_accepted
+from unilabos.config.station_key import is_station_path, station_key_accepted
+from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -81,6 +84,7 @@ workflow_routes_mounted = False
 registry_routes_mounted = False
 driver_packages_mounted = False
 edge_proxy_mounted = False
+process_management_mounted = False
 
 def cors_allow_origins() -> list[str]:
     """``BasicConfig.cors_allow_origins``：逗号分隔的来源；空或含 ``*`` 即全部允许（默认）。"""
@@ -107,7 +111,16 @@ class ConfiguredCORSMiddleware:
                 allow_origins=cors_allow_origins(),
                 allow_credentials=True,
                 allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-                allow_headers=["Authorization", "Content-Type", "Accept", "Last-Event-ID", TOKEN_HEADER],
+                # Authorization 留给 V1 工站 api_key；控制面 token 只认 X-UniLab-Token
+                allow_headers=[
+                    "Authorization",
+                    "Content-Type",
+                    "Accept",
+                    "Last-Event-ID",
+                    "Idempotency-Key",
+                    "X-Workflow-Filename",
+                    TOKEN_HEADER,
+                ],
             )
         await self._inner(scope, receive, send)
 
@@ -116,14 +129,18 @@ class ConfiguredCORSMiddleware:
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 #: 不经 token 检查的写入口：MCP 端点自带 Host 白名单并拒绝一切浏览器 Origin（见 server/mcp）。
 TOKEN_EXEMPT_PATHS = ("/mcp",)
+#: V1 进程管理路由（``api/process_management.py``）：裸 JSON，写操作同样要控制面 token。
+V1_PROCESS_MANAGEMENT_PREFIX = "/v1/"
 
 
 class ControlTokenMiddleware:
-    """管理 API 的写请求必须出示控制面 token（``X-UniLab-Token`` 或 ``Authorization: Bearer``）。
+    """管理 API 的写请求必须在请求头 ``X-UniLab-Token`` 出示控制面 token。
 
     CORS 默认放行所有来源，任何网页都能向本机后端发请求；没有 token 时，随便打开的一个网页就能
     创建任务、启动设备。token 见 ``unilabos/config/control_token.py``；本进程没有 token（单元测试、
-    嵌入式装配）时不检查。被拒的请求返回 HTTP 401 + ``{"code": 4001, ...}``，经外层 CORS 中间件
+    嵌入式装配）时不检查。``Authorization: Bearer`` 留给 V1 工站调用的 api_key（``station_key.py``）：
+    工站入口（``STATION_KEY_PATHS``）只认有效工站密钥放行、缺失或错误一律 401，不接受控制面 token。
+    被拒的请求返回 HTTP 401 + 信封 ``{"code": 1002, "error": {"msg": ...}}``，经外层 CORS 中间件
     补上跨域头，浏览器能读到原因。
     """
 
@@ -131,6 +148,22 @@ class ControlTokenMiddleware:
         self._app = app
 
     async def __call__(self, scope, receive, send) -> None:
+        if scope.get("type") == "http" and scope.get("method") in WRITE_METHODS and is_station_path(scope.get("path", "")):
+            # V1 工站调用只认工站密钥（Authorization: Bearer <station_api_key>），控制面 token 不能代替；
+            # 与控制面 token 是否启用无关：未配置工站密钥时工站入口一律拒绝（V1 同口径）。
+            from starlette.datastructures import Headers
+
+            if station_key_accepted(Headers(scope=scope)):
+                await self._app(scope, receive, send)
+                return
+            response = error_response(
+                UNAUTHORIZED,
+                "工站调用凭据无效：请求头 Authorization: Bearer <station_api_key>",
+                http_status=401,
+                headers={"WWW-Authenticate": 'Bearer realm="unilab-station"'},
+            )
+            await response(scope, receive, send)
+            return
         if (
             scope.get("type") == "http"
             and scope.get("method") in WRITE_METHODS
@@ -143,13 +176,25 @@ class ControlTokenMiddleware:
 
             if not token_accepted(Headers(scope=scope)):
                 message = (
-                    "写操作需要控制面 token：请求头 X-UniLab-Token 或 Authorization: Bearer <token>。"
+                    f"写操作需要控制面 token：请求头 {TOKEN_HEADER}: <token>。"
                     "在运行 unilab 的机器上执行 `unilab token` 查看"
                 )
-                response = JSONResponse(
-                    status_code=401,
-                    content={"code": 4001, "error": {"msg": message}, "detail": "control token missing or invalid"},
-                    headers={"WWW-Authenticate": 'Bearer realm="unilab"'},
+                if scope.get("path", "").startswith(V1_PROCESS_MANAGEMENT_PREFIX):
+                    # V1 进程管理路由不走信封：拒绝正文按 V1 的 {"error": {"code": "unauthorized"}}
+                    from starlette.responses import JSONResponse
+
+                    response = JSONResponse(
+                        {"error": {"code": "unauthorized", "message": message}},
+                        status_code=401,
+                        headers={"WWW-Authenticate": f'{TOKEN_HEADER} realm="unilab"', "Cache-Control": "no-store"},
+                    )
+                    await response(scope, receive, send)
+                    return
+                response = error_response(
+                    UNAUTHORIZED,
+                    message,
+                    http_status=401,
+                    headers={"WWW-Authenticate": f'{TOKEN_HEADER} realm="unilab"'},
                 )
                 await response(scope, receive, send)
                 return
@@ -184,7 +229,8 @@ async def reset_maintenance_gate(request: Request, call_next):
     controller = get_reset_controller()
     if controller is not None and controller.pending and request.method != "OPTIONS":
         if request.url.path not in ("/api/v1/reset", "/api/v1/health"):
-            return JSONResponse({"detail": "正在全量重置，停止接受业务请求"}, status_code=503)
+            # 进程级维护闸门（不是某个路由的业务失败）：保留 HTTP 503，正文仍是信封 5001
+            return error_response(SERVICE_UNAVAILABLE, "正在全量重置，停止接受业务请求", http_status=503)
     return await call_next(request)
 
 
@@ -408,7 +454,7 @@ def setup_server() -> FastAPI:
     """幂等挂载当前运行角色所需的 API 路由。"""
     global edge_routes_mounted, materials_routes_mounted, server_routes_mounted
     global workflow_routes_mounted, registry_routes_mounted, driver_packages_mounted
-    global edge_proxy_mounted
+    global edge_proxy_mounted, process_management_mounted
 
     from unilabos.server.api.edge_proxy import create_edge_proxy_router, edge_proxy_enabled
 
@@ -436,6 +482,10 @@ def setup_server() -> FastAPI:
             app.include_router(create_driver_package_graphs_router())
             app.include_router(create_device_processes_router())
             app.include_router(create_runtime_logs_router())
+            from unilabos.server.api.workspace import create_workspace_router
+
+            # V1 工作区只读面（驱动包挂载 / 工作目录浏览）
+            app.include_router(create_workspace_router())
             # 调度权威（materials 权威）把物料投影下行经这里送到设备
             app.include_router(create_host_relay_router())
             driver_packages_mounted = True
@@ -474,6 +524,21 @@ def setup_server() -> FastAPI:
                 workflow_routes_mounted = True
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Microbackend] 挂载本机 Workflow Authority 失败: {exc}")
+
+    # V1 进程管理协议（/v1/snapshot、/v1/operations、/v1/logs）：调度权威就是 dev 的工作区监督者，
+    # 与 Workflow Authority 同归属；操作记录落 runtime.db。
+    if not process_management_mounted:
+        try:
+            from unilabos.server.backend.composition import get_workflow_service
+
+            workflow_service = get_workflow_service()
+            if workflow_service is not None:
+                from unilabos.server.api.process_management import install_process_management_api
+
+                install_process_management_api(app, workflow_service)
+                process_management_mounted = True
+        except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
+            error(f"[Microbackend] 挂载进程管理路由失败: {exc}")
 
     # Registry Authority 与 Workflow Authority 同归属：调度权威随本进程装配时挂载
     # 条目级注册表版本 API；只提供执行面的 Host 不挂载。
@@ -546,9 +611,22 @@ _routes_ready = threading.Event()
 
 
 def wait_routes_ready(timeout: float) -> bool:
-    """等待本进程管理 API 路由挂载完成；返回是否就绪。"""
+    """等待本进程管理 API 路由挂载完成；返回是否就绪。
 
-    return _routes_ready.wait(timeout)
+    停机一开始就放弃等待：这些等待跑在控制 WS 事件循环的线程池里，路由永远挂不好时
+    （主线程在 ``setup_server`` 里就收到了停机信号）会让解释器退出时逐个 join 它们，一次
+    SIGTERM 被拖上几分钟。
+    """
+
+    deadline = time.monotonic() + max(0.0, timeout)
+    while not _routes_ready.is_set():
+        if lifecycle.shutting_down() or _abort_serving.is_set():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        _routes_ready.wait(min(0.2, remaining))
+    return True
 
 
 def request_server_shutdown() -> bool:
@@ -654,6 +732,10 @@ def ensure_port_available(host: str, port: int) -> None:
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     probe = socket.socket(family, socket.SOCK_STREAM)
     try:
+        # POSIX 与 Uvicorn 使用相同的 TIME_WAIT 复用语义；仍拒绝活动监听者。
+        # Windows 的 SO_REUSEADDR 会允许共享监听端口，因此不启用。
+        if sys.platform != "win32":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((host, port))
     except OSError as exc:
         if _is_addr_in_use(exc):

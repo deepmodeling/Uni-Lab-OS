@@ -155,6 +155,9 @@ def test_host_child_command_points_back_to_authority() -> None:
     assert tail[tail.index("--address") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--material_microbackend_addr") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--server_database_root") + 1] == "/root/edge"
+    # 权威的单库覆盖不传给 Host 子进程：四库全部落在 edge 根目录下，不与权威打开同一个文件
+    for key in ("runtime", "materials", "telemetry", "history"):
+        assert tail[tail.index(f"--{key}_db") + 1] == ""
     assert "--skip_env_check" in tail and "--disable_browser" in tail
     # Host 子进程不监听端口：不再给它 --port
     assert "--port" not in tail
@@ -246,6 +249,16 @@ def test_host_child_supervisor_backs_off_after_crash(monkeypatch: pytest.MonkeyP
     child._thread.join(timeout=5)
     assert launched == 3
     assert child.crash_count == 2
+    # V1 进程管理快照的 edge 组件据此推导阶段：子进程已正常退出、不再看护
+    assert child.state() == {
+        "pid": None,
+        "alive": False,
+        "supervising": False,
+        "stop_requested": False,
+        "restart_count": 0,
+        "crash_count": 2,
+        "last_exit_code": 0,
+    }
 
 
 def test_host_child_supervisor_stop_requests_graceful_exit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -379,7 +392,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
 
     host_app = FastAPI()
 
-    @host_app.get("/api/v1/history/payloads/p1")
+    @host_app.get("/api/v1/edge/history/payloads/p1")
     async def payload():
         return {"inline_payload": "e30="}
 
@@ -400,17 +413,19 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
     monkeypatch.setattr(client, "_post_http_response", capture)
     asyncio.run(
         client._serve_backend_http(
-            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/history/payloads/p1", "timeout_seconds": 5}
+            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/edge/history/payloads/p1", "timeout_seconds": 5}
         )
     )
     assert waited == [5.0]
-    assert posted[-1].status_code == 503
-    assert "not mounted" in json.loads(posted[-1].body_bytes())["detail"]
+    # 路由未挂好：与「Host 不在线」同形，HTTP 200 + 业务码 5001
+    reply = json.loads(posted[-1].body_bytes())
+    assert posted[-1].status_code == 200 and reply["code"] == 5001
+    assert "尚未挂载" in reply["error"]["msg"]
 
     # 路由就绪后同一请求正常执行
     monkeypatch.setattr(app_module, "wait_routes_ready", lambda timeout: True)
     asyncio.run(
-        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/history/payloads/p1"})
+        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/edge/history/payloads/p1"})
     )
     assert posted[-1].status_code == 200
 

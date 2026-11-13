@@ -42,6 +42,7 @@ from unilabos.backend.ros2.msgs.message_converter import (
 from unilabos.backend.runtime.workstation_protocol import (
     WorkstationNodeTempError,
     expand_resource_value,
+    physical_setup_graph,
     protocol_model,
     setup_protocol_names,
     update_protocol_resources,
@@ -343,10 +344,9 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                             self.lab_logger().error(f"查询资源失败: {k}, 错误: {ex}\n{traceback.format_exc()}")
                             raise
 
-                from unilabos.resources.graphio import physical_setup_graph
-
-                self.lab_logger().info(f"Working on physical setup: {physical_setup_graph}")
-                protocol_steps = protocol_steps_generator(G=physical_setup_graph, **protocol_kwargs)
+                setup_graph = physical_setup_graph()
+                self.lab_logger().info(f"Working on physical setup: {setup_graph}")
+                protocol_steps = protocol_steps_generator(G=setup_graph, **protocol_kwargs)
                 logs = []
                 for step in protocol_steps:
                     if isinstance(step, dict) and "log_message" in step.get("action_kwargs", {}):

@@ -28,7 +28,8 @@ def _registry_resources() -> dict[str, dict[str, Any]]:
     global _COMPLETE_REGISTRY_RESOURCES
     if _COMPLETE_REGISTRY_RESOURCES is None:
         if not lab_registry._setup_called:  # noqa: SLF001 - 进程级测试边界
-            lab_registry.setup(upload_registry=True, complete_registry=True)
+            # 完整生成内存模板，但测试不得重写仓库中的 Registry YAML。
+            lab_registry.setup(upload_registry=True, complete_registry=False)
 
         def has_template_root(entry: dict[str, Any]) -> bool:
             config_info = entry.get("config_info")

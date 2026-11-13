@@ -14,6 +14,8 @@ from unilabos.backend.runtime.resource import (
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.client.materials import LocalMaterialsClient
+from unilabos.protocol.materials import InventoryMutation, MaterialDelete
+from unilabos.resources.adapters.plr_materials import SnapshotUuidMismatchError
 from unilabos.server.services.materials import MaterialsService
 
 
@@ -285,6 +287,33 @@ def test_partial_update_derives_roots_locally(tmp_path) -> None:
         materials.close()
 
 
+def test_device_held_tree_set_derives_roots_locally(tmp_path) -> None:
+    """append_resource 回报的台面树（根 parent 投影为本设备）：归属本地即可确定。
+
+    设备之下那棵树就是快照根（与 ``_root_material_uuid`` 停在设备物料之下同一规则），
+    不能逐节点 get_material 反查——带枪头的整台面有数百节点，经 HostLink 逐个往返
+    会把一次挂载拖过下行超时。
+    """
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        root = _deck_with_wells(materials, service)
+        root.children[1].tracker.set_liquids([("water", 5.0, "ul")])
+        tree_set = ResourceTreeSet.from_plr_resources([root])
+        tree_set.trees[0].root_node.res_content.parent_uuid = "device-uuid"
+        gateway.reset()
+
+        service.update_resources_sync("device-1", "device-uuid", tree_set)
+
+        assert gateway.calls == {"get_tree": 1, "apply_snapshot": 1}
+        stored = materials.get_material(root.children[1].unilabos_uuid)
+        assert [(s.name, s.quantity) for s in stored.data.substances] == [("water", 5.0)]
+        assert materials.get_material(root.unilabos_uuid).material.parent_material_uuid is None
+    finally:
+        materials.close()
+
+
 def test_stale_baseline_is_refetched_on_conflict_and_after_authority_moves(tmp_path) -> None:
     """外部改了权威（版本前进 / 结构变化）：靠 precondition 冲突和下行作废基线各重拉一次。"""
     from unilabos.protocol.materials import MaterialMove
@@ -436,6 +465,168 @@ def test_strict_snapshot_rejects_a_child_only_partial_tree(tmp_path) -> None:
                 "device-uuid",
                 created.resources[0].children[0],
             )
+
+    try:
+        asyncio.run(run())
+    finally:
+        materials.close()
+
+
+def _deck_under_liquid_handler(service: AuthorityResourceService):
+    """PLR 1.0 运行时形态：台面是权威物料根，但它的 PLR 父节点是没有 uuid 的 LiquidHandler。"""
+
+    from pylabrobot.legacy.liquid_handling import LiquidHandler
+    from pylabrobot.legacy.liquid_handling.backends.chatterbox import (
+        LiquidHandlerChatterboxBackend,
+    )
+    from pylabrobot.resources import Deck
+
+    draft = Deck(name="lh_deck", size_x=300, size_y=300, size_z=10)
+    draft.unilabos_extra = {"unilabos_resource_class": "authority-deck"}
+    for name in ("w1", "w2"):
+        draft.assign_child_resource(_container(name), Coordinate.zero())
+    deck = asyncio.run(
+        service.create_resources("lh-1", "lh-device-uuid", draft)
+    ).resources[0]
+    handler = LiquidHandler(backend=LiquidHandlerChatterboxBackend(), deck=deck)
+    assert deck.parent is handler and not getattr(handler, "unilabos_uuid", "")
+    return handler, deck
+
+
+def test_liquid_handler_deck_reports_state_deltas_to_the_authority(tmp_path) -> None:
+    """FRAMEWORK_GAPS #27：台面挂在 LiquidHandler 之下时，增量上报的根是台面本身。
+
+    根推导沿 ``.parent`` 停在最高的、带权威 uuid 的祖先；处理器不是物料，越过它会让
+    每次增量都因“根物料缺少权威 uuid”被丢弃，液体变化永远到不了权威。
+    """
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    _handler, deck = _deck_under_liquid_handler(service)
+    well = deck.children[1]
+
+    async def run() -> None:
+        observer = MaterialSnapshotObserver(
+            service,
+            device_id=lambda: "lh-1",
+            device_uuid=lambda: "lh-device-uuid",
+            schedule=asyncio.create_task,
+        )
+        assert observer.observe(deck) is True
+        gateway.reset()
+        well.tracker.set_liquids([("water", 42.0, "ul")])
+        await observer.wait_idle()
+        assert observer.errors == ()
+        assert gateway.calls == {"get_tree": 1, "apply_delta": 1}
+
+    try:
+        asyncio.run(run())
+        stored = materials.get_material(well.unilabos_uuid)
+        assert [(s.name, s.quantity) for s in stored.data.substances] == [("water", 42.0)]
+    finally:
+        materials.close()
+
+
+def test_liquid_handler_deck_partial_update_derives_root_locally(tmp_path) -> None:
+    """同一规则用于 materials.update(孔位)：根归属本地即可确定，不逐节点反查权威。"""
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        _handler, deck = _deck_under_liquid_handler(service)
+        well = deck.children[0]
+        well.tracker.set_liquids([("buffer", 9.0, "ul")])
+        gateway.reset()
+
+        service.update_resources_sync("lh-1", "lh-device-uuid", well)
+
+        assert "get_material" not in gateway.calls
+        assert gateway.calls == {"get_tree": 1, "apply_snapshot": 1}
+        assert materials.get_material(well.unilabos_uuid).data.substances[0].name == "buffer"
+    finally:
+        materials.close()
+
+
+def test_queued_state_delta_for_a_material_deleted_meanwhile_is_dropped(tmp_path) -> None:
+    """排队中的状态上报晚于权威删除：按结构漂移放弃，不记为观察者错误（仓库库位测试曾因此偶发失败）。"""
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        root = _deck_with_wells(materials, service)
+        well = root.children[1]
+        # 先建版本表，再由别处在权威里删掉这个孔（本地实例还挂在台面上）
+        well.tracker.set_liquids([("a", 1.0, "ul")])
+        assert service.apply_node_deltas_sync("device-1", "device-uuid", root, [well]) is True
+        materials.delete_material(
+            InventoryMutation(command_uuid=str(uuid4()), effect_key="delete", operation="delete_material"),
+            MaterialDelete(material_uuid=well.unilabos_uuid, recursive=True),
+        )
+        service._forget_tree(root.unilabos_uuid)
+
+        well.tracker.set_liquids([("b", 2.0, "ul")])
+        with pytest.raises(SnapshotUuidMismatchError):
+            service.apply_node_deltas_sync("device-1", "device-uuid", root, [well])
+
+        async def run() -> None:
+            observer = MaterialSnapshotObserver(
+                service,
+                device_id=lambda: "device-1",
+                device_uuid=lambda: "device-uuid",
+                schedule=asyncio.create_task,
+            )
+            observer.observe(root)
+            well.tracker.set_liquids([("c", 3.0, "ul")])
+            await observer.wait_idle()
+            assert observer.errors == ()
+
+        asyncio.run(run())
+    finally:
+        materials.close()
+
+
+def test_snapshot_freeze_torn_by_a_concurrent_structural_change_is_retried(tmp_path, monkeypatch) -> None:
+    """冻结整树时另一线程正在移除 / 转移物料，Site 占用与子节点读到不同时刻：重新冻结，
+    不记观察者错误，也不丢掉这次变更（仓库库位测试曾在满载时因此偶发失败）。"""
+    materials = MaterialsService(tmp_path / "materials.db")
+    service = AuthorityResourceService(LocalMaterialsClient(materials))
+    draft_root = _container("rack")
+    draft_root.assign_child_resource(_container("left"), Coordinate(1, 2, 3))
+    draft_root.assign_child_resource(_container("right"), Coordinate(4, 5, 6))
+    real_freeze = ResourceTreeSet.from_plr_resources
+    freezes: list[bool] = []
+
+    def freeze_torn_once(resources, *args, **kwargs):
+        freezes.append(True)
+        if len(freezes) == 1:
+            raise ValueError("Site s 引用的 occupied_material_uuid=m 不在物料树中")
+        return real_freeze(resources, *args, **kwargs)
+
+    async def run() -> None:
+        created = await service.create_resources("device-1", "device-uuid", draft_root)
+        root = created.resources[0]
+        observer = MaterialSnapshotObserver(
+            service,
+            device_id=lambda: "device-1",
+            device_uuid=lambda: "device-uuid",
+            schedule=asyncio.create_task,
+        )
+        assert observer.observe(root) is True
+        submitted = []
+        real_submit = service.snapshot_resource_tree
+
+        async def counting_submit(*args, **kwargs):
+            submitted.append(len(freezes))
+            return await real_submit(*args, **kwargs)
+
+        monkeypatch.setattr(service, "snapshot_resource_tree", counting_submit)
+        monkeypatch.setattr(resource_module.ResourceTreeSet, "from_plr_resources", staticmethod(freeze_torn_once))
+        root.unassign_child_resource(root.children[1])
+        await observer.wait_idle()
+        assert observer.errors == ()
+        assert submitted and submitted[0] >= 2  # 撕裂的那次没有提交，重新冻结后提交成功
 
     try:
         asyncio.run(run())

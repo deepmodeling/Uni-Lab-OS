@@ -197,7 +197,8 @@ def test_virtual_drivers_import_without_ros() -> None:
         "import sys; "
         "import unilabos.devices.virtual.virtual_centrifuge; "
         "import unilabos.devices.virtual.workbench; "
-        "import unilabos.devices.neware_battery_test_system.neware_battery_test_system; "
+        "import unilabos.devices.virtual.heating_platform; "
+        "import unilabos.devices.workstation.workstation_base; "
         "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
     )
     result = subprocess.run(
@@ -228,18 +229,17 @@ def test_liquid_handling_package_keeps_optional_rviz_ros_import_lazy() -> None:
 
 
 def test_liquid_handler_drivers_import_in_hostlink_without_ros_runtime() -> None:
-    pytest.importorskip("pylibftdi")
+    # 内置抽象液体处理器与经注册钩子导入的 rviz 后端都不得拉起 ROS
     code = (
         "import sys; "
         "from unilabos.config.config import BasicConfig; "
         "BasicConfig.backend = 'hostlink'; "
         "from unilabos.devices.liquid_handling.liquid_handler_abstract "
         "import LiquidHandlerAbstract; "
-        "from unilabos.devices.liquid_handling.prcxi.prcxi "
-        "import PRCXI9300Handler; "
         "from unilabos.resources.plr_additional_res_reg import register; "
         "register(); "
-        "assert LiquidHandlerAbstract and PRCXI9300Handler; "
+        "assert 'unilabos.devices.liquid_handling.rviz_backend' in sys.modules; "
+        "assert LiquidHandlerAbstract; "
         "assert 'rclpy' not in sys.modules; "
         "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
     )

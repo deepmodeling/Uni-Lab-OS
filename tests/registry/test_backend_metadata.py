@@ -261,13 +261,13 @@ def test_ast_scanner_skips_runtime_injected_parameters(tmp_path) -> None:
 def test_ast_cache_rejects_previous_metadata_version(tmp_path) -> None:
     cache_path = tmp_path / "ast_scan_cache.json"
     cache_path.write_text(
-        '{"version": 7, "files": {"stale.py": {"devices": [{"device_id": "stale"}]}}}',
+        '{"version": 19, "files": {"stale.py": {"devices": [{"device_id": "stale"}]}}}',
         encoding="utf-8",
     )
 
     cache = load_scan_cache(cache_path)
 
-    assert _CACHE_VERSION == 17
+    assert _CACHE_VERSION == 20
     assert cache == {"version": _CACHE_VERSION, "files": {}}
 
 

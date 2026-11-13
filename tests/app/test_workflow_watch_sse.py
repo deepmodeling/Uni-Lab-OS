@@ -30,12 +30,12 @@ def test_sse_parser_keeps_watermark_frames_and_does_not_inherit_ids() -> None:
     lines = [
         "retry: 3000", ": connected", "",
         "id: 7", "",
-        "id: 8", "event: workflow.task.changed", 'data: {"workflow_task_uuid":', "data: \"t\"}", "",
+        "id: 8", "event: workflow.runtime.changed", 'data: {"kind":"task","workflow_task_uuid":', "data: \"t\"}", "",
         "event: runtime.logs.changed", 'data: {"source_ids":["host"]}', "",
     ]
     assert list(_parse_sse_lines(lines)) == [
         {"event": "message", "id": "7", "data": None},
-        {"event": "workflow.task.changed", "id": "8", "data": '{"workflow_task_uuid":\n"t"}'},
+        {"event": "workflow.runtime.changed", "id": "8", "data": '{"kind":"task","workflow_task_uuid":\n"t"}'},
         {"event": "runtime.logs.changed", "id": None, "data": '{"source_ids":["host"]}'},
     ]
 
@@ -77,12 +77,12 @@ def test_real_sse_stream_delivers_notices_and_times_out(sse_server: str) -> None
     _ScriptedSSE.script = [
         b"retry: 3000\n: connected\n\n",
         b"id: 5\n\n",
-        b'id: 6\nevent: workflow.task.changed\ndata: {"workflow_task_uuid":"t"}\n\n',
+        b'id: 6\nevent: workflow.runtime.changed\ndata: {"kind":"task","workflow_task_uuid":"t"}\n\n',
     ]
     with _SSENoticeStream(sse_server, {"Accept": "text/event-stream", "Last-Event-ID": "4"}, 5) as stream:
         assert json.loads(stream.recv(timeout=2)) == {"action": "message", "id": 5, "data": {}}
         assert json.loads(stream.recv(timeout=2)) == {
-            "action": "workflow.task.changed", "id": 6, "data": {"workflow_task_uuid": "t"},
+            "action": "workflow.runtime.changed", "id": 6, "data": {"kind": "task", "workflow_task_uuid": "t"},
         }
         started = time.monotonic()
         with pytest.raises(TimeoutError):
@@ -136,12 +136,14 @@ class _Notices(AbstractContextManager):
 
 
 def test_watch_follows_stream_reset_and_skips_unchanged_snapshots() -> None:
-    # 首次快照、连接后补读、无变化通知、reset 后读到终态。
+    # 首次快照、连接后补读、无变化通知、reset 后读到终态。V1 事件名：运行变化统一为
+    # workflow.runtime.changed（种类在 data.kind）；作者态变化与任务无关，不触发重读。
     http = _Tasks(["running", "running", "running", "succeeded"])
     notices = [
         {"action": "message", "id": 40, "data": {}},
-        {"action": "workflow.node_job.changed", "id": 41, "data": {"workflow_node_job_uuid": "j"}},
-        {"action": "workflow.task.changed", "id": 42, "data": {"workflow_task_uuid": "other"}},
+        {"action": "workflow.runtime.changed", "id": 41, "data": {"kind": "node_job", "workflow_node_job_uuid": "j"}},
+        {"action": "workflow.runtime.changed", "id": 42, "data": {"kind": "task", "workflow_task_uuid": "other"}},
+        {"action": "workflow.authoring.changed", "id": 43, "data": {"workflow_uuid": "w"}},
         {"action": "stream.reset", "id": 3, "data": {"reason": "cursor_ahead"}},
     ]
     client = HTTPWorkflowClient("http://edge:8002", http_client=http, notice_connector=lambda *_: _Notices(notices))

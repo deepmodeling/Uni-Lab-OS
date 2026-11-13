@@ -1,8 +1,8 @@
 """旧云端 Backend 相关的启动期接线。
 
 - :func:`upgrade_startup_graph_payload` —— ``-g`` 启动图读取边界：旧后端导出图 /
-  dev 时代示例图在这里整图转成当前 node-link 契约，之后的 Graph Authority 与
-  graphio 只见当前契约。这是 ``unilabos.app.main`` 唯一触碰旧后端的地方；
+  dev 时代示例图在这里整图转成当前 node-link 契约，之后的 Graph Authority（登记与
+  运行时装配）只见当前契约。这是 ``unilabos.app.main`` 唯一触碰旧后端的地方；
 - :func:`start_legacy_uplink` —— 显式接入旧协议 Backend 时的开机上联：注册表
   上报、物料全量镜像与增量镜像线程。Edge 启动不再调用它；由 Backend 侧的
   legacy 兼容入口与 :meth:`BackendSessionFactory.create_legacy_client` 一起装配。

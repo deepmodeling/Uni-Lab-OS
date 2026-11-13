@@ -11,8 +11,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.services.device_processes import (
     DeviceProcessError,
+    DeviceProcessBusyError,
     build_device_node,
     get_device_process_service,
 )
@@ -56,14 +58,14 @@ class DeviceProcessWrite(BaseModel):
 
 
 def create_device_processes_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/device-processes", tags=["device-processes"])
+    router = envelope_router(prefix="/api/v1/device-processes", tags=["device-processes"])
 
     def _call(function, *args, **kwargs):
         try:
             return function(*args, **kwargs)
         except DeviceProcessError as exc:
             message = str(exc)
-            status = 404 if "not found" in message else 409 if "已在运行" in message else 422
+            status = 404 if "not found" in message else 409 if isinstance(exc, DeviceProcessBusyError) or "已在运行" in message else 422
             raise HTTPException(status_code=status, detail=message) from exc
 
     @router.get("")

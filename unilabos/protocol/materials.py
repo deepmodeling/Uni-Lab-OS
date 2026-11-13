@@ -559,6 +559,34 @@ class InventoryLotInbound(ServerObject):
     unit: NonEmptyStr
     quantity: float = Field(gt=0)
     expiry_at_ms: Optional[int] = Field(default=None, ge=0)
+    # 批次所在库位与仓储分区（V1 lot location / warehouse zone）；补充入库时不改变既有位置
+    location_site_uuid: Optional[NonEmptyStr] = None
+    warehouse_zone_id: str = ""
+
+
+class InventoryLotCorrection(ServerObject):
+    """批次数量与位置校正：适用于任意计量单位（含质量 / 体积）与已隔离批次。
+
+    ``measured_quantity`` 为空时只改位置；给出时按实测总量校正，可用量随差额调整，
+    不能低于已预留量。``quarantined`` 给出时同时设置或解除批次隔离。
+    """
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_quantity: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: Optional[str] = None
+    quarantined: Optional[bool] = None
+    reason: NonEmptyStr
+
+
+class InventoryStocktake(ServerObject):
+    """人工盘点计数库存；预留或已实例化库存的差异必须另行复核。"""
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_count: int = Field(ge=0, strict=True)
+    reason: NonEmptyStr
 
 
 class InventoryLotRead(ServerObject):
@@ -574,6 +602,8 @@ class InventoryLotRead(ServerObject):
     created_at_ms: int = Field(ge=0)
     updated_at_ms: int = Field(ge=0)
     version: int = Field(ge=1)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: str = ""
 
 
 class InventoryRequirement(ServerObject):
@@ -723,6 +753,19 @@ class MaterialSnapshot(ServerObject):
     state_hash: Optional[NonEmptyStr] = None
 
 
+#: 快照唯一可以退役的物料类型。设备丢弃的枪头从父节点的运行时结构中消失；
+#: 快照把该节点写成 ``lifecycle_status="retired"`` 且 ``parent_material_uuid=None``，
+#: 权威在同一写事务内将其退役（软删除：保留记录与账本）。其他类型仍不能借快照
+#: 创建或删除。
+SNAPSHOT_RETIRABLE_RESOURCE_TYPES = frozenset({"tip"})
+
+
+def snapshot_retirable(resource_type: str) -> bool:
+    """该业务类型的物料能否由设备快照退役（目前只有被丢弃的枪头）。"""
+
+    return str(resource_type or "").casefold() in SNAPSHOT_RETIRABLE_RESOURCE_TYPES
+
+
 class MaterialSnapshotChange(ServerObject):
     aggregate_type: Literal["material", "site"]
     aggregate_uuid: NonEmptyStr
@@ -845,6 +888,7 @@ __all__ = [
     "ChemicalSummary",
     "InventoryAllocation",
     "InventoryChange",
+    "InventoryLotCorrection",
     "InventoryLotInbound",
     "InventoryLotRead",
     "InventoryMutation",
@@ -887,5 +931,7 @@ __all__ = [
     "SiteDelta",
     "SiteRead",
     "SiteWrite",
+    "SNAPSHOT_RETIRABLE_RESOURCE_TYPES",
     "SUBSTANCE_CHEMICAL_FIELDS",
+    "snapshot_retirable",
 ]

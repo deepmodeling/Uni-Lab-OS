@@ -1,6 +1,6 @@
 """Registry Authority：条目级版本的上报替换、冲突挂起与还原。
 
-Edge 通过 ``/resource-templates`` 上报完整模板快照，本服务按条目独立处理：
+Edge 通过 ``/registry/reports`` 上报完整模板快照，本服务按条目独立处理：
 
 - 任何字段变化都生成一个不可变的新版本；
 - 变化条目做表关系冲突检测：被 workflow 节点引用的 action 被删除或定义
@@ -51,7 +51,7 @@ REGISTRY_TEMPLATE_NAMESPACE = uuid_module.uuid5(
 #: ``workflow``：设备包 ``@workflow`` 声明的工作流模板，与设备 / 资源同一套条目版本化。
 _VALID_REGISTRY_TYPES = frozenset({"device", "resource", "workflow"})
 #: ``loop``：循环容器（``with ctx.loop_for / ctx.loop_while``），循环体节点以 ``parent`` 指向它。
-_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop"})
+_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop", "condition"})
 
 #: 返回活跃 workflow 节点对模板 action 的引用明细行，字段见
 #: ``WorkflowService.list_template_action_references``（template_uuid / action /
@@ -752,6 +752,24 @@ class RegistryService(SqliteDomain):
         templates.sort(key=lambda item: (str(item.get("display_name") or ""), str(item.get("id"))))
         return templates
 
+    def active_payloads(self, registry_type: str = "") -> List[Dict[str, Any]]:
+        """生效条目 payload（按名称排序）；``registry_type`` 非空时只取该类型（如 ``device``）。"""
+
+        with self._lock:
+            payloads = [
+                dict(payload)
+                for _name, payload in sorted(self._active.items())
+                if not registry_type or str(payload.get("registry_type") or "") == registry_type
+            ]
+        return payloads
+
+    def active_fingerprint(self) -> str:
+        """生效条目集合的内容指纹（名称 + 内容哈希）；模板投影据此判断是否需要重算。"""
+
+        with self._lock:
+            pairs = sorted(self._active_hashes.items())
+        return canonical_hash(pairs)
+
     def get_workflow_template(self, template_uuid: str) -> Optional[Dict[str, Any]]:
         """按模板 uuid 取生效模板；找不到（或已软移除）返回 None。"""
 
@@ -943,6 +961,32 @@ def _workflow_template_issue(entry: Mapping[str, Any]) -> str:
             return "invalid-node-description"
     # 循环体成员的 parent 必须指向本模板里的 loop 节点
     kinds_by_key = {str(node.get("key")): str(node.get("kind") or "") for node in nodes}
+    if any(node.get("kind") == "condition" or node.get("condition_guards") for node in nodes):
+        from unilabos.protocol.runtime.condition import remap_expression, validate_condition_graph
+
+        identities = {key: str(uuid_module.uuid5(uuid_module.NAMESPACE_URL, key)) for key in keys}
+        try:
+            bound = {}
+            for node in nodes:
+                identity = identities[node["key"]]
+                param = dict(node.get("param") or {})
+                if node.get("kind") == "condition":
+                    param = remap_expression(param, identities.__getitem__, reference_key="node_key")
+                bound[identity] = {
+                    "param": param,
+                    "execution_policy": {"condition_guards": [
+                        {"node_uuid": identities[guard["node_key"]], "equals": guard["equals"]}
+                        for guard in node.get("condition_guards", [])
+                    ]},
+                    "meta_data": {"inventory_requirements": node.get("inventory_requirements")},
+                }
+            validate_condition_graph(
+                bound, {identities[key]: kind for key, kind in kinds_by_key.items()},
+                {identities[node["key"]]: identities[node["parent"]] if node.get("parent") else None for node in nodes},
+                {key: node["param"] for key, node in bound.items()},
+            )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return "invalid-condition-node"
     for node in nodes:
         parent = node.get("parent")
         if parent is None:

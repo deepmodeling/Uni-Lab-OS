@@ -80,6 +80,30 @@ class RemoteError(LinkError):
         self.error_info = dict(error_info) if isinstance(error_info, dict) else {}
 
 
+#: Host 启动中、请求所需的状态尚未就绪时应答里的 ``error_info.code``。
+HOST_NOT_READY = "host_not_ready"
+
+
+class HostNotReadyError(RemoteError):
+    """Host 仍在启动，请求所需的状态（物料权威 / 本机设备）尚未就绪。
+
+    Host 在执行处理器之前就回这个应答，请求没有产生任何副作用，所以客户端可以原样重试；
+    客户端重试到等待上限仍未就绪时抛出本异常。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        error_info: Optional[Dict[str, Any]] = None,
+        *,
+        stage: str = "",
+        retry_after: float = 0.0,
+    ) -> None:
+        super().__init__(message, error_info)
+        self.stage = str(stage or self.error_info.get("stage") or "")
+        self.retry_after = max(0.0, float(retry_after or 0.0))
+
+
 def exception_error_info(exc: BaseException) -> Dict[str, Any]:
     """Build or forward structured exception identity across HostLink."""
 
@@ -87,7 +111,11 @@ def exception_error_info(exc: BaseException) -> Dict[str, Any]:
         info = dict(exc.error_info)
         info.setdefault("error_message", str(exc))
         return info
+    to_error_info = getattr(exc, "to_error_info", None)
+    structured = to_error_info() if callable(to_error_info) else {}
     info: Dict[str, Any] = {
+        # 超时异常自带结构化身份（timeout_seconds、driver_still_running 等）
+        **(structured if isinstance(structured, dict) else {}),
         "exception_type": type(exc).__name__,
         "exception_mro": [kind.__name__ for kind in type(exc).__mro__],
         "error_message": str(exc),
@@ -138,6 +166,50 @@ def new_response(
         if error_info:
             message["error_info"] = dict(error_info)
     return message
+
+
+def new_not_ready_response(
+    request_id: str,
+    action_type: str,
+    stage: str,
+    retry_after: float,
+) -> Dict[str, Any]:
+    """Host 启动中的拒绝应答：处理器尚未执行，对端可以原样重试。
+
+    重试标记 ``not_ready`` 放在应答顶层而不是 ``error_info`` 里：``error_info`` 会随
+    嵌套调用的失败原样转发（``exception_error_info``），顶层字段不会，所以客户端只会
+    重试 Host 门控本身拒绝的请求，不会把已经执行过一半的嵌套动作再跑一遍。
+    """
+
+    message = new_response(
+        request_id,
+        False,
+        error=f"Host 正在启动，{action_type} 需等待 {stage} 就绪，请稍后重试",
+        error_info={
+            "code": HOST_NOT_READY,
+            "stage": stage,
+            "exception_type": "HostNotReadyError",
+        },
+    )
+    message["not_ready"] = stage
+    message["retry_after"] = float(retry_after)
+    return message
+
+
+def response_error(response: Dict[str, Any]) -> RemoteError:
+    """把 ``ok=false`` 应答转成异常；Host 启动中的拒绝转成 :class:`HostNotReadyError`。"""
+
+    message = str(response.get("error") or "remote error")
+    error_info = response.get("error_info")
+    stage = response.get("not_ready")
+    if stage:
+        return HostNotReadyError(
+            message,
+            error_info,
+            stage=str(stage),
+            retry_after=float(response.get("retry_after") or 0.0),
+        )
+    return RemoteError(message, error_info)
 
 
 def _dumps(message: Dict[str, Any]) -> str:
@@ -351,6 +423,8 @@ def read_message(reader: Any) -> Optional[Dict[str, Any]]:
 
 __all__ = [
     "ActionType",
+    "HOST_NOT_READY",
+    "HostNotReadyError",
     "LineReader",
     "LinkError",
     "MAX_FRAME_BYTES",
@@ -360,9 +434,11 @@ __all__ = [
     "encode_frame",
     "encode_frames",
     "exception_error_info",
+    "new_not_ready_response",
     "new_request",
     "new_response",
     "read_message",
+    "response_error",
     "send_message",
     "send_response_or_reject",
 ]

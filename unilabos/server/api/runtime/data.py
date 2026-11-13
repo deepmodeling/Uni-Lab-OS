@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.runtime import (
     AdapterCommandAck,
     AdapterCommandClaim,
@@ -43,7 +44,7 @@ def _call(function, *args, **kwargs):
 
 
 def create_runtime_router(service: RuntimeService) -> APIRouter:
-    router = APIRouter(prefix="/api/v1/runtime", tags=["runtime-v1"])
+    router = envelope_router(prefix="/api/v1/runtime", tags=["runtime-v1"])
 
     # Backend session 是状态机 upsert，不提供删除或任意字段 patch。
     @router.put("/sessions/{session_uuid}")

@@ -15,6 +15,7 @@ CLIENT_COMMANDS = frozenset(
     {"login", "logout", "whoami", "config", "material", "workflow", "graph", "token"}
 )
 PACKAGE_COMMANDS = frozenset({"package", "pkg"})
+RUNTIME_COMMANDS = frozenset({"runtime"})
 
 
 def _add_client_connection_options(
@@ -275,6 +276,9 @@ def register_cli_commands(
     """注册不参与设备 runtime bootstrap 的命令。"""
 
     register_package_commands(subparsers)
+    from .runtime import register_runtime_commands
+
+    register_runtime_commands(subparsers)
 
     parser.add_argument(
         "--json",
@@ -372,12 +376,12 @@ def _prepare_command_session(
     values = vars(args)
     from unilabos.config.working_dir import resolve_working_dir
 
-    working_dir = resolve_working_dir(values.get("working_dir"))
+    working_dir = resolve_working_dir(values.get("working_dir"), values.get("config"))
     # SDK 在工作目录里找控制面 token（写操作需要），与调度权威用同一个工作目录
     from unilabos.config.config import BasicConfig
 
-    if not str(BasicConfig.working_dir or "").strip():
-        BasicConfig.working_dir = str(working_dir)
+    # 同一解释器可以连续执行多个管理命令，不能沿用上一次目录的令牌。
+    BasicConfig.working_dir = str(working_dir)
 
     address = values.get("address")
     args.address_resolved = resolve_address(address) if address else None
@@ -480,7 +484,7 @@ def _cmd_token(values: dict[str, Any], session_manager: Any) -> None:
         return
     print(token)
     print(
-        f"（来自 {path}；写请求带请求头 X-UniLab-Token 或 Authorization: Bearer <token>，"
+        f"（来自 {path}；写请求带请求头 X-UniLab-Token: <token>，"
         "OpenLabSite 在连接设置的「控制令牌」里填写）",
         file=sys.stderr,
     )
@@ -493,9 +497,14 @@ def run_cli_command(
     """统一分发所有无需启动设备 runtime 的 CLI 子命令。"""
 
     command = getattr(args, "command", None)
-    if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS:
+    if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS | RUNTIME_COMMANDS:
         return False
     session_manager = _prepare_command_session(args, parser)
+    if command in RUNTIME_COMMANDS:
+        from .runtime import run_runtime_command
+
+        run_runtime_command(args, session_manager)
+        return True
     if command in PACKAGE_COMMANDS:
         return run_package_command(
             vars(args),
@@ -512,6 +521,7 @@ def run_cli_command(
 __all__ = [
     "CLIENT_COMMANDS",
     "PACKAGE_COMMANDS",
+    "RUNTIME_COMMANDS",
     "register_cli_commands",
     "run_cli_command",
     "run_client_command",

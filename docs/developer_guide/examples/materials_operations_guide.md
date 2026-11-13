@@ -3,7 +3,7 @@
 > **文档类型**：物料系统操作教程（新权威架构）
 > **适用场景**：物料创建、挂载、换位、跨设备转移、内容物管理、状态同步
 > **前置知识**：PyLabRobot 基础 | HostLink 概念
-> **可运行参照**：`tests/backend/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/backend/hostlink/test_prcxi_material_e2e.py`（14 阶段全链路）。本文所有示例均从这两个端到端测试提炼，可直接运行对照。
+> **可运行参照**：`tests/backend/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/backend/hostlink/test_host_services.py`（host_node 物料动作）。原 14 阶段 PRCXI 全链路测试已随 PRCXI 驱动迁出主仓库。文中 PRCXI 耗材只是示例，换成任意驱动包或 PLR 自带的耗材类同样适用。
 
 ---
 
@@ -47,7 +47,7 @@ runtime 注入的节点对象）；`gateway=` 参数在设备运行时内部自�
 
 ```python
 from unilabos.resources import materials
-from unilabos.devices.liquid_handling.prcxi.prcxi_labware import PRCXI_BioER_96_wellplate
+from prcxi_driver_pkg.prcxi_labware import PRCXI_BioER_96_wellplate  # 驱动包中的耗材工厂
 
 # 形态 1：本地草稿实例（不带 uuid）
 draft = PRCXI_BioER_96_wellplate(name="plate_1")
@@ -178,7 +178,19 @@ materials.assign(node, plate, parent="PRCXI_Deck", site=site_uuid)
 # parent=None：挂到设备自身（台面 Deck、驻留在设备上的顶级物料）——本地登记 tracker，
 # 权威里该物料的 parent 落为设备物料，前端设备卡片下即可看到它和它的 sites
 materials.assign(node, deck)
+
+# 仓库 / 载架（PLR Carrier、ItemizedCarrier、WareHouse）同样按库位挂载，必须给 slot 或 site
+materials.assign(node, bottle_carrier, parent=warehouse, slot="A04")
 ```
+
+**载架型目标（仓库、瓶架等 PLR `Carrier`）**：载架的直接子节点只能是库位 holder
+（`ResourceHolder`），物料只能经 `assign_resource_to_site` 放到 holder 上。`assign`、
+`RESOURCE_APPEND`、资源树下行（`RESOURCE_TREE_SYNC`）和 `transfer` 的 load 都按这条路径放置，
+不指定库位直接报错。权威里的形态与本地整树 `materials.create` 一致：物料的 parent 是该库位的
+holder，载架的 Site 记占用（`occupied_material_uuid`）。台面型 Site（权威 `ResourceSite`，如
+PRCXI 台面）没有 holder，物料仍直接挂在台面下。驱动也可以直接经 holder 放取
+（`warehouse["A04"].resource`、`holder.unassign_child_resource(...)`），`ItemizedCarrier`
+会同步自己的 canonical Site 占用。
 
 运行期台面（不是 `available_sites` 声明的固定位点）的标准写法是"有则复用、无则创建再挂"，
 且**放在依赖它的每个动作入口**，不要只放在启动钩子里：
@@ -191,6 +203,13 @@ def _ensure_bench(self):
         materials.assign(node, self.deck_uuid)                               # 挂到设备自身
     return node.resource_tracker.uuid_to_resources[self.deck_uuid]
 ```
+
+`assign` 的 `timeout`（默认 30 s，Host 下发 `RESOURCE_APPEND` 同此）只约束提交点之前：等挂载锁、
+从权威拉取物料。超时就取消，本地与权威都不变，抛 `TimeoutError`。本地 PLR 挂上之后（提交点），
+权威 move 与快照回报一定走完再返回：快照按物料所在的整棵根树做，上千个物料的台面要几十秒，
+期间每过一个 `timeout` 记一条 WARNING，不会在提交之后取消。每次取消都在设备日志里记 ERROR，
+写明取消发生在哪一阶段。跨机（Slave 上的设备）时 Host 的 HostLink 请求仍以 30 s 为限：
+Slave 照样把挂载做完，但 Host 侧调用方会先收到超时。
 
 创建多件耗材再逐件 `assign` 时，先校验目标位点空闲；挂载失败要 `materials.remove` 掉本轮已经
 发号的物料，否则权威里会留下不挂在任何台面上的孤儿。
@@ -227,6 +246,7 @@ plate.get_well("A2").tracker.commit()
 # 枪头（物理动作完成后 commit）
 tip_spot = tips.get_item("A1")
 tip = tip_spot.get_tip(); tip_spot.empty(); tip_spot.tracker.commit()
+# 不放回即为丢弃：下一次上报台面时，这支枪头在权威里退役（retired + 软删除），恢复时不会复活
 ```
 
 **同步语义（重要）**——本地改了状态，权威什么时候知道：
@@ -245,6 +265,10 @@ tip = tip_spot.get_tip(); tip_spot.empty(); tip_spot.tracker.commit()
   由 `move` / `transfer` 原子维护。版本表与整树基线只在乐观锁冲突、结构漂移、以及
   权威下行（前端/其它设备改了物料 → `RESOURCE_TREE_SYNC` / `MATERIAL_SYNC` / `append`）
   之后重拉。因此**不要绕过设备直写它持有的物料**——设备的下一次上报会按自己所见覆盖回去。
+- **上报落到哪棵根树**：从变化的物料沿 PLR `.parent` 往上，最高的、带权威 uuid 的
+  祖先就是快照 / 增量的根（通常是设备持有的台面），不问权威。PLR 1.0 的液体处理器
+  （`LiquidHandler` / `LiquidHandlerAbstract`）把台面挂成自己的子资源，处理器本身不是
+  物料、没有 uuid，根停在台面——移液后的液体变化照常按台面根树增量上报。
 - **手动同步（其余场景）**：观察者只监听 `commit()`/assign 回调；绕过 tracker
   的直接赋值、或物料不在设备 tracker 里（纯脚本上下文）时权威不会自动知道，
   操作完成后必须显式同步一次：
@@ -289,15 +313,33 @@ await materials.transfer(
     source_device_id="slave_a",
 )
 
-# 设备驱动内的便捷入口（自动填 source）：
-await node.transfer_resource_to_another([plate], "slave_b", [deck_b], ["S1"])
+# 设备驱动内：没有单独的节点方法，同样调 materials.transfer，source 取自本设备节点。
+# 物料、目标、Site 都可以是列表（一一对应）；驱动同步代码里用 asyncio.run(...) 包一层
+await materials.transfer(
+    [plate], "slave_b", [deck_b], ["S1"],
+    source_device_id=node.device_id,
+    source_device_uuid=node.resource_uuid,
+)
+
+# 放到仓库库位：目标是仓库（载架）本身，Site 选库位
+await materials.transfer(
+    bottle_carrier, node.device_id, warehouse, "A04",
+    source_device_id=node.device_id,
+)
 ```
 
 自动完成的编排：权威提交位置（源 Site 释放、目标 Site 占用、parent 迁移）
 → 源设备 unload（卸载本地实例，触发 `resource_tree_remove`）→ 目标设备 load
-（按 uuid 权威拉取重建实例挂目标 Site，触发 `resource_tree_transfer` + `add`）。
+（按 uuid 权威拉取重建实例挂目标 Site，触发 `resource_tree_transfer` + `add`，
+随后把物料在新位置上的位姿按增量补报给权威）。
 液体/枪头状态随权威 round-trip 恢复，不随进程丢失。
 slave→slave、slave→host、host→host 三种形态完全一致。
+
+目标 Site 属于载架（仓库等 PLR `Carrier`）时，权威把物料挂在该库位的 holder 下（与本地整树
+`create` 同形，见 2.4），目标设备 load 时经载架放到库位上；不给 Site 直接挂到载架下会被权威拒绝。
+旧版本 transfer 曾把物料直接挂在载架下，这样的树设备反序列化不了：权威打开时
+（`ServerServices.open` → `MaterialsService.repair_site_occupant_parents`）一次性把它们改挂到
+对应 holder 下，账本记一次 `move`，并打印 WARNING。
 
 ## 3. 三种创建来源规范
 

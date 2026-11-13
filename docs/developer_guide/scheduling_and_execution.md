@@ -80,7 +80,8 @@ attempt_count` 是当前 attempt 的投影，只由 store 在同一事务里随 
 - `GET /api/v1/workflow-tasks/{uuid}/jobs`、`/workflow-node-jobs/{job_uuid}`
   （含 `/results`、`/feedback-history`）：attempt 粒度，与 `/error-decisions` 报告里的
   `job_id` 一致；报告同时携带 `node_run_uuid`。
-- 事件：`workflow.node_run.changed`（节点级）与 `workflow.node_job.changed`（attempt 级）。
+- 事件：`/api/v1/events` 上的 `workflow.runtime.changed`，`data.kind` 为 `node_run`（节点级）或
+  `node_job`（attempt 级）；库内仍按 `workflow.node_run.changed` / `workflow.node_job.changed` 记录。
 
 派发以执行适配器就绪为前提：`JobExecutionBackend.host_ready()` 为假（ROS 2 host node 在
 全部设备初始化后才注册适配器，晚于管理 API 与 `@workflow` 模板就绪）时，已持有资源的节点
@@ -116,6 +117,19 @@ execution_timeout)`，软超时表达式（如 `duration * 1.5 + 30`）用最终
 解析结果随 `execute_job` 载荷下发（`timeout_seconds` / `execution_timeout_seconds`），软超时秒数
 写回节点运行的 `execution_timeout_seconds` 供前端展示。硬超时到期由执行面协作式取消动作并以
 `TimeoutException` 进入本决策链，节点运行 `error_info[0].code=action_timeout`。
+
+硬超时是工作流的自动继续规则，但不是释放资源的证据（ADR 0008）：执行面在驱动尚未返回时给终态附
+`return_info.timeout_hold`，调度器照常结算 attempt、按决策继续，同时在同一事务里把该 attempt 的执行
+Claim 转为 `timed_out`——动作 / 物料锁、使用权与准入、资源区间和设备托管都不随终态收回。后续需要
+这些锁的作业（同任务后续节点、该节点的重试、其他任务）在区间准入处等待，`/scheduler/resources` 以
+超时的 attempt 为阻塞者。驱动真实返回时执行面把结果作为迟到结果交给 owner（本机调度器的
+`publish_job_late_outcome`；Backend-controlled 下为 runtime.v1 事件 `execution.late_outcome`），调度器
+记入 `control_data.late_outcome`、不改已结算的结果，并释放这些锁；操作员也可以在核实现场后用
+`execution-locks/{lease_uuid}/force-release` 释放。`timed_out` 是持久状态，跨调度权威重启保留。
+
+attempt 状态与由它派生的占用收敛（Claim 释放、使用权 / 准入、区间、设备托管）在同一个 runtime.db
+事务里提交；`_release_job_resources` 随后只释放调度器内存锁并唤醒等待者，`ResourceIntervals.recover()`
+仍在启动时兜底。
 
 任务恢复（进程重启）以节点运行为判定单元：在飞的 attempt 与其节点运行同时转
 `execution_unknown`；历史 failed attempt 不参与判定。设备是否已经做过这一步无法证明，
@@ -208,16 +222,37 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
    - `(device_id, action_name)` 动作 claim；
    - 所有 action 参数物料 claim；
    - 所有仓储分配实体物料 claim。
-6. `SchedulerResourceManager.acquire()` 以 all-or-nothing 方式申请完整集合。
+6. 先过持久准入 `ResourceIntervals.admit()`（`runtime.db` 的资源区间、使用权与等待记录，
+   见 5.0），通过后 `SchedulerResourceManager.acquire()` 以 all-or-nothing 方式登记内存占用。
 7. 状态为 `held` 才标记 Node Job running 并下发；状态为 `waiting` 时只留在
    Scheduler 的等待集合中，执行端完全不可见。
 
-资源管理器使用稳定登记顺序避免后来者越过有冲突的早期等待者，也不会让一个 Job
-只持有部分锁。
+一个 Job 不会只持有部分锁；等待顺序由持久准入决定（5.0）。
+
+### 5.0 持久准入与等待顺序
+
+准入以设备（`/devices/<id>`）和物料为键，同一事务里取得完整区间集合与实际使用权。资源被别的任务持有
+就等待：写一条 `workflow_resource_waiter`（等待的键、持有者、第一次等待的 `enqueued_at`）。
+资源此刻空闲也不一定立刻给：如果有排在前面、也需要其中某个键的等待者，本请求让行并排队
+（`server/services/runtime/workflow/resource_waiters.py`），否则一个要多个资源的任务会被只要其中一个资源的
+后到者反复插队而饿死。
+
+- 排名与 V1 一致：有效优先级降序（任务 `priority`：`high` = 1、`normal` = 0，每等待
+  `WAITER_AGING_INTERVAL_S` = 30 秒加 1），再按 `enqueued_at`、任务创建时间、任务 / 作业 UUID 升序。
+  `enqueued_at` 只在第一次等待时写入，重试与权威重启都保留原位置。
+- 本任务已经持有、借入或托管的键不参与排队；同一任务的等待者之间不让行；暂停的任务不占排队位置
+  （恢复后按原 `enqueued_at` 回到队列）。
+- 让行不会造成死锁：先到者可能正在等后到者所在任务持有的资源（例如后到任务在显式作用域里持有先到者要的
+  样品，这一步只要一台空闲设备）。每次准入按当前事实重算等待图（节点是任务，持有边来自真实占用），按排名
+  从前往后给等待者加让行边，会闭合环路的让行边不加——后到者直接取得空闲资源。同一状态下任何调用顺序
+  得到同样的裁决。
+- 等待图接口（`wait_graph`）的 `waiting_since` 就是 `enqueued_at`。
 
 ### 5.1 可插拔的授予策略
 
-“这一轮谁拿到完整资源集合”由授予策略决定（`scheduler/grant/`）。宿主只交给策略决策所需的事实：
+授予策略只裁决内存资源管理器里的争用（`scheduler/grant/`）。工作流节点先过持久准入（5.0），到达内存
+管理器时已经不与任何人冲突，所以正常运行时的先后由 5.0 决定；内存里的争用只出现在权威启动时恢复遗留占用、
+以及不确定执行重新持锁这类路径上，这时“这一轮谁拿到完整资源集合”由授予策略决定。宿主只交给策略决策所需的事实：
 按到达顺序的等待请求、已被持有的键、被 pending handoff 预留的键、哪些请求是 handoff 目标（键与 owner
 在本轮编号为 `0..n` 的整数）；策略返回授予的请求下标。宿主逐条复核——下标有效且不重复、不授予 handoff
 目标、与已持有 / 预留 / 彼此不相交——不合格或抛异常时整轮退回 Python 参考实现，坏的策略不会造成重复占用。
@@ -237,13 +272,14 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
 
 ## 6. 什么时候重算
 
-统一 Scheduler 没有独立定时轮询。重算由事实变化触发：
+统一 Scheduler 的重算由事实变化触发，另有一个 5 秒的兜底重算：
 
 - 新 DAG-ready 节点登记完整资源申请时；
 - Job 成功、失败、跳过、取消并释放资源时；
 - Task fail-fast 或取消后，在跑 Job 真实结束时（停止后排空：不再派发，未下发的直接取消，
   已下发的只请求取消并继续持有锁，直到执行面回报它真实返回）；
 - 资源 handoff 完成或取消时；
+- 调度线程每 5 秒兜底重算一次（库存恢复循环）：让行等待者即使错过释放事件，最迟在下一轮重新申请；
 - 进程恢复后重新提交可恢复 Task 时。
 
 每次 `acquire/release/cancel` 都会让 `SchedulerResourceManager` 重新提升可满足的等待
@@ -355,7 +391,7 @@ Store 基座负责 SQL 与事务，Service 负责幂等和状态机。Scheduler 
 | `/api/v1/runtime` | RuntimeService 数据面 |
 | `/api/v1/materials` | MaterialsService 数据面；外置 Materials 时不重复挂本地写 API |
 | `/api/v1/telemetry` | TelemetryService 数据面 |
-| `/api/v1/history` | HistoryService 数据面 |
+| `/api/v1/edge/history` | HistoryService 数据面 |
 | `/api/v1/health` | Scheduler 位置和执行器 readiness |
 | `/api/v1/hostlink/peers` | Host/Slave 连接诊断 |
 | `/api/v1/status-incidents` | 状态联锁事件与人工决策 |

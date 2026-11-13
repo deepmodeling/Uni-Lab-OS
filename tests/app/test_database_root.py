@@ -10,7 +10,11 @@ from unilabos.app.cli.parser import build_parser
 from unilabos.config import config as config_module
 from unilabos.config.config import BasicConfig
 from unilabos.server import startup
-from unilabos.server.startup import configured_database_root, resolve_database_paths
+from unilabos.server.startup import (
+    configured_database_root,
+    process_database_root,
+    resolve_database_paths,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -83,3 +87,17 @@ def test_env_variable_overrides_config_field(monkeypatch, tmp_path: Path) -> Non
     config_module._update_config_from_env()
     assert BasicConfig.server_database_root == str(tmp_path / "from-env")
     assert configured_database_root({}, working_dir=tmp_path) == str(tmp_path / "from-env")
+
+
+def test_process_database_root_per_mode(tmp_path: Path) -> None:
+    """每个进程独占的根目录：--role backend 落 <根目录>/backend，其余（权威 / Host / Slave）是根目录本身；
+    Host 子进程由权威以 --server_database_root <根目录>/edge 拉起。"""
+
+    root = str(tmp_path / "db")
+    assert process_database_root({"server_database_root": root}, working_dir=tmp_path) == root
+    assert process_database_root(
+        {"server_database_root": root, "role": "backend"}, working_dir=tmp_path
+    ) == str(Path(root) / "backend")
+    assert process_database_root({"server_database_root": root, "is_slave": True}, working_dir=tmp_path) == root
+    edge = str(Path(root) / "edge")
+    assert process_database_root({"server_database_root": edge}, working_dir=tmp_path) == edge

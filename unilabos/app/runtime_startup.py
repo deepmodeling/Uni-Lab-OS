@@ -15,7 +15,7 @@ BACKEND_READY_TIMEOUT_S = 120.0
 
 
 def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> bool:
-    """等设备执行适配器注册（HostLink 已监听 / ROS HostNode 已建）或 backend 线程退出。"""
+    """等设备执行适配器注册（HostLink 设备与 host 服务已就绪 / ROS HostNode 已建）或 backend 线程退出。"""
 
     from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
 
@@ -32,8 +32,9 @@ def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> boo
 def _announce_ready_and_start_managed(backend_thread: threading.Thread) -> None:
     """设备 runtime 真正就绪后才打就绪横幅、拉起受管 Slave（在后台线程运行）。
 
-    ``start_backend`` 只是起了线程：这时 HostLink 端口还没绑上，先打"已就绪"再拉 Slave
-    会让 Slave 连到一个不存在（或上次没退干净）的 Host；runtime 起不来时更不该拉起任何东西。
+    ``start_backend`` 只是起了线程：HostLink 端口虽已在进程启动之初打开（Slave 连上后会
+    等 Host 就绪），设备与 host 服务还没起来，这时打"已就绪"横幅为时过早；runtime 起不来时
+    更不该拉起任何东西。
     """
 
     ready = _wait_backend_ready(backend_thread, BACKEND_READY_TIMEOUT_S)
@@ -109,8 +110,8 @@ def print_slave_launch_hint() -> None:
     print_status(f"在其他机器上启动 Slave 接入本 Host：{command}", "info")
     if hostlink_enabled:
         print_status(
-            "同一台机器上可把 --host_node_ip 改为 127.0.0.1；"
-            "需要加载驱动包时追加 --devices <目录>。",
+            "同一台机器上可把 --host_node_ip 改为 127.0.0.1，并用 --server_database_root 指定另一个"
+            "数据库目录（一个数据库根目录只能由一个实例使用）；需要加载驱动包时追加 --devices <目录>。",
             "info",
         )
     else:
@@ -184,9 +185,15 @@ def _start_management_server() -> None:
         _fail_on_port_in_use(exc)
 
 
+def _join_backend(backend_thread: threading.Thread) -> None:
+    # 分段等待：Windows 上无限期 join 收不到 Ctrl+C，也收不到父进程消失时对主线程的中断请求
+    while backend_thread.is_alive():
+        backend_thread.join(timeout=0.5)
+
+
 def _run_management_or_wait(backend_thread: threading.Thread) -> None:
     if not BasicConfig.is_host_mode:
-        backend_thread.join()
+        _join_backend(backend_thread)
         _exit_on_backend_failure()
         return
 
@@ -207,22 +214,32 @@ def run_runtime(args: dict[str, Any]) -> None:
 
     _ensure_management_port_available()
 
+    if BasicConfig.is_host_mode:
+        from unilabos.server.services.driver_packages import get_driver_package_service
+        state = get_driver_package_service().mutation_gate.status()
+        if state['unresolved_operations'] or state['error']:
+            print_status('包操作恢复尚未人工确认：仅启动管理服务，设备 runtime 与托管 slave 保持停止；确认后手动重启 Host。', 'warning')
+            # 设备 runtime 不会启动：关掉进程启动时提前打开的 HostLink 端口，别让 Slave 空等
+            from unilabos.backend.hostlink.startup import release_prebound_host_server
+
+            release_prebound_host_server()
+            _start_management_server()
+            return
+
     if args["visual"] == "disable":
-        _run_management_or_wait(start_backend(**args))
-        return
-
-    from unilabos.resources.graphio import dict_from_graph
-
-    devices_and_resources = dict_from_graph(args["graph"])
-    if devices_and_resources is None:
         _run_management_or_wait(start_backend(**args))
         return
 
     from unilabos.device_mesh.resource_visalization import ResourceVisualization
 
+    resource_tree_set = args["resources_config"]
+    # 可视化按节点 id 查设备 / 物料模型；节点 dict 即 ResourceTreeSet 的 dump 形态。
+    devices_and_resources = {
+        node["id"]: node for tree in resource_tree_set.dump() for node in tree
+    }
     visualization = ResourceVisualization(
         devices_and_resources,
-        [node.res_content for node in args["resources_config"].all_nodes],
+        [node.res_content for node in resource_tree_set.all_nodes],
         enable_rviz=args["visual"] == "rviz",
     )
     args["resources_mesh_config"] = visualization.resource_model
@@ -255,7 +272,7 @@ def run_runtime(args: dict[str, Any]) -> None:
             "info",
         )
 
-    backend_thread.join()
+    _join_backend(backend_thread)
     _exit_on_backend_failure()
 
 

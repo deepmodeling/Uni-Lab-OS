@@ -52,11 +52,16 @@ class DeviceClassCreator(Generic[T]):
         if self.device_instance is None:
             return
         for child in self.children:
-            if child.res_content.type != "device":
-                resource = ResourceTreeSet(
-                    [ResourceTreeInstance(child)]
-                ).to_plr_resources()[0]
-                self.resource_tracker.add_resource(resource)
+            if child.res_content.type == "device":
+                continue
+            # 构造驱动时已按引用实例化过的子节点（工作站的台面）已在 tracker 里：
+            # 再实例化一份会让同一权威物料有两个实例，uuid 索引指向驱动手里没有的副本。
+            if str(child.res_content.uuid or "") in self.resource_tracker.uuid_to_resources:
+                continue
+            resource = ResourceTreeSet(
+                [ResourceTreeInstance(child)]
+            ).to_plr_resources()[0]
+            self.resource_tracker.add_resource(resource)
 
     def create_instance(self, data: Dict[str, Any]) -> T:
         self.device_instance = create_instance_from_config(
@@ -275,7 +280,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
 
     def post_create(self) -> None:
         setup = getattr(self.device_instance, "setup", None)
-        if self.task_scheduler is None or not asyncio.iscoroutinefunction(setup):
+        if self.task_scheduler is None or not inspect.iscoroutinefunction(setup):
             return
 
         future = schedule_async_func(
@@ -289,10 +294,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
                 done_future.result()
             except BaseException:
                 return
-            from pylabrobot.resources import set_volume_tracking
-
-            set_volume_tracking(enabled=True)
-            logger.debug("PyLabRobot 设备实例 %s 设置完成", self.device_instance)
+            pylabrobot_setup_finished(self.device_instance)
             from unilabos.config.config import BasicConfig
 
             if not BasicConfig.vis_2d_enable:
@@ -307,6 +309,20 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
             )
 
         future.add_done_callback(setup_done)
+
+
+def pylabrobot_setup_finished(device_instance: Any) -> None:
+    """PyLabRobot 驱动 ``setup`` 成功之后的共同收尾：打开 PLR 体积跟踪。
+
+    ROS 2 由 :meth:`PyLabRobotCreator.post_create` 调度 setup 后调用；HostLink 自己在
+    设备节点启动时调用 setup，完成后同样调用这里，两种 backend 的移液都会改变孔内液体。
+    体积跟踪是 PLR 的进程级开关。
+    """
+
+    from pylabrobot.resources import set_volume_tracking
+
+    set_volume_tracking(enabled=True)
+    logger.debug("PyLabRobot 设备实例 %s 设置完成，已打开体积跟踪", device_instance)
 
 
 class WorkstationNodeCreator(DeviceClassCreator[T]):
@@ -341,18 +357,21 @@ class WorkstationNodeCreator(DeviceClassCreator[T]):
         return super().create_instance(params)
 
 
+# 按类名（含基类）识别需要 PyLabRobotCreator 的驱动：外部驱动包里的
+# LiquidHandlerAbstract 子类（如 PRCXI、LaiYu）无需在框架里登记具体类名。
+# LiquidHandlerBiomek 不继承 LiquidHandlerAbstract，外部包沿用原类名时仍按此识别。
+_PYLABROBOT_CREATOR_CLASS_NAMES = frozenset(
+    {"LiquidHandlerAbstract", "LiquidHandlerBiomek", "OpcUaClient"}
+)
+
+
 def uses_pylabrobot_creator(driver_class: Type[Any]) -> bool:
     """Return whether a driver needs graph child/resource resolution."""
 
-    return driver_class.__module__.startswith(
-        "pylabrobot"
-    ) or driver_class.__name__ in {
-        "LiquidHandlerAbstract",
-        "LiquidHandlerBiomek",
-        "PRCXI9300Handler",
-        "TransformXYZHandler",
-        "OpcUaClient",
-    }
+    return driver_class.__module__.startswith("pylabrobot") or any(
+        base.__name__ in _PYLABROBOT_CREATOR_CLASS_NAMES
+        for base in getattr(driver_class, "__mro__", (driver_class,))
+    )
 
 
 def is_workstation_driver(driver_class: Type[Any]) -> bool:
@@ -420,6 +439,7 @@ __all__ = [
     "PyLabRobotCreator",
     "WorkstationNodeCreator",
     "is_workstation_driver",
+    "pylabrobot_setup_finished",
     "select_driver_creator",
     "uses_pylabrobot_creator",
 ]

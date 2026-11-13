@@ -23,6 +23,7 @@ import time
 from typing import Any, Callable, Optional
 
 from unilabos.app.supervisor import RESTART_EXIT_CODE, is_supervised
+from unilabos.server.backend.lifecycle import active_device_job_ids
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class RestartCoordinator:
         self,
         get_execution_backend: Callable[[], Any],
         get_scheduler: Callable[[], Any],
+        *,
+        mutation_gate: Any = None,
     ) -> None:
         self._get_execution_backend = get_execution_backend
         self._get_scheduler = get_scheduler
@@ -48,6 +51,13 @@ class RestartCoordinator:
         self._requested_at: Optional[float] = None
         self._watcher: Optional[threading.Thread] = None
         self._restarting = False
+        self._mutation_gate = mutation_gate
+        self._edge_restart_requested = False
+        self._watch_generation = 0
+        # 最近一次请求的结局（成功 / 失败 / 取消），带登记时的代次与单调序号；
+        # V1 进程管理协议的 os.restart 操作据此判断自己提交的那次重启怎么结束。
+        self._outcome: Optional[dict[str, Any]] = None
+        self._outcome_sequence = 0
 
     @staticmethod
     def _edge_control_service() -> Any:
@@ -67,21 +77,31 @@ class RestartCoordinator:
     # ── 状态查询 ─────────────────────────────────────────────
 
     def active_job_ids(self) -> list[str]:
-        backend = self._get_execution_backend()
-        if backend is not None:
-            manager = getattr(backend, "device_manager", None)
-            if manager is not None:
-                return [job.job_id for job in manager.get_active_jobs()]
-            return []
-        # --role backend：执行端在 Edge 进程，取 runtime.v1 控制面在途命令视图
-        service = self._edge_control_service()
-        if service is not None:
-            return service.active_job_ids()
-        return []
+        return active_device_job_ids(self._get_scheduler(), self._get_execution_backend())
+
+    def _record_outcome(self, generation: int, outcome: str, reason: str = "", **extra: Any) -> None:
+        with self._lock:
+            self._outcome_sequence += 1
+            self._outcome = {
+                "sequence": self._outcome_sequence,
+                "generation": generation,
+                "outcome": outcome,
+                "reason": reason,
+                "at": time.time(),
+                **extra,
+            }
+
+    def outcome(self) -> Optional[dict[str, Any]]:
+        """最近一次重启请求的结局；尚无结局为 None。"""
+
+        with self._lock:
+            return dict(self._outcome) if self._outcome is not None else None
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             return {
+                # 内部代次：/api/v1/restart 的响应模型不含该字段
+                "generation": self._watch_generation,
                 "pending": self._pending,
                 "mode": self._mode,
                 "scope": self._scope,
@@ -91,6 +111,7 @@ class RestartCoordinator:
                 "safe_restart": is_safe_restart_enabled() or is_supervised(),
                 "active_jobs": self.active_job_ids(),
                 "dispatch_paused": self._scheduler_paused(),
+                "mutation": self._mutation_gate.status() if self._mutation_gate is not None else None,
             }
 
     def _scheduler_paused(self) -> bool:
@@ -118,16 +139,22 @@ class RestartCoordinator:
         with self._lock:
             if self._restarting:
                 return self.status()
+            new_request = not self._pending
+            if new_request:
+                self._watch_generation += 1
             self._pending = True
             self._mode = mode
             self._scope = scope
+            if self._resolve_scope() == 'process' and self._mutation_gate is not None:
+                self._mutation_gate.request_restart(self)
             self._requested_at = time.time()
             scheduler = self._get_scheduler()
             if scheduler is not None:
-                scheduler.pause_dispatch()
-            if self._watcher is None or not self._watcher.is_alive():
+                scheduler.pause_dispatch(reason="restart")
+            if new_request or self._watcher is None or not self._watcher.is_alive():
                 self._watcher = threading.Thread(
                     target=self._watch,
+                    args=(self._watch_generation,),
                     name="RestartCoordinator",
                     daemon=True,
                 )
@@ -140,27 +167,54 @@ class RestartCoordinator:
         return self.status()
 
     def cancel(self) -> dict[str, Any]:
+        if self._edge_restart_requested:
+            from unilabos.client.utils.envelope import EnvelopeError
+            from unilabos.server.api.edge_proxy import edge_http, edge_response_data
+            response = edge_http('DELETE', '/api/v1/restart', timeout=10)
+            if response is None:
+                return self.status()
+            try:
+                state = edge_response_data(response)
+            except (EnvelopeError, ValueError):
+                return self.status()
+            if not isinstance(state, dict):
+                return self.status()
+            if state.get('pending') or state.get('restarting'):
+                return self.status()
+            with self._lock:
+                self._edge_restart_requested = False
+                self._restarting = False
         with self._lock:
             if self._restarting:
                 return self.status()
+            if self._pending:
+                self._record_outcome(self._watch_generation, "canceled", "重启请求已取消")
             self._pending = False
+            self._watch_generation += 1
             self._requested_at = None
+            if self._mutation_gate is not None:
+                self._mutation_gate.cancel_restart(self)
             scheduler = self._get_scheduler()
         if scheduler is not None:
-            scheduler.resume_dispatch()
-        logger.info("[Restart] 重启请求已取消，恢复调度派发")
+            scheduler.resume_dispatch(reason="restart")
+        logger.info("[Restart] 重启请求已取消，解除重启的派发暂停")
         return self.status()
 
     # ── 安静点检测与执行 ─────────────────────────────────────
 
-    def _watch(self) -> None:
+    def _watch(self, generation: int) -> None:
         confirmations = 0
         while True:
             time.sleep(_POLL_INTERVAL_SECONDS)
             with self._lock:
-                if not self._pending:
+                if not self._pending or generation != self._watch_generation:
                     return
                 mode = self._mode
+            if self._resolve_scope() == 'process' and self._mutation_gate is not None:
+                # immediate 也不能截断源码切换、依赖安装或持久日志提交。
+                if not self._mutation_gate.claim_restart(self):
+                    confirmations = 0
+                    continue
             if mode == "immediate":
                 break
             if self.active_job_ids():
@@ -170,7 +224,7 @@ class RestartCoordinator:
             if confirmations >= _QUIESCENT_CONFIRMATIONS:
                 break
         with self._lock:
-            if not self._pending:
+            if not self._pending or generation != self._watch_generation:
                 return
             self._restarting = True
         self._execute()
@@ -189,9 +243,13 @@ class RestartCoordinator:
 
         import json
 
-        from unilabos.server.api.edge_proxy import edge_http
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
         logger.warning("[Restart] 执行端已安静，经控制面通知 Edge 进程整进程重启")
+        service = self._edge_control_service()
+        previous_process = getattr(service, 'edge_process', '')
+        generation = self._watch_generation
         response = edge_http(
             "POST",
             "/api/v1/restart",
@@ -199,16 +257,30 @@ class RestartCoordinator:
             body=json.dumps({"mode": "immediate", "scope": "process"}).encode("utf-8"),
             timeout=10,
         )
-        if response is None or response.status_code >= 300:
+        failure = "Edge 未在线" if response is None else ""
+        if response is not None:
+            # Host 的 /restart 走统一信封：业务拒绝是 HTTP 200 + code != 0
+            try:
+                edge_response_data(response)
+            except EnvelopeError as exc:
+                failure = f"业务码 {exc.code}（HTTP {response.status_code}）：{exc.error}"
+            except ValueError:
+                failure = f"HTTP {response.status_code} 响应无效"
+        if failure:
             logger.error(
                 "[Restart] 无法通知 Edge 重启（%s），派发保持暂停；"
                 "确认 Edge 状态后可 DELETE /api/v1/restart 手动恢复",
-                "Edge 未在线" if response is None else f"HTTP {response.status_code}",
+                failure,
             )
             with self._lock:
                 self._restarting = False
+            self._record_outcome(generation, "failed", f"无法通知 Host 重启：{failure}")
             return
-        ready = self._wait_edge_reconnected()
+        self._edge_restart_requested = True
+        ready = self._wait_edge_reconnected(previous_process=previous_process, generation=generation)
+        with self._lock:
+            if not self._pending or generation != self._watch_generation:
+                return  # 用户已确认取消远端等待，不能再改变新的暂停原因。
         if not ready:
             logger.error(
                 "[Restart] Edge 重启后未在预期时间内重连，派发保持暂停；"
@@ -216,34 +288,52 @@ class RestartCoordinator:
             )
             with self._lock:
                 self._restarting = False
+            self._record_outcome(generation, "failed", "Host 重启后未在预期时间内重连")
             return
         with self._lock:
             self._pending = False
             self._requested_at = None
             self._restarting = False
+            self._edge_restart_requested = False
             scheduler = self._get_scheduler()
         if scheduler is not None:
-            scheduler.resume_dispatch()
-        logger.warning("[Restart] Edge 已重连 runtime.v1 控制面会话，派发已恢复")
+            scheduler.resume_dispatch(reason="restart")
+        self._record_outcome(
+            generation,
+            "succeeded",
+            previous_edge_process=previous_process,
+            edge_process=getattr(service, "edge_process", ""),
+        )
+        logger.warning("[Restart] Edge 已重连 runtime.v1 控制面会话，解除重启的派发暂停")
 
     def _wait_edge_reconnected(
         self,
         *,
-        disconnect_timeout: float = 30.0,
+        disconnect_timeout: float = 1200.0,
         reconnect_timeout: float = 300.0,
+        previous_process: str = '',
+        generation: int | None = None,
     ) -> bool:
         """等待 Edge 断开旧连接并以新进程重连。"""
 
         service = self._edge_control_service()
         if service is None:
             return False
-        deadline = time.time() + disconnect_timeout
-        while time.time() < deadline and service.connected:
+        deadline = time.monotonic() + disconnect_timeout
+        while time.monotonic() < deadline and service.connected:
+            if not self._pending or generation is not None and generation != self._watch_generation:
+                return False
+            if previous_process and getattr(service, 'edge_process', '') not in {'', previous_process}:
+                return True
             time.sleep(_POLL_INTERVAL_SECONDS)
-        # 旧连接可能在通知前就已断开，不强求观察到断开事件
-        deadline = time.time() + reconnect_timeout
-        while time.time() < deadline:
-            if service.connected:
+        # 包安装可能持续十几分钟；旧 Host 一直在线不能当作已经重启。
+        if service.connected:
+            return False
+        deadline = time.monotonic() + reconnect_timeout
+        while time.monotonic() < deadline:
+            if not self._pending or generation is not None and generation != self._watch_generation:
+                return False
+            if service.connected and (not previous_process or getattr(service, 'edge_process', '') not in {'', previous_process}):
                 return True
             time.sleep(_POLL_INTERVAL_SECONDS)
         return False
@@ -259,6 +349,8 @@ class RestartCoordinator:
             logger.error("[Restart] 管理 API 未运行，无法触发整进程重启")
             with self._lock:
                 self._restarting = False
+                generation = self._watch_generation
+            self._record_outcome(generation, "failed", "管理 API 未运行，无法触发整进程重启")
 
 
 # ── 进程级重启标记与再拉起 ──────────────────────────────────────
@@ -323,8 +415,16 @@ def get_restart_coordinator() -> RestartCoordinator:
             _coordinator = RestartCoordinator(
                 get_execution_backend,
                 get_scheduler,
+                mutation_gate=_configured_mutation_gate(),
             )
         return _coordinator
+
+
+def _configured_mutation_gate():
+    from pathlib import Path
+    from unilabos.config.config import BasicConfig
+    from unilabos.server.services.host_mutations import get_host_mutation_gate
+    return get_host_mutation_gate(getattr(BasicConfig, 'working_dir', None) or Path.cwd())
 
 
 __all__ = [

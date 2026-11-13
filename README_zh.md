@@ -31,7 +31,7 @@ Uni-Lab-OS 是一个用于实验室自动化的综合平台，旨在连接和控
 
 ## 支持的运行时
 
-默认安装和运行统一为 **Python 3.12 + NumPy 2 + HostLink，不需要 ROS**。
+默认安装和运行统一为 **Python 3.14 + NumPy 2 + HostLink，不需要 ROS**。
 ROS 2 Jazzy/Humble 改为显式选装。普通 Python 驱动、Host/Slave、Workstation/
 sub-device、物料、工作流、HTTP/WS API 和 MCP 都可以在无 ROS 环境运行。
 MoveIt、RViz、ROS 原生驱动和图像管线仍需要相应 ROS 环境。
@@ -55,16 +55,16 @@ python scripts/dev_install.py
 unilab --disable-browser
 ```
 
-也可解压对应平台的配套 wheel 包，用 Python 3.12 执行 `python install_wheel_release.py`：
+也可解压对应平台的配套 wheel 包，用 Python 3.14 执行 `python install_wheel_release.py`：
 自动新建环境、离线安装全部默认依赖，并实际验证 Opentrons 96 孔板创建。
 修正版 Opentrons 和固定 PLR wheel 随发行附件分发，不上传 PyPI；仅对公共源执行
 `pip install unilabos` 找不到它们，需要安装入口或 `--find-links <配套包>/wheelhouse`。
 上面的源码安装工具会先构建配套依赖。详见[安装指南](docs/user_guide/installation.md)。
 
-**0.12.3+ 默认 Conda 包发布后**：
+**0.13+ 默认 Conda 包发布后**：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
 mamba activate unilab
 unilab --disable-browser
 ```
@@ -150,7 +150,7 @@ legacy 探测分叉。
 ### 5. 使用自定义界面
 
 Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部署自己的
-前端（[OpenLab](https://xuwznln.github.io/OpenLabSite/) 是一个示例），并把 API 根地址配置为管理端点：
+前端（[Uni-Lab FE 源码](https://git.dp.tech/lab-os/uni-lab-fe)），并把 API 根地址配置为管理端点：
 
 | 部署方式 | 前端 API 根地址 |
 |----------|----------------|
@@ -158,8 +158,7 @@ Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部
 | 拆分部署 | `http://127.0.0.1:8081`（Backend 权威） |
 | 远端 Backend | 启动参数 `--address` 指定的地址 |
 
-调试时可以用仓库自带的 React 调试控制台 [`frontend/`](frontend/README.md)（`cd frontend && npm ci && npm run dev`，
-代理到 `http://127.0.0.1:8002`）；推荐界面仍是 OpenLab。
+前端在独立的 Uni-Lab FE 仓库维护，本仓库提供后端 API 和导出的接口契约。
 
 接口契约见 `/api/openapi.json`，交互式文档见 `/api/docs`。以 Vite 为例，
 自定义静态前端可独立开发和预览：
@@ -239,12 +238,11 @@ Uni-Lab-OS 使用预构建的 `unilabos_msgs` 进行系统通信。您可以在 
 
 ## 许可证
 
-本项目采用双许可证结构：
+Uni-Lab-OS 采用 GPL-3.0 许可证，详见 [LICENSE](LICENSE)。`unilabos/devices/` 只保留框架依赖的内置代码：
+工作站基类、虚拟设备、抽象液体处理器及其 RViz 后端、ROS 液体处理器关节发布器。
 
-- **主框架**：GPL-3.0 - 详见 [LICENSE](LICENSE)
-- **设备驱动** (`unilabos/devices/`)：深势科技专有许可证
-
-完整许可证说明请参阅 [NOTICE](NOTICE)。
+厂商设备驱动不再随主仓库发布，而是放在各自的外部驱动包中（许可证由驱动包自行声明）；
+用 `unilab package` 安装，新建驱动包参见 `.cursor/skills/create-device-package`。
 
 ## 项目统计
 

@@ -63,7 +63,6 @@ from unilabos.registry.utils.tools import (
     resolve_registry_display_name,
     SIMPLE_TYPE_MAP,
 )
-from unilabos.resources.graphio import resource_plr_to_ulab, tree_to_list
 from unilabos.resources.resource_tracker import ResourceTreeSet, RETURN_UNILABOS_SAMPLES
 from unilabos.resources.objects.site import normalize_available_sites
 from unilabos.utils import logger
@@ -95,7 +94,27 @@ else:
 
 _module_hash_cache: Dict[str, Optional[str]] = {}
 
+#: ``--external_devices_only`` 下仍从核心注册表加载的资源模板（相对 ``unilabos/registry``）：
+#: 图里的容器节点都引用 ``container``，驱动包不会自带它。
+EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/container.yaml",)
+
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
+
+
+def _default_category(entry: Dict[str, Any], file: Path) -> None:
+    """补全条目的 ``category``：声明了就以声明为准（规整为列表），没有声明才用文件名兜底。
+
+    文件名不再追加到已声明的分类里：驱动包可以按子目录分组、重命名 YAML 文件而不改变 UI 分类。
+    """
+    category = entry.get("category")
+    if isinstance(category, str):
+        category = [category] if category else []
+    if not category:
+        entry["category"] = [file.stem]
+    elif not isinstance(category, list):
+        entry["category"] = list(category)
+    else:
+        entry["category"] = category
 
 
 def _apply_action_timeouts(
@@ -231,6 +250,14 @@ class Registry:
 
         self._setup_called = False
         self._startup_executor: Optional[ThreadPoolExecutor] = None
+        #: AST 扫描失败、被跳过的文件：[{"file", "error"}]；check_mode 据此判定失败
+        self.scan_errors: List[Dict[str, str]] = []
+        #: 读不了 / 解析失败、整份被跳过的注册表 YAML：[{"file", "error"}]；check_mode 据此判定失败
+        self.yaml_errors: List[Dict[str, str]] = []
+        #: verify_and_resolve_registry 的导入失败（"device:<id>: <错误>" / "resource:<id>: <错误>"）
+        self.verify_errors: List[str] = []
+        #: 当前 backend 不支持、导入失败只记跳过的设备："<id>: <错误>"
+        self.verify_skipped: List[str] = []
 
     # ------------------------------------------------------------------
     # 统一入口
@@ -267,9 +294,18 @@ class Registry:
         # 2. Host node 内置设备
         self._setup_host_node()
 
-        # 3. 加载内置 YAML 注册表；external_only 模式只保留外部声明。
+        # 3. 加载内置 YAML 注册表；external_only 模式只保留外部声明与核心 container 模板。
         if external_only:
-            logger.info("[Uni-Lab-OS Registry] external_only 模式: 跳过内置 YAML 注册表加载")
+            logger.info("[Uni-Lab-OS Registry] external_only 模式: 跳过内置 YAML 注册表加载（保留核心 container 模板）")
+            if BasicConfig.enable_resource_load:
+                core_root = Path(__file__).resolve().parent
+                # 核心文件不在 external_only 下补全写回：只读加载
+                self.load_resource_types(
+                    core_root,
+                    upload_registry,
+                    complete_registry=False,
+                    files=[core_root / relative for relative in EXTERNAL_ONLY_CORE_RESOURCE_FILES],
+                )
         else:
             self.registry_paths = [Path(path).absolute() for path in self.registry_paths]
             for i, path in enumerate(self.registry_paths):
@@ -376,7 +412,10 @@ class Registry:
         python_path = pkg_root.parent                              # .../Uni-Lab-OS
         scan_root = pkg_root                                       # 扫描 unilabos/ 整个包
 
-        # 额外的 --devices 目录：把它们的父目录加入 sys.path
+        # 额外的 --devices 目录：把它们的导入根加入 sys.path。挂载的是包里的子目录（如一个设备家族）时，
+        # 导入根是顶层包的父目录（沿 __init__.py 上溯），模块路径才与 import 一致。
+        from unilabos.registry.package_layout import find_import_root
+
         extra_dirs: list[Path] = []
         if devices_dirs:
             for d in devices_dirs:
@@ -384,7 +423,7 @@ class Registry:
                 if not d_path.is_dir():
                     logger.warning(f"[Uni-Lab-OS Registry] --devices 路径不存在或不是目录: {d_path}")
                     continue
-                parent_dir = str(d_path.parent)
+                parent_dir = str(find_import_root(d_path))
                 if parent_dir not in sys.path:
                     sys.path.insert(0, parent_dir)
                     logger.info(f"[Uni-Lab-OS Registry] 添加 Python 路径: {parent_dir}")
@@ -394,17 +433,13 @@ class Registry:
         # host_services.py 一律不进默认启动扫描：host_node 注册表由
         # _setup_host_node 基于下方的单独扫描结果自行处理。
         if external_only:
-            core_files = [
-                pkg_root / "resources" / "container.py",
-            ]
+            # 核心的 @device / @resource 一律不进 external_only 注册表；核心 container 模板由
+            # setup() 从 EXTERNAL_ONLY_CORE_RESOURCE_FILES 单独加载。
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
-                cache=ast_cache, include_files=core_files,
+                cache=ast_cache, include_files=[],
             )
-            logger.info(
-                f"[Uni-Lab-OS Registry] external_only 模式: 仅扫描核心文件 "
-                f"({', '.join(f.name for f in core_files)})"
-            )
+            logger.info("[Uni-Lab-OS Registry] external_only 模式: 不扫描核心 Python 文件")
         else:
             exclude_files = {"host_services.py"}
             if not BasicConfig.extra_resource:
@@ -421,6 +456,8 @@ class Registry:
             scan_root, python_path=python_path, executor=self._startup_executor,
             cache=ast_cache, include_files=[pkg_root / "backend" / "host_services.py"],
         )
+        self.scan_errors.extend(scan_result.pop("_scan_errors", []))
+        self.scan_errors.extend(host_scan.pop("_scan_errors", []))
         host_meta = host_scan.get("devices", {}).get("host_node")
         self._host_node_ast_entry = (
             self._build_device_entry_from_ast("host_node", host_meta) if host_meta else {}
@@ -432,10 +469,11 @@ class Registry:
         # 额外目录逐个扫描并合并
         for d_path in extra_dirs:
             extra_result = scan_directory(
-                d_path, python_path=str(d_path.parent), executor=self._startup_executor,
+                d_path, python_path=str(find_import_root(d_path)), executor=self._startup_executor,
                 cache=ast_cache,
             )
             extra_stats = extra_result.pop("_cache_stats", {"hits": 0, "misses": 0, "total": 0})
+            self.scan_errors.extend(extra_result.pop("_scan_errors", []))
             total_stats["hits"] += extra_stats["hits"]
             total_stats["misses"] += extra_stats["misses"]
             total_stats["total"] += extra_stats["total"]
@@ -1087,6 +1125,33 @@ class Registry:
             nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
+            canonical_schema = method_info.get("canonical_schema")
+            if canonical_schema is not None:
+                from unilabos.registry.typed_contract import material_lock_parameters
+
+                entry["schema"] = canonical_schema
+                entry["contract_kind"] = "typed"
+                from unilabos.registry.action_template_projection import compile_backend_action_handles
+
+                entry["handles"] = compile_backend_action_handles(canonical_schema)
+                properties = canonical_schema["properties"]["goal"]["properties"]
+                entry["goal"] = {name: name for name in properties}
+                entry["goal_default"] = {
+                    name: schema["default"] for name, schema in properties.items() if "default" in schema
+                }
+                entry["goal_default"].update((action_args or {}).get("goal_default") or {})
+                entry["materials_need_lock"] = material_lock_parameters(canonical_schema)
+                def resource_field(field: Dict[str, Any]) -> bool:
+                    if not field:
+                        return False
+                    return "x-unilabos-material-lock" in field or resource_field(field.get("items", {}))
+                entry["placeholder_keys"] = {
+                    name: "unilabos_resources" for name, field in properties.items() if resource_field(field)
+                }
+                entry["placeholder_keys"].update({
+                    name: "unilabos_sites" for name, field in properties.items()
+                    if "x-unilabos-site-selector" in field
+                })
             return action_name, entry
 
         # 1) auto- actions
@@ -1643,11 +1708,17 @@ class Registry:
     def verify_and_resolve_registry(self):
         """
         对 AST 扫描得到的注册表执行实际 import 验证（使用共享线程池并行）。
+
+        返回导入失败列表（同时记入 ``self.verify_errors``）。``supported_backends`` 不含当前
+        backend 的设备（如 HostLink 环境里的 ROS 2 专用节点）导入失败只记入
+        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。
         """
         errors = []
+        skipped: List[str] = []
         import_success_count = 0
         resolved_count = 0
         total_items = len(self.device_type_registry) + len(self.resource_type_registry)
+        active_backend = str(BasicConfig.backend or "hostlink")
 
         lock = threading.Lock()
 
@@ -1673,6 +1744,15 @@ class Registry:
 
                 return None
             except Exception as e:
+                supported = entry.get("class", {}).get("supported_backends") or []
+                if supported and active_backend not in supported:
+                    logger.warning(
+                        f"[Uni-Lab-OS Registry/Verify] 设备 {device_id} 仅支持 {', '.join(supported)}，"
+                        f"当前 backend {active_backend} 下导入 {module_str} 失败，跳过校验: {e}"
+                    )
+                    with lock:
+                        skipped.append(f"{device_id}: {e}")
+                    return None
                 logger.warning(
                     f"[Uni-Lab-OS Registry/Verify] 设备 {device_id}: "
                     f"导入模块 {module_str} 失败: {e}"
@@ -1725,18 +1805,34 @@ class Registry:
             if self._startup_executor is None:
                 executor.shutdown(wait=True)
 
+        errors.sort()
+        skipped.sort()
+        skipped_note = f", {len(skipped)} 个因 backend 不支持跳过" if skipped else ""
         if errors:
             logger.warning(
                 f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items} 成功, "
-                f"{len(errors)} 个错误"
+                f"{len(errors)} 个错误{skipped_note}"
             )
         else:
             logger.info(
-                f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items} 全部通过, "
-                f"{resolved_count} 设备类型已解析"
+                f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items - len(skipped)} 全部通过, "
+                f"{resolved_count} 设备类型已解析{skipped_note}"
             )
 
+        self.verify_errors = list(errors)
+        self.verify_skipped = list(skipped)
         return errors
+
+    def _record_yaml_error(self, file: os.PathLike, error: Exception) -> None:
+        self.yaml_errors.append({"file": str(file).replace("\\", "/"), "error": f"{type(error).__name__}: {error}"})
+
+    def check_failures(self) -> List[str]:
+        """``--check_mode`` 的失败清单：AST 扫描跳过的文件 + 加载失败的注册表 YAML + 注册类导入失败。"""
+
+        failures = [f"AST 扫描失败: {item['file']}: {item['error']}" for item in self.scan_errors]
+        failures.extend(f"注册表 YAML 加载失败: {item['file']}: {item['error']}" for item in self.yaml_errors)
+        failures.extend(f"导入失败: {item}" for item in self.verify_errors)
+        return failures
 
     def resolve_types_for_device(self, device_id: str, cls=None):
         """
@@ -1822,6 +1918,11 @@ class Registry:
 
                 for action_name_key, action_config in action_mappings.items():
                     type_obj = action_config.get("type")
+                    # AST / YAML 已给出的 schema 就是运行时使用的那一份（typed 合同还带
+                    # x-unilabos-action-contract 与注解约束）；导入期签名只补缺失的 schema，
+                    # 不覆盖，否则 check_mode 校验的会是另一份 schema。
+                    if action_config.get("contract_kind") == "typed" or action_config.get("schema"):
+                        continue
                     if isinstance(type_obj, str) and type_obj in (
                         "UniLabJsonCommand", "UniLabJsonCommandAsync"
                     ):
@@ -1836,7 +1937,7 @@ class Registry:
                                 method_info["args"],
                                 docstring=getattr(actual_method, "__doc__", None),
                             )
-                            action_config["schema"] = schema
+                            action_config["schema"] = wrap_action_schema(schema, action_name_key)
             except Exception as e:
                 logger.debug(f"[Registry] 设备 {device_id} 动态增强失败: {e}")
 
@@ -1882,6 +1983,7 @@ class Registry:
                 data = yaml.safe_load(io.StringIO(f.read()))
         except Exception as e:
             logger.warning(f"[Uni-Lab-OS Registry] 读取资源文件失败: {file}, 错误: {e}")
+            self._record_yaml_error(file, e)
             return {}, {}, False
 
         if not data:
@@ -1905,12 +2007,7 @@ class Registry:
 
             if "version" not in resource_info:
                 resource_info["version"] = "1.0.0"
-            if "category" not in resource_info:
-                resource_info["category"] = [file.stem]
-            elif file.stem not in resource_info["category"]:
-                resource_info["category"].append(file.stem)
-            elif not isinstance(resource_info.get("category"), list):
-                resource_info["category"] = [resource_info["category"]]
+            _default_category(resource_info, file)
             if "config_info" not in resource_info:
                 resource_info["config_info"] = []
             if "icon" not in resource_info:
@@ -1948,10 +2045,30 @@ class Registry:
 
         return data, complete_data, True
 
-    def load_resource_types(self, path: os.PathLike, upload_registry: bool, complete_registry: bool = False):
+    def load_resource_types(
+        self,
+        path: os.PathLike,
+        upload_registry: bool,
+        complete_registry: bool = False,
+        files: Optional[List[Path]] = None,
+        module_prefix: Optional[str] = None,
+    ):
+        """加载 ``<path>/resources/**/*.yaml``；给出 *files* 时只加载这些文件。
+
+        *module_prefix* 给出时只登记 ``class.module`` 落在该模块前缀内的条目（挂载包里的子目录时用）。
+        """
+        from unilabos.registry.package_layout import module_in_prefix
+
+        def _in_scope(entry: Any) -> bool:
+            module = (entry.get("class") or {}).get("module") if isinstance(entry, dict) else None
+            return module_in_prefix(module, module_prefix)
+
         abs_path = Path(path).absolute()
         resources_path = abs_path / "resources"
-        files = list(resources_path.rglob("*.yaml"))
+        if files is None:
+            files = list(resources_path.rglob("*.yaml"))
+        else:
+            files = [Path(file).absolute() for file in files if Path(file).is_file()]
         logger.trace(
             f"[Uni-Lab-OS Registry] resources: {resources_path.exists()}, total: {len(files)}"
         )
@@ -1993,7 +2110,8 @@ class Registry:
                         # 都被当成缺失，触发重新加载并把十几 MB 的缓存整体重写一遍
                         if all_ok and cached.get("entries") is not None:
                             for rid, entry in cached["entries"].items():
-                                self.resource_type_registry[rid] = entry
+                                if _in_scope(entry):
+                                    self.resource_type_registry[rid] = entry
                             yaml_cache_hits += 1
                             continue
                 uncached_files.append(file)
@@ -2011,18 +2129,21 @@ class Registry:
             try:
                 data, complete_data, is_valid = future.result()
                 if is_valid:
+                    complete_data = {rid: entry for rid, entry in complete_data.items() if _in_scope(entry)}
                     self.resource_type_registry.update(complete_data)
                     file_key = str(file.absolute()).replace("\\", "/")
                     yaml_file_rids[file_key] = list(complete_data.keys())
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 加载资源文件失败: {file}, 错误: {e}")
+                self._record_yaml_error(file, e)
 
         # upload 模式下，统一利用线程池为 pylabrobot 资源生成 config_info
         if upload_registry:
             self._populate_resource_config_info(config_cache=config_cache)
 
             # Update YAML cache for newly processed files (entries now have config_info)
-            if yaml_file_rids and config_cache is not None:
+            # 按模块前缀过滤过的加载只登记了部分条目，不写回按文件缓存（缓存必须是整份文件）
+            if yaml_file_rids and config_cache is not None and not module_prefix:
                 for file_key, rids in yaml_file_rids.items():
                     entries = {}
                     module_hashes = {}
@@ -2071,6 +2192,7 @@ class Registry:
             data = resolve_yaml_refs(raw_data, base_file=file)
         except Exception as e:
             logger.warning(f"[Uni-Lab-OS Registry] 读取设备文件失败: {file}, 错误: {e}")
+            self._record_yaml_error(file, e)
             return {}, {}, False, []
 
         if not data:
@@ -2095,10 +2217,7 @@ class Registry:
             # 补全默认字段
             if "version" not in device_config:
                 device_config["version"] = "1.0.0"
-            if "category" not in device_config:
-                device_config["category"] = [file.stem]
-            elif file.stem not in device_config["category"]:
-                device_config["category"].append(file.stem)
+            _default_category(device_config, file)
             if "config_info" not in device_config:
                 device_config["config_info"] = []
             if "description" not in device_config:
@@ -2154,12 +2273,20 @@ class Registry:
 
                 enhanced_info = {}
                 enhanced_import_map: Dict[str, str] = {}
-                if complete_registry:
-                    original_status_keys = set(device_config["class"]["status_types"].keys())
-                    device_config["class"]["status_types"].clear()
+                enhance = complete_registry
+                if enhance:
                     enhanced_info = get_enhanced_class_info(device_config["class"]["module"])
                     if not enhanced_info.get("ast_analysis_success", False):
-                        continue
+                        # 找不到类源码时不补全，但条目照常登记、照原样写回：不能把它从 YAML 里删掉，
+                        # 是否可用交给导入校验（check_mode）判定。
+                        logger.warning(
+                            f"[Uni-Lab-OS Registry] 设备 {device_id} 的类 {device_config['class']['module']} "
+                            "无法静态分析，保留 YAML 原样，不做补全"
+                        )
+                        enhance = False
+                if enhance:
+                    original_status_keys = set(device_config["class"]["status_types"].keys())
+                    device_config["class"]["status_types"].clear()
                     enhanced_import_map = enhanced_info.get("import_map", {})
                     for st_k, st_v in enhanced_info["status_methods"].items():
                         if st_k in original_status_keys:
@@ -2181,7 +2308,7 @@ class Registry:
                     status_str_type_mapping[status_type] = target_type
                 device_config["class"]["status_types"] = dict(sorted(device_config["class"]["status_types"].items()))
 
-                if complete_registry:
+                if enhance:
                     old_action_configs = dict(device_config["class"]["action_value_mappings"])
 
                     device_config["class"]["action_value_mappings"] = {
@@ -2196,6 +2323,10 @@ class Registry:
                             continue
                         else:
                             action_key = f"auto-{k}"
+                        existing = old_action_configs.get(action_key, {})
+                        if "x-unilabos-action-contract" in (existing.get("schema") or {}):
+                            device_config["class"]["action_value_mappings"][action_key] = existing
+                            continue
                         goal_schema = self._generate_unilab_json_command_schema(
                             v["args"], docstring=v.get("docstring"), import_map=enhanced_import_map
                         )
@@ -2477,13 +2608,36 @@ class Registry:
             self._add_builtin_actions(device_config, device_id)
         return data
 
-    def load_device_types(self, path: os.PathLike, complete_registry: bool = False):
+    def load_device_types(
+        self,
+        path: os.PathLike,
+        complete_registry: bool = False,
+        recursive: bool = True,
+        module_prefix: Optional[str] = None,
+    ):
+        """加载 ``<path>/devices`` 与 ``<path>/device_comms`` 下的设备 YAML。
+
+        *recursive* 时包含子目录（驱动包可按家族分组）；``--devices`` 目录本身兜底当注册表根时
+        只读顶层文件，避免把驱动代码目录里的配置 YAML 当成注册表。*module_prefix* 给出时只登记
+        ``class.module`` 落在该模块前缀内的条目（挂载包里的子目录时用）。
+        """
+        from unilabos.registry.package_layout import module_in_prefix
+
+        def _in_scope(entries: Dict[str, Any]) -> Dict[str, Any]:
+            if not module_prefix:
+                return entries
+            return {
+                did: cfg for did, cfg in entries.items()
+                if module_in_prefix((cfg.get("class") or {}).get("module") if isinstance(cfg, dict) else None, module_prefix)
+            }
+
         import hashlib as _hl
         t0 = time.time()
         abs_path = Path(path).absolute()
         devices_path = abs_path / "devices"
         device_comms_path = abs_path / "device_comms"
-        files = list(devices_path.glob("*.yaml")) + list(device_comms_path.glob("*.yaml"))
+        pattern = "**/*.yaml" if recursive else "*.yaml"
+        files = sorted(devices_path.glob(pattern)) + sorted(device_comms_path.glob(pattern))
         logger.trace(
             f"[Uni-Lab-OS Registry] devices: {devices_path.exists()}, device_comms: {device_comms_path.exists()}, "
             + f"total: {len(files)}"
@@ -2513,7 +2667,7 @@ class Registry:
                     complete_data = cached["entries"]
                     # 过滤掉 AST 已有的设备
                     complete_data = {
-                        did: cfg for did, cfg in complete_data.items()
+                        did: cfg for did, cfg in _in_scope(complete_data).items()
                         if not self.device_type_registry.get(did)
                     }
                     runtime_data = self._rebuild_device_runtime_data(complete_data)
@@ -2535,7 +2689,7 @@ class Registry:
             try:
                 data, _complete_data, is_valid, device_ids = future.result()
                 if is_valid:
-                    runtime_data = {did: data[did] for did in device_ids if did in data}
+                    runtime_data = _in_scope({did: data[did] for did in device_ids if did in data})
                     self.device_type_registry.update(runtime_data)
                     # 写入缓存
                     file_key = str(file.absolute()).replace("\\", "/")
@@ -2549,6 +2703,7 @@ class Registry:
                         pass
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 加载设备文件失败: {file}, 错误: {e}")
+                self._record_yaml_error(file, e)
 
         if uncached_files and yaml_dev_cache:
             latest_cache = self._load_config_cache()
@@ -2567,6 +2722,8 @@ class Registry:
     def _load_community_device_registries(self, devices_dirs=None):
         """加载社区设备包根目录下的 registry.yaml（device_id -> 条目）。
         """
+        from unilabos.registry.package_layout import community_registry_file
+
         if not devices_dirs:
             return
 
@@ -2575,12 +2732,7 @@ class Registry:
             d_path = Path(d).resolve()
             if not d_path.is_dir():
                 continue
-            reg_file = None
-            for name in ("registry.yaml", "registry.yml"):
-                candidate = d_path / name
-                if candidate.is_file():
-                    reg_file = candidate
-                    break
+            reg_file = community_registry_file(d_path)
             if reg_file is None:
                 continue
 
@@ -2590,16 +2742,12 @@ class Registry:
                 )
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 社区包 registry.yaml 加载失败: {reg_file}, 错误: {e}")
+                self._record_yaml_error(reg_file, e)
                 continue
             if not is_valid:
                 continue
 
             runtime_data = {did: data[did] for did in device_ids if did in data}
-            for cfg in runtime_data.values():
-                # _load_single_device_file 会按 file.stem 追加分类，这里去掉无意义的 "registry"
-                category = cfg.get("category")
-                if isinstance(category, list) and reg_file.stem in category and len(category) > 1:
-                    category.remove(reg_file.stem)
             if runtime_data:
                 self.device_type_registry.update(runtime_data)
                 loaded_total += len(runtime_data)
@@ -2611,54 +2759,17 @@ class Registry:
         if loaded_total:
             logger.info(f"[Uni-Lab-OS Registry] 社区包 registry.yaml 设备加载完成: 共 {loaded_total} 个")
 
-    @staticmethod
-    def _is_registry_root(p: Path) -> bool:
-        """目录是否为注册表根：含 devices/ device_comms/ resources/ 任一子目录且其中有 *.yaml。"""
-        if not p.is_dir():
-            return False
-        for sub in ("devices", "device_comms", "resources"):
-            subp = p / sub
-            if subp.is_dir() and next(subp.rglob("*.yaml"), None) is not None:
-                return True
-        return False
-
-    @staticmethod
-    def _find_package_root(start: Path, max_up: int = 6) -> Optional[Path]:
-        """从 start 起（含自身）向上最多 max_up 层，定位含 pyproject.toml 的包根。"""
-        cur = start
-        for _ in range(max_up + 1):
-            if (cur / "pyproject.toml").is_file():
-                return cur
-            if cur.parent == cur:
-                break
-            cur = cur.parent
-        return None
-
-    def _registry_root_candidates(self, base: Path) -> List[Path]:
-        """给定一个 --devices 目录，推导其内嵌注册表根的候选目录。
-
-        约定 registry 与 unilabos/registry 同构（ROOT/{devices,resources,device_comms}/*.yaml）：
-        - <devices_dir>/registry：--devices 指向包根（社区包）或 registry 直接放在 --devices 下；
-        - <包根>/registry：--devices 指向 python 子包时（如模板的 device_package_example），
-          向上按 pyproject.toml 锚定 ROOT 再取 ROOT/registry；
-        - <devices_dir>/unilabos_registry 或 <包根>/unilabos_registry：目录化设备包的固定注册表目录；
-        - <devices_dir> 本身：--devices 直接指向 registry 根的兜底。
-        """
-        candidates = [base / "registry", base / "unilabos_registry"]
-        pkg_root = self._find_package_root(base)
-        if pkg_root is not None:
-            candidates.append(pkg_root / "registry")
-            candidates.append(pkg_root / "unilabos_registry")
-        candidates.append(base)
-        return candidates
-
     def _load_devices_dir_registries(self, devices_dirs=None, upload_registry=False, complete_registry=False):
         """为每个 --devices 目录自动加载其内嵌的、与 unilabos/registry 同构的注册表。
 
-        约定：内嵌注册表与内置注册表结构一致（ROOT/registry/{devices,device_comms,resources}/*.yaml）。
+        注册表根的发现规则见 ``package_layout.registry_roots_for_mount``（``registry/``、
+        ``unilabos_registry/``、pyproject ``[tool.unilabos.registry].paths``、包根下同名目录、
+        挂载目录本身兜底），``package inspect`` 与 ``package install`` 台账用同一份规则。
         命中即复用 load_device_types / load_resource_types 加载。external_only 模式下同样加载——
         外部设备包自带的注册表不应被跳过。
         """
+        from unilabos.registry.package_layout import registry_roots_for_mount
+
         if not devices_dirs:
             return
 
@@ -2667,16 +2778,21 @@ class Registry:
             base = Path(d).resolve()
             if not base.is_dir():
                 continue
-            for candidate in self._registry_root_candidates(base):
-                root = candidate.resolve()
-                key = str(root)
-                if key in seen or not self._is_registry_root(root):
+            for registry_root in registry_roots_for_mount(base):
+                root = registry_root.path
+                prefix = registry_root.module_prefix
+                key = (str(root), prefix)
+                if key in seen:
                     continue
                 seen.add(key)
-                logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}")
-                self.load_device_types(root, complete_registry=complete_registry)
+                scope = f"（只取 {prefix} 内的条目）" if prefix else ""
+                logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}{scope}")
+                # --devices 目录本身兜底当注册表根：只读 devices/ 顶层，不进驱动代码子目录
+                self.load_device_types(
+                    root, complete_registry=complete_registry, recursive=registry_root.recursive, module_prefix=prefix,
+                )
                 if BasicConfig.enable_resource_load:
-                    self.load_resource_types(root, upload_registry, complete_registry=complete_registry)
+                    self.load_resource_types(root, upload_registry, complete_registry=complete_registry, module_prefix=prefix)
                 else:
                     logger.warning(
                         "[Uni-Lab-OS Registry] 资源加载已禁用 (enable_resource_load=False)，"
@@ -2721,7 +2837,7 @@ class Registry:
                     type_obj = action_config.get("type")
                     if hasattr(type_obj, "__name__"):
                         action_config["type"] = type_obj.__name__
-                    if "schema" in action_config and action_config["schema"]:
+                    if "schema" in action_config and action_config["schema"] and "x-unilabos-action-contract" not in action_config["schema"]:
                         schema = action_config["schema"]
                         # 确保schema结构存在
                         if (

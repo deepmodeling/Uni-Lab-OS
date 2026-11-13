@@ -2,15 +2,15 @@ diff --git a/pyproject.toml b/pyproject.toml
 --- a/pyproject.toml
 +++ b/pyproject.toml
 @@ -9,7 +9,11 @@
- requires-python = ">=3.9"
+ requires-python = ">=3.10"
  license = {text = "MIT"}
  dynamic = ["version"]
--dependencies = ["typing_extensions", "websockets"]
+-dependencies = ["typing_extensions", "websockets>=14"]
 +dependencies = [
 +  "typing_extensions",
-+  "websockets",
-+  "opentrons-shared-data==9.1.0+unilabos.np2.1",
++  "websockets>=14",
++  "opentrons-shared-data==10.1.0+unilabos.np2.1",
 +]
  
- [project.optional-dependencies]
- serial = ["pyserial"]
+ [project.scripts]
+ plr = "pylabrobot.cli:main"

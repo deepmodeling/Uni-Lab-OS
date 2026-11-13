@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import time
 from typing import Any
 from uuid import uuid4
@@ -12,12 +11,6 @@ from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.database import DATABASE_SPECS
-from unilabos.server.database.schema import rebuild_table_migration
-from unilabos.server.database.tables.runtime.migrations import (
-    _WORKFLOW_TASK_COMMAND_V4,
-    _WORKFLOW_TASK_COMMAND_V4_INDEXES,
-)
 from unilabos.server.services.runtime.workflow.authoring_identity import expanded_node_uuid
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -96,8 +89,22 @@ def _node(node_uuid: str, name: str, param: dict, *, device: str, depends_on=())
     }
 
 
+def _insert(client, service, parent_uuid: str, revision: int, child_uuid: str, **body) -> Any:
+    """V1 组合调用：按子工作流最新发布合同插入；成功时返回父工作流完整图（含私有子图）。"""
+
+    publications = client.get(f"/api/v1/workflows/{child_uuid}/publications").json()["data"]
+    response = client.post(f"/api/v1/workflows/{parent_uuid}/composite-invocations", json={
+        "revision": revision, "contract_uuid": publications[-1]["uuid"], **body,
+    })
+    if response.json()["code"] != 0:
+        return response
+    _ok(response)
+    return service.get_graph(parent_uuid)
+
+
 def _workflow(client, name: str, nodes: list[dict]) -> dict:
-    workflow = _ok(client.post("/api/v1/workflows", json={"name": name}), 201)
+    # V1：只有实验操作可以被引用；子工作流都以实验操作创建
+    workflow = _ok(client.post("/api/v1/workflows", json={"name": name, "workflow_type": "experiment_operation"}), 201)
     return _ok(client.put(
         f"/api/v1/workflows/{workflow['uuid']}/graph",
         json={"revision": workflow["revision"], "nodes": nodes, "edges": [],
@@ -236,10 +243,8 @@ def test_canvas_child_receives_parent_entry_parameter(stack) -> None:
         input_contract=_contract({"name": "amount", "schema": NUMBER, "required": True}),
     ))
     invocation = str(uuid4())
-    inserted = _ok(client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json={
-        "revision": parent_graph["workflow"]["revision"], "child_workflow_uuid": child_uuid,
-        "invocation_uuid": invocation, "arguments": {"volume": ref("amount")},
-    }), 201)["graph"]
+    inserted = _insert(client, service, parent["uuid"], parent_graph["workflow"]["revision"], child_uuid,
+                       invocation_uuid=invocation, param={"volume": ref("amount")})
     leaf = expanded_node_uuid(invocation, inner)
     by_uuid = {node["uuid"]: node for node in inserted["nodes"]}
     # 透传：子工作流的引用改指父工作流入口参数
@@ -272,18 +277,51 @@ def test_canvas_child_receives_parent_entry_parameter(stack) -> None:
     # 静态实参：插入时直接写进内部节点
     other = _ok(client.post("/api/v1/workflows", json={"name": "静态父流程"}), 201)
     static_invocation = str(uuid4())
-    static = _ok(client.post(f"/api/v1/workflows/{other['uuid']}/composite-invocations", json={
-        "revision": other["revision"], "child_workflow_uuid": child_uuid,
-        "invocation_uuid": static_invocation, "arguments": {"volume": 4},
-    }), 201)["graph"]
+    static = _insert(client, service, other["uuid"], other["revision"], child_uuid,
+                     invocation_uuid=static_invocation, param={"volume": 4})
     static_leaf = expanded_node_uuid(static_invocation, inner)
     assert {node["uuid"]: node for node in static["nodes"]}[static_leaf]["param"] == {"volume": 4}
     # 引用父工作流未声明的入口参数被拒绝
-    rejected = client.post(f"/api/v1/workflows/{other['uuid']}/composite-invocations", json={
-        "revision": static["workflow"]["revision"], "child_workflow_uuid": child_uuid,
-        "arguments": {"volume": ref("amount")},
-    })
+    rejected = _insert(client, service, other["uuid"], static["workflow"]["revision"], child_uuid,
+                       param={"volume": ref("amount")})
     assert _code(rejected) == 1000
+
+
+def test_published_child_condition_references_its_expanded_nodes(stack) -> None:
+    service, executor, client = stack
+    probe, condition, chosen, skipped = (str(uuid4()) for _ in range(4))
+    child = _workflow(client, "条件子流程", [
+        _node(probe, "检测", {}, device="pump-1"),
+        {"uuid": condition, "type": "condition", "name": "判定", "param": {
+            "version": 1, "expression": {"field": {"node_uuid": probe}, "name": "ready"},
+        }},
+        {**_node(chosen, "选中", {}, device="pump-1"), "execution_policy": {
+            "condition_guards": [{"node_uuid": condition, "equals": True}],
+        }},
+        {**_node(skipped, "跳过", {}, device="pump-1"), "execution_policy": {
+            "condition_guards": [{"node_uuid": condition, "equals": False}],
+        }},
+    ])
+    child_uuid = child["workflow"]["uuid"]
+    _ok(client.post(f"/api/v1/workflows/{child_uuid}/publications", json={"revision": child["workflow"]["revision"]}), 201)
+    parent = _ok(client.post("/api/v1/workflows", json={"name": "条件父流程"}), 201)
+    invocation = str(uuid4())
+    inserted = _insert(client, service, parent["uuid"], parent["revision"], child_uuid,
+                       invocation_uuid=invocation, param={})
+    nodes = {node["uuid"]: node for node in inserted["nodes"]}
+    expanded_condition = expanded_node_uuid(invocation, condition)
+    expanded_probe = expanded_node_uuid(invocation, probe)
+    assert nodes[expanded_condition]["param"]["expression"]["field"] == {"node_uuid": expanded_probe}
+    task = _ok(_task(client, parent["uuid"]), 201)
+    wait_for(lambda: len(executor.dispatched) == 1)
+    assert executor.dispatched[0]["node_id"] == expanded_probe
+    executor.finish(0, {"ready": True})
+    wait_for(lambda: len(executor.dispatched) == 2)
+    assert executor.dispatched[1]["node_id"] == expanded_node_uuid(invocation, chosen)
+    executor.finish(1)
+    wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    runs = {run["workflow_node_uuid"]: run for run in service.list_workflow_node_runs(task["uuid"])}
+    assert runs[expanded_node_uuid(invocation, skipped)]["status"] == "skipped"
 
 
 def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
@@ -307,7 +345,8 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
 
     # 运行中（未暂停）不能改
     assert _code(_edit(client, task, {"temperature": 30})) == 3003
-    assert _ok(_command(client, task, "pause"))["control_status"] == "paused"
+    assert _ok(_command(client, task, "pause"), 201)["status"] == "succeeded"
+    assert service.get_workflow_task(task["uuid"])["control_status"] == "paused"
     revision = service.get_workflow_task(task["uuid"])["control_revision"]
 
     assert _code(_edit(client, task, {"temperature": 30}, revision=revision - 1)) == 3003
@@ -329,7 +368,8 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
     executor.finish(0)
     time.sleep(0.1)
     assert len(executor.dispatched) == 1, "暂停中不派发后继"
-    assert _ok(_command(client, task, "resume"))["control_status"] == "active"
+    assert _ok(_command(client, task, "resume"), 201)["status"] == "succeeded"
+    assert service.get_workflow_task(task["uuid"])["control_status"] == "active"
     wait_for(lambda: len(executor.dispatched) == 2)
     assert executor.dispatched[1]["node_id"] == second
     assert executor.dispatched[1]["action_args"] == {"temperature": 30}
@@ -338,64 +378,6 @@ def test_paused_edit_changes_only_unconsumed_entry_parameters(stack) -> None:
     jobs = {job["workflow_node_uuid"]: job for job in service.list_workflow_node_jobs(task["uuid"])}
     assert jobs[second]["param"] == {"temperature": 30}
     assert _code(_edit(client, task, {"temperature": 40})) == 3003
-
-
-_V3_COMMAND_CHECK = "type IN ('step', 'pause', 'resume', 'cancel')"
-
-
-def test_v3_runtime_database_migrates_task_commands_to_v4(tmp_path) -> None:
-    path = tmp_path / "runtime.db"
-    service = WorkflowService(path)
-    workflow = service.create_workflow(name="迁移", tags=[], description=None, meta_data={})
-    service.save_graph(workflow["uuid"], revision=1, nodes=[
-        _node(str(uuid4()), "加样", {"volume": 1}, device="pump-1"),
-    ], edges=[])
-    task = service.create_workflow_task(
-        workflow_uuid=workflow["uuid"], run_mode="step", target_node_uuid=None,
-        input_value={}, description=None, meta_data={},
-    )
-    service.command_workflow_task(task["uuid"], command_type="resume",
-                                  expected_revision=0, idempotency_key="resume-1")
-    service.close()
-
-    v3_sql = _WORKFLOW_TASK_COMMAND_V4.replace(
-        "type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')", _V3_COMMAND_CHECK,
-    )
-    assert v3_sql != _WORKFLOW_TASK_COMMAND_V4
-    connection = sqlite3.connect(path, isolation_level=None)
-    try:
-        connection.execute("PRAGMA foreign_keys = OFF")
-        connection.execute("BEGIN IMMEDIATE")
-        rebuild_table_migration(
-            3, "test downgrade", table="workflow_task_command",
-            create_sql=v3_sql, indexes=_WORKFLOW_TASK_COMMAND_V4_INDEXES,
-        ).apply(connection)
-        connection.execute("UPDATE schema_identity SET checksum = 'runtime-v3' WHERE database_key = 'runtime'")
-        connection.execute("PRAGMA user_version = 3")
-        connection.execute("COMMIT")
-    finally:
-        connection.close()
-
-    service = WorkflowService(path)
-    try:
-        migrated = service.get_workflow_task(task["uuid"])
-        assert migrated["control_revision"] == 1
-        with service.transaction() as conn:
-            conn.execute(
-                "INSERT INTO workflow_task_command(uuid, create_time, update_time, workflow_task_uuid, "
-                "type, idempotency_key, status) VALUES (?, 't', 't', ?, 'edit_input', 'edit-1', 'succeeded')",
-                (str(uuid4()), task["uuid"]),
-            )
-        assert service.get_workflow_task(task["uuid"])["control_revision"] == 2
-    finally:
-        service.close()
-    connection = sqlite3.connect(path)
-    try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == DATABASE_SPECS["runtime"].schema_version
-        history = [tuple(row) for row in connection.execute("SELECT version, description FROM schema_migration")]
-        assert history == [(4, "workflow_task_command 允许 edit_input（暂停时修改入口参数）")]
-    finally:
-        connection.close()
 
 
 def test_task_list_omits_output_but_detail_keeps_it(stack) -> None:

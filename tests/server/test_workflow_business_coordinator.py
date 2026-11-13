@@ -390,3 +390,15 @@ def _coordinator_on(tmp_path, runtime):
     )
     executor.coordinator = coordinator
     return coordinator, history, executor, data_plane
+
+
+def test_start_unknown_is_persisted_and_reported_without_terminal_failure(tmp_path):
+    from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+    coordinator, runtime, history, executor, data_plane = _coordinator(tmp_path)
+    notice, document = _document("execute-1", 1, "execute_job", "payload-execute-1", _execute_payload(), job_uuid="job-1")
+    data_plane.documents["execute-1"] = document
+    coordinator.handle_backend_notice(notice)
+    coordinator.publish_job_status({}, _item(), "failed", {"suc_type": SUCCESS_TYPE_EXECUTION_UNKNOWN,
+                                                          "uncertainty_reason": "开始许可应答丢失"})
+    assert runtime.get_execution_job("job-1").status == "execution_unknown"
+    assert any(notice.event_type == "execution.execution_unknown" for notice in coordinator.claim_edge_changes())

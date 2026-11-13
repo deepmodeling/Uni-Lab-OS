@@ -41,6 +41,8 @@ class ServerServices:
             opened.append(runtime)
             materials = MaterialsService(paths.materials_db)
             opened.append(materials)
+            # 旧版 transfer 把载架 Site 的物料直接挂在载架下，设备反序列化不了：打开时一次性修复
+            materials.repair_site_occupant_parents()
             telemetry = TelemetryService(paths.telemetry_db)
             opened.append(telemetry)
             history = HistoryService(paths.history_db)

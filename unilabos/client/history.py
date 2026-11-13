@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from typing import Any, Optional
-from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
 
 from unilabos.config.control_token import client_headers
 
@@ -57,22 +58,20 @@ class LocalHistoryClient:
         return self.service.replacement_chain(event_uuid)
 
 
-class HistoryHTTPError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(f"history API returned {status_code}: {detail}")
-        self.status_code = status_code
-        self.detail = detail
+class HistoryHTTPError(APIHTTPError):
+    api_name = "history"
 
 
 class HTTPHistoryClient:
     def __init__(self, base_url: str, *, timeout: float = 30.0):
         base = base_url.rstrip("/")
-        if base.endswith("/api/v1/history"):
+        # dev 事件 / 载荷存储在 /api/v1/edge/history；/api/v1/history 归 V1 运行历史
+        if base.endswith("/api/v1/edge/history"):
             self.base_url = base
         elif base.endswith("/api/v1"):
-            self.base_url = base + "/history"
+            self.base_url = base + "/edge/history"
         else:
-            self.base_url = base + "/api/v1/history"
+            self.base_url = base + "/api/v1/edge/history"
         self.timeout = timeout
 
     def _request(self, method: str, path: str, body: Optional[Any] = None) -> Any:
@@ -90,15 +89,9 @@ class HTTPHistoryClient:
             method=method,
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:  # noqa: S310
-                return json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            try:
-                detail = json.loads(raw).get("detail", raw)
-            except ValueError:
-                detail = raw
-            raise HistoryHTTPError(exc.code, str(detail)) from exc
+            return request_json(request, timeout=self.timeout, opener=urlopen)
+        except EnvelopeError as exc:
+            raise HistoryHTTPError.from_envelope_error(exc) from exc
 
     def store_payload(self, value: PayloadWrite) -> PayloadObjectRead:
         return _payload_read(self._request("POST", "/payloads", value))

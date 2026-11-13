@@ -78,6 +78,10 @@ def derive_workflow_websocket_url(
 
 
 STREAM_RESET_EVENT = "stream.reset"
+#: V1 事件名：任务 / 节点 / 作业 / 人工确认 / 资源变化都发成它，dev 细粒度种类在 ``data.kind``
+RUNTIME_CHANGED_EVENT = "workflow.runtime.changed"
+#: 作者态（草稿 / 候选 / 定义）变化，与任务运行状态无关
+AUTHORING_CHANGED_EVENT = "workflow.authoring.changed"
 _STREAM_CLOSED = object()
 _LINE_BREAK = re.compile(r"\r\n|\r|\n")
 
@@ -314,12 +318,15 @@ class HTTPWorkflowClient:
         revision: int,
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """与 ``WorkflowService.save_graph`` 同签名，便于 ``registry.workflows.upsert_workflow``
         经 HTTP 向远端 Workflow Authority 写入实例化后的工作流。"""
 
         return self.save_workflow_graph(
-            workflow_uuid, revision=revision, nodes=nodes, edges=edges
+            workflow_uuid, revision=revision, nodes=nodes, edges=edges, workflow_io=workflow_io,
+            resource_scopes=resource_scopes,
         )
 
     def get_workflow_graph(self, workflow_uuid: str) -> dict[str, Any]:
@@ -332,10 +339,16 @@ class HTTPWorkflowClient:
         revision: int,
         nodes: list[dict[str, Any]],
         edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        # 资源作用域与节点、I/O 同一次 PUT 原子保存，避免图已更新而作用域仍引用旧节点。
         return self._http.put(
             f"/workflows/{workflow_uuid}/graph",
-            json={"revision": revision, "nodes": nodes, "edges": edges},
+            # 程序化导入（模板实例化 / CLI 上传）显式要求按目标物料解析 Site 标签；V1 默认 preserve
+            json={"revision": revision, "nodes": nodes, "edges": edges, "site_binding_mode": "resolve",
+                  **({"workflow_io": workflow_io} if workflow_io is not None else {}),
+                  **({"resource_scopes": resource_scopes} if resource_scopes is not None else {})},
         )
 
     def inspect_workflow(self, workflow_uuid: str) -> dict[str, Any]:
@@ -372,18 +385,35 @@ class HTTPWorkflowClient:
             },
         )
 
+    def begin_execution(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/begin", json=body)
+
+    def record_start_receipt(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/started", json=body)
+
     def get_task(self, task_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflow-tasks/{task_uuid}")
 
     def command_task(
-        self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
+        self, task_uuid: str, *, command_type: str, idempotency_key: str,
+        expected_revision: Optional[int] = None, target_node_uuid: Optional[str] = None,
+        description: Optional[str] = None, meta_data: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
-        """step 放行一个动作 / resume 转自动；调用者保留幂等键供网络重传。"""
-        return self._http.post(f"/workflow-tasks/{task_uuid}/commands", json={
-            "type": command_type, "expected_revision": expected_revision,
-            "idempotency_key": idempotency_key,
-        })
+        """V1 任务控制命令（step / switch_to_step / pause / resume / cancel / unlock_resources）。
+
+        返回命令投影：``status`` 为 ``rejected`` 时 ``result.reason`` 给出业务原因。调用者保留
+        幂等键供网络重传；``expected_revision`` 可选，给出时做任务控制版本 CAS。
+        """
+        body: dict[str, Any] = {"type": command_type, "idempotency_key": idempotency_key}
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        if target_node_uuid is not None:
+            body["target_node_uuid"] = target_node_uuid
+        if description is not None:
+            body["description"] = description
+        if meta_data:
+            body["meta_data"] = meta_data
+        return self._http.post(f"/workflow-tasks/{task_uuid}/commands", json=body)
 
     def list_task_jobs(self, task_uuid: str) -> list[dict[str, Any]]:
         return self._http.get(f"/workflow-tasks/{task_uuid}/jobs")
@@ -396,6 +426,43 @@ class HTTPWorkflowClient:
 
     def get_job(self, job_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflow-node-jobs/{job_uuid}")
+
+    def list_task_inventory_consumptions(self, task_uuid: str) -> list[dict[str, Any]]:
+        """V1：任务的数量型库存消费事实（批次 / 试剂 / 当前内容物）。"""
+
+        return self._http.get(f"/workflow-tasks/{task_uuid}/inventory-consumptions")
+
+    def list_job_inventory_consumptions(self, job_uuid: str) -> list[dict[str, Any]]:
+        return self._http.get(f"/workflow-node-jobs/{job_uuid}/inventory-consumptions")
+
+    def list_reagent_inventory_consumptions(self, reagent_uuid: str) -> list[dict[str, Any]]:
+        """V1：一份试剂（内容物）的工作流消费谱系，新在前。"""
+
+        return self._http.get(f"/reagents/{reagent_uuid}/inventory-consumptions")
+
+    def reconcile_job_quantity(
+        self, job_uuid: str, consumptions: list[dict[str, Any]], *, reason: str,
+    ) -> dict[str, Any]:
+        """V1：人工核对作业实际用量；每项 ``{inventory_type, inventory_uuid, actual_quantity, quantity_unit}``。
+
+        同一核对可安全重放；已落账的不同用量返回 3003（不会重复扣减）。返回作业并附 ``inventory_consumptions``。
+        """
+
+        return self._http.post(
+            f"/workflow-node-jobs/{job_uuid}/reconcile-quantity",
+            json={"consumptions": consumptions, "reason": reason},
+        )
+
+    def resolve_uncertain_job(
+        self, job_uuid: str, *, reason: str, resolution: str = "canceled",
+        device_command_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """V1：结果未知作业的人工处置；``pending_edge_confirmation`` 为真时执行面尚未确认停止。"""
+
+        body: dict[str, Any] = {"resolution": resolution, "reason": reason}
+        if device_command_id is not None:
+            body["device_command_id"] = device_command_id
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/resolve-uncertain", json=body)
 
     def get_authoring(self, workflow_uuid: str) -> dict[str, Any]:
         return self._http.get(f"/workflows/{workflow_uuid}/authoring")
@@ -569,6 +636,8 @@ class HTTPWorkflowClient:
         notice: Mapping[str, Any],
         task_uuid: str,
     ) -> bool:
+        if notice.get("action") == AUTHORING_CHANGED_EVENT:
+            return False
         data = cls._notice_data(notice)
         direct_ids = {
             str(data.get(key) or "") for key in ("workflow_task_uuid", "task_uuid")

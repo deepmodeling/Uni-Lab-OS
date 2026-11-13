@@ -6,13 +6,21 @@
 子进程经 HostLink 接回本 Host；驱动崩了只影响这个子进程，按策略自动拉起，
 Host 本体、物料权威和调度都不受影响；改驱动、改配置也只需重启这个子进程。
 
+受管 Slave 跟随拉起它的 Host：拉起时写入 Host 的 pid（``app/lifetime.py``），Host 无论怎么没了
+（含 ``kill -9``、崩溃），Slave 都察觉并退出，不留下来占着各自的数据库根目录与 HostLink 连接；
+Windows 上另放进 KILL_ON_JOB_CLOSE 的 Job Object 兜底。Host 有序退出时由 :meth:`DeviceProcessService.shutdown`
+（atexit）先一起请全部 Slave 退出，再限时等待。
+
 持久化：``<working_dir>/device_processes.json``（规格）与 ``<working_dir>/device_processes/<id>/``
-（图文件、日志）；working_dir 即 BasicConfig.working_dir（unilabos_data 目录）。
+（图文件、日志，以及该 Slave 自己的数据库根目录 ``database/``）；working_dir 即
+BasicConfig.working_dir（unilabos_data 目录）。一个数据库根目录只归一个进程，受管 Slave 不能与
+Host / 权威共用 ``<working_dir>/database``，所以每个受管进程各有一个。
 """
 
 from __future__ import annotations
 
 import atexit
+import argparse
 import json
 import os
 import subprocess
@@ -24,11 +32,16 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from unilabos.app.lifetime import KillOnCloseJob, follow_parent_env
 from unilabos.utils import logger
 from unilabos.utils.log_notices import log_notices
+from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
+from unilabos.server.services.host_mutations import HostMutationBusy, get_host_mutation_gate
 
 SPEC_FILENAME = "device_processes.json"
 PROCESS_DIRNAME = "device_processes"
+#: 受管 Slave 的数据库根目录（在各自的进程目录下）：Slave 把启动图登记进本机 Graph Authority
+PROCESS_DATABASE_DIRNAME = "database"
 STOP_GRACE_S = 8.0
 RESTART_BACKOFF_S = (2.0, 4.0, 8.0, 15.0, 30.0)
 RESTART_POLICIES = ("never", "on-failure", "always")
@@ -36,6 +49,10 @@ RESTART_POLICIES = ("never", "on-failure", "always")
 
 class DeviceProcessError(RuntimeError):
     """受管进程操作的可预期错误。"""
+
+
+class DeviceProcessBusyError(DeviceProcessError):
+    """包变更或 Host 重启尚未完成。"""
 
 
 @dataclass
@@ -169,6 +186,9 @@ class DeviceProcessService:
         self._stop_requested: set[str] = set()
         self._monitor: Optional[threading.Thread] = None
         self._closing = False
+        # Windows：受管 Slave 随本 Host 消亡由系统回收（拿不到 job 时靠 Slave 自己跟随父进程）
+        self._job = KillOnCloseJob.create()
+        self.source_changes = get_source_changes(self.working_dir)
         atexit.register(self.shutdown)
 
     # ── 环境 ──────────────────────────────────────────────────────
@@ -221,6 +241,9 @@ class DeviceProcessService:
             target["host"],
             "--hostlink_port",
             str(target["port"]),
+            # 不落在 Host / 权威独占的 <working_dir>/database：每个受管 Slave 自己一个根目录
+            "--server_database_root",
+            str(process_dir(self.working_dir, spec.id) / PROCESS_DATABASE_DIRNAME),
             "-g",
             str(graph_file),
         ]
@@ -230,6 +253,27 @@ class DeviceProcessService:
             command.append("--external_devices_only")
         command.extend(str(item) for item in spec.extra_args if str(item).strip())
         return command
+
+    def _register_source_watch(self, spec: DeviceProcessSpec, command: List[str]) -> None:
+        """观察子进程实际命令和工作目录会挂载的目录，包含额外参数及启用台账。"""
+        from unilabos.app.cli.parser import build_parser
+        from unilabos.config.working_dir import resolve_working_dir
+        from unilabos.server.services.driver_packages import enabled_package_dirs, load_ledger
+
+        try:
+            args, _ = build_parser().parse_known_args(command[3:])
+        except (SystemExit, argparse.ArgumentError) as exc:
+            raise DeviceProcessError("设备进程启动参数无效，无法确定源码挂载目录") from exc
+
+        def absolute(value: str | None) -> str | None:
+            return str((self.working_dir / Path(value).expanduser()).resolve()) if value else None
+
+        child_dir = resolve_working_dir(absolute(args.working_dir), absolute(args.config), cwd=str(self.working_dir))
+        records = {**load_ledger(self.working_dir), **load_ledger(child_dir)}
+        dirs = [absolute(item) for item in args.devices or []] + enabled_package_dirs(child_dir)
+        roots, packages = source_roots(dirs, records)
+        self.source_changes.register(spec.id, kind="slave", name=spec.name, pid=None, roots=roots,
+                                     packages=packages, auto_start=spec.auto_start)
 
     @staticmethod
     def graph_filename(spec: DeviceProcessSpec) -> str:
@@ -278,6 +322,7 @@ class DeviceProcessService:
         spec = self._spec_from_payload(payload, existing=current)
         specs[process_id] = spec
         save_specs(self.working_dir, specs)
+        self.source_changes.describe(process_id, name=spec.name, auto_start=spec.auto_start)
         self._write_graph(spec)
         log_notices.changed(sources_changed=True)
         return self._view(spec)
@@ -353,12 +398,25 @@ class DeviceProcessService:
             if proc is not None:
                 runtime.last_exit_code = proc.poll()
             self._procs.pop(process_id, None)
+            self.source_changes.remove(process_id)
         log_notices.changed(f"managed:{process_id}", sources_changed=True)
         return self._view(spec)
 
     def restart(self, process_id: str) -> Dict[str, Any]:
-        self.stop(process_id, wait=True)
-        return self.start(process_id)
+        spec = load_specs(self.working_dir).get(process_id)
+        if spec is None:
+            raise DeviceProcessError(f"device process not found: {process_id}")
+        try:
+            # 在停止旧 slave 前取得变更锁，拒绝时保持正在运行的进程。
+            with get_host_mutation_gate(self.working_dir).hold('slave_restart'):
+                self.stop(process_id, wait=True)
+                with self._lock:
+                    self._stop_requested.discard(process_id)
+                    self._launch_with_sources(spec, reset_restart_count=True)
+                self._ensure_monitor()
+                return self._view(spec)
+        except HostMutationBusy as exc:
+            raise DeviceProcessBusyError(str(exc)) from exc
 
     def start_auto(self) -> List[str]:
         """Host 启动完成后拉起 auto_start 的进程；返回启动的 id。"""
@@ -374,18 +432,41 @@ class DeviceProcessService:
         return started
 
     def shutdown(self) -> None:
-        """Host 退出 / 重启时结束全部子进程（不留孤儿）。"""
+        """Host 退出 / 重启时结束全部子进程（不留孤儿）。
+
+        先一起请全部子进程退出，再共用一个 ``STOP_GRACE_S`` 等待，超时强制结束；逐个
+        「请求 + 等待」在受管进程多时会把 Host 的退出拖得很长。
+        """
         self._closing = True
         with self._lock:
             procs = list(self._procs.items())
-        for process_id, proc in procs:
-            self._stop_requested.add(process_id)
-            if proc.poll() is None:
-                self._terminate(proc, wait=True)
+            self._stop_requested.update(process_id for process_id, _ in procs)
+        running = [proc for _, proc in procs if proc.poll() is None]
+        for proc in running:
+            self._terminate(proc, wait=False)
+        deadline = time.monotonic() + STOP_GRACE_S
+        for proc in running:
+            try:
+                proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+        for process_id, _ in procs:
+            self.source_changes.remove(process_id)
 
     # ── 内部：启动 / 结束 / 看护 ─────────────────────────────────
 
     def _launch(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
+        try:
+            with get_host_mutation_gate(self.working_dir).hold('slave_start'):
+                self._launch_with_sources(spec, reset_restart_count=reset_restart_count)
+        except HostMutationBusy as exc:
+            raise DeviceProcessBusyError(str(exc)) from exc
+
+    def _launch_with_sources(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
         runtime = self._runtime.setdefault(spec.id, DeviceProcessRuntime())
         command = self.build_command(spec)
         directory = process_dir(self.working_dir, spec.id)
@@ -402,7 +483,12 @@ class DeviceProcessService:
         # 输出进的是文件 / API，不是终端：关掉着色，日志页才不会满屏 ESC 序列
         env.setdefault("NO_COLOR", "1")
         env.setdefault("TERM", "dumb")
+        # Slave 跟随本 Host 进程：Host 消失（含强制结束）时 Slave 自行退出。这里可能在 API 工作线程、
+        # 重启定时器线程里执行，拉起线程不常驻，所以不用 Linux 死亡信号（它跟随的是线程）。
+        follow_parent_env(env)
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+        # 在 Popen 前取基线，子进程异步导入期间发生的编辑也必须提示。
+        self._register_source_watch(spec, command)
         try:
             proc = subprocess.Popen(
                 command,
@@ -413,14 +499,19 @@ class DeviceProcessService:
                 creationflags=creationflags,
             )
         except OSError as exc:
+            self.source_changes.remove(spec.id)
             runtime.status = "crashed"
             runtime.last_error = str(exc)
             raise DeviceProcessError(f"无法启动子进程：{exc}") from exc
+        if self._job is not None:
+            self._job.assign(proc)
         runtime.pid = proc.pid
         runtime.started_at_ms = _now_ms()
         runtime.stopped_at_ms = None
         runtime.status = "running"
         self._procs[spec.id] = proc
+        self.source_changes.set_pid(spec.id, proc.pid)
+        self.source_changes.start()
         log_notices.changed(f"managed:{spec.id}", sources_changed=True)
         threading.Thread(
             target=self._pump_output,
@@ -472,11 +563,15 @@ class DeviceProcessService:
                 if code is None:
                     continue
                 with self._lock:
+                    # 采样后可能已由用户重启，旧进程退出不能覆盖新实例及其源码基线。
+                    if self._procs.get(process_id) is not proc:
+                        continue
                     runtime = self._runtime.setdefault(process_id, DeviceProcessRuntime())
                     runtime.last_exit_code = code
                     runtime.pid = None
                     runtime.stopped_at_ms = _now_ms()
                     self._procs.pop(process_id, None)
+                    self.source_changes.remove(process_id)
                     requested = process_id in self._stop_requested
                 log_notices.changed(f"managed:{process_id}", sources_changed=True)
                 if requested:
@@ -496,7 +591,10 @@ class DeviceProcessService:
                 delay = RESTART_BACKOFF_S[min(runtime.restart_count, len(RESTART_BACKOFF_S) - 1)]
                 runtime.status = "restarting"
                 runtime.restart_count += 1
-                threading.Timer(delay, self._restart_later, args=(process_id,)).start()
+                timer = threading.Timer(delay, self._restart_later, args=(process_id,))
+                # 守护线程：退避中的重启不能拖住 Host 退出
+                timer.daemon = True
+                timer.start()
 
     def _restart_later(self, process_id: str) -> None:
         if self._closing or process_id in self._stop_requested:
@@ -524,6 +622,9 @@ class DeviceProcessService:
         view.update(asdict(spec))
         view["device_ids"] = [str(node.get("id")) for node in spec.graph_nodes]
         view["graph_path"] = str(process_dir(self.working_dir, spec.id) / self.graph_filename(spec))
+        notices = [item for item in self.source_changes.status()["notices"] if item["process_id"] == spec.id]
+        view["restart_required"] = bool(notices)
+        view["restart_notices"] = notices
         return view
 
 

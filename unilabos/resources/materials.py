@@ -607,23 +607,30 @@ def resolve(
     return resources[0]
 
 
-def _instantiate_registry_resource(class_name: str, name: str) -> Any:
-    """按 registry 资源类名实例化本地草稿（发给权威创建前的载体）。
+def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
+    """按 registry 资源类名实例化本地 PLR 草稿（无 uuid，发给权威创建前的载体）。
 
-    与微后端 ``POST /materials/instantiate`` 端点同款实例化入口；随后的
-    权威登记同样走 create_tree，两条路径语义一致。
+    ``materials.create("类名", name=...)`` 与微后端库存命令 ``instantiate_material``
+    （``POST /api/v1/inventory/commands``）共用此入口；随后的权威登记同样走
+    create_tree，两条路径语义一致。需要 dict 形态时交给
+    ``ResourceTreeSet.from_plr_resources``。只有 ``class.type == "pylabrobot"`` 的
+    registry 资源类可实例化。
     """
 
     if not str(name or "").strip():
         raise ValueError("按资源类名创建物料时必须提供 name")
-    from pylabrobot.resources.resource import Resource as ResourcePLR
+    import importlib
 
-    from unilabos.resources.graphio import initialize_resource
+    from unilabos.registry.registry import lab_registry
 
-    draft = initialize_resource(
-        {"name": str(name), "class": class_name}, resource_type=ResourcePLR
-    )
-    if not isinstance(draft, ResourcePLR):
+    entry = lab_registry.resource_type_registry.get(class_name)
+    class_info = entry.get("class") if isinstance(entry, dict) else None
+    if not isinstance(class_info, dict) or class_info.get("type") != "pylabrobot":
+        raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
+    module_name, _, attribute = str(class_info.get("module") or "").partition(":")
+    resource_class = getattr(importlib.import_module(module_name), attribute)
+    draft = resource_class(name=str(name))
+    if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
     return draft
 
@@ -664,7 +671,7 @@ def create(
     """
 
     if isinstance(plr_resource, str):
-        plr_resource = _instantiate_registry_resource(plr_resource, name)
+        plr_resource = instantiate_registry_resource(plr_resource, name)
     resources = (
         list(plr_resource)
         if isinstance(plr_resource, (list, tuple))
@@ -742,13 +749,14 @@ def assign(
     - ``parent``：目标父物料（实例或名字）；None 表示挂到设备自身
       （只登记进 tracker，不做 assign）；
     - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
-    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）。
+    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
+    - ``timeout``：只约束提交点之前（等锁、从权威拉取物料），超时取消挂载、什么都不改；
+      本地挂上之后，权威 move 与快照回报一定走完再返回（大台面的整树快照要几十秒），
+      不会在提交之后被取消（见 ``DeviceNode.append_resource_blocking``）。
 
     本函数为阻塞式，供驱动线程 / 脚本调用；已在节点执行器内的异步代码
     请直接 ``await node.append_resource(payload)``。
     """
-
-    from unilabos.backend.runtime.async_utils import run_node_coroutine
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
     resource_uuids = [material_uuid(item) for item in items]
@@ -769,7 +777,7 @@ def assign(
     }
     if other:
         payload["other_calling_param"] = other
-    return run_node_coroutine(node, node.append_resource(payload), timeout)
+    return node.append_resource_blocking(payload, timeout)
 
 
 async def snapshot(
@@ -1047,6 +1055,7 @@ __all__ = [
     "ensure",
     "from_str",
     "get",
+    "instantiate_registry_resource",
     "material_uuid",
     "owner_device_of",
     "remove",

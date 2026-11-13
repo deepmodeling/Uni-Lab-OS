@@ -1,7 +1,10 @@
 """Action-level material-lock metadata.
 
 物料天然带锁：动作的物料入参（``ResourceSlot`` 及其列表 / Optional，或
-``placeholder_keys`` 标为 ``unilabos_resources`` 的入参）默认在执行期间独占。
+``placeholder_keys`` 标为 ``unilabos_resources`` 的入参）默认在动作执行期间互斥。
+正常终态释放后可供其他任务使用；交接、取消未完成或执行结果未知时可能继续持锁。
+这不等于已经实现共享资源的空闲区间借出协议或独占资源的跨动作占用声明。
+``materials_free`` 则是显式免锁，不能拿它代替共享资源锁。
 
 - 未声明 ``materials_need_lock`` 时，上述物料入参全部加锁，``materials_free`` 列出的除外；
 - 显式声明 ``materials_need_lock``（包括 ``[]``）时按声明原样生效，不再推导，
@@ -152,7 +155,7 @@ def effective_material_lock_parameters(
     placeholder_keys: Mapping[str, Any] | None = None,
     action_name: str = "action",
 ) -> list[str]:
-    """动作执行期间要独占的物料入参（写入注册表的最终 ``materials_need_lock``）。
+    """动作执行期间要加互斥锁的物料入参（写入注册表的最终 ``materials_need_lock``）。
 
     ``params`` 为动作签名（``{"name", "type"}`` 字典或 ``inspect.Parameter``）；
     为 None 表示签名未知（直接加载的 YAML 条目）：不校验参数名，默认锁只按

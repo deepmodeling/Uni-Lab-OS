@@ -1,13 +1,13 @@
 package:
   name: ros-humble-unilabos-msgs
-  version: 0.12.1
+  version: 0.12.2
 
 source:
   path: ../../unilabos_msgs
   target_directory: src
 
 build:
-  number: 0
+  number: 1
   script:
   - if: win
     then:
@@ -27,7 +27,7 @@ requirements:
   build:
   - ${{ compiler('cxx') }}
   - ${{ compiler('c') }}
-  - python ==3.12.13
+  - python ==3.14.10
   # Humble 的 Windows rosidl_adapter 仍使用 EmPy 3 API；与 ci-check.yml 保持一致。
   - empy ==3.3.4
   - numpy >=2,<3
@@ -53,9 +53,9 @@ requirements:
     then:
     - vs2022_win-64
   host:
-  - python ==3.12.13
+  - python ==3.14.10
   - empy ==3.3.4
-  - python_abi 3.12.* *_cp312
+  - python_abi 3.14.* *_cp314
   - numpy >=2,<3
   - pip
   - if: build_platform == target_platform
@@ -70,17 +70,17 @@ requirements:
   - robostack-humble::ros-humble-rosidl-default-generators
   - robostack-humble::ros-humble-std-msgs
   - robostack-humble::ros-humble-geometry-msgs
-  - robostack-humble::ros2-distro-mutex 0.9.* humble_*
+  - robostack-humble::ros2-distro-mutex 0.11.* humble_*
   run:
-  - python >=3.12,<3.13
-  - python_abi 3.12.* *_cp312
+  - python >=3.14,<3.15
+  - python_abi 3.14.* *_cp314
   - numpy >=2,<3
   - robostack-humble::ros-humble-action-msgs
   - robostack-humble::ros-humble-ros-workspace
   - robostack-humble::ros-humble-rosidl-default-runtime
   - robostack-humble::ros-humble-std-msgs
   - robostack-humble::ros-humble-geometry-msgs
-  - robostack-humble::ros2-distro-mutex 0.9.* humble_*
+  - robostack-humble::ros2-distro-mutex 0.11.* humble_*
   - if: osx and x86_64
     then:
     - __osx >=${{ MACOSX_DEPLOYMENT_TARGET|default('10.14') }}

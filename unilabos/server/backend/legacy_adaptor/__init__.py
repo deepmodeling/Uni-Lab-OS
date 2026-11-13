@@ -13,7 +13,7 @@ legacy（旧云端 Backend：``job_start`` / ``host_node_ready`` 消息族）
     - ``legacy.sync``      注册表上报与物料镜像（开机全量 + 账本增量）；
     - ``legacy.materials`` 旧后端物料通知 → 微后端权威的翻译；
     - ``legacy.graph``     旧形状图/节点/边 → 当前契约的入站转换（``-g`` 文件与
-      ``unilab graph upload`` 的读取边界调用；graphio / Graph Authority 只认当前契约）；
+      ``unilab graph upload`` 的读取边界调用；Graph Authority 只认当前契约）；
     - ``legacy.startup``   启动期接线（启动图转换、旧后端开机上联）；``app.main``
       只保留对启动图转换的一处调用。
 

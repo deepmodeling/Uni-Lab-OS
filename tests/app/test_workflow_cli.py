@@ -224,9 +224,10 @@ def test_workflow_watch_uses_sse_only_as_invalidation_then_pulls_http() -> None:
     connections: list[tuple[str, dict[str, str], float]] = []
     forged_notice = json.dumps(
         {
-            "action": "workflow.task.changed",
+            "action": "workflow.runtime.changed",
             "id": 9,
             "data": {
+                "kind": "task",
                 "workflow_task_uuid": "task-1",
                 "task": {"uuid": "task-1", "status": "forged"},
             },

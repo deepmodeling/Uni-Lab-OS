@@ -2,6 +2,12 @@
 
 在 Uni-Lab 中，设备（Device）是实验操作的基础单元。Uni-Lab 使用**注册表机制**来兼容管理种类繁多的设备驱动程序。抽象的设备对外拥有【话题】【服务】【动作】三种通信机制，因此将设备添加进 Uni-Lab，实际上是将设备驱动中的这三种机制映射到 Uni-Lab 标准指令集上。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库不再内置厂商驱动（PRCXI、LaiYu、Bioyond 工作站、HPLC、天平、机械臂等）。新设备请按 `.cursor/skills/create-device-package`（基于 LabDeviceTemplate）建立独立驱动包，用 `unilab package install <GitHub 仓库/归档/源码目录>` 安装，开发时也可用 `--devices <包目录>` 直接挂载。驱动包的注册表放在包内 `registry/{devices,resources}/`，结构与 `unilabos/registry` 相同；用 `@device` 装饰器时通常无需手写 YAML。下文示例中的 `my_device_pkg.xxx:Class` 就是你的驱动包里的模块路径。
+>
+> `unilabos/devices/` 只保留框架依赖的内置代码：`workstation/workstation_base.py`（`WorkstationBase`、`WorkStationContainer`）、`virtual/`（虚拟设备，供协议编译器、`--test_mode`、示例图和测试使用）、`liquid_handling/liquid_handler_abstract.py` 与 `rviz_backend.py`、`ros_dev/liquid_handler_joint_publisher*.py`。驱动包可以继承这些基类，但不要把新驱动加进这个目录。
+>
+> 驱动包自定义的 PLR 资源类或液体处理后端如果不在注册表条目里，需在包导入时调用 `unilabos.resources.plr_additional_res_reg.register_plr_module("<模块路径>")`（或给类加 `@register_plr_class`），物料反序列化才能找到它们。框架自己的预设类（`unilabos.resources.presets` 里的 `RegularContainer`、`Bottle`、`ItemizedCarrier`、`BottleCarrier`、`WareHouse`）已内置登记，直接使用或继承它们不需要再登记。
+
 > **💡 提示：** 本文档介绍如何使用已有的设备驱动（SDK）。若设备没有现成的驱动程序，需要自己开发驱动，请参考 {doc}`add_old_device`。
 
 ## 支持的驱动类型
@@ -147,14 +153,15 @@ public class MockGripper
 ```yaml
 my_device: # 设备唯一标识符
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice # Python 类路径
+    module: my_device_pkg.my_device:MyDevice # Python 类路径
     type: python # 驱动类型
 ```
 
 **注册表文件位置：**
 
-- 默认路径：`unilabos/registry/devices`
+- 驱动包内：`<包根>/registry/devices`（随 `unilab package install` 或 `--devices <包目录>` 自动加载）
 - 自定义路径：启动时使用 `--registry_path` 参数指定
+- `unilabos/registry/devices` 只放内置设备（虚拟设备、工作站、抽象液体处理器等）的注册表
 - 可将多个设备写在同一个 YAML 文件中
 
 **系统自动生成的内容：**
@@ -171,7 +178,7 @@ my_device: # 设备唯一标识符
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     status_types: {} # 自动生成
     action_value_mappings: {} # 自动生成
@@ -355,7 +362,7 @@ async def heat_to(self, temperature: float = 25.0, duration: float = 60.0) -> Di
 
 | 参数 | 取值 | 到期行为 |
 |---|---|---|
-| `timeout` | 正数秒 | 执行面对动作发起协作式取消（HostLink 本地运行时同时用 `asyncio.wait_for` 真正取消协程动作；同步方法的线程无法被杀死，只是结果被丢弃）；attempt 以 `exception_type=TimeoutException`（`category=timeout`）进入决策链，选项与普通失败相同 |
+| `timeout` | 正数秒 | 执行面对动作发起协作式取消（HostLink 本地运行时同时用 `asyncio.wait_for` 真正取消协程动作；同步方法的线程无法被杀死）；attempt 以 `exception_type=TimeoutException`（`category=timeout`）进入决策链，选项与普通失败相同。工作流按决策继续，但驱动真实返回之前该 attempt 的设备 / 物料锁一直保留（ADR 0008），需要同一设备的后续动作排队等待；线程返回后结果作为迟到结果记录，不改变已结算的 attempt |
 | `execution_timeout` | 正数秒，或只引用**本动作入参**的四则运算表达式（`+ - * /`、括号、一元负号、数字字面量，如 `"duration * 1.5 + 30"`） | 动作**不被取消**；执行面以 `exception_type=ExecutionTimeoutException`（`severity=warning`，报告带 `action_still_running=true`）打开一条决策，选项前置 `wait`（继续等待并按同样秒数重新计时）；选 `abort` / `retry` / `operator_intervention` 时才取消动作。动作在等待期间真实完成则真实结果优先，决策自动收回 |
 
 表达式在声明期只校验语法与参数名（引用了非入参名会在 `@action` 或 `--check_mode` 时报错），
@@ -366,6 +373,10 @@ async def heat_to(self, temperature: float = 25.0, duration: float = 60.0) -> Di
 
 > `error_policy.options` 按异常类名匹配：需要给超时定制选项时，用 `"TimeoutException"` /
 > `"ExecutionTimeoutException"` 作为键。两个超时可以同时声明，软超时应小于硬超时，否则永远不会先触发。
+>
+> 超时之后设备可能被长时间锁住：同步驱动最好在长循环里调用 `context.raise_if_cancelled()`
+> 配合取消，让驱动尽快真正返回；否则只能等它自然返回，或由操作员在现场核实后经
+> `POST /api/v1/workflow-tasks/{uuid}/execution-locks/{lease_uuid}/force-release` 强制释放。
 
 ### 返回值设计指南
 
@@ -718,6 +729,19 @@ source.type      # "resource"
 source.class_    # "corning_96_wellplate_360ul_flat"
 ```
 
+## 继承内置液体处理器 `LiquidHandlerAbstract`
+
+驱动包里的 PyLabRobot 液体处理器可以继承 `unilabos.devices.liquid_handling.liquid_handler_abstract.LiquidHandlerAbstract`，用 `@action` 重新声明要暴露的动作并调用 `super()`。基类的约定：
+
+- **触壁（`touch_tip`）**：`transfer_liquid`、`add_liquid`、`remove_liquid` 只在参数 `touch_tip=True` 时触壁，默认不触壁。`touch_tip()` 接受单个孔或孔列表，用当前装着枪头的通道在孔的左右两壁各做一次 0 uL 吸液；0 uL 吸液不改变枪头里记录的样品。后端做不了触壁的设备设 `support_touch_tip = False`，`touch_tip()` 即什么都不做。
+- **耗材**：`aspirate()` / `dispense()` 用 `unilabos_extra` 记录样品 uuid，直接用 PLR 工厂建的耗材（没有 `unilabos_extra`）也可以吸排；`use_channels=None` 时与 PLR 一样取前 N 个通道。
+- **枪头**：`transfer_liquid(tip_racks=...)` 直接使用传入的枪头盒，不需要先调用 `set_tiprack`；与上一次相同的枪头盒（同一对象或同一物料 uuid）接着上次的位置往后取，不同的枪头盒从它第一个有枪头的位置取，空列表沿用 `set_tiprack` 设定的枪头盒。PLR 默认不跟踪枪头（取走的位置 `has_tip()` 仍为 True），所以连续调用不会回到 A1；`set_tiprack` 则明确从头开始，开启 PLR 枪头跟踪时跳过已取走的位置。`add_liquid` / `remove_liquid` 不带枪头盒参数，使用 `set_tiprack` 设定的枪头盒。没有可用枪头盒或枪头用完时报 `RuntimeError`。
+- **体积**：`asp_vols` / `dis_vols` 可以是单个体积（标量或单元素列表），按模式展开：一对一两者都展开到每一对；一对多的 `dis_vols` 展开到每个目标（`asp_vols` 仍是总吸液量）；多对一的 `asp_vols` 展开到每个源（`dis_vols` 仍是汇总体积）。`add_liquid` / `remove_liquid` 的单个体积对所有目标 / 源通用，`add_liquid` 的单个试剂源也对所有目标通用。
+- **通道**：`transfer_liquid`、`add_liquid`、`remove_liquid` 的 `use_channels` 缺省为设备全部通道（`channel_num`），在这些通道上取枪头、吸排、丢枪头。
+- **混匀（`mix`）**：在每个目标孔内吸排 `mix_time` 次（需已装枪头、需要 `mix_vol`）；用当前装着枪头的通道，每孔一个通道同时混匀，孔多于通道时分批。`offsets` 可以是一个 `Coordinate` 或与目标等长的列表。
+
+子类覆盖这些方法时保留同样的调用方式：基类内部按关键字调用 `self.mix(targets=..., mix_time=..., mix_vol=..., offsets=..., height_to_bottom=..., mix_rate=...)`、`self.touch_tip(targets)` 与 `self.set_tiprack(tip_racks)`。
+
 ## 支持的通信方式
 
 ### 1. 串口（Serial）
@@ -768,21 +792,33 @@ class TCPDevice:
 
 ```python
 from pymodbus.client import ModbusTcpClient
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
 
 class ModbusDevice:
     def __init__(self, config: Dict[str, Any]):
         self.host = config['host']
         self.port = config.get('port', 502)
+        self.slave_id = config.get('slave_id', 1)
         self.client = ModbusTcpClient(self.host, port=self.port)
         self.client.connect()
 
     def read_register(self, address: int) -> int:
-        result = self.client.read_holding_registers(address, 1)
+        result = call_with_slave(self.client.read_holding_registers, address, count=1, slave=self.slave_id)
         return result.registers[0]
 
     def write_register(self, address: int, value: int):
-        self.client.write_register(address, value)
+        call_with_slave(self.client.write_register, address, value, slave=self.slave_id)
 ```
+
+核心允许 `pymodbus>=3.6.9,<4`（3.8.0 / 3.8.1 除外：它们在 Python 3.14 上无法创建同步客户端），这个范围里接口变过：
+
+- 从站地址关键字 3.6.9–3.9 叫 `slave`，3.10 起叫 `device_id`，用错名字直接 `TypeError`。直接调用 pymodbus 时用 `call_with_slave(方法, ..., slave=N)`，它按方法签名选名字。
+- 3.8 起 `count` 等参数只能按关键字传（`read_holding_registers(address, count=1)`）。
+- `convert_from_registers` / `convert_to_registers` 3.8 之前没有 `word_order`；`modbus.py` 的同名函数在老版本上自行交换字序。
+
+核心的 `device_comms/modbus_plc`（`TCPClient` / `RTUClient` 与 `Coil`、`HoldRegister` 等节点）已经处理这些差异，节点的 `read(..., slave=N)` / `write(..., slave=N)` 在整个范围内可用。
+
+每个 `TCPClient` / `RTUClient` 实例有自己的节点表、函数表和工作流表（`opcua_client` 的客户端同样），一个驱动里连多台 PLC、或一个进程里跑多个工作站时互不影响；读地址表的 `load_csv` 需要 pandas（`drivers` 可选依赖），导入客户端模块本身不需要。
 
 ### 4. OPC UA
 

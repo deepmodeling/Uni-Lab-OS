@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import tempfile
 import tomllib
@@ -96,7 +97,7 @@ def download_source(spec: dict, target: Path, cache: Path | None = None) -> None
 def extract_source(archive: Path, target: Path) -> Path:
     target.mkdir()
     with tarfile.open(archive) as stream:
-        # Python 3.12 的 data filter 拒绝路径穿越及目录外链接。
+        # Python 3.14 的 data filter 拒绝路径穿越及目录外链接。
         stream.extractall(target, filter="data")
     roots = list(target.iterdir())
     if len(roots) != 1 or not roots[0].is_dir():
@@ -199,8 +200,8 @@ def main() -> None:
     parser.add_argument("--source-cache", type=Path, default=Path("dist/wheel-source-cache"), help="按源码哈希缓存下载，不缓存校验结果")
     parser.add_argument("--release-tag", default="", help="正式 Release 时校验 v<版本> 标签")
     args = parser.parse_args()
-    if sys.version_info[:2] != (3, 12):
-        raise RuntimeError("必须用 Python 3.12 构建默认发行包")
+    if sys.version_info[:2] != (3, 14) or sysconfig.get_config_var("Py_GIL_DISABLED"):
+        raise RuntimeError("必须用普通 CPython 3.14（cp314，非 cp314t）构建默认发行包")
     version = read_version(ROOT)
     if args.release_tag and (args.local_test or args.release_tag != f"v{version}"):
         raise RuntimeError("Release 标签与源码版本不一致，或试图发布 local-test 产物")
@@ -235,7 +236,7 @@ def main() -> None:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(ROOT / relative, target)
         manifest = {"schema_version": 1, "kind": "offline-wheelhouse", "version": version,
-                    "source_sha": source_sha, "local_test": args.local_test, "python": "3.12",
+                    "source_sha": source_sha, "local_test": args.local_test, "python": "3.14",
                     "platform": platform_id(), "verified": False,
                     "files": {path.relative_to(output).as_posix(): sha256(path)
                               for path in sorted(output.rglob("*")) if path.is_file()}}

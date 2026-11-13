@@ -1,6 +1,6 @@
 # 配套 wheel 发布约定
 
-默认发行使用 Python 3.12 / NumPy 2 / HostLink，不需要 ROS。下游修正版不上传官方 PyPI，
+默认发行使用 Python 3.14 / NumPy 2 / HostLink，不需要 ROS。下游修正版不上传官方 PyPI，
 而是与 UniLabOS 同批作为发行附件提供。只附带一个 wheel 不会改变 pip 的查找规则；
 安装入口必须显式提供 `--find-links`，不能把解决依赖的责任推迟到启动设备时。
 
@@ -8,10 +8,10 @@
 
 - `recipes/wheels.toml` 固定下载地址、SHA256、版本、补丁和 NOTICE。
 - Opentrons wheel 使用 `recipes/opentrons-shared-data/numpy2.patch`，与 Conda 完全共用；
-  包版本为 `9.1.0+unilabos.np2.1`，保留原许可证、修改说明和物料 JSON 数据。
+  包版本为 `10.1.0+unilabos.np2.1`，保留原许可证、修改说明和物料 JSON 数据。
 - PLR 固定提交 `6285d662effa972be97a781ba7493553f2ba94ee`，与 Conda 共用版本和依赖补丁；
-  Python 分发版本 `0.2.2+unilabos.6285d662effa`，避免与上游 `0.2.2` 混淆。
-- PLR 自身必须无条件声明 `opentrons-shared-data==9.1.0+unilabos.np2.1`；
+  Python 分发版本 `0.2.2+unilabos.6285d662effa.ot10`；`ot10` 仅标识 Opentrons 10 依赖元数据修订，PLR 源码提交不变。
+- PLR 自身必须无条件声明 `opentrons-shared-data==10.1.0+unilabos.np2.1`；
   Conda 的 PLR 配方也声明同一前置包。不是调整 requirements 的行顺序，也不安装完整的 `opentrons` SDK。
 - UniLabOS 的 `Requires-Dist` 与包内 `unilabos/utils/requirements.txt` 一致。
   不使用源码直链依赖：`--no-index` 不会阻止直接 URL 的下载。
@@ -33,7 +33,7 @@ python scripts/build_wheel_release.py --output-dir dist/wheel-release
 python scripts/build_wheel_release.py --local-test --output-dir dist/wheel-local-test
 ```
 
-构建机需要 Python 3.12、pip、Git 和网络；目标机只需 Python 3.12。
+构建机需要 Python 3.14、pip、Git 和网络；目标机只需 Python 3.14。
 脚本要求新的或空的输出目录，不会覆盖旧发行包。源码缓存按 SHA256 命名，每次复核哈希。
 正式构建拒绝相关未提交修改，主包从当前 HEAD 的 Git 归档构建，避免夹带本地 build 缓存。
 

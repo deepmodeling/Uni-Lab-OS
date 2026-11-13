@@ -149,7 +149,10 @@ def test_sse_notice_merges_slow_reader_without_changing_workflow_cursor(monkeypa
     async def scenario():
         stream = events.runtime_event_stream(Request(), workflow, cursor=41)
         assert "connected" in await anext(stream)
-        assert (await anext(stream)).startswith("id: 42\n")
+        durable = await anext(stream)
+        # 库里存 dev 事件名，SSE 按 V1 发 workflow.runtime.changed，种类放进 data.kind
+        assert durable.startswith("id: 42\nevent: workflow.runtime.changed\n")
+        assert json.loads(durable.split("data: ")[1]) == {"uuid": "t", "kind": "task"}
         # 慢读者停在 yield 期间，重复通知只保留合并后的一个槽位。
         for _ in range(100):
             hub.listener(RuntimeLogNotice(source_ids=["host"]))

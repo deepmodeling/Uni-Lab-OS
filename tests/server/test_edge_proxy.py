@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.runtime.control import EdgeHttpResponse
 from unilabos.server.api import edge_proxy
 from unilabos.server.api.runtime.diagnostics import create_backend_app
@@ -106,11 +107,12 @@ def test_proxy_forwards_host_routes_over_control_plane(host_app: FastAPI, author
 def test_proxy_returns_503_while_host_is_offline(host_app: FastAPI, authority_app: FastAPI) -> None:
     edge_control.set_edge_control_service(_FakeEdgeControl(host_app, connected=False))
     response = TestClient(authority_app).get("/api/v1/telemetry/states")
-    assert response.status_code == 503
-    assert "host execution process" in response.json()["detail"]
+    # Host 不在线：HTTP 200 + 业务码 5001（503 → 5001），仍带 Retry-After
+    assert "Host 执行进程" in error_of(response, 5001)["msg"]
+    assert response.headers["retry-after"] == "3"
 
     edge_control.set_edge_control_service(None)
-    assert TestClient(authority_app).get("/api/v1/runtime/endpoints").status_code == 503
+    error_of(TestClient(authority_app).get("/api/v1/runtime/endpoints"), 5001)
     assert edge_proxy.edge_http("GET", "/api/v1/health") is None
 
 
@@ -124,7 +126,7 @@ def test_proxy_logs_host_offline_once_per_episode(
     client = TestClient(authority_app)
     with caplog.at_level(logging.INFO, logger=edge_proxy.__name__):
         for path in ("/api/v1/telemetry/states", "/api/v1/hostlink/peers", "/api/v1/runtime/endpoints"):
-            assert client.get(path).status_code == 503
+            error_of(client.get(path), 5001)
         offline = [r for r in caplog.records if "尚未接入" in r.getMessage()]
         assert len(offline) == 1
         assert "GET /api/v1/telemetry/states" in offline[0].getMessage()
@@ -137,8 +139,8 @@ def test_proxy_logs_host_offline_once_per_episode(
 
         # 再次掉线：新一轮只再记一条
         fake.connected = False
-        assert client.get("/api/v1/telemetry/states").status_code == 503
-        assert client.get("/api/v1/hostlink/peers").status_code == 503
+        error_of(client.get("/api/v1/telemetry/states"), 5001)
+        error_of(client.get("/api/v1/hostlink/peers"), 5001)
         assert len([r for r in caplog.records if "尚未接入" in r.getMessage()]) == 2
 
 
@@ -146,7 +148,7 @@ def test_proxy_disabled_when_not_configured(host_app: FastAPI, authority_app: Fa
     edge_control.set_edge_control_service(_FakeEdgeControl(host_app))
     edge_proxy.configure_edge_proxy(False)
     assert edge_proxy.edge_proxy_enabled() is False
-    assert TestClient(authority_app).get("/api/v1/runtime/endpoints").status_code == 503
+    error_of(TestClient(authority_app).get("/api/v1/runtime/endpoints"), 5001)
 
 
 def test_health_reports_host_child_state(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -179,7 +181,7 @@ def test_install_server_apis_can_skip_host_data_routes(tmp_path) -> None:
         paths = set(app.openapi()["paths"])
         assert not any(path.startswith("/api/v1/runtime") for path in paths)
         assert not any(path.startswith("/api/v1/telemetry") for path in paths)
-        assert not any(path.startswith("/api/v1/history") for path in paths)
+        assert not any(path.startswith("/api/v1/edge/history") for path in paths)
         # Graph Authority 与布局留在权威：老数据都在权威的库里
         assert any(path.startswith("/api/v1/graphs") for path in paths)
         assert any(path.startswith("/api/v1/lab") for path in paths)

@@ -31,6 +31,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import StrSingleInput
 from unilabos.backend.runtime.node import DeviceNode
+from unilabos.backend.runtime.resource_slot import resource_slot_shapes
 from unilabos.backend.runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.action_policy import (
@@ -293,7 +294,7 @@ class PropertyPublisher:
         return value
 
     def get_property(self):
-        if asyncio.iscoroutinefunction(self.get_method):
+        if inspect.iscoroutinefunction(self.get_method):
             # 如果是异步函数，运行事件循环并等待结果
             self.node.lab_logger().trace(f"【.get_property】获取异步属性: {self.name}")
             loop = self.__loop
@@ -1264,7 +1265,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             future = None
             if not error_skip:
                 # 将阻塞操作放入线程池执行
-                if asyncio.iscoroutinefunction(ACTION):
+                if inspect.iscoroutinefunction(ACTION):
                     try:
                         self.lab_logger().trace(f"异步执行动作 {ACTION}")
 
@@ -1334,7 +1335,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                     for msg_name, attr_name in action_value_mapping["feedback"].items():
                         if hasattr(self.driver_instance, f"get_{attr_name}"):
                             method = getattr(self.driver_instance, f"get_{attr_name}")
-                            if not asyncio.iscoroutinefunction(method):
+                            if not inspect.iscoroutinefunction(method):
                                 feedback_values[msg_name] = method()
                         elif hasattr(self.driver_instance, attr_name):
                             feedback_values[msg_name] = getattr(self.driver_instance, attr_name)
@@ -1508,9 +1509,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
             # 处理参数（包含 unilabos 系统参数如 sample_uuids）
             args_list = default_manager._analyze_method_signature(function, skip_unilabos_params=False)["args"]
+            slot_shapes = resource_slot_shapes(function)
             for arg in args_list:
                 arg_name = arg["name"]
-                arg_type = arg["type"]
 
                 # 跳过不在 function_args 中的参数
                 if arg_name not in function_args:
@@ -1532,7 +1533,8 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
                 # 处理单个 ResourceSlot：wire 形态由 parse_resource_slot 统一剥离
                 # （str→loads；dict=引用，按 uuid 拉取；list=扁平树，就地装配）
-                if arg_type == "unilabos.registry.placeholder_type:ResourceSlot":
+                slot_shape = slot_shapes.get(arg_name)
+                if slot_shape == "single":
                     resource_data: ResourceSlotRawInput = function_args[arg_name]
                     try:
                         function_args[arg_name] = self._resolve_slot_value_sync(resource_data)
@@ -1543,20 +1545,18 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                         raise JsonCommandInitError(f"ResourceSlot参数转换失败: {arg_name}")
 
                 # 处理 ResourceSlot 列表：逐元素剥离
-                elif isinstance(arg_type, tuple) and len(arg_type) == 2:
-                    resource_slot_type = "unilabos.registry.placeholder_type:ResourceSlot"
-                    if arg_type[0] == "list" and arg_type[1] == resource_slot_type:
-                        resource_list = function_args[arg_name]
-                        if isinstance(resource_list, list):
-                            try:
-                                function_args[arg_name] = [
-                                    self._resolve_slot_value_sync(value) for value in resource_list
-                                ]
-                            except Exception as e:
-                                self.lab_logger().error(
-                                    f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
-                                )
-                                raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
+                elif slot_shape == "list":
+                    resource_list = function_args[arg_name]
+                    if isinstance(resource_list, list):
+                        try:
+                            function_args[arg_name] = [
+                                self._resolve_slot_value_sync(value) for value in resource_list
+                            ]
+                        except Exception as e:
+                            self.lab_logger().error(
+                                f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
+                            )
+                            raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
             return function(**function_args)
         except KeyError as ex:
             raise JsonCommandInitError(
@@ -1679,15 +1679,15 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             assert callable(
                 function
             ), f"执行动作时JSON中的function_name对应的函数不可调用: {function_name}\n原JSON: {string}"
-            assert asyncio.iscoroutinefunction(
+            assert inspect.iscoroutinefunction(
                 function
             ), f"执行动作时JSON中的function并非异步: {function_name}\n原JSON: {string}"
 
             # 处理参数（包含 unilabos 系统参数如 sample_uuids）
             args_list = default_manager._analyze_method_signature(function, skip_unilabos_params=False)["args"]
+            slot_shapes = resource_slot_shapes(function)
             for arg in args_list:
                 arg_name = arg["name"]
-                arg_type = arg["type"]
 
                 # 跳过不在 function_args 中的参数
                 if arg_name not in function_args:
@@ -1711,8 +1711,8 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
                 # 处理单个 ResourceSlot：wire 形态由 parse_resource_slot 统一剥离
                 # （str→loads；dict=引用，按 uuid/id 拉取；list=扁平树，就地装配）
-                _is_resource_slot = isinstance(arg_type, str) and arg_type.endswith(":ResourceSlot")
-                if _is_resource_slot:
+                slot_shape = slot_shapes.get(arg_name)
+                if slot_shape == "single":
                     resource_data: ResourceSlotRawInput = function_args[arg_name]
                     try:
                         function_args[arg_name] = await self._resolve_slot_value_async(resource_data)
@@ -1723,19 +1723,18 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                         raise JsonCommandInitError(f"ResourceSlot参数转换失败: {arg_name}")
 
                 # 处理 ResourceSlot 列表：逐元素剥离
-                elif isinstance(arg_type, tuple) and len(arg_type) == 2:
-                    if arg_type[0] == "list" and isinstance(arg_type[1], str) and arg_type[1].endswith(":ResourceSlot"):
-                        resource_list = function_args[arg_name]
-                        if isinstance(resource_list, list):
-                            try:
-                                function_args[arg_name] = [
-                                    await self._resolve_slot_value_async(value) for value in resource_list
-                                ]
-                            except Exception as e:
-                                self.lab_logger().error(
-                                    f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
-                                )
-                                raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
+                elif slot_shape == "list":
+                    resource_list = function_args[arg_name]
+                    if isinstance(resource_list, list):
+                        try:
+                            function_args[arg_name] = [
+                                await self._resolve_slot_value_async(value) for value in resource_list
+                            ]
+                        except Exception as e:
+                            self.lab_logger().error(
+                                f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
+                            )
+                            raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
 
             return await function(**function_args)
         except KeyError as ex:

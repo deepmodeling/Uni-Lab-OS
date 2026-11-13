@@ -2,7 +2,7 @@ import copy
 import inspect
 import uuid
 from pydantic import BaseModel, Field, ValidationError
-from typing import List, Tuple, Any, Dict, Mapping, Optional, cast, TYPE_CHECKING, Union
+from typing import Iterator, List, Tuple, Any, Dict, Mapping, Optional, cast, TYPE_CHECKING, Union
 
 from unilabos.resources.objects.resource import (
     EXTRA_RESOURCE_CLASS,
@@ -18,6 +18,13 @@ from unilabos.resources.objects.resource import (
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
 from unilabos.resources.plr_additional_res_reg import register
+from unilabos.resources.plr_identity import (
+    material_children,
+    material_serialization,
+    prepare_plr_restore,
+    restore_tip_counters,
+    runtime_material_uuids,
+)
 from unilabos.resources.objects.pose import (
     ResourceDictPositionObject,
     ResourceDictPositionSizeType,
@@ -36,6 +43,45 @@ JSON_UNILABOS_PARAM = "unilabos_param"
 
 # 返回值中的 samples 字段名
 RETURN_UNILABOS_SAMPLES = "unilabos_samples"
+
+# 权威容量约束不属于 PLR 构造参数，通过运行时 sidecar 往返。
+EXTRA_RESOURCE_CAPACITY = "unilabos_capacity"
+
+
+def iter_serialized_plr_children(
+    resource: "PLRResource", serialized: Mapping[str, Any]
+) -> Iterator[Tuple["PLRResource", dict]]:
+    """按规范结构匹配实例；已提升的内嵌枪头也参与 UUID 映射。"""
+    by_name = {}
+    for child in material_children(resource):
+        if child.name in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的孩子重名: {child.name}")
+        by_name[child.name] = child
+    seen = set()
+    for child_data in serialized.get("children", []):
+        name = child_data["name"]
+        if name in seen or name not in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的序列化孩子无法唯一匹配: {name}")
+        seen.add(name)
+        yield by_name[name], child_data
+
+
+def iter_serialized_plr_children(
+    resource: "PLRResource", serialized: Mapping[str, Any]
+) -> Iterator[Tuple["PLRResource", dict]]:
+    """按规范结构匹配实例；已提升的内嵌枪头也参与 UUID 映射。"""
+    by_name = {}
+    for child in material_children(resource):
+        if child.name in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的孩子重名: {child.name}")
+        by_name[child.name] = child
+    seen = set()
+    for child_data in serialized.get("children", []):
+        name = child_data["name"]
+        if name in seen or name not in by_name:
+            raise ValueError(f"PLR 资源 {resource.name} 的序列化孩子无法唯一匹配: {name}")
+        seen.add(name)
+        yield by_name[name], child_data
 
 
 def require_plr_config_type(config: Mapping[str, Any], *, uuid: str, template_name: str) -> str:
@@ -863,6 +909,11 @@ class ResourceTreeSet(object):
         Raises:
             TypeError: 当传入不支持的类型时
         """
+        #: 运行时证据：生成本树集时设备仍持有的全部物料 UUID（见
+        #: ``plr_identity.runtime_material_uuids``）。只有 ``from_plr_resources``
+        #: 从运行时 PLR 实例序列化时才填写；``None`` 表示树集来自原始字典 / 权威读，
+        #: 不能据此判断某个结构孩子已从设备上消失。
+        self.runtime_material_uuids: Optional[frozenset[str]] = None
         if not resource_list:
             self.trees: List[ResourceTreeInstance] = []
         elif isinstance(resource_list[0], ResourceTreeInstance):
@@ -927,7 +978,7 @@ class ResourceTreeSet(object):
                 return source
 
         def build_uuid_mapping(
-            res: "PLRResource", uuid_list: list, parent_uuid: Optional[str] = None
+            res: "PLRResource", serialized: dict, uuid_list: list, parent_uuid: Optional[str] = None
         ):
             """递归构建uuid和extra映射字典，返回(current_uuid, parent_uuid, extra)元组列表"""
             uid = getattr(res, "unilabos_uuid", "")
@@ -990,8 +1041,8 @@ class ResourceTreeSet(object):
                     ),
                 )
             )
-            for child in res.children:
-                build_uuid_mapping(child, uuid_list, uid)
+            for child, child_data in iter_serialized_plr_children(res, serialized):
+                build_uuid_mapping(child, child_data, uuid_list, uid)
 
         def resource_plr_inner(
             plr_resource: "PLRResource",
@@ -1012,8 +1063,10 @@ class ResourceTreeSet(object):
 
             resource_state = copy.deepcopy(states[d["name"]])
             state_rotation = resource_state.pop("rotation", None)
+            state_location = resource_state.pop("location", None)
 
-            serialized_location = d.get("location")
+            # 结构位置优先（包括 None），兼容仅在 state 中输出位置的 PLR。
+            serialized_location = d.get("location", state_location)
             raw_pos = (
                 {
                     "x": serialized_location["x"],
@@ -1118,6 +1171,9 @@ class ResourceTreeSet(object):
                 "sites": extract_plr_sites(plr_resource, d),
                 "sites_initialized": True,
             }
+            capacity = extra.pop(EXTRA_RESOURCE_CAPACITY, missing)
+            if capacity is not missing:
+                r_dict["config"]["capacity"] = copy.deepcopy(capacity)
             if resource_meta_data is not missing:
                 r_dict["meta_data"] = resource_meta_data
 
@@ -1132,9 +1188,7 @@ class ResourceTreeSet(object):
                 resource_plr_inner(
                     child_resource, child_dict, current_resource, states, uuids
                 )
-                for child_resource, child_dict in zip(
-                    plr_resource.children, d.get("children", [])
-                )
+                for child_resource, child_dict in iter_serialized_plr_children(plr_resource, d)
             ]
 
             return current_instance
@@ -1143,12 +1197,11 @@ class ResourceTreeSet(object):
         for resource in resources:
             # 构建uuid列表
             uuid_list = []
+            serialized_data, all_states = material_serialization(resource)
             build_uuid_mapping(
-                resource, uuid_list, getattr(resource.parent, "unilabos_uuid", None)
+                resource, serialized_data, uuid_list, getattr(resource.parent, "unilabos_uuid", None)
             )
 
-            serialized_data = resource.serialize()
-            all_states = resource.serialize_all_state()
 
             # 根节点没有父节点，传入 None
             root_instance = resource_plr_inner(
@@ -1156,7 +1209,11 @@ class ResourceTreeSet(object):
             )
             tree_instance = ResourceTreeInstance(root_instance)
             trees.append(tree_instance)
-        return cls(trees)
+        tree_set = cls(trees)
+        if not known_random_uuid:
+            # 创建草稿只是 client_ref，不是设备上报；只有已登记的运行时实例才记录证据
+            tree_set.runtime_material_uuids = runtime_material_uuids(resources)
+        return tree_set
 
     def to_plr_resources(self, skip_devices=True) -> List["PLRResource"]:
         """
@@ -1178,6 +1235,8 @@ class ResourceTreeSet(object):
             name_to_uuid[node.res_content.name] = node.res_content.uuid
             all_states[node.res_content.name] = assemble_tracker_state(node.res_content)
             plr_extra = copy.deepcopy(node.res_content.extra)
+            if "capacity" in node.res_content.config:
+                plr_extra[EXTRA_RESOURCE_CAPACITY] = copy.deepcopy(node.res_content.config["capacity"])
             plr_extra[EXTRA_RESOURCE_POSE] = node.res_content.pose.model_dump(
                 exclude={"position"}
             )
@@ -1216,6 +1275,7 @@ class ResourceTreeSet(object):
             # get_resource_instance_from_dict 从 config 读取的逻辑对称。PLR location
             # 对应唯一的 pose.position；其余 pose 字段通过 unilabos_extra sidecar 保留。
             config = dict(res.config)
+            config.pop("capacity", None)
             config.pop("sites", None)
             config.pop("template_name", None)
             if res.barcode:
@@ -1302,6 +1362,7 @@ class ResourceTreeSet(object):
             )
             has_model = tree.root_node.res_content.type != "deck"
             plr_dict = node_to_plr_dict(tree.root_node, has_model)
+            prepare_plr_restore(plr_dict, all_states)
             try:
                 sub_cls = find_plr_resource_class(plr_dict["type"])
                 if sub_cls is None:
@@ -1323,7 +1384,10 @@ class ResourceTreeSet(object):
                     else None
                 )
                 plr_resource.load_all_state(all_states)
-                set_uuids_by_name(plr_resource, name_to_uuid)
+                restore_tip_counters(plr_resource, all_states)
+                restored_count = set_uuids_by_name(plr_resource, name_to_uuid)
+                if restored_count != len(name_to_uuid):
+                    raise ValueError("PLR 恢复后物料节点数量与权威 UUID 映射不一致")
                 set_extras_by_name(plr_resource, name_to_extra)
                 apply_plr_site_metadata(plr_resource, name_to_sites)
                 plr_resources.append(plr_resource)
@@ -1719,7 +1783,7 @@ def resource_children(resource: Any) -> List[Any]:
     if isinstance(resource, dict):
         children = resource.get("children") or []
         return list(children.values()) if isinstance(children, dict) else list(children)
-    return list(getattr(resource, "children", None) or [])
+    return material_children(resource)
 
 
 def walk_resources(resource: Any):

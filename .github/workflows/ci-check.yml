@@ -8,12 +8,13 @@ on:
 
 jobs:
   hostlink-no-ros:
-    name: hostlink-no-ros (${{ matrix.os }})
+    name: hostlink-no-ros (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-2022, macos-latest]
+        python: ['3.14']
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
@@ -23,7 +24,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python }}
       - name: Build companion wheels without uploading to PyPI
         run: python scripts/build_wheel_release.py --dependencies-only
       - name: Install only the default Python distribution
@@ -34,7 +35,7 @@ jobs:
           python scripts/verify_installation.py --assert-no-ros
           unilab --help
       - name: Test Python-only API and runtime contracts
-        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/server tests/protocol tests/backend/hostlink
+        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/app/test_process_lifetime.py tests/server tests/protocol tests/backend/hostlink
       # 原生锁授予策略（native/grant-policy，Rust → C ABI）：各平台编译，并与 Python 参考实现逐条比对
       - name: Build and test the native grant policy
         shell: bash
@@ -50,7 +51,7 @@ jobs:
       - uses: actions/upload-artifact@v6
         if: always()
         with:
-          name: no-ros-evidence-${{ matrix.os }}
+          name: no-ros-evidence-${{ matrix.os }}-py${{ matrix.python }}
           path: |
             ${{ runner.temp }}/no-ros-demos
             ${{ runner.temp }}/no-ros-demos.xml
@@ -75,7 +76,7 @@ jobs:
       ROS_DISTRO: ${{ matrix.ros_distro }}
       ROS_CHANNEL: robostack-${{ matrix.ros_distro }}
       ROS_PACKAGE_PREFIX: ros-${{ matrix.ros_distro }}
-      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.15' || '0.9' }}
+      ROS_MUTEX: ${{ matrix.ros_distro == 'jazzy' && '0.20' || '0.11' }}
 
     defaults:
       run:
@@ -91,7 +92,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge,robostack-${{ matrix.ros_distro }}
           channel-priority: strict
           activate-environment: check-env
@@ -108,7 +109,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp312
+      - name: Build unilabos_msgs for ${{ matrix.ros_distro }}/cp314
         run: |
           call conda activate check-env
           if /I "%ROS_DISTRO%"=="humble" python -m pip install empy==3.3.4
@@ -116,7 +117,7 @@ jobs:
           colcon build --base-paths unilabos_msgs --build-base build\unilabos_msgs --install-base install\unilabos_msgs --merge-install --packages-select unilabos_msgs --cmake-args -DBUILD_TESTING=OFF -DPython3_EXECUTABLE="%CMAKE_PYTHON%"
           if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
           call install\unilabos_msgs\setup.bat
-          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp312 typesupport: OK')"
+          python -c "import os; from rosidl_generator_py import import_type_support_impl; from unilabos_msgs.msg import Resource; import_type_support_impl.import_type_support('unilabos_msgs'); print('unilabos_msgs ' + os.environ['ROS_DISTRO'] + '/cp314 typesupport: OK')"
 
       - name: Install pip dependencies and unilabos
         run: |

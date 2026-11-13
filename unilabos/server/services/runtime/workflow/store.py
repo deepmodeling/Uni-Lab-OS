@@ -196,12 +196,29 @@ class WorkflowStore:
         page: int,
         page_size: int,
         name: str = "",
+        workflow_type: Optional[str] = None,
+        operation_category_uuid: Optional[str] = None,
+        published: Optional[bool] = None,
     ) -> Dict[str, Any]:
         where = "deleted_at IS NULL"
         values: List[Any] = []
         if name:
             where += " AND name LIKE ?"
             values.append(f"%{name}%")
+        if workflow_type is not None:
+            where += " AND workflow_type = ?"
+            values.append(workflow_type)
+        if operation_category_uuid is not None:
+            where += " AND operation_category_uuid = ?"
+            values.append(operation_category_uuid)
+        if published is not None:
+            # V1 status：当前修订已发布为 published，否则 source
+            where += (
+                (" AND " if published else " AND NOT ")
+                + "EXISTS (SELECT 1 FROM workflow_publication AS publication "
+                "WHERE publication.workflow_uuid = workflow.uuid "
+                "AND publication.revision = workflow.revision)"
+            )
         offset = (page - 1) * page_size
         with self._lock:
             total = self._conn.execute(
@@ -360,8 +377,25 @@ class WorkflowStore:
         nodes: List[WorkflowNodeWrite],
         edges: List[WorkflowEdgeWrite],
         protect_reserved_metadata: bool = False,
+        workflow_io: Optional[Dict[str, Any]] = None,
+        resource_scopes: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         with self.transaction() as conn:
+            if resource_scopes is not None:
+                from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+                checked_scopes = WorkflowResourceScopesRequest(revision=revision, scopes=resource_scopes)
+                current = WorkflowStore.get_workflow(self, workflow_uuid, conn=conn)
+                metadata = dict(current["meta_data"])
+                metadata["unilab"] = {**metadata.get("unilab", {}), "resource_scopes":
+                    [scope.model_dump(exclude_none=True) for scope in checked_scopes.scopes]}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
+            if workflow_io is not None:
+                if set(workflow_io) != {"input_contract", "output_contract", "output_bindings"}:
+                    raise StoreConflict("工作流 I/O 必须完整声明输入、输出合同与输出绑定")
+                current = WorkflowStore.get_workflow(self, workflow_uuid, conn=conn)
+                metadata = dict(current["meta_data"])
+                metadata["unilab"] = {**metadata.get("unilab", {}), **workflow_io}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
             self._reconcile_graph(
                 conn,
                 workflow_uuid=workflow_uuid,
@@ -371,6 +405,25 @@ class WorkflowStore:
                 advance_revision=True,
                 protect_reserved_metadata=protect_reserved_metadata,
             )
+            graph = WorkflowStore.get_graph(self, workflow_uuid, conn=conn)
+            unilab = (graph["workflow"].get("meta_data") or {}).get("unilab") or {}
+            if unilab.get("resource_scopes"):
+                from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
+                try:
+                    validate_graph_resource_scopes(graph)
+                except (ValueError, TypeError) as exc:
+                    raise StoreConflict(str(exc)) from exc
+            if "input_contract" in unilab or "output_contract" in unilab:
+                from .workflow_io import validate_workflow_graph_io, WorkflowIOValidationError
+
+                try:
+                    checked = validate_workflow_graph_io(graph)
+                except WorkflowIOValidationError as exc:
+                    raise StoreConflict(f"{exc.code}（{exc.path}）") from exc
+                metadata = dict(graph["workflow"]["meta_data"])
+                metadata["unilab"] = {**unilab, "input_contract": checked.input_contract.to_dict(),
+                    "output_contract": checked.output_contract.to_dict(), "output_bindings": checked.output_bindings}
+                conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
         return WorkflowStore.get_graph(self, workflow_uuid)
 
     def _reconcile_graph(
@@ -551,6 +604,7 @@ class WorkflowStore:
             int(node.disabled),
             int(node.minimized),
             node.script,
+            _json(node.manual_confirmation),
         )
         if existing is None:
             conn.execute(
@@ -560,9 +614,9 @@ class WorkflowStore:
                     meta_data, workflow_uuid, workflow_node_template_uuid,
                     parent_uuid, material_uuid, name, status, type, icon, pose,
                     param, footer, action_name, action_type, execution_policy,
-                    disabled, minimized, script
+                    disabled, minimized, script, manual_confirmation
                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (node.uuid, now, now, *values),
             )
@@ -576,7 +630,7 @@ class WorkflowStore:
                 material_uuid = ?, name = ?, status = ?, type = ?, icon = ?,
                 pose = ?, param = ?, footer = ?, action_name = ?,
                 action_type = ?, execution_policy = ?, disabled = ?,
-                minimized = ?, script = ?
+                minimized = ?, script = ?, manual_confirmation = ?
             WHERE uuid = ?
             """,
             (now, *values, node.uuid),
@@ -1039,8 +1093,13 @@ class WorkflowStore:
         idempotency_key: Optional[str] = None,
         request_fingerprint: str = "",
         input_builder: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        priority: str = "normal",
+        inventory_bindings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """``input_builder`` 按同一事务内的图求有效任务输入（先于 ``plan_builder`` 调用）。"""
+        """``input_builder`` 按同一事务内的图求有效任务输入（先于 ``plan_builder`` 调用）。
+
+        ``priority`` / ``inventory_bindings`` 是 V1 创建字段，随任务原样冻结。
+        """
 
         now = utc_now()
         with self.transaction() as conn:
@@ -1058,9 +1117,9 @@ class WorkflowStore:
                     meta_data, workflow_uuid, status, workflow_snapshot,
                     execution_plan, run_mode, target_node_uuid, control_status,
                     cleanup_status, trace_context, input, output, error_info,
-                    idempotency_key, request_fingerprint
+                    idempotency_key, request_fingerprint, priority, inventory_bindings
                 ) VALUES (?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, ?, ?, ?,
-                          'none', '{}', ?, '{}', '[]', ?, ?)
+                          'none', '{}', ?, '{}', '[]', ?, ?, ?, ?)
                 """,
                 (
                     task_uuid,
@@ -1077,6 +1136,8 @@ class WorkflowStore:
                     _json(input_value),
                     idempotency_key,
                     request_fingerprint if idempotency_key is not None else "",
+                    priority,
+                    _json(list(inventory_bindings or [])),
                 ),
             )
             for spec in jobs:
@@ -1382,85 +1443,6 @@ class WorkflowStore:
             "WHERE workflow_task_uuid=? AND deleted_at IS NULL", (task_uuid,)
         ).fetchone()[0])
 
-    def apply_task_command(
-        self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
-    ) -> Dict[str, Any]:
-        """原子受理单点放行 / 转自动 / 暂停；同键重传幂等，旧版本与在飞步进拒绝。"""
-
-        now = utc_now()
-        with self.transaction() as conn:
-            task = self.get_task(task_uuid)
-            previous = conn.execute(
-                "SELECT * FROM workflow_task_command WHERE workflow_task_uuid=? "
-                "AND idempotency_key=? AND deleted_at IS NULL",
-                (task_uuid, idempotency_key),
-            ).fetchone()
-            if previous is not None:
-                if (previous["type"] != command_type or
-                        _load(previous["meta_data"], {}).get("expected_revision") != expected_revision):
-                    raise StoreConflict("command idempotency key already used")
-                return task
-            if command_type not in {"step", "resume", "pause", "cancel"}:
-                raise StoreConflict("unsupported task command")
-            if command_type == "cancel" and task["status"] in {"pending", "running"}:
-                # 取消对单点设备动作同样适用；不检查控制态与节点状态，任何时候都能停
-                self._apply_cancel(conn, task, idempotency_key=idempotency_key,
-                                   expected_revision=expected_revision, now=now)
-                return self.get_task(task_uuid)
-            if task["execution_kind"] != "workflow":
-                raise StoreConflict("only workflow tasks accept execution control")
-            if command_type not in {"pause", "cancel"} and task["run_mode"] != "step":
-                raise StoreConflict("only step workflows accept execution control")
-            if task["status"] not in {"pending", "running"}:
-                raise StoreConflict("task is no longer executable")
-            if task["control_revision"] != expected_revision:
-                raise StoreRevisionConflict("task control revision changed")
-            if conn.execute(
-                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL "
-                "AND status NOT IN ('succeeded', 'skipped', 'failed', 'timeout', 'canceled') LIMIT 1",
-                (task_uuid,),
-            ).fetchone() is None:
-                raise StoreConflict("all nodes have already finished")
-            if command_type == "pause":
-                self._apply_pause(conn, task, idempotency_key=idempotency_key,
-                                  expected_revision=expected_revision, now=now)
-                return self.get_task(task_uuid)
-            if task["control_status"] not in {"active", "paused"}:
-                raise StoreConflict("task requires intervention or reconciliation")
-            if command_type == "step" and task["control_status"] != "paused":
-                raise StoreConflict("a step is already pending or executing")
-            if conn.execute(
-                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? "
-                "AND deleted_at IS NULL AND status IN "
-                "('execution_unknown', 'intervention_required', 'cancel_requested', 'failed', 'timeout', 'canceled') LIMIT 1",
-                (task_uuid,),
-            ).fetchone() is not None:
-                raise StoreConflict("resolve the current node before continuing")
-            conn.execute(
-                "INSERT INTO workflow_task_command(uuid, create_time, update_time, "
-                "workflow_task_uuid, type, idempotency_key, status, meta_data, consumed_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (str(uuid4()), now, now, task_uuid, command_type, idempotency_key,
-                 "pending" if command_type == "step" else "succeeded",
-                 _json({"expected_revision": expected_revision}),
-                 None if command_type == "step" else now),
-            )
-            if command_type == "resume":
-                # 转自动也收拢尚未完成的许可，之后完成回调不能把自动任务重新暂停。
-                conn.execute(
-                    "UPDATE workflow_task_command SET status='succeeded', consumed_at=?, update_time=? "
-                    "WHERE workflow_task_uuid=? AND status='pending' AND type='step' AND deleted_at IS NULL",
-                    (now, now, task_uuid),
-                )
-            conn.execute(
-                "UPDATE workflow_task SET run_mode=?, control_status='active', update_time=? WHERE uuid=?",
-                ("step" if command_type == "step" else "normal", now, task_uuid),
-            )
-            self._append_event(conn, event="workflow.task.changed",
-                               data={"workflow_task_uuid": task_uuid}, now=now)
-            return self.get_task(task_uuid)
-
     def _apply_pause(
         self, conn: sqlite3.Connection, task: Dict[str, Any], *,
         idempotency_key: str, expected_revision: int, now: str,
@@ -1594,11 +1576,12 @@ class WorkflowStore:
                 if name not in current or not strict_json_equal(current[name], value)
             }
             plan = task["execution_plan"]
-            affected: List[Tuple[Dict[str, Any], str, str]] = []
+            affected = []
             for planned in plan.get("nodes") or []:
-                for key, name in (planned.get("entry_bindings") or {}).items():
-                    if name in changed:
-                        affected.append((planned, str(key), str(name)))
+                names = set(planned.get("entry_parameter_names") or []) | set((planned.get("entry_bindings") or {}).values())
+                used = names & changed.keys()
+                if used:
+                    affected.append((planned, used))
             runs = {
                 row["workflow_node_uuid"]: row
                 for row in conn.execute(
@@ -1606,38 +1589,44 @@ class WorkflowStore:
                     (task_uuid,),
                 ).fetchall()
             }
-            for planned, _key, name in affected:
+            for planned, names in affected:
                 run = runs.get(planned["uuid"])
                 if run is None:
                     continue
+                name = sorted(names)[0]
                 if run["executor_kind"] == "loop":
                     raise StoreConflict(f"入口参数 {name!r} 被循环容器使用，运行中不可修改")
                 dispatched = conn.execute(
                     "SELECT 1 FROM workflow_node_job WHERE workflow_node_run_uuid=? "
-                    "AND deleted_at IS NULL AND (status <> 'pending' OR started_at IS NOT NULL) LIMIT 1",
+                    "AND deleted_at IS NULL AND (status <> 'pending' OR started_at IS NOT NULL "
+                    "OR json_type(control_data,'$.inventory_request') IS NOT NULL) LIMIT 1",
                     (run["uuid"],),
                 ).fetchone()
                 if dispatched is not None:
                     raise StoreConflict(f"入口参数 {name!r} 已被已下发的节点使用，不能修改")
-            for planned, key, name in affected:
-                planned["param"] = {**(planned.get("param") or {}), key: changed[name]}
+            for planned, _names in affected:
+                if "entry_param_template" in planned:
+                    from .entry_parameters import substitute_entry_references
+
+                    if planned.get("kind") != "condition":
+                        planned["param"], _bindings = substitute_entry_references(
+                            planned["entry_param_template"], {**current, **values})
+                else:
+                    # 兼容旧任务快照：旧计划只有顶层参数的绑定表。
+                    planned["param"] = {**(planned.get("param") or {}), **{
+                        key: changed[name] for key, name in (planned.get("entry_bindings") or {}).items() if name in changed}}
                 run = runs.get(planned["uuid"])
                 if run is None:
                     continue
-                run_param = {**_load(run["param"], {}), key: changed[name]}
                 conn.execute(
                     "UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?",
-                    (_json(run_param), now, run["uuid"]),
+                    (_json(planned["param"]), now, run["uuid"]),
                 )
-                for job in conn.execute(
-                    "SELECT uuid, param FROM workflow_node_job WHERE workflow_node_run_uuid=? "
+                conn.execute(
+                    "UPDATE workflow_node_job SET param=?, update_time=? WHERE workflow_node_run_uuid=? "
                     "AND deleted_at IS NULL AND status='pending'",
-                    (run["uuid"],),
-                ).fetchall():
-                    conn.execute(
-                        "UPDATE workflow_node_job SET param=?, update_time=? WHERE uuid=?",
-                        (_json({**_load(job["param"], {}), key: changed[name]}), now, job["uuid"]),
-                    )
+                    (_json(planned["param"]), now, run["uuid"]),
+                )
             conn.execute(
                 "UPDATE workflow_task SET input=?, execution_plan=?, update_time=? WHERE uuid=?",
                 (_json({**current, **values}), _json(plan), now, task_uuid),
@@ -1652,7 +1641,7 @@ class WorkflowStore:
                     _json({
                         "changed": sorted(changed),
                         "previous": {name: current[name] for name in sorted(changed) if name in current},
-                        "nodes": sorted({planned["uuid"] for planned, _key, _name in affected}),
+                        "nodes": sorted({planned["uuid"] for planned, _names in affected}),
                     }),
                     now,
                 ),
@@ -1687,8 +1676,13 @@ class WorkflowStore:
             task = self.get_task(task_uuid)
             if task["status"] not in {"pending", "running"}:
                 return False  # canceling / 终态：不再派发
+            # V1 工站手动处理期间整站暂停普通派发，只放行本工站会话的手动动作
+            if (task["meta_data"].get("execution_source") != "error_manual"
+                    and conn.execute("SELECT 1 FROM workflow_station_control WHERE mode='PAUSED' LIMIT 1").fetchone()):
+                return False
             if task["run_mode"] != "step":
-                return True
+                # V1 pause：普通模式关派发闸门，执行模式不变
+                return task.get("dispatch_gate", "active") != "paused"
             if task["control_status"] != "active":
                 return False
             command = conn.execute(
@@ -1706,6 +1700,9 @@ class WorkflowStore:
                 "AND status='pending' AND deleted_at IS NULL", (job_uuid, task_uuid),
             ).fetchone()
             if job is None:
+                return False
+            # V1 step 指定了目标节点时，许可只给该节点
+            if command["target_node_uuid"] and command["target_node_uuid"] != job["workflow_node_uuid"]:
                 return False
             conn.execute(
                 "UPDATE workflow_task_command SET target_node_uuid=?, result=?, update_time=? WHERE uuid=?",
@@ -1744,6 +1741,7 @@ class WorkflowStore:
         workflow_uuid: Optional[str] = None,
         status: str = "",
         cleanup_status: str = "",
+        execution_kind: str = "",
     ) -> Dict[str, Any]:
         clauses = ["deleted_at IS NULL"]
         values: List[Any] = []
@@ -1751,6 +1749,7 @@ class WorkflowStore:
             ("workflow_uuid", workflow_uuid),
             ("status", status),
             ("cleanup_status", cleanup_status),
+            ("execution_kind", execution_kind),
         ):
             if value:
                 clauses.append(f"{field} = ?")
@@ -1775,6 +1774,7 @@ class WorkflowStore:
             "total": total,
             "page": page,
             "page_size": page_size,
+            "has_more": offset + len(rows) < total,
         }
 
     def list_node_runs(
@@ -2511,6 +2511,10 @@ class WorkflowStore:
             if not updated:
                 return False
             self._sync_run_projection(conn, row["run_uuid"], now)
+            # 托管转待核实、执行声明转不确定，与 execution_unknown 同事务可见。
+            from .resource_intervals import ResourceIntervals
+
+            ResourceIntervals.settle_jobs(conn, [job_uuid])
             conn.execute(
                 """
                 UPDATE workflow_task
@@ -2584,7 +2588,7 @@ class WorkflowStore:
             # 循环容器没有设备副作用：在飞的循环 attempt 直接退回 pending，由调度器按
             # control_data.loop.iteration 续跑，不需要人裁决（循环体里的设备节点仍要）。
             for run in runs:
-                if run["status"] in self._RUN_IN_FLIGHT and run["executor_kind"] == "loop":
+                if run["status"] in self._RUN_IN_FLIGHT and run["executor_kind"] in {"loop", "condition"}:
                     conn.execute(
                         """
                         UPDATE workflow_node_job
@@ -2613,6 +2617,9 @@ class WorkflowStore:
                         (reason, now, run["current_job_uuid"]),
                     )
                     self._sync_run_projection(conn, run["uuid"], now)
+                from .resource_intervals import ResourceIntervals
+
+                ResourceIntervals.settle_jobs(conn, [run["current_job_uuid"] for run in in_flight_runs])
                 # 只可能从 active 进入；记住恢复目标，裁决完成后回到它
                 conn.execute(
                     """
@@ -2811,6 +2818,10 @@ class WorkflowStore:
                 decision_id=report.get("decision_id"),
             )
             self._sync_run_projection(conn, row["workflow_node_run_uuid"], now)
+            # V1 工作流干预：同一事务持久化决策报告（/workflow-interventions）
+            from .interventions import open_for_decision
+
+            open_for_decision(conn, row, report, now)
         return self.get_job(job_uuid)
 
     def set_node_run_execution_timeout(self, run_uuid: str, seconds: int) -> Dict[str, Any]:
@@ -2884,6 +2895,9 @@ class WorkflowStore:
                 resumed=True,
             )
             self._sync_run_projection(conn, row["workflow_node_run_uuid"], now)
+            from .interventions import supersede_for_job
+
+            supersede_for_job(conn, job_uuid, now)
         return self.get_job(job_uuid)
 
     def record_job_terminal(
@@ -2894,8 +2908,18 @@ class WorkflowStore:
         return_info: Dict[str, Any],
         error_info: List[Dict[str, Any]],
         error_resolution: Optional[Dict[str, Any]] = None,
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """持久化 attempt 终态并投影到节点运行；``retry`` 决策在同一事务里追加新 attempt。
+
+        由终态派生的占用收敛（执行 Claim、使用权与准入、区间、设备托管）在**同一事务**
+        里提交，观察者不会读到"终态已落、托管还没跟上"的中间态。
+
+        ``timeout_hold`` 非空表示终态由超时闸门决定而驱动尚未返回（ADR 0008）：attempt
+        照常结算、工作流照常继续，但 Claim 转 ``timed_out``，锁与托管保持原样，直到
+        :meth:`record_job_late_outcome` 或人工强制释放。``late_outcome`` 是超时后、终态放行
+        前已经到达的驱动真实结果，只作记录，不改变本次结算。
 
         返回 ``{"job", "run", "next_job"}``：``next_job`` 非空表示节点运行没有终结，
         调度器应以它为新的执行器 job 重新申请资源并下发；否则以 ``run["status"]``
@@ -2939,6 +2963,9 @@ class WorkflowStore:
             )
             self._emit_job_changed(conn, row, status, now)
             self._finish_task_step(conn, row, now)
+            from .interventions import supersede_for_job
+
+            supersede_for_job(conn, job_uuid, now)
             next_job_uuid: Optional[str] = None
             if retry_requested:
                 # 失败 attempt 保留为事实；同一节点运行追加下一 attempt 并切换 current，
@@ -2965,6 +2992,13 @@ class WorkflowStore:
                     (next_job_uuid, now, run_uuid),
                 )
             run = self._sync_run_projection(conn, run_uuid, now)
+            if timeout_hold is not None or late_outcome is not None:
+                self._annotate_timeout_hold(
+                    conn, job_uuid, timeout_hold=timeout_hold, late_outcome=late_outcome, now=now,
+                )
+            from .resource_intervals import ResourceIntervals
+
+            ResourceIntervals.settle_jobs(conn, [job_uuid])
             job = self._job_row(
                 conn.execute(
                     "SELECT * FROM workflow_node_job WHERE uuid=?", (job_uuid,)
@@ -2980,6 +3014,84 @@ class WorkflowStore:
                 else None
             )
         return {"job": job, "run": run, "next_job": next_job}
+
+    def _annotate_timeout_hold(
+        self,
+        conn: sqlite3.Connection,
+        job_uuid: str,
+        *,
+        timeout_hold: Optional[Dict[str, Any]],
+        late_outcome: Optional[Dict[str, Any]],
+        now: str,
+    ) -> None:
+        """终态事务内记录超时持有与迟到结果（``control_data``），不改动结算结果本身。"""
+
+        from .execution_claim import ExecutionClaims
+
+        row = conn.execute(
+            "SELECT control_data FROM workflow_node_job WHERE uuid=?", (job_uuid,)
+        ).fetchone()
+        control_data = _load(row["control_data"], {})
+        if late_outcome is not None:
+            control_data["late_outcome"] = {**dict(late_outcome), "recorded_at": now}
+        if timeout_hold is not None and ExecutionClaims.hold_after_timeout(conn, job_uuid):
+            control_data["timeout_hold"] = {**dict(timeout_hold), "state": "held", "held_at": now}
+        conn.execute(
+            "UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+            (_json(control_data), now, job_uuid),
+        )
+
+    def record_job_late_outcome(
+        self, job_uuid: str, outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """超时结算之后驱动真实返回：记录迟到结果，并放开该 attempt 仍持有的锁。
+
+        迟到结果不改变已结算 attempt 的状态与结果，只写入 ``control_data.late_outcome``；
+        Claim 为 ``timed_out`` 时同一事务释放 Claim，并按已结算的状态收敛使用权、区间与
+        设备托管（失败 / 超时的装卸转 ``retained`` 待核实）。重复投递幂等。返回
+        ``{"job", "released"}``，``released`` 表示本次放开了超时持有。
+        """
+
+        from .execution_claim import ExecutionClaims
+        from .resource_intervals import ResourceIntervals
+
+        now = utc_now()
+        with self.transaction() as conn:
+            row = conn.execute(
+                "SELECT * FROM workflow_node_job WHERE uuid=? AND deleted_at IS NULL",
+                (job_uuid,),
+            ).fetchone()
+            if row is None:
+                raise StoreNotFound(f"workflow node job {job_uuid} not found")
+            control_data = _load(row["control_data"], {})
+            if not isinstance(control_data.get("late_outcome"), dict):
+                control_data["late_outcome"] = {**dict(outcome), "recorded_at": now}
+            released = ExecutionClaims.release_timeout_hold(conn, job_uuid)
+            hold = control_data.get("timeout_hold")
+            if released and isinstance(hold, dict):
+                hold.update(state="released", released_at=now, release_reason="late_outcome")
+            conn.execute(
+                "UPDATE workflow_node_job SET control_data=?, update_time=? WHERE uuid=?",
+                (_json(control_data), now, job_uuid),
+            )
+            if released:
+                ResourceIntervals.settle_jobs(conn, [job_uuid])
+            self._append_event(
+                conn,
+                event="workflow.resource.changed",
+                data={
+                    "workflow_task_uuid": row["workflow_task_uuid"],
+                    "workflow_node_job_uuid": job_uuid,
+                    "operation": "late_outcome_recorded",
+                    "late_status": str(outcome.get("status") or ""),
+                    "timeout_hold_released": released,
+                },
+                now=now,
+            )
+            job = self._job_row(
+                conn.execute("SELECT * FROM workflow_node_job WHERE uuid=?", (job_uuid,)).fetchone()
+            )
+        return {"job": job, "released": released}
 
     def begin_loop_iteration(
         self,
@@ -3115,16 +3227,19 @@ class WorkflowStore:
 
         if status not in self._RUN_TERMINAL:
             raise ValueError(f"invalid terminal workflow node run status: {status}")
-        current = self.get_node_run(run_uuid, include_attempts=False)
-        if current["status"] in self._RUN_TERMINAL:
-            return current
-        outcome = self.record_job_terminal(
-            str(current["current_job_uuid"]),
-            status=status,
-            return_info={},
-            error_info=([] if status == "succeeded" else [{"code": status}]),
-        )
-        return outcome["run"]
+        with self.write_lock:
+            current = self.get_node_run(run_uuid, include_attempts=False)
+            if current["status"] in self._RUN_TERMINAL:
+                return current
+            if current["executor_kind"] not in {"loop", "condition"} and current["status"] in self._RUN_IN_FLIGHT:
+                raise StoreConflict("在飞或待核实动作不能由 DAG 清理关闭，必须等待执行结果或人工核实")
+            outcome = self.record_job_terminal(
+                str(current["current_job_uuid"]),
+                status=status,
+                return_info={},
+                error_info=([] if status == "succeeded" else [{"code": status}]),
+            )
+            return outcome["run"]
 
     def finish_task(
         self,
@@ -3146,6 +3261,21 @@ class WorkflowStore:
                 raise StoreNotFound(f"workflow task {task_uuid} not found")
             if row["status"] in {"succeeded", "failed", "canceled", "timeout"}:
                 return self.get_task(task_uuid)
+            unresolved = conn.execute(
+                "SELECT 1 FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL "
+                "AND executor_kind NOT IN ('loop','condition') "
+                "AND status IN ('dispatched','running','cancel_requested','execution_unknown','intervention_required') LIMIT 1",
+                (task_uuid,),
+            ).fetchone()
+            if unresolved:
+                raise StoreConflict("任务仍有在飞或待核实动作，不能提前结束任务")
+            from .device_tenancy import DeviceTenancies
+            DeviceTenancies.reconcile(conn, task_uuid)
+            if DeviceTenancies.snapshot(conn, task_uuid):
+                if status == "succeeded":
+                    status = "failed"
+                error_info = [*error_info, {"code": "device_tenancy_active", "message": "任务仍托管样品，请核实并取走后释放设备"}]
+                conn.execute("UPDATE workflow_task SET cleanup_status='requires_attention',attention_reason='device_tenancy_active' WHERE uuid=?", (task_uuid,))
             conn.execute(
                 """
                 UPDATE workflow_task
@@ -3773,6 +3903,10 @@ class WorkflowStore:
             "action_type",
             "script",
         )
+        # V1：人工确认配置只在非空时输出
+        manual_confirmation = _load(row["manual_confirmation"], {}) if "manual_confirmation" in row.keys() else {}
+        if manual_confirmation:
+            result["manual_confirmation"] = manual_confirmation
         return result
 
     @classmethod
@@ -3870,6 +4004,13 @@ class WorkflowStore:
         fingerprint = row["request_fingerprint"]
         if fingerprint:
             result["request_fingerprint"] = fingerprint
+        # V1 字段：run_mode 是 dev 的当前模式，V1 的 execution_mode 与之同义；单步模式恒关闸。
+        execution_mode = "step" if row["run_mode"] == "step" else "normal"
+        result["priority"] = row["priority"]
+        result["inventory_bindings"] = _load(row["inventory_bindings"], [])
+        result["execution_mode"] = execution_mode
+        result["dispatch_gate"] = "paused" if execution_mode == "step" else row["dispatch_gate"]
+        result["wait_reason"] = {}
         return result
 
     @classmethod

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from pathlib import Path
@@ -195,6 +196,44 @@ def test_materialize_resolves_roles_and_builds_serial_nodes() -> None:
     assert nodes[1]["execution_policy"] == {"depends_on": [nodes[0]["uuid"]]}
 
 
+@pytest.mark.parametrize("compiler", ["builder", "ast"])
+def test_device_id_rebinding_updates_actions_and_state_without_mutating_template(compiler: str) -> None:
+    @workflow(display_name="通用反应釜流程", compiler=compiler)
+    def flow(ctx):
+        ctx.run("reactor/start_heating", {"target_c": 80})
+        with ctx.loop_while(ctx.device_state("reactor", "temperature_c", "<", 80), interval_seconds=0.5):
+            pass
+
+    definition = next(iter(get_registered_workflows().values()))
+    template = build_workflow_template_payload(definition)
+    catalog = DeviceCatalog()
+    catalog.add("reactor-a", "demo_class", str(uuid.uuid4()))
+    catalog.add("reactor-b", "demo_class", str(uuid.uuid4()))
+    assert [role["role"] for role in template["roles"]] == ["reactor"]
+    for target in ("reactor-a", "reactor-b"):
+        payload = materialize_workflow_template(template, catalog, {"reactor": target})
+        action, loop = payload["nodes"]
+        assert action["meta_data"]["target_device_id"] == target
+        assert action["material_uuid"] == catalog.by_device_id[target]["uuid"]
+        assert loop["param"]["condition"]["device_id"] == target
+    assert template["nodes"][1]["param"]["condition"]["device_id"] == "reactor"
+
+
+def test_state_only_device_is_a_bindable_id_role() -> None:
+    @workflow(display_name="仅等待状态", compiler="ast")
+    def flow(ctx):
+        with ctx.loop_while(ctx.device_state("sensor", "ready", "==", False), interval_seconds=0.5):
+            pass
+
+    definition = next(iter(get_registered_workflows().values()))
+    template = build_workflow_template_payload(definition)
+    assert [role["role"] for role in template["roles"]] == ["sensor"]
+    default = materialize_workflow_template(template, DeviceCatalog())
+    bound = materialize_workflow_template(template, DeviceCatalog(), {"sensor": "slave-sensor-02"})
+    assert default["nodes"][0]["param"]["condition"]["device_id"] == "sensor"
+    assert bound["nodes"][0]["param"]["condition"]["device_id"] == "slave-sensor-02"
+
+
 def test_class_role_needs_binding_unless_single_instance() -> None:
     @workflow(display_name="多实例流")
     def ambiguous(ctx: WorkflowBuildContext) -> None:
@@ -251,7 +290,7 @@ def test_step_inventory_requirements_land_in_node_meta_data() -> None:
     with pytest.raises(ValueError):
         # lot 需求缺 quantity/unit：声明时即拒绝，而不是等到任务启动
         ctx.run("device-1/dispense", {}, inventory=[{"key": "water", "kind": "lot", "lot_uuid": "x"}])
-    with pytest.raises(ValueError, match="key 重复"):
+    with pytest.raises(ValueError, match="key 不能重复"):
         ctx.run("device-1/dispense", {}, inventory=[requirement, requirement])
 
 
@@ -261,6 +300,48 @@ def test_step_target_must_contain_action() -> None:
         ctx.run("only-device", {})
     with pytest.raises(ValueError, match="target"):
         ctx.run_template("only_class", {})
+
+
+@pytest.mark.parametrize("misuse", [
+    lambda ctx, step: bool(step),
+    lambda ctx, step: bool(step.output("ok")),
+    lambda ctx, step: step.output("ok") == False,  # noqa: E712 - 正是要拦住的写法
+    lambda ctx, step: step.output("count") > 3,
+    lambda ctx, step: f"S-{step.output('sample_id')}",
+    lambda ctx, step: bool(ctx.step_output(step, "ok", "==", True)),
+    lambda ctx, step: bool(ctx.device_state("reactor", "ready", "==", True)),
+], ids=["step", "output", "output-eq", "output-gt", "output-fstring", "step-output-condition", "device-state-condition"])
+def test_builder_mode_rejects_build_time_decisions_on_results(misuse) -> None:
+    """builder 模式在注册时执行一次函数：对结果做判断只会得到固定答案（else 分支被静默丢弃），必须报错。"""
+
+    @workflow(display_name="误用", compiler="builder")
+    def misuse_flow(ctx: WorkflowBuildContext) -> None:
+        step = ctx.run("reactor/measure", {})
+        if misuse(ctx, step):
+            ctx.run("reactor/heat", {})
+        else:
+            ctx.run("reactor/cool", {})
+
+    definition = next(iter(get_registered_workflows().values()))
+    with pytest.raises(TypeError, match=r"compiler=|step\.output"):
+        definition.collect()
+
+
+def test_builder_references_are_stored_as_plain_json() -> None:
+    """引用照常放进参数和条件；入库的是普通 dict，内部比较与序列化不受构建期保护影响。"""
+
+    ctx = WorkflowBuildContext()
+    first = ctx.run("reactor/measure", {})
+    second = ctx.run("reactor/heat", {"target": first.output("temperature"), "nested": [{"ref": first.output()}]})
+    with ctx.loop_while(ctx.step_output(second, "ok", "==", False), interval_seconds=0.5):
+        ctx.run("reactor/heat", {})
+
+    assert second.params["target"] == {"kind": "node_output", "node_key": first.key, "data_key": "temperature"}
+    assert type(second.params["target"]) is dict and type(second.params["nested"][0]["ref"]) is dict
+    condition = ctx.steps[2].params["condition"]
+    assert type(condition) is dict and condition["node_key"] == second.key
+    assert first.output("x") == {"kind": "node_output", "node_key": first.key, "data_key": "x"}
+    assert json.loads(json.dumps(first.output("x"))) == first.output("x")
 
 
 def test_materialized_workflow_upsert_is_idempotent() -> None:
@@ -331,6 +412,51 @@ def test_upsert_over_http_like_client_survives_bodiless_get(monkeypatch) -> None
         upsert_workflow(reporter, payload)
         assert service.get_workflow(payload["workflow_uuid"])["revision"] >= 2
         assert len(service.get_graph(payload["workflow_uuid"])["nodes"]) == 1
+    finally:
+        service.close()
+
+
+def test_upsert_over_http_keeps_resource_scopes(monkeypatch) -> None:
+    """回归：upsert 经 HTTPWorkflowClient 写图时须把资源作用域一并 PUT。
+
+    ``upsert_workflow`` 向 ``save_graph`` 传 ``resource_scopes``；HTTP 客户端曾不接受该参数，
+    Host 子进程向远端权威登记带作用域的 ``@workflow`` 模板时直接 TypeError。
+    """
+
+    from fastapi.testclient import TestClient
+    from types import SimpleNamespace
+
+    from unilabos.client.http import HTTPClient, HTTPClientConfig
+    from unilabos.client.runtime.workflow import HTTPWorkflowClient
+    from unilabos.server.api.runtime.workflow import create_workflow_app
+
+    @workflow(display_name="HTTP 上报作用域流", tags=["demo"])
+    def scoped(ctx: WorkflowBuildContext) -> None:
+        with ctx.resource_scope("device-1", name="reaction"):
+            ctx.run("device-1/succeed", {"value": 5})
+
+    template = build_workflow_template_payload(next(iter(get_registered_workflows().values())))
+    service = WorkflowService(":memory:")
+    base_url = "http://testserver/api/v1"
+    http = HTTPClient(HTTPClientConfig(base_url=base_url))
+    http._client.close()
+    http._client = TestClient(create_workflow_app(service), base_url=base_url)
+    reporter = HTTPWorkflowClient("http://testserver", http_client=http)
+    try:
+        payload = materialize_workflow_template(template, _catalog())
+        assert payload.get("resource_scopes"), "模板实例化应带出显式资源作用域"
+        authority_materials = SimpleNamespace(list_materials=lambda: [{"material": {
+            "material_uuid": payload["nodes"][0]["material_uuid"],
+            "resource_id": "device-1", "template_name": "demo_class",
+        }}])
+        authority_registry = SimpleNamespace(action_definition=lambda klass, action: {
+            "schema": {"properties": {"goal": {"type": "object", "properties": {"value": {"type": "integer"}}}}},
+        } if (klass, action) == ("demo_class", "succeed") else None)
+        monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: authority_materials)
+        monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: authority_registry)
+        upsert_workflow(reporter, payload)
+        stored = service.get_graph(payload["workflow_uuid"])["workflow"]["meta_data"]["unilab"]["resource_scopes"]
+        assert [scope.get("scope_id") for scope in stored] == ["reaction"]
     finally:
         service.close()
 

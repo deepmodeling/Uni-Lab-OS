@@ -150,6 +150,191 @@ def stack():
         instance.close()
 
 
+def test_static_condition_uses_action_result_and_joins_after_skipped_branch(stack: _Stack) -> None:
+    @workflow(display_name="返回值分支", compiler="ast")
+    def flow(ctx):
+        result = ctx.run("loop-device/record", {"value": "probe"}, name="测量")
+        if result["count"] >= 1 and not result["value"] == "bad":
+            ctx.run("loop-device/record", {"value": "selected"}, name="选择")
+        else:
+            ctx.run("loop-device/record", {"value": "wrong"}, name="跳过")
+        ctx.run("loop-device/record", {"value": "joined"}, name="汇合")
+
+    task = stack.run()
+    assert task["status"] == "succeeded", task["error_info"]
+    assert stack.driver.calls == ["probe", "selected", "joined"]
+    runs = stack.runs_by_name(task["uuid"])
+    assert runs["跳过"]["status"] == "skipped"
+    condition = next(run for run in runs.values() if run["executor_kind"] == "condition")
+    assert condition["return_info"]["return_value"] == {"matched": True}
+
+
+def test_static_condition_rechecks_current_attempt_inside_loop(stack: _Stack) -> None:
+    @workflow(display_name="逐轮条件", compiler="ast")
+    def flow(ctx):
+        with ctx.loop_for(4, name="四轮"):
+            result = ctx.run("loop-device/probe", {}, name="检测")
+            if result.ready:
+                ctx.run("loop-device/record", {"value": "done"}, name="达标")
+            else:
+                ctx.run("loop-device/record", {"value": "{{loop.index}}"}, name="处理")
+
+    task = stack.run()
+    assert task["status"] == "succeeded", task["error_info"]
+    assert stack.driver.calls == [0, 1, 2, "done"]
+    runs = stack.runs_by_name(task["uuid"])
+    assert [attempt["status"] for attempt in runs["达标"]["attempts"]] == ["skipped"] * 3 + ["succeeded"]
+    assert [attempt["status"] for attempt in runs["处理"]["attempts"]] == ["succeeded"] * 3 + ["skipped"]
+    condition = next(run for run in runs.values() if run["executor_kind"] == "condition")
+    assert [attempt["return_info"]["return_value"]["matched"] for attempt in condition["attempts"]] == [False, False, False, True]
+
+
+def test_static_condition_skips_nested_condition_and_loop_body(stack: _Stack) -> None:
+    @workflow(display_name="嵌套跳过", compiler="ast")
+    def flow(ctx):
+        result = ctx.run("loop-device/probe", {}, name="检测")
+        if result.ready:
+            if result.missing:
+                ctx.run("loop-device/record", {"value": "wrong"}, name="不可达")
+            with ctx.loop_for(2, name="跳过循环"):
+                ctx.run("loop-device/record", {"value": "wrong"}, name="跳过循环体")
+        elif result.count == 0:
+            ctx.run("loop-device/record", {"value": "fallback"}, name="兜底")
+        else:
+            ctx.run("loop-device/record", {"value": "wrong"}, name="跳过 else")
+        ctx.run("loop-device/record", {"value": "end"}, name="结束")
+
+    task = stack.run()
+    assert task["status"] == "succeeded", task["error_info"]
+    assert stack.driver.calls == ["fallback", "end"]
+    runs = stack.runs_by_name(task["uuid"])
+    for name in ("不可达", "跳过循环", "跳过循环体", "跳过 else"):
+        assert runs[name]["status"] == "skipped"
+
+
+@pytest.mark.parametrize("bad_field", ["missing", "count"])
+def test_static_condition_rejects_missing_or_non_boolean_result(stack: _Stack, bad_field: str) -> None:
+    @workflow(display_name="非法条件", compiler="ast")
+    def flow(ctx):
+        result = ctx.run("loop-device/probe", {}, name="检测")
+        if result["missing"]:
+            ctx.run("loop-device/record", {"value": "wrong"}, name="不能执行")
+
+    # 用同一份静态图测试两个运行时数据错误。
+    definition = next(iter(get_registered_workflows().values()))
+    template = build_workflow_template_payload(definition)
+    template["nodes"][1]["param"]["expression"]["name"] = bad_field
+    catalog = DeviceCatalog()
+    catalog.add("loop-device", "loop_demo_class", str(uuid.uuid4()))
+    record = upsert_workflow(stack.service, materialize_workflow_template(template, catalog))
+    task = stack.service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
+                                            target_node_uuid=None, input_value={}, description=None, meta_data={})
+    deadline = time.monotonic() + 5
+    while stack.service.get_workflow_task(task["uuid"])["status"] not in {"failed", "succeeded"}:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    assert stack.service.get_workflow_task(task["uuid"])["status"] == "failed"
+    assert stack.driver.calls == []
+    condition = next(run for run in stack.runs_by_name(task["uuid"]).values() if run["executor_kind"] == "condition")
+    assert condition["error_info"][0]["code"] == "condition_failed"
+
+
+def test_static_compiler_never_executes_unsupported_author_code() -> None:
+    effects = []
+
+    @workflow(display_name="拒绝执行作者代码", compiler="ast")
+    def flow(ctx):
+        effects.append("executed")
+        ctx.run("loop-device/probe", {})
+
+    definition = next(iter(get_registered_workflows().values()))
+    with pytest.raises(ValueError, match="仅支持"):
+        definition.collect_steps()
+    assert effects == []
+
+
+def test_static_compiler_rejects_branch_result_leaking_to_join() -> None:
+    @workflow(display_name="拒绝跨分支引用", compiler="ast")
+    def flow(ctx):
+        if True:
+            selected = ctx.run("loop-device/probe", {})
+        if selected.ready:
+            ctx.run("loop-device/record", {})
+
+    definition = next(iter(get_registered_workflows().values()))
+    with pytest.raises(ValueError, match="作用域外"):
+        definition.collect_steps()
+
+
+def test_condition_and_skipped_branch_do_not_consume_device_step(stack: _Stack) -> None:
+    @workflow(display_name="条件单步", compiler="ast")
+    def flow(ctx):
+        if False:
+            ctx.run("loop-device/record", {"value": "wrong"}, name="跳过")
+        else:
+            ctx.run("loop-device/record", {"value": "chosen"}, name="选中")
+
+    catalog = DeviceCatalog()
+    catalog.add("loop-device", "loop_demo_class", str(uuid.uuid4()))
+    definition = next(iter(get_registered_workflows().values()))
+    record = upsert_workflow(stack.service, materialize_workflow_template(build_workflow_template_payload(definition), catalog))
+    task = stack.service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="step",
+                                            target_node_uuid=None, input_value={}, description=None, meta_data={})
+    time.sleep(0.05)
+    assert stack.driver.calls == []
+    current = stack.service.get_workflow_task(task["uuid"])
+    stack.service.command_workflow_task(task["uuid"], command_type="step",
+                                       expected_revision=current["control_revision"], idempotency_key="condition-step")
+    deadline = time.monotonic() + 5
+    while stack.service.get_workflow_task(task["uuid"])["status"] != "succeeded":
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    assert stack.driver.calls == ["chosen"]
+    assert stack.runs_by_name(task["uuid"])["跳过"]["status"] == "skipped"
+
+
+@pytest.mark.parametrize("settled", [False, True])
+def test_condition_recovers_from_persisted_plan_and_result(tmp_path, settled: bool) -> None:
+    @workflow(display_name="条件恢复", compiler="ast")
+    def flow(ctx):
+        if True:
+            ctx.run("loop-device/record", {}, name="动作")
+
+    path = str(tmp_path / "workflow.db")
+    service = WorkflowService(path)
+    service.set_task_submitter(lambda _: None)
+    catalog = DeviceCatalog()
+    catalog.add("loop-device", "loop_demo_class", str(uuid.uuid4()))
+    definition = next(iter(get_registered_workflows().values()))
+    payload = materialize_workflow_template(build_workflow_template_payload(definition), catalog)
+    record = upsert_workflow(service, payload)
+    task = service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
+                                        target_node_uuid=None, input_value={}, description=None, meta_data={})
+    prepared = service.prepare_workflow_task_execution(task["uuid"])
+    run = next(run for run in prepared["runs"] if run["executor_kind"] == "condition")
+    service.mark_workflow_node_job_running(run["current_job_uuid"])
+    if settled:
+        service.record_workflow_node_job_terminal(run["current_job_uuid"], status="succeeded",
+                                                 return_info={"return_value": {"matched": True}}, error_info=[])
+    # 修改的是定义；已创建任务仍持有最初的条件计划。
+    payload["nodes"][0]["param"]["expression"] = {"lit": False}
+    upsert_workflow(service, payload)
+    service.close()
+    restored = WorkflowService(path)
+    try:
+        recovery = restored.prepare_workflow_task_execution(task["uuid"])
+        assert recovery["state"] != "waiting_reconciliation"
+        current = restored.get_workflow_node_run(run["uuid"])
+        assert current["status"] == ("succeeded" if settled else "pending")
+        assert current["attempt_count"] == 1
+        if settled:
+            assert current["return_info"]["return_value"] == {"matched": True}
+        planned = next(node for node in recovery["task"]["execution_plan"]["nodes"] if node["kind"] == "condition")
+        assert planned["param"]["expression"] == {"lit": True}
+    finally:
+        restored.close()
+
+
 def test_step_mode_executes_one_hostlink_leaf_inside_nested_loops(stack: _Stack) -> None:
     """一次 step 不代表跑完整个循环：真实 HostLink 驱动每次只能收到一个叶动作。"""
     @workflow(display_name="嵌套逐步")
@@ -264,7 +449,7 @@ def test_while_loop_repeats_until_a_body_step_reports_ready(stack: _Stack) -> No
     """条件引用循环体里的探测步骤：首轮前没有产出 => 先跑一轮（do-while 语义），
     之后每轮看最新探测结果。"""
 
-    @workflow(display_name="重复直到就绪")
+    @workflow(display_name="重复直到就绪", compiler="builder")  # 构建期断言 loop.is_loop 需要执行函数
     def flow(ctx: WorkflowBuildContext) -> None:
         with ctx.loop_while(ctx.step_output("探测", "ready", "==", False), name="直到就绪") as loop:
             ctx.run("loop-device/record", {"value": "work"}, name="干活")
@@ -558,3 +743,59 @@ def test_graph_validation_rejects_bad_loops() -> None:
         save(_loop_graph_nodes(loop_param={"mode": "for", "count": 2}))
     finally:
         service.close()
+
+
+def test_dynamic_result_params_read_this_loop_attempt(stack: _Stack) -> None:
+    @workflow(display_name="逐轮传参", compiler="ast")
+    def flow(ctx):
+        with ctx.loop_for(3):
+            produced = ctx.run("loop-device/record", {"value": "{{loop.index}}"}, name="生产")
+            ctx.run("loop-device/record", {"value": {"item": produced.value,
+                    "nested": [produced["count"]]}}, name="消费")
+    task = stack.run()
+    assert task["status"] == "succeeded"
+    assert stack.driver.calls == [0, {"item": 0, "nested": [1]},
+                                  1, {"item": 1, "nested": [3]},
+                                  2, {"item": 2, "nested": [5]}]
+    runs = stack.runs_by_name(task["uuid"])
+    assert runs["消费"]["return_info"]["return_value"]["value"]["item"] == 2
+
+
+def test_dynamic_result_missing_field_fails_before_device_dispatch(stack: _Stack) -> None:
+    @workflow(display_name="拒绝缺失值", compiler="ast")
+    def flow(ctx):
+        produced = ctx.run("loop-device/record", {"value": 12}, name="生产")
+        ctx.run("loop-device/record", {"value": produced.missing}, name="不能执行")
+    task = stack.run()
+    assert task["status"] == "failed"
+    assert stack.driver.calls == [12]
+
+
+def test_dynamic_result_array_path_and_escaped_field(stack: _Stack) -> None:
+    @workflow(display_name="嵌套结果路径", compiler="ast")
+    def flow(ctx):
+        produced = ctx.run("loop-device/record", {"value": [{"a.b": 42}]})
+        ctx.run("loop-device/record", {"value": produced.value[0]["a.b"]})
+    assert stack.run()["status"] == "succeeded"
+    assert stack.driver.calls == [[{"a.b": 42}], 42]
+
+
+def test_parallel_ast_rejects_sibling_value_before_join() -> None:
+    from unilabos.registry.workflow_ast import collect_static_steps, WorkflowSourceError
+    def flow(ctx):
+        with ctx.parallel():
+            left = ctx.run("a/record", {})
+            ctx.run("b/record", {"value": left.value})
+    with pytest.raises(WorkflowSourceError, match="作用域"):
+        collect_static_steps(flow)
+
+
+def test_group_inside_loop_keeps_current_iteration(stack: _Stack) -> None:
+    @workflow(display_name="循环内分组", compiler="ast")
+    def flow(ctx):
+        with ctx.loop_for(2):
+            with ctx.group("读取和传参"):
+                produced = ctx.run("loop-device/record", {"value": "{{loop.index}}"})
+                ctx.run("loop-device/record", {"value": produced.value})
+    assert stack.run()["status"] == "succeeded"
+    assert stack.driver.calls == [0, 0, 1, 1]

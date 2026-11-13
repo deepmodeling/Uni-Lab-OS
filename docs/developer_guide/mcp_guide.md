@@ -52,7 +52,7 @@ default_tools_approval_mode = "writes"
    所需驱动动作的参数、错误策略和 `materials_need_lock`。
 5. `protocol_search`：用具体关键词缩小操作范围；`protocol_inspect`：调用前确认字段和必填项。
 
-当前有 131 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
+当前有 132 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
 `.`、`-` 替换为 `_` 得到，客户端可能再显示 MCP server 前缀。
 
 | 需求 | 优先入口 |
@@ -62,6 +62,7 @@ default_tools_approval_mode = "writes"
 | 物料、内容物、位置、库存 | `materials_v1_instances_list`、`materials_v1_instances_tree`、`materials_v1_lots_list` |
 | 动作锁与物料锁 | `system_scheduler_resources`，再核对任务与设备审计结果 |
 | Host/Slave 日志 | `system_log_sources_list`、`system_logs_read` |
+| 进程树与工作区操作（V1 进程管理协议） | `process_management_snapshot`，写操作用 `process_management_operations_submit`（自带幂等 `operationId`，可带快照 `revision` 作 `expectedRevision`）后以 `process_management_operations_get` 轮询；组件日志尾部 `process_management_logs_tail` |
 | 注册表、图、包、进程、遥测、历史 | `protocol_search` 按业务域检索，写操作先确认授权 |
 
 辅助工具分别是 `protocol_guide`、`protocol_search`、`protocol_inspect`、
@@ -148,8 +149,9 @@ default_tools_approval_mode = "writes"
 Site 参数的导入行为遵循 [工作流模板参数绑定规范](edge_ui_api.md#工作流模板参数预填确认与-api-导入)：
 前端即使预填 `T1` 并唯一匹配，也必须由用户在绑定界面确认实际物料与 Site；MCP / CLI 等
 程序化 API 导入则应在明确目标物料后自动将标签解析为 UUID，不弹前端确认界面。
-`workflow_workflow_from_template` / `workflow_graph_save` 的 `body.site_binding_mode` 默认
-`resolve`：缺少目标或动作声明、标签不存在或存在歧义时返回绑定错误，不能选第一个同名 Site。
+`workflow_workflow_from_template` 的 `body.site_binding_mode` 默认 `resolve`；`workflow_graph_save` 按 V1 合同默认
+`preserve`，程序化导入必须显式传 `"site_binding_mode": "resolve"`：缺少目标或动作声明、标签不存在或存在歧义时返回
+绑定错误，不能选第一个同名 Site。
 只保存待校验草稿可显式传 `preserve`，不能将其当作已确认可执行的图。
 转换成功后仍应读回图，核对 `param` 的 UUID 与 `meta_data.site_bindings` 中的 owner。
 默认作用域为目标设备子树；可用节点 `meta_data.site_binding_owners[参数名]` 明确物料 UUID。

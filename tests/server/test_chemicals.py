@@ -1,17 +1,12 @@
-"""化学品定义：CAS / InChIKey 可空唯一键、软删除让出、materials.db v1 → v2 迁移。"""
+"""化学品定义：CAS / InChIKey 可空唯一键、软删除让出。"""
 
 from __future__ import annotations
-
-import sqlite3
-from dataclasses import replace
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.materials.chemicals import create_chemical_router
-from unilabos.server.database import DATABASE_SPECS
-from unilabos.server.database.schema import initialize_database
 from unilabos.server.services.materials.chemicals import (
     ChemicalError,
     ChemicalService,
@@ -100,7 +95,8 @@ def test_http_envelope(service) -> None:
     created = client.post("/api/v1/chemicals", json=WATER)
     assert created.status_code == 201 and created.json()["code"] == 0
     chemical = created.json()["data"]
-    assert client.post("/api/v1/chemicals", json=WATER).json()["code"] == 3003
+    # 重复 CAS：化学品（V1 试剂信息）按资源口径，冲突为 4002
+    assert client.post("/api/v1/chemicals", json=WATER).json()["code"] == 4002
     assert client.post("/api/v1/chemicals", json={"name": "坏的", "cas": "1-1-1"}).json()["code"] == 1000
     assert client.get("/api/v1/chemicals", params={"q": "water"}).json()["data"]["total"] == 1
 
@@ -108,42 +104,7 @@ def test_http_envelope(service) -> None:
                            json={"expected_version": chemical["version"], "description": "去离子"})
     assert patched.json()["data"]["description"] == "去离子"
     assert client.delete(f"/api/v1/chemicals/{chemical['chemical_uuid']}",
-                         params={"expected_version": chemical["version"]}).json()["code"] == 3003
+                         params={"expected_version": chemical["version"]}).json()["code"] == 4002
     assert client.delete(f"/api/v1/chemicals/{chemical['chemical_uuid']}",
                          params={"expected_version": patched.json()["data"]["version"]}).json()["code"] == 0
-    assert client.get(f"/api/v1/chemicals/{chemical['chemical_uuid']}").json()["code"] == 3002
-
-
-def test_v1_materials_database_migrates_to_current(tmp_path) -> None:
-    spec = DATABASE_SPECS["materials"]
-    v1 = replace(
-        spec,
-        tables=tuple(table for table in spec.tables if table.name != "chemical"),
-        schema_version=1,
-        migrations=(),
-    )
-    path = tmp_path / "materials.db"
-    initialize_database(path, v1).close()
-    connection = sqlite3.connect(path)
-    tables_before = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert "chemical" not in tables_before
-    connection.close()
-
-    service = ChemicalService(path)
-    try:
-        assert service.create_chemical(WATER)["cas"] == "7732-18-5"
-    finally:
-        service.close()
-
-    connection = sqlite3.connect(path)
-    try:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == spec.schema_version
-        history = [tuple(row) for row in connection.execute("SELECT version, description FROM schema_migration")]
-        assert (2, "新增化学品定义表 chemical") in history
-        assert [version for version, _ in history] == list(range(2, spec.schema_version + 1))
-        assert connection.execute("SELECT checksum FROM schema_identity").fetchone()[0] == spec.checksum
-        tables_after = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert tables_before <= tables_after
-    finally:
-        connection.close()
-    assert list(tmp_path.glob(f"materials.db.pre-v{spec.schema_version}-*.bak"))
+    assert client.get(f"/api/v1/chemicals/{chemical['chemical_uuid']}").json()["code"] == 4001

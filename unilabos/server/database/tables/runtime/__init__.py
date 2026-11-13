@@ -6,17 +6,14 @@ runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
   execution_job / adapter outbox-inbox 等）；
 - ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
 - ``registry``：Edge 注册表快照（条目级版本模型三表）；
-- ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）。
+- ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）；
+- ``process_management``：V1 进程管理协议的操作记录与快照修订号。
 
 对外导入只看表：一律 ``from unilabos.server.database.tables.runtime
 import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在此聚合。
 """
 
 from unilabos.server.database.schema import SCHEMA_IDENTITY_TABLE, DatabaseSpec
-from unilabos.server.database.tables.runtime.migrations import (
-    RUNTIME_MIGRATIONS,
-    RUNTIME_SCHEMA_VERSION,
-)
 from unilabos.server.database.tables.runtime.lab import (
     LAB_TABLES,
     LAB_TABLE_MODELS,
@@ -62,6 +59,7 @@ from unilabos.server.database.tables.runtime.workflow import (
     WorkflowNodeRecord,
     WorkflowNodeRunRecord,
     WorkflowNodeTemplateRecord,
+    WorkflowOperationCategoryRecord,
     WorkflowPublicationRecord,
     WorkflowRecord,
     WorkflowSourceRegistrationRecord,
@@ -70,11 +68,33 @@ from unilabos.server.database.tables.runtime.workflow import (
 )
 
 
+from unilabos.server.database.tables.runtime.execution_claim import (
+    EXECUTION_CLAIM_TABLES, EXECUTION_CLAIM_MODELS,
+)
+
+
+from .resource_interval import RESOURCE_INTERVAL_TABLES, RESOURCE_INTERVAL_MODELS
+
+
+from .resource_custody import RESOURCE_CUSTODY_TABLES, RESOURCE_CUSTODY_MODELS
+from .migrations import RUNTIME_MIGRATIONS, RUNTIME_RELEASED_CHECKSUMS
+
+
+from .task_lifecycle import TASK_LIFECYCLE_TABLES, TASK_LIFECYCLE_MODELS
+from .station_handling import STATION_HANDLING_TABLES, STATION_HANDLING_MODELS
+from .process_management import PROCESS_MANAGEMENT_TABLES, PROCESS_MANAGEMENT_MODELS
+
 RUNTIME_TABLE_MODELS = (
     *DATA_TABLE_MODELS,
     *WORKFLOW_TABLE_MODELS,
     *REGISTRY_TABLE_MODELS,
     *LAB_TABLE_MODELS,
+    *EXECUTION_CLAIM_MODELS,
+    *RESOURCE_INTERVAL_MODELS,
+    *RESOURCE_CUSTODY_MODELS,
+    *TASK_LIFECYCLE_MODELS,
+    *STATION_HANDLING_MODELS,
+    *PROCESS_MANAGEMENT_MODELS,
 )
 
 
@@ -94,12 +114,21 @@ RUNTIME_DATABASE = DatabaseSpec(
         *(spec for spec in WORKFLOW_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *LAB_TABLES,
+        *EXECUTION_CLAIM_TABLES,
+        *RESOURCE_INTERVAL_TABLES,
+        *RESOURCE_CUSTODY_TABLES,
+        *TASK_LIFECYCLE_TABLES,
+        *STATION_HANDLING_TABLES,
+        *PROCESS_MANAGEMENT_TABLES,
     ),
-    schema_version=RUNTIME_SCHEMA_VERSION,
+    # 0.13 发布线的基线是 schema v1；之后改 DDL / contract_version 时提升 schema_version，
+    # 并在 migrations.py 里补对应迁移（v2：资源等待记录的入队时间）。
+    schema_version=2,
     migrations=RUNTIME_MIGRATIONS,
-    # 工作流定义、任务与注册表记录：结构变化必须带迁移。开发期没有迁移路径时备份后重建；
-    # 正式发布前改为 "refuse"（拒绝启动、保留旧库）。
-    on_unmigratable="rebuild",
+    released_checksums=RUNTIME_RELEASED_CHECKSUMS,
+    # 工作流定义、任务与注册表记录：结构变化必须带迁移。没有迁移路径时拒绝启动、保留旧库；
+    # 确认旧数据不再需要时由 BasicConfig.database_rebuild_on_mismatch 显式允许备份后重建。
+    on_unmigratable="refuse",
 )
 
 
@@ -135,6 +164,7 @@ __all__ = [
     "WorkflowNodeRecord",
     "WorkflowNodeRunRecord",
     "WorkflowNodeTemplateRecord",
+    "WorkflowOperationCategoryRecord",
     "WorkflowPublicationRecord",
     "WorkflowRecord",
     "WorkflowSourceRegistrationRecord",

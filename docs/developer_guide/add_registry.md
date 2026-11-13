@@ -2,6 +2,8 @@
 
 本文档说明如何为设备创建和配置注册表，包括基本结构、特殊类型识别、动作配置等内容。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库只保留框架依赖的内置设备代码（工作站基类、虚拟设备、抽象液体处理器）；厂商驱动和新设备都放在独立驱动包里，详见 {doc}`add_device` 开头的说明。下文 `module:` 示例中的 `my_device_pkg.xxx` 指你的驱动包模块路径。
+
 ## 概述
 
 注册表（Registry）是 Uni-Lab 的设备配置系统，采用 YAML 格式定义设备的：
@@ -25,7 +27,8 @@
 4. 点击"分析文件"，让系统读取类信息
 5. 填写基本信息（设备描述、图标等）
 6. 点击"生成注册表"，复制生成的内容
-7. 保存到 `unilabos/registry/devices/your_device.yaml`
+7. 保存到 `unilabos/registry/devices/your_device.yaml`（驱动包里放在 `registry/devices/` 下，可以再按设备家族分子目录，
+   如 `registry/devices/analytical/hplc.yaml`；`devices/` 与 `device_comms/` 都递归读取）
 
 **提示**：我们提供了测试驱动用于在界面上尝试注册表生成，参见：`test/registry/example_devices.py`
 
@@ -42,7 +45,7 @@
 | icon              | string | 否       | 图标路径，默认为空                |
 | init_param_schema | object | 否       | 初始化参数，系统自动分析生成      |
 | version           | string | 否       | 版本号，默认 "1.0.0"              |
-| category          | array  | 否       | 设备分类，默认使用文件名          |
+| category          | array  | 否       | 设备分类；未声明时使用文件名，声明了就以声明为准（文件名不再追加） |
 | config_info       | array  | 否       | 嵌套配置，默认为空                |
 | file_path         | string | 否       | 文件路径，系统自动设置            |
 | registry_type     | string | 否       | 注册表类型，自动设为 "device"     |
@@ -63,7 +66,7 @@ class 是核心部分，包含这些内容：
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     status_types:
       status: str
@@ -150,7 +153,7 @@ unilab -g dev.json --complete_registry --registry_path ./my_registry
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -478,7 +481,7 @@ init_param_schema:
 
 ```yaml
 version: '1.0.0' # 默认版本
-category: ['文件名'] # 使用 yaml 文件名作为类别
+category: ['文件名'] # 未声明时用 yaml 文件名作为类别；声明了就原样保留
 description: '' # 默认为空
 icon: '' # 默认为空
 handles: [] # 默认空数组
@@ -525,7 +528,7 @@ config_info: # 嵌套配置，用于包含子设备
 ### Python 驱动代码
 
 ```python
-# unilabos/devices/my_lab/liquid_handler.py
+# my_device_pkg/liquid_handler.py
 
 from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
 from typing import List, Dict, Any, Optional
@@ -586,7 +589,7 @@ class AdvancedLiquidHandler:
 
 advanced_liquid_handler:
   class:
-    module: unilabos.devices.my_lab.liquid_handler:AdvancedLiquidHandler
+    module: my_device_pkg.liquid_handler:AdvancedLiquidHandler
     type: python
 
     # 自动提取的状态类型
@@ -755,7 +758,7 @@ my_temperature_controller:
           type: object
         feedback: {}
 
-    module: unilabos.devices.temperature.my_controller:MyTemperatureController
+    module: my_device_pkg.my_controller:MyTemperatureController
     status_types:
       current_temperature: float
       target_temperature: float
@@ -859,7 +862,7 @@ class MyDevice:
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -881,7 +884,7 @@ my_device:
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     action_value_mappings:
       # 自定义动作
@@ -928,7 +931,7 @@ cat unilabos/registry/devices/my_device.yaml
 
 ```bash
 # 确认模块路径正确
-python -c "from unilabos.devices.my_module.my_device import MyDevice"
+python -c "from my_device_pkg.my_device import MyDevice"
 ```
 
 ## 常见问题

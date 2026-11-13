@@ -198,6 +198,8 @@ def substitute_loop_placeholders(value: Any, context: Mapping[str, Any]) -> Any:
             lambda match: _render(context.get(match.group(1))), value
         )
     if isinstance(value, dict):
+        if value.get("kind") == "workflow_literal":
+            return value
         return {key: substitute_loop_placeholders(item, context) for key, item in value.items()}
     if isinstance(value, list):
         return [substitute_loop_placeholders(item, context) for item in value]

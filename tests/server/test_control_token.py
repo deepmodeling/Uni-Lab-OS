@@ -65,12 +65,14 @@ def test_client_reads_config_then_the_working_dir_file(tmp_path, monkeypatch) ->
 def test_presented_token_header_forms(monkeypatch) -> None:
     assert presented_token({TOKEN_HEADER: " t1 "}) == "t1"
     assert presented_token({"x-unilab-token": "t2"}) == "t2"
-    assert presented_token({"authorization": "Bearer t3"}) == "t3"
-    assert presented_token({"authorization": "Lab abc"}) == ""  # 旧云端 ak/sk 不是控制面 token
+    # Bearer 留给 V1 工站 api_key，旧云端 ak/sk（Lab）也不是控制面 token
+    assert presented_token({"authorization": "Bearer t3"}) == ""
+    assert presented_token({"authorization": "Lab abc"}) == ""
     monkeypatch.setattr(BasicConfig, "control_token", "secret")
     assert token_accepted({TOKEN_HEADER: "secret"})
     assert not token_accepted({TOKEN_HEADER: "secrex"})
     assert not token_accepted({})
+    assert not token_accepted({"authorization": "Bearer secret"})
 
 
 @pytest.fixture
@@ -102,10 +104,14 @@ def test_edge_routes_require_the_token(control_app) -> None:
 
         body = EdgeHttpResponse(request_uuid="r-1", status_code=200).model_dump(mode="json")
         assert client.post("/api/v1/edge/http-responses/r-1", json=body).status_code == 401
-        accepted = client.post(
+        # Host↔权威内部通道只认 X-UniLab-Token，Bearer 不再是控制面 token
+        bearer = client.post(
             "/api/v1/edge/http-responses/r-1", json=body, headers={"Authorization": "Bearer secret"}
         )
-        assert accepted.status_code == 200
+        assert bearer.status_code == 401
+        accepted = client.post("/api/v1/edge/http-responses/r-1", json=body, headers={TOKEN_HEADER: "secret"})
+        # 内部通道不包信封：Host 只看 HTTP 状态码
+        assert accepted.status_code == 200 and accepted.json() == {"accepted": False}
 
 
 def test_control_websocket_rejects_connections_without_the_token(control_app) -> None:

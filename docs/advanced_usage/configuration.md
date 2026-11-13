@@ -80,6 +80,8 @@ class HostLinkConfig:
     port = 7302
     bind = "0.0.0.0"
     advertise_ip = ""  # Host 多网卡时显式填写 Slave 可达 IP
+    connect_timeout = 5.0  # 单次 TCP 连接 / 握手超时
+    host_wait_timeout = 120.0  # Slave 等 Host 端口可连、等 Host 启动就绪的上限（秒）
     ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
     ros_discovery_range = ""
     ros_static_peers = ""
@@ -196,7 +198,8 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `HostLinkConfig` | `enable`       | `--disable-hostlink` | 禁用 HostLink                    |
 | `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
 | `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
-| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | TCP 连接/握手超时          |
+| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | 单次 TCP 连接/握手超时     |
+| `HostLinkConfig` | `host_wait_timeout` | `--hostlink-host-wait-timeout` | Slave 等 Host 的上限（默认 120 秒）：启动时退避重连、Host 启动中请求的重试 |
 | `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求/设备 RPC 超时      |
 | `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
 | `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
@@ -274,13 +277,15 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
 | `control_token`          | str  | `""`          | 调度权威与 Host 之间控制面的共享 token，见下文「控制面 token」 |
 | `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
+| `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |
 
 #### 控制面 token
 
 管理 API 的一切写操作（POST / PUT / PATCH / DELETE），以及 Host 专属的控制面（控制 WebSocket
 `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`），都要求请求头
-`X-UniLab-Token`（也接受 `Authorization: Bearer <token>`），否则 WebSocket 握手被拒（HTTP 403）、HTTP 返回 401。
-读操作不需要。浏览器前端（OpenLabSite、调试控制台）在连接设置里填写 token；`unilab token` 打印它。
+`X-UniLab-Token`（只认这个请求头；`Authorization: Bearer` 留给 V1 工站 api_key），否则 WebSocket 握手被拒
+（HTTP 403）、HTTP 返回 401 + 业务码 1002。
+读操作不需要。浏览器前端在连接设置里填写 token；`unilab token` 打印它。
 
 - 调度权威：`control_token` 留空时首次启动生成 `<工作目录>/control_token`（权限 0600），之后沿用；启动日志会打印它的位置。
 - 默认双进程拓扑：Host 子进程由权威经环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` 拿到 token，无需配置。
@@ -305,6 +310,67 @@ Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/b
 `history.db`（连同 `-wal` / `-shm` 文件）以及 `edge/`、`backend/` 目录移到 `<工作目录>/database/`；
 或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
 单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
+
+**从 0.12.x 或 0.13 之前的开发版升级**：0.13 的四个库都以 schema v1 为起点，旧库没有迁移路径。
+`runtime.db`（工作流、任务、注册表）与 `materials.db`（物料）会**拒绝启动并保留旧库原样**，启动报错里写明了库的位置；
+确认旧数据不再需要时，在 `local_config.py` 设 `BasicConfig.database_rebuild_on_mismatch = True`
+（或环境变量 `UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true`），旧库会改名为 `.bak-<时间戳>` 后重建；
+也可以用 `--server_database_root` 换一个新目录。`telemetry.db` 与 `history.db` 不拒绝，自动备份后重建。
+0.13 建立的库之后升级时走正常迁移：启动先备份为 `<file>.pre-v<N>-<时间戳>.bak` 再迁移，例如 `runtime.db` v1 → v2
+（资源等待记录加入队时间，迁移时清空瞬态的等待记录，由调度器重新排队）。
+
+#### 一个数据库根目录只归一个实例
+
+同一个数据库根目录同一时间只能由一个进程打开。每个要开库的进程在打开任何数据库之前，先独占根目录下的
+锁文件 `unilab.lock`（操作系统级独占锁：Linux / macOS 用 `fcntl`，Windows 用 `msvcrt`）：
+
+| 启动方式 | 独占的根目录 |
+| --- | --- |
+| 默认 `unilab`（调度权威） | `<根目录>` |
+| 权威拉起的 Host 子进程 | `<根目录>/edge` |
+| `--role backend` | `<根目录>/backend` |
+| `--address`（接远端权威的 Host）、`--no-safe-restart`（单进程） | `<根目录>` |
+| `--is_slave`（Slave 把 `-g` 图登记进本机 Graph Authority） | `<根目录>` |
+| 受管设备进程（Host 拉起的 Slave） | `<工作目录>/device_processes/<进程 id>/database` |
+| `--check_mode` | 不打开数据库，不取锁 |
+
+- 锁随进程结束由操作系统释放，包括崩溃、`kill -9`、任务管理器结束进程，不需要手动删除锁文件；
+  锁文件留在目录里不代表被占用，也不要手动删除正在运行的实例的锁文件。
+- 权威与 Host 子进程各持各的锁。Host 子进程安静点重启（退出码 75）后，新拉起的一代等上一代释放
+  （最多 10 秒）再取锁。
+- 第二个实例在打开任何数据库之前就以退出码 73 失败，并说明是谁占着：
+
+  ```text
+  [ERROR] 数据库根目录 /home/lab/.unilabos/database 已被另一个 Uni-Lab-OS 进程占用（pid 12345，调度权威，2026-11-13 09:30:12 启动，命令行 python …/unilabos/app/main.py --port 8002 …）。一个数据库根目录同一时间只能由一个实例使用：请先停止该进程；要并行运行另一个实例，请用 --working_dir 或 --server_database_root 指定另一个目录。锁文件：/home/lab/.unilabos/database/unilab.lock
+  ```
+
+  先确认该 pid 是不是忘了关的 `unilab`。默认拓扑里权威无论怎么结束（含 `kill -9`、崩溃、任务管理器
+  结束进程），Host 子进程都会自行退出并释放 `<根目录>/edge`（见下面的「停止与子进程」），下一次
+  `unilab` 直接就能启动；万一冲突的是 `<根目录>/edge`，说明占用者是另一个实例拉起的 Host（例如
+  手动用同一根目录起的第二套），结束它即可，新权威拉起的 Host 子进程按崩溃退避重试，会自动恢复。
+  要在同一台机器上并行运行第二套实验室或一个 Slave，给它另一个 `--working_dir` 或 `--server_database_root`。
+- 锁只覆盖根目录：用 `--runtime_db` 等把单个库指到根目录之外时，需自行保证不与其他实例共用同一个文件。
+  默认拓扑下这些单库覆盖只作用于调度权威，Host 子进程的四库总在 `<根目录>/edge`。
+- 根目录应放在本地磁盘；网络文件系统上的文件锁不一定可靠。
+
+#### 停止与子进程
+
+- 停止默认的 `unilab`：对调度权威发 SIGTERM、Ctrl+C，或在 Windows 上关闭控制台窗口 / Ctrl+Break，
+  效果相同——权威一收到就请 Host 子进程退出，两边并行收尾（Host 关控制链路、关库、停受管设备进程），
+  权威等 Host 退出后关自己的库，以退出码 0 结束，正常情况下几秒内完成。Host 子进程
+  `CHILD_EXIT_GRACE_S`（30 秒）内仍未退出时被强制结束。
+- 子进程跟随本机父进程：权威拉起的 Host 子进程、Host 拉起的受管设备进程、`--address` 外层薄监督进程
+  拉起的 Host，在父进程无论怎么消失时（含 `kill -9`、崩溃）都会察觉并走自己的有序退出，20 秒内没退完
+  就强制结束，所以不会留下孤儿继续占着端口和数据库根目录。实现上 Linux 用 `PR_SET_PDEATHSIG` 立即通知，
+  Linux / macOS 再轮询父进程是否还在，Windows 等待父进程的进程句柄，并把子进程放进父进程的
+  Job Object（父进程消失时由系统结束）。
+- 只跟随**本机**父进程：`--address` 连远端权威的 Host 与权威之间的网络断开时只是重连，不会退出。
+- 单独对 Host 子进程发 SIGTERM，它同样立即有序退出（退出码 0，权威视为正常结束，不再拉起）；
+  重复的停机信号会被忽略，不会打断正在进行的收尾。
+
+四个数据库的结构版本（`PRAGMA user_version`）在 0.13 发布线上都从 v1 开始。0.13 之前的开发版建的库
+结构版本更高或结构不同，首次启动时会被改名为 `<文件>.bak-<时间戳>`（连同 `-wal` / `-shm`）保留，再按 v1 重建空库；
+确认旧数据不再需要后可以删除这些备份。
 
 #### 日志级别选项
 

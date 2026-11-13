@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 import pytest
 
 from unilabos.backend.hostlink.protocol import ActionType
+from unilabos.backend.runtime.node import DeviceNode
 from unilabos.backend.hostlink import downlink
 from unilabos.backend.hostlink.downlink import (
     local_resource_append,
@@ -86,9 +87,12 @@ class _FakeNode:
         self.tree_sync_calls.append(operations)
         return {"results": [{"success": True}], "total": len(operations)}
 
-    async def append_resource(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def append_resource(self, payload: Dict[str, Any], *, commit_point: Any = None) -> Dict[str, Any]:
         self.append_calls.append(payload)
         return {"created_resource_tree": [[{"id": "r1"}]], "substance_resource_tree": []}
+
+    # 阻塞挂载入口与真实设备节点同一实现（提交点握手见 DeviceNode.append_resource_blocking）
+    append_resource_blocking = DeviceNode.append_resource_blocking
 
 
 @pytest.fixture(params=["hostlink", "ros2"])

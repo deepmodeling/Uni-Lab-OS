@@ -12,9 +12,16 @@ import sys
 
 # 公共 channel 缺失的纯 Python/字体包，仅 full 需要，不增加用户安装档位。
 FULL_SUPPORT_RECIPES = (
-    "pprp", "opcua", "rinoh-typeface-dejavuserif", "rinoh-typeface-texgyrecursor",
+    "opcua", "rinoh-typeface-dejavuserif", "rinoh-typeface-texgyrecursor",
     "rinoh-typeface-texgyreheros", "rinoh-typeface-texgyrepagella",
 )
+
+# ABI 升级时前置包必须来自同一次构建，不能依赖频道中的旧 cp312 产物。
+EXTERNAL_RECIPES = {
+    "opentrons-shared-data": "recipes/opentrons-shared-data/recipe.yaml",
+    "msgs": "recipes/msgs/recipe.yaml",
+    "msgs-humble": "recipes/msgs-humble/recipe.yaml",
+}
 
 
 def recipes(ros_distros: str = "", full: bool = False, extensions_only: bool = False) -> list[tuple[str, list[str]]]:
@@ -25,11 +32,14 @@ def recipes(ros_distros: str = "", full: bool = False, extensions_only: bool = F
         raise ValueError("build_full 必须显式选择 ros_distros")
     if extensions_only and not distros:
         raise ValueError("仅构建扩展必须显式选择 ros_distros，并先发布同版本默认包")
-    result = [] if extensions_only else [(name, []) for name in ("msgcenterpy", "pylabrobot", "mcp", "base")]
+    result = [] if extensions_only else [
+        (name, []) for name in ("opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base")
+    ]
     if full:
         result.extend((name, []) for name in FULL_SUPPORT_RECIPES)
     for distro in distros:
         suffix = "-humble" if distro == "humble" else ""
+        result.append((f"msgs{suffix}", [f"robostack-{distro}"]))
         result.append((f"ros2{suffix}", [f"robostack-{distro}"]))
         if full:
             result.append((f"full{suffix}", [f"robostack-{distro}"]))
@@ -45,6 +55,7 @@ def main() -> None:
     parser.add_argument("--extensions-only", action="store_true", help="复用已发布的默认包，仅构建/上传 ROS2/full 扩展")
     parser.add_argument("--output-dir", default="output")
     parser.add_argument("--artifact-dir", default="conda-artifacts")
+    parser.add_argument("--skip-existing", action="store_true", help="续跑时复用本地已有产物；调用方须先确认其测试通过")
     args = parser.parse_args()
     selected = recipes(args.ros_distros, args.full, args.extensions_only)
     output = Path(args.output_dir).resolve()
@@ -57,11 +68,14 @@ def main() -> None:
                               f"GIT_CONFIG_KEY_{count}": "core.longpaths",
                               f"GIT_CONFIG_VALUE_{count}": "true"})
         for name, extra_channels in selected:
-            command = ["rattler-build", "build", "-r", f".conda/{name}/recipe.yaml",
+            recipe_path = EXTERNAL_RECIPES.get(name, f".conda/{name}/recipe.yaml")
+            command = ["rattler-build", "build", "-r", recipe_path,
                        "--target-platform", args.platform, "--output-dir", str(output),
                        "-c", str(output), "-c", "uni-lab", "-c", "conda-forge"]
             for channel in extra_channels:
                 command.extend(("-c", channel))
+            if args.skip_existing:
+                command.extend(("--skip-existing", "local"))
             subprocess.run(command, check=True, env=build_env)
         for subdir in ("noarch", args.platform):
             for package in (output / subdir).glob("*.conda"):
@@ -79,7 +93,10 @@ def main() -> None:
         raise RuntimeError("没有已构建的 .conda 产物，禁止写入 published 凭证")
     for package in packages:
         package_name = package.name.rsplit("-", 2)[0]
-        if args.extensions_only and package_name not in {"unilabos-ros2", "unilabos-full", *FULL_SUPPORT_RECIPES}:
+        if args.extensions_only and package_name not in {
+            "unilabos-ros2", "unilabos-full", "ros-jazzy-unilabos-msgs",
+            "ros-humble-unilabos-msgs", *FULL_SUPPORT_RECIPES,
+        }:
             continue
         command = [sys.executable, "-m", "binstar_client.scripts.cli", "-t", token,
                    "upload", "--user", "uni-lab", "--register"]

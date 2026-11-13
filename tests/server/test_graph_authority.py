@@ -143,7 +143,8 @@ class TestGraphAPI:
 
     def test_not_found_maps_to_business_code(self, api_client) -> None:
         body = api_client.get("/api/v1/graphs/missing").json()
-        assert body["code"] == 3002
+        # 设备图属于 materials 域：资源不存在 4001（3002 只用于工作流 / 任务）
+        assert body["code"] == 4001
         assert "error" in body
 
     def test_delete_then_fetch_returns_not_found(self, api_client) -> None:
@@ -152,7 +153,7 @@ class TestGraphAPI:
         )
         deleted = api_client.delete("/api/v1/graphs/gone").json()
         assert deleted["code"] == 0
-        assert api_client.get("/api/v1/graphs/gone").json()["code"] == 3002
+        assert api_client.get("/api/v1/graphs/gone").json()["code"] == 4001
 
     def test_invalid_payload_maps_to_input_code(self, api_client) -> None:
         body = api_client.post(

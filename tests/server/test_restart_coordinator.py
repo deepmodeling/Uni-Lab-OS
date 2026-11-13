@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import unilabos.server.backend.restart as restart_module
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime import create_backend_app
 from unilabos.server.backend.restart import RestartCoordinator
 from unilabos.server.backend.scheduler.service import BackendScheduler
@@ -35,13 +36,17 @@ class _FakeExecutionBackend:
 
 class _FakeScheduler:
     def __init__(self) -> None:
-        self.dispatch_paused = False
+        self.reasons: set[str] = set()
 
-    def pause_dispatch(self) -> None:
-        self.dispatch_paused = True
+    @property
+    def dispatch_paused(self) -> bool:
+        return bool(self.reasons)
 
-    def resume_dispatch(self) -> None:
-        self.dispatch_paused = False
+    def pause_dispatch(self, *, reason: str = "manual") -> None:
+        self.reasons.add(reason)
+
+    def resume_dispatch(self, *, reason: str = "manual") -> None:
+        self.reasons.discard(reason)
 
 
 @pytest.fixture()
@@ -176,7 +181,9 @@ def test_request_rejects_devices_scope() -> None:
 
 def test_scheduler_dispatch_gate_keeps_waiting_jobs() -> None:
     executor = MagicMock()
-    scheduler = BackendScheduler(workflow=MagicMock(), executor=executor)
+    workflow = MagicMock()
+    workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
+    scheduler = BackendScheduler(workflow=workflow, executor=executor)
     scheduler.resources = MagicMock()
 
     scheduler.pause_dispatch()
@@ -213,18 +220,18 @@ def test_restart_api_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
 
     response = client.post("/api/v1/restart", json={"mode": "quiescent"})
     assert response.status_code == 200
-    assert response.json()["pending"] is True
-    assert response.json()["active_jobs"] == ["job-1"]
+    assert ok_data(response)["pending"] is True
+    assert ok_data(response)["active_jobs"] == ["job-1"]
 
-    assert client.get("/api/v1/restart").json()["dispatch_paused"] is True
+    assert ok_data(client.get("/api/v1/restart"))["dispatch_paused"] is True
 
     response = client.delete("/api/v1/restart")
     assert response.status_code == 200
-    assert response.json()["pending"] is False
+    assert ok_data(response)["pending"] is False
 
     response = client.post("/api/v1/restart", json={"mode": "bogus"})
-    assert response.status_code == 422
-    assert client.get("/api/v1/restart").json()["safe_restart"] is True
+    error_of(response, 1000)
+    assert ok_data(client.get("/api/v1/restart"))["safe_restart"] is True
     coordinator.cancel()
 
 

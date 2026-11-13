@@ -23,6 +23,22 @@ class WorkstationNodeTempError(Exception):
     """协议步骤内的日志占位（log_message），不代表失败。"""
 
 
+#: 协议编译器读取的物理拓扑图（``networkx.Graph``，节点为设备 / 物料，边带端口）。
+#: Host 启动装配 ``-g`` 图时写入（``unilabos.app.main._load_startup_graph``）。
+_physical_setup_graph: Any = None
+
+
+def set_physical_setup_graph(graph: Any) -> None:
+    """登记本进程的物理拓扑图（Host 启动装配设备图后调用）。"""
+    global _physical_setup_graph
+    _physical_setup_graph = graph
+
+
+def physical_setup_graph() -> Any:
+    """协议编译器 ``generator(G=...)`` 使用的物理拓扑图；未装配设备图时为 None。"""
+    return _physical_setup_graph
+
+
 def setup_protocol_names(protocol_type: Any) -> List[str]:
     """把 registry 的 protocol_type 配置规范成协议名列表。"""
     if not protocol_type:

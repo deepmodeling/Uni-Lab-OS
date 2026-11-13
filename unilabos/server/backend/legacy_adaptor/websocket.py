@@ -483,7 +483,10 @@ class BackendWebSocketClient(BaseBackendClient):
             response = await self._execute_local_http(request)
         except Exception as exc:  # noqa: BLE001 - 执行失败也要回一个响应，别让 Backend 干等
             logger.exception("[ControlProtocol] backend_http %s %s 执行失败", request.method, request.path)
-            body = json.dumps({"detail": f"host request failed: {exc}"}).encode("utf-8")
+            from unilabos.server.api.envelope import INTERNAL_ERROR, error_body
+
+            # 未归类的执行失败：保持 HTTP 500，正文仍是统一信封（业务码 1）
+            body = json.dumps(error_body(INTERNAL_ERROR, f"Host 执行请求失败：{exc}"), ensure_ascii=False).encode("utf-8")
             response = EdgeHttpResponse(
                 request_uuid=request.request_uuid,
                 status_code=500,
@@ -501,11 +504,16 @@ class BackendWebSocketClient(BaseBackendClient):
         # 权威随即来拉结果 payload。路由未挂好时对 app 执行只会得到误导性的 404，这里先等。
         wait_seconds = min(30.0, float(request.timeout_seconds or 30.0))
         if not await asyncio.to_thread(wait_routes_ready, wait_seconds):
-            body = json.dumps({"detail": "host management routes are not mounted yet"}).encode("utf-8")
+            from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, error_body
+
+            # 与权威侧「Host 不在线」同形：HTTP 200 + 业务码 5001，浏览器经代理看到的是统一信封
+            body = json.dumps(
+                error_body(SERVICE_UNAVAILABLE, "Host 管理路由尚未挂载完成，请稍后重试"), ensure_ascii=False
+            ).encode("utf-8")
             return EdgeHttpResponse(
                 request_uuid=request.request_uuid,
-                status_code=503,
-                headers={"content-type": "application/json"},
+                status_code=200,
+                headers={"content-type": "application/json", "retry-after": "3"},
                 body_base64=base64.b64encode(body).decode("ascii"),
             )
         transport = httpx.ASGITransport(app=app)

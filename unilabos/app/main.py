@@ -6,11 +6,11 @@ import shutil
 import signal
 import sys
 from pathlib import Path
-from typing import Dict, Any, List, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING
 import yaml
 
-if TYPE_CHECKING:  # networkx 导入要 0.6s，运行期只用于一个局部变量标注
-    import networkx as nx
+if TYPE_CHECKING:
+    from unilabos.server.services.materials.graph import LoadedGraph
 
 # Windows 中文系统 stdout 默认 GBK，无法编码 banner / emoji 日志中的 Unicode 字符
 # 强制 stdout/stderr 用 UTF-8，避免 print 触发 UnicodeEncodeError 导致进程崩溃
@@ -73,6 +73,26 @@ def _resolve_graph_file_path(file_path: str | None) -> str | None:
     return file_path
 
 
+def _require_node_link_json(file_path: str) -> None:
+    """``-g`` 只接受 node-link JSON；GraphML 等其它格式直接拒绝启动。"""
+
+    if file_path.lower().endswith(".graphml"):
+        print_status(
+            f"-g {file_path}: 不再支持 GraphML 设备图。请把它转换为 node-link JSON"
+            "（顶层 nodes + links，层级用 parent 表达，格式见 docs/user_guide/graph_files.md）"
+            "后用 unilab -g <文件>.json 启动",
+            "error",
+        )
+        os._exit(1)
+    if os.path.isfile(file_path) and not file_path.endswith(".json"):
+        print_status(
+            f"-g {file_path}: 设备图文件必须是 node-link JSON（.json），"
+            "格式见 docs/user_guide/graph_files.md",
+            "error",
+        )
+        os._exit(1)
+
+
 def _load_graph_json_preview(file_path: str | None) -> Dict[str, Any] | None:
     if not file_path or not file_path.endswith(".json") or not os.path.isfile(file_path):
         return None
@@ -94,9 +114,7 @@ def _materialize_graph_from_authority(
     文件再启动。
     """
 
-    from unilabos.server.startup import resolve_database_paths
-
-    paths = resolve_database_paths(args_dict, working_dir=working_dir)
+    paths = _own_database_paths(args_dict, working_dir)
     record = None
     if _graph_authority_is_remote():
         # 权威的 Host 子进程：Graph Authority 在权威的 materials.db，经 HTTP 读取
@@ -132,6 +150,23 @@ def _materialize_graph_from_authority(
         "info",
     )
     return cache_path
+
+
+def _own_database_paths(args_dict: Dict[str, Any], working_dir: str):
+    """本进程自己的四库路径（``--role backend`` 落 ``<根目录>/backend``）；开库前先独占根目录。
+
+    启动入口已经取过锁时 ``claim_database_root`` 返回同一把（进程内可重入）。
+    """
+
+    from unilabos.server.database import claim_database_root
+    from unilabos.server.startup import process_database_root, resolve_database_paths
+
+    root = process_database_root(args_dict, working_dir=working_dir)
+    paths = resolve_database_paths(
+        {**args_dict, "server_database_root": root}, working_dir=working_dir
+    )
+    claim_database_root(paths.root)
+    return paths
 
 
 def _graph_authority_is_remote() -> bool:
@@ -205,7 +240,7 @@ def _register_graph_file_to_authority(
         权威 payload 的缓存文件路径。
     """
 
-    from unilabos.server.startup import resolve_database_paths
+    from unilabos.server.database import DatabaseRootLockError
     from unilabos.server.services.materials.graph import GraphError, GraphService
 
     if graph_payload is None:
@@ -213,7 +248,9 @@ def _register_graph_file_to_authority(
 
     graph_name = Path(str(file_path)).stem
     try:
-        paths = resolve_database_paths(args_dict, working_dir=working_dir)
+        paths = _own_database_paths(args_dict, working_dir)
+    except DatabaseRootLockError:
+        raise
     except Exception as exc:
         print_status(f"Graph Authority 不可用，无法登记启动图: {exc}", "error")
         os._exit(1)
@@ -297,6 +334,57 @@ def _print_graph_registration(stored: Dict[str, Any]) -> None:
     )
 
 
+def _load_startup_graph(
+    args_dict: Dict[str, Any], working_dir: str, *, is_slave: bool
+) -> "LoadedGraph":
+    """Host 启动图：``-g`` → Graph Authority → 资源树 / backend 连线 / 物理拓扑图。
+
+    本地 JSON 文件在读取边界由 legacy 适配层升级旧格式，再登记到 Graph Authority；
+    之后一律以权威 payload（缓存文件）经 ``load_graph_payload`` 装配。不带 ``-g``
+    时以空图启动（只有 host_node）。物理拓扑图同时交给协议编译器使用。
+    """
+
+    from unilabos.backend.runtime.workstation_protocol import set_physical_setup_graph
+    from unilabos.server.services.materials.graph import load_graph_payload
+
+    file_path = args_dict.get("_graph_file_path")
+    if file_path is None:
+        file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
+    if file_path is None:
+        # 不带 -g：Host 以空图启动（只有 host_node），设备随后经驱动包 / 受管设备进程
+        # 或其它 Slave 接入；Slave 没有设备就没有存在意义，仍然要求 -g。
+        if is_slave:
+            print_status("Slave 必须用 -g 指定要接入的设备图", "error")
+            os._exit(1)
+        print_status(
+            "未指定 -g，以空图启动（仅 host_node）。设备可稍后从驱动包页安装并作为受管进程接入，"
+            "或用 unilab -g <图文件.json> 重启。",
+            "info",
+        )
+        payload: Dict[str, Any] = {"nodes": [], "links": []}
+    else:
+        _require_node_link_json(file_path)
+        if not args_dict.get("_graph_from_authority") and os.path.isfile(file_path):
+            # -g 本地 JSON 是创建入口：旧格式图在读取边界由 legacy 适配层转成
+            # 当前契约，注册表就绪后登记到 Graph Authority（权威没有则创建，已有则
+            # 以权威为准只补新增，冲突 / 不可达拒绝启动），再以权威 payload 装配。
+            from unilabos.server.backend.legacy_adaptor.legacy.startup import (
+                upgrade_startup_graph_payload,
+            )
+
+            graph_payload = upgrade_startup_graph_payload(_read_graph_json(file_path), file_path)
+            file_path = _register_graph_file_to_authority(
+                file_path, args_dict, working_dir, graph_payload
+            )
+            args_dict["_graph_file_path"] = file_path
+            args_dict["_graph_from_authority"] = True
+        payload = _read_graph_json(file_path)
+
+    loaded = load_graph_payload(payload, machine_name=BasicConfig.machine_name or "本地")
+    set_physical_setup_graph(loaded.physical_setup_graph)
+    return loaded
+
+
 def _first_run_confirmed(check_mode: bool) -> bool:
     """首次启动是否以当前路径作为工作目录（提示为 Y/n，默认「是」）。
 
@@ -330,12 +418,38 @@ def _runs_local_authority(args_dict: Dict[str, Any]) -> bool:
     return not is_host_child()
 
 
+#: 本进程是常驻运行时（调度权威 / Host / Slave / 监督进程），而不是一次性 CLI 子命令
+_runtime_process = False
+
+
 def main():
     """运行 Uni-Lab-OS CLI，并在需要时启动设备运行时。
 
     数据库无法迁移 / 迁移失败属于数据保护类错误：只给出可操作的说明并以退出码 1 结束，
-    不打印调用栈，也不会继续用空库启动。
+    不打印调用栈，也不会继续用空库启动。数据库根目录已被另一个实例占用同样只打印说明，
+    以退出码 73 结束（看护进程据此区分“根目录被占”与普通崩溃）。
+
+    被本机父进程拉起的子进程（Host 子进程、薄监督下的 Host、受管 Slave）最先认领父进程：父进程
+    无论怎么没了都随之有序退出（``app/lifetime.py``）。常驻运行时的有序收尾做完后立即结束进程，
+    不再等解释器 join 线程池工作线程、析构全部对象——那些收尾可以把一次 SIGTERM 拖上几分钟。
     """
+    global _runtime_process
+    from unilabos.app import lifetime
+
+    _runtime_process = False
+    lifetime.follow_parent_from_env()
+    try:
+        _main_with_exit_codes()
+    except BaseException as exc:
+        if not _runtime_process:
+            raise
+        lifetime.exit_now(lifetime.exit_code_for(exc))
+    if _runtime_process:
+        lifetime.exit_now(0)
+
+
+def _main_with_exit_codes() -> None:
+    from unilabos.server.database import DatabaseRootLocked, DatabaseRootLockError
     from unilabos.server.database.schema import DatabaseMigrationFailed, DatabaseMigrationRequired
 
     try:
@@ -343,6 +457,58 @@ def main():
     except (DatabaseMigrationRequired, DatabaseMigrationFailed) as exc:
         print_status(str(exc), "error")
         raise SystemExit(1) from None
+    except DatabaseRootLockError as exc:
+        from unilabos.app.supervisor import DATABASE_ROOT_LOCKED_EXIT_CODE
+
+        print_status(str(exc), "error")
+        raise SystemExit(
+            DATABASE_ROOT_LOCKED_EXIT_CODE if isinstance(exc, DatabaseRootLocked) else 1
+        ) from None
+
+
+def _database_root_role(args_dict: Dict[str, Any]) -> str:
+    """写进数据库根目录锁的进程角色，冲突提示里给第二个实例看。"""
+
+    from unilabos.app.supervisor import is_host_child
+
+    if args_dict.get("is_slave"):
+        return "Slave"
+    if args_dict.get("role") == "backend":
+        return "调度权威（--role backend）"
+    if is_host_child():
+        return "Host 子进程"
+    if str(HTTPConfig.remote_addr or "").strip():
+        return "Host"
+    if args_dict.get("no_safe_restart"):
+        return "调度权威 + Host（--no-safe-restart 单进程）"
+    return "调度权威"
+
+
+def _claim_process_database_root(args_dict: Dict[str, Any], working_dir: str) -> None:
+    """一个数据库根目录只归一个实例：本进程要打开的根目录在碰任何库之前先独占。
+
+    - 默认 ``unilab``（权威）、``--address`` 顶层 Host、``--no-safe-restart``：``<根目录>``；
+    - ``--role backend``：``<根目录>/backend``；
+    - 权威拉起的 Host 子进程：命令行带的 ``<根目录>/edge``，与权威各持各的锁；
+    - ``--is_slave``：Slave 把 ``-g`` 图登记进本机 Graph Authority（materials.db），同样要独占；
+    - ``--check_mode`` 只校验注册表、不开库，不取锁。
+
+    被看护的进程（Host 子进程、薄监督下的 Host、受管 Slave）重新拉起时上一代刚退出，给锁的
+    释放留几秒；顶层启动不等，第二个实例立即失败。
+    """
+
+    if args_dict.get("check_mode"):
+        return
+    from unilabos.app.supervisor import RELAUNCH_ROOT_LOCK_WAIT_S, is_supervised
+    from unilabos.server.database import claim_database_root
+    from unilabos.server.startup import process_database_root
+
+    lock = claim_database_root(
+        process_database_root(args_dict, working_dir=working_dir),
+        role=_database_root_role(args_dict),
+        wait_s=RELAUNCH_ROOT_LOCK_WAIT_S if is_supervised() else 0.0,
+    )
+    print_status(f"数据库根目录 {lock.root}（本进程独占，锁文件 {lock.path.name}）", "info")
 
 
 def _run_main():
@@ -352,6 +518,9 @@ def _run_main():
 
     if run_cli_command(args, parser):
         return
+
+    global _runtime_process
+    _runtime_process = True
 
     from unilabos.app.supervisor import maybe_supervise
 
@@ -533,14 +702,35 @@ def _run_main():
         args_dict.get("host_node_name") or BasicConfig.host_node_name
     )
 
+    # hostlink Host 在配置就绪后立刻打开 HostLink 端口，不等注册表、设备图与设备启动：
+    # Slave 可以马上连上并登记，物料 / 设备请求在 Host 就绪前回「Host 启动中」由 Slave 重试。
+    # 设备 runtime 启动时 HostLinkBackend 接管同一个 server。
+    from unilabos.backend.hostlink.startup import (
+        prebind_host_server,
+        should_prebind_host_server,
+    )
+
+    if should_prebind_host_server(
+        args_dict,
+        is_slave=is_slave,
+        check_mode=check_mode,
+        runs_local_authority=_runs_local_authority(args_dict),
+    ):
+        prebind_host_server()
+
     from unilabos.registry.registry import build_registry
 
     # 显示启动横幅
     print_unilab_banner(args_dict)
 
+    # 打开任何数据库之前先独占本进程的数据库根目录：第二个实例在这里就失败，不碰任何库
+    _claim_process_database_root(args_dict, working_dir)
+
     # Step -1: 预读取 graph 中的 community.* class，并在 build_registry 前挂载社区设备包
     if not check_mode:
         graph_file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
+        if graph_file_path is not None:
+            _require_node_link_json(graph_file_path)
         # 非文件参数按 uuid 或名称从本机 Graph Authority 解析。
         if graph_file_path is not None and not os.path.isfile(graph_file_path):
             materialized_path = _materialize_graph_from_authority(
@@ -599,7 +789,14 @@ def _run_main():
     # 管理 API 装的驱动包（unilabos_data/driver_packages.json 中已启用者）并入扫描目录，
     # 安装后安静点重启即可加载，不用改启动命令。
     if not check_mode:
-        from unilabos.server.services.driver_packages import enabled_package_dirs
+        from unilabos.server.services.driver_packages import enabled_package_dirs, get_driver_package_service
+
+        if BasicConfig.is_host_mode and args_dict.get("role") != "backend" and not _runs_local_authority(args_dict):
+            # 恢复在目录存在性判断之前完成，避免上次切换中断后遗漏已恢复的挂载目录。
+            package_service = get_driver_package_service()
+            pending_operations = package_service.mutation_gate.status()['unresolved_operations']
+            if pending_operations:
+                print_status(f"驱动包操作待核实，受管 slave 启动已阻止：{', '.join(pending_operations)}", "warning")
 
         ledger_dirs = [
             item
@@ -618,7 +815,8 @@ def _run_main():
     if not check_mode:
         from unilabos.server.services.driver_packages import get_driver_package_service
 
-        get_driver_package_service().configure(list(devices_dirs or []), bool(external_only))
+        if BasicConfig.is_host_mode and args_dict.get("role") != "backend" and not _runs_local_authority(args_dict):
+            get_driver_package_service().configure(list(devices_dirs or []), bool(external_only), watch=True)
     lab_registry = build_registry(
         registry_paths=args_dict["registry_path"],
         devices_dirs=devices_dirs,
@@ -629,11 +827,27 @@ def _run_main():
         external_only=external_only,
     )
 
-    # Check mode: 注册表验证完成后直接退出
+    # Check mode: 注册表验证完成后直接退出；扫描跳过的文件或导入失败的注册类都让校验失败（退出码 1）
     if check_mode:
         device_count = len(lab_registry.device_type_registry)
         resource_count = len(lab_registry.resource_type_registry)
+        for skipped in lab_registry.verify_skipped:
+            print_status(f"Check mode: 当前 backend 不支持，跳过导入校验: {skipped}", "warning")
+        failures = lab_registry.check_failures()
+        if failures:
+            for failure in failures:
+                print_status(f"Check mode: {failure}", "error")
+            print_status(
+                f"Check mode: 注册表校验失败 ({len(failures)} 个问题; {device_count} 设备, {resource_count} 资源)",
+                "error",
+            )
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(1)
         print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
+        # os._exit 不会刷新缓冲区：输出被管道接走时（CI）先刷出结论
+        sys.stdout.flush()
+        sys.stderr.flush()
         os._exit(0)
 
     # 调度权威进程：--role backend 只起权威（Edge 用 --address 接入）；默认拓扑则由
@@ -649,61 +863,12 @@ def _run_main():
         return
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
-    from unilabos.resources.graphio import (
-        read_node_link_json,
-        read_graphml,
-        modify_to_backend_format,
-    )
     from unilabos.server.backend.legacy_adaptor import get_backend_client
-    from unilabos.resources.resource_tracker import ResourceTreeSet, ResourceDict
+    from unilabos.resources.resource_tracker import ResourceDict
 
-    graph: "nx.Graph"
-    resource_tree_set: ResourceTreeSet
-    resource_links: List[Dict[str, Any]]
-
-    file_path = args_dict.get("_graph_file_path")
-    if file_path is None:
-        file_path = _resolve_graph_file_path(args_dict.get("graph") or BasicConfig.startup_json_path)
-    if file_path is None:
-        # 不带 -g：Host 以空图启动（只有 host_node），设备随后经驱动包 / 受管设备进程
-        # 或其它 Slave 接入；Slave 没有设备就没有存在意义，仍然要求 -g。
-        if is_slave:
-            print_status("Slave 必须用 -g 指定要接入的设备图", "error")
-            os._exit(1)
-        print_status(
-            "未指定 -g，以空图启动（仅 host_node）。设备可稍后从驱动包页安装并作为受管进程接入，"
-            "或用 unilab -g <图文件.json> 重启。",
-            "info",
-        )
-        graph, resource_tree_set, resource_links = read_node_link_json({"nodes": [], "links": []})
-    else:
-        if (
-            file_path.endswith(".json")
-            and not args_dict.get("_graph_from_authority")
-            and os.path.isfile(file_path)
-        ):
-            # -g 本地 JSON 是创建入口：旧格式图在读取边界由 legacy 适配层转成
-            # 当前契约，注册表就绪后登记到 Graph Authority（权威没有则创建，已有则
-            # 以权威为准只补新增，冲突 / 不可达拒绝启动），再以权威 payload 装配。
-            from unilabos.server.backend.legacy_adaptor.legacy.startup import (
-                upgrade_startup_graph_payload,
-            )
-
-            graph_payload = upgrade_startup_graph_payload(_read_graph_json(file_path), file_path)
-            file_path = _register_graph_file_to_authority(
-                file_path, args_dict, working_dir, graph_payload
-            )
-            args_dict["_graph_file_path"] = file_path
-            args_dict["_graph_from_authority"] = True
-            graph, resource_tree_set, resource_links = read_node_link_json(file_path)
-        elif file_path.endswith(".json"):
-            graph, resource_tree_set, resource_links = read_node_link_json(file_path)
-        else:
-            graph, resource_tree_set, resource_links = read_graphml(file_path)
-    import unilabos.resources.graphio as graph_res
-
-    graph_res.physical_setup_graph = graph
-    resource_edge_info = modify_to_backend_format(resource_links)
+    loaded_graph = _load_startup_graph(args_dict, working_dir, is_slave=is_slave)
+    resource_tree_set = loaded_graph.resource_tree_set
+    resource_edge_info = loaded_graph.links
     # 模板 handle 表只在校验图中的边时才需要；设备条目的投影要几百毫秒，空图 / 无边不算
     materials: Dict[str, Any] = {}
     if resource_edge_info:
@@ -754,7 +919,7 @@ def _run_main():
     # 使用 ResourceTreeSet 代替 list
     args_dict["resources_config"] = resource_tree_set
     args_dict["devices_config"] = resource_tree_set
-    args_dict["graph"] = graph_res.physical_setup_graph
+    args_dict["graph"] = loaded_graph.physical_setup_graph
 
     if args_dict["controllers"] is not None:
         args_dict["controllers_config"] = yaml.safe_load(open(args_dict["controllers"], encoding="utf-8"))
@@ -769,17 +934,39 @@ def _run_main():
         comm_client = get_backend_client()
         args_dict["bridges"].append(comm_client)
 
-        def _exit(signum, frame):
-            comm_client.stop()
-            from unilabos.server.backend.restart import (
-                RESTART_EXIT_CODE,
-                is_restart_requested,
-            )
+        # 处理器里要用的模块先导入好：信号可能恰好打断主线程里正在进行的导入
+        from unilabos.app import lifetime
+        from unilabos.server import lifecycle
 
-            sys.exit(RESTART_EXIT_CODE if is_restart_requested() else 0)
+        # 限时看门狗在装处理器之前启动：处理器里布置限时只做一次赋值，不拿锁、不起线程
+        lifetime.start_exit_watchdog()
+        from unilabos.server.backend.restart import (
+            RESTART_EXIT_CODE,
+            is_restart_requested,
+        )
+
+        def _exit(signum, frame):
+            """停机信号：只在第一次时让主线程抛 SystemExit，沿 finally / atexit 有序收尾。
+
+            处理器里不做阻塞动作（停控制 WS、关库都在 finally 里）。重复的信号——POSIX 上
+            Ctrl+C 同时发给整个进程组、权威又转发一次 SIGTERM，rclpy 的处理器也会再转一次——
+            一律忽略：再抛一次 SystemExit 只会打断正在进行的收尾。收尾整体限时
+            ``lifetime.SHUTDOWN_DEADLINE_S``，超时强制结束，不会挂住不退。
+            """
+
+            code = RESTART_EXIT_CODE if is_restart_requested() else 0
+            if not lifetime.begin_shutdown(code, reason=f"Host 收到停机信号 {signum}"):
+                return
+            # 唤醒在等「Host 路由挂好」/ SSE 心跳等的线程：它们若还在线程池里等着，会拖住退出
+            lifecycle.begin_shutdown()
+            sys.exit(code)
 
         signal.signal(signal.SIGINT, _exit)
         signal.signal(signal.SIGTERM, _exit)
+        # 终端关闭（SIGHUP，薄监督进程也会转发）同样有序退出
+        sighup = getattr(signal, "SIGHUP", None)
+        if sighup is not None:
+            signal.signal(sighup, _exit)
         # 作为权威的 Host 子进程建在独立进程组，权威用 Ctrl+Break 请它退出；uvicorn 停机后
         # 会重新抛出该信号，没有处理器时 CRT 直接 _exit(3)，finally / atexit（关库、收受管
         # 设备进程）都不会跑。
@@ -925,6 +1112,10 @@ def _run_main():
     try:
         run_runtime(args_dict)
     finally:
+        from unilabos.app.lifetime import shutdown_started
+
+        if shutdown_started():
+            print_status("收到停机信号，正在有序退出（停控制链路、关库、停受管设备进程）", "info")
         if comm_client is not None:
             comm_client.stop()
         if BasicConfig.is_host_mode:

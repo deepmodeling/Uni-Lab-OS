@@ -25,7 +25,22 @@ def _client(scheduler, backend) -> TestClient:
 def test_ready_when_the_execution_adapter_is_registered() -> None:
     response = _client(object(), _Backend(True)).get("/api/v1/readiness")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "scheduler": "local", "execution": "ready", "reasons": []}
+    # V1 合同字段 + dev 探针摘要（扩展字段）；不包信封
+    assert response.json() == {
+        "status": "ready",
+        "capabilities": {
+            "can_edit_definitions": True,
+            "can_view_drafts": True,
+            "can_run_unpublished": True,
+            "can_debug": True,
+            "can_execute_device_actions": True,
+        },
+        "phase": "ready",
+        "workflowRuntime": "disabled",
+        "scheduler": "local",
+        "execution": "ready",
+        "reasons": [],
+    }
 
 
 def test_not_ready_while_devices_are_still_initializing() -> None:
@@ -33,6 +48,8 @@ def test_not_ready_while_devices_are_still_initializing() -> None:
     client = _client(object(), backend)
     response = client.get("/api/v1/readiness")
     assert response.status_code == 503
+    # V1 没有 not_ready：未就绪统一为 starting，dev 的执行面状态与原因保留在扩展字段
+    assert response.json()["status"] == "starting" and response.json()["phase"] == "execution_starting"
     assert response.json()["execution"] == "starting"
     assert response.json()["reasons"]
     # 存活探针不受影响
@@ -56,7 +73,7 @@ def test_split_topology_follows_the_host_control_connection(monkeypatch) -> None
 
     response = client.get("/api/v1/readiness")
     assert response.status_code == 503
-    assert response.json()["execution"] == "restarting"
+    assert response.json()["execution"] == "restarting" and response.json()["phase"] == "host_restarting"
 
     service.connected = True
     assert client.get("/api/v1/readiness").status_code == 200

@@ -10,6 +10,12 @@ from pathlib import Path
 from tests.e2e.readme_demos import api_request
 
 
+def _body_data(body):
+    """MCP 回包 body：信封取 ``data``，其他形状原样返回。"""
+
+    return body.get("data", body) if isinstance(body, dict) and "code" in body else body
+
+
 def _events(output: Path) -> list[dict]:
     return [json.loads(line) for line in (output / "codex" / "events.jsonl").read_text(encoding="utf-8").splitlines()
             if line.startswith("{")]
@@ -107,7 +113,7 @@ def assert_closed_loops(spec, source: Path, evidence: dict, output: Path, port: 
                     elif call.get("tool") == "decisions_error_decisions_list":
                         body = result.get("body", {})
                         data = body.get("data", body)
-                        items = data.get("items", [])
+                        items = data.get("decisions", [])
                     else:
                         continue
                     matching += [item for item in items if item.get("task_id") == proof["task_uuid"]]
@@ -188,15 +194,16 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     assert fill["substances"] == [["Water", 1200, "ul"]]
     assert report["sites"]["T1"] == fill["plate_name"] and report["sites"]["T2"] == ""
     assert report["sites"]["T3"] == "bench_plate_r1" and report["sites"]["T4"] == "bench_plate_r2"
-    totals = [lot for event in observations if event["kind"] == "lots" for lot in event["data"]]
+    totals = [lot for event in observations if event["kind"] == "lots" for lot in event["data"]["lots"]]
     for quantity in (500, 10500, 9300):
         assert any(lot["quantity_total"] == quantity and lot["quantity_available"] == quantity
                    and lot["quantity_reserved"] == 0 for lot in totals), f"未观察到 {quantity}/{quantity}/0"
     proof_path = output / "materials-authority.json"
     if port is not None:
-        failed_reservations = api_request(port, f"/materials/reservations?task_uuid={failed['task']['uuid']}")
-        succeeded_reservations = api_request(port, f"/materials/reservations?task_uuid={succeeded['task']['uuid']}")
-        deck = api_request(port, "/materials/instances?name=bench_deck")[0]
+        # V1 合同：库存读接口在 /inventory 下，列表带命名数组
+        failed_reservations = api_request(port, f"/inventory/reservations?task_uuid={failed['task']['uuid']}")["reservations"]
+        succeeded_reservations = api_request(port, f"/inventory/reservations?task_uuid={succeeded['task']['uuid']}")["reservations"]
+        deck = api_request(port, "/inventory/instances?name=bench_deck")["instances"][0]
         selected_uuid = next(site["occupied_material_uuid"] for site in deck["sites"] if site["label"] == "T1")
         selected = api_request(port, f"/materials/instances/{selected_uuid}/tree")
         proof = {"deck": deck, "selected_tree": selected, "failed_reservations": failed_reservations,
@@ -226,7 +233,8 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     topped_up = next(index for index, call in enumerate(calls) if index > failed_seen[0]
                     and call.get("tool") == "materials_v1_lots_inbound"
                     and call.get("arguments", {}).get("body", {}).get("payload", {}).get("quantity") == 10000)
-    rollback_reads = [_result(call).get("body", {}) for call in calls[failed_seen[0] + 1:topped_up]]
+    # MCP 回包 body 是统一信封 {code, data}：比对的是 data 里的物料 / 批次
+    rollback_reads = [_body_data(_result(call).get("body", {})) for call in calls[failed_seen[0] + 1:topped_up]]
     plates = [body["material"] for body in rollback_reads if isinstance(body, dict)
               and body.get("material", {}).get("name") in {"flow_plate_01", "flow_plate_02"}]
     assert {plate["name"] for plate in plates} == {"flow_plate_01", "flow_plate_02"}

@@ -4,6 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.server.api.runtime.diagnostics import create_backend_router
@@ -85,13 +86,13 @@ def test_http_preview_confirm_and_shutdown(tmp_path, monkeypatch):
     app.include_router(create_backend_router(lambda: None, lambda: None))
     try:
         with TestClient(app) as client:
-            preview = client.get("/api/v1/reset").json()
+            preview = ok_data(client.get("/api/v1/reset"))
             assert preview["supported"]
-            assert client.post("/api/v1/reset", json={"confirmation_token": "x", "confirmation": "清空全部数据"}).status_code == 409
+            # 确认令牌不对：状态冲突 3003（HTTP 200 信封），不停机
+            error_of(client.post("/api/v1/reset", json={"confirmation_token": "x", "confirmation": "清空全部数据"}), 3003)
             assert not stopped
             reply = client.post("/api/v1/reset", json={"confirmation_token": preview["confirmation_token"], "confirmation": "清空全部数据"})
-            assert reply.status_code == 202
-            assert reply.json()["pending"]
+            assert ok_data(reply, status=202)["pending"]
             assert stopped == [True]
             assert not reset.backup.exists()
     finally:
@@ -132,8 +133,12 @@ def test_full_reset_real_split_runtime(tmp_path):
     log = tmp_path / "runtime.log"
     def request(path, payload=None):
         data = None if payload is None else json.dumps(payload).encode()
+        headers = {"Content-Type": "application/json"}
+        token_path = work / "control_token"
+        if token_path.exists():
+            headers["X-UniLab-Token"] = token_path.read_text(encoding="utf-8").strip()
         req = urllib.request.Request(f"http://127.0.0.1:{management}/api/v1{path}", data=data,
-                                     headers={"Content-Type": "application/json"})
+                                     headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
             return json.load(response)
     with log.open("w", encoding="utf-8") as stream:
@@ -152,6 +157,10 @@ def test_full_reset_real_split_runtime(tmp_path):
                 time.sleep(0.3)
             else:
                 pytest.fail(log.read_text(encoding="utf-8"))
+            assert request("/scheduler/drain", {})["phase"] == "drained"
+            assert request("/scheduler/drain/resume", {})["phase"] == "running"
+            # reset 预检在已有显式 drain 时也必须取得自己的暂停来源。
+            assert request("/scheduler/drain", {})["requested"]
             preview = request("/reset")
             assert preview["supported"]
             smoke = os.environ.get("OPENLAB_PROTOCOL_SMOKE")

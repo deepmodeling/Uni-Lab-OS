@@ -45,6 +45,23 @@ class WorkflowRecord(TableObject, table=True):
         sa_column=json_text_column("tags", default_json="[]"),
     )
     revision: int = Field(default=1, ge=1)
+    #: V1 工作流类型：normal（普通工作流）| experiment_operation（实验操作）。
+    workflow_type: str = "normal"
+    #: 实验操作类别；普通工作流恒为空。
+    operation_category_uuid: Optional[str] = None
+
+
+class WorkflowOperationCategoryRecord(TableObject, table=True):
+    """实验操作类别（V1 ``/experiment-operation-categories``）；删除为软删除，默认类别不会被重新补种。"""
+
+    __tablename__: ClassVar[str] = "workflow_operation_category"
+
+    uuid: NonEmptyStr = Field(primary_key=True)
+    create_time: NonEmptyStr
+    update_time: NonEmptyStr
+    deleted_at: Optional[str] = None
+    name: NonEmptyStr
+    sort_order: int = Field(default=100, ge=0, le=10_000)
 
 
 class WorkflowNodeTemplateRecord(TableObject, table=True):
@@ -152,6 +169,11 @@ class WorkflowNodeRecord(TableObject, table=True):
     disabled: int = Field(ge=0, le=1)
     minimized: int = Field(ge=0, le=1)
     script: Optional[str] = None
+    #: V1 节点人工确认配置（``{"timeout_seconds": N}``）；空对象表示未配置。
+    manual_confirmation: JsonObject = Field(
+        default_factory=dict,
+        sa_column=json_text_column("manual_confirmation", default_json="{}"),
+    )
 
 
 class WorkflowEdgeRecord(TableObject, table=True):
@@ -224,6 +246,15 @@ class WorkflowTaskRecord(TableObject, table=True):
     execution_kind: str = "workflow"
     idempotency_key: Optional[str] = None
     request_fingerprint: str = ""
+    #: V1 任务优先级（normal / high），只随任务持久化，排序由调度器负责
+    priority: str = "normal"
+    #: V1 库存绑定：逻辑需求键 → 具体库存实例与预留量（创建时冻结）
+    inventory_bindings: JsonArray = Field(
+        default_factory=list,
+        sa_column=json_text_column("inventory_bindings", default_json="[]"),
+    )
+    #: V1 普通模式的派发闸门：pause 关闸但不改执行模式
+    dispatch_gate: str = "active"
 
 
 class WorkflowNodeRunRecord(TableObject, table=True):
@@ -581,6 +612,7 @@ class FrontendEventRecord(TableObject, table=True):
 
 WORKFLOW_TABLE_MODELS = (
     WorkflowRecord,
+    WorkflowOperationCategoryRecord,
     WorkflowNodeTemplateRecord,
     WorkflowHandleTemplateRecord,
     WorkflowNodeRecord,
@@ -687,7 +719,11 @@ WORKFLOW_TABLES = (
             meta_data TEXT NOT NULL,
             name TEXT NOT NULL,
             tags TEXT NOT NULL,
-            revision INTEGER NOT NULL DEFAULT 1
+            revision INTEGER NOT NULL DEFAULT 1,
+            workflow_type TEXT NOT NULL DEFAULT 'normal' CHECK (
+                workflow_type IN ('normal', 'experiment_operation')
+            ),
+            operation_category_uuid TEXT
         )
         """,
         (
@@ -695,7 +731,24 @@ WORKFLOW_TABLES = (
             CREATE INDEX IF NOT EXISTS idx_workflow_created_active
             ON workflow(create_time DESC, uuid DESC) WHERE deleted_at IS NULL
             """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_workflow_type_active
+            ON workflow(workflow_type, operation_category_uuid) WHERE deleted_at IS NULL
+            """,
         ),
+    ),
+    TableSpec(
+        "workflow_operation_category",
+        """
+        CREATE TABLE IF NOT EXISTS workflow_operation_category (
+            uuid TEXT PRIMARY KEY,
+            create_time TEXT NOT NULL,
+            update_time TEXT NOT NULL,
+            deleted_at TEXT,
+            name TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 100 CHECK (sort_order BETWEEN 0 AND 10000)
+        )
+        """,
     ),
     TableSpec(
         "workflow_node_template",
@@ -811,6 +864,7 @@ WORKFLOW_TABLES = (
             disabled INTEGER NOT NULL,
             minimized INTEGER NOT NULL,
             script TEXT,
+            manual_confirmation TEXT NOT NULL DEFAULT '{}',
             FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid)
         )
         """,
@@ -935,6 +989,11 @@ WORKFLOW_TABLES = (
             ),
             idempotency_key TEXT,
             request_fingerprint TEXT NOT NULL DEFAULT '',
+            priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('normal', 'high')),
+            inventory_bindings TEXT NOT NULL DEFAULT '[]' CHECK (
+                json_valid(inventory_bindings) AND json_type(inventory_bindings) = 'array'
+            ),
+            dispatch_gate TEXT NOT NULL DEFAULT 'active' CHECK (dispatch_gate IN ('active', 'paused')),
             FOREIGN KEY(workflow_uuid) REFERENCES workflow(uuid),
             CHECK (
                 (
@@ -1197,7 +1256,9 @@ WORKFLOW_TABLES = (
                 json_valid(meta_data) AND json_type(meta_data) = 'object'
             ),
             workflow_task_uuid TEXT NOT NULL,
-            type TEXT NOT NULL CHECK (type IN ('step', 'pause', 'resume', 'cancel', 'edit_input')),
+            type TEXT NOT NULL CHECK (type IN (
+                'step', 'pause', 'resume', 'cancel', 'edit_input', 'switch_to_step', 'unlock_resources'
+            )),
             target_node_uuid TEXT,
             idempotency_key TEXT NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('pending', 'succeeded', 'rejected')),

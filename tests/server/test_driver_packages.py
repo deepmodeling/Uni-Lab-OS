@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import io
+import threading
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.driver_packages import create_driver_packages_router
 from unilabos.server.services import driver_packages as dp
 
@@ -29,6 +32,194 @@ class Pump:
     def dispense(self, volume_ml: float = 1.0):
         return {{"volume_ml": volume_ml}}
 '''
+
+
+def _seed_managed_package(service: dp.DriverPackageService) -> Path:
+    root = dp.packages_root(service.working_dir) / "demo" / "1.0"
+    _write_source_tree(root, name="demo", version="1.0", package="demo", device_id="old_device", deps=[])
+    dp.save_ledger(service.working_dir, {"demo": dp.DriverPackageRecord(
+        name="demo", version="1.0", source_kind="archive", package_root=str(root),
+        package_dirs=[str(root / "demo")], device_ids=["old_device"],
+    )})
+    return root
+
+
+def _fake_remote_source(service, tmp_path, monkeypatch, *, name="demo", version="2.0", valid=True):
+    staging = tmp_path / "download"
+    root = staging / "source"
+    if valid:
+        _write_source_tree(root, name=name, version=version, package="demo", device_id="new_device", deps=[])
+    else:
+        root.mkdir(parents=True)
+        (root / "pyproject.toml").write_text(f'[project]\nname="{name}"\nversion="{version}"\n', encoding="utf-8")
+    monkeypatch.setattr(service, "_fetch_source_tree", lambda source, log: (staging, root, "digest"))
+    monkeypatch.setattr(service, "_install_dependencies", lambda deps, upgrade, log: "")
+
+
+def test_busy_mutations_return_conflict_and_reads_stay_available(service, tmp_path, monkeypatch):
+    _seed_managed_package(service)
+    source = tmp_path / "local"
+    _write_source_tree(source, name="another", version="1.0", package="another", device_id="another", deps=["pyserial"])
+    entered = threading.Event()
+    release = threading.Event()
+
+    def slow_dependencies(deps, upgrade, log):
+        entered.set()
+        assert release.wait(5)
+        return "uv"
+
+    monkeypatch.setattr(service, "_install_dependencies", slow_dependencies)
+    app = FastAPI()
+    app.include_router(create_driver_packages_router())
+    with TestClient(app) as client:
+        started = client.post("/api/v1/driver-packages/install", json={"spec": str(source)})
+        assert started.status_code == 202
+        try:
+            assert entered.wait(3)
+            error_of(client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}), 3003)
+            error_of(client.delete("/api/v1/driver-packages/demo"), 3003)
+            error_of(client.post("/api/v1/driver-packages/install", json={"spec": str(source)}), 3003)
+            ok_data(client.get("/api/v1/driver-packages"))
+            assert len(service.operations()) == 1
+        finally:
+            release.set()
+        assert _wait(service, ok_data(started)["operation_id"])["status"] == "succeeded"
+        ok_data(client.put("/api/v1/driver-packages/demo/enabled", json={"enabled": False}))
+    assert set(dp.load_ledger(service.working_dir)) == {"demo", "another"}
+
+
+def test_terminal_operation_status_means_the_write_lock_is_free(service, tmp_path, monkeypatch):
+    """读到终态就能发起下一次变更：终态落盘与释放写锁对读者是原子的。"""
+    source = tmp_path / "local"
+    _write_source_tree(source, name="demo", version="1.0", package="demo", device_id="demo_pump", deps=[])
+    monkeypatch.setattr(service, "_install_dependencies", lambda *args: "")
+    original_mutation = service.source_changes.mutation
+
+    def slow_release(active: bool) -> None:
+        if not active:
+            time.sleep(0.3)  # 放大"终态已落盘、写锁未释放"的窗口（满载时线程恰好在这里被挂起）
+        original_mutation(active)
+
+    monkeypatch.setattr(service.source_changes, "mutation", slow_release)
+    done = _wait(service, service.start_install(str(source))["operation_id"])
+    assert done["status"] == "succeeded", done
+    again = _wait(service, service.start_install(str(source), upgrade=True)["operation_id"])
+    assert again["status"] == "succeeded", again
+
+
+def test_concurrent_enable_writes_cannot_lose_a_successful_update(service, monkeypatch):
+    dp.save_ledger(service.working_dir, {n: dp.DriverPackageRecord(name=n) for n in ("a", "b")})
+    entered = threading.Event()
+    release = threading.Event()
+    original_save = dp.save_ledger
+
+    def paused_save(path, records):
+        entered.set()
+        assert release.wait(5)
+        original_save(path, records)
+
+    monkeypatch.setattr(dp, "save_ledger", paused_save)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(service.set_enabled, "a", False)
+        try:
+            assert entered.wait(3)
+            with pytest.raises(dp.DriverPackageBusyError):
+                service.set_enabled("b", False)
+        finally:
+            release.set()
+        assert first.result(timeout=3)["enabled"] is False
+    assert service.set_enabled("b", False)["enabled"] is False
+    assert all(not item.enabled for item in dp.load_ledger(service.working_dir).values())
+
+
+def test_invalid_upgrade_keeps_previous_source_and_ledger(service, tmp_path, monkeypatch):
+    old = _seed_managed_package(service)
+    original = (old / "demo" / "pump.py").read_bytes()
+    _fake_remote_source(service, tmp_path, monkeypatch, valid=False)
+    done = _wait(service, service.start_install("https://example.invalid/demo.zip", upgrade=True)["operation_id"])
+    assert done["status"] == "failed"
+    assert dp.load_ledger(service.working_dir)["demo"].version == "1.0"
+    assert (old / "demo" / "pump.py").read_bytes() == original
+
+
+@pytest.mark.parametrize("version", ["1.0", "2.0"])
+def test_ledger_failure_rolls_back_source_replacement(service, tmp_path, monkeypatch, version):
+    old = _seed_managed_package(service)
+    original = (old / "demo" / "pump.py").read_bytes()
+    _fake_remote_source(service, tmp_path, monkeypatch, version=version)
+
+    def cannot_save(*args):
+        raise OSError("模拟台账写入失败")
+
+    monkeypatch.setattr(dp, "save_ledger", cannot_save)
+    done = _wait(service, service.start_install("https://example.invalid/demo.zip", upgrade=True)["operation_id"])
+    assert done["status"] == "failed" and "台账写入失败" in done["error"]
+    assert (old / "demo" / "pump.py").read_bytes() == original
+    assert dp.load_ledger(service.working_dir)["demo"].device_ids == ["old_device"]
+    assert list(old.parent.iterdir()) == [old]
+    assert list(service._staging_root().iterdir()) == []
+
+
+def test_uninstall_ledger_failure_restores_managed_source(service, monkeypatch):
+    old = _seed_managed_package(service)
+
+    def cannot_save(*args):
+        raise OSError("模拟台账写入失败")
+
+    monkeypatch.setattr(dp, "save_ledger", cannot_save)
+    done = _wait(service, service.start_uninstall("demo")["operation_id"])
+    assert done["status"] == "failed"
+    assert (old / "demo" / "pump.py").is_file()
+    assert "demo" in dp.load_ledger(service.working_dir)
+
+
+@pytest.mark.parametrize("name,version", [
+    (".", "1.0"), ("..", "1.0"), ("demo", "."), ("demo", ".."), (".staging", "1.0"),
+])
+def test_bad_package_metadata_cannot_escape_cache(service, tmp_path, monkeypatch, name, version):
+    sentinel = tmp_path / "keep.txt"
+    sentinel.write_text("保留", encoding="utf-8")
+    _fake_remote_source(service, tmp_path, monkeypatch, name=name, version=version)
+    dependencies = []
+    monkeypatch.setattr(service, "_install_dependencies", lambda *a: dependencies.append(True))
+    done = _wait(service, service.start_install("https://example.invalid/demo.zip")["operation_id"])
+    assert done["status"] == "failed" and "不能用作源码目录" in done["error"]
+    assert not dependencies
+    assert sentinel.read_text(encoding="utf-8") == "保留"
+    assert dp.load_ledger(service.working_dir) == {}
+
+
+def test_package_storage_symlink_is_rejected(service, tmp_path, monkeypatch):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    home = dp.packages_root(service.working_dir)
+    home.mkdir(parents=True)
+    try:
+        (home / "demo").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("当前环境不允许创建符号链接")
+    _fake_remote_source(service, tmp_path, monkeypatch)
+    done = _wait(service, service.start_install("https://example.invalid/demo.zip")["operation_id"])
+    assert done["status"] == "failed" and "符号链接" in done["error"]
+    assert list(outside.iterdir()) == []
+
+
+def test_local_package_keeps_explicit_symlink_mount(service, tmp_path, monkeypatch):
+    outside = tmp_path / "shared"
+    _write_source_tree(outside, name="demo", version="1.0", package="demo", device_id="linked_device", deps=[])
+    local = tmp_path / "checkout"
+    local.mkdir()
+    (local / "pyproject.toml").write_text('[project]\nname="demo"\nversion="1.0"\n', encoding="utf-8")
+    try:
+        (local / "demo").symlink_to(outside / "demo", target_is_directory=True)
+    except OSError:
+        pytest.skip("当前环境不允许创建符号链接")
+    monkeypatch.setattr(service, "_install_dependencies", lambda *a: "")
+    done = _wait(service, service.start_install(str(local))["operation_id"])
+    assert done["status"] == "succeeded", done
+    record = dp.load_ledger(service.working_dir)["demo"]
+    assert record.package_root == str(local)
+    assert record.package_dirs == [str(outside / "demo")]
 
 
 def _write_source_tree(root: Path, *, name: str, version: str, package: str, device_id: str, deps: list[str]) -> None:
@@ -202,6 +393,10 @@ def test_dependency_install_failure_and_toggle(service: dp.DriverPackageService,
     done = _wait(service, service.start_install(str(source))["operation_id"])
     assert done["status"] == "failed" and "依赖安装失败" in done["error"]
     assert service.inventory()["packages"] == []  # 失败不登记
+    assert done['requires_confirmation']
+    with pytest.raises(dp.DriverPackageBusyError):
+        service.start_install(str(source))
+    service.confirm_operation(done['operation_id'], done['version'], '已修复并核实共享依赖环境')
 
     dp.save_ledger(service.working_dir, {"x": dp.DriverPackageRecord(name="x", package_dirs=[], enabled=True)})
     record = service.set_enabled("x", False)
@@ -255,24 +450,24 @@ def test_router_endpoints(service: dp.DriverPackageService, tmp_path: Path, monk
 
     response = client.get("/api/v1/driver-packages")
     assert response.status_code == 200
-    body = response.json()
+    body = ok_data(response)
     assert body["scan_dirs"] and body["external_only"] is True
     assert body["packages"] == [] and body["packages_root"].endswith("driver_packages")
 
     monkeypatch.setattr(dp.DriverPackageService, "_index_url", staticmethod(lambda: ""))
-    assert client.get("/api/v1/driver-packages/catalog").json()["packages"] == []
-    assert client.post("/api/v1/driver-packages/install", json={"spec": ""}).status_code == 422
-    assert client.post("/api/v1/driver-packages/install", json={"spec": str(tmp_path / "missing")}).status_code == 422
-    assert client.post("/api/v1/driver-packages/install", json={"spec": "https://example.com/page"}).status_code == 422
-    assert client.get("/api/v1/driver-packages/operations/unknown").status_code == 404
-    assert client.put("/api/v1/driver-packages/ghost/enabled", json={"enabled": True}).status_code == 404
+    assert ok_data(client.get("/api/v1/driver-packages/catalog"))["packages"] == []
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": ""}), 1000)
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": str(tmp_path / "missing")}), 1000)
+    error_of(client.post("/api/v1/driver-packages/install", json={"spec": "https://example.com/page"}), 1000)
+    error_of(client.get("/api/v1/driver-packages/operations/unknown"), 4001)
+    error_of(client.put("/api/v1/driver-packages/ghost/enabled", json={"enabled": True}), 4001)
 
     source = tmp_path / "via_api"
     _write_source_tree(source, name="via-api", version="0.0.1", package="via_api", device_id="api_dev", deps=[])
     monkeypatch.setattr(service, "_install_dependencies", lambda deps, upgrade, log: "")
     accepted = client.post("/api/v1/driver-packages/install", json={"spec": str(source)})
     assert accepted.status_code == 202
-    done = _wait(service, accepted.json()["operation_id"])
+    done = _wait(service, ok_data(accepted)["operation_id"])
     assert done["status"] == "succeeded", done
-    assert client.get("/api/v1/driver-packages/operations").json()[0]["operation_id"] == accepted.json()["operation_id"]
-    assert client.delete("/api/v1/driver-packages/via-api").status_code == 202
+    assert ok_data(client.get("/api/v1/driver-packages/operations"))[0]["operation_id"] == ok_data(accepted)["operation_id"]
+    ok_data(client.delete("/api/v1/driver-packages/via-api"), status=202)

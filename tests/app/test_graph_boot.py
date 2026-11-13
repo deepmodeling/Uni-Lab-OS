@@ -415,3 +415,137 @@ class TestRegisterGraphFileToAuthority:
         assert cached["links"][0]["sourceHandle"] == "out"
         assert "source_handle" not in cached["links"][0]
         assert service.get_graph("old_lab")["revision"] == 1
+
+
+class TestLoadStartupGraph:
+    """``-g <文件>.json`` 的完整装配：legacy 升级 → Graph Authority → 运行时结构。"""
+
+    @pytest.fixture()
+    def physical_graph_slot(self, monkeypatch):
+        from unilabos.backend.runtime import workstation_protocol
+
+        monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", None)
+        return workstation_protocol
+
+    def test_example_graph_loads_through_graph_authority(
+        self, authority, tmp_path, monkeypatch, physical_graph_slot
+    ) -> None:
+        import shutil
+        from pathlib import Path
+
+        import unilabos
+        from unilabos.app.main import _load_startup_graph
+        from unilabos.config.config import BasicConfig
+        from unilabos.experiments.compile.pump_protocol import generate_pump_protocol
+
+        service, _paths = authority
+        monkeypatch.setattr(BasicConfig, "machine_name", "lab-pc")
+        source = (
+            Path(unilabos.__file__).parent
+            / "test/experiments/Protocol_Test_Station/pumptransfer_test_station.json"
+        )
+        graph_file = tmp_path / source.name
+        shutil.copy(source, graph_file)
+        args_dict = {"server_database_root": str(tmp_path), "graph": str(graph_file)}
+
+        loaded = _load_startup_graph(args_dict, str(tmp_path), is_slave=False)
+
+        # 本地文件已登记进权威，后续以权威缓存为准
+        assert args_dict["_graph_from_authority"] is True
+        assert args_dict["_graph_file_path"].endswith(".json")
+        assert service.get_graph("pumptransfer_test_station")["revision"] == 1
+
+        tree = loaded.resource_tree_set
+        (root,) = tree.root_nodes
+        assert root.res_content.id == "SimpleProtocolStation"
+        assert len(tree.all_nodes) == 10
+        assert all(node.res_content.uuid for node in tree.all_nodes)
+        assert {node.res_content.machine_name for node in tree.all_nodes} == {"lab-pc"}
+
+        # backend 连线：port 拆成 sourceHandle / targetHandle
+        assert loaded.links
+        for link in loaded.links:
+            assert "port" not in link
+            assert link["id"] == (
+                f"reactflow__edge-{link['source']}-{link['sourceHandle']}-"
+                f"{link['target']}-{link['targetHandle']}"
+            )
+
+        # 物理拓扑图登记给协议编译器，边保留端口字典
+        graph = physical_graph_slot.physical_setup_graph()
+        assert graph is loaded.physical_setup_graph
+        assert set(graph.nodes) == {node.res_content.id for node in tree.all_nodes}
+        assert graph.edges["multiway_valve_1", "flask_DMF"]["port"] == {
+            "multiway_valve_1": "2",
+            "flask_DMF": "outlet",
+        }
+        # dev 时代容器的 data.liquid 升级成内容物（FRAMEWORK_GAPS #32），编译器读的原字段保留
+        flask = next(node for node in tree.all_nodes if node.res_content.id == "flask_DMF")
+        assert [tuple(item) for item in flask.res_content.substances] == [("DMF", 800.0, "ul")]
+        assert graph.nodes["flask_DMF"]["data"]["liquid"] == [
+            {"liquid_type": "DMF", "liquid_volume": 800.0}
+        ]
+        steps = generate_pump_protocol(graph, "flask_DMF", "main_reactor", 10.0)
+        assert steps[0] == {
+            "device_id": "multiway_valve_1",
+            "action_name": "set_valve_position",
+            "action_kwargs": {"command": "2"},
+        }
+
+    def test_without_graph_starts_with_empty_graph(
+        self, tmp_path, monkeypatch, physical_graph_slot
+    ) -> None:
+        from unilabos.app.main import _load_startup_graph
+        from unilabos.config.config import BasicConfig
+
+        monkeypatch.setattr(BasicConfig, "startup_json_path", None)
+        loaded = _load_startup_graph({"graph": None}, str(tmp_path), is_slave=False)
+        assert loaded.resource_tree_set.trees == []
+        assert loaded.links == []
+        assert loaded.physical_setup_graph.number_of_nodes() == 0
+        assert physical_graph_slot.physical_setup_graph() is loaded.physical_setup_graph
+
+
+class TestRequireNodeLinkJson:
+    @pytest.fixture()
+    def exits(self, monkeypatch):
+        import unilabos.app.main as main_module
+
+        class _Exit(Exception):
+            pass
+
+        def _exit(code: int) -> None:
+            raise _Exit(code)
+
+        monkeypatch.setattr(main_module.os, "_exit", _exit)
+        return _Exit
+
+    def test_graphml_is_rejected_with_conversion_hint(self, tmp_path, exits, capsys) -> None:
+        from unilabos.app.main import _require_node_link_json
+
+        graph_file = tmp_path / "lab.graphml"
+        graph_file.write_text("<graphml/>", encoding="utf-8")
+        for path in (str(graph_file), "missing_lab.GraphML"):
+            with pytest.raises(exits):
+                _require_node_link_json(path)
+            message = capsys.readouterr().out
+            assert "不再支持 GraphML" in message
+            assert "node-link JSON" in message
+
+    def test_other_local_files_must_be_json(self, tmp_path, exits, capsys) -> None:
+        from unilabos.app.main import _require_node_link_json
+
+        graph_file = tmp_path / "lab.yaml"
+        graph_file.write_text("nodes: []", encoding="utf-8")
+        with pytest.raises(exits):
+            _require_node_link_json(str(graph_file))
+        assert "node-link JSON" in capsys.readouterr().out
+
+    def test_json_files_and_authority_identities_pass(self, tmp_path, exits) -> None:
+        from unilabos.app.main import _require_node_link_json
+
+        graph_file = tmp_path / "lab.json"
+        graph_file.write_text(json.dumps(PAYLOAD), encoding="utf-8")
+        _require_node_link_json(str(graph_file))
+        # 非本地文件：按 uuid / 名称交给 Graph Authority 解析
+        _require_node_link_json("my_lab")

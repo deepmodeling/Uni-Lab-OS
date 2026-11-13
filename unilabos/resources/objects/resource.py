@@ -432,6 +432,23 @@ class ResourceDict(BaseModel):
                 raise ValueError("根字段 pose.position 与 config.pose.position 冲突")
         normalized_pose = normalized_root_pose or normalized_config_pose
 
+        # PLR state.location 是同一位置的快照，不应成为第二份权威数据。
+        # 旧数据仅在没有显式 pose.position 时迁入；显式 None 也表示清空位置。
+        if content.get("type") != "device" and "location" in data:
+            state_location = data.pop("location")
+            has_position = any(
+                isinstance(pose, ResourceDictPosition)
+                or (isinstance(pose, dict) and "position" in pose)
+                for pose in (root_pose, config_pose)
+            )
+            if not has_position:
+                if isinstance(state_location, dict):
+                    state_location = dict(state_location)
+                    state_location.pop("type", None)
+                normalized_pose = ResourceDictPosition.model_validate(
+                    {**(normalized_pose or {}), "position": state_location}
+                ).model_dump()
+
         content.pop("available_sites", None)
         config.pop("available_sites", None)
 
@@ -587,6 +604,9 @@ PLR_CONFIG_ROOT_KEYS = (
 
 def assemble_tracker_state(resource: ResourceDict) -> Dict[str, Any]:
     state = copy.deepcopy(resource.data)
+    if resource.type != "device":
+        # 防止调用方直接修改 data 后，旧快照在 load_all_state 中覆盖 pose/Site。
+        state.pop("location", None)
     for state_key in TRACKER_STATE_KEYS:
         root_value = getattr(resource, state_key)
         if root_value is not None:

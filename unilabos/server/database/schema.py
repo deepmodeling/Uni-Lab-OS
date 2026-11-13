@@ -1,15 +1,17 @@
 """四个独立 SQLite 文件共用的声明式 schema、版本迁移与建库入口。
 
-每个库声明 ``schema_version`` 与一串线性迁移（Flyway 式）。库内版本记在
+每个库声明 ``schema_version`` 与一串线性迁移（Flyway 式）。0.13 发布线上四个库都以
+v1 为基线、尚无迁移；之后的结构变化从 v2 起追加迁移。库内版本记在
 ``PRAGMA user_version``，结构指纹记在 ``schema_identity.checksum``：
 
-- 指纹一致：直接复用；
+- 库内版本不高于代码版本且指纹一致：直接复用；
 - 库内版本低于代码版本且迁移连续：先用 SQLite backup API 备份为
   ``<file>.pre-v<N>-<时间戳>.bak``，再在一个事务里依次执行迁移，执行后与当前声明逐表
   比对列、索引与触发器并做外键检查，任何一项不符都整体回滚；
-- 没有迁移路径（指纹漂移、版本缺失或更高）：按 ``on_unmigratable`` 处理。``refuse``
+- 没有迁移路径（指纹漂移、版本缺失或高于代码版本）：按 ``on_unmigratable`` 处理。``refuse``
   拒绝启动并保留旧库原样；``rebuild`` 把旧库改名为 ``<file>.bak-<时间戳>`` 后重建空库。
-  ``BasicConfig.database_rebuild_on_mismatch`` 可在开发期显式允许 ``refuse`` 库重建。
+  ``runtime`` / ``materials`` 是 ``refuse``，``telemetry`` / ``history`` 是 ``rebuild``；
+  ``BasicConfig.database_rebuild_on_mismatch`` 可显式允许 ``refuse`` 库备份后重建。
 """
 
 from __future__ import annotations
@@ -132,8 +134,13 @@ class DatabaseSpec:
     """一个物理 SQLite 文件的完整 schema。
 
     ``contract_version`` 表示表结构之外的行内容契约（JSON 列的形状、幂等键的
-    派生规则、枚举取值等）；它计入结构指纹。``schema_version`` 是迁移序号：
-    DDL 或 ``contract_version`` 变化时把它 +1，并在 ``migrations`` 里给出对应迁移。
+    派生规则、枚举取值等）；它计入结构指纹。``schema_version`` 是迁移序号，从 1
+    （无迁移的基线）开始：DDL 或 ``contract_version`` 变化时把它 +1，并在
+    ``migrations`` 里给出对应迁移。
+
+    ``released_checksums`` 是已发布版本的结构指纹 ``(版本, 指纹)``：库内是这些版本时指纹也必须
+    一致才执行迁移。同号不同指纹的库（例如版本基线压平前、恰好停在同一序号的开发库）没有迁移
+    路径，按 ``on_unmigratable`` 处理，而不是迁移到一半再因结构核对失败回滚。不计入结构指纹。
     """
 
     key: str
@@ -145,6 +152,7 @@ class DatabaseSpec:
     schema_version: int = 1
     migrations: tuple[Migration, ...] = field(default=())
     on_unmigratable: Literal["refuse", "rebuild"] = "rebuild"
+    released_checksums: tuple[tuple[int, str], ...] = ()
 
     def __post_init__(self) -> None:
         if self.schema_version < 1:
@@ -257,14 +265,26 @@ def _inspect(connection: sqlite3.Connection, spec: DatabaseSpec) -> _SchemaState
         return _SchemaState("empty")
     stored_checksum = str(rows[0][1])
     stored_version = _user_version(connection)
+    if stored_version > spec.schema_version:
+        # 指纹一致也不复用：库由更新的代码或版本基线压平前的开发版本写入，残留的
+        # schema_migration 记录会与之后同号的迁移冲突。
+        return _SchemaState(
+            "unmigratable", stored_version, stored_checksum, "库内版本高于代码版本（更新的代码或压平前的开发库）"
+        )
     if stored_checksum == spec.checksum:
         return _SchemaState("current", stored_version, stored_checksum)
     if 1 <= stored_version < spec.schema_version:
+        released = dict(spec.released_checksums).get(stored_version)
+        if released is not None and stored_checksum != released:
+            return _SchemaState(
+                "unmigratable", stored_version, stored_checksum,
+                f"库内版本 v{stored_version} 的结构指纹不是已发布的 v{stored_version}（版本基线压平前的开发库）",
+            )
         return _SchemaState("migratable", stored_version, stored_checksum)
     if stored_version == 0:
         reason = "库内没有迁移版本且结构指纹不同（迁移机制之前的旧结构）"
-    elif stored_version >= spec.schema_version:
-        reason = "库内版本不低于代码版本，但结构指纹不同"
+    elif stored_version == spec.schema_version:
+        reason = "库内版本与代码版本相同，但结构指纹不同"
     else:
         reason = "结构指纹不同且没有迁移路径"
     return _SchemaState("unmigratable", stored_version, stored_checksum, reason)

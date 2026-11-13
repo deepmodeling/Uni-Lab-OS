@@ -56,6 +56,7 @@ _TERMINAL_EVENT_STATUS = {
     "execution.succeeded": ("succeeded", True),
     "execution.failed": ("failed", False),
     "execution.canceled": ("canceled", False),
+    "execution.execution_unknown": ("execution_unknown", False),
 }
 
 
@@ -76,7 +77,7 @@ def _positive_seconds(value: Any) -> Optional[float]:
 
 
 def _decode_payload_document(body: Any) -> Optional[Any]:
-    """``GET /api/v1/history/payloads/{uuid}`` 的正文 → 原始 JSON。"""
+    """``GET /api/v1/edge/history/payloads/{uuid}`` 的正文 → 原始 JSON。"""
 
     if not isinstance(body, dict):
         return None
@@ -99,17 +100,25 @@ class EdgePayloadClient:
 
     def fetch_json(self, payload_uuid: str) -> Optional[Any]:
         response = self._service.http_request(
-            "GET", f"/api/v1/history/payloads/{payload_uuid}", timeout=self.timeout
+            "GET", f"/api/v1/edge/history/payloads/{payload_uuid}", timeout=self.timeout
         )
-        if response is None or response.status_code != 200:
+        if response is None:
+            logger.warning("[EdgeControl] 拉取 payload %s 失败: Edge 未响应", payload_uuid)
+            return None
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_response_data
+
+        try:
+            return _decode_payload_document(edge_response_data(response))
+        except EnvelopeError as exc:
             logger.warning(
-                "[EdgeControl] 拉取 payload %s 失败: %s",
+                "[EdgeControl] 拉取 payload %s 失败: 业务码 %s（HTTP %s）%s",
                 payload_uuid,
-                "Edge 未响应" if response is None else f"HTTP {response.status_code}",
+                exc.code,
+                response.status_code,
+                exc.error,
             )
             return None
-        try:
-            return _decode_payload_document(json.loads(response.body_bytes().decode("utf-8")))
         except (ValueError, UnicodeDecodeError):
             logger.warning("[EdgeControl] payload %s 正文不是合法 JSON", payload_uuid)
             return None
@@ -124,7 +133,10 @@ class _HttpWaiter:
 
 
 class EdgeControlService:
-    """单 Edge 的 runtime.v1 控制面服务端与调度执行代理。"""
+    """一个 backend 对应一个主 Host/runtime；slave 经该 runtime 扩展设备。
+
+    控制面只保留一条主连接，新会话替换旧会话属于重连，不是多主 Host 复用。
+    """
 
     def __init__(
         self,
@@ -222,6 +234,11 @@ class EdgeControlService:
         waiter.event.set()
         return True
 
+    def fail_pending_http_requests(self) -> None:
+        """让所有等 Edge 回结果的 ``http_request`` 立即返回 None（权威停机时调用，非阻塞）。"""
+
+        self._fail_http_waiters()
+
     def _fail_http_waiters(self) -> None:
         with self._lock:
             waiters = list(self._http_waiters.values())
@@ -252,6 +269,9 @@ class EdgeControlService:
         else:
             retry_of_job_uuid = str(retry_of_job_uuid)
         content = ExecuteJobContent(
+            execution_permit=payload.get("execution_permit"),
+            resource_contract=payload.get("resource_contract"),
+            material_execution=payload.get("material_execution"),
             job_uuid=job_uuid,
             task_uuid=str(payload["task_id"]),
             node_uuid=str(payload["node_id"]),
@@ -353,6 +373,12 @@ class EdgeControlService:
         except Exception:  # noqa: BLE001 - 注册表查询失败按未声明处理
             logger.exception("[EdgeControl] 解析动作声明失败: %s/%s", device_id, action_name)
             return None
+
+    def resolve_action_schema(self, device_id: str, action_name: str) -> dict[str, Any] | None:
+        """从当前注册表读取动作合同，供候选计划冻结及预检使用。"""
+        action = self._action_definition(device_id, action_name)
+        schema = action.get("schema") if action else None
+        return deepcopy(schema) if isinstance(schema, dict) else None
 
     def resolve_material_lock_parameters(
         self, device_id: str, action_name: str
@@ -470,6 +496,15 @@ class EdgeControlService:
             )
             return False
         replace = selected == "operator_intervention" and result is not None
+        if replace:
+            schema = self.resolve_action_schema(str(report.get("device_id") or ""), str(report.get("action_name") or ""))
+            if schema and "x-unilabos-action-contract" in schema:
+                from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
+
+                try:
+                    validate_action_values(schema, result, section="result")
+                except TypedActionValueError:
+                    return False
         content = ErrorDecisionContent(
             decision_uuid=decision_id,
             confirmed_scheduler_revision=int(pending["required_scheduler_revision"]),
@@ -560,6 +595,25 @@ class EdgeControlService:
                     callback(deepcopy(report))
                 except Exception:  # noqa: BLE001 - 单个 bridge 失败不影响决策登记
                     logger.exception("[EdgeControl] publish_job_error_decision_required 失败")
+
+    def _record_late_outcome(self, notice: EdgeChangeNotice, *, final_attempt: bool = False) -> None:
+        """超时结算后驱动真实返回：转交调度权威记录迟到结果并释放该 attempt 仍持有的锁。"""
+
+        job_uuid = notice.job_uuid or notice.aggregate_uuid
+        detail = self._event_detail(notice, final_attempt=final_attempt)
+        report = dict(detail.get("report") or {}) if isinstance(detail, dict) else {}
+        report["job_id"] = job_uuid
+        if isinstance(detail, dict):
+            report.setdefault("status", detail.get("status"))
+            report.setdefault("return_info", detail.get("return_info") or {})
+        logger.info("[EdgeControl] job %s 超时后驱动返回迟到结果 %s", job_uuid, report.get("status"))
+        for bridge in list(self.result_bridges):
+            callback = getattr(bridge, "publish_job_late_outcome", None)
+            if callable(callback):
+                try:
+                    callback(deepcopy(report))
+                except Exception:  # noqa: BLE001 - 单个 bridge 失败不影响其他 bridge
+                    logger.exception("[EdgeControl] publish_job_late_outcome 失败")
 
     def wait_idle(self, timeout: float = 5.0) -> bool:
         deadline = time.time() + timeout
@@ -785,6 +839,12 @@ class EdgeControlService:
                 break
 
     @property
+    def edge_process(self) -> str:
+        """当前 Host 进程身份；单纯 WebSocket 重连不会改变。"""
+        with self._lock:
+            return self._edge_process
+
+    @property
     def connected(self) -> bool:
         with self._lock:
             return self._connected
@@ -945,6 +1005,9 @@ class EdgeControlService:
         if notice.event_type == "execution.error_resumed":
             self._record_error_resumed(notice)
             return
+        if notice.event_type == "execution.late_outcome":
+            self._record_late_outcome(notice, final_attempt=final_attempt)
+            return
         terminal = _TERMINAL_EVENT_STATUS.get(notice.event_type)
         if terminal is None:
             logger.debug(
@@ -965,7 +1028,8 @@ class EdgeControlService:
         if not isinstance(return_info, dict):
             return_info = {}
         ret_value = return_info.get("return_value")
-        suc_type = str(return_info.get("suc_type") or "normal")
+        suc_type = (SUCCESS_TYPE_EXECUTION_UNKNOWN if status == "execution_unknown"
+                    else str(return_info.get("suc_type") or "normal"))
         with self._lock:
             self._inflight.pop(job_uuid, None)
             for decision_id in [

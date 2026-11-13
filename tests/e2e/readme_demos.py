@@ -127,7 +127,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLanDemo",
         url="https://github.com/Xuwznln/LabDeviceLanDemo",
-        ref="3a76d122761cfe7bb8171a157c27336447ad8235",
+        ref="25d587942f58ed1ef300e82ced47b98d0c5eee8b",
         package="lan_demo",
         host_graph="examples/host.json",
         slave_graph="examples/slave.json",
@@ -143,7 +143,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         repo="LabDeviceWorkstationDemo",
         url="https://github.com/Xuwznln/LabDeviceWorkstationDemo",
         # b9da1ae6：设备不自跑 proof，inspect_endpoints 成为第四步。
-        ref="43d59709c2268abe4d3c14c09970dc0b526b2504",
+        ref="eca1211df46da21f7534da506fb581ec26c86d7c",
         package="workstation_demo",
         host_graph="graph/workstation_demo.json",
         # 设备不自跑闭环：串口回环 / 双传感器探测 / 共享端点计数全部由 @workflow 经 API 触发
@@ -152,7 +152,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceExceptionDemo",
         url="https://github.com/Xuwznln/LabDeviceExceptionDemo",
-        ref="d6f2f8b14f79be3491e0a4a83b663437f46b3a35",
+        ref="fa68f8e14c11cdc37d08886d1fa8addb6a0031c6",
         package="exception_demo",
         host_graph="graph/exception_demo.json",
         # 该 demo 设备内不自跑闭环：全部路径都是网页式工作流提交 + 决策链。
@@ -185,7 +185,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceComplexWorkflowDemo",
         url="https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo",
-        ref="9dda0f1d8a8f6b0ba834761d173869918b840b9e",
+        ref="59b0fb6b9db21a064cccdcb5bccfb1653750c616",
         package="complex_workflow_demo",
         host_graph="graph/complex_workflow_demo.json",
         # 循环容器：循环体节点每轮一个 attempt（trigger=loop_iteration），循环节点自身 1 个 attempt；
@@ -195,8 +195,13 @@ DEMOS: tuple[DemoSpec, ...] = (
             WorkflowExpectation(name="循环演示：定次加样", node_count=4, attempt_counts=(1, 1, 3, 1)),
             # 空循环体按设备状态轮询：轮数取决于升温耗时，不断言；循环节点仍是 1 个 attempt
             WorkflowExpectation(name="循环演示：等待升温", node_count=5),
-            # 复位 / 循环 / 提纯 ×2 / 取样检测 ×2 / 汇总
-            WorkflowExpectation(name="循环演示：提纯达标", node_count=5, attempt_counts=(1, 1, 2, 2, 1)),
+            # 静态 AST if/else（LabDeviceComplexWorkflowDemo#6）：三轮检测，未达标则提纯，达标后跳过提纯
+            WorkflowExpectation(
+                name="循环演示：提纯达标",
+                node_count=7,
+                node_statuses=("succeeded",) * 5 + ("skipped", "succeeded"),
+                attempt_counts=(1, 1, 3, 3, 3, 3, 1),
+            ),
             # 复位 / 板 ×2 / 切换到板 ×2 / 板孔 ×3（内层 loop，外层每轮一次）×2 / 孔位加样 ×6 / 汇总
             WorkflowExpectation(name="循环演示：嵌套板孔", node_count=6, attempt_counts=(1, 1, 2, 2, 6, 1)),
             WorkflowExpectation(
@@ -212,7 +217,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="7120d08a4ad4ebac221809b983825ea2711ed404",
+        ref="d1e8192e59ca8b2180238307b2c914d596f7040b",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",
@@ -228,7 +233,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLockDemo",
         url="https://github.com/Xuwznln/LabDeviceLockDemo",
-        ref="333481aab9dbcd98c5c9cafe157121ec62e1c70c",
+        ref="a12d8e0e48094ec7154c3b252f575cfa9c5acdfb",
         package="lock_demo",
         host_graph="graph/lock_demo.json",
         # 无设备自跑闭环：锁语义只能在"多个任务同时申请资源"时观察，靠并发组制造竞争。
@@ -253,7 +258,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         repo="LabDeviceInventoryDemo",
         url="https://github.com/Xuwznln/LabDeviceInventoryDemo",
         # b142910b：库存需求 kind reagent -> lot（与本仓库 InventoryRequirement 的 Literal 同步）。
-        ref="cbc920e325fe96fa141f0a964ebe345fa9a6e26d",
+        ref="6c62b712c22c6e2443285daefe18613fb5293da3",
         package="inventory_demo",
         host_graph="graph/inventory_demo.json",
         # 每次 e2e 都是全新数据库：入库 100 → 出库 40 → 500 被拒 → 盘点 60/60/0
@@ -550,8 +555,19 @@ def _wait_process_group_exit(group: int, timeout: float = 10.0) -> None:
         time.sleep(0.1)
 
 
+SERVICE_UNAVAILABLE_CODE = 5001
+
+
+class ServiceUnavailable(RuntimeError):
+    """信封业务码 5001：依赖暂不可用（如 Host 子进程启动 / 重启中），轮询时按瞬时错误重试。"""
+
+
 def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, *, method: str | None = None) -> Any:
-    """请求管理 API；``{"code":0,"data":...}`` 信封自动解包，其余原样返回。"""
+    """请求管理 API；``{"code":0,"data":...}`` 信封自动解包，其余原样返回。
+
+    Host 专有路由在 Host 子进程就绪前返回 HTTP 200 + 5001（V1 信封约定，原 dev 为 HTTP 503），
+    抛 :class:`ServiceUnavailable`，由 :func:`wait_until` 当作瞬时错误重试。
+    """
 
     url = f"http://127.0.0.1:{port}/api/v1{path}"
     data = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -563,6 +579,8 @@ def api_request(port: int, path: str, payload: Optional[dict[str, Any]] = None, 
     with urllib.request.urlopen(request, timeout=5) as response:
         body = json.loads(response.read().decode("utf-8"))
     if isinstance(body, dict) and "code" in body:
+        if body["code"] == SERVICE_UNAVAILABLE_CODE:
+            raise ServiceUnavailable(f"管理 API {path} 暂不可用: {body}")
         if body["code"] != 0:
             raise RuntimeError(f"管理 API {path} 返回错误: {body}")
         return body.get("data")
@@ -586,7 +604,7 @@ def wait_until(
             raise RuntimeError(f"等待 {description or 'condition'} 期间被中止")
         try:
             value = predicate()
-        except (urllib.error.URLError, OSError) as exc:
+        except (urllib.error.URLError, OSError, ServiceUnavailable) as exc:
             last_error = exc
             value = None
         if value:

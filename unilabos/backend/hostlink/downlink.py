@@ -42,7 +42,8 @@ def remote_device_relay() -> bool:
 def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     import json
 
-    from unilabos.server.api.edge_proxy import edge_http
+    from unilabos.client.utils.envelope import EnvelopeError
+    from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
     response = edge_http(
         "POST",
@@ -53,15 +54,12 @@ def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     )
     if response is None:
         raise RuntimeError(f"Host 进程不在线，无法经控制面执行 {path}")
-    text = response.body_bytes().decode("utf-8", errors="replace")
     try:
-        parsed = json.loads(text) if text else None
-    except ValueError:
-        parsed = None
-    if response.status_code >= 300:
-        detail = parsed.get("detail", text) if isinstance(parsed, dict) else text
-        raise RuntimeError(f"Host 中继 {path} 返回 HTTP {response.status_code}: {detail}")
-    return parsed
+        return edge_response_data(response)
+    except EnvelopeError as exc:
+        raise RuntimeError(f"Host 中继 {path} 失败（业务码 {exc.code}）: {exc.error}") from exc
+    except ValueError as exc:
+        raise RuntimeError(f"Host 中继 {path} 返回无效响应（HTTP {response.status_code}）") from exc
 
 
 def remote_material_sync_dispatcher(command: Any) -> Dict[str, Any]:
@@ -153,7 +151,7 @@ def local_resource_append(data: Dict[str, Any]) -> Dict[str, Any]:
     device_id = str(data.get("device_id") or "")
     node = _require_local_device_node(device_id)
     payload = {key: value for key, value in data.items() if key != "device_id"}
-    return run_node_coroutine(node, node.append_resource(payload))
+    return node.append_resource_blocking(payload)
 
 
 def local_material_sync(data: Dict[str, Any]) -> Dict[str, Any]:

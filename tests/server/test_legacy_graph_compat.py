@@ -1,4 +1,4 @@
-"""旧后端导出图 / 旧示例图只在 legacy 适配层转换；微后端与 graphio 只认当前契约。
+"""旧后端导出图 / 旧示例图只在 legacy 适配层转换；微后端与 Graph Authority 装配只认当前契约。
 
 覆盖旧 Backend ``/edge/material/download`` 与 dev 分支示例图的形状：``class``
 无 ``template_name``、根级 ``position``、``pose.position_3d``、``children``、
@@ -141,6 +141,59 @@ def test_normalize_legacy_liquid_fields():
     assert "liquids" not in empty["data"]
 
 
+
+def test_dev_era_container_liquid_becomes_substances():
+    """FRAMEWORK_GAPS #32：dev 时代容器的 ``data.liquid=[{liquid_type, liquid_volume}]``。
+
+    升级把它转成当前契约的内容物（``data.liquids`` → ``substances``），不能静默丢掉；
+    ``data.liquid`` 原样保留，内置协议编译器仍从物理拓扑图读取它。
+    """
+
+    legacy_liquid = [
+        {"liquid_type": "CH2Cl2", "liquid_volume": 1500.0},
+        {"liquid_type": "", "liquid_volume": None},
+    ]
+    node = normalize_legacy_graph_node(
+        _legacy_node(
+            id="flask_CH2Cl2",
+            name="flask_CH2Cl2",
+            type="container",
+            config={"max_volume": 2000.0},
+            data={"liquid": [dict(item) for item in legacy_liquid]},
+        )
+    )
+    assert node["data"]["liquids"] == [["CH2Cl2", 1500.0, "ul"]]
+    assert node["data"]["liquid"] == legacy_liquid
+
+    # 已有当前契约内容物时不覆盖
+    current = normalize_legacy_graph_node(
+        _legacy_node(
+            type="container",
+            data={"liquid": [{"liquid_type": "old", "liquid_volume": 1.0}]},
+            substances=[["new", 2.0, "ul"]],
+        )
+    )
+    assert "liquids" not in current["data"] and current["substances"] == [["new", 2.0, "ul"]]
+
+    # 只有 data.liquid 这一处旧字段的图同样会被识别并升级，升级后不再报旧字段
+    flask = {
+        "id": "flask",
+        "uuid": str(uuid4()),
+        "type": "container",
+        "template_name": "container",
+        "pose": {"position": {"x": 0, "y": 0, "z": 0}},
+        "config": {"max_volume": 1000.0},
+        "data": {"liquid": [{"liquid_type": "DMF", "liquid_volume": 800.0}]},
+    }
+    payload = {"nodes": [flask], "links": []}
+    assert legacy_graph_markers(payload) == {"旧液体字段": 1}
+    upgraded = upgrade_legacy_graph_payload(payload, source="t", report=lambda _message: None)
+    assert upgraded["nodes"][0]["data"]["liquids"] == [["DMF", 800.0, "ul"]]
+    assert legacy_graph_markers(upgraded) == {}
+    # 空列表不是旧字段
+    assert legacy_graph_markers({"nodes": [{**flask, "data": {"liquid": []}}], "links": []}) == {}
+
+
 def test_occupied_by_resolves_only_current_children():
     deck_uuid, plate_uuid, other_uuid = str(uuid4()), str(uuid4()), str(uuid4())
     deck = _legacy_node(
@@ -273,24 +326,18 @@ def test_material_nodes_batch_resolves_occupied_by_and_fills_defaults():
     assert plate["parent_uuid"] == deck_uuid and plate["template_name"] == "host_node"
 
 
-# ── 微后端 / graphio 只认当前契约 ───────────────────────────────
+# ── 微后端 / Graph Authority 装配只认当前契约 ───────────────────
 
 
-@pytest.fixture
-def graphio():
-    return pytest.importorskip(
-        "unilabos.resources.graphio",
-        reason="GraphIO 依赖 ROS Jazzy 生成的 unilabos_msgs",
-        exc_type=ImportError,
-    )
+def test_graph_loader_loads_converted_export_but_rejects_raw_legacy_shape():
+    from unilabos.server.services.materials.graph import load_graph_payload
 
-
-def test_graphio_loads_converted_export_but_rejects_raw_legacy_shape(graphio):
     payload, ids = _legacy_export()
     with pytest.raises(ValueError, match="根字段 position 不受支持"):
-        graphio.read_node_link_json(payload)
+        load_graph_payload(payload, machine_name="lab-pc")
 
-    graph, tree, links = graphio.read_node_link_json(normalize_legacy_graph(payload))
+    loaded = load_graph_payload(normalize_legacy_graph(payload), machine_name="lab-pc")
+    tree, links = loaded.resource_tree_set, loaded.links
     assert len(tree.all_nodes) == 6
     by_uuid = {node.res_content.uuid: node for node in tree.all_nodes}
     assert by_uuid[ids["well_a"]].res_content.parent.uuid == ids["plate_a"]

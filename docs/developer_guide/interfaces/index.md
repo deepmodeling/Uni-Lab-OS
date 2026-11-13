@@ -9,7 +9,7 @@
 | --- | --- |
 | 起点 | `99558a5a`，2026-08-10，首次在 dev 引入 Jazzy / Python 3.12 / NumPy 2（PR #304） |
 | 终点 | `862ce87a38222ac2d51739f2f89e5daecd3cd907`，2026-09-14（PR #317），版本号 0.12.1 |
-| 运行时 | Python 3.12；ROS2 Jazzy / Humble；无 ROS 通信时使用 HostLink |
+| 运行时 | Python 3.14（cp314）；ROS2 Jazzy / Humble；无 ROS 通信时使用 HostLink |
 | HTTP | 当前离线导出 134 个路径、163 个操作；含两条 SSE 路由 |
 | 额外通道 | runtime.v1 控制 WS、内部 HTTP 中继、HostLink TCP、MCP `/mcp` |
 | 本次不纳入 | 工作区未提交的代码、独立前端内部组件 API、每一台硬件厂商的私有指令集 |

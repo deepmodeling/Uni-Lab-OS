@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import os
@@ -10,13 +11,14 @@ import signal
 import stat
 import struct
 import threading
+import time
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager, suppress
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
-from uuid import uuid4
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from uuid import UUID, uuid4
 
 try:  # Linux authoring CAS 使用 file lease；Windows 仍需支持 Workflow Runtime。
     import fcntl  # type: ignore[import-not-found]
@@ -86,11 +88,21 @@ from unilabos.server.services.runtime.workflow.publication import (
     publication_source_hash,
     publication_summary,
 )
+from unilabos.server.services.runtime.workflow.definition_service import WorkflowDefinitionEditing
+from unilabos.server.services.runtime.workflow.node_templates import NodeTemplateCatalog
+from unilabos.server.services.runtime.workflow.operation_category import (
+    UNSET as CATEGORY_UNSET,
+    OperationCategories,
+    OperationCategoryError,
+    category_uuid,
+    normalize_workflow_type,
+)
 from unilabos.server.services.runtime.workflow.workflow_io import (
     WorkflowIOValidationError,
     validate_workflow_graph_io,
 )
 from unilabos.server.database.sqlite_domain import DomainDatabase
+from unilabos.utils.file_lock import acquire_exclusive_file_lock, release_file_lock
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +144,8 @@ _ERRORS = {
         "工作流模板的角色未能绑定到设备，请在 bindings 中指定",
     ),
     "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
+    "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
+    "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
     "local_task_authority_forbidden": (
         409,
         "当前调度权威运行模式不允许创建本地可执行工作流任务",
@@ -155,10 +169,86 @@ _MANUAL_CONFIRMATION_CONFLICTS = {
     "decision_idempotency_key already used": "manual_confirmation_key_used",
 }
 _HASH_TOKEN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+#: 本机托管源码工作区的包身份与可导入文件名
+MANAGED_SOURCE_PACKAGE = "local"
+_SOURCE_FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,100}\.py\Z")
 _NO_EXPECTED_HASH = object()
 _F_SETOWN_EX = getattr(fcntl, "F_SETOWN_EX", 15) if fcntl is not None else 15
 _F_OWNER_TID = 0
 _LEASE_BREAK_SIGNAL = getattr(signal, "SIGRTMAX", signal.SIGTERM)
+
+# 源码回写后端 -----------------------------------------------------------------
+# linux_lease：Linux file lease + dir_fd 的强路径（_compare_and_replace）；
+# portable：macOS / Windows 的路径版实现（_portable_atomic_write），外部契约相同，
+# 但检测不到“外部编辑器在比较与替换之间写入”，差异见 _portable_atomic_write。
+#: 仅供测试强制可移植路径：``UNILABOS_SOURCE_WRITE_BACKEND=portable``
+_SOURCE_WRITE_BACKEND_ENV = "UNILABOS_SOURCE_WRITE_BACKEND"
+_SOURCE_WRITE_LEASE = "linux_lease"
+_SOURCE_WRITE_PORTABLE = "portable"
+#: 可移植路径等待 sidecar 锁的上限；超时按并发修改返回 draft_hash_conflict
+_PORTABLE_LOCK_TIMEOUT_SECONDS = 10.0
+_PORTABLE_LOCK_POLL_SECONDS = 0.02
+#: Windows 名称代理型重解析点（符号链接、目录联接、挂载点）标志位
+_REPARSE_TAG_NAME_SURROGATE = 0x20000000
+_O_BINARY = getattr(os, "O_BINARY", 0)
+_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+#: 目标缺失时的不覆盖发布：Windows 的 rename 不替换已有文件；POSIX 用 link（已存在即失败）
+_NO_CLOBBER_RENAME = os.name == "nt"
+
+
+def _linux_lease_write_supported() -> bool:
+    """Linux 强路径所需原语是否齐备（缺任何一项都不能走强路径）。
+
+    需要 file lease（``F_SETLEASE`` / ``F_SETSIG``）、同步消费 lease 通知的
+    ``signal.sigtimedwait`` / ``pthread_sigmask`` 与实时信号，以及 ``O_DIRECTORY`` /
+    ``O_NOFOLLOW`` 和 ``dir_fd`` 相对的 open / stat / mkdir / link / unlink / rename
+    （``os.replace`` 与 ``os.rename`` 共用 dir_fd 支持）。
+    """
+
+    if fcntl is None or not all(
+        hasattr(fcntl, name) for name in ("F_SETLEASE", "F_SETSIG", "F_WRLCK", "F_UNLCK")
+    ):
+        return False
+    if not all(hasattr(signal, name) for name in ("sigtimedwait", "pthread_sigmask", "SIGRTMAX")):
+        return False
+    if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC")):
+        return False
+    supported = os.supports_dir_fd
+    return all(
+        function in supported
+        for function in (os.open, os.stat, os.mkdir, os.link, os.unlink, os.rename)
+    )
+
+
+def _select_source_write_backend(environ: Optional[Mapping[str, str]] = None) -> str:
+    """按平台能力选择源码回写后端；模块加载时调用一次，结果存入 ``_SOURCE_WRITE_BACKEND``。"""
+
+    requested = (
+        (os.environ if environ is None else environ).get(_SOURCE_WRITE_BACKEND_ENV, "").strip().lower()
+    )
+    if requested == _SOURCE_WRITE_PORTABLE:
+        return _SOURCE_WRITE_PORTABLE
+    if requested not in {"", "auto"}:
+        logger.warning(
+            "忽略未知的 %s=%r，按平台能力选择源码回写后端",
+            _SOURCE_WRITE_BACKEND_ENV,
+            requested,
+        )
+    return _SOURCE_WRITE_LEASE if _linux_lease_write_supported() else _SOURCE_WRITE_PORTABLE
+
+
+_SOURCE_WRITE_BACKEND = _select_source_write_backend()
+
+
+def _is_redirecting_entry(stat_result: os.stat_result) -> bool:
+    """lstat 结果是否为符号链接或会把路径重定向到别处的 Windows 重解析点。"""
+
+    if stat.S_ISLNK(stat_result.st_mode):
+        return True
+    return bool(getattr(stat_result, "st_reparse_tag", 0) & _REPARSE_TAG_NAME_SURROGATE)
+
+
 _WORKFLOW_READ_FIELDS = {
     "uuid",
     "create_time",
@@ -336,7 +426,7 @@ def _mtime_rfc3339(timestamp: float) -> str:
     )
 
 
-class WorkflowService(WorkflowStore):
+class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowStore):
     """Workflow 域单层服务：持连接（继承 WorkflowStore 的 SQL 事实层）、
     协调 package Draft 文件与编译器状态。
 
@@ -355,6 +445,9 @@ class WorkflowService(WorkflowStore):
         ),
     ):
         super().__init__(database)
+        self._preflight_materials = None
+        self._preflight_endpoints = None
+        self._action_schema_resolver = None
         self.compiler = compiler
         self._compiler_rebuilder = compiler_rebuilder
         self._authority_profile = SchedulerAuthorityProfile.parse(authority_profile)
@@ -362,6 +455,8 @@ class WorkflowService(WorkflowStore):
         self._authoring_locks: Dict[str, threading.RLock] = {}
         self._task_submitter: Optional[Callable[[str], None]] = None
         self._task_controller: Optional[Callable[[str], None]] = None
+        self._resource_change_listener: Optional[Callable[[], None]] = None
+        self._task_resource_releaser: Optional[Callable[[str, List[str]], None]] = None
         # Scheduler 绑定此回调消费 durable 人工确认决策；Service 本身不依赖调度器。
         self._manual_confirmation_resolver: Optional[
             Callable[[Dict[str, Any]], None]
@@ -391,29 +486,94 @@ class WorkflowService(WorkflowStore):
         """绑定持久化控制命令后的调度唤醒；HTTP 层不直接操作执行器。"""
         self._task_controller = controller
 
-    def command_workflow_task(
-        self, task_uuid: str, *, command_type: str,
-        expected_revision: int, idempotency_key: str,
-    ) -> Dict[str, Any]:
+    def set_resource_change_listener(self, listener: Optional[Callable[[], None]]) -> None:
+        """资源释放已提交后唤醒调度器；回调失败不撤销持久决策。"""
+        self._resource_change_listener = listener
+
+    def list_resource_intervals(self, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_intervals import ResourceIntervals
+
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        return ResourceIntervals(self).snapshot(task_uuid)
+
+    def release_resource_interval(self, owner_uuid: str, *, expected_version: int, reason: str) -> Dict[str, Any]:
+        from .resource_intervals import ResourceIntervals
+
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
-        task_uuid = self.get_workflow_task(task_uuid)["uuid"]
-        if (command_type not in {"step", "resume", "pause", "cancel"} or not idempotency_key.strip()
-                or type(expected_revision) is not int or expected_revision < 0):
-            raise WorkflowError("invalid_input")
         try:
-            result = self.apply_task_command(task_uuid, command_type=command_type,
-                                             expected_revision=expected_revision,
-                                             idempotency_key=idempotency_key)
+            result = ResourceIntervals(self).confirm_release(owner_uuid, expected_version=expected_version, reason=reason)
         except StoreConflict as exc:
             raise WorkflowConflict("conflict", detail=str(exc)) from None
-        if self._task_controller is not None:
+        if self._resource_change_listener is not None:
             try:
-                self._task_controller(task_uuid)
+                self._resource_change_listener()
             except Exception:
-                # 命令已落库，执行器暂时不可用时不能误报提交失败；恢复时重新消费。
-                logger.exception("任务 %s 控制已持久化，等待调度器恢复", task_uuid)
+                logger.exception("资源区间 %s 的释放已持久化，等待调度器恢复", owner_uuid)
         return result
+
+    def list_resource_custody(self, kind: str, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        with self.write_lock:
+            return (ResourceLoans if kind == "loans" else DeviceTenancies).snapshot(self.connection, task_uuid)
+
+    def change_resource_custody(self, operation: str, identity: str, **values) -> Dict[str, Any]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest, ResourceLoanRequest
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        body = (ResourceLoanRequest if operation == "lend" else ResourceIntervalReleaseRequest).model_validate(values)
+        try:
+            with self.transaction() as conn:
+                if operation == "lend":
+                    result = ResourceLoans.lend(conn, identity, **body.model_dump())
+                elif operation == "return":
+                    result = ResourceLoans.confirm_return(conn, identity, **body.model_dump())
+                elif operation == "release_tenancy":
+                    result = DeviceTenancies.confirm_release(conn, identity, **body.model_dump())
+                    if not DeviceTenancies.snapshot(conn, result["task_uuid"]):
+                        conn.execute("UPDATE workflow_task SET cleanup_status='settled',attention_reason='device_tenancy_released' "
+                                     "WHERE uuid=? AND attention_reason='device_tenancy_active'", (result["task_uuid"],))
+                else:
+                    raise StoreConflict("未知资源操作")
+                self._append_event(conn, event="workflow.resource.changed", data={"operation": operation, "identity": identity}, now=utc_now())
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._resource_change_listener is not None:
+            try:
+                self._resource_change_listener()
+            except Exception:
+                logger.exception("资源操作 %s 已持久化，等待调度器恢复", identity)
+        return result
+
+    def command_workflow_task(
+        self, task_uuid: str, *, command_type: str,
+        idempotency_key: str, expected_revision: Optional[int] = None,
+        target_node_uuid: Optional[str] = None, description: Optional[str] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """V1 任务控制命令（状态机见 ``task_lifecycle.TaskCommands``），返回命令投影。"""
+
+        from .task_lifecycle import TaskCommands
+
+        try:
+            return TaskCommands(self).apply(
+                task_uuid, command_type=command_type, target_node_uuid=target_node_uuid,
+                idempotency_key=idempotency_key, description=description,
+                meta_data=dict(meta_data or {}), expected_revision=expected_revision,
+            )
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+
+    def set_task_resource_releaser(self, releaser: Optional[Callable[[str, List[str]], None]]) -> None:
+        """绑定 ``unlock_resources`` 持久释放后的调度器内存占用释放（任务 uuid, 作业 uuid 列表）。"""
+
+        self._task_resource_releaser = releaser
 
     def mark_workflow_node_job_cancel_requested(self, job_uuid: str) -> bool:
         return self.mark_job_cancel_requested(job_uuid)
@@ -442,7 +602,11 @@ class WorkflowService(WorkflowStore):
         description: Optional[str],
         meta_data: Dict[str, Any],
         workflow_uuid: Optional[str] = None,
+        workflow_type: str = "normal",
+        operation_category_uuid: Any = CATEGORY_UNSET,
     ) -> Dict[str, Any]:
+        """创建普通工作流或实验操作（V1 ``workflow_type``）；类别规则见 ``operation_category``。"""
+
         try:
             name = name.strip()
             if not name:
@@ -452,17 +616,78 @@ class WorkflowService(WorkflowStore):
             meta_data = normalize_json_object(meta_data)
             public_meta_data = dict(meta_data)
             public_meta_data.pop("unilab", None)
-            return super().create_workflow(
-                workflow_uuid=identity,
-                name=name,
-                tags=tags,
-                description=self._optional_text(description),
-                meta_data=public_meta_data,
-            )
+            public_meta_data.pop("operation_category_uuid", None)
         except (ValueError, ValidationError):
             raise WorkflowError("invalid_input") from None
-        except StoreConflict:
-            raise WorkflowConflict("conflict") from None
+        with self.write_lock:
+            try:
+                kind = normalize_workflow_type(workflow_type)
+                category = self.operation_categories.resolve_for_workflow(
+                    workflow_type=kind, category=operation_category_uuid, tags=tags,
+                )
+            except OperationCategoryError as exc:
+                raise WorkflowError(exc.code, detail=exc.message) from None
+            try:
+                super().create_workflow(
+                    workflow_uuid=identity,
+                    name=name,
+                    tags=tags,
+                    description=self._optional_text(description),
+                    meta_data=public_meta_data,
+                )
+            except (ValueError, ValidationError):
+                raise WorkflowError("invalid_input") from None
+            except StoreConflict:
+                raise WorkflowConflict("conflict") from None
+            self.operation_categories.set_workflow_kind(identity, workflow_type=kind, category=category)
+        return WorkflowStore.get_workflow(self, identity)
+
+    @property
+    def operation_categories(self) -> OperationCategories:
+        """实验操作类别（runtime.db ``workflow_operation_category``）。"""
+
+        categories = getattr(self, "_operation_categories", None)
+        if categories is None:
+            categories = self._operation_categories = OperationCategories(self)
+        return categories
+
+    def public_workflow(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 工作流读模型：补 ``workflow_type`` / ``operation_category_uuid`` / ``status``。
+
+        ``status``：当前修订已发布为 ``published``，否则 ``source``。
+        """
+
+        workflow_type, category = self.operation_categories.workflow_kind(record["uuid"])
+        published = self.find_workflow_publication(record["uuid"], record["revision"])
+        return dict(
+            record,
+            workflow_type=workflow_type,
+            operation_category_uuid=category,
+            status="published" if published is not None else "source",
+        )
+
+    def list_operation_categories(self) -> List[Dict[str, Any]]:
+        return self.operation_categories.list()
+
+    def get_operation_category(self, category_uuid: str) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.get, category_uuid)
+
+    def create_operation_category(self, *, name: str, sort_order: int = 100) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.create, name=name, sort_order=sort_order)
+
+    def update_operation_category(self, category_uuid: str, **changes: Any) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.update, category_uuid, **changes)
+
+    def delete_operation_category(self, category_uuid: str) -> None:
+        self._category_call(self.operation_categories.delete, category_uuid)
+
+    @staticmethod
+    def _category_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except OperationCategoryError as exc:
+            error_type = WorkflowConflict if exc.code == "conflict" else WorkflowError
+            raise error_type(exc.code, detail=exc.message) from None
 
     def get_workflow(self, workflow_uuid: str) -> Dict[str, Any]:
         try:
@@ -480,9 +705,28 @@ class WorkflowService(WorkflowStore):
         page: int = 1,
         page_size: int = 20,
         name: str = "",
+        workflow_type: Optional[str] = None,
+        status: Optional[str] = None,
+        operation_category_uuid: Optional[str] = None,
     ) -> Dict[str, Any]:
+        """分页列表；``workflow_type`` / ``status``（source|published）/ 类别为 V1 筛选。"""
+
         page, page_size = self._normalize_page(page, page_size)
-        return super().list_workflows(page=page, page_size=page_size, name=name)
+        try:
+            kind = normalize_workflow_type(workflow_type) if workflow_type is not None else None
+            category = category_uuid(operation_category_uuid) if operation_category_uuid is not None else None
+        except OperationCategoryError:
+            raise WorkflowError("invalid_input") from None
+        if status not in {None, "source", "published"}:
+            raise WorkflowError("invalid_input")
+        return super().list_workflows(
+            page=page,
+            page_size=page_size,
+            name=name,
+            workflow_type=kind,
+            operation_category_uuid=category,
+            published=None if status is None else status == "published",
+        )
 
     def update_workflow(
         self,
@@ -492,7 +736,12 @@ class WorkflowService(WorkflowStore):
         tags: List[Any],
         description: Optional[str],
         meta_data: Dict[str, Any],
+        workflow_type: Optional[str] = None,
+        operation_category_uuid: Any = CATEGORY_UNSET,
     ) -> Dict[str, Any]:
+        """更新根字段。类型可省略或重复当前值，不能在普通工作流与实验操作间转换（V1）；
+        类别省略则保持，显式 ``None`` 清空。"""
+
         current = self.get_workflow(workflow_uuid)
         identity = current["uuid"]
         with self._authoring_lock(identity):
@@ -506,15 +755,59 @@ class WorkflowService(WorkflowStore):
             except (AttributeError, TypeError, ValueError):
                 raise WorkflowError("invalid_input") from None
             public_meta_data.pop("unilab", None)
+            public_meta_data.pop("operation_category_uuid", None)
             if "unilab" in current["meta_data"]:
                 public_meta_data["unilab"] = current["meta_data"]["unilab"]
-            return super().update_workflow(
+            current_type, current_category = self.operation_categories.workflow_kind(identity)
+            if workflow_type is not None and workflow_type != current_type:
+                raise WorkflowError("invalid_input", detail="不能在普通工作流和实验操作之间转换")
+            try:
+                category = (
+                    current_category
+                    if operation_category_uuid is CATEGORY_UNSET
+                    else self.operation_categories.resolve_for_workflow(
+                        workflow_type=current_type, category=operation_category_uuid, tags=tags,
+                    )
+                )
+            except OperationCategoryError as exc:
+                raise WorkflowError(exc.code, detail=exc.message) from None
+            updated = super().update_workflow(
                 identity,
                 name=name,
                 tags=tags,
                 description=self._optional_text(description),
                 meta_data=public_meta_data,
             )
+            if category != current_category:
+                self.operation_categories.set_workflow_kind(identity, workflow_type=current_type, category=category)
+            return updated
+
+    def list_referencing_workflows(
+        self, workflow_uuid: str, *, page: int = 1, page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """引用该工作流（组合调用 ``meta_data.unilab.composite.child_workflow_uuid``）的父工作流。"""
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        page, page_size = self._normalize_page(page, page_size)
+        with self.write_lock:
+            rows = self.connection.execute(
+                """
+                SELECT DISTINCT workflow.* FROM workflow
+                JOIN workflow_node AS node ON node.workflow_uuid = workflow.uuid
+                WHERE workflow.deleted_at IS NULL AND node.deleted_at IS NULL
+                  AND json_extract(node.meta_data, '$.unilab.composite.child_workflow_uuid') = ?
+                  AND workflow.uuid <> ?
+                ORDER BY workflow.create_time DESC, workflow.uuid
+                """,
+                (identity, identity),
+            ).fetchall()
+        offset = (page - 1) * page_size
+        return {
+            "items": [self._workflow_row(row) for row in rows[offset: offset + page_size]],
+            "total": len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
 
     def delete_workflow(self, workflow_uuid: str) -> None:
         identity = self.get_workflow(workflow_uuid)["uuid"]
@@ -544,8 +837,16 @@ class WorkflowService(WorkflowStore):
         revision: int,
         nodes: List[WorkflowNodeWrite | Dict[str, Any]],
         edges: List[WorkflowEdgeWrite | Dict[str, Any]],
+        workflow_io: Optional[Dict[str, Any]] = None,
+        resource_scopes: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         identity = self.get_workflow(workflow_uuid)["uuid"]
+        if any(
+            (item.workflow_node_template_uuid if isinstance(item, WorkflowNodeWrite) else (item or {}).get("workflow_node_template_uuid"))
+            for item in nodes
+        ):
+            # 引用设备动作模板的节点：先把注册表投影同步进模板表，图校验才能找到模板
+            self._sync_registry_templates_best_effort()
         with self._authoring_lock(identity):
             self.get_workflow(identity)
             try:
@@ -567,6 +868,8 @@ class WorkflowService(WorkflowStore):
                     nodes=node_values,
                     edges=edge_values,
                     protect_reserved_metadata=True,
+                    workflow_io=normalize_json_object(workflow_io) if workflow_io is not None else None,
+                    resource_scopes=resource_scopes,
                 )
             except ValidationError as exc:
                 detail = "; ".join(
@@ -581,6 +884,30 @@ class WorkflowService(WorkflowStore):
             except StoreConflict as exc:
                 # 留下 protocol 图校验的具体原因；仅有笼统文案时前端/AI 都无法纠正节点。
                 raise WorkflowError("invalid_input", detail=str(exc)) from None
+
+    def declare_workflow_resource_scopes(
+        self, workflow_uuid: str, *, revision: int, scopes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """资源作用域通过专用修订接口写入，普通 metadata 更新不能改保留字段。"""
+        from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+        from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            graph = WorkflowStore.get_graph(self, identity)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict")
+            try:
+                body = WorkflowResourceScopesRequest(revision=revision, scopes=scopes)
+                metadata = dict(graph["workflow"]["meta_data"])
+                metadata["unilab"] = {**(metadata.get("unilab") or {}),
+                    "resource_scopes": [scope.model_dump(exclude_none=True) for scope in body.scopes]}
+                candidate = {**graph, "workflow": {**graph["workflow"], "meta_data": metadata}}
+                validate_graph_resource_scopes(candidate)
+            except (ValueError, TypeError) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            return self._save_reserved_graph(identity, revision=revision, workflow_meta_data=metadata,
+                                             nodes=graph["nodes"], edges=graph["edges"])
 
     # 工作流 I/O、发布与组合调用 --------------------------------------------
 
@@ -817,6 +1144,130 @@ class WorkflowService(WorkflowStore):
                 "graph": saved,
             }
 
+    # V1 发布合同 / 组合调用 ------------------------------------------------
+
+    def publication_contract(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """dev 发布行 → V1 公共发布合同（``uuid`` 即 ``contract_uuid``），保留 dev 摘要字段。
+
+        V1 字段：``workflow_revision`` / ``version``（该工作流第几次发布）/ ``input_contract`` /
+        ``output_contract`` / ``executor_requirements``（dev 发布不带执行器绑定，恒为空）/
+        ``node_template_uuid`` / ``node_count`` / ``edge_count`` / ``revision_fingerprint``。
+        """
+
+        summary = self._publication_dto(row)
+        snapshot = row.get("snapshot") or {}
+        snapshot_workflow = snapshot.get("workflow") or {}
+        with self.write_lock:
+            version = self.connection.execute(
+                "SELECT COUNT(*) FROM workflow_publication WHERE workflow_uuid = ? AND revision <= ?",
+                (row["workflow_uuid"], row["revision"]),
+            ).fetchone()[0]
+        contract = {
+            "uuid": summary["uuid"],
+            "create_time": summary["create_time"],
+            "update_time": summary["create_time"],
+            "meta_data": {},
+            "workflow_uuid": summary["workflow_uuid"],
+            "workflow_revision": summary["revision"],
+            "version": int(version),
+            "name": summary["name"],
+            "tags": list(snapshot_workflow.get("tags") or []),
+            "node_template_uuid": (summary.get("node_template") or {}).get("uuid"),
+            "input_contract": {"version": 1, "parameters": summary.get("inputs") or []},
+            "output_contract": {"version": 1, "outputs": summary.get("outputs") or []},
+            "executor_requirements": [],
+            "source_hash": summary["source_hash"],
+            "contract_digest": summary["contract_digest"],
+            "node_count": len(snapshot.get("nodes") or []),
+            "edge_count": len(snapshot.get("edges") or []),
+            "revision_fingerprint": summary["source_hash"],
+        }
+        if "description" in summary:
+            contract["description"] = summary["description"]
+        # dev 调色板字段（节点模板与 Handle）一并保留，供组合插入前展示
+        for key in ("revision", "inputs", "outputs", "node_template", "handle_templates"):
+            contract[key] = summary.get(key)
+        return contract
+
+    def publish_workflow_contract(self, workflow_uuid: str, *, revision: int) -> Dict[str, Any]:
+        """V1 ``POST /publications``：当前修订冻结为发布，返回 V1 发布合同。"""
+
+        summary = self.publish_workflow(workflow_uuid, revision=revision)
+        row = self.find_workflow_publication(summary["workflow_uuid"], summary["revision"])
+        assert row is not None
+        return self.publication_contract(row)
+
+    def get_publication_by_uuid(self, contract_uuid: str) -> Optional[Dict[str, Any]]:
+        with self.write_lock:
+            row = self.connection.execute(
+                "SELECT * FROM workflow_publication WHERE uuid = ?", (contract_uuid,),
+            ).fetchone()
+        return self._publication_row(row) if row is not None else None
+
+    def list_published_workflow_contracts(
+        self, *, page: int = 1, page_size: int = 20, keyword: str = "",
+    ) -> Dict[str, Any]:
+        """V1 旧客户端兼容列表：每个工作流的最新发布合同（按名称关键字筛选）。"""
+
+        page, page_size = self._normalize_page(page, page_size)
+        needle = keyword.strip().lower()
+        rows = [
+            row for row in self.list_latest_workflow_publications()
+            if not needle or needle in str(row.get("name") or "").lower()
+        ]
+        offset = (page - 1) * page_size
+        return {
+            "items": [self.publication_contract(row) for row in rows[offset: offset + page_size]],
+            "has_more": page * page_size < len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
+
+    def insert_composite_workflow(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        contract_uuid: str,
+        invocation_uuid: Optional[str] = None,
+        device_bindings: Optional[Dict[str, str]] = None,
+        pose: Optional[Dict[str, Any]] = None,
+        param: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """V1 组合调用：按发布合同（``contract_uuid``）插入已发布实验操作，返回父图。
+
+        dev 的 CAS 字段由服务端从合同推导：子工作流 = 合同所属工作流，子修订 = 合同修订；
+        ``param`` 即 dev 的 ``arguments``。V1 规则：子工作流必须是实验操作且当前修订已发布；
+        dev 发布没有执行器需求，``device_bindings`` 必须为空对象。
+        """
+
+        try:
+            identity = validate_uuid(contract_uuid)
+        except (TypeError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            raise WorkflowError("invalid_input")
+        row = self.get_publication_by_uuid(identity)
+        if row is None:
+            raise WorkflowError("not_found", detail="发布合同不存在")
+        child = self.public_workflow(self.get_workflow(row["workflow_uuid"]))
+        if child["workflow_type"] != "experiment_operation":
+            raise WorkflowError("invalid_composite_child_type", detail="只有实验操作可以被其他工作流引用")
+        if child["status"] != "published":
+            raise WorkflowConflict("invalid_composite_child_status", detail="被引用的实验操作当前修订尚未发布")
+        if device_bindings:
+            raise WorkflowError("invalid_input", detail="该发布合同没有执行器需求，device_bindings 必须为空")
+        result = self.insert_composite_invocation(
+            workflow_uuid,
+            revision=revision,
+            child_workflow_uuid=row["workflow_uuid"],
+            child_revision=row["revision"],
+            invocation_uuid=invocation_uuid,
+            pose=pose,
+            arguments=param,
+        )
+        return result["graph"]
+
     def _composite_authoring(
         self,
         selected: Dict[str, Any],
@@ -900,6 +1351,21 @@ class WorkflowService(WorkflowStore):
 
     # WorkflowTask 与 WorkflowNodeJob -----------------------------------
 
+    def configure_preflight(
+        self, *, materials: Any = None,
+        endpoints: Optional[Callable[[], list[dict[str, Any]]]] = None,
+        action_schema_resolver: Optional[Callable[[str, str], Optional[dict[str, Any]]]] = None,
+    ) -> None:
+        """组合根注入只读库存与设备快照，不把 HTTP 依赖带入领域服务。"""
+        self._preflight_materials = materials
+        self._preflight_endpoints = endpoints
+        self._action_schema_resolver = action_schema_resolver
+
+    def preflight_workflow(self, **kwargs: Any) -> dict[str, Any]:
+        from .run_preflight import build_run_preflight_report
+
+        return build_run_preflight_report(self, **kwargs)
+
     def create_workflow_task(
         self,
         *,
@@ -910,10 +1376,20 @@ class WorkflowService(WorkflowStore):
         description: Optional[str],
         meta_data: Dict[str, Any],
         idempotency_key: Optional[str] = None,
+        expected_revision: Optional[int] = None,
+        priority: str = "normal",
+        inventory_bindings: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
         workflow_uuid = self.get_workflow(workflow_uuid)["uuid"]
+        from .task_lifecycle import normalize_inventory_bindings, normalize_task_priority
+
+        try:
+            priority = normalize_task_priority(priority)
+            bindings = normalize_inventory_bindings(inventory_bindings)
+        except ValueError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
         run_mode = "normal" if run_mode == "" else run_mode
         if run_mode not in {"normal", "step", "single_node"}:
             raise WorkflowError("invalid_input")
@@ -945,6 +1421,13 @@ class WorkflowService(WorkflowStore):
             if input_value:
                 # 空输入不进指纹：与引入任务输入之前的既有任务保持同一指纹
                 semantics["input"] = input_value
+            if expected_revision is not None:
+                semantics["expected_revision"] = expected_revision
+            # V1 字段取默认值时不进指纹，与既有任务保持同一指纹
+            if priority != "normal":
+                semantics["priority"] = priority
+            if bindings:
+                semantics["inventory_bindings"] = bindings
             fingerprint = _sha256(_canonical_json(semantics))
             existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
             if existing is not None:
@@ -954,6 +1437,9 @@ class WorkflowService(WorkflowStore):
         resolved: Dict[str, Dict[str, Any]] = {}
 
         def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
+            # 在建任务事务内比较修订，避免预检后图被修改却提交了另一份计划。
+            if expected_revision is not None and graph["workflow"]["revision"] != expected_revision:
+                raise WorkflowConflict("conflict", detail="工作流修订已变化，请刷新后重新预检")
             try:
                 contract = declared_input_contract(graph["workflow"])
                 resolved["input"] = resolve_task_input(contract, input_value)
@@ -979,6 +1465,8 @@ class WorkflowService(WorkflowStore):
                 ),
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
+                priority=priority,
+                inventory_bindings=bindings,
             )
         except StoreConflict:
             if idempotency_key is not None:
@@ -1078,6 +1566,53 @@ class WorkflowService(WorkflowStore):
             self._task_submitter(task["uuid"])
         return task
 
+    def create_device_action_run(
+        self,
+        *,
+        material_uuid: str,
+        workflow_node_template_uuid: str,
+        param: Optional[Dict[str, Any]],
+        execution_policy: Optional[Dict[str, Any]],
+        idempotency_key: str,
+        description: Optional[str],
+        meta_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """V1 ``POST /device-action-runs``：按设备物料 + 动作模板创建（或幂等复用）单动作任务。
+
+        设备 ID 由物料权威解析（设备根物料的 ``resource_id``），动作名 / 类型取自节点模板；
+        执行沿用 dev 的单点设备动作任务（同一套调度、历史与异常链路）。返回 ``{task, job, created}``。
+        """
+
+        try:
+            material_identity = validate_uuid(material_uuid)
+        except (TypeError, ValueError):
+            raise WorkflowError("invalid_input", detail="material_uuid 必须是有效 UUID") from None
+        if not str(idempotency_key or "").strip():
+            raise WorkflowError("invalid_input", detail="idempotency_key 不能为空")
+        template = self.get_node_template_record(workflow_node_template_uuid)
+        device_id = self._device_id_for_material(material_identity, template)
+        if not device_id:
+            raise WorkflowError("invalid_input", detail="设备物料不存在或不是设备")
+        existed = self.find_task_by_idempotency_key("ad_hoc_device_action", str(idempotency_key).strip())
+        effective_param = param if param is not None else dict(template.get("goal_default") or {})
+        task = self.create_ad_hoc_device_action_task(
+            device_id=device_id,
+            action_name=str(template["name"]),
+            action_type=str(template.get("type") or ""),
+            param=effective_param,
+            execution_policy=execution_policy,
+            idempotency_key=idempotency_key,
+            description=description,
+            meta_data=dict(meta_data or {}, material_uuid=material_identity,
+                           workflow_node_template_uuid=template["uuid"]),
+        )
+        jobs = self.list_workflow_node_jobs(task["uuid"])
+        return {
+            "task": self.get_workflow_task(task["uuid"]),
+            "job": jobs[0] if jobs else None,
+            "created": existed is None,
+        }
+
     def list_template_action_references(self) -> List[Dict[str, Any]]:
         """活跃 workflow 节点对模板 action 的引用明细行（Registry 冲突检测用）。"""
 
@@ -1127,6 +1662,8 @@ class WorkflowService(WorkflowStore):
         return_info: Optional[Dict[str, Any]] = None,
         error_info: Optional[List[Dict[str, Any]]] = None,
         error_resolution: Optional[Dict[str, Any]] = None,
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """attempt 终态 + 节点运行投影；返回 ``{"job", "run", "next_job"}``（见 store）。"""
 
@@ -1136,7 +1673,16 @@ class WorkflowService(WorkflowStore):
             return_info=return_info or {},
             error_info=error_info or [],
             error_resolution=error_resolution,
+            timeout_hold=timeout_hold,
+            late_outcome=late_outcome,
         )
+
+    def record_workflow_node_job_late_outcome(
+        self, job_uuid: str, outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """超时结算后驱动的迟到结果：只记录，并放开仍持有的锁（见 store）。"""
+
+        return self.record_job_late_outcome(job_uuid, outcome)
 
     def begin_workflow_loop_iteration(
         self,
@@ -1178,6 +1724,10 @@ class WorkflowService(WorkflowStore):
                 )
             except StoreNotFound:
                 declared = None
+            except EntryParameterError as exc:
+                declared = None
+                status = "failed"
+                error_info = [*(error_info or []), {"code": exc.code, "message": str(exc), "path": exc.path}]
             if declared is not None:
                 output = declared
         return self.finish_task(
@@ -1260,8 +1810,12 @@ class WorkflowService(WorkflowStore):
         workflow_uuid: Optional[str] = None,
         status: str = "",
         cleanup_status: str = "",
+        execution_kind: str = "",
     ) -> Dict[str, Any]:
         page, page_size = self._normalize_page(page, page_size)
+        execution_kind = execution_kind.strip().lower()
+        if execution_kind and execution_kind not in {"workflow", "ad_hoc_device_action"}:
+            raise WorkflowError("invalid_input")
         if workflow_uuid is not None:
             try:
                 workflow_uuid = validate_uuid(workflow_uuid)
@@ -1293,6 +1847,7 @@ class WorkflowService(WorkflowStore):
             workflow_uuid=workflow_uuid,
             status=status,
             cleanup_status=cleanup_status,
+            execution_kind=execution_kind,
         )
 
     def list_workflow_node_runs(self, task_uuid: str) -> List[Dict[str, Any]]:
@@ -1314,16 +1869,20 @@ class WorkflowService(WorkflowStore):
     def list_workflow_node_jobs(self, task_uuid: str) -> List[Dict[str, Any]]:
         """attempt（物理执行）平铺视图。"""
 
+        from .task_lifecycle import enrich_jobs
+
         identity = self.get_workflow_task(task_uuid)["uuid"]
-        return self.list_jobs(identity)
+        return enrich_jobs(self, self.list_jobs(identity))
 
     def get_workflow_node_job(self, job_uuid: str) -> Dict[str, Any]:
+        from .task_lifecycle import enrich_jobs
+
         try:
             identity = validate_uuid(job_uuid)
         except ValueError:
             raise WorkflowError("invalid_input") from None
         try:
-            return self.get_job(identity)
+            return enrich_jobs(self, [self.get_job(identity)])[0]
         except StoreNotFound:
             raise WorkflowError("not_found") from None
 
@@ -1594,6 +2153,21 @@ class WorkflowService(WorkflowStore):
             if source_uuid not in effective_depends_on[target_uuid]:
                 effective_depends_on[target_uuid].append(source_uuid)
 
+        from unilabos.protocol.runtime.condition import validate_condition_graph
+
+        from unilabos.protocol.runtime.value_binding import validate_result_binding_graph
+
+        effective_params = {key: {**(node.get("param") or {}), **composite_params.get(key, {})}
+                            for key, node in enabled.items()}
+        condition_dependencies = validate_condition_graph(enabled, node_kinds, parents, effective_params)
+        result_dependencies = validate_result_binding_graph(enabled, node_kinds, parents, effective_params)
+        for target_uuid, sources in result_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+        for target_uuid, sources in condition_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+
         for target_uuid, node in enabled.items():
             depends_on = (node.get("execution_policy") or {}).get("depends_on") or []
             if not isinstance(depends_on, list):
@@ -1679,16 +2253,21 @@ class WorkflowService(WorkflowStore):
             if kind == "script":
                 raise StoreConflict("script executor is not configured")
             policy = node.get("execution_policy") or {}
-            if invocations and effective_depends_on.get(node_uuid):
+            if effective_depends_on.get(node_uuid):
                 policy = {**policy, "depends_on": list(effective_depends_on[node_uuid])}
             template_uuid = node.get("workflow_node_template_uuid")
             template = templates.get(template_uuid)
             planned_param = dict(node.get("param") or {})
             planned_param.update(composite_params.get(node_uuid, {}))
-            # 入口参数：画布节点的 param 顶层引用与模板节点的 Handle 绑定都替换为任务输入值
-            planned_param, entry_bindings = substitute_entry_references(
-                planned_param, entry_input or {}
-            )
+            from copy import deepcopy
+            from unilabos.protocol.runtime.input_binding import input_references
+
+            entry_param_template = deepcopy(planned_param)
+            # 入口参数递归替换；保留原始引用供暂停修改时重新生成未派发参数。
+            if kind == "condition":
+                entry_bindings = {}
+            else:
+                planned_param, entry_bindings = substitute_entry_references(planned_param, entry_input or {})
             node_unilab = (node.get("meta_data") or {}).get("unilab")
             input_bindings = (
                 node_unilab.get("input_bindings") if isinstance(node_unilab, dict) else None
@@ -1702,6 +2281,7 @@ class WorkflowService(WorkflowStore):
                     continue
                 data_key = self._final_target_data_key(self._handle_data_key(handle))
                 entry_bindings[data_key] = parameter
+                entry_param_template[data_key] = {"kind": "workflow_input", "parameter": parameter}
                 if parameter in (entry_input or {}):
                     planned_param[data_key] = (entry_input or {})[parameter]
             target_handles = sorted(
@@ -1746,13 +2326,11 @@ class WorkflowService(WorkflowStore):
                 raise StoreConflict("inventory_requirements must be a list")
             if raw_inventory_requirements:
                 try:
-                    planned_node["inventory_requirements"] = [
-                        InventoryRequirement.model_validate(item).model_dump(
-                            mode="json",
-                            exclude_none=False,
-                        )
-                        for item in raw_inventory_requirements
-                    ]
+                    from unilabos.protocol.runtime.inventory import normalize_inventory, inventory_deferred
+                    planned_node["inventory_requirements"] = normalize_inventory(raw_inventory_requirements)
+                    planned_node["inventory_deferred"] = inventory_deferred(
+                        planned_node["inventory_requirements"], policy=policy,
+                        mode=(node.get("meta_data") or {}).get("inventory_mode", "task"))
                 except ValueError as exc:
                     raise StoreConflict(
                         f"invalid inventory requirement on node {node_uuid}: {exc}"
@@ -1768,8 +2346,23 @@ class WorkflowService(WorkflowStore):
                 planned_node["source_handle_uuids"] = source_handle_uuids
             if template is not None and template.get("schema") is not None:
                 planned_node["param_schema"] = template["schema"]
+            if self._action_schema_resolver is not None and kind == "device_action":
+                device_id = str((node.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid") or planned_param.get("device_id") or "")
+                action_name = str(node.get("action_name") or planned_param.get("action") or "")
+                schema = self._action_schema_resolver(device_id, action_name)
+                if schema and "x-unilabos-action-contract" in schema:
+                    planned_node["param_schema"] = schema
             if entry_bindings:
                 planned_node["entry_bindings"] = entry_bindings
+            parameter_names = set() if kind == "condition" else input_references(entry_param_template)
+            if kind == "condition":
+                from unilabos.protocol.runtime.condition import condition_input_references
+
+                parameter_names.update(condition_input_references(entry_param_template))
+            parameter_names.update(input_references(raw_inventory_requirements))
+            if parameter_names:
+                planned_node["entry_parameter_names"] = sorted(parameter_names)
+                planned_node["entry_param_template"] = entry_param_template
             planned_nodes.append(planned_node)
             jobs.append(
                 {
@@ -1789,6 +2382,26 @@ class WorkflowService(WorkflowStore):
         }
         if target_node_uuid is not None:
             plan["target_node_uuid"] = target_node_uuid
+        from unilabos.registry.typed_contract import validate_action_values
+        from .run_preflight import deferred_parameters
+
+        for node, job in zip(planned_nodes, jobs):
+            schema = node.get("param_schema")
+            if schema and "x-unilabos-action-contract" in schema:
+                try:
+                    pending = deferred_parameters(plan, node)
+                    normalized = validate_action_values(schema, node["param"], deferred=pending, managed_resources=True)
+                    # 未生成的动态值仍保留引用；预检不得用空值覆盖引用。
+                    node["param"] = {**node["param"], **normalized}
+                    job["param"] = dict(node["param"])
+                except ValueError as error:
+                    raise StoreConflict(str(error)) from None
+        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+
+        try:
+            plan["resource_intervals"] = compile_interval_plan(plan, graph)
+        except ValueError as exc:
+            raise StoreConflict(str(exc)) from None
         return plan, jobs
 
     @staticmethod
@@ -2219,6 +2832,34 @@ class WorkflowService(WorkflowStore):
             )
             return self.get_authoring(workflow_uuid)
 
+    def apply_authoring_by_candidate(self, workflow_uuid: str, *, candidate_hash: str) -> Dict[str, Any]:
+        """V1 ``POST /authoring/apply {candidate_hash}``：dev 的三元 CAS 由服务端从持久候选推导。
+
+        客户端只确认候选哈希；草稿哈希与基线修订取自签发该哈希时的候选，因此不能混搭不同世代。
+        """
+
+        self._validate_hash(candidate_hash, nullable=False)
+        identity = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            record = self.get_authoring_record(identity)
+            candidate = record.get("candidate")
+            if candidate is None:
+                if any(str(item.get("severity", "")).lower() == "error" for item in record["diagnostics"]):
+                    raise WorkflowError("draft_invalid")
+                raise WorkflowConflict("candidate_not_ready")
+            if candidate.get("candidate_hash") != candidate_hash:
+                raise WorkflowConflict("candidate_hash_conflict")
+            draft_hash = candidate.get("draft_hash")
+            base_revision = candidate.get("base_workflow_revision")
+            if not isinstance(draft_hash, str) or type(base_revision) is not int:
+                raise WorkflowError("candidate_invalid")
+            return self.apply_authoring(
+                identity,
+                expected_draft_hash=draft_hash,
+                expected_workflow_revision=base_revision,
+                expected_candidate_hash=candidate_hash,
+            )
+
     def apply_authoring(
         self,
         workflow_uuid: str,
@@ -2534,12 +3175,128 @@ class WorkflowService(WorkflowStore):
         try:
             return self.get_source_registration(workflow_uuid)
         except StoreNotFound:
-            raise WorkflowError("workflow_not_found") from None
+            pass
+        root = getattr(self, "_managed_source_root", None)
+        if root is None:
+            raise WorkflowError("workflow_not_found")
+        # 本机托管源码工作区：任何工作流第一次进入作者态时登记 workflows/wf_<uuid>.py（文件按需创建）
+        return self._register_managed_source(workflow_uuid, f"wf_{UUID(workflow_uuid).hex}.py")
+
+    def _register_managed_source(self, workflow_uuid: str, file_name: str) -> Dict[str, Any]:
+        root = Path(self._managed_source_root)
+        (root / "workflows").mkdir(parents=True, exist_ok=True)
+        return self.register_editable_source(
+            workflow_uuid=workflow_uuid,
+            package_id=MANAGED_SOURCE_PACKAGE,
+            package_root=root,
+            relative_path=f"workflows/{file_name}",
+        )
+
+    def configure_authoring(
+        self,
+        *,
+        compiler: Optional[AuthoringCompiler],
+        source_root: Optional[str | Path] = None,
+    ) -> None:
+        """装配作者编译器与本机托管源码工作区（``<source_root>/workflows/*.py``）。"""
+
+        self.compiler = compiler
+        self._managed_source_root = Path(source_root) if source_root is not None else None
+
+    def import_python_workflow(self, *, file_name: str, python_source: str) -> Dict[str, Any]:
+        """V1 ``POST /local/workflows/import-python``：静态编译并原子导入一个 ``@workflow`` 源码文件。
+
+        新建工作流 → 登记托管源码 ``workflows/<文件名>`` → 写入草稿并签发候选 → 按候选哈希应用。
+        任一步失败都删除本次新建的工作流与源码文件，不留下半个定义。源码只进静态编译器，不执行。
+        """
+
+        from unilabos.registry.workflow_ast import WorkflowSourceError, compile_workflow_source
+
+        if self.compiler is None or getattr(self, "_managed_source_root", None) is None:
+            raise WorkflowError("template_catalog_unavailable")
+        name = str(file_name or "").strip()
+        if (
+            not _SOURCE_FILE_NAME.fullmatch(name)
+            or name in {".py"}
+        ):
+            raise WorkflowError("invalid_input", detail="文件名必须是不含路径的 .py 文件名（字母、数字、下划线、短横线）")
+        try:
+            program = compile_workflow_source(python_source)
+        except WorkflowSourceError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=program.display_name or Path(name).stem,
+            tags=list(program.tags),
+            description=program.description or None,
+            meta_data={},
+        )
+        identity = record["uuid"]
+        target = Path(self._managed_source_root) / "workflows" / f"{Path(name).stem}_{UUID(identity).hex[:8]}.py"
+        registration: Optional[Dict[str, Any]] = None
+        try:
+            registration = self._register_managed_source(identity, target.name)
+            authoring = self.save_draft(
+                identity, python_source=python_source, expected_draft_hash=None,
+                expected_workflow_revision=record["revision"],
+            )
+            candidate = authoring.get("candidate")
+            if candidate is None:
+                diagnostics = ((authoring.get("draft") or {}).get("diagnostics")) or []
+                message = next((item.get("message") for item in diagnostics if item.get("message")), "")
+                raise WorkflowError("draft_invalid", detail=message)
+            self.apply_authoring_by_candidate(identity, candidate_hash=candidate["candidate_hash"])
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(identity)
+            if registration is not None:
+                with suppress(Exception):
+                    self._discard_source_file(registration)
+            raise
+        return self.get_graph(identity)
+
+    def import_legacy_workflow(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 ``POST /workflows/import``：旧版 JSON 图（直接或 ``data`` 包装）重建身份后原子导入。"""
+
+        from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
+
+        definition = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        name = definition.get("name") or definition.get("workflow_name")
+        if not isinstance(name, str) or not name.strip():
+            raise WorkflowError("invalid_input", detail="缺少工作流名称（name 或 workflow_name）")
+        nodes = definition.get("nodes")
+        edges = definition.get("edges") or []
+        if not isinstance(nodes, list) or not nodes or not isinstance(edges, list):
+            raise WorkflowError("invalid_input", detail="nodes 必须是至少包含一个节点的数组，edges 必须是数组")
+        if definition.get("inventory_requirements") not in (None, []):
+            raise WorkflowError("invalid_input", detail="暂不支持在导入图中携带 inventory_requirements")
+        try:
+            for index, node in enumerate(nodes):
+                if not isinstance(node, dict):
+                    raise ValueError(f"nodes[{index}] 必须是对象")
+                validate_uuid(node.get("uuid"))
+            new_nodes, new_edges, _requirements = duplicate_graph({"nodes": nodes, "edges": edges})
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=name,
+            tags=list(definition.get("tags") or []),
+            description=definition.get("description"),
+            meta_data={key: value for key, value in (definition.get("meta_data") or {}).items() if key != "unilab"},
+            workflow_type=str(definition.get("workflow_type") or "normal"),
+        )
+        try:
+            return self.save_graph(record["uuid"], revision=record["revision"], nodes=new_nodes, edges=new_edges)
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(record["uuid"])
+            raise
 
     def _read_source(
         self,
         registration: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_read_source(registration)
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         with self._source_parent_fd(
@@ -2596,6 +3353,8 @@ class WorkflowService(WorkflowStore):
     ) -> Tuple[Any, ...]:
         """返回无需读取文件内容的稳定性签名，供 Draft 监视器去抖。"""
 
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_source_signature(registration)
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         with self._source_parent_fd(
@@ -2633,6 +3392,9 @@ class WorkflowService(WorkflowStore):
         *,
         expected_hash: Any = _NO_EXPECTED_HASH,
     ) -> None:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            self._portable_atomic_write(registration, content, expected_hash=expected_hash)
+            return
         root, target = self._source_path(registration)
         self._assert_contained_regular_target(root, target, allow_missing=True)
         # 先以目录 FD 安全地创建（如有需要）固定的 workflows 目录。
@@ -2947,16 +3709,7 @@ class WorkflowService(WorkflowStore):
         *,
         create: bool,
     ) -> Iterator[Optional[Tuple[int, str]]]:
-        relative = PurePosixPath(registration["relative_path"])
-        if (
-            relative.is_absolute()
-            or len(relative.parts) != 2
-            or relative.parts[0] != "workflows"
-            or any(part in {"", ".", ".."} for part in relative.parts)
-            or relative.suffix != ".py"
-            or not relative.stem
-        ):
-            raise WorkflowError("invalid_input")
+        relative = cls._checked_source_relative(registration)
 
         root_fd = cls._open_directory_chain(Path(registration["package_root"]))
         parent_fd = -1
@@ -2988,6 +3741,22 @@ class WorkflowService(WorkflowStore):
             if parent_fd >= 0:
                 os.close(parent_fd)
             os.close(root_fd)
+
+    @staticmethod
+    def _checked_source_relative(registration: Dict[str, Any]) -> PurePosixPath:
+        """登记的相对路径只能是 ``workflows/<名称>.py``，两条回写后端共用。"""
+
+        relative = PurePosixPath(registration["relative_path"])
+        if (
+            relative.is_absolute()
+            or len(relative.parts) != 2
+            or relative.parts[0] != "workflows"
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or relative.suffix != ".py"
+            or not relative.stem
+        ):
+            raise WorkflowError("invalid_input")
+        return relative
 
     @staticmethod
     def _open_directory_chain(path: Path) -> int:
@@ -3055,6 +3824,430 @@ class WorkflowService(WorkflowStore):
             raise WorkflowError("invalid_input")
         if not allow_missing and not target.exists():
             raise WorkflowError("invalid_input")
+
+    # 可移植源码回写（macOS / Windows）-------------------------------------
+
+    def _portable_read_source(
+        self,
+        registration: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """路径版 ``_read_source``：逐级 lstat 校验后读取，不依赖 dir_fd。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return None
+        parent, filename = source_parent
+        try:
+            raw, stat_result = self._portable_read_regular(parent / filename)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeError:
+            raise WorkflowError("invalid_input") from None
+        return {
+            "python_source": source,
+            "draft_hash": _sha256(raw),
+            "update_time": _mtime_rfc3339(stat_result.st_mtime),
+        }
+
+    def _portable_source_signature(
+        self,
+        registration: Dict[str, Any],
+    ) -> Tuple[Any, ...]:
+        """路径版 ``source_signature``：只 lstat，不跟随符号链接。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return ("missing",)
+        parent, filename = source_parent
+        try:
+            stat_result = os.lstat(parent / filename)
+        except FileNotFoundError:
+            return ("missing",)
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        if _is_redirecting_entry(stat_result) or not stat.S_ISREG(stat_result.st_mode):
+            raise WorkflowError("invalid_input")
+        return (
+            "file",
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+            stat_result.st_ctime_ns,
+        )
+
+    def _portable_atomic_write(
+        self,
+        registration: Dict[str, Any],
+        content: bytes,
+        *,
+        expected_hash: Any,
+    ) -> None:
+        """macOS / Windows 的源码回写，外部契约与 Linux lease 路径（``_compare_and_replace``）相同。
+
+        相同的契约：按 ``expected_hash`` 做内容 CAS（目标缺失而期望哈希非空、或目标存在而
+        期望为 None 都是 ``draft_hash_conflict``）；同目录临时文件 fsync 后 ``os.replace``
+        原子发布（POSIX 与 Windows 均为原子替换）；只写登记包根内固定的
+        ``workflows/<名称>.py``，逐级 lstat 拒绝符号链接与目录联接等重解析点；失败不留下
+        临时文件；``os.replace`` 一旦发布，绝不覆盖或删除无法证明属于本进程的内容。
+
+        步骤：持目标旁 sidecar 锁 ``.<名称>.py.lock``（``utils/file_lock``：POSIX flock，
+        Windows msvcrt）→ 写临时文件并 fsync → 读目标、比对哈希 → 写 fsync 过的 ``.cas``
+        备份 → 再次确认目标仍是同一文件且哈希未变 → ``os.replace`` → fsync 目录（Windows
+        跳过）→ 验证目标哈希等于新内容 → 删除备份。锁文件常驻，不随写入删除。
+
+        与 Linux 的保证差异：没有 file lease，无法发现外部编辑器仍持有目标的打开句柄，也检测
+        不到外部程序在“最后一次哈希确认”与 ``os.replace`` 之间写入的内容——这部分写入会被
+        本次发布覆盖（备份里也没有它）。Linux 上 lease 会让这两种情况都返回冲突。本仓库的
+        进程之间由 sidecar 锁串行化；外部写入只有发生在 replace 之后、发布后验证之前，才会
+        被发现（返回冲突并保留 ``.cas`` 备份供人工恢复）。Windows 上目标被其他程序打开而
+        使 ``os.replace`` 抛 PermissionError 时，同样按 ``draft_hash_conflict`` 处理。
+        """
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=True)
+        if source_parent is None:  # pragma: no cover - create=True 时目录必然存在
+            raise WorkflowError("invalid_input")
+        parent, filename = source_parent
+        try:
+            with self._portable_source_lock(parent, filename):
+                # 等锁期间路径链可能已被替换：持锁后重新校验一次。
+                self._assert_contained_regular_target(root, target, allow_missing=True)
+                if self._portable_source_parent(registration, create=False) != source_parent:
+                    raise WorkflowError("invalid_input")
+                temporary = parent / f".{filename}.{uuid4().hex}.tmp"
+                try:
+                    self._portable_write_new_file(temporary, content)
+                    if expected_hash is _NO_EXPECTED_HASH:
+                        self._portable_replace(temporary, parent / filename)
+                    else:
+                        self._portable_compare_and_replace(
+                            parent=parent,
+                            target_name=filename,
+                            temporary=temporary,
+                            replacement_hash=_sha256(content),
+                            expected_hash=expected_hash,
+                        )
+                    self._portable_fsync_directory(parent)
+                finally:
+                    self._portable_discard(temporary)
+        except WorkflowError:
+            raise
+        except OSError:
+            raise WorkflowError("internal_error") from None
+
+    @staticmethod
+    def _portable_compare_and_replace(
+        *,
+        parent: Path,
+        target_name: str,
+        temporary: Path,
+        replacement_hash: str,
+        expected_hash: Optional[str],
+    ) -> None:
+        """sidecar 锁内的 CAS：读-哈希-比较 → 备份原稿 → 原子发布 → 发布后验证。
+
+        与 Linux 路径相同的规则：``os.replace()`` 成功发布后，异常路径无法证明 canonical
+        仍是本进程写入的内容（外部程序可能已在发布后写入或再次替换），此时绝不用 ``.cas``
+        备份覆盖或删除它，只保留 fsync 过的备份供人工 / Git 恢复。
+        """
+
+        target = parent / target_name
+        backup = parent / f".{target_name}.{uuid4().hex}.cas"
+        backup_pending = False
+        published = False
+        try:
+            staged, _staged_stat = WorkflowService._portable_read_regular(temporary)
+            if _sha256(staged) != replacement_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            try:
+                original, original_stat = WorkflowService._portable_read_regular(target)
+            except FileNotFoundError:
+                if expected_hash is not None:
+                    raise WorkflowConflict("draft_hash_conflict") from None
+                WorkflowService._portable_publish_new(temporary, target)
+                published = True
+                WorkflowService._portable_verify_published(target, replacement_hash)
+                return
+            except PermissionError:
+                # Windows：目标被其他程序以独占方式打开。
+                raise WorkflowConflict("draft_hash_conflict") from None
+            if expected_hash is None or _sha256(original) != expected_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+
+            backup_pending = True
+            WorkflowService._portable_write_new_file(backup, original)
+            WorkflowService._portable_fsync_directory(parent)
+            # 发布前最后确认目标仍是刚才校验的同一文件且内容未变，尽量缩小外部写入窗口。
+            WorkflowService._portable_assert_unchanged(target, original_stat, expected_hash)
+            WorkflowService._portable_replace(temporary, target)
+            published = True
+            WorkflowService._portable_fsync_directory(parent)
+            WorkflowService._portable_verify_published(target, replacement_hash)
+            with suppress(OSError):
+                os.unlink(backup)
+                backup_pending = False
+                WorkflowService._portable_fsync_directory(parent)
+        except Exception:
+            # 未发布时备份只是本进程的副本，可以删除；已发布则保留供人工恢复。
+            if backup_pending and not published:
+                with suppress(OSError):
+                    os.unlink(backup)
+            raise
+
+    @staticmethod
+    def _portable_replace(source: Path, target: Path) -> None:
+        """原子替换；PermissionError（Windows 上目标被其他程序打开）按并发修改处理。"""
+
+        try:
+            os.replace(source, target)
+        except PermissionError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+
+    @staticmethod
+    def _portable_publish_new(source: Path, target: Path) -> None:
+        """目标缺失时不覆盖地发布：POSIX 用 link，Windows 用不带替换语义的 rename。"""
+
+        try:
+            if _NO_CLOBBER_RENAME:
+                os.rename(source, target)
+            else:
+                os.link(source, target)
+        except FileExistsError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+        except PermissionError:
+            if _NO_CLOBBER_RENAME:
+                raise WorkflowConflict("draft_hash_conflict") from None
+            raise
+
+    @staticmethod
+    def _portable_assert_unchanged(
+        target: Path,
+        original_stat: os.stat_result,
+        expected_hash: str,
+    ) -> None:
+        try:
+            current, current_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if (
+            not os.path.samestat(current_stat, original_stat)
+            or _sha256(current) != expected_hash
+        ):
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_verify_published(target: Path, replacement_hash: str) -> None:
+        """发布后验证：目标必须是普通文件且哈希等于新内容，否则视为外部并发写入。"""
+
+        try:
+            published, _published_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError, WorkflowError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if _sha256(published) != replacement_hash:
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_read_regular(path: Path) -> Tuple[bytes, os.stat_result]:
+        """先 lstat 拒绝符号链接、重解析点与非普通文件，再打开、比对文件身份后读取。
+
+        ``FileNotFoundError`` / ``PermissionError`` 等 OSError 原样抛出，由调用方映射。
+        """
+
+        before = os.lstat(path)
+        if _is_redirecting_entry(before) or not stat.S_ISREG(before.st_mode):
+            raise WorkflowError("invalid_input")
+        descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY)
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
+                # lstat 与 open 之间路径被换成了别的文件（Windows 没有 O_NOFOLLOW）。
+                raise WorkflowConflict("draft_hash_conflict")
+            return WorkflowService._read_regular_fd(descriptor), opened
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _portable_write_new_file(path: Path, content: bytes) -> None:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    @staticmethod
+    def _portable_discard(path: Path) -> None:
+        """尽力删除本进程创建的临时文件；删除失败只记录，不掩盖原始异常。"""
+
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("未能删除源码回写临时文件 %s", path, exc_info=True)
+
+    @staticmethod
+    def _portable_fsync_directory(path: Path) -> None:
+        """POSIX 上 fsync 目录以持久化 rename / link；Windows 无法以 os.open 打开目录，跳过。"""
+
+        if os.name == "nt":
+            return
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _O_CLOEXEC)
+        try:
+            os.fsync(descriptor)
+        except OSError as exc:
+            # 部分文件系统不支持目录 fsync，视同平台不支持。
+            if exc.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+                raise
+        finally:
+            os.close(descriptor)
+
+    @classmethod
+    def _portable_source_parent(
+        cls,
+        registration: Dict[str, Any],
+        *,
+        create: bool,
+    ) -> Optional[Tuple[Path, str]]:
+        """路径版 ``_source_parent_fd``：逐级 lstat 拒绝符号链接与重解析点，返回固定 workflows 目录。"""
+
+        relative = cls._checked_source_relative(registration)
+        root = Path(os.path.abspath(registration["package_root"]))
+        parent = root / relative.parts[0]
+        try:
+            cls._portable_assert_plain_directories(root)
+            try:
+                parent_stat = os.lstat(parent)
+            except FileNotFoundError:
+                if not create:
+                    return None
+                with suppress(FileExistsError):
+                    os.mkdir(parent, 0o755)
+                parent_stat = os.lstat(parent)
+            if _is_redirecting_entry(parent_stat) or not stat.S_ISDIR(parent_stat.st_mode):
+                raise WorkflowError("invalid_input")
+            # 兜底：解析后的目录仍须位于解析后的包根内。
+            Path(os.path.realpath(parent)).relative_to(Path(os.path.realpath(root)))
+        except WorkflowError:
+            raise
+        except (OSError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        return parent, relative.parts[1]
+
+    @staticmethod
+    def _portable_assert_plain_directories(path: Path) -> None:
+        """从盘符 / 根起逐级 lstat：每一级都必须是目录，且不是符号链接或重解析点。"""
+
+        absolute = Path(os.path.abspath(path))
+        current = Path(absolute.anchor)
+        for part in absolute.parts[1:]:
+            current = current / part
+            entry = os.lstat(current)
+            if _is_redirecting_entry(entry) or not stat.S_ISDIR(entry.st_mode):
+                raise WorkflowError("invalid_input")
+
+    @staticmethod
+    def _portable_lock_path(parent: Path, filename: str) -> Path:
+        return parent / f".{filename}.lock"
+
+    @staticmethod
+    @contextmanager
+    def _portable_source_lock(parent: Path, filename: str) -> Iterator[None]:
+        """目标旁 sidecar 锁文件上的跨进程排他锁，覆盖读-哈希-比较-替换全过程。
+
+        flock / msvcrt 锁按打开的文件生效，同一进程的不同线程也互斥。持锁后确认路径
+        仍指向所锁文件（锁文件被持锁者删除时重新打开）；等待超过上限按并发修改处理。
+        """
+
+        lock_path = WorkflowService._portable_lock_path(parent, filename)
+        deadline = time.monotonic() + _PORTABLE_LOCK_TIMEOUT_SECONDS
+        while True:
+            stream = WorkflowService._portable_open_lock_file(lock_path)
+            locked = False
+            try:
+                while True:
+                    try:
+                        acquire_exclusive_file_lock(stream, blocking=False)
+                        locked = True
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise WorkflowConflict("draft_hash_conflict") from None
+                        time.sleep(_PORTABLE_LOCK_POLL_SECONDS)
+                if WorkflowService._portable_lock_file_current(lock_path, stream):
+                    yield
+                    return
+            finally:
+                if locked:
+                    with suppress(OSError):
+                        release_file_lock(stream)
+                stream.close()
+            if time.monotonic() >= deadline:
+                raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_open_lock_file(lock_path: Path) -> BinaryIO:
+        try:
+            existing = os.lstat(lock_path)
+        except FileNotFoundError:
+            pass
+        else:
+            if _is_redirecting_entry(existing) or not stat.S_ISREG(existing.st_mode):
+                raise WorkflowError("invalid_input")
+        descriptor = os.open(
+            lock_path,
+            os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        try:
+            return os.fdopen(descriptor, "r+b")
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _portable_lock_file_current(lock_path: Path, stream: BinaryIO) -> bool:
+        try:
+            current = os.lstat(lock_path)
+        except FileNotFoundError:
+            return False
+        if _is_redirecting_entry(current):
+            raise WorkflowError("invalid_input")
+        opened = os.fstat(stream.fileno())
+        return stat.S_ISREG(opened.st_mode) and os.path.samestat(current, opened)
+
+    def _discard_source_file(self, registration: Dict[str, Any]) -> None:
+        """导入失败时删除本次创建的源码文件；可移植后端持锁一并删除 sidecar 锁文件。"""
+
+        target = self._source_path(registration)[1]
+        if _SOURCE_WRITE_BACKEND != _SOURCE_WRITE_PORTABLE:
+            target.unlink(missing_ok=True)
+            return
+        lock_path = self._portable_lock_path(target.parent, target.name)
+        with self._portable_source_lock(target.parent, target.name):
+            target.unlink(missing_ok=True)
+            if os.name != "nt":
+                # POSIX 持锁删除：等待者拿到锁后发现路径已不指向所锁文件，会重新打开。
+                with suppress(OSError):
+                    os.unlink(lock_path)
+        if os.name == "nt":
+            # Windows 不能删除仍被打开的文件：释放后再删；其他进程仍打开着它时删除失败，
+            # 正好不会破坏对方的锁。
+            with suppress(OSError):
+                os.unlink(lock_path)
 
     def _compile(
         self,

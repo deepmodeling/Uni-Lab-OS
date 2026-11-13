@@ -19,13 +19,15 @@ _NON_CONFIG_ENV_KEYS = frozenset(
     {
         "UNILABOS_SUPERVISOR_INNER",  # app.supervisor：当前进程处于监督循环内
         "UNILABOS_HOST_CHILD",  # app.supervisor：由调度权威拉起的 Host 子进程
+        "UNILABOS_PARENT_PID",  # app.lifetime：本进程应跟随的本机父进程 pid
+        "UNILABOS_PARENT_DEATH_SIGNAL",  # app.lifetime：可启用 Linux PR_SET_PDEATHSIG
         "UNILABOS_OTEL_ENABLED",  # utils.tracing：是否创建 OTLP exporter
     }
 )
 
 
 # 值不进日志的配置字段（小写）。
-_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token"})
+_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token", "station_api_key"})
 
 
 class BasicConfig:
@@ -38,14 +40,19 @@ class BasicConfig:
     # 见 unilabos/config/control_token.py。权威留空时首次启动生成并保存在 <working_dir>/control_token；
     # Host 子进程由权威经环境变量传入；远端 Host（--address 指向另一台机器）在这里填权威那份 token。
     control_token = ""
+    # V1 工站调用（``POST /api/v1/station/workflow-invocations``）的协议密钥，对应 V1 的
+    # ``EdgeControlConfig.api_key``：上游 Backend 以 ``Authorization: Bearer <key>`` 调用。
+    # 留空时读 <working_dir>/station_api_key（不自动生成）；都没有则工站调用一律 401。
+    # 见 unilabos/config/station_key.py。
+    station_api_key = ""
     # 允许跨域访问管理 API 的来源，逗号分隔（如 "https://xuwznln.github.io,http://localhost:5173"）；
     # "*" 为全部允许（默认）。
     cors_allow_origins = "*"
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
     # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
     server_database_root = ""
-    # 库结构不一致且没有迁移路径时，策略为 refuse 的库拒绝启动；设为 True 则改为把旧库改名为
-    # .bak-<时间戳> 后重建空库。开发期四个库都是 rebuild，本开关在发布切换为 refuse 后才起作用。
+    # 库结构不一致且没有迁移路径时，策略为 refuse 的库（runtime / materials）拒绝启动、保留旧库；
+    # 设为 True 则改为把旧库改名为 .bak-<时间戳> 后重建空库。telemetry / history 本来就自动重建。
     database_rebuild_on_mismatch = False
     # 调度锁授予策略：auto（有原生库用原生，否则 Python FIFO）/ python / native（找不到原生库报错）。
     scheduler_grant_policy = "auto"
@@ -146,7 +153,9 @@ class HostLinkConfig:
     advertise_ip = ""  # Host 下发给 Slave 的可达地址；空时自动探测
     heartbeat_interval = 5.0
     heartbeat_timeout = 15.0
-    connect_timeout = 5.0
+    connect_timeout = 5.0  # 单次 TCP 连接 / HELLO 握手超时
+    # Slave 等 Host 的上限（秒）：启动时等端口可连、以及 Host 启动中「未就绪」请求的重试，各自计时
+    host_wait_timeout = 120.0
     request_timeout = 10.0
     ros_assist_apply = True
     ros_domain_id = ""  # 空时沿用 ROS_DOMAIN_ID

@@ -30,6 +30,7 @@ from unilabos.backend.hostlink.adapter_registry import set_execution_adapter
 from unilabos.backend.hostlink.backend import to_wire_value
 from unilabos.backend.hostlink.protocol import RemoteError
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
+from unilabos.backend.runtime.test_mode import driver_runs_in_test_mode
 from unilabos.backend.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
@@ -51,6 +52,8 @@ class HostNode(HostAdapterBase):
     构造即启动：注册执行适配器、刷新设备快照并启动监控线程；
     结束时调用 :meth:`stop`。
     """
+
+    supports_execution_start_guard = True
 
     _instance: ClassVar[Optional["HostNode"]] = None
     _ready_event: ClassVar[threading.Event] = threading.Event()
@@ -177,6 +180,13 @@ class HostNode(HostAdapterBase):
                 result.setdefault(device_id, remote)
         return result
 
+    @property
+    def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
+        """设备图中因 backend 不支持而被本机 runtime 跳过的设备（能力快照里登记为停用 route）。"""
+
+        local = getattr(self.runtime, "local", None)
+        return dict(getattr(local, "unavailable_devices", None) or {})
+
     def refresh_devices(self, *, initial: bool = False, notify_ready: bool = False) -> None:
         snapshot = self._device_snapshot(initial=initial)
         self._subscribed_topics = set(self.runtime.local.topic_bus.subscribed_topics())
@@ -283,10 +293,11 @@ class HostNode(HostAdapterBase):
 
         local_node = self.runtime.local.devices.get(item.device_id)
         run_simulator = bool(
-            local_node is not None
-            and getattr(local_node.driver, "run_in_test_mode", False) is True
+            local_node is not None and driver_runs_in_test_mode(local_node.driver)
         )
         if BasicConfig.test_mode and not run_simulator:
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             result = self._build_test_mode_return(item.device_id, item.action_name, action_kwargs)
             return_info = serialize_result_info("", True, result)
             result_data = self._result_data(item, result, return_info)
@@ -296,6 +307,9 @@ class HostNode(HostAdapterBase):
         context = ActionContext(
             action_id=item.job_id,
             feedback_callback=lambda _action_id, feedback: self._publish_feedback(item, feedback),
+            late_result_callback=lambda _action_id, value, error: self._publish_late_result(
+                item, action_type, value, error
+            ),
         )
         kwargs = self._prepare_action_kwargs(item, action_kwargs, sample_material)
         with self._contexts_lock:
@@ -323,7 +337,10 @@ class HostNode(HostAdapterBase):
         action_kwargs: Dict[str, Any],
         context: ActionContext,
     ) -> None:
+        from unilabos.server.backend.execution_start import confirm_execution_start, ExecutionStartUnknown
         try:
+            context.raise_if_cancelled()
+            confirm_execution_start(item)
             # A scheduler action may legitimately run for hours.  ``-1`` means
             # no transport request deadline; cancellation remains explicit.
             result = asyncio.run(
@@ -337,6 +354,12 @@ class HostNode(HostAdapterBase):
             )
             status, return_info = self._normalize_result(item, action_type, result)
             result_data = self._result_data(item, result, return_info)
+        except ExecutionStartUnknown as exc:
+            from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+            status = "failed"
+            return_info = serialize_result_info(str(exc), False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+            return_info["uncertainty_reason"] = str(exc)
+            result_data = self._result_data(item, {}, return_info)
         except ActionCancelled:
             status = "failed"
             return_info = serialize_result_info(
@@ -346,16 +369,17 @@ class HostNode(HostAdapterBase):
                 suc_type=SUCCESS_TYPE_CANCELLATION,
             )
             result_data = self._result_data(item, {}, return_info)
-        except Exception as exc:  # noqa: BLE001 - convert driver failure to job result
+        except Exception as exc:  # noqa: BLE001 - 驱动明确失败与传输结果未知必须区分
+            from unilabos.backend.hostlink.protocol import LinkError, RemoteError
+            from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
             status = "failed"
             error_text = traceback.format_exc()
-            error_info = self._exception_error_info(item.action_name, exc, error_text)
-            return_info = serialize_result_info(
-                error_text,
-                False,
-                {},
-                error_info=error_info,
-            )
+            if isinstance(exc, LinkError) and not isinstance(exc, RemoteError):
+                return_info = serialize_result_info(error_text, False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+                return_info["uncertainty_reason"] = str(exc)
+            else:
+                error_info = self._exception_error_info(item.action_name, exc, error_text)
+                return_info = serialize_result_info(error_text, False, {}, error_info=error_info)
             result_data = self._result_data(item, {}, return_info)
         finally:
             with self._contexts_lock:
@@ -364,7 +388,8 @@ class HostNode(HostAdapterBase):
 
         with self._goal_state_lock:
             canceled = item.job_id in self._canceled_jobs
-        if canceled and status != "canceled":
+        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+        if canceled and status != "canceled" and return_info.get("suc_type") != SUCCESS_TYPE_EXECUTION_UNKNOWN:
             status = "failed"
             return_info = serialize_result_info(
                 "Job was cancelled",
@@ -375,6 +400,32 @@ class HostNode(HostAdapterBase):
             result_data = self._result_data(item, {}, return_info)
 
         self._publish_terminal_result(item, status, return_info, result_data)
+
+    def _publish_late_result(
+        self,
+        item: "QueueItem",
+        action_type: str,
+        value: Any,
+        error: Optional[BaseException],
+    ) -> None:
+        """硬超时之后驱动线程才返回：按真实结果回报，执行面把它当迟到结果处理（ADR 0008）。"""
+
+        try:
+            if error is None:
+                status, return_info = self._normalize_result(item, action_type, value)
+                result_data = self._result_data(item, value, return_info)
+            else:
+                status = "failed"
+                error_text = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+                error_info = self._exception_error_info(item.action_name, error, error_text)
+                return_info = serialize_result_info(error_text, False, {}, error_info=error_info)
+                result_data = self._result_data(item, {}, return_info)
+            for bridge in execution_result_bridges(self.bridges):
+                publish_status = getattr(bridge, "publish_job_status", None)
+                if callable(publish_status):
+                    publish_status(result_data, item, status, return_info)
+        except Exception:  # noqa: BLE001 - 迟到结果回报失败只影响锁的自动释放，可人工强制释放
+            self.lab_logger().exception(f"作业 {item.job_id} 的迟到结果回报失败")
 
     def _result_data(
         self,
@@ -515,7 +566,11 @@ class HostNode(HostAdapterBase):
             info.setdefault("error_message", str(exc))
             info.setdefault("traceback", error_text)
             return info
+        to_error_info = getattr(exc, "to_error_info", None)
+        structured = to_error_info() if callable(to_error_info) else {}
         info: Dict[str, Any] = {
+            # 超时异常自带结构化身份（timeout_seconds、driver_still_running 等）
+            **(structured if isinstance(structured, dict) else {}),
             "action_name": action_name,
             "exception_type": type(exc).__name__,
             "exception_mro": [kind.__name__ for kind in type(exc).__mro__],

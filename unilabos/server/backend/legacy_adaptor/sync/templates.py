@@ -117,6 +117,12 @@ class TemplateSynchronizer:
             raise TemplateSyncError(
                 f"registry digest returned HTTP {response.status_code}: {payload}"
             )
+        if isinstance(payload, Mapping) and int(payload.get("code") or 0) != 0:
+            error = payload.get("error")
+            message = error.get("msg") if isinstance(error, Mapping) else error
+            raise TemplateSyncError(
+                f"registry digest returned code {payload.get('code')}: {message or payload}"
+            )
         data = payload.get("data", payload) if isinstance(payload, Mapping) else None
         if not isinstance(data, Mapping):
             raise TemplateSyncError("registry digest returned a non-object response")
@@ -185,14 +191,14 @@ class TemplateSynchronizer:
             "Content-Encoding": "gzip",
             **client_headers(),
         }
-        url = f"{self.backend_api}/resource-templates"
+        url = f"{self.backend_api}/registry/reports"
         target = urlsplit(url)
         with span(
             "edge.http.template.sync",
             kind="client",
             attributes={
                 "http.request.method": "POST",
-                "http.route": "/api/v1/resource-templates",
+                "http.route": "/api/v1/registry/reports",
                 "server.address": target.hostname or "",
                 **attributes,
             },

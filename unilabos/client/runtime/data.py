@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any, Optional
-from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
 
 from unilabos.config.control_token import client_headers
 
@@ -244,11 +245,8 @@ class LocalRuntimeClient:
         return self.service.acknowledge_backend_events(value)
 
 
-class RuntimeHTTPError(RuntimeError):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(f"runtime API returned {status_code}: {detail}")
-        self.status_code = status_code
-        self.detail = detail
+class RuntimeHTTPError(APIHTTPError):
+    api_name = "runtime"
 
 
 class HTTPRuntimeClient:
@@ -284,15 +282,9 @@ class HTTPRuntimeClient:
             method=method,
         )
         try:
-            with self._opener(request, timeout=self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            raw = exc.read().decode("utf-8")
-            try:
-                detail = json.loads(raw).get("detail", raw)
-            except ValueError:
-                detail = raw
-            raise RuntimeHTTPError(exc.code, str(detail)) from exc
+            return request_json(request, timeout=self.timeout, opener=self._opener)
+        except EnvelopeError as exc:
+            raise RuntimeHTTPError.from_envelope_error(exc) from exc
 
     def upsert_backend_session(
         self, value: BackendSessionUpsert

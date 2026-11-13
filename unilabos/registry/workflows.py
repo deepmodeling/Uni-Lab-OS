@@ -1,6 +1,7 @@
 """@workflow 装饰器：把 Python 函数声明为设备包自带的**工作流模板**。
 
-设备包用 ``@workflow`` 声明模板，函数体内通过 ctx 描述步骤：
+设备包用 ``@workflow`` 声明默认设备 ID、默认参数和过程；具体换绑由前端使用模板时选择，
+后端实例化接口接收并校验。函数体内通过 ctx 描述步骤：
 
     from unilabos.registry.workflows import WorkflowGuide, workflow
 
@@ -19,6 +20,9 @@
 - ``ctx.run("device_id/action_name", params)``：角色 = 显式设备 id。
 - ``ctx.run_template("class_name/action_name", params)``：角色 = registry 设备类；
   实例化时该类恰有一个设备则自动填充，否则由用户绑定。
+- 默认 ``compiler="ast"``：只解析函数源码、不执行，支持动作结果的原生 if/elif/else；
+  辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前按源码展开
+  （``registry/workflow_helpers.py``）。``compiler="builder"`` 是旧行为：注册时执行一次函数收集步骤。
 - ``with ctx.loop_for(3):`` / ``with ctx.loop_while(condition):``：块内的步骤是循环体，
   运行时由调度器逐轮执行（不是配置时展开）。``for`` 固定轮数；``while`` 每轮前判定条件——
   ``ctx.device_state("heater", "temperature_c", "<", 80)`` 看设备状态字段，
@@ -40,11 +44,10 @@ Authority（``registry_type="workflow"``，同一套版本化 / 软移除），�
 模板 uuid 由函数相对路径（``module:qualname``）经 uuid5 派生，跨进程 / 跨机器稳定；
 实例化出的工作流 uuid 由模板 uuid + 角色绑定派生，同一组设备反复实例化幂等覆盖。
 
-实例化后的步骤节点不画 handle 连线（handle 边属于节点模板体系，声明式步骤没有
-数据流），执行序依赖写在节点 ``execution_policy.depends_on``（上一步节点 uuid），
-调度器把它翻译成 DAG 依赖边——同一层级的步骤严格按声明序串行执行；循环体是
-``parent_uuid`` 指向循环节点的子节点，循环节点作为一个整体排在它的同级序列里。
-节点 uuid 按步骤序构造，拓扑序 == 声明序。
+实例化后的顺序与汇合依赖写在 ``execution_policy.depends_on``，动作结果通过结构化
+``node_output`` 参数引用传递。默认顺序执行；``ctx.parallel`` 的直接成员并行，
+``ctx.group`` 将多步组合为顺序分支。组框不生成 Job，循环作为一个执行整体排入依赖。
+节点 UUID 按声明序生成，真正的运行顺序由依赖和资源约束共同决定。
 """
 
 from __future__ import annotations
@@ -52,7 +55,7 @@ from __future__ import annotations
 import importlib
 import uuid as uuid_module
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence
 
 from unilabos.protocol.materials import InventoryRequirement
@@ -76,6 +79,66 @@ def workflow_uuid_for(source_path: str) -> str:
     return str(uuid_module.uuid5(WORKFLOW_NAMESPACE, source_path))
 
 
+_BUILD_TIME_HINT = (
+    "builder 模式只在注册时执行一次工作流函数，此时动作还没有运行、没有结果，"
+    "这里的判断会得到与运行无关的固定答案。按结果分支请用 @workflow(compiler=\"ast\") 写原生 if；"
+    "按结果或设备状态循环请用 with ctx.loop_while(ctx.step_output(...) / ctx.device_state(...))。"
+)
+
+
+class StepResultRef(dict):
+    """``WorkflowStep.output()`` 返回的结果引用：JSON 形态与普通 dict 相同，运行时才代入值。
+
+    作者函数拿到的引用拒绝判断真假、与常量比较和拼进字符串——这些操作在构建期只能得到
+    固定答案，会静默生成与源码不符的流程。入库前由 :func:`_plain_references` 换回普通 dict。
+    """
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        raise TypeError(f"不能在工作流函数里判断动作结果的真假。{_BUILD_TIME_HINT}")
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Mapping):
+            return dict.__eq__(self, other)
+        raise TypeError(f"不能在工作流函数里把动作结果和常量比较。{_BUILD_TIME_HINT}")
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def _compare(self, other: object) -> bool:
+        raise TypeError(f"不能在工作流函数里比较动作结果的大小。{_BUILD_TIME_HINT}")
+
+    __lt__ = __le__ = __gt__ = __ge__ = _compare
+
+    def __format__(self, format_spec: str) -> str:
+        raise TypeError("不能把动作结果拼进字符串：参数值直接写 step.output(...)，由运行时代入。")
+
+
+class WorkflowCondition(dict):
+    """``ctx.device_state`` / ``ctx.step_output`` 构造的条件：只能交给 ``ctx.loop_while``
+    （或 ``compiler="ast"`` 源码里的 ``if`` / ``while`` 条件），不能在构建期判断真假。"""
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        raise TypeError(f"条件对象不能在工作流函数里直接判断真假。{_BUILD_TIME_HINT}")
+
+
+def _plain_references(value: Any) -> Any:
+    """把作者函数里的结果引用 / 条件换回普通 dict 再入库，同时与作者的可变对象解除共享。"""
+
+    if isinstance(value, dict):
+        return {key: _plain_references(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain_references(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_plain_references(item) for item in value)
+    return value
+
+
 @dataclass(frozen=True)
 class WorkflowStep:
     """一条 ctx.run/ctx.run_template/循环 记录（build 时解析为 workflow 节点）。"""
@@ -87,12 +150,26 @@ class WorkflowStep:
     name: str  # 节点显示名，缺省 f"{target}.{action}"
     #: 已校验的 InventoryRequirement（json 形态），落到节点 meta_data.inventory_requirements
     inventory: List[Dict[str, Any]] = field(default_factory=list)
+    inventory_mode: str = "task"
     #: 这一步做什么 / 该看到什么（前端"全流程"说明里逐步展示）
     description: str = ""
-    #: 所在循环步骤在 ctx.steps 里的下标；顶层为 None
+    #: 所在循环或分组步骤在 ctx.steps 里的下标；顶层为 None
     parent: Optional[int] = None
     #: 模板里的步骤 key（``step-N``，N 为声明序号）；条件引用与边都用它
     key: str = ""
+    #: 静态编译器产生的条件分支；模板中引用 node_key，实例化时换成 UUID。
+    guards: List[Dict[str, Any]] = field(default_factory=list)
+    #: 构建时记录的真实前驱；分组不作为运行节点。
+    dependencies: Optional[List[str]] = None
+
+    def output(self, data_key: str = "") -> "StepResultRef":
+        """builder 模式的结果引用；AST 模式同时支持 result.field / result["field"]。"""
+        if not isinstance(data_key, str):
+            raise ValueError("结果路径必须是字符串")
+        return StepResultRef(kind="node_output", node_key=self.key, data_key=data_key)
+
+    def __bool__(self) -> bool:
+        raise TypeError(f"不能在工作流函数里判断步骤的真假。{_BUILD_TIME_HINT}")
 
     @property
     def is_loop(self) -> bool:
@@ -169,15 +246,37 @@ class WorkflowDefinition:
     tags: List[str]
     fn: Callable[["WorkflowBuildContext"], Any]
     guide: Optional[WorkflowGuide] = None
+    compiler: str = "ast"
 
-    def collect_steps(self) -> List[WorkflowStep]:
-        """执行函数体收集步骤（声明式：函数只描述步骤，不执行设备动作）。"""
+    def collect(self) -> "WorkflowBuildContext":
+        """收集步骤及输入输出声明，AST 模式不调用作者函数。"""
+        if self.compiler == "ast":
+            from unilabos.registry.workflow_ast import collect_static_workflow
 
+            return collect_static_workflow(self.fn)
         ctx = WorkflowBuildContext()
         self.fn(ctx)
         if not ctx.steps:
             raise ValueError(f"工作流 {self.source_path} 未声明任何步骤")
-        return list(ctx.steps)
+        return ctx
+
+    def collect_steps(self) -> List[WorkflowStep]:
+        return list(self.collect().steps)
+
+
+@dataclass
+class _BuildSequence:
+    """序列的当前尾部；并行区域的每个分支都从同一入口开始。"""
+    entry: List[str] = field(default_factory=list)
+    frontier: List[str] = field(default_factory=list)
+    parallel: bool = False
+    start_index: int = 0
+
+    def incoming(self) -> List[str]:
+        return list(self.entry if self.parallel else self.frontier)
+
+    def accept(self, tails: Sequence[str]) -> None:
+        self.frontier = list(dict.fromkeys([*self.frontier, *tails] if self.parallel else tails))
 
 
 class WorkflowBuildContext:
@@ -185,8 +284,101 @@ class WorkflowBuildContext:
 
     def __init__(self) -> None:
         self.steps: List[WorkflowStep] = []
+        self.input_contract: Dict[str, Any] = {"version": 1, "parameters": []}
+        self.output_contract: Dict[str, Any] = {"version": 1, "outputs": []}
+        self.output_bindings: Dict[str, Any] = {}
+        self.resource_scopes: List[Dict[str, Any]] = []
+        self._resource_scope_stack: List[str] = []
         # 正在声明循环体的循环步骤下标栈（with ctx.loop_for(...) 嵌套）
         self._loop_stack: List[int] = []
+        self._parent_stack: List[int] = []
+        self._sequences: List[_BuildSequence] = [_BuildSequence()]
+
+    def _record(self, step: WorkflowStep) -> WorkflowStep:
+        from unilabos.protocol.runtime.value_binding import result_binding_locations
+
+        references = result_binding_locations(step.params, template=True)
+        indices = {item.key: index for index, item in enumerate(self.steps)}
+        for level, scope in enumerate(self._sequences):
+            if not scope.parallel:
+                continue
+            branch_start = self._sequences[level + 1].start_index if level + 1 < len(self._sequences) else len(self.steps)
+            for reference in references.values():
+                source_index = indices.get(reference["node_key"])
+                if source_index is not None and scope.start_index <= source_index < branch_start:
+                    raise ValueError("并行分支不能读取兄弟分支的结果；请在并行块结束后汇合")
+        frame = self._sequences[-1]
+        step = replace(step, dependencies=frame.incoming(),
+                       parent=self._parent_stack[-1] if self._parent_stack else None,
+                       key=_step_key(len(self.steps)))
+        self.steps.append(step)
+        frame.accept([step.key])
+        return step
+
+    @contextmanager
+    def _sequence(self, *, parallel: bool = False, entry: Optional[List[str]] = None) -> Iterator[_BuildSequence]:
+        outer = self._sequences[-1]
+        initial = outer.incoming() if entry is None else list(entry)
+        frame = _BuildSequence(initial, [] if parallel else list(initial), parallel, start_index=len(self.steps))
+        self._sequences.append(frame)
+        try:
+            yield frame
+        finally:
+            self._sequences.pop()
+        outer.accept(frame.frontier or initial)
+
+    @contextmanager
+    def group(self, name: str = "分组", *, description: str = "") -> Iterator[None]:
+        """顺序执行的一组动作；组框只负责展示，不生成 Job。"""
+        with self._group(name, description=description, parallel=False):
+            yield
+
+    @contextmanager
+    def parallel(self, name: str = "并行", *, description: str = "") -> Iterator[None]:
+        """每个直接成员是独立分支；分支内多步顺序使用 group。"""
+        with self._group(name, description=description, parallel=True):
+            yield
+
+    @contextmanager
+    def _group(self, name: str, *, description: str, parallel: bool) -> Iterator[None]:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("分组名称必须是非空字符串")
+        index = len(self.steps)
+        self.steps.append(WorkflowStep(kind="group", target="", action="",
+            params={"mode": "parallel" if parallel else "sequence"}, name=name.strip(),
+            description=description, key=_step_key(index), dependencies=[],
+            parent=self._parent_stack[-1] if self._parent_stack else None))
+        self._parent_stack.append(index)
+        try:
+            with self._sequence(parallel=parallel):
+                yield
+        finally:
+            self._parent_stack.pop()
+
+
+    @contextmanager
+    def resource_scope(self, *device_ids: str, name: str = "") -> Iterator[None]:
+        """显式持有设备直到块结束；包含循环时覆盖全部轮次，失败后等待人工核实。"""
+        if not device_ids or any(not isinstance(value, str) or not value.strip() for value in device_ids):
+            raise ValueError("resource_scope 需要非空设备 ID")
+        if len(set(device_ids)) != len(device_ids):
+            raise ValueError("resource_scope 的设备 ID 不能重复")
+        scope_id = name or f"scope-{len(self.resource_scopes) + 1}"
+        if any(scope["scope_id"] == scope_id for scope in self.resource_scopes):
+            raise ValueError("资源作用域名称不能重复")
+        declaration = {"scope_id": scope_id, "kind": "with", "resources": list(device_ids), "node_keys": []}
+        if self._resource_scope_stack:
+            declaration["parent_scope_id"] = self._resource_scope_stack[-1]
+        self.resource_scopes.append(declaration)
+        start = len(self.steps)
+        self._resource_scope_stack.append(scope_id)
+        try:
+            yield
+        finally:
+            self._resource_scope_stack.pop()
+        declaration["node_keys"] = [step.key for step in self.steps[start:] if step.kind != "group"]
+        if not declaration["node_keys"]:
+            raise ValueError("资源作用域不能是空块")
 
     # ── 循环 ─────────────────────────────────────────────────
 
@@ -199,7 +391,7 @@ class WorkflowBuildContext:
         description: str = "",
         interval_seconds: float = 0.0,
     ) -> Iterator[WorkflowStep]:
-        """固定轮数循环：``with ctx.loop_for(3) as loop:`` 块内的步骤是循环体。"""
+        """固定轮数循环：``with ctx.loop_for(3):`` 块内的步骤是循环体（``as`` 绑定只在 builder 模式可用）。"""
 
         spec = {"mode": "for", "count": count, "interval_seconds": interval_seconds}
         with self._loop(spec, name or f"循环 ×{count}", description) as step:
@@ -222,7 +414,7 @@ class WorkflowBuildContext:
 
         spec = {
             "mode": "while",
-            "condition": dict(condition),
+            "condition": _plain_references(dict(condition)),
             "max_iterations": max_iterations,
             "interval_seconds": interval_seconds,
         }
@@ -230,33 +422,33 @@ class WorkflowBuildContext:
             yield step
 
     @staticmethod
-    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> Dict[str, Any]:
+    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> WorkflowCondition:
         """while 条件：设备状态字段（``@topic_config`` / status_fields 上报的最新值）。"""
 
-        return {
-            "source": "device_state",
-            "device_id": str(device_id),
-            "field": str(field_name),
-            "op": op,
-            "value": value,
-        }
+        return WorkflowCondition(
+            source="device_state",
+            device_id=str(device_id),
+            field=str(field_name),
+            op=op,
+            value=value,
+        )
 
     @staticmethod
     def step_output(
         step: "WorkflowStep | str", data_key: str, op: str, value: Any = None
-    ) -> Dict[str, Any]:
+    ) -> WorkflowCondition:
         """while 条件：某一步最近一次成功的返回值；该步没产出前循环体先跑一轮。
 
         ``step`` 是 ``ctx.run`` 返回的步骤，或步骤的 ``name``——循环体里的步骤在 ``with``
         打开时还没声明，用名字引用（名字须在本工作流内唯一），块结束时解析。
         """
 
-        condition: Dict[str, Any] = {
-            "source": "node_output",
-            "data_key": str(data_key or ""),
-            "op": op,
-            "value": value,
-        }
+        condition = WorkflowCondition(
+            source="node_output",
+            data_key=str(data_key or ""),
+            op=op,
+            value=value,
+        )
         if isinstance(step, WorkflowStep):
             if step.is_loop:
                 raise ValueError("step_output 条件必须引用设备动作步骤，不能引用循环")
@@ -296,13 +488,18 @@ class WorkflowBuildContext:
             parent=self._loop_stack[-1] if self._loop_stack else None,
             key=_step_key(index),
         )
-        self.steps.append(step)
+        step = self._record(step)
         self._loop_stack.append(index)
+        self._parent_stack.append(index)
+        # 循环体是独立执行层级，外部前驱由循环节点承担。
+        self._sequences.append(_BuildSequence(start_index=len(self.steps)))
         try:
             yield step
         finally:
+            self._sequences.pop()
+            self._parent_stack.pop()
             self._loop_stack.pop()
-        body = [item for item in self.steps if item.parent == index]
+        body = [item for item in self.steps[index + 1:] if item.kind != "group"]
         if not body and spec["mode"] == "while" and float(spec.get("interval_seconds") or 0) <= 0:
             raise ValueError(
                 f"循环 {name!r} 没有循环体且未设置 interval_seconds：空 while 需要轮询间隔"
@@ -330,13 +527,14 @@ class WorkflowBuildContext:
         name: str = "",
         description: str = "",
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         """按 ``"device_id/action_name"`` 追加一步（显式设备实例）。
 
         ``description`` 写这一步做什么 / 操作员该看到什么，进模板的"全流程"说明。
         """
 
-        return self._append("run", target, params, name, description, inventory)
+        return self._append("run", target, params, name, description, inventory, inventory_mode)
 
     def run_template(
         self,
@@ -346,10 +544,11 @@ class WorkflowBuildContext:
         name: str = "",
         description: str = "",
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         """按 ``"class_name/action_name"`` 追加一步（设备类解析，单实例自动填）。"""
 
-        return self._append("run_template", target, params, name, description, inventory)
+        return self._append("run_template", target, params, name, description, inventory, inventory_mode)
 
     def _append(
         self,
@@ -359,6 +558,7 @@ class WorkflowBuildContext:
         name: str,
         description: str,
         inventory: Optional[Sequence[Mapping[str, Any]]] = None,
+        inventory_mode: str = "task",
     ) -> WorkflowStep:
         head, sep, action = str(target).partition("/")
         head = head.strip()
@@ -367,19 +567,21 @@ class WorkflowBuildContext:
             raise ValueError(
                 f'工作流步骤 target 必须是 "{"device_id" if kind == "run" else "class_name"}/action_name"：{target!r}'
             )
+        if inventory_mode not in {"task", "on_ready"}:
+            raise ValueError("inventory_mode 必须是 task 或 on_ready")
         step = WorkflowStep(
             kind=kind,
+            inventory_mode=inventory_mode,
             target=head,
             action=action,
-            params=dict(params or {}),
+            params=_plain_references(dict(params or {})),
             name=name or f"{head}.{action}",
             inventory=_normalize_inventory(inventory, f"{head}/{action}"),
             description=str(description or "").strip(),
             parent=self._loop_stack[-1] if self._loop_stack else None,
             key=_step_key(len(self.steps)),
         )
-        self.steps.append(step)
-        return step
+        return self._record(step)
 
 
 def _normalize_inventory(
@@ -389,16 +591,8 @@ def _normalize_inventory(
 
     if not inventory:
         return []
-    normalized = [
-        InventoryRequirement.model_validate(dict(item)).model_dump(
-            mode="json", exclude_none=False
-        )
-        for item in inventory
-    ]
-    keys = [item["key"] for item in normalized]
-    if len(keys) != len(set(keys)):
-        raise ValueError(f"工作流步骤 {step_label} 的库存需求 key 重复：{keys}")
-    return normalized
+    from unilabos.protocol.runtime.inventory import normalize_inventory
+    return normalize_inventory([dict(item) for item in inventory], template=True)
 
 
 def workflow(
@@ -407,6 +601,7 @@ def workflow(
     description: str = "",
     tags: Optional[Sequence[str]] = None,
     guide: Optional[Any] = None,
+    compiler: str = "ast",
 ):
     """把模块级函数注册为设备包自带的工作流模板。
 
@@ -417,10 +612,14 @@ def workflow(
         guide: 操作指引（``WorkflowGuide`` 或同形 dict）：``preparation`` 运行前要在前端做的
             准备（出库、挂到哪台设备哪个位点、确认设备在线……）、``expected`` 预期效果、
             ``notes`` 注意事项。配合每步的 ``description`` 组成前端的"全流程"说明。
+        compiler: ast（默认）只解析函数源码：支持动作结果驱动的 if/elif/else，辅助函数在编译前按源码展开；
+            builder 在注册时执行一次函数收集步骤（旧行为，需要显式指定）。
     """
 
     if not str(display_name).strip():
         raise ValueError("@workflow 必须提供非空 display_name")
+    if compiler not in {"builder", "ast"}:
+        raise ValueError("@workflow compiler 只支持 builder 或 ast")
     normalized_guide = _normalize_guide(guide)
 
     def decorator(fn: Callable[[WorkflowBuildContext], Any]):
@@ -433,6 +632,7 @@ def workflow(
             tags=[str(tag) for tag in (tags or [])],
             fn=fn,
             guide=normalized_guide,
+            compiler=compiler,
         )
         existing = _registered_workflows.get(definition.uuid)
         if existing is not None and existing.fn is not fn:
@@ -613,15 +813,16 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
     ``uuid`` 是跨机器稳定的模板身份。
     """
 
-    steps = definition.collect_steps()
+    collected = definition.collect()
+    steps = collected.steps
     roles: Dict[str, Dict[str, Any]] = {}
     nodes: List[Dict[str, Any]] = []
     for index, step in enumerate(steps):
         node: Dict[str, Any]
-        if step.is_loop:
+        if step.is_loop or step.kind in {"condition", "group"}:
             node = {
                 "key": _step_key(index),
-                "kind": LOOP_NODE_TYPE,
+                "kind": step.kind,
                 "name": step.name,
                 "param": dict(step.params),
             }
@@ -660,18 +861,32 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
             }
             if step.inventory:
                 node["inventory_requirements"] = [dict(item) for item in step.inventory]
+                node["inventory_mode"] = step.inventory_mode
+        if step.is_loop:
+            condition = step.params.get("condition")
+            if isinstance(condition, Mapping) and condition.get("source") == "device_state":
+                # 只有状态读取、没有动作的设备也必须能在实例化时换绑。
+                device_id = str(condition.get("device_id") or "").strip()
+                roles.setdefault(device_id, {
+                    "role": device_id, "label": device_id, "kind": "device",
+                    "device_id": device_id, "matches": [device_id],
+                })
         if step.description:
             node["description"] = step.description
+        if step.guards:
+            node["condition_guards"] = [dict(guard) for guard in step.guards]
         if step.parent is not None:
             node["parent"] = _step_key(step.parent)
         nodes.append(node)
-    # 同一层级（顶层 / 同一循环体）的步骤按声明序串成链；循环节点作为整体排在它的同级里
+    # 使用构建阶段记录的顺序、分叉和汇合依赖；兼容旧步骤声明。
     edges: List[Dict[str, str]] = []
     previous_by_parent: Dict[Optional[int], int] = {}
     for index, step in enumerate(steps):
+        if step.kind == "group":
+            continue
         previous = previous_by_parent.get(step.parent)
-        if previous is not None:
-            edges.append({"source": _step_key(previous), "target": _step_key(index)})
+        predecessors = step.dependencies if step.dependencies is not None else ([] if previous is None else [_step_key(previous)])
+        edges.extend({"source": source, "target": _step_key(index)} for source in predecessors)
         previous_by_parent[step.parent] = index
     payload: Dict[str, Any] = {
         "id": definition.source_path,
@@ -689,6 +904,14 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
     }
     if definition.guide is not None:
         payload["guide"] = definition.guide.to_payload()
+    for scope in collected.resource_scopes:
+        unknown_resources = set(scope["resources"]) - roles.keys()
+        if unknown_resources:
+            raise ValueError(f"资源作用域引用未声明的设备角色：{sorted(unknown_resources)}")
+    payload["resource_scopes"] = collected.resource_scopes
+    if collected.input_contract["parameters"] or collected.output_contract["outputs"]:
+        payload["io"] = {"input_contract": collected.input_contract,
+                         "output_contract": collected.output_contract, "output_bindings": collected.output_bindings}
     return payload
 
 
@@ -778,41 +1001,92 @@ def materialize_workflow_template(
     bindings: Optional[Mapping[str, str]] = None,
     *,
     name: str = "",
+    instance_uuid: Optional[str] = None,
+    node_params: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    node_uuids: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """把模板按角色绑定实例化为权威可落库的 node-link 载荷。
+
+    ``node_uuids``（步骤 key → 节点 UUID）覆盖默认的确定性节点身份；工作流作者编译器用它
+    保留源码 ``# unilab:node_uuid`` 锚点声明的身份。
 
     Returns:
         {"workflow_uuid", "name", "description", "tags", "nodes", "edges", "bindings"}
     """
 
     resolved = resolve_template_bindings(template, catalog, bindings)
-    workflow_uuid_value = instantiated_workflow_uuid(str(template["uuid"]), resolved)
+    # 浏览器创建独立副本；脚本入口不传身份时保持原来的幂等行为。
+    workflow_uuid_value = str(uuid_module.UUID(instance_uuid)) if instance_uuid else instantiated_workflow_uuid(str(template["uuid"]), resolved)
     template_nodes = list(template.get("nodes") or [])
+    overrides = dict(node_params or {})
+    action_keys = {str(node["key"]) for node in template_nodes if node.get("kind") == "action"}
+    unknown = set(overrides) - action_keys
+    if unknown:
+        raise ValueError(f"仅可调整动作步骤的参数，未知或控制步骤：{sorted(unknown)}")
+    from unilabos.protocol.runtime.workflow import normalize_json_object
+
+    overrides = {key: normalize_json_object(value) for key, value in overrides.items()}
+    from unilabos.protocol.runtime.value_binding import result_binding_locations
+    from unilabos.protocol.runtime.input_binding import input_binding_locations
+
+    for node in template_nodes:
+        key = str(node["key"])
+        if key in overrides and result_binding_locations(overrides[key], template=True) != result_binding_locations(node.get("param") or {}, template=True):
+            raise ValueError(f"步骤 {key!r} 的动态结果引用属于流程定义，不能在默认参数中修改")
+        if key in overrides and input_binding_locations(overrides[key]) != input_binding_locations(node.get("param") or {}):
+            raise ValueError(f"步骤 {key!r} 的工作流输入引用属于流程定义，不能在默认参数中修改")
     key_to_index = {str(node.get("key")): index for index, node in enumerate(template_nodes)}
+    explicit_uuids = {str(key): str(uuid_module.UUID(value)) for key, value in (node_uuids or {}).items()}
+    if len(set(explicit_uuids.values())) != len(explicit_uuids):
+        raise ValueError("节点 UUID 重复")
+
+    def uuid_at(index: int) -> str:
+        return explicit_uuids.get(str(template_nodes[index].get("key"))) or _step_node_uuid(workflow_uuid_value, index)
+
     depends_on: Dict[int, List[str]] = {}
     for edge in template.get("edges") or []:
         source = key_to_index.get(str(edge.get("source")))
         target = key_to_index.get(str(edge.get("target")))
         if source is None or target is None:
             raise ValueError(f"模板边引用了不存在的节点：{edge}")
-        depends_on.setdefault(target, []).append(_step_node_uuid(workflow_uuid_value, source))
+        depends_on.setdefault(target, []).append(uuid_at(source))
 
     def node_uuid_of_key(key: Any) -> str:
         index = key_to_index.get(str(key))
         if index is None:
             raise ValueError(f"模板引用了不存在的节点 key：{key!r}")
-        return _step_node_uuid(workflow_uuid_value, index)
+        return uuid_at(index)
 
     nodes: List[Dict[str, Any]] = []
     for index, node in enumerate(template_nodes):
         kind = str(node.get("kind") or "")
-        # 声明式步骤严格串行：执行序依赖走 execution_policy，由调度器翻译成 DAG 边
-        # （handle 连线属于节点模板体系，声明式步骤没有数据流）。
+        # 顺序、并行汇合走 execution_policy；结果数据流保留在 param 的结构化引用中。
         execution_policy: Dict[str, Any] = {}
         if depends_on.get(index):
             execution_policy["depends_on"] = list(depends_on[index])
+        if node.get("condition_guards"):
+            execution_policy["condition_guards"] = [
+                {"node_uuid": node_uuid_of_key(guard["node_key"]), "equals": guard["equals"]}
+                for guard in node["condition_guards"]
+            ]
         parent_uuid = node_uuid_of_key(node["parent"]) if node.get("parent") else None
-        if kind == LOOP_NODE_TYPE:
+        if kind == "group":
+            entry = {"uuid": uuid_at(index),
+                "name": str(node.get("name") or "分组"), "type": "group", "param": {},
+                "meta_data": {"unilab": {"group_mode": (node.get("param") or {}).get("mode", "sequence")}},
+                "pose": {}, "execution_policy": {}}
+        elif kind == "condition":
+            from unilabos.protocol.runtime.condition import condition_references, remap_expression
+
+            param = remap_expression(dict(node.get("param") or {}), node_uuid_of_key, reference_key="node_key")
+            condition_references(param)
+            entry = {
+                "uuid": uuid_at(index),
+                "name": str(node.get("name") or "条件"), "type": "condition",
+                "param": param, "meta_data": {}, "pose": {},
+                "execution_policy": execution_policy,
+            }
+        elif kind == LOOP_NODE_TYPE:
             param = dict(node.get("param") or {})
             condition = param.get("condition")
             if isinstance(condition, Mapping) and "node_key" in condition:
@@ -820,9 +1094,13 @@ def materialize_workflow_template(
                 condition = dict(condition)
                 condition["node_uuid"] = node_uuid_of_key(condition.pop("node_key"))
                 param["condition"] = condition
+            elif isinstance(condition, Mapping) and condition.get("source") == "device_state":
+                # 动作与状态条件使用同一份角色绑定；旧模板未声明状态角色时保留原 ID。
+                device_id = str(condition.get("device_id") or "").strip()
+                param["condition"] = dict(condition, device_id=resolved.get(device_id, device_id))
             parse_loop_spec(param)
             entry: Dict[str, Any] = {
-                "uuid": _step_node_uuid(workflow_uuid_value, index),
+                "uuid": uuid_at(index),
                 "name": str(node.get("name") or "循环"),
                 "type": LOOP_NODE_TYPE,
                 "param": param,
@@ -834,19 +1112,19 @@ def materialize_workflow_template(
             device_id = resolved[str(node.get("role") or "")]
             klass = str((catalog.by_device_id.get(device_id) or {}).get("class") or "")
             action = str(node.get("action_name") or "")
-            meta_data: Dict[str, Any] = {"target_device_id": device_id}
+            meta_data: Dict[str, Any] = {"target_device_id": device_id, "inventory_mode": node.get("inventory_mode", "task")}
             if node.get("inventory_requirements"):
                 meta_data["inventory_requirements"] = [
                     dict(item) for item in node["inventory_requirements"]
                 ]
             entry = {
-                "uuid": _step_node_uuid(workflow_uuid_value, index),
+                "uuid": uuid_at(index),
                 "name": str(node.get("name") or f"{device_id}.{action}"),
                 "type": "device_action",
                 "material_uuid": catalog.material_uuid_of(device_id),
                 "action_name": action,
                 "action_type": _action_type_from_registry(klass, action) if klass else "",
-                "param": dict(node.get("param") or {}),
+                "param": dict(overrides.get(str(node["key"]), node.get("param") or {})),
                 "meta_data": meta_data,
                 "pose": {},
                 "execution_policy": execution_policy,
@@ -857,6 +1135,12 @@ def materialize_workflow_template(
             entry["description"] = str(node["description"])
         if parent_uuid is not None:
             entry["parent_uuid"] = parent_uuid
+        from unilabos.protocol.runtime.value_binding import remap_result_bindings
+
+        entry["param"] = remap_result_bindings(entry["param"], node_uuid_of_key, template=True)
+        if entry["meta_data"].get("inventory_requirements"):
+            entry["meta_data"]["inventory_requirements"] = remap_result_bindings(
+                entry["meta_data"]["inventory_requirements"], node_uuid_of_key, template=True)
         nodes.append(entry)
     return {
         "workflow_uuid": workflow_uuid_value,
@@ -866,6 +1150,12 @@ def materialize_workflow_template(
         "nodes": nodes,
         "edges": [],
         "bindings": resolved,
+        "resource_scopes": [{**{key: value for key, value in scope.items() if key != "node_keys"},
+                             "resources": [resolved[role] for role in scope["resources"]],
+                             "node_uuids": [node_uuid_of_key(key) for key in scope["node_keys"]]}
+                            for scope in template.get("resource_scopes", [])],
+        **({"io": {**dict(template["io"]), "output_bindings": remap_result_bindings(
+            template["io"].get("output_bindings") or {}, node_uuid_of_key, template=True)}} if template.get("io") else {}),
     }
 
 
@@ -900,6 +1190,8 @@ def upsert_workflow(service: Any, payload: Mapping[str, Any]) -> Dict[str, Any]:
         revision=record["revision"],
         nodes=payload["nodes"],
         edges=payload["edges"],
+        **({"workflow_io": payload["io"]} if payload.get("io") else {}),
+        resource_scopes=payload.get("resource_scopes"),
     )
     return service.get_workflow(workflow_uuid_value)
 

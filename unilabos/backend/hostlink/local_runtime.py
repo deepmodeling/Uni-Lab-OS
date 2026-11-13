@@ -6,8 +6,9 @@ import asyncio
 import contextlib
 import inspect
 import logging
+import queue
 import threading
-import types
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -18,19 +19,21 @@ from typing import (
     Iterable,
     Optional,
     Type,
-    Union,
-    get_args,
-    get_origin,
 )
 
 from unilabos.backend.runtime.action import ActionContext
+from unilabos.backend.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
+from unilabos.config.config import BasicConfig
 from unilabos.backend.runtime.exception import TimeoutException
 from unilabos.backend.runtime.driver_creator import (
     is_workstation_driver,
+    pylabrobot_setup_finished,
     select_driver_creator,
+    uses_pylabrobot_creator,
 )
 from unilabos.backend.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.backend.runtime.resource import ResourceService
+from unilabos.backend.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
 from unilabos.backend.hostlink.service import (
     DeviceService,
     DeviceServiceClient,
@@ -129,6 +132,53 @@ def _write_path(target: Dict[str, Any], path: str, value: Any) -> None:
         current = current.setdefault(name, {})
 
 
+class _StatusReadWorker:
+    """单条守护线程上的串行执行器，供状态 getter 求值。
+
+    不用 ``ThreadPoolExecutor``：它的工作线程在解释器退出时会被 join，一个永远阻塞的
+    硬件查询会让进程无法退出。
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._queue: "queue.SimpleQueue[Any]" = queue.SimpleQueue()
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._closed = False
+
+    def submit(self, function: Callable[..., Any], *args: Any) -> "Future[Any]":
+        future: "Future[Any]" = Future()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError(f"{self._name} 已关闭")
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
+                self._thread.start()
+            self._queue.put((future, function, args))
+        return future
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            future, function, args = item
+            if not future.set_running_or_notify_cancel():
+                continue
+            try:
+                future.set_result(function(*args))
+            except BaseException as exc:  # noqa: BLE001 - 异常交给等待方
+                future.set_exception(exc)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            if self._thread is not None:
+                self._queue.put(None)
+
+
 @dataclass(frozen=True)
 class _StatusBinding:
     source_name: str
@@ -137,38 +187,6 @@ class _StatusBinding:
     print_publish: bool
     qos: int
     configured: bool
-
-
-def _resource_slot_shape(annotation: Any) -> Optional[str]:
-    """Return ``single``/``list`` for ResourceSlot-compatible annotations."""
-
-    if annotation is inspect.Parameter.empty:
-        return None
-    if isinstance(annotation, str):
-        normalized = annotation.replace(" ", "").replace("typing.", "")
-        if "ResourceSlot" not in normalized:
-            return None
-        if normalized.startswith(("list[", "List[")):
-            return "list"
-        return "single"
-
-    origin = get_origin(annotation)
-    if origin is list:
-        arguments = get_args(annotation)
-        if arguments and _resource_slot_shape(arguments[0]) == "single":
-            return "list"
-        return None
-    if origin in (Union, types.UnionType):
-        shapes = {
-            shape
-            for item in get_args(annotation)
-            if item is not type(None) and (shape := _resource_slot_shape(item))
-        }
-        return shapes.pop() if len(shapes) == 1 else None
-
-    name = str(getattr(annotation, "__qualname__", "") or "")
-    module = str(getattr(annotation, "__module__", "") or "")
-    return "single" if name == "ResourceSlot" and module else None
 
 
 def instantiate_driver(
@@ -199,7 +217,20 @@ def instantiate_driver(
 
     kwargs: Dict[str, Any]
     if "config" in parameters:
+        # ``config`` 仍收到整份节点配置（旧驱动从 config 里读参数）；同时声明的其他具名
+        # 参数按名取节点配置里的同名键（与 ROS 2 平铺传参一致），不能静默退回默认值。
         kwargs = {"config": config}
+        for name, parameter in parameters.items():
+            if (
+                name != "config"
+                and name in config
+                and parameter.kind
+                in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+            ):
+                kwargs[name] = config[name]
     else:
         kwargs = dict(config)
 
@@ -278,6 +309,9 @@ class HostLinkDeviceNode(DeviceNode):
         self._started = False
         self._ready = False
         self._status_lock = threading.Lock()
+        # 同步状态 getter / property 在这条线程上求值：不占设备事件循环（慢查询不拖住
+        # 本设备的动作与定时器），各 getter 之间仍按原来的顺序串行执行。
+        self._status_worker = _StatusReadWorker(f"hostlink-status-{device_id}")
         self._decorated_subscriptions: list[Any] = []
         self._status_bindings = self._build_status_bindings()
         self.resource_tracker = resource_tracker or DeviceNodeResourceTracker()
@@ -606,6 +640,9 @@ class HostLinkDeviceNode(DeviceNode):
             setup = getattr(self.driver, "setup", None)
             if callable(setup):
                 self._call(setup, _wait_timeout=30)
+                if uses_pylabrobot_creator(type(self.driver)):
+                    # 与 ROS 2 的 PyLabRobotCreator.post_create 同一收尾（打开 PLR 体积跟踪）
+                    pylabrobot_setup_finished(self.driver)
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)
@@ -690,10 +727,30 @@ class HostLinkDeviceNode(DeviceNode):
         value = getattr(self.driver, source_name)
         return self._call(value) if callable(value) else value
 
-    async def _read_driver_value_async(self, source_name: str) -> Any:
+    def _is_coroutine_source(self, source_name: str) -> bool:
+        try:
+            member = inspect.getattr_static(self.driver, source_name)
+        except AttributeError:
+            return False
+        return inspect.iscoroutinefunction(getattr(member, "__func__", member))
+
+    def _read_driver_value_blocking(self, source_name: str) -> Any:
         value = getattr(self.driver, source_name)
-        if callable(value):
-            value = value()
+        return value() if callable(value) else value
+
+    async def _read_driver_value_async(self, source_name: str) -> Any:
+        """状态发布与动作反馈的取值。
+
+        ``async def`` getter 在设备事件循环上 await；同步 getter 与 property 放到本设备的
+        状态线程求值，阻塞的硬件查询不会拖住同一设备的动作、反馈与定时器。
+        """
+
+        if self._is_coroutine_source(source_name):
+            value = getattr(self.driver, source_name)()
+        else:
+            value = await asyncio.wrap_future(
+                self._status_worker.submit(self._read_driver_value_blocking, source_name)
+            )
         return await value if inspect.isawaitable(value) else value
 
     async def _publish_status_binding(self, binding: _StatusBinding) -> None:
@@ -966,23 +1023,31 @@ class HostLinkDeviceNode(DeviceNode):
         hard_timeout = self._hard_timeout_seconds(mapping)
         try:
             context.raise_if_cancelled()
-            if inspect.iscoroutinefunction(action):
+            threaded = not inspect.iscoroutinefunction(action)
+            if not threaded:
                 pending: Any = action(**kwargs)
             else:
-                pending = asyncio.to_thread(action, **kwargs)
+                pending = asyncio.ensure_future(asyncio.to_thread(action, **kwargs))
             try:
                 if hard_timeout is not None:
-                    # @action(timeout=...) 硬超时：协程动作被真正取消；同步动作只能放弃等待，
-                    # 线程继续跑完但结果被丢弃。两种情况都以 TimeoutException 进入决策链。
-                    result = await asyncio.wait_for(pending, timeout=hard_timeout)
+                    # @action(timeout=...) 硬超时：协程动作被真正取消；同步动作的线程杀不掉，只能放弃
+                    # 等待。两种情况都以 TimeoutException 进入决策链；线程仍在跑时异常带
+                    # driver_still_running，执行面据此继续持有锁，线程返回后作为迟到结果回报（ADR 0008）。
+                    result = await asyncio.wait_for(
+                        asyncio.shield(pending) if threaded else pending, timeout=hard_timeout
+                    )
                 else:
                     result = await pending
             except asyncio.TimeoutError as exc:
                 context.request_cancel()
+                still_running = threaded and not pending.done()
+                if still_running:
+                    pending.add_done_callback(lambda done: self._report_late_result(context, done))
                 raise TimeoutException(
                     getattr(action, "__name__", "action"),
                     hard_timeout or 0.0,
                     device_id=self.device_id,
+                    driver_still_running=still_running,
                 ) from exc
             if inspect.isawaitable(result):
                 result = await result
@@ -995,6 +1060,20 @@ class HostLinkDeviceNode(DeviceNode):
                 feedback_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await feedback_task
+
+    @staticmethod
+    def _report_late_result(context: ActionContext, done: "asyncio.Future[Any]") -> None:
+        """超时后才结束的驱动线程：把真实返回交给动作上下文（总是取走异常，避免未取回告警）。"""
+
+        if done.cancelled():
+            value, error = None, asyncio.CancelledError()
+        else:
+            error = done.exception()
+            value = None if error is not None else done.result()
+        try:
+            context.publish_late_result(value, error)
+        except Exception:  # noqa: BLE001 - 回报失败只影响锁的自动释放
+            logging.getLogger(__name__).exception("动作 %s 的迟到结果回报失败", context.action_id)
 
     def call_action(
         self,
@@ -1128,6 +1207,8 @@ class HostLinkDeviceNode(DeviceNode):
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._loop_thread.join(timeout=5)
         self._loop.close()
+        # 卡住的 getter 无法强行结束：守护线程放弃等待，不阻止进程退出
+        self._status_worker.shutdown()
         self._started = False
 
 
@@ -1156,6 +1237,9 @@ class HostLinkLocalRuntime:
         #: 图中声明的 host_node 身份（device_id -> 资源 uuid），供内置 host
         #: 服务设备注册时复用，保证图导出与权威身份一致。
         self.graph_host_resource_uuids: dict[str, str] = {}
+        #: 设备图中因 backend 不支持而跳过的设备（device_id -> 原因记录），
+        #: 由能力快照、``/api/v1/hostlink/peers`` 与 ``/api/v1/health`` 上报。
+        self.unavailable_devices: dict[str, dict[str, Any]] = {}
         self.topic_bus = LocalTopicBus()
         self.service_bus = LocalServiceBus()
         self._resource_service: ResourceService | None = None
@@ -1415,6 +1499,38 @@ class HostLinkLocalRuntime:
             normalized = normalized[len("/devices/") :]
         return normalized.lstrip("/")
 
+    def test_mode_mock(
+        self,
+        device_id: str,
+        action_name: str,
+        *,
+        test_mode: Optional[bool] = None,
+        caller_device_id: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """测试模式下对本机设备的跨设备调用：目标驱动没声明 ``run_in_test_mode`` 时的模拟结果。
+
+        与 Host 派发作业同一规则（``runtime.test_mode``）：在测试模式下真实运行的工作站
+        调用子设备时，不能绕过闸门驱动真实硬件。返回 None 表示照常真实执行（不在测试模式、
+        目标不在本机或目标驱动声明了 ``run_in_test_mode``）。``test_mode`` 缺省取本进程的
+        ``--test_mode``；跨机调用传入调用方的测试模式。
+        """
+
+        active = BasicConfig.test_mode if test_mode is None else bool(test_mode)
+        if not active:
+            return None
+        node = self.devices.get(self._normalize_device_id(device_id))
+        if node is None or driver_runs_in_test_mode(node.driver):
+            return None
+        mappings = node.action_value_mappings
+        mapping = mappings.get(action_name) or mappings.get(f"auto-{action_name}") or {}
+        logging.getLogger(__name__).info(
+            "[TEST MODE] 跨设备调用模拟执行：%s -> %s/%s（目标驱动未声明 run_in_test_mode）",
+            caller_device_id or "-",
+            node.device_id,
+            action_name,
+        )
+        return build_test_mode_return(action_name, mapping)
+
     def route_action(
         self,
         caller_device_id: str,
@@ -1426,6 +1542,9 @@ class HostLinkLocalRuntime:
         target = self._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1453,6 +1572,9 @@ class HostLinkLocalRuntime:
         target = self._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")

@@ -14,7 +14,7 @@ python -m unilabos.app.main --port 8003 --disable_browser
 curl http://127.0.0.1:8003/api/v1/health
 ```
 
-健康响应示例：`{"status":"ok","scheduler":"local","execution":"ready"}`。
+健康响应示例：`{"status":"ok","scheduler":"local","execution":"ready"}`（探针不包信封，见下文「响应信封」）。
 `execution` 可为 `ready`、`restarting`、`disabled`；HTTP 进程在线不等于目标设备已注册。
 执行前还要读取 `/runtime/endpoints?state=online` 的 `device_routes` 与 `action_capabilities`。
 
@@ -30,7 +30,7 @@ curl http://127.0.0.1:8003/api/v1/health
 | driver-packages、device-processes | 经控制通道转发 Host |
 | events | 权威的工作流持久事件与瞬时日志通知 |
 
-Host 不在线或中继超时，Host 专属请求返回 **503 + `Retry-After: 3`**，
+Host 不在线或中继超时，Host 专属请求返回 **HTTP 200 + 业务码 5001**（带 `Retry-After: 3`），
 而权威上的工作流定义和物料仍可读取。
 `--role backend`、`--address`、`--no-safe-restart` 会改变装配；不带执行面的进程不能伪装 Host 能力。
 
@@ -39,11 +39,15 @@ Host 不在线或中继超时，Host 专属请求返回 **503 + `Retry-After: 3`
 
 ## 认证与网络边界
 
-**写操作需要控制面 token。** 管理 API 的 POST / PUT / PATCH / DELETE 必须带请求头 `X-UniLab-Token: <token>`
-或 `Authorization: Bearer <token>`，即使只监听 127.0.0.1 也一样：CORS 默认放行所有来源（`BasicConfig.cors_allow_origins`），
+**写操作需要控制面 token。** 管理 API 的 POST / PUT / PATCH / DELETE 必须带请求头 `X-UniLab-Token: <token>`，
+即使只监听 127.0.0.1 也一样：CORS 默认放行所有来源（`BasicConfig.cors_allow_origins`），
 没有 token 时任何网页都能经浏览器向本机后端提交任务、启动设备。缺少或带错时返回 HTTP 401，
-正文 `{"code": 4001, "error": {"msg": ...}, "detail": "control token missing or invalid"}`，带 `WWW-Authenticate: Bearer`。
+正文是信封 `{"code": 1002, "error": {"msg": ...}}`，带 `WWW-Authenticate: X-UniLab-Token realm="unilab"`。
 读操作（GET、SSE `/api/v1/events`）不需要 token。
+
+`Authorization: Bearer` **不再**被当作控制面 token：它留给 V1 工站调用的 api_key（`/stations/*`），
+只带 Bearer 的写请求同样返回 401 / 1002。CORS 放行的请求头包括 `X-UniLab-Token`、`Authorization`、
+`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`。
 
 - token 由调度权威首次启动时生成在 `<工作目录>/control_token`（或取 `BasicConfig.control_token`），见配置指南「控制面 token」；
   在同一台机器上执行 `unilab token` 打印它（stdout 只有 token 本身）。
@@ -56,39 +60,61 @@ Host 不在线或中继超时，Host 专属请求返回 **503 + `Retry-After: 3`
 驱动包安装、任务提交、干预和 reset 均可能改变设备或实验数据。SDK 中的 `Authorization: Lab <base64(ak:sk)>`
 是上游 Backend 认证能力，与控制面 token 无关。
 
-## 三类响应，不能统一盲解包
+## 响应信封
 
-| 类型 | 形状 / 判断方式 | 主要使用者 |
-| --- | --- | --- |
-| Backend 信封 | 成功 `{"code":0,"data":...}`，无数据时可以只有 `code`；先判 HTTP，再判 `code` | workflow、graphs、chemicals、registry（成功） |
-| 直出 DTO / 数组 | 直接是资源或列表；错误通常 `{"detail":...}` | runtime、telemetry、history、诊断、驱动包、日志 |
-| materials.v1 | 读操作直出；幂等写结果 `MutationResult`，含 `data`、账本区间与 replayed | 物料聚合/库存写入 |
-
-信封式路由（workflow、graphs、chemicals）的业务失败一律 HTTP 200，形状固定：
+**所有 `/api/v1` JSON 路由**（workflow、graphs、chemicals、registry、materials、runtime、telemetry、history、
+lab、诊断、生命周期、驱动包、受管进程、日志、debug）用同一个信封，由 `unilabos/server/api/envelope.py` 的
+`EnvelopeRoute` 统一包装：
 
 ```json
+{"code":0,"data":{...}}
 {"code":3003,"error":{"msg":"冲突详情"}}
+{"code":3003,"error":{"msg":"...","code":"workflow_identity_mismatch","details":{...}}}
 ```
 
-三者共用一张业务码表（`unilabos/server/api/envelope.py`）：
+- 成功：HTTP 200（创建类 201、后台受理 202），`data` 是原来直出的 DTO / 数组；无数据的命令只有 `{"code":0}`。
+- 业务失败：**HTTP 200**，`error.msg` 为中文说明；`error.code`（符号码）与 `error.details` 只在 V1 同路由也输出时出现。
+- 请求体不是合法 JSON、请求体 / 查询参数校验失败：HTTP 200 + 1000，不再是 FastAPI 默认 422。
+- 中间件级拒绝保留 HTTP 状态码、正文仍是信封：控制面 token 缺失或错误 **401 + 1002**；全量重置维护闸门
+  **503 + 5001**。
+- 不包信封：SSE（`/api/v1/events`、`/api/v1/materials/events`）、文件下载、存活 / 就绪探针
+  `/api/v1/health` 与 `/api/v1/readiness`（探针按 HTTP 状态码判定，就绪失败仍是 503），以及 Host↔权威内部通道
+  `/api/v1/edge/*`（Host 回送 backend_http 结果）和 `/edge/commands/*`。
+- 不存在的路由仍是框架默认的 HTTP 404 `{"detail":"Not Found"}`（没有匹配到任何合同）。
+
+materials.v1 的幂等写结果 `MutationResult`（含 `data`、账本区间与 replayed）整体放在信封的 `data` 里，
+即 `{"code":0,"data":{"data":...,"replayed":false,...}}`。
+
+### 业务码表（V1 为准）
 
 | code | 含义 |
 | --- | --- |
-| 0 | 成功（创建类接口 HTTP 201） |
+| 0 | 成功 |
+| 1 | 未归类内部错误；检查 error.msg |
 | 1000 | 请求参数 / 载荷不合法：字段校验、JSON 解析、模板或 Site 绑定错误 |
-| 3002 | 资源不存在或已删除 |
+| 1001 | 只读模式、调试不允许、设备动作不允许、当前调度权威模式不允许 |
+| 1002 | 写操作缺少或带错控制面 token（HTTP 401；dev 旧码 4001 已改） |
+| 2005 | 数据库冲突 |
+| 3002 | 工作流或任务（含节点运行、作业、人工确认）不存在 |
 | 3003 | 状态冲突：revision / hash 过期、唯一键重复、当前状态不允许该操作 |
-| 5001 | 依赖暂不可用或该部署不支持 |
-| 1 | 其余内部错误；检查 error.msg |
+| 4000 | 试剂信息仍被引用 |
+| 4001 | 资源不存在（物料以外的 runtime / history / 驱动包 / 设备图 / 化学品等对象同样用它） |
+| 4002 | 资源数据冲突（物料、化学品、设备图） |
+| 5000 | 资源模板不存在 |
+| 5001 | 依赖暂不可用或该部署不支持（含 Host 不在线） |
+| 5003 / 5004 | 模板定义不合法 / 模板数据冲突 |
+| 6000–6011 | 物料：6000 物料不存在、6001 模板不存在、6002 模板不可变、6003 父级不存在、6004 父级成环、6006 库位不存在、6007 库位已占用、6008 库位不允许该模板、6009 库位成环、6010 身份冲突、6011 仍被未结算动作占用 |
 
-这些路由的请求体 / 查询参数校验失败也返回 1000 信封，而不是 FastAPI 默认 422。
-直出 DTO 的域（runtime、telemetry、history、materials.v1、诊断、驱动包）仍用 HTTP 状态码表达失败
-（404 / 409 / 422 / 503，正文 `{"detail": ...}`）；Registry 成功走信封，无效 gzip / JSON 等错误返回 HTTP 4xx。
+HTTP 状态码到业务码的换算（路由抛 `HTTPException` 时）：400 / 422 → 1000，401 → 1002，403 → 1001，
+404 → 3002（工作流域）或 4001（其余），409 → 3003（物料 / 化学品 / 设备图域为 4002），503 → 5001，其余 → 1。
+dev 领域异常（`WorkflowError`、`MaterialNotFoundError`、`GraphError`、`ChemicalError` 等）的映射集中在
+`envelope.DOMAIN_ERRORS`。Python 客户端（`HTTPClient` 与各领域 HTTP 客户端）解包一次：返回 `data`，
+`code != 0` 抛带业务码、符号码、details 的错误。
 
 实际成功状态码中的重要例外：
 
 - `POST /workflows`、`/workflows/from-template`、`/workflow-tasks`：**201**，虽离线 OpenAPI 当前标 200。
-- `POST /device-processes`：201；删除进程与重置布局成功：204，无 JSON。
+- `POST /device-processes`：201；删除进程与重置布局成功：HTTP 200 + `{"code":0}`（不再是 204）。
 - 安装/卸载驱动包、提交全量 reset：202；202 只代表已接受，不代表操作完成。
 - 物料创建/更新通常 200；Workflow 删除返回 code=0，并非 204。
 
@@ -136,8 +162,8 @@ execution_timeout、materials_need_lock、supported_backends 是编辑与调度�
 以已有权威物料为准补新增。`GET /graphs/live/payload` 从当前物料及拓扑边生成实时图，
 不等同于原始上传快照。布局通过 `/lab/layout` 保存，PUT 使用该布局自己的 revision。
 
-Graph 业务失败与 Workflow 同一张码表：not_found=3002，invalid_input / invalid_payload=1000，
-identity_conflict=3003，unsupported=5001，error 为 `{"msg": ...}`。
+Graph 业务失败按资源口径：not_found=4001，invalid_input / invalid_payload=1000，
+identity_conflict=4002，unsupported=5001，error 为 `{"msg": ...}`。
 
 ## Runtime、Telemetry 与 History
 
@@ -167,7 +193,7 @@ identity_conflict=3003，unsupported=5001，error 为 `{"msg": ...}`。
 - adapter-commands 的 enqueue/claim/ack 与 backend-events 的 enqueue/claim/ack 是独立队列，
   各自携带幂等身份、租约或序号；backend-events/ack 返回 `{acknowledged:数量}`。
 
-Runtime 未找到 404、状态/身份冲突 409、协议验证失败 422，均不是 Workflow code 信封。
+Runtime 未找到为 4001、状态/身份冲突 3003、协议验证失败 1000（均为 HTTP 200 信封）。
 部分 handler 直接返回数据库 Record 的公共字段；具体类型见
 [Runtime 数据记录](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/database/tables/runtime/data.py)，
 并以 handler 的包装/转换为准，不能据此绕过 API 直接写表。
@@ -189,7 +215,7 @@ GET events 返回事件数组；GET states 返回 DeviceStateLatestRecord 数组
 
 ### History：正文、事件与替换链
 
-`POST /history/payloads` 的 PayloadWrite 分两种：
+`POST /edge/history/payloads` 的 PayloadWrite 分两种：
 
 | storage_kind | 内容 | 约束 |
 | --- | --- | --- |
@@ -199,11 +225,11 @@ GET events 返回事件数组；GET states 返回 DeviceStateLatestRecord 数组
 两者都可带 encoding/compression、created_at_ms/expires_at_ms；返回 PayloadObjectRead。
 Python bytes 与 HTTP Base64 要经过协议序列化，不能直接按 UTF-8 文本猜测二进制。
 
-`POST /history/events` 用 HistoryEventAppend 关联 job、endpoint、device、payload、state_version 与来源；
+`POST /edge/history/events` 用 HistoryEventAppend 关联 job、endpoint、device、payload、state_version 与来源；
 返回 HistoryEventRecord，sequence 由服务器分配。事件类型包含 job_transition/action_availability/
 job_feedback/job_result/job_log/error_snapshot/decision_audit。
 查询可按 after_sequence、job、设备、类型与时间窗口过滤，详情和 replacement-chain 有独立 GET。
-人工替换用 `POST /history/events/{uuid}/replacement`，supersedes_event_uuid 必须与路径相同，
+人工替换用 `POST /edge/history/events/{uuid}/replacement`，supersedes_event_uuid 必须与路径相同，
 保留 actor 及原始事件；不提供历史事件/正文的通用覆盖或删除。
 
 ## 驱动包、受管进程与维护

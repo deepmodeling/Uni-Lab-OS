@@ -10,7 +10,7 @@ from unilabos.registry.init_enforce import merge_init_param_enforce
 from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.resources.adapters.device_site import apply_device_authority_state
 from unilabos.resources.resource_tracker import ResourceDictInstance
-from unilabos.backend.runtime.exception import DeviceClassInvalid
+from unilabos.backend.runtime.exception import DeviceBackendUnsupported, DeviceClassInvalid
 from unilabos.utils.import_manager import default_manager
 
 
@@ -136,9 +136,11 @@ def resolve_device_definition(
 
         supported = resolve_driver_backends(driver_config)
         if backend_name not in supported:
-            raise DeviceClassInvalid(
-                f"Device [{device_id}] does not support backend {backend_name!r}; "
-                f"supported: {', '.join(supported)}"
+            raise DeviceBackendUnsupported(
+                device_id,
+                backend_name=backend_name,
+                supported_backends=supported,
+                registry_name=registry_name,
             )
 
     # 权威优先：设备的 Site 快照与它持有的物料（图中子节点）都以物料权威为准

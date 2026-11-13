@@ -2,6 +2,6 @@ recursive-include unilabos/test *
 recursive-include unilabos/utils *
 recursive-include unilabos/registry *.yaml
 recursive-exclude * __pycache__ *.pyc
-prune unilabos/devices/cytomat
+include unilabos/devices/ros_dev/lh_joint_config.json
 recursive-include unilabos/device_mesh/devices *
 recursive-include unilabos/device_mesh/resources *

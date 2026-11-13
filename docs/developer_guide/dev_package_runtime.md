@@ -6,6 +6,11 @@
 
 `package inspect` 仍在本地做 AST/YAML 检查和归档。其余管理命令通过统一管理地址进入现有 `/api/v1/driver-packages`；backend 转发给唯一主 Host，Host 持有台账、源码缓存与安装操作。CLI 不直接修改另一份台账，也不在调用者的解释器里安装包体。
 
+`package inspect` 的 AST 扫描范围与 `package install` / `--devices` 挂载一致：按 pyproject 的
+`[tool.setuptools.packages.find] include`（以及 `src/` 布局）找到顶层 Python 包，模块路径相对导入根推导
+（`<仓库>/<包>/x.py` → `<包>.x:类名`，不带仓库目录名）；扫描失败的文件会让 inspect 报错退出，而不是从
+`resources.json` 里悄悄丢掉设备。不传 `--out` 时归档和清单写到包目录自己的 `dist/`（归档时排除）。
+
 ```bash
 # 本地静态检查，不需要后端或设备运行
 unilab package inspect --path /absolute/path/to/driver

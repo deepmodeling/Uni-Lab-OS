@@ -187,21 +187,35 @@ def read_pyproject(pkg_dir: Path) -> Dict[str, Any]:
 
 
 def scan_package_devices(pkg_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """纯 AST 扫描包目录下的 @device 注册表，返回 {device_id: meta}。
+    """纯 AST 扫描包里的 @device 注册表，返回 {device_id: meta}。
+
+    扫描范围与模块路径和 ``unilab package install`` / ``--devices`` 挂载一致：按 pyproject 的
+    ``[tool.setuptools.packages.find] include``（及 ``src/`` 布局）找到顶层 Python 包，模块路径
+    相对各自的导入根推导（``<repo>/<包>/x.py`` → ``<包>.x``）。没有顶层包时（模块直接放在根
+    目录）把包目录当作命名空间包整体扫描。扫描失败的文件不静默丢弃：抛 ``PackageCLIError``。
     """
     from unilabos.registry.ast_registry_scanner import scan_directory
+    from unilabos.registry.package_layout import format_scan_errors, scan_package_dirs
+    from unilabos.server.services.driver_packages import detect_package_dirs, read_project_metadata
 
-    py_files = [
-        f
-        for f in pkg_dir.rglob("*.py")
-        if not f.name.startswith("__")
-        and not (set(f.relative_to(pkg_dir).parts) & ARCHIVE_EXCLUDE_DIRS)
-    ]
-    executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="PackageInspect")
-    try:
-        result = scan_directory(pkg_dir, executor=executor, include_files=py_files)
-    finally:
-        executor.shutdown(wait=True)
+    package_dirs = detect_package_dirs(pkg_dir, read_project_metadata(pkg_dir)["include"])
+    if package_dirs:
+        result = scan_package_dirs(package_dirs)
+    else:
+        py_files = [
+            f
+            for f in pkg_dir.rglob("*.py")
+            if not f.name.startswith("__")
+            and not (set(f.relative_to(pkg_dir).parts) & ARCHIVE_EXCLUDE_DIRS)
+        ]
+        executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="PackageInspect")
+        try:
+            result = scan_directory(pkg_dir, executor=executor, include_files=py_files)
+        finally:
+            executor.shutdown(wait=True)
+    errors = result.get("_scan_errors") or []
+    if errors:
+        raise PackageCLIError(f"AST 扫描失败，以下文件中的设备会丢失：{format_scan_errors(errors)}")
     devices = result.get("devices", {})
     return {did: meta for did, meta in devices.items() if isinstance(meta, dict)}
 
@@ -506,7 +520,8 @@ def inspect_package(
     project = read_pyproject(pkg_dir)
     class_namespace = resolve_class_namespace(project["name"], namespace)
 
-    out_path = Path(out_dir).resolve() if out_dir else (pkg_dir.parent / "dist")
+    # 默认输出到包目录自己的 dist/（归档时排除），不写到仓库外
+    out_path = Path(out_dir).resolve() if out_dir else (pkg_dir / "dist")
     out_path.mkdir(parents=True, exist_ok=True)
     archive_name = f"{normalize_name(project['name'])}-{project['version']}.tar.gz"
     archive_path = out_path / archive_name

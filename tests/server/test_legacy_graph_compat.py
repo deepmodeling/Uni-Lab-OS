@@ -141,6 +141,59 @@ def test_normalize_legacy_liquid_fields():
     assert "liquids" not in empty["data"]
 
 
+
+def test_dev_era_container_liquid_becomes_substances():
+    """FRAMEWORK_GAPS #32：dev 时代容器的 ``data.liquid=[{liquid_type, liquid_volume}]``。
+
+    升级把它转成当前契约的内容物（``data.liquids`` → ``substances``），不能静默丢掉；
+    ``data.liquid`` 原样保留，内置协议编译器仍从物理拓扑图读取它。
+    """
+
+    legacy_liquid = [
+        {"liquid_type": "CH2Cl2", "liquid_volume": 1500.0},
+        {"liquid_type": "", "liquid_volume": None},
+    ]
+    node = normalize_legacy_graph_node(
+        _legacy_node(
+            id="flask_CH2Cl2",
+            name="flask_CH2Cl2",
+            type="container",
+            config={"max_volume": 2000.0},
+            data={"liquid": [dict(item) for item in legacy_liquid]},
+        )
+    )
+    assert node["data"]["liquids"] == [["CH2Cl2", 1500.0, "ul"]]
+    assert node["data"]["liquid"] == legacy_liquid
+
+    # 已有当前契约内容物时不覆盖
+    current = normalize_legacy_graph_node(
+        _legacy_node(
+            type="container",
+            data={"liquid": [{"liquid_type": "old", "liquid_volume": 1.0}]},
+            substances=[["new", 2.0, "ul"]],
+        )
+    )
+    assert "liquids" not in current["data"] and current["substances"] == [["new", 2.0, "ul"]]
+
+    # 只有 data.liquid 这一处旧字段的图同样会被识别并升级，升级后不再报旧字段
+    flask = {
+        "id": "flask",
+        "uuid": str(uuid4()),
+        "type": "container",
+        "template_name": "container",
+        "pose": {"position": {"x": 0, "y": 0, "z": 0}},
+        "config": {"max_volume": 1000.0},
+        "data": {"liquid": [{"liquid_type": "DMF", "liquid_volume": 800.0}]},
+    }
+    payload = {"nodes": [flask], "links": []}
+    assert legacy_graph_markers(payload) == {"旧液体字段": 1}
+    upgraded = upgrade_legacy_graph_payload(payload, source="t", report=lambda _message: None)
+    assert upgraded["nodes"][0]["data"]["liquids"] == [["DMF", 800.0, "ul"]]
+    assert legacy_graph_markers(upgraded) == {}
+    # 空列表不是旧字段
+    assert legacy_graph_markers({"nodes": [{**flask, "data": {"liquid": []}}], "links": []}) == {}
+
+
 def test_occupied_by_resolves_only_current_children():
     deck_uuid, plate_uuid, other_uuid = str(uuid4()), str(uuid4()), str(uuid4())
     deck = _legacy_node(

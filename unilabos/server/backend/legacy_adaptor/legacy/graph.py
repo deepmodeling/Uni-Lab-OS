@@ -10,7 +10,8 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
 - 派生的 ``children`` id 列表；
 - PLR 平铺 Site 用占用物料 **name** 的 ``occupied_by`` 表达占用；
 - 旧 PLR ``serialize_state`` 液体字段（``liquid_history`` 名字列表、``["", null]``
-  空液体、``{"liquid_type", "liquid_volume"}`` 对象、``pending_liquids``）；
+  空液体、``{"liquid_type", "liquid_volume"}`` 对象、``pending_liquids``），以及 dev
+  时代容器的 ``data.liquid=[{"liquid_type", "liquid_volume"}]``；
 - 边只有 ``source_uuid`` / ``target_uuid`` 与下划线 ``source_handle`` /
   ``target_handle``，顶层键叫 ``edges``。
 
@@ -60,6 +61,24 @@ def _is_legacy_liquid_entry(entry: Any) -> bool:
     return amount is None or (isinstance(name, str) and not name.strip())
 
 
+def _has_dev_era_liquid(node: Mapping[str, Any]) -> bool:
+    """节点是否只有 dev 时代的 ``data.liquid`` 内容物、还没有当前契约的内容物字段。"""
+
+    data = node.get("data")
+    if not isinstance(data, Mapping):
+        return False
+    entries = data.get("liquid")
+    if not isinstance(entries, list) or not any(
+        isinstance(entry, Mapping) and "liquid_type" in entry for entry in entries
+    ):
+        return False
+    return not any(
+        scope.get(key) is not None
+        for scope in (node, data)
+        for key in ("liquids", "substances")
+    )
+
+
 def _normalize_legacy_tracker_state(node: Dict[str, Any], label: Any) -> None:
     """旧 PLR ``serialize_state`` 输出的液体字段 → 当前 tracker 根字段形状。
 
@@ -67,13 +86,19 @@ def _normalize_legacy_tracker_state(node: Dict[str, Any], label: Any) -> None:
       ``(name, delta, unit)`` 三元组——旧值无法还原增量，直接丢弃；
     - ``liquids`` / ``substances``：``["", null]`` 表示空容器，过滤掉空名/空量
       条目；二元组补默认单位 ``ul``；
-    - ``pending_liquids``：旧 tracker 的暂存字段，当前模型无对应语义，丢弃。
+    - ``pending_liquids``：旧 tracker 的暂存字段，当前模型无对应语义，丢弃；
+    - ``data.liquid``：dev 时代容器的 ``[{"liquid_type", "liquid_volume"}]``。节点还没有
+      当前契约的内容物（``liquids`` / ``substances``）时转成 ``data.liquids``（随后按上面
+      的规则清洗、补单位，再由 ``ResourceDict`` 提升为 ``substances``）。``data.liquid``
+      本身原样保留：内置协议编译器仍从物理拓扑图的节点 data 读取它。
     """
 
     data = node.get("data")
     if not isinstance(data, dict):
         return
     data.pop("pending_liquids", None)
+    if _has_dev_era_liquid(node):
+        data["liquids"] = copy.deepcopy(data["liquid"])
     for scope in (node, data):
         history = scope.get("liquid_history")
         if isinstance(history, list) and any(
@@ -352,7 +377,9 @@ def legacy_graph_markers(payload: Mapping[str, Any]) -> Dict[str, int]:
             hit("Site occupied_by")
         data = node.get("data")
         scopes = [node, data] if isinstance(data, Mapping) else [node]
-        if isinstance(data, Mapping) and "pending_liquids" in data:
+        if isinstance(data, Mapping) and (
+            "pending_liquids" in data or _has_dev_era_liquid(node)
+        ):
             hit("旧液体字段")
         elif any(
             (

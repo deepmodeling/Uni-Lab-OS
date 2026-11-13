@@ -151,7 +151,10 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
 
 1. 旧格式图（`class` 无 `template_name`、根级 `position`、`children` 列表、
    `edges` 键等）在读取边界由 `server/backend/legacy_adaptor/legacy/graph.py`
-   一次性转换为当前契约，并打印 WARNING。
+   一次性转换为当前契约，并打印 WARNING。旧液体字段一并转成内容物：dev 时代容器的
+   `data.liquid=[{"liquid_type": ..., "liquid_volume": ...}]` 在节点还没有
+   `liquids` / `substances` 时转为 `substances`（单位 `ul`，与 `max_volume` 同单位），
+   `data.liquid` 原样保留给协议编译器读取。
 2. Graph Authority（`server/services/materials/graph.py`）登记该图：为草稿节点和
    Site 发号、实例化设备模板 Site、拒绝身份冲突；权威已有同名图时以权威为准，只补
    文件新增的节点和连线。

@@ -100,8 +100,15 @@ class MaterialExecutions:
                 if move.source_site_uuid:
                     site_ids.add(move.source_site_uuid)
                 current = service.get_material(move.material_uuid).material
+                # 载架型 Site 上的物料挂在该 Site 的 holder 下，父物料不是来源容器本身
+                expected_parents = {move.source_owner_uuid}
+                source_site = service.get_site(move.source_site_uuid) if move.source_site_uuid else None
+                if source_site is not None:
+                    expected_parents.add(
+                        service.site_parent_material_uuid(source_site, moving_material_uuid=move.material_uuid)
+                    )
                 if (
-                    current.parent_material_uuid != move.source_owner_uuid
+                    current.parent_material_uuid not in expected_parents
                     or self._site(move.material_uuid) != move.source_site_uuid
                 ):
                     raise MaterialConflictError("搬运来源与权威库位不一致")

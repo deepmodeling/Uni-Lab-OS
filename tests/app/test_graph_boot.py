@@ -479,6 +479,12 @@ class TestLoadStartupGraph:
             "multiway_valve_1": "2",
             "flask_DMF": "outlet",
         }
+        # dev 时代容器的 data.liquid 升级成内容物（FRAMEWORK_GAPS #32），编译器读的原字段保留
+        flask = next(node for node in tree.all_nodes if node.res_content.id == "flask_DMF")
+        assert [tuple(item) for item in flask.res_content.substances] == [("DMF", 800.0, "ul")]
+        assert graph.nodes["flask_DMF"]["data"]["liquid"] == [
+            {"liquid_type": "DMF", "liquid_volume": 800.0}
+        ]
         steps = generate_pump_protocol(graph, "flask_DMF", "main_reactor", 10.0)
         assert steps[0] == {
             "device_id": "multiway_valve_1",

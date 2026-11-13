@@ -24,7 +24,7 @@
 | --- | --- |
 | template_name | 注册表/模板名称，不是 PLR Python 实现类 |
 | config.type | **PLR 反序列化唯一允许读取的实现类信息** |
-| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR |
+| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR。它来自 PLR `category`，是物料实例的属性：同一模板（如按类名共用的组件模板 `Well`）的物料可以有不同的 resource_type，模板上的值只是按模板新建物料时的默认值，建树不再要求两者一致 |
 | class_name / ResourceDict.klass（JSON alias 为 class） | 当前模型仍存在的字段；不能当作 config.type 的兜底 |
 | category | `ResourceTemplateWrite.category: list[str]`；不是所有 MaterialIdentity 都有同名字段 |
 | allowed_resource_categories | Site 的前端匹配提示；不是 allowed_resource_template_uuids 白名单 |

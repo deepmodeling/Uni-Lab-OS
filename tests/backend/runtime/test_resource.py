@@ -468,3 +468,80 @@ def test_strict_snapshot_rejects_a_child_only_partial_tree(tmp_path) -> None:
         asyncio.run(run())
     finally:
         materials.close()
+
+
+def _deck_under_liquid_handler(service: AuthorityResourceService):
+    """PLR 1.0 运行时形态：台面是权威物料根，但它的 PLR 父节点是没有 uuid 的 LiquidHandler。"""
+
+    from pylabrobot.legacy.liquid_handling import LiquidHandler
+    from pylabrobot.legacy.liquid_handling.backends.chatterbox import (
+        LiquidHandlerChatterboxBackend,
+    )
+    from pylabrobot.resources import Deck
+
+    draft = Deck(name="lh_deck", size_x=300, size_y=300, size_z=10)
+    draft.unilabos_extra = {"unilabos_resource_class": "authority-deck"}
+    for name in ("w1", "w2"):
+        draft.assign_child_resource(_container(name), Coordinate.zero())
+    deck = asyncio.run(
+        service.create_resources("lh-1", "lh-device-uuid", draft)
+    ).resources[0]
+    handler = LiquidHandler(backend=LiquidHandlerChatterboxBackend(), deck=deck)
+    assert deck.parent is handler and not getattr(handler, "unilabos_uuid", "")
+    return handler, deck
+
+
+def test_liquid_handler_deck_reports_state_deltas_to_the_authority(tmp_path) -> None:
+    """FRAMEWORK_GAPS #27：台面挂在 LiquidHandler 之下时，增量上报的根是台面本身。
+
+    根推导沿 ``.parent`` 停在最高的、带权威 uuid 的祖先；处理器不是物料，越过它会让
+    每次增量都因“根物料缺少权威 uuid”被丢弃，液体变化永远到不了权威。
+    """
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    _handler, deck = _deck_under_liquid_handler(service)
+    well = deck.children[1]
+
+    async def run() -> None:
+        observer = MaterialSnapshotObserver(
+            service,
+            device_id=lambda: "lh-1",
+            device_uuid=lambda: "lh-device-uuid",
+            schedule=asyncio.create_task,
+        )
+        assert observer.observe(deck) is True
+        gateway.reset()
+        well.tracker.set_liquids([("water", 42.0, "ul")])
+        await observer.wait_idle()
+        assert observer.errors == ()
+        assert gateway.calls == {"get_tree": 1, "apply_delta": 1}
+
+    try:
+        asyncio.run(run())
+        stored = materials.get_material(well.unilabos_uuid)
+        assert [(s.name, s.quantity) for s in stored.data.substances] == [("water", 42.0)]
+    finally:
+        materials.close()
+
+
+def test_liquid_handler_deck_partial_update_derives_root_locally(tmp_path) -> None:
+    """同一规则用于 materials.update(孔位)：根归属本地即可确定，不逐节点反查权威。"""
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = _CountingGateway(LocalMaterialsClient(materials))
+    service = AuthorityResourceService(gateway)
+    try:
+        _handler, deck = _deck_under_liquid_handler(service)
+        well = deck.children[0]
+        well.tracker.set_liquids([("buffer", 9.0, "ul")])
+        gateway.reset()
+
+        service.update_resources_sync("lh-1", "lh-device-uuid", well)
+
+        assert "get_material" not in gateway.calls
+        assert gateway.calls == {"get_tree": 1, "apply_snapshot": 1}
+        assert materials.get_material(well.unilabos_uuid).data.substances[0].name == "buffer"
+    finally:
+        materials.close()

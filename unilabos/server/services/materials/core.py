@@ -33,6 +33,7 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
+    ACTOR_BACKEND,
     ChemicalSummary,
     InventoryAllocation,
     InventoryLotCorrection,
@@ -2031,12 +2032,10 @@ class MaterialsService(MaterialsRepository):
                 f"template_name {identity.template_name!r} does not match "
                 f"registered template {template.name!r}"
             )
-        if identity.resource_type != template.resource_type:
-            raise MaterialValidationError(
-                f"resource_type {identity.resource_type!r} does not match "
-                f"template {template.name!r} resource_type "
-                f"{template.resource_type!r}"
-            )
+        # resource_type 不参与模板身份校验：它是 PLR ``category``，属于实例而不是类。
+        # 子节点按类名共用组件模板（如所有 ``Well`` 都是模板 ``Well``），同一个类的
+        # 实例可以是 well / tube 等不同类型；模板上的 resource_type 只是按模板新建
+        # 物料时的默认值，物料自己的 resource_type 才是它的类型（建树后不可变）。
         if template.class_name and identity.class_name != template.class_name:
             raise MaterialValidationError(
                 f"class_name {identity.class_name!r} does not match template "
@@ -2709,6 +2708,139 @@ class MaterialsService(MaterialsRepository):
             mutation, value, MutationResult[MaterialAggregateRead], apply
         )
 
+    #: Site 位姿与 holder 位置比对的容差（两者都取自同一个 PLR ``holder.location``）
+    _SITE_HOLDER_POSITION_TOLERANCE = 1e-6
+
+    def _site_holder_uuids(
+        self, owner_uuid: str, *, exclude: Sequence[str] = ()
+    ) -> dict[str, str] | None:
+        """载架型物料的 ``{Site uuid: 承载它的 holder 物料 uuid}``；不是载架型时返回 None。
+
+        PLR ``Carrier``（含 ``ItemizedCarrier`` / ``WareHouse``）的直接子节点只能是槽位
+        holder（``ResourceHolder``），物料放在 holder 上、载架的 Site 记占用——
+        ``materials.create`` 本地整树建出来就是这个形态（``extract_plr_sites`` 以
+        ``holder.location`` 生成 Site 位姿）。权威里按同一结构识别，规则全部满足才算：
+
+        - 所属物料不是设备，至少有一个 Site；
+        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下，
+          旧版 transfer 的坏树也是这样）和 ``exclude``（正在移动的物料），剩下的与
+          Site 一一对应：数量相同，按顺序第 k 个子物料对应第 k 个 Site；
+        - 每个这样的子物料没有自己的 Site、最多一个子物料，且位置就是对应 Site 的位置。
+
+        台面型 Site（权威 ``ResourceSite``，没有 holder 子物料）不满足数量或位置规则，
+        物料照旧直接挂在 Site 所属物料下。
+        """
+
+        owner = MaterialsRepository.get_material(self, owner_uuid)
+        if owner is None or str(owner.resource_type or "").lower() == "device":
+            return None
+        sites = MaterialsRepository.list_sites(self, owner_uuid)
+        if not sites:
+            return None
+        occupants = {site.occupied_material_uuid for site in sites if site.occupied_material_uuid}
+        skipped = occupants | set(exclude)
+        rows = self.connection.execute(
+            """
+            SELECT material.material_uuid,
+                (SELECT COUNT(*) FROM material AS child
+                    WHERE child.parent_material_uuid = material.material_uuid
+                    AND child.deleted_at_ms IS NULL) AS child_count,
+                (SELECT COUNT(*) FROM site
+                    WHERE site.owner_material_uuid = material.material_uuid
+                    AND site.deleted_at_ms IS NULL) AS site_count,
+                material_position.position_x, material_position.position_y,
+                material_position.position_z
+            FROM material LEFT JOIN material_position
+                ON material_position.material_uuid = material.material_uuid
+            WHERE material.parent_material_uuid = ? AND material.deleted_at_ms IS NULL
+            ORDER BY material.ordinal, material.material_uuid
+            """,
+            (owner_uuid,),
+        ).fetchall()
+        holders = [row for row in rows if row[0] not in skipped]
+        if len(holders) != len(sites):
+            return None
+        mapping: dict[str, str] = {}
+        tolerance = self._SITE_HOLDER_POSITION_TOLERANCE
+        for site, (holder_uuid, child_count, site_count, x, y, z) in zip(sites, holders):
+            if site_count or child_count > 1:
+                return None
+            position = (site.pose or {}).get("position") or {}
+            try:
+                expected = [float(position.get(axis, 0.0) or 0.0) for axis in ("x", "y", "z")]
+            except (TypeError, ValueError):
+                return None
+            if any(value is None for value in (x, y, z)) or any(
+                abs(float(actual) - wanted) > tolerance
+                for actual, wanted in zip((x, y, z), expected)
+            ):
+                return None
+            mapping[site.site_uuid] = holder_uuid
+        return mapping
+
+    def site_parent_material_uuid(
+        self, site: SiteRecord | SiteRead, *, moving_material_uuid: str | None = None
+    ) -> str:
+        """物料放到 ``site`` 上时它在权威里的父物料。
+
+        载架型 Site（见 ``_site_holder_uuids``）是承载该 Site 的 holder，与本地整树
+        ``materials.create`` 的形态一致；其它 Site（台面等）是 Site 所属物料。
+        """
+
+        holders = self._site_holder_uuids(
+            site.owner_material_uuid,
+            exclude=(moving_material_uuid,) if moving_material_uuid else (),
+        )
+        if holders is not None and site.site_uuid in holders:
+            return holders[site.site_uuid]
+        return site.owner_material_uuid
+
+    def repair_site_occupant_parents(self) -> list[str]:
+        """一次性修复旧版 transfer 写下的坏树，返回改挂的物料 uuid。
+
+        旧版 move / transfer 把载架型 Site 的占用物料直接挂在载架下（应挂在该 Site 的
+        holder 下）：设备反序列化时载架拒收物料，快照也改不了占用物料的父节点。权威
+        打开时（``ServerServices.open``）把这样的物料原位改挂到 holder 下，Site 占用
+        不变，账本记一次 ``move``。没有坏树时只做一次查询，可重复调用。
+        """
+
+        from unilabos.utils.log import logger
+
+        rows = self.connection.execute(
+            """
+            SELECT site.site_uuid, site.occupied_material_uuid
+            FROM site JOIN material ON material.material_uuid = site.occupied_material_uuid
+            WHERE site.deleted_at_ms IS NULL AND material.deleted_at_ms IS NULL
+                AND material.parent_material_uuid = site.owner_material_uuid
+            ORDER BY site.owner_material_uuid, site.ordinal
+            """
+        ).fetchall()
+        repaired: list[str] = []
+        for site_uuid, material_uuid in rows:
+            site = self.get_site(site_uuid)
+            if site is None:
+                continue
+            parent_uuid = self.site_parent_material_uuid(site, moving_material_uuid=material_uuid)
+            if parent_uuid == site.owner_material_uuid:
+                continue
+            command_uuid = str(uuid4())
+            self.move_material(
+                InventoryMutation(
+                    command_uuid=command_uuid,
+                    effect_key=f"repair_site_occupant_parent:{command_uuid}",
+                    operation="move_material",
+                    actor_type=ACTOR_BACKEND,
+                    actor_uuid="materials-repair",
+                ),
+                MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid),
+            )
+            logger.warning(
+                f"[物料权威] 修复旧版 transfer 的坏树：物料 {material_uuid} 从载架 "
+                f"{site.owner_material_uuid} 改挂到 Site {site.label} 的 holder {parent_uuid}"
+            )
+            repaired.append(material_uuid)
+        return repaired
+
     def _apply_material_move(
         self,
         mutation: InventoryMutation,
@@ -2730,22 +2862,37 @@ class MaterialsService(MaterialsRepository):
             raise MaterialNotFoundError(
                 f"site not found: {value.destination_site_uuid}", subject="site"
             )
+        # 载架型 Site 的物料挂在该 Site 的 holder 下（与本地整树 create 同形）；
+        # 其它 Site 挂在 Site 所属物料下
         parent_uuid = (
-            destination.owner_material_uuid
+            self.site_parent_material_uuid(
+                destination, moving_material_uuid=value.material_uuid
+            )
             if destination is not None
             else value.parent_material_uuid
         )
+        if (
+            destination is None
+            and parent_uuid is not None
+            and self._site_holder_uuids(parent_uuid, exclude=(value.material_uuid,))
+            is not None
+        ):
+            # 直接挂到载架下（不占 Site）同样是设备反序列化不了的树
+            raise MaterialValidationError(
+                f"material {parent_uuid} only holds materials on its Sites; "
+                "give destination_site_uuid (or the Site's holder as parent)"
+            )
         if destination is not None and destination.occupied_material_uuid not in (
             None,
             value.material_uuid,
         ):
             raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
-        if (
+        same_site = (
             source is not None
             and destination is not None
             and source.site_uuid == destination.site_uuid
-            and material.parent_material_uuid == parent_uuid
-        ):
+        )
+        if same_site and material.parent_material_uuid == parent_uuid:
             raise MaterialNoChangeError("material is already at destination")
         if (
             source is None
@@ -2802,11 +2949,13 @@ class MaterialsService(MaterialsRepository):
                 "version": material.version + 1,
             }
         )
+        if same_site:
+            # 原位换父（修复旧版坏树：物料从载架改挂到 Site 的 holder 下）。触发器要求
+            # 先解除占用再改父；同一事务内随后重新占用，Site 版本照常 +1。
+            self.clear_site_occupants([destination.site_uuid])
         self.update_material(updated_material)
 
-        if destination is not None and (
-            source is None or source.site_uuid != destination.site_uuid
-        ):
+        if destination is not None:
             updated_destination = SiteRecord.model_validate(
                 {
                     **destination.model_dump(mode="json"),
@@ -2922,14 +3071,22 @@ class MaterialsService(MaterialsRepository):
             value.destination_site_uuids,
         ):
             material = MaterialsRepository.get_material(self, material_uuid)
-            if material is None or material.parent_material_uuid != target_uuid:
-                raise MaterialConflictError(
-                    f"material transfer {material_uuid} was superseded"
-                )
             occupied_site = self.occupied_site(material_uuid)
             occupied_site_uuid = (
                 occupied_site.site_uuid if occupied_site is not None else None
             )
+            # 载架型 Site 的物料挂在 Site 的 holder 下，父物料不是转移目标本身
+            expected_parent = (
+                self.site_parent_material_uuid(
+                    occupied_site, moving_material_uuid=material_uuid
+                )
+                if occupied_site is not None and occupied_site_uuid == site_uuid
+                else target_uuid
+            )
+            if material is None or material.parent_material_uuid != expected_parent:
+                raise MaterialConflictError(
+                    f"material transfer {material_uuid} was superseded"
+                )
             if occupied_site_uuid != site_uuid:
                 raise MaterialConflictError(
                     f"material transfer {material_uuid} Site was superseded"

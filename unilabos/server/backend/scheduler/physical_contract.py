@@ -51,14 +51,21 @@ def resolve_physical_contract(
         return matches[0]
 
     def location(identity):
-        owner = aggregate(identity).material.parent_material_uuid
-        if not owner:
+        parent = aggregate(identity).material.parent_material_uuid
+        if not parent:
             raise ValueError("待搬运物料没有权威来源容器")
-        matches = [item for item in aggregate(owner).sites if item.occupied_material_uuid == identity]
-        if len(matches) != 1:
-            raise ValueError("待搬运物料没有唯一权威来源库位")
-        owner_device(owner)
-        return owner, matches[0].site_uuid
+        # 台面型 Site 的物料直接挂在 Site 所属物料下；载架型 Site（仓库等）的物料挂在
+        # 该 Site 的 holder 下，Site 属于 holder 的父物料
+        for owner in (parent, aggregate(parent).material.parent_material_uuid):
+            if not owner:
+                continue
+            matches = [item for item in aggregate(owner).sites if item.occupied_material_uuid == identity]
+            if len(matches) == 1:
+                owner_device(owner)
+                return owner, matches[0].site_uuid
+            if matches:
+                break
+        raise ValueError("待搬运物料没有唯一权威来源库位")
 
     def gripper(owners, role, material):
         matches = [

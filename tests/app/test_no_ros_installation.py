@@ -434,3 +434,48 @@ def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp
     monkeypatch.setattr(pack_conda_release.subprocess, "check_output", lambda *a, **kw: "2" * 40)
     with pytest.raises(RuntimeError, match="SHA"):
         pack_conda_release.main()
+
+
+def test_windows_gui_helper_dependencies_are_declared(monkeypatch):
+    """``utils/pywinauto_util`` 在模块级导入的第三方包（psutil、pywinauto）都要由 full 扩展与 conda
+    full 配方以 Windows 条件声明；其它平台导入它得到明确的错误，而不是缺包。"""
+
+    import ast
+    import runpy
+    import sys
+
+    import setuptools
+    import yaml
+    from packaging.requirements import Requirement
+
+    root = Path(__file__).resolve().parents[2]
+    helper = root / "unilabos/utils/pywinauto_util.py"
+    tree = ast.parse(helper.read_text(encoding="utf-8"))
+    imported = set()
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            imported.add(node.module.split(".")[0])
+    third_party = imported - set(sys.stdlib_module_names) - {"pywinauto_recorder"}
+    assert {"psutil", "pywinauto"} <= third_party
+
+    captured = {}
+    monkeypatch.setattr(setuptools, "setup", lambda **kwargs: captured.update(kwargs))
+    runpy.run_path(str(root / "setup.py"))
+    full = {Requirement(raw).name: Requirement(raw) for raw in captured["extras_require"]["full"]}
+    for name in third_party:
+        assert name in full, f"{name} 未在 full 扩展中声明"
+        assert full[name].marker is not None and full[name].marker.evaluate({"sys_platform": "win32"})
+        assert not full[name].marker.evaluate({"sys_platform": "linux"})
+    for suffix in ("", "-humble"):
+        recipe = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text(encoding="utf-8"))
+        windows = {dep["then"].split()[0] for dep in recipe["requirements"]["run"] if isinstance(dep, dict) and dep.get("if") == "win"}
+        assert third_party <= windows, f".conda/full{suffix} 缺少 {sorted(third_party - windows)}"
+
+    if sys.platform != "win32":
+        import importlib
+
+        sys.modules.pop("unilabos.utils.pywinauto_util", None)
+        with pytest.raises(ImportError, match="Windows"):
+            importlib.import_module("unilabos.utils.pywinauto_util")

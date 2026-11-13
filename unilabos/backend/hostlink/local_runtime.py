@@ -1235,6 +1235,9 @@ class HostLinkLocalRuntime:
         #: 图中声明的 host_node 身份（device_id -> 资源 uuid），供内置 host
         #: 服务设备注册时复用，保证图导出与权威身份一致。
         self.graph_host_resource_uuids: dict[str, str] = {}
+        #: 设备图中因 backend 不支持而跳过的设备（device_id -> 原因记录），
+        #: 由能力快照、``/api/v1/hostlink/peers`` 与 ``/api/v1/health`` 上报。
+        self.unavailable_devices: dict[str, dict[str, Any]] = {}
         self.topic_bus = LocalTopicBus()
         self.service_bus = LocalServiceBus()
         self._resource_service: ResourceService | None = None

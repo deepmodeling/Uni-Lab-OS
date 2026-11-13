@@ -247,3 +247,26 @@ def test_device_state_routes_read_the_telemetry_projection(tmp_path) -> None:
             assert _code(client.get("/api/v1/device-state")) == 5001
     finally:
         telemetry.close()
+
+
+def test_device_list_reports_a_device_skipped_for_the_backend(lab) -> None:
+    """FRAMEWORK_GAPS #22：本 backend 跑不了的设备被跳过，但设备目录要说清楚为什么不可用。"""
+
+    client = lab.client
+    unavailable = {"reason": "设备类只支持 backend ros2，当前 backend 为 hostlink，已跳过",
+                   "backend": "hostlink", "supported_backends": ["ros2"], "registry_name": "pump"}
+    lab.endpoints["value"] = [{
+        "endpoint_uuid": "ep-1", "host_uuid": "host-1", "instance_name": "lab-pc", "transport": "hostlink",
+        "state": "online", "action_capabilities": [],
+        "device_routes": [{"route_uuid": "route:pump-1", "device_uuid": "pump-1", "driver_key": "pump-1",
+                           "enabled": False, "selected": False, "config_hash": "x",
+                           "config": {"registry_name": "pump", "unavailable": unavailable}}],
+    }]
+
+    device = _ok(client.get("/api/v1/devices"))[0]
+    assert device["online"] is False and device["dispatchable"] is False
+    assert device["edge_status"] == "unavailable"
+    assert device["unavailable"] == unavailable
+    assert _ok(client.get("/api/v1/online-devices"))["total_count"] == 0
+    item = _ok(client.get("/api/v1/authoring/device-catalog"))["items"][0]
+    assert item["online"] is False and item["unavailable"] == unavailable

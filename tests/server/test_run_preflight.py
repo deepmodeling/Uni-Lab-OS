@@ -118,3 +118,26 @@ def test_submission_checks_preflight_revision_without_writes_and_replays_origina
         assert submitted == [task["uuid"]]
         body["expected_revision"] = checked_revision + 2
         assert client.post("/api/v1/workflow-tasks", json=body).json()["code"] == 3003
+
+
+def test_preflight_names_why_a_skipped_device_is_unavailable():
+    """FRAMEWORK_GAPS #22：Host 因 backend 不支持跳过的设备，预检写明原因而不是笼统的"离线"。"""
+
+    with closing(WorkflowService(":memory:")) as service:
+        workflow = service.create_workflow(name="跳过设备", tags=[], description=None, meta_data={})
+        service.save_graph(workflow["uuid"], revision=1, nodes=[{
+            "uuid": str(uuid4()), "name": "规划", "type": "device_action", "action_name": "plan",
+            "material_uuid": str(uuid4()), "param": {}, "pose": {"x": 0, "y": 0},
+            "meta_data": {"target_device_id": "arm"},
+        }], edges=[])
+        reason = "设备类只支持 backend ros2，当前 backend 为 hostlink，已跳过"
+        endpoints = [{"state": "online", "action_capabilities": [], "device_routes": [{
+            "device_uuid": "arm", "enabled": False,
+            "config": {"unavailable": {"reason": reason, "supported_backends": ["ros2"]}}}]}]
+        service.configure_preflight(materials=None, endpoints=lambda: endpoints)
+        report = service.preflight_workflow(workflow_uuid=workflow["uuid"], run_mode="normal",
+                                            target_node_uuid=None, input_value={})
+        device = next(item for item in report["checks"] if item["type"] == "device")
+        assert device["code"] == "device_action_unavailable"
+        assert reason in device["message"]
+        assert device["details"]["unavailable"]["supported_backends"] == ["ros2"]

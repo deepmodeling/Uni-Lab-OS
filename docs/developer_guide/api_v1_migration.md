@@ -46,7 +46,8 @@
   readiness 字段按 V1：`status`（`ready` / `starting` / `failed`）、`capabilities`、`phase`、`workflowRuntime`、
   可选 `observability`；dev 的探针摘要 `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，
   dev 原来的 `not_ready` 改为 V1 的 `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端
-  归属改名 `scheduler_mode`，`execution` 保留。
+  归属改名 `scheduler_mode`，`execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但当前 backend 跑不了而
+  没有启动的设备（`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），分进程时经控制面读 Host。
 - V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、`/v1/logs/{component}`）按 V1
   原样：路径不带 `/api` 前缀、成功是裸 JSON（提交操作 HTTP 202），失败是 HTTP 状态码 + `{"error": {code, message,
   details?}}`（不存在 404、`operation_conflict` / `revision_conflict` 409、其余 400；dev 增加日志暂不可读 503

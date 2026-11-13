@@ -103,9 +103,27 @@ class DeviceDirectory:
                 return endpoint
         return None
 
+    def unavailable(self, material: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+        """Host 因 backend 不支持而跳过的设备：停用 route 上的原因记录；正常设备为 None。"""
+
+        identities = self._identities(material)
+        for endpoint in self.endpoints:
+            for raw in endpoint.get("device_routes") or []:
+                route = _mapping(raw)
+                if str(route.get("device_uuid")) not in identities or route.get("enabled", True):
+                    continue
+                record = _mapping(_mapping(route.get("config")).get("unavailable"))
+                if record:
+                    return dict(record)
+        return None
+
     def online(self, material: Mapping[str, Any]) -> bool:
         endpoint = self.endpoint_of(material)
-        return endpoint is not None and endpoint.get("state") == "online"
+        return (
+            endpoint is not None
+            and endpoint.get("state") == "online"
+            and self.unavailable(material) is None
+        )
 
     def action_mappings(self, material: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
         definition = self.registry.get(str(material.get("template_name") or ""), {})
@@ -148,7 +166,8 @@ class DeviceDirectory:
             endpoint = self.endpoint_of(material) or {}
             edge_uuid = str(endpoint.get("host_uuid") or endpoint.get("endpoint_uuid") or "local")
             material_uuid = str(material["material_uuid"])
-            online = endpoint.get("state") == "online"
+            unavailable = self.unavailable(material)
+            online = endpoint.get("state") == "online" and unavailable is None
             created = ms_to_iso(material.get("created_at_ms"))
             updated = ms_to_iso(material.get("updated_at_ms"))
             device_class = str(material.get("template_name") or "")
@@ -175,25 +194,31 @@ class DeviceDirectory:
             }
             if material.get("description"):
                 backend_material["description"] = str(material["description"])
-            result.append(
-                {
-                    "binding": {
-                        "uuid": str(uuid5(NAMESPACE_URL, f"unilab:edge-device-binding:{edge_uuid}:{material_uuid}")),
-                        "create_time": created,
-                        "update_time": updated,
-                        "meta_data": {},
-                        "edge_uuid": edge_uuid,
-                        "material_uuid": material_uuid,
-                        "local_id": str(material["resource_id"]),
-                        "name": backend_material["name"],
-                    },
-                    "material": backend_material,
-                    "online": online,
-                    "edge_status": "online" if online else ("offline" if endpoint else "registered"),
-                    "dispatchable": online,
-                    "actions": actions,
-                }
-            )
+            if unavailable is not None:
+                edge_status = "unavailable"
+            else:
+                edge_status = "online" if online else ("offline" if endpoint else "registered")
+            entry: Dict[str, Any] = {
+                "binding": {
+                    "uuid": str(uuid5(NAMESPACE_URL, f"unilab:edge-device-binding:{edge_uuid}:{material_uuid}")),
+                    "create_time": created,
+                    "update_time": updated,
+                    "meta_data": {},
+                    "edge_uuid": edge_uuid,
+                    "material_uuid": material_uuid,
+                    "local_id": str(material["resource_id"]),
+                    "name": backend_material["name"],
+                },
+                "material": backend_material,
+                "online": online,
+                "edge_status": edge_status,
+                "dispatchable": online,
+                "actions": actions,
+            }
+            if unavailable is not None:
+                # dev 扩展：Host 没有启动它的原因（如设备类只支持 ros2）
+                entry["unavailable"] = unavailable
+            result.append(entry)
         return sorted(result, key=lambda item: item["material"]["uuid"])
 
     def authoring_catalog(self) -> Dict[str, Any]:
@@ -230,6 +255,7 @@ class DeviceDirectory:
                     "namespace": f"/devices/{device_id}",
                     "name": str(material.get("display_name") or material.get("name") or device_id),
                     "online": self.online(material),
+                    **({"unavailable": unavailable} if (unavailable := self.unavailable(material)) else {}),
                     "stateSchema": {
                         str(key): {"type": _JSON_TYPES.get(str(getattr(value, "__name__", value)).strip().lower(), "string")}
                         for key, value in status_types.items() if str(key)
@@ -245,7 +271,7 @@ class DeviceDirectory:
         online = {}
         for material in self.devices:
             endpoint = self.endpoint_of(material)
-            if endpoint is None or endpoint.get("state") != "online":
+            if endpoint is None or not self.online(material):
                 continue
             device_id = str(material["resource_id"])
             online[device_id] = {

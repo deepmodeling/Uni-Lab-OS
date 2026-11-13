@@ -179,6 +179,13 @@ class HostNode(HostAdapterBase):
                 result.setdefault(device_id, remote)
         return result
 
+    @property
+    def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
+        """设备图中因 backend 不支持而被本机 runtime 跳过的设备（能力快照里登记为停用 route）。"""
+
+        local = getattr(self.runtime, "local", None)
+        return dict(getattr(local, "unavailable_devices", None) or {})
+
     def refresh_devices(self, *, initial: bool = False, notify_ready: bool = False) -> None:
         snapshot = self._device_snapshot(initial=initial)
         self._subscribed_topics = set(self.runtime.local.topic_bus.subscribed_topics())

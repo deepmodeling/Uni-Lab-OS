@@ -20,6 +20,7 @@ from unilabos.backend.runtime.node import (
 from unilabos.backend.runtime.exception import (
     ActionResultError,
     DeviceActionError,
+    DeviceBackendUnsupported,
     DeviceClassInvalid,
 )
 from unilabos.backend.runtime.resource import (
@@ -34,6 +35,7 @@ __all__ = [
     "BackendCapabilityError",
     "AuthorityResourceService",
     "DeviceActionError",
+    "DeviceBackendUnsupported",
     "DeviceClassInvalid",
     "MaterialSnapshotObserver",
     "DeviceNode",

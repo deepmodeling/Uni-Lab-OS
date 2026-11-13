@@ -186,8 +186,13 @@ ROS2 下运行的特殊节点。相对 Topic 名称会按
 驱动调用时携带的 `action_type` 只作为兼容信息，实际按动作名和字典参数执行。
 这套兼容接口用于普通设备控制，并不表示 HostLink 与 ROS2 100% 等价。MoveIt
 ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2 专用高频图像流或
-依赖原生 QoS、零拷贝、复杂消息图的链路仍使用 ROS2。对应驱动应标记为 `[ros2]`，
-HostLink 启动时会直接提示该驱动不支持，而不是在导入过程中报缺少 `rclpy`。工作站和
+依赖原生 QoS、零拷贝、复杂消息图的链路仍使用 ROS2。对应驱动应标记为 `[ros2]`
+（`class.supported_backends: [ros2]`）。HostLink 启动时不导入这类驱动，而是跳过该设备及挂在它
+下面的子设备，写一条 ERROR 日志，其余设备照常启动；跳过的设备及原因出现在 `/api/v1/devices`
+（`edge_status: "unavailable"`，`unavailable` 字段写明原因与支持的 backend；设备目录与在线列表
+都不把它算作在线）、运行预检、`/api/v1/hostlink/peers` 与 `/api/v1/health` 的
+`unavailable_devices` 中。注册表缺失、模板名非法等配置错误仍让启动失败。Slave 上跳过的设备
+目前只写 Slave 自己的日志。工作站和
 普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
 相同的设备初始化路径。
 

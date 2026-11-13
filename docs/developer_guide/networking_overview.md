@@ -202,6 +202,10 @@ HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creat
 - 启动顺序是 `post_init` → `setup` → `initialize` → 状态定时发布。PyLabRobot 液体处理器
   （`LiquidHandlerAbstract` 系）的 `setup` 成功后，运行时打开 PLR 体积跟踪（进程级开关，ROS2 在
   构造器调度的 `setup` 完成后做同一件事），驱动不必自己调用 `set_volume_tracking`。
+- 状态定时发布与动作反馈读取的同步 getter / property 在该设备专用的状态线程上求值（各 getter
+  之间仍串行），不占设备事件循环：慢的硬件查询只推迟状态本身，不会拖住同一设备的动作与定时器。
+  `async def` getter 仍在设备事件循环上 await，不应在其中做阻塞 IO。启动时扫描 `@subscribe`
+  回调不求值 property。
 
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制

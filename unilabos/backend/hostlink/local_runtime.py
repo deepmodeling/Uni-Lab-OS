@@ -6,7 +6,9 @@ import asyncio
 import contextlib
 import inspect
 import logging
+import queue
 import threading
+from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -126,6 +128,53 @@ def _write_path(target: Dict[str, Any], path: str, value: Any) -> None:
             current[name] = value
             return
         current = current.setdefault(name, {})
+
+
+class _StatusReadWorker:
+    """单条守护线程上的串行执行器，供状态 getter 求值。
+
+    不用 ``ThreadPoolExecutor``：它的工作线程在解释器退出时会被 join，一个永远阻塞的
+    硬件查询会让进程无法退出。
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._queue: "queue.SimpleQueue[Any]" = queue.SimpleQueue()
+        self._lock = threading.Lock()
+        self._thread: Optional[threading.Thread] = None
+        self._closed = False
+
+    def submit(self, function: Callable[..., Any], *args: Any) -> "Future[Any]":
+        future: "Future[Any]" = Future()
+        with self._lock:
+            if self._closed:
+                raise RuntimeError(f"{self._name} 已关闭")
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
+                self._thread.start()
+            self._queue.put((future, function, args))
+        return future
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None:
+                return
+            future, function, args = item
+            if not future.set_running_or_notify_cancel():
+                continue
+            try:
+                future.set_result(function(*args))
+            except BaseException as exc:  # noqa: BLE001 - 异常交给等待方
+                future.set_exception(exc)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            if self._thread is not None:
+                self._queue.put(None)
 
 
 @dataclass(frozen=True)
@@ -258,6 +307,9 @@ class HostLinkDeviceNode(DeviceNode):
         self._started = False
         self._ready = False
         self._status_lock = threading.Lock()
+        # 同步状态 getter / property 在这条线程上求值：不占设备事件循环（慢查询不拖住
+        # 本设备的动作与定时器），各 getter 之间仍按原来的顺序串行执行。
+        self._status_worker = _StatusReadWorker(f"hostlink-status-{device_id}")
         self._decorated_subscriptions: list[Any] = []
         self._status_bindings = self._build_status_bindings()
         self.resource_tracker = resource_tracker or DeviceNodeResourceTracker()
@@ -673,10 +725,30 @@ class HostLinkDeviceNode(DeviceNode):
         value = getattr(self.driver, source_name)
         return self._call(value) if callable(value) else value
 
-    async def _read_driver_value_async(self, source_name: str) -> Any:
+    def _is_coroutine_source(self, source_name: str) -> bool:
+        try:
+            member = inspect.getattr_static(self.driver, source_name)
+        except AttributeError:
+            return False
+        return inspect.iscoroutinefunction(getattr(member, "__func__", member))
+
+    def _read_driver_value_blocking(self, source_name: str) -> Any:
         value = getattr(self.driver, source_name)
-        if callable(value):
-            value = value()
+        return value() if callable(value) else value
+
+    async def _read_driver_value_async(self, source_name: str) -> Any:
+        """状态发布与动作反馈的取值。
+
+        ``async def`` getter 在设备事件循环上 await；同步 getter 与 property 放到本设备的
+        状态线程求值，阻塞的硬件查询不会拖住同一设备的动作、反馈与定时器。
+        """
+
+        if self._is_coroutine_source(source_name):
+            value = getattr(self.driver, source_name)()
+        else:
+            value = await asyncio.wrap_future(
+                self._status_worker.submit(self._read_driver_value_blocking, source_name)
+            )
         return await value if inspect.isawaitable(value) else value
 
     async def _publish_status_binding(self, binding: _StatusBinding) -> None:
@@ -1133,6 +1205,8 @@ class HostLinkDeviceNode(DeviceNode):
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._loop_thread.join(timeout=5)
         self._loop.close()
+        # 卡住的 getter 无法强行结束：守护线程放弃等待，不阻止进程退出
+        self._status_worker.shutdown()
         self._started = False
 
 

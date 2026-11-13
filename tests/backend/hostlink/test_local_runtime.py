@@ -611,3 +611,60 @@ def test_hostlink_leaves_volume_tracking_alone_for_plain_drivers() -> None:
         assert does_volume_tracking() is False
     finally:
         runtime.stop()
+
+
+_status_getter_entered = threading.Event()
+_status_getter_release = threading.Event()
+
+
+class BlockingStatusDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.getter_threads: list[str] = []
+
+    def post_init(self, node) -> None:
+        self.node = node
+
+    @property
+    @topic_config(period=0.02)
+    def status(self) -> str:
+        self.getter_threads.append(threading.current_thread().name)
+        _status_getter_entered.set()
+        _status_getter_release.wait(10)  # 模拟一次慢的 TCP 查询
+        return "idle"
+
+    async def ping(self) -> str:
+        return "pong"
+
+
+def test_hostlink_blocking_status_getter_does_not_stall_device_actions() -> None:
+    """FRAMEWORK_GAPS #21：阻塞的状态 getter 不能在设备事件循环上执行，拖住该设备的动作。"""
+
+    import concurrent.futures
+
+    _status_getter_entered.clear()
+    _status_getter_release.clear()
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(
+        HostLinkDriverSpec(
+            "slow-status",
+            BlockingStatusDriver,
+            {},
+            action_names=("ping",),
+            status_names=("status",),
+        )
+    )
+    runtime.start()
+    try:
+        assert _status_getter_entered.wait(5), "状态定时发布没有调用 getter"
+        node = runtime.devices["slow-status"]
+        future = asyncio.run_coroutine_threadsafe(node.call_action_async("ping"), node._loop)
+        try:
+            assert future.result(timeout=2) == "pong"
+        except concurrent.futures.TimeoutError:
+            pytest.fail("状态 getter 阻塞了设备事件循环，动作无法执行")
+        # 状态 getter 只在状态线程上求值：启动扫描 @subscribe 时不求值 property，也不上事件循环
+        assert set(node.driver.getter_threads) == {"hostlink-status-slow-status"}
+    finally:
+        _status_getter_release.set()
+        runtime.stop()

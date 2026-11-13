@@ -165,7 +165,7 @@ class HostServices:
         if node is not None:
             data = {k: v for k, v in payload.items() if k != "device_id"}
             if action_type == ActionType.RESOURCE_APPEND:
-                return run_node_coroutine(node, node.append_resource(data))
+                return node.append_resource_blocking(data)
             if action_type == ActionType.RESOURCE_TREE_SYNC:
                 return run_node_coroutine(
                     node, node.apply_resource_tree_update(data["operations"])

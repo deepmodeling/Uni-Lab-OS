@@ -543,7 +543,7 @@ class HostLinkBackend:
         device_id = str(data.get("device_id") or "")
         node = self._require_local_resource_node(device_id)
         payload = {key: value for key, value in data.items() if key != "device_id"}
-        return run_node_coroutine(node, node.append_resource(payload))
+        return node.append_resource_blocking(payload)
 
     def _handle_material_sync(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """``MATERIAL_SYNC``：微后端 transfer 的设备侧投影（unload/load）。"""

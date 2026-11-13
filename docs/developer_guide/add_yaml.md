@@ -39,7 +39,7 @@ yaml 注册表就是设备的配置文件，里面定义了设备怎么用、有
 | icon              | string | 否       | 图标路径，默认为空                  |
 | init_param_schema | object | 否       | 初始化参数，系统自动分析生成        |
 | version           | string | 否       | 版本号，默认 "1.0.0"                |
-| category          | array  | 否       | 设备分类，默认用文件名              |
+| category          | array  | 否       | 设备分类；没写时用文件名，写了就以你写的为准 |
 | config_info       | array  | 否       | 嵌套配置，默认为空                  |
 | file_path         | string | 否       | 文件路径，系统自动设置              |
 | registry_type     | string | 否       | 注册表类型，自动设为 "device"       |
@@ -299,7 +299,7 @@ init_param_schema:
 
 ```yaml
 version: '1.0.0' # 默认版本
-category: ['文件名'] # 用你的 yaml 文件名当类别
+category: ['文件名'] # 没写 category 时用 yaml 文件名当类别
 description: '' # 默认为空，你可以手动改
 icon: '' # 默认为空，你可以加图标
 handles: [] # 默认空数组

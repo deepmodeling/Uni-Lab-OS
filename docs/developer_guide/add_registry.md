@@ -27,7 +27,8 @@
 4. 点击"分析文件"，让系统读取类信息
 5. 填写基本信息（设备描述、图标等）
 6. 点击"生成注册表"，复制生成的内容
-7. 保存到 `unilabos/registry/devices/your_device.yaml`
+7. 保存到 `unilabos/registry/devices/your_device.yaml`（驱动包里放在 `registry/devices/` 下，可以再按设备家族分子目录，
+   如 `registry/devices/analytical/hplc.yaml`；`devices/` 与 `device_comms/` 都递归读取）
 
 **提示**：我们提供了测试驱动用于在界面上尝试注册表生成，参见：`test/registry/example_devices.py`
 
@@ -44,7 +45,7 @@
 | icon              | string | 否       | 图标路径，默认为空                |
 | init_param_schema | object | 否       | 初始化参数，系统自动分析生成      |
 | version           | string | 否       | 版本号，默认 "1.0.0"              |
-| category          | array  | 否       | 设备分类，默认使用文件名          |
+| category          | array  | 否       | 设备分类；未声明时使用文件名，声明了就以声明为准（文件名不再追加） |
 | config_info       | array  | 否       | 嵌套配置，默认为空                |
 | file_path         | string | 否       | 文件路径，系统自动设置            |
 | registry_type     | string | 否       | 注册表类型，自动设为 "device"     |
@@ -480,7 +481,7 @@ init_param_schema:
 
 ```yaml
 version: '1.0.0' # 默认版本
-category: ['文件名'] # 使用 yaml 文件名作为类别
+category: ['文件名'] # 未声明时用 yaml 文件名作为类别；声明了就原样保留
 description: '' # 默认为空
 icon: '' # 默认为空
 handles: [] # 默认空数组

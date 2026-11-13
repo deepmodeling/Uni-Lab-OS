@@ -101,6 +101,22 @@ EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/contain
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
 
 
+def _default_category(entry: Dict[str, Any], file: Path) -> None:
+    """补全条目的 ``category``：声明了就以声明为准（规整为列表），没有声明才用文件名兜底。
+
+    文件名不再追加到已声明的分类里：驱动包可以按子目录分组、重命名 YAML 文件而不改变 UI 分类。
+    """
+    category = entry.get("category")
+    if isinstance(category, str):
+        category = [category] if category else []
+    if not category:
+        entry["category"] = [file.stem]
+    elif not isinstance(category, list):
+        entry["category"] = list(category)
+    else:
+        entry["category"] = category
+
+
 def _apply_action_timeouts(
     entry: Dict[str, Any],
     source: Any,
@@ -1981,12 +1997,7 @@ class Registry:
 
             if "version" not in resource_info:
                 resource_info["version"] = "1.0.0"
-            if "category" not in resource_info:
-                resource_info["category"] = [file.stem]
-            elif file.stem not in resource_info["category"]:
-                resource_info["category"].append(file.stem)
-            elif not isinstance(resource_info.get("category"), list):
-                resource_info["category"] = [resource_info["category"]]
+            _default_category(resource_info, file)
             if "config_info" not in resource_info:
                 resource_info["config_info"] = []
             if "icon" not in resource_info:
@@ -2181,10 +2192,7 @@ class Registry:
             # 补全默认字段
             if "version" not in device_config:
                 device_config["version"] = "1.0.0"
-            if "category" not in device_config:
-                device_config["category"] = [file.stem]
-            elif file.stem not in device_config["category"]:
-                device_config["category"].append(file.stem)
+            _default_category(device_config, file)
             if "config_info" not in device_config:
                 device_config["config_info"] = []
             if "description" not in device_config:
@@ -2567,13 +2575,19 @@ class Registry:
             self._add_builtin_actions(device_config, device_id)
         return data
 
-    def load_device_types(self, path: os.PathLike, complete_registry: bool = False):
+    def load_device_types(self, path: os.PathLike, complete_registry: bool = False, recursive: bool = True):
+        """加载 ``<path>/devices`` 与 ``<path>/device_comms`` 下的设备 YAML。
+
+        *recursive* 时包含子目录（驱动包可按家族分组）；``--devices`` 目录本身兜底当注册表根时
+        只读顶层文件，避免把驱动代码目录里的配置 YAML 当成注册表。
+        """
         import hashlib as _hl
         t0 = time.time()
         abs_path = Path(path).absolute()
         devices_path = abs_path / "devices"
         device_comms_path = abs_path / "device_comms"
-        files = list(devices_path.glob("*.yaml")) + list(device_comms_path.glob("*.yaml"))
+        pattern = "**/*.yaml" if recursive else "*.yaml"
+        files = sorted(devices_path.glob(pattern)) + sorted(device_comms_path.glob(pattern))
         logger.trace(
             f"[Uni-Lab-OS Registry] devices: {devices_path.exists()}, device_comms: {device_comms_path.exists()}, "
             + f"total: {len(files)}"
@@ -2685,11 +2699,6 @@ class Registry:
                 continue
 
             runtime_data = {did: data[did] for did in device_ids if did in data}
-            for cfg in runtime_data.values():
-                # _load_single_device_file 会按 file.stem 追加分类，这里去掉无意义的 "registry"
-                category = cfg.get("category")
-                if isinstance(category, list) and reg_file.stem in category and len(category) > 1:
-                    category.remove(reg_file.stem)
             if runtime_data:
                 self.device_type_registry.update(runtime_data)
                 loaded_total += len(runtime_data)
@@ -2764,7 +2773,8 @@ class Registry:
                     continue
                 seen.add(key)
                 logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}")
-                self.load_device_types(root, complete_registry=complete_registry)
+                # --devices 目录本身兜底当注册表根：只读 devices/ 顶层，不进驱动代码子目录
+                self.load_device_types(root, complete_registry=complete_registry, recursive=root != base)
                 if BasicConfig.enable_resource_load:
                     self.load_resource_types(root, upload_registry, complete_registry=complete_registry)
                 else:

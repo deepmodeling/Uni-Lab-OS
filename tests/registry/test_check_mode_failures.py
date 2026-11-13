@@ -160,3 +160,66 @@ def test_check_mode_passes_a_clean_package_and_skips_backend_incompatible_import
     assert completed.returncode == 0, output[-4000:]
     assert "check_ros_only" in output
     assert "Check mode: 注册表验证完成" in output
+
+
+def _yaml_registry(pkg: Path) -> Path:
+    """包内 YAML 注册表：一个可导入的设备、一个类路径写错的设备、一个语法损坏的文件。"""
+
+    _write(
+        pkg / "plain.py",
+        """
+        class PlainDevice:
+            def __init__(self, **kwargs):
+                pass
+
+            def ping(self) -> bool:
+                return True
+        """,
+    )
+    devices = pkg / "registry" / "devices"
+    _write(
+        devices / "family" / "plain.yaml",
+        """
+        check_yaml.good:
+          category: [check]
+          class:
+            module: check_pkg.plain:PlainDevice
+            type: python
+        check_yaml.missing-class:
+          category: [check]
+          class:
+            module: check_pkg.plain:NoSuchClass
+            type: python
+        """,
+    )
+    return devices
+
+
+def test_check_mode_fails_on_unloadable_yaml_and_keeps_the_file(tmp_path: Path) -> None:
+    """YAML 设备与 @device 一样：读不了的文件、找不到的类都让 check_mode 失败；补全写回不能把
+    找不到类的条目从文件里删掉。"""
+
+    pkg = _package(tmp_path)
+    devices = _yaml_registry(pkg)
+    broken = devices / "broken.yaml"
+    broken.write_text("check_yaml.broken: [unclosed\n", encoding="utf-8")
+
+    completed = _check_mode(pkg, tmp_path)
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 1, output[-4000:]
+    assert "broken.yaml" in output
+    assert "check_yaml.missing-class" in output
+    assert "check_yaml.missing-class" in (devices / "family" / "plain.yaml").read_text(encoding="utf-8")
+
+
+def test_check_mode_passes_a_clean_yaml_package(tmp_path: Path) -> None:
+    pkg = _package(tmp_path)
+    devices = _yaml_registry(pkg)
+    source = (devices / "family" / "plain.yaml").read_text(encoding="utf-8")
+    (devices / "family" / "plain.yaml").write_text(
+        source.split("check_yaml.missing-class:")[0], encoding="utf-8"
+    )
+    completed = _check_mode(pkg, tmp_path)
+    output = completed.stdout + completed.stderr
+    assert completed.returncode == 0, output[-4000:]
+    assert "Check mode: 注册表验证完成" in output

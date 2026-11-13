@@ -252,6 +252,8 @@ class Registry:
         self._startup_executor: Optional[ThreadPoolExecutor] = None
         #: AST 扫描失败、被跳过的文件：[{"file", "error"}]；check_mode 据此判定失败
         self.scan_errors: List[Dict[str, str]] = []
+        #: 读不了 / 解析失败、整份被跳过的注册表 YAML：[{"file", "error"}]；check_mode 据此判定失败
+        self.yaml_errors: List[Dict[str, str]] = []
         #: verify_and_resolve_registry 的导入失败（"device:<id>: <错误>" / "resource:<id>: <错误>"）
         self.verify_errors: List[str] = []
         #: 当前 backend 不支持、导入失败只记跳过的设备："<id>: <错误>"
@@ -1821,10 +1823,14 @@ class Registry:
         self.verify_skipped = list(skipped)
         return errors
 
+    def _record_yaml_error(self, file: os.PathLike, error: Exception) -> None:
+        self.yaml_errors.append({"file": str(file).replace("\\", "/"), "error": f"{type(error).__name__}: {error}"})
+
     def check_failures(self) -> List[str]:
-        """``--check_mode`` 的失败清单：AST 扫描跳过的文件 + 注册类导入失败。"""
+        """``--check_mode`` 的失败清单：AST 扫描跳过的文件 + 加载失败的注册表 YAML + 注册类导入失败。"""
 
         failures = [f"AST 扫描失败: {item['file']}: {item['error']}" for item in self.scan_errors]
+        failures.extend(f"注册表 YAML 加载失败: {item['file']}: {item['error']}" for item in self.yaml_errors)
         failures.extend(f"导入失败: {item}" for item in self.verify_errors)
         return failures
 
@@ -1977,6 +1983,7 @@ class Registry:
                 data = yaml.safe_load(io.StringIO(f.read()))
         except Exception as e:
             logger.warning(f"[Uni-Lab-OS Registry] 读取资源文件失败: {file}, 错误: {e}")
+            self._record_yaml_error(file, e)
             return {}, {}, False
 
         if not data:
@@ -2128,6 +2135,7 @@ class Registry:
                     yaml_file_rids[file_key] = list(complete_data.keys())
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 加载资源文件失败: {file}, 错误: {e}")
+                self._record_yaml_error(file, e)
 
         # upload 模式下，统一利用线程池为 pylabrobot 资源生成 config_info
         if upload_registry:
@@ -2184,6 +2192,7 @@ class Registry:
             data = resolve_yaml_refs(raw_data, base_file=file)
         except Exception as e:
             logger.warning(f"[Uni-Lab-OS Registry] 读取设备文件失败: {file}, 错误: {e}")
+            self._record_yaml_error(file, e)
             return {}, {}, False, []
 
         if not data:
@@ -2264,12 +2273,20 @@ class Registry:
 
                 enhanced_info = {}
                 enhanced_import_map: Dict[str, str] = {}
-                if complete_registry:
-                    original_status_keys = set(device_config["class"]["status_types"].keys())
-                    device_config["class"]["status_types"].clear()
+                enhance = complete_registry
+                if enhance:
                     enhanced_info = get_enhanced_class_info(device_config["class"]["module"])
                     if not enhanced_info.get("ast_analysis_success", False):
-                        continue
+                        # 找不到类源码时不补全，但条目照常登记、照原样写回：不能把它从 YAML 里删掉，
+                        # 是否可用交给导入校验（check_mode）判定。
+                        logger.warning(
+                            f"[Uni-Lab-OS Registry] 设备 {device_id} 的类 {device_config['class']['module']} "
+                            "无法静态分析，保留 YAML 原样，不做补全"
+                        )
+                        enhance = False
+                if enhance:
+                    original_status_keys = set(device_config["class"]["status_types"].keys())
+                    device_config["class"]["status_types"].clear()
                     enhanced_import_map = enhanced_info.get("import_map", {})
                     for st_k, st_v in enhanced_info["status_methods"].items():
                         if st_k in original_status_keys:
@@ -2291,7 +2308,7 @@ class Registry:
                     status_str_type_mapping[status_type] = target_type
                 device_config["class"]["status_types"] = dict(sorted(device_config["class"]["status_types"].items()))
 
-                if complete_registry:
+                if enhance:
                     old_action_configs = dict(device_config["class"]["action_value_mappings"])
 
                     device_config["class"]["action_value_mappings"] = {
@@ -2686,6 +2703,7 @@ class Registry:
                         pass
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 加载设备文件失败: {file}, 错误: {e}")
+                self._record_yaml_error(file, e)
 
         if uncached_files and yaml_dev_cache:
             latest_cache = self._load_config_cache()
@@ -2724,6 +2742,7 @@ class Registry:
                 )
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 社区包 registry.yaml 加载失败: {reg_file}, 错误: {e}")
+                self._record_yaml_error(reg_file, e)
                 continue
             if not is_valid:
                 continue

@@ -246,7 +246,7 @@ pip install -e .
 unilab --check_mode --devices ./<package_name> --external_devices_only
 ```
 
-check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、导入失败的注册类都会让它以退出码 1 结束并逐条列出；
+check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目都算）都会让它以退出码 1 结束并逐条列出；
 `supported_backends` 不含当前 backend 的设备（HostLink 环境里的 ROS 2 专用节点）导入失败只记为跳过。
 
 ## 关键规则

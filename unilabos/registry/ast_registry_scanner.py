@@ -254,7 +254,8 @@ def scan_directory(
             return [], [], [], False, None
 
         cached_entry = cache_files.get(key)
-        if cached_entry and _is_cache_hit(cached_entry, fp):
+        # 模块路径由导入根推导：同一文件换了导入根（如改为挂载子目录）必须重新解析
+        if cached_entry and _is_cache_hit(cached_entry, fp) and cached_entry.get("python_path") == str(python_path):
             error = cached_entry.get("error")
             if error:
                 _report_scan_error(py_file, error)
@@ -278,6 +279,7 @@ def scan_directory(
             "md5": fp["md5"],
             "size": fp["size"],
             "mtime": fp["mtime"],
+            "python_path": str(python_path),
             "devices": devs,
             "resources": ress,
             "workflows": flows,

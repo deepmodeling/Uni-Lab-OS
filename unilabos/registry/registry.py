@@ -410,7 +410,10 @@ class Registry:
         python_path = pkg_root.parent                              # .../Uni-Lab-OS
         scan_root = pkg_root                                       # 扫描 unilabos/ 整个包
 
-        # 额外的 --devices 目录：把它们的父目录加入 sys.path
+        # 额外的 --devices 目录：把它们的导入根加入 sys.path。挂载的是包里的子目录（如一个设备家族）时，
+        # 导入根是顶层包的父目录（沿 __init__.py 上溯），模块路径才与 import 一致。
+        from unilabos.registry.package_layout import find_import_root
+
         extra_dirs: list[Path] = []
         if devices_dirs:
             for d in devices_dirs:
@@ -418,7 +421,7 @@ class Registry:
                 if not d_path.is_dir():
                     logger.warning(f"[Uni-Lab-OS Registry] --devices 路径不存在或不是目录: {d_path}")
                     continue
-                parent_dir = str(d_path.parent)
+                parent_dir = str(find_import_root(d_path))
                 if parent_dir not in sys.path:
                     sys.path.insert(0, parent_dir)
                     logger.info(f"[Uni-Lab-OS Registry] 添加 Python 路径: {parent_dir}")
@@ -464,7 +467,7 @@ class Registry:
         # 额外目录逐个扫描并合并
         for d_path in extra_dirs:
             extra_result = scan_directory(
-                d_path, python_path=str(d_path.parent), executor=self._startup_executor,
+                d_path, python_path=str(find_import_root(d_path)), executor=self._startup_executor,
                 cache=ast_cache,
             )
             extra_stats = extra_result.pop("_cache_stats", {"hits": 0, "misses": 0, "total": 0})
@@ -2041,8 +2044,18 @@ class Registry:
         upload_registry: bool,
         complete_registry: bool = False,
         files: Optional[List[Path]] = None,
+        module_prefix: Optional[str] = None,
     ):
-        """加载 ``<path>/resources/**/*.yaml``；给出 *files* 时只加载这些文件。"""
+        """加载 ``<path>/resources/**/*.yaml``；给出 *files* 时只加载这些文件。
+
+        *module_prefix* 给出时只登记 ``class.module`` 落在该模块前缀内的条目（挂载包里的子目录时用）。
+        """
+        from unilabos.registry.package_layout import module_in_prefix
+
+        def _in_scope(entry: Any) -> bool:
+            module = (entry.get("class") or {}).get("module") if isinstance(entry, dict) else None
+            return module_in_prefix(module, module_prefix)
+
         abs_path = Path(path).absolute()
         resources_path = abs_path / "resources"
         if files is None:
@@ -2090,7 +2103,8 @@ class Registry:
                         # 都被当成缺失，触发重新加载并把十几 MB 的缓存整体重写一遍
                         if all_ok and cached.get("entries") is not None:
                             for rid, entry in cached["entries"].items():
-                                self.resource_type_registry[rid] = entry
+                                if _in_scope(entry):
+                                    self.resource_type_registry[rid] = entry
                             yaml_cache_hits += 1
                             continue
                 uncached_files.append(file)
@@ -2108,6 +2122,7 @@ class Registry:
             try:
                 data, complete_data, is_valid = future.result()
                 if is_valid:
+                    complete_data = {rid: entry for rid, entry in complete_data.items() if _in_scope(entry)}
                     self.resource_type_registry.update(complete_data)
                     file_key = str(file.absolute()).replace("\\", "/")
                     yaml_file_rids[file_key] = list(complete_data.keys())
@@ -2119,7 +2134,8 @@ class Registry:
             self._populate_resource_config_info(config_cache=config_cache)
 
             # Update YAML cache for newly processed files (entries now have config_info)
-            if yaml_file_rids and config_cache is not None:
+            # 按模块前缀过滤过的加载只登记了部分条目，不写回按文件缓存（缓存必须是整份文件）
+            if yaml_file_rids and config_cache is not None and not module_prefix:
                 for file_key, rids in yaml_file_rids.items():
                     entries = {}
                     module_hashes = {}
@@ -2575,12 +2591,29 @@ class Registry:
             self._add_builtin_actions(device_config, device_id)
         return data
 
-    def load_device_types(self, path: os.PathLike, complete_registry: bool = False, recursive: bool = True):
+    def load_device_types(
+        self,
+        path: os.PathLike,
+        complete_registry: bool = False,
+        recursive: bool = True,
+        module_prefix: Optional[str] = None,
+    ):
         """加载 ``<path>/devices`` 与 ``<path>/device_comms`` 下的设备 YAML。
 
         *recursive* 时包含子目录（驱动包可按家族分组）；``--devices`` 目录本身兜底当注册表根时
-        只读顶层文件，避免把驱动代码目录里的配置 YAML 当成注册表。
+        只读顶层文件，避免把驱动代码目录里的配置 YAML 当成注册表。*module_prefix* 给出时只登记
+        ``class.module`` 落在该模块前缀内的条目（挂载包里的子目录时用）。
         """
+        from unilabos.registry.package_layout import module_in_prefix
+
+        def _in_scope(entries: Dict[str, Any]) -> Dict[str, Any]:
+            if not module_prefix:
+                return entries
+            return {
+                did: cfg for did, cfg in entries.items()
+                if module_in_prefix((cfg.get("class") or {}).get("module") if isinstance(cfg, dict) else None, module_prefix)
+            }
+
         import hashlib as _hl
         t0 = time.time()
         abs_path = Path(path).absolute()
@@ -2617,7 +2650,7 @@ class Registry:
                     complete_data = cached["entries"]
                     # 过滤掉 AST 已有的设备
                     complete_data = {
-                        did: cfg for did, cfg in complete_data.items()
+                        did: cfg for did, cfg in _in_scope(complete_data).items()
                         if not self.device_type_registry.get(did)
                     }
                     runtime_data = self._rebuild_device_runtime_data(complete_data)
@@ -2639,7 +2672,7 @@ class Registry:
             try:
                 data, _complete_data, is_valid, device_ids = future.result()
                 if is_valid:
-                    runtime_data = {did: data[did] for did in device_ids if did in data}
+                    runtime_data = _in_scope({did: data[did] for did in device_ids if did in data})
                     self.device_type_registry.update(runtime_data)
                     # 写入缓存
                     file_key = str(file.absolute()).replace("\\", "/")
@@ -2728,15 +2761,19 @@ class Registry:
                 continue
             for registry_root in registry_roots_for_mount(base):
                 root = registry_root.path
-                key = str(root)
+                prefix = registry_root.module_prefix
+                key = (str(root), prefix)
                 if key in seen:
                     continue
                 seen.add(key)
-                logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}")
+                scope = f"（只取 {prefix} 内的条目）" if prefix else ""
+                logger.info(f"[Uni-Lab-OS Registry] 加载 --devices 内嵌注册表: {root}{scope}")
                 # --devices 目录本身兜底当注册表根：只读 devices/ 顶层，不进驱动代码子目录
-                self.load_device_types(root, complete_registry=complete_registry, recursive=registry_root.recursive)
+                self.load_device_types(
+                    root, complete_registry=complete_registry, recursive=registry_root.recursive, module_prefix=prefix,
+                )
                 if BasicConfig.enable_resource_load:
-                    self.load_resource_types(root, upload_registry, complete_registry=complete_registry)
+                    self.load_resource_types(root, upload_registry, complete_registry=complete_registry, module_prefix=prefix)
                 else:
                     logger.warning(
                         "[Uni-Lab-OS Registry] 资源加载已禁用 (enable_resource_load=False)，"

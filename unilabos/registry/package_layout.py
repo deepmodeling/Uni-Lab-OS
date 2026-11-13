@@ -84,16 +84,37 @@ def is_registry_root(path: PathLike) -> bool:
     return False
 
 
+def mount_module_prefix(mount: PathLike) -> str:
+    """挂载目录对应的模块前缀（相对导入根），如 ``<repo>/pkg/devices/family`` → ``pkg.devices.family``。"""
+
+    path = Path(mount).resolve()
+    return ".".join(path.relative_to(find_import_root(path)).parts)
+
+
+def module_in_prefix(module: Any, prefix: Optional[str]) -> bool:
+    """注册表条目的 ``class.module``（``a.b.c:Class``）是否落在模块前缀 *prefix* 之内。"""
+
+    if not prefix:
+        return True
+    if not isinstance(module, str) or not module:
+        return False
+    module_name = module.split(":", 1)[0]
+    return module_name == prefix or module_name.startswith(prefix + ".")
+
+
 @dataclass(frozen=True)
 class RegistryRoot:
     """一个驱动包挂载目录对应的 YAML 注册表根。
 
     ``recursive``：``devices/`` 与 ``device_comms/`` 是否包含子目录（挂载目录本身兜底当注册表根时
     只读顶层，不进驱动代码目录）。
+    ``module_prefix``：挂载的是包里的子目录（如一个设备家族）时，挂载目录之外的包级注册表只采纳
+    ``class.module`` 落在该子包内的条目；``None`` 表示整份加载。
     """
 
     path: Path
     recursive: bool = True
+    module_prefix: Optional[str] = None
 
 
 def registry_roots_for_mount(mount: PathLike) -> List[RegistryRoot]:
@@ -111,12 +132,21 @@ def registry_roots_for_mount(mount: PathLike) -> List[RegistryRoot]:
     """
 
     base = Path(mount).resolve()
+    import_root = find_import_root(base)
+    # 挂载的是子包（导入根不是挂载目录的父目录）：挂载目录之外的注册表按模块前缀过滤
+    prefix = mount_module_prefix(base) if import_root != base.parent else None
     candidates: List[RegistryRoot] = [RegistryRoot(base / "registry"), RegistryRoot(base / "unilabos_registry")]
+    # 子包挂载：上溯到导入根之前的各级包目录（如 <repo>/pkg/registry）
+    ancestor = base.parent
+    while prefix and ancestor != import_root and import_root in ancestor.parents:
+        candidates.append(RegistryRoot(ancestor / "registry", module_prefix=prefix))
+        candidates.append(RegistryRoot(ancestor / "unilabos_registry", module_prefix=prefix))
+        ancestor = ancestor.parent
     project_root = find_project_root(base)
     if project_root is not None:
-        candidates.extend(RegistryRoot(path) for path in declared_registry_paths(project_root))
-        candidates.append(RegistryRoot(project_root / "registry"))
-        candidates.append(RegistryRoot(project_root / "unilabos_registry"))
+        candidates.extend(RegistryRoot(path, module_prefix=prefix) for path in declared_registry_paths(project_root))
+        candidates.append(RegistryRoot(project_root / "registry", module_prefix=prefix))
+        candidates.append(RegistryRoot(project_root / "unilabos_registry", module_prefix=prefix))
     candidates.append(RegistryRoot(base, recursive=False))
 
     roots: List[RegistryRoot] = []
@@ -126,7 +156,9 @@ def registry_roots_for_mount(mount: PathLike) -> List[RegistryRoot]:
         if resolved in seen or not is_registry_root(resolved):
             continue
         seen.add(resolved)
-        roots.append(RegistryRoot(resolved, candidate.recursive))
+        # 注册表就在挂载目录内：整份加载
+        inside = resolved == base or base in resolved.parents
+        roots.append(RegistryRoot(resolved, candidate.recursive, None if inside else candidate.module_prefix))
     return roots
 
 
@@ -180,7 +212,13 @@ def read_yaml_device_entries(roots: Iterable[RegistryRoot]) -> Dict[str, Dict[st
     只采纳带 ``class.module`` 或显式 ``resource_type: device`` 的条目，与运行时加载口径一致。
     """
 
-    return _read_device_entries_from_files(path for root in roots for path in device_yaml_files(root))
+    entries: Dict[str, Dict[str, Any]] = {}
+    for root in roots:
+        for device_id, entry in _read_device_entries_from_files(device_yaml_files(root)).items():
+            module = (entry.get("class") or {}).get("module") if isinstance(entry.get("class"), dict) else None
+            if device_id not in entries and module_in_prefix(module, root.module_prefix):
+                entries[device_id] = entry
+    return entries
 
 
 def package_registry_roots(mounts: Iterable[PathLike]) -> List[RegistryRoot]:
@@ -190,8 +228,9 @@ def package_registry_roots(mounts: Iterable[PathLike]) -> List[RegistryRoot]:
     seen: set = set()
     for mount in mounts:
         for root in registry_roots_for_mount(mount):
-            if root.path not in seen:
-                seen.add(root.path)
+            key = (root.path, root.module_prefix)
+            if key not in seen:
+                seen.add(key)
                 roots.append(root)
     return roots
 
@@ -259,6 +298,8 @@ __all__ = [
     "find_project_root",
     "format_scan_errors",
     "is_registry_root",
+    "module_in_prefix",
+    "mount_module_prefix",
     "package_device_ids",
     "package_registry_roots",
     "read_yaml_device_entries",

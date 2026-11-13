@@ -88,6 +88,25 @@ def test_busy_mutations_return_conflict_and_reads_stay_available(service, tmp_pa
     assert set(dp.load_ledger(service.working_dir)) == {"demo", "another"}
 
 
+def test_terminal_operation_status_means_the_write_lock_is_free(service, tmp_path, monkeypatch):
+    """读到终态就能发起下一次变更：终态落盘与释放写锁对读者是原子的。"""
+    source = tmp_path / "local"
+    _write_source_tree(source, name="demo", version="1.0", package="demo", device_id="demo_pump", deps=[])
+    monkeypatch.setattr(service, "_install_dependencies", lambda *args: "")
+    original_mutation = service.source_changes.mutation
+
+    def slow_release(active: bool) -> None:
+        if not active:
+            time.sleep(0.3)  # 放大"终态已落盘、写锁未释放"的窗口（满载时线程恰好在这里被挂起）
+        original_mutation(active)
+
+    monkeypatch.setattr(service.source_changes, "mutation", slow_release)
+    done = _wait(service, service.start_install(str(source))["operation_id"])
+    assert done["status"] == "succeeded", done
+    again = _wait(service, service.start_install(str(source), upgrade=True)["operation_id"])
+    assert again["status"] == "succeeded", again
+
+
 def test_concurrent_enable_writes_cannot_lose_a_successful_update(service, monkeypatch):
     dp.save_ledger(service.working_dir, {n: dp.DriverPackageRecord(name=n) for n in ("a", "b")})
     entered = threading.Event()

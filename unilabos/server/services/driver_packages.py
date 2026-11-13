@@ -683,8 +683,9 @@ class DriverPackageService:
             return accepted
         except Exception as exc:
             if operation is not None:
-                self._finish(operation.operation_id, error=str(exc))
-            self._release_mutation()
+                self._finish_and_release(operation.operation_id, error=str(exc))
+            else:
+                self._release_mutation()
             raise DriverPackageError(f"无法启动驱动包操作：{exc}") from exc
 
     def _execute_mutation(
@@ -703,10 +704,8 @@ class DriverPackageService:
             try:
                 if result is not None:
                     result["source_changes"] = self.source_changes.status()
-                # 持久化完成后才允许重启，消除退出发生在最后一次台账写入前的窗口。
-                self._finish(operation_id, error=error, result=result)
             finally:
-                self._release_mutation()
+                self._finish_and_release(operation_id, error=error, result=result)
 
     def start_install(
         self, spec: str, enable: bool = True, upgrade: bool = False, name: str = ""
@@ -760,19 +759,37 @@ class DriverPackageService:
 
     def _finish(self, operation_id: str, *, error: Optional[str] = None, result: Optional[Dict[str, Any]] = None) -> None:
         with self._lock:
-            operation = self._operations.get(operation_id)
-            if operation is None:
-                return
-            operation.status = "failed" if error else "succeeded"
-            operation.error = error
-            operation.result = result
-            operation.finished_at_ms = _now_ms()
-            operation.requires_confirmation = bool(error and (
-                operation.recovery.get('dependencies_started')
-                or operation.recovery.get('outcome') == 'manual_repair_required'
-                or operation.recovery.get('phase') == 'ledger_committed'))
-            operation.version += 1
-            self._persist_operations()
+            self._finish_locked(operation_id, error=error, result=result)
+
+    def _finish_and_release(
+        self, operation_id: str, *, error: Optional[str] = None, result: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """写入终态并释放写锁，两步都在 ``_lock`` 内完成。
+
+        先落盘终态再释放：重启不能抢在最后一次台账写入之前。``operation()`` 同样持
+        ``_lock`` 读台账，所以读者看到终态时写锁与 Host 变更闸都已释放，可以立即发起
+        下一次变更，不会撞上 ``DriverPackageBusyError``。
+        """
+        with self._lock:
+            try:
+                self._finish_locked(operation_id, error=error, result=result)
+            finally:
+                self._release_mutation()
+
+    def _finish_locked(self, operation_id: str, *, error: Optional[str], result: Optional[Dict[str, Any]]) -> None:
+        operation = self._operations.get(operation_id)
+        if operation is None:
+            return
+        operation.status = "failed" if error else "succeeded"
+        operation.error = error
+        operation.result = result
+        operation.finished_at_ms = _now_ms()
+        operation.requires_confirmation = bool(error and (
+            operation.recovery.get('dependencies_started')
+            or operation.recovery.get('outcome') == 'manual_repair_required'
+            or operation.recovery.get('phase') == 'ledger_committed'))
+        operation.version += 1
+        self._persist_operations()
 
     # 下面三个是可替换的"外部世界"入口：测试用桩，生产用真实网络 / 子进程。
 

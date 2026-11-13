@@ -2031,12 +2031,10 @@ class MaterialsService(MaterialsRepository):
                 f"template_name {identity.template_name!r} does not match "
                 f"registered template {template.name!r}"
             )
-        if identity.resource_type != template.resource_type:
-            raise MaterialValidationError(
-                f"resource_type {identity.resource_type!r} does not match "
-                f"template {template.name!r} resource_type "
-                f"{template.resource_type!r}"
-            )
+        # resource_type 不参与模板身份校验：它是 PLR ``category``，属于实例而不是类。
+        # 子节点按类名共用组件模板（如所有 ``Well`` 都是模板 ``Well``），同一个类的
+        # 实例可以是 well / tube 等不同类型；模板上的 resource_type 只是按模板新建
+        # 物料时的默认值，物料自己的 resource_type 才是它的类型（建树后不可变）。
         if template.class_name and identity.class_name != template.class_name:
             raise MaterialValidationError(
                 f"class_name {identity.class_name!r} does not match template "

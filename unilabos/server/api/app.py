@@ -7,6 +7,7 @@ from urllib.parse import quote
 import socket
 import sys
 import threading
+import time
 import webbrowser
 
 from fastapi import FastAPI, Request
@@ -610,9 +611,22 @@ _routes_ready = threading.Event()
 
 
 def wait_routes_ready(timeout: float) -> bool:
-    """等待本进程管理 API 路由挂载完成；返回是否就绪。"""
+    """等待本进程管理 API 路由挂载完成；返回是否就绪。
 
-    return _routes_ready.wait(timeout)
+    停机一开始就放弃等待：这些等待跑在控制 WS 事件循环的线程池里，路由永远挂不好时
+    （主线程在 ``setup_server`` 里就收到了停机信号）会让解释器退出时逐个 join 它们，一次
+    SIGTERM 被拖上几分钟。
+    """
+
+    deadline = time.monotonic() + max(0.0, timeout)
+    while not _routes_ready.is_set():
+        if lifecycle.shutting_down() or _abort_serving.is_set():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        _routes_ready.wait(min(0.2, remaining))
+    return True
 
 
 def request_server_shutdown() -> bool:

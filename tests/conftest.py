@@ -28,3 +28,8 @@ def _release_database_root_locks():
     for root in root_lock.held_database_roots():
         if root not in before:
             root_lock.release_database_root(root)
+
+
+def pytest_configure(config):
+    # 起真实 unilab 进程、单个用例几十秒的端到端用例；-m "not slow" 可跳过
+    config.addinivalue_line("markers", "slow: 起真实 unilab 进程的较慢用例")

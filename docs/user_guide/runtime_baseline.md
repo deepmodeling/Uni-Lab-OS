@@ -73,6 +73,11 @@ Host 子进程持有 `<根目录>/edge`，`--role backend` 持有 `<根目录>/b
 
 各启动方式对应的根目录与排查方法见[配置指南](../advanced_usage/configuration.md)的「一个数据库根目录只归一个实例」。
 
+停止 `unilab`（SIGTERM、Ctrl+C、Windows 关闭控制台窗口）时，调度权威先请 Host 子进程退出、等它结束
+再关自己的库；权威被强制结束（`kill -9`、崩溃）时，Host 子进程与它拉起的受管设备进程会察觉父进程消失并
+在 20 秒内自行退出，`<根目录>/edge` 随之释放，下一次 `unilab` 直接就能启动。`--address` 连远端权威的
+Host 只跟随本机的监督进程，网络断开只重连、不退出。详见配置指南的「停止与子进程」。
+
 ## Windows DLL 兼容
 
 仅 ROS2 后端需要处理 ROS 原生 DLL。发行版优先从当前环境的

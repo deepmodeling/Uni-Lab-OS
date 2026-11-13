@@ -185,9 +185,15 @@ def _start_management_server() -> None:
         _fail_on_port_in_use(exc)
 
 
+def _join_backend(backend_thread: threading.Thread) -> None:
+    # 分段等待：Windows 上无限期 join 收不到 Ctrl+C，也收不到父进程消失时对主线程的中断请求
+    while backend_thread.is_alive():
+        backend_thread.join(timeout=0.5)
+
+
 def _run_management_or_wait(backend_thread: threading.Thread) -> None:
     if not BasicConfig.is_host_mode:
-        backend_thread.join()
+        _join_backend(backend_thread)
         _exit_on_backend_failure()
         return
 
@@ -266,7 +272,7 @@ def run_runtime(args: dict[str, Any]) -> None:
             "info",
         )
 
-    backend_thread.join()
+    _join_backend(backend_thread)
     _exit_on_backend_failure()
 
 

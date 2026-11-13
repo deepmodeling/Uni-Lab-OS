@@ -38,6 +38,35 @@ def _authority_listening(port: int) -> bool:
         probe.close()
 
 
+def _stop_on_signal(signum: int, frame: Any) -> None:
+    """SIGTERM / SIGHUP：与 Ctrl+C 走同一条有序停机路径。
+
+    uvicorn 服务期间这两个信号由它自己接住；它优雅停机后会恢复原处理器并**重新抛出**收到的
+    信号——原处理器若是默认动作，进程就在那一刻被信号直接杀掉，下面 ``finally`` 里停 Host
+    子进程、关库都不会执行，Host 子进程成了孤儿。所以权威给这两个信号装上本处理器：uvicorn
+    还在服务就请它停机，否则（启动阶段、uvicorn 停完后重新抛出）抛 KeyboardInterrupt 让主线程
+    沿 ``finally`` 收尾。
+    """
+
+    from unilabos.server.api.app import request_server_shutdown
+
+    # 信号处理器里不打印：主线程可能正持有 stdout 的缓冲锁，重入写会抛 RuntimeError
+    if request_server_shutdown():
+        return
+    raise KeyboardInterrupt
+
+
+def _install_stop_signals() -> None:
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, _stop_on_signal)
+    # 控制台 Ctrl+Break（含关闭控制台窗口）也走 Ctrl+C 的优雅停机路径（uvicorn 停机后会重新抛出信号）
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signal.signal(sigbreak, signal.default_int_handler)
+
+
 def run_backend_process(
     args_dict: Dict[str, Any],
     registry: Any,
@@ -82,6 +111,8 @@ def run_backend_process(
         resolve_database_paths,
     )
 
+    # 最先装停机信号：启动阶段收到 SIGTERM 也要沿 finally 收尾（停已拉起的 Host、关库）
+    _install_stop_signals()
     base_root = os.path.expanduser(
         configured_database_root(args_dict, working_dir=working_dir)
     )
@@ -112,6 +143,7 @@ def run_backend_process(
 
     host_child: Optional[Any] = None
     unsubscribe_shutdown: Optional[Any] = None
+    unsubscribe_edge_waiters: Optional[Any] = None
     from unilabos.utils.log_notices import set_local_log_source
 
     previous_log_source = set_local_log_source(None)
@@ -223,7 +255,7 @@ def run_backend_process(
             reset_controller = ResetController(paths, working_dir, reset_preflight)
             configure_reset(reset_controller)
             # 权威一收到 Ctrl+C / SIGTERM 就请 Host 开始退出，两边并行收尾；
-            # finally 里的 stop() 只负责等它结束。
+            # finally 里的 stop() 只负责等它结束（超时强制结束）。
             from unilabos.server import lifecycle
 
             unsubscribe_shutdown = lifecycle.on_shutdown(host_child.request_stop)
@@ -248,10 +280,11 @@ def run_backend_process(
             database_root=str(paths.root),
             edge_database_root=edge_root,
         )
-        # 控制台 Ctrl+Break 也走 Ctrl+C 的优雅停机路径（uvicorn 停机后会重新抛出信号）
-        sigbreak = getattr(signal, "SIGBREAK", None)
-        if sigbreak is not None:
-            signal.signal(sigbreak, signal.default_int_handler)
+        # 停机一开始就让等 Host 回 backend_http 的请求失败返回：浏览器请求、调度线程不必等到超时，
+        # uvicorn 的优雅停机与事件循环的线程池收尾也就不会被这些等待拖住
+        from unilabos.server import lifecycle as server_lifecycle
+
+        unsubscribe_edge_waiters = server_lifecycle.on_shutdown(edge_control.fail_pending_http_requests)
         try:
             start_server(
                 host="0.0.0.0",
@@ -268,6 +301,8 @@ def run_backend_process(
 
         configure_process_management()
         set_local_log_source(previous_log_source)
+        if unsubscribe_edge_waiters is not None:
+            unsubscribe_edge_waiters()
         if unsubscribe_shutdown is not None:
             unsubscribe_shutdown()
         if host_child is not None:

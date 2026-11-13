@@ -6,6 +6,11 @@
 子进程经 HostLink 接回本 Host；驱动崩了只影响这个子进程，按策略自动拉起，
 Host 本体、物料权威和调度都不受影响；改驱动、改配置也只需重启这个子进程。
 
+受管 Slave 跟随拉起它的 Host：拉起时写入 Host 的 pid（``app/lifetime.py``），Host 无论怎么没了
+（含 ``kill -9``、崩溃），Slave 都察觉并退出，不留下来占着各自的数据库根目录与 HostLink 连接；
+Windows 上另放进 KILL_ON_JOB_CLOSE 的 Job Object 兜底。Host 有序退出时由 :meth:`DeviceProcessService.shutdown`
+（atexit）先一起请全部 Slave 退出，再限时等待。
+
 持久化：``<working_dir>/device_processes.json``（规格）与 ``<working_dir>/device_processes/<id>/``
 （图文件、日志，以及该 Slave 自己的数据库根目录 ``database/``）；working_dir 即
 BasicConfig.working_dir（unilabos_data 目录）。一个数据库根目录只归一个进程，受管 Slave 不能与
@@ -27,6 +32,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from unilabos.app.lifetime import KillOnCloseJob, follow_parent_env
 from unilabos.utils import logger
 from unilabos.utils.log_notices import log_notices
 from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
@@ -180,6 +186,8 @@ class DeviceProcessService:
         self._stop_requested: set[str] = set()
         self._monitor: Optional[threading.Thread] = None
         self._closing = False
+        # Windows：受管 Slave 随本 Host 消亡由系统回收（拿不到 job 时靠 Slave 自己跟随父进程）
+        self._job = KillOnCloseJob.create()
         self.source_changes = get_source_changes(self.working_dir)
         atexit.register(self.shutdown)
 
@@ -424,14 +432,29 @@ class DeviceProcessService:
         return started
 
     def shutdown(self) -> None:
-        """Host 退出 / 重启时结束全部子进程（不留孤儿）。"""
+        """Host 退出 / 重启时结束全部子进程（不留孤儿）。
+
+        先一起请全部子进程退出，再共用一个 ``STOP_GRACE_S`` 等待，超时强制结束；逐个
+        「请求 + 等待」在受管进程多时会把 Host 的退出拖得很长。
+        """
         self._closing = True
         with self._lock:
             procs = list(self._procs.items())
-        for process_id, proc in procs:
-            self._stop_requested.add(process_id)
-            if proc.poll() is None:
-                self._terminate(proc, wait=True)
+            self._stop_requested.update(process_id for process_id, _ in procs)
+        running = [proc for _, proc in procs if proc.poll() is None]
+        for proc in running:
+            self._terminate(proc, wait=False)
+        deadline = time.monotonic() + STOP_GRACE_S
+        for proc in running:
+            try:
+                proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+        for process_id, _ in procs:
             self.source_changes.remove(process_id)
 
     # ── 内部：启动 / 结束 / 看护 ─────────────────────────────────
@@ -460,6 +483,9 @@ class DeviceProcessService:
         # 输出进的是文件 / API，不是终端：关掉着色，日志页才不会满屏 ESC 序列
         env.setdefault("NO_COLOR", "1")
         env.setdefault("TERM", "dumb")
+        # Slave 跟随本 Host 进程：Host 消失（含强制结束）时 Slave 自行退出。这里可能在 API 工作线程、
+        # 重启定时器线程里执行，拉起线程不常驻，所以不用 Linux 死亡信号（它跟随的是线程）。
+        follow_parent_env(env)
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
         # 在 Popen 前取基线，子进程异步导入期间发生的编辑也必须提示。
         self._register_source_watch(spec, command)
@@ -477,6 +503,8 @@ class DeviceProcessService:
             runtime.status = "crashed"
             runtime.last_error = str(exc)
             raise DeviceProcessError(f"无法启动子进程：{exc}") from exc
+        if self._job is not None:
+            self._job.assign(proc)
         runtime.pid = proc.pid
         runtime.started_at_ms = _now_ms()
         runtime.stopped_at_ms = None
@@ -563,7 +591,10 @@ class DeviceProcessService:
                 delay = RESTART_BACKOFF_S[min(runtime.restart_count, len(RESTART_BACKOFF_S) - 1)]
                 runtime.status = "restarting"
                 runtime.restart_count += 1
-                threading.Timer(delay, self._restart_later, args=(process_id,)).start()
+                timer = threading.Timer(delay, self._restart_later, args=(process_id,))
+                # 守护线程：退避中的重启不能拖住 Host 退出
+                timer.daemon = True
+                timer.start()
 
     def _restart_later(self, process_id: str) -> None:
         if self._closing or process_id in self._stop_requested:

@@ -35,7 +35,7 @@ jobs:
           python scripts/verify_installation.py --assert-no-ros
           unilab --help
       - name: Test Python-only API and runtime contracts
-        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/server tests/protocol tests/backend/hostlink
+        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/app/test_process_lifetime.py tests/server tests/protocol tests/backend/hostlink
       # 原生锁授予策略（native/grant-policy，Rust → C ABI）：各平台编译，并与 Python 参考实现逐条比对
       - name: Build and test the native grant policy
         shell: bash

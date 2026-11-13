@@ -234,6 +234,11 @@ class EdgeControlService:
         waiter.event.set()
         return True
 
+    def fail_pending_http_requests(self) -> None:
+        """让所有等 Edge 回结果的 ``http_request`` 立即返回 None（权威停机时调用，非阻塞）。"""
+
+        self._fail_http_waiters()
+
     def _fail_http_waiters(self) -> None:
         with self._lock:
             waiters = list(self._http_waiters.values())

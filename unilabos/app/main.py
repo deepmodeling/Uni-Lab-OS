@@ -418,13 +418,37 @@ def _runs_local_authority(args_dict: Dict[str, Any]) -> bool:
     return not is_host_child()
 
 
+#: 本进程是常驻运行时（调度权威 / Host / Slave / 监督进程），而不是一次性 CLI 子命令
+_runtime_process = False
+
+
 def main():
     """运行 Uni-Lab-OS CLI，并在需要时启动设备运行时。
 
     数据库无法迁移 / 迁移失败属于数据保护类错误：只给出可操作的说明并以退出码 1 结束，
     不打印调用栈，也不会继续用空库启动。数据库根目录已被另一个实例占用同样只打印说明，
     以退出码 73 结束（看护进程据此区分“根目录被占”与普通崩溃）。
+
+    被本机父进程拉起的子进程（Host 子进程、薄监督下的 Host、受管 Slave）最先认领父进程：父进程
+    无论怎么没了都随之有序退出（``app/lifetime.py``）。常驻运行时的有序收尾做完后立即结束进程，
+    不再等解释器 join 线程池工作线程、析构全部对象——那些收尾可以把一次 SIGTERM 拖上几分钟。
     """
+    global _runtime_process
+    from unilabos.app import lifetime
+
+    _runtime_process = False
+    lifetime.follow_parent_from_env()
+    try:
+        _main_with_exit_codes()
+    except BaseException as exc:
+        if not _runtime_process:
+            raise
+        lifetime.exit_now(lifetime.exit_code_for(exc))
+    if _runtime_process:
+        lifetime.exit_now(0)
+
+
+def _main_with_exit_codes() -> None:
     from unilabos.server.database import DatabaseRootLocked, DatabaseRootLockError
     from unilabos.server.database.schema import DatabaseMigrationFailed, DatabaseMigrationRequired
 
@@ -494,6 +518,9 @@ def _run_main():
 
     if run_cli_command(args, parser):
         return
+
+    global _runtime_process
+    _runtime_process = True
 
     from unilabos.app.supervisor import maybe_supervise
 
@@ -891,17 +918,36 @@ def _run_main():
         comm_client = get_backend_client()
         args_dict["bridges"].append(comm_client)
 
-        def _exit(signum, frame):
-            comm_client.stop()
-            from unilabos.server.backend.restart import (
-                RESTART_EXIT_CODE,
-                is_restart_requested,
-            )
+        # 处理器里要用的模块先导入好：信号可能恰好打断主线程里正在进行的导入
+        from unilabos.app import lifetime
+        from unilabos.server import lifecycle
+        from unilabos.server.backend.restart import (
+            RESTART_EXIT_CODE,
+            is_restart_requested,
+        )
 
-            sys.exit(RESTART_EXIT_CODE if is_restart_requested() else 0)
+        def _exit(signum, frame):
+            """停机信号：只在第一次时让主线程抛 SystemExit，沿 finally / atexit 有序收尾。
+
+            处理器里不做阻塞动作（停控制 WS、关库都在 finally 里）。重复的信号——POSIX 上
+            Ctrl+C 同时发给整个进程组、权威又转发一次 SIGTERM，rclpy 的处理器也会再转一次——
+            一律忽略：再抛一次 SystemExit 只会打断正在进行的收尾。收尾整体限时
+            ``lifetime.SHUTDOWN_DEADLINE_S``，超时强制结束，不会挂住不退。
+            """
+
+            code = RESTART_EXIT_CODE if is_restart_requested() else 0
+            if not lifetime.begin_shutdown(code, reason=f"Host 收到停机信号 {signum}"):
+                return
+            # 唤醒在等「Host 路由挂好」/ SSE 心跳等的线程：它们若还在线程池里等着，会拖住退出
+            lifecycle.begin_shutdown()
+            sys.exit(code)
 
         signal.signal(signal.SIGINT, _exit)
         signal.signal(signal.SIGTERM, _exit)
+        # 终端关闭（SIGHUP，薄监督进程也会转发）同样有序退出
+        sighup = getattr(signal, "SIGHUP", None)
+        if sighup is not None:
+            signal.signal(sighup, _exit)
         # 作为权威的 Host 子进程建在独立进程组，权威用 Ctrl+Break 请它退出；uvicorn 停机后
         # 会重新抛出该信号，没有处理器时 CRT 直接 _exit(3)，finally / atexit（关库、收受管
         # 设备进程）都不会跑。
@@ -1047,6 +1093,10 @@ def _run_main():
     try:
         run_runtime(args_dict)
     finally:
+        from unilabos.app.lifetime import shutdown_started
+
+        if shutdown_started():
+            print_status("收到停机信号，正在有序退出（停控制链路、关库、停受管设备进程）", "info")
         if comm_client is not None:
             comm_client.stop()
         if BasicConfig.is_host_mode:

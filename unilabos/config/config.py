@@ -19,6 +19,8 @@ _NON_CONFIG_ENV_KEYS = frozenset(
     {
         "UNILABOS_SUPERVISOR_INNER",  # app.supervisor：当前进程处于监督循环内
         "UNILABOS_HOST_CHILD",  # app.supervisor：由调度权威拉起的 Host 子进程
+        "UNILABOS_PARENT_PID",  # app.lifetime：本进程应跟随的本机父进程 pid
+        "UNILABOS_PARENT_DEATH_SIGNAL",  # app.lifetime：可启用 Linux PR_SET_PDEATHSIG
         "UNILABOS_OTEL_ENABLED",  # utils.tracing：是否创建 OTLP exporter
     }
 )

@@ -205,3 +205,43 @@ def test_router_roundtrip(service: dpx.DeviceProcessService) -> None:
     assert ok_data(client.post(f"/api/v1/device-processes/{process_id}/stop"))["status"] == "stopped"
     assert ok_data(client.delete(f"/api/v1/device-processes/{process_id}")) is None
     error_of(client.get(f"/api/v1/device-processes/{process_id}"), 4001)
+
+
+def test_managed_slave_follows_its_host_and_shutdown_stops_all_at_once(
+    service: dpx.DeviceProcessService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """受管 Slave 跟随 Host（Host 被强制结束时自行退出）；Host 退出时先一起请全部 Slave 退出再限时等待。"""
+
+    import os
+
+    from unilabos.app import lifetime
+
+    events: list[str] = []
+    envs: list[dict[str, str]] = []
+
+    class RecordingPopen(FakePopen):
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            super().__init__(command, **kwargs)
+            envs.append(dict(kwargs["env"]))
+
+        def terminate(self) -> None:
+            events.append(f"terminate {self.pid}")
+            super().terminate()
+
+        def wait(self, timeout: float | None = None) -> int:
+            events.append(f"wait {self.pid}")
+            return super().wait(timeout)
+
+    monkeypatch.setattr(dpx.subprocess, "Popen", RecordingPopen)
+    first = service.create(_payload(name="泵站 1"))["id"]
+    second = service.create(_payload(name="泵站 2", graph_nodes=[dpx.build_device_node("pump_2", "acme_pump")]))["id"]
+    service.start(first)
+    service.start(second)
+
+    # 拉起线程可能是 API 工作线程 / 定时器线程：只写父进程 pid，不启用跟随拉起线程的 Linux 死亡信号
+    assert [env[lifetime.PARENT_PID_ENV] for env in envs] == [str(os.getpid())] * 2
+    assert all(lifetime.PARENT_DEATH_SIGNAL_ENV not in env for env in envs)
+
+    service.shutdown()
+    pids = [proc.pid for proc in RecordingPopen.instances[-2:]]
+    assert events == [f"terminate {pids[0]}", f"terminate {pids[1]}", f"wait {pids[0]}", f"wait {pids[1]}"]

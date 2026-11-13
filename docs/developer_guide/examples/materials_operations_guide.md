@@ -306,8 +306,13 @@ await materials.transfer(
     source_device_id="slave_a",
 )
 
-# 设备驱动内的便捷入口（自动填 source）：
-await node.transfer_resource_to_another([plate], "slave_b", [deck_b], ["S1"])
+# 设备驱动内：没有单独的节点方法，同样调 materials.transfer，source 取自本设备节点。
+# 物料、目标、Site 都可以是列表（一一对应）；驱动同步代码里用 asyncio.run(...) 包一层
+await materials.transfer(
+    [plate], "slave_b", [deck_b], ["S1"],
+    source_device_id=node.device_id,
+    source_device_uuid=node.resource_uuid,
+)
 
 # 放到仓库库位：目标是仓库（载架）本身，Site 选库位
 await materials.transfer(

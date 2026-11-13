@@ -215,7 +215,7 @@ classDiagram
         +create_ros_action_server(action_name, mapping)
         +execute_single_action(device_id, action, kwargs)
         +update_resource(resources)
-        +transfer_resource_to_another(resources, target, sites)
+        +material_sync(command)
         +_setup_hardware_proxy(device, comm_device, read, write)
     }
 
@@ -282,7 +282,7 @@ classDiagram
         +workflow_sequence: List
 
         +post_init(ros_node)
-        +transfer_resource_to_another()
+        +resource_tree_transfer(old_parent, resource, new_parent)
         +resource_tree_add(resources)
         +append_to_workflow_sequence(name)
         +get_all_workflows()
@@ -652,7 +652,9 @@ class PLCWorkstation(WorkstationBase):
 - `create_ros_action_server(action_name, mapping)`: 创建 Action 服务器
 - `execute_single_action(device_id, action, kwargs)`: 执行单个动作
 - `update_resource(resources)`: 同步物料到云端
-- `transfer_resource_to_another(...)`: 跨设备物料转移
+- `material_sync(command)`: 权威 transfer 的设备侧投影（unload / load）。节点没有发起转移的方法：
+  驱动调用 `materials.transfer(物料, 目标设备, 目标物料, Site, source_device_id=node.device_id)`，
+  见 {doc}`materials_operations_guide` 2.6
 
 ## 9. 配置参数说明
 

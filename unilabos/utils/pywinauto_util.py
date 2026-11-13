@@ -7,7 +7,8 @@
 import sys
 
 if sys.platform != "win32":
-    raise ImportError("unilabos.utils.pywinauto_util 只支持 Windows（依赖 pywinauto、psutil 与 win32api）")
+    # name 标明缺的是哪个可选依赖：驱动包的检查据此区分"平台不支持"与代码错误
+    raise ImportError("unilabos.utils.pywinauto_util 只支持 Windows（依赖 pywinauto、psutil 与 win32api）", name="pywinauto")
 
 import psutil
 import pywinauto

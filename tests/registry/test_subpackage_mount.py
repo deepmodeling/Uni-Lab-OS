@@ -111,3 +111,41 @@ def test_whole_package_mount_is_unchanged(vendor_repo: Path, monkeypatch) -> Non
     devices = registry.device_type_registry
     assert devices["fam_b_dev"]["class"]["module"] == "vendorpkg.devices.fam_b.driver:FamB"
     assert {"fam_a_dev", "fam_b_dev", "fam_a.yaml-dev", "fam_b.yaml-dev"} <= set(devices)
+
+
+def test_package_mount_skips_a_sibling_package_in_the_root_registry(tmp_path: Path, monkeypatch) -> None:
+    """一个仓库两个顶层包、共用仓库根 registry/：挂载其中一个包只登记它自己的条目；挂载仓库根全部登记。"""
+
+    repo = tmp_path / "two-pkg-repo"
+    _write(repo / "pyproject.toml", '[project]\nname = "two-pkg-repo"\nversion = "0.1.0"\n')
+    for name in ("pkg_a", "pkg_b"):
+        _write(repo / name / "__init__.py", "")
+        _write(repo / name / "driver.py", "class Plain:\n    def __init__(self, **kwargs):\n        pass\n")
+    _write(repo / "registry" / "devices" / "mixed.yaml", """
+    a-dev:
+      category: [mixed]
+      class:
+        module: pkg_a.driver:Plain
+        type: python
+        action_value_mappings: {}
+        status_types: {}
+    b-dev:
+      category: [mixed]
+      class:
+        module: pkg_b.driver:Plain
+        type: python
+        action_value_mappings: {}
+        status_types: {}
+    """)
+
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setattr(sys, "modules", dict(sys.modules))
+    only_a = Registry.__wrapped__()
+    only_a.setup(devices_dirs=[str(repo / "pkg_a")], external_only=True)
+    assert "a-dev" in only_a.device_type_registry
+    assert "b-dev" not in only_a.device_type_registry
+
+    from unilabos.registry.package_layout import registry_roots_for_mount
+
+    assert [root.module_prefix for root in registry_roots_for_mount(repo / "pkg_a")] == ["pkg_a"]
+    assert [root.module_prefix for root in registry_roots_for_mount(repo)] == [None]

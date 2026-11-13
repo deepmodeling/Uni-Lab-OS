@@ -133,8 +133,11 @@ def registry_roots_for_mount(mount: PathLike) -> List[RegistryRoot]:
 
     base = Path(mount).resolve()
     import_root = find_import_root(base)
-    # 挂载的是子包（导入根不是挂载目录的父目录）：挂载目录之外的注册表按模块前缀过滤
-    prefix = mount_module_prefix(base) if import_root != base.parent else None
+    # 挂载的是一个 Python 包（含 __init__.py，顶层包或子包）：挂载目录之外的注册表（包根 registry/、
+    # pyproject 声明的路径）只登记 class.module 落在这个包里的条目。一个仓库里放几个包、共用仓库根
+    # registry/ 时，挂载其中一个包不会把别的包的设备带进来。普通目录（没有 __init__.py）照旧整份加载。
+    is_package = (base / "__init__.py").is_file()
+    prefix = mount_module_prefix(base) if (import_root != base.parent or is_package) else None
     candidates: List[RegistryRoot] = [RegistryRoot(base / "registry"), RegistryRoot(base / "unilabos_registry")]
     # 子包挂载：上溯到导入根之前的各级包目录（如 <repo>/pkg/registry）
     ancestor = base.parent

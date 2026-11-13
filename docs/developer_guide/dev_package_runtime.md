@@ -20,6 +20,7 @@
 `--devices` 也可以挂载包里的子目录（如 `unilab --check_mode --devices ./vendor_pkg/devices/<家族> --external_devices_only`
 单独校验一个设备家族）：导入根沿 `__init__.py` 上溯到顶层包的父目录，模块路径与 `import vendor_pkg...` 一致；
 挂载目录之外的包级注册表（如 `vendor_pkg/registry/`、包根 `registry/`）只登记 `class.module` 落在该子目录内的条目。
+挂载一个顶层包（含 `__init__.py`）时同理：仓库根 `registry/` 只登记 `class.module` 在这个包里的条目，所以一个仓库放几个包、共用仓库根 `registry/` 时，挂载其中一个包不会带进别的包的设备；挂载仓库根（或不含 `__init__.py` 的普通目录）则整份加载。
 
 ```bash
 # 本地静态检查，不需要后端或设备运行

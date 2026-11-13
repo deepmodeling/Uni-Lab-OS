@@ -59,27 +59,6 @@ def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
     return main_hostlink_run.unavailable_devices()
 
 
-def _unavailable_devices() -> list[dict[str, Any]]:
-    """因 backend 不支持而未启动的设备：本进程带设备 runtime 时直接读，否则经控制面问 Host。"""
-
-    local = _local_unavailable_devices()
-    if local is not None:
-        return local
-    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
-
-    if not edge_proxy_enabled():
-        return []
-    try:
-        response = edge_http("GET", "/api/v1/hostlink/peers", timeout=3.0)
-        if response is None:
-            return []
-        data = edge_response_data(response)
-    except Exception:  # noqa: BLE001 - 存活探针不因 Host 暂不可达而失败
-        return []
-    records = data.get("unavailable_devices") if isinstance(data, dict) else None
-    return [dict(item) for item in records or [] if isinstance(item, dict)]
-
-
 def _hostlink_snapshot() -> dict[str, Any]:
     from unilabos.backend.hostlink.client import get_hostlink_client
     from unilabos.backend.hostlink.server import get_hostlink_server
@@ -249,23 +228,29 @@ def create_backend_router(
         ready, summary = _readiness()
         return JSONResponse(status_code=200 if ready else 503, content=summary)
 
-    @router.get("/health", response_model=HealthStatus)
+    # unavailable_devices 只在非空时出现：不让 response_model 用缺省值把它补成 []
+    @router.get("/health", response_model=HealthStatus, response_model_exclude_unset=True)
     @raw_response
     def health() -> dict[str, Any]:
         """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。
 
-        ``unavailable_devices``（dev 扩展）：设备图里有、但当前 backend 跑不了而没有启动的设备及原因。
+        ``unavailable_devices``（dev 扩展，只在非空时出现）：本进程设备 runtime 跳过的设备（设备图里有、
+        当前 backend 跑不了）及原因。存活探针只读本进程数据、不经控制面问 Host（前端每几秒轮询一次，
+        不能让它等 Host）；默认两进程拓扑下 Host 子进程跳过的设备见 ``GET /api/v1/hostlink/peers``。
         """
 
         local = get_scheduler() is not None
-        return {
+        payload: dict[str, Any] = {
             "status": "ok",
             # V1：本进程装配了调度器为 ready，否则 disabled；dev 的 local / remote 归属在 scheduler_mode
             "scheduler": "ready" if local else "disabled",
             "scheduler_mode": "local" if local else "remote",
             "execution": _execution_state(),
-            "unavailable_devices": _unavailable_devices(),
         }
+        unavailable = _local_unavailable_devices()
+        if unavailable:
+            payload["unavailable_devices"] = unavailable
+        return payload
 
     @router.get("/ping")
     def ping(client_timestamp: Optional[float] = None) -> dict[str, Any]:

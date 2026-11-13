@@ -21,8 +21,9 @@ class HealthStatus(BaseModel):
     scheduler: Literal["ready", "disabled"]
     scheduler_mode: Literal["local", "remote"]
     execution: Literal["ready", "restarting", "disabled"]
-    #: dev 扩展：设备图里有、但当前 backend 跑不了而没有启动的设备
-    #: （``device_id`` / ``registry_name`` / ``backend`` / ``reason`` / ``supported_backends``）
+    #: dev 扩展，只在非空时出现：本进程设备 runtime 跳过的设备（设备图里有、当前 backend 跑不了）
+    #: （``device_id`` / ``registry_name`` / ``backend`` / ``reason`` / ``supported_backends``）；
+    #: 两进程拓扑下 Host 子进程跳过的设备见 ``/api/v1/hostlink/peers``
     unavailable_devices: list[dict[str, Any]] = Field(default_factory=list)
 
 

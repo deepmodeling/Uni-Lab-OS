@@ -22,6 +22,8 @@ from typing import (
 )
 
 from unilabos.backend.runtime.action import ActionContext
+from unilabos.backend.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
+from unilabos.config.config import BasicConfig
 from unilabos.backend.runtime.exception import TimeoutException
 from unilabos.backend.runtime.driver_creator import (
     is_workstation_driver,
@@ -1497,6 +1499,38 @@ class HostLinkLocalRuntime:
             normalized = normalized[len("/devices/") :]
         return normalized.lstrip("/")
 
+    def test_mode_mock(
+        self,
+        device_id: str,
+        action_name: str,
+        *,
+        test_mode: Optional[bool] = None,
+        caller_device_id: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """测试模式下对本机设备的跨设备调用：目标驱动没声明 ``run_in_test_mode`` 时的模拟结果。
+
+        与 Host 派发作业同一规则（``runtime.test_mode``）：在测试模式下真实运行的工作站
+        调用子设备时，不能绕过闸门驱动真实硬件。返回 None 表示照常真实执行（不在测试模式、
+        目标不在本机或目标驱动声明了 ``run_in_test_mode``）。``test_mode`` 缺省取本进程的
+        ``--test_mode``；跨机调用传入调用方的测试模式。
+        """
+
+        active = BasicConfig.test_mode if test_mode is None else bool(test_mode)
+        if not active:
+            return None
+        node = self.devices.get(self._normalize_device_id(device_id))
+        if node is None or driver_runs_in_test_mode(node.driver):
+            return None
+        mappings = node.action_value_mappings
+        mapping = mappings.get(action_name) or mappings.get(f"auto-{action_name}") or {}
+        logging.getLogger(__name__).info(
+            "[TEST MODE] 跨设备调用模拟执行：%s -> %s/%s（目标驱动未声明 run_in_test_mode）",
+            caller_device_id or "-",
+            node.device_id,
+            action_name,
+        )
+        return build_test_mode_return(action_name, mapping)
+
     def route_action(
         self,
         caller_device_id: str,
@@ -1508,6 +1542,9 @@ class HostLinkLocalRuntime:
         target = self._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1535,6 +1572,9 @@ class HostLinkLocalRuntime:
         target = self._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")

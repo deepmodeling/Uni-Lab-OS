@@ -313,26 +313,13 @@ class HostAdapterBase:
     def _build_test_mode_return(
         self, device_id: str, action_name: str, action_kwargs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """按注册表 handles 的 output 定义构建 test_mode 模拟返回值。
+        """按注册表 handles 的 output 定义构建 test_mode 模拟返回值（规则见 ``runtime.test_mode``）。"""
 
-        data_key 中每层 ``@flatten`` 对应一层嵌套数组，叶子为空字典。
-        例如 "vessel" → {}，"plate.@flatten" → [{}]，"a.@flatten.@flatten" → [[{}]]。
-        """
+        from unilabos.backend.runtime.test_mode import build_test_mode_return
 
-        mock_return: Dict[str, Any] = {"test_mode": True, "action_name": action_name}
+        del action_kwargs
         action_mapping = self._action_value_mappings.get(device_id, {}).get(action_name, {})
-        handles = action_mapping.get("handles", {}) if isinstance(action_mapping, dict) else {}
-        if isinstance(handles, dict):
-            for output_handle in handles.get("output", []):
-                data_key = str(output_handle.get("data_key") or "")
-                handler_key = str(output_handle.get("handler_key") or "")
-                if not handler_key:
-                    continue
-                value: Any = {}
-                for _ in range(data_key.count("@flatten")):
-                    value = [value]
-                mock_return[handler_key] = value
-        return mock_return
+        return build_test_mode_return(action_name, action_mapping)
 
 
 __all__ = [

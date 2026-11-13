@@ -522,16 +522,21 @@ class HostLinkServer:
         arguments: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
         action_id: str = "",
+        test_mode: bool = False,
     ) -> Any:
+        payload: Dict[str, Any] = {
+            "device_id": str(device_id),
+            "action": str(action_name),
+            "arguments": dict(arguments or {}),
+            "action_id": str(action_id),
+        }
+        if test_mode:
+            # 测试模式下驱动发起的跨设备调用：Slave 按目标驱动的 run_in_test_mode 判定是否模拟
+            payload["test_mode"] = True
         return self.request_device(
             device_id,
             ActionType.DEVICE_CALL,
-            {
-                "device_id": str(device_id),
-                "action": str(action_name),
-                "arguments": dict(arguments or {}),
-                "action_id": str(action_id),
-            },
+            payload,
             timeout,
         )
 
@@ -542,16 +547,21 @@ class HostLinkServer:
         arguments: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None,
         action_id: str = "",
+        test_mode: bool = False,
     ) -> Any:
+        payload: Dict[str, Any] = {
+            "device_id": str(device_id),
+            "action": str(action_name),
+            "arguments": dict(arguments or {}),
+            "action_id": str(action_id),
+        }
+        if test_mode:
+            # 测试模式下驱动发起的跨设备调用：Slave 按目标驱动的 run_in_test_mode 判定是否模拟
+            payload["test_mode"] = True
         return await self.request_device_async(
             device_id,
             ActionType.DEVICE_CALL,
-            {
-                "device_id": str(device_id),
-                "action": str(action_name),
-                "arguments": dict(arguments or {}),
-                "action_id": str(action_id),
-            },
+            payload,
             timeout,
         )
 

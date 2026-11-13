@@ -257,4 +257,5 @@ unilab --check_mode --devices ./<package_name> --external_devices_only
 - 不应暴露的 public 辅助方法改成私有方法或加 `@not_action`
 - 运行时数据存储在 `self.data` 字典中
 - `post_init(self, ros_node)` 用于需要 ROS node 的初始化逻辑
+- 模拟器 / 离线模式的驱动设 `self.run_in_test_mode = True`，`unilab --test_mode` 下才会真实执行；没设的驱动在测试模式下只返回模拟结果。这条规则同样作用于驱动之间的 `node.call_device_action[_async]`：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到的是模拟结果，不会驱动真实硬件
 - `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包

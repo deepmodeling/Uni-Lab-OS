@@ -30,6 +30,7 @@ from unilabos.backend.hostlink.adapter_registry import set_execution_adapter
 from unilabos.backend.hostlink.backend import to_wire_value
 from unilabos.backend.hostlink.protocol import RemoteError
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
+from unilabos.backend.runtime.test_mode import driver_runs_in_test_mode
 from unilabos.backend.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
@@ -292,8 +293,7 @@ class HostNode(HostAdapterBase):
 
         local_node = self.runtime.local.devices.get(item.device_id)
         run_simulator = bool(
-            local_node is not None
-            and getattr(local_node.driver, "run_in_test_mode", False) is True
+            local_node is not None and driver_runs_in_test_mode(local_node.driver)
         )
         if BasicConfig.test_mode and not run_simulator:
             from unilabos.server.backend.execution_start import confirm_execution_start

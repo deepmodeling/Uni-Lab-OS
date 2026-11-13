@@ -52,11 +52,16 @@ class DeviceClassCreator(Generic[T]):
         if self.device_instance is None:
             return
         for child in self.children:
-            if child.res_content.type != "device":
-                resource = ResourceTreeSet(
-                    [ResourceTreeInstance(child)]
-                ).to_plr_resources()[0]
-                self.resource_tracker.add_resource(resource)
+            if child.res_content.type == "device":
+                continue
+            # 构造驱动时已按引用实例化过的子节点（工作站的台面）已在 tracker 里：
+            # 再实例化一份会让同一权威物料有两个实例，uuid 索引指向驱动手里没有的副本。
+            if str(child.res_content.uuid or "") in self.resource_tracker.uuid_to_resources:
+                continue
+            resource = ResourceTreeSet(
+                [ResourceTreeInstance(child)]
+            ).to_plr_resources()[0]
+            self.resource_tracker.add_resource(resource)
 
     def create_instance(self, data: Dict[str, Any]) -> T:
         self.device_instance = create_instance_from_config(
@@ -289,10 +294,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
                 done_future.result()
             except BaseException:
                 return
-            from pylabrobot.resources import set_volume_tracking
-
-            set_volume_tracking(enabled=True)
-            logger.debug("PyLabRobot 设备实例 %s 设置完成", self.device_instance)
+            pylabrobot_setup_finished(self.device_instance)
             from unilabos.config.config import BasicConfig
 
             if not BasicConfig.vis_2d_enable:
@@ -307,6 +309,20 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
             )
 
         future.add_done_callback(setup_done)
+
+
+def pylabrobot_setup_finished(device_instance: Any) -> None:
+    """PyLabRobot 驱动 ``setup`` 成功之后的共同收尾：打开 PLR 体积跟踪。
+
+    ROS 2 由 :meth:`PyLabRobotCreator.post_create` 调度 setup 后调用；HostLink 自己在
+    设备节点启动时调用 setup，完成后同样调用这里，两种 backend 的移液都会改变孔内液体。
+    体积跟踪是 PLR 的进程级开关。
+    """
+
+    from pylabrobot.resources import set_volume_tracking
+
+    set_volume_tracking(enabled=True)
+    logger.debug("PyLabRobot 设备实例 %s 设置完成，已打开体积跟踪", device_instance)
 
 
 class WorkstationNodeCreator(DeviceClassCreator[T]):
@@ -423,6 +439,7 @@ __all__ = [
     "PyLabRobotCreator",
     "WorkstationNodeCreator",
     "is_workstation_driver",
+    "pylabrobot_setup_finished",
     "select_driver_creator",
     "uses_pylabrobot_creator",
 ]

@@ -191,6 +191,18 @@ HostLink 启动时会直接提示该驱动不支持，而不是在导入过程�
 普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
 相同的设备初始化路径。
 
+HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creator.py`）：
+
+- 图节点的 `config` 按 `__init__` 参数名平铺传入。构造函数声明了名为 `config` 的参数时，它收到
+  整份节点配置（旧驱动从 `config` 里读参数的写法照旧），同时声明的其他具名参数（如 `debug_mode`、
+  `address`、`deck`）仍按名取节点配置里的同名键，不会静默退回默认值。新驱动仍应按基础类型
+  拆开参数，不要只用一个 `config: dict`。
+- 工作站构造器按 `deck` 引用实例化的台面就是驱动手里的 `self.deck`，也是设备 `resource_tracker`
+  里该 uuid 唯一的实例；其余非设备子节点各登记一次。驱动不需要自己去 tracker 里去重。
+- 启动顺序是 `post_init` → `setup` → `initialize` → 状态定时发布。PyLabRobot 液体处理器
+  （`LiquidHandlerAbstract` 系）的 `setup` 成功后，运行时打开 PLR 体积跟踪（进程级开关，ROS2 在
+  构造器调度的 `setup` 完成后做同一件事），驱动不必自己调用 `set_volume_tracking`。
+
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
 终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连（间隔封顶

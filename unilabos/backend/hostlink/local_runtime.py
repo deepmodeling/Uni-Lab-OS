@@ -23,7 +23,9 @@ from unilabos.backend.runtime.action import ActionContext
 from unilabos.backend.runtime.exception import TimeoutException
 from unilabos.backend.runtime.driver_creator import (
     is_workstation_driver,
+    pylabrobot_setup_finished,
     select_driver_creator,
+    uses_pylabrobot_creator,
 )
 from unilabos.backend.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.backend.runtime.resource import ResourceService
@@ -164,7 +166,20 @@ def instantiate_driver(
 
     kwargs: Dict[str, Any]
     if "config" in parameters:
+        # ``config`` 仍收到整份节点配置（旧驱动从 config 里读参数）；同时声明的其他具名
+        # 参数按名取节点配置里的同名键（与 ROS 2 平铺传参一致），不能静默退回默认值。
         kwargs = {"config": config}
+        for name, parameter in parameters.items():
+            if (
+                name != "config"
+                and name in config
+                and parameter.kind
+                in (
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.KEYWORD_ONLY,
+                )
+            ):
+                kwargs[name] = config[name]
     else:
         kwargs = dict(config)
 
@@ -571,6 +586,9 @@ class HostLinkDeviceNode(DeviceNode):
             setup = getattr(self.driver, "setup", None)
             if callable(setup):
                 self._call(setup, _wait_timeout=30)
+                if uses_pylabrobot_creator(type(self.driver)):
+                    # 与 ROS 2 的 PyLabRobotCreator.post_create 同一收尾（打开 PLR 体积跟踪）
+                    pylabrobot_setup_finished(self.driver)
             initialize = getattr(self.driver, "initialize", None)
             if callable(initialize):
                 self._call(initialize, _wait_timeout=30)

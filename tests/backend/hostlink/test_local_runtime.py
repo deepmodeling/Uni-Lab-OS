@@ -573,3 +573,41 @@ def test_hostlink_runtime_reports_direct_ros_node_calls_clearly() -> None:
             runtime.call_action("ros-guard", "create_guard")
     finally:
         runtime.stop()
+
+
+def test_hostlink_turns_on_plr_volume_tracking_after_liquid_handler_setup() -> None:
+    """FRAMEWORK_GAPS #23：HostLink 自己调用 setup，之后要与 ROS 2 一样打开 PLR 体积跟踪。"""
+
+    from pylabrobot.resources import does_volume_tracking, set_volume_tracking
+
+    set_volume_tracking(enabled=False)
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(
+        HostLinkDriverSpec(
+            "liquid-handler",
+            LiquidHandlerAbstract,
+            {"backend": "simulator"},
+            device_config=DeviceConfig(),
+        )
+    )
+    try:
+        assert does_volume_tracking() is False
+        runtime.start()
+        assert runtime.devices["liquid-handler"].driver.setup_called is True
+        assert does_volume_tracking() is True
+    finally:
+        runtime.stop()
+        set_volume_tracking(enabled=False)
+
+
+def test_hostlink_leaves_volume_tracking_alone_for_plain_drivers() -> None:
+    from pylabrobot.resources import does_volume_tracking, set_volume_tracking
+
+    set_volume_tracking(enabled=False)
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("dev-1", AsyncDriver, {}))
+    try:
+        runtime.start()
+        assert does_volume_tracking() is False
+    finally:
+        runtime.stop()

@@ -182,7 +182,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 - `@action(action_type=...)` 会优先从 ROS Action 类型补全 `goal/feedback/result/schema/goal_default`，再用装饰器里的 `goal/feedback/result/goal_default` 覆盖。
 - `@action()` / auto action 会从方法参数生成 `goal/schema/goal_default`，从返回值注解补 result schema。
 - 参数类型注解必须完整；`str/int/float/bool/list/dict`、`Optional`、`Union`、`List`、`Dict`、`Literal`、`TypedDict`、`ResourceSlot`、`DeviceSlot` 都有不同程度的自动 schema 支持。
-- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。
+- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。旧驱动保留的 `config` 参数在 HostLink 上收到整份节点配置，同时声明的其他具名参数仍按名取值。
 
 ### 4. 生成 pyproject.toml
 

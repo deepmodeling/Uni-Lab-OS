@@ -6,6 +6,21 @@
 
 `package inspect` 仍在本地做 AST/YAML 检查和归档。其余管理命令通过统一管理地址进入现有 `/api/v1/driver-packages`；backend 转发给唯一主 Host，Host 持有台账、源码缓存与安装操作。CLI 不直接修改另一份台账，也不在调用者的解释器里安装包体。
 
+`package inspect` 的 AST 扫描范围与 `package install` / `--devices` 挂载一致：按 pyproject 的
+`[tool.setuptools.packages.find] include`（以及 `src/` 布局）找到顶层 Python 包，模块路径相对导入根推导
+（`<仓库>/<包>/x.py` → `<包>.x:类名`，不带仓库目录名）；扫描失败的文件会让 inspect 报错退出，而不是从
+`resources.json` 里悄悄丢掉设备。不传 `--out` 时归档和清单写到包目录自己的 `dist/`（归档时排除）。
+
+驱动包的 YAML 注册表在运行时（`--devices`）、`package inspect` 和 `package install` 台账（`package list` 的
+`device_ids` / `loaded_device_ids`）三处按同一规则发现（`registry/package_layout.py:registry_roots_for_mount`）：
+挂载目录与包根（含 `pyproject.toml`）下的 `registry/`、`unilabos_registry/`，以及 pyproject 声明的
+`[tool.unilabos.registry].paths`（相对包根，与默认位置叠加而非替换）；每个注册表根下 `devices/`、`device_comms/`
+递归读取。三处都把 YAML 设备与 `@device` 设备合并，同一 id 以 `@device` 为准。
+
+`--devices` 也可以挂载包里的子目录（如 `unilab --check_mode --devices ./vendor_pkg/devices/<家族> --external_devices_only`
+单独校验一个设备家族）：导入根沿 `__init__.py` 上溯到顶层包的父目录，模块路径与 `import vendor_pkg...` 一致；
+挂载目录之外的包级注册表（如 `vendor_pkg/registry/`、包根 `registry/`）只登记 `class.module` 落在该子目录内的条目。
+
 ```bash
 # 本地静态检查，不需要后端或设备运行
 unilab package inspect --path /absolute/path/to/driver

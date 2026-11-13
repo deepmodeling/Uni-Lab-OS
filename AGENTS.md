@@ -38,7 +38,7 @@ pytest tests/resources/test_resourcetreeset_groups.py::test_name  # single test
 
 ### Core Layers
 
-**Registry** (`unilabos/registry/`): Singleton `Registry` class discovers and catalogs all device types, resource types, and communication devices from YAML definitions. Device types live in `registry/devices/*.yaml`, resources in `registry/resources/`, comms in `registry/device_comms/`. The registry resolves class paths to actual Python classes via `utils/import_manager.py`.
+**Registry** (`unilabos/registry/`): Singleton `Registry` class discovers and catalogs all device types, resource types, and communication devices from YAML definitions. Device types live in `registry/devices/**/*.yaml`, resources in `registry/resources/`, comms in `registry/device_comms/` (all read recursively; a declared `category` is kept, the file stem is only the fallback). The registry resolves class paths to actual Python classes via `utils/import_manager.py`.
 
 **Resource Tracking** (`unilabos/resources/resource_tracker.py`): Pydantic-based `ResourceDict` → `ResourceDictInstance` → `ResourceTreeSet` hierarchy. `ResourceTreeSet` is the canonical in-memory representation of all devices and resources, used throughout the system, and it owns every resource conversion: flat dicts (`from_raw_dict_list`, `dump`/`load`) and PLR (`from_plr_resources`, `to_plr_resources`). PLR drafts from a registry resource class come from `resources/materials.py:instantiate_registry_resource`. There is no separate graph I/O module: device graphs are node-link JSON only (GraphML is not supported) and are turned into runtime structures by the Graph Authority (`server/services/materials/graph.py:load_graph_payload`).
 

@@ -38,6 +38,11 @@ Uni-Lab 开发团队在仓库中提供了 3 个样例：
 pip install pywinauto
 ```
 
+框架自带的辅助模块 `unilabos.utils.pywinauto_util` 在模块级导入 `pywinauto` 与 `psutil`，两者都在 `unilabos[full]`
+（及 conda 的 `unilabos-full`）里以 Windows 条件声明；驱动包若直接使用该模块，应在自己的依赖里同样以
+`sys_platform == "win32"` 声明这两个包。该模块只支持 Windows，其它平台导入会直接报 `ImportError`，因此请在
+需要 GUI 自动化的代码路径里延迟导入它，不要在串口等通用驱动的模块级导入。
+
 如需录制 GUI 操作，请另行安装
 [pywinauto-recorder](https://github.com/beuaaa/pywinauto_recorder)，并遵循其版本对应的使用说明。
 

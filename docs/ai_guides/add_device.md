@@ -49,6 +49,7 @@ mamba activate unilab
 mamba install uni-lab::unilabos -c uni-lab -c robostack-staging -c conda-forge -y
 
 # 验证注册表（会自动检测并安装 requirements.txt 中的依赖）
+# 扫描失败被跳过的文件或导入失败的设备类都会让它以退出码 1 结束
 unilab --check_mode --devices ./my_package --external_devices_only
 ```
 
@@ -58,7 +59,8 @@ unilab --check_mode --devices ./my_package --external_devices_only
 unilab --devices ./my_package --external_devices_only -g graph.json
 ```
 
-> `--external_devices_only` 跳过内置设备扫描，只加载你的外部设备包，启动更快。
+> `--external_devices_only` 跳过内置设备扫描，只加载你的外部设备包，启动更快；核心的 `container` 资源模板
+> （`registry/resources/organic/container.yaml`）仍会加载，图里的容器节点可以照常引用它。
 > 设备包目录下的 `requirements.txt` 会被自动检测，缺失的依赖通过 `uv` 或 `pip` 自动安装。
 
 详细的装饰器用法和设备类别说明见下文。

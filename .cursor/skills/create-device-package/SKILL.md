@@ -175,6 +175,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 外部设备包验证走 `unilab --check_mode --devices ./<package_name> --external_devices_only`，registry 会静态扫描 Python AST 构建设备 schema：
 
 - 只识别来自 `unilabos.registry.decorators` 的 `@device`、`@action`、`@topic_config`、`@not_action`、`@always_free`。
+- 包内模块之间可以用相对导入（`from .labware import Deck`、`from ..common import helper`）：扫描器按包结构（`__init__.py`）把它们解析成绝对模块路径，typed 合同动作同样适用；越过顶层包的相对导入会让该文件扫描失败。
 - `@device` 类会生成设备条目；`id/category/description/handles/model/hardware_interface` 来自装饰器。
 - `__init__` 参数、类型注解、默认值和 docstring 会进入 `init_param_schema.config`。
 - 带 `@action` 的方法会进入 `action_value_mappings`；未加 `@action` 的 public 方法会生成 `auto-<method_name>` 动作。
@@ -245,6 +246,9 @@ pip install -e .
 unilab --check_mode --devices ./<package_name> --external_devices_only
 ```
 
+check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目都算）都会让它以退出码 1 结束并逐条列出；
+`supported_backends` 不含当前 backend 的设备（HostLink 环境里的 ROS 2 专用节点）导入失败只记为跳过。
+
 ## 关键规则
 
 - 包目录名以 `device_package_` 开头（已在主仓库 `.gitignore` 中排除）
@@ -257,4 +261,5 @@ unilab --check_mode --devices ./<package_name> --external_devices_only
 - 不应暴露的 public 辅助方法改成私有方法或加 `@not_action`
 - 运行时数据存储在 `self.data` 字典中
 - `post_init(self, ros_node)` 用于需要 ROS node 的初始化逻辑
-- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包
+- `--devices` 可以指向包里的子目录（如一个设备家族 `./<package_name>/devices/<family>`）：模块路径按顶层包推导（沿 `__init__.py` 上溯），包级 `registry/` 只取类路径在该子目录内的条目，便于单独校验一个家族
+- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包；核心 `container` 资源模板仍会加载，其它内置设备（如 `virtual_*`）不加载

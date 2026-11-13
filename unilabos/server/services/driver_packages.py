@@ -32,7 +32,6 @@ import threading
 import time
 import uuid
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -333,24 +332,15 @@ def detect_package_dirs(root: Path, include_patterns: List[str] | None = None) -
 
 
 def scan_device_ids(package_dirs: List[str]) -> List[str]:
-    """AST 扫描包目录里的 ``@device``（不 import），返回设备类 id。"""
+    """AST 扫描包目录里的 ``@device``（不 import），返回设备类 id。
 
-    from unilabos.registry.ast_registry_scanner import scan_directory
+    模块路径按各目录的导入根推导（与 ``--devices`` 挂载、``package inspect`` 一致）。
+    """
 
-    ids: List[str] = []
-    executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="DriverPackageScan")
-    try:
-        for item in package_dirs:
-            directory = Path(item)
-            if not directory.is_dir():
-                continue
-            result = scan_directory(directory, python_path=str(directory.parent), executor=executor)
-            for device_id in result.get("devices", {}):
-                if device_id not in ids:
-                    ids.append(str(device_id))
-    finally:
-        executor.shutdown(wait=True)
-    return sorted(ids)
+    from unilabos.registry.package_layout import scan_package_dirs
+
+    result = scan_package_dirs(package_dirs)
+    return sorted(str(device_id) for device_id in result.get("devices", {}))
 
 
 def _sha256_file(path: Path) -> str:
@@ -898,7 +888,10 @@ class DriverPackageService:
             source_dirs = detect_package_dirs(root, project["include"])
             if not source_dirs:
                 raise DriverPackageError(f"源码树里没有可挂载的 Python 包目录（含 __init__.py）：{root}")
-            device_ids = scan_device_ids(source_dirs)
+            # 台账记录运行时挂载这些目录后会注册的全部设备：@device 与注册表 YAML
+            from unilabos.registry.package_layout import package_device_ids
+
+            device_ids = package_device_ids(source_dirs)
             if dependencies:
                 # 安装器失败也可能已部分改变共享环境，因此提前标记受影响进程。
                 self.source_changes.package_changed(name, reason="shared_dependencies_changed", shared_dependencies=True)

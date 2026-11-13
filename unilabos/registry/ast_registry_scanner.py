@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
 from unilabos.registry.material_locks import effective_material_lock_parameters
+from unilabos.registry.module_scope import resolve_relative_module
 from unilabos.registry.utils.tools import resolve_registry_display_name
 from unilabos.resources.objects.site import normalize_available_sites
 
@@ -38,7 +39,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 18      # 18：显式 typed 动作合同及资源约束
+_CACHE_VERSION = 20      # 20：缓存记录扫描失败原因（命中时照样报告）
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -188,7 +189,12 @@ def scan_directory(
 
     Returns:
         {"devices": {device_id: meta, ...}, "resources": {resource_id: meta, ...},
-         "workflows": {"module:function": meta, ...}}
+         "workflows": {"module:function": meta, ...},
+         "_scan_errors": [{"file": path, "error": message}, ...],
+         "_cache_stats": {...}}
+
+        ``_scan_errors`` 列出解析失败、被跳过的文件（缓存命中时同样列出，失败不会被缓存
+        “吞掉”），供 ``--check_mode`` 判定失败。
 
     Args:
         root_dir: Directory to scan (e.g. "unilabos/devices").
@@ -229,52 +235,70 @@ def scan_directory(
     cache_hits = 0
     cache_misses = 0
 
-    def _parse_one_cached(py_file: Path) -> Tuple[List[dict], List[dict], List[dict], bool]:
-        """Returns (devices, resources, workflows, was_cache_hit)."""
+    scan_errors: List[Dict[str, str]] = []
+
+    def _report_scan_error(py_file: Path, message: str) -> None:
+        # 解析失败的文件不能静默丢弃：装饰器写错时用户需要看到原因，check_mode 据此失败。
+        import logging
+
+        logging.getLogger("unilabos.registry.ast_scan").warning(
+            "AST 扫描文件失败，已跳过 %s: %s", py_file, message
+        )
+
+    def _parse_one_cached(py_file: Path) -> Tuple[List[dict], List[dict], List[dict], bool, Optional[str]]:
+        """Returns (devices, resources, workflows, was_cache_hit, scan_error)."""
         key = str(py_file)
         try:
             fp = _file_fingerprint(py_file)
         except OSError:
-            return [], [], [], False
+            return [], [], [], False, None
 
         cached_entry = cache_files.get(key)
-        if cached_entry and _is_cache_hit(cached_entry, fp):
+        # 模块路径由导入根推导：同一文件换了导入根（如改为挂载子目录）必须重新解析
+        if cached_entry and _is_cache_hit(cached_entry, fp) and cached_entry.get("python_path") == str(python_path):
+            error = cached_entry.get("error")
+            if error:
+                _report_scan_error(py_file, error)
             return (
                 cached_entry.get("devices", []),
                 cached_entry.get("resources", []),
                 cached_entry.get("workflows", []),
                 True,
+                error,
             )
 
+        error: Optional[str] = None
         try:
             devs, ress, flows = _parse_file(py_file, python_path)
         except Exception as exc:
-            # 解析失败的文件不能静默丢弃：装饰器写错时用户需要看到原因。
-            import logging
-
-            logging.getLogger("unilabos.registry.ast_scan").warning(
-                "AST 扫描文件失败，已跳过 %s: %s", py_file, exc
-            )
+            error = f"{type(exc).__name__}: {exc}"
+            _report_scan_error(py_file, error)
             devs, ress, flows = [], [], []
 
-        cache_files[key] = {
+        cache_entry = {
             "md5": fp["md5"],
             "size": fp["size"],
             "mtime": fp["mtime"],
+            "python_path": str(python_path),
             "devices": devs,
             "resources": ress,
             "workflows": flows,
         }
-        return devs, ress, flows, False
+        if error:
+            cache_entry["error"] = error
+        cache_files[key] = cache_entry
+        return devs, ress, flows, False, error
 
     def _collect_results(futures_dict: Dict):
         nonlocal cache_hits, cache_misses
         for future in as_completed(futures_dict):
-            devs, ress, flows, hit = future.result()
+            devs, ress, flows, hit, error = future.result()
             if hit:
                 cache_hits += 1
             else:
                 cache_misses += 1
+            if error:
+                scan_errors.append({"file": str(futures_dict[future]).replace("\\", "/"), "error": error})
             for dev in devs:
                 device_id = dev.get("device_id")
                 if device_id:
@@ -309,6 +333,7 @@ def scan_directory(
         "devices": devices,
         "resources": resources,
         "workflows": workflows,
+        "_scan_errors": sorted(scan_errors, key=lambda item: item["file"]),
         "_cache_stats": {"hits": cache_hits, "misses": cache_misses, "total": len(py_files)},
     }
 
@@ -375,9 +400,11 @@ def _parse_file(
 
     # Derive module path from file path
     module_path = _filepath_to_module(filepath, python_path)
+    # 包的 __init__.py：相对导入以包自身为基准
+    is_package = filepath.name == "__init__.py"
 
     # Build import map from the file (includes same-file class defs)
-    import_map = _collect_imports(tree, module_path)
+    import_map = _collect_imports(tree, module_path, is_package=is_package)
     literal_constants = _collect_literal_constants(tree, import_map)
 
     devices: List[dict] = []
@@ -398,7 +425,9 @@ def _parse_file(
                         constant_name = value.rsplit(":", 1)[-1]
                         if constant_name in literal_constants:
                             device_args[key] = literal_constants[constant_name]
-                class_body = _extract_class_body(node, import_map, module=tree, module_name=module_path)
+                class_body = _extract_class_body(
+                    node, import_map, module=tree, module_name=module_path, is_package=is_package,
+                )
 
                 # Support ids + id_meta (multi-device) or id (single device)
                 device_ids: List[str] = []
@@ -624,10 +653,14 @@ def _extract_resource_meta(
 # ---------------------------------------------------------------------------
 
 
-def _collect_imports(tree: ast.Module, module_path: str = "") -> Dict[str, str]:
+def _collect_imports(tree: ast.Module, module_path: str = "", is_package: bool = False) -> Dict[str, str]:
     """
     Walk all Import/ImportFrom nodes in the AST tree, build a mapping from
     local name to fully-qualified import path.
+
+    相对导入（``from .labware import Deck``）按 *module_path* 解析成绝对路径
+    （*is_package* 表示该模块是包的 ``__init__.py``）；无法解析（缺少模块身份或越过
+    顶层包）的相对导入不登记，避免把 ``labware`` 误当成顶层模块。
 
     Also includes top-level class/function definitions from the same file,
     so that same-file TypedDict / Enum / dataclass references can be resolved.
@@ -644,6 +677,13 @@ def _collect_imports(tree: ast.Module, module_path: str = "") -> Dict[str, str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
             module = node.module or ""
+            if node.level:
+                if not module_path:
+                    continue
+                try:
+                    module = resolve_relative_module(module_path, node.level, node.module, is_package=is_package)
+                except ValueError:
+                    continue
             for alias in node.names:
                 local_name = alias.asname if alias.asname else alias.name
                 import_map[local_name] = f"{module}:{alias.name}"
@@ -949,6 +989,7 @@ def _extract_class_body(
     *,
     module: Optional[ast.Module] = None,
     module_name: str = "",
+    is_package: bool = False,
 ) -> dict:
     """
     Walk the class body to extract:
@@ -1038,7 +1079,7 @@ def _extract_class_body(
                     normalize_action_resource_contract, validate_action_resource_contract_schema,
                 )
 
-                parsed = parse_action_contract(module, item, module_name=module_name)
+                parsed = parse_action_contract(module, item, module_name=module_name, is_package=is_package)
                 canonical_schema = parsed.to_action_schema(
                     action_name=method_name, description=str(action_args.get("description") or ""),
                 )

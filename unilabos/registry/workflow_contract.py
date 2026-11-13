@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import os
 import tokenize
 from typing import Any, Callable
 
@@ -16,19 +17,39 @@ def source_symbols(fn: Callable[..., Any]) -> tuple[dict[str, str], dict[str, as
         raise ValueError("工作流合同需要可读取的源码文件")
     with tokenize.open(filename) as stream:
         tree = ast.parse(stream.read())
-    return module_symbols(tree)
+    return module_symbols(
+        tree,
+        module_name=getattr(fn, "__module__", "") or "",
+        is_package=os.path.basename(filename) == "__init__.py",
+    )
 
 
-def module_symbols(tree: ast.Module) -> tuple[dict[str, str], dict[str, ast.ClassDef]]:
-    """模块级 ``from x import y`` 与类定义（结果记录）；不导入、不求值。"""
+def module_symbols(
+    tree: ast.Module, *, module_name: str = "", is_package: bool = False,
+) -> tuple[dict[str, str], dict[str, ast.ClassDef]]:
+    """模块级 ``from x import y`` 与类定义（结果记录）；不导入、不求值。
+
+    相对导入按 ``module_name``（``is_package`` 表示包的 ``__init__.py``）解析成绝对身份；
+    没有模块身份（如上传的源码文本）或越过顶层包时跳过。
+    """
+
+    from unilabos.registry.module_scope import resolve_relative_module
 
     imports: dict[str, str] = {}
     records: dict[str, ast.ClassDef] = {}
     for item in tree.body:
-        if isinstance(item, ast.ImportFrom) and item.module and not item.level:
+        if isinstance(item, ast.ImportFrom) and (item.module or item.level):
+            module = item.module
+            if item.level:
+                if not module_name:
+                    continue
+                try:
+                    module = resolve_relative_module(module_name, item.level, item.module, is_package=is_package)
+                except ValueError:
+                    continue
             for alias in item.names:
                 if alias.name != "*":
-                    imports[alias.asname or alias.name] = f"{item.module}:{alias.name}"
+                    imports[alias.asname or alias.name] = f"{module}:{alias.name}"
         elif isinstance(item, ast.ClassDef):
             records[item.name] = item
     return imports, records

@@ -18,8 +18,9 @@ dependency_groups = {
     # 框架内通信适配器与工具用到的 SDK；厂商驱动的专用 SDK 由各外部驱动包自行声明。
     'drivers': [
         'opcua>=0.98.13', 'pandas>=2.2', 'matplotlib>=3.8',
-        # utils/pywinauto_util 的 Windows GUI 自动化；其他平台没有对应运行入口。
+        # utils/pywinauto_util 的 Windows GUI 自动化（模块级导入 pywinauto 与 psutil）；其他平台没有对应运行入口。
         'pywinauto>=0.6.8; sys_platform == "win32"',
+        'psutil>=5.9; sys_platform == "win32"',
     ],
     'test': ['pytest>=8', 'pytest-asyncio>=0.23'],
 }

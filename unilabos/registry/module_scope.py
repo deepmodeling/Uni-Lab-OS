@@ -281,14 +281,70 @@ def _import_bindings(statement: ast.Import, path: str) -> dict[str, str]:
     return bindings
 
 
+def resolve_relative_module(
+    module_name: str,
+    level: int,
+    target: str | None,
+    *,
+    is_package: bool = False,
+) -> str:
+    """按 Python 导入语义把 ``from <.级> <target> import`` 解析成绝对模块名。
+
+    ``module_name`` 是当前模块身份；``is_package`` 表示它来自包的 ``__init__.py``（此时相对
+    导入以模块自身为包，否则以父包为包）。越过顶层包时抛 ``ValueError``。
+    """
+
+    if level <= 0:
+        if not target:
+            raise ValueError("绝对导入缺少模块名")
+        return target
+    package = module_name if is_package else module_name.rpartition(".")[0]
+    if not package:
+        raise ValueError(f"模块 {module_name!r} 不在包内，不能使用相对导入")
+    parts = package.split(".")
+    if level - 1 >= len(parts):
+        raise ValueError(f"模块 {module_name!r} 的相对导入越过了顶层包")
+    base = ".".join(parts[: len(parts) - (level - 1)])
+    return f"{base}.{target}" if target else base
+
+
+_RELATIVE_PLACEHOLDER = "<relative>"
+
+
+def _from_import_module(
+    statement: ast.ImportFrom,
+    path: str,
+    module_name: str | None,
+    is_package: bool,
+) -> str:
+    level = getattr(statement, "level", None)
+    if type(level) is not int or level < 0:
+        _fail(path)
+    target = getattr(statement, "module", None)
+    if level == 0:
+        return _dotted_name(target, path)
+    if target is not None:
+        _dotted_name(target, path)
+    if module_name is None:
+        # 只收集局部名（条件分支 / class 内的可能绑定）时不需要身份
+        return _RELATIVE_PLACEHOLDER
+    try:
+        return resolve_relative_module(module_name, level, target, is_package=is_package)
+    except ValueError:
+        _fail(path)
+
+
 def _from_import_bindings(
     statement: ast.ImportFrom,
     path: str,
+    module_name: str | None = None,
+    is_package: bool = False,
 ) -> dict[str, str]:
-    level = getattr(statement, "level", None)
-    if type(level) is not int or level != 0:
-        _fail(path)
-    module_name = _dotted_name(getattr(statement, "module", None), path)
+    """``from x import y`` 的局部名 -> ``模块:名`` 身份；相对导入按当前模块身份解析。
+
+    ``module_name`` 为 ``None`` 时调用方只关心局部名，相对导入不解析身份。
+    """
+    module_name = _from_import_module(statement, path, module_name, is_package)
     aliases = _node_list(getattr(statement, "names", None), ast.alias, f"{path}/names")
     if not aliases:
         _fail(path)
@@ -649,8 +705,13 @@ def resolve_module_scope(
     module: ast.Module,
     *,
     module_name: str,
+    is_package: bool = False,
 ) -> ResolvedModuleScope:
-    """解析一个真实模块 AST 的最终、保守且 shadow-aware 的顶层绑定。"""
+    """解析一个真实模块 AST 的最终、保守且 shadow-aware 的顶层绑定。
+
+    ``is_package`` 表示模块来自包的 ``__init__.py``；相对导入（``from .x import y``）
+    按 ``module_name`` 与它解析成绝对身份，越过顶层包时失败关闭。
+    """
 
     if not isinstance(module, ast.Module):
         _fail("/module")
@@ -674,7 +735,9 @@ def resolve_module_scope(
                 import_identities[local_name] = identity
             continue
         if isinstance(statement, ast.ImportFrom):
-            bindings = _from_import_bindings(statement, path)
+            bindings = _from_import_bindings(
+                statement, path, resolved_module_name, is_package
+            )
             for local_name, identity in bindings.items():
                 _clear_binding(
                     local_name,

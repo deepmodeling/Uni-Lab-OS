@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from pathlib import Path
@@ -299,6 +300,48 @@ def test_step_target_must_contain_action() -> None:
         ctx.run("only-device", {})
     with pytest.raises(ValueError, match="target"):
         ctx.run_template("only_class", {})
+
+
+@pytest.mark.parametrize("misuse", [
+    lambda ctx, step: bool(step),
+    lambda ctx, step: bool(step.output("ok")),
+    lambda ctx, step: step.output("ok") == False,  # noqa: E712 - 正是要拦住的写法
+    lambda ctx, step: step.output("count") > 3,
+    lambda ctx, step: f"S-{step.output('sample_id')}",
+    lambda ctx, step: bool(ctx.step_output(step, "ok", "==", True)),
+    lambda ctx, step: bool(ctx.device_state("reactor", "ready", "==", True)),
+], ids=["step", "output", "output-eq", "output-gt", "output-fstring", "step-output-condition", "device-state-condition"])
+def test_builder_mode_rejects_build_time_decisions_on_results(misuse) -> None:
+    """builder 模式在注册时执行一次函数：对结果做判断只会得到固定答案（else 分支被静默丢弃），必须报错。"""
+
+    @workflow(display_name="误用")
+    def misuse_flow(ctx: WorkflowBuildContext) -> None:
+        step = ctx.run("reactor/measure", {})
+        if misuse(ctx, step):
+            ctx.run("reactor/heat", {})
+        else:
+            ctx.run("reactor/cool", {})
+
+    definition = next(iter(get_registered_workflows().values()))
+    with pytest.raises(TypeError, match=r"compiler=|step\.output"):
+        definition.collect()
+
+
+def test_builder_references_are_stored_as_plain_json() -> None:
+    """引用照常放进参数和条件；入库的是普通 dict，内部比较与序列化不受构建期保护影响。"""
+
+    ctx = WorkflowBuildContext()
+    first = ctx.run("reactor/measure", {})
+    second = ctx.run("reactor/heat", {"target": first.output("temperature"), "nested": [{"ref": first.output()}]})
+    with ctx.loop_while(ctx.step_output(second, "ok", "==", False), interval_seconds=0.5):
+        ctx.run("reactor/heat", {})
+
+    assert second.params["target"] == {"kind": "node_output", "node_key": first.key, "data_key": "temperature"}
+    assert type(second.params["target"]) is dict and type(second.params["nested"][0]["ref"]) is dict
+    condition = ctx.steps[2].params["condition"]
+    assert type(condition) is dict and condition["node_key"] == second.key
+    assert first.output("x") == {"kind": "node_output", "node_key": first.key, "data_key": "x"}
+    assert json.loads(json.dumps(first.output("x"))) == first.output("x")
 
 
 def test_materialized_workflow_upsert_is_idempotent() -> None:

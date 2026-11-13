@@ -78,6 +78,66 @@ def workflow_uuid_for(source_path: str) -> str:
     return str(uuid_module.uuid5(WORKFLOW_NAMESPACE, source_path))
 
 
+_BUILD_TIME_HINT = (
+    "builder 模式只在注册时执行一次工作流函数，此时动作还没有运行、没有结果，"
+    "这里的判断会得到与运行无关的固定答案。按结果分支请用 @workflow(compiler=\"ast\") 写原生 if；"
+    "按结果或设备状态循环请用 with ctx.loop_while(ctx.step_output(...) / ctx.device_state(...))。"
+)
+
+
+class StepResultRef(dict):
+    """``WorkflowStep.output()`` 返回的结果引用：JSON 形态与普通 dict 相同，运行时才代入值。
+
+    作者函数拿到的引用拒绝判断真假、与常量比较和拼进字符串——这些操作在构建期只能得到
+    固定答案，会静默生成与源码不符的流程。入库前由 :func:`_plain_references` 换回普通 dict。
+    """
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        raise TypeError(f"不能在工作流函数里判断动作结果的真假。{_BUILD_TIME_HINT}")
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Mapping):
+            return dict.__eq__(self, other)
+        raise TypeError(f"不能在工作流函数里把动作结果和常量比较。{_BUILD_TIME_HINT}")
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def _compare(self, other: object) -> bool:
+        raise TypeError(f"不能在工作流函数里比较动作结果的大小。{_BUILD_TIME_HINT}")
+
+    __lt__ = __le__ = __gt__ = __ge__ = _compare
+
+    def __format__(self, format_spec: str) -> str:
+        raise TypeError("不能把动作结果拼进字符串：参数值直接写 step.output(...)，由运行时代入。")
+
+
+class WorkflowCondition(dict):
+    """``ctx.device_state`` / ``ctx.step_output`` 构造的条件：只能交给 ``ctx.loop_while``
+    （或 ``compiler="ast"`` 源码里的 ``if`` / ``while`` 条件），不能在构建期判断真假。"""
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        raise TypeError(f"条件对象不能在工作流函数里直接判断真假。{_BUILD_TIME_HINT}")
+
+
+def _plain_references(value: Any) -> Any:
+    """把作者函数里的结果引用 / 条件换回普通 dict 再入库，同时与作者的可变对象解除共享。"""
+
+    if isinstance(value, dict):
+        return {key: _plain_references(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain_references(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_plain_references(item) for item in value)
+    return value
+
+
 @dataclass(frozen=True)
 class WorkflowStep:
     """一条 ctx.run/ctx.run_template/循环 记录（build 时解析为 workflow 节点）。"""
@@ -101,12 +161,14 @@ class WorkflowStep:
     #: 构建时记录的真实前驱；分组不作为运行节点。
     dependencies: Optional[List[str]] = None
 
-    def output(self, data_key: str = "") -> Dict[str, Any]:
+    def output(self, data_key: str = "") -> "StepResultRef":
         """builder 模式的结果引用；AST 模式同时支持 result.field / result["field"]。"""
         if not isinstance(data_key, str):
             raise ValueError("结果路径必须是字符串")
-        return {"kind": "node_output", "node_key": self.key, "data_key": data_key}
+        return StepResultRef(kind="node_output", node_key=self.key, data_key=data_key)
 
+    def __bool__(self) -> bool:
+        raise TypeError(f"不能在工作流函数里判断步骤的真假。{_BUILD_TIME_HINT}")
 
     @property
     def is_loop(self) -> bool:
@@ -351,7 +413,7 @@ class WorkflowBuildContext:
 
         spec = {
             "mode": "while",
-            "condition": dict(condition),
+            "condition": _plain_references(dict(condition)),
             "max_iterations": max_iterations,
             "interval_seconds": interval_seconds,
         }
@@ -359,33 +421,33 @@ class WorkflowBuildContext:
             yield step
 
     @staticmethod
-    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> Dict[str, Any]:
+    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> WorkflowCondition:
         """while 条件：设备状态字段（``@topic_config`` / status_fields 上报的最新值）。"""
 
-        return {
-            "source": "device_state",
-            "device_id": str(device_id),
-            "field": str(field_name),
-            "op": op,
-            "value": value,
-        }
+        return WorkflowCondition(
+            source="device_state",
+            device_id=str(device_id),
+            field=str(field_name),
+            op=op,
+            value=value,
+        )
 
     @staticmethod
     def step_output(
         step: "WorkflowStep | str", data_key: str, op: str, value: Any = None
-    ) -> Dict[str, Any]:
+    ) -> WorkflowCondition:
         """while 条件：某一步最近一次成功的返回值；该步没产出前循环体先跑一轮。
 
         ``step`` 是 ``ctx.run`` 返回的步骤，或步骤的 ``name``——循环体里的步骤在 ``with``
         打开时还没声明，用名字引用（名字须在本工作流内唯一），块结束时解析。
         """
 
-        condition: Dict[str, Any] = {
-            "source": "node_output",
-            "data_key": str(data_key or ""),
-            "op": op,
-            "value": value,
-        }
+        condition = WorkflowCondition(
+            source="node_output",
+            data_key=str(data_key or ""),
+            op=op,
+            value=value,
+        )
         if isinstance(step, WorkflowStep):
             if step.is_loop:
                 raise ValueError("step_output 条件必须引用设备动作步骤，不能引用循环")
@@ -511,7 +573,7 @@ class WorkflowBuildContext:
             inventory_mode=inventory_mode,
             target=head,
             action=action,
-            params=dict(params or {}),
+            params=_plain_references(dict(params or {})),
             name=name or f"{head}.{action}",
             inventory=_normalize_inventory(inventory, f"{head}/{action}"),
             description=str(description or "").strip(),

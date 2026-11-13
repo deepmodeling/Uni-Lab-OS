@@ -193,7 +193,7 @@ def _compile_function(
             if node.id in parameters:
                 return {"kind": "workflow_input", "parameter": node.id}
             if node.id in results:
-                return results[node.id].output()
+                return dict(results[node.id].output())
             if node.id in constants:
                 return literal_copy(constants[node.id], node)
             return fail(node, f"未知常量或当前作用域外的动作结果：{node.id}")
@@ -216,7 +216,7 @@ def _compile_function(
                 segments.insert(0, segment.replace("\\", "\\\\").replace(".", "\\."))
             if not isinstance(current, ast.Name) or current.id not in results:
                 return fail(node, "只能读取当前作用域内动作结果的字段")
-            return results[current.id].output(".".join(segments))
+            return dict(results[current.id].output(".".join(segments)))
         if isinstance(node, ast.Dict):
             result = {}
             for key, item in zip(node.keys, node.values):
@@ -263,6 +263,9 @@ def _compile_function(
             raise
         except ValueError as exc:
             return fail(node, str(exc))
+        if isinstance(result, dict):
+            # 静态编译只处理普通 JSON 值；带构建期保护的条件对象只给 builder 作者函数用。
+            result = dict(result)
         if isinstance(result, WorkflowStep):
             result = replace(result, guards=deepcopy(guards))
             ctx.steps[-1] = result

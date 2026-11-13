@@ -11,12 +11,18 @@
 | 装饰器 | `@workflow(workflow_uuid=..., displayname=...)` | `@workflow(display_name=...)` |
 | 构图 | 只解析源码 AST，不执行作者函数 | 执行一次函数，ctx 收集步骤声明 |
 | 动作返回值 | 编译为节点结果引用 | `ctx.run` 返回步骤声明；`step_output` 可供 while 条件引用 |
-| 原生 if/else | 编译为结构化条件区域 | 原来不支持动作结果驱动的原生 if |
+| 原生 if/else | 编译为结构化条件区域 | 不支持动作结果驱动的原生 if；对结果判断真假在注册时报错 |
 | 身份 | 工作流 UUID、节点 UUID 源码锚点 | 函数路径派生模板 UUID、步骤顺序派生节点 UUID |
 
 两种动作调用形式都容易解析。影响可靠性的是能否在执行动作之前静态看到全部分支、
 依赖和作用域。因此本轮采用 v1 的静态编译思路，但不替换 dev 调度器，也不复制 v1 的
 完整作者 API。现有模板保持兼容，新模板显式使用 `compiler="ast"`。
+
+builder 模式在注册时执行一次函数，此时动作还没有运行、没有结果。对 `ctx.run` 返回的步骤、
+`step.output(...)` 引用或 `ctx.step_output` / `ctx.device_state` 条件判断真假、与常量比较大小或相等、
+拼进 f-string，都会在注册时抛出 `TypeError` 并给出改法（以前 `if step:` 恒为真，else 分支被静默丢弃）。
+按结果分支改用 `compiler="ast"`；按结果或设备状态循环用 `with ctx.loop_while(...)`。
+引用本身照常放进参数和条件，入库时是普通 JSON。
 
 ## 新流程写法
 

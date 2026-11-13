@@ -729,6 +729,19 @@ source.type      # "resource"
 source.class_    # "corning_96_wellplate_360ul_flat"
 ```
 
+## 继承内置液体处理器 `LiquidHandlerAbstract`
+
+驱动包里的 PyLabRobot 液体处理器可以继承 `unilabos.devices.liquid_handling.liquid_handler_abstract.LiquidHandlerAbstract`，用 `@action` 重新声明要暴露的动作并调用 `super()`。基类的约定：
+
+- **触壁（`touch_tip`）**：`transfer_liquid`、`add_liquid`、`remove_liquid` 只在参数 `touch_tip=True` 时触壁，默认不触壁。`touch_tip()` 接受单个孔或孔列表，用当前装着枪头的通道在孔的左右两壁各做一次 0 uL 吸液；0 uL 吸液不改变枪头里记录的样品。后端做不了触壁的设备设 `support_touch_tip = False`，`touch_tip()` 即什么都不做。
+- **耗材**：`aspirate()` / `dispense()` 用 `unilabos_extra` 记录样品 uuid，直接用 PLR 工厂建的耗材（没有 `unilabos_extra`）也可以吸排；`use_channels=None` 时与 PLR 一样取前 N 个通道。
+- **枪头**：`transfer_liquid(tip_racks=...)` 直接使用传入的枪头盒，不需要先调用 `set_tiprack`；与上一次相同的枪头盒（同一对象或同一物料 uuid）接着上次的位置往后取，不同的枪头盒从它第一个有枪头的位置取，空列表沿用 `set_tiprack` 设定的枪头盒。PLR 默认不跟踪枪头（取走的位置 `has_tip()` 仍为 True），所以连续调用不会回到 A1；`set_tiprack` 则明确从头开始，开启 PLR 枪头跟踪时跳过已取走的位置。`add_liquid` / `remove_liquid` 不带枪头盒参数，使用 `set_tiprack` 设定的枪头盒。没有可用枪头盒或枪头用完时报 `RuntimeError`。
+- **体积**：`asp_vols` / `dis_vols` 可以是单个体积（标量或单元素列表），按模式展开：一对一两者都展开到每一对；一对多的 `dis_vols` 展开到每个目标（`asp_vols` 仍是总吸液量）；多对一的 `asp_vols` 展开到每个源（`dis_vols` 仍是汇总体积）。`add_liquid` / `remove_liquid` 的单个体积对所有目标 / 源通用，`add_liquid` 的单个试剂源也对所有目标通用。
+- **通道**：`transfer_liquid`、`add_liquid`、`remove_liquid` 的 `use_channels` 缺省为设备全部通道（`channel_num`），在这些通道上取枪头、吸排、丢枪头。
+- **混匀（`mix`）**：在每个目标孔内吸排 `mix_time` 次（需已装枪头、需要 `mix_vol`）；用当前装着枪头的通道，每孔一个通道同时混匀，孔多于通道时分批。`offsets` 可以是一个 `Coordinate` 或与目标等长的列表。
+
+子类覆盖这些方法时保留同样的调用方式：基类内部按关键字调用 `self.mix(targets=..., mix_time=..., mix_vol=..., offsets=..., height_to_bottom=..., mix_rate=...)`、`self.touch_tip(targets)` 与 `self.set_tiprack(tip_racks)`。
+
 ## 支持的通信方式
 
 ### 1. 串口（Serial）
@@ -779,21 +792,33 @@ class TCPDevice:
 
 ```python
 from pymodbus.client import ModbusTcpClient
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
 
 class ModbusDevice:
     def __init__(self, config: Dict[str, Any]):
         self.host = config['host']
         self.port = config.get('port', 502)
+        self.slave_id = config.get('slave_id', 1)
         self.client = ModbusTcpClient(self.host, port=self.port)
         self.client.connect()
 
     def read_register(self, address: int) -> int:
-        result = self.client.read_holding_registers(address, 1)
+        result = call_with_slave(self.client.read_holding_registers, address, count=1, slave=self.slave_id)
         return result.registers[0]
 
     def write_register(self, address: int, value: int):
-        self.client.write_register(address, value)
+        call_with_slave(self.client.write_register, address, value, slave=self.slave_id)
 ```
+
+核心允许 `pymodbus>=3.6.9,<4`（3.8.0 / 3.8.1 除外：它们在 Python 3.14 上无法创建同步客户端），这个范围里接口变过：
+
+- 从站地址关键字 3.6.9–3.9 叫 `slave`，3.10 起叫 `device_id`，用错名字直接 `TypeError`。直接调用 pymodbus 时用 `call_with_slave(方法, ..., slave=N)`，它按方法签名选名字。
+- 3.8 起 `count` 等参数只能按关键字传（`read_holding_registers(address, count=1)`）。
+- `convert_from_registers` / `convert_to_registers` 3.8 之前没有 `word_order`；`modbus.py` 的同名函数在老版本上自行交换字序。
+
+核心的 `device_comms/modbus_plc`（`TCPClient` / `RTUClient` 与 `Coil`、`HoldRegister` 等节点）已经处理这些差异，节点的 `read(..., slave=N)` / `write(..., slave=N)` 在整个范围内可用。
+
+每个 `TCPClient` / `RTUClient` 实例有自己的节点表、函数表和工作流表（`opcua_client` 的客户端同样），一个驱动里连多台 PLC、或一个进程里跑多个工作站时互不影响；读地址表的 `load_csv` 需要 pandas（`drivers` 可选依赖），导入客户端模块本身不需要。
 
 ### 4. OPC UA
 

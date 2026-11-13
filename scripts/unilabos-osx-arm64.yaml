@@ -24,7 +24,7 @@ dependencies:
   # Device communication
   - pyserial
   - pyusb
-  - pymodbus >=3.6.9,<4
+  - pymodbus >=3.6.9,<4,!=3.8.0,!=3.8.1
   - python-can
   - pyvisa
   - opencv

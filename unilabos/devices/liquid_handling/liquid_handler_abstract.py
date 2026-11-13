@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 import traceback
 from collections import Counter
@@ -56,6 +57,63 @@ class SetLiquidFromPlateReturn(TypedDict):
 class TransferLiquidReturn(TypedDict):
     sources: List[List[ResourceDict]]
     targets: List[List[ResourceDict]]
+
+
+def _sample_uuid_of(resource: Resource) -> Optional[str]:
+    """读取耗材上记录的样品 uuid；直接用 PLR 工厂建的耗材没有 ``unilabos_extra``。"""
+
+    extra = getattr(resource, "unilabos_extra", None)
+    return extra.get(EXTRA_SAMPLE_UUID) if isinstance(extra, dict) else None
+
+
+def _set_sample_uuid(resource: Resource, sample_uuid: Optional[str]) -> None:
+    """记录耗材里的样品 uuid，没有 ``unilabos_extra`` 时补一个。"""
+
+    extra = getattr(resource, "unilabos_extra", None)
+    if not isinstance(extra, dict):
+        extra = {}
+        resource.unilabos_extra = extra
+    extra[EXTRA_SAMPLE_UUID] = sample_uuid
+
+
+def _as_containers(targets: Union[Container, Sequence[Container]]) -> List[Container]:
+    """单个孔或孔列表统一成列表（基类自己按单孔调用 touch_tip / mix，动作入口按列表调用）。"""
+
+    if isinstance(targets, Resource):
+        return [targets]
+    return list(targets)
+
+
+def _volume_list(vols: Union[float, Sequence[float]], count: int) -> List[float]:
+    """单个体积（标量或只有一个元素的列表）展开成 ``count`` 份；其他列表原样转成 float。"""
+
+    if isinstance(vols, (int, float)):
+        return [float(vols)] * count
+    values = [float(v) for v in vols]
+    if len(values) == 1 and count > 1:
+        return values * count
+    return values
+
+
+def _offsets_per_well(
+    offsets: Optional[Union[Coordinate, Sequence[Optional[Coordinate]]]], count: int
+) -> Optional[List[Coordinate]]:
+    """mix 的 offsets 展开成逐孔列表：单个 Coordinate 各孔相同；等长列表逐孔；其他列表取第一个。"""
+
+    if offsets is None:
+        return None
+    if isinstance(offsets, Coordinate):
+        return [offsets] * count
+    values = list(offsets)
+    if not values:
+        return None
+    if len(values) != count:
+        values = values[:1] * count
+    return [value if value is not None else Coordinate.zero() for value in values]
+
+
+def _material_uuid(resource: Resource) -> Optional[str]:
+    return getattr(resource, "unilabos_uuid", None) or None
 
 
 class LiquidHandlerMiddleware(LiquidHandler):
@@ -222,6 +280,9 @@ class LiquidHandlerMiddleware(LiquidHandler):
                 spread,
                 **backend_kwargs,
             )
+        # 与 PLR 的默认通道一致；下面按通道记录枪头里的样品，不能是 None
+        if use_channels is None:
+            use_channels = getattr(self, "_default_use_channels", None) or list(range(len(resources)))
         await super().aspirate(
             resources,
             vols,
@@ -237,9 +298,12 @@ class LiquidHandlerMiddleware(LiquidHandler):
         res_samples = []
         res_volumes = []
         for resource, volume, channel in zip(resources, vols, use_channels):
-            sample_uuid_value = resource.unilabos_extra.get(EXTRA_SAMPLE_UUID, None)
+            sample_uuid_value = _sample_uuid_of(resource)
             res_samples.append({"name": resource.name, EXTRA_SAMPLE_UUID: sample_uuid_value})
             res_volumes.append(volume)
+            if not volume:
+                # 0 uL（触壁）没有吸入液体，枪头里仍是原来的样品
+                continue
             self.pending_liquids_dict[channel] = {
                 EXTRA_SAMPLE_UUID: sample_uuid_value,
                 "volume": volume,
@@ -270,6 +334,8 @@ class LiquidHandlerMiddleware(LiquidHandler):
                 spread,
                 **backend_kwargs,
             )
+        if use_channels is None:
+            use_channels = getattr(self, "_default_use_channels", None) or list(range(len(resources)))
         await super().dispense(
             resources,
             vols,
@@ -283,9 +349,14 @@ class LiquidHandlerMiddleware(LiquidHandler):
         res_samples = []
         res_volumes = []
         for resource, volume, channel in zip(resources, vols, use_channels):
-            res_uuid = self.pending_liquids_dict[channel][EXTRA_SAMPLE_UUID]
-            self.pending_liquids_dict[channel]["volume"] -= volume
-            resource.unilabos_extra[EXTRA_SAMPLE_UUID] = res_uuid
+            # 没经过本类 aspirate 的通道（如只分液的流程）没有样品记录
+            pending = self.pending_liquids_dict.get(channel)
+            if pending:
+                res_uuid = pending[EXTRA_SAMPLE_UUID]
+                pending["volume"] -= volume
+                _set_sample_uuid(resource, res_uuid)
+            else:
+                res_uuid = _sample_uuid_of(resource)
             res_samples.append({"name": resource.name, EXTRA_SAMPLE_UUID: res_uuid})
             res_volumes.append(volume)
 
@@ -836,21 +907,27 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         is_96_well: Optional[bool] = False,
         top: Optional[List[float]] = None,
         none_keys: List[str] = [],
+        touch_tip: bool = False,
     ):
-        """A complete *remove* (aspirate → waste) operation."""
+        """A complete *remove* (aspirate → waste) operation.
+
+        ``touch_tip``：分液后是否触壁（默认否，与 transfer_liquid 一致）。
+        ``use_channels`` 缺省时用设备全部通道；单个体积（标量或单元素列表）对所有源通用。
+        """
+
+        if use_channels is None:
+            use_channels = list(range(self.channel_num)) if self.channel_num > 0 else [0]
 
         try:
             if is_96_well:
                 pass  # This mode is not verified.
             else:
+                vols = _volume_list(vols, len(sources))
                 # 首先应该对任务分组，然后每次1个/8个进行操作处理
                 if len(use_channels) == 1 and self.backend.num_channels == 1:
 
                     for _ in range(len(sources)):
-                        tip = []
-                        for __ in range(len(use_channels)):
-                            tip.extend(next(self.current_tip))
-                        await self.pick_up_tips(tip)
+                        await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
                         await self.aspirate(
                             resources=[sources[_]],
                             vols=[vols[_]],
@@ -874,7 +951,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                             liquid_height=[liquid_height[1]] if liquid_height else None,
                             spread=spread,
                         )
-                        await self.discard_tips()
+                        await self.discard_tips(use_channels=use_channels)
 
                 elif len(use_channels) == 8 and self.backend.num_channels == 8:
 
@@ -887,10 +964,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     # 8个8个来取任务序列
 
                     for i in range(0, len(sources), 8):
-                        tip = []
-                        for _ in range(len(use_channels)):
-                            tip.extend(next(self.current_tip))
-                        await self.pick_up_tips(tip)
+                        await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
                         current_targets = waste_liquid[i : i + 8]
                         current_reagent_sources = sources[i : i + 8]
                         current_asp_vols = vols[i : i + 8]
@@ -938,8 +1012,9 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                         if delays is not None and len(delays) > 1:
                             await self.custom_delay(seconds=delays[1])
-                        await self.touch_tip(current_targets)
-                        await self.discard_tips()
+                        if touch_tip:
+                            await self.touch_tip(current_targets)
+                        await self.discard_tips(use_channels=use_channels)
 
         except Exception as e:
             traceback.print_exc()
@@ -969,22 +1044,39 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         mix_rate: Optional[int] = None,
         mix_liquid_height: Optional[float] = None,
         none_keys: List[str] = [],
+        touch_tip: bool = False,
     ):
-        # """A complete *add* (aspirate reagent → dispense into targets) operation."""
+        """A complete *add* (aspirate reagent → dispense into targets) operation.
+
+        ``touch_tip``：每个目标分液（及混匀）后是否触壁，默认否，与 transfer_liquid 一致。
+        ``use_channels`` 缺省时用设备全部通道（与 transfer_liquid 一致）；单个体积（标量或单元素列表）
+        与单个试剂源对所有目标通用。枪头取自 set_tiprack 设定的枪头盒。
+        """
+
+        if use_channels is None:
+            use_channels = list(range(self.channel_num)) if self.channel_num > 0 else [0]
 
         # # try:
         if is_96_well:
             pass  # This mode is not verified.
         else:
+            asp_vols = _volume_list(asp_vols, len(targets))
+            dis_vols = _volume_list(dis_vols, len(targets))
+            reagent_sources = list(reagent_sources)
+            if len(reagent_sources) == 1 and len(targets) > 1:
+                reagent_sources = reagent_sources * len(targets)
             if len(asp_vols) != len(targets):
                 raise ValueError(f"Length of `asp_vols` {len(asp_vols)} must match `targets` {len(targets)}.")
+            if len(dis_vols) != len(targets):
+                raise ValueError(f"Length of `dis_vols` {len(dis_vols)} must match `targets` {len(targets)}.")
+            if len(reagent_sources) != len(targets):
+                raise ValueError(
+                    f"Length of `reagent_sources` {len(reagent_sources)} must be 1 or match `targets` {len(targets)}."
+                )
             # 首先应该对任务分组，然后每次1个/8个进行操作处理
             if len(use_channels) == 1:
                 for _ in range(len(targets)):
-                    tip = []
-                    for x in range(len(use_channels)):
-                        tip.extend(next(self.current_tip))
-                    await self.pick_up_tips(tip)
+                    await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
                     await self.aspirate(
                         resources=[reagent_sources[_]],
@@ -1024,8 +1116,9 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                     if delays is not None and len(delays) > 1:
                         await self.custom_delay(seconds=delays[1])
-                    await self.touch_tip(targets[_])
-                    await self.discard_tips()
+                    if touch_tip:
+                        await self.touch_tip([targets[_]])
+                    await self.discard_tips(use_channels=use_channels)
 
             elif len(use_channels) == 8:
                 # 对于8个的情况，需要判断此时任务是不是能被8通道移液站来成功处理
@@ -1033,10 +1126,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     raise ValueError(f"Length of `targets` {len(targets)} must be a multiple of 8 for 8-channel mode.")
 
                 for i in range(0, len(targets), 8):
-                    tip = []
-                    for _ in range(len(use_channels)):
-                        tip.extend(next(self.current_tip))
-                    await self.pick_up_tips(tip)
+                    await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
                     current_targets = targets[i : i + 8]
                     current_reagent_sources = reagent_sources[i : i + 8]
                     current_asp_vols = asp_vols[i : i + 8]
@@ -1097,8 +1187,9 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                     if delays is not None and len(delays) > 1:
                         await self.custom_delay(seconds=delays[1])
-                    await self.touch_tip(current_targets)
-                    await self.discard_tips()
+                    if touch_tip:
+                        await self.touch_tip(current_targets)
+                    await self.discard_tips(use_channels=use_channels)
 
     # except Exception as e:
     #     traceback.print_exc()
@@ -1142,14 +1233,16 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         Parameters
         ----------
         asp_vols, dis_vols
-            Single volume (µL) or list. Automatically expanded based on transfer mode.
+            Single volume (µL) or list. Automatically expanded based on transfer mode
+            （单元素列表也算单个体积：一对一两者都展开，一对多展开 dis_vols，多对一展开 asp_vols）。
         sources, targets
             Containers (wells or plates). Length determines transfer mode:
             - len(sources) == 1, len(targets) > 1: One-to-many mode
             - len(sources) == len(targets): One-to-one mode
             - len(sources) > 1, len(targets) == 1: Many-to-one mode
         tip_racks
-            One or more TipRacks providing fresh tips.
+            One or more TipRacks providing fresh tips. 与上次相同的枪头盒接着上次的位置取；
+            不同的枪头盒从它的第一个可用位置取；空列表沿用 set_tiprack 设定的枪头盒。
         is_96_well
             Set *True* to use the 96‑channel head.
         mix_stage
@@ -1166,19 +1259,21 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             # 默认使用设备所有通道（例如 8 通道移液站默认就是 0-7）
             use_channels = list(range(self.channel_num)) if self.channel_num > 0 else [0]
 
+        self._adopt_tip_racks(tip_racks)
+
+        # 识别传输模式（mix_times 为 None 也应该能正常移液，只是不做 mix）
+        num_sources = len(sources)
+        num_targets = len(targets)
+        one_to_many = num_sources == 1 and num_targets > 1
+        many_to_one = num_sources > 1 and num_targets == 1
+
         if is_96_well:
             pass  # This mode is not verified.
         else:
-            # 转换体积参数为列表
-            if isinstance(asp_vols, (int, float)):
-                asp_vols = [float(asp_vols)]
-            else:
-                asp_vols = [float(v) for v in asp_vols]
-
-            if isinstance(dis_vols, (int, float)):
-                dis_vols = [float(dis_vols)]
-            else:
-                dis_vols = [float(v) for v in dis_vols]
+            # 体积转换为列表；单个体积按模式展开：吸液每个源一份、排液每个目标一份。
+            # 一对多的吸液、多对一的排液保持单个值（总量 / 汇总体积，见各模式说明）。
+            asp_vols = _volume_list(asp_vols, 1 if one_to_many else num_sources)
+            dis_vols = _volume_list(dis_vols, 1 if many_to_one else num_targets)
 
         # 统一混合次数为标量，防止数组/列表与 int 比较时报错
         if mix_times is not None and not isinstance(mix_times, (int, float)):
@@ -1192,11 +1287,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         if mix_times is not None:
             mix_times = int(mix_times)
 
-        # 识别传输模式（mix_times 为 None 也应该能正常移液，只是不做 mix）
-        num_sources = len(sources)
-        num_targets = len(targets)
-
-        if num_sources == 1 and num_targets > 1:
+        if one_to_many:
             # 模式1: 一对多 (1 source -> N targets)
             await self._transfer_one_to_many(
                 sources[0],
@@ -1219,7 +1310,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 mix_liquid_height,
                 delays,
             )
-        elif num_sources > 1 and num_targets == 1:
+        elif many_to_one:
             # 模式2: 多对一 (N sources -> 1 target)
             await self._transfer_many_to_one(
                 sources,
@@ -1309,10 +1400,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
 
         if len(use_channels) == 1:
             for _ in range(len(targets)):
-                tip = []
-                for ___ in range(len(use_channels)):
-                    tip.extend(next(self.current_tip))
-                await self.pick_up_tips(tip)
+                await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
                 if mix_stage in ["before", "both"] and mix_times is not None and mix_times > 0:
                     await self.mix(
@@ -1363,7 +1451,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                await self.touch_tip(targets[_])
+                if touch_tip:
+                    await self.touch_tip([targets[_]])
                 await self.discard_tips(use_channels=use_channels)
 
         elif len(use_channels) == 8:
@@ -1371,10 +1460,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 raise ValueError(f"Length of `targets` {len(targets)} must be a multiple of 8 for 8-channel mode.")
 
             for i in range(0, len(targets), 8):
-                tip = []
-                for _ in range(len(use_channels)):
-                    tip.extend(next(self.current_tip))
-                await self.pick_up_tips(tip)
+                await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
                 current_targets = targets[i : i + 8]
                 current_reagent_sources = sources[i : i + 8]
                 current_asp_vols = asp_vols[i : i + 8]
@@ -1435,7 +1521,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                await self.touch_tip(current_targets)
+                if touch_tip:
+                    await self.touch_tip(current_targets)
                 await self.discard_tips([0, 1, 2, 3, 4, 5, 6, 7])
 
     async def _transfer_one_to_many(
@@ -1474,10 +1561,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
 
         if len(use_channels) == 1:
             # 单通道模式：一次吸液，多次分液
-            tip = []
-            for _ in range(len(use_channels)):
-                tip.extend(next(self.current_tip))
-            await self.pick_up_tips(tip)
+            await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
             if mix_stage in ["before", "both"] and mix_times is not None and mix_times > 0:
                 for idx, target in enumerate(targets):
@@ -1544,10 +1628,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
 
             # 每次处理8个目标
             for i in range(0, len(targets), 8):
-                tip = []
-                for _ in range(len(use_channels)):
-                    tip.extend(next(self.current_tip))
-                await self.pick_up_tips(tip)
+                await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
                 current_targets = targets[i : i + 8]
                 current_dis_vols = dis_vols[i : i + 8]
@@ -1685,10 +1766,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
 
             # 从每个源容器吸液并分液到目标容器
             for idx, source in enumerate(sources):
-                tip = []
-                for _ in range(len(use_channels)):
-                    tip.extend(next(self.current_tip))
-                await self.pick_up_tips(tip)
+                await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
                 await self.aspirate(
                     resources=[source],
@@ -1773,10 +1851,7 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 )
 
             for i in range(0, len(sources), 8):
-                tip = []
-                for _ in range(len(use_channels)):
-                    tip.extend(next(self.current_tip))
-                await self.pick_up_tips(tip)
+                await self.pick_up_tips(self._next_tip_spots(len(use_channels)), use_channels=use_channels)
 
                 current_sources = sources[i : i + 8]
                 current_asp_vols = asp_vols[i : i + 8]
@@ -1868,35 +1943,55 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 print(f"Waiting time: {msg}")
                 print(f"Current time: {time.strftime('%H:%M:%S')}")
                 print(f"Time to finish: {time.strftime('%H:%M:%S', time.localtime(time.time() + seconds))}")
-            await self._ros_node.sleep(seconds)
+            node = getattr(self, "_ros_node", None)
+            if node is None:
+                # 未接入设备节点（单独使用、单元测试）时直接在当前事件循环等待
+                await asyncio.sleep(seconds)
+            else:
+                await node.sleep(seconds)
             if msg:
                 print(f"Done: {msg}")
                 print(f"Current time: {time.strftime('%H:%M:%S')}")
 
+    def _tipped_channels(self) -> List[int]:
+        """当前装着枪头的通道（模拟模式下动作转给模拟处理器，看它的枪头状态）。"""
+
+        handler = self._simulate_handler if getattr(self, "_simulator", False) else self
+        head = getattr(handler, "head", None) or {}
+        return [channel for channel, tracker in sorted(head.items()) if tracker.has_tip]
+
+    def _channels_for(self, count: int) -> List[int]:
+        """触壁 / 混匀用的通道：装着枪头的通道；查不到时与 PLR 默认一致，取前 ``count`` 个。"""
+
+        channels = self._tipped_channels()
+        if channels:
+            return channels
+        channel_num = getattr(self, "channel_num", None) or count
+        return list(range(max(1, min(count, channel_num))))
+
     async def touch_tip(self, targets: Sequence[Container]):
-        """Touch the tip to the side of the well."""
+        """Touch the tip to the side of the well.
+
+        枪头在孔的左、右两壁各碰一次（以 0 uL 吸液移到孔壁）。``targets`` 可以是单个孔或孔列表；
+        使用当前装着枪头的通道，孔数多于通道时分批。``support_touch_tip = False`` 的设备不执行。
+        """
 
         if not self.support_touch_tip:
             return
-        await self.aspirate(
-            resources=[targets],
-            vols=[0],
-            use_channels=None,
-            flow_rates=None,
-            offsets=[Coordinate(x=-targets.get_size_x() / 2, y=0, z=0)],
-            liquid_height=None,
-            blow_out_air_volume=None,
-        )
-        # await self.custom_delay(seconds=1) # In the simulation, we do not need to wait
-        await self.aspirate(
-            resources=[targets],
-            vols=[0],
-            use_channels=None,
-            flow_rates=None,
-            offsets=[Coordinate(x=targets.get_size_x() / 2, y=0, z=0)],
-            liquid_height=None,
-            blow_out_air_volume=None,
-        )
+        wells = _as_containers(targets)
+        channels = self._channels_for(len(wells))
+        for start in range(0, len(wells), len(channels)):
+            batch = wells[start : start + len(channels)]
+            for side in (-1, 1):
+                await self.aspirate(
+                    resources=batch,
+                    vols=[0] * len(batch),
+                    use_channels=channels[: len(batch)],
+                    flow_rates=None,
+                    offsets=[Coordinate(x=side * well.get_size_x() / 2, y=0, z=0) for well in batch],
+                    liquid_height=None,
+                    blow_out_air_volume=None,
+                )
 
     async def mix(
         self,
@@ -1908,39 +2003,89 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         mix_rate: Optional[float] = None,
         none_keys: List[str] = [],
     ):
-        if mix_time is None:  # No mixing required
-            return
-        """Mix the liquid in the target wells."""
-        for _ in range(mix_time):
-            await self.aspirate(
-                resources=[targets],
-                vols=[mix_vol],
-                flow_rates=[mix_rate] if mix_rate else None,
-                offsets=[offsets] if offsets else None,
-                liquid_height=[height_to_bottom] if height_to_bottom else None,
-            )
-            await self.custom_delay(seconds=1)
-            await self.dispense(
-                resources=[targets],
-                vols=[mix_vol],
-                flow_rates=[mix_rate] if mix_rate else None,
-                offsets=[offsets] if offsets else None,
-                liquid_height=[height_to_bottom] if height_to_bottom else None,
-            )
+        """Mix the liquid in the target wells.
 
-    def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[Resource]:
-        """Yield tips from a list of TipRacks one-by-one until depleted."""
+        在每个目标孔内吸排 ``mix_time`` 次，每次 ``mix_vol`` uL，需已装枪头。``targets`` 可以是单个孔或孔列表。
+        用当前装着枪头的通道：每个孔占一个通道同时混匀，孔数多于通道时分批。
+        ``offsets`` 可以是一个 Coordinate（所有孔相同）、与 ``targets`` 等长的列表（逐孔），或其他列表
+        （取第一个；transfer_liquid / add_liquid 传入的是它们自己的 offsets）。
+        """
+        if not mix_time or int(mix_time) <= 0:  # No mixing required
+            return
+        if mix_vol is None:
+            raise ValueError("混匀需要给出 mix_vol")
+        wells = _as_containers(targets)
+        channels = self._channels_for(len(wells))
+        well_offsets = _offsets_per_well(offsets, len(wells))
+        for start in range(0, len(wells), len(channels)):
+            batch = wells[start : start + len(channels)]
+            count = len(batch)
+            step = dict(
+                resources=batch,
+                vols=[mix_vol] * count,
+                use_channels=channels[:count],
+                flow_rates=[mix_rate] * count if mix_rate else None,
+                offsets=well_offsets[start : start + count] if well_offsets else None,
+                liquid_height=[height_to_bottom] * count if height_to_bottom else None,
+            )
+            for _ in range(int(mix_time)):
+                await self.aspirate(**step)
+                await self.custom_delay(seconds=1)
+                await self.dispense(**step)
+
+    def iter_tips(self, tip_racks: Sequence[TipRack]) -> Iterator[List[TipSpot]]:
+        """Yield tips from a list of TipRacks one-by-one until depleted.
+
+        依次给出还有枪头的位置（每次一个 ``[TipSpot]``）。开启 PLR 枪头跟踪时跳过已取走的位置，
+        重新 set_tiprack() 不会拿到空位；不跟踪时取走的位置 has_tip() 仍为 True。
+        """
         for rack in tip_racks:
-            for tip in rack:
-                yield tip
-        raise RuntimeError("Out of tips!")
+            for spots in rack:
+                if all(spot.has_tip() for spot in spots):
+                    yield spots
+        raise RuntimeError("枪头已用完（Out of tips!）")
 
     def set_tiprack(self, tip_racks: Sequence[TipRack]):
-        """Set the tip racks for the liquid handler."""
+        """Set the tip racks for the liquid handler.
 
-        self.tip_racks = tip_racks
-        tip_iter = self.iter_tips(tip_racks)
+        之后取枪头从这些枪头盒的第一个可用位置开始。
+        """
+
+        self.tip_racks = list(tip_racks)
+        tip_iter = self.iter_tips(self.tip_racks)
         self.current_tip = tip_iter
+
+    def _adopt_tip_racks(self, tip_racks: Sequence[TipRack]) -> None:
+        """transfer_liquid 的 ``tip_racks``：与当前枪头盒相同就接着往后取，不同才重新 set_tiprack。
+
+        框架默认不开 PLR 枪头跟踪，取走的位置 has_tip() 仍为 True；每次调用都重新设定，
+        连续几次转移会回到 A1 重复取同一个位置。空列表表示沿用 set_tiprack 设定的枪头盒。
+        """
+
+        racks = list(tip_racks or [])
+        if not racks:
+            return
+        current = list(getattr(self, "tip_racks", None) or [])
+        same = len(current) == len(racks) and all(
+            old is new or (_material_uuid(old) is not None and _material_uuid(old) == _material_uuid(new))
+            for old, new in zip(current, racks)
+        )
+        if not same or getattr(self, "current_tip", None) is None:
+            self.set_tiprack(racks)
+
+    def _next_tip_spots(self, count: int) -> List[TipSpot]:
+        """从当前枪头盒依次取 ``count`` 个有枪头的位置。"""
+
+        tip_iter = getattr(self, "current_tip", None)
+        if tip_iter is None:
+            raise RuntimeError("未设置枪头盒：请先调用 set_tiprack，或在 transfer_liquid 的 tip_racks 中给出枪头盒")
+        spots: List[TipSpot] = []
+        for _ in range(count):
+            try:
+                spots.extend(next(tip_iter))
+            except StopIteration:
+                raise RuntimeError("枪头已用完：请补充枪头后重新调用 set_tiprack") from None
+        return spots
 
     async def move_to(self, well: Well, dis_to_top: float = 0, channel: int = 0):
         """

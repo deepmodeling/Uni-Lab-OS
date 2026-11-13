@@ -836,6 +836,8 @@ def _send_frame(self, func_code: int, data: bytes) -> bytes:
 ### 模式 3：Modbus 寄存器读写
 
 ```python
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
+
 REGISTER_MAP = {
     "temp_target": {"addr": 0x000B, "scale": 10},
     "temp_current": {"addr": 0x0001, "scale": 10},
@@ -845,7 +847,8 @@ def set_temperature(self, temp: float, **kwargs) -> bool:
     temp = float(temp)
     reg = REGISTER_MAP["temp_target"]
     value = int(temp * reg["scale"]) & 0xFFFF
-    self.client.write_register(reg["addr"], value, slave=self.slave_id)
+    # pymodbus 3.10 起从站地址叫 device_id（3.6.9–3.9 叫 slave），call_with_slave 按签名选名字
+    call_with_slave(self.client.write_register, reg["addr"], value, slave=self.slave_id)
     self.data["temp_target"] = temp
     return True
 ```
@@ -920,8 +923,11 @@ resp_str = self._normalize_response(resp_str)
 
 ### Modbus RTU
 
+pymodbus 的读写方法用 `unilabos.device_comms.modbus_plc.modbus.call_with_slave(方法, ..., slave=N)` 调用：从站地址关键字 3.6.9–3.9 叫 `slave`、3.10 起叫 `device_id`，`count` 3.8 起只能按关键字传。
+
 ```python
 from pymodbus.client import ModbusSerialClient
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
 
 self.client = ModbusSerialClient(
     port=self.config.get('port', 'COM1'),

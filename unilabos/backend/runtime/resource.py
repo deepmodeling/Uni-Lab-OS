@@ -65,16 +65,24 @@ def _is_no_change_error(exc: BaseException) -> bool:
 
 
 def _local_root_uuid(resource: Any) -> Optional[str]:
-    """PLR 实例沿 ``.parent`` 走到顶层持有根的 uuid。
+    """PLR 实例沿 ``.parent`` 找快照根：最高的、带权威 uuid 的祖先（含自身）。
 
-    设备持有的顶层根在权威里 parent 是设备物料，但设备不在 PLR 树里，所以 PLR
-    树的顶层就是快照根——无需向权威反查每个节点的归属。
+    设备持有的顶层根在权威里 parent 是设备物料，但设备不在 PLR 树里，所以带 uuid
+    的最高祖先就是快照根——无需向权威反查每个节点的归属。PLR 1.0 的液体处理器
+    把台面挂成自己的子资源，处理器本身不是物料（没有 uuid）：根停在台面，不能
+    走到处理器上（否则每次增量都因根缺 uuid 被丢弃）。
     """
 
-    top = resource
-    while getattr(top, "parent", None) is not None:
-        top = top.parent
-    return str(getattr(top, "unilabos_uuid", "") or "") or None
+    root_uuid: Optional[str] = None
+    current = resource
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        current_uuid = str(getattr(current, "unilabos_uuid", "") or "")
+        if current_uuid:
+            root_uuid = current_uuid
+        current = getattr(current, "parent", None)
+    return root_uuid
 
 
 class ResourceService(Protocol):
@@ -780,7 +788,8 @@ class AuthorityResourceService:
     ) -> dict[str, str]:
         """不问权威就能确定的 ``节点 uuid → 快照根 uuid``。
 
-        - 传入 PLR 实例：沿 ``.parent`` 到 PLR 顶层即根，其子树全部归它；
+        - 传入 PLR 实例：沿 ``.parent`` 到最高的带 uuid 祖先即根（见 ``_local_root_uuid``），
+          其子树全部归它；
         - 传入 ResourceTreeSet：``uuid_parent`` 为空、或就是本设备物料的树根就是根
           （观察者冻结的整棵持有树；append_resource 挂到设备上、根 parent 投影为
           设备的台面树）——与 ``_root_material_uuid`` 停在设备物料之下同一规则。

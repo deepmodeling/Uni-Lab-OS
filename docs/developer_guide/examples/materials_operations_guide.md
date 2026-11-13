@@ -246,6 +246,10 @@ tip = tip_spot.get_tip(); tip_spot.empty(); tip_spot.tracker.commit()
   由 `move` / `transfer` 原子维护。版本表与整树基线只在乐观锁冲突、结构漂移、以及
   权威下行（前端/其它设备改了物料 → `RESOURCE_TREE_SYNC` / `MATERIAL_SYNC` / `append`）
   之后重拉。因此**不要绕过设备直写它持有的物料**——设备的下一次上报会按自己所见覆盖回去。
+- **上报落到哪棵根树**：从变化的物料沿 PLR `.parent` 往上，最高的、带权威 uuid 的
+  祖先就是快照 / 增量的根（通常是设备持有的台面），不问权威。PLR 1.0 的液体处理器
+  （`LiquidHandler` / `LiquidHandlerAbstract`）把台面挂成自己的子资源，处理器本身不是
+  物料、没有 uuid，根停在台面——移液后的液体变化照常按台面根树增量上报。
 - **手动同步（其余场景）**：观察者只监听 `commit()`/assign 回调；绕过 tracker
   的直接赋值、或物料不在设备 tracker 里（纯脚本上下文）时权威不会自动知道，
   操作完成后必须显式同步一次：

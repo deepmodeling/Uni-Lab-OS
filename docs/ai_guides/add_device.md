@@ -59,7 +59,8 @@ unilab --check_mode --devices ./my_package --external_devices_only
 unilab --devices ./my_package --external_devices_only -g graph.json
 ```
 
-> `--external_devices_only` 跳过内置设备扫描，只加载你的外部设备包，启动更快。
+> `--external_devices_only` 跳过内置设备扫描，只加载你的外部设备包，启动更快；核心的 `container` 资源模板
+> （`registry/resources/organic/container.yaml`）仍会加载，图里的容器节点可以照常引用它。
 > 设备包目录下的 `requirements.txt` 会被自动检测，缺失的依赖通过 `uv` 或 `pip` 自动安装。
 
 详细的装饰器用法和设备类别说明见下文。

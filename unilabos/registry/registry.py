@@ -94,6 +94,10 @@ else:
 
 _module_hash_cache: Dict[str, Optional[str]] = {}
 
+#: ``--external_devices_only`` 下仍从核心注册表加载的资源模板（相对 ``unilabos/registry``）：
+#: 图里的容器节点都引用 ``container``，驱动包不会自带它。
+EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/container.yaml",)
+
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
 
 
@@ -272,9 +276,18 @@ class Registry:
         # 2. Host node 内置设备
         self._setup_host_node()
 
-        # 3. 加载内置 YAML 注册表；external_only 模式只保留外部声明。
+        # 3. 加载内置 YAML 注册表；external_only 模式只保留外部声明与核心 container 模板。
         if external_only:
-            logger.info("[Uni-Lab-OS Registry] external_only 模式: 跳过内置 YAML 注册表加载")
+            logger.info("[Uni-Lab-OS Registry] external_only 模式: 跳过内置 YAML 注册表加载（保留核心 container 模板）")
+            if BasicConfig.enable_resource_load:
+                core_root = Path(__file__).resolve().parent
+                # 核心文件不在 external_only 下补全写回：只读加载
+                self.load_resource_types(
+                    core_root,
+                    upload_registry,
+                    complete_registry=False,
+                    files=[core_root / relative for relative in EXTERNAL_ONLY_CORE_RESOURCE_FILES],
+                )
         else:
             self.registry_paths = [Path(path).absolute() for path in self.registry_paths]
             for i, path in enumerate(self.registry_paths):
@@ -399,17 +412,13 @@ class Registry:
         # host_services.py 一律不进默认启动扫描：host_node 注册表由
         # _setup_host_node 基于下方的单独扫描结果自行处理。
         if external_only:
-            core_files = [
-                pkg_root / "resources" / "container.py",
-            ]
+            # 核心的 @device / @resource 一律不进 external_only 注册表；核心 container 模板由
+            # setup() 从 EXTERNAL_ONLY_CORE_RESOURCE_FILES 单独加载。
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
-                cache=ast_cache, include_files=core_files,
+                cache=ast_cache, include_files=[],
             )
-            logger.info(
-                f"[Uni-Lab-OS Registry] external_only 模式: 仅扫描核心文件 "
-                f"({', '.join(f.name for f in core_files)})"
-            )
+            logger.info("[Uni-Lab-OS Registry] external_only 模式: 不扫描核心 Python 文件")
         else:
             exclude_files = {"host_services.py"}
             if not BasicConfig.extra_resource:
@@ -2015,10 +2024,20 @@ class Registry:
 
         return data, complete_data, True
 
-    def load_resource_types(self, path: os.PathLike, upload_registry: bool, complete_registry: bool = False):
+    def load_resource_types(
+        self,
+        path: os.PathLike,
+        upload_registry: bool,
+        complete_registry: bool = False,
+        files: Optional[List[Path]] = None,
+    ):
+        """加载 ``<path>/resources/**/*.yaml``；给出 *files* 时只加载这些文件。"""
         abs_path = Path(path).absolute()
         resources_path = abs_path / "resources"
-        files = list(resources_path.rglob("*.yaml"))
+        if files is None:
+            files = list(resources_path.rglob("*.yaml"))
+        else:
+            files = [Path(file).absolute() for file in files if Path(file).is_file()]
         logger.trace(
             f"[Uni-Lab-OS Registry] resources: {resources_path.exists()}, total: {len(files)}"
         )

@@ -261,4 +261,4 @@ check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、导�
 - 不应暴露的 public 辅助方法改成私有方法或加 `@not_action`
 - 运行时数据存储在 `self.data` 字典中
 - `post_init(self, ros_node)` 用于需要 ROS node 的初始化逻辑
-- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包
+- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包；核心 `container` 资源模板仍会加载，其它内置设备（如 `virtual_*`）不加载

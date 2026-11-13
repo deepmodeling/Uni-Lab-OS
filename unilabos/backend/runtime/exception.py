@@ -7,6 +7,31 @@ class DeviceClassInvalid(Exception):
     pass
 
 
+class DeviceBackendUnsupported(DeviceClassInvalid):
+    """设备类声明的 ``supported_backends`` 不含当前 backend（如只能跑在 ROS 2 上的 MoveIt 设备）。
+
+    与注册表缺失、模板名非法等配置错误不同：设备本身没问题，只是不能在这个 backend 上运行。
+    HostLink 启动时据此跳过该设备（其余设备照常启动）并上报不可用原因。
+    """
+
+    def __init__(
+        self,
+        device_id: str,
+        *,
+        backend_name: str,
+        supported_backends: tuple[str, ...] | list[str],
+        registry_name: str = "",
+    ) -> None:
+        self.device_id = str(device_id)
+        self.backend_name = str(backend_name)
+        self.supported_backends = [str(item) for item in supported_backends]
+        self.registry_name = str(registry_name or "")
+        super().__init__(
+            f"Device [{self.device_id}] does not support backend {self.backend_name!r}; "
+            f"supported: {', '.join(self.supported_backends)}"
+        )
+
+
 class ActionTimeoutBase(RuntimeError):
     """``@action`` 超时闸门触发时由执行面构造的异常基类。
 

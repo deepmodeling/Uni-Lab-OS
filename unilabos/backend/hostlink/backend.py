@@ -34,6 +34,28 @@ def to_wire_value(value: Any) -> Any:
     return message_to_value(value)
 
 
+def _device_call_payload(
+    caller_device_id: str,
+    device_id: str,
+    action_name: str,
+    arguments: Optional[Dict[str, Any]],
+    action_id: str,
+    test_mode: bool,
+) -> Dict[str, Any]:
+    """Slave 发起跨设备调用的 ``DEVICE_CALL`` 载荷；测试模式才带 ``test_mode``（旧 Host 忽略该字段）。"""
+
+    payload: Dict[str, Any] = {
+        "caller_device_id": caller_device_id,
+        "device_id": device_id,
+        "action": action_name,
+        "arguments": dict(arguments or {}),
+        "action_id": action_id,
+    }
+    if test_mode:
+        payload["test_mode"] = True
+    return payload
+
+
 class HostLinkBackend:
     """Run local Python drivers and expose Slave devices to one Host."""
 
@@ -543,7 +565,7 @@ class HostLinkBackend:
         device_id = str(data.get("device_id") or "")
         node = self._require_local_resource_node(device_id)
         payload = {key: value for key, value in data.items() if key != "device_id"}
-        return run_node_coroutine(node, node.append_resource(payload))
+        return node.append_resource_blocking(payload)
 
     def _handle_material_sync(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """``MATERIAL_SYNC``：微后端 transfer 的设备侧投影（unload/load）。"""
@@ -1083,6 +1105,23 @@ class HostLinkBackend:
             action_id=str(data.get("action_id") or "") or ActionContext().action_id,
             feedback_callback=self._send_action_feedback,
         )
+        if data.get("test_mode"):
+            # 调用方在测试模式下发起的跨设备调用：目标驱动在本进程，由这里判定是否模拟
+            mocked = self.local.test_mode_mock(
+                device_id,
+                action,
+                test_mode=True,
+                caller_device_id=str(data.get("caller_device_id") or ""),
+            )
+            if mocked is not None:
+                return {
+                    "device_id": device_id,
+                    "action": action,
+                    "action_id": context.action_id,
+                    "status": "succeeded",
+                    "result": to_wire_value(mocked),
+                    "state": to_wire_value(self.local.devices[device_id].snapshot_status()),
+                }
         with self._actions_lock:
             self._actions[context.action_id] = (device_id, context)
         try:
@@ -1156,11 +1195,25 @@ class HostLinkBackend:
             action_id=action_id,
             feedback_callback=forward_feedback,
         )
+        test_mode = bool(data.get("test_mode"))
+        if test_mode:
+            mocked = self.local.test_mode_mock(
+                device_id, action, test_mode=True, caller_device_id=caller_device_id
+            )
+            if mocked is not None:
+                return {
+                    "device_id": device_id,
+                    "action": action,
+                    "action_id": action_id,
+                    "status": "succeeded",
+                    "result": to_wire_value(mocked),
+                }
         try:
             result = self.call_action(
                 device_id,
                 action,
                 action_context=context,
+                _test_mode=test_mode,
                 **arguments,
             )
             status = "succeeded"
@@ -1275,6 +1328,7 @@ class HostLinkBackend:
         /,
         *,
         action_context: Optional[ActionContext] = None,
+        _test_mode: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Call a local device, or route a Host call to an online Slave.
@@ -1282,6 +1336,9 @@ class HostLinkBackend:
         ``device_id`` / ``action_name`` 是 positional-only：host_node 的
         apply_deduct_resource / discard_resource 等动作自身就带 ``device_id``
         参数，经 ``**kwargs`` 展开时不得与位置参数撞名。
+
+        ``_test_mode``：跨设备调用来自测试模式下运行的驱动；目标在 Slave 上时随请求带过去，
+        由 Slave 按目标驱动的 ``run_in_test_mode`` 判定是否模拟。
         """
 
         device_id = str(device_id)
@@ -1309,6 +1366,7 @@ class HostLinkBackend:
                 action_name,
                 kwargs,
                 action_id=context.action_id,
+                test_mode=_test_mode,
             )
         finally:
             with self._actions_lock:
@@ -1328,6 +1386,7 @@ class HostLinkBackend:
         *,
         action_context: Optional[ActionContext] = None,
         request_timeout: Optional[float] = None,
+        _test_mode: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Await a local or remote device action without blocking a thread."""
@@ -1352,6 +1411,7 @@ class HostLinkBackend:
                 kwargs,
                 timeout=request_timeout,
                 action_id=context.action_id,
+                test_mode=_test_mode,
             )
         except asyncio.CancelledError:
             context.request_cancel()
@@ -1385,6 +1445,11 @@ class HostLinkBackend:
         target = self.local._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        # --test_mode：目标在本机且驱动未声明 run_in_test_mode 时模拟；跨机时随请求带给目标进程判定
+        mocked = self.local.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
+        test_mode = bool(BasicConfig.test_mode)
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1399,6 +1464,7 @@ class HostLinkBackend:
                 target,
                 action_name,
                 action_context=context,
+                _test_mode=test_mode,
                 **dict(arguments or {}),
             )
         client = self.client
@@ -1411,13 +1477,9 @@ class HostLinkBackend:
         try:
             response = client.request(
                 ActionType.DEVICE_CALL,
-                {
-                    "caller_device_id": caller_device_id,
-                    "device_id": target,
-                    "action": action_name,
-                    "arguments": dict(arguments or {}),
-                    "action_id": context.action_id,
-                },
+                _device_call_payload(
+                    caller_device_id, target, action_name, arguments, context.action_id, test_mode
+                ),
                 timeout=options.get("timeout"),
             )
         finally:
@@ -1442,6 +1504,10 @@ class HostLinkBackend:
         target = self.local._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.local.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
+        test_mode = bool(BasicConfig.test_mode)
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1457,6 +1523,7 @@ class HostLinkBackend:
                 action_name,
                 action_context=context,
                 request_timeout=options.get("timeout"),
+                _test_mode=test_mode,
                 **dict(arguments or {}),
             )
         client = self.client
@@ -1469,13 +1536,9 @@ class HostLinkBackend:
         try:
             response = await client.request_async(
                 ActionType.DEVICE_CALL,
-                {
-                    "caller_device_id": caller_device_id,
-                    "device_id": target,
-                    "action": action_name,
-                    "arguments": dict(arguments or {}),
-                    "action_id": context.action_id,
-                },
+                _device_call_payload(
+                    caller_device_id, target, action_name, arguments, context.action_id, test_mode
+                ),
                 timeout=options.get("timeout"),
             )
         except asyncio.CancelledError:

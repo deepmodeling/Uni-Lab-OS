@@ -6,7 +6,7 @@ Host 是一个 backend 对应的主 runtime；slave 属于该 runtime 的设备�
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Self
+from typing import Any, Literal, Optional, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -21,6 +21,9 @@ class HealthStatus(BaseModel):
     scheduler: Literal["ready", "disabled"]
     scheduler_mode: Literal["local", "remote"]
     execution: Literal["ready", "restarting", "disabled"]
+    #: dev 扩展：设备图里有、但当前 backend 跑不了而没有启动的设备
+    #: （``device_id`` / ``registry_name`` / ``backend`` / ``reason`` / ``supported_backends``）
+    unavailable_devices: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class RuntimeCapabilities(BaseModel):

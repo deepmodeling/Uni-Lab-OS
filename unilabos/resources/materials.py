@@ -749,13 +749,14 @@ def assign(
     - ``parent``：目标父物料（实例或名字）；None 表示挂到设备自身
       （只登记进 tracker，不做 assign）；
     - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
-    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）。
+    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
+    - ``timeout``：只约束提交点之前（等锁、从权威拉取物料），超时取消挂载、什么都不改；
+      本地挂上之后，权威 move 与快照回报一定走完再返回（大台面的整树快照要几十秒），
+      不会在提交之后被取消（见 ``DeviceNode.append_resource_blocking``）。
 
     本函数为阻塞式，供驱动线程 / 脚本调用；已在节点执行器内的异步代码
     请直接 ``await node.append_resource(payload)``。
     """
-
-    from unilabos.backend.runtime.async_utils import run_node_coroutine
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
     resource_uuids = [material_uuid(item) for item in items]
@@ -776,7 +777,7 @@ def assign(
     }
     if other:
         payload["other_calling_param"] = other
-    return run_node_coroutine(node, node.append_resource(payload), timeout)
+    return node.append_resource_blocking(payload, timeout)
 
 
 async def snapshot(

@@ -35,7 +35,7 @@ description: Guide for creating and editing experiment graph files in Uni-Lab-OS
 | `type` | string | 否 | `"device"` / `"deck"` / `"container"` |
 | `name` | string | 否 | 显示名称 |
 | `parent` | string\|null | 否 | 父节点 ID；层级关系只由它表达，不写 `children` |
-| `config` | object | 否 | 传给 `__init__` 的 `config` 参数 |
+| `config` | object | 否 | 按 `__init__` 参数名平铺传入；构造函数声明了 `config` 参数时它收到整份配置，其他具名参数仍按名取值 |
 | `data` | object | 否 | 初始运行状态 |
 
 > 子节点顺序即其在 `nodes` 数组中的出现顺序；旧图里的 `children` 列表读取时会被忽略并在入库时剥离。

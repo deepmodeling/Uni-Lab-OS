@@ -183,7 +183,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 - `@action(action_type=...)` 会优先从 ROS Action 类型补全 `goal/feedback/result/schema/goal_default`，再用装饰器里的 `goal/feedback/result/goal_default` 覆盖。
 - `@action()` / auto action 会从方法参数生成 `goal/schema/goal_default`，从返回值注解补 result schema。
 - 参数类型注解必须完整；`str/int/float/bool/list/dict`、`Optional`、`Union`、`List`、`Dict`、`Literal`、`TypedDict`、`ResourceSlot`、`DeviceSlot` 都有不同程度的自动 schema 支持。
-- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。
+- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。旧驱动保留的 `config` 参数在 HostLink 上收到整份节点配置，同时声明的其他具名参数仍按名取值。
 
 ### 4. 生成 pyproject.toml
 
@@ -262,4 +262,5 @@ check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、读�
 - 运行时数据存储在 `self.data` 字典中
 - `post_init(self, ros_node)` 用于需要 ROS node 的初始化逻辑
 - `--devices` 可以指向包里的子目录（如一个设备家族 `./<package_name>/devices/<family>`）：模块路径按顶层包推导（沿 `__init__.py` 上溯），包级 `registry/` 只取类路径在该子目录内的条目，便于单独校验一个家族
+- 模拟器 / 离线模式的驱动设 `self.run_in_test_mode = True`，`unilab --test_mode` 下才会真实执行；没设的驱动在测试模式下只返回模拟结果。这条规则同样作用于驱动之间的 `node.call_device_action[_async]`：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到的是模拟结果，不会驱动真实硬件
 - `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包；核心 `container` 资源模板仍会加载，其它内置设备（如 `virtual_*`）不加载

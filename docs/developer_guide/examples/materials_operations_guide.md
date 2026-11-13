@@ -204,6 +204,13 @@ def _ensure_bench(self):
     return node.resource_tracker.uuid_to_resources[self.deck_uuid]
 ```
 
+`assign` 的 `timeout`（默认 30 s，Host 下发 `RESOURCE_APPEND` 同此）只约束提交点之前：等挂载锁、
+从权威拉取物料。超时就取消，本地与权威都不变，抛 `TimeoutError`。本地 PLR 挂上之后（提交点），
+权威 move 与快照回报一定走完再返回：快照按物料所在的整棵根树做，上千个物料的台面要几十秒，
+期间每过一个 `timeout` 记一条 WARNING，不会在提交之后取消。每次取消都在设备日志里记 ERROR，
+写明取消发生在哪一阶段。跨机（Slave 上的设备）时 Host 的 HostLink 请求仍以 30 s 为限：
+Slave 照样把挂载做完，但 Host 侧调用方会先收到超时。
+
 创建多件耗材再逐件 `assign` 时，先校验目标位点空闲；挂载失败要 `materials.remove` 掉本轮已经
 发号的物料，否则权威里会留下不挂在任何台面上的孤儿。
 

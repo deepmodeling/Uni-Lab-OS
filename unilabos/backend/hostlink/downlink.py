@@ -151,7 +151,7 @@ def local_resource_append(data: Dict[str, Any]) -> Dict[str, Any]:
     device_id = str(data.get("device_id") or "")
     node = _require_local_device_node(device_id)
     payload = {key: value for key, value in data.items() if key != "device_id"}
-    return run_node_coroutine(node, node.append_resource(payload))
+    return node.append_resource_blocking(payload)
 
 
 def local_material_sync(data: Dict[str, Any]) -> Dict[str, Any]:

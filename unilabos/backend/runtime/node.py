@@ -11,7 +11,12 @@ import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterator, List, Optional
 
-from unilabos.backend.runtime.async_utils import DeviceAsyncMutex, schedule_async_func
+from unilabos.backend.runtime.async_utils import (
+    CommitPoint,
+    DeviceAsyncMutex,
+    run_node_coroutine,
+    schedule_async_func,
+)
 
 if TYPE_CHECKING:
     from unilabos.backend.runtime.resource import ResourceService
@@ -840,7 +845,30 @@ class DeviceNode(ABC):
                     fallback = fallback or site.uuid
         return fallback
 
-    async def append_resource(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def append_resource_blocking(
+        self, payload: Dict[str, Any], timeout: float = 30.0
+    ) -> Dict[str, Any]:
+        """从非执行器线程阻塞执行 :meth:`append_resource`（``materials.assign`` 与 Host 下行共用）。
+
+        ``timeout`` 只约束提交点之前（等锁、从权威拉取物料）：本地挂上之后，权威 move 与
+        快照回报一定走完，不被超时取消。大台面（上千个物料）的整树快照要几十秒，取消它
+        只会留下本地已挂、权威半截的状态。越过超时继续等待与取消都会写日志。
+        """
+
+        commit_point = CommitPoint()
+        return run_node_coroutine(
+            self,
+            self.append_resource(payload, commit_point=commit_point),
+            timeout,
+            commit_point=commit_point,
+        )
+
+    async def append_resource(
+        self,
+        payload: Dict[str, Any],
+        *,
+        commit_point: Optional[CommitPoint] = None,
+    ) -> Dict[str, Any]:
         """把微后端权威已创建的物料（带 uuid）assign 到本设备的目标父物料下。
 
         物料创建只发生在微后端，设备侧不做本地 initialize、不发 "add" 上报。四步：
@@ -860,6 +888,9 @@ class DeviceNode(ABC):
         与 MATERIAL_MOVE 的 destination_site_uuid 同一标识，免反查直传权威）；
         ``slot`` 是字符串——优先按 Site label 匹配（如 "A1"），非 label 且为
         纯数字（isdigit）时按 0-based 索引找对应 Site。
+
+        ``commit_point``：跨线程等待方（:meth:`append_resource_blocking`）的提交点握手。
+        第 2 步本地挂载之前进入提交点；等待方已超时放弃时直接退出，不做任何改动。
         """
 
         from pylabrobot.resources import Coordinate
@@ -876,12 +907,15 @@ class DeviceNode(ABC):
         loc = payload.get("bind_location") or {}
         bind_location = Coordinate(loc.get("x", 0.0), loc.get("y", 0.0), loc.get("z", 0.0))
         tag = ",".join(map(str, resource_uuids))
+        stage = "等待挂载锁"
         await self._append_resource_mutex().acquire(self, tag=tag)
         resource_locks: List[DeviceAsyncMutex] = []
         try:
+            stage = "等待物料锁"
             # 与资源树同步共享 uuid 锁：防止挂载与创建分发(notify add)并发处理同一物料
             resource_locks = await self._acquire_resource_tree_uuid_locks(resource_uuids, tag=f"append:{tag}")
             # 1. materials：按 uuid 从权威拉取（uuid 不存在时直接失败）
+            stage = "从权威拉取物料"
             tree_set = await self.get_resource(resources_uuid=resource_uuids, with_children=True)
             if len(tree_set.trees) != len(resource_uuids):
                 raise ValueError(
@@ -895,6 +929,10 @@ class DeviceNode(ABC):
                 else self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
             )
             drafts = tree_set.to_plr_resources()
+            # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
+            if commit_point is not None and not commit_point.enter():
+                raise TimeoutError("等待方已超时放弃，挂载未执行")
+            stage = "本地挂载"
             plr_instances: List[Any] = []
             added_instances: List[Any] = []
             report_roots: List[Any] = []
@@ -940,6 +978,7 @@ class DeviceNode(ABC):
             #    的新树分组对齐。挂到设备自身（台面 Deck、驱动运行期 ensure 的根树）同样
             #    要落 parent=设备物料：否则它在权威里仍是独立根，前端设备卡片下看不到它
             #    的 sites，materials.owner_device_of 也只能靠 extra 推断。
+            stage = "权威 move"
             if parent_uuid != self.resource_uuid:
                 for material_uuid in resource_uuids:
                     # site 参数即权威 Site uuid，直传；slot/未指定则从挂载快照反查
@@ -957,6 +996,7 @@ class DeviceNode(ABC):
                 for material_uuid in resource_uuids:
                     await self._attach_root_to_device(material_uuid)
             # 4. 同步：挂载后的父树经 update_resource 直连权威（权威已有 create 记录，严禁 add）
+            stage = "快照回报"
             for tree in report_tree_set.trees:
                 if tree.root_node.res_content.uuid_parent is None:
                     tree.root_node.res_content.parent_uuid = self.resource_uuid
@@ -968,7 +1008,14 @@ class DeviceNode(ABC):
                 "substance_resource_tree": [],
             }
         except Exception as ex:
-            self.lab_logger().error(f"[AR:{tag}] 挂载权威物料(append_resource)出错: {ex}\n{traceback.format_exc()}")
+            self.lab_logger().error(
+                f"[AR:{tag}] 挂载权威物料(append_resource)在「{stage}」阶段出错: {ex}\n{traceback.format_exc()}"
+            )
+            raise
+        except BaseException as ex:  # CancelledError 等：不是 Exception，同样必须留痕
+            self.lab_logger().error(
+                f"[AR:{tag}] 挂载权威物料(append_resource)在「{stage}」阶段被取消（{type(ex).__name__}）"
+            )
             raise
         finally:
             self._release_resource_tree_uuid_locks(resource_locks)

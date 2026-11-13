@@ -30,6 +30,7 @@ from unilabos.backend.hostlink.adapter_registry import set_execution_adapter
 from unilabos.backend.hostlink.backend import to_wire_value
 from unilabos.backend.hostlink.protocol import RemoteError
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
+from unilabos.backend.runtime.test_mode import driver_runs_in_test_mode
 from unilabos.backend.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
@@ -179,6 +180,13 @@ class HostNode(HostAdapterBase):
                 result.setdefault(device_id, remote)
         return result
 
+    @property
+    def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
+        """设备图中因 backend 不支持而被本机 runtime 跳过的设备（能力快照里登记为停用 route）。"""
+
+        local = getattr(self.runtime, "local", None)
+        return dict(getattr(local, "unavailable_devices", None) or {})
+
     def refresh_devices(self, *, initial: bool = False, notify_ready: bool = False) -> None:
         snapshot = self._device_snapshot(initial=initial)
         self._subscribed_topics = set(self.runtime.local.topic_bus.subscribed_topics())
@@ -285,8 +293,7 @@ class HostNode(HostAdapterBase):
 
         local_node = self.runtime.local.devices.get(item.device_id)
         run_simulator = bool(
-            local_node is not None
-            and getattr(local_node.driver, "run_in_test_mode", False) is True
+            local_node is not None and driver_runs_in_test_mode(local_node.driver)
         )
         if BasicConfig.test_mode and not run_simulator:
             from unilabos.server.backend.execution_start import confirm_execution_start

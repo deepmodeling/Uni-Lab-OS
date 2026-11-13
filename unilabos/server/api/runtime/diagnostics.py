@@ -49,6 +49,37 @@ class ErrorDecision(BaseModel):
     operator_id: Optional[str] = None
 
 
+def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
+    """本进程设备 runtime 跳过的设备；本进程不带 HostLink runtime 时为 None。"""
+
+    from unilabos.backend.hostlink import main_hostlink_run
+
+    if main_hostlink_run.get_runtime() is None:
+        return None
+    return main_hostlink_run.unavailable_devices()
+
+
+def _unavailable_devices() -> list[dict[str, Any]]:
+    """因 backend 不支持而未启动的设备：本进程带设备 runtime 时直接读，否则经控制面问 Host。"""
+
+    local = _local_unavailable_devices()
+    if local is not None:
+        return local
+    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
+
+    if not edge_proxy_enabled():
+        return []
+    try:
+        response = edge_http("GET", "/api/v1/hostlink/peers", timeout=3.0)
+        if response is None:
+            return []
+        data = edge_response_data(response)
+    except Exception:  # noqa: BLE001 - 存活探针不因 Host 暂不可达而失败
+        return []
+    records = data.get("unavailable_devices") if isinstance(data, dict) else None
+    return [dict(item) for item in records or [] if isinstance(item, dict)]
+
+
 def _hostlink_snapshot() -> dict[str, Any]:
     from unilabos.backend.hostlink.client import get_hostlink_client
     from unilabos.backend.hostlink.server import get_hostlink_server
@@ -59,6 +90,8 @@ def _hostlink_snapshot() -> dict[str, Any]:
     result: dict[str, Any] = {
         "role": role,
         "peers": link_server.peers() if link_server else [],
+        # 设备图中因 backend 不支持而跳过的本机设备（原因、支持的 backend）
+        "unavailable_devices": _local_unavailable_devices() or [],
         "client": (
             {
                 "online": link_client.online,
@@ -218,8 +251,11 @@ def create_backend_router(
 
     @router.get("/health", response_model=HealthStatus)
     @raw_response
-    def health() -> dict[str, str]:
-        """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。"""
+    def health() -> dict[str, Any]:
+        """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。
+
+        ``unavailable_devices``（dev 扩展）：设备图里有、但当前 backend 跑不了而没有启动的设备及原因。
+        """
 
         local = get_scheduler() is not None
         return {
@@ -228,6 +264,7 @@ def create_backend_router(
             "scheduler": "ready" if local else "disabled",
             "scheduler_mode": "local" if local else "remote",
             "execution": _execution_state(),
+            "unavailable_devices": _unavailable_devices(),
         }
 
     @router.get("/ping")

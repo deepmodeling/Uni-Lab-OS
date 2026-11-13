@@ -121,9 +121,20 @@ def build_run_preflight_report(
                        for cap in endpoint.get("action_capabilities", [])
                        if cap.get("state") == "active" and str(cap.get("device_uuid")) in identities
                        and cap.get("action_name") in {action, f"auto-{action}"}]
+            # Host 因 backend 不支持跳过的设备登记为停用 route，带不可用原因
+            skipped = next((route["config"]["unavailable"] for endpoint in endpoints
+                            for route in endpoint.get("device_routes") or []
+                            if str(route.get("device_uuid")) in identities and route.get("enabled") is False
+                            and isinstance((route.get("config") or {}).get("unavailable"), dict)), None)
+            if len(matches) == 1:
+                message = "设备在线且动作已注册"
+            elif skipped is not None:
+                message = f"设备未在 Host 上启动：{skipped.get('reason') or '当前 backend 不支持该设备'}"
+            else:
+                message = "设备离线、能力未注册或存在重复路由"
             check("device", "passed" if len(matches) == 1 else "blocked",
                   "device_action_ready" if len(matches) == 1 else "device_action_unavailable",
-                  "设备在线且动作已注册" if len(matches) == 1 else "设备离线、能力未注册或存在重复路由", node=node)
+                  message, node=node, details={"unavailable": skipped} if skipped is not None else None)
         else:
             check("device", "blocked", "device_snapshot_unavailable", "尚未接入设备在线快照", node=node)
         schema = node.get("param_schema")

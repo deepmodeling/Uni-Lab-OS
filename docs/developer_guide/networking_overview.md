@@ -186,10 +186,37 @@ ROS2 下运行的特殊节点。相对 Topic 名称会按
 驱动调用时携带的 `action_type` 只作为兼容信息，实际按动作名和字典参数执行。
 这套兼容接口用于普通设备控制，并不表示 HostLink 与 ROS2 100% 等价。MoveIt
 ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2 专用高频图像流或
-依赖原生 QoS、零拷贝、复杂消息图的链路仍使用 ROS2。对应驱动应标记为 `[ros2]`，
-HostLink 启动时会直接提示该驱动不支持，而不是在导入过程中报缺少 `rclpy`。工作站和
+依赖原生 QoS、零拷贝、复杂消息图的链路仍使用 ROS2。对应驱动应标记为 `[ros2]`
+（`class.supported_backends: [ros2]`）。HostLink 启动时不导入这类驱动，而是跳过该设备及挂在它
+下面的子设备，写一条 ERROR 日志，其余设备照常启动；跳过的设备及原因出现在 `/api/v1/devices`
+（`edge_status: "unavailable"`，`unavailable` 字段写明原因与支持的 backend；设备目录与在线列表
+都不把它算作在线）、运行预检、`/api/v1/hostlink/peers` 与 `/api/v1/health` 的
+`unavailable_devices` 中。注册表缺失、模板名非法等配置错误仍让启动失败。Slave 上跳过的设备
+目前只写 Slave 自己的日志。工作站和
 普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
 相同的设备初始化路径。
+
+HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creator.py`）：
+
+- 图节点的 `config` 按 `__init__` 参数名平铺传入。构造函数声明了名为 `config` 的参数时，它收到
+  整份节点配置（旧驱动从 `config` 里读参数的写法照旧），同时声明的其他具名参数（如 `debug_mode`、
+  `address`、`deck`）仍按名取节点配置里的同名键，不会静默退回默认值。新驱动仍应按基础类型
+  拆开参数，不要只用一个 `config: dict`。
+- 工作站构造器按 `deck` 引用实例化的台面就是驱动手里的 `self.deck`，也是设备 `resource_tracker`
+  里该 uuid 唯一的实例；其余非设备子节点各登记一次。驱动不需要自己去 tracker 里去重。
+- 启动顺序是 `post_init` → `setup` → `initialize` → 状态定时发布。PyLabRobot 液体处理器
+  （`LiquidHandlerAbstract` 系）的 `setup` 成功后，运行时打开 PLR 体积跟踪（进程级开关，ROS2 在
+  构造器调度的 `setup` 完成后做同一件事），驱动不必自己调用 `set_volume_tracking`。
+- 状态定时发布与动作反馈读取的同步 getter / property 在该设备专用的状态线程上求值（各 getter
+  之间仍串行），不占设备事件循环：慢的硬件查询只推迟状态本身，不会拖住同一设备的动作与定时器。
+  `async def` getter 仍在设备事件循环上 await，不应在其中做阻塞 IO。启动时扫描 `@subscribe`
+  回调不求值 property。
+
+`--test_mode` 下只有声明 `run_in_test_mode = True` 的驱动真实执行，其余动作返回按注册表 handles 构造的
+模拟结果。这条规则既作用于 Host 派发的作业，也作用于驱动之间的跨设备调用
+（`node.call_device_action[_async]`）：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到
+模拟结果，不会驱动真实硬件。目标设备在别的进程（Host ↔ Slave）时，调用方把测试模式随 `device.call`
+带过去，由目标所在进程按目标驱动判定。
 
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制

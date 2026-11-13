@@ -585,3 +585,50 @@ def test_queued_state_delta_for_a_material_deleted_meanwhile_is_dropped(tmp_path
         asyncio.run(run())
     finally:
         materials.close()
+
+
+def test_snapshot_freeze_torn_by_a_concurrent_structural_change_is_retried(tmp_path, monkeypatch) -> None:
+    """冻结整树时另一线程正在移除 / 转移物料，Site 占用与子节点读到不同时刻：重新冻结，
+    不记观察者错误，也不丢掉这次变更（仓库库位测试曾在满载时因此偶发失败）。"""
+    materials = MaterialsService(tmp_path / "materials.db")
+    service = AuthorityResourceService(LocalMaterialsClient(materials))
+    draft_root = _container("rack")
+    draft_root.assign_child_resource(_container("left"), Coordinate(1, 2, 3))
+    draft_root.assign_child_resource(_container("right"), Coordinate(4, 5, 6))
+    real_freeze = ResourceTreeSet.from_plr_resources
+    freezes: list[bool] = []
+
+    def freeze_torn_once(resources, *args, **kwargs):
+        freezes.append(True)
+        if len(freezes) == 1:
+            raise ValueError("Site s 引用的 occupied_material_uuid=m 不在物料树中")
+        return real_freeze(resources, *args, **kwargs)
+
+    async def run() -> None:
+        created = await service.create_resources("device-1", "device-uuid", draft_root)
+        root = created.resources[0]
+        observer = MaterialSnapshotObserver(
+            service,
+            device_id=lambda: "device-1",
+            device_uuid=lambda: "device-uuid",
+            schedule=asyncio.create_task,
+        )
+        assert observer.observe(root) is True
+        submitted = []
+        real_submit = service.snapshot_resource_tree
+
+        async def counting_submit(*args, **kwargs):
+            submitted.append(len(freezes))
+            return await real_submit(*args, **kwargs)
+
+        monkeypatch.setattr(service, "snapshot_resource_tree", counting_submit)
+        monkeypatch.setattr(resource_module.ResourceTreeSet, "from_plr_resources", staticmethod(freeze_torn_once))
+        root.unassign_child_resource(root.children[1])
+        await observer.wait_idle()
+        assert observer.errors == ()
+        assert submitted and submitted[0] >= 2  # 撕裂的那次没有提交，重新冻结后提交成功
+
+    try:
+        asyncio.run(run())
+    finally:
+        materials.close()

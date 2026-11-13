@@ -422,11 +422,15 @@ class MaterialSnapshotObserver:
             logger.exception("物料 snapshot 无法进入 backend 执行队列")
 
     _FLUSH_CONFLICT_RETRIES = 5
+    #: 冻结整树撞上并发结构变更（撕裂读）时的重新冻结次数与间隔。
+    _FLUSH_TORN_RETRIES = 5
+    _FLUSH_TORN_BACKOFF_S = 0.02
 
     async def _flush(self, root_key: int) -> None:
         # 合并同一个同步 tick 内多个 child 的变化。
         await asyncio.sleep(0)
         conflict_attempts = 0
+        torn_attempts = 0
         force_full = False
         while True:
             with self._guard:
@@ -472,7 +476,18 @@ class MaterialSnapshotObserver:
                 else:
                     # 先在设备执行线程冻结整棵 PLR 树，避免后台 I/O 时继续读取
                     # 一半旧、一半新的 child state。
-                    runtime_tree = ResourceTreeSet.from_plr_resources([root])
+                    try:
+                        runtime_tree = ResourceTreeSet.from_plr_resources([root])
+                    except ValueError as exc:
+                        # 另一线程正在移除 / 转移物料：Site 占用与子节点读到了不同时刻（撕裂读）。
+                        # 变更结束后树是一致的，让出片刻重新冻结；连续多次仍不一致才按错误处理。
+                        torn_attempts += 1
+                        if torn_attempts >= self._FLUSH_TORN_RETRIES:
+                            raise
+                        logger.info("冻结物料根树时读到正在变更的结构，重新冻结（第 %s 次）：%s", torn_attempts, exc)
+                        await asyncio.sleep(self._FLUSH_TORN_BACKOFF_S)
+                        force_full = True
+                        continue
                     snapshot_method = getattr(
                         self._service, "snapshot_resource_tree", None
                     )

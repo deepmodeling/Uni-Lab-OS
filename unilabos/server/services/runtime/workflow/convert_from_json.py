@@ -212,6 +212,7 @@ def convert_from_json(
     validate: bool = True,
     action_resource_mapping: Optional[Dict[str, str]] = None,
     create_resource_defaults: Optional[Dict[str, str]] = None,
+    device_name: Optional[str] = None,
 ) -> WorkflowGraph:
     """
     从 JSON 数据或文件转换为 WorkflowGraph
@@ -221,11 +222,13 @@ def convert_from_json(
 
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
-        workstation_name: 工作站名称，默认内置 "liquid_handler"
+        workstation_name: 工作站（设备实例）名称，默认内置 "liquid_handler"；动作节点与设液节点的
+            device_name 取它（驱动包场景如 PRCXI 传其设备实例名）
         validate: 是否校验句柄配置，默认 True
         action_resource_mapping: 覆盖默认的 action → 注册表 id 映射（与 ACTION_RESOURCE_MAPPING 合并），
             用于指向驱动包提供的设备，例如 {"transfer_liquid": "liquid_handler.prcxi"}
         create_resource_defaults: 覆盖建板节点的 device_id / parent_template / class_name（见 common.CREATE_RESOURCE_DEFAULTS）
+        device_name: 显式指定动作节点与设液节点的设备实例名，优先于 workstation_name
 
     Returns:
         WorkflowGraph: 构建好的工作流图
@@ -276,6 +279,7 @@ def convert_from_json(
         action_resource_mapping={**ACTION_RESOURCE_MAPPING, **(action_resource_mapping or {})},
         labware_defs=labware_defs,
         create_resource_defaults=create_resource_defaults,
+        device_name=device_name or workstation_name,
     )
 
     # 校验句柄配置

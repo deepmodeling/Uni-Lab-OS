@@ -88,8 +88,9 @@ transfer_liquid:
 每个节点都有 device_name 字段，指定在哪个设备上执行:
 - create_resource: device_name = 本机 host 服务设备实例名（默认 host_node，
   支持 --host_node_id 重命名，见 host_device_name()）
-- set_liquid_from_plate: device_name = "liquid_handler"（可配置，见 DEVICE_NAME_DEFAULT）
-- transfer_liquid 等动作: device_name = "liquid_handler"（可配置，见 DEVICE_NAME_DEFAULT）
+- set_liquid_from_plate: device_name = 调用方给的设备实例名（build_protocol_graph(device_name=...)，
+  convert_from_json 取 workstation_name），未给时为 DEVICE_NAME_DEFAULT（"liquid_handler"）
+- transfer_liquid 等动作: 同上
 
 ==================== 校验规则 ====================
 
@@ -373,6 +374,7 @@ def build_protocol_graph(
     action_resource_mapping: Optional[Dict[str, str]] = None,
     labware_defs: Optional[List[Dict[str, Any]]] = None,
     create_resource_defaults: Optional[Dict[str, str]] = None,
+    device_name: Optional[str] = None,
 ) -> WorkflowGraph:
     """统一的协议图构建函数，根据设备类型自动选择构建逻辑
 
@@ -383,8 +385,11 @@ def build_protocol_graph(
         action_resource_mapping: action 到 resource_name 的映射字典，可选
         labware_defs: labware 定义列表，格式为 [{"name": "...", "slot": "1", "type": "lab_xxx"}, ...]
         create_resource_defaults: 覆盖 CREATE_RESOURCE_DEFAULTS 的 device_id / parent_template / class_name
+        device_name: 动作节点与设液节点执行所在的设备实例名（图中的设备节点 id），
+            未给时为 DEVICE_NAME_DEFAULT；建板节点始终在本机 host 服务设备上执行
     """
     resource_defaults = {**CREATE_RESOURCE_DEFAULTS, **(create_resource_defaults or {})}
+    action_device_name = device_name or DEVICE_NAME_DEFAULT
     G = WorkflowGraph()
     resource_last_writer = {}  # reagent_name -> "node_id:port"
     slot_to_create_resource = {}  # slot -> create_resource node_id
@@ -492,7 +497,7 @@ def build_protocol_graph(
             description=f"Set liquid: {labware_id}",
             lab_node_type="Reagent",
             footer=f"set_liquid_from_plate-{set_liquid_resource}",
-            device_name=DEVICE_NAME_DEFAULT,
+            device_name=action_device_name,
             type=NODE_TYPE_DEFAULT,
             parent_uuid=set_liquid_group_id,  # 指向 Group 节点
             minimized=True,  # 折叠显示
@@ -611,7 +616,7 @@ def build_protocol_graph(
         # 更新 step 的 param、footer、device_name 和 type
         step_copy = step.copy()
         step_copy["param"] = params
-        step_copy["device_name"] = DEVICE_NAME_DEFAULT  # 动作节点使用默认设备名
+        step_copy["device_name"] = action_device_name  # 动作节点落在调用方指定的设备实例上
         step_copy["type"] = NODE_TYPE_DEFAULT  # 节点类型
 
         # 如果有警告，修改 footer 添加警告标记（警告放前面）

@@ -51,8 +51,8 @@ class BasicConfig:
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
     # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
     server_database_root = ""
-    # 库结构不一致且没有迁移路径时，策略为 refuse 的库拒绝启动；设为 True 则改为把旧库改名为
-    # .bak-<时间戳> 后重建空库。开发期四个库都是 rebuild，本开关在发布切换为 refuse 后才起作用。
+    # 库结构不一致且没有迁移路径时，策略为 refuse 的库（runtime / materials）拒绝启动、保留旧库；
+    # 设为 True 则改为把旧库改名为 .bak-<时间戳> 后重建空库。telemetry / history 本来就自动重建。
     database_rebuild_on_mismatch = False
     # 调度锁授予策略：auto（有原生库用原生，否则 Python FIFO）/ python / native（找不到原生库报错）。
     scheduler_grant_policy = "auto"

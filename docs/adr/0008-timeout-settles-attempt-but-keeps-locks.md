@@ -49,7 +49,7 @@ Status: accepted（2026-11-13，统一分支）
 - 默认两进程拓扑：Host 的 `execution_job` 已终态不再变化，迟到结果作为 runtime.v1 事件
   `execution.late_outcome` 上报（详情 payload 同时写入 Host history，`event_key=late_outcome`）。
 - runtime.db：`workflow_execution_claim.state` 增加 `timed_out`（0.13 发布线 schema v1 基线直接修改，
-  开发期旧库按 `on_unmigratable="rebuild"` 备份后重建）。
+  旧开发库没有迁移路径，按 `on_unmigratable="refuse"` 拒绝启动，需显式允许重建）。
 
 ## 托管与终态同事务
 

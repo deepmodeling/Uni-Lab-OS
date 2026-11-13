@@ -124,9 +124,9 @@ RUNTIME_DATABASE = DatabaseSpec(
     # schema_version 并在 migrations 里补 v2 起的迁移。
     schema_version=1,
     migrations=(),
-    # 工作流定义、任务与注册表记录：结构变化必须带迁移。开发期没有迁移路径时备份后重建；
-    # 正式发布前改为 "refuse"（拒绝启动、保留旧库）。
-    on_unmigratable="rebuild",
+    # 工作流定义、任务与注册表记录：结构变化必须带迁移。没有迁移路径时拒绝启动、保留旧库；
+    # 确认旧数据不再需要时由 BasicConfig.database_rebuild_on_mismatch 显式允许备份后重建。
+    on_unmigratable="refuse",
 )
 
 

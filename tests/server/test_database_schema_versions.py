@@ -35,8 +35,8 @@ def test_schema_changes_come_with_a_version_bump(key: str) -> None:
     assert (spec.schema_version, spec.checksum) == PINNED[key], f"{key} 已升级：请同步更新 PINNED"
 
 
-def test_development_policy_rebuilds_without_migration() -> None:
-    """开发期数据可丢：四个库都备份后重建。正式发布前把 runtime / materials 改为 refuse 并更新这里。"""
+def test_release_policy_refuses_runtime_and_materials_without_migration() -> None:
+    """工作流 / 注册表与物料是实验室的事实，没有迁移路径时拒绝启动；遥测与历史可丢，备份后重建。"""
     assert {key: spec.on_unmigratable for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": "rebuild", "materials": "rebuild", "telemetry": "rebuild", "history": "rebuild",
+        "runtime": "refuse", "materials": "refuse", "telemetry": "rebuild", "history": "rebuild",
     }

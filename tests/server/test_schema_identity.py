@@ -53,19 +53,39 @@ def _table_set(path) -> set[str]:
 
 
 def _refusing(key: str):
-    """发布时 runtime / materials 将使用的拒绝策略；开发期默认是 rebuild。"""
+    """runtime / materials 自身的拒绝策略（保留这个入口，测试读起来与声明无关）。"""
     from dataclasses import replace
 
     return replace(DATABASE_SPECS[key], on_unmigratable="refuse")
 
 
-@pytest.mark.parametrize("key", ["runtime", "materials", "telemetry", "history"])
-def test_schema_drift_rebuilds_during_development(tmp_path, key) -> None:
-    """开发期：指纹漂移且没有迁移路径时把旧库改名保留（.bak-时间戳）并按当前声明重建。"""
+def _rebuilding(key: str):
+    """同一张库按 rebuild 策略打开（显式允许重建的路径）。"""
+    from dataclasses import replace
+
+    return replace(DATABASE_SPECS[key], on_unmigratable="rebuild")
+
+
+@pytest.mark.parametrize("key", ["runtime", "materials"])
+def test_runtime_and_materials_refuse_by_default(tmp_path, key) -> None:
+    """默认声明就是拒绝：指纹漂移且没有迁移路径时不重建、旧库原样保留。"""
     path = tmp_path / DATABASE_SPECS[key].filename
     _tamper(path, key)
 
-    connection = initialize_database(path, DATABASE_SPECS[key])
+    with pytest.raises(DatabaseMigrationRequired, match="拒绝启动"):
+        initialize_database(path, DATABASE_SPECS[key])
+
+    assert "drift_marker" in _table_set(path)
+    assert not list(tmp_path.glob(f"{DATABASE_SPECS[key].filename}.bak-*"))
+
+
+@pytest.mark.parametrize("key", ["runtime", "materials", "telemetry", "history"])
+def test_schema_drift_rebuilds_under_the_rebuild_policy(tmp_path, key) -> None:
+    """rebuild 策略（telemetry / history 的默认）：指纹漂移且没有迁移路径时把旧库改名保留（.bak-时间戳）并重建。"""
+    path = tmp_path / DATABASE_SPECS[key].filename
+    _tamper(path, key)
+
+    connection = initialize_database(path, _rebuilding(key))
     try:
         row = connection.execute("SELECT database_key, checksum FROM schema_identity").fetchone()
         assert tuple(row) == (key, DATABASE_SPECS[key].checksum)
@@ -79,7 +99,7 @@ def test_schema_drift_rebuilds_during_development(tmp_path, key) -> None:
 
 @pytest.mark.parametrize("key", ["runtime", "materials"])
 def test_refuse_policy_keeps_the_old_database(tmp_path, key) -> None:
-    """发布后的拒绝策略：指纹漂移且没有迁移路径时拒绝启动，旧库原样保留。"""
+    """拒绝策略：指纹漂移且没有迁移路径时拒绝启动，旧库原样保留。"""
     path = tmp_path / DATABASE_SPECS[key].filename
     _tamper(path, key)
 
@@ -169,13 +189,70 @@ def test_contract_version_bump_with_migration_keeps_unaffected_rows(tmp_path) ->
     [(12, True), (8, False), (0, False)],
     ids=["newer-same-fingerprint", "newer-drifted", "unversioned-drifted"],
 )
-def test_database_from_before_the_v1_baseline_is_backed_up_and_rebuilt(
+def _make_pre_baseline(path, key, stored_version, same_checksum) -> None:
+    """造一张 0.13 之前的开发库：库内版本更高或没有版本、带旧迁移记录。"""
+
+    spec = DATABASE_SPECS[key]
+    connection = initialize_database(path, spec)
+    with connection:
+        connection.execute(
+            "CREATE TABLE schema_migration (version INTEGER PRIMARY KEY, description TEXT NOT NULL, "
+            "from_checksum TEXT NOT NULL, to_checksum TEXT NOT NULL, applied_at_ms INTEGER NOT NULL)"
+        )
+        connection.executemany(
+            "INSERT INTO schema_migration VALUES (?, 'pre-baseline', 'old', 'old', 0)",
+            [(version,) for version in range(2, stored_version + 1)],
+        )
+        connection.execute("CREATE TABLE pre_baseline_marker(x TEXT)")
+        if not same_checksum:
+            connection.execute(f"UPDATE schema_identity SET checksum='pre-baseline' WHERE database_key='{key}'")
+    connection.execute(f"PRAGMA user_version = {stored_version}")
+    connection.close()
+
+
+@pytest.mark.parametrize("key", ["runtime", "materials"])
+@pytest.mark.parametrize(
+    ("stored_version", "same_checksum"),
+    [(12, True), (8, False), (0, False)],
+    ids=["newer-same-fingerprint", "newer-drifted", "unversioned-drifted"],
+)
+def test_runtime_and_materials_from_before_the_v1_baseline_refuse_and_keep_the_old_database(
     tmp_path, key, stored_version, same_checksum
 ) -> None:
-    """0.13 之前的开发库（库内版本更高或没有版本、带旧迁移记录）：改名备份后按 v1 基线重建。
+    """0.13 之前的 runtime / materials 库没有迁移路径：默认拒绝启动，旧库连同库内版本原样保留。"""
+
+    spec = DATABASE_SPECS[key]
+    path = tmp_path / spec.filename
+    _make_pre_baseline(path, key, stored_version, same_checksum)
+
+    with pytest.raises(DatabaseMigrationRequired, match="database_rebuild_on_mismatch"):
+        initialize_database(path, spec)
+
+    assert "pre_baseline_marker" in _table_set(path)
+    assert not list(tmp_path.glob(f"{spec.filename}.bak-*"))
+    peek = sqlite3.connect(path)
+    try:
+        assert peek.execute("PRAGMA user_version").fetchone()[0] == stored_version
+    finally:
+        peek.close()
+
+
+@pytest.mark.parametrize("key", ["runtime", "materials", "telemetry", "history"])
+@pytest.mark.parametrize(
+    ("stored_version", "same_checksum"),
+    [(12, True), (8, False), (0, False)],
+    ids=["newer-same-fingerprint", "newer-drifted", "unversioned-drifted"],
+)
+def test_database_from_before_the_v1_baseline_is_backed_up_and_rebuilt(
+    tmp_path, monkeypatch, key, stored_version, same_checksum
+) -> None:
+    """0.13 之前的开发库按 v1 基线重建并改名备份：telemetry / history 默认如此，
+    runtime / materials 需要显式允许（``database_rebuild_on_mismatch``）。
 
     指纹一致但库内版本更高也不复用：旧迁移记录会与之后同号的迁移冲突。
     """
+    if DATABASE_SPECS[key].on_unmigratable == "refuse":
+        monkeypatch.setattr(BasicConfig, "database_rebuild_on_mismatch", True)
     spec = DATABASE_SPECS[key]
     path = tmp_path / spec.filename
     connection = initialize_database(path, spec)

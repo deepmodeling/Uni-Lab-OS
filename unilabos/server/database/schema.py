@@ -10,7 +10,8 @@ v1 为基线、尚无迁移；之后的结构变化从 v2 起追加迁移。库�
   比对列、索引与触发器并做外键检查，任何一项不符都整体回滚；
 - 没有迁移路径（指纹漂移、版本缺失或高于代码版本）：按 ``on_unmigratable`` 处理。``refuse``
   拒绝启动并保留旧库原样；``rebuild`` 把旧库改名为 ``<file>.bak-<时间戳>`` 后重建空库。
-  ``BasicConfig.database_rebuild_on_mismatch`` 可在开发期显式允许 ``refuse`` 库重建。
+  ``runtime`` / ``materials`` 是 ``refuse``，``telemetry`` / ``history`` 是 ``rebuild``；
+  ``BasicConfig.database_rebuild_on_mismatch`` 可显式允许 ``refuse`` 库备份后重建。
 """
 
 from __future__ import annotations

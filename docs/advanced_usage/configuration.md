@@ -277,6 +277,7 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
 | `control_token`          | str  | `""`          | 调度权威与 Host 之间控制面的共享 token，见下文「控制面 token」 |
 | `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
+| `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |
 
 #### 控制面 token
 
@@ -309,6 +310,12 @@ Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/b
 `history.db`（连同 `-wal` / `-shm` 文件）以及 `edge/`、`backend/` 目录移到 `<工作目录>/database/`；
 或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
 单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
+
+**从 0.12.x 或 0.13 之前的开发版升级**：0.13 的四个库都以 schema v1 为起点，旧库没有迁移路径。
+`runtime.db`（工作流、任务、注册表）与 `materials.db`（物料）会**拒绝启动并保留旧库原样**，启动报错里写明了库的位置；
+确认旧数据不再需要时，在 `local_config.py` 设 `BasicConfig.database_rebuild_on_mismatch = True`
+（或环境变量 `UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true`），旧库会改名为 `.bak-<时间戳>` 后重建；
+也可以用 `--server_database_root` 换一个新目录。`telemetry.db` 与 `history.db` 不拒绝，自动备份后重建。
 
 #### 一个数据库根目录只归一个实例
 

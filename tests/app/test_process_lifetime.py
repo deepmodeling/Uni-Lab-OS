@@ -269,15 +269,11 @@ def test_shutdown_deadline_forces_exit_and_repeated_signals_are_ignored(tmp_path
     )
     assert result.returncode == 7, result.stdout + result.stderr
     assert time.monotonic() - started < 30
-    assert "测试：" in result.stdout and "强制结束进程" in result.stdout
+    assert "测试：" in result.stderr and "强制结束进程" in result.stderr
 
 
 def test_shutdown_deadline_exits_even_when_reporting_blocks(tmp_path: Path) -> None:
-    """限时不能依赖输出流：卡住的线程占着 stdout 的锁时，打印报告会永远阻塞，进程仍须按时退出。
-
-    CI 曾见过权威被强杀后 Host 子进程在 20 s 限时之后还在重连、日志里没有"强制结束"——
-    限时线程卡在打印上，os._exit 没执行到。
-    """
+    """限时不能依赖输出流：print / logging 永远阻塞时，进程仍须按时退出（报告直接写 fd 2）。"""
 
     script = textwrap.dedent(
         """
@@ -297,7 +293,88 @@ def test_shutdown_deadline_exits_even_when_reporting_blocks(tmp_path: Path) -> N
     )
     assert result.returncode == 7, result.stdout + result.stderr
     assert time.monotonic() - started < 15
-    assert "强制结束进程" in result.stderr and "绕过缓冲区" in result.stderr
+    assert "强制结束进程" in result.stderr
+
+
+def _run_deadline_script(script: str) -> tuple[subprocess.CompletedProcess[str], float]:
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(script)], env=_env(), capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=60,
+    )
+    return result, time.monotonic() - started
+
+
+@POSIX_ONLY
+def test_shutdown_signal_cannot_deadlock_on_lifetime_locks(tmp_path: Path) -> None:
+    """停机信号打断正持有 lifetime 锁的主线程：处理器布置限时不能去等这把锁。
+
+    CI 见过权威被强杀后 Host 子进程既没有有序收尾、20 s 限时也没生效（一直在重连）。旧实现在信号
+    处理器里拿锁、起线程：被打断的主线程若正持有同一把锁，处理器就和它互相等死，限时也没布置上。
+    这里处理器布置限时后故意卡住（模拟收尾卡死），只有看门狗能让进程退出。
+    """
+
+    result, elapsed = _run_deadline_script(
+        """
+        import os, signal, threading, time
+        from unilabos.app import lifetime
+
+        def handler(signum, frame):
+            if lifetime.begin_shutdown(3, reason="测试", deadline=0.5):
+                threading.Event().wait()  # 收尾卡死
+
+        lifetime.start_exit_watchdog()
+        signal.signal(signal.SIGTERM, handler)
+        with lifetime._state_lock:
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(60)
+        """
+    )
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert elapsed < 15 and "强制结束进程" in result.stderr
+
+
+def test_deadline_fires_even_when_threading_internals_are_held(tmp_path: Path) -> None:
+    """到点时另一个线程卡在 threading 内部锁里：旧实现到点再起报告线程会被它挡住，永远不退出。"""
+
+    result, elapsed = _run_deadline_script(
+        """
+        import threading, time
+        from unilabos.app import lifetime
+
+        lifetime.arm_exit_deadline(0.5, 3, reason="测试")
+        held = threading.Event()
+
+        def stuck():
+            with threading._active_limbo_lock:
+                held.set()
+                time.sleep(60)
+
+        threading.Thread(target=stuck, daemon=True).start()
+        held.wait()
+        time.sleep(60)
+        """
+    )
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert elapsed < 15
+
+
+def test_lost_parent_arms_the_deadline_before_printing(tmp_path: Path) -> None:
+    """父进程消失后先布置限时再打印：打印被占着的输出锁卡住时进程仍须限时退出。"""
+
+    result, elapsed = _run_deadline_script(
+        """
+        import threading, time
+        from unilabos.app import lifetime
+
+        lifetime.print_status = lambda *args, **kwargs: threading.Event().wait()  # 输出永远阻塞
+        lifetime.SHUTDOWN_DEADLINE_S = 0.5
+        threading.Thread(target=lifetime._exit_with_parent, args=(4242,), daemon=True).start()
+        time.sleep(60)
+        """
+    )
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert elapsed < 15 and "父进程 (pid 4242) 已退出" in result.stderr
 
 
 def test_exit_now_runs_atexit_and_does_not_join_busy_worker_threads(tmp_path: Path) -> None:

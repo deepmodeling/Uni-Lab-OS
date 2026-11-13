@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import atexit
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -53,74 +54,101 @@ PARENT_DEATH_SIGNAL_ENV = "UNILABOS_PARENT_DEATH_SIGNAL"
 SHUTDOWN_DEADLINE_S = 20.0
 #: 父进程轮询间隔
 PARENT_POLL_S = 0.5
-#: 限时到点后，打印"强制结束"报告最多等多久（输出流被卡住的线程占着时不再等）
-EXIT_REPORT_TIMEOUT_S = 2.0
+#: 看门狗轮询间隔：限时到点后最多晚这么久强制结束
+WATCHDOG_POLL_S = 0.2
 #: 父进程消失、或停机超时被强制结束时的退出码（没有人再看这个码，只为日志里可辨认）
 PARENT_LOST_EXIT_CODE = 1
 
+#: 只保护 ``_watch``（普通上下文里使用）；停机与限时的路径一律不拿锁
 _state_lock = threading.Lock()
-_shutdown_started = threading.Event()
-_deadline_armed = False
 _watch: Optional["_ParentWatch"] = None
+#: 停机是否已经开始。信号处理器里只做普通赋值：处理器可能打断正持有任意锁的主线程，
+#: 也可能被下一个信号嵌套打断，拿锁就可能和被打断的代码互相等死。
+_shutdown_flag = False
+#: 已布置的限时 ``(到点的 monotonic 时刻, 退出码, 原因, 秒数)``；先布置者生效
+_deadline: Optional[tuple[float, int, str, float]] = None
+_watchdog: Optional[threading.Thread] = None
+_watchdog_lock = threading.Lock()
 
 
 # ── 停机：限时、一次性 ─────────────────────────────────────────────
 
 
 def begin_shutdown(code: int, *, reason: str, deadline: float = SHUTDOWN_DEADLINE_S) -> bool:
-    """标记本进程开始停机并布置限时强制退出。
+    """标记本进程开始停机并布置限时强制退出（在主线程的信号处理器里调用）。
 
     第一次调用返回 True；之后（重复的 SIGTERM / Ctrl+C、进程组信号与父进程转发的信号同时到达）
-    返回 False，调用方应忽略这次信号，不要再往正在进行的收尾里抛异常。
+    返回 False，调用方应忽略这次信号，不要再往正在进行的收尾里抛异常。只做普通赋值，不拿锁、
+    不起线程。
     """
 
-    with _state_lock:
-        if _shutdown_started.is_set():
-            return False
-        _shutdown_started.set()
+    global _shutdown_flag
+    if _shutdown_flag:
+        return False
+    _shutdown_flag = True
     arm_exit_deadline(deadline, code, reason=reason)
     return True
 
 
 def shutdown_started() -> bool:
-    return _shutdown_started.is_set()
+    return _shutdown_flag
 
 
 def arm_exit_deadline(seconds: float, code: int, *, reason: str) -> None:
-    """``seconds`` 后若进程仍在，强制以 ``code`` 结束；只布置一次，先布置者生效。"""
+    """``seconds`` 后若进程仍在，强制以 ``code`` 结束；只布置一次，先布置者生效。
 
-    global _deadline_armed
-    with _state_lock:
-        if _deadline_armed:
+    这里只记下到点时刻（一次普通赋值，信号处理器里调用也安全），计时与强制结束由常驻看门狗线程
+    完成。限时是最后的保证，不能依赖任何可能被卡住的东西：布置时不拿锁、不起线程，到点时不打印、
+    不起线程。看门狗还没启动时（测试、一次性工具）在这里补启动；装信号处理器的进程须在装处理器
+    之前调用 :func:`start_exit_watchdog`。
+    """
+
+    global _deadline
+    if _deadline is None:
+        _deadline = (time.monotonic() + float(seconds), code, reason, float(seconds))
+    if not _watchdog_running():
+        start_exit_watchdog()
+
+
+def start_exit_watchdog() -> None:
+    """启动常驻看门狗线程（幂等）。须在普通上下文里调用，不能在信号处理器里。"""
+
+    global _watchdog
+    with _watchdog_lock:
+        if _watchdog_running():
             return
-        _deadline_armed = True
+        watchdog = threading.Thread(target=_run_watchdog, name="UniLabExitDeadline", daemon=True)
+        watchdog.start()
+        _watchdog = watchdog
 
-    def _expire() -> None:
-        time.sleep(seconds)
-        message = f"{reason}：{seconds:.0f}s 内未完成退出，强制结束进程"
 
-        def _report() -> None:
-            print_status(message, "error")
-            _flush_std_streams()
+def _watchdog_running() -> bool:
+    watchdog = _watchdog
+    return watchdog is not None and watchdog.is_alive()
 
-        # 限时是最后的保证，不能被任何 Python 层的锁拖住：卡住的线程若正持有 stdout / stderr 的
-        # 缓冲区锁，print / flush 会永远等下去，os._exit 就永远执行不到。报告放到另一个线程里限时等。
-        reported = False
-        try:
-            reporter = threading.Thread(target=_report, name="UniLabExitReport", daemon=True)
-            reporter.start()
-            reporter.join(EXIT_REPORT_TIMEOUT_S)
-            reported = not reporter.is_alive()
-        except RuntimeError:  # 解释器已在收尾，起不了新线程
-            pass
-        if not reported:
-            try:
-                os.write(2, f"[ERROR] {message}（输出流被占用，绕过缓冲区直接写）\n".encode("utf-8", "replace"))
-            except OSError:
-                pass
-        os._exit(code)
 
-    threading.Thread(target=_expire, name="UniLabExitDeadline", daemon=True).start()
+def _run_watchdog() -> None:
+    while True:
+        deadline = _deadline
+        if deadline is not None and time.monotonic() >= deadline[0]:
+            _force_exit(deadline[1], deadline[2], deadline[3])
+        time.sleep(WATCHDOG_POLL_S)
+
+
+def _force_exit(code: int, reason: str, seconds: float) -> NoReturn:
+    """到点：报告一行再 ``os._exit``。不经过 print / logging（它们的锁可能被卡住的线程占着），
+    也不起新线程；输出端写不进去（管道满、读端停住）就不写，绝不阻塞。"""
+
+    message = f"[ERROR] {reason}：{seconds:.0f}s 内未完成退出，强制结束进程\n".encode("utf-8", "replace")
+    try:
+        writable = True
+        if os.name != "nt":
+            writable = bool(select.select([], [2], [], 0)[1])
+        if writable:
+            os.write(2, message)
+    except (OSError, ValueError):
+        pass
+    os._exit(code)
 
 
 def request_main_exit() -> None:
@@ -238,6 +266,7 @@ def follow_parent(
     """开始跟随 ``parent_pid``：父进程消失时调用 ``on_lost(parent_pid)``（默认有序退出本进程）。"""
 
     global _watch
+    start_exit_watchdog()
     handler = on_lost or _exit_with_parent
     if death_signal and sys.platform.startswith("linux") and os.getppid() == parent_pid:
         _set_parent_death_signal(signal.SIGTERM)
@@ -266,8 +295,9 @@ def stop_following_parent() -> None:
 
 def _exit_with_parent(parent_pid: int) -> None:
     reason = f"父进程 (pid {parent_pid}) 已退出"
-    print_status(f"{reason}，本进程随之有序退出", "warning")
+    # 先布置限时再打印：打印可能被别的线程占着的输出锁拖住，限时不能排在它后面
     arm_exit_deadline(SHUTDOWN_DEADLINE_S, PARENT_LOST_EXIT_CODE, reason=reason)
+    print_status(f"{reason}，本进程随之有序退出", "warning")
     request_main_exit()
 
 
@@ -511,13 +541,12 @@ class KillOnCloseJob:
 
 
 def _reset_for_test() -> None:
-    """测试用：清掉停机标记与限时（已在跑的限时线程无法撤销，测试里不要真的布置）。"""
+    """测试用：清掉停机标记与已布置的限时（看门狗继续空转）。"""
 
-    global _deadline_armed
+    global _shutdown_flag, _deadline
     stop_following_parent()
-    with _state_lock:
-        _shutdown_started.clear()
-        _deadline_armed = False
+    _shutdown_flag = False
+    _deadline = None
 
 
 __all__ = [
@@ -535,5 +564,6 @@ __all__ = [
     "follow_parent_from_env",
     "request_main_exit",
     "shutdown_started",
+    "start_exit_watchdog",
     "stop_following_parent",
 ]

@@ -937,6 +937,9 @@ def _run_main():
         # 处理器里要用的模块先导入好：信号可能恰好打断主线程里正在进行的导入
         from unilabos.app import lifetime
         from unilabos.server import lifecycle
+
+        # 限时看门狗在装处理器之前启动：处理器里布置限时只做一次赋值，不拿锁、不起线程
+        lifetime.start_exit_watchdog()
         from unilabos.server.backend.restart import (
             RESTART_EXIT_CODE,
             is_restart_requested,

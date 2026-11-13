@@ -49,6 +49,7 @@ mamba activate unilab
 mamba install uni-lab::unilabos -c uni-lab -c robostack-staging -c conda-forge -y
 
 # 验证注册表（会自动检测并安装 requirements.txt 中的依赖）
+# 扫描失败被跳过的文件或导入失败的设备类都会让它以退出码 1 结束
 unilab --check_mode --devices ./my_package --external_devices_only
 ```
 

@@ -230,6 +230,12 @@ class Registry:
 
         self._setup_called = False
         self._startup_executor: Optional[ThreadPoolExecutor] = None
+        #: AST 扫描失败、被跳过的文件：[{"file", "error"}]；check_mode 据此判定失败
+        self.scan_errors: List[Dict[str, str]] = []
+        #: verify_and_resolve_registry 的导入失败（"device:<id>: <错误>" / "resource:<id>: <错误>"）
+        self.verify_errors: List[str] = []
+        #: 当前 backend 不支持、导入失败只记跳过的设备："<id>: <错误>"
+        self.verify_skipped: List[str] = []
 
     # ------------------------------------------------------------------
     # 统一入口
@@ -420,6 +426,8 @@ class Registry:
             scan_root, python_path=python_path, executor=self._startup_executor,
             cache=ast_cache, include_files=[pkg_root / "backend" / "host_services.py"],
         )
+        self.scan_errors.extend(scan_result.pop("_scan_errors", []))
+        self.scan_errors.extend(host_scan.pop("_scan_errors", []))
         host_meta = host_scan.get("devices", {}).get("host_node")
         self._host_node_ast_entry = (
             self._build_device_entry_from_ast("host_node", host_meta) if host_meta else {}
@@ -435,6 +443,7 @@ class Registry:
                 cache=ast_cache,
             )
             extra_stats = extra_result.pop("_cache_stats", {"hits": 0, "misses": 0, "total": 0})
+            self.scan_errors.extend(extra_result.pop("_scan_errors", []))
             total_stats["hits"] += extra_stats["hits"]
             total_stats["misses"] += extra_stats["misses"]
             total_stats["total"] += extra_stats["total"]
@@ -1669,11 +1678,17 @@ class Registry:
     def verify_and_resolve_registry(self):
         """
         对 AST 扫描得到的注册表执行实际 import 验证（使用共享线程池并行）。
+
+        返回导入失败列表（同时记入 ``self.verify_errors``）。``supported_backends`` 不含当前
+        backend 的设备（如 HostLink 环境里的 ROS 2 专用节点）导入失败只记入
+        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。
         """
         errors = []
+        skipped: List[str] = []
         import_success_count = 0
         resolved_count = 0
         total_items = len(self.device_type_registry) + len(self.resource_type_registry)
+        active_backend = str(BasicConfig.backend or "hostlink")
 
         lock = threading.Lock()
 
@@ -1699,6 +1714,15 @@ class Registry:
 
                 return None
             except Exception as e:
+                supported = entry.get("class", {}).get("supported_backends") or []
+                if supported and active_backend not in supported:
+                    logger.warning(
+                        f"[Uni-Lab-OS Registry/Verify] 设备 {device_id} 仅支持 {', '.join(supported)}，"
+                        f"当前 backend {active_backend} 下导入 {module_str} 失败，跳过校验: {e}"
+                    )
+                    with lock:
+                        skipped.append(f"{device_id}: {e}")
+                    return None
                 logger.warning(
                     f"[Uni-Lab-OS Registry/Verify] 设备 {device_id}: "
                     f"导入模块 {module_str} 失败: {e}"
@@ -1751,18 +1775,30 @@ class Registry:
             if self._startup_executor is None:
                 executor.shutdown(wait=True)
 
+        errors.sort()
+        skipped.sort()
+        skipped_note = f", {len(skipped)} 个因 backend 不支持跳过" if skipped else ""
         if errors:
             logger.warning(
                 f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items} 成功, "
-                f"{len(errors)} 个错误"
+                f"{len(errors)} 个错误{skipped_note}"
             )
         else:
             logger.info(
-                f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items} 全部通过, "
-                f"{resolved_count} 设备类型已解析"
+                f"[Uni-Lab-OS Registry/Verify] 验证完成: {import_success_count}/{total_items - len(skipped)} 全部通过, "
+                f"{resolved_count} 设备类型已解析{skipped_note}"
             )
 
+        self.verify_errors = list(errors)
+        self.verify_skipped = list(skipped)
         return errors
+
+    def check_failures(self) -> List[str]:
+        """``--check_mode`` 的失败清单：AST 扫描跳过的文件 + 注册类导入失败。"""
+
+        failures = [f"AST 扫描失败: {item['file']}: {item['error']}" for item in self.scan_errors]
+        failures.extend(f"导入失败: {item}" for item in self.verify_errors)
+        return failures
 
     def resolve_types_for_device(self, device_id: str, cls=None):
         """

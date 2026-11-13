@@ -92,6 +92,9 @@ Uni-Lab 的启动过程分为以下几个阶段：
 - 构建设备和资源注册表
 - 支持自定义注册表路径 (`--registry_path`)
 - 可选择补全注册表信息 (`--complete_registry`)
+- `--check_mode` 只构建并校验注册表后退出：真实 import 每个注册的设备 / 资源类。AST 扫描失败而被跳过的文件
+  （日志 `AST 扫描文件失败`）或导入失败的注册类都会让它以退出码 1 结束，并逐条列出问题；
+  `supported_backends` 不含当前 backend 的设备（例如 HostLink 下的 ROS 2 专用节点）导入失败只记为跳过。
 
 ### 8. 设备验证和注册
 

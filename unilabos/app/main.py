@@ -800,11 +800,27 @@ def _run_main():
         external_only=external_only,
     )
 
-    # Check mode: 注册表验证完成后直接退出
+    # Check mode: 注册表验证完成后直接退出；扫描跳过的文件或导入失败的注册类都让校验失败（退出码 1）
     if check_mode:
         device_count = len(lab_registry.device_type_registry)
         resource_count = len(lab_registry.resource_type_registry)
+        for skipped in lab_registry.verify_skipped:
+            print_status(f"Check mode: 当前 backend 不支持，跳过导入校验: {skipped}", "warning")
+        failures = lab_registry.check_failures()
+        if failures:
+            for failure in failures:
+                print_status(f"Check mode: {failure}", "error")
+            print_status(
+                f"Check mode: 注册表校验失败 ({len(failures)} 个问题; {device_count} 设备, {resource_count} 资源)",
+                "error",
+            )
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(1)
         print_status(f"Check mode: 注册表验证完成 ({device_count} 设备, {resource_count} 资源)，退出", "info")
+        # os._exit 不会刷新缓冲区：输出被管道接走时（CI）先刷出结论
+        sys.stdout.flush()
+        sys.stderr.flush()
         os._exit(0)
 
     # 调度权威进程：--role backend 只起权威（Edge 用 --address 接入）；默认拓扑则由

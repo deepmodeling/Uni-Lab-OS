@@ -314,7 +314,7 @@ def test_step_target_must_contain_action() -> None:
 def test_builder_mode_rejects_build_time_decisions_on_results(misuse) -> None:
     """builder 模式在注册时执行一次函数：对结果做判断只会得到固定答案（else 分支被静默丢弃），必须报错。"""
 
-    @workflow(display_name="误用")
+    @workflow(display_name="误用", compiler="builder")
     def misuse_flow(ctx: WorkflowBuildContext) -> None:
         step = ctx.run("reactor/measure", {})
         if misuse(ctx, step):

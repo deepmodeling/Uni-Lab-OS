@@ -11,6 +11,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
+from unilabos.registry.workflow_helpers import INLINED_MARK
 from unilabos.registry.workflows import WorkflowBuildContext, WorkflowStep
 
 
@@ -59,8 +60,11 @@ def collect_static_workflow(fn: Callable[..., Any]) -> WorkflowBuildContext:
         input_contract, output_contract = parse_workflow_contract(fn, function)
     except ValueError as exc:
         raise WorkflowSourceError(f"{fn.__qualname__}：{exc}") from exc
+    from unilabos.registry.workflow_helpers import live_scope
+
     closure = inspect.getclosurevars(fn)
     constants = {**closure.globals, **closure.nonlocals}
+    function = _expand_helpers(function, live_scope(fn), constants, qualname=fn.__qualname__)
     return _compile_function(
         function, qualname=fn.__qualname__, input_contract=input_contract,
         output_contract=output_contract, constants=constants, source_lines=source.splitlines(),
@@ -108,6 +112,9 @@ def compile_workflow_source(python_source: str, *, function_name: Optional[str] 
                 constants[item.targets[0].id] = ast.literal_eval(item.value)
             except (ValueError, TypeError, SyntaxError):
                 continue
+    from unilabos.registry.workflow_helpers import source_scope
+
+    function = _expand_helpers(function, source_scope(tree, constants), constants, qualname=function.name)
     lines = python_source.splitlines()
     result = _compile_function(
         function, qualname=function.name, input_contract=input_contract,
@@ -128,6 +135,20 @@ def compile_workflow_source(python_source: str, *, function_name: Optional[str] 
         except (ValueError, TypeError, SyntaxError):
             raise WorkflowSourceError("@workflow 参数必须是字面量", line=decorator.lineno) from None
     return result
+
+
+def _expand_helpers(function: ast.FunctionDef, scope: Any, constants: dict[str, Any], *, qualname: str) -> ast.FunctionDef:
+    """编译前展开辅助函数调用（只读源码，不执行）；出错位置报在模板里的调用行。"""
+
+    from unilabos.registry.workflow_helpers import HelperError, inline_helpers
+
+    try:
+        return inline_helpers(function, scope, constants)
+    except HelperError as exc:
+        raise WorkflowSourceError(
+            f"{qualname} 第 {getattr(exc.node, 'lineno', '?')} 行：{exc}",
+            line=getattr(exc.node, "lineno", None), column=getattr(exc.node, "col_offset", None),
+        ) from None
 
 
 def _is_workflow_decorator(node: ast.expr) -> bool:
@@ -162,6 +183,8 @@ def _compile_function(
             statement.end_lineno or statement.lineno, (statement.end_col_offset or statement.col_offset) + 1,
         )
         previous = statement.lineno - 2
+        if getattr(statement, INLINED_MARK, False):
+            return  # 辅助函数展开出的步骤：源码范围记在调用处，节点锚点只认模板里亲手写的语句
         if 0 <= previous < len(source_lines):
             match = _NODE_ANCHOR.fullmatch(source_lines[previous])
             if match is not None:

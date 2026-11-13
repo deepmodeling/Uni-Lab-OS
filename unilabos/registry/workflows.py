@@ -20,8 +20,9 @@
 - ``ctx.run("device_id/action_name", params)``：角色 = 显式设备 id。
 - ``ctx.run_template("class_name/action_name", params)``：角色 = registry 设备类；
   实例化时该类恰有一个设备则自动填充，否则由用户绑定。
-- ``@workflow(..., compiler="ast")``：静态解析函数体，支持动作结果的原生 if/elif/else；
-  默认 builder 模式保留原有执行函数收集步骤的行为。
+- 默认 ``compiler="ast"``：只解析函数源码、不执行，支持动作结果的原生 if/elif/else；
+  辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前按源码展开
+  （``registry/workflow_helpers.py``）。``compiler="builder"`` 是旧行为：注册时执行一次函数收集步骤。
 - ``with ctx.loop_for(3):`` / ``with ctx.loop_while(condition):``：块内的步骤是循环体，
   运行时由调度器逐轮执行（不是配置时展开）。``for`` 固定轮数；``while`` 每轮前判定条件——
   ``ctx.device_state("heater", "temperature_c", "<", 80)`` 看设备状态字段，
@@ -245,7 +246,7 @@ class WorkflowDefinition:
     tags: List[str]
     fn: Callable[["WorkflowBuildContext"], Any]
     guide: Optional[WorkflowGuide] = None
-    compiler: str = "builder"
+    compiler: str = "ast"
 
     def collect(self) -> "WorkflowBuildContext":
         """收集步骤及输入输出声明，AST 模式不调用作者函数。"""
@@ -390,7 +391,7 @@ class WorkflowBuildContext:
         description: str = "",
         interval_seconds: float = 0.0,
     ) -> Iterator[WorkflowStep]:
-        """固定轮数循环：``with ctx.loop_for(3) as loop:`` 块内的步骤是循环体。"""
+        """固定轮数循环：``with ctx.loop_for(3):`` 块内的步骤是循环体（``as`` 绑定只在 builder 模式可用）。"""
 
         spec = {"mode": "for", "count": count, "interval_seconds": interval_seconds}
         with self._loop(spec, name or f"循环 ×{count}", description) as step:
@@ -600,7 +601,7 @@ def workflow(
     description: str = "",
     tags: Optional[Sequence[str]] = None,
     guide: Optional[Any] = None,
-    compiler: str = "builder",
+    compiler: str = "ast",
 ):
     """把模块级函数注册为设备包自带的工作流模板。
 
@@ -611,7 +612,8 @@ def workflow(
         guide: 操作指引（``WorkflowGuide`` 或同形 dict）：``preparation`` 运行前要在前端做的
             准备（出库、挂到哪台设备哪个位点、确认设备在线……）、``expected`` 预期效果、
             ``notes`` 注意事项。配合每步的 ``description`` 组成前端的"全流程"说明。
-        compiler: builder 保留原有步骤收集；ast 只解析函数源码并编译原生条件。
+        compiler: ast（默认）只解析函数源码：支持动作结果驱动的 if/elif/else，辅助函数在编译前按源码展开；
+            builder 在注册时执行一次函数收集步骤（旧行为，需要显式指定）。
     """
 
     if not str(display_name).strip():

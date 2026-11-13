@@ -42,6 +42,7 @@ liquid_handler:
           reagent_sources: null
           spread: wide
           targets: null
+          touch_tip: false
           use_channels: null
         handles: {}
         placeholder_keys:
@@ -118,6 +119,9 @@ liquid_handler:
                   items:
                     type: object
                   type: array
+                touch_tip:
+                  default: false
+                  type: boolean
                 use_channels:
                   items:
                     type: integer
@@ -3727,6 +3731,7 @@ liquid_handler:
           sources: null
           spread: wide
           top: null
+          touch_tip: false
           use_channels: null
           vols: null
           waste_liquid: null
@@ -3785,6 +3790,9 @@ liquid_handler:
                   items:
                     type: number
                   type: array
+                touch_tip:
+                  default: false
+                  type: boolean
                 use_channels:
                   items:
                     type: integer

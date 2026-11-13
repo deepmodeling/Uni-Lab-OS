@@ -729,6 +729,13 @@ source.type      # "resource"
 source.class_    # "corning_96_wellplate_360ul_flat"
 ```
 
+## 继承内置液体处理器 `LiquidHandlerAbstract`
+
+驱动包里的 PyLabRobot 液体处理器可以继承 `unilabos.devices.liquid_handling.liquid_handler_abstract.LiquidHandlerAbstract`，用 `@action` 重新声明要暴露的动作并调用 `super()`。基类的约定：
+
+- **触壁（`touch_tip`）**：`transfer_liquid`、`add_liquid`、`remove_liquid` 只在参数 `touch_tip=True` 时触壁，默认不触壁。`touch_tip()` 接受单个孔或孔列表，用当前装着枪头的通道在孔的左右两壁各做一次 0 uL 吸液；0 uL 吸液不改变枪头里记录的样品。后端做不了触壁的设备设 `support_touch_tip = False`，`touch_tip()` 即什么都不做。
+- **耗材**：`aspirate()` / `dispense()` 用 `unilabos_extra` 记录样品 uuid，直接用 PLR 工厂建的耗材（没有 `unilabos_extra`）也可以吸排；`use_channels=None` 时与 PLR 一样取前 N 个通道。
+
 ## 支持的通信方式
 
 ### 1. 串口（Serial）

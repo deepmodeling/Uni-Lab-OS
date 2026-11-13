@@ -58,6 +58,31 @@ class TransferLiquidReturn(TypedDict):
     targets: List[List[ResourceDict]]
 
 
+def _sample_uuid_of(resource: Resource) -> Optional[str]:
+    """读取耗材上记录的样品 uuid；直接用 PLR 工厂建的耗材没有 ``unilabos_extra``。"""
+
+    extra = getattr(resource, "unilabos_extra", None)
+    return extra.get(EXTRA_SAMPLE_UUID) if isinstance(extra, dict) else None
+
+
+def _set_sample_uuid(resource: Resource, sample_uuid: Optional[str]) -> None:
+    """记录耗材里的样品 uuid，没有 ``unilabos_extra`` 时补一个。"""
+
+    extra = getattr(resource, "unilabos_extra", None)
+    if not isinstance(extra, dict):
+        extra = {}
+        resource.unilabos_extra = extra
+    extra[EXTRA_SAMPLE_UUID] = sample_uuid
+
+
+def _as_containers(targets: Union[Container, Sequence[Container]]) -> List[Container]:
+    """单个孔或孔列表统一成列表（基类自己按单孔调用 touch_tip / mix，动作入口按列表调用）。"""
+
+    if isinstance(targets, Resource):
+        return [targets]
+    return list(targets)
+
+
 class LiquidHandlerMiddleware(LiquidHandler):
     def __init__(
         self, backend: LiquidHandlerBackend, deck: Deck, simulator: bool = False, channel_num: int = 8, **kwargs
@@ -222,6 +247,9 @@ class LiquidHandlerMiddleware(LiquidHandler):
                 spread,
                 **backend_kwargs,
             )
+        # 与 PLR 的默认通道一致；下面按通道记录枪头里的样品，不能是 None
+        if use_channels is None:
+            use_channels = getattr(self, "_default_use_channels", None) or list(range(len(resources)))
         await super().aspirate(
             resources,
             vols,
@@ -237,9 +265,12 @@ class LiquidHandlerMiddleware(LiquidHandler):
         res_samples = []
         res_volumes = []
         for resource, volume, channel in zip(resources, vols, use_channels):
-            sample_uuid_value = resource.unilabos_extra.get(EXTRA_SAMPLE_UUID, None)
+            sample_uuid_value = _sample_uuid_of(resource)
             res_samples.append({"name": resource.name, EXTRA_SAMPLE_UUID: sample_uuid_value})
             res_volumes.append(volume)
+            if not volume:
+                # 0 uL（触壁）没有吸入液体，枪头里仍是原来的样品
+                continue
             self.pending_liquids_dict[channel] = {
                 EXTRA_SAMPLE_UUID: sample_uuid_value,
                 "volume": volume,
@@ -270,6 +301,8 @@ class LiquidHandlerMiddleware(LiquidHandler):
                 spread,
                 **backend_kwargs,
             )
+        if use_channels is None:
+            use_channels = getattr(self, "_default_use_channels", None) or list(range(len(resources)))
         await super().dispense(
             resources,
             vols,
@@ -283,9 +316,14 @@ class LiquidHandlerMiddleware(LiquidHandler):
         res_samples = []
         res_volumes = []
         for resource, volume, channel in zip(resources, vols, use_channels):
-            res_uuid = self.pending_liquids_dict[channel][EXTRA_SAMPLE_UUID]
-            self.pending_liquids_dict[channel]["volume"] -= volume
-            resource.unilabos_extra[EXTRA_SAMPLE_UUID] = res_uuid
+            # 没经过本类 aspirate 的通道（如只分液的流程）没有样品记录
+            pending = self.pending_liquids_dict.get(channel)
+            if pending:
+                res_uuid = pending[EXTRA_SAMPLE_UUID]
+                pending["volume"] -= volume
+                _set_sample_uuid(resource, res_uuid)
+            else:
+                res_uuid = _sample_uuid_of(resource)
             res_samples.append({"name": resource.name, EXTRA_SAMPLE_UUID: res_uuid})
             res_volumes.append(volume)
 
@@ -836,8 +874,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         is_96_well: Optional[bool] = False,
         top: Optional[List[float]] = None,
         none_keys: List[str] = [],
+        touch_tip: bool = False,
     ):
-        """A complete *remove* (aspirate → waste) operation."""
+        """A complete *remove* (aspirate → waste) operation.
+
+        ``touch_tip``：分液后是否触壁（默认否，与 transfer_liquid 一致）。
+        """
 
         try:
             if is_96_well:
@@ -938,7 +980,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                         if delays is not None and len(delays) > 1:
                             await self.custom_delay(seconds=delays[1])
-                        await self.touch_tip(current_targets)
+                        if touch_tip:
+                            await self.touch_tip(current_targets)
                         await self.discard_tips()
 
         except Exception as e:
@@ -969,8 +1012,12 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
         mix_rate: Optional[int] = None,
         mix_liquid_height: Optional[float] = None,
         none_keys: List[str] = [],
+        touch_tip: bool = False,
     ):
-        # """A complete *add* (aspirate reagent → dispense into targets) operation."""
+        """A complete *add* (aspirate reagent → dispense into targets) operation.
+
+        ``touch_tip``：每个目标分液（及混匀）后是否触壁，默认否，与 transfer_liquid 一致。
+        """
 
         # # try:
         if is_96_well:
@@ -1024,7 +1071,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                     if delays is not None and len(delays) > 1:
                         await self.custom_delay(seconds=delays[1])
-                    await self.touch_tip(targets[_])
+                    if touch_tip:
+                        await self.touch_tip([targets[_]])
                     await self.discard_tips()
 
             elif len(use_channels) == 8:
@@ -1097,7 +1145,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                         )
                     if delays is not None and len(delays) > 1:
                         await self.custom_delay(seconds=delays[1])
-                    await self.touch_tip(current_targets)
+                    if touch_tip:
+                        await self.touch_tip(current_targets)
                     await self.discard_tips()
 
     # except Exception as e:
@@ -1363,7 +1412,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                await self.touch_tip(targets[_])
+                if touch_tip:
+                    await self.touch_tip([targets[_]])
                 await self.discard_tips(use_channels=use_channels)
 
         elif len(use_channels) == 8:
@@ -1435,7 +1485,8 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                     )
                 if delays is not None and len(delays) > 1:
                     await self.custom_delay(seconds=delays[1])
-                await self.touch_tip(current_targets)
+                if touch_tip:
+                    await self.touch_tip(current_targets)
                 await self.discard_tips([0, 1, 2, 3, 4, 5, 6, 7])
 
     async def _transfer_one_to_many(
@@ -1873,30 +1924,45 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
                 print(f"Done: {msg}")
                 print(f"Current time: {time.strftime('%H:%M:%S')}")
 
+    def _tipped_channels(self) -> List[int]:
+        """当前装着枪头的通道（模拟模式下动作转给模拟处理器，看它的枪头状态）。"""
+
+        handler = self._simulate_handler if getattr(self, "_simulator", False) else self
+        head = getattr(handler, "head", None) or {}
+        return [channel for channel, tracker in sorted(head.items()) if tracker.has_tip]
+
+    def _channels_for(self, count: int) -> List[int]:
+        """触壁 / 混匀用的通道：装着枪头的通道；查不到时与 PLR 默认一致，取前 ``count`` 个。"""
+
+        channels = self._tipped_channels()
+        if channels:
+            return channels
+        channel_num = getattr(self, "channel_num", None) or count
+        return list(range(max(1, min(count, channel_num))))
+
     async def touch_tip(self, targets: Sequence[Container]):
-        """Touch the tip to the side of the well."""
+        """Touch the tip to the side of the well.
+
+        枪头在孔的左、右两壁各碰一次（以 0 uL 吸液移到孔壁）。``targets`` 可以是单个孔或孔列表；
+        使用当前装着枪头的通道，孔数多于通道时分批。``support_touch_tip = False`` 的设备不执行。
+        """
 
         if not self.support_touch_tip:
             return
-        await self.aspirate(
-            resources=[targets],
-            vols=[0],
-            use_channels=None,
-            flow_rates=None,
-            offsets=[Coordinate(x=-targets.get_size_x() / 2, y=0, z=0)],
-            liquid_height=None,
-            blow_out_air_volume=None,
-        )
-        # await self.custom_delay(seconds=1) # In the simulation, we do not need to wait
-        await self.aspirate(
-            resources=[targets],
-            vols=[0],
-            use_channels=None,
-            flow_rates=None,
-            offsets=[Coordinate(x=targets.get_size_x() / 2, y=0, z=0)],
-            liquid_height=None,
-            blow_out_air_volume=None,
-        )
+        wells = _as_containers(targets)
+        channels = self._channels_for(len(wells))
+        for start in range(0, len(wells), len(channels)):
+            batch = wells[start : start + len(channels)]
+            for side in (-1, 1):
+                await self.aspirate(
+                    resources=batch,
+                    vols=[0] * len(batch),
+                    use_channels=channels[: len(batch)],
+                    flow_rates=None,
+                    offsets=[Coordinate(x=side * well.get_size_x() / 2, y=0, z=0) for well in batch],
+                    liquid_height=None,
+                    blow_out_air_volume=None,
+                )
 
     async def mix(
         self,

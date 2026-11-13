@@ -12,7 +12,8 @@ from unilabos.registry.registry import Registry
 
 def test_external_only_keeps_the_core_container_template(monkeypatch) -> None:
     monkeypatch.setattr(sys, "path", list(sys.path))
-    registry = Registry()
+    # Registry 是单例：用原始类构造独立实例，setup() 不污染全局注册表
+    registry = Registry.__wrapped__()
     registry.setup(external_only=True)
 
     container = registry.resource_type_registry.get("container")

@@ -57,7 +57,8 @@ def test_verify_keeps_typed_and_legacy_action_schemas(tmp_path: Path, monkeypatc
         ''',
     )
     monkeypatch.setattr(sys, "path", list(sys.path))
-    registry = Registry()
+    # Registry 是单例：用原始类构造独立实例，setup() 不污染全局注册表
+    registry = Registry.__wrapped__()
     registry.setup(devices_dirs=[str(pkg)], external_only=True)
     actions = registry.device_type_registry["parity_photometer"]["class"]["action_value_mappings"]
     before = {name: copy.deepcopy(actions[name]["schema"]) for name in ("read_absorbance", "warm_up")}

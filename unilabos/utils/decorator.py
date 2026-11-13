@@ -16,6 +16,8 @@ def singleton(cls):
             instances[cls] = cls(*args, **kwargs)
         return instances[cls]
 
+    # 原始类：测试等需要独立实例时用 ``Cls.__wrapped__()``，不影响全局单例
+    get_instance.__wrapped__ = cls
     return get_instance
 
 

@@ -127,6 +127,29 @@ def test_ast_scope_roundtrip_and_nested_scope_across_loop():
         stack.close()
 
 
+def test_lock_sugar_holds_one_interval_across_real_loop_rounds():
+    def flow(ctx):
+        with ctx.lock("loop-device"):
+            ctx.run("loop-device/record", {"value": 1})
+            with ctx.loop_for(2):
+                ctx.run("loop-device/record", {"value": 2})
+
+    stack = _Stack()
+    try:
+        record = _record(stack, flow)
+        [scope] = stack.service.get_graph(record["uuid"])["workflow"]["meta_data"]["unilab"]["resource_scopes"]
+        assert scope["resources"] == ["loop-device"]
+        task = stack.service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
+            target_node_uuid=None, input_value={}, description=None, meta_data={})
+        wait_for(lambda: stack.service.get_workflow_task(task["uuid"])["status"] in {"succeeded", "failed"})
+        assert stack.service.get_workflow_task(task["uuid"])["status"] == "succeeded"
+        assert stack.driver.calls == [1, 2, 2]
+        rows = stack.service.connection.execute("SELECT * FROM workflow_resource_interval").fetchall()
+        assert len(rows) == 1 and rows[0]["state"] == "released"
+    finally:
+        stack.close()
+
+
 def test_paused_loop_owner_survives_database_reopen_and_blocks_competitor(tmp_path):
     from types import SimpleNamespace
     from fastapi.testclient import TestClient

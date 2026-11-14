@@ -49,6 +49,7 @@ Authority（``registry_type="workflow"``，同一套版本化 / 软移除），�
 实例化后的顺序与汇合依赖写在 ``execution_policy.depends_on``，动作结果通过结构化
 ``node_output`` 参数引用传递。默认顺序执行；``ctx.parallel`` 的直接成员并行，
 ``ctx.group`` 将多步组合为顺序分支。组框不生成 Job，循环作为一个执行整体排入依赖。
+``with ctx.lock("reactor"):``（``ctx.resource_scope`` 的简写）在块内持有设备，覆盖其中循环的全部轮次。
 节点 UUID 按声明序生成，真正的运行顺序由依赖和资源约束共同决定。
 """
 
@@ -58,7 +59,7 @@ import importlib
 import uuid as uuid_module
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Sequence
+from typing import Any, Callable, ContextManager, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from unilabos.protocol.materials import InventoryRequirement
 from unilabos.protocol.runtime.loop import LOOP_NODE_TYPE, parse_loop_spec
@@ -358,13 +359,24 @@ class WorkflowBuildContext:
             self._parent_stack.pop()
 
 
-    @contextmanager
-    def resource_scope(self, *device_ids: str, name: str = "") -> Iterator[None]:
+    def resource_scope(self, *device_ids: str, name: str = "") -> ContextManager[None]:
         """显式持有设备直到块结束；包含循环时覆盖全部轮次，失败后等待人工核实。"""
+        return self._resource_scope(device_ids, name=name, label="resource_scope")
+
+    def lock(self, *device_ids: str, name: str = "") -> ContextManager[None]:
+        """``resource_scope`` 的简写：``with ctx.lock("reactor"):`` 持有设备直到块结束。
+
+        语义、存储和调度与 ``resource_scope`` 完全相同（入库都是 ``resource_scopes``），
+        builder 与 AST 两种编译方式都支持。
+        """
+        return self._resource_scope(device_ids, name=name, label="lock")
+
+    @contextmanager
+    def _resource_scope(self, device_ids: Tuple[str, ...], *, name: str, label: str) -> Iterator[None]:
         if not device_ids or any(not isinstance(value, str) or not value.strip() for value in device_ids):
-            raise ValueError("resource_scope 需要非空设备 ID")
+            raise ValueError(f"{label} 需要非空设备 ID")
         if len(set(device_ids)) != len(device_ids):
-            raise ValueError("resource_scope 的设备 ID 不能重复")
+            raise ValueError(f"{label} 的设备 ID 不能重复")
         scope_id = name or f"scope-{len(self.resource_scopes) + 1}"
         if any(scope["scope_id"] == scope_id for scope in self.resource_scopes):
             raise ValueError("资源作用域名称不能重复")

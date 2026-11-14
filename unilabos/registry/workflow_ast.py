@@ -26,6 +26,8 @@ class WorkflowSourceError(ValueError):
 
 #: 节点身份锚点：紧邻语句上一行的注释 ``# unilab:node_uuid <uuid>``（与 V1 源码格式一致）。
 _NODE_ANCHOR = re.compile(r"\s*#\s*unilab:node_uuid\s+([0-9a-fA-F-]{36})\s*")
+#: ``with`` 块里的资源作用域：``ctx.lock`` 是 ``ctx.resource_scope`` 的简写，编译结果相同
+_SCOPE_CONTEXTS = frozenset({"resource_scope", "lock"})
 
 
 @dataclass
@@ -267,7 +269,7 @@ def _compile_function(
 
     def call(node: ast.Call, results: dict[str, WorkflowStep]) -> Any:
         name = method(node)
-        if name not in {"run", "run_template", "loop_for", "loop_while", "step_output", "device_state", "group", "parallel", "resource_scope"}:
+        if name not in {"run", "run_template", "loop_for", "loop_while", "step_output", "device_state", "group", "parallel", *_SCOPE_CONTEXTS}:
             return fail(node, "仅支持 ctx 的步骤、循环和条件引用声明")
         if any(item.arg is None for item in node.keywords):
             return fail(node, "不支持关键字参数展开")
@@ -359,10 +361,10 @@ def _compile_function(
             if isinstance(statement, ast.With) and len(statement.items) == 1:
                 item = statement.items[0]
                 context = method(item.context_expr)
-                if context not in {"loop_for", "loop_while", "group", "parallel", "resource_scope"} or item.optional_vars is not None:
-                    fail(statement, "仅支持无 as 绑定的 ctx 循环、group 或 parallel")
+                if context not in {"loop_for", "loop_while", "group", "parallel", *_SCOPE_CONTEXTS} or item.optional_vars is not None:
+                    fail(statement, "仅支持无 as 绑定的 ctx 循环、group、parallel 或 lock / resource_scope")
                 with call(item.context_expr, results):
-                    if context != "resource_scope":
+                    if context not in _SCOPE_CONTEXTS:
                         ctx.steps[-1] = replace(ctx.steps[-1], guards=deepcopy(guards))
                         remember(ctx.steps[-1].key, statement)
                     if context == "parallel":
@@ -377,7 +379,7 @@ def _compile_function(
                                     fail(branch, "并行分支不能声明同名结果")
                                 exports[key] = local[key]
                         results.update(exports)
-                    elif context in {"group", "resource_scope"}:
+                    elif context == "group" or context in _SCOPE_CONTEXTS:
                         body(statement.body, results, depth + 1)
                     else:
                         body(statement.body, dict(results), depth + 1)

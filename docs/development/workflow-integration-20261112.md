@@ -49,7 +49,19 @@ HTTP `resource-scopes` 接口也接受跨循环节点引用；跨入循环时，
 
 ## 条件库存、动态来源和补料
 
-静态无条件需求沿用整任务原子预留。`ctx.run(..., inventory_mode="on_ready", inventory=[...])` 在节点就绪后预留，缺料时保留 pending 并显示在运行处置的“等待补料”。条件分支和含入口/上游结果引用的需求自动使用此语义；未选分支不预留。补料入库后定期重查，暂停任务不自行恢复。
+静态无条件需求沿用整任务原子预留。`ctx.run(..., inventory_mode="on_ready", inventory=[...])` 在节点就绪后预留。条件分支和含入口/上游结果引用的需求自动使用此语义；未选分支不预留。
+
+缺料不再静默「等待补料」（2026-11-15 用户决定），按报错类型处理，写在错误项的 `stage`：
+**预检报错** `preflight` 在动作开始执行前发现，**执行报错** `execution` 是动作执行中失败。运行中补料就是
+处置动作执行前的预检报错。
+
+| 类型 | 何时发现 | 结果 |
+| --- | --- | --- |
+| 任务预检 `stage=preflight, scope=task` | 运行前预检（检查项 `inventory_shortage`）；任务启动时整任务原子预留不足 | 任务不派发任何动作直接失败：`{"code": "plan_not_executable", "stage": "preflight", "scope": "task", "reason": "inventory_shortage", "message": ...}` |
+| 动作预检 `stage=preflight, scope=action` | 节点就绪、动作执行前才预留的需求（`on_ready`、条件分支、引用上游结果）此刻不足 | 该 attempt 进入 `intervention_required`，待决策清单（`/error-decisions`）出现 `category="preflight"` 的决策，只有「重试」和「放弃」：补料后重试 → 追加新 attempt 重新预检，通过即执行；放弃 → 动作失败（`inventory_shortage`），任务失败 `node_preflight_failed`。动作没派发，不占任何资源；样品托管等物理状态保持不动；重启后按原决策重新挂出 |
+| 执行报错 `stage=execution` | 设备动作报错、超时 | 照旧走执行面的失败决策；任务失败 `node_execution_failed` |
+
+其他启动前的不可执行（设备 / 动作缺失、计划非法）同属任务预检报错。
 
 库存选择器和 quantity/unit 可以引用入口参数或上游结果；key/kind 必须静态。引用遵守相同分支及循环作用域规则。实际来源在材料事务前写入 attempt.control_data.inventory_request；材料已提交但应答丢失时复用原预留，不重新选料。循环和显式重试使用新 attempt，重新求值。已冻结来源使用的入口参数不能再修改。确定的库存不足与不确定网络异常分开处理，只有前者允许下一次预留申请。
 

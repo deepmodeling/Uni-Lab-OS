@@ -92,7 +92,8 @@ def build_run_preflight_report(
             check("parameters", "deferred", "runtime_values_pending", "上游结果、循环变量或库存分配将在派发时校验",
                   node=node, details={"parameters": pending})
         if node.get("inventory_deferred"):
-            check("inventory", "deferred", "selected_inventory_pending", "节点选中并就绪后预留；不足时等待补料", node=node)
+            check("inventory", "deferred", "selected_inventory_pending",
+                  "节点选中并就绪后、动作执行前预留；那时不足报动作预检错误，挂起等处置（补料后重试或放弃）", node=node)
         else:
             for item in node.get("inventory_requirements", []):
                 requirements.append(InventoryRequirement.model_validate({**item, "key": f'{node["uuid"]}/{item["key"]}'}))

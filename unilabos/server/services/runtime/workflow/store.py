@@ -2802,6 +2802,10 @@ class WorkflowStore:
                 "max_retries": report.get("max_retries"),
                 "expires_at": report.get("expires_at"),
             }
+            if report.get("category") == "preflight":
+                # 动作执行前预检的决策：动作没派发过，重启后据此原样重新挂出（不当成在飞动作）
+                control_data["pending_decision"]["category"] = "preflight"
+                control_data["pending_decision"]["error_info"] = list(report.get("error_info") or [])
             conn.execute(
                 """
                 UPDATE workflow_node_job
@@ -2861,14 +2865,18 @@ class WorkflowStore:
                 raise StoreNotFound(f"workflow node job {job_uuid} not found")
 
     def mark_job_decision_resumed(
-        self, job_uuid: str, decision_id: str = ""
+        self, job_uuid: str, decision_id: str = "", *, status: str = "running"
     ) -> Dict[str, Any]:
         """软超时（``execution_timeout``）决策收回：attempt 与节点运行从 ``intervention_required``
         回到 ``running``，``control_data.pending_decision`` 移入 ``resumed_decisions`` 留痕。
 
         动作从未停止过，所以不产生新 attempt、不改结果；``execution_unknown`` 与终态
-        attempt 不受影响（幂等返回）。
+        attempt 不受影响（幂等返回）。``status="pending"``：动作执行前预检的决策选了重试——
+        动作还没尝试过，同一 attempt 回到待派发重新预检，不消耗 attempt。
         """
+
+        if status not in {"running", "pending"}:
+            raise ValueError("decision resume status must be running or pending")
 
         now = utc_now()
         with self.transaction() as conn:
@@ -2897,15 +2905,15 @@ class WorkflowStore:
             conn.execute(
                 """
                 UPDATE workflow_node_job
-                SET status='running', control_data=?, update_time=?
+                SET status=?, control_data=?, update_time=?
                 WHERE uuid=?
                 """,
-                (_json(control_data), now, job_uuid),
+                (status, _json(control_data), now, job_uuid),
             )
             self._emit_job_changed(
                 conn,
                 row,
-                "running",
+                status,
                 now,
                 decision_id=decision_id or (pending or {}).get("decision_id"),
                 resumed=True,

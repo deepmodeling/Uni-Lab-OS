@@ -1664,9 +1664,9 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         return self.mark_job_decision_pending(job_uuid, report)
 
     def mark_workflow_node_job_decision_resumed(
-        self, job_uuid: str, decision_id: str = ""
+        self, job_uuid: str, decision_id: str = "", *, status: str = "running"
     ) -> Dict[str, Any]:
-        return self.mark_job_decision_resumed(job_uuid, decision_id)
+        return self.mark_job_decision_resumed(job_uuid, decision_id, status=status)
 
     def set_workflow_node_run_execution_timeout(
         self, run_uuid: str, seconds: int

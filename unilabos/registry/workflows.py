@@ -35,7 +35,11 @@
   "unit": "ml"}``；从某个容器取内容物用 ``{"key": "buffer", "kind": "content",
   "material_uuid": ..., "substance_name": "PBS", "quantity": 4, "unit": "ml"}``，多个任务
   共享同一容器的余量），实例化后写入节点 ``meta_data.inventory_requirements``；调度器在
-  任务启动时 all-or-nothing 预留，数量不足则任务在派发前失败（``plan_not_executable``），
+  任务启动时 all-or-nothing 预留，数量不足是**预检报错**：任务在派发任何动作前失败
+  （``plan_not_executable``，``stage="preflight"``、``reason="inventory_shortage"``）；
+  ``inventory_mode="on_ready"``、条件分支或引用上游结果的需求在节点就绪、动作执行前才预留，那时不足
+  是**动作执行前的预检报错**（``inventory_shortage``，``stage="preflight"``、``scope="action"``）：该动作
+  挂起在待决策清单，补料后重试或放弃，不静默等待补料。
   动作开始时由执行面扣减。
 
 模板不是工作流：它和 device / resource 条目一样随注册表快照上报到 Registry

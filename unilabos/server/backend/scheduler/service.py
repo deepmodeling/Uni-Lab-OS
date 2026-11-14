@@ -139,6 +139,46 @@ class BackendSchedulingError(RuntimeError):
     """A persisted execution plan cannot be mapped to the local executor."""
 
 
+#: 报错类型（错误项的 ``stage``）：
+#: - ``preflight``：动作开始执行之前发现。``scope="task"`` 是任务启动时的整任务预检（如整任务库存预留
+#:   不足），任务不执行任何动作直接失败；``scope="action"`` 是每个动作执行前的预检（如节点就绪时才预留的
+#:   库存不足），该动作挂起等待处置——补料 / 排除原因后重试，或放弃。
+#: - ``execution``：动作执行中失败（设备动作报错、超时）。
+ERROR_STAGE_PREFLIGHT = "preflight"
+ERROR_STAGE_EXECUTION = "execution"
+#: 动作执行前预检未通过时可选的处置：补料后重试，或放弃（该动作记失败）
+_PREFLIGHT_OPTIONS = (
+    {"action": "retry", "label": "重试", "description": "补料或排除原因后重新预检，通过即执行该动作"},
+    {"action": "abort", "label": "放弃", "description": "该动作记失败，任务按失败结束"},
+)
+#: 预检重试不消耗设备动作的重试次数，只防止无限点击
+_PREFLIGHT_MAX_RETRIES = 50
+
+
+def preflight_error(error: Exception) -> Dict[str, Any]:
+    """任务启动前不可执行：库存不足另标 ``reason``，其余（设备 / 动作缺失、计划非法）只有消息。"""
+    item: Dict[str, Any] = {"code": "plan_not_executable", "stage": ERROR_STAGE_PREFLIGHT, "scope": "task",
+                            "message": str(error)}
+    if getattr(error, "code", None) == "insufficient_inventory":
+        item["reason"] = "inventory_shortage"
+    return item
+
+
+class RuntimeInventoryShortage(RuntimeError):
+    """节点就绪时才预留的库存（``on_ready``、条件分支、引用上游结果的需求）此刻不足：动作执行前预检报错。"""
+
+    def __init__(self, message: str, shortages: Optional[list] = None) -> None:
+        super().__init__(message)
+        self.shortages = list(shortages or [])
+
+    def error_item(self) -> Dict[str, Any]:
+        item: Dict[str, Any] = {"code": "inventory_shortage", "stage": ERROR_STAGE_PREFLIGHT, "scope": "action",
+                                "message": f"动作执行前预检：库存不足：{self}"}
+        if self.shortages:
+            item["shortages"] = self.shortages
+        return item
+
+
 def allocation_arguments(
     items: Any, *, action_schema: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Dict[str, Any]]:
@@ -466,7 +506,7 @@ class BackendScheduler:
                         self.workflow.close_workflow_node_run(str(run["uuid"]), status="canceled")
                 self.workflow.finish_workflow_task(
                     task_uuid, status="failed" if "failed" in failed else "timeout" if "timeout" in failed else "canceled",
-                    error_info=[{"code": "node_execution_failed"}],
+                    error_info=[self._task_failure_error(task_uuid)],
                 )
                 self._release_unconsumed_task_inventory(task_uuid)
                 return {}
@@ -538,7 +578,7 @@ class BackendScheduler:
                 error_info=(
                     []
                     if task_status == "succeeded"
-                    else [{"code": "node_execution_failed"}]
+                    else [self._task_failure_error(task_uuid)]
                 ),
             )
             return result
@@ -672,6 +712,12 @@ class BackendScheduler:
                     self._execution_claims.mark_uncertain(spec["current_job_uuid"])
                 with self._guard:
                     self._run_context[run_uuid] = (task, node)
+                previous = (self._current_job_metadata(spec["current_job_uuid"]).get("control_data") or {}).get(
+                    "pending_decision") or {}
+                if previous.get("category") == "preflight":
+                    # 动作执行前预检的决策：动作从未派发，没有要核实的物理结果，按原决策重新挂出
+                    self._open_preflight_decision(task, node, spec, list(previous.get("error_info") or []))
+                    continue
                 persisted = self._physical_recovery.pending().get(spec["current_job_uuid"])
                 if persisted:
                     self._settle_attempt(spec["current_job_uuid"], **{key: persisted[key] for key in ("job_status", "return_info", "error_info", "resolution")})
@@ -921,6 +967,12 @@ class BackendScheduler:
             return
         recovered_status = spec.pop("recovered_status", None)
         if recovered_status is not None:
+            previous = (self._current_job_metadata(spec["current_job_uuid"]).get("control_data") or {}).get(
+                "pending_decision") or {}
+            if previous.get("category") == "preflight":
+                # 动作执行前预检的决策：动作从未派发、不占资源，按原决策重新挂出
+                self._open_preflight_decision(task, node, spec, list(previous.get("error_info") or []))
+                return
             # 重启前在飞的 attempt：设备可能仍停在中间态，裁决前继续占着它的锁，后来的任务排队
             self._hold_recovered_resources(task, node, spec)
             self._open_reconciliation_decision(task, node, spec, recovered_status)
@@ -933,10 +985,13 @@ class BackendScheduler:
                 self._waiting_step_nodes[node.node_id] = (task, node)
                 return
             self._waiting_step_nodes.pop(node.node_id, None)
-        if spec.get("inventory_deferred") and not self._reserve_ready_inventory(task, node):
-            with self._guard:
-                self._wait_for_interval(spec["current_job_uuid"], task, node)
-            return
+        if spec.get("inventory_deferred"):
+            try:
+                self._reserve_ready_inventory(task, node)
+            except RuntimeInventoryShortage as shortage:
+                # 动作执行前预检报错：挂起等处置（补料后重试 / 放弃），不静默等待补料
+                self._open_preflight_decision(task, node, spec, [shortage.error_item()])
+                return
         args = self._resolve_action_args(node.node_id)
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
         # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
@@ -1686,6 +1741,7 @@ class BackendScheduler:
                 )
 
     def _reserve_ready_inventory(self, task: Dict[str, Any], node: DagNode) -> bool:
+        """节点就绪时预留它的库存；不足抛 :class:`RuntimeInventoryShortage`（执行报错）。"""
         from .attempt_inventory import freeze_inventory, inventory_wait
         from unilabos.protocol.runtime.input_binding import map_input_bindings, literal_input
         from unilabos.protocol.runtime.value_binding import resolve_result_bindings
@@ -1712,16 +1768,16 @@ class BackendScheduler:
                 InventoryRequirement.model_validate(item) for item in spec["inventory_requirements"]])
             if not preview["available"]:
                 reason = "；".join(str(item.get("message") or "库存不足") for item in preview["shortages"])
-                inventory_wait(self.workflow, self._authority_epoch, job_uuid, reason)
-                return False
+                raise RuntimeInventoryShortage(reason, preview["shortages"])
         generation = (self._current_job_metadata(job_uuid).get("control_data") or {}).get("inventory_generation", 0)
         try:
             self._reserve_inventory(task, [(job_uuid, spec)], ready=True, command_suffix=f":ready:{generation}")
         except Exception as error:
             if getattr(error, "code", None) != "insufficient_inventory":
                 raise
-            inventory_wait(self.workflow, self._authority_epoch, job_uuid, str(error), advance=True)
-            return False
+            # 下次预留（预检重试）换新的命令身份，不重放这次被拒的结果
+            inventory_wait(self.workflow, self._authority_epoch, job_uuid, None, advance=True)
+            raise RuntimeInventoryShortage(str(error)) from None
         inventory_wait(self.workflow, self._authority_epoch, job_uuid, None)
         return True
 
@@ -2610,6 +2666,84 @@ class BackendScheduler:
             recovered_status,
         )
 
+    def _open_preflight_decision(
+        self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any], error_info: list[Dict[str, Any]],
+    ) -> None:
+        """动作执行前预检未通过：attempt 进入 ``intervention_required``，在待决策清单里给出重试 / 放弃。
+
+        与执行面的失败决策同形、同一清单（``/error-decisions``），``category="preflight"``。
+        动作没派发过，不申请也不保留任何资源；重试追加新 attempt 重新预检。
+        """
+
+        job_uuid = str(spec["current_job_uuid"])
+        task_uuid = str(task["uuid"])
+        attempt_no = int(spec.get("attempt_no") or 1)
+        decision_id = str(uuid5(_RECONCILIATION_NAMESPACE, job_uuid))
+        message = "；".join(str(item.get("message") or "") for item in error_info if item.get("message")) or "动作执行前预检未通过"
+        report: Dict[str, Any] = {
+            "decision_id": decision_id,
+            "device_id": node.device_id,
+            "action_name": node.action,
+            "task_id": task_uuid,
+            "job_id": job_uuid,
+            "node_id": str(spec["workflow_node_uuid"]),
+            "node_run_uuid": node.node_id,
+            "exception_type": "PreflightFailed",
+            "error_message": message + "。补料或排除原因后选择重试，或放弃。",
+            "traceback": "",
+            "options": [dict(option) for option in _PREFLIGHT_OPTIONS],
+            "retry_count": max(attempt_no - 1, 0),
+            "max_retries": _PREFLIGHT_MAX_RETRIES,
+            "created_at": time.time(),
+            "require_confirmation": True,
+            "category": "preflight",
+            "stage": ERROR_STAGE_PREFLIGHT,
+            "severity": "warning",
+            "error_info": deepcopy(error_info),
+        }
+        with self._guard:
+            self._run_context[node.node_id] = (task, node)
+            self._job_runs[job_uuid] = node.node_id
+            self._reconciliation_decisions[decision_id] = {
+                "report": report, "job_uuid": job_uuid, "run_uuid": node.node_id, "task_uuid": task_uuid,
+                "error_info": deepcopy(error_info),
+            }
+        self.workflow.mark_workflow_node_job_decision_pending(job_uuid, report)
+        logger.info("workflow node %s preflight failed, awaiting decision %s: %s",
+                    spec["workflow_node_uuid"], decision_id, message)
+
+    def _restart_after_preflight(self, pending: Dict[str, Any]) -> None:
+        """预检重试：运行中直接重新走 ``_start_node``；重启接管期间只唤醒等待者，由正常计划重新派发。"""
+        task_uuid = pending["task_uuid"]
+        with self._guard:
+            waiter = self._recovery_waiters.get(task_uuid)
+            runner = self._runners.get(task_uuid)
+            context = self._run_context.get(pending["run_uuid"])
+        if waiter is not None:
+            remaining = self.workflow.list_workflow_node_runs(task_uuid)
+            if not any(item["status"] in _RUN_NEEDS_RECONCILIATION for item in remaining):
+                waiter[0].call_soon_threadsafe(waiter[1].set)
+            return
+        if runner is None or context is None:
+            return
+        task, node = context
+        try:
+            self._start_node(task, node)
+        except Exception:
+            logger.exception("预检重试后节点 %s 无法继续", node.node_id)
+            self._notify_start_failure(node.node_id)
+
+    def _task_failure_error(self, task_uuid: str) -> Dict[str, Any]:
+        """任务因节点失败而结束：失败节点都是动作执行前预检未通过的记预检报错，否则记执行报错。"""
+        try:
+            failed = [run for run in self.workflow.list_workflow_node_runs(task_uuid) if run.get("status") == "failed"]
+        except Exception:  # noqa: BLE001 - 读不到明细时按执行报错记
+            failed = []
+        if failed and all(((run.get("error_info") or [{}])[0] or {}).get("stage") == ERROR_STAGE_PREFLIGHT
+                          for run in failed):
+            return {"code": "node_preflight_failed", "stage": ERROR_STAGE_PREFLIGHT, "scope": "action"}
+        return {"code": "node_execution_failed", "stage": ERROR_STAGE_EXECUTION}
+
     def _action_max_retries(self, device_id: str, action_name: str) -> int:
         resolver = getattr(self.executor, "resolve_action_error_policy", None)
         policy: Any = {}
@@ -2678,6 +2812,13 @@ class BackendScheduler:
         with self._guard:
             if self._reconciliation_decisions.pop(decision_id, None) is None:
                 return False
+        if pending.get("error_info") and selected == "retry":
+            # 动作执行前预检没过：动作还没尝试过，同一 attempt 回到待派发重新预检，不消耗 attempt
+            self.workflow.mark_workflow_node_job_decision_resumed(job_uuid, decision_id, status="pending")
+            logger.info("preflight decision %s for job %s: retry", decision_id, job_uuid)
+            self._restart_after_preflight(pending)
+            self._settle_task_reconciliation(pending["task_uuid"])
+            return True
 
         resolution = {
             "decision_id": decision_id,
@@ -2696,6 +2837,11 @@ class BackendScheduler:
         elif selected == "skip":
             job_status = "skipped"
             return_info = {"suc": True, "suc_type": "skip", "return_value": None}
+        elif pending.get("error_info"):
+            # 动作执行前预检的决策：记下原预检错误（retry 由 store 追加新 attempt 重新预检）
+            job_status = "failed"
+            return_info = {"suc": False, "suc_type": "normal", "return_value": None, "error": report["error_message"]}
+            error_info = deepcopy(pending["error_info"])
         else:
             # retry / abort 都先把当前 attempt 记 failed；retry 由 store 在同一事务追加新 attempt
             job_status = "failed"
@@ -2773,10 +2919,11 @@ class BackendScheduler:
         self.workflow.finish_workflow_task(
             task_uuid,
             status="failed",
-            error_info=[
-                {"code": "plan_not_executable", "message": str(error)}
-            ],
+            error_info=[preflight_error(error)],
         )
 
 
-__all__ = ["BackendScheduler", "BackendSchedulingError", "allocation_arguments"]
+__all__ = [
+    "BackendScheduler", "BackendSchedulingError", "ERROR_STAGE_EXECUTION", "ERROR_STAGE_PREFLIGHT",
+    "RuntimeInventoryShortage", "allocation_arguments", "preflight_error",
+]

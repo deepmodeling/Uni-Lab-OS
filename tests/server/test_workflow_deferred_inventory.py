@@ -1,4 +1,4 @@
-"""条件选料、补料及双库恢复走实际工作流计划和库存事务。"""
+"""条件选料、缺料的预检报错（任务级直接失败、动作级挂起待补料重试）及双库恢复走实际工作流计划和库存事务。"""
 from __future__ import annotations
 
 from uuid import uuid4
@@ -53,33 +53,137 @@ def test_only_selected_branch_reserves_and_consumes(tmp_path):
         stack.close()
 
 
-def test_dynamic_source_waits_for_replenishment_without_dispatch_or_device_lock(tmp_path):
-    def flow(ctx):
-        source = ctx.run("reactor/select", {})
-        ctx.run("reactor/operate", {}, inventory=[{"key": "solvent", "kind": "lot",
-            "lot_uuid": source.lot, "quantity": source.amount, "unit": "ul"}])
+def _failed_run(stack, task_uuid):
+    return next(run for run in stack.workflow.list_workflow_node_runs(task_uuid) if run["status"] == "failed")
+
+
+def _dynamic_flow(ctx):
+    source = ctx.run("reactor/select", {})
+    ctx.run("reactor/operate", {}, inventory=[{"key": "solvent", "kind": "lot",
+        "lot_uuid": source.lot, "quantity": source.amount, "unit": "ul"}])
+
+
+def _preflight_decision(scheduler, task_uuid):
+    decisions = [item for item in scheduler.list_reconciliation_decisions() if item["task_id"] == task_uuid]
+    return decisions[0] if decisions else None
+
+
+def test_runtime_shortage_is_an_action_preflight_error_handled_by_replenish_and_retry(tmp_path):
+    """动作执行前才预留的需求不足：动作预检报错、挂起待决策（不静默等待）；补料后重试，同一 attempt 重新预检通过即执行。"""
     stack = Stack(tmp_path)
     _template(stack.materials, "reagent-template", "reagent")
     _inbound(stack.materials, lot_uuid="lot-a", quantity=2)
     executor = Executor()
-    scheduler, task = create(stack, executor, flow)
+    scheduler, task = create(stack, executor, _dynamic_flow)
     try:
         wait_for(lambda: len(executor.dispatched) == 1)
         executor.finish(0, {"lot": "lot-a", "amount": 5})
-        wait_for(lambda: bool(scheduler._inventory_recovery.reconcile()["waiting"]))
-        report = scheduler._inventory_recovery.snapshot()
-        assert report["waiting"][0]["requirements"][0]["lot_uuid"] == "lot-a"
-        assert len(executor.dispatched) == 1
+        wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
+        decision = _preflight_decision(scheduler, task["uuid"])
+        assert (decision["category"], decision["stage"]) == ("preflight", "preflight")
+        assert [option["action"] for option in decision["options"]] == ["retry", "abort"]
+        [error] = decision["error_info"]
+        assert (error["code"], error["stage"], error["scope"]) == ("inventory_shortage", "preflight", "action")
+        assert "动作执行前预检" in error["message"] and error["shortages"]
+        job = stack.workflow.get_workflow_node_job(decision["job_id"])
+        assert job["status"] == "intervention_required"
+        assert job["control_data"]["pending_decision"]["category"] == "preflight"
+        assert len(executor.dispatched) == 1  # 缺料的动作没有派发
         assert not stack.client.list_inventory_reservations()
-        _inbound(stack.materials, lot_uuid="lot-a", quantity=4)
-        scheduler._reconcile_resources()
+        assert stack.workflow.get_workflow_task(task["uuid"])["status"] == "running"
+
+        _inbound(stack.materials, lot_uuid="lot-a", quantity=4)  # 补料
+        assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "retry", "reason": "已补料"})
         wait_for(lambda: len(executor.dispatched) == 2)
         assert executor.dispatched[1]["inventory_requirements"][0]["quantity"] == 5
         executor.finish(1, {})
         wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
         scheduler._reconcile_inventory()
         assert stack.quantities() == (1, 1, 0)
-        assert not scheduler._inventory_recovery.reconcile()["waiting"]
+        attempts = [item for item in stack.workflow.list_workflow_node_jobs(task["uuid"])
+                    if item["workflow_node_uuid"] == decision["node_id"]]
+        assert [item["status"] for item in attempts] == ["succeeded"]  # 动作没尝试过：预检重试不消耗 attempt
+        [resumed] = attempts[0]["control_data"]["resumed_decisions"]
+        assert (resumed["category"], resumed["decision_id"]) == ("preflight", decision["decision_id"])
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+def test_abandoning_an_action_preflight_error_fails_the_task_as_preflight(tmp_path):
+    stack = Stack(tmp_path)
+    _template(stack.materials, "reagent-template", "reagent")
+    _inbound(stack.materials, lot_uuid="lot-a", quantity=2)
+    executor = Executor()
+    scheduler, task = create(stack, executor, _dynamic_flow)
+    try:
+        wait_for(lambda: len(executor.dispatched) == 1)
+        executor.finish(0, {"lot": "lot-a", "amount": 5})
+        wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
+        decision = _preflight_decision(scheduler, task["uuid"])
+        assert not scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "skip", "reason": "x"})
+        assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "abort", "reason": "不补了"})
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "failed")
+        assert stack.workflow.get_workflow_task(task["uuid"])["error_info"] == [
+            {"code": "node_preflight_failed", "stage": "preflight", "scope": "action"}]
+        [error] = _failed_run(stack, task["uuid"])["error_info"]
+        assert (error["code"], error["stage"]) == ("inventory_shortage", "preflight")
+        assert len(executor.dispatched) == 1
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+def test_action_preflight_decision_survives_restart_without_holding_resources(tmp_path):
+    def flow(ctx):
+        ctx.run("reactor/operate", {}, inventory_mode="on_ready", inventory=[{"key": "solvent", "kind": "lot",
+            "lot_uuid": "lot-a", "quantity": 5, "unit": "ul"}])
+    stack = Stack(tmp_path)
+    _template(stack.materials, "reagent-template", "reagent")
+    _inbound(stack.materials, lot_uuid="lot-a", quantity=1)
+    executor = Executor()
+    scheduler, task = create(stack, executor, flow)
+    wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
+    before = _preflight_decision(scheduler, task["uuid"])
+    scheduler.stop()
+    stack.close()
+    reopened = Stack(tmp_path)
+    resumed = BackendScheduler(reopened.workflow, executor, materials_gateway=reopened.client)
+    try:
+        resumed.submit(task["uuid"])
+        wait_for(lambda: _preflight_decision(resumed, task["uuid"]) is not None)
+        after = _preflight_decision(resumed, task["uuid"])
+        assert after["decision_id"] == before["decision_id"] and after["category"] == "preflight"
+        assert [option["action"] for option in after["options"]] == ["retry", "abort"]
+        assert after["error_info"][0]["code"] == "inventory_shortage"
+        assert not resumed._intervals.snapshot(task["uuid"])  # noqa: SLF001 - 没派发过的动作不保留设备区间
+        _inbound(reopened.materials, lot_uuid="lot-a", quantity=4)
+        assert resumed.resolve_reconciliation_decision(after["decision_id"], {"action": "retry", "reason": "已补料"})
+        wait_for(lambda: len(executor.dispatched) == 1)
+        executor.finish(0, {})
+        wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    finally:
+        resumed.stop()
+        reopened.close()
+
+
+def test_start_shortage_is_a_preflight_error_before_any_dispatch(tmp_path):
+    """任务启动时整任务预留不足是预检报错：任务失败，不派发任何动作。"""
+    def flow(ctx):
+        ctx.run("reactor/prepare", {})
+        ctx.run("reactor/operate", {}, inventory=[{"key": "solvent", "kind": "lot",
+            "lot_uuid": "lot-a", "quantity": 5, "unit": "ul"}])
+    stack = Stack(tmp_path)
+    _template(stack.materials, "reagent-template", "reagent")
+    _inbound(stack.materials, lot_uuid="lot-a", quantity=1)
+    executor = Executor()
+    scheduler, task = create(stack, executor, flow)
+    try:
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "failed")
+        [error] = stack.workflow.get_workflow_task(task["uuid"])["error_info"]
+        assert (error["code"], error["stage"], error["scope"], error["reason"]) == (
+            "plan_not_executable", "preflight", "task", "inventory_shortage")
+        assert executor.dispatched == []
     finally:
         scheduler.stop()
         stack.close()
@@ -142,39 +246,6 @@ def test_on_ready_loop_uses_fresh_reservation_per_iteration(tmp_path):
     finally:
         scheduler.stop()
         stack.close()
-
-
-def test_waiting_source_survives_reopen_and_new_input_cannot_rebind_it(tmp_path):
-    def flow(ctx):
-        ctx.run("reactor/operate", {}, inventory_mode="on_ready", inventory=[{"key": "solvent", "kind": "lot",
-            "lot_uuid": "lot-a", "quantity": 5, "unit": "ul"}])
-    stack = Stack(tmp_path)
-    _template(stack.materials, "reagent-template", "reagent")
-    _inbound(stack.materials, lot_uuid="lot-a", quantity=1)
-    executor = Executor()
-    scheduler, task = create(stack, executor, flow)
-    wait_for(lambda: bool(scheduler._inventory_recovery.reconcile()["waiting"]))
-    job = scheduler._inventory_recovery.snapshot()["waiting"][0]["job_uuid"]
-    scheduler.stop()
-    stack.close()
-    reopened = Stack(tmp_path)
-    resumed = BackendScheduler(reopened.workflow, executor, materials_gateway=reopened.client)
-    try:
-        assert resumed._inventory_recovery.reconcile()["waiting"][0]["job_uuid"] == job
-        actual = freeze_inventory(reopened.workflow, resumed._authority_epoch, job,
-            lambda: pytest.fail("恢复不得重新求值来源"))
-        assert actual[0]["lot_uuid"] == "lot-a"
-        resumed.submit(task["uuid"])
-        _inbound(reopened.materials, lot_uuid="lot-a", quantity=4)
-        resumed._reconcile_resources()
-        wait_for(lambda: len(executor.dispatched) == 1)
-        executor.finish(0, {})
-        wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
-        resumed._reconcile_inventory()
-        assert reopened.quantities() == (0, 0, 0)
-    finally:
-        resumed.stop()
-        reopened.close()
 
 
 def test_published_child_inventory_references_follow_expansion_identity_and_input():

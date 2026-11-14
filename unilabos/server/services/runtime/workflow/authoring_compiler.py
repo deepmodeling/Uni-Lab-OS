@@ -39,6 +39,8 @@ _IO_KEYS = ("input_contract", "output_contract", "output_bindings")
 _PRESERVED_NODE_FIELDS = ("pose", "icon", "footer", "minimized", "manual_confirmation")
 #: 源码表达的节点元数据键；其余元数据沿用已应用图
 _SOURCE_META_KEYS = ("target_device_id", "inventory_mode", "inventory_requirements")
+#: 编译时派生的元数据（声明序号、分组展示方式）：已有节点沿用已应用图的值（没有就不加），不算源码改动
+_DERIVED_META_KEYS = ("source_order", "group_mode")
 _JSON_TO_PYTHON = {"integer": "int", "number": "float", "string": "str", "boolean": "bool", "object": "dict", "array": "list"}
 
 
@@ -288,6 +290,11 @@ class WorkflowAuthoringCompiler:
         applied_meta = applied.get("meta_data") or {}
         meta_data = {key: deepcopy(value) for key, value in applied_meta.items() if key not in _SOURCE_META_KEYS}
         meta_data.update(result.get("meta_data") or {})
+        for key in _DERIVED_META_KEYS:
+            if key in applied_meta:
+                meta_data[key] = deepcopy(applied_meta[key])
+            else:
+                meta_data.pop(key, None)
         if meta_data.get("inventory_mode") == "task" and "inventory_mode" not in applied_meta:
             # task 是默认库存时机，已应用节点没写时不当作变更
             meta_data.pop("inventory_mode")
@@ -542,7 +549,9 @@ class _PythonRenderer:
             self.emit(indent + 1, "pass")
 
     def render_group(self, node: Mapping[str, Any], indent: int) -> None:
-        mode = ((node.get("meta_data") or {}).get("unilab") or {}).get("group_mode", "sequence")
+        meta = node.get("meta_data") or {}
+        # 早先实例化的图把它放在 ``unilab`` 下（经普通保存会丢，丢了就只能当顺序分组）
+        mode = meta.get("group_mode") or (meta.get("unilab") or {}).get("group_mode", "sequence")
         self.anchor(indent, node)
         self.emit(indent, f"with ctx.{'parallel' if mode == 'parallel' else 'group'}({json.dumps(str(node.get('name') or '分组'), ensure_ascii=False)}):")
         before = len(self.lines)

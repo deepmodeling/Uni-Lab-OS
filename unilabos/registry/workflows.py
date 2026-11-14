@@ -1016,7 +1016,8 @@ def materialize_workflow_template(
         if kind == "group":
             entry = {"uuid": uuid_at(index),
                 "name": str(node.get("name") or "分组"), "type": "group", "param": {},
-                "meta_data": {"unilab": {"group_mode": (node.get("param") or {}).get("mode", "sequence")}},
+                # 顶层：保存作者图时 ``meta_data.unilab`` 属于服务端保留字段会被剥掉，图转源码要靠它区分 parallel / group
+                "meta_data": {"group_mode": (node.get("param") or {}).get("mode", "sequence")},
                 "pose": {}, "execution_policy": {}}
         elif kind == "condition":
             from unilabos.protocol.runtime.condition import condition_references, remap_expression

@@ -187,3 +187,27 @@ def test_parallel_members_start_in_written_order_when_they_compete_for_one_devic
     finally:
         scheduler.stop()
         service.close()
+
+
+def test_parallel_group_survives_save_and_renders_back_as_parallel():
+    """模板实例化的并行分组经普通保存后仍记得自己是 parallel；图转源码不会把它变成顺序 group。"""
+    from unilabos.server.services.runtime.workflow.authoring_compiler import _PythonRenderer
+
+    def flow(ctx):
+        with ctx.parallel("两路"):
+            ctx.run("left/probe", {}, name="左")
+            ctx.run("right/probe", {}, name="右")
+    definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:parallel-roundtrip",
+        display_name="并行往返", description="", tags=[])
+    catalog = DeviceCatalog()
+    for device in ("left", "right"):
+        catalog.add(device, "unknown", str(uuid4()))
+    service = WorkflowService(":memory:")
+    try:
+        record = upsert_workflow(service, materialize_workflow_template(build_workflow_template_payload(definition), catalog))
+        graph = service.get_graph(record["uuid"])
+        [group] = [node for node in graph["nodes"] if node["type"] == "group"]
+        assert group["meta_data"]["group_mode"] == "parallel"
+        assert 'with ctx.parallel("两路"):' in _PythonRenderer(graph, catalog).render()
+    finally:
+        service.close()

@@ -312,6 +312,10 @@ class BackendScheduler:
         # 按派发顺序、也就是声明顺序取得空出来的设备）。
         self._waiting_interval_since: Dict[str, int] = {}
         self._waiting_interval_counter = itertools.count()
+        # 同一时刻只有一轮区间重试按上面的先后逐个准入；并发触发只记一笔，由正在跑的那轮补跑。
+        # 两个线程各取一个等待者同时准入时，后排的会抢在前排之前拿到刚空出来的设备。
+        self._interval_retry_active = False
+        self._interval_retry_again = False
         # 区间准入未通过时的完整资源申请，仅供 /scheduler/resources 观测排队与阻塞者。
         self._waiting_interval_requests: Dict[str, SchedulerResourceRequest] = {}
         self._dispatched_jobs: set[str] = set()
@@ -1059,7 +1063,9 @@ class BackendScheduler:
         with self._guard:
             self._run_context[node.node_id] = (task, node)
             self._job_runs[job_uuid] = node.node_id
-        if not self._intervals.admit(resource_request, self._authority_epoch):
+        if self._earlier_sibling_waiting(task, node, spec) or not self._intervals.admit(
+            resource_request, self._authority_epoch,
+        ):
             with self._guard:
                 self._wait_for_interval(job_uuid, task, node)
                 self._waiting_interval_requests[job_uuid] = resource_request
@@ -1126,6 +1132,62 @@ class BackendScheduler:
             ]
         for job_uuid, task, node in queued:
             self._park_if_gated(task, node, job_uuid)
+
+    def _retry_waiting_intervals(self) -> None:
+        """按首次排队先后逐个重试等区间的 attempt；同一时刻只跑一轮，期间再被触发就补跑一轮。"""
+        with self._guard:
+            if self._interval_retry_active:
+                self._interval_retry_again = True
+                return
+            self._interval_retry_active = True
+        try:
+            while True:
+                with self._guard:
+                    self._interval_retry_again = False
+                    candidates = sorted(self._waiting_interval_jobs.items(),
+                                        key=lambda item: self._waiting_interval_since.get(item[0], -1))
+                for job_uuid, (task, node) in candidates:
+                    with self._guard:
+                        if self._waiting_interval_jobs.pop(job_uuid, None) is None:
+                            continue
+                    try:
+                        self._start_node(task, node)
+                    except Exception:
+                        logger.exception("资源区间等待节点 %s 无法继续", job_uuid)
+                        with self._guard:
+                            self._waiting_interval_jobs.pop(job_uuid, None)
+                        self._notify_start_failure(node.node_id)
+                with self._guard:
+                    if not self._interval_retry_again:
+                        self._interval_retry_active = False
+                        return
+        except BaseException:
+            with self._guard:
+                self._interval_retry_active = False
+            raise
+
+    def _earlier_sibling_waiting(self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any]) -> bool:
+        """同一任务里更早排队、要同一台设备的 attempt 还在等：不插队。
+
+        跨任务的先后由持久准入的老化 FIFO 裁决；同一任务的等待者之间它不让行。设备恰好在一轮
+        重试中途空出来时，排在后面的兄弟会先拿到它（``ctx.parallel`` 的成员就不再按书写顺序）。
+        后到的 attempt 此刻不持有任何资源，让行不会形成等待环。免动作锁的动作不参与。
+        """
+        if spec.get("always_free") or not node.device_id:
+            return False
+        job_uuid = str(spec["current_job_uuid"])
+        task_uuid = str(task["uuid"])
+        with self._guard:
+            mine = self._waiting_interval_since.get(job_uuid)
+            for other, (other_task, other_node) in self._waiting_interval_jobs.items():
+                if other == job_uuid or str(other_task["uuid"]) != task_uuid or other_node.device_id != node.device_id:
+                    continue
+                if (self._run_specs.get(other_node.node_id) or {}).get("always_free"):
+                    continue
+                since = self._waiting_interval_since.get(other)
+                if since is not None and (mine is None or since < mine):
+                    return True
+        return False
 
     def _wait_for_interval(self, job_uuid: str, task: Dict[str, Any], node: DagNode) -> None:
         """登记一个等资源区间的 attempt（调用方持有 ``self._guard``），保留它第一次登记的先后。"""
@@ -1291,19 +1353,7 @@ class BackendScheduler:
             if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
                     and not self._intervals.unadmitted_active_claims()):
                 self._dispatch_pause_reasons.discard("legacy_resource_reconciliation")
-            interval_candidates = sorted(self._waiting_interval_jobs.items(),
-                                         key=lambda item: self._waiting_interval_since.get(item[0], -1))
-        for job_uuid, (task, node) in interval_candidates:
-            with self._guard:
-                if self._waiting_interval_jobs.pop(job_uuid, None) is None:
-                    continue
-            try:
-                self._start_node(task, node)
-            except Exception:
-                logger.exception("资源区间等待节点 %s 无法继续", job_uuid)
-                with self._guard:
-                    self._waiting_interval_jobs.pop(job_uuid, None)
-                self._notify_start_failure(node.node_id)
+        self._retry_waiting_intervals()
         with self._guard:
             if ("legacy_execution_reconciliation" in self._dispatch_pause_reasons
                     and not self._execution_claims.unclaimed_active_jobs()):

@@ -26,7 +26,7 @@
 | W04 | 已有 | 已有 | |
 | A01 | 无预计时长合同 | 已实现（A01 分支） | `@action(estimate_duration_fixed / estimate_duration_express)`，派发时求值记在 attempt 上，时间线消费；V1 闭源引擎的学习估时与时间求解不移植 |
 | A02 | #358 未合并 | 已实现 | `contract="typed"`、`registry/typed_contract.py` 等已在 #361 |
-| A03 | 仅能解析 | **部分** | `device_tenancy` / `operate_in_place` / `transfer` / `transfer_step` / `aliquot` 在调度器托管下启用（`scheduler/physical_contract.py`、`materials/execution.py`）；`order_sensitive` 仍被拒绝（`registry/typed_contract.py`），需补「同一资源的无序兄弟动作必须显式排序」的发布期检查 |
+| A03 | 仅能解析 | 已实现 | `device_tenancy` / `operate_in_place` / `transfer` / `transfer_step` / `aliquot` 在调度器托管下启用（`scheduler/physical_contract.py`、`materials/execution.py`）；`order_sensitive` 按 V1 规则在发布和创建任务时检查同一资源上无先后关系的兄弟动作（`scheduler/interval_plan.py`，`tests/server/test_order_sensitive_actions.py`）；并行成员同时就绪时按书写顺序派发 |
 | I01 | #358 未合并 | 已实现 | `materials/quantity.py`、`capacity.py`，批次计数盘点 `stocktake_inventory_lot` |
 | I02 | 未对齐 | **部分** | 批次侧（多任务共享数量、`on_ready` 缺料等待、执行结果不明时冻结）已有；容器内物质（`kind="content"`）的工作流预留、多任务共享、随作业结算与恢复、一次性实际用量更正、结算防错（不吃别人的预留、单位换算失败即拒绝、快照不能移除已预留内容物）已实现（I02 分支）；运行时补料分支（`material_source` + `sufficient` + `material_io`）未做，是否做待用户决定；任务开始即缺料时直接失败（`plan_not_executable`），按用户决定保持，与 V1 的等待入库有意不同 |
 | I03 | 未完整 | **部分** | 搬运 / 分装按执行回执结算（`materials/execution.py`），人工计数盘点已有；按测量作业证据自动盘点未实现 |
@@ -45,8 +45,8 @@
 builder 模式已移除，工作流只按源码编译；支持等待测量结果再判断 `measurement.qualified`；
 `condition` 节点已接入调度器；`estimate_duration_*` 已实现（A01）。
 
-剩余顺序建议：待用户决定的 I02 运行时补料、A03 `order_sensitive` → 正式前端适配与 F09 / T02 联调 → U01 → T01。
-I02 第一步、W01 已完成；任务开始即缺料直接失败（用户决定，不做等待）。
+剩余顺序建议：待用户决定的 I02 运行时补料 → 正式前端适配与 F09 / T02 联调 → U01 → T01。
+I02 第一步、W01、A03 `order_sensitive` 已完成；任务开始即缺料直接失败（用户决定，不做等待）；builder 模式已移除。
 
 ## 基线与原始目标（11-09 原始记录）
 

@@ -13,6 +13,7 @@ WorkflowService 持有 Workflow/Task/节点运行/attempt 事实，本服务在�
 from __future__ import annotations
 
 import asyncio
+import itertools
 import logging
 import math
 import threading
@@ -264,6 +265,10 @@ class BackendScheduler:
         self._job_runs: Dict[str, str] = {}
         self._waiting_resource_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
         self._waiting_interval_jobs: Dict[str, tuple[Dict[str, Any], DagNode]] = {}
+        # 首次进入区间等待的先后：重试按它走，不因每次重试重新登记而轮转（同任务的兄弟节点
+        # 按派发顺序、也就是声明顺序取得空出来的设备）。
+        self._waiting_interval_since: Dict[str, int] = {}
+        self._waiting_interval_counter = itertools.count()
         # 区间准入未通过时的完整资源申请，仅供 /scheduler/resources 观测排队与阻塞者。
         self._waiting_interval_requests: Dict[str, SchedulerResourceRequest] = {}
         self._dispatched_jobs: set[str] = set()
@@ -552,6 +557,7 @@ class BackendScheduler:
                         self._job_runs.pop(job_uuid, None)
                         self._waiting_resource_jobs.pop(job_uuid, None)
                         self._waiting_interval_jobs.pop(job_uuid, None)
+                        self._waiting_interval_since.pop(job_uuid, None)
                         self._dispatched_jobs.discard(job_uuid)
                         self._manual_confirmation_jobs.discard(job_uuid)
                 for decision_id, pending in list(self._reconciliation_decisions.items()):
@@ -929,7 +935,7 @@ class BackendScheduler:
             self._waiting_step_nodes.pop(node.node_id, None)
         if spec.get("inventory_deferred") and not self._reserve_ready_inventory(task, node):
             with self._guard:
-                self._waiting_interval_jobs[spec["current_job_uuid"]] = (task, node)
+                self._wait_for_interval(spec["current_job_uuid"], task, node)
             return
         args = self._resolve_action_args(node.node_id)
         # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
@@ -970,7 +976,7 @@ class BackendScheduler:
                 tenancy["device_tenancy"] = physical["device_tenancy"]
         if self._physical_recovery.blockers(job_uuid, material_uuids, {node.device_id, *tenancy.get("device_claims", [])}):
             with self._guard:
-                self._waiting_interval_jobs[job_uuid] = (task, node)
+                self._wait_for_interval(job_uuid, task, node)
             return
         resource_request = SchedulerResourceRequest(
                 **tenancy,
@@ -997,11 +1003,12 @@ class BackendScheduler:
             self._job_runs[job_uuid] = node.node_id
         if not self._intervals.admit(resource_request, self._authority_epoch):
             with self._guard:
-                self._waiting_interval_jobs[job_uuid] = (task, node)
+                self._wait_for_interval(job_uuid, task, node)
                 self._waiting_interval_requests[job_uuid] = resource_request
             return
         with self._guard:
             self._waiting_interval_jobs.pop(job_uuid, None)
+            self._waiting_interval_since.pop(job_uuid, None)
         record = self.resources.acquire(resource_request)
         with self._guard:
             self._run_context[node.node_id] = (task, node)
@@ -1061,6 +1068,11 @@ class BackendScheduler:
             ]
         for job_uuid, task, node in queued:
             self._park_if_gated(task, node, job_uuid)
+
+    def _wait_for_interval(self, job_uuid: str, task: Dict[str, Any], node: DagNode) -> None:
+        """登记一个等资源区间的 attempt（调用方持有 ``self._guard``），保留它第一次登记的先后。"""
+        self._waiting_interval_jobs[job_uuid] = (task, node)
+        self._waiting_interval_since.setdefault(job_uuid, next(self._waiting_interval_counter))
 
     def _dispatch_held_node(self, task: Dict[str, Any], node: DagNode) -> None:
         """下发一个已经持有完整动作/物料集合的节点运行（当前 attempt）。"""
@@ -1221,7 +1233,8 @@ class BackendScheduler:
             if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
                     and not self._intervals.unadmitted_active_claims()):
                 self._dispatch_pause_reasons.discard("legacy_resource_reconciliation")
-            interval_candidates = list(self._waiting_interval_jobs.items())
+            interval_candidates = sorted(self._waiting_interval_jobs.items(),
+                                         key=lambda item: self._waiting_interval_since.get(item[0], -1))
         for job_uuid, (task, node) in interval_candidates:
             with self._guard:
                 if self._waiting_interval_jobs.pop(job_uuid, None) is None:

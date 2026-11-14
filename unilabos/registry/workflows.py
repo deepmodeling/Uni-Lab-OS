@@ -1084,6 +1084,9 @@ def materialize_workflow_template(
         if entry["meta_data"].get("inventory_requirements"):
             entry["meta_data"]["inventory_requirements"] = remap_result_bindings(
                 entry["meta_data"]["inventory_requirements"], node_uuid_of_key, template=True)
+        # 声明顺序：同时就绪的节点（如 ctx.parallel 的成员）按它派发。放在顶层：保存作者图时
+        # ``meta_data.unilab`` 属于服务端保留字段，会被剥掉。
+        entry["meta_data"] = {**entry["meta_data"], "source_order": index}
         nodes.append(entry)
     return {
         "workflow_uuid": workflow_uuid_value,

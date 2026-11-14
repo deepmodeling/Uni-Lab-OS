@@ -49,8 +49,10 @@ def validate_action_values(
         raise TypedActionValueError(f"动作{section}包含无效 JSON 值") from error
     if section == "goal":
         # 物理结算和跨动作设备托管需要持久开始记录及资源租约，不能仅凭 Schema 宣称已执行。
+        # ``order_sensitive`` 只约束计划（同一资源的兄弟动作必须显式排序，见 interval_plan），执行时无需额外处理。
         resource_contract = schema["x-unilabos-action-contract"].get("resource_contract") or {}
-        unsupported = [name for name in ("device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot", "order_sensitive") if resource_contract.get(name) and not (managed_resources and name in {"device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot"})]
+        managed = ("device_tenancy", "operate_in_place", "transfer", "transfer_step", "aliquot")
+        unsupported = [name for name in managed if resource_contract.get(name) and not managed_resources]
         if unsupported:
             raise TypedActionValueError("当前 dev 尚未启用资源执行合同：" + "、".join(unsupported))
     selected = deepcopy(schema["properties"][section])

@@ -99,7 +99,7 @@ def test_parallel_condition_branch_does_not_serialize_sibling():
     assert len(report.dependencies) == 3
 
 
-def test_builder_cannot_accidentally_serialize_parallel_siblings():
+def test_parallel_siblings_cannot_read_each_others_results():
     from unilabos.registry.workflows import WorkflowBuildContext
     ctx = WorkflowBuildContext()
     with pytest.raises(ValueError, match="兄弟分支"):
@@ -137,5 +137,53 @@ def test_result_reference_adds_dispatch_dependency_without_explicit_order():
         wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
     finally:
         service.set_task_submitter(None)
+        scheduler.stop()
+        service.close()
+
+
+def test_parallel_members_start_in_written_order_when_they_compete_for_one_device():
+    """同时就绪的并行成员按书写顺序派发；排队等同一台设备时按排队先后依次取得，先写的先做。
+
+    默认节点 UUID 由声明序号派生、字典序恰好是书写序；源码锚点（``# unilab:node_uuid``）给的
+    UUID 是任意的。以前同时就绪时按 UUID 排，这里让 UUID 序与书写序相反，以前会倒着执行。
+    """
+    def flow(ctx):
+        with ctx.parallel("同一台机械臂"):
+            ctx.run("arm/move", {"order": 1}, name="甲")
+            ctx.run("arm/move", {"order": 2}, name="乙")
+            ctx.run("arm/move", {"order": 3}, name="丙")
+            ctx.run("arm/move", {"order": 4}, name="丁")
+            ctx.run("arm/move", {"order": 5}, name="戊")
+    definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:parallel-order",
+        display_name="并行顺序", description="", tags=[])
+    catalog = DeviceCatalog()
+    catalog.add("arm", "unknown", str(uuid4()))
+    service = WorkflowService(":memory:")
+    executor = Executor()
+    scheduler = BackendScheduler(service, executor)
+    service.set_task_submitter(scheduler.submit)
+    try:
+        template = build_workflow_template_payload(definition)
+        keys = [node["key"] for node in template["nodes"] if node["kind"] == "action"]
+        anchored = {key: f"{9 - index}0000000-0000-4000-8000-000000000000" for index, key in enumerate(keys)}
+        payload = materialize_workflow_template(template, catalog, node_uuids=anchored)
+        actions = [node for node in payload["nodes"] if node["type"] == "device_action"]
+        assert [node["uuid"] for node in actions] == sorted((node["uuid"] for node in actions), reverse=True)
+        record = upsert_workflow(service, payload)
+        task = service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
+            target_node_uuid=None, input_value={}, description=None, meta_data={})
+        planned = [node["param"].get("order") for node in task["execution_plan"]["nodes"] if node["kind"] == "device_action"]
+        assert planned == [1, 2, 3, 4, 5]
+        wait_for(lambda: len(executor.dispatched) == 1)
+        # 第一个动作在做时，其余成员都已在等这台设备（真实动作要跑一阵子，兄弟早已排上队）
+        wait_for(lambda: len(scheduler._waiting_interval_jobs) == 4)  # noqa: SLF001
+        started = []
+        for count in range(1, 6):
+            wait_for(lambda: len(executor.dispatched) == count)
+            started.append(executor.dispatched[-1]["action_args"]["order"])
+            executor.finish(count - 1, {})
+        assert started == [1, 2, 3, 4, 5]
+        wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    finally:
         scheduler.stop()
         service.close()

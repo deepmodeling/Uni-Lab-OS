@@ -2,15 +2,35 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Callable, Optional
 
 from unilabos.protocol.utils.workflow_hierarchy import lift_edge
 from .resource_keys import device_lock_key
 from .resource_plan import ResourcePlanError, bind_station_resource_plan, compile_template_resource_plan, serialize_resource_plan
 
 
-def validate_graph_resource_scopes(graph: dict[str, Any]) -> None:
-    """保存作者图时检查作用域，组框不改变循环边界。"""
+#: 作者图里设备动作节点的类型别名（与工作流服务的执行类型归一一致）
+_DEVICE_ACTION_TYPES = frozenset({"device_action", "ilab", "device", "action", "resource_action"})
+ActionSchemaResolver = Callable[[str, str], Optional[dict[str, Any]]]
+
+
+def _order_sensitive(node: dict[str, Any]) -> bool:
+    """动作的类型化合同声明了 ``order_sensitive``：与同一资源上的兄弟动作谁先谁后会影响结果。"""
+    contract = ((node.get("param_schema") or {}).get("x-unilabos-action-contract") or {}).get("resource_contract") or {}
+    return bool(contract.get("order_sensitive"))
+
+
+def _device_of(node: dict[str, Any], source: dict[str, Any]) -> str:
+    return str((source.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid")
+               or source.get("material_uuid") or (node.get("param") or {}).get("device_id") or "")
+
+
+def validate_graph_resource_scopes(graph: dict[str, Any], *, action_schema: Optional[ActionSchemaResolver] = None) -> None:
+    """保存 / 发布作者图时检查作用域，组框不改变循环边界。
+
+    给出 ``action_schema(device_id, action_name)`` 时同时按动作的类型化合同检查
+    ``order_sensitive``：同一资源上没有先后关系的兄弟动作只要有一个声明了它，就拒绝。
+    """
     nodes = {node["uuid"]: node for node in graph["nodes"]}
 
     def loop_parent(node):
@@ -23,9 +43,32 @@ def validate_graph_resource_scopes(graph: dict[str, Any]) -> None:
             parent = nodes[parent].get("parent_uuid")
         return parent
 
-    plan = {"nodes": [{**node, "kind": node["type"], "parent_uuid": loop_parent(node)}
-                      for node in nodes.values() if node["type"] != "group"], "edges": graph["edges"]}
-    compile_interval_plan(plan, graph)
+    planned = []
+    for node in nodes.values():
+        node_type = str(node.get("type") or "")
+        if node_type == "group":
+            continue
+        kind = "device_action" if node_type.strip().lower() in _DEVICE_ACTION_TYPES else node_type
+        entry = {**node, "kind": kind, "parent_uuid": loop_parent(node)}
+        if action_schema is not None and kind == "device_action":
+            schema = action_schema(_device_of(node, node), str(node.get("action_name") or (node.get("param") or {}).get("action") or ""))
+            if schema:
+                entry["param_schema"] = schema
+        planned.append(entry)
+    compile_interval_plan({"nodes": planned, "edges": graph["edges"]}, graph)
+
+
+def graph_has_order_sensitive_actions(graph: dict[str, Any], action_schema: Optional[ActionSchemaResolver]) -> bool:
+    """作者图里是否有声明了 ``order_sensitive`` 的设备动作（发布前决定要不要做顺序检查）。"""
+    if action_schema is None:
+        return False
+    for node in graph["nodes"]:
+        if str(node.get("type") or "").strip().lower() not in _DEVICE_ACTION_TYPES:
+            continue
+        schema = action_schema(_device_of(node, node), str(node.get("action_name") or (node.get("param") or {}).get("action") or ""))
+        if _order_sensitive({"param_schema": schema or {}}):
+            return True
+    return False
 
 
 def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[str, Any]:
@@ -39,15 +82,18 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
         source = sources.get(key, {})
         policy = node.get("execution_policy") or {}
         aliases = []
+        member: dict[str, Any] = {"uuid": key, "kind": "repeat_until" if node["kind"] == "loop" else node["kind"]}
         if node["kind"] == "device_action":
-            device = str((source.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid")
-                         or source.get("material_uuid") or node.get("param", {}).get("device_id") or "")
+            device = _device_of(node, source)
             if device:
                 if not policy.get("always_free"):
                     aliases.append(device)
                 bindings[device] = {"canonical_key": device_lock_key(device), "kind": "device"}
-        frames[parents[key]].append({"uuid": key, "kind": "repeat_until" if node["kind"] == "loop" else node["kind"],
-                                    "resource_defaults": aliases})
+            if _order_sensitive(node):
+                # 资源计划按 V1 规则拒绝同一资源上无先后关系、且至少一方顺序敏感的兄弟动作
+                member["action_resource_contract"] = {"order_sensitive": True}
+        member["resource_defaults"] = aliases
+        frames[parents[key]].append(member)
     pairs = {(edge["source_node_uuid"], edge["target_node_uuid"]) for edge in plan.get("edges", [])}
     pairs.update((dep, key) for key, node in nodes.items() for dep in (node.get("execution_policy") or {}).get("depends_on", []))
     edges: dict[str | None, list[dict[str, str]]] = defaultdict(list)
@@ -110,13 +156,27 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
                     scope.pop("parent_scope_id", None)
     result = []
     for parent, members in frames.items():
-        template = compile_template_resource_plan({
-            "workflow_uuid": str((graph.get("workflow") or {}).get("uuid") or "workflow:anonymous") + ":" + str(parent),
-            "nodes": members, "edges": edges[parent], "resource_scopes": scoped[parent],
-        })
+        try:
+            template = compile_template_resource_plan({
+                "workflow_uuid": str((graph.get("workflow") or {}).get("uuid") or "workflow:anonymous") + ":" + str(parent),
+                "nodes": members, "edges": edges[parent], "resource_scopes": scoped[parent],
+            })
+        except ResourcePlanError as error:
+            if error.code != "unordered_resource_actions":
+                raise
+            raise ResourcePlanError(error.code, _with_node_names(str(error), sources), path=error.path) from None
         bound = bind_station_resource_plan(template, bindings)
         inherited = {interval.interval_id: scope_members[interval.scope_id]
                      for interval in bound.intervals if interval.explicit_boundary and interval.scope_id in scope_members}
         result.append({"parent_node_uuid": parent, "plan": serialize_resource_plan(bound),
                        "admission_members": inherited})
     return {"version": 2, "frames": result}
+
+
+def _with_node_names(message: str, sources: dict[str, dict[str, Any]]) -> str:
+    """报错里的节点 UUID 换成「名称（UUID）」，作者能直接找到是哪两步。"""
+    for key, source in sources.items():
+        name = str(source.get("name") or "").strip()
+        if name and key in message:
+            message = message.replace(key, f"「{name}」（{key}）")
+    return message + "：把它们改成顺序执行，或用依赖 / 汇合明确先后"

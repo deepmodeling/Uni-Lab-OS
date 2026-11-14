@@ -1024,6 +1024,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             graph = WorkflowStore.get_graph(self, identity)
             if graph["workflow"]["revision"] != revision:
                 raise WorkflowConflict("conflict", detail="只能发布工作流的当前修订")
+            self._check_resource_order(graph)
             source_hash = publication_source_hash(graph)
             snapshot = freeze_publication_snapshot(graph, source_hash=source_hash)
             try:
@@ -1045,6 +1046,23 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 "工作流 %s 已发布修订 %s（%s）", identity, revision, projection.contract_digest
             )
             return publication_summary(row, projection)
+
+    def _check_resource_order(self, graph: Dict[str, Any]) -> None:
+        """发布期检查（与 V1 相同）：声明了 ``order_sensitive`` 的动作与同一资源上的兄弟动作必须显式排序。
+
+        任务创建时按执行计划再查一次，没发布直接运行的工作流同样受约束。
+        """
+        from unilabos.server.backend.scheduler.interval_plan import (
+            graph_has_order_sensitive_actions, validate_graph_resource_scopes,
+        )
+
+        resolver = self._action_schema_resolver
+        if not graph_has_order_sensitive_actions(graph, resolver):
+            return
+        try:
+            validate_graph_resource_scopes(graph, action_schema=resolver)
+        except (ValueError, TypeError) as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
 
     def list_workflow_publications(self, workflow_uuid: str) -> List[Dict[str, Any]]:
         identity = self.get_workflow(workflow_uuid)["uuid"]
@@ -1468,7 +1486,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 priority=priority,
                 inventory_bindings=bindings,
             )
-        except StoreConflict:
+        except StoreConflict as exc:
             if idempotency_key is not None:
                 # 唯一索引兜底：并发同键提交，读回先到者
                 existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
@@ -1476,7 +1494,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                     if existing.get("request_fingerprint", "") != fingerprint:
                         raise WorkflowConflict("conflict") from None
                     return existing
-            raise WorkflowError("invalid_input") from None
+            # 计划编译的具体原因（如哪两步须显式排序、哪个参数不合合同）留给前端 / 作者
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
         if self._task_submitter is not None:
             self._task_submitter(task["uuid"])
         return task
@@ -2054,9 +2073,17 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             graph_nodes = [selected_node]
             graph_edges = []
 
-        def stable_key(node_uuid: str) -> Tuple[str, str]:
+        def stable_key(node_uuid: str) -> Tuple[int, int, str, str]:
+            # 同时可排的节点：先按声明顺序——模板实例化记的 ``source_order``（``ctx.parallel`` 的成员
+            # 按书写顺序派发），或作者接口逐个添加时服务端记的 ``unilab.authoring_source_order``；
+            # 没有声明顺序的节点排在后面，再按创建时间、UUID。
             node = enabled[node_uuid]
-            return str(node.get("create_time") or ""), node_uuid
+            meta = node.get("meta_data") or {}
+            order = meta.get("source_order")
+            if type(order) is not int:
+                order = (meta.get("unilab") or {}).get("authoring_source_order")
+            declared = type(order) is int
+            return (0 if declared else 1, order if declared else 0, str(node.get("create_time") or ""), node_uuid)
 
         enabled: Dict[str, Dict[str, Any]] = {}
         node_kinds: Dict[str, str] = {}

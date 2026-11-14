@@ -132,7 +132,7 @@ def dose(
 
 - V1 的内容物共享数量预留、运行时补料分支与数量预留 Saga，尚未取代 dev 的 lot 预留模型。
 - V1 的搬运/分装实际结果结算、与通用扣减去重、可信测量 Job 自动盘点，尚未接入。
-- `device_tenancy`、`transfer`、`transfer_step`、`operate_in_place`、`aliquot`、`order_sensitive` 的 Schema 可以静态解析，但当前 dev 的运行值校验明确拒绝这些未接通的执行语义。不会仅因声明了合同，就假装完成持久占用或物理结算。
+- `device_tenancy`、`transfer`、`transfer_step`、`operate_in_place`、`aliquot` 只在调度器托管（`managed_resources`）下接受，脱离托管的运行值校验仍拒绝；`order_sensitive` 只约束计划：与同一资源上无先后关系的兄弟动作在发布和创建任务时被拒绝（`scheduler/interval_plan.py`）。（2026-11-15 更新）
 - 正式前端在独立 Uni-Lab FE 仓库；本轮只读核验其代码和 API，不修改该仓库业务实现。主仓库调试站已移除。
 
 上述运行期能力应与开始许可、attempt fencing、持久资源租约及恢复/人工裁决规则一起接入，防止未知执行被当成“未消费”而重新派发或补回库存。

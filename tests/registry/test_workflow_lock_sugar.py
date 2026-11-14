@@ -1,4 +1,4 @@
-"""``ctx.lock(...)`` 是 ``ctx.resource_scope(...)`` 的简写（W01）：两种编译方式下结果逐项相同。"""
+"""``ctx.lock(...)`` 是 ``ctx.resource_scope(...)`` 的简写（W01）：编译结果逐项相同。"""
 
 from __future__ import annotations
 
@@ -34,17 +34,9 @@ def _with_resource_scope(ctx):
         ctx.run("reactor/unload", {})
 
 
-def _builder(fn) -> WorkflowBuildContext:
-    ctx = WorkflowBuildContext()
-    fn(ctx)
-    return ctx
-
-
-def test_lock_compiles_exactly_like_resource_scope_in_both_compilers() -> None:
-    expected = _shape(_builder(_with_resource_scope))
-    assert _shape(_builder(_with_lock)) == expected
+def test_lock_compiles_exactly_like_resource_scope() -> None:
+    expected = _shape(collect_static_workflow(_with_resource_scope))
     assert _shape(collect_static_workflow(_with_lock)) == expected
-    assert _shape(collect_static_workflow(_with_resource_scope)) == expected
     [outer, inner] = expected[1]
     assert (outer["scope_id"], outer["resources"], inner["parent_scope_id"]) == ("reaction", ["reactor", "pump"], "reaction")
     assert len(outer["node_keys"]) == 4 and len(inner["node_keys"]) == 1  # 装料、循环、加液、卸料

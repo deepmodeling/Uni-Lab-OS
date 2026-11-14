@@ -11,19 +11,15 @@
 | 装饰器 | `@workflow(workflow_uuid=..., displayname=...)` | `@workflow(display_name=...)` |
 | 构图 | 只解析源码 AST，不执行作者函数 | 执行一次函数，ctx 收集步骤声明 |
 | 动作返回值 | 编译为节点结果引用 | `ctx.run` 返回步骤声明；`step_output` 可供 while 条件引用 |
-| 原生 if/else | 编译为结构化条件区域 | 不支持动作结果驱动的原生 if；对结果判断真假在注册时报错 |
+| 原生 if/else | 编译为结构化条件区域 | 不支持动作结果驱动的原生 if（统一后与 V1 相同：只按源码编译） |
 | 身份 | 工作流 UUID、节点 UUID 源码锚点 | 函数路径派生模板 UUID、步骤顺序派生节点 UUID |
 
 两种动作调用形式都容易解析。影响可靠性的是能否在执行动作之前静态看到全部分支、
 依赖和作用域。因此本轮采用 v1 的静态编译思路，但不替换 dev 调度器，也不复制 v1 的
-完整作者 API。2026-11-13 起 `compiler="ast"` 是默认值；`compiler="builder"`（注册时执行一次函数）仍可显式指定。
-7 个 demo 仓库与示例驱动包的 31 个模板全部按 AST 编译，原来走 builder 的 27 个在两种模式下收集出的步骤逐项一致。
-
-builder 模式在注册时执行一次函数，此时动作还没有运行、没有结果。对 `ctx.run` 返回的步骤、
-`step.output(...)` 引用或 `ctx.step_output` / `ctx.device_state` 条件判断真假、与常量比较大小或相等、
-拼进 f-string，都会在注册时抛出 `TypeError` 并给出改法（以前 `if step:` 恒为真，else 分支被静默丢弃）。
-按结果分支改用 `compiler="ast"`；按结果或设备状态循环用 `with ctx.loop_while(...)`。
-引用本身照常放进参数和条件，入库时是普通 JSON。
+完整作者 API。工作流一律按源码静态编译（与 V1 相同，只认 `if` / `with` 结构），不执行作者函数；
+原 dev 的 builder 模式（注册时执行一次函数收集步骤）已移除，`compiler="builder"` 会报错并提示去掉该参数，
+`compiler="ast"` 只为兼容保留。7 个 demo 仓库与示例驱动包的 31 个模板全部按 AST 编译，
+原来走 builder 的 27 个在两种模式下收集出的步骤逐项一致。
 
 ### 辅助函数
 
@@ -75,8 +71,7 @@ def check_quality(ctx):
 以及原有 `ctx.loop_for` / `ctx.loop_while` 声明。条件可包围循环，也可位于循环体内。
 
 动作参数支持 JSON 字面量、模块或闭包中的 JSON 常量、循环占位符，以及动作结果引用。
-AST 模式可写 `result.field`、`result["field"]`、数组下标和整个 `result`；builder 模式
-使用 `step.output("field")`。引用可嵌入字典或数组，调度器等来源节点成功后取值。
+可写 `result.field`、`result["field"]`、`result.output("field")`、数组下标和整个 `result`。引用可嵌入字典或数组，调度器等来源节点成功后取值。
 缺失字段会在调用设备前失败，返回数据中的引用标记或占位符不会再次求值。
 辅助函数按上文规则展开；除此之外不支持其它函数调用、赋值计算、原生 for/while、break/continue、
 提前 return 或参数展开；遇到不支持的语法给出函数名和相对源码行号，不回退执行函数体。

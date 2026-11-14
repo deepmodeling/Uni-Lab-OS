@@ -289,8 +289,7 @@ def _compile_function(
         except ValueError as exc:
             return fail(node, str(exc))
         if isinstance(result, dict):
-            # 静态编译只处理普通 JSON 值；带构建期保护的条件对象只给 builder 作者函数用。
-            result = dict(result)
+            result = dict(result)  # 条件 / 结果引用：拷贝一份，不与 ctx 内部记录共享
         if isinstance(result, WorkflowStep):
             result = replace(result, guards=deepcopy(guards))
             ctx.steps[-1] = result

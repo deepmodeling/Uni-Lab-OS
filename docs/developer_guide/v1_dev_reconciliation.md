@@ -20,8 +20,8 @@
 | D05 | 按设计消解 | 不变 | 0.13 未发布，四个库都仍是 v1 基线（等待顺序、预计时长等结构变化直接并进 v1）；发布后加迁移时只认已发布版本的结构指纹 |
 | M01 | Dev 已有 | 已有 | |
 | M02 | 部分基础 | 已实现 | 显式作用域 `ctx.resource_scope`、空闲借出与归还（`resource_loans.py`）、持久区间准入与老化优先级排队（SC-N4）；`test_workflow_resource_custody.py`、`test_workflow_resource_intervals.py`、`test_resource_admission_order.py` |
-| W01 | 不支持 | 已实现 | `with ctx.lock("reactor"):` 是 `ctx.resource_scope` 的简写，builder / AST 两种编译方式结果逐项相同（`tests/registry/test_workflow_lock_sugar.py`、`test_cross_loop_resource_scopes.py::test_lock_sugar_holds_one_interval_across_real_loop_rounds`）；按用户决定 `@workflow` 的 `display_name` 保持必填 |
-| W02 | 未接通 | 已实现 | 默认 `compiler="ast"`，支持按动作结果的 if/elif/else，辅助函数编译前按源码展开；builder 模式对结果判断真假会报错 |
+| W01 | 不支持 | 已实现 | `with ctx.lock("reactor"):` 是 `ctx.resource_scope` 的简写，编译结果逐项相同（`tests/registry/test_workflow_lock_sugar.py`、`test_cross_loop_resource_scopes.py::test_lock_sugar_holds_one_interval_across_real_loop_rounds`）；按用户决定 `@workflow` 的 `display_name` 保持必填 |
+| W02 | 未接通 | 已实现 | 工作流只按源码静态编译（builder 模式已按用户决定移除），支持按动作结果的 if/elif/else，辅助函数编译前按源码展开 |
 | W03 | 作者接口没有 | 已实现 | `with ctx.parallel():` + `ctx.group`（与 V1 写法一致） |
 | W04 | 已有 | 已有 | |
 | A01 | 无预计时长合同 | 已实现（A01 分支） | `@action(estimate_duration_fixed / estimate_duration_express)`，派发时求值记在 attempt 上，时间线消费；V1 闭源引擎的学习估时与时间求解不移植 |
@@ -42,7 +42,7 @@
 | F09 | 未执行 | **开放** | FE 适配后与 T02 一起做浏览器联调 |
 
 11-09「作者语法的实测结果」现已变化：`workflow()` 仍需 `display_name`（保持必填）；锁写作 `with ctx.lock(...)`；`ctx.parallel` 已有；
-builder 模式下 `bool(step)` 会报错并提示改用 AST；AST 模式支持等待测量结果再判断 `measurement.qualified`；
+builder 模式已移除，工作流只按源码编译；支持等待测量结果再判断 `measurement.qualified`；
 `condition` 节点已接入调度器；`estimate_duration_*` 已实现（A01）。
 
 剩余顺序建议：待用户决定的 I02 运行时补料、A03 `order_sensitive` → 正式前端适配与 F09 / T02 联调 → U01 → T01。

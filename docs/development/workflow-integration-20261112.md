@@ -14,7 +14,7 @@ def experiment(ctx):
         ctx.run("reactor/unload", {})
 ```
 
-`with ctx.lock("reactor", name="reaction"):` 是同一件事的简写，两种编译方式下结果完全相同（入库同为 `resource_scopes`）；`display_name` 仍是 `@workflow` 的必填项。
+`with ctx.lock("reactor", name="reaction"):` 是同一件事的简写，编译结果完全相同（入库同为 `resource_scopes`）；`display_name` 仍是 `@workflow` 的必填项。
 
 参数使用设备 ID（模板角色），前端实例化时沿用同一份设备绑定。作用域只声明所有权边界；每次动作仍须独立取得实际使用权。外层所有权覆盖循环全部轮次、嵌套循环和动作间隙，不随每轮完成而释放。声明在循环内部的作用域仍按轮次创建。
 

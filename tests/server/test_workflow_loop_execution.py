@@ -449,12 +449,11 @@ def test_while_loop_repeats_until_a_body_step_reports_ready(stack: _Stack) -> No
     """条件引用循环体里的探测步骤：首轮前没有产出 => 先跑一轮（do-while 语义），
     之后每轮看最新探测结果。"""
 
-    @workflow(display_name="重复直到就绪", compiler="builder")  # 构建期断言 loop.is_loop 需要执行函数
+    @workflow(display_name="重复直到就绪")
     def flow(ctx: WorkflowBuildContext) -> None:
-        with ctx.loop_while(ctx.step_output("探测", "ready", "==", False), name="直到就绪") as loop:
+        with ctx.loop_while(ctx.step_output("探测", "ready", "==", False), name="直到就绪"):
             ctx.run("loop-device/record", {"value": "work"}, name="干活")
             ctx.run("loop-device/probe", {}, name="探测")
-        assert loop.is_loop
         ctx.run("loop-device/record", {"value": "done"}, name="收尾")
 
     task = stack.run()

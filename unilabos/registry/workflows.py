@@ -20,9 +20,9 @@
 - ``ctx.run("device_id/action_name", params)``：角色 = 显式设备 id。
 - ``ctx.run_template("class_name/action_name", params)``：角色 = registry 设备类；
   实例化时该类恰有一个设备则自动填充，否则由用户绑定。
-- 默认 ``compiler="ast"``：只解析函数源码、不执行，支持动作结果的原生 if/elif/else；
-  辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前按源码展开
-  （``registry/workflow_helpers.py``）。``compiler="builder"`` 是旧行为：注册时执行一次函数收集步骤。
+- 工作流函数只按源码静态编译（``registry/workflow_ast.py``）：不执行函数体，支持动作结果的
+  原生 if/elif/else；辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前
+  按源码展开（``registry/workflow_helpers.py``）。``compiler`` 参数只为兼容保留，只接受 ``"ast"``。
 - ``with ctx.loop_for(3):`` / ``with ctx.loop_while(condition):``：块内的步骤是循环体，
   运行时由调度器逐轮执行（不是配置时展开）。``for`` 固定轮数；``while`` 每轮前判定条件——
   ``ctx.device_state("heater", "temperature_c", "<", 80)`` 看设备状态字段，
@@ -58,6 +58,7 @@ from __future__ import annotations
 import importlib
 import uuid as uuid_module
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, ContextManager, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
@@ -82,64 +83,8 @@ def workflow_uuid_for(source_path: str) -> str:
     return str(uuid_module.uuid5(WORKFLOW_NAMESPACE, source_path))
 
 
-_BUILD_TIME_HINT = (
-    "builder 模式只在注册时执行一次工作流函数，此时动作还没有运行、没有结果，"
-    "这里的判断会得到与运行无关的固定答案。按结果分支请用 @workflow(compiler=\"ast\") 写原生 if；"
-    "按结果或设备状态循环请用 with ctx.loop_while(ctx.step_output(...) / ctx.device_state(...))。"
-)
-
-
-class StepResultRef(dict):
-    """``WorkflowStep.output()`` 返回的结果引用：JSON 形态与普通 dict 相同，运行时才代入值。
-
-    作者函数拿到的引用拒绝判断真假、与常量比较和拼进字符串——这些操作在构建期只能得到
-    固定答案，会静默生成与源码不符的流程。入库前由 :func:`_plain_references` 换回普通 dict。
-    """
-
-    __slots__ = ()
-
-    def __bool__(self) -> bool:
-        raise TypeError(f"不能在工作流函数里判断动作结果的真假。{_BUILD_TIME_HINT}")
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Mapping):
-            return dict.__eq__(self, other)
-        raise TypeError(f"不能在工作流函数里把动作结果和常量比较。{_BUILD_TIME_HINT}")
-
-    def __ne__(self, other: object) -> bool:
-        return not self.__eq__(other)
-
-    __hash__ = None  # type: ignore[assignment]
-
-    def _compare(self, other: object) -> bool:
-        raise TypeError(f"不能在工作流函数里比较动作结果的大小。{_BUILD_TIME_HINT}")
-
-    __lt__ = __le__ = __gt__ = __ge__ = _compare
-
-    def __format__(self, format_spec: str) -> str:
-        raise TypeError("不能把动作结果拼进字符串：参数值直接写 step.output(...)，由运行时代入。")
-
-
-class WorkflowCondition(dict):
-    """``ctx.device_state`` / ``ctx.step_output`` 构造的条件：只能交给 ``ctx.loop_while``
-    （或 ``compiler="ast"`` 源码里的 ``if`` / ``while`` 条件），不能在构建期判断真假。"""
-
-    __slots__ = ()
-
-    def __bool__(self) -> bool:
-        raise TypeError(f"条件对象不能在工作流函数里直接判断真假。{_BUILD_TIME_HINT}")
-
-
-def _plain_references(value: Any) -> Any:
-    """把作者函数里的结果引用 / 条件换回普通 dict 再入库，同时与作者的可变对象解除共享。"""
-
-    if isinstance(value, dict):
-        return {key: _plain_references(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_plain_references(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_plain_references(item) for item in value)
-    return value
+#: 旧的 builder 模式（注册时执行一次作者函数）已移除，所有工作流都按源码静态编译。
+_BUILDER_REMOVED = "builder 模式已移除：@workflow 只按源码静态编译（AST），去掉 compiler 参数即可"
 
 
 @dataclass(frozen=True)
@@ -165,14 +110,11 @@ class WorkflowStep:
     #: 构建时记录的真实前驱；分组不作为运行节点。
     dependencies: Optional[List[str]] = None
 
-    def output(self, data_key: str = "") -> "StepResultRef":
-        """builder 模式的结果引用；AST 模式同时支持 result.field / result["field"]。"""
+    def output(self, data_key: str = "") -> Dict[str, Any]:
+        """结果引用 ``{"kind": "node_output", ...}``；源码里写 ``step.output("x")``、``step.x`` 或 ``step["x"]`` 都编成它。"""
         if not isinstance(data_key, str):
             raise ValueError("结果路径必须是字符串")
-        return StepResultRef(kind="node_output", node_key=self.key, data_key=data_key)
-
-    def __bool__(self) -> bool:
-        raise TypeError(f"不能在工作流函数里判断步骤的真假。{_BUILD_TIME_HINT}")
+        return {"kind": "node_output", "node_key": self.key, "data_key": data_key}
 
     @property
     def is_loop(self) -> bool:
@@ -249,19 +191,18 @@ class WorkflowDefinition:
     tags: List[str]
     fn: Callable[["WorkflowBuildContext"], Any]
     guide: Optional[WorkflowGuide] = None
+    #: 只为兼容保留：只接受 ``"ast"``
     compiler: str = "ast"
 
-    def collect(self) -> "WorkflowBuildContext":
-        """收集步骤及输入输出声明，AST 模式不调用作者函数。"""
-        if self.compiler == "ast":
-            from unilabos.registry.workflow_ast import collect_static_workflow
+    def __post_init__(self) -> None:
+        if self.compiler != "ast":
+            raise ValueError(_BUILDER_REMOVED)
 
-            return collect_static_workflow(self.fn)
-        ctx = WorkflowBuildContext()
-        self.fn(ctx)
-        if not ctx.steps:
-            raise ValueError(f"工作流 {self.source_path} 未声明任何步骤")
-        return ctx
+    def collect(self) -> "WorkflowBuildContext":
+        """按源码静态编译出步骤及输入输出声明，不调用作者函数。"""
+        from unilabos.registry.workflow_ast import collect_static_workflow
+
+        return collect_static_workflow(self.fn)
 
     def collect_steps(self) -> List[WorkflowStep]:
         return list(self.collect().steps)
@@ -366,8 +307,7 @@ class WorkflowBuildContext:
     def lock(self, *device_ids: str, name: str = "") -> ContextManager[None]:
         """``resource_scope`` 的简写：``with ctx.lock("reactor"):`` 持有设备直到块结束。
 
-        语义、存储和调度与 ``resource_scope`` 完全相同（入库都是 ``resource_scopes``），
-        builder 与 AST 两种编译方式都支持。
+        语义、存储和调度与 ``resource_scope`` 完全相同（入库都是 ``resource_scopes``）。
         """
         return self._resource_scope(device_ids, name=name, label="lock")
 
@@ -405,7 +345,7 @@ class WorkflowBuildContext:
         description: str = "",
         interval_seconds: float = 0.0,
     ) -> Iterator[WorkflowStep]:
-        """固定轮数循环：``with ctx.loop_for(3):`` 块内的步骤是循环体（``as`` 绑定只在 builder 模式可用）。"""
+        """固定轮数循环：``with ctx.loop_for(3):`` 块内的步骤是循环体。"""
 
         spec = {"mode": "for", "count": count, "interval_seconds": interval_seconds}
         with self._loop(spec, name or f"循环 ×{count}", description) as step:
@@ -428,7 +368,7 @@ class WorkflowBuildContext:
 
         spec = {
             "mode": "while",
-            "condition": _plain_references(dict(condition)),
+            "condition": deepcopy(dict(condition)),
             "max_iterations": max_iterations,
             "interval_seconds": interval_seconds,
         }
@@ -436,33 +376,22 @@ class WorkflowBuildContext:
             yield step
 
     @staticmethod
-    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> WorkflowCondition:
-        """while 条件：设备状态字段（``@topic_config`` / status_fields 上报的最新值）。"""
+    def device_state(device_id: str, field_name: str, op: str, value: Any = None) -> Dict[str, Any]:
+        """while / if 条件：设备状态字段（``@topic_config`` / status_fields 上报的最新值）。"""
 
-        return WorkflowCondition(
-            source="device_state",
-            device_id=str(device_id),
-            field=str(field_name),
-            op=op,
-            value=value,
-        )
+        return {"source": "device_state", "device_id": str(device_id), "field": str(field_name), "op": op, "value": value}
 
     @staticmethod
     def step_output(
         step: "WorkflowStep | str", data_key: str, op: str, value: Any = None
-    ) -> WorkflowCondition:
+    ) -> Dict[str, Any]:
         """while 条件：某一步最近一次成功的返回值；该步没产出前循环体先跑一轮。
 
         ``step`` 是 ``ctx.run`` 返回的步骤，或步骤的 ``name``——循环体里的步骤在 ``with``
         打开时还没声明，用名字引用（名字须在本工作流内唯一），块结束时解析。
         """
 
-        condition = WorkflowCondition(
-            source="node_output",
-            data_key=str(data_key or ""),
-            op=op,
-            value=value,
-        )
+        condition: Dict[str, Any] = {"source": "node_output", "data_key": str(data_key or ""), "op": op, "value": value}
         if isinstance(step, WorkflowStep):
             if step.is_loop:
                 raise ValueError("step_output 条件必须引用设备动作步骤，不能引用循环")
@@ -588,7 +517,7 @@ class WorkflowBuildContext:
             inventory_mode=inventory_mode,
             target=head,
             action=action,
-            params=_plain_references(dict(params or {})),
+            params=deepcopy(dict(params or {})),
             name=name or f"{head}.{action}",
             inventory=_normalize_inventory(inventory, f"{head}/{action}"),
             description=str(description or "").strip(),
@@ -626,14 +555,14 @@ def workflow(
         guide: 操作指引（``WorkflowGuide`` 或同形 dict）：``preparation`` 运行前要在前端做的
             准备（出库、挂到哪台设备哪个位点、确认设备在线……）、``expected`` 预期效果、
             ``notes`` 注意事项。配合每步的 ``description`` 组成前端的"全流程"说明。
-        compiler: ast（默认）只解析函数源码：支持动作结果驱动的 if/elif/else，辅助函数在编译前按源码展开；
-            builder 在注册时执行一次函数收集步骤（旧行为，需要显式指定）。
+        compiler: 只为兼容保留，只接受 ``"ast"``：工作流一律按源码静态编译，支持动作结果驱动的
+            if/elif/else，辅助函数在编译前按源码展开；不执行作者函数。
     """
 
     if not str(display_name).strip():
         raise ValueError("@workflow 必须提供非空 display_name")
-    if compiler not in {"builder", "ast"}:
-        raise ValueError("@workflow compiler 只支持 builder 或 ast")
+    if compiler != "ast":
+        raise ValueError(_BUILDER_REMOVED)
     normalized_guide = _normalize_guide(guide)
 
     def decorator(fn: Callable[[WorkflowBuildContext], Any]):

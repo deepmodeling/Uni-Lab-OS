@@ -13,6 +13,7 @@ from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.workflows import (
     DeviceCatalog,
     WorkflowBuildContext,
+    WorkflowDefinition,
     WorkflowTemplateBindingError,
     build_workflow_template_payload,
     class_role_id,
@@ -196,9 +197,8 @@ def test_materialize_resolves_roles_and_builds_serial_nodes() -> None:
     assert nodes[1]["execution_policy"] == {"depends_on": [nodes[0]["uuid"]]}
 
 
-@pytest.mark.parametrize("compiler", ["builder", "ast"])
-def test_device_id_rebinding_updates_actions_and_state_without_mutating_template(compiler: str) -> None:
-    @workflow(display_name="通用反应釜流程", compiler=compiler)
+def test_device_id_rebinding_updates_actions_and_state_without_mutating_template() -> None:
+    @workflow(display_name="通用反应釜流程")
     def flow(ctx):
         ctx.run("reactor/start_heating", {"target_c": 80})
         with ctx.loop_while(ctx.device_state("reactor", "temperature_c", "<", 80), interval_seconds=0.5):
@@ -302,33 +302,25 @@ def test_step_target_must_contain_action() -> None:
         ctx.run_template("only_class", {})
 
 
-@pytest.mark.parametrize("misuse", [
-    lambda ctx, step: bool(step),
-    lambda ctx, step: bool(step.output("ok")),
-    lambda ctx, step: step.output("ok") == False,  # noqa: E712 - 正是要拦住的写法
-    lambda ctx, step: step.output("count") > 3,
-    lambda ctx, step: f"S-{step.output('sample_id')}",
-    lambda ctx, step: bool(ctx.step_output(step, "ok", "==", True)),
-    lambda ctx, step: bool(ctx.device_state("reactor", "ready", "==", True)),
-], ids=["step", "output", "output-eq", "output-gt", "output-fstring", "step-output-condition", "device-state-condition"])
-def test_builder_mode_rejects_build_time_decisions_on_results(misuse) -> None:
-    """builder 模式在注册时执行一次函数：对结果做判断只会得到固定答案（else 分支被静默丢弃），必须报错。"""
+def test_builder_mode_is_gone() -> None:
+    """工作流一律按源码静态编译；``compiler="ast"`` 只为兼容保留，``builder`` 给出改法。"""
 
-    @workflow(display_name="误用", compiler="builder")
-    def misuse_flow(ctx: WorkflowBuildContext) -> None:
-        step = ctx.run("reactor/measure", {})
-        if misuse(ctx, step):
-            ctx.run("reactor/heat", {})
-        else:
-            ctx.run("reactor/cool", {})
+    with pytest.raises(ValueError, match="builder 模式已移除.*去掉 compiler 参数"):
+        workflow(display_name="旧写法", compiler="builder")
+    with pytest.raises(ValueError, match="builder 模式已移除"):
+        WorkflowDefinition(uuid=str(uuid.uuid4()), source_path="test:old", display_name="旧写法", description="",
+                           tags=[], fn=lambda ctx: None, compiler="builder")
 
-    definition = next(iter(get_registered_workflows().values()))
-    with pytest.raises(TypeError, match=r"compiler=|step\.output"):
-        definition.collect()
+    @workflow(display_name="兼容写法", compiler="ast")
+    def explicit(ctx):
+        ctx.run("reactor/measure", {})
+
+    [definition] = get_registered_workflows().values()
+    assert [step.action for step in definition.collect().steps] == ["measure"]
 
 
-def test_builder_references_are_stored_as_plain_json() -> None:
-    """引用照常放进参数和条件；入库的是普通 dict，内部比较与序列化不受构建期保护影响。"""
+def test_references_are_stored_as_plain_json() -> None:
+    """结果引用和条件都是普通 dict，放进参数和条件后原样入库、可序列化。"""
 
     ctx = WorkflowBuildContext()
     first = ctx.run("reactor/measure", {})

@@ -1,6 +1,7 @@
 """把 dev 执行计划映射为按循环层级冻结的资源区间。"""
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from typing import Any, Callable, Optional
 
@@ -15,9 +16,19 @@ ActionSchemaResolver = Callable[[str, str], Optional[dict[str, Any]]]
 
 
 def _order_sensitive(node: dict[str, Any]) -> bool:
-    """动作的类型化合同声明了 ``order_sensitive``：与同一资源上的兄弟动作谁先谁后会影响结果。"""
-    contract = ((node.get("param_schema") or {}).get("x-unilabos-action-contract") or {}).get("resource_contract") or {}
-    return bool(contract.get("order_sensitive"))
+    """动作的类型化合同声明了 ``order_sensitive``：与同一资源上的兄弟动作谁先谁后会影响结果。
+
+    ``param_schema`` 可能是字典，也可能是模板里存的 JSON 文本；非类型化动作没有这个合同。
+    """
+    schema = node.get("param_schema")
+    if isinstance(schema, str):
+        try:
+            schema = json.loads(schema)
+        except ValueError:
+            return False
+    contract = schema.get("x-unilabos-action-contract") if isinstance(schema, dict) else None
+    resource = contract.get("resource_contract") if isinstance(contract, dict) else None
+    return isinstance(resource, dict) and resource.get("order_sensitive") is True
 
 
 def _device_of(node: dict[str, Any], source: dict[str, Any]) -> str:

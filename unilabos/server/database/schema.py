@@ -486,12 +486,11 @@ def initialize_database(
         connection.close()
         if spec.on_unmigratable == "refuse" and not _rebuild_allowed():
             raise DatabaseMigrationRequired(
-                f"数据库 {database_path}（{spec.key}：{spec.role}）与当前代码的结构不一致且无法迁移："
-                f"{state.reason}（库内版本 {state.stored_version}，代码版本 {spec.schema_version}）。"
-                "为避免丢失数据已拒绝启动，旧库保持原样。可选：升级到包含对应迁移的版本；"
-                f"或用 --{spec.key}_db / --server_database_root 指向新位置；确认旧数据不再需要时，"
-                "设置 BasicConfig.database_rebuild_on_mismatch = True"
-                "（或环境变量 UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true），旧库会改名备份后重建。"
+                f"数据库 {database_path} 与当前版本不兼容，需要重建（{spec.key}：{state.reason}；"
+                f"库内版本 {state.stored_version}，代码版本 {spec.schema_version}）。已拒绝启动，旧库保持原样。"
+                "重建：设置 BasicConfig.database_rebuild_on_mismatch = True"
+                "（或环境变量 UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true），旧库会先改名备份；"
+                f"或用 --{spec.key}_db / --server_database_root 换一个位置。"
             )
         backup = _retire_database_files(database_path)
         logger.warning(

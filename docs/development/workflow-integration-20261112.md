@@ -58,7 +58,7 @@ HTTP `resource-scopes` 接口也接受跨循环节点引用；跨入循环时，
 | 类型 | 何时发现 | 结果 |
 | --- | --- | --- |
 | 任务预检 `stage=preflight, scope=task` | 运行前预检（检查项 `inventory_shortage`）；任务启动时整任务原子预留不足 | 任务不派发任何动作直接失败：`{"code": "plan_not_executable", "stage": "preflight", "scope": "task", "reason": "inventory_shortage", "message": ...}` |
-| 动作预检 `stage=preflight, scope=action` | 节点就绪、动作执行前才预留的需求（`on_ready`、条件分支、引用上游结果）此刻不足 | 该 attempt 进入 `intervention_required`，待决策清单（`/error-decisions`）出现 `category="preflight"` 的决策，只有「重试」和「放弃」：补料后重试 → 追加新 attempt 重新预检，通过即执行；放弃 → 动作失败（`inventory_shortage`），任务失败 `node_preflight_failed`。动作没派发，不占任何资源；样品托管等物理状态保持不动；重启后按原决策重新挂出 |
+| 动作预检 `stage=preflight, scope=action` | 节点就绪、动作执行前才预留的需求（`on_ready`、条件分支、引用上游结果）此刻不足 | 该 attempt 进入 `intervention_required`，待决策清单（`/error-decisions`）出现 `category="preflight"` 的决策：补料后**重试** → 同一 attempt 重新预检，通过即执行（动作没尝试过，不消耗 attempt）；**跳过** → 不执行、下游继续；**人工替换为成功** → 操作员手工完成，按给出的结果记成功；**放弃** → 动作失败（`inventory_shortage`），任务失败 `node_preflight_failed`。动作没派发，不占任何资源；样品托管等物理状态保持不动；重启后按原决策重新挂出 |
 | 执行报错 `stage=execution` | 设备动作报错、超时 | 照旧走执行面的失败决策；任务失败 `node_execution_failed` |
 
 其他启动前的不可执行（设备 / 动作缺失、计划非法）同属任务预检报错。

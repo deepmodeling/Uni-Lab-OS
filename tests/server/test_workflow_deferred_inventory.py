@@ -81,7 +81,7 @@ def test_runtime_shortage_is_an_action_preflight_error_handled_by_replenish_and_
         wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
         decision = _preflight_decision(scheduler, task["uuid"])
         assert (decision["category"], decision["stage"]) == ("preflight", "preflight")
-        assert [option["action"] for option in decision["options"]] == ["retry", "abort"]
+        assert [option["action"] for option in decision["options"]] == ["retry", "skip", "operator_intervention", "abort"]
         [error] = decision["error_info"]
         assert (error["code"], error["stage"], error["scope"]) == ("inventory_shortage", "preflight", "action")
         assert "动作执行前预检" in error["message"] and error["shortages"]
@@ -121,7 +121,6 @@ def test_abandoning_an_action_preflight_error_fails_the_task_as_preflight(tmp_pa
         executor.finish(0, {"lot": "lot-a", "amount": 5})
         wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
         decision = _preflight_decision(scheduler, task["uuid"])
-        assert not scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "skip", "reason": "x"})
         assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "abort", "reason": "不补了"})
         wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "failed")
         assert stack.workflow.get_workflow_task(task["uuid"])["error_info"] == [
@@ -129,6 +128,39 @@ def test_abandoning_an_action_preflight_error_fails_the_task_as_preflight(tmp_pa
         [error] = _failed_run(stack, task["uuid"])["error_info"]
         assert (error["code"], error["stage"]) == ("inventory_shortage", "preflight")
         assert len(executor.dispatched) == 1
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+@pytest.mark.parametrize(("action", "status"), [("skip", "skipped"), ("operator_intervention", "succeeded")])
+def test_action_preflight_error_can_be_skipped_or_done_by_hand(tmp_path, action, status):
+    """跳过 / 人工替换为成功：缺料的动作不派发、不扣库存，下游照常执行。"""
+    def flow(ctx):
+        source = ctx.run("reactor/select", {})
+        ctx.run("reactor/operate", {}, inventory=[{"key": "solvent", "kind": "lot",
+            "lot_uuid": source.lot, "quantity": source.amount, "unit": "ul"}])
+        ctx.run("reactor/report", {})
+    stack = Stack(tmp_path)
+    _template(stack.materials, "reagent-template", "reagent")
+    _inbound(stack.materials, lot_uuid="lot-a", quantity=2)
+    executor = Executor()
+    scheduler, task = create(stack, executor, flow)
+    try:
+        wait_for(lambda: len(executor.dispatched) == 1)
+        executor.finish(0, {"lot": "lot-a", "amount": 5})
+        wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
+        decision = _preflight_decision(scheduler, task["uuid"])
+        assert scheduler.resolve_reconciliation_decision(
+            decision["decision_id"], {"action": action, "reason": "操作员处置", "result": {"done_by": "operator"}})
+        wait_for(lambda: len(executor.dispatched) == 2)
+        assert executor.dispatched[1]["action"] == "report"  # 缺料的动作没派发，直接到下游
+        executor.finish(1, {})
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+        run = next(item for item in stack.workflow.list_workflow_node_runs(task["uuid"])
+                   if item["workflow_node_uuid"] == decision["node_id"])
+        assert run["status"] == status
+        assert not stack.client.list_inventory_reservations()
     finally:
         scheduler.stop()
         stack.close()
@@ -154,7 +186,7 @@ def test_action_preflight_decision_survives_restart_without_holding_resources(tm
         wait_for(lambda: _preflight_decision(resumed, task["uuid"]) is not None)
         after = _preflight_decision(resumed, task["uuid"])
         assert after["decision_id"] == before["decision_id"] and after["category"] == "preflight"
-        assert [option["action"] for option in after["options"]] == ["retry", "abort"]
+        assert [option["action"] for option in after["options"]] == ["retry", "skip", "operator_intervention", "abort"]
         assert after["error_info"][0]["code"] == "inventory_shortage"
         assert not resumed._intervals.snapshot(task["uuid"])  # noqa: SLF001 - 没派发过的动作不保留设备区间
         _inbound(reopened.materials, lot_uuid="lot-a", quantity=4)

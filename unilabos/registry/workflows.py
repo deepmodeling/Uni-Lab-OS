@@ -39,7 +39,7 @@
   （``plan_not_executable``，``stage="preflight"``、``reason="inventory_shortage"``）；
   ``inventory_mode="on_ready"``、条件分支或引用上游结果的需求在节点就绪、动作执行前才预留，那时不足
   是**动作执行前的预检报错**（``inventory_shortage``，``stage="preflight"``、``scope="action"``）：该动作
-  挂起在待决策清单，补料后重试或放弃，不静默等待补料。
+  挂起在待决策清单，补料后重试（也可跳过、人工替换为成功或放弃），不静默等待补料。
   动作开始时由执行面扣减。
 
 模板不是工作流：它和 device / resource 条目一样随注册表快照上报到 Registry

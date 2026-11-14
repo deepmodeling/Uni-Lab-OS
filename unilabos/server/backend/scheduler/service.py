@@ -142,13 +142,16 @@ class BackendSchedulingError(RuntimeError):
 #: 报错类型（错误项的 ``stage``）：
 #: - ``preflight``：动作开始执行之前发现。``scope="task"`` 是任务启动时的整任务预检（如整任务库存预留
 #:   不足），任务不执行任何动作直接失败；``scope="action"`` 是每个动作执行前的预检（如节点就绪时才预留的
-#:   库存不足），该动作挂起等待处置——补料 / 排除原因后重试，或放弃。
+#:   库存不足），该动作挂起等待处置——补料 / 排除原因后重试，或跳过、人工替换为成功、放弃。
 #: - ``execution``：动作执行中失败（设备动作报错、超时）。
 ERROR_STAGE_PREFLIGHT = "preflight"
 ERROR_STAGE_EXECUTION = "execution"
-#: 动作执行前预检未通过时可选的处置：补料后重试，或放弃（该动作记失败）
+#: 动作执行前预检未通过时可选的处置（与执行失败的决策同一组动作）
 _PREFLIGHT_OPTIONS = (
     {"action": "retry", "label": "重试", "description": "补料或排除原因后重新预检，通过即执行该动作"},
+    {"action": "skip", "label": "跳过", "description": "不执行该动作，视为已完成但不产生结果，下游节点继续执行"},
+    {"action": "operator_intervention", "label": "人工替换为成功",
+     "description": "操作员已手工完成这一步，按给出的结果记为成功，下游节点继续执行"},
     {"action": "abort", "label": "放弃", "description": "该动作记失败，任务按失败结束"},
 )
 #: 预检重试不消耗设备动作的重试次数，只防止无限点击
@@ -2669,7 +2672,7 @@ class BackendScheduler:
     def _open_preflight_decision(
         self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any], error_info: list[Dict[str, Any]],
     ) -> None:
-        """动作执行前预检未通过：attempt 进入 ``intervention_required``，在待决策清单里给出重试 / 放弃。
+        """动作执行前预检未通过：attempt 进入 ``intervention_required``，在待决策清单里等处置。
 
         与执行面的失败决策同形、同一清单（``/error-decisions``），``category="preflight"``。
         动作没派发过，不申请也不保留任何资源；重试追加新 attempt 重新预检。
@@ -2689,7 +2692,7 @@ class BackendScheduler:
             "node_id": str(spec["workflow_node_uuid"]),
             "node_run_uuid": node.node_id,
             "exception_type": "PreflightFailed",
-            "error_message": message + "。补料或排除原因后选择重试，或放弃。",
+            "error_message": message + "。补料或排除原因后选择重试；也可以跳过、人工替换为成功或放弃。",
             "traceback": "",
             "options": [dict(option) for option in _PREFLIGHT_OPTIONS],
             "retry_count": max(attempt_no - 1, 0),

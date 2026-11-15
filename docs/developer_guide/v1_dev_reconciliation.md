@@ -37,7 +37,7 @@
 | R03 | 无 | 已实现 | 调度容量（U01 汇总 C12）按 V1 默认值：全局在途作业 100、全局运行任务 500、每工作流运行任务 100（`BasicConfig.scheduler_max_*`），超出的任务保持 `pending`、作业带 `job_dispatch_capacity` 排队，按先后放行，不失败（`test_scheduler_capacity.py`） |
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
 | T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 苏州工站测试材料 |
-| U01 | 待逐项核验 | **开放** | 全文件差异索引尚未逐项核验 |
+| U01 | 待逐项核验 | 已核验 | 492 个 V1 源文件逐个对照，见 [`v1_file_index/`](v1_file_index/README.md)；找出的缺口与处理结论列在其 README「缺口处理」 |
 | F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings`（建任务时落到冻结计划里对应的 `kind="content"` 需求，决定实际预留哪份试剂 / 当前内容物，对不上声明需求即拒绝；`tests/server/test_task_inventory_bindings.py`） / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
 | F08 | Center 分流 | 不变 | Center / project / experiment 路由不属于 OS 本地 backend |
 | F09 | 未执行 | **开放** | FE 适配后与 T02 一起做浏览器联调 |
@@ -123,7 +123,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | C01 #358 合并 | 已消解：内容已并入 #361（11-14 复核） | 保留原资源测试，按旧规格与显式容量声明区分校验；本轮 114 项回归通过。远端仍为 `0c940ded`、CI `42584235496` 未更新，不能按本地结果宣称合并完成。 |
 | T01 device status | TODO，按用户要求后续做 | 现有 telemetry / status_fields / device_state 不等于用户要求的新设备状态合同；本轮不实现。 |
 | T02 苏州工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖主 runtime 下多 slave、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
-| U01 其他文件差异 | 已建立全文件索引，待逐项核验 | 目录迁移、文档、生成物、测试和驱动差异不能按行数判定为缺失能力；索引中的“待核验”不可当作已关闭。 |
+| U01 其他文件差异 | 已逐项核验 | 逐文件结论（已移植 / 部分 / 缺失 / 有意不移植 / 不涉及）见 [`v1_file_index/`](v1_file_index/README.md)；目录迁移、文档、生成物、测试和驱动差异不按行数判定为缺失能力。 |
 
 ## 锁的统一语义
 

@@ -58,6 +58,13 @@ class BasicConfig:
     scheduler_grant_policy = "auto"
     # 原生策略库路径；留空时依次查环境变量 UNILABOS_SCHEDULER_GRANT_LIBRARY、<working_dir>/native/。
     scheduler_grant_library = ""
+    # 调度容量（默认值同 V1 workflow/scheduler_capacity.py）：超出的任务 / 作业按先后排队，不失败。
+    # 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限：
+    scheduler_max_in_flight_jobs = 100
+    # 全局运行中任务（running / canceling）上限；未开始的任务保持 pending 排队：
+    scheduler_max_active_tasks = 500
+    # 同一工作流运行中任务上限：
+    scheduler_max_tasks_per_workflow = 100
     # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
     server_database_paths = None
     config_path = ""

@@ -266,6 +266,19 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 用最终 `action_args` 求出预计时长，写在 attempt 上（`estimated_s` / `estimate_source`）。
 它只用于时间线、监控与 ETA，求值失败退回兜底，解析或写入失败都不阻断派发（见 `add_device.md`）。
 
+### 5.0.1 调度容量
+
+默认值同 V1（`workflow/scheduler_capacity.py`），由 `BasicConfig` 配置：全局在途作业 `scheduler_max_in_flight_jobs`
+（100）、全局运行任务 `scheduler_max_active_tasks`（500）、同一工作流运行任务 `scheduler_max_tasks_per_workflow`
+（100）。超出的一律排队、不失败：
+
+- 任务：尚未开始的任务在转 `running` 之前按持久任务状态计数（`running` / `canceling`），满了就保持 `pending`，
+  不建 runner、不预留库存；有任务结束或 5 秒兜底重算时按创建先后重新提交，更早排队且所在工作流还有余量的
+  任务先走。重启后待启动任务照常恢复、按创建先后重新判定。
+- 作业：attempt 起跑时（预留库存、申请资源之前）在途作业已满、或有更早排队等容量的 attempt，就带
+  `wait_reason.code=job_dispatch_capacity` 排队，不持有任何东西；派发前在同一把锁里复核硬上限，期间被别人先占满
+  就放掉取得的资源回到排队。在途作业计已派发到落终态之间的 attempt（含人工确认、待核实）。
+
 ### 5.1 可插拔的授予策略
 
 授予策略只裁决内存资源管理器里的争用（`scheduler/grant/`）。工作流节点先过持久准入（5.0），到达内存

@@ -275,6 +275,9 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `server_database_root`   | str  | `""`          | 四个数据库所在目录，留空为工作目录下的 `database/`，见下文「数据库位置」 |
 | `scheduler_grant_policy` | str  | `"auto"`      | 调度锁授予策略：`auto`（有原生库用原生，否则 Python FIFO）/ `python` / `native` |
 | `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
+| `scheduler_max_in_flight_jobs` | int | `100` | 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限；超出的作业排队，有作业结束后按先后放行 |
+| `scheduler_max_active_tasks` | int | `500` | 全局运行中任务（`running` / `canceling`）上限；超出的任务保持 `pending`，按提交先后启动 |
+| `scheduler_max_tasks_per_workflow` | int | `100` | 同一工作流的运行中任务上限；只让该工作流的后续任务排队 |
 | `control_token`          | str  | `""`          | 调度权威与 Host 之间控制面的共享 token，见下文「控制面 token」 |
 | `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
 | `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |

@@ -260,6 +260,16 @@ def allocation_arguments(
     return arguments
 
 
+#: 全局在途作业容量满：attempt 排队，有作业落终态后按先后重试
+WAIT_JOB_CAPACITY = "job_dispatch_capacity"
+
+
+def _positive_limit(name: str, value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"调度容量 {name} 必须是正整数：{value!r}")
+    return value
+
+
 class BackendScheduler:
     """持久化 WorkflowTask 的唯一 DAG、资源和库存调度权威。
 
@@ -281,7 +291,20 @@ class BackendScheduler:
             Callable[[str, str], list[str]]
         ] = None,
         device_state_reader: Optional[Callable[[str], Mapping[str, Any]]] = None,
+        max_in_flight_jobs: Optional[int] = None,
+        max_active_tasks: Optional[int] = None,
+        max_tasks_per_workflow: Optional[int] = None,
     ) -> None:
+        from unilabos.config.config import BasicConfig
+
+        # 调度容量（V1 scheduler_capacity）：缺省取 BasicConfig；超出的任务 / 作业排队，不失败
+        self._max_in_flight_jobs = _positive_limit(
+            "max_in_flight_jobs", BasicConfig.scheduler_max_in_flight_jobs if max_in_flight_jobs is None else max_in_flight_jobs)
+        self._max_active_tasks = _positive_limit(
+            "max_active_tasks", BasicConfig.scheduler_max_active_tasks if max_active_tasks is None else max_active_tasks)
+        self._max_tasks_per_workflow = _positive_limit(
+            "max_tasks_per_workflow",
+            BasicConfig.scheduler_max_tasks_per_workflow if max_tasks_per_workflow is None else max_tasks_per_workflow)
         self.workflow = workflow
         self.executor = executor
         self.materials_gateway = materials_gateway
@@ -343,6 +366,8 @@ class BackendScheduler:
         self._inventory_waiting_tasks: Dict[str, tuple[str, list[str]]] = {}
         # 等库存任务已被拒的次数：重试换新的预留命令身份（被拒的命令按幂等会原样重放拒绝）
         self._inventory_wait_attempts: Dict[str, int] = {}
+        # 运行任务容量已满、保持 pending 排队的任务：task -> (创建时间, 工作流)；按创建先后放行
+        self._capacity_waiting_tasks: Dict[str, tuple[str, str]] = {}
         self._dispatched_jobs: set[str] = set()
         # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
         self._manual_confirmation_jobs: set[str] = set()
@@ -641,7 +666,8 @@ class BackendScheduler:
             # 任务终结（含取消）后不再有待裁决 attempt，控制态不能停留在 waiting_reconciliation
             self._settle_task_reconciliation(task_uuid)
             if not self._stopping:
-                # 它的预留已释放或结算：等库存的任务按先后再试
+                # 它让出了运行容量、预留已释放或结算：排队的任务按先后再试
+                self._retry_capacity_waiting_tasks()
                 self._retry_inventory_waiting_tasks()
 
     def _admit_fresh_task(self, task_uuid: str) -> bool:
@@ -653,15 +679,18 @@ class BackendScheduler:
         """
         try:
             task = self.workflow.get_workflow_task(task_uuid)
-        except Exception:  # noqa: BLE001 - 读不到交给原路径报告
-            return True
+        except Exception:  # noqa: BLE001 - 读不到（如已删除）交给原路径报告，也不再占排队位置
+            task = {}
         if task.get("status") != "pending" or task.get("control_status") != "active":
             with self._guard:
                 self._inventory_waiting_tasks.pop(task_uuid, None)
+                self._capacity_waiting_tasks.pop(task_uuid, None)
             return True
         runs = self.workflow.list_workflow_node_runs(task_uuid)
         if any(run["status"] != "pending" for run in runs):
             return True
+        if not self._admit_task_capacity(task):
+            return False
         specs: Optional[Dict[str, Dict[str, Any]]] = None
         with self._guard:
             attempt = self._inventory_wait_attempts.get(task_uuid, 0)
@@ -691,6 +720,69 @@ class BackendScheduler:
             self._inventory_wait_attempts.pop(task_uuid, None)
         self._clear_task_inventory_wait(task_uuid, waited)
         return True
+
+    def _admit_task_capacity(self, task: Dict[str, Any]) -> bool:
+        """运行任务容量（全局 / 每工作流）还有余量、且没有更早排队又能走的任务时放行；否则保持 pending 排队。
+
+        计数取持久任务状态（``running`` / ``canceling``，与 V1 相同），重启后照样成立；排队的任务不持有任何东西，
+        有任务结束或兜底重算时按创建先后重新提交。
+        """
+        task_uuid = str(task["uuid"])
+        workflow_uuid = str(task.get("workflow_uuid") or "")
+        with self.workflow.write_lock:
+            counts = {str(row[0] or ""): int(row[1]) for row in self.workflow.connection.execute(
+                "SELECT workflow_uuid, COUNT(*) FROM workflow_task WHERE deleted_at IS NULL "
+                "AND status IN ('running','canceling') GROUP BY workflow_uuid")}
+        reason = None
+        if sum(counts.values()) >= self._max_active_tasks:
+            reason = f"全局运行任务容量（{self._max_active_tasks}）已满，任务继续排队"
+        elif workflow_uuid and counts.get(workflow_uuid, 0) >= self._max_tasks_per_workflow:
+            reason = f"同一工作流的运行任务容量（{self._max_tasks_per_workflow}）已满，任务继续排队"
+        mine = (str(task.get("create_time") or ""), task_uuid)
+        with self._guard:
+            if reason is None:
+                # 先到先走：更早排队、所在工作流也还有余量的任务先拿这个名额
+                earlier = [other for other, (created, other_workflow) in self._capacity_waiting_tasks.items()
+                           if other != task_uuid and (created, other) < mine
+                           and (not other_workflow or counts.get(other_workflow, 0) < self._max_tasks_per_workflow)]
+                if earlier:
+                    reason = "更早提交的任务正在等待运行容量，按提交先后排队"
+            if reason is None:
+                self._capacity_waiting_tasks.pop(task_uuid, None)
+                return True
+            first = task_uuid not in self._capacity_waiting_tasks
+            self._capacity_waiting_tasks[task_uuid] = (mine[0], workflow_uuid)
+        if first:
+            logger.info("任务 %s 排队等待运行容量：%s", task_uuid, reason)
+        if reason.startswith("更早"):
+            self._retry_capacity_waiting_tasks()
+        return False
+
+    def _retry_capacity_waiting_tasks(self) -> None:
+        """按创建先后重新提交等运行容量的任务；仍没有余量的会再次排队。"""
+        with self._guard:
+            if self._stopping or not self._capacity_waiting_tasks:
+                return
+            waiting = sorted(self._capacity_waiting_tasks.items(), key=lambda item: (item[1][0], item[0]))
+        for task_uuid, _entry in waiting:
+            self.submit(task_uuid)
+
+    def _job_capacity_full(self, job_uuid: str, *, in_order: bool = True) -> bool:
+        """全局在途作业已满，或（``in_order``）有更早排队等容量的 attempt（先到先走）。调用方持有 ``self._guard``。
+
+        起跑时按先后检查；派发前只复核硬上限（起跑时已经排过队，这里再让行会把它排到后面去）。
+        """
+        in_flight = self._dispatched_jobs | {item["job_uuid"] for item in self._reconciliation_decisions.values()}
+        if job_uuid in in_flight:
+            return False
+        if len(in_flight) >= self._max_in_flight_jobs:
+            return True
+        if not in_order:
+            return False
+        mine = self._waiting_interval_since.get(job_uuid)
+        return any(code == WAIT_JOB_CAPACITY and other != job_uuid and other in self._waiting_interval_jobs
+                   and (mine is None or self._waiting_interval_since.get(other, mine) < mine)
+                   for other, code in self._condition_waits.items())
 
     def _held_inventory_shortages(self, task: Dict[str, Any], specs: Dict[str, Dict[str, Any]],
                                   error: Exception) -> Optional[list[Dict[str, Any]]]:
@@ -822,6 +914,7 @@ class BackendScheduler:
             await asyncio.sleep(5)
             if not self._stopping:
                 self._reconcile_resources()
+                self._retry_capacity_waiting_tasks()
                 self._retry_inventory_waiting_tasks()
 
     async def _reconcile_before_planning(
@@ -1143,6 +1236,12 @@ class BackendScheduler:
                 self._waiting_step_nodes[node.node_id] = (task, node)
                 return
             self._waiting_step_nodes.pop(node.node_id, None)
+            capacity_full = self._job_capacity_full(spec["current_job_uuid"])
+        if capacity_full:
+            # 全局在途作业已满：不预留、不申请资源，排队到有作业落终态
+            self._wait_for_condition(task, node, spec["current_job_uuid"], WAIT_JOB_CAPACITY,
+                                     f"全局在途作业容量（{self._max_in_flight_jobs}）已满，作业继续排队")
+            return
         if spec.get("inventory_deferred"):
             try:
                 self._reserve_ready_inventory(task, node)
@@ -1429,8 +1528,17 @@ class BackendScheduler:
             record = self.resources.request_for_owner(job_uuid)
             if record.status != "held":
                 return
-            self._waiting_resource_jobs.pop(job_uuid, None)
-            self._dispatched_jobs.add(job_uuid)
+            capacity_full = self._job_capacity_full(job_uuid, in_order=False)
+            if not capacity_full:
+                self._waiting_resource_jobs.pop(job_uuid, None)
+                self._dispatched_jobs.add(job_uuid)
+        if capacity_full:
+            # 排队期间别的作业先占满了在途容量：放掉这次取得的资源，回到排队
+            if self._withdraw_undispatched(job_uuid):
+                self._wait_for_condition(task, node, job_uuid, WAIT_JOB_CAPACITY,
+                                         f"全局在途作业容量（{self._max_in_flight_jobs}）已满，作业继续排队")
+            return
+        with self._guard:
             args = dict(spec["resolved_action_args"])
             is_manual_confirmation = node.action.strip().lower() == "manual_confirm"
             if is_manual_confirmation:

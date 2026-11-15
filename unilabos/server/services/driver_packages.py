@@ -343,6 +343,23 @@ def scan_device_ids(package_dirs: List[str]) -> List[str]:
     return sorted(str(device_id) for device_id in result.get("devices", {}))
 
 
+def _installed_definition_ids(record: DriverPackageRecord) -> Dict[str, List[str]]:
+    """已装包现在的定义 id：按台账里的包目录重新扫描（本机目录登记的包源码可能已改）；
+    目录不在或扫描失败时退回台账记下的设备 id。"""
+
+    fallback = {"devices": list(record.device_ids), "resources": []}
+    dirs = [item for item in record.package_dirs if Path(item).is_dir()]
+    if not dirs:
+        return fallback
+    from unilabos.registry.package_layout import package_definition_ids
+
+    try:
+        return package_definition_ids(dirs)
+    except (OSError, ValueError) as exc:
+        logger.warning(f"[DriverPackages] 扫描已装包 {record.name} 的定义 id 失败，按台账核对: {exc}")
+        return fallback
+
+
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -906,9 +923,12 @@ class DriverPackageService:
             if not source_dirs:
                 raise DriverPackageError(f"源码树里没有可挂载的 Python 包目录（含 __init__.py）：{root}")
             # 台账记录运行时挂载这些目录后会注册的全部设备：@device 与注册表 YAML
-            from unilabos.registry.package_layout import package_device_ids
+            from unilabos.registry.package_layout import package_definition_ids
 
-            device_ids = package_device_ids(source_dirs)
+            definitions = package_definition_ids(source_dirs)
+            device_ids = definitions["devices"]
+            # 与已装包的定义 id 冲突时在装依赖、落源码之前拒绝，不留到下次 Host 启动才报「id 重复」
+            self._reject_definition_conflicts(name, definitions)
             if dependencies:
                 # 安装器失败也可能已部分改变共享环境，因此提前标记受影响进程。
                 self.source_changes.package_changed(name, reason="shared_dependencies_changed", shared_dependencies=True)
@@ -942,6 +962,30 @@ class DriverPackageService:
         finally:
             if staging is not None:
                 shutil.rmtree(staging, ignore_errors=True)
+
+    def _reject_definition_conflicts(self, name: str, definitions: Dict[str, List[str]]) -> None:
+        """新包的设备 / 资源 id 不能与其他已装包（含已停用的）重复。
+
+        同名包是升级或重装，替换的是它自己的旧定义，不算冲突。``@device`` / ``@resource`` 重复会让
+        下次 Host 启动的注册表扫描失败，YAML 条目重复则静默互相覆盖，两种都在这里拒绝。
+        """
+
+        key = _normalize(name)
+        clashes: List[str] = []
+        for other_key, record in sorted(load_ledger(self.working_dir).items()):
+            if other_key == key:
+                continue
+            installed = _installed_definition_ids(record)
+            for kind, label in (("devices", "设备"), ("resources", "资源")):
+                shared = sorted(set(definitions.get(kind, [])) & set(installed.get(kind, [])))
+                if shared:
+                    state = "" if record.enabled else "（已停用）"
+                    clashes.append(f"{label} id {', '.join(shared)} 已由包 {record.name}{state} 定义")
+        if clashes:
+            raise DriverPackageError(
+                f"驱动包 {name} 的注册表定义 id 与已安装的包冲突：{'；'.join(clashes)}。"
+                "请先卸载冲突的包，或改用不重复的 id"
+            )
 
     def _package_target(self, name: str, version: str) -> Path:
         """包名和版本只能成为缓存下的两个路径分量，不允许符号链接越界。"""

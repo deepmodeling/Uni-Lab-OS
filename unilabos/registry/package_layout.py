@@ -242,12 +242,51 @@ def package_device_ids(mounts: Iterable[PathLike]) -> List[str]:
     """一组挂载目录在运行时会注册的设备 id：``@device`` AST 扫描 ∪ 根目录 ``registry.yaml`` ∪
     注册表根里的 YAML（与 ``Registry.setup`` 对 ``--devices`` 的加载范围一致）。"""
 
+    return package_definition_ids(mounts)["devices"]
+
+
+def _read_yaml_resource_ids(roots: Iterable[RegistryRoot]) -> set[str]:
+    """注册表根 ``resources/**/*.yaml`` 里的资源 id（与 ``Registry.load_resource_types`` 的范围一致）。"""
+
+    import yaml
+
+    from unilabos.utils import logger
+
+    ids: set[str] = set()
+    for root in roots:
+        for yaml_path in sorted((root.path / "resources").rglob("*.yaml")):
+            try:
+                data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
+            except Exception as exc:  # noqa: BLE001 - 单个文件损坏不影响其它条目
+                logger.warning(f"[package] 解析注册表 {yaml_path} 失败: {exc}")
+                continue
+            if not isinstance(data, dict):
+                continue
+            for resource_id, entry in data.items():
+                if not isinstance(entry, dict):
+                    continue
+                module = (entry.get("class") or {}).get("module") if isinstance(entry.get("class"), dict) else None
+                if module_in_prefix(module, root.module_prefix):
+                    ids.add(str(resource_id))
+    return ids
+
+
+def package_definition_ids(mounts: Iterable[PathLike]) -> Dict[str, List[str]]:
+    """一组挂载目录在运行时会注册的注册表定义 id，按 ``devices`` / ``resources`` 分开。
+
+    设备：``@device`` AST 扫描 ∪ 根目录 ``registry.yaml`` ∪ 注册表根的设备 YAML；资源：``@resource``
+    AST 扫描 ∪ 注册表根的资源 YAML。两类 id 各自一个命名空间（注册表分开存放）。
+    """
+
     mounts = [Path(item) for item in mounts]
-    ids = set(scan_package_dirs(mounts).get("devices", {}))
+    scanned = scan_package_dirs(mounts)
+    roots = package_registry_roots(mounts)
+    devices = set(scanned.get("devices", {}))
     community_files = [path for path in (community_registry_file(mount) for mount in mounts) if path is not None]
-    ids.update(_read_device_entries_from_files(community_files))
-    ids.update(read_yaml_device_entries(package_registry_roots(mounts)))
-    return sorted(ids)
+    devices.update(_read_device_entries_from_files(community_files))
+    devices.update(read_yaml_device_entries(roots))
+    resources = set(scanned.get("resources", {})) | _read_yaml_resource_ids(roots)
+    return {"devices": sorted(devices), "resources": sorted(resources)}
 
 
 def scan_package_dirs(
@@ -303,6 +342,7 @@ __all__ = [
     "is_registry_root",
     "module_in_prefix",
     "mount_module_prefix",
+    "package_definition_ids",
     "package_device_ids",
     "package_registry_roots",
     "read_yaml_device_entries",

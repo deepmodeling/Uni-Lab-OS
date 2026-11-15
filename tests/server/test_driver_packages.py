@@ -222,6 +222,44 @@ def test_local_package_keeps_explicit_symlink_mount(service, tmp_path, monkeypat
     assert record.package_dirs == [str(outside / "demo")]
 
 
+def test_install_rejects_definition_ids_of_other_installed_packages(service, tmp_path, monkeypatch):
+    """新包的设备 id 与已装的（含已停用的）其他包重复：装依赖、落源码之前就拒绝，台账不变。"""
+    _seed_managed_package(service)
+    service.set_enabled("demo", False)
+    installed: list[list[str]] = []
+    monkeypatch.setattr(service, "_install_dependencies", lambda deps, upgrade, log: installed.append(list(deps)) or "")
+    source = tmp_path / "fork"
+    _write_source_tree(source, name="demo-fork", version="1.0", package="demo_fork", device_id="old_device", deps=["pyserial"])
+    done = _wait(service, service.start_install(str(source))["operation_id"])
+    assert done["status"] == "failed", done
+    assert "old_device" in done["error"] and "demo（已停用）" in done["error"] and "demo-fork" in done["error"]
+    assert installed == []
+    assert set(dp.load_ledger(service.working_dir)) == {"demo"}
+
+    # 同名包是升级 / 重装：替换自己的旧定义，不算冲突
+    _fake_remote_source(service, tmp_path, monkeypatch, version="2.0")
+    upgraded = _wait(service, service.start_install("https://example.invalid/demo.zip", upgrade=True)["operation_id"])
+    assert upgraded["status"] == "succeeded", upgraded
+    assert dp.load_ledger(service.working_dir)["demo"].device_ids == ["new_device"]
+
+
+def test_install_rejects_resource_ids_of_other_installed_packages(service, tmp_path, monkeypatch):
+    """资源 id（注册表 YAML 与 ``@resource``）同样与已装包核对；YAML 重复在启动时只会静默覆盖。"""
+    old = _seed_managed_package(service)
+    resource_yaml = "shared_plate:\n  category: [plate]\n  class:\n    module: pylabrobot.resources:Plate\n    type: pylabrobot\n"
+    (old / "demo" / "registry" / "resources").mkdir(parents=True)
+    (old / "demo" / "registry" / "resources" / "plates.yaml").write_text(resource_yaml, encoding="utf-8")
+    monkeypatch.setattr(service, "_install_dependencies", lambda *args: "")
+    source = tmp_path / "plates"
+    _write_source_tree(source, name="plates", version="1.0", package="plates", device_id="plate_reader", deps=[])
+    (source / "plates" / "registry" / "resources").mkdir(parents=True)
+    (source / "plates" / "registry" / "resources" / "plates.yaml").write_text(resource_yaml, encoding="utf-8")
+    done = _wait(service, service.start_install(str(source))["operation_id"])
+    assert done["status"] == "failed", done
+    assert "资源 id shared_plate 已由包 demo 定义" in done["error"] and "plate_reader" not in done["error"]
+    assert set(dp.load_ledger(service.working_dir)) == {"demo"}
+
+
 def _write_source_tree(root: Path, *, name: str, version: str, package: str, device_id: str, deps: list[str]) -> None:
     root.mkdir(parents=True, exist_ok=True)
     (root / "pyproject.toml").write_text(

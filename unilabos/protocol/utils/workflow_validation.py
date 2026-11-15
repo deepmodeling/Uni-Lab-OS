@@ -114,6 +114,7 @@ def validate_graph(
     except HierarchyError as exc:
         raise GraphValidationError(str(exc)) from exc
     _validate_loop_nodes(enabled, kinds, parents, effective_params)
+    _validate_material_io_nodes(enabled, kinds, effective_params)
     try:
         condition_dependencies = validate_condition_graph(enabled, kinds, parents, effective_params)
         result_dependencies = validate_result_binding_graph(enabled, kinds, parents, effective_params)
@@ -248,6 +249,24 @@ def _validate_loop_nodes(
             )
 
 
+def _validate_material_io_nodes(
+    enabled: Mapping[str, WorkflowNodeWrite],
+    kinds: Mapping[str, str],
+    effective_params: Mapping[str, Dict[str, Any]],
+) -> None:
+    """人工装入 / 取走 / 补量节点按模式校验必填与禁止字段；引用（工作流输入、上游结果）留到运行时解析。"""
+
+    from unilabos.protocol.runtime.material_io import MaterialIOParamError, normalize_material_io_param
+
+    for node_uuid, node in enabled.items():
+        if kinds.get(node_uuid) != "material_io":
+            continue
+        try:
+            normalize_material_io_param(effective_params.get(node_uuid) or node.param or {})
+        except MaterialIOParamError as exc:
+            raise GraphValidationError(f"{node.name!r}: {exc}") from exc
+
+
 def _validate_parent_cycles(nodes: Iterable[WorkflowNodeWrite]) -> None:
     parents = {
         node.uuid: node.parent_uuid for node in nodes if node.parent_uuid is not None
@@ -304,6 +323,7 @@ def _node_kind(
         "tool_call": "tool_call",
         "manual_confirm": "manual_confirm",
         "loop": "loop",
+        "material_io": "material_io",
     }
     kind = aliases.get(str(raw_kind).strip().lower())
     if kind is None:

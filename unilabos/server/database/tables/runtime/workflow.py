@@ -1076,7 +1076,7 @@ WORKFLOW_TABLES = (
             topological_index INTEGER NOT NULL DEFAULT 0 CHECK (topological_index >= 0),
             executor_kind TEXT NOT NULL DEFAULT 'compute' CHECK (executor_kind IN (
                 'device_action', 'compute', 'condition', 'script', 'tool_call',
-                'manual_confirm', 'loop'
+                'manual_confirm', 'loop', 'material_io'
             )),
             execution_policy TEXT NOT NULL DEFAULT '{}' CHECK (
                 json_valid(execution_policy) AND json_type(execution_policy) = 'object'
@@ -1128,7 +1128,8 @@ WORKFLOW_TABLES = (
             ON workflow_node_run(update_time, uuid)
             WHERE deleted_at IS NULL
               AND executor_kind IN (
-                  'compute', 'condition', 'script', 'tool_call', 'manual_confirm', 'loop'
+                  'compute', 'condition', 'script', 'tool_call', 'manual_confirm', 'loop',
+                  'material_io'
               )
               AND status IN ('dispatched', 'running')
             """,

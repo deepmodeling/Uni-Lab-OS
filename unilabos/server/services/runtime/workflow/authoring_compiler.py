@@ -7,8 +7,9 @@
   工作流 UUID + 步骤序号确定性派生；语句上一行的 ``# unilab:node_uuid <uuid>`` 锚点（V1 同格式）
   显式指定身份。源码表达不了的字段（画布位置、模板引用、人工确认配置、其它元数据）沿用
   已应用图里同身份节点的值，连线只保留两端仍存在的。
-- ``generate_python``：图 → 规范源码（每个节点带身份锚点），再回编译确认图不变；表达不了的结构
-  （条件分支、脚本、人工确认、组合调用、具名结果）返回诊断而不是近似源码。
+- ``generate_python``：图 → 规范源码（每个节点带身份锚点），再回编译确认图不变；人工装入 / 取走 / 补量节点
+  生成 ``ctx.material_io(...)``；表达不了的结构（条件分支、脚本、人工确认、组合调用、具名结果）返回诊断而不是
+  近似源码。
 - ``validate``：源码与图的语义固定点校验（回编译后图不变）。
 
 V1 的 ``authoring_engine`` 语法（``device()`` 句柄、物料源等）不移植：dev 的作者语法就是设备包
@@ -500,6 +501,8 @@ class _PythonRenderer:
                 self.render_action(node, indent)
             elif node_type == "loop":
                 self.render_loop(node, indent)
+            elif node_type == "material_io":
+                self.render_material_io(node, indent)
             elif node_type == "group":
                 self.render_group(node, indent)
             else:
@@ -521,6 +524,26 @@ class _PythonRenderer:
             arguments.append(f"inventory_mode={json.dumps(meta['inventory_mode'])}")
         self.anchor(indent, node)
         self.emit(indent, f"{variable} = ctx.run({', '.join(arguments)})")
+        self.variables[str(node["uuid"])] = variable
+
+    def render_material_io(self, node: Mapping[str, Any], indent: int) -> None:
+        from unilabos.protocol.runtime.material_io import (
+            DEFAULT_STEP_NAMES,
+            MaterialIOParamError,
+            normalize_material_io_param,
+        )
+
+        try:
+            param = normalize_material_io_param(node.get("param") or {})
+        except MaterialIOParamError as exc:
+            self.fail(f"节点 {node.get('name')} 的参数无法生成源码：{exc}")
+        variable = f"step_{len(self.variables) + 1}"
+        arguments = [f"{key}={_python_literal(value, self.reference)}" for key, value in param.items()]
+        name = str(node.get("name") or "")
+        if name and name != DEFAULT_STEP_NAMES[param["mode"]]:
+            arguments.append(f"name={json.dumps(name, ensure_ascii=False)}")
+        self.anchor(indent, node)
+        self.emit(indent, f"{variable} = ctx.material_io({', '.join(arguments)})")
         self.variables[str(node["uuid"])] = variable
 
     def render_loop(self, node: Mapping[str, Any], indent: int) -> None:

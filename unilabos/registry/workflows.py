@@ -20,6 +20,9 @@
 - ``ctx.run("device_id/action_name", params)``：角色 = 显式设备 id。
 - ``ctx.run_template("class_name/action_name", params)``：角色 = registry 设备类；
   实例化时该类恰有一个设备则自动填充，否则由用户绑定。
+- ``loaded = ctx.material_io(mode="load", mount=..., site=..., resource_template=...)``：人工装入 / 取走 /
+  补量步骤（``mode`` 为 load / unload / refill），权威在人工确认后改库存，不派发设备动作；后面的步骤用
+  ``loaded.material`` 引用新物料（见 ``protocol/runtime/material_io.py``）。
 - 工作流函数只按源码静态编译（``registry/workflow_ast.py``）：不执行函数体，支持动作结果的
   原生 if/elif/else；辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前
   按源码展开（``registry/workflow_helpers.py``）。``compiler`` 参数只为兼容保留，只接受 ``"ast"``。
@@ -506,6 +509,65 @@ class WorkflowBuildContext:
 
         return self._append("run_template", target, params, name, description, inventory, inventory_mode)
 
+    def material_io(
+        self,
+        *,
+        mode: str,
+        mount: Any = None,
+        site: Any = None,
+        resource_template: Any = None,
+        material: Any = None,
+        material_name: Any = None,
+        barcode: Any = None,
+        reagent: Any = None,
+        disposition: Any = None,
+        scope: Any = None,
+        timeout_seconds: Optional[int] = None,
+        assignee_user_ids: Sequence[str] = (),
+        name: str = "",
+        description: str = "",
+    ) -> WorkflowStep:
+        """人工装入 / 取走 / 补量步骤：停下等人工确认，确认后在库存里装入、取走或补量，不派发设备动作。
+
+        - ``mode="load"``：按 ``resource_template``（模板名或 UUID）在 ``mount`` 的 ``site`` 上建新物料，
+          可选 ``material_name`` / ``barcode`` / ``reagent``；结果 ``.material`` 是新物料（``{"uuid": ...}``）。
+        - ``mode="unload"``：取走 ``material``，``disposition`` 为 ``detach`` / ``soft_delete``，``scope`` 为
+          ``material_only`` / ``material_with_contents``。
+        - ``mode="refill"``：给仍在 ``site`` 上的 ``material`` 补量，``reagent`` 只有 ``quantity`` / ``quantity_unit``。
+
+        ``mount`` / ``material`` 写 ``{"uuid": ...}``、物料 UUID 或物料业务 ID，也可以是工作流输入或前面步骤的
+        结果（``loaded.material``）。``name`` 与 ``ctx.run`` 一样是步骤显示名（新物料的名字用 ``material_name``）。
+        ``timeout_seconds`` 1..86400（不写按 3600 秒）；``assignee_user_ids`` 与人工确认同一规则，缺省 ``[]`` 表示
+        任何人可确认。
+        """
+
+        from unilabos.protocol.runtime.material_io import (
+            DEFAULT_STEP_NAMES,
+            MATERIAL_IO_NODE_TYPE,
+            normalize_material_io_param,
+        )
+
+        if isinstance(assignee_user_ids, str):
+            raise ValueError("material_io：assignee_user_ids 必须是字符串列表")
+        raw = {
+            "mode": mode, "mount": mount, "site": site, "resource_template": resource_template,
+            "material": material, "material_name": material_name, "barcode": barcode, "reagent": reagent,
+            "disposition": disposition, "scope": scope, "timeout_seconds": timeout_seconds,
+            "assignee_user_ids": list(assignee_user_ids),
+        }
+        params = normalize_material_io_param({key: value for key, value in raw.items() if value is not None})
+        step = WorkflowStep(
+            kind=MATERIAL_IO_NODE_TYPE,
+            target="",
+            action=MATERIAL_IO_NODE_TYPE,
+            params=params,
+            name=str(name or "").strip() or DEFAULT_STEP_NAMES[params["mode"]],
+            description=str(description or "").strip(),
+            parent=self._loop_stack[-1] if self._loop_stack else None,
+            key=_step_key(len(self.steps)),
+        )
+        return self._record(step)
+
     def _append(
         self,
         kind: str,
@@ -789,7 +851,7 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
     nodes: List[Dict[str, Any]] = []
     for index, step in enumerate(steps):
         node: Dict[str, Any]
-        if step.is_loop or step.kind in {"condition", "group"}:
+        if step.is_loop or step.kind in {"condition", "group", "material_io"}:
             node = {
                 "key": _step_key(index),
                 "kind": step.kind,
@@ -1079,6 +1141,18 @@ def materialize_workflow_template(
                 "name": str(node.get("name") or "循环"),
                 "type": LOOP_NODE_TYPE,
                 "param": param,
+                "meta_data": {},
+                "pose": {},
+                "execution_policy": execution_policy,
+            }
+        elif kind == "material_io":
+            from unilabos.protocol.runtime.material_io import normalize_material_io_param
+
+            entry = {
+                "uuid": uuid_at(index),
+                "name": str(node.get("name") or "人工物料步骤"),
+                "type": "material_io",
+                "param": normalize_material_io_param(dict(node.get("param") or {})),
                 "meta_data": {},
                 "pose": {},
                 "execution_policy": execution_policy,

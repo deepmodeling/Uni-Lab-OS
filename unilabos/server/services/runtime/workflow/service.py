@@ -2541,6 +2541,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             "tool_call",
             "manual_confirm",
             "loop",
+            "material_io",
         }:
             raise StoreConflict(f"unsupported workflow node type {node_type!r}")
         return kind

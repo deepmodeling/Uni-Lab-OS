@@ -107,7 +107,8 @@ def validate_result_binding_graph(nodes: Mapping[str, Any], kinds: Mapping[str, 
 def _check_result_source(source: str, target: str, nodes: Mapping[str, Any], kinds: Mapping[str, str],
                          guards: Mapping[str, list[dict[str, Any]]], parents: Mapping[str, str | None],
                          allowed: set[str | None]) -> None:
-    if source not in nodes or kinds.get(source) not in {"device_action", "condition", "wait", "loop"}:
+    # 人工装入 / 取走 / 补量步骤也产出结果（``material`` 等），后面的步骤可以引用
+    if source not in nodes or kinds.get(source) not in {"device_action", "condition", "wait", "loop", "material_io"}:
         raise ValueError("结果引用了不存在、禁用、自身或不产出动作结果的节点")
     if any(guard not in guards[target] for guard in guards[source]):
         raise ValueError("结果引用了其他分支，不能保证该分支已执行")

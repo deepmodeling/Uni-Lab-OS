@@ -30,6 +30,8 @@ class WorkflowSourceError(ValueError):
 _NODE_ANCHOR = re.compile(r"\s*#\s*unilab:node_uuid\s+([0-9a-fA-F-]{36})\s*")
 #: ``with`` 块里的资源作用域：``ctx.lock`` 是 ``ctx.resource_scope`` 的简写，编译结果相同
 _SCOPE_CONTEXTS = frozenset({"resource_scope", "lock"})
+#: 产生一个执行步骤（结果可被后面引用）的 ctx 调用：设备动作与人工装入 / 取走 / 补量
+_STEP_CALLS = frozenset({"run", "run_template", "material_io"})
 
 
 @dataclass(frozen=True)
@@ -332,17 +334,19 @@ def _compile_function(
 
     def call(node: ast.Call, results: dict[str, WorkflowStep]) -> Any:
         name = method(node)
-        if name not in {"run", "run_template", "loop_for", "loop_while", "step_output", "device_state", "group", "parallel", *_SCOPE_CONTEXTS}:
+        if name not in {*_STEP_CALLS, "loop_for", "loop_while", "step_output", "device_state", "group", "parallel", *_SCOPE_CONTEXTS}:
             return fail(node, "仅支持 ctx 的步骤、循环和条件引用声明")
         if any(item.arg is None for item in node.keywords):
             return fail(node, "不支持关键字参数展开")
+        if name == "material_io" and node.args:
+            return fail(node, "ctx.material_io 只接受命名参数（mode=、mount=、site= …）")
         positional = [
             results[item.id] if name == "step_output" and index == 0
             and isinstance(item, ast.Name) and isinstance(results.get(item.id), WorkflowStep) else value(item, results)
             for index, item in enumerate(node.args)
         ]
         keywords = {item.arg: value(item.value, results) for item in node.keywords}
-        if name in {"run", "run_template"}:
+        if name in _STEP_CALLS:
             literal_copy(positional, node)
             literal_copy(keywords, node)
         try:
@@ -351,6 +355,8 @@ def _compile_function(
             raise
         except ValueError as exc:
             return fail(node, str(exc))
+        except TypeError as exc:
+            return fail(node, f"ctx.{name} 的参数不对：{exc}")
         if isinstance(result, dict):
             result = dict(result)  # 条件 / 结果引用：拷贝一份，不与 ctx 内部记录共享
         if isinstance(result, WorkflowStep):
@@ -627,15 +633,15 @@ def _compile_function(
                 if result_name in locked:
                     fail(statement, f"变量 {result_name} 不能在条件分支、并行分支或 with ctx.loop_* 循环体里改写"
                                     "（分支外 / 下一轮的取值不确定）；在分支里用新名字，或把赋值移到每轮都会执行的位置")
-                if method(node) not in {"run", "run_template"}:
+                if method(node) not in _STEP_CALLS:
                     results[result_name] = _Value(assignment(node, results))
                     continue
             elif isinstance(statement, ast.Expr):
                 node = statement.value
             else:
                 fail(statement, "不支持该语句；请用步骤声明、变量赋值、条件和循环")
-            if method(node) not in {"run", "run_template"}:
-                fail(statement, "仅支持 ctx.run / ctx.run_template 动作声明")
+            if method(node) not in _STEP_CALLS:
+                fail(statement, "仅支持 ctx.run / ctx.run_template / ctx.material_io 步骤声明")
             step = call(node, results)
             remember(step.key, statement)
             if result_name is not None:

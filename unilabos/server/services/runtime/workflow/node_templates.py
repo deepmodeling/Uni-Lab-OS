@@ -17,9 +17,11 @@ V1 的节点模板来自设备注册表的模板投影（每个设备类 × 动�
 结构模板与 V1 ``registry/template_projection.py`` 同口径挂在宿主节点（``host_node``）的资源模板下，
 但按 dev 实际支持的结构节点生成：``condition``（``protocol/runtime/condition.py`` 的封闭表达式）、
 ``loop``（``protocol/runtime/loop.py`` 的 for / while，取代 V1 的 ``repeat_until``）和只做展示分组的
-``group``（并行是分组的 ``meta_data.group_mode=parallel``，不是单独的节点类型）。参数合同放在
-``meta_data.unilab.parameter_schema`` 只作编辑提示，``schema`` 留空，真正的校验仍由保存整图时的
-结构校验完成；``goal_default`` 是能直接保存的最小参数，节点面板拖入后即可保存再改参数。
+``group``（并行是分组的 ``meta_data.group_mode=parallel``，不是单独的节点类型），以及人工装入 / 取走 /
+补量的 ``material_io``（``protocol/runtime/material_io.py``）。参数合同放在 ``meta_data.unilab.parameter_schema``
+只作编辑提示，``schema`` 留空，真正的校验仍由保存整图时的结构校验完成；条件与循环的 ``goal_default`` 是能直接
+保存的最小参数，节点面板拖入后即可保存再改参数；``material_io`` 必须指明库位与物料，``goal_default`` 只带模式与
+确认设置，保存前要填好。
 """
 
 from __future__ import annotations
@@ -128,14 +130,55 @@ def _condition_parameter_schema() -> Dict[str, Any]:
     }
 
 
+def _material_io_parameter_schema() -> Dict[str, Any]:
+    """人工装入 / 取走 / 补量节点 ``param`` 的展示合同；严格校验见 ``protocol.runtime.material_io``。"""
+
+    material = {
+        "description": "物料：{uuid: 物料 UUID}、物料 UUID 或物料业务 ID；也可以是工作流输入或上游步骤的 material 结果",
+        "oneOf": [{"type": "object", "properties": {"uuid": {"type": "string", "format": "uuid"}},
+                   "required": ["uuid"]}, {"type": "string", "minLength": 1}],
+    }
+    return {
+        "type": "object",
+        "description": (
+            "调度器在权威侧本地执行：锁定 mount 的库位（unload / refill 另锁 material），停下等人工确认，"
+            "确认后在一个事务里装入、取走或补量；不派发设备动作。确认前不改库存，拒绝 / 超时节点失败。"
+        ),
+        "properties": {
+            "mode": {"type": "string", "enum": ["load", "unload", "refill"]},
+            "mount": {**material, "description": "挂载物料（库位所属的物料）"},
+            "site": {"type": "string", "minLength": 1, "description": "mount 上的库位名或库位 UUID"},
+            "resource_template": {"type": "string", "minLength": 1, "description": "load：新物料的资源模板名或 UUID"},
+            "material": {**material, "description": "unload / refill：要取走或补量的物料（必须在 site 上）"},
+            "material_name": {"type": "string", "minLength": 1, "description": "load：新物料名，缺省按模板名加时间生成"},
+            "barcode": {"type": "string", "minLength": 1, "description": "load：新物料条码"},
+            "reagent": {
+                "type": "object",
+                "description": (
+                    "load 可选：quantity + quantity_unit，再加 reagent_info_uuid 或 name / cas 作试剂身份；"
+                    "refill 必填：只有 quantity + quantity_unit"
+                ),
+            },
+            "disposition": {"type": "string", "enum": ["detach", "soft_delete"], "description": "unload 必填"},
+            "scope": {"type": "string", "enum": ["material_only", "material_with_contents"],
+                      "description": "unload 必填；detach 只支持 material_only"},
+            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 86400, "default": 3600},
+            "assignee_user_ids": {"type": "array", "items": {"type": "string"},
+                                  "description": "可确认的用户；[] 表示任何人可确认（必须显式给出）"},
+        },
+        "required": ["mode", "mount", "site", "assignee_user_ids"],
+        "additionalProperties": False,
+    }
+
+
 def structural_templates(
     resource_summary: Mapping[str, Any],
     *,
     reserved_names: Iterable[str] = (),
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """宿主节点名下的结构模板（条件 / 循环 / 分组）及其连接点。
+    """宿主节点名下的结构模板（条件 / 循环 / 人工物料 / 分组）及其连接点。
 
-    条件与循环带一对 ready 连接点，与设备动作模板一样可以连顺序依赖（组合调用的入口 / 出口
+    条件、循环与人工物料带一对 ready 连接点，与设备动作模板一样可以连顺序依赖（组合调用的入口 / 出口
     也需要它）；分组不参与执行依赖，没有连接点。``reserved_names`` 是宿主节点已有的动作名，
     同名时跳过结构模板，避免同一资源模板下模板名冲突。
     """
@@ -166,6 +209,17 @@ def structural_templates(
             "goal_default": {"mode": "for", "count": 1},
             "executor_kind": "loop",
             "parameter_schema": LoopSpec.model_json_schema(),
+        },
+        {
+            "name": "material_io",
+            "display_name": "人工物料",
+            "description": (
+                "人工装入 / 取走 / 补量：调度器锁定库位后停下等人工确认，确认后改库存，不派发设备动作。"
+                "goal_default 只带模式与确认设置，保存前填好 mount / site 以及该模式的必填字段。"
+            ),
+            "goal_default": {"mode": "load", "timeout_seconds": 3600, "assignee_user_ids": []},
+            "executor_kind": "material_io",
+            "parameter_schema": _material_io_parameter_schema(),
         },
         {
             "name": "group",

@@ -107,6 +107,27 @@ class LocalMaterialsClient:
     def prepare_material_execution(self, value):
         return self.service.executions.prepare(value)
 
+    def inventory_command(self, command: dict[str, Any]) -> dict[str, Any]:
+        """V1 类型化库存命令（与 HTTP 客户端同一裸结果）：``status`` 为 ``completed`` / ``rejected``，同一
+        ``command_id`` 重放返回首次结果。"""
+
+        from unilabos.server.api.envelope import INTERNAL_ERROR, RESOURCE, to_api_error
+        from unilabos.server.services.materials.inventory_commands import InventoryCommands
+
+        def code_of(exc: BaseException) -> int:
+            api_error = to_api_error(exc, RESOURCE)
+            return api_error.code if api_error is not None else INTERNAL_ERROR
+
+        return InventoryCommands(self.service).typed_command(dict(command), code_of)
+
+    def check_material_io(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """工作流人工装入 / 取走 / 补量步骤的试运行（不写库），返回冻结的执行计划。"""
+
+        from unilabos.server.services.materials.material_io import MaterialIO
+
+        return MaterialIO(self.service).check(
+            payload["param"], task_uuid=payload["task_uuid"], job_uuid=payload["job_uuid"])
+
     def validate_material_execution(self, value):
         return self.service.executions.validate(value)
 
@@ -476,6 +497,11 @@ class HTTPMaterialsClient:
         if not isinstance(response, dict) or response.get("status") not in {"completed", "rejected"}:
             raise MaterialsHTTPError(502, "库存命令返回了无法解析的响应")
         return response
+
+    def check_material_io(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """工作流人工装入 / 取走 / 补量步骤的试运行（不写库），返回冻结的执行计划；不能执行时按业务码抛错。"""
+
+        return self._request("POST", "/inventory/material-io/check", payload, root=True)
 
     def _command(self, mutation: InventoryMutation, value: Any, *, target_uuid: Optional[str] = None) -> Any:
         """``materials.v1`` 变更经统一命令入口；拒绝结果按业务码还原成 HTTP 语义的异常。"""

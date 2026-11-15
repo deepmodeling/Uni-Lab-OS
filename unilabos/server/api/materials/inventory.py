@@ -6,6 +6,8 @@
 - 读路由返回 dev 的运营 DTO（批次 / 物料聚合 / 模板 / 预留），并附 V1 的标识别名
   （``lot_id`` / ``edge_uuid`` / ``template_id`` / ``reservation_id``）。
 - ``/inventory/ingress-reservations`` 是工站入站库位预留。
+- ``POST /inventory/material-io/check`` 是工作流人工装入 / 取走 / 补量步骤确认前的试运行（不写库）；确认后的写入
+  走统一命令入口的 ``material.io`` 类型化命令。
 """
 
 from __future__ import annotations
@@ -46,6 +48,15 @@ class IngressReserveRequest(BaseModel):
 class IngressCancelRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     reason: str = Field(min_length=1)
+
+
+class MaterialIOCheckRequest(BaseModel):
+    """工作流人工装入 / 取走 / 补量步骤的试运行：``param`` 是解析完引用的节点参数。"""
+
+    model_config = ConfigDict(extra="forbid")
+    param: Dict[str, Any]
+    task_uuid: str = Field(min_length=1)
+    job_uuid: str = Field(min_length=1)
 
 
 def _code_of(exc: BaseException) -> int:
@@ -102,6 +113,15 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
                       "status": "rejected", "error": str(exc), "error_code": getattr(exc, "code", "invalid"),
                       "code": _code_of(exc)}
         return EnvelopeResponse(content=result)
+
+    @router.post("/material-io/check")
+    def check_material_io(body: MaterialIOCheckRequest) -> Any:
+        """调度器在人工确认前试运行一次（保存点内回滚，不写库）：返回冻结的执行计划；不能执行时按业务码报错
+        （库位被占 6007、被其他任务占用 6011 是临时条件，调度器继续排队；其余为合同错误）。"""
+
+        from unilabos.server.services.materials.material_io import MaterialIO
+
+        return MaterialIO(service, contents=contents).check(body.param, task_uuid=body.task_uuid, job_uuid=body.job_uuid)
 
     @router.get("/commands/processed")
     def processed_commands(limit: int = Query(default=200, ge=1, le=500)) -> Any:

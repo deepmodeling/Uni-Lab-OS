@@ -7,7 +7,8 @@
   ``effect_key`` 幂等，结果是 :class:`MutationResult`。``patch_material`` / ``put_position`` /
   ``put_data`` 需要的物料身份放在命令顶层 ``target_uuid``（原路径参数）。
 - **V1 类型化命令**（``type`` + ``command_id``）：``reagent.dispense``、``inventory.*``（含 kind=instance 实例入库）、
-  ``material.*`` 以及本分支新增的 ``inventory.lot.correct``、``content.*``、``source.*``。
+  ``material.*``（含工作流人工装入 / 取走 / 补量的 ``material.io``）以及本分支新增的 ``inventory.lot.correct``、
+  ``content.*``、``source.*``。
   按 ``command_id`` 幂等，首次结果（完成或拒绝）存在 ``inventory_processed_command``；一条命令的全部写入
   在同一个 materials.db 事务里，拒绝时整体回滚。V1 实例状态映射到 dev 生命周期：warehouse / bench →
   ``active``（上台只是放到父物料或库位上），used → 未删除的 ``retired``，consumed → ``consumed``，
@@ -268,6 +269,7 @@ class InventoryCommands:
             "material.consume": self._material_consume,
             "material.mark_used": self._material_mark_used,
             "material.adjust": self._material_adjust,
+            "material.io": self._material_io,
             "content.reserve": lambda payload, **kw: self.contents.reserve_content(payload),
             "content.release": lambda payload, **kw: self.contents.finish_content_reservation(
                 str(payload.get("reservation_uuid") or ""), "released"),
@@ -459,6 +461,13 @@ class InventoryCommands:
         return self.materials.delete_material(
             new_mutation("delete_material", actor_uuid=actor or None, payload=value.model_dump(mode="json")), value
         ).data.model_dump(mode="json")
+
+    def _material_io(self, payload: Mapping[str, Any], *, command_id: str, **_: Any) -> dict[str, Any]:
+        """工作流人工装入 / 取走 / 补量：按调度器冻结的计划一次写完（见 ``material_io.py``）。"""
+
+        from unilabos.server.services.materials.material_io import MaterialIO
+
+        return MaterialIO(self.materials, contents=self.contents).apply(payload, command_id=command_id)
 
     # ── V1 实例命令：上台 / 内容物 / 消耗 / 标为已使用 / 批次调整 / 实例入库 ─────────
 

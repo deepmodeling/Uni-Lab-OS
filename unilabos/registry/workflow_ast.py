@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import ast
 import inspect
+import math
 import re
 import textwrap
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
+from unilabos.protocol.runtime.loop import DEFAULT_MAX_ITERATIONS
 from unilabos.registry.workflow_helpers import INLINED_MARK
-from unilabos.registry.workflows import WorkflowBuildContext, WorkflowStep
+from unilabos.registry.workflows import LOOP_SELF_KEY, WorkflowBuildContext, WorkflowStep
 
 
 class WorkflowSourceError(ValueError):
@@ -28,6 +30,51 @@ class WorkflowSourceError(ValueError):
 _NODE_ANCHOR = re.compile(r"\s*#\s*unilab:node_uuid\s+([0-9a-fA-F-]{36})\s*")
 #: ``with`` 块里的资源作用域：``ctx.lock`` 是 ``ctx.resource_scope`` 的简写，编译结果相同
 _SCOPE_CONTEXTS = frozenset({"resource_scope", "lock"})
+
+
+@dataclass(frozen=True)
+class _Value:
+    """源码里的普通变量：字面量、工作流输入引用或结果引用（含循环携带的变量和 for 循环变量）。
+
+    ``unavailable`` 非空时这个名字不能再读（for 循环结束后的循环变量），读取时用它报错。
+    """
+
+    value: Any
+    unavailable: str = ""
+
+
+#: 作用域表：名字 → 动作步骤（``x = ctx.run(...)``）或普通变量
+_Scope = dict[str, Union[WorkflowStep, _Value]]
+
+
+def _split_path(path: str) -> list[str]:
+    """结果路径 ``a.b\\.c`` → 字段名列表（``\\`` 转义点号与反斜杠）。"""
+
+    segments: list[str] = []
+    current: list[str] = []
+    escaped = False
+    for char in path:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ".":
+            segments.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    if path:
+        segments.append("".join(current))
+    return segments
+
+
+def _has_reference(item: Any) -> bool:
+    if isinstance(item, dict):
+        return item.get("kind") in {"node_output", "workflow_input"} or any(_has_reference(child) for child in item.values())
+    if isinstance(item, list):
+        return any(_has_reference(child) for child in item)
+    return False
 
 
 @dataclass
@@ -213,12 +260,22 @@ def _compile_function(
             return {key: literal_copy(item, node) for key, item in value.items()}
         return fail(node, "常量必须是 JSON 字面量，不能读取对象属性或调用函数")
 
-    def value(node: ast.AST, results: dict[str, WorkflowStep]) -> Any:
+    def bound(name: str, node: ast.AST, results: _Scope) -> Any:
+        """名字当前绑定的值：动作步骤取整个结果引用，普通变量取它的值。"""
+
+        item = results[name]
+        if isinstance(item, WorkflowStep):
+            return dict(item.output())
+        if item.unavailable:
+            return fail(node, item.unavailable)
+        return deepcopy(item.value)
+
+    def value(node: ast.AST, results: _Scope) -> Any:
         if isinstance(node, ast.Name):
             if node.id in parameters:
                 return {"kind": "workflow_input", "parameter": node.id}
             if node.id in results:
-                return dict(results[node.id].output())
+                return bound(node.id, node, results)
             if node.id in constants:
                 return literal_copy(constants[node.id], node)
             return fail(node, f"未知常量或当前作用域外的动作结果：{node.id}")
@@ -241,7 +298,13 @@ def _compile_function(
                 segments.insert(0, segment.replace("\\", "\\\\").replace(".", "\\."))
             if not isinstance(current, ast.Name) or current.id not in results:
                 return fail(node, "只能读取当前作用域内动作结果的字段")
-            return dict(results[current.id].output(".".join(segments)))
+            base = results[current.id]
+            if isinstance(base, WorkflowStep):
+                return dict(base.output(".".join(segments)))
+            reference = bound(current.id, node, results)
+            if not isinstance(reference, dict) or reference.get("kind") != "node_output":
+                return fail(node, f"变量 {current.id} 不是动作结果，不能读取字段")
+            return {**reference, "data_key": ".".join(item for item in (reference["data_key"], *segments) if item)}
         if isinstance(node, ast.Dict):
             result = {}
             for key, item in zip(node.keys, node.values):
@@ -275,7 +338,7 @@ def _compile_function(
             return fail(node, "不支持关键字参数展开")
         positional = [
             results[item.id] if name == "step_output" and index == 0
-            and isinstance(item, ast.Name) and item.id in results else value(item, results)
+            and isinstance(item, ast.Name) and isinstance(results.get(item.id), WorkflowStep) else value(item, results)
             for index, item in enumerate(node.args)
         ]
         keywords = {item.arg: value(item.value, results) for item in node.keywords}
@@ -295,15 +358,38 @@ def _compile_function(
             ctx.steps[-1] = result
         return result
 
-    def expression(node: ast.AST, results: dict[str, WorkflowStep]) -> dict[str, Any]:
+    def value_expression(item: Any, node: ast.AST) -> dict[str, Any]:
+        """普通变量的值 → 条件表达式（结果引用变成字段链，字面量变成 lit / value）。"""
+
+        if isinstance(item, dict) and item.get("kind") == "workflow_input":
+            return {"input": item["parameter"]}
+        if isinstance(item, dict) and item.get("kind") == "node_output":
+            result: dict[str, Any] = {"node_key": item["node_key"]}
+            for segment in _split_path(item["data_key"]):
+                result = {"field": result, "name": segment}
+            return result
+        if item is None or type(item) in {bool, str, int} or (type(item) is float and math.isfinite(item)):
+            return {"lit": item}
+        if _has_reference(item):
+            return fail(node, "条件里不能读取含结果引用的容器变量，请直接读取其中的字段")
+        return {"value": item}
+
+    def expression(node: ast.AST, results: _Scope) -> dict[str, Any]:
         if isinstance(node, ast.Name) and node.id in parameters:
             return {"input": node.id}
-        if isinstance(node, ast.Name) and node.id in results:
+        if isinstance(node, ast.Name) and isinstance(results.get(node.id), WorkflowStep):
             return {"node_key": results[node.id].key}
-        if isinstance(node, ast.Attribute):
-            return {"field": expression(node.value, results), "name": node.attr}
-        if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and type(node.slice.value) is str:
-            return {"field": expression(node.value, results), "name": node.slice.value}
+        if isinstance(node, ast.Name) and node.id in results:
+            return value_expression(bound(node.id, node, results), node)
+        if isinstance(node, (ast.Attribute, ast.Subscript)):
+            if isinstance(node, ast.Subscript) and not (isinstance(node.slice, ast.Constant)
+                                                        and type(node.slice.value) is str):
+                return {"lit": value(node, results)}
+            inner = expression(node.value, results)
+            if set(inner) == {"lit"}:
+                return fail(node, "条件里不能读取字面量的字段")
+            name = node.attr if isinstance(node, ast.Attribute) else node.slice.value
+            return {"field": inner, "name": name}
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             return {"not": expression(node.operand, results)}
         if isinstance(node, ast.BoolOp):
@@ -319,7 +405,148 @@ def _compile_function(
             return parts[0] if len(parts) == 1 else {"op": "and", "args": parts}
         return {"lit": value(node, results)}
 
-    def body(statements: list[ast.stmt], results: dict[str, WorkflowStep], depth: int = 0) -> None:
+    # 正在编译循环体的 for 循环变量：循环体里不能改写
+    for_variables: set[str] = set()
+
+    def assigned_names(statements: list[ast.stmt]) -> list[str]:
+        """循环体（含嵌套分支、分组和内层循环）里被赋值的名字，按首次出现排序；for 循环变量不算。"""
+
+        names: list[str] = []
+        for statement in statements:
+            if isinstance(statement, ast.Assign):
+                names.extend(target.id for target in statement.targets if isinstance(target, ast.Name))
+            elif isinstance(statement, (ast.If, ast.While, ast.For)):
+                names.extend(assigned_names([*statement.body, *statement.orelse]))
+            elif isinstance(statement, ast.With):
+                names.extend(assigned_names(statement.body))
+        return list(dict.fromkeys(names))
+
+    def assignment(node: ast.AST, results: _Scope) -> Any:
+        """``x = <值>``：动作结果字段、字面量、工作流输入或其他变量；不做运算。"""
+
+        if isinstance(node, (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.IfExp, ast.JoinedStr)):
+            try:
+                return literal_copy(ast.literal_eval(node), node)  # -1 这类字面量
+            except (ValueError, TypeError, SyntaxError):
+                return fail(node, f"不支持运算：{ast.unparse(node)}。变量只能赋值为动作结果的字段、字面量、"
+                                  "工作流输入或其他变量；需要计算的值请让设备动作返回")
+        if isinstance(node, ast.Call):
+            return fail(node, f"变量只能赋值为动作结果的字段、字面量、工作流输入或其他变量，不能调用 {ast.unparse(node.func)}")
+        return value(node, results)
+
+    def range_count(node: ast.AST, results: _Scope) -> Any:
+        """``range`` 的实参：整数字面量（常量、保存字面量的变量）或工作流输入。"""
+
+        if isinstance(node, ast.Name) and node.id in parameters:
+            return {"kind": "workflow_input", "parameter": node.id}
+        try:
+            item = value(node, results)
+        except WorkflowSourceError:
+            item = None
+        if type(item) is int:
+            return item
+        if isinstance(item, dict) and item.get("kind") == "workflow_input":
+            return item
+        return fail(node, "range 的参数只能是整数字面量或工作流输入")
+
+    def native_loop(statement: Union[ast.While, ast.For], results: _Scope, depth: int, locked: frozenset[str]) -> None:
+        """原生 ``while <条件>:`` / ``for i in range(...)``：编译成调度器循环，循环体里改写的外部变量逐轮携带。"""
+
+        if statement.orelse:
+            fail(statement, "循环不支持 else 子句")
+        spec: dict[str, Any]
+        target: Optional[str] = None
+        if isinstance(statement, ast.For):
+            iterator = statement.iter
+            if (not isinstance(iterator, ast.Call) or not isinstance(iterator.func, ast.Name)
+                    or iterator.func.id != "range" or iterator.keywords or not 1 <= len(iterator.args) <= 2):
+                fail(statement, "for 只支持 range(n) 或 range(start, stop)")
+            if not isinstance(statement.target, ast.Name):
+                fail(statement, "for 循环变量必须是一个名字")
+            target = statement.target.id
+            # 上一个循环结束后留下的同名循环变量可以重用（for i ... 之后再 for i ...）
+            reusable = isinstance(results.get(target), _Value) and bool(results[target].unavailable)
+            if (target in results and not reusable) or target in parameters or target in constants or target == ctx_name:
+                fail(statement, f"for 循环变量 {target} 与已有名称冲突")
+            if len(iterator.args) == 1:
+                count = range_count(iterator.args[0], results)
+                spec = {"mode": "for", "count": count}
+                label = count["parameter"] if isinstance(count, dict) else count
+            else:
+                first, stop = (range_count(item, results) for item in iterator.args)
+                if not isinstance(first, int) or not isinstance(stop, int):
+                    fail(statement, "range(start, stop) 只支持整数字面量")
+                spec = {"mode": "for", "count": stop - first, "start": first}
+                label = stop - first
+            if isinstance(spec["count"], int) and spec["count"] < 1:
+                fail(statement, "range 至少要有一轮（一轮都不跑的循环请删掉）")
+            spec["interval_seconds"] = 0.0
+            name = f"循环 ×{label}"
+        else:
+            spec = {"mode": "while", "max_iterations": DEFAULT_MAX_ITERATIONS, "interval_seconds": 0.0}
+            name = f"循环（第 {statement.lineno} 行）"
+        assigned = assigned_names(statement.body)
+        if target is not None and target in assigned:
+            fail(statement, f"不能在循环体里改写 for 循环变量 {target}")
+        # 循环前已有、循环体里重新赋值的名字逐轮携带：循环前的值是初值，本轮末尾的值是下一轮的值
+        carried = [key for key in assigned if key in results
+                   and not (isinstance(results[key], _Value) and results[key].unavailable)]
+        for key in carried:
+            if key in locked:
+                fail(statement, f"变量 {key} 不能在条件分支、并行分支或 with ctx.loop_* 循环体里改写"
+                                "（分支外的取值不确定）；在分支里用新名字，或把赋值移到每轮都会执行的位置")
+        if carried:
+            spec["carry"] = {key: bound(key, statement, results) for key in carried}
+
+        def carried_scope(loop_key: str) -> _Scope:
+            scope = dict(results)
+            for key in carried:
+                scope[key] = _Value({"kind": "node_output", "node_key": loop_key, "data_key": f"carry.{key}"})
+            return scope
+
+        if isinstance(statement, ast.While):
+            if any(isinstance(item, ast.Call) and method(item) in {"device_state", "step_output"}
+                   for item in ast.walk(statement.test)):
+                fail(statement, "while 条件不能读设备状态或用 ctx.step_output；等设备状态请用 "
+                                "with ctx.loop_while(ctx.device_state(...), interval_seconds=...)")
+            # 条件每轮开始前求值：读到的是本轮携带的值（循环步骤建好后占位 key 换成它自己的 key）
+            spec["expression"] = expression(statement.test, carried_scope(LOOP_SELF_KEY))
+        index = len(ctx.steps)
+        try:
+            with ctx._loop(spec, name, ""):
+                ctx.steps[-1] = replace(ctx.steps[-1], guards=deepcopy(guards))
+                remember(ctx.steps[-1].key, statement)
+                loop_key = ctx.steps[index].key
+                scope = carried_scope(loop_key)
+                if target is not None:
+                    scope[target] = _Value({"kind": "node_output", "node_key": loop_key, "data_key": "value"})
+                    for_variables.add(target)
+                try:
+                    body(statement.body, scope, depth + 1, locked)
+                finally:
+                    if target is not None:
+                        for_variables.discard(target)
+                updates = {}
+                for key in carried:
+                    current = bound(key, statement, scope)
+                    if current != {"kind": "node_output", "node_key": loop_key, "data_key": f"carry.{key}"}:
+                        updates[key] = current
+                if updates:
+                    ctx.steps[index].params["carry_next"] = updates
+        except WorkflowSourceError:
+            raise
+        except ValueError as exc:
+            fail(statement, str(exc))
+        # 循环之后：携带的变量是最终值；for 循环变量不再可读
+        for key in carried:
+            results[key] = _Value({"kind": "node_output", "node_key": loop_key, "data_key": f"carry.{key}"})
+        if target is not None:
+            results[target] = _Value(None, unavailable=f"for 循环变量 {target} 只能在循环体里读取")
+
+    def body(statements: list[ast.stmt], results: _Scope, depth: int = 0,
+             locked: frozenset[str] = frozenset()) -> None:
+        """``locked``：在这里不能改写的名字（条件 / 并行分支外、with 循环体外定义的名字）。"""
+
         if depth > 16:
             fail(function, "控制流嵌套不能超过 16 层")
         for position, statement in enumerate(statements):
@@ -339,6 +566,11 @@ def _compile_function(
                 continue
             if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, str):
                 continue
+            if isinstance(statement, (ast.Break, ast.Continue)):
+                fail(statement, "不支持 break / continue：用 while 条件结束循环，用 if 跳过本轮的步骤")
+            if isinstance(statement, (ast.While, ast.For)):
+                native_loop(statement, results, depth, locked)
+                continue
             if isinstance(statement, ast.If):
                 # 整个条件作为一个分支单元；两条分支都从条件判定处出发。
                 with ctx._sequence() as region:
@@ -351,7 +583,7 @@ def _compile_function(
                         guards.append({"node_key": step.key, "equals": selected})
                         try:
                             with ctx._sequence(entry=[step.key]) as branch_region:
-                                body(branch, dict(results), depth + 1)
+                                body(branch, dict(results), depth + 1, locked | set(results))
                             tails.extend(branch_region.frontier)
                         finally:
                             guards.pop()
@@ -372,27 +604,36 @@ def _compile_function(
                             local = dict(results)
                             # 每个直接成员一个独立分支；只允许读取进入并行块前已有的值。
                             with ctx._sequence():
-                                body([branch], local, depth + 1)
+                                body([branch], local, depth + 1, locked | set(results))
                             for key in local.keys() - results.keys():
                                 if key in exports:
                                     fail(branch, "并行分支不能声明同名结果")
                                 exports[key] = local[key]
                         results.update(exports)
                     elif context == "group" or context in _SCOPE_CONTEXTS:
-                        body(statement.body, results, depth + 1)
+                        body(statement.body, results, depth + 1, locked)
                     else:
-                        body(statement.body, dict(results), depth + 1)
+                        # with ctx.loop_* 不携带变量：循环体里不能改写循环外的名字
+                        body(statement.body, dict(results), depth + 1, locked | set(results))
                 continue
             result_name = None
             if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
                 result_name = statement.targets[0].id
                 node = statement.value
-                if result_name in results or result_name == ctx_name or result_name in constants or result_name in parameters:
-                    fail(statement, "动作结果不能覆盖已有名称")
+                if result_name == ctx_name or result_name in constants or result_name in parameters:
+                    fail(statement, f"不能改写 {result_name}（ctx、工作流输入或模块常量）；换一个变量名")
+                if result_name in for_variables:
+                    fail(statement, f"不能在循环体里改写 for 循环变量 {result_name}")
+                if result_name in locked:
+                    fail(statement, f"变量 {result_name} 不能在条件分支、并行分支或 with ctx.loop_* 循环体里改写"
+                                    "（分支外 / 下一轮的取值不确定）；在分支里用新名字，或把赋值移到每轮都会执行的位置")
+                if method(node) not in {"run", "run_template"}:
+                    results[result_name] = _Value(assignment(node, results))
+                    continue
             elif isinstance(statement, ast.Expr):
                 node = statement.value
             else:
-                fail(statement, "不支持该语句；请用步骤声明、条件和循环上下文")
+                fail(statement, "不支持该语句；请用步骤声明、变量赋值、条件和循环")
             if method(node) not in {"run", "run_template"}:
                 fail(statement, "仅支持 ctx.run / ctx.run_template 动作声明")
             step = call(node, results)

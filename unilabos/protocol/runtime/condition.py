@@ -154,6 +154,14 @@ def validate_condition_graph(nodes: Mapping[str, Any], kinds: Mapping[str, str],
         if parents.get(source) not in allowed:
             raise ValueError("条件不能读取其他循环体或尚未完成的循环体结果")
 
+    def enclosing(key: str) -> set[str]:
+        result: set[str] = set()
+        ancestor = parents.get(key)
+        while ancestor is not None:
+            result.add(ancestor)
+            ancestor = parents.get(ancestor)
+        return result
+
     for key, node in nodes.items():
         active: list[dict[str, Any]] = []
         refs: set[str] = set()
@@ -167,10 +175,22 @@ def validate_condition_graph(nodes: Mapping[str, Any], kinds: Mapping[str, str],
         parent = parents.get(key)
         if parent is not None and any(guard not in active for guard in guards[parent]):
             raise ValueError("循环体必须继承循环节点的分支条件")
+        sources: set[str] = set()
+        live = enclosing(key)
         if kinds.get(key) == "condition":
-            for source in condition_references(params[key]):
-                visible(source, key, active)
-                refs.add(source)
+            sources = condition_references(params[key])
+        elif kinds.get(key) == "loop":
+            from unilabos.protocol.runtime.loop import loop_expression_references
+
+            # while 条件可以读循环自己的 carry
+            sources = loop_expression_references(params.get(key) or {})
+            live = live | {key}
+        for source in sources:
+            if source in live:
+                # 外层（或本）循环的 carry 是本轮的值：不是先后依赖
+                continue
+            visible(source, key, active)
+            refs.add(source)
         dependencies[key] = refs
     return dependencies
 

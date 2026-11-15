@@ -179,6 +179,15 @@ class _Inliner:
                 item.context_expr = self.expression(item.context_expr)
             statement.body = self.statements(statement.body)
             return [statement]
+        if isinstance(statement, (ast.While, ast.For)):
+            # 原生循环：条件 / range 实参里的值辅助函数照常展开，循环体逐句展开
+            if isinstance(statement, ast.While):
+                statement.test = self.expression(statement.test)
+            else:
+                statement.iter = self.expression(statement.iter)
+            statement.body = self.statements(statement.body)
+            statement.orelse = self.statements(statement.orelse)
+            return [statement]
         if isinstance(statement, ast.Expr) and (helper := self._step_helper(statement.value)) is not None:
             return self._expand_steps(helper, statement.value, target=None, site=statement)
         if (isinstance(statement, ast.Assign) and len(statement.targets) == 1

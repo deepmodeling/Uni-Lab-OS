@@ -68,17 +68,95 @@ def check_quality(ctx):
 
 `quality.ready` 与 `quality["ready"]` 都是静态结果引用；它们不是构图时的实际检测值。
 支持 `if/elif/else`、嵌套条件、`and/or/not`、`== != < <= > >=` 和链式比较，
-以及原有 `ctx.loop_for` / `ctx.loop_while` 声明。条件可包围循环，也可位于循环体内。
+原生 `while <条件>:` 与 `for i in range(...)`（见下节「循环与跨轮携带的变量」），以及原有
+`ctx.loop_for` / `ctx.loop_while` 声明。条件可包围循环，也可位于循环体内。
 
 动作参数支持 JSON 字面量、模块或闭包中的 JSON 常量、循环占位符，以及动作结果引用。
 可写 `result.field`、`result["field"]`、`result.output("field")`、数组下标和整个 `result`。引用可嵌入字典或数组，调度器等来源节点成功后取值。
 缺失字段会在调用设备前失败，返回数据中的引用标记或占位符不会再次求值。
-辅助函数按上文规则展开；除此之外不支持其它函数调用、赋值计算、原生 for/while、break/continue、
-提前 return 或参数展开；遇到不支持的语法给出函数名和相对源码行号，不回退执行函数体。
-分支内定义的结果不能在其他分支或汇合点使用，循环体结果不能泄漏到循环外。
+变量可以赋值为动作结果的字段、字面量、工作流输入或其他变量（`volume = dosed.next_volume`）；
+辅助函数按上文规则展开；除此之外不支持其它函数调用、运算（`x = x + 1`）、`break` / `continue`、
+循环的 `else`、提前 return 或参数展开；遇到不支持的语法给出函数名和相对源码行号，不回退执行函数体。
+分支内定义的结果不能在其他分支或汇合点使用，循环体结果不能泄漏到循环外（循环携带的变量除外，
+见下节）；分支外已有的名字不能在分支里改写（分支外的取值会不确定）。
 
 本入口用于已安装设备包：包模块仍按 dev 原方式导入。只有标记函数的构图是 AST 解析，
 这不是用于不可信上传源码的沙箱；v1 的不导入上传模块入口尚未迁移。
+
+## 循环与跨轮携带的变量
+
+循环直接写 Python 的 `while` / `for`，编译成调度器逐轮执行的循环（不在构图时展开，函数体不执行）：
+
+```python
+@workflow(display_name="加倍直到够量")
+def double_until_enough(ctx, *, start: float = 1.0, rounds: int = 3):
+    volume = start                       # 循环前赋值……
+    enough = False
+    while not enough and volume < 100:   # 每轮开始前判定，读本轮的 volume / enough
+        dosed = ctx.run("pump/dose", {"volume": volume}, name="加样")
+        if volume >= 4:
+            ctx.run("recorder/note", {"text": "大体积"}, name="记录")
+        volume = dosed.next_volume       # ……循环体里重新赋值：这就是下一轮的值
+        enough = dosed.enough
+    ctx.run("pump/dose", {"volume": volume}, name="收尾")   # 循环之后：最终值
+
+    for i in range(rounds):              # 轮数：整数字面量或工作流输入
+        ctx.run("recorder/note", {"text": i}, name="编号")   # i 同 {{loop.index}}
+```
+
+- `while <条件>:` 的条件与 `if` 同一套表达式（动作结果、工作流输入、变量、比较、`and` / `or` / `not`），
+  每轮开始前求值，假就结束。源码里没有上限，按默认 1000 轮（`DEFAULT_MAX_ITERATIONS`）：到了还没结束
+  就按失败收敛（`while 循环达到 max_iterations=1000 仍未结束`）。条件读不到设备状态；等设备状态仍用
+  `with ctx.loop_while(ctx.device_state(...), interval_seconds=...)`。
+- `for i in range(n)`：`n` 是整数字面量（含模块常量、保存字面量的变量）或工作流输入（建任务时换成输入值），
+  至少一轮；`range(start, stop)` 只接受整数字面量。`i` 是本轮的循环变量（`range(n)` 时与 `{{loop.index}}`
+  相同，`range(start, stop)` 时是 `start + index`），可以作动作参数、写进 `if` / 内层 `while` 条件；循环体里
+  不能改写它，循环结束后不能再读。`for x in <列表>` 暂不支持。
+- **携带的变量**：循环前已有（字面量、工作流输入、之前动作结果的字段、外层循环携带的变量）、在循环体里
+  重新赋值的名字逐轮携带。循环前的值是第一轮的值；循环体里在重新赋值之前读到的是本轮的值，之后读到的是
+  新值；本轮循环体全部成功后，循环体末尾的值就是下一轮的值（没有重新赋值的保持不变）；循环结束后这个名字
+  就是最终值。赋值只能是动作结果的字段、字面量、工作流输入或其他变量，不能做运算（`x = x + 1` 在编译时
+  报错，需要计算的值让设备动作返回）。整个动作结果也可以携带：循环前 `m = ctx.run(...)`、循环体里再
+  `m = ctx.run(...)`，`while not m.ok:` 就是“至少测一次、达标即停”。
+- 携带的变量只能在每轮都会执行的位置重新赋值：直接写在循环体里，或在 `ctx.group` / `ctx.lock` 块、
+  内层循环里（内层循环结束后的最终值就是外层这一轮的值）。写在 `if` / `elif` / `else` 或 `ctx.parallel`
+  分支里会让下一轮的值取决于走了哪条分支，编译时拒绝——需要分支各自的值时在分支里用新名字。
+  `with ctx.loop_for` / `ctx.loop_while` 的循环体不携带变量，也不能改写循环外的名字。
+- 不支持 `break` / `continue`（用 `while` 条件结束循环，用 `if` 跳过本轮的步骤）和循环的 `else` 子句。
+
+V1 的 `with repeat_until(max_iterations=…, carry={...}) as loop: … loop.next(...); until(cond)` 对应
+“循环前赋初值 + `while not <cond>:` + 循环体里重新赋值”；V1 的标记函数语法不移植。原有的
+`with ctx.loop_for(n):` / `with ctx.loop_while(ctx.device_state(...) / ctx.step_output(...)):` 写法照常可用，
+不携带变量。
+
+运行与持久化：携带的变量是循环节点自己的结果 `return_value.carry`。每轮开始时调度器把本轮的值随轮次
+写进循环节点运行的 `control_data.loop.carry`（与 `iteration` 同一事务），本轮结束后按 `carry_next` 读本轮
+已落库的结果算出下一轮；进程重启后从 `control_data.loop.carry` 续用，本轮结束前重启则按落库结果重算，
+得到同一个值。外层循环开始新一轮时内层循环从初值重新开始。初值或下一轮的值读不到（字段缺失等）时循环
+按失败收敛，不调用后续设备动作。
+
+节点参数（`type="loop"` 的 `param`，模板阶段用步骤 key，实例化后换成节点 UUID）：
+
+```json
+{
+  "mode": "while",
+  "expression": {"op": "and", "args": [
+    {"not": {"field": {"field": {"node_uuid": "循环节点 UUID"}, "name": "carry"}, "name": "enough"}},
+    {"op": "lt", "args": [{"field": {"field": {"node_uuid": "循环节点 UUID"}, "name": "carry"}, "name": "volume"},
+                          {"lit": 100}]}]},
+  "max_iterations": 1000,
+  "carry": {"volume": {"kind": "workflow_input", "parameter": "start"}, "enough": false},
+  "carry_next": {"volume": {"kind": "node_output", "workflow_node_uuid": "加样节点 UUID", "data_key": "next_volume"},
+                 "enough": {"kind": "node_output", "workflow_node_uuid": "加样节点 UUID", "data_key": "enough"}}
+}
+```
+
+`for` 循环是 `{"mode": "for", "count": 3 或 {"kind": "workflow_input", "parameter": "rounds"}, "start": 0}`。
+动作参数里读携带的变量是指向循环节点的普通结果引用
+`{"kind": "node_output", "workflow_node_uuid": "循环节点 UUID", "data_key": "carry.volume"}`（for 循环变量是
+`"data_key": "value"`）；读取方在该循环体内时取本轮值，在循环之后取最终值。外层循环与循环体之间的这类引用
+不产生执行依赖（循环体本来就在循环里），循环之后的读取照常依赖循环节点。原生 while / for range 循环暂不能
+由图生成源码（`/authoring/generate-python` 返回 `graph_not_representable`）。
 
 ## 条件协议与调度
 

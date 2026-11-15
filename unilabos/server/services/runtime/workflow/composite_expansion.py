@@ -933,9 +933,10 @@ def _materialize_param_references(
         if "inventory_requirements" in metadata:
             metadata["inventory_requirements"] = map_input_bindings(metadata["inventory_requirements"], resolve)
         node["param"] = param if node.get("type") == "condition" else map_input_bindings(param, resolve)
-        if node.get("type") == "condition":
+        if node.get("type") in {"condition", "loop"}:
             from unilabos.protocol.runtime.condition import bind_condition_inputs
 
+            # 循环的 while 条件表达式与条件节点同形：{"input": 名} 改绑到本次实参
             node["param"] = bind_condition_inputs(node["param"], resolve)
 
 
@@ -1053,6 +1054,10 @@ def _remap_depends_on(
         from unilabos.protocol.runtime.condition import remap_expression
 
         node["param"] = remap_expression(node.get("param") or {}, node_uuid_map.__getitem__)
+    if node.get("type") == "loop":
+        from unilabos.protocol.runtime.loop import remap_loop_param
+
+        node["param"] = remap_loop_param(node.get("param") or {}, node_uuid_map.__getitem__)
     if node.get("type") not in {"workflow", "condition"}:
         from unilabos.protocol.runtime.value_binding import remap_result_bindings
 

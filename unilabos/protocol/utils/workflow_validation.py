@@ -210,7 +210,10 @@ def validate_graph(
         if _node_kind(node, templates) == "device_action":
             if node.material_uuid is None:
                 raise GraphValidationError("设备动作节点必须绑定 material_uuid")
-        if parents.get(node_uuid) is None and references_loop_placeholder(param):
+        # 循环自己的下一轮 carry 在本循环体里求值，可以用本循环的迭代变量
+        own_scope = {key: value for key, value in param.items() if key != "carry_next"} \
+            if _node_kind(node, templates) == "loop" else param
+        if parents.get(node_uuid) is None and references_loop_placeholder(own_scope):
             raise GraphValidationError(
                 f"节点 {node.name!r} 引用了 {{{{loop.*}}}} 迭代变量，但它不在任何循环体内"
             )
@@ -433,6 +436,10 @@ def _validate_param_references(
             from unilabos.protocol.runtime.condition import condition_input_references
 
             names.update(condition_input_references(param))
+        elif node.type == "loop":
+            from unilabos.protocol.runtime.loop import loop_input_references
+
+            names.update(loop_input_references(param))
     except ValueError as exc:
         raise GraphValidationError(str(exc)) from exc
     unknown = names - declared

@@ -28,6 +28,8 @@
   ``ctx.device_state("heater", "temperature_c", "<", 80)`` 看设备状态字段，
   ``ctx.step_output(step, "ok", "==", False)`` 看某一步最近的返回值。循环体参数里可以写
   ``{{loop.index}}`` / ``{{loop.iteration}}`` / ``{{loop.count}}`` 引用当前轮次。
+- 原生 ``while <条件>:`` / ``for i in range(n):`` 同样编译成调度器循环：条件与 if 同一套表达式，
+  循环前赋值、循环体里重新赋值的变量在轮次之间携带（见 ``registry/workflow_ast.py``）。
 - ``guide`` + 每步的 ``name`` / ``description`` 组成前端模板卡片上的"全流程"说明：
   运行前该在前端做什么 → 每一步做什么 → 跑完该看到什么。
 - 两者都接受 ``inventory=[...]``：该步骤的库存需求（``InventoryRequirement``
@@ -73,6 +75,10 @@ from unilabos.utils.log import logger
 #: 模板里 node_output 条件引用的是步骤 key（``step-N``），实例化时换成节点 uuid；
 #: 校验时用这个占位 uuid 顶替。
 _CONDITION_NODE_PLACEHOLDER = "00000000-0000-4000-8000-000000000001"
+
+#: 原生 ``while`` 条件表达式里引用正在声明的这个循环（读它携带的变量）用的步骤 key；
+#: 循环步骤建好后换成它真实的 key。
+LOOP_SELF_KEY = "loop:self"
 
 #: uuid5 命名空间：Uni-Lab 工作流（固定值，保证跨进程/跨机器一致）。
 WORKFLOW_NAMESPACE = uuid_module.uuid5(uuid_module.NAMESPACE_URL, "unilabos://workflow")
@@ -413,6 +419,9 @@ class WorkflowBuildContext:
     def _loop(
         self, spec: Dict[str, Any], name: str, description: str
     ) -> Iterator[WorkflowStep]:
+        if "expression" in spec:
+            # 条件表达式里引用"这个循环"的占位 key 换成循环步骤自己的 key
+            spec["expression"] = _replace_node_key(spec["expression"], LOOP_SELF_KEY, _step_key(len(self.steps)))
         condition = spec.get("condition")
         if isinstance(condition, Mapping) and ("node_key" in condition or "node_name" in condition):
             # node_output 条件在模板里引用步骤 key：校验时先顶上占位 uuid
@@ -744,6 +753,20 @@ def _step_key(index: int) -> str:
     return f"{_STEP_KEY_PREFIX}{index}"
 
 
+def _replace_node_key(expression: Any, old: str, new: str) -> Any:
+    """条件表达式里 ``{"node_key": old}`` 换成 ``{"node_key": new}``；字面量原样保留。"""
+
+    if isinstance(expression, dict):
+        if set(expression) in ({"lit"}, {"value"}):
+            return expression
+        if set(expression) == {"node_key"}:
+            return {"node_key": new} if expression["node_key"] == old else dict(expression)
+        return {key: _replace_node_key(item, old, new) for key, item in expression.items()}
+    if isinstance(expression, list):
+        return [_replace_node_key(item, old, new) for item in expression]
+    return expression
+
+
 def workflow_package_name(source_path: str) -> str:
     """模板所属设备包：``module:qualname`` 里模块路径的顶层包名（即挂载给注册表的包目录名）。"""
 
@@ -1046,6 +1069,10 @@ def materialize_workflow_template(
                 # 动作与状态条件使用同一份角色绑定；旧模板未声明状态角色时保留原 ID。
                 device_id = str(condition.get("device_id") or "").strip()
                 param["condition"] = dict(condition, device_id=resolved.get(device_id, device_id))
+            if isinstance(param.get("expression"), Mapping):
+                from unilabos.protocol.runtime.condition import remap_expression
+
+                param["expression"] = remap_expression(param["expression"], node_uuid_of_key, reference_key="node_key")
             parse_loop_spec(param)
             entry: Dict[str, Any] = {
                 "uuid": uuid_at(index),

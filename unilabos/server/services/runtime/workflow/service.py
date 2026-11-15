@@ -2311,6 +2311,16 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 entry_bindings = {}
             else:
                 planned_param, entry_bindings = substitute_entry_references(planned_param, entry_input or {})
+            if kind == "loop":
+                from unilabos.protocol.runtime.loop import parse_loop_spec
+
+                # for range(n) 的 n 可以是工作流输入：建任务时就要是合法的轮数
+                try:
+                    loop_spec = parse_loop_spec(planned_param)
+                except ValueError as exc:
+                    raise StoreConflict(f"{node.get('name') or node_uuid}: {exc}") from None
+                if loop_spec.mode == "for" and type(loop_spec.count) is not int:
+                    raise StoreConflict(f"{node.get('name') or node_uuid}: for 循环轮数引用的工作流输入没有提供")
             node_unilab = (node.get("meta_data") or {}).get("unilab")
             input_bindings = (
                 node_unilab.get("input_bindings") if isinstance(node_unilab, dict) else None
@@ -2402,6 +2412,10 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 from unilabos.protocol.runtime.condition import condition_input_references
 
                 parameter_names.update(condition_input_references(entry_param_template))
+            if kind == "loop":
+                from unilabos.protocol.runtime.loop import loop_input_references
+
+                parameter_names.update(loop_input_references(entry_param_template))
             parameter_names.update(input_references(raw_inventory_requirements))
             if parameter_names:
                 planned_node["entry_parameter_names"] = sorted(parameter_names)

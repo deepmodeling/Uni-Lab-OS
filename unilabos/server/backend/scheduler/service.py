@@ -1907,15 +1907,57 @@ class BackendScheduler:
         return None
 
     def _condition_result(self, spec: Dict[str, Any], node_uuid: str) -> Any:
-        """条件读取当前节点运行的成功结果；不接受上一轮或被跳过的结果。"""
+        """条件读取当前节点运行的成功结果；不接受上一轮或被跳过的结果。
+
+        读取方所在的外层循环（以及循环条件读循环自己）还没结束：读到的是本轮的
+        ``{"carry": ..., "index": ...}``，不是循环的终态结果。
+        """
         run_uuid = spec["runs_by_node"].get(node_uuid)
         if not run_uuid:
             raise ValueError(f"条件引用的节点不存在：{node_uuid}")
+        live = self._live_loop_state(spec, run_uuid)
+        if live is not None:
+            return live
         run = self.workflow.get_workflow_node_run(run_uuid)
         info = run.get("return_info") or {}
         if run["status"] != "succeeded" or "return_value" not in info:
             raise ValueError(f"条件引用的节点没有成功结果：{node_uuid}")
         return info["return_value"]
+
+    def _live_loop_state(self, spec: Dict[str, Any], run_uuid: str) -> Optional[Dict[str, Any]]:
+        """``run_uuid`` 是读取方自己或它的外层循环时，返回该循环本轮的状态。
+
+        ``carry`` 是本轮携带的变量，``value`` 是 for 的循环变量（``start + index``）。
+        """
+
+        with self._guard:
+            current = spec["runs_by_node"].get(str(spec.get("workflow_node_uuid")))
+            seen: set[str] = set()
+            while current is not None and current not in seen:
+                seen.add(current)
+                loop = self._run_specs.get(current, {})
+                if current == run_uuid:
+                    if "loop_context" not in loop and "loop_carry" not in loop:
+                        return None
+                    context = dict(loop.get("loop_context") or {})
+                    return {**context, "value": int(context.get("index") or 0) + int(loop.get("loop_start") or 0),
+                            "carry": deepcopy(loop.get("loop_carry") or {})}
+                current = loop.get("parent_run_uuid")
+        return None
+
+    def _resolve_loop_values(
+        self, spec: Dict[str, Any], values: Mapping[str, Any], context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """carry 初值 / 下一轮取值：替换迭代变量后读结构化结果引用（读不到即失败）。
+
+        初值在循环外层求值（迭代变量取外层循环），下一轮取值在本循环体里求值（取本轮）。
+        """
+
+        from unilabos.protocol.runtime.value_binding import resolve_result_bindings
+
+        resolved = substitute_loop_placeholders(deepcopy(dict(values)), context) if context else deepcopy(dict(values))
+        return dict(resolve_result_bindings(resolved, lambda source: self._condition_result(spec, source),
+                                            read_path=json_get_exists))
 
     def _run_condition_control(self, task: Dict[str, Any], node: DagNode) -> Optional[NodeState]:
         """本地判定和跳过不消费单步许可；只有被选择的设备动作申请资源与许可。"""
@@ -2000,9 +2042,29 @@ class BackendScheduler:
             logger.exception("loop node %s cannot start", spec["workflow_node_uuid"])
             return resolve_status("failed", {"iterations": 0}, f"loop start failed: {exc}")
 
+        if loop_spec.mode == "for" and type(loop_spec.count) is not int:
+            return resolve_status("failed", {"iterations": 0}, f"for 循环轮数没有解析成整数：{loop_spec.count!r}")
+        with self._guard:
+            spec["loop_start"] = loop_spec.start
         iteration = self._recovered_loop_iteration(node.node_id)
         resumed = iteration > 0 or self._loop_body_in_progress(body_runs)
         completed_iterations = iteration
+        carry: Optional[Dict[str, Any]] = None
+        if loop_spec.carry is not None:
+            # 已开始的轮次续用持久化的 carry；首轮（或旧记录没有 carry）按初值求
+            carry = self._recovered_loop_carry(node.node_id) if resumed else None
+            if carry is None:
+                try:
+                    carry = self._resolve_loop_values(spec, loop_spec.carry, self._loop_context_for(node.node_id))
+                except Exception as exc:  # noqa: BLE001 - 初值引用读不到是数据错误
+                    return resolve_status("failed", {"iterations": 0}, f"carry 初值无法求值：{exc}")
+            with self._guard:
+                spec["loop_carry"] = carry
+                spec["loop_context"] = loop_context(iteration, loop_spec.count)
+
+        def final(value: Dict[str, Any]) -> Dict[str, Any]:
+            return {**value, "carry": deepcopy(carry)} if carry is not None else value
+
         while True:
             if self._task_cancelled(task):
                 return resolve_status("canceled", {"iterations": completed_iterations}, None)
@@ -2017,12 +2079,15 @@ class BackendScheduler:
                 if iteration >= loop_spec.max_iterations:
                     return resolve_status(
                         "failed",
-                        {"iterations": completed_iterations},
+                        final({"iterations": completed_iterations}),
                         f"while 循环达到 max_iterations={loop_spec.max_iterations} 仍未结束"
-                        f"（条件：{loop_spec.condition.describe() if loop_spec.condition else ''}）",
+                        f"（条件：{loop_spec.describe().removeprefix('while ')}）",
                     )
                 try:
-                    proceed = self._evaluate_loop_condition(task, spec, loop_spec.condition)
+                    if loop_spec.expression is not None:
+                        proceed = self._evaluate_loop_expression(task, spec, loop_spec.expression)
+                    else:
+                        proceed = self._evaluate_loop_condition(task, spec, loop_spec.condition)
                 except Exception as exc:  # noqa: BLE001 - 条件不可求值是配置/数据错误
                     logger.warning(
                         "loop node %s condition failed: %s", spec["workflow_node_uuid"], exc
@@ -2039,9 +2104,12 @@ class BackendScheduler:
                 "count": loop_spec.count,
                 "max_iterations": loop_spec.max_iterations if loop_spec.mode == "while" else None,
                 "condition": (
-                    loop_spec.condition.describe() if loop_spec.condition is not None else None
+                    loop_spec.describe().removeprefix("while ") if loop_spec.mode == "while" else None
                 ),
             }
+            if carry is not None:
+                # 本轮的 carry 随轮次一起落库：重启后从这里续跑
+                progress["carry"] = deepcopy(carry)
             context = loop_context(iteration, loop_spec.count)
             with self._guard:
                 spec["loop_context"] = context
@@ -2075,11 +2143,26 @@ class BackendScheduler:
                 )
             if any(state != NodeState.SUCCESS for state in result.values()):
                 return resolve_status("canceled", {"iterations": completed_iterations}, None)
+            if carry is not None and loop_spec.carry_next:
+                # 下一轮的 carry 只由本轮已落库的结果决定：重启后重算得到同一个值
+                try:
+                    carry = {**carry, **self._resolve_loop_values(spec, loop_spec.carry_next, context)}
+                except Exception as exc:  # noqa: BLE001
+                    return resolve_status(
+                        "failed",
+                        {"iterations": completed_iterations, "failed_iteration": iteration + 1},
+                        f"第 {iteration + 1} 轮结束后无法计算下一轮 carry：{exc}",
+                    )
+                with self._guard:
+                    spec["loop_carry"] = carry
             iteration += 1
             completed_iterations = iteration
+            if carry is not None:
+                with self._guard:
+                    spec["loop_context"] = loop_context(iteration, loop_spec.count)
             if loop_spec.interval_seconds > 0:
                 await asyncio.sleep(loop_spec.interval_seconds)
-        return resolve_status("succeeded", {"iterations": completed_iterations, "mode": loop_spec.mode}, None)
+        return resolve_status("succeeded", final({"iterations": completed_iterations, "mode": loop_spec.mode}), None)
 
     def _task_cancelled(self, task: Dict[str, Any]) -> bool:
         with self._guard:
@@ -2096,6 +2179,16 @@ class BackendScheduler:
         loop_state = (run.get("control_data") or {}).get("loop") or {}
         iteration = loop_state.get("iteration")
         return int(iteration) if isinstance(iteration, int) and iteration > 0 else 0
+
+    def _recovered_loop_carry(self, run_uuid: str) -> Optional[Dict[str, Any]]:
+        """重启恢复：本轮开始时落库的 carry（``control_data.loop.carry``）。"""
+
+        try:
+            run = self.workflow.get_workflow_node_run(run_uuid)
+        except Exception:  # noqa: BLE001 - 精简测试替身可能没有该方法
+            return None
+        carry = ((run.get("control_data") or {}).get("loop") or {}).get("carry")
+        return dict(carry) if isinstance(carry, dict) else None
 
     def _loop_body_in_progress(self, body_runs: Iterable[str]) -> bool:
         """循环体里已有节点跑完（succeeded/skipped）：说明是恢复而不是首轮起跑。"""
@@ -2218,6 +2311,18 @@ class BackendScheduler:
                     f"节点 {condition.node_uuid} 的返回值里没有 {condition.data_key!r}"
                 )
         return compare_condition(condition.op, value, condition.value)
+
+    def _evaluate_loop_expression(
+        self, task: Dict[str, Any], spec: Dict[str, Any], expression: Mapping[str, Any],
+    ) -> bool:
+        """while 的静态条件表达式：读本轮 carry、工作流输入和循环前的结果。"""
+
+        from unilabos.protocol.runtime.condition import evaluate_condition
+
+        current_input = self.workflow.get_workflow_task(str(task["uuid"])).get("input") or {}
+        return evaluate_condition({"version": 1, "expression": dict(expression)},
+                                  lambda key: self._condition_result(spec, key),
+                                  read_input=current_input.__getitem__)
 
     def _read_device_state(self, device_id: str) -> Dict[str, Any]:
         """设备最新状态字段 -> 值；来源是注入的读取器或执行适配器的设备状态投影。"""

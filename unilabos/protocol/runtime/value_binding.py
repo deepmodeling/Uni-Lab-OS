@@ -77,21 +77,42 @@ def validate_result_binding_graph(nodes: Mapping[str, Any], kinds: Mapping[str, 
             continue
         node = nodes[target]
         meta = (node.get("meta_data") if isinstance(node, Mapping) else getattr(node, "meta_data", None)) or {}
-        refs = result_references([params.get(target, {}), meta.get("inventory_requirements", [])])
-        allowed = {None}
+        param = params.get(target, {})
+        next_refs: set[str] = set()
+        if kinds.get(target) == "loop" and isinstance(param, Mapping) and "carry_next" in param:
+            # 下一轮 carry 在本轮循环体结束时求值：可以读本循环体（直接一层）的结果和循环自己的 carry
+            next_refs = result_references(param["carry_next"])
+            param = {key: value for key, value in param.items() if key != "carry_next"}
+        refs = result_references([param, meta.get("inventory_requirements", [])])
+        enclosing: set[str] = set()
         ancestor = parents.get(target)
         while ancestor is not None:
-            allowed.add(ancestor)
+            enclosing.add(ancestor)
             ancestor = parents.get(ancestor)
+        allowed: set[str | None] = {None, *enclosing}
+        for source in next_refs:
+            if source == target:
+                continue
+            _check_result_source(source, target, nodes, kinds, guards, parents, allowed | {target})
         for source in refs:
-            if source not in nodes or source == target or kinds.get(source) not in {"device_action", "condition", "wait"}:
+            if source == target:
                 raise ValueError("结果引用了不存在、禁用、自身或不产出动作结果的节点")
-            if any(guard not in guards[target] for guard in guards[source]):
-                raise ValueError("结果引用了其他分支，不能保证该分支已执行")
-            if parents.get(source) not in allowed:
-                raise ValueError("结果不能从其他循环体或循环体内部泄漏到外部")
-        dependencies[target] = refs
+            _check_result_source(source, target, nodes, kinds, guards, parents, allowed)
+        # 外层循环（读本轮 carry）与本循环体（下一轮 carry）不是执行先后，不进依赖
+        dependencies[target] = {source for source in refs | next_refs
+                                if source != target and source not in enclosing and parents.get(source) != target}
     return dependencies
+
+
+def _check_result_source(source: str, target: str, nodes: Mapping[str, Any], kinds: Mapping[str, str],
+                         guards: Mapping[str, list[dict[str, Any]]], parents: Mapping[str, str | None],
+                         allowed: set[str | None]) -> None:
+    if source not in nodes or kinds.get(source) not in {"device_action", "condition", "wait", "loop"}:
+        raise ValueError("结果引用了不存在、禁用、自身或不产出动作结果的节点")
+    if any(guard not in guards[target] for guard in guards[source]):
+        raise ValueError("结果引用了其他分支，不能保证该分支已执行")
+    if parents.get(source) not in allowed:
+        raise ValueError("结果不能从其他循环体或循环体内部泄漏到外部")
 
 
 def result_binding_locations(value: Any, *, template: bool = False) -> dict[tuple[Any, ...], dict[str, Any]]:

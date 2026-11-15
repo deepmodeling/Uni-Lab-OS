@@ -187,6 +187,9 @@ attempt 状态与由它派生的占用收敛（Claim 释放、使用权 / 准入
 条件用 `ctx.device_state(device_id, field, op, value)` 或 `ctx.step_output(step_or_name, data_key,
 op, value)` 构造（循环体里的步骤在 `with` 打开时还没声明，用步骤 `name` 引用，块结束时解析）。
 模板节点 `kind="loop"`，成员带 `parent`；实例化时 `node_key` 换成节点 uuid。
+源码也可以直接写原生 `while <条件>:`（与 if 同一套表达式，默认上限 1000 轮）和 `for i in range(n)`；
+循环前赋值、循环体里重新赋值的变量在轮次之间携带，见 [静态条件流程](workflow_static_conditions.md#循环与跨轮携带的变量)；
+本轮携带的值随轮次写在 `control_data.loop.carry`，重启后续用。
 
 ### 4.2 Backend-controlled（接入云端）
 

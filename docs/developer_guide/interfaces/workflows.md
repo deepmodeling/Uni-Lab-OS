@@ -368,7 +368,9 @@ Windows 不支持目录 fsync，跳过这一步。sidecar 锁文件常驻，不�
 文件读写里就记警告继续停机，守护线程随进程退出），不影响停机限时 `lifetime.SHUTDOWN_DEADLINE_S`。
 
 设备包 `@workflow` 是另一种声明入口：ctx.run/ctx.run_template 声明步骤，
-ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件。
+ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件；
+源码里也可以直接写原生 `while <条件>:` / `for i in range(n)`，循环前赋值、循环体里重新赋值的变量在
+轮次之间携带（见 workflow_static_conditions.md「循环与跨轮携带的变量」）。
 循环变量 `{{loop.index}}`、`{{loop.iteration}}`、`{{loop.count}}` 由运行时处理。
 这不等同于支持把任意 Python while/try/except 直接变成可恢复的工作流。
 

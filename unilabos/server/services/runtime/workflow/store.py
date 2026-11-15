@@ -3204,6 +3204,8 @@ class WorkflowStore:
                     "index": int(iteration),
                     "iteration": int(iteration) + 1,
                     "count": progress.get("count"),
+                    # 跨轮携带值：本轮循环体与循环条件读到的就是它
+                    **({"carry": progress["carry"]} if "carry" in progress else {}),
                 },
             }
             conn.execute(

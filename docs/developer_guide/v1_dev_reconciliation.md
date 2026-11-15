@@ -54,6 +54,7 @@ I02、W01、A03 `order_sensitive` 已完成；缺料是预检报错（任务级�
 | --- | --- | --- | --- |
 | `workflow/composite_graph_rewrite.py`（资源作用域投影） | 部分：子操作的 `ctx.lock` / `resource_scope` 在组合调用后失效 | 已实现 | 插入时投影到组合调用节点 `composite.resource_scopes`，`interval_plan.effective_resource_scopes` 与父图作用域合并（调用节点作成员即其展开后代，子作用域嵌在覆盖调用的最深作用域下）；`tests/server/test_composite_resource_scopes.py`（真实调度器下竞争任务被挡在子操作锁外） |
 | `workflow/source_monitor.py` / `composition.py`（启动恢复与源码监视） | 部分：代码已搬但没有实例化，外部编辑不重编译，`writeback_status=pending` 永不重试 | 已实现 | `setup_local_scheduler` 启动时 `recover_registered_sources`（单个源码失败不挡启动）并起监视线程，`shutdown_backend_services` 关库前停线程；`tests/server/test_workflow_source_monitor_wiring.py`（重启后补写源码、运行期外部编辑出新候选）、`tests/app/test_process_lifetime.py` |
+| `workflow/authoring_ast.py` `repeat_until(carry=…)` + `loop.next()` / `until()`；`app/scheduler/dag_state.py` carry | 缺失：dev 循环不能跨轮传值，while 条件只有单项比较 | 已实现（原生写法） | 源码直接写 `while <条件>:`（与 if 同一套表达式，and / or / not，默认上限 1000 轮）和 `for i in range(n)`（n 为字面量或工作流输入）；循环前赋值、循环体里重新赋值的变量逐轮携带，循环后是最终值；不支持运算、break / continue、循环 else、分支里改写携带的变量（编译报错）；携带的值随轮次落 `control_data.loop.carry`，重启续用（`workflow_static_conditions.md`）；`tests/server/test_workflow_loop_carry.py`。原 `with ctx.loop_*` 写法不变；V1 标记函数语法不移植 |
 
 ## 基线与原始目标（11-09 原始记录）
 

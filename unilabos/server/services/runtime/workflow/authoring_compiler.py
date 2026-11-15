@@ -525,6 +525,9 @@ class _PythonRenderer:
 
     def render_loop(self, node: Mapping[str, Any], indent: int) -> None:
         spec = dict(node.get("param") or {})
+        if (spec.get("carry") is not None or spec.get("expression") is not None
+                or type(spec.get("count", 1)) is not int or spec.get("start")):
+            self.fail("原生 while / for range 循环（条件表达式、携带变量、输入轮数）暂不支持生成源码")
         name = json.dumps(str(node.get("name") or ""), ensure_ascii=False)
         interval = spec.get("interval_seconds") or 0.0
         if spec.get("mode") == "for":

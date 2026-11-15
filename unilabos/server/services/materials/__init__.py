@@ -15,6 +15,7 @@ from unilabos.server.services.materials.core import (
     MaterialsService,
     MaterialsServiceError,
     RejectedMutationError,
+    SITE_INGRESS_RESERVED,
     material_link_uuid,
 )
 from unilabos.server.services.materials.graph import (
@@ -45,6 +46,7 @@ __all__ = [
     "MaterialsService",
     "MaterialsServiceError",
     "RejectedMutationError",
+    "SITE_INGRESS_RESERVED",
     "compare_material_snapshot",
     "graph_uuid_for_name",
     "link_payload",

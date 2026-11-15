@@ -118,7 +118,7 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - 物料服务异常显式携带业务含义，不再按消息文字判断（p7-c 起）：`MaterialNotFoundError(msg, subject=...)`，
   `subject` 为 `material` / `site` / `template` / `parent` / `resource_template` 时分别为 6000 / 6006 / 6001 / 6003 / 5000，
   其余（`lot`、`reservation`、未给）为 4001；`MaterialConflictError(msg, conflict=...)`，`conflict` 为
-  `site_occupied` 6007、`identity` 6010、`active_claim` 6011、`template_immutable` 6002、`parent_cycle` 6004、
+  `site_occupied` 6007、`identity` 6010、`active_claim` 6011、`site_ingress_reserved` 6011、`template_immutable` 6002、`parent_cycle` 6004、
   `database` 2005、`template_data` 5004、`state` 3003，未给为 4002。映射表在 `envelope.py`，幂等拒绝重放时
   `subject` / `conflict` 随拒绝码（如 `not_found:material`）一起还原。
 - 化学品（V1 的试剂信息）与设备图按资源口径：不存在 4001、冲突 4002。
@@ -147,6 +147,13 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   `inventory_processed_command`、`lab_meta` / `lab_zone` / `lab_placement`，以及未删除非空条码唯一索引；
   `inventory_lot` 带 `location_site_uuid` / `warehouse_zone_id`。这些都在 schema v1 基线里。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
   校正，适用于质量 / 体积批次与已隔离批次。
+- 工站入站预留（`/inventory/ingress-reservations`）保护它的库位：`reserved`（未过期）或 `in_transit` 期间，
+  人工移动（`move_material` 命令、V1 `site_placement`）、transfer 和工作流搬运派发前的预检都以
+  `MaterialConflictError(conflict="site_ingress_reserved")` 拒绝（HTTP 6011，库存命令 `error_code`
+  `conflict:site_ingress_reserved`），载体本身也只能经 `receive` 落位；同一载体同时至多一个活动预留（再预留 3003）。
+  `site_ingress_reserved` 是临时资源条件：预留接收、取消或过期后自然解除，调度侧应等待而不是判任务失败
+  （常量 `services.materials.SITE_INGRESS_RESERVED`）。与 V1 的差别：只锁库位，不锁库位所属设备与载体设备上的
+  普通作业；设备快照（`apply_snapshot`）是现场事实，不受预留拦截。
 - 化学品：V1 `/reagent-infos` 是 `chemical` 表的 V1 视图；dev `/chemicals`（带 `expected_version` 的写入）保留。
 - 进程管理协议（`/v1/snapshot`、`/v1/operations`、`/v1/logs/{component}`）见下文「进程管理协议（p8 落地）」。
 

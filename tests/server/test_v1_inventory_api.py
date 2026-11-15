@@ -240,17 +240,26 @@ def test_station_ingress_reservation_lifecycle(stack) -> None:
                       for index, label in enumerate(("IN-1", "IN-2"))]))).json()["result"]["data"]
     rack_aggregate = ok_data(client.get(f"/api/v1/inventory/instances/{rack['root_material_uuid']}"))
     sites = [site["site_uuid"] for site in rack_aggregate["sites"]]
-    carrier = client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree("载体"))).json()
-    carrier_uuid = carrier["result"]["data"]["root_material_uuid"]
+    carrier_uuid, other_carrier, third_carrier = (
+        client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))).json()
+        ["result"]["data"]["root_material_uuid"] for name in ("载体", "载体-2", "载体-3")
+    )
     request = {"idempotency_key": "agv-1", "carrier_material_uuid": carrier_uuid, "candidate_site_uuids": sites,
                "ttl_seconds": 600, "backend_task_uuid": "task-1"}
     reserved = ok_data(client.post("/api/v1/inventory/ingress-reservations", json=request), status=201)
     assert reserved["state"] == "reserved" and reserved["site_uuid"] == sites[0] and reserved["revision"] == 1
     assert ok_data(client.post("/api/v1/inventory/ingress-reservations", json=request), status=201)["uuid"] == reserved["uuid"]
     error_of(client.post("/api/v1/inventory/ingress-reservations", json={**request, "ttl_seconds": 5}), 3003)
-    second = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={**request, "idempotency_key": "agv-2"}), status=201)
+    # 同一载体同时只能有一个活动预留：换幂等键也不能再占另一个入口库位
+    error_of(client.post("/api/v1/inventory/ingress-reservations", json={**request, "idempotency_key": "agv-2"}), 3003)
+    assert [item["uuid"] for item in ok_data(client.get("/api/v1/inventory/ingress-reservations"))["reservations"]] == [
+        reserved["uuid"]
+    ]
+    second = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={
+        **request, "idempotency_key": "agv-2", "carrier_material_uuid": other_carrier}), status=201)
     assert second["site_uuid"] == sites[1]
-    error_of(client.post("/api/v1/inventory/ingress-reservations", json={**request, "idempotency_key": "agv-3"}), 6007)
+    error_of(client.post("/api/v1/inventory/ingress-reservations", json={
+        **request, "idempotency_key": "agv-3", "carrier_material_uuid": third_carrier}), 6007)
     error_of(client.post(f"/api/v1/inventory/ingress-reservations/{reserved['uuid']}/receive"), 3003)
     moving = ok_data(client.post(f"/api/v1/inventory/ingress-reservations/{reserved['uuid']}/in-transit"))
     assert moving["state"] == "in_transit" and moving["transport_started_at"]
@@ -262,6 +271,60 @@ def test_station_ingress_reservation_lifecycle(stack) -> None:
     assert canceled["state"] == "canceled" and canceled["cancel_reason"] == "改派"
     error_of(client.post(f"/api/v1/inventory/ingress-reservations/{second['uuid']}/cancel", json={"reason": "别的"}), 3003)
     error_of(client.get("/api/v1/inventory/ingress-reservations/missing"), 4001)
+
+
+def test_active_ingress_reservation_protects_its_site(stack) -> None:
+    """活动入口预留期间库位只留给 receive：人工移动、V1 放置、载体自己提前落位都被挡住。"""
+
+    from unilabos.protocol.materials import SiteCreate
+
+    service, client = stack
+    _seed(client)
+    rack = client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(
+        "入口架", sites=[SiteCreate(template_name="bottle", site_index=index, label=label)
+                      for index, label in enumerate(("IN-1", "IN-2"))]))).json()["result"]["data"]
+    sites = [site["site_uuid"] for site in ok_data(client.get(f"/api/v1/inventory/instances/{rack['root_material_uuid']}"))["sites"]]
+    carrier, other_carrier, bottle = (
+        client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))).json()
+        ["result"]["data"]["root_material_uuid"] for name in ("载体", "载体-2", "瓶-B")
+    )
+
+    def move(material_uuid: str, site_uuid: str) -> dict:
+        return client.post("/api/v1/inventory/commands", json=_command(
+            "move_material", MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid))).json()
+
+    reserved = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={
+        "idempotency_key": "agv-1", "carrier_material_uuid": carrier, "candidate_site_uuids": [sites[0]],
+        "ttl_seconds": 600}), status=201)
+    for material_uuid in (bottle, carrier):
+        blocked = move(material_uuid, sites[0])
+        assert blocked["status"] == "rejected" and blocked["code"] == 6011, blocked
+        assert blocked["error_code"] == "conflict:site_ingress_reserved" and reserved["uuid"] in blocked["error"]
+    error_of(client.put(f"/api/v1/materials/{bottle}", json={
+        "site_placement": {"action": "place", "site_uuid": sites[0]}}), 6011)
+    ok_data(client.post(f"/api/v1/inventory/ingress-reservations/{reserved['uuid']}/in-transit"))
+    assert move(bottle, sites[0])["code"] == 6011
+    assert service.get_site(sites[0]).occupied_material_uuid is None
+
+    # 已过期（尚未被惰性扫描改状态）的 reserved 不再挡位置
+    expiring = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={
+        "idempotency_key": "agv-2", "carrier_material_uuid": other_carrier, "candidate_site_uuids": [sites[1]],
+        "ttl_seconds": 600}), status=201)
+    with service.write():
+        service.connection.execute(
+            "UPDATE station_ingress_reservation SET expires_at_ms=created_at_ms WHERE reservation_uuid=?",
+            (expiring["uuid"],),
+        )
+    assert move(bottle, sites[1])["status"] == "completed"
+    # 取消后库位恢复普通放置
+    ok_data(client.post(f"/api/v1/inventory/ingress-reservations/{reserved['uuid']}/cancel", json={"reason": "改派"}))
+    assert move(bottle, sites[0])["status"] == "completed"
+    assert service.get_site(sites[0]).occupied_material_uuid == bottle
+    # 预留结束后同一载体可以重新预留
+    again = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={
+        "idempotency_key": "agv-3", "carrier_material_uuid": carrier, "candidate_site_uuids": sites,
+        "ttl_seconds": 600}), status=201)
+    assert again["site_uuid"] == sites[1] and again["state"] == "reserved"
 
 
 class _TestClientOpener:

@@ -3,7 +3,12 @@
 AGV 运输载体前在目标工站的候选入口库位里预留一个空库位：``reserved``（TTL 内有效）→
 ``in_transit``（已装载，不再自然过期）→ ``received``（物理交接，经 dev ``move_material``
 把载体放进库位）；也可人工 ``canceled``。预留与 ``site_uuid`` 部分唯一索引保证同一库位
-同时只有一个活动预留；库位占用、父级与账本沿用 dev 物料移动路径。
+同时只有一个活动预留，同一载体也同时只有一个活动预留（预留时在写事务内检查）；库位占用、
+父级与账本沿用 dev 物料移动路径。
+
+活动预留期间库位只留给这次接收：人工移动、transfer、工作流搬运派发前的预检都经
+``MaterialsService._apply_material_move`` 拿到 ``site_ingress_reserved`` 冲突（HTTP 6011），
+调度侧把它当作临时资源条件等待；``receive`` 先把预留置为 ``received`` 再在同一事务里移动载体。
 """
 
 from __future__ import annotations
@@ -98,6 +103,18 @@ class IngressReservations:
                 return self._projection(replay), False
             if MaterialsRepository.get_material(self.materials, carrier) is None:
                 raise MaterialNotFoundError("可搬运载体尚未同步到目标工站", subject="material")
+            # 同一载体同时只能去一个入口库位（到期的 reserved 已在上面置为 expired）
+            held = self.connection.execute(
+                "SELECT reservation_uuid, site_uuid, state FROM station_ingress_reservation "
+                "WHERE carrier_material_uuid=? AND state IN ('reserved','in_transit') LIMIT 1",
+                (carrier,),
+            ).fetchone()
+            if held is not None:
+                raise MaterialConflictError(
+                    f"载体 {carrier} 已有活动入口预留 {held['reservation_uuid']}（库位 {held['site_uuid']}，"
+                    f"{held['state']}）；同一载体同时只能预留一个入口库位，先接收或取消原预留",
+                    conflict="state",
+                )
             marks = ",".join("?" for _ in candidates)
             found = {
                 row[0] for row in self.connection.execute(
@@ -164,12 +181,13 @@ class IngressReservations:
             site = self.materials.get_site(current["site_uuid"])
             if site is None or site.occupied_material_uuid is not None:
                 raise MaterialConflictError("运输中的目标入口库位不再可接收", conflict="site_occupied")
-            # 物理交接：沿用 dev 物料移动（库位占用、父级、账本同一事务）
+            # 先结束预留再移动：活动预留挡住一切放入（含载体本身）；移动失败时整个事务回滚，
+            # 预留仍是 in_transit。物理交接沿用 dev 物料移动（库位占用、父级、账本同一事务）。
+            self._transition(reservation_uuid, "received", now, received_at_ms=now)
             move = MaterialMove(material_uuid=current["carrier_material_uuid"], destination_site_uuid=site.site_uuid)
             self.materials.move_material(
                 new_mutation("move_material", actor_type="device", payload=move.model_dump(mode="json", exclude_none=False)), move
             )
-            self._transition(reservation_uuid, "received", now, received_at_ms=now)
         return self._projection(self._row(reservation_uuid))
 
     def cancel(self, reservation_uuid: str, *, reason: str) -> dict[str, Any]:

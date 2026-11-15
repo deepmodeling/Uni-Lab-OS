@@ -76,6 +76,45 @@ def fill(service, identity, values):
     )
 
 
+def _site_owner(service, label, *, child=False):
+    """带一个 Site ``A`` 的容器；``child`` 时 Site 上已放着物料 ``sample``。"""
+    nodes = [
+        MaterialNodeCreate(
+            client_ref="owner",
+            identity=MaterialIdentityWrite(
+                resource_id=label,
+                name=label,
+                template_name="container",
+                resource_type="container",
+                class_name="Container",
+            ),
+            sites=[
+                SiteCreate(
+                    template_name="slot",
+                    site_index=0,
+                    label="A",
+                    occupied_client_ref="sample" if child else None,
+                )
+            ],
+        )
+    ]
+    if child:
+        nodes.append(
+            MaterialNodeCreate(
+                client_ref="sample",
+                parent_client_ref="owner",
+                identity=MaterialIdentityWrite(
+                    resource_id="sample",
+                    name="sample",
+                    template_name="container",
+                    resource_type="container",
+                    class_name="Container",
+                ),
+            )
+        )
+    return service.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=nodes)).data
+
+
 def test_aliquot_actual_mixture_is_atomic_idempotent_and_blocks_other_writers(tmp_path):
     service = MaterialsService(tmp_path / "materials.db")
     _template(service, "container-template", "container")
@@ -131,44 +170,7 @@ def test_transfer_settles_both_sites_and_rejects_incomplete_receipt(tmp_path):
     try:
         _template(service, "container-template", "container")
 
-        def owner(label, child=False):
-            nodes = [
-                MaterialNodeCreate(
-                    client_ref="owner",
-                    identity=MaterialIdentityWrite(
-                        resource_id=label,
-                        name=label,
-                        template_name="container",
-                        resource_type="container",
-                        class_name="Container",
-                    ),
-                    sites=[
-                        SiteCreate(
-                            template_name="slot",
-                            site_index=0,
-                            label="A",
-                            occupied_client_ref="sample" if child else None,
-                        )
-                    ],
-                )
-            ]
-            if child:
-                nodes.append(
-                    MaterialNodeCreate(
-                        client_ref="sample",
-                        parent_client_ref="owner",
-                        identity=MaterialIdentityWrite(
-                            resource_id="sample",
-                            name="sample",
-                            template_name="container",
-                            resource_type="container",
-                            class_name="Container",
-                        ),
-                    )
-                )
-            return service.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=nodes)).data
-
-        src, dst = owner("source", True), owner("target")
+        src, dst = _site_owner(service, "source", child=True), _site_owner(service, "target")
         sample = src.client_ref_map["sample"]
         source_owner, target_owner = src.root_material_uuid, dst.root_material_uuid
         a, b = service.get_material(source_owner).sites[0], service.get_material(target_owner).sites[0]
@@ -190,6 +192,45 @@ def test_transfer_settles_both_sites_and_rejects_incomplete_receipt(tmp_path):
         assert service.get_material(sample).material.parent_material_uuid == target_owner
         assert service.get_site(a.site_uuid).occupied_material_uuid is None
         assert service.get_site(b.site_uuid).occupied_material_uuid == sample
+    finally:
+        service.close()
+
+
+def test_transfer_into_ingress_reserved_site_is_a_site_ingress_reserved_conflict(tmp_path):
+    """工作流搬运派发前的预检认 AGV 入口预留：冲突类别 ``site_ingress_reserved``，不留任何占用。"""
+
+    from unilabos.server.services.materials import SITE_INGRESS_RESERVED, MaterialConflictError
+    from unilabos.server.services.materials.ingress import IngressReservations
+
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "container-template", "container")
+        src, dst = _site_owner(service, "source", child=True), _site_owner(service, "target")
+        sample = src.client_ref_map["sample"]
+        source_site = service.get_material(src.root_material_uuid).sites[0].site_uuid
+        target_site = service.get_material(dst.root_material_uuid).sites[0].site_uuid
+        ingress = IngressReservations(service)
+        reserved, _created = ingress.reserve({
+            "idempotency_key": "agv-1", "carrier_material_uuid": _material(service, "container"),
+            "candidate_site_uuids": [target_site], "ttl_seconds": 600,
+        })
+        move = PhysicalMove(
+            material_uuid=sample,
+            source_owner_uuid=src.root_material_uuid,
+            source_site_uuid=source_site,
+            target_owner_uuid=dst.root_material_uuid,
+            target_site_uuid=target_site,
+        )
+        with pytest.raises(MaterialConflictError, match="入口预留") as raised:
+            prepare(service, moves=[move])
+        assert raised.value.conflict == SITE_INGRESS_RESERVED
+        assert service.executions.list() == []
+        assert service.get_site(target_site).occupied_material_uuid is None
+        # 预留结束后同一搬运可以派发
+        ingress.cancel(reserved["uuid"], reason="改派")
+        record = prepare(service, moves=[move])
+        service.executions.settle(receipt(record, moves=[move]))
+        assert service.get_site(target_site).occupied_material_uuid == sample
     finally:
         service.close()
 

@@ -382,6 +382,8 @@ _MATERIAL_NOT_FOUND_SUBJECTS: Dict[str, int] = {
 #: 物料冲突按异常的 ``conflict`` 类别换算；未给类别的一般冲突为 4002。
 _MATERIAL_CONFLICT_KINDS: Dict[str, int] = {
     "site_occupied": MATERIAL_SITE_OCCUPIED,
+    # 入口预留是库位上的持续占用（V1 经活动 Claim 冲突报 6011）
+    "site_ingress_reserved": MATERIAL_ACTIVE_CLAIM_CONFLICT,
     "active_claim": MATERIAL_ACTIVE_CLAIM_CONFLICT,
     "identity": MATERIAL_IDENTITY_CONFLICT,
     "template_immutable": MATERIAL_TEMPLATE_IMMUTABLE,

@@ -178,6 +178,11 @@ transfer payload：source_device_id、target_device_id、items。
 每个 item 为 material_uuid、target_material_uuid、target_site（Site UUID、label/index 或 null）。
 同一请求不能重复物料或占据同一目标 Site；目标必须存在且未被其他物料占用。
 
+move、transfer 与工作流搬运派发前的预检共用同一组放入检查：目标 Site 有活动的工站入站预留
+（`/api/v1/inventory/ingress-reservations`，`reserved` 未过期或 `in_transit`）时拒绝，冲突类别
+`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位。这是临时条件，
+预留接收、取消或过期后同一请求可以重试。
+
 执行顺序：
 
 1. 验证所有目标，事务内更新权威位置和账本。

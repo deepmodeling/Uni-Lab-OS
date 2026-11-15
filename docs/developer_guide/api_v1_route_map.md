@@ -287,7 +287,7 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 | MISSING | `GET /api/v1/inventory/ingress-reservations/{reservation_uuid}` | unilabos/app/scheduler/inventory/ingress_api.py:126 | - |  | PORTED |
 | MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/cancel` | unilabos/app/scheduler/inventory/ingress_api.py:162 | - |  | PORTED |
 | MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/in-transit` | unilabos/app/scheduler/inventory/ingress_api.py:136 | - |  | PORTED |
-| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/receive` | unilabos/app/scheduler/inventory/ingress_api.py:149 | - |  | PORTED: receive = dev move_material into the reserved Site |
+| MISSING | `POST /api/v1/inventory/ingress-reservations/{reservation_uuid}/receive` | unilabos/app/scheduler/inventory/ingress_api.py:149 | - |  | PORTED: receive = dev move_material into the reserved Site; an active reservation blocks every other placement on that Site (`site_ingress_reserved`, 6011) and a carrier holds at most one active reservation |
 | MISSING | `GET /api/v1/inventory/sync/cursors` | unilabos/app/scheduler/inventory/api.py:210 | (partial) POST /api/v1/materials/changes/ack |  | PORTED: read view over the materials ledger acknowledgement |
 | MISSING | `GET /api/v1/material-models/{asset_path:path}` | unilabos/app/scheduler/inventory/backend_api.py:444 | - |  | PORTED: raw file route; 404 until a workspace model catalog is wired |
 | MISSING | `GET /api/v1/material-shapes` | unilabos/app/scheduler/inventory/backend_api.py:435 | - | Material 3D or 2D shapes | PORTED: empty list until workspace shapes are wired |

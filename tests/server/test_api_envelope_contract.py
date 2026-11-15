@@ -192,6 +192,7 @@ def test_raw_endpoints_streams_and_unknown_exceptions_are_not_enveloped() -> Non
         (lambda: _materials("MaterialNotFoundError", "material not found: m1"), 4001, None),
         (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied", conflict="site_occupied"), 6007, None),
         (lambda: _materials("MaterialConflictError", "物料或库位仍由未结算动作 j1 占用", conflict="active_claim"), 6011, None),
+        (lambda: _materials("MaterialConflictError", "库位 IN-1 已被入口预留", conflict="site_ingress_reserved"), 6011, None),
         (lambda: _materials("MaterialConflictError", "material uuid already exists: m1", conflict="identity"), 6010, None),
         (lambda: _materials("MaterialConflictError", "destination Site s1 is occupied"), 4002, None),
         (lambda: _materials("MaterialConflictError", "material m1 state changed"), 4002, None),

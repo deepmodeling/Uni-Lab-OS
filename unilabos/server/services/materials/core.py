@@ -93,8 +93,14 @@ class MaterialsServiceError(RuntimeError):
         super().__init__(message)
         #: 不存在的对象：material / site / template / parent / lot / reservation / resource …
         self.subject = subject
-        #: 冲突类别：site_occupied / active_claim / identity / content_reserved …；None 为一般冲突
+        #: 冲突类别：site_occupied / site_ingress_reserved / active_claim / identity / content_reserved …；
+        #: None 为一般冲突
         self.conflict = conflict
+
+
+#: 冲突类别：目标库位正由 AGV 入口预留（``station_ingress_reservation`` 的 reserved / in_transit）
+#: 留给入站载体。预留接收、取消或过期后自然解除，调度侧应按「临时资源条件」等待，而不是判失败。
+SITE_INGRESS_RESERVED = "site_ingress_reserved"
 
 
 class MaterialNotFoundError(MaterialsServiceError):
@@ -2998,6 +3004,25 @@ class MaterialsService(MaterialsRepository):
             repaired.append(material_uuid)
         return repaired
 
+    def _assert_site_not_ingress_reserved(self, site: SiteRecord) -> None:
+        """活动入口预留（reserved 未过期 / in_transit）期间库位不接受任何放入。
+
+        载体本身也只能经预留的 receive 落位（receive 先把预留置为 received 再移动），
+        人工移动、工作流搬运预检与 transfer 都走这里，拿到 ``site_ingress_reserved`` 冲突。
+        """
+
+        row = self.connection.execute(
+            "SELECT reservation_uuid, carrier_material_uuid, state FROM station_ingress_reservation "
+            "WHERE site_uuid=? AND (state='in_transit' OR (state='reserved' AND expires_at_ms > ?)) LIMIT 1",
+            (site.site_uuid, self._now_ms()),
+        ).fetchone()
+        if row is not None:
+            raise MaterialConflictError(
+                f"库位 {site.label}（{site.site_uuid}）已被入口预留 {row['reservation_uuid']}"
+                f"（{row['state']}）留给载体 {row['carrier_material_uuid']}，接收或取消前不能放入物料",
+                conflict=SITE_INGRESS_RESERVED,
+            )
+
     def _apply_material_move(
         self,
         mutation: InventoryMutation,
@@ -3044,6 +3069,8 @@ class MaterialsService(MaterialsRepository):
             value.material_uuid,
         ):
             raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
+        if destination is not None and destination.occupied_material_uuid is None:
+            self._assert_site_not_ingress_reserved(destination)
         same_site = (
             source is not None
             and destination is not None
@@ -4311,4 +4338,5 @@ __all__ = [
     "MaterialsService",
     "MaterialsServiceError",
     "RejectedMutationError",
+    "SITE_INGRESS_RESERVED",
 ]

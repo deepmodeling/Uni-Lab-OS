@@ -31,13 +31,13 @@
 | I02 | 未对齐 | 已实现（按用户决定收口） | 批次侧（多任务共享数量、`on_ready` 就绪时预留、执行结果不明时冻结）已有；容器内物质（`kind="content"`）的工作流预留、多任务共享、随作业结算与恢复、一次性实际用量更正、结算防错（不吃别人的预留、单位换算失败即拒绝、快照不能移除已预留内容物）已实现（I02 分支）；不做运行时补料分支（`material_source` + `sufficient` + `material_io`）：按用户决定缺料是**预检报错**——任务启动整任务预留不足直接失败（`plan_not_executable`，`scope=task`）；动作执行前才预留的需求不足则该动作挂起为 `preflight` 决策，补料后重试，或跳过 / 人工替换为成功 / 放弃（`scope=action`）；动作执行中失败另为**执行报错**。不静默等待补料，与 V1 的等待入库 / 补料分支有意不同 |
 | I03 | 未完整 | **部分** | 搬运 / 分装按执行回执结算（`materials/execution.py`），人工计数盘点已有；按测量作业证据自动盘点未实现 |
 | I04 | 已修复 | 已修复 | |
-| P01 | FE 未兼容 | 后端已实现 | `/workflows/{uuid}/run-preflight`，接受 `inventory_bindings`；正式 FE 对接见 F 行 |
+| P01 | FE 未兼容 | 后端已实现 | `/workflows/{uuid}/run-preflight`，接受 `inventory_bindings` 并按绑定的来源检查库存（与建任务同一规则，对不上声明需求的绑定报 `invalid_inventory_binding`）；正式 FE 对接见 F 行 |
 | R01 | 尚未移植 | 已实现 | `server/backend/execution_start.py`（开始许可；应答不确定时禁止再调用驱动，保留资源等待核实） |
 | R02 | 未完全等同 | 基本完成 | 持久 claim / lease、硬超时保锁（ADR 0008）、重启恢复与人工裁决；容器内物质预留的恢复随 I02 补 |
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
 | T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 苏州工站测试材料 |
 | U01 | 待逐项核验 | **开放** | 全文件差异索引尚未逐项核验 |
-| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings` / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
+| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings`（建任务时落到冻结计划里对应的 `kind="content"` 需求，决定实际预留哪份试剂 / 当前内容物，对不上声明需求即拒绝；`tests/server/test_task_inventory_bindings.py`） / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
 | F08 | Center 分流 | 不变 | Center / project / experiment 路由不属于 OS 本地 backend |
 | F09 | 未执行 | **开放** | FE 适配后与 T02 一起做浏览器联调 |
 

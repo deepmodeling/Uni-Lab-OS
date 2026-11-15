@@ -29,18 +29,22 @@ def _binding(**overrides):
 
 
 def test_create_accepts_v1_priority_and_inventory_bindings(stack: Stack) -> None:
-    binding = _binding()
-    task = stack.create_task(["device-a"], priority="high", inventory_bindings=[binding],
+    task = stack.create_task(["device-a"], priority="high", inventory_bindings=[],
                              description="样品 1", meta_data={"sample_id": "S1"})
     assert task["priority"] == "high"
-    assert task["inventory_bindings"] == [binding]
+    assert task["inventory_bindings"] == []
     assert task["execution_mode"] == "normal" and task["dispatch_gate"] == "active"
     assert task["wait_reason"] == {} and task["description"] == "样品 1"
     detail = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}"))
-    assert detail["priority"] == "high" and detail["inventory_bindings"] == [binding]
+    assert detail["priority"] == "high" and detail["inventory_bindings"] == []
     # 默认值
     plain = stack.create_task(["device-b"])
     assert plain["priority"] == "normal" and plain["inventory_bindings"] == []
+    # 非空绑定必须对应计划里声明的库存需求（生效见 test_task_inventory_bindings.py），对不上即拒绝、不静默丢弃
+    workflow = stack.create_workflow(["device-c"])
+    response = stack.client.post("/api/v1/workflow-tasks", json={"workflow_uuid": workflow["uuid"],
+                                                                 "inventory_bindings": [_binding()]})
+    assert "未对应本次执行的库存需求" in error_of(response, 1000)["msg"]
 
 
 @pytest.mark.parametrize("body", [

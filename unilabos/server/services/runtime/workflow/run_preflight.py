@@ -36,6 +36,7 @@ def deferred_parameters(plan: Mapping[str, Any], node: Mapping[str, Any]) -> lis
 def build_run_preflight_report(
     service: Any, *, workflow_uuid: str, run_mode: str, target_node_uuid: str | None,
     input_value: dict[str, Any], expected_revision: int | None = None,
+    inventory_bindings: Sequence[Any] = (),
 ) -> dict[str, Any]:
     # 同一读事务冻结图、模板及修订；后续外部状态分别采样，不伪称跨库原子快照。
     with service._lock:
@@ -80,6 +81,21 @@ def build_run_preflight_report(
     sources = {node["uuid"]: node for node in graph["nodes"]}
     requirements = []
     materials = service._preflight_materials
+    if inventory_bindings:
+        # 与建任务同一规则把绑定落到候选计划：下面的库存检查按绑定的来源报告
+        from .task_lifecycle import bind_plan_inventory, inventory_binding_sources, normalize_inventory_bindings
+        try:
+            bindings = normalize_inventory_bindings(list(inventory_bindings))
+            bind_plan_inventory(plan, bindings, inventory_binding_sources(bindings, materials)
+                                if materials is not None else None)
+        except ValueError as error:
+            check("inventory", "blocked", "invalid_inventory_binding", str(error))
+            return finalize(report)
+        except (RuntimeError, OSError) as error:
+            check("inventory", "blocked", "inventory_unavailable", f"无法读取绑定的库存：{error}")
+            return finalize(report)
+        check("inventory", "passed", "inventory_bindings_applied", "库存绑定已对应到计划中的库存需求",
+              details={"bindings": bindings})
     endpoints = None
     if service._preflight_endpoints is not None:
         try:

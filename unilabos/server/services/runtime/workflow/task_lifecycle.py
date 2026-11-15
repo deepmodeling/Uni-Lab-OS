@@ -25,8 +25,7 @@ def normalize_task_priority(value: Any) -> str:
 def normalize_inventory_bindings(value: Optional[List[Any]]) -> List[Dict[str, Any]]:
     """V1 ``WorkflowInventoryBindingRequest`` 列表：逐项规范并拒绝重复的逻辑需求键。
 
-    绑定只随任务冻结；库存实例（试剂 / 当前内容物）的存在性与数量预留由库存域负责，
-    这里不读物料库。
+    只做形状校验；绑定落到哪条库存需求、绑到哪份库存见 :func:`bind_plan_inventory`。
     """
 
     if value is None:
@@ -63,6 +62,109 @@ def normalize_inventory_bindings(value: Optional[List[Any]]) -> List[Dict[str, A
             "quantity_unit": unit,
         })
     return result
+
+
+_BINDING_LABELS = {"reagent": "试剂", "current_substance": "当前内容物"}
+
+
+class InventoryBindingUnavailable(RuntimeError):
+    """库存权威未接入：无法按 ``inventory_bindings`` 选择库存（不是绑定本身不合法）。"""
+
+
+def inventory_binding_sources(bindings: List[Dict[str, Any]], materials: Any) -> Dict[str, Dict[str, Any]]:
+    """读出每个绑定指向的库存实例（试剂 / 当前内容物）：所在容器与内容物身份。
+
+    返回 ``{requirement_key: {"material_uuid", "substance_uuid"}}``。库存实例不存在、类型不符
+    （试剂 uuid 当作当前内容物给出等）抛 ``ValueError``；库存权威不可达的异常原样抛出。
+    """
+
+    if not bindings:
+        return {}
+    reader = getattr(materials, "get_inventory_content", None)
+    if not callable(reader):
+        raise InventoryBindingUnavailable("库存权威尚未接入，不能按 inventory_bindings 选择库存")
+    sources: Dict[str, Dict[str, Any]] = {}
+    for binding in bindings:
+        label = _BINDING_LABELS[binding["inventory_type"]]
+        try:
+            row = reader(binding["inventory_type"], binding["inventory_uuid"])
+        except (RuntimeError, OSError) as error:
+            if getattr(error, "code", None) == "not_found":
+                raise ValueError(
+                    f"库存绑定 {binding['requirement_key']} 指向的{label} {binding['inventory_uuid']} 不存在"
+                ) from None
+            raise
+        sources[binding["requirement_key"]] = {
+            "material_uuid": str(row["material_uuid"]), "substance_uuid": str(row["uuid"]),
+        }
+    return sources
+
+
+def bind_plan_inventory(
+    plan: Dict[str, Any], bindings: List[Dict[str, Any]], sources: Optional[Dict[str, Dict[str, Any]]],
+) -> None:
+    """把任务的库存绑定落到冻结的执行计划：绑定决定对应需求从哪份库存预留（V1 ``prepare_task_allocations``）。
+
+    ``requirement_key`` 是节点库存需求的 ``key``；同一键出现在多个步骤时写成 ``<节点 uuid>/<key>``。
+    只有容器内容物（``kind="content"``）需求能绑定试剂 / 当前内容物；绑定的单位必须与需求声明的
+    单位一致、预留量必须等于需求量（dev 不拆分绑定）；来源或数量由入口参数 / 上游结果决定的需求
+    不能绑定。不匹配的绑定一律拒绝（``ValueError``），不静默丢弃。``sources`` 为 ``None`` 表示库存
+    权威不可用：先报绑定与需求不匹配，再抛 :class:`InventoryBindingUnavailable`。
+    """
+
+    from unilabos.protocol.materials import InventoryRequirement
+    from unilabos.server.services.materials.quantity import quantity_tolerance
+
+    if not bindings:
+        return
+    targets: list[tuple[Dict[str, Any], Dict[str, Any], int]] = []
+    for binding in bindings:
+        key = binding["requirement_key"]
+
+        def lookup(node_uuid: Optional[str], requirement_key: str) -> list[tuple[Dict[str, Any], int]]:
+            return [
+                (node, index)
+                for node in plan.get("nodes") or []
+                for index, item in enumerate(node.get("inventory_requirements") or [])
+                if item.get("key") == requirement_key and node_uuid in (None, node.get("uuid"))
+            ]
+
+        matches = lookup(None, key)
+        if not matches and "/" in key:
+            node_uuid, _, short_key = key.partition("/")
+            matches = lookup(node_uuid, short_key)
+        if not matches:
+            raise ValueError(f"库存绑定 {key} 未对应本次执行的库存需求")
+        if len(matches) > 1:
+            raise ValueError(f"库存需求 {key} 出现在多个步骤中，请写成 <节点 uuid>/{key} 指定步骤")
+        node, index = matches[0]
+        if any(other is node and other_index == index for _, other, other_index in targets):
+            raise ValueError(f"库存需求 {key} 重复绑定")
+        requirement = node["inventory_requirements"][index]
+        if requirement.get("kind") != "content":
+            raise ValueError(
+                f"库存需求 {key} 是 {requirement.get('kind')} 需求，只有容器内容物（content）需求能绑定试剂或当前内容物"
+            )
+        if any(isinstance(requirement.get(field), dict) for field in ("material_uuid", "substance_uuid", "substance_name")):
+            raise ValueError(f"库存需求 {key} 的来源由入口参数或上游结果决定，不能再绑定")
+        if any(isinstance(requirement.get(field), dict) for field in ("quantity", "unit")):
+            raise ValueError(f"库存需求 {key} 的数量由入口参数或上游结果决定，暂不支持绑定")
+        unit = str(requirement.get("unit") or "")
+        if binding["quantity_unit"].casefold() != unit.strip().casefold():
+            raise ValueError(f"库存绑定 {key} 必须使用需求声明的单位 {unit}")
+        required = float(requirement["quantity"])
+        reserved = float(binding["reserved_quantity"])
+        if abs(reserved - required) > quantity_tolerance(reserved, required):
+            raise ValueError(f"库存绑定 {key} 预留 {reserved:g}，应为 {required:g}")
+        targets.append((binding, node, index))
+    if sources is None:
+        raise InventoryBindingUnavailable("库存权威尚未接入，不能按 inventory_bindings 选择库存")
+    for binding, node, index in targets:
+        source = sources[binding["requirement_key"]]
+        bound = {key: value for key, value in node["inventory_requirements"][index].items() if key != "substance_name"}
+        bound.update(material_uuid=source["material_uuid"], substance_uuid=source["substance_uuid"])
+        node["inventory_requirements"][index] = InventoryRequirement.model_validate(bound).model_dump(
+            mode="json", exclude_none=False)
 
 
 # ── 公共帮助 ────────────────────────────────────────────────────────

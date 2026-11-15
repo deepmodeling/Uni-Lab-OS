@@ -306,7 +306,7 @@ class WorkflowTaskCreateRequest(_StrictModel):
     input: Dict[str, Any] = Field(default_factory=dict)
     #: V1 任务优先级：normal 普通任务，high 高优先级任务（随任务持久化，排序由调度器负责）
     priority: Literal["normal", "high"] = "normal"
-    #: V1 库存绑定：随任务冻结，库存实例的预留由库存域负责
+    #: V1 库存绑定：建任务时落到冻结计划里对应的库存需求，决定预留哪份试剂 / 当前内容物
     inventory_bindings: List[WorkflowInventoryBindingRequest] = Field(default_factory=list)
 
     @field_validator("meta_data", "param", "execution_policy", "input", mode="before")
@@ -316,7 +316,7 @@ class WorkflowTaskCreateRequest(_StrictModel):
 
 
 class WorkflowInventoryBindingRequest(_StrictModel):
-    """V1：把一个逻辑库存需求绑定到本次任务实际使用的库存实例（dev 预检接收并原样回显）。"""
+    """V1：把一个逻辑库存需求绑定到本次任务实际使用的库存实例（预检按绑定的来源检查并回显）。"""
 
     requirement_key: str
     inventory_type: Literal["reagent", "current_substance"]
@@ -799,12 +799,13 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
 
     @router.post("/workflows/{workflow_uuid}/run-preflight")
     def preflight_workflow(workflow_uuid: str, body: WorkflowPreflightRequest) -> JSONResponse:
-        """V1：按候选入口参数执行零写入预检；``inventory_bindings`` 原样回显（dev 预检不消费库存绑定）。"""
+        """V1：按候选入口参数与 ``inventory_bindings`` 执行零写入预检；库存检查按绑定的来源报告，绑定原样回显。"""
 
+        bindings = [item.model_dump() for item in body.inventory_bindings]
         report = service.preflight_workflow(
             workflow_uuid=workflow_uuid, run_mode=body.run_mode,
             target_node_uuid=body.target_node_uuid, input_value=body.input,
-            expected_revision=body.expected_revision,
+            expected_revision=body.expected_revision, inventory_bindings=bindings,
         )
         if body.inventory_bindings and isinstance(report, dict):
             report = dict(report, inventory_bindings=[item.model_dump() for item in body.inventory_bindings])

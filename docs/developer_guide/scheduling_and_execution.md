@@ -315,6 +315,8 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    或设备/动作缺失时，任务在派发前落 `failed` + `error_info[0].code=plan_not_executable`
    （message 为权威原文，如 ``requirement 'water' is short by 440 ml``），节点运行
    `canceled`，设备不被调用；这是调度的正常业务终态，调度器只记 WARNING。
+   任务的 `inventory_bindings` 在建任务时落到冻结计划里对应的 `content` 需求（换成绑定的容器与内容物），
+   之后的预留、预检与恢复都按绑定的来源进行。
    需求来源有两处：画布节点 `meta_data.inventory_requirements`，或 `@workflow` 步骤的
    `ctx.run(..., inventory=[...])`（声明时按 `InventoryRequirement` 校验，`lot_uuid`
    指定批次，`template_uuid` 由权威按 FIFO 选批次）。`InventoryRequirement` 只是节点上的

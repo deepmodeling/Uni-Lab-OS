@@ -1412,7 +1412,13 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         if not self._authority_profile.can_create_local_workflow_task:
             raise WorkflowError("local_task_authority_forbidden")
         workflow_uuid = self.get_workflow(workflow_uuid)["uuid"]
-        from .task_lifecycle import normalize_inventory_bindings, normalize_task_priority
+        from .task_lifecycle import (
+            InventoryBindingUnavailable,
+            bind_plan_inventory,
+            inventory_binding_sources,
+            normalize_inventory_bindings,
+            normalize_task_priority,
+        )
 
         try:
             priority = normalize_task_priority(priority)
@@ -1464,6 +1470,30 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                     raise WorkflowConflict("conflict")
                 return existing
         resolved: Dict[str, Dict[str, Any]] = {}
+        # 绑定指向的库存实例在建任务事务外读取（物料库是另一个权威，不在 runtime 写锁内访问）；
+        # 事务内按冻结计划把绑定落到对应需求，不匹配即拒绝建任务。
+        binding_sources: Optional[Dict[str, Dict[str, Any]]] = {}
+        if bindings:
+            try:
+                binding_sources = (inventory_binding_sources(bindings, self._preflight_materials)
+                                   if self._preflight_materials is not None else None)
+            except (ValueError, InventoryBindingUnavailable) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            except (RuntimeError, OSError) as exc:
+                raise WorkflowError("invalid_input", detail=f"无法读取绑定的库存：{exc}") from None
+
+        def build_plan(graph: Dict[str, Any]) -> Any:
+            plan, jobs = self._build_execution_plan(
+                graph,
+                run_mode=run_mode,
+                target_node_uuid=target_node_uuid,
+                entry_input=resolved["input"],
+            )
+            try:
+                bind_plan_inventory(plan, bindings, binding_sources)
+            except (ValueError, InventoryBindingUnavailable) as exc:
+                raise StoreConflict(str(exc)) from None
+            return plan, jobs
 
         def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
             # 在建任务事务内比较修订，避免预检后图被修改却提交了另一份计划。
@@ -1486,12 +1516,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 input_builder=build_input,
                 description=description,
                 meta_data=meta_data,
-                plan_builder=lambda graph: self._build_execution_plan(
-                    graph,
-                    run_mode=run_mode,
-                    target_node_uuid=target_node_uuid,
-                    entry_input=resolved["input"],
-                ),
+                plan_builder=build_plan,
                 idempotency_key=idempotency_key,
                 request_fingerprint=fingerprint,
                 priority=priority,

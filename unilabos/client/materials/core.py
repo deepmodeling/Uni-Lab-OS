@@ -125,6 +125,13 @@ class LocalMaterialsClient:
     def preview_inventory(self, requirements):
         return self.service.preview_inventory(requirements)
 
+    def get_inventory_content(self, inventory_type: str, inventory_uuid: str) -> dict:
+        """V1 库存实例（``reagent`` 试剂 / ``current_substance`` 当前内容物）的读模型：所在容器与单位。"""
+        contents = self.service._content_contract()
+        if inventory_type == "reagent":
+            return contents.get_reagent(inventory_uuid)
+        return contents.get_current_substance(inventory_uuid)
+
     def reserve_inventory(self, mutation, value):
         return self.service.reserve_inventory(bind_payload(mutation, value), value)
 
@@ -593,6 +600,11 @@ class HTTPMaterialsClient:
         return self._request("POST", "/inventory/preview", {
             "requirements": [item.model_dump(mode="json") for item in requirements],
         })
+
+    def get_inventory_content(self, inventory_type: str, inventory_uuid: str) -> dict:
+        """V1 库存实例的读模型（``GET /api/v1/reagents/{uuid}`` 或 ``/current-substances/{uuid}``）。"""
+        path = "/reagents/" if inventory_type == "reagent" else "/current-substances/"
+        return self._get(path + quote(inventory_uuid, safe=""))
 
     # -- 预留 ------------------------------------------------------
 

@@ -1064,6 +1064,7 @@ class MaterialsService(MaterialsRepository):
         requirement: InventoryRequirement,
         *,
         selected_materials: set[str],
+        ignore_reservations: bool = False,
     ) -> MaterialRecord:
         if requirement.material_uuid is not None:
             candidates = [MaterialsRepository.get_material(self, requirement.material_uuid)]
@@ -1083,10 +1084,11 @@ class MaterialsService(MaterialsRepository):
                 MaterialsRepository.list_materials(self),
                 key=lambda item: (item.created_at_ms, item.material_uuid),
             )
+        usable = {"active", "reserved"} if ignore_reservations else {"active"}
         for material in candidates:
             if material is None or material.material_uuid in selected_materials:
                 continue
-            if material.lifecycle_status != "active":
+            if material.lifecycle_status not in usable:
                 continue
             if (
                 requirement.template_uuid is not None
@@ -1107,61 +1109,78 @@ class MaterialsService(MaterialsRepository):
         )
 
     def _plan_inventory(
-        self, requirements: Sequence[InventoryRequirement], timestamp: int,
+        self, requirements: Sequence[InventoryRequirement], timestamp: int, *,
+        ignore_reservations: bool = False, short_indexes: Optional[list[int]] = None,
     ) -> tuple[list[InventoryAllocation], list[dict[str, Any]]]:
-        """整批需求共用虚拟余量；与真正预留复用同一筛选、单位换算和顺序。"""
+        """整批需求共用虚拟余量；与真正预留复用同一筛选、单位换算和顺序。
+
+        ``ignore_reservations`` 把其他预留占着的量也当作可用（实物够不够）；``short_indexes`` 收集
+        出现短缺的需求下标（每条需求至多一条短缺）。
+        """
         allocations: list[InventoryAllocation] = []
         shortages: list[dict[str, Any]] = []
         selected_materials: set[str] = set()
         lot_reserved: dict[str, float] = {}
         content_planned: dict[str, float] = {}
-        for requirement in requirements:
-            if requirement.kind == "content":
-                planned = self._plan_content(requirement, content_planned)
-                if isinstance(planned, InventoryAllocation):
-                    allocations.append(planned)
-                else:
-                    shortages.append(planned)
-                continue
-            if requirement.kind == "material":
-                try:
-                    material = self._select_inventory_material(requirement, selected_materials=selected_materials)
-                except (InsufficientInventoryError, MaterialNotFoundError) as error:
-                    shortages.append({"key": requirement.key, "kind": "material", "message": str(error)})
-                    continue
-                selected_materials.add(material.material_uuid)
-                allocations.append(InventoryAllocation(
-                    key=requirement.key, kind="material", material_uuid=material.material_uuid,
-                    template_uuid=material.template_uuid,
-                ))
-                continue
-            requested = remaining = float(requirement.quantity)
-            for lot in self._candidate_inventory_lots(requirement, timestamp):
-                # 分配与流水始终以原批次单位记账；跨批次需求以请求单位比较。
-                converted = convert_quantity(1.0, lot.unit, requirement.unit)
-                assert converted is not None
-                factor = converted[0]
-                available = max(0.0, lot.quantity_available - lot_reserved.get(lot.lot_uuid, 0.0))
-                take = min(available, remaining / factor)
-                if take <= 0:
-                    continue
-                lot_reserved[lot.lot_uuid] = lot_reserved.get(lot.lot_uuid, 0.0) + take
-                allocations.append(InventoryAllocation(
-                    key=requirement.key, kind="lot", template_uuid=lot.template_uuid,
-                    lot_uuid=lot.lot_uuid, quantity=take, unit=lot.unit,
-                ))
-                remaining -= take * factor
-                if remaining <= quantity_tolerance(requested, remaining):
-                    remaining = 0.0
-                    break
-            if remaining > 0:
-                shortages.append({
-                    "key": requirement.key, "kind": "lot", "lot_uuid": requirement.lot_uuid,
-                    "template_uuid": requirement.template_uuid, "required": requested,
-                    "available": requested - remaining, "shortage": remaining, "unit": requirement.unit,
-                    "message": f"库存需求 {requirement.key} 缺少 {remaining:g} {requirement.unit}",
-                })
+        for index, requirement in enumerate(requirements):
+            before = len(shortages)
+            self._plan_one(requirement, timestamp, allocations, shortages, selected_materials, lot_reserved,
+                           content_planned, ignore_reservations=ignore_reservations)
+            if short_indexes is not None and len(shortages) > before:
+                short_indexes.append(index)
         return allocations, shortages
+
+    def _plan_one(self, requirement: InventoryRequirement, timestamp: int, allocations: list[InventoryAllocation],
+                  shortages: list[dict[str, Any]], selected_materials: set[str], lot_reserved: dict[str, float],
+                  content_planned: dict[str, float], *, ignore_reservations: bool) -> None:
+        """规划一条需求：分配追加到 ``allocations``，短缺追加到 ``shortages``。"""
+        if requirement.kind == "content":
+            planned = self._plan_content(requirement, content_planned, ignore_reservations=ignore_reservations)
+            if isinstance(planned, InventoryAllocation):
+                allocations.append(planned)
+            else:
+                shortages.append(planned)
+            return
+        if requirement.kind == "material":
+            try:
+                material = self._select_inventory_material(requirement, selected_materials=selected_materials,
+                                                           ignore_reservations=ignore_reservations)
+            except (InsufficientInventoryError, MaterialNotFoundError) as error:
+                shortages.append({"key": requirement.key, "kind": "material", "message": str(error)})
+                return
+            selected_materials.add(material.material_uuid)
+            allocations.append(InventoryAllocation(
+                key=requirement.key, kind="material", material_uuid=material.material_uuid,
+                template_uuid=material.template_uuid,
+            ))
+            return
+        requested = remaining = float(requirement.quantity)
+        for lot in self._candidate_inventory_lots(requirement, timestamp, include_reserved=ignore_reservations):
+            # 分配与流水始终以原批次单位记账；跨批次需求以请求单位比较。
+            converted = convert_quantity(1.0, lot.unit, requirement.unit)
+            assert converted is not None
+            factor = converted[0]
+            held = lot.quantity_reserved if ignore_reservations else 0.0
+            available = max(0.0, lot.quantity_available + held - lot_reserved.get(lot.lot_uuid, 0.0))
+            take = min(available, remaining / factor)
+            if take <= 0:
+                continue
+            lot_reserved[lot.lot_uuid] = lot_reserved.get(lot.lot_uuid, 0.0) + take
+            allocations.append(InventoryAllocation(
+                key=requirement.key, kind="lot", template_uuid=lot.template_uuid,
+                lot_uuid=lot.lot_uuid, quantity=take, unit=lot.unit,
+            ))
+            remaining -= take * factor
+            if remaining <= quantity_tolerance(requested, remaining):
+                remaining = 0.0
+                break
+        if remaining > 0:
+            shortages.append({
+                "key": requirement.key, "kind": "lot", "lot_uuid": requirement.lot_uuid,
+                "template_uuid": requirement.template_uuid, "required": requested,
+                "available": requested - remaining, "shortage": remaining, "unit": requirement.unit,
+                "message": f"库存需求 {requirement.key} 缺少 {remaining:g} {requirement.unit}",
+            })
 
     # ── 内容物（容器里的一份 substance）数量 ───────────────────────────
 
@@ -1213,7 +1232,8 @@ class MaterialsService(MaterialsRepository):
             total += converted[0]
         return total
 
-    def _plan_content(self, requirement: InventoryRequirement, planned: dict[str, float]) -> Any:
+    def _plan_content(self, requirement: InventoryRequirement, planned: dict[str, float], *,
+                      ignore_reservations: bool = False) -> Any:
         """内容物需求：可用量 = 现量 − 其他预留 − 同一批已规划的量；返回分配或短缺说明。"""
 
         try:
@@ -1229,7 +1249,8 @@ class MaterialsService(MaterialsRepository):
                     "message": f"库存需求 {requirement.key} 的单位 {requirement.unit} 无法换算为内容物单位 {row['quantity_unit']}"}
         need = converted[0]
         try:
-            reserved = self.content_reserved(row["substance_uuid"], row["quantity_unit"], physical=physical)
+            reserved = 0.0 if ignore_reservations else self.content_reserved(
+                row["substance_uuid"], row["quantity_unit"], physical=physical)
         except MaterialConflictError as error:
             return {"key": requirement.key, "kind": "content", "message": str(error)}
         available = float(row["quantity"]) - reserved - planned.get(row["substance_uuid"], 0.0)
@@ -1290,7 +1311,15 @@ class MaterialsService(MaterialsRepository):
             if not nested:
                 self.connection.execute("BEGIN")
             try:
-                allocations, shortages = self._plan_inventory(requirements, int(time.time() * 1000))
+                timestamp = int(time.time() * 1000)
+                short_indexes: list[int] = []
+                allocations, shortages = self._plan_inventory(requirements, timestamp, short_indexes=short_indexes)
+                if shortages:
+                    # 区分「实物不够」与「实物够、只是被其他预留占着」：后者等别人释放即可，不是缺料
+                    physical: list[int] = []
+                    self._plan_inventory(requirements, timestamp, ignore_reservations=True, short_indexes=physical)
+                    for index, shortage in zip(short_indexes, shortages):
+                        shortage["cause"] = "insufficient" if index in physical else "reserved_by_other_tasks"
                 return {
                     "available": not shortages,
                     "allocations": [item.model_dump(mode="json") for item in allocations],
@@ -1304,6 +1333,8 @@ class MaterialsService(MaterialsRepository):
         self,
         requirement: InventoryRequirement,
         timestamp: int,
+        *,
+        include_reserved: bool = False,
     ) -> list[InventoryLotRecord]:
         if requirement.lot_uuid is not None:
             lot = self.get_lot(requirement.lot_uuid)
@@ -1315,11 +1346,12 @@ class MaterialsService(MaterialsRepository):
         else:
             candidates = self.list_lots(
                 template_uuid=requirement.template_uuid,
-                available_only=True,
+                available_only=not include_reserved,
             )
         result: list[InventoryLotRecord] = []
         for lot in candidates:
-            if lot.quarantined or lot.quantity_available <= 0:
+            held = lot.quantity_reserved if include_reserved else 0.0
+            if lot.quarantined or lot.quantity_available + held <= 0:
                 continue
             if requirement.template_uuid is not None and (
                 lot.template_uuid != requirement.template_uuid

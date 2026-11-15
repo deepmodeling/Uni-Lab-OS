@@ -168,12 +168,27 @@ def preflight_error(error: Exception) -> Dict[str, Any]:
     return item
 
 
-class RuntimeInventoryShortage(RuntimeError):
-    """节点就绪时才预留的库存（``on_ready``、条件分支、引用上游结果的需求）此刻不足：动作执行前预检报错。"""
+#: 库存实物够、只是被其他任务的预留占着：任务 / attempt 排队等释放，不算缺料
+WAIT_INVENTORY_RESERVED = "inventory_reserved_by_other_tasks"
 
-    def __init__(self, message: str, shortages: Optional[list] = None) -> None:
+
+def inventory_held_by_other_tasks(shortages: list) -> bool:
+    """权威预检的每条短缺都是「被其他任务预留」（``cause``）时为真；任一条实物不够、或原因未知都按缺料。"""
+
+    return bool(shortages) and all(item.get("cause") == "reserved_by_other_tasks" for item in shortages)
+
+
+class RuntimeInventoryShortage(RuntimeError):
+    """节点就绪时才预留的库存（``on_ready``、条件分支、引用上游结果的需求）此刻不足：动作执行前预检报错。
+
+    ``held_by_other_tasks``：实物够、只是被其他任务预留——attempt 排队等释放，不开预检决策。
+    """
+
+    def __init__(self, message: str, shortages: Optional[list] = None, *, held_by_other_tasks: Optional[bool] = None) -> None:
         super().__init__(message)
         self.shortages = list(shortages or [])
+        self.held_by_other_tasks = (inventory_held_by_other_tasks(self.shortages)
+                                    if held_by_other_tasks is None else held_by_other_tasks)
 
     def error_item(self) -> Dict[str, Any]:
         item: Dict[str, Any] = {"code": "inventory_shortage", "stage": ERROR_STAGE_PREFLIGHT, "scope": "action",
@@ -323,6 +338,11 @@ class BackendScheduler:
         # _waiting_interval_jobs 里按首次排队先后重试，但不持有任何资源，也不算在等设备（同任务的
         # 兄弟节点不为它让行：腾出库位的可能正是兄弟节点）。
         self._condition_waits: Dict[str, str] = {}
+        # 尚未开始、整任务预留所需库存被其他任务占着的任务：task -> (创建时间, 记了排队原因的 attempt)。
+        # 它们不持有任何东西、保持 pending；库存释放或兜底重算时按创建先后重新提交。
+        self._inventory_waiting_tasks: Dict[str, tuple[str, list[str]]] = {}
+        # 等库存任务已被拒的次数：重试换新的预留命令身份（被拒的命令按幂等会原样重放拒绝）
+        self._inventory_wait_attempts: Dict[str, int] = {}
         self._dispatched_jobs: set[str] = set()
         # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
         self._manual_confirmation_jobs: set[str] = set()
@@ -500,6 +520,8 @@ class BackendScheduler:
                 spec["base_param"] = dict(run.get("param") or {})
 
     async def run_task(self, task_uuid: str) -> Dict[str, NodeState]:
+        if not self._admit_fresh_task(task_uuid):
+            return {}
         prepared = self.workflow.prepare_workflow_task_execution(task_uuid)
         # waiting_reconciliation：任务可接管，但上一进程在飞的 attempt 要由人裁决；
         # DAG 照常构建，这些节点在起跑时改为开决策（见 _start_node），不重放。
@@ -618,6 +640,128 @@ class BackendScheduler:
                         self._reconciliation_decisions.pop(decision_id, None)
             # 任务终结（含取消）后不再有待裁决 attempt，控制态不能停留在 waiting_reconciliation
             self._settle_task_reconciliation(task_uuid)
+            if not self._stopping:
+                # 它的预留已释放或结算：等库存的任务按先后再试
+                self._retry_inventory_waiting_tasks()
+
+    def _admit_fresh_task(self, task_uuid: str) -> bool:
+        """尚未开始的任务先整任务预留库存，再转 ``running``；返回 False 表示这次不起跑。
+
+        实物不够（或计划不可执行）任务直接失败（``plan_not_executable``，stage=preflight）；实物够、只是被
+        其他任务预留占着，任务保持 ``pending`` 排队，不持有任何东西，库存释放后按创建先后重试。已开始、
+        暂停或取消中的任务走原路径。
+        """
+        try:
+            task = self.workflow.get_workflow_task(task_uuid)
+        except Exception:  # noqa: BLE001 - 读不到交给原路径报告
+            return True
+        if task.get("status") != "pending" or task.get("control_status") != "active":
+            with self._guard:
+                self._inventory_waiting_tasks.pop(task_uuid, None)
+            return True
+        runs = self.workflow.list_workflow_node_runs(task_uuid)
+        if any(run["status"] != "pending" for run in runs):
+            return True
+        specs: Optional[Dict[str, Dict[str, Any]]] = None
+        with self._guard:
+            attempt = self._inventory_wait_attempts.get(task_uuid, 0)
+        try:
+            _dag, specs = self._build_dag(task, runs)
+            self._reserve_task_inventory(task, specs, generation=f":wait:{attempt}" if attempt else "")
+        except Exception as exc:
+            held = self._held_inventory_shortages(task, specs, exc) if specs is not None else None
+            if held is not None:
+                with self._guard:
+                    self._inventory_wait_attempts[task_uuid] = attempt + 1
+                self._wait_task_inventory(task, held)
+                return False
+            self._fail_unstarted_task(task_uuid, runs, exc)
+            self._release_unconsumed_task_inventory(task_uuid)
+            self._settle_task_reconciliation(task_uuid)
+            with self._guard:
+                self._inventory_waiting_tasks.pop(task_uuid, None)
+                self._inventory_wait_attempts.pop(task_uuid, None)
+            if isinstance(exc, (BackendSchedulingError, MaterialsServiceError, MaterialsHTTPError)):
+                logger.warning("workflow task %s cannot start: %s", task_uuid, exc)
+            else:
+                logger.exception("workflow task %s failed while planning", task_uuid)
+            return False
+        with self._guard:
+            waited = self._inventory_waiting_tasks.pop(task_uuid, None)
+            self._inventory_wait_attempts.pop(task_uuid, None)
+        self._clear_task_inventory_wait(task_uuid, waited)
+        return True
+
+    def _held_inventory_shortages(self, task: Dict[str, Any], specs: Dict[str, Dict[str, Any]],
+                                  error: Exception) -> Optional[list[Dict[str, Any]]]:
+        """预留失败只因库存被其他任务占着时，返回各条短缺（``key`` 为 ``<attempt>/<需求键>``）；否则 None。"""
+        if getattr(error, "code", None) != "insufficient_inventory" or self.materials_gateway is None:
+            return None
+        from unilabos.protocol.materials import InventoryRequirement
+
+        requirements = [
+            InventoryRequirement.model_validate({**item, "key": f'{spec["current_job_uuid"]}/{item["key"]}'})
+            for spec in specs.values()
+            if spec["inventory_requirements"] and not spec.get("inventory_deferred")
+            and spec.get("inventory_job_status", "pending") not in _RUN_TERMINAL
+            for item in spec["inventory_requirements"]
+        ]
+        try:
+            preview = self.materials_gateway.preview_inventory(requirements)
+        except Exception:  # noqa: BLE001 - 无法判定原因时按缺料处理
+            logger.warning("任务 %s 预留失败后的库存预检失败", task.get("uuid"), exc_info=True)
+            return None
+        shortages = list(preview.get("shortages") or [])
+        # 预检时已经够了（别人刚释放）：同样排队，下一轮重试
+        return shortages if not shortages or inventory_held_by_other_tasks(shortages) else None
+
+    def _wait_task_inventory(self, task: Dict[str, Any], shortages: list[Dict[str, Any]]) -> None:
+        from .attempt_inventory import attempt_wait, inventory_wait
+
+        task_uuid = str(task["uuid"])
+        message = "；".join(str(item.get("message") or "") for item in shortages if item.get("message")) or "库存被其他任务预留"
+        jobs = sorted({str(item["key"]).partition("/")[0] for item in shortages if "/" in str(item.get("key") or "")})
+        with self._guard:
+            first = task_uuid not in self._inventory_waiting_tasks
+            previous = (self._inventory_waiting_tasks.get(task_uuid) or ("", []))[1]
+            self._inventory_waiting_tasks[task_uuid] = (str(task.get("create_time") or ""), sorted({*previous, *jobs}))
+        if first:
+            logger.info("任务 %s 需要的库存被其他任务预留，排队等待释放：%s", task_uuid, message)
+        for job_uuid in jobs:
+            try:
+                inventory_wait(self.workflow, self._authority_epoch, job_uuid, message)
+                attempt_wait(self.workflow, self._authority_epoch, job_uuid,
+                             {"code": WAIT_INVENTORY_RESERVED, "message": f"库存被其他任务预留：{message}"})
+            except Exception:  # noqa: BLE001 - 排队原因只是观测
+                logger.warning("任务 %s 的排队原因写入失败", task_uuid, exc_info=True)
+
+    def _clear_task_inventory_wait(self, task_uuid: str, waited: Optional[tuple[str, list[str]]]) -> None:
+        """任务取得库存后清掉各 attempt 上的排队原因（重启后内存记录丢了，按持久事实清）。"""
+        from .attempt_inventory import attempt_wait, inventory_wait
+
+        jobs = set((waited or ("", []))[1])
+        lister = getattr(self.workflow, "list_workflow_node_jobs", None)
+        if callable(lister):
+            try:
+                jobs.update(str(job["uuid"]) for job in lister(task_uuid)
+                            if ((job.get("control_data") or {}).get("wait_reason") or {}).get("code") == WAIT_INVENTORY_RESERVED)
+            except Exception:  # noqa: BLE001
+                logger.debug("读取任务 %s 的 attempt 失败", task_uuid, exc_info=True)
+        for job_uuid in sorted(jobs):
+            try:
+                inventory_wait(self.workflow, self._authority_epoch, job_uuid, None)
+                attempt_wait(self.workflow, self._authority_epoch, job_uuid, None)
+            except Exception:  # noqa: BLE001
+                logger.warning("任务 %s 的排队原因清除失败", task_uuid, exc_info=True)
+
+    def _retry_inventory_waiting_tasks(self) -> None:
+        """按创建先后重新提交等库存的任务；仍被占用的会再次排队。"""
+        with self._guard:
+            if self._stopping or not self._inventory_waiting_tasks:
+                return
+            waiting = sorted(self._inventory_waiting_tasks.items(), key=lambda item: (item[1][0], item[0]))
+        for task_uuid, _entry in waiting:
+            self.submit(task_uuid)
 
     def stop(self) -> None:
         # 停止调度进程不等于取消实验；在飞尝试与资源声明留给恢复和人工核实。
@@ -678,6 +822,7 @@ class BackendScheduler:
             await asyncio.sleep(5)
             if not self._stopping:
                 self._reconcile_resources()
+                self._retry_inventory_waiting_tasks()
 
     async def _reconcile_before_planning(
         self, task: Dict[str, Any], runs: list[Dict[str, Any]],
@@ -1002,7 +1147,14 @@ class BackendScheduler:
             try:
                 self._reserve_ready_inventory(task, node)
             except RuntimeInventoryShortage as shortage:
-                # 动作执行前预检报错：挂起等处置（补料后重试 / 放弃），不静默等待补料
+                if shortage.held_by_other_tasks:
+                    # 实物够、只是被其他任务预留：attempt 不持有任何东西，排队等释放后重试
+                    from .attempt_inventory import inventory_wait
+                    inventory_wait(self.workflow, self._authority_epoch, spec["current_job_uuid"], str(shortage))
+                    self._wait_for_condition(task, node, spec["current_job_uuid"], WAIT_INVENTORY_RESERVED,
+                                             f"库存被其他任务预留：{shortage}")
+                    return
+                # 真缺料是动作执行前预检报错：挂起等处置（补料后重试 / 放弃），不静默等待补料
                 self._open_preflight_decision(task, node, spec, [shortage.error_item()])
                 return
         job_uuid = spec["current_job_uuid"]
@@ -1799,8 +1951,11 @@ class BackendScheduler:
         *,
         command_suffix: str = "",
         ready: bool = False,
+        generation: str = "",
     ) -> None:
         """为若干 (attempt job uuid, spec) 建库存 reservation，all-or-nothing。
+
+        ``generation``：同一集合被拒（库存被其他任务占着）后排队重试时换新的命令身份，不重放被拒的结果。
 
         reservation 绑定 attempt 的 job uuid（执行器按 job_id 校验），所以任务启动时
         为每个节点运行的首个 attempt 预留；retry 的新 attempt 再单独预留一次。
@@ -1847,7 +2002,8 @@ class BackendScheduler:
             # 重试、循环和部分节点已完成会改变预留集合；同一集合保持固定幂等身份。
             digest = canonical_hash(value.model_dump(mode="json", exclude_none=False))
             mutation = InventoryMutation(
-                command_uuid=self._inventory_command_uuid(task_uuid, ":batch:" + digest + (command_suffix if ready else "")),
+                command_uuid=self._inventory_command_uuid(
+                    task_uuid, ":batch:" + digest + (command_suffix if ready else "") + generation),
                 effect_key="inventory.task.reserve", operation="reserve_task_inventory", actor_type="scheduler")
             result = self.materials_gateway.reserve_task_inventory(mutation, value)
             recovered.extend(result.data.reservations)
@@ -1906,7 +2062,11 @@ class BackendScheduler:
                 raise
             # 下次预留（预检重试）换新的命令身份，不重放这次被拒的结果
             inventory_wait(self.workflow, self._authority_epoch, job_uuid, None, advance=True)
-            raise RuntimeInventoryShortage(str(error)) from None
+            # 预检刚通过、预留被别人抢先：按此刻的原因判定是排队还是缺料
+            shortages = self.materials_gateway.preview_inventory([
+                InventoryRequirement.model_validate(item) for item in spec["inventory_requirements"]])["shortages"]
+            raise RuntimeInventoryShortage(str(error), shortages, held_by_other_tasks=(
+                not shortages or inventory_held_by_other_tasks(shortages))) from None
         inventory_wait(self.workflow, self._authority_epoch, job_uuid, None)
         return True
 
@@ -1914,10 +2074,13 @@ class BackendScheduler:
         self,
         task: Dict[str, Any],
         specs: Dict[str, Dict[str, Any]],
+        *,
+        generation: str = "",
     ) -> None:
         self._reserve_inventory(
             task,
             [(spec["current_job_uuid"], spec) for spec in specs.values()],
+            generation=generation,
         )
 
     def _release_unconsumed_task_inventory(self, task_uuid: str) -> None:
@@ -2318,11 +2481,18 @@ class BackendScheduler:
                 rearmed.append((str(spec["current_job_uuid"]), spec))
         if rearmed:
             # 库存 reservation 绑定 attempt：每轮为循环体重新预留一次（与 retry 同构）
-            self._reserve_inventory(
-                task,
-                rearmed,
-                command_suffix=f":loop:{loop_run_uuid}:{iteration}",
-            )
+            try:
+                self._reserve_inventory(
+                    task,
+                    rearmed,
+                    command_suffix=f":loop:{loop_run_uuid}:{iteration}",
+                )
+            except Exception as error:
+                if self._held_inventory_shortages(task, dict(rearmed), error) is None:
+                    raise
+                # 被其他任务占着：本轮循环体改在各节点就绪时预留，排队等释放
+                for _job_uuid, body_spec in rearmed:
+                    body_spec["inventory_deferred"] = True
 
     def _arm_next_attempt(
         self, spec: Dict[str, Any], next_job: Dict[str, Any], *, retry_of: Optional[str]
@@ -2667,11 +2837,17 @@ class BackendScheduler:
                 next_job["uuid"],
             )
             try:
-                self._reserve_inventory(
-                    task,
-                    [(spec["current_job_uuid"], spec)],
-                    command_suffix=f":{spec['current_job_uuid']}",
-                )
+                try:
+                    self._reserve_inventory(
+                        task,
+                        [(spec["current_job_uuid"], spec)],
+                        command_suffix=f":{spec['current_job_uuid']}",
+                    )
+                except Exception as error:
+                    if self._held_inventory_shortages(task, {run_uuid: spec}, error) is None:
+                        raise
+                    # 被其他任务占着：这个 attempt 改在就绪时预留，排队等释放
+                    spec["inventory_deferred"] = True
                 self._start_node(task, node)
             except Exception:  # noqa: BLE001 - 新 attempt 起不来按节点失败收敛
                 logger.exception(

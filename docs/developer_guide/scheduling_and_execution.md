@@ -326,6 +326,13 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    或设备/动作缺失时，任务在派发前落 `failed` + `error_info[0].code=plan_not_executable`
    （message 为权威原文，如 ``requirement 'water' is short by 440 ml``），节点运行
    `canceled`，设备不被调用；这是调度的正常业务终态，调度器只记 WARNING。
+   **实物够、只是被其他任务预留**不算缺料：预留被拒后调度器用 `preview_inventory` 判定原因（每条短缺带
+   `cause`：`insufficient` 实物不够 / `reserved_by_other_tasks` 被其他预留占着），全部是后者时任务在转
+   `running` 之前就停下，保持 `pending` 排队，不持有任何预留或资源；排队原因写在相关 attempt 的
+   `control_data.wait_reason`（`code=inventory_reserved_by_other_tasks`）。任务终结（预留释放 / 结算）或 5 秒
+   兜底重算时按任务创建先后重新提交，每次重试换新的预留命令身份；重启后待启动任务照常恢复、再次排队。
+   动作就绪时才预留的需求（以及重试、循环下一轮的重新预留）同理：被占着时 attempt 排队等释放，真缺料才开
+   `category="preflight"` 决策。
    任务的 `inventory_bindings` 在建任务时落到冻结计划里对应的 `content` 需求（换成绑定的容器与内容物），
    之后的预留、预检与恢复都按绑定的来源进行。
    需求来源有两处：画布节点 `meta_data.inventory_requirements`，或 `@workflow` 步骤的

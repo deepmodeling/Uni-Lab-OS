@@ -186,7 +186,8 @@ def build_run_preflight_report(
                     name = sources.get(identity, {}).get("name", identity)
                     shortage_messages.append(f"{name}：{key} " + (
                         f"缺少 {shortage['shortage']:g} {shortage['unit']}" if "shortage" in shortage else shortage["message"]
-                    ))
+                    ) + ("（实物够，被其他任务预留：提交后排队，释放后取用）"
+                         if shortage.get("cause") == "reserved_by_other_tasks" else ""))
                 check("inventory", "passed" if result["available"] else "blocked",
                       "inventory_ready" if result["available"] else "inventory_shortage",
                       "整任务当前库存足够" if result["available"] else "；".join(shortage_messages), details=result)

@@ -21,7 +21,7 @@ def seed(stack):
     return source, target
 
 
-def make_task(stack, executor, source, target, *, inventory=None):
+def make_task(stack, executor, source, target, *, inventory=None, dispatched=True):
     field = {
         "type": "object",
         "properties": {"uuid": {"type": "string"}},
@@ -77,7 +77,8 @@ def make_task(stack, executor, source, target, *, inventory=None):
         description=None,
         meta_data={},
     )
-    wait_for(lambda: len(executor.dispatched) == 1)
+    if dispatched:
+        wait_for(lambda: len(executor.dispatched) == 1)
     return scheduler, task
 
 

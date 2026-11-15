@@ -88,8 +88,10 @@ class MaterialExecutions:
             moved = {move.material_uuid for move in value.moves}
             for identity in site_ids:
                 site = service.get_site(identity)
-                if site is None or site.occupied_material_uuid and site.occupied_material_uuid not in moved:
+                if site is None:
                     raise MaterialConflictError("夹爪或搬运器库位不可用")
+                if site.occupied_material_uuid and site.occupied_material_uuid not in moved:
+                    raise MaterialConflictError("夹爪或搬运器库位正被其他物料占用", conflict="site_occupied")
                 material_ids.add(site.owner_material_uuid)
             for move in value.moves:
                 material_ids.update((move.material_uuid, move.target_owner_uuid))
@@ -111,7 +113,7 @@ class MaterialExecutions:
                     current.parent_material_uuid not in expected_parents
                     or self._site(move.material_uuid) != move.source_site_uuid
                 ):
-                    raise MaterialConflictError("搬运来源与权威库位不一致")
+                    raise MaterialConflictError("搬运来源与权威库位不一致", conflict="transfer_source_site_missing")
                 destination = service.get_site(move.target_site_uuid)
                 if (
                     destination is None

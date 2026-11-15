@@ -12,7 +12,15 @@ from .errors import StoreConflict
 
 
 class ResourceUnavailableError(ValueError):
-    """物料或库位的动态状态暂时不允许执行。"""
+    """物料或库位的动态状态暂时不允许执行。
+
+    ``wait_code`` 是会随其他作业 / 物料移动而解除的临时条件（如 ``site_occupied``）：派发时遇到它
+    attempt 继续排队（``scheduler/resource_wait_policy.py``）；为空则按失败处理。
+    """
+
+    def __init__(self, message: str, *, wait_code: str | None = None) -> None:
+        super().__init__(message)
+        self.wait_code = wait_code
 
 
 def deferred_parameters(plan: Mapping[str, Any], node: Mapping[str, Any]) -> list[str]:
@@ -279,4 +287,4 @@ def validate_resource_values(
             if site is None:
                 raise ValueError(f"库位参数 {name} 不属于所选容器或已失效")
             if not selector["allow_occupied"] and site.occupied_material_uuid not in {None, occupant.get("uuid")}:
-                raise ResourceUnavailableError(f"库位参数 {name} 已被其他物料占用")
+                raise ResourceUnavailableError(f"库位参数 {name} 已被其他物料占用", wait_code="site_occupied")

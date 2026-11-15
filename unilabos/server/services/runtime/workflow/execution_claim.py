@@ -130,6 +130,21 @@ class ExecutionClaims:
                 ResourceIntervals.require_admission(conn, request)
             return result
 
+    def withdraw_reserved(self, job_uuid: str) -> None:
+        """尚未派发的 Claim 退回：派发前遇到临时资源条件，attempt 回到排队、之后用同一身份重新申请。
+
+        只撤回 ``reserved`` 且没有封存派发记录的 Claim（动作一定没有交给执行面）；其他状态拒绝。
+        """
+        with self.store.transaction() as conn:
+            row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()
+            if row is None:
+                return
+            if row["state"] != "reserved" or conn.execute(
+                    "SELECT 1 FROM workflow_execution_dispatch WHERE job_uuid=?", (job_uuid,)).fetchone():
+                raise StoreConflict("已派发或待核实的资源声明不能撤回")
+            conn.execute("DELETE FROM workflow_execution_lease WHERE claim_uuid=?", (row["claim_uuid"],))
+            conn.execute("DELETE FROM workflow_execution_claim WHERE claim_uuid=?", (row["claim_uuid"],))
+
     def mark_dispatched(self, job_uuid: str) -> None:
         with self.store.transaction() as conn:
             row = conn.execute("SELECT * FROM workflow_execution_claim WHERE job_uuid=?", (job_uuid,)).fetchone()

@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from unilabos.protocol.material_execution import PhysicalMove, PhysicalAliquot
 from unilabos.protocol.runtime.resource_intervals import DeviceTenancyTransition
+from .resource_wait_policy import ResourceConditionWait
 
 
 def resolve_physical_contract(
@@ -53,7 +54,8 @@ def resolve_physical_contract(
     def location(identity):
         parent = aggregate(identity).material.parent_material_uuid
         if not parent:
-            raise ValueError("待搬运物料没有权威来源容器")
+            # 物料暂时不在任何库位（运输中、被取下）：等它回到库位，不算合同错误
+            raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有权威来源容器")
         # 台面型 Site 的物料直接挂在 Site 所属物料下；载架型 Site（仓库等）的物料挂在
         # 该 Site 的 holder 下，Site 属于 holder 的父物料
         for owner in (parent, aggregate(parent).material.parent_material_uuid):
@@ -65,18 +67,16 @@ def resolve_physical_contract(
                 return owner, matches[0].site_uuid
             if matches:
                 break
-        raise ValueError("待搬运物料没有唯一权威来源库位")
+        raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有唯一权威来源库位")
 
     def gripper(owners, role, material):
         matches = [
             (owner, item) for owner in owners for item in aggregate(owner).sites if item.meta_data.get("role") == role
         ]
-        if (
-            len(matches) != 1
-            or not matches[0][1].visible
-            or matches[0][1].occupied_material_uuid not in (None, material)
-        ):
+        if len(matches) != 1 or not matches[0][1].visible:
             raise ValueError("搬运器必须有唯一可用的夹爪库位角色")
+        if matches[0][1].occupied_material_uuid not in (None, material):
+            raise ResourceConditionWait("gripper_site_occupied", "搬运器的夹爪库位正被其他物料占用")
         reserved_sites.add(matches[0][1].site_uuid)
         for owner in owners:
             owner_device(owner)
@@ -111,7 +111,7 @@ def resolve_physical_contract(
                 or values.get(transfer.get("source_site_name_param")),
             )
             if (requested_owner, requested_site.site_uuid) != (source_owner, source_site):
-                raise ValueError("声明的搬运来源与权威库位不一致")
+                raise ResourceConditionWait("transfer_source_site_missing", "声明的搬运来源与权威库位不一致")
         executor = materials.get_material_by_resource_id(device_id)
         gripper([executor.material.material_uuid], transfer["gripper_site_role"], identity)
         owner_device(target_owner)
@@ -140,7 +140,7 @@ def resolve_physical_contract(
             raise ValueError("分步搬运的夹爪必须归属于设备，才能跨动作托管")
         if step["operation"] == "pick":
             if (source_owner, source_site) != (end_owner, end_site.site_uuid):
-                raise ValueError("抓取来源与权威库位不一致")
+                raise ResourceConditionWait("transfer_source_site_missing", "抓取来源与权威库位不一致")
             target_owner, target_site = carrier, grip.site_uuid
             tenancy = DeviceTenancyTransition(material_uuid=identity, acquire_device_id=carrier_device)
         else:

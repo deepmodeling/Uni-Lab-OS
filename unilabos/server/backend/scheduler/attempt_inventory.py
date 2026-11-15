@@ -1,4 +1,4 @@
-"""派发前冻结库存来源；库存库提交应答丢失后仍按同一 attempt 恢复。"""
+"""派发前冻结库存来源与排队原因；库存库提交应答丢失后仍按同一 attempt 恢复。"""
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -41,5 +41,33 @@ def inventory_wait(workflow: Any, epoch: str, job_uuid: str, reason: str | None,
             data["inventory_wait"] = reason
         else:
             data.pop("inventory_wait", None)
+        conn.execute("UPDATE workflow_node_job SET control_data=? WHERE uuid=?",
+                     (encode_json(data).decode("utf-8"), job_uuid))
+
+
+def attempt_wait(workflow: Any, epoch: str, job_uuid: str, reason: dict[str, Any] | None) -> None:
+    """记录 / 清除未派发 attempt 为什么还在排队（``control_data.wait_reason``，V1 作业 ``wait_reason``）。
+
+    ``reason`` 为 ``{"code", "message"}``；同一码重复登记保留最初的 ``waiting_since``。attempt 已不是
+    当前的未派发尝试时不改。
+    """
+    from unilabos.server.services.runtime.workflow.store import utc_now
+
+    with workflow.transaction() as conn:
+        ExecutionClaims._require_epoch(conn, epoch)
+        row = ExecutionClaims._job(conn, job_uuid)
+        if row["status"] != "pending" or row["current_job_uuid"] != job_uuid:
+            return
+        data = decode_json_bytes(row["control_data"].encode("utf-8"))
+        previous = data.get("wait_reason") or {}
+        if reason is None:
+            if not previous:
+                return
+            data.pop("wait_reason", None)
+        else:
+            if previous.get("code") == reason["code"] and previous.get("message") == reason["message"]:
+                return
+            since = previous.get("waiting_since") if previous.get("code") == reason["code"] else None
+            data["wait_reason"] = {**reason, "waiting_since": since or utc_now()}
         conn.execute("UPDATE workflow_node_job SET control_data=? WHERE uuid=?",
                      (encode_json(data).decode("utf-8"), job_uuid))

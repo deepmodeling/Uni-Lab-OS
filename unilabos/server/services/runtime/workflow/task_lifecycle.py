@@ -629,7 +629,8 @@ def enrich_jobs(service: Any, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]
         enriched["attempt"] = job["attempt_no"]
         enriched["start_state"] = "START_COMMITTED" if job.get("started_at") else "NOT_STARTED"
         enriched.setdefault("execution_source", str((job.get("control_data") or {}).get("execution_source") or "workflow"))
-        enriched.setdefault("wait_reason", {})
+        # 未派发 attempt 为什么还在排队（临时资源条件 / 库存被他任务占用 / 在途容量），调度器记在 control_data
+        enriched.setdefault("wait_reason", dict((job.get("control_data") or {}).get("wait_reason") or {}))
         enriched.setdefault("expected_change_set", {})
         confirmation = confirmations.get(str(job["uuid"]))
         if confirmation is not None:

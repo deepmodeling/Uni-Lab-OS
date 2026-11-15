@@ -232,6 +232,17 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 
 一个 Job 不会只持有部分锁；等待顺序由持久准入决定（5.0）。
 
+**临时资源条件只排队、不失败**（V1 `resource_wait_policy`，`scheduler/resource_wait_policy.py`）：解析动作参数与
+物理合同时（SiteSelector 的目标库位被占、搬运来源暂时不在库位、夹爪库位有物），或物料权威准备物理动作时
+（`prepare_material_execution` 发现目标库位刚被占、另一作业的物理动作尚未结算），attempt 不记 `dispatch_not_sent`，
+而是撤回已取得的 Claim、区间准入与内存锁，回到等待集合，下一次资源变化（任一作业释放资源、5 秒兜底重算）时
+按首次排队先后重试；排队原因写在 attempt 的 `control_data.wait_reason`（`{code, message, waiting_since}`，作业
+投影的 `wait_reason`），attempt 一直是 `pending`，重启后重建计划时再判一次。条件码与 V1 相同：`site_occupied`、
+`gripper_site_occupied`、`transfer_source_site_missing`、`site_claimed`（物料权威冲突类别 `active_claim`）、
+`site_ingress_reserved`、`site_group_unavailable`、`operate_in_place_site_*`。合同错误（库位不属于所选容器、
+夹爪角色缺失或重复、参数不符合 Schema、未知冲突）照常失败。这类等待者不持有资源，也不算在等设备：同一任务里
+要同一台设备的兄弟节点不为它让行（腾出库位的可能正是兄弟节点）。
+
 ### 5.0 持久准入与等待顺序
 
 准入以设备（`/devices/<id>`）和物料为键，同一事务里取得完整区间集合与实际使用权。资源被别的任务持有

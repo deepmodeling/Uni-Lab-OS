@@ -19,7 +19,7 @@
 | D04 / D06 | 按设计消解 / 已配置 | 不变 | |
 | D05 | 按设计消解 | 不变 | 0.13 未发布，四个库都仍是 v1 基线（等待顺序、预计时长等结构变化直接并进 v1）；发布后加迁移时只认已发布版本的结构指纹 |
 | M01 | Dev 已有 | 已有 | |
-| M02 | 部分基础 | 已实现 | 显式作用域 `ctx.resource_scope`、空闲借出与归还（`resource_loans.py`）、持久区间准入与老化优先级排队（SC-N4）；`test_workflow_resource_custody.py`、`test_workflow_resource_intervals.py`、`test_resource_admission_order.py` |
+| M02 | 部分基础 | 已实现 | 显式作用域 `ctx.resource_scope`、空闲借出与归还（`resource_loans.py`）、持久区间准入与老化优先级排队（SC-N4）；目标库位被占、夹爪忙、来源暂不在库位等临时资源条件让 attempt 撤回占用继续排队、资源变化时重试，不再记 `dispatch_not_sent` 失败（V1 `resource_wait_policy`，`test_resource_condition_wait.py`）；`test_workflow_resource_custody.py`、`test_workflow_resource_intervals.py`、`test_resource_admission_order.py` |
 | W01 | 不支持 | 已实现 | `with ctx.lock("reactor"):` 是 `ctx.resource_scope` 的简写，编译结果逐项相同（`tests/registry/test_workflow_lock_sugar.py`、`test_cross_loop_resource_scopes.py::test_lock_sugar_holds_one_interval_across_real_loop_rounds`）；按用户决定 `@workflow` 的 `display_name` 保持必填 |
 | W02 | 未接通 | 已实现 | 工作流只按源码静态编译（builder 模式已按用户决定移除），支持按动作结果的 if/elif/else，辅助函数编译前按源码展开 |
 | W03 | 作者接口没有 | 已实现 | `with ctx.parallel():` + `ctx.group`（与 V1 写法一致） |

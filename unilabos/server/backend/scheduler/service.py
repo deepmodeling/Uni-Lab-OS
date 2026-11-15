@@ -70,6 +70,7 @@ from unilabos.server.backend.scheduler.resource_manager import (
     ResourceNotFound,
     SchedulerResourceManager,
 )
+from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 logger = logging.getLogger(__name__)
@@ -318,6 +319,10 @@ class BackendScheduler:
         self._interval_retry_again = False
         # 区间准入未通过时的完整资源申请，仅供 /scheduler/resources 观测排队与阻塞者。
         self._waiting_interval_requests: Dict[str, SchedulerResourceRequest] = {}
+        # 因临时条件（目标库位被占、夹爪忙、来源暂不在库位……）排队的 attempt -> 条件码。它们同在
+        # _waiting_interval_jobs 里按首次排队先后重试，但不持有任何资源，也不算在等设备（同任务的
+        # 兄弟节点不为它让行：腾出库位的可能正是兄弟节点）。
+        self._condition_waits: Dict[str, str] = {}
         self._dispatched_jobs: set[str] = set()
         # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
         self._manual_confirmation_jobs: set[str] = set()
@@ -605,6 +610,7 @@ class BackendScheduler:
                         self._waiting_resource_jobs.pop(job_uuid, None)
                         self._waiting_interval_jobs.pop(job_uuid, None)
                         self._waiting_interval_since.pop(job_uuid, None)
+                        self._condition_waits.pop(job_uuid, None)
                         self._dispatched_jobs.discard(job_uuid)
                         self._manual_confirmation_jobs.discard(job_uuid)
                 for decision_id, pending in list(self._reconciliation_decisions.items()):
@@ -999,43 +1005,52 @@ class BackendScheduler:
                 # 动作执行前预检报错：挂起等处置（补料后重试 / 放弃），不静默等待补料
                 self._open_preflight_decision(task, node, spec, [shortage.error_item()])
                 return
-        args = self._resolve_action_args(node.node_id)
-        # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
-        # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
-        args.update(spec.get("inventory_allocations") or {})
-        from unilabos.registry.typed_contract import validate_action_values
-
-        args = validate_action_values(spec.get("param_schema"), args, managed_resources=True)
-        if spec.get("param_schema"):
-            from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
-
-            validate_resource_values(spec["param_schema"], args, self.materials_gateway)
-        parameter_names = self._material_lock_parameters(
-            node.device_id,
-            node.action,
-        )
-        material_uuids = set(
-            material_uuids_for_parameters(parameter_names, args)
-        )
-        material_uuids.update(spec.get("reserved_material_uuids") or ())
-        from .physical_contract import resolve_physical_contract
-        physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
-        material_uuids.update(physical.get("material_ids", []))
-        spec["physical_contract"] = physical
-        spec["resolved_action_args"] = args
-        spec["materials_need_lock"] = parameter_names
-        spec["always_free"] = self._action_always_free(node, spec)
         job_uuid = spec["current_job_uuid"]
-        # 资源申请以当前 attempt 为 owner：acquire 对同一 owner 幂等重放，重试
-        # 的新 attempt 必须是新的申请才能重新排队获取。
-        from .tenancy_contract import resolve_tenancy_contract
-        tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
-        if physical:
-            tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
-            if physical.get("device_tenancy"):
-                if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
-                    raise ValueError("搬运托管与显式设备托管合同不一致")
-                tenancy["device_tenancy"] = physical["device_tenancy"]
+        try:
+            args = self._resolve_action_args(node.node_id)
+            # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
+            # （物料 uuid / lot 与数量）按需求 key 注入同名动作参数，设备拿到的已是具体引用。
+            args.update(spec.get("inventory_allocations") or {})
+            from unilabos.registry.typed_contract import validate_action_values
+
+            args = validate_action_values(spec.get("param_schema"), args, managed_resources=True)
+            if spec.get("param_schema"):
+                from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+                validate_resource_values(spec["param_schema"], args, self.materials_gateway)
+            parameter_names = self._material_lock_parameters(
+                node.device_id,
+                node.action,
+            )
+            material_uuids = set(
+                material_uuids_for_parameters(parameter_names, args)
+            )
+            material_uuids.update(spec.get("reserved_material_uuids") or ())
+            from .physical_contract import resolve_physical_contract
+            physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+            material_uuids.update(physical.get("material_ids", []))
+            spec["physical_contract"] = physical
+            spec["resolved_action_args"] = args
+            spec["materials_need_lock"] = parameter_names
+            spec["always_free"] = self._action_always_free(node, spec)
+            # 资源申请以当前 attempt 为 owner：acquire 对同一 owner 幂等重放，重试
+            # 的新 attempt 必须是新的申请才能重新排队获取。
+            from .tenancy_contract import resolve_tenancy_contract
+            tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+            if physical:
+                tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
+                if physical.get("device_tenancy"):
+                    if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
+                        raise ValueError("搬运托管与显式设备托管合同不一致")
+                    tenancy["device_tenancy"] = physical["device_tenancy"]
+        except Exception as error:
+            # 目标库位被占、夹爪忙、来源暂不在库位……是临时条件：继续排队，资源变化时重试
+            code = temporary_resource_condition(error)
+            if code is None:
+                raise
+            self._wait_for_condition(task, node, job_uuid, code, str(error))
+            return
+        self._clear_condition_wait(job_uuid)
         if self._physical_recovery.blockers(job_uuid, material_uuids, {node.device_id, *tenancy.get("device_claims", [])}):
             with self._guard:
                 self._wait_for_interval(job_uuid, task, node)
@@ -1182,6 +1197,8 @@ class BackendScheduler:
             for other, (other_task, other_node) in self._waiting_interval_jobs.items():
                 if other == job_uuid or str(other_task["uuid"]) != task_uuid or other_node.device_id != node.device_id:
                     continue
+                if other in self._condition_waits:
+                    continue
                 if (self._run_specs.get(other_node.node_id) or {}).get("always_free"):
                     continue
                 since = self._waiting_interval_since.get(other)
@@ -1193,6 +1210,51 @@ class BackendScheduler:
         """登记一个等资源区间的 attempt（调用方持有 ``self._guard``），保留它第一次登记的先后。"""
         self._waiting_interval_jobs[job_uuid] = (task, node)
         self._waiting_interval_since.setdefault(job_uuid, next(self._waiting_interval_counter))
+
+    def _wait_for_condition(self, task: Dict[str, Any], node: DagNode, job_uuid: str, code: str, message: str) -> None:
+        """attempt 因临时条件继续排队：不持有任何资源，和等区间的 attempt 一起在下一次资源变化时按先后重试。
+
+        排队原因持久记在 attempt 的 ``control_data.wait_reason``（作业投影的 ``wait_reason``）；attempt 仍是
+        ``pending``，重启后重建计划时再判一次，条件仍在就继续等。
+        """
+        with self._guard:
+            first = self._condition_waits.get(job_uuid) != code
+            self._condition_waits[job_uuid] = code
+            self._wait_for_interval(job_uuid, task, node)
+        if first:
+            logger.info("作业 %s 等待资源条件 %s：%s", job_uuid, code, message)
+        try:
+            from .attempt_inventory import attempt_wait
+            attempt_wait(self.workflow, self._authority_epoch, job_uuid, {"code": code, "message": message})
+        except Exception:  # noqa: BLE001 - 排队原因只是观测，写失败不影响排队本身
+            logger.warning("作业 %s 的排队原因写入失败", job_uuid, exc_info=True)
+
+    def _clear_condition_wait(self, job_uuid: str) -> None:
+        with self._guard:
+            waited = self._condition_waits.pop(job_uuid, None)
+        if waited is None:
+            return
+        try:
+            from .attempt_inventory import attempt_wait
+            attempt_wait(self.workflow, self._authority_epoch, job_uuid, None)
+        except Exception:  # noqa: BLE001 - 同上
+            logger.warning("作业 %s 的排队原因清除失败", job_uuid, exc_info=True)
+
+    def _withdraw_undispatched(self, job_uuid: str) -> bool:
+        """撤回一个尚未交给执行面的 attempt 的全部占用（Claim、区间准入、内存锁），供它回到排队。"""
+        from unilabos.server.services.runtime.workflow.errors import StoreConflict
+
+        try:
+            self._execution_claims.withdraw_reserved(job_uuid)
+        except StoreConflict:
+            return False
+        if not self.resources.withdraw(job_uuid, reason="resource_condition"):
+            return False
+        self._intervals.withdraw(job_uuid)
+        with self._guard:
+            self._dispatched_jobs.discard(job_uuid)
+            self._waiting_resource_jobs.pop(job_uuid, None)
+        return True
 
     def _dispatch_held_node(self, task: Dict[str, Any], node: DagNode) -> None:
         """下发一个已经持有完整动作/物料集合的节点运行（当前 attempt）。"""
@@ -1328,6 +1390,13 @@ class BackendScheduler:
                 self._reconcile_lost_attempt(job_uuid, {"uncertainty_reason": f"派发回执不确定：{error}"})
                 logger.exception("作业 %s 派发回执不确定，已保留资源并请求核实", job_uuid)
                 return
+            code = temporary_resource_condition(error)
+            if code is not None and self._withdraw_undispatched(job_uuid):
+                # 物料权威准备物理动作时发现临时条件（目标库位刚被占、夹爪库位有物、另一作业的物理动作
+                # 尚未结算）：动作没交给执行面，撤回全部占用回到排队，不记失败
+                self._wait_for_condition(task, node, job_uuid, code, str(error))
+                self._dispatch_promoted()
+                return
             self.workflow.record_workflow_node_job_terminal(
                 job_uuid, status="failed", return_info={},
                 error_info=[{"code": "dispatch_not_sent", "message": str(error)}],
@@ -1358,6 +1427,12 @@ class BackendScheduler:
             if ("legacy_execution_reconciliation" in self._dispatch_pause_reasons
                     and not self._execution_claims.unclaimed_active_jobs()):
                 self._dispatch_pause_reasons.discard("legacy_execution_reconciliation")
+        self._dispatch_promoted()
+
+    def _dispatch_promoted(self) -> None:
+        """下发资源队列里已经获得完整资源（``held``）的 attempt。"""
+
+        with self._guard:
             candidates = list(self._waiting_resource_jobs.items())
         for job_uuid, (task, node) in candidates:
             try:
@@ -1578,6 +1653,7 @@ class BackendScheduler:
                                 if str(task["uuid"]) == task_uuid]
             for job, _node in interval_waiters:
                 self._waiting_interval_jobs.pop(job, None)
+                self._condition_waits.pop(job, None)
             manual_jobs = [
                 job_uuid
                 for job_uuid in self._manual_confirmation_jobs

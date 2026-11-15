@@ -539,6 +539,8 @@ class ResourceContract:
                 raise MaterialNotFoundError(f"site not found: {site_uuid}", subject="site")
             if site.occupied_material_uuid is not None:
                 raise MaterialConflictError("site is occupied", conflict="site_occupied")
+            # 与移动同一组放入检查，但在建物料之前做：不留下建了又删的物料与账本
+            self.materials.assert_site_accepts(site, template_uuid=template_uuid, template_name=template.name)
         barcode = str(values.get("barcode") or "")
         if barcode and self.find_by_barcode(barcode):
             raise MaterialConflictError(

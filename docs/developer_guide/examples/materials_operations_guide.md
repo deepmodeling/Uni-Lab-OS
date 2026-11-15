@@ -113,6 +113,13 @@ ensured = materials.ensure(deck)
 报错——权威不支持给既有物料补 Site，需删除该设备物料后重启重建）；pose / 描述等定义
 字段以权威首次实例化时为准，注册表后续修改只告警。
 
+位点可以限定能放的物料模板：在 `available_sites` 的条目里写
+`allowed_resource_template_uuids=["plate_96", ...]`（模板名，即注册表资源 id；也可写模板 UUID，但
+UUID 由各 materials.db 分配，包里写模板名才可移植），空表示不限制。实例化后白名单在 Site 的
+`extra.allowed_resource_template_uuids` 里，任何放入（人工移动、V1 `site_placement`、transfer、工作流搬运、
+入站预留）遇到不在白名单的模板都报 `site_template`（6008）。白名单与 pose 一样以首次实例化为准：改了包里的
+白名单，要删除该设备物料后重启重建才会生效。`allowed_resource_categories` 仍只是前端筛选提示，不做校验。
+
 ### 2.2.1 变更来源（`actor_type` / `actor_uuid`）
 
 每条物料变更都以 `InventoryMutation.actor_type` / `actor_uuid` 落进账本

@@ -26,10 +26,11 @@ from unilabos.resources.resource_tracker import (
     ResourceTreeSet,
 )
 from unilabos.resources.objects.site import (
-    SITE_DEFINITION_FIELDS,
     ResourceSite,
     SiteDefinition,
     normalize_available_sites,
+    site_definition_extra,
+    site_instance_definition,
     validate_instantiated_sites,
 )
 from unilabos.utils import logger
@@ -127,7 +128,7 @@ def _site_create_payload(
         "parent_link": site["parent_link"],
         "description": site["description"],
         "meta_data": site["meta_data"],
-        "extra": {},
+        "extra": site_definition_extra(site),
     }
 
 
@@ -269,9 +270,7 @@ def _adopt_authority_children(device_config: ResourceDictInstance, tree_read: An
 
 
 def _definition_of(site: Mapping[str, Any]) -> Dict[str, Any]:
-    return SiteDefinition.model_validate(
-        {key: site[key] for key in SITE_DEFINITION_FIELDS if key in site}
-    ).model_dump()
+    return site_instance_definition(site)
 
 
 def _check_authority_sites(

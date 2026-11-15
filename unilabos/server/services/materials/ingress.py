@@ -101,7 +101,8 @@ class IngressReservations:
                 if replay["request_hash"] != request_hash:
                     raise MaterialConflictError("入口预留幂等键已用于不同请求", conflict="state")
                 return self._projection(replay), False
-            if MaterialsRepository.get_material(self.materials, carrier) is None:
+            carrier_record = MaterialsRepository.get_material(self.materials, carrier)
+            if carrier_record is None:
                 raise MaterialNotFoundError("可搬运载体尚未同步到目标工站", subject="material")
             # 同一载体同时只能去一个入口库位（到期的 reserved 已在上面置为 expired）
             held = self.connection.execute(
@@ -136,6 +137,18 @@ class IngressReservations:
             ).fetchall()
             if not available:
                 raise MaterialConflictError("逻辑入口当前没有可接收载体的库位", conflict="site_occupied")
+            # 只预留接受载体模板的库位，免得载体到站后 receive 才因库位白名单（6008）失败
+            accepting = [
+                row for row in available if self.materials.site_accepts_template(
+                    self.materials.get_site(row[0]),
+                    template_uuid=carrier_record.template_uuid, template_name=carrier_record.template_name,
+                )
+            ]
+            if not accepting:
+                raise MaterialConflictError(
+                    f"逻辑入口的空库位都不接受载体模板 {carrier_record.template_name}", conflict="site_template"
+                )
+            available = accepting
             reservation_uuid = str(uuid4())
             self.connection.execute(
                 "INSERT INTO station_ingress_reservation(reservation_uuid, idempotency_key, request_hash, "

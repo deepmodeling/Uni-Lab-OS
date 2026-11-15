@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from unilabos.protocol.base import canonical_hash
-from unilabos.resources.objects.site import normalize_available_sites
+from unilabos.resources.objects.site import SITE_TEMPLATE_WHITELIST_KEY, normalize_available_sites
 from unilabos.server.services.materials.store import MaterialsRepository
 from unilabos.server.database.tables.materials import (
     LabGraphRecord,
@@ -86,6 +86,16 @@ def _is_plr_flat_site(site: Mapping[str, Any]) -> bool:
     return not any(
         key in site for key in ("schema_version", "uuid", "material_uuid", "template_name")
     )
+
+
+def _extra_with_whitelist(site: Mapping[str, Any]) -> dict[str, Any]:
+    """实例 Site 没有顶层准入白名单字段：定义 / 图里写在顶层的白名单并入 ``extra``。"""
+
+    extra = dict(site.get("extra") or {})
+    allowed = site.get(SITE_TEMPLATE_WHITELIST_KEY)
+    if allowed:
+        extra[SITE_TEMPLATE_WHITELIST_KEY] = list(allowed)
+    return extra
 
 
 def _canonicalize_site(
@@ -152,11 +162,14 @@ def _canonicalize_site(
             "parent_link": str(site.get("parent_link") or label),
             "description": str(site.get("description") or ""),
             "meta_data": dict(site.get("meta_data") or {}),
-            "extra": dict(site.get("extra") or {}),
+            "extra": _extra_with_whitelist(site),
         }
         return canonical
 
     canonical = copy.deepcopy(dict(site))
+    if SITE_TEMPLATE_WHITELIST_KEY in canonical:
+        canonical["extra"] = _extra_with_whitelist(canonical)
+        canonical.pop(SITE_TEMPLATE_WHITELIST_KEY)
     canonical.setdefault("schema_version", 1)
     canonical["uuid"] = site_uuid
     canonical["material_uuid"] = str(canonical.get("material_uuid") or "").strip() or node_uuid

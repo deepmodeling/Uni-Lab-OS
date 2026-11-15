@@ -28,11 +28,15 @@
 | class_name / ResourceDict.klass（JSON alias 为 class） | 当前模型仍存在的字段；不能当作 config.type 的兜底 |
 | category | `ResourceTemplateWrite.category: list[str]`；不是所有 MaterialIdentity 都有同名字段 |
 | allowed_resource_categories | Site 的前端匹配提示；不是 allowed_resource_template_uuids 白名单 |
+| allowed_resource_template_uuids | Site 的模板白名单（模板 UUID 或模板名），在 Site `extra` 里；非空时放入其他模板报 6008 |
 
 因此本版不能宣称已经彻底删除 `klass`/`class_name`；已落实的是 **PLR 不从外层 type/class 猜实现类**。
 构造自定义 PLR 资源前应加载相应包/注册表，缺失或无法解析 `config.type` 必须修复定义，不能静默改成 Resource。
 Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子关系、位点存在性与占用冲突，
-“不强制 category”不等于“不检查位置一致性”。
+“不强制 category”不等于“不检查位置一致性”。模板白名单由权威强制：放入时按物料模板 UUID 或模板名
+匹配（不区分大小写），不匹配报 `site_template`（6008）；物料占用自己的 Site 报 `site_cycle`（6009），
+放进自己后代的 Site 或挂到后代下报 `parent_cycle`（6004）。初始建树（`POST /trees`、开机图）不按白名单
+拦截，与 V1 一致。
 
 ## 创建：草稿不是已登记物料
 

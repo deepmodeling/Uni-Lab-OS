@@ -71,6 +71,7 @@ from unilabos.protocol.materials import (
     SiteRead,
     snapshot_retirable,
 )
+from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
     data_semantic,
@@ -3004,6 +3005,43 @@ class MaterialsService(MaterialsRepository):
             repaired.append(material_uuid)
         return repaired
 
+    def assert_site_accepts(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
+        """一件该模板的物料能否放进空库位：模板白名单（``site_template``，6008）与活动入口预留。"""
+
+        self._assert_site_template_allowed(site, template_uuid=template_uuid, template_name=template_name)
+        self._assert_site_not_ingress_reserved(site)
+
+    @staticmethod
+    def site_accepts_template(site: SiteRecord, *, template_uuid: str, template_name: str) -> bool:
+        """库位白名单（``extra.allowed_resource_template_uuids``）按模板 UUID 或模板名匹配；空表示不限制。"""
+
+        keys = {item.casefold() for item in site_template_whitelist(site.extra_json)}
+        return not keys or template_uuid.casefold() in keys or template_name.casefold() in keys
+
+    def _assert_site_template_allowed(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
+        if not self.site_accepts_template(site, template_uuid=template_uuid, template_name=template_name):
+            allowed = site_template_whitelist(site.extra_json)
+            raise MaterialConflictError(
+                f"库位 {site.label}（{site.site_uuid}）只接受资源模板 {', '.join(allowed)}，"
+                f"不接受 {template_name}（{template_uuid}）",
+                conflict="site_template",
+            )
+
+    def _assert_no_parent_cycle(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
+        """新父物料不能是物料自己或它的后代（V1 6004）；库位所属物料是新父物料时同样适用。"""
+
+        cursor, seen = parent_uuid, set()
+        while cursor is not None and cursor not in seen:
+            if cursor == material_uuid:
+                raise MaterialConflictError(
+                    f"物料 {material_uuid} 不能挂到自己或自己的后代 {parent_uuid} 下", conflict="parent_cycle"
+                )
+            seen.add(cursor)
+            row = self.connection.execute(
+                "SELECT parent_material_uuid FROM material WHERE material_uuid=?", (cursor,)
+            ).fetchone()
+            cursor = row[0] if row is not None else None
+
     def _assert_site_not_ingress_reserved(self, site: SiteRecord) -> None:
         """活动入口预留（reserved 未过期 / in_transit）期间库位不接受任何放入。
 
@@ -3044,6 +3082,15 @@ class MaterialsService(MaterialsRepository):
             raise MaterialNotFoundError(
                 f"site not found: {value.destination_site_uuid}", subject="site"
             )
+        placing = destination is not None and destination.occupied_material_uuid != value.material_uuid
+        if placing and destination.owner_material_uuid == value.material_uuid:
+            raise MaterialConflictError(
+                f"物料 {value.material_uuid} 不能占用自己的库位 {destination.label}", conflict="site_cycle"
+            )
+        if placing:
+            self._assert_site_template_allowed(
+                destination, template_uuid=material.template_uuid, template_name=material.template_name
+            )
         # 载架型 Site 的物料挂在该 Site 的 holder 下（与本地整树 create 同形）；
         # 其它 Site 挂在 Site 所属物料下
         parent_uuid = (
@@ -3069,8 +3116,9 @@ class MaterialsService(MaterialsRepository):
             value.material_uuid,
         ):
             raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
-        if destination is not None and destination.occupied_material_uuid is None:
+        if placing:
             self._assert_site_not_ingress_reserved(destination)
+        self._assert_no_parent_cycle(value.material_uuid, parent_uuid)
         same_site = (
             source is not None
             and destination is not None

@@ -118,7 +118,7 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - 物料服务异常显式携带业务含义，不再按消息文字判断（p7-c 起）：`MaterialNotFoundError(msg, subject=...)`，
   `subject` 为 `material` / `site` / `template` / `parent` / `resource_template` 时分别为 6000 / 6006 / 6001 / 6003 / 5000，
   其余（`lot`、`reservation`、未给）为 4001；`MaterialConflictError(msg, conflict=...)`，`conflict` 为
-  `site_occupied` 6007、`identity` 6010、`active_claim` 6011、`site_ingress_reserved` 6011、`template_immutable` 6002、`parent_cycle` 6004、
+  `site_occupied` 6007、`identity` 6010、`active_claim` 6011、`site_ingress_reserved` 6011、`template_immutable` 6002、`parent_cycle` 6004、`site_template` 6008、`site_cycle` 6009、
   `database` 2005、`template_data` 5004、`state` 3003，未给为 4002。映射表在 `envelope.py`，幂等拒绝重放时
   `subject` / `conflict` 随拒绝码（如 `not_found:material`）一起还原。
 - 化学品（V1 的试剂信息）与设备图按资源口径：不存在 4001、冲突 4002。

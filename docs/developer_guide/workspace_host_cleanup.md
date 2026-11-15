@@ -9,7 +9,7 @@
 1. **架构方向已确定**：使用 Dev 主进程持有 Scheduler / Workflow / Registry / Materials，监督执行进程；设备包和 slave 沿用 Dev。无需再引入一个外层 Workspace Host 来启动和监督 backend。
 2. **已有代码但尚未合并完**：库存增量、预检、严格动作合同在 #358 候选中。上一轮核验的容量/资源快照回归仍是未关闭项；不能当作全部移植完成。
 3. **明确的功能缺口**：action 返回值 if/else、资源空闲借出/独占区间、parallel 作者语法、预计时长、高级资源结算与开始许可。它们不由删除 Workspace Host 自动解决。
-4. **接入与验收**：正式前端已有 API 不兼容清单；device status、苏州工站 Markdown 测试继续保留 TODO。React 调试站已在本地 review 分支移除，尚未应用到主工作区 Dev。
+4. **接入与验收**：正式前端已有 API 不兼容清单；device status、工站 Markdown 测试继续保留 TODO。React 调试站已在本地 review 分支移除，尚未应用到主工作区 Dev。
 
 ## Workspace Host 到底装了什么
 

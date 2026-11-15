@@ -36,7 +36,7 @@
 | R02 | 未完全等同 | 基本完成 | 持久 claim / lease、硬超时保锁（ADR 0008）、重启恢复与人工裁决；容器内物质预留的恢复随 I02 补 |
 | R03 | 无 | 已实现 | 调度容量（U01 汇总 C12）按 V1 默认值：全局在途作业 100、全局运行任务 500、每工作流运行任务 100（`BasicConfig.scheduler_max_*`），超出的任务保持 `pending`、作业带 `job_dispatch_capacity` 排队，按先后放行，不失败（`test_scheduler_capacity.py`） |
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
-| T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 苏州工站测试材料 |
+| T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 工站测试材料 |
 | U01 | 待逐项核验 | 已核验 | 492 个 V1 源文件逐个对照，见 [`v1_file_index/`](v1_file_index/README.md)；找出的缺口与处理结论列在其 README「缺口处理」 |
 | F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings`（建任务时落到冻结计划里对应的 `kind="content"` 需求，决定实际预留哪份试剂 / 当前内容物，对不上声明需求即拒绝；`tests/server/test_task_inventory_bindings.py`） / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `material_io` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
 | F08 | Center 分流 | 不变 | Center / project / experiment 路由不属于 OS 本地 backend |
@@ -124,7 +124,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | R02 持久 Claim/Lease 与恢复 | 基本完成（11-14 复核） | 保留 Dev 的未知执行和人工裁决；围绕 R01/M02/A03/I03 设计持久事实和迁移，补 Host/权威重启与重放回归。 |
 | C01 #358 合并 | 已消解：内容已并入 #361（11-14 复核） | 保留原资源测试，按旧规格与显式容量声明区分校验；本轮 114 项回归通过。远端仍为 `0c940ded`、CI `42584235496` 未更新，不能按本地结果宣称合并完成。 |
 | T01 device status | TODO，按用户要求后续做 | 现有 telemetry / status_fields / device_state 不等于用户要求的新设备状态合同；本轮不实现。 |
-| T02 苏州工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖主 runtime 下多 slave、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
+| T02 工站 Markdown 测试 | TODO，等待用户提供 | 收到测试 Markdown、工站包和预期后，覆盖主 runtime 下多 slave、共享/独占锁、if、parallel、预计时长、正式 FE 的整链路场景。 |
 | U01 其他文件差异 | 已逐项核验 | 逐文件结论（已移植 / 部分 / 缺失 / 有意不移植 / 不涉及）见 [`v1_file_index/`](v1_file_index/README.md)；目录迁移、文档、生成物、测试和驱动差异不按行数判定为缺失能力。 |
 
 ## 锁的统一语义
@@ -169,7 +169,7 @@ def inspect_flow(ctx):
 | F06 动作与作者目录 | core client 引用了 `/devices`、`/authoring/device-catalog`、`/workflow-node-templates`、`/device-action-runs`；Dev API 组织不同。 | 对接 registry 与设备单点 Task 接口，保留正式前端领域端口；逐条验收 Schema/权限。 |
 | F07 控制与观测扩展 | presentations、execution-locks、人工确认、干预等部分 FE 路径无直接 Dev 对应；动态 URL 尚需进一步展开。 | 区分可以投影的既有 Dev 事实和真正缺少的后端能力，不创建第二个前端事实权威。 |
 | F08 Center 与工站边界 | core 同时包含 center/project/experiment 等接口，不都属于 OS 本地 backend。 | 按真实路由归属标为 Center 独立能力，不把所有未命中都列成 Dev 欠账。 |
-| F09 浏览器与苏州联调 | 尚未执行 | 前述协议适配后再跑真实页面和 T02；本轮 531 个 mock/领域测试不能替代联调。 |
+| F09 浏览器与工站联调 | 尚未执行 | 前述协议适配后再跑真实页面和 T02；本轮 531 个 mock/领域测试不能替代联调。 |
 
 静态扫描范围是 `packages/core/src/domain` 的显式 method+url 请求对象：106 处请求、102 个去重操作，14 个在 Dev 候选 OpenAPI 存在、88 个未命中，另有 29 处动态 URL/方法未解析。这是用于定位的扫描结果，既不是“只有 14 个 API 可用”，也不是“Dev 缺 88 个必做功能”；存在的路由仍可能有 DTO 不兼容，Center 路由需要 F08 分流。逐条结果和源码行号在 patch 包 `evidence/frontend-routes.json`。
 

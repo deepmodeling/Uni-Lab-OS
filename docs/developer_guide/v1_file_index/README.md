@@ -37,7 +37,7 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
 5. **开源树没有时间规划引擎（CP-SAT）**：`/scheduler/time-plan` 返回 `{enabled:false}`，时间线用实测平均时长 + 动作声明的预计时长（A01）。
 6. **运行时补料分支不做**（`material_source(supports_replenishment=True)` + `sufficient` 分支）：缺料是预检报错——任务启动时整任务预留不足直接失败；
    节点就绪时才预留的需求不足则开 `category="preflight"` 决策（重试 / 跳过 / 人工替换为成功 / 放弃），补料后重试。
-   `material_io` 人工装入 / 取走 / 补量节点后来决定补上，作为作者显式写出的独立一步（见下面「缺口处理」）。
+   `material_io` 人工装入 / 取走 / 补量节点后来决定补上，作为作者显式写出的独立一步（`ctx.material_io(...)`，见下面「需要确认的三点」）。
 7. **builder 模式删除**：工作流只按源码静态编译（`registry/workflow_ast.py` + `workflow_helpers.py`），与 V1 一样只认 if / with。
 8. **数据库**：四个库都是 v1 基线、没有迁移链（V1 的 store_migrations 之类归此）；结构不一致且无迁移路径时拒绝启动，提示重建。
 9. 与 V1 的已知有意差异（不算缺口）：发布后被编辑的工作流按发布指纹调用工站时拒绝（3003）且 dev 运行当前图；`resolve-uncertain` 后作业为
@@ -101,5 +101,5 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
 ### 需要确认的三点（已答）
 
 - 物料只是被别的任务占用（不是真缺）：**等待**。已补：*wait while inventory is only held by other tasks*。
-- `material_io`：作为后端本地执行的工作流节点补上（load / unload / refill，人工确认后改库存，不派发到 Host）。
+- `material_io`：作为后端本地执行的工作流节点补上（load / unload / refill，人工确认后一次物料事务改库存，不派发到 Host）。已补：*ctx.material_io declares a manual load / unload / refill step*、*a material.io command loads, unloads or refills in one transaction*、*run material_io steps on the authority after a manual confirmation*；写法与行为见 `workflow_static_conditions.md`、`scheduling_and_execution.md`。
 - 容器内容规则：见 E25，不改。

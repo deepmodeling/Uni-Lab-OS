@@ -13,6 +13,13 @@ V1 的节点模板来自设备注册表的模板投影（每个设备类 × 动�
 
 模板节点的 ``node_type`` 默认 ``ILab``（dev 执行计划按别名归一为 ``device_action``），
 因此 V1 控制台以模板创建的节点可以直接被 dev 调度执行。
+
+结构模板与 V1 ``registry/template_projection.py`` 同口径挂在宿主节点（``host_node``）的资源模板下，
+但按 dev 实际支持的结构节点生成：``condition``（``protocol/runtime/condition.py`` 的封闭表达式）、
+``loop``（``protocol/runtime/loop.py`` 的 for / while，取代 V1 的 ``repeat_until``）和只做展示分组的
+``group``（并行是分组的 ``meta_data.group_mode=parallel``，不是单独的节点类型）。参数合同放在
+``meta_data.unilab.parameter_schema`` 只作编辑提示，``schema`` 留空，真正的校验仍由保存整图时的
+结构校验完成；``goal_default`` 是能直接保存的最小参数，节点面板拖入后即可保存再改参数。
 """
 
 from __future__ import annotations
@@ -34,10 +41,16 @@ REGISTRY_TEMPLATE_AUTHORITY = "registry-template-projection"
 _DEFAULT_PAGE = 1
 _DEFAULT_PAGE_SIZE = 20
 _MAX_PAGE_SIZE = 100
-#: V1 列表默认可见的节点类型；显式 ``node_type`` 筛选可看到其它类型（如已发布工作流 ``workflow``）。
+#: V1 列表默认可见的节点类型（另加 dev 的循环节点 ``loop``）；显式 ``node_type`` 筛选可看到其它类型
+#: （如已发布工作流 ``workflow``、展示分组 ``group``）。
 DEFAULT_VISIBLE_NODE_TYPES = frozenset(
-    {"ILab", "device_action", "py_script", "tool_call", "manual_confirm", "condition", "repeat_until", "material_io"}
+    {"ILab", "device_action", "py_script", "tool_call", "manual_confirm", "condition", "repeat_until", "loop",
+     "material_io"}
 )
+#: 结构模板的所有者：与 V1 一样挂在宿主节点的资源模板下，随注册表里的 host_node 条目投影。
+STRUCTURAL_TEMPLATE_OWNER = "host_node"
+#: 结构模板的类身份：作者在 ``@workflow`` 里经 ctx 写出的控制结构（与设备动作的业务身份不冲突）。
+_STRUCTURAL_TEMPLATE_CLASS = "unilabos.registry.workflows:WorkflowBuildContext"
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -90,12 +103,132 @@ def _schema_handles(schema: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return handles
 
 
+def _condition_parameter_schema() -> Dict[str, Any]:
+    """条件节点 ``param`` 的展示合同；严格校验见 ``protocol.runtime.condition.condition_references``。"""
+
+    return {
+        "type": "object",
+        "description": (
+            "调度器本地求值的严格布尔条件。分支节点在 execution_policy.condition_guards 里写 "
+            "{node_uuid: 本节点, equals: true / false}，只执行命中的分支。"
+        ),
+        "properties": {
+            "version": {"type": "integer", "enum": [1]},
+            "expression": {
+                "type": "object",
+                "description": (
+                    "封闭 JSON 表达式，不执行 Python 字符串：{lit: 标量}、{value: JSON}、{input: 入口参数名}、"
+                    "{node_uuid: 节点}（该节点本次成功结果）、{field: 表达式, name: 字段名}、{not: 表达式}、"
+                    "{op: eq|ne|lt|le|gt|ge|and|or, args: [表达式, ...]}；结果必须是布尔值。"
+                ),
+            },
+        },
+        "required": ["version", "expression"],
+        "additionalProperties": False,
+    }
+
+
+def structural_templates(
+    resource_summary: Mapping[str, Any],
+    *,
+    reserved_names: Iterable[str] = (),
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """宿主节点名下的结构模板（条件 / 循环 / 分组）及其连接点。
+
+    条件与循环带一对 ready 连接点，与设备动作模板一样可以连顺序依赖（组合调用的入口 / 出口
+    也需要它）；分组不参与执行依赖，没有连接点。``reserved_names`` 是宿主节点已有的动作名，
+    同名时跳过结构模板，避免同一资源模板下模板名冲突。
+    """
+
+    from unilabos.protocol.runtime.loop import LoopSpec
+
+    resource_name = str(resource_summary["name"])
+    resource_uuid = str(resource_summary["uuid"])
+    specs: List[Dict[str, Any]] = [
+        {
+            "name": "condition",
+            "display_name": "条件",
+            "description": (
+                "调度器本地求值并选择唯一分支的结构化条件；默认表达式恒为真，放入后改写 param.expression，"
+                "分支节点用 execution_policy.condition_guards 引用本节点。"
+            ),
+            "goal_default": {"version": 1, "expression": {"lit": True}},
+            "executor_kind": "condition",
+            "parameter_schema": _condition_parameter_schema(),
+        },
+        {
+            "name": "loop",
+            "display_name": "循环",
+            "description": (
+                "循环容器：循环体是 parent_uuid 指向本节点的子节点；mode=for 固定 count 轮，mode=while "
+                "每轮开始前求值 condition（device_state / node_output），max_iterations 为安全上限。"
+            ),
+            "goal_default": {"mode": "for", "count": 1},
+            "executor_kind": "loop",
+            "parameter_schema": LoopSpec.model_json_schema(),
+        },
+        {
+            "name": "group",
+            "display_name": "分组",
+            "description": (
+                "组织节点的展示分组，不参与执行依赖；成员以 parent_uuid 指向本节点，"
+                "节点 meta_data.group_mode=parallel 表示并行分组（ctx.parallel）。"
+            ),
+            "goal_default": {},
+            # 分组不执行：没有执行器、参数合同和连接点
+            "executor_kind": None,
+            "parameter_schema": None,
+        },
+    ]
+    reserved = {str(name).lower() for name in reserved_names}
+    templates: List[Dict[str, Any]] = []
+    handles: List[Dict[str, Any]] = []
+    for spec in specs:
+        name = spec["name"]
+        if name in reserved:
+            logger.warning("[NodeTemplates] %s 已有同名动作 %s，跳过同名结构模板", resource_name, name)
+            continue
+        template_uuid = action_template_uuid(resource_name, name)
+        unilab: Dict[str, Any] = {"framework_owner_only": True, "resource_template": dict(resource_summary)}
+        if spec["executor_kind"] is not None:
+            unilab["executor_kind"] = spec["executor_kind"]
+            unilab["parameter_schema"] = spec["parameter_schema"]
+        templates.append(
+            {
+                "uuid": template_uuid,
+                "resource_template_uuid": resource_uuid,
+                "name": name,
+                "display_name": spec["display_name"],
+                "description": spec["description"],
+                "class": _STRUCTURAL_TEMPLATE_CLASS,
+                "goal": {},
+                "goal_default": spec["goal_default"],
+                "feedback": {},
+                "result": {},
+                "schema": None,
+                "type": name,
+                "node_type": name,
+                "meta_data": {"unilab": unilab},
+            }
+        )
+        if spec["executor_kind"] is not None:
+            for io_type in ("target", "source"):
+                handle = _ready_handle(io_type)
+                handle["uuid"] = action_handle_uuid(template_uuid, io_type=io_type, handle_key="ready")
+                handle["workflow_node_template_uuid"] = template_uuid
+                handles.append(handle)
+    return templates, handles
+
+
 def project_registry_templates(
     payloads: Iterable[Mapping[str, Any]],
     *,
     resource_template_uuid_of: Callable[[str], str],
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """生效的设备注册表条目 → (节点模板, 连接点模板)。无法投影的动作记日志后跳过。"""
+    """生效的设备注册表条目 → (节点模板, 连接点模板)。无法投影的动作记日志后跳过。
+
+    宿主节点条目另带结构模板（见 ``structural_templates``）。
+    """
 
     from unilabos.registry.action_template_projection import (
         ActionTemplateProjectionError,
@@ -177,6 +310,10 @@ def project_registry_templates(
                 )
                 handle["workflow_node_template_uuid"] = template_uuid
                 handles.append(handle)
+        if device_name == STRUCTURAL_TEMPLATE_OWNER:
+            structural, structural_handles = structural_templates(resource_summary, reserved_names=seen_names)
+            templates.extend(structural)
+            handles.extend(structural_handles)
     return templates, handles
 
 
@@ -365,6 +502,8 @@ __all__ = [
     "DEFAULT_VISIBLE_NODE_TYPES",
     "NodeTemplateCatalog",
     "REGISTRY_TEMPLATE_AUTHORITY",
+    "STRUCTURAL_TEMPLATE_OWNER",
     "project_registry_templates",
+    "structural_templates",
     "template_summary",
 ]

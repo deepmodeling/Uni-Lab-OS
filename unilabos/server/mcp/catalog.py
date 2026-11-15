@@ -100,7 +100,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("workflow.run-preflight", "workflow", "POST", "/api/v1/workflows/{workflow_uuid}/run-preflight", "零写入运行预检", "any"),
     Operation("workflow.operation-categories.list", "workflow", "GET", "/api/v1/experiment-operation-categories", "实验操作类别", "any"),
     Operation("workflow.operation-categories.create", "workflow", "POST", "/api/v1/experiment-operation-categories", "新增实验操作类别", "any"),
-    Operation("workflow.node-templates.list", "workflow", "GET", "/api/v1/workflow-node-templates", "设备动作节点模板（注册表投影）分页", "any"),
+    Operation("workflow.node-templates.list", "workflow", "GET", "/api/v1/workflow-node-templates", "节点模板分页：设备动作（注册表投影）与 host_node 名下的条件 / 循环结构模板（分组需 node_type=group）", "any"),
     Operation("workflow.node-templates.get", "workflow", "GET", "/api/v1/workflow-node-templates/{template_uuid}", "节点模板及其 Handle", "any"),
     Operation("workflow.device-action-run.create", "workflow", "POST", "/api/v1/device-action-runs", "设备单动作运行（设备物料 + 动作模板，幂等键）", "any"),
     Operation("devices.list", "devices", "GET", "/api/v1/devices", "设备读模型（绑定 / 物料 / 在线 / 动作模板）", "any"),

@@ -37,7 +37,7 @@
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
 | T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 苏州工站测试材料 |
 | U01 | 待逐项核验 | **开放** | 全文件差异索引尚未逐项核验 |
-| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings` / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
+| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings` / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
 | F08 | Center 分流 | 不变 | Center / project / experiment 路由不属于 OS 本地 backend |
 | F09 | 未执行 | **开放** | FE 适配后与 T02 一起做浏览器联调 |
 

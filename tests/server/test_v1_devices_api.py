@@ -154,6 +154,96 @@ def test_template_nodes_and_ready_edges_are_executable_graphs(lab) -> None:
     })) == 3002
 
 
+HOST_ACTION = {**ACTION, "display_name": "创建物料"}
+
+
+def _report_with_host_node(lab) -> None:
+    lab.registry.report([
+        {"id": "pump", "registry_type": "device", "class": {
+            "module": "lab.pump:Pump", "type": "python", "action_value_mappings": {"dose": ACTION},
+            "status_types": {"pressure": "float"}}},
+        {"id": "host_node", "registry_type": "device", "class": {
+            "module": "unilabos.backend.host_services:HostServices", "type": "python",
+            "action_value_mappings": {"create_resource": HOST_ACTION}}},
+    ], edge_uuid="test")
+
+
+def test_structural_templates_are_projected_under_host_node(lab) -> None:
+    client = lab.client
+    _report_with_host_node(lab)
+    condition_uuid = action_template_uuid("host_node", "condition")
+    loop_uuid = action_template_uuid("host_node", "loop")
+    group_uuid = action_template_uuid("host_node", "group")
+
+    page = _ok(client.get("/api/v1/workflow-node-templates", params={"page_size": 100}))
+    by_uuid = {item["uuid"]: item for item in page["items"]}
+    assert by_uuid[condition_uuid]["node_type"] == "condition" and by_uuid[condition_uuid]["display_name"] == "条件"
+    assert by_uuid[loop_uuid]["node_type"] == "loop" and by_uuid[loop_uuid]["display_name"] == "循环"
+    assert by_uuid[loop_uuid]["resource_template"]["name"] == "host_node"
+    # 与 V1 一样，展示分组只在显式按 node_type 筛选时出现
+    assert group_uuid not in by_uuid
+    assert [item["uuid"] for item in _ok(client.get(
+        "/api/v1/workflow-node-templates", params={"node_type": "group"}))["items"]] == [group_uuid]
+    assert [item["uuid"] for item in _ok(client.get(
+        "/api/v1/workflow-node-templates", params={"node_type": "condition"}))["items"]] == [condition_uuid]
+
+    condition = _ok(client.get(f"/api/v1/workflow-node-templates/{condition_uuid}"))
+    unilab = condition["template"]["meta_data"]["unilab"]
+    assert unilab["executor_kind"] == "condition" and unilab["framework_owner_only"] is True
+    assert unilab["parameter_schema"]["required"] == ["version", "expression"]
+    assert "schema" not in condition["template"]
+    assert {(item["io_type"], item["handle_key"]) for item in condition["handles"]} == {
+        ("target", "ready"), ("source", "ready")}
+    loop = _ok(client.get(f"/api/v1/workflow-node-templates/{loop_uuid}"))
+    assert loop["template"]["goal_default"] == {"mode": "for", "count": 1}
+    assert loop["template"]["meta_data"]["unilab"]["parameter_schema"]["properties"]["mode"]["enum"] == ["for", "while"]
+    group = _ok(client.get(f"/api/v1/workflow-node-templates/{group_uuid}"))
+    assert group["handles"] == [] and "executor_kind" not in group["template"]["meta_data"]["unilab"]
+
+
+def test_structural_template_nodes_build_an_executable_graph(lab) -> None:
+    client = lab.client
+    _report_with_host_node(lab)
+    dose = action_template_uuid("pump", "dose")
+    condition_uuid = action_template_uuid("host_node", "condition")
+    loop_uuid = action_template_uuid("host_node", "loop")
+    group_uuid = action_template_uuid("host_node", "group")
+    workflow = _ok(client.post("/api/v1/workflows", json={"name": "结构节点"}), 201)
+    base = f"/api/v1/workflows/{workflow['uuid']}"
+
+    def add(payload):
+        return _ok(client.post(f"{base}/nodes", json=payload), 201)["nodes"][-1]
+
+    group = add({"workflow_node_template_uuid": group_uuid})
+    measure = add({"workflow_node_template_uuid": dose, "material_uuid": lab.device_uuid, "parent_uuid": group["uuid"]})
+    # 不给 param：节点用模板的默认参数，拖入面板即可保存
+    check = add({"workflow_node_template_uuid": condition_uuid, "name": "达标？"})
+    assert (check["type"], check["param"]) == ("condition", {"version": 1, "expression": {"lit": True}})
+    patched = _ok(client.patch(f"/api/v1/workflow-nodes/{check['uuid']}", json={"param": {"version": 1, "expression": {
+        "op": "eq", "args": [{"field": {"node_uuid": measure["uuid"]}, "name": "ok"}, {"lit": True}]}}}))
+    assert patched["param"]["expression"]["op"] == "eq"
+    guard = [{"node_uuid": check["uuid"], "equals": True}]
+    repeat = add({"workflow_node_template_uuid": loop_uuid, "param": {"mode": "for", "count": 2},
+                  "execution_policy": {"condition_guards": guard}})
+    assert repeat["type"] == "loop"
+    add({"workflow_node_template_uuid": dose, "material_uuid": lab.device_uuid, "parent_uuid": repeat["uuid"],
+         "execution_policy": {"condition_guards": guard}})
+    graph = _ok(client.post(f"{base}/edges", json={
+        "source_node_uuid": measure["uuid"], "target_node_uuid": check["uuid"],
+        "source_handle_uuid": action_handle_uuid(dose, io_type="source", handle_key="ready"),
+        "target_handle_uuid": action_handle_uuid(condition_uuid, io_type="target", handle_key="ready"),
+    }), 201)
+    assert len(graph["edges"]) == 1
+    assert {item["uuid"] for item in graph["node_templates"]} >= {condition_uuid, loop_uuid, group_uuid}
+    # while 循环缺条件时保存被拒，错误来自 dev 的循环参数校验
+    assert _code(client.post(f"{base}/nodes", json={
+        "workflow_node_template_uuid": loop_uuid, "param": {"mode": "while"}})) == 1000
+
+    task = _ok(client.post("/api/v1/workflow-tasks", json={"workflow_uuid": workflow["uuid"]}), 201)
+    runs = _ok(client.get(f"/api/v1/workflow-tasks/{task['uuid']}/node-runs"))
+    assert sorted(run["executor_kind"] for run in runs) == ["condition", "device_action", "device_action", "loop"]
+
+
 def test_device_catalog_routes(lab) -> None:
     client = lab.client
     devices = _ok(client.get("/api/v1/devices"))

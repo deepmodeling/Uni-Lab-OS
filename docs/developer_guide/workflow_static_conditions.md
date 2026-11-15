@@ -158,6 +158,53 @@ V1 的 `with repeat_until(max_iterations=…, carry={...}) as loop: … loop.nex
 不产生执行依赖（循环体本来就在循环里），循环之后的读取照常依赖循环节点。原生 while / for range 循环暂不能
 由图生成源码（`/authoring/generate-python` 返回 `graph_not_representable`）。
 
+## 人工装入 / 取走 / 补量（material_io）
+
+`ctx.material_io(...)` 声明一步人工物料操作：执行到这里停下等人确认，确认后由权威在库存里装入、取走或补量，
+不派发任何设备动作。它和 `ctx.run` 一样返回步骤，结果可以被后面的步骤引用；全部参数都是关键字参数。
+
+```python
+from unilabos.registry.workflows import workflow
+
+
+@workflow("换吸头盒并补液")
+def refresh(ctx, *, volume: float = 20.0):
+    # 把一只新吸头盒放到 deck 的 A1，后面的动作用 box.material 引用这件新物料
+    box = ctx.material_io(mode="load", mount="deck", site="A1", resource_template="tip_box_96",
+                          material_name="吸头盒-新", assignee_user_ids=["operator-1"])
+    ctx.run("liquid_handler/pick_up_tips", {"tip_rack": box.material})
+    # 原位补液：只写加量，位置不变、不新建物料
+    ctx.material_io(mode="refill", mount="reagent_rack", site="B1", material="solvent_bottle",
+                    reagent={"quantity": volume, "quantity_unit": "mL"}, timeout_seconds=600)
+    # 用完取走：软删除盒子与它的内容
+    ctx.material_io(mode="unload", mount="deck", site="A1", material=box.material,
+                    disposition="soft_delete", scope="material_with_contents", name="收走旧盒")
+```
+
+| 参数 | load | unload | refill | 说明 |
+| --- | --- | --- | --- | --- |
+| `mode` | `"load"` | `"unload"` | `"refill"` | 字面量 |
+| `mount` | 必填 | 必填 | 必填 | 挂载物料：`{"uuid": ...}`、物料 UUID 或物料业务 ID（`resource_id`）；可用工作流输入 |
+| `site` | 必填 | 必填 | 必填 | `mount` 上的库位名（不区分大小写）或库位 UUID；可用工作流输入。调度器锁定的就是它所属的 `mount` |
+| `resource_template` | 必填 | — | — | 新物料的资源模板名或模板 UUID |
+| `material` | — | 必填 | 必填 | 要取走 / 补量的物料，必须正在 `site` 上；可以是前面步骤的结果（`box.material`）或工作流输入 |
+| `material_name` / `barcode` | 可选 | — | — | 新物料名（缺省按模板短名加本地时间生成）、条码（不能带首尾空白） |
+| `reagent` | 可选 | — | 必填 | 对象字面量；`quantity` 为正数（可用工作流输入）+ `quantity_unit`。load 另要 `reagent_info_uuid`，或 `name` / `cas`（已登记的 CAS 或唯一同名身份直接复用，没有就按 `name` 新建）；refill 只能有 `quantity` / `quantity_unit`，换了一瓶请用 unload 再 load |
+| `disposition` / `scope` | — | 必填 | — | `detach`（解除挂载，物料留在库存）/ `soft_delete`；`material_only` / `material_with_contents`。`detach` 只支持 `material_only`，`material_only` 要求物料没有子物料和内容物 |
+| `timeout_seconds` | 可选 | 可选 | 可选 | 1..86400，缺省 3600；超时节点失败、库存不变 |
+| `assignee_user_ids` | 可选 | 可选 | 可选 | 与人工确认同一规则；`ctx.material_io` 缺省写入 `[]`（任何人可确认），画布节点必须显式给出 |
+| `name` / `description` | 可选 | 可选 | 可选 | 与 `ctx.run` 一样是步骤显示名与说明；缺省名为「人工装入」「人工取走」「人工补量」 |
+
+这些规则在编译源码、保存整图（含画布节点）和调度器起跑时各校验一次（`protocol/runtime/material_io.py`），
+不符合时报错指向源码行。节点落成 `type="material_io"`、不带 `material_uuid`；`node_output` 引用 material_io
+步骤的结果与引用动作结果一样参与执行依赖。节点模板面板里有 `host_node` 名下的「人工物料」结构模板
+（`node_type=material_io`，带一对 ready 连接点）；它的 `goal_default` 只带模式与确认设置，保存前要填好库位与该模式的
+必填字段。`/authoring/generate-python` 把 material_io 节点生成 `ctx.material_io(...)`。
+
+运行时的锁定、确认、库存写入与恢复见 [调度与执行架构](scheduling_and_execution.md#人工装入--取走--补量material_io)。
+material_io 是作者显式写出的独立一步，和运行中缺料的动作执行前预检决策（`stage=preflight`）互不依赖；V1 的
+`material_source(supports_replenishment=True)` + `sufficient` 补料分支不移植。
+
 ## 条件协议与调度
 
 条件节点 `type="condition"` 的参数为版本化 JSON：

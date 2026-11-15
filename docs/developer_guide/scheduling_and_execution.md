@@ -191,6 +191,51 @@ op, value)` 构造（循环体里的步骤在 `with` 打开时还没声明，用
 循环前赋值、循环体里重新赋值的变量在轮次之间携带，见 [静态条件流程](workflow_static_conditions.md#循环与跨轮携带的变量)；
 本轮携带的值随轮次写在 `control_data.loop.carry`，重启后续用。
 
+#### 人工装入 / 取走 / 补量（material_io）
+
+`type="material_io"` 节点（`executor_kind=material_io`）是人工物料边界：执行到这一步时停下等人确认，
+确认后在库存里装入、取走或补量。它由**权威侧调度器本地执行**，和 `condition` / `loop` 一样不派发到 Host /
+edge、不占设备动作锁，执行器永远收不到它。作者写法见
+[静态条件流程](workflow_static_conditions.md#人工装入--取走--补量material_io)，参数合同在
+`protocol/runtime/material_io.py`，调度器侧实现在 `server/backend/scheduler/material_io.py` 与
+`BackendScheduler._start_material_io / _open_material_io / _settle_material_io`。
+
+1. **试运行**：起跑时解析参数里的工作流输入、上游结果引用与循环占位符，再请物料权威试运行一次
+   （`check_material_io`，HTTP 为 `POST /api/v1/inventory/material-io/check`）。试运行就是真正写入的那套代码，
+   在保存点里执行后回滚，返回执行计划：挂载物料 / 库位 / 模板 / 物料的 UUID 与**锁定集合**——`mount`，
+   unload / refill 另加 `material`。它抛出的异常与写入时相同，按 `resource_wait_policy.py` 分类：库位已有物料
+   （`site_occupied`，6007）、物料被其他任务的预留 / 来源绑定 / 未结算物理动作占着（`active_claim` → `site_claimed`，
+   6011）、库位入口预留是临时条件，attempt 不持有任何东西地排队（`control_data.wait_reason`），资源变化时重试；
+   库位 / 模板 / 物料不存在、模板不在库位白名单、物料不在给出的库位上、`material_only` 却有内容物等是合同错误，
+   节点直接失败（`error_info[0].code=material_io_invalid`，带 `material_error_code` / `business_code`），不打扰操作员。
+2. **锁定**：以 attempt 为 owner 申请锁定集合的物料锁（`SchedulerResourceRequest` 只有 `material_lock_claims`，
+   没有 `current_action`），走与设备动作相同的持久区间准入、老化 FIFO 与内存锁队列。dev 的锁身份是物料级：库位的锁
+   就是它所属挂载物料的锁——任何要用这个库位的动作（搬运进出、带库位选择器的动作、把挂载物料当物料参数的动作）
+   都要同一把锁，于是在这一步终结前排队等待；它自己的 Claim 落 `workflow_execution_claim`（`reserved`，没有派发记录），
+   重启时先于任何任务恢复。持锁后再试运行一次（排队期间库位可能已被占），通过才把计划冻结在 attempt 的
+   `control_data.material_io`，此后重启只用冻结的计划，锁定集合与确认单都不变。
+3. **人工确认**：复用 `manual_confirm` 的 durable 确认单（`open_workflow_manual_confirmation`；
+   `timeout_seconds` 1..86400、缺省 3600；`assignee_user_ids` 必须显式给出，`[]` 表示任何人可确认）。确认单的
+   `description` 是给操作员的一句话（装入什么、放到哪个库位），`param` 是去掉任务身份的执行计划，
+   `meta_data.executor_kind=material_io`。确认前不改库存；它和人工确认一样计入在途作业容量，但不算设备作业
+   （不阻止 runtime 排空）。调度器每 5 秒的兜底重算也把到期的确认单收为超时。
+4. **一次库存命令**：批准后提交一条类型化库存命令 `material.io`（`inventory_commands.py` → `materials/material_io.py`），
+   `command_id = workflow.material_io:<attempt>`，全部写入在一个 materials.db 事务里；首次结果（完成或拒绝）存在
+   `inventory_processed_command`，同一 attempt 重放只返回首次结果。设备台面经已有的 materials → device 同步拿到变化。
+
+| 决策 / 结果 | 节点 | 库存 |
+| --- | --- | --- |
+| 批准，load 完成 | succeeded，`return_value.material = {uuid}`（`material_uuid`、`name`、`site_uuid` …），后面的步骤像引用动作结果一样引用它 | 按模板建新物料（展开模板库位），放到库位上；可选登记试剂 |
+| 批准，unload 完成 | succeeded，`affected_material_uuids` | `detach`：解除挂载，物料留在库存；`soft_delete`：软删除（`material_with_contents` 连同子物料与内容物） |
+| 批准，refill 完成 | succeeded，`quantity_added` / `quantity` | 原位容器唯一试剂加量（单位可换算），记一条 `add` 内容物历史；位置不变、不新建物料 |
+| 批准但写库被拒（如确认期间有人手工占了库位） | failed，`material_io_rejected` + `material_error_code`（`conflict:site_occupied`）+ `business_code`（6007） | 不变 |
+| 拒绝 / 超时 | failed（`manual_confirmation_rejected`）/ timeout（`manual_confirmation_timed_out`） | 不变 |
+| 取消任务 | 确认单收为 `canceled`，节点 canceled | 不变 |
+
+恢复：确认待决时重启，恢复的 Claim 继续持锁，任务接管后读回同一张确认单等决策；批准后、写库前或写库后应答前崩溃
+（或物料权威暂时不可达），attempt 保持 `pending` 继续持锁，兜底重算或重启接管时用同一命令身份重提——没写过就写一次，
+写过就只重放结果。确认单的 `skip` 决策（`decision_action=skip`）把节点记为 skipped，不写库存。
+
 ### 4.2 Backend-controlled（接入云端）
 
 显式配置云端地址后，Edge 不接收也不保存整张工作流图，本机 Workflow 写 API 不

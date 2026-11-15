@@ -145,8 +145,15 @@ POST `/workflow-tasks` 可带 `input`：按合同校验（未知键、缺必填�
    ```
 
    子工作流按所选发布的冻结快照**内联展开**：父图多一个组合调用节点（无 Job，仅画布/追溯/边界映射）
-   和它展开出的普通节点与连线，节点 uuid 由调用 uuid 派生。展开节点各自申请设备 / 物料锁，
-   没有组级锁。静态实参下推到内部节点 param；未给出的可选输入在父图里不存在。
+   和它展开出的普通节点与连线，节点 uuid 由调用 uuid 派生。展开节点各自申请设备 / 物料锁；
+   子工作流声明的资源作用域（`with ctx.lock(...)` / `ctx.resource_scope` / `PUT .../resource-scopes`）
+   随调用投影到父图身份空间，记在组合调用节点的 `meta_data.unilab.composite.resource_scopes`
+   （作用域 id 按调用派生，`source_scope_id` 记原名；`root` 在父图里按包住这次调用的 `with` 处理），
+   调度器建任务时与父图直接声明的作用域合并规划，持有方式和直接运行子工作流完全一样。
+   父图作用域的 `node_uuids` 可以写组合调用节点（定义层只看得到它），等价于它展开出的全部节点；
+   子工作流的顶层作用域嵌套在覆盖这次调用的最深作用域下（含嵌套组合里外层子操作的作用域）。
+   子作用域引用了子图外节点时插入被拒（`composite_boundary_mapping_invalid`）。
+   静态实参下推到内部节点 param；未给出的可选输入在父图里不存在。
    成功 201，返回 `{invocation_uuid, contract_pin, graph}`，父图 revision +1。
    子工作流未发布 code=3002；递归（插入自身、子工作流内含父工作流）、缺必填实参、实参类型不符等
    展开诊断 code=1000，消息含诊断码与路径（如 `composite_recursive_reference（/composite/child_workflow_uuid）`）。

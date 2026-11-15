@@ -48,6 +48,12 @@ builder 模式已移除，工作流只按源码编译；支持等待测量结果
 剩余顺序建议：正式前端适配与 F09 / T02 联调 → U01 → T01。
 I02、W01、A03 `order_sensitive` 已完成；缺料是预检报错（任务级直接失败、动作级挂起待补料重试），执行中失败是执行报错（用户决定）；builder 模式已移除。
 
+### U01 缺口补齐：工作流（2026-11-16）
+
+| V1 文件 | 之前 | 现在 | 证据 |
+| --- | --- | --- | --- |
+| `workflow/composite_graph_rewrite.py`（资源作用域投影） | 部分：子操作的 `ctx.lock` / `resource_scope` 在组合调用后失效 | 已实现 | 插入时投影到组合调用节点 `composite.resource_scopes`，`interval_plan.effective_resource_scopes` 与父图作用域合并（调用节点作成员即其展开后代，子作用域嵌在覆盖调用的最深作用域下）；`tests/server/test_composite_resource_scopes.py`（真实调度器下竞争任务被挡在子操作锁外） |
+
 ## 基线与原始目标（11-09 原始记录）
 
 | 对象 | 固定版本 | 当前含义 |

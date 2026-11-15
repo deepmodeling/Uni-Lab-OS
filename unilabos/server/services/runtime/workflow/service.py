@@ -1147,6 +1147,17 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 edge["uuid"] for edge in graph["edges"]
             }:
                 raise WorkflowConflict("conflict", detail="组合调用身份已存在于父图")
+            from unilabos.server.backend.scheduler.interval_plan import (
+                graph_declares_resource_scopes, validate_graph_resource_scopes,
+            )
+
+            candidate = {**graph, "nodes": [*graph["nodes"], *nodes], "edges": [*graph["edges"], *edges]}
+            if graph_declares_resource_scopes(candidate):
+                # 子操作带来的资源作用域要能和父图已有的作用域一起规划
+                try:
+                    validate_graph_resource_scopes(candidate)
+                except (ValueError, TypeError) as exc:
+                    raise WorkflowError("invalid_input", detail=str(exc)) from None
             saved = self._save_reserved_graph(
                 parent,
                 revision=revision,

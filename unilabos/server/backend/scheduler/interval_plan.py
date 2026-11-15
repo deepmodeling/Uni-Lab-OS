@@ -118,7 +118,8 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
         seen.add((source, target))
         edges[parents[source]].append({"source_node_uuid": source, "target_node_uuid": target})
     metadata = (graph.get("workflow") or {}).get("meta_data") or {}
-    declarations = (metadata.get("unilab") or {}).get("resource_scopes", [])
+    declarations = effective_resource_scopes((metadata.get("unilab") or {}).get("resource_scopes", []),
+                                             sources, planned=nodes)
     scoped: dict[str | None, list[dict[str, Any]]] = defaultdict(list)
     scope_frames: dict[str, str | None] = {}
     scope_members: dict[str, list[str]] = {}
@@ -182,6 +183,100 @@ def compile_interval_plan(plan: dict[str, Any], graph: dict[str, Any]) -> dict[s
         result.append({"parent_node_uuid": parent, "plan": serialize_resource_plan(bound),
                        "admission_members": inherited})
     return {"version": 2, "frames": result}
+
+
+def _composite_scopes(node: dict[str, Any]) -> Optional[list[Any]]:
+    """组合调用节点随调用投影来的子操作资源作用域；不是组合调用返回 None。"""
+    composite = ((node.get("meta_data") or {}).get("unilab") or {}).get("composite")
+    if not isinstance(composite, dict):
+        return None
+    scopes = composite.get("resource_scopes") or []
+    if not isinstance(scopes, list):
+        raise ResourcePlanError("invalid_scope", "组合调用的 resource_scopes 必须是数组")
+    return scopes
+
+
+def graph_declares_resource_scopes(graph: dict[str, Any]) -> bool:
+    """图本身或其中的组合调用声明了资源作用域（保存 / 插入时据此决定要不要校验）。"""
+    metadata = (graph.get("workflow") or {}).get("meta_data") or {}
+    if (metadata.get("unilab") or {}).get("resource_scopes"):
+        return True
+    return any(_composite_scopes(node) for node in graph.get("nodes") or [])
+
+
+def effective_resource_scopes(direct: Any, sources: dict[str, dict[str, Any]], *,
+                              planned: Any) -> Any:
+    """本次规划实际生效的资源作用域：父图直接声明的 + 各组合调用带来的子操作作用域。
+
+    组合调用节点没有 Job：作用域成员里的调用节点换成它展开出的、参与本次规划的
+    后代；子操作作用域的成员同样只保留参与规划的节点（禁用、单节点运行时没选中
+    的不算），一个也不剩的作用域整体不生效。子操作的顶层作用域挂到覆盖这次调用
+    的最深作用域下（父图 ``with ctx.lock`` 包住调用、外层子操作包住内层调用），
+    与非组合工作流里嵌套的词法作用域一样规划。图里没有组合调用时原样返回。
+    """
+    owned = {key: scopes for key, node in sources.items()
+             if (scopes := _composite_scopes(node)) is not None}
+    if not owned or not isinstance(direct, list):
+        return direct
+    planned = set(planned)
+
+    def chain(key: str) -> list[str]:
+        """节点自身及其全部祖先（含组框、循环、外层组合调用）。"""
+        result = [key]
+        parent = (sources.get(key) or {}).get("parent_uuid")
+        while parent is not None and parent in sources and parent not in result:
+            result.append(parent)
+            parent = sources[parent].get("parent_uuid")
+        return result
+
+    descendants: dict[str, list[str]] = {key: [] for key in owned}
+    for key in sources:
+        if key in planned and key not in owned:
+            for ancestor in chain(key)[1:]:
+                if ancestor in descendants:
+                    descendants[ancestor].append(key)
+    # 外层调用先处理：内层调用的作用域可能挂在外层调用带来的作用域下
+    invocations = sorted(owned, key=lambda key: (sum(item in owned for item in chain(key)), key))
+    scopes: list[dict[str, Any]] = [dict(scope) if isinstance(scope, dict) else scope for scope in direct]
+    for invocation in invocations:
+        covering = set(chain(invocation))
+        by_id = {scope.get("scope_id"): scope for scope in scopes if isinstance(scope, dict)}
+
+        def depth(scope: dict[str, Any]) -> int:
+            result, seen = 0, set()
+            while scope.get("parent_scope_id") in by_id and scope["parent_scope_id"] not in seen:
+                seen.add(scope["parent_scope_id"])
+                scope = by_id[scope["parent_scope_id"]]
+                result += 1
+            return result
+
+        candidates = [scope for scope in by_id.values()
+                      if isinstance(scope.get("node_uuids"), list) and covering & set(scope["node_uuids"])]
+        parent = max(candidates, key=lambda scope: (depth(scope), str(scope.get("scope_id")))) if candidates else None
+        for raw in owned[invocation]:
+            if not isinstance(raw, dict):
+                raise ResourcePlanError("invalid_scope", "资源作用域必须是对象")
+            scope = {**raw, "composite_invocation_uuid": invocation}
+            if scope.get("parent_scope_id") is None and parent is not None:
+                scope["parent_scope_id"] = parent["scope_id"]
+            scopes.append(scope)
+    # 调用节点 → 参与规划的后代；子操作成员只保留参与规划的节点
+    result: list[Any] = []
+    for scope in scopes:
+        if not isinstance(scope, dict) or not isinstance(scope.get("node_uuids"), list) or not scope["node_uuids"]:
+            # 形状不对的声明原样交给下面的校验报错
+            result.append(scope)
+            continue
+        members: list[Any] = []
+        for key in scope["node_uuids"]:
+            if key in owned:
+                members.extend(descendants[key])
+            elif "composite_invocation_uuid" not in scope or key in planned:
+                members.append(key)
+        if members:
+            # 子作用域成员是父作用域成员的子集：父作用域整体不生效时子作用域也不剩成员
+            result.append({**scope, "node_uuids": list(dict.fromkeys(members))})
+    return result
 
 
 def _with_node_names(message: str, sources: dict[str, dict[str, Any]]) -> str:

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
+from uuid import UUID, uuid5
 
 from unilabos.server.services.runtime.workflow.authoring_identity import (
     authoring_edge_uuid,
@@ -60,6 +61,8 @@ class CompositeExpansion:
     contract_pin: Mapping[str, Any]
     effective_parent_input_contract: Mapping[str, Any]
     diagnostics: tuple[Mapping[str, str], ...]
+    #: 子工作流完整图里的节点身份（含其嵌套调用已展开的后代）→ 本次展开后的身份
+    identity_map: Mapping[str, str] = field(default_factory=dict)
 
 
 class _CompositeFailure(RuntimeError):
@@ -216,6 +219,7 @@ class CompositeAuthoring:
             nodes,
             edges,
             node_uuid_map,
+            identity_map,
             effective_child_input_contract,
         ) = self._expand_graph(
             graph,
@@ -286,6 +290,11 @@ class CompositeAuthoring:
             target_mappings=target_mappings,
             source_mappings=source_mappings,
             structural_mappings=structural,
+            resource_scopes=_project_resource_scopes(
+                workflow,
+                invocation_uuid=invocation_uuid,
+                identity_map=identity_map,
+            ),
             base_node=base_node,
         )
         referenced_nodes, referenced_handles = _referenced_templates(
@@ -314,6 +323,7 @@ class CompositeAuthoring:
             contract_pin=contract_pin,
             effective_parent_input_contract=effective_parent,
             diagnostics=(),
+            identity_map=identity_map,
         )
 
     def _expand_graph(
@@ -328,6 +338,7 @@ class CompositeAuthoring:
     ) -> tuple[
         list[dict[str, Any]],
         list[dict[str, Any]],
+        dict[str, str],
         dict[str, str],
         dict[str, Any],
     ]:
@@ -367,6 +378,9 @@ class CompositeAuthoring:
             node_uuid: expanded_node_uuid(invocation_uuid, node_uuid)
             for node_uuid in by_uuid
         }
+        # 子工作流完整图里嵌套调用的后代（视图里已去掉）身份为
+        # expanded_node_uuid(嵌套调用, 后代)；按嵌套展开结果补齐到本次展开身份。
+        identity_map = dict(node_uuid_map)
         nodes: list[dict[str, Any]] = []
         nested_edges: list[dict[str, Any]] = []
         effective_input_contract = _plain(input_contract)
@@ -438,6 +452,10 @@ class CompositeAuthoring:
             nodes.append(_remap_depends_on(_plain(nested.invocation_node), node_uuid_map))
             nodes.extend(_plain(nested.nodes))
             nested_edges.extend(_plain(nested.edges))
+            for nested_identity, expanded_identity in nested.identity_map.items():
+                identity_map.setdefault(
+                    expanded_node_uuid(node_uuid, nested_identity), expanded_identity
+                )
             effective_input_contract = _plain(nested.effective_parent_input_contract)
         direct_edges = _expand_edges(
             graph["edges"],
@@ -446,7 +464,7 @@ class CompositeAuthoring:
         )
         edges = _unique_edges([*direct_edges, *nested_edges])
         _assert_acyclic(nodes, edges)
-        return nodes, edges, node_uuid_map, effective_input_contract
+        return nodes, edges, node_uuid_map, identity_map, effective_input_contract
 
 
 def _published_template(
@@ -715,6 +733,7 @@ def _invocation_node(
     target_mappings: Mapping[str, Sequence[Mapping[str, str]]],
     source_mappings: Mapping[str, Mapping[str, str]],
     structural_mappings: Mapping[str, Sequence[Mapping[str, str]]],
+    resource_scopes: Sequence[Mapping[str, Any]],
     base_node: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     composite = {
@@ -725,6 +744,9 @@ def _invocation_node(
         "source_mappings": _plain(source_mappings),
         "structural_mappings": _plain(structural_mappings),
     }
+    if resource_scopes:
+        # 子操作的 ctx.lock / resource_scope 跟随本次调用：调度器从这里取回并按父图规划
+        composite["resource_scopes"] = _plain(resource_scopes)
     result = _plain(base_node) if base_node is not None else {}
     meta_data = result.get("meta_data")
     meta_data = _plain(meta_data) if isinstance(meta_data, Mapping) else {}
@@ -749,6 +771,66 @@ def _invocation_node(
             "meta_data": meta_data,
         }
     )
+    return result
+
+
+def _project_resource_scopes(
+    workflow: Mapping[str, Any],
+    *,
+    invocation_uuid: str,
+    identity_map: Mapping[str, str],
+) -> list[dict[str, Any]]:
+    """把子工作流声明的资源作用域投影到本次调用的身份空间。
+
+    作用域身份按调用派生（同一子操作调用两次得到两组互不冲突的作用域），成员与
+    父作用域一并重映射；子工作流的 ``root`` 作用域在父图里只是包住这次调用的
+    词法作用域。引用了子图外节点的作用域不能安全投影，整次插入失败。
+    """
+
+    path = "/child/workflow/meta_data/unilab/resource_scopes"
+    raw_scopes = _unilab(workflow).get("resource_scopes")
+    if raw_scopes is None:
+        return []
+    if not isinstance(raw_scopes, Sequence) or isinstance(raw_scopes, (str, bytes)):
+        raise _CompositeFailure("composite_boundary_mapping_invalid", path)
+    namespace = UUID(invocation_uuid)
+    projected_ids: dict[str, str] = {}
+    for index, raw_scope in enumerate(raw_scopes):
+        scope_id = raw_scope.get("scope_id") if isinstance(raw_scope, Mapping) else None
+        if not isinstance(scope_id, str) or not scope_id.strip() or scope_id in projected_ids:
+            raise _CompositeFailure("composite_boundary_mapping_invalid", f"{path}/{index}/scope_id")
+        projected_ids[scope_id] = "resource-scope-" + str(
+            uuid5(namespace, f"unilabos:composite-resource-scope:v1:{scope_id}")
+        )
+
+    def mapped(value: Any, where: str) -> str:
+        if not isinstance(value, str) or value not in identity_map:
+            raise _CompositeFailure("composite_boundary_mapping_invalid", where)
+        return identity_map[value]
+
+    result: list[dict[str, Any]] = []
+    for index, raw_scope in enumerate(raw_scopes):
+        members = raw_scope.get("node_uuids")
+        if not isinstance(members, Sequence) or isinstance(members, (str, bytes)) or not members:
+            raise _CompositeFailure("composite_boundary_mapping_invalid", f"{path}/{index}/node_uuids")
+        projected = _plain(raw_scope)
+        projected["node_uuids"] = list(
+            dict.fromkeys(mapped(item, f"{path}/{index}/node_uuids") for item in members)
+        )
+        for key in ("entry_node_uuid", "exit_node_uuid"):
+            if projected.get(key) is not None:
+                projected[key] = mapped(projected[key], f"{path}/{index}/{key}")
+        parent = raw_scope.get("parent_scope_id")
+        if parent is not None and parent not in projected_ids:
+            raise _CompositeFailure(
+                "composite_boundary_mapping_invalid", f"{path}/{index}/parent_scope_id"
+            )
+        projected["parent_scope_id"] = projected_ids[parent] if parent is not None else None
+        projected["source_scope_id"] = raw_scope["scope_id"]
+        projected["scope_id"] = projected_ids[raw_scope["scope_id"]]
+        if projected.get("kind") == "root":
+            projected["kind"] = "with"
+        result.append(projected)
     return result
 
 

@@ -14,6 +14,7 @@ from tests.server.test_scheduler_inventory_authority import _material, _mutation
 from tests.server.test_workflow_inventory_recovery import Stack
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from tests.server.test_workflow_physical_recovery import make_task, result, seed
+from unilabos.client.materials.core import MaterialsHTTPError
 from unilabos.protocol.materials import MaterialIdentityWrite, MaterialMove, MaterialNodeCreate, MaterialTreeCreate, SiteCreate
 from unilabos.registry.workflows import upsert_workflow
 from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
@@ -187,6 +188,11 @@ def test_contract_errors_from_the_physical_preparation_still_fail(tmp_path):
     (MaterialConflictError("x"), None),
     (MaterialValidationError("x"), None),
     (ValueError("库位选择必须唯一且可见"), None),
+    # HTTP 物料网关只带信封业务码
+    (MaterialsHTTPError(409, "库位已被入口预留", business_code=6011), "site_claimed"),
+    (MaterialsHTTPError(409, "库位已有物料", business_code=6007), "site_occupied"),
+    (MaterialsHTTPError(409, "模板不允许放在该库位", business_code=6008), None),
+    (MaterialsHTTPError(409, "冲突"), None),
 ])
 def test_wait_policy_classifies_conditions(error, code):
     assert temporary_resource_condition(error) == code

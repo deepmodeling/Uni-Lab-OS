@@ -239,7 +239,8 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 按首次排队先后重试；排队原因写在 attempt 的 `control_data.wait_reason`（`{code, message, waiting_since}`，作业
 投影的 `wait_reason`），attempt 一直是 `pending`，重启后重建计划时再判一次。条件码与 V1 相同：`site_occupied`、
 `gripper_site_occupied`、`transfer_source_site_missing`、`site_claimed`（物料权威冲突类别 `active_claim`）、
-`site_ingress_reserved`、`site_group_unavailable`、`operate_in_place_site_*`。合同错误（库位不属于所选容器、
+`site_ingress_reserved`、`site_group_unavailable`、`operate_in_place_site_*`。经 HTTP 物料网关时冲突类别不过线，
+只剩信封业务码：6007 按 `site_occupied`、6011（活动 Claim 或入口预留）按 `site_claimed` 等待。合同错误（库位不属于所选容器、
 夹爪角色缺失或重复、参数不符合 Schema、未知冲突）照常失败。这类等待者不持有资源，也不算在等设备：同一任务里
 要同一台设备的兄弟节点不为它让行（腾出库位的可能正是兄弟节点）。
 

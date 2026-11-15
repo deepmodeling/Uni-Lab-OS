@@ -352,6 +352,21 @@ Windows 不支持目录 fsync，跳过这一步。sidecar 锁文件常驻，不�
 在外部编辑器里改源码时，先在编辑器里保存，再到浏览器保存或应用；遇到冲突按提示刷新查看差异。
 测试用 `UNILABOS_SOURCE_WRITE_BACKEND=portable` 在 Linux 上强制可移植后端。
 
+### 外部编辑与待回写恢复
+
+已登记源码归本机 Workflow Authority（调度权威进程；`--no-safe-restart` 时是单进程 Host）所有，
+`server/backend/composition.py:setup_local_scheduler` 装配调度器后：
+
+1. 先同步跑一遍 `recover_registered_sources`：外部改过的源码重新编译出候选（事件 cause
+   `external_draft_changed` / `recovered`）；Apply 已提交但写回失败留下的 `writeback_status=pending`
+   （应用响应里的 `draft_writeback_pending` 警告）在文件仍是写回前内容或已丢失时重新写回并结清，
+   文件已经是应用后的内容则直接结清。单个源码失败只记日志，不挡启动；
+2. 再启动 `WorkflowSourceMonitor` 守护线程（每秒扫描一次，签名稳定 0.25 s 后才处理）：外部编辑器保存
+   后重新编译出候选，仍为 pending 的写回按退避持续重试；单个源码出意外错误只影响它自己，下一轮继续。
+
+`shutdown_backend_services` 在关闭共享的 runtime.db 之前先停监视线程（最多等 5 s，卡在一次编译或
+文件读写里就记警告继续停机，守护线程随进程退出），不影响停机限时 `lifetime.SHUTDOWN_DEADLINE_S`。
+
 设备包 `@workflow` 是另一种声明入口：ctx.run/ctx.run_template 声明步骤，
 ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件。
 循环变量 `{{loop.index}}`、`{{loop.iteration}}`、`{{loop.count}}` 由运行时处理。

@@ -1,12 +1,20 @@
-"""Authoring Draft 文件的进程级轮询监视器。"""
+"""Authoring Draft 文件的进程级轮询监视器。
+
+由本机 Workflow Authority 拥有（``server/backend/composition.py:setup_local_scheduler``
+启动、``shutdown_backend_services`` 停止）：外部编辑器改动已注册源码后重新编译出候选，
+Apply 写回失败留下的 ``writeback_status=pending`` 记录持续重试直到写回落盘。
+"""
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Dict, Optional, Tuple
 
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowSourceMonitor:
@@ -35,7 +43,7 @@ class WorkflowSourceMonitor:
         if self._thread is not None:
             return
         self._thread = threading.Thread(
-            target=self._run,
+            target=self._guarded_run,
             name="workflow-source-monitor",
             daemon=True,
         )
@@ -49,6 +57,16 @@ class WorkflowSourceMonitor:
             if thread.is_alive():
                 raise RuntimeError("Workflow Draft 监视器未能停止")
         self._thread = None
+
+    def _guarded_run(self) -> None:
+        """意外错误不能让监视线程永久停摆：记日志后下一轮重新扫描。"""
+
+        while not self._stop_event.is_set():
+            try:
+                self._run()
+            except Exception:  # noqa: BLE001
+                logger.exception("工作流源码监视本轮失败，稍后重试")
+                self._stop_event.wait(self._interval_seconds)
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -127,6 +145,11 @@ class WorkflowSourceMonitor:
                         self._schedule_retry(workflow_uuid, signature)
                     continue
                 except (OSError, RuntimeError):
+                    if signature is not None:
+                        self._schedule_retry(workflow_uuid, signature)
+                    continue
+                except Exception:  # noqa: BLE001 - 一个源码出错不能挡住其余源码
+                    logger.exception("工作流 %s 的源码同步失败，稍后重试", workflow_uuid)
                     if signature is not None:
                         self._schedule_retry(workflow_uuid, signature)
                     continue

@@ -190,6 +190,7 @@ def setup_local_scheduler(
     execution_backend.result_bridges.append(scheduler)
     scheduler.start(recover=True)
     _start_event_retention(service)
+    _start_source_monitor(service)
     _workflow_service = service
     _scheduler = scheduler
     _setup_registry_authority(services.runtime)
@@ -224,6 +225,47 @@ def _stop_event_retention() -> None:
     if _event_retention is not None:
         _event_retention.stop()
         _event_retention = None
+
+
+_source_monitor: Any = None
+
+
+def _start_source_monitor(service: Any) -> None:
+    """本机 Workflow Authority 拥有已注册的工作流源码。
+
+    启动时先恢复一遍：外部改过的源码重新编译出候选，上次 Apply 写回失败留下的
+    ``writeback_status=pending`` 立即重试；之后由监视线程持续跟进外部编辑和写回重试。
+    单个源码恢复失败只记日志，不挡 Authority 启动（监视线程会继续重试）。
+    """
+
+    global _source_monitor
+    if _source_monitor is not None:
+        return
+    from unilabos.server.services.runtime.workflow.source_monitor import WorkflowSourceMonitor
+
+    def report(workflow_uuid: str, exc: Exception) -> None:
+        logger.warning("[WorkflowIntegration] 工作流 %s 的源码启动恢复失败，交给监视线程重试: %s",
+                       workflow_uuid, exc)
+
+    try:
+        service.recover_registered_sources(on_error=report)
+    except Exception:  # noqa: BLE001 - 连源码清单都读不出来时同样交给监视线程
+        logger.exception("[WorkflowIntegration] 工作流源码启动恢复失败，交给监视线程重试")
+    monitor = WorkflowSourceMonitor(service, interval_seconds=1.0, settle_seconds=0.25)
+    monitor.start()
+    _source_monitor = monitor
+
+
+def _stop_source_monitor() -> None:
+    global _source_monitor
+    if _source_monitor is None:
+        return
+    try:
+        _source_monitor.stop()
+    except RuntimeError as exc:
+        # 线程卡在一次编译 / 文件读写里：守护线程随进程退出，不能拖住停机
+        logger.warning("[WorkflowIntegration] %s，继续停机", exc)
+    _source_monitor = None
 
 
 def read_preflight_endpoints() -> list[dict[str, Any]]:
@@ -466,7 +508,8 @@ def shutdown_backend_services() -> None:
         _scheduler.stop()
         if _backend is not None and _scheduler in _backend.result_bridges:
             _backend.result_bridges.remove(_scheduler)
-    # 先等清理线程结束当前事务，再关闭共享的 runtime.db 连接。
+    # 先等后台线程（源码监视、事件清理）结束当前事务，再关闭共享的 runtime.db 连接。
+    _stop_source_monitor()
     _stop_event_retention()
     if _workflow_service is not None:
         _workflow_service.set_task_submitter(None)

@@ -2566,15 +2566,25 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         *,
         force_compile: bool = False,
         preserve_author_source: bool = False,
+        on_error: Optional[Callable[[str, Exception], None]] = None,
     ) -> None:
-        """按当前目录恢复全部源码；固定点模式不吞目录基础设施错误。"""
+        """按当前目录恢复全部源码（重编译外部改动、重试待写回的 Apply）。
+
+        固定点模式不吞目录基础设施错误；给出 ``on_error`` 时（Authority 启动）单个
+        源码失败只报告给它，其余源码照常恢复。
+        """
 
         for registration in self.list_registered_sources():
-            self.reconcile_registered_source(
-                registration["workflow_uuid"],
-                force_compile=force_compile,
-                preserve_author_source=preserve_author_source,
-            )
+            try:
+                self.reconcile_registered_source(
+                    registration["workflow_uuid"],
+                    force_compile=force_compile,
+                    preserve_author_source=preserve_author_source,
+                )
+            except Exception as exc:  # noqa: BLE001 - 是否吞掉由调用方决定
+                if on_error is None:
+                    raise
+                on_error(registration["workflow_uuid"], exc)
 
     def activate_registered_sources_to_fixed_point(self) -> None:
         """按 child-first 依赖逐轮应用工作区候选，直到没有新工作流推进。"""

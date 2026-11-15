@@ -369,8 +369,13 @@ class BackendScheduler:
         # 运行任务容量已满、保持 pending 排队的任务：task -> (创建时间, 工作流)；按创建先后放行
         self._capacity_waiting_tasks: Dict[str, tuple[str, str]] = {}
         self._dispatched_jobs: set[str] = set()
-        # 已建立 durable 人工确认单、但尚未收到决策的 attempt。
+        # 已建立 durable 人工确认单、但尚未收到决策的 attempt（含人工装入 / 取走 / 补量步骤）。
         self._manual_confirmation_jobs: set[str] = set()
+        # 人工物料步骤：正在提交库存命令的 attempt（API 线程与调度线程不重复提交），以及已批准、
+        # 库存写入暂时失败、等兜底重算再提交的 attempt。
+        self._material_io_settling: set[str] = set()
+        self._material_io_retry: set[str] = set()
+        self._material_io_retrying = False
         # 进程重启后执行态未知 / 决策上下文丢失的 attempt：decision_id -> 待裁决记录。
         # 与执行面的失败决策一起从 /error-decisions 暴露，由本调度器直接收敛。
         self._reconciliation_decisions: Dict[str, Dict[str, Any]] = {}
@@ -660,6 +665,7 @@ class BackendScheduler:
                         self._condition_waits.pop(job_uuid, None)
                         self._dispatched_jobs.discard(job_uuid)
                         self._manual_confirmation_jobs.discard(job_uuid)
+                        self._material_io_retry.discard(job_uuid)
                 for decision_id, pending in list(self._reconciliation_decisions.items()):
                     if pending["task_uuid"] == task_uuid:
                         self._reconciliation_decisions.pop(decision_id, None)
@@ -913,9 +919,21 @@ class BackendScheduler:
         while not self._stopping:
             await asyncio.sleep(5)
             if not self._stopping:
+                self._expire_manual_confirmations()
                 self._reconcile_resources()
                 self._retry_capacity_waiting_tasks()
                 self._retry_inventory_waiting_tasks()
+
+    def _expire_manual_confirmations(self) -> None:
+        """到期仍待决的人工确认（含人工物料步骤）收敛为超时；决策经 resolver 回到本调度器。"""
+
+        expire = getattr(self.workflow, "expire_workflow_manual_confirmations", None)
+        if not callable(expire):
+            return
+        try:
+            expire()
+        except Exception:  # noqa: BLE001 - 下一轮再试，不影响兜底重算
+            logger.warning("人工确认超时收敛失败", exc_info=True)
 
     async def _reconcile_before_planning(
         self, task: Dict[str, Any], runs: list[Dict[str, Any]],
@@ -1046,6 +1064,17 @@ class BackendScheduler:
                 condition_references(param)
                 dag_nodes[run_uuid] = DagNode(
                     node_id=run_uuid, device_id="", action="", kind="condition", action_args=param,
+                )
+            elif run["executor_kind"] == "material_io":
+                # 人工装入 / 取走 / 补量：权威本地执行，不派发设备；引用到起跑时才解析
+                from unilabos.protocol.runtime.material_io import MaterialIOParamError, normalize_material_io_param
+
+                try:
+                    normalize_material_io_param(param)
+                except MaterialIOParamError as exc:
+                    raise BackendSchedulingError(f"workflow node {workflow_node_uuid}: {exc}") from exc
+                dag_nodes[run_uuid] = DagNode(
+                    node_id=run_uuid, device_id="", action="material_io", kind="material_io", action_args=param,
                 )
             elif run["executor_kind"] != "device_action":
                 raise BackendSchedulingError(
@@ -1241,6 +1270,9 @@ class BackendScheduler:
             # 全局在途作业已满：不预留、不申请资源，排队到有作业落终态
             self._wait_for_condition(task, node, spec["current_job_uuid"], WAIT_JOB_CAPACITY,
                                      f"全局在途作业容量（{self._max_in_flight_jobs}）已满，作业继续排队")
+            return
+        if node.kind == "material_io":
+            self._start_material_io(task, node, spec)
             return
         if spec.get("inventory_deferred"):
             try:
@@ -1504,6 +1536,7 @@ class BackendScheduler:
         self._intervals.withdraw(job_uuid)
         with self._guard:
             self._dispatched_jobs.discard(job_uuid)
+            self._manual_confirmation_jobs.discard(job_uuid)
             self._waiting_resource_jobs.pop(job_uuid, None)
         return True
 
@@ -1514,6 +1547,9 @@ class BackendScheduler:
             job_uuid = self._run_specs[node.node_id]["current_job_uuid"]
         # 排队期间任务可能被暂停：拿到锁也不派发，撤回申请让给别的任务。
         if self._park_if_gated(task, node, job_uuid):
+            return
+        if getattr(node, "kind", "") == "material_io":
+            self._open_material_io(task, node)
             return
         with self._guard:
             spec = self._run_specs[node.node_id]
@@ -1670,6 +1706,275 @@ class BackendScheduler:
                 pass
             raise
 
+    # ── 人工装入 / 取走 / 补量（权威本地执行，见 scheduler/material_io.py） ──────────
+
+    def _check_material_io(
+        self, task: Dict[str, Any], spec: Dict[str, Any], args: Mapping[str, Any],
+    ) -> tuple[Dict[str, Any], Dict[str, Any]]:
+        """解析完引用的参数严格校验后，请物料权威试运行一次；返回 (参数, 执行计划)。"""
+        from unilabos.protocol.runtime.material_io import normalize_material_io_param
+
+        if self.materials_gateway is None:
+            raise BackendSchedulingError("人工装入 / 取走 / 补量步骤需要物料权威")
+        param = normalize_material_io_param(args, allow_references=False)
+        plan = self.materials_gateway.check_material_io(
+            {"param": param, "task_uuid": str(task["uuid"]), "job_uuid": str(spec["current_job_uuid"])})
+        return param, dict(plan)
+
+    def _start_material_io(self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any]) -> None:
+        """人工物料步骤起跑：取得执行计划（已冻结的沿用），按锁定集合申请物料锁；``held`` 即开确认单。
+
+        库位被占、被其他任务占用等临时条件让 attempt 不持有任何东西地排队，资源变化时重试；合同错误节点失败。
+        """
+        from .material_io import frozen_material_io, material_io_request
+
+        job_uuid = spec["current_job_uuid"]
+        frozen = frozen_material_io(self.workflow, job_uuid)
+        if frozen is None:
+            try:
+                param, plan = self._check_material_io(task, spec, self._resolve_action_args(node.node_id))
+            except Exception as error:
+                code = temporary_resource_condition(error)
+                if code is None:
+                    self._fail_material_io(task, node, spec, error)
+                    return
+                self._wait_for_condition(task, node, job_uuid, code, str(error))
+                return
+            from unilabos.protocol.runtime.material_io import DEFAULT_TIMEOUT_SECONDS
+
+            frozen = {"plan": plan, "confirmation": {
+                "timeout_seconds": param.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+                "assignee_user_ids": param["assignee_user_ids"]}}
+            spec["material_io_param"] = param
+        spec["material_io"] = frozen
+        self._clear_condition_wait(job_uuid)
+        request = material_io_request(frozen["plan"], task_uuid=str(task["uuid"]), job_uuid=job_uuid)
+        prior_claim = self._execution_claims.get(job_uuid)
+        if prior_claim and not prior_claim["request"].get("interval_admission"):
+            request = request.model_copy(update={"interval_admission": False})
+        spec["resource_request"] = request
+        with self._guard:
+            self._run_context[node.node_id] = (task, node)
+            self._job_runs[job_uuid] = node.node_id
+        if self._physical_recovery.blockers(job_uuid, frozen["plan"]["lock_material_uuids"]):
+            with self._guard:
+                self._wait_for_interval(job_uuid, task, node)
+            return
+        if not self._intervals.admit(request, self._authority_epoch):
+            with self._guard:
+                self._wait_for_interval(job_uuid, task, node)
+                self._waiting_interval_requests[job_uuid] = request
+            return
+        with self._guard:
+            self._waiting_interval_jobs.pop(job_uuid, None)
+            self._waiting_interval_since.pop(job_uuid, None)
+        record = self.resources.acquire(request)
+        with self._guard:
+            self._waiting_resource_jobs[job_uuid] = (task, node)
+        if record.status == "held":
+            self._dispatch_held_node(task, node)
+
+    def _open_material_io(self, task: Dict[str, Any], node: DagNode) -> None:
+        """已持有物料锁的人工物料步骤：持锁再试运行一次、冻结计划、持久 Claim，然后开（或读回）确认单。"""
+        from .material_io import confirmation_description, confirmation_param, freeze_material_io, frozen_material_io
+
+        with self._guard:
+            spec = self._run_specs[node.node_id]
+            job_uuid = spec["current_job_uuid"]
+            # 暂停闸门（安静点重启 / 库存对账）期间继续持锁等待；不依赖执行适配器就绪
+            if self._dispatch_pause_reasons or job_uuid in self._dispatched_jobs:
+                return
+            if self.resources.request_for_owner(job_uuid).status != "held":
+                return
+            capacity_full = self._job_capacity_full(job_uuid, in_order=False)
+            if not capacity_full:
+                self._waiting_resource_jobs.pop(job_uuid, None)
+                self._dispatched_jobs.add(job_uuid)
+                self._manual_confirmation_jobs.add(job_uuid)
+        if capacity_full:
+            if self._withdraw_undispatched(job_uuid):
+                self._wait_for_condition(task, node, job_uuid, WAIT_JOB_CAPACITY,
+                                         f"全局在途作业容量（{self._max_in_flight_jobs}）已满，作业继续排队")
+            return
+        frozen = spec["material_io"]
+        confirmation: Optional[Dict[str, Any]] = None
+        try:
+            confirmation = self.workflow.get_manual_confirmation_for_job(job_uuid)
+            if confirmation is None:
+                stored = frozen_material_io(self.workflow, job_uuid)
+                if stored is None:
+                    # 排队等锁期间库位可能已被占：持锁后再试运行一次，通过才冻结计划
+                    _param, plan = self._check_material_io(task, spec, spec["material_io_param"])
+                    if plan["lock_material_uuids"] != frozen["plan"]["lock_material_uuids"]:
+                        raise BackendSchedulingError("排队期间人工物料步骤涉及的库位或物料变了，请重新运行")
+                    stored = freeze_material_io(self.workflow, self._authority_epoch, job_uuid, {**frozen, "plan": plan})
+                frozen = spec["material_io"] = stored
+            self._execution_claims.reserve(spec["resource_request"], authority_epoch=self._authority_epoch)
+            if confirmation is None:
+                plan = frozen["plan"]
+                confirmation = self.workflow.open_workflow_manual_confirmation(
+                    job_uuid,
+                    param=confirmation_param(frozen),
+                    description=confirmation_description(plan),
+                    meta_data={
+                        "workflow_task_uuid": str(task["uuid"]),
+                        "workflow_node_uuid": str(spec["workflow_node_uuid"]),
+                        "executor_kind": "material_io",
+                        "material_io": {key: plan[key] for key in (
+                            "mode", "mount_uuid", "site_uuid", "site_label", "template_uuid", "material_uuid",
+                        ) if key in plan},
+                    },
+                    timeout_seconds=int(frozen["confirmation"]["timeout_seconds"]),
+                )
+        except Exception as error:
+            with self._guard:
+                self._manual_confirmation_jobs.discard(job_uuid)
+            code = temporary_resource_condition(error)
+            if code is not None and confirmation is None and self._withdraw_undispatched(job_uuid):
+                # 持锁后才发现库位被占 / 被其他任务占用：放掉锁回到排队，不开确认单
+                self._wait_for_condition(task, node, job_uuid, code, str(error))
+                self._dispatch_promoted()
+                return
+            with self._guard:
+                self._dispatched_jobs.discard(job_uuid)
+            self._fail_material_io(task, node, spec, error)
+            return
+        # 重启接管时决策可能已经落库：读回终态立即收敛（库存命令按 attempt 幂等，只写一次）
+        if confirmation.get("status") != "pending":
+            self._on_manual_confirmation_decided(confirmation)
+
+    def _fail_material_io(self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any], error: BaseException) -> None:
+        """人工物料步骤不能执行（参数、库位、模板或物料不合法）：节点失败，库存不变。"""
+
+        job_uuid = str(spec["current_job_uuid"])
+        entry: Dict[str, Any] = {"code": "material_io_invalid", "message": str(error)}
+        code = getattr(error, "code", None)
+        qualifier = getattr(error, "subject", None) or getattr(error, "conflict", None)
+        if isinstance(code, str) and code:
+            entry["material_error_code"] = f"{code}:{qualifier}" if qualifier else code
+        business = getattr(error, "business_code", None)
+        if isinstance(business, int) and not isinstance(business, bool):
+            entry["business_code"] = business
+        logger.warning("人工物料步骤 %s 不能执行：%s", job_uuid, error)
+        state = NodeState.FAILED
+        try:
+            outcome = self.workflow.record_workflow_node_job_terminal(
+                job_uuid, status="failed",
+                return_info={"suc": False, "suc_type": "material_io", "return_value": {}}, error_info=[entry],
+            )
+            status = str((outcome.get("run") or {}).get("status") or "")
+            if status in _RUN_TERMINAL:
+                # 已终态（例如取消先到）时按已落的终态收敛
+                state = _run_status_to_state(status)
+        except Exception:  # noqa: BLE001 - 终态写不进去也要让节点收敛
+            logger.exception("人工物料步骤 %s 的失败终态写入失败", job_uuid)
+        self._release_job_resources(job_uuid, canceled=True)
+        with self._guard:
+            runner = self._runners.get(str(task["uuid"]))
+        if runner is not None:
+            runner.notify_terminal(node.node_id, state)
+
+    def _settle_material_io(
+        self, confirmation: Dict[str, Any], *, job_uuid: str, run_uuid: str, runner: Any,
+    ) -> None:
+        """消费人工物料步骤的确认决策：批准即提交一条库存命令（命令身份 = attempt），再把 attempt 收敛为终态。"""
+        from unilabos.server.services.materials.material_io import MATERIAL_IO_COMMAND, material_io_command_id
+        from .material_io import frozen_material_io, rejection_error
+
+        status = str(confirmation.get("status") or "pending")
+        decision_action = str((confirmation.get("meta_data") or {}).get("decision_action") or "").strip().lower()
+        if status not in {"approved", "rejected", "timed_out", "canceled"}:
+            if status != "pending":
+                logger.warning("忽略人工物料步骤 %s 的未知确认状态 %s", job_uuid, status)
+            return
+        with self._guard:
+            if job_uuid in self._material_io_settling:
+                return
+            self._material_io_settling.add(job_uuid)
+        try:
+            value: Dict[str, Any] = {"confirmation": {
+                "confirmation_uuid": confirmation.get("uuid"), "status": status,
+                "decision_action": decision_action or None, "confirmed_by": confirmation.get("confirmed_by"),
+                "comment": confirmation.get("comment"),
+            }}
+            errors: list[Dict[str, Any]] = []
+            if status == "approved" and decision_action != "skip":
+                # 以 attempt 上冻结的计划为准（循环下一轮会换成新 attempt 的计划）
+                frozen = frozen_material_io(self.workflow, job_uuid)
+                if frozen is None:
+                    job_status = "failed"
+                    errors = [{"code": "material_io_plan_missing", "message": "人工物料步骤没有冻结的执行计划"}]
+                else:
+                    try:
+                        response = self.materials_gateway.inventory_command({
+                            "command_id": material_io_command_id(job_uuid), "type": MATERIAL_IO_COMMAND,
+                            "payload": frozen["plan"], "actor": "scheduler",
+                        })
+                    except Exception as error:  # noqa: BLE001 - 决策已持久；同一命令身份稍后重提，不会写两次
+                        with self._guard:
+                            first = job_uuid not in self._material_io_retry
+                            self._material_io_retry.add(job_uuid)
+                        if first:
+                            logger.exception("人工物料步骤 %s 已批准，库存写入暂时失败，稍后重试", job_uuid)
+                        else:
+                            logger.warning("人工物料步骤 %s 的库存写入仍未成功：%s", job_uuid, error)
+                        return
+                    if response.get("status") == "completed":
+                        job_status = "succeeded"
+                        value = {**dict(response.get("result") or {}), **value}
+                    else:
+                        job_status = "failed"
+                        errors = [rejection_error(response)]
+            elif status == "approved":
+                job_status = "skipped"
+            elif status == "rejected":
+                job_status, errors = "failed", [{"code": "manual_confirmation_rejected"}]
+            elif status == "timed_out":
+                job_status, errors = "timeout", [{"code": "manual_confirmation_timed_out"}]
+            else:
+                job_status = "canceled"
+            with self._guard:
+                self._material_io_retry.discard(job_uuid)
+            try:
+                outcome = self.workflow.record_workflow_node_job_terminal(
+                    job_uuid, status=job_status,
+                    return_info={"suc": job_status in {"succeeded", "skipped"}, "suc_type": "material_io",
+                                 "return_value": value},
+                    error_info=errors,
+                )
+            except Exception:  # noqa: BLE001 - 保留 durable 决策，等待恢复重试
+                logger.exception("人工物料步骤 %s 的终态写入失败", job_uuid)
+                return
+            if job_status == "failed" and errors:
+                logger.warning("人工物料步骤 %s 失败：%s", job_uuid, errors[0].get("message") or errors[0]["code"])
+            self._release_job_resources(job_uuid, canceled=job_status in {"failed", "timeout", "canceled"})
+            run = outcome.get("run") or {}
+            if runner is not None and str(run.get("status") or "") in _RUN_TERMINAL:
+                runner.notify_terminal(run_uuid, _run_status_to_state(str(run["status"])))
+        finally:
+            with self._guard:
+                self._material_io_settling.discard(job_uuid)
+
+    def _retry_material_io_settlements(self) -> None:
+        """已批准、库存写入暂时失败的人工物料步骤按同一命令身份重提（兜底重算时）。"""
+
+        with self._guard:
+            if self._material_io_retrying or not self._material_io_retry:
+                return
+            self._material_io_retrying = True
+            jobs = sorted(self._material_io_retry)
+        try:
+            for job_uuid in jobs:
+                try:
+                    confirmation = self.workflow.get_manual_confirmation_for_job(job_uuid)
+                except Exception:  # noqa: BLE001 - 读不到就等下一轮
+                    continue
+                if confirmation is not None:
+                    self._on_manual_confirmation_decided(confirmation)
+        finally:
+            with self._guard:
+                self._material_io_retrying = False
+
     def _reconcile_resources(self) -> None:
         """重算等待集合；只下发本轮已获得完整资源的 attempt。"""
 
@@ -1678,6 +1983,7 @@ class BackendScheduler:
                 return
         self._reconcile_inventory()
         self._retry_physical_outcomes()
+        self._retry_material_io_settlements()
         with self._guard:
             if ("legacy_resource_reconciliation" in self._dispatch_pause_reasons
                     and not self._intervals.unadmitted_active_claims()):
@@ -1896,7 +2202,9 @@ class BackendScheduler:
                 for job_uuid, run_uuid in self._job_runs.items()
                 if self._run_to_task.get(run_uuid) == task_uuid
             ]
-            dispatched = [job_uuid for job_uuid, _run in jobs if job_uuid in self._dispatched_jobs]
+            # 人工确认 / 人工物料步骤从未交给执行面：经确认单取消，不发执行面取消请求
+            dispatched = [job_uuid for job_uuid, _run in jobs
+                          if job_uuid in self._dispatched_jobs and job_uuid not in self._manual_confirmation_jobs]
             queued = [
                 (job_uuid, run_uuid)
                 for job_uuid, run_uuid in jobs
@@ -2745,6 +3053,11 @@ class BackendScheduler:
         # 决策可以先于新进程接管到达；事实已在 DB，恢复时 _dispatch_held_node
         # 会再次读到终态并调用本方法，此处不凭空修改未知任务。
         if run_uuid is None or task_uuid is None:
+            return
+        with self._guard:
+            spec = self._run_specs.get(run_uuid) or {}
+        if spec.get("kind") == "material_io":
+            self._settle_material_io(confirmation, job_uuid=job_uuid, run_uuid=run_uuid, runner=runner)
             return
 
         decision_action = str(

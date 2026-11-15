@@ -2,7 +2,9 @@
 
 import json
 import sys
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from unilabos.client import (
     EnvelopeError,
@@ -55,6 +57,19 @@ def _emit_list(data: Any, *, jsonl: bool) -> None:
         _print_jsonl(item)
 
 
+def _read_json_object(specification: str) -> dict[str, Any]:
+    """``--inputs``：JSON 对象文本，或 ``@文件路径`` 读取 JSON 文件。"""
+
+    text = Path(specification[1:]).read_text(encoding="utf-8") if specification.startswith("@") else specification
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"--inputs 不是合法 JSON：{error}") from None
+    if not isinstance(value, dict):
+        raise ValueError("--inputs 必须是 JSON 对象或 @JSON 文件")
+    return value
+
+
 def _emit_watch(events: Any, *, jsonl: bool) -> None:
     for event in events:
         if jsonl:
@@ -92,6 +107,7 @@ def cmd_workflow_command(args: Any, session_manager: SessionManager) -> None:
                 args.workflow_uuid,
                 run_mode=args.mode,
                 target_node_uuid=args.target_node,
+                input_value=_read_json_object(args.inputs),
                 operation_id=args.operation_id,
             )
             if jsonl:
@@ -118,6 +134,22 @@ def cmd_workflow_command(args: Any, session_manager: SessionManager) -> None:
                 ),
                 jsonl=jsonl,
             )
+        elif action == "command":
+            command_type = "resume" if args.type == "continue" else str(args.type)
+            command = client.command_task(
+                args.task_uuid,
+                command_type=command_type,
+                idempotency_key=args.idempotency_key or f"cli-{command_type}-{uuid4()}",
+                target_node_uuid=args.target_node,
+                description="由 unilab workflow CLI 提交",
+                meta_data={"source": "unilab-workflow-client"},
+            )
+            print_output(command)
+            if command.get("status") == "rejected":
+                # 业务拒绝不是接口错误：命令已登记为 rejected，原因在 result.reason
+                reason = (command.get("result") or {}).get("reason") or "未给出原因"
+                print_error(f"任务命令 {command_type} 被拒绝: {reason}")
+                raise SystemExit(1)
         elif action == "authoring":
             print_output(
                 client.wait_authoring(

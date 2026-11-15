@@ -101,6 +101,11 @@ def _register_workflow_authority_commands(workflow_actions: Any) -> None:
         dest="target_node",
         default=None,
     )
+    workflow_run.add_argument(
+        "--inputs",
+        default="{}",
+        help="Workflow entry input: a JSON object, or @path/to/file.json",
+    )
     workflow_run.add_argument("--operation_id", "--operation-id", default=None)
     workflow_run.add_argument("--follow", action="store_true")
     workflow_run.add_argument("--after", type=int, default=0)
@@ -137,6 +142,36 @@ def _register_workflow_authority_commands(workflow_actions: Any) -> None:
         include_auth=True,
         jsonl=True,
     )
+
+    workflow_command = workflow_actions.add_parser(
+        "command",
+        help="Submit a Task control command (pause / resume / step / cancel) idempotently",
+    )
+    workflow_command.add_argument("task_uuid")
+    workflow_command.add_argument(
+        "type",
+        # continue 是 V1 CLI 的 resume 别名
+        choices=["pause", "resume", "continue", "step", "cancel"],
+        help=(
+            "pause closes the dispatch gate (running actions finish); resume reopens it or leaves step mode; "
+            "step releases one node; cancel cancels the Task (continue = resume)"
+        ),
+    )
+    workflow_command.add_argument(
+        "--target_node",
+        "--target-node",
+        dest="target_node",
+        default=None,
+        help="Node to release (step only)",
+    )
+    workflow_command.add_argument(
+        "--idempotency_key",
+        "--idempotency-key",
+        dest="idempotency_key",
+        default=None,
+        help="Reuse the key when retrying the same command (default: a new key)",
+    )
+    _add_client_connection_options(workflow_command, include_auth=True)
 
     workflow_authoring = workflow_actions.add_parser(
         "authoring",
@@ -530,6 +565,7 @@ def run_client_command(
             "inspect",
             "run",
             "watch",
+            "command",
             "authoring",
         }:
             cmd_workflow_command(args, session_manager)

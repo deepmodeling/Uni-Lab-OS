@@ -368,8 +368,11 @@ class HTTPWorkflowClient:
         *,
         run_mode: str = "normal",
         target_node_uuid: Optional[str] = None,
+        input_value: Optional[Mapping[str, Any]] = None,
         operation_id: Optional[str] = None,
     ) -> dict[str, Any]:
+        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。"""
+
         operation_id = operation_id or str(uuid4())
         return self._http.post(
             "/workflow-tasks",
@@ -377,6 +380,7 @@ class HTTPWorkflowClient:
                 "workflow_uuid": workflow_uuid,
                 "run_mode": run_mode,
                 "target_node_uuid": target_node_uuid,
+                "input": dict(input_value or {}),
                 "description": "由 unilab workflow CLI 启动",
                 "meta_data": {
                     "source": "unilab-workflow-client",

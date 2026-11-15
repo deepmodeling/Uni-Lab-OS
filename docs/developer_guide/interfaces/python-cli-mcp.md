@@ -205,6 +205,8 @@ python -m unilabos.app.main --backend hostlink --is-slave --machine-name lab-sla
 unilab workflow list --address http://127.0.0.1:8003 --json
 unilab workflow upload -f workflow.json -n "实验流程" --address http://127.0.0.1:8003
 unilab workflow run WORKFLOW_UUID --mode step --address http://127.0.0.1:8003 --json
+unilab workflow run WORKFLOW_UUID --inputs '{"count": 3}' --address http://127.0.0.1:8003   # 或 --inputs @inputs.json
+unilab workflow command TASK_UUID step --address http://127.0.0.1:8003   # pause / resume / step / cancel
 unilab workflow inspect TASK_UUID --kind task --address http://127.0.0.1:8003 --json
 unilab graph --help
 unilab package --help
@@ -218,7 +220,9 @@ CLI 与 Python SDK 的写请求自动带控制面 token：取 `BasicConfig.contr
 
 实际替换 UUID/路径；run 会创建真实任务，不是 dry-run。
 package/pkg 已合入 app.cli，不使用旧 package_cli 入口；命令处理完成后不启动设备运行时。
-当前 CLI 未提供 task commands 的独立 step/resume 子命令，提交 step 模式后通过 HTTP/前端操作。
+`--inputs` 是工作流入口参数（JSON 对象，或 `@文件` 读取），按工作流的 input_contract 校验；不给时提交 `{}`。
+`workflow command` 幂等提交任务控制命令（`continue` 是 V1 的 `resume` 别名，`step` 可用 `--target-node` 指定节点）；
+重传同一命令时用 `--idempotency-key` 带上原键。命令被业务拒绝（例如任务未暂停时 resume）时仍输出命令投影，原因在 `result.reason`，退出码为 1。
 
 session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 code，utils/output.py 负责 CLI 输出；
 它们不是四库业务仓库，也不是三个重复的数据库连接层。

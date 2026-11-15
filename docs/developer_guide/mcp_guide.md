@@ -235,6 +235,18 @@ param 按该动作 schema 填写，不能认为每个动作都接受空对象。
 最终用 `workflow_task_node_runs` 和 `workflow_task_jobs` 核对返回实值、attempt_count、
 旧失败与新 attempt 的关联；通过 workflow_node_uuid 关联图中的节点名称。
 
+观察任务进展时读运行事件时间线，每次把上次返回的 `next_cursor` 作为 `after_sequence`，
+只拿新发生的任务状态迁移、作业派发与结果（两个 query 参数都是十进制字符串，limit 最大 500）：
+
+```json
+{
+  "name": "workflow_task_events",
+  "arguments": {"path": {"task_uuid": "<task_uuid>"}, "query": {"after_sequence": "0", "limit": "100"}}
+}
+```
+
+`has_more=true` 时用新的 `next_cursor` 继续读；没有新事件时 `items` 为空、`next_cursor` 不变。
+
 ## 6. 异常、人工确认与重试
 
 - 动作错误使用 `decisions_error_decisions_list` 发现，具体字段先 inspect
@@ -315,7 +327,8 @@ payload，不产生另一套数据模型。相同命令/效果的重传用相同
 
 持续实时订阅沿用前端协议的 SSE 通知加 HTTP 拉取：`/api/v1/events`，
 物料为 `/api/v1/materials/events`。不把无限 SSE 流塞进一次 MCP 工具返回，
-也不为前端实现固定每秒轮询。MCP 的短时 task wait 不等于前端实时订阅。
+也不为前端实现固定每秒轮询。MCP 的短时 task wait 不等于前端实时订阅；
+单个任务的增量变化用 `workflow_task_events` 按游标读取。
 
 ## 10. 可直接改写的自然语言任务
 

@@ -58,9 +58,9 @@ def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
     # +23 V1 工作流作者 / 设备目录；-1 V1 任务生命周期合并重复路由；+6 V1 库存 / 工作区；
     # +12 V1 作业 / 库存接缝（消费事实、数量核对、结果未知处置、类型化实例命令）；
-    # +4 V1 进程管理协议（快照、提交 / 查询操作、组件日志）
-    assert len(OPERATIONS) == 176
-    assert len(protocol.tools) == 182
+    # +4 V1 进程管理协议（快照、提交 / 查询操作、组件日志）；+1 任务运行事件时间线
+    assert len(OPERATIONS) == 177
+    assert len(protocol.tools) == 183
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -103,7 +103,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 182
+        assert len(rpc(client, "tools/list")["tools"]) == 183
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})
@@ -255,6 +255,55 @@ def test_graph_validation_error_explains_how_to_fix(tmp_path, contract):
         }))
         assert result.isError
         assert "material_uuid" in result.structuredContent["body"]["error"]["msg"]
+    finally:
+        service.close()
+
+
+def test_task_events_tool_follows_the_task_timeline_by_cursor(tmp_path, contract):
+    from unilabos.server.api.runtime.workflow import create_workflow_app
+    from unilabos.server.services.runtime.workflow.service import WorkflowService
+
+    service = WorkflowService(tmp_path / "runtime.db")
+    protocol = ProtocolMCP(create_workflow_app(service), contract)
+    tool = next(tool for tool in protocol.tools if tool.name == "workflow_task_events")
+    assert tool.annotations.readOnlyHint is True
+    validator = Draft202012Validator(tool.inputSchema)
+
+    def call(name, arguments):
+        result = asyncio.run(protocol.call_tool(name, arguments))
+        assert not result.isError, result.structuredContent
+        return result.structuredContent["body"]["data"]
+
+    def events(task_uuid, **query):
+        arguments = {"path": {"task_uuid": task_uuid}, "query": query}
+        validator.validate(arguments)
+        return call("workflow_task_events", arguments)
+
+    try:
+        workflow = call("workflow_workflow_create", {"body": {"name": "事件观察"}})
+        call("workflow_graph_save", {"path": {"workflow_uuid": workflow["uuid"]}, "body": {
+            "revision": workflow["revision"], "edges": [],
+            "nodes": [{"uuid": "6f2c4f0e-6a4f-4b8e-9d55-0d3c1f0e7a11", "name": "人工确认", "type": "manual_confirm"}],
+        }})
+        task = call("workflow_task_create", {"body": {"workflow_uuid": workflow["uuid"]}})
+        first = events(task["uuid"], after_sequence="0", limit="500")
+        assert set(first) == {"items", "next_cursor", "has_more"} and first["has_more"] is False
+        cursor = first["next_cursor"]
+
+        call("workflow_task_command", {"path": {"task_uuid": task["uuid"]},
+                                       "body": {"type": "cancel", "idempotency_key": "mcp-cancel"}})
+        later = events(task["uuid"], after_sequence=str(cursor))
+        assert later["items"], "取消后应有新的任务事件"
+        assert all(item["sequence"] > cursor and item["workflow_task_uuid"] == task["uuid"]
+                   for item in later["items"])
+        assert later["next_cursor"] == later["items"][-1]["sequence"]
+        everything = first["items"] + later["items"]
+        paged = events(task["uuid"], after_sequence="0", limit="1")
+        assert paged["items"] == everything[:1]
+        assert paged["has_more"] is (len(everything) > 1)
+        # 游标已到末尾：没有新事件，next_cursor 原样返回
+        assert events(task["uuid"], after_sequence=str(later["next_cursor"])) == {
+            "items": [], "next_cursor": later["next_cursor"], "has_more": False}
     finally:
         service.close()
 

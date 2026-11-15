@@ -68,6 +68,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("workflow.task.get", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}", "运行详情", "any"),
     Operation("workflow.task.command", "workflow", "POST", "/api/v1/workflow-tasks/{task_uuid}/commands", "任务控制（V1）：step / switch_to_step / pause / resume / cancel / unlock_resources，幂等键必填，返回命令投影", "any"),
     Operation("workflow.task.jobs", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/jobs", "运行的全部 attempt（节点作业）平铺列表", "any"),
+    Operation("workflow.task.events", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/events", "任务运行事件时间线（状态迁移、作业派发与结果）：after_sequence 传上次的 next_cursor 只读新事件，limit 1–500（两者都是十进制字符串）；返回 items / next_cursor / has_more", "any"),
     Operation("workflow.task.node-runs", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/node-runs", "运行的节点运行视图：每节点一条，当前 attempt 结果 + attempts 历史", "any"),
     Operation("workflow.node-run.get", "workflow", "GET", "/api/v1/workflow-node-runs/{run_uuid}", "节点运行详情（含 attempts）", "any"),
     Operation("workflow.task.manual-confirmations", "workflow", "GET", "/api/v1/workflow-tasks/{task_uuid}/manual-confirmations", "task 的人工确认待办与历史", "any"),

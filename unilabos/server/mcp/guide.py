@@ -50,6 +50,8 @@ GUIDE = """# 本机 MCP / protocol
 6. workflow_task_get / workflow_task_node_runs / workflow_task_jobs 跟踪真实结果，
    不以提交成功等同执行成功；检查每次 attempt 和返回信息。protocol_wait_task 有界等待，
    遇到待人工决策会立即返回，不能在等待期间自动替用户审批。
+   workflow_task_events 读任务运行事件时间线：query.after_sequence 传上次返回的 next_cursor，
+   只拿到新发生的状态迁移与作业结果，不必反复拉整份任务快照。
 
 ## 异常、物料与锁
 - 只有用户明确选择后才调用错误决策工具，回带 decision_id/job_id/device_id；

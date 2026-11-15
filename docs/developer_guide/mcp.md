@@ -85,7 +85,9 @@ tool_timeout_sec = 60
 其他项。工具不自动重试。设备动作必须经 `workflow_task_create` 交给调度执行。
 
 现有实时变化仍使用 SSE 通知加 HTTP 拉取：`/api/v1/events` 与
-`/api/v1/materials/events`。无限 SSE 流不作为一次 MCP 工具结果返回。
+`/api/v1/materials/events`。无限 SSE 流不作为一次 MCP 工具结果返回；
+单个任务的运行事件由 `workflow_task_events`（`/api/v1/workflow-tasks/{task_uuid}/events`）
+按 `after_sequence` 游标分页读取。
 
 ## 安全
 

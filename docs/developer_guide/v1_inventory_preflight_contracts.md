@@ -131,7 +131,7 @@ def dose(
 这次提供可独立接入 dev 的库存增量、预检和严格动作合同，不宣称整个 V1 库存运行期已经移植：
 
 - V1 的内容物共享数量预留、运行时补料分支与数量预留 Saga，尚未取代 dev 的 lot 预留模型。
-- V1 的搬运/分装实际结果结算、与通用扣减去重、可信测量 Job 自动盘点，尚未接入。
+- 搬运 / 分装按实际回执结算已接入（`materials/execution.py`）；与通用扣减去重：同一作业在分装来源容器上声明的内容物预留不再按计划量扣减，动作开始时预留保持有效（其他任务拿不走），物理结算时按分装实际取走的量记为已消费（`settled_by="aliquot"`，V1 `settled_quantity` 的做法），现场核实不结算分装时按未取用释放（2026-11-16）。可信测量 Job 自动盘点尚未接入。
 - `device_tenancy`、`transfer`、`transfer_step`、`operate_in_place`、`aliquot` 只在调度器托管（`managed_resources`）下接受，脱离托管的运行值校验仍拒绝；`order_sensitive` 只约束计划：与同一资源上无先后关系的兄弟动作在发布和创建任务时被拒绝（`scheduler/interval_plan.py`）。（2026-11-15 更新）
 - 正式前端在独立 Uni-Lab FE 仓库；本轮只读核验其代码和 API，不修改该仓库业务实现。主仓库调试站已移除。
 

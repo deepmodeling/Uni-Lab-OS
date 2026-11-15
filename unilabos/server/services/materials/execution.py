@@ -281,7 +281,7 @@ class MaterialExecutions:
                         MaterialMove(material_uuid=move.material_uuid, destination_site_uuid=move.target_site_uuid),
                     )
                 if plan.aliquot:
-                    self._aliquot(plan, receipt)
+                    self._settle_aliquot_contents(plan, self._aliquot(plan, receipt))
                 self._inventory(plan, receipt, now)
                 for identity in record["snapshot"]:
                     service._validate_material_capacity(identity)
@@ -304,14 +304,35 @@ class MaterialExecutions:
             job_uuid=plan.job_uuid,
         )
 
+    def aliquot_of(self, job_uuid: str) -> dict | None:
+        """作业冻结的分装来源与物理执行状态；没有物理执行或不含分装时为 ``None``。"""
+        row = self.service.connection.execute(
+            "SELECT state, request_json FROM material_execution WHERE job_uuid=?", (job_uuid,)
+        ).fetchone()
+        aliquot = (json.loads(row["request_json"]).get("aliquot") if row is not None else None) or None
+        return {"source_material_uuid": aliquot["source_material_uuid"], "state": row["state"]} if aliquot else None
+
+    def _settle_aliquot_contents(self, plan, deducted) -> None:
+        """同一作业在分装来源上的内容物预留按分装实际取走的量结算：来源只扣一次（分装台账即实际扣量）。"""
+        contents = self.service._content_contract()
+        for row in self.service.connection.execute(
+            "SELECT reservation_uuid, substance_uuid, quantity_unit FROM material_content_reservation "
+            "WHERE job_uuid=? AND material_uuid=? AND status='active' ORDER BY reservation_uuid",
+            (plan.job_uuid, plan.aliquot.source_material_uuid),
+        ).fetchall():
+            amount, unit, before = deducted.get(row["substance_uuid"], (0.0, row["quantity_unit"], 0.0))
+            contents.settle_content_by_aliquot(row["reservation_uuid"], actual_quantity=amount,
+                                               quantity_unit=unit, balance_before=before)
+
     def _aliquot(self, plan, receipt):
+        """按回执把来源内容物等比分到各目标；返回来源每份内容物被取走的量 ``{substance_uuid: (量, 单位, 原量)}``。"""
         from .core import MaterialConflictError
 
         source = self.service.get_material(plan.aliquot.source_material_uuid)
         contents = source.data.substances
         positive = [item for item in contents if item.quantity > 0]
         if not positive and all(item.actual_quantity == 0 for item in receipt.material_aliquot_receipts):
-            return
+            return {}
         if not positive:
             raise MaterialConflictError("分装来源没有可核算的内容物")
         # 混合物按来源各组分比例分配；不可换算的物性须由操作员补全。
@@ -331,6 +352,11 @@ class MaterialExecutions:
             source.material.material_uuid: [
                 item.model_copy(update={"quantity": max(0.0, item.quantity * (1 - used / total))}) for item in contents
             ]
+        }
+        deducted = {
+            before.substance_uuid: (before.quantity - after.quantity, before.quantity_unit, before.quantity)
+            for before, after in zip(contents, updates[source.material.material_uuid])
+            if before.substance_uuid
         }
         for target_receipt, amount in zip(receipt.material_aliquot_receipts, amounts):
             target = self.service.get_material(target_receipt.target_material_uuid)
@@ -370,6 +396,7 @@ class MaterialExecutions:
                 self.service.put_data(self._mutation(plan, "aliquot:" + identity, "put_data"), identity, value)
             except MaterialNoChangeError:
                 pass
+        return deducted
 
     @staticmethod
     def _chemical_key(item):
@@ -511,4 +538,14 @@ class MaterialExecutions:
                 (_json(value), self.service._now_ms(), job_uuid),
             )
             conn.execute("DELETE FROM material_execution_hold WHERE job_uuid=?", (job_uuid,))
+            aliquot = (record["request"] or {}).get("aliquot")
+            reservation = record["request"].get("inventory_reservation_uuid")
+            if aliquot and reservation and self.service.get_inventory_reservation(reservation).status != "active":
+                # 动作开始时留给分装结算的来源内容物预留：现场核实不再结算分装，按未取用释放
+                contents = self.service._content_contract()
+                for (identity,) in conn.execute(
+                    "SELECT reservation_uuid FROM material_content_reservation WHERE job_uuid=? AND material_uuid=? "
+                    "AND status='active'", (job_uuid, aliquot["source_material_uuid"]),
+                ).fetchall():
+                    contents.finish_content_reservation(identity, "released")
             return self.get(job_uuid)

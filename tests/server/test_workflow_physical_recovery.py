@@ -21,7 +21,7 @@ def seed(stack):
     return source, target
 
 
-def make_task(stack, executor, source, target):
+def make_task(stack, executor, source, target, *, inventory=None):
     field = {
         "type": "object",
         "properties": {"uuid": {"type": "string"}},
@@ -63,7 +63,7 @@ def make_task(stack, executor, source, target):
                     "type": "device_action",
                     "material_uuid": str(uuid4()),
                     "action_name": "aliquot",
-                    "meta_data": {"target_device_id": "pipette"},
+                    "meta_data": {"target_device_id": "pipette", **({"inventory_requirements": inventory} if inventory else {})},
                     "param": {"source": {"uuid": source}, "target": {"uuid": target}},
                 }
             ],
@@ -100,6 +100,103 @@ def test_success_settles_actual_contents_before_task_completion(tmp_path):
         assert contents(stack.materials, source) == {"water": 70}
         assert contents(stack.materials, target) == {"water": 30}
         assert not scheduler._physical_recovery.snapshot()
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+def _water(source, quantity=30):
+    """分装来源上的内容物需求：同一节点既预留来源内容物、又执行分装。"""
+    return [{"key": "water", "kind": "content", "material_uuid": source, "substance_name": "water",
+             "quantity": quantity, "unit": "ul"}]
+
+
+def _consumptions(stack, job_uuid):
+    from unilabos.server.services.materials.consumption import InventoryConsumptions
+
+    return [(item["inventory_type"], item["planned_quantity"], item["actual_quantity"])
+            for item in InventoryConsumptions(stack.materials).list_job(job_uuid)]
+
+
+def test_aliquot_source_reserved_as_content_is_deducted_once_when_the_scheduler_settles(tmp_path):
+    """调度器终态对账结算预留（Host 没有在动作开始时消费）：分装回执已经扣过来源，预留结算不能再扣一次。"""
+    stack, executor = Stack(tmp_path), Executor()
+    source, target = seed(stack)
+    scheduler, task = make_task(stack, executor, source, target, inventory=_water(source))
+    try:
+        job = executor.dispatched[0]["job_id"]
+        [reservation] = stack.client.list_inventory_reservations(task_uuid=task["uuid"])
+        executor.finish(0, result(target))
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+        scheduler._reconcile_inventory()
+        assert stack.client.get_inventory_reservation(reservation.reservation_uuid).status == "consumed"
+        assert contents(stack.materials, source) == {"water": 70}
+        assert contents(stack.materials, target) == {"water": 30}
+        # 读模型：内容物预留的实际量取分装台账，不再另列一条分装消耗
+        assert _consumptions(stack, job) == [("current_substance", 30.0, 30.0)]
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+def test_aliquot_source_consumed_at_action_start_is_settled_by_the_actual_aliquot(tmp_path):
+    """Host 在动作开始时消费预留：来源内容物等分装回执按实际量扣一次，期间预留仍挡住其他任务。"""
+    from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+    from unilabos.protocol.materials import InventoryRequirement
+
+    stack, executor = Stack(tmp_path), Executor()
+    source, target = seed(stack)
+    scheduler, task = make_task(stack, executor, source, target, inventory=_water(source))
+    try:
+        payload = executor.dispatched[0]
+        host = ExecutionInventoryCoordinator(stack.client)
+        host.prepare(payload)
+        assert host.consume(payload["job_id"]).status == "consumed"  # 动作开始
+        assert contents(stack.materials, source) == {"water": 100}  # 实际量以分装回执为准
+        shortage = stack.materials.preview_inventory([InventoryRequirement(
+            key="other", kind="content", material_uuid=source, substance_name="water", quantity=80, unit="ul")])
+        assert not shortage["available"]  # 分装结算前这 30 ul 仍归本作业
+        executor.finish(0, result(target, 25))
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+        scheduler._reconcile_inventory()
+        assert contents(stack.materials, source) == {"water": 75}
+        assert contents(stack.materials, target) == {"water": 25}
+        assert _consumptions(stack, payload["job_id"]) == [("current_substance", 30.0, 25.0)]
+    finally:
+        scheduler.stop()
+        stack.close()
+
+
+def test_released_aliquot_releases_the_source_content_reserved_at_action_start(tmp_path):
+    """动作开始后失败、现场核实恢复原状（不结算分装）：留给分装结算的来源预留按未取用释放。"""
+    from unilabos.protocol.runtime.execution_start import execution_identity
+    from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+
+    stack, executor = Stack(tmp_path), Executor()
+    source, target = seed(stack)
+    scheduler, task = make_task(stack, executor, source, target, inventory=_water(source))
+    try:
+        payload = executor.dispatched[0]
+        scheduler._execution_claims.begin_execution(payload["job_id"], {  # Host 取得开始许可后才消费
+            "permit": payload["execution_permit"], "invocation_uuid": str(uuid4()),
+            "executor_epoch": "test-host", "identity": execution_identity(payload)})
+        host = ExecutionInventoryCoordinator(stack.client)
+        host.prepare(payload)
+        host.consume(payload["job_id"])
+        executor.finish(0, {})  # 没有分装回执
+        wait_for(lambda: bool(scheduler.list_reconciliation_decisions()))
+        decision = scheduler.list_reconciliation_decisions()[0]
+        assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "abort", "reason": "停止"})
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "failed")
+        scheduler._reconcile_inventory()
+        [content] = stack.materials._content_contract().list_content_reservations(task_uuid=task["uuid"])
+        assert content["status"] == "active"  # 分装是否发生只有现场能确认，结算前不扣也不放
+        row = scheduler._physical_recovery.snapshot()[0]
+        scheduler._physical_recovery.release_verified(payload["job_id"], row["version"], "现场确认未分装")
+        [content] = stack.materials._content_contract().list_content_reservations(task_uuid=task["uuid"])
+        assert content["status"] == "released"
+        assert contents(stack.materials, source) == {"water": 100}
+        assert _consumptions(stack, payload["job_id"]) == []
     finally:
         scheduler.stop()
         stack.close()

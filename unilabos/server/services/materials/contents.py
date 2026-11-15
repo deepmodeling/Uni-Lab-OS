@@ -1084,6 +1084,58 @@ class ContentContract:
                 )
         return self.get_content_reservation(reservation_uuid)
 
+    def settle_content_by_aliquot(self, reservation_uuid: str, *, actual_quantity: float, quantity_unit: str,
+                                  balance_before: float) -> dict[str, Any]:
+        """分装来源上的预留按分装回执结算（V1 ``settled_quantity``）：来源内容物已由分装按实际量扣过。
+
+        这里只把预留记为 ``consumed`` 并写一条 ``consume`` 历史（``settled_by="aliquot"``，实际量为分装
+        从这份内容物取走的量），不再按计划量扣第二次。已不是 ``active`` 的预留原样返回（重放幂等）。
+        """
+
+        with self.materials.write():
+            row = self.connection.execute(
+                "SELECT * FROM material_content_reservation WHERE reservation_uuid=?", (reservation_uuid,)
+            ).fetchone()
+            if row is None:
+                raise MaterialNotFoundError(f"content reservation not found: {reservation_uuid}", subject="reservation")
+            if row["status"] != "active":
+                return self._reservation_row(row)
+            now = self._now()
+            self.connection.execute(
+                "UPDATE material_content_reservation SET status='consumed', updated_at_ms=MAX(?, created_at_ms), "
+                "version=version+1 WHERE reservation_uuid=?", (now, reservation_uuid),
+            )
+            physical = self._physical(row["substance_uuid"])
+            reported = convert_quantity(actual_quantity, quantity_unit, row["quantity_unit"], inventory_type="content",
+                                        physical_state=physical.get("physical_state"),
+                                        concentration_value=physical.get("concentration_value"),
+                                        density_g_per_ml=physical.get("density_g_per_ml"))
+            kind = self.connection.execute(
+                "SELECT content_kind FROM material_content WHERE substance_uuid=?", (row["substance_uuid"],)
+            ).fetchone()
+            if kind is not None:
+                self._update_content(row["substance_uuid"], now)
+            self._append_history(
+                material_uuid=row["material_uuid"],
+                subject_type={"current": "current_substance"}.get(kind[0], kind[0]) if kind else "current_substance",
+                subject_uuid=row["substance_uuid"], event_type="consume", quantity_delta=-actual_quantity,
+                quantity_unit=quantity_unit, revision=None, previous=None, result=None,
+                extension={
+                    "reservation_uuid": reservation_uuid,
+                    "settled_by": "aliquot",
+                    "planned_quantity": float(row["quantity"]),
+                    "planned_quantity_unit": row["quantity_unit"],
+                    "reported_quantity": reported[0] if reported is not None else None,
+                    "reported_quantity_unit": row["quantity_unit"] if reported is not None else None,
+                    "actual_quantity": actual_quantity,
+                    "quantity_unit": quantity_unit,
+                    "balance_before": balance_before,
+                    "balance_after": max(0.0, balance_before - actual_quantity),
+                },
+                operator_type="workflow", task_uuid=row["task_uuid"], job_uuid=row["job_uuid"],
+            )
+        return self.get_content_reservation(reservation_uuid)
+
     def _reported_content_quantity(self, row: Any) -> float:
         """已结算内容物预留最近一次落账的上报量（预留单位）：最新的 consume / reconcile 记录，缺省为预留量。"""
 

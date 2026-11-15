@@ -338,7 +338,8 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    （或 "substance_uuid"）, "quantity": 4, "unit": "ml"}`。可用量 = 内容物现量 − 其他任务仍有效的预留，
    所以多个任务共享同一瓶的余量，不足时整张回滚并说明缺多少。预留随作业预留一起写入
    `material_content_reservation`，结算规则与 `lot` 相同：动作开始扣减、未开始即失败释放、
-   结果不明按预留量扣减且不退回。注入动作参数时，带物料锁的参数得到容器的 ResourceSlot 引用，
+   结果不明按预留量扣减且不退回；同一作业还在这只容器上分装时，预留留到物理结算，按分装实际取走的量记为
+   已消费（来源只扣一次）。注入动作参数时，带物料锁的参数得到容器的 ResourceSlot 引用，
    否则得到 `{"material_uuid", "substance_uuid", "quantity", "unit"}`。动作开始后可经
    `POST /api/v1/workflow-node-jobs/{uuid}/reconcile-quantity` 按实际用量更正**一次**：少用的退回容器，
    多用的只能从未预留余量里扣。作业持有有效预留的内容物不能被（包括设备快照）移除，单位也不能改成

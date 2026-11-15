@@ -29,7 +29,7 @@
 | A03 | 仅能解析 | 已实现 | `device_tenancy` / `operate_in_place` / `transfer` / `transfer_step` / `aliquot` 在调度器托管下启用（`scheduler/physical_contract.py`、`materials/execution.py`）；`order_sensitive` 按 V1 规则在发布和创建任务时检查同一资源上无先后关系的兄弟动作（`scheduler/interval_plan.py`，`tests/server/test_order_sensitive_actions.py`）；并行成员同时就绪时按书写顺序派发 |
 | I01 | #358 未合并 | 已实现 | `materials/quantity.py`、`capacity.py`，批次计数盘点 `stocktake_inventory_lot` |
 | I02 | 未对齐 | 已实现（按用户决定收口） | 批次侧（多任务共享数量、`on_ready` 就绪时预留、执行结果不明时冻结）已有；容器内物质（`kind="content"`）的工作流预留、多任务共享、随作业结算与恢复、一次性实际用量更正、结算防错（不吃别人的预留、单位换算失败即拒绝、快照不能移除已预留内容物）已实现（I02 分支）；不做运行时补料分支（`material_source` + `sufficient` + `material_io`）：按用户决定缺料是**预检报错**——任务启动整任务预留不足直接失败（`plan_not_executable`，`scope=task`）；动作执行前才预留的需求不足则该动作挂起为 `preflight` 决策，补料后重试，或跳过 / 人工替换为成功 / 放弃（`scope=action`）；动作执行中失败另为**执行报错**。不静默等待补料，与 V1 的等待入库 / 补料分支有意不同 |
-| I03 | 未完整 | **部分** | 搬运 / 分装按执行回执结算（`materials/execution.py`），人工计数盘点已有；按测量作业证据自动盘点未实现 |
+| I03 | 未完整 | **部分** | 搬运 / 分装按执行回执结算（`materials/execution.py`）；同一节点在分装来源上声明的内容物预留按分装实际取走的量结算、不再按计划量重复扣减（V1 `settled_quantity`，`test_workflow_physical_recovery.py::test_aliquot_source_*`）；人工计数盘点已有；按测量作业证据自动盘点未实现 |
 | I04 | 已修复 | 已修复 | |
 | P01 | FE 未兼容 | 后端已实现 | `/workflows/{uuid}/run-preflight`，接受 `inventory_bindings` 并按绑定的来源检查库存（与建任务同一规则，对不上声明需求的绑定报 `invalid_inventory_binding`）；正式 FE 对接见 F 行 |
 | R01 | 尚未移植 | 已实现 | `server/backend/execution_start.py`（开始许可；应答不确定时禁止再调用驱动，保留资源等待核实） |

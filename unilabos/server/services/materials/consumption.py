@@ -10,7 +10,8 @@ V1 把每次结算写成统一台账上的一条消费快照；dev 的同一事�
   ``consumed`` 时按实际量扣减，计划量、上报量、实际量与前后余量记在 ``material_content_history`` 的
   ``consume`` 事件扩展里。``inventory_type`` 按内容物角色为 ``reagent`` 或 ``current_substance``。
 - **物理分装**（``material_execution`` 已结算且带 ``aliquot``）：来源容器各内容物按分装实际总量等比扣减；
-  由冻结快照与回执还原，没有计划量（``planned_quantity`` 为 ``null``）。
+  由冻结快照与回执还原，没有计划量（``planned_quantity`` 为 ``null``）。同一作业在分装来源上的内容物预留
+  按分装取走的量结算（``meta_data.settled_by="aliquot"``），那份内容物只列这一条，不再另列分装消耗。
 
 DTO 字段对齐 V1 ``_consumption_row``（``uuid`` / ``workflow_task_uuid`` / ``workflow_node_job_uuid`` /
 ``inventory_type`` / ``inventory_uuid`` / ``planned_quantity`` / ``actual_quantity`` / ``quantity_unit`` /
@@ -71,10 +72,19 @@ class InventoryConsumptions:
         """单个作业的全部消费事实（内部形状，含排序键；对外用 :meth:`list_job`）。"""
 
         with self.materials._write_lock:
-            records = [*self._lot_facts(job_uuid), *self._content_facts("job_uuid=?", (job_uuid,)),
-                       *self._aliquot_facts(job_uuid)]
+            contents = self._content_facts("job_uuid=?", (job_uuid,))
+            records = [*self._lot_facts(job_uuid), *contents,
+                       *self._without_settled_contents(self._aliquot_facts(job_uuid), contents)]
         records.sort(key=lambda item: (item["_at_ms"], item["uuid"]))
         return records
+
+    @staticmethod
+    def _without_settled_contents(aliquots: list[dict[str, Any]], contents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """分装来源上按分装回执结算的内容物预留已经是这次取用的消费事实，同一份内容物不再另列分装消耗。"""
+
+        settled = {(item["workflow_node_job_uuid"], item["inventory_uuid"]) for item in contents
+                   if item["meta_data"].get("settled_by") == "aliquot"}
+        return [item for item in aliquots if (item["workflow_node_job_uuid"], item["inventory_uuid"]) not in settled]
 
     def list_job(self, job_uuid: str) -> list[dict[str, Any]]:
         return [self._public(item) for item in self.for_job(job_uuid)]
@@ -95,7 +105,7 @@ class InventoryConsumptions:
                     "SELECT job_uuid FROM material_execution WHERE state='settled' "
                     "AND json_extract(request_json, '$.aliquot.source_material_uuid')=?", (material_uuid,),
                 ).fetchall():
-                    records.extend(item for item in self._aliquot_facts(job_uuid)
+                    records.extend(item for item in self._without_settled_contents(self._aliquot_facts(job_uuid), records)
                                    if item["inventory_uuid"] == substance_uuid)
         records.sort(key=lambda item: (item["_at_ms"], item["uuid"]), reverse=True)
         return [self._public(item) for item in records]
@@ -247,6 +257,8 @@ class InventoryConsumptions:
             }
             if extension.get("reconciliation") is not None:
                 meta["reconciliation"] = extension["reconciliation"]
+            if extension.get("settled_by") == "aliquot":
+                meta["settled_by"] = "aliquot"
             records.append({
                 "uuid": _uuid(row["job_uuid"], row["reservation_uuid"], "content", row["substance_uuid"]),
                 "workflow_task_uuid": row["task_uuid"],

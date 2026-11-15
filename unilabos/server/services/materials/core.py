@@ -1528,7 +1528,15 @@ class MaterialsService(MaterialsRepository):
             ]
             if content_items and current.status == "active":
                 contents = self._content_contract()
+                aliquot = self.executions.aliquot_of(current.job_uuid)
                 for item in content_items:
+                    if aliquot and item.material_uuid == aliquot["source_material_uuid"] and target_status != "released":
+                        # 同一作业还在这只容器上分装：实际扣量以分装回执为准（V1 settled_quantity），
+                        # 物理结算时按实际取走的量结算这份预留；结算前预留保持有效，其他任务拿不走。
+                        # 现场核实放弃结算（released）时视为未取用。
+                        if aliquot["state"] == "released":
+                            contents.finish_content_reservation(item.content_reservation_uuid, "released")
+                        continue
                     contents.finish_content_reservation(
                         item.content_reservation_uuid, "released" if target_status == "released" else "consumed",
                     )

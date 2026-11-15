@@ -600,6 +600,27 @@ ros2 run demo_nodes_cpp listener
 - 如果只能看到本地消息，说明网络配置有问题
 - 如果两台机器都能互相收发消息，则组网配置正确
 
+#### 用 `unilab doctor` 分层诊断
+
+`unilab doctor` 不启动设备运行时，逐层定位「设备不上线」卡在哪一层：
+
+```bash
+# 第一层：HostLink TCP 通路（连接 → hello 握手 → ping 往返），不需要 ROS
+unilab doctor net --hostlink-addr 192.168.1.10:7302
+
+# 第二层：ROS 收发。host（192.168.1.10）上收、slave（192.168.1.20）上发，纯单播定向诊断
+unilab doctor listener --peer 192.168.1.20 --discovery OFF --ros-domain-id 42
+unilab doctor talker --peer 192.168.1.10 --discovery OFF --ros-domain-id 42
+# 或两边都套用 host 经 HostLink 下发的组网参数
+unilab doctor talker --hostlink-addr 192.168.1.10
+
+# 假设备：以设备身份发探测消息，并检查 host 的注册服务在 ROS 图上是否可见
+unilab doctor fake-device --hostlink-addr 192.168.1.10
+```
+
+`net` 通路正常退出码为 0，连不上或握手失败为 2；`listener` 一条探测都没收到为 2；
+`fake-device` 看不到 host 注册服务为 3。`talker` / `listener` / `fake-device` 需要 ROS 2（`rclpy`）。
+
 ### 本地网络要求
 
 **ROS2 通信**:

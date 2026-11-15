@@ -208,6 +208,7 @@ unilab workflow run WORKFLOW_UUID --mode step --address http://127.0.0.1:8003 --
 unilab workflow inspect TASK_UUID --kind task --address http://127.0.0.1:8003 --json
 unilab graph --help
 unilab package --help
+unilab doctor net --hostlink-addr 192.168.1.10   # HostLink/ROS 组网分层诊断，不启动运行时
 unilab token          # 打印写操作需要的控制面 token（stdout 只有 token；--json 带文件位置）
 ```
 

@@ -16,6 +16,8 @@ CLIENT_COMMANDS = frozenset(
 )
 PACKAGE_COMMANDS = frozenset({"package", "pkg"})
 RUNTIME_COMMANDS = frozenset({"runtime"})
+#: 现场组网诊断：不读会话、不建工作目录，也不启动 runtime（net 层连 rclpy 都不导入）。
+DOCTOR_COMMANDS = frozenset({"doctor"})
 
 
 def _add_client_connection_options(
@@ -269,6 +271,100 @@ def _register_graph_commands(subparsers: Any) -> None:
     _add_graph_backend_options(graph_delete)
 
 
+def _register_doctor_commands(subparsers: Any) -> None:
+    """``unilab doctor``：Host / Slave 组网分层诊断（TCP 通路 → ROS 收发）。"""
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Network diagnostics: TCP probe, ROS talker/listener pair, fake device",
+        description=(
+            "逐层定位「设备不上线」卡在哪一层：net 只测 HostLink TCP 通路与握手；"
+            "talker / listener 成对测 ROS 收发；fake-device 以设备身份发探测并检查 Host 服务可见性。"
+            "不启动设备运行时。"
+        ),
+    )
+    doctor_actions = doctor_parser.add_subparsers(
+        title="doctor subcommands", dest="doctor_command", required=True
+    )
+
+    def add_common(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--hostlink_addr",
+            "--hostlink-addr",
+            dest="hostlink_addr",
+            default="",
+            help=(
+                "Host ip[:port] (default port 7302): TCP probe target; talker/listener/fake-device "
+                "also fetch the ROS network settings through the HostLink handshake"
+            ),
+        )
+        command_parser.add_argument(
+            "--peer",
+            default="",
+            help=(
+                "Peer ip list (comma separated) for unicast-only diagnosis "
+                "(sets ROS_STATIC_PEERS; discovery defaults to OFF)"
+            ),
+        )
+        # 顶层已有同名参数：这里不给默认值，免得覆盖 ``unilab --ros_domain_id N doctor ...``
+        command_parser.add_argument(
+            "--ros_domain_id",
+            "--ros-domain-id",
+            dest="ros_domain_id",
+            type=int,
+            default=argparse.SUPPRESS,
+            help="ROS domain id override",
+        )
+        command_parser.add_argument(
+            "--discovery",
+            default="",
+            choices=["", "OFF", "LOCALHOST", "SUBNET"],
+            help="ROS_AUTOMATIC_DISCOVERY_RANGE (default: OFF when --peer is given)",
+        )
+        command_parser.add_argument("--topic", default="/unilab_doctor", help="Probe topic")
+        command_parser.add_argument("--rate", type=float, default=1.0, help="Publish rate in Hz")
+        command_parser.add_argument(
+            "--duration",
+            type=float,
+            default=0.0,
+            help="Seconds to run, 0 = until Ctrl-C",
+        )
+
+    doctor_net = doctor_actions.add_parser(
+        "net", help="Layer 1: HostLink TCP channel probe (connect, hello, ping RTT; no ROS needed)"
+    )
+    add_common(doctor_net)
+    doctor_net.add_argument("--count", type=int, default=5, help="Ping count")
+    doctor_talker = doctor_actions.add_parser("talker", help="Layer 2: publish ROS probe messages")
+    add_common(doctor_talker)
+    doctor_listener = doctor_actions.add_parser(
+        "listener", help="Layer 2: receive ROS probes, report loss/latency"
+    )
+    add_common(doctor_listener)
+    doctor_listener.add_argument(
+        "--quiet", action="store_true", help="Only print the final summary"
+    )
+    doctor_fake = doctor_actions.add_parser(
+        "fake-device",
+        help="Fake device: probe as a device and check host service visibility",
+    )
+    add_common(doctor_fake)
+    doctor_fake.add_argument(
+        "--device_id",
+        "--device-id",
+        dest="device_id",
+        default="",
+        help="Fake device id (default: random)",
+    )
+    doctor_fake.add_argument(
+        "--no_service_check",
+        "--no-service-check",
+        dest="no_service_check",
+        action="store_true",
+        help="Skip the host registration service visibility check",
+    )
+
+
 def register_cli_commands(
     parser: argparse.ArgumentParser,
     subparsers: Any,
@@ -279,6 +375,7 @@ def register_cli_commands(
     from .runtime import register_runtime_commands
 
     register_runtime_commands(subparsers)
+    _register_doctor_commands(subparsers)
 
     parser.add_argument(
         "--json",
@@ -490,6 +587,19 @@ def _cmd_token(values: dict[str, Any], session_manager: Any) -> None:
     )
 
 
+def _run_doctor_command(args: argparse.Namespace) -> bool:
+    """执行组网诊断；诊断失败按 ``run_doctor`` 的退出码退出（1 参数错误，2 / 3 诊断不通过）。"""
+
+    from unilabos.backend.hostlink.doctor import run_doctor
+
+    code = run_doctor(vars(args))
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if code:
+        raise SystemExit(code)
+    return True
+
+
 def run_cli_command(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
@@ -497,6 +607,8 @@ def run_cli_command(
     """统一分发所有无需启动设备 runtime 的 CLI 子命令。"""
 
     command = getattr(args, "command", None)
+    if command in DOCTOR_COMMANDS:
+        return _run_doctor_command(args)
     if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS | RUNTIME_COMMANDS:
         return False
     session_manager = _prepare_command_session(args, parser)
@@ -520,6 +632,7 @@ def run_cli_command(
 
 __all__ = [
     "CLIENT_COMMANDS",
+    "DOCTOR_COMMANDS",
     "PACKAGE_COMMANDS",
     "RUNTIME_COMMANDS",
     "register_cli_commands",

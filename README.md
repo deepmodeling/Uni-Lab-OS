@@ -155,19 +155,46 @@ wired explicitly on the Backend side (`BackendSessionFactory.create_legacy_clien
 `build_legacy_backend_websocket_url()`), so neither address derivation nor the
 Edge connection factory branches on a legacy probe.
 
-### 5. Use a custom UI
+### 5. Get a frontend
 
-Uni-Lab is backend-only: an Edge process does not host a SPA. Build or deploy
-your UI separately ([Uni-Lab FE source](https://git.dp.tech/lab-os/uni-lab-fe)), and configure its API base URL to
-the management endpoint:
+Uni-Lab is backend-only: `unilab` does not host a web UI. A frontend is a
+separate static site that talks to the management API (default port `8002`).
 
-| Deployment | UI API base URL |
-|------------|-----------------|
-| Local single-process Edge | `http://127.0.0.1:8002` |
-| Split deployment | `http://127.0.0.1:8081` (the Backend authority) |
-| Remote Backend | the address passed to `--address` |
+**OpenLab (recommended, public).** [OpenLab](https://xuwznln.github.io/OpenLabSite/)
+is the community frontend listed under "推荐前端" on the page that `unilab`
+serves at `/` ([source](https://github.com/Xuwznln/OpenLabSite)). Two ways to
+connect it to a running `unilab`:
 
-The frontend is maintained in the separate Uni-Lab FE repository; this repository provides the backend API and its exported contract.
+- Open `http://127.0.0.1:8002/` and click the OpenLab card. When `unilab`
+  opens this page itself at startup, the URL carries the control token, and
+  the card hands OpenLab both the backend address and the token.
+- Or open OpenLab directly, open its connection settings (`连接设置`) and enter
+  the backend address, e.g. `http://127.0.0.1:8002` or
+  `http://<host-ip>:8002` for another machine. Write operations need the
+  control token: run `unilab token` on the machine running `unilab` and paste it.
+
+If the HTTPS site cannot reach a local HTTP backend, run OpenLab locally as
+described in its repository.
+
+**Official frontend.** The official frontend is Uni-Lab FE
+([source](https://git.dp.tech/lab-os/uni-lab-fe)). Build and deploy it
+separately; its adaptation to the unified backend is tracked in
+`docs/developer_guide/v1_dev_reconciliation.md` (F01–F07).
+
+**What to enter as the backend address:**
+
+| Deployment | Backend / API base URL |
+|------------|------------------------|
+| Default `unilab` (authority + Host child) | `http://<host>:8002` (`--port`) |
+| `--role backend` authority | its port (default `8081`) |
+| Edge connected to a remote Backend | the address passed to `--address` |
+
+Never enter the HostLink port (`7302`).
+
+#### Build your own UI
+
+Any UI can use the same API; this repository provides the backend API and its
+exported contract.
 
 Use the generated contract at `/api/openapi.json` and the interactive docs at
 `/api/docs`. A Vite-style static UI can be developed and served independently:

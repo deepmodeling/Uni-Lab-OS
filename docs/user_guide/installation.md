@@ -133,6 +133,10 @@ unilab --role backend --port 8081
 
 默认启动会分为微后端权威和 Host 子进程；前端只连接管理端 HTTP 端口，
 Slave 连接 HostLink TCP 端口。同机时 Host IP 可用 `127.0.0.1`。
+前端是独立部署的静态站点：推荐的 [OpenLab](https://xuwznln.github.io/OpenLabSite/) 可以从
+`http://127.0.0.1:8002/` 导航页的卡片进入（`unilab` 启动时自动打开的导航页会把后端地址和控制令牌一起交给它），
+也可以直接打开后在「连接设置」里填 `http://<主机>:8002`；写操作需要的控制令牌由 `unilab token` 打印。
+正式前端 Uni-Lab FE 需要自行部署，同样填管理端地址，不要填 HostLink 端口。
 设备归属可以提前登记，但必须完成 `post_init/setup/initialize` 后才会进入可调度设备快照。
 
 无 ROS 安装支持普通设备驱动、Workstation/sub-device、动作与 Service、物料创建及 transfer、

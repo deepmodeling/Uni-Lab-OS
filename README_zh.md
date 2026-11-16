@@ -147,18 +147,40 @@ HTTP 端口 `+1`）的兼容不再由 Edge 自动选择：它收敛在
 `build_legacy_backend_websocket_url()`）。地址派生与 Edge 连接工厂都不再按
 legacy 探测分叉。
 
-### 5. 使用自定义界面
+### 5. 获取前端
 
-Uni-Lab 只提供 backend API，Edge 进程不托管 SPA。请单独构建或部署自己的
-前端（[Uni-Lab FE 源码](https://git.dp.tech/lab-os/uni-lab-fe)），并把 API 根地址配置为管理端点：
+Uni-Lab 只提供后端：`unilab` 不托管网页界面。前端是独立部署的静态站点，
+连接管理 API（默认端口 `8002`）。
 
-| 部署方式 | 前端 API 根地址 |
-|----------|----------------|
-| 本地单进程 Edge | `http://127.0.0.1:8002` |
-| 拆分部署 | `http://127.0.0.1:8081`（Backend 权威） |
-| 远端 Backend | 启动参数 `--address` 指定的地址 |
+**OpenLab（推荐，公开）**：[OpenLab](https://xuwznln.github.io/OpenLabSite/)
+是 `unilab` 在 `/` 提供的导航页里「推荐前端」一栏列出的社区前端
+（[源码](https://github.com/Xuwznln/OpenLabSite)）。连接正在运行的 `unilab` 有两种方式：
 
-前端在独立的 Uni-Lab FE 仓库维护，本仓库提供后端 API 和导出的接口契约。
+- 打开 `http://127.0.0.1:8002/`，点 OpenLab 卡片。`unilab` 启动时自动打开的这个页面地址
+  带着控制令牌，卡片会把后端地址和令牌一起交给 OpenLab。
+- 或者直接打开 OpenLab，在右上角「连接设置」里填后端地址，例如 `http://127.0.0.1:8002`，
+  另一台机器上填 `http://<主机 IP>:8002`。写操作需要控制令牌：在运行 `unilab` 的机器上执行
+  `unilab token`，把输出填进去。
+
+HTTPS 站点连不上本机 HTTP 后端时，按 OpenLab 仓库的说明在本地运行它。
+
+**正式前端**：正式前端是 Uni-Lab FE（[源码](https://git.dp.tech/lab-os/uni-lab-fe)），
+需要自行构建部署；它对统一后端的适配进度见
+`docs/developer_guide/v1_dev_reconciliation.md`（F01–F07）。
+
+**后端地址填什么：**
+
+| 部署方式 | 后端 / API 根地址 |
+|----------|------------------|
+| 默认 `unilab`（权威 + Host 子进程） | `http://<主机>:8002`（`--port`） |
+| `--role backend` 权威 | 它的端口（默认 `8081`） |
+| 连接远端 Backend 的 Edge | 启动参数 `--address` 指定的地址 |
+
+不要填 HostLink 端口（`7302`）。
+
+#### 自己开发界面
+
+任何界面都可以使用同一套 API；本仓库提供后端 API 和导出的接口契约。
 
 接口契约见 `/api/openapi.json`，交互式文档见 `/api/docs`。以 Vite 为例，
 自定义静态前端可独立开发和预览：

@@ -7,6 +7,7 @@ from typing import Any
 
 from unilabos.protocol.materials import InventoryMutation, InventoryReservationTransition
 from unilabos.protocol.utils.json_codec import decode_json_bytes
+from unilabos.registry.action_policy import SUCCESS_TYPE_OPERATOR_INTERVENTION
 from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.store import utc_now
@@ -118,6 +119,10 @@ class InventoryRecovery:
         if status == "succeeded":
             target = "consumed"
             if reservation.status in {"released", "quarantined"}:
+                if _load(job["return_info"] or "{}").get("suc_type") == SUCCESS_TYPE_OPERATOR_INTERVENTION:
+                    # 人工替换为成功：成功来自操作员结论而不是设备回执，失败时已到达的结算就是结果。
+                    # 隔离已按预留量扣减（与扣减同额），释放说明扣减前动作就已失败；都不再改账。
+                    return
                 raise ValueError("成功尝试与已释放或隔离的库存冲突，需要人工核实")
         else:
             # 新协议的开始许可是可能产生物理副作用的边界；旧作业没有凭据时保守隔离。

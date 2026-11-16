@@ -33,7 +33,7 @@
 | I04 | 已修复 | 已修复 | |
 | P01 | FE 未兼容 | 后端已实现 | `/workflows/{uuid}/run-preflight`，接受 `inventory_bindings` 并按绑定的来源检查库存（与建任务同一规则，对不上声明需求的绑定报 `invalid_inventory_binding`）；正式 FE 对接见 F 行 |
 | R01 | 尚未移植 | 已实现 | `server/backend/execution_start.py`（开始许可；应答不确定时禁止再调用驱动，保留资源等待核实） |
-| R02 | 未完全等同 | 基本完成 | 持久 claim / lease、硬超时保锁（ADR 0008）、重启恢复与人工裁决；容器内物质预留的恢复随 I02 补 |
+| R02 | 未完全等同 | 基本完成 | 持久 claim / lease、硬超时保锁（ADR 0008）、重启恢复与人工裁决；容器内物质预留的恢复随 I02 补。失败动作被人工替换为成功（`operator_intervention`）时，库存对账沿用失败时已到达的隔离 / 释放结算，不再每 5 秒报“成功尝试与已释放或隔离的库存冲突”并全局暂停派发；设备回执的成功遇到隔离 / 释放仍是冲突（[库存恢复](workflow_inventory_recovery.md)，`test_workflow_inventory_recovery.py::test_failed_action_replaced_by_operator_success_does_not_pause_dispatch`） |
 | R03 | 无 | 已实现 | 调度容量（U01 汇总 C12）按 V1 默认值：全局在途作业 100、全局运行任务 500、每工作流运行任务 100（`BasicConfig.scheduler_max_*`），超出的任务保持 `pending`、作业带 `job_dispatch_capacity` 排队，按先后放行，不失败（`test_scheduler_capacity.py`） |
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
 | T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 工站测试材料 |

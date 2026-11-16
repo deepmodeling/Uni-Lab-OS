@@ -11,6 +11,7 @@
 | 当前 pending、已存在 active 预留 | 校验身份、修订和需求摘要后复用，恢复出库参数 |
 | succeeded、库存仍 active | 按原预留补扣 |
 | succeeded、库存已 consumed | 保持，不再扣减 |
+| succeeded 来自人工替换为成功（suc_type=operator_intervention），库存已 quarantined / released | 保持失败时已到达的结算，不报冲突、不暂停派发 |
 | canceled / failed / timeout / skipped，证明未领用开始许可 | 释放 active 预留 |
 | 上述异常终态且领用过许可，或库存已 consumed | 隔离，不把可能使用过的数量加回 |
 | 在飞、execution_unknown、intervention_required | 保留库存状态，等待真实回执或现有人工核实流程 |
@@ -18,7 +19,19 @@
 | 预留身份、需求或修订不匹配，冻结派发引用缺失记录 | 保留记录，暂停新派发并报告冲突 |
 
 旧作业没有新版开始凭据时，started_at 表示可能执行过，按保守规则处理。
-已释放或隔离的库存与成功终态冲突时不会自动返还、重新扣减或解除隔离。
+已释放或隔离的库存与设备回执的成功终态冲突时不会自动返还、重新扣减或解除隔离，报告冲突并暂停派发。
+
+人工替换为成功（错误决策选 operator_intervention）不是设备回执：动作已经失败，Host 在打开决策前
+已按失败结算预留（扣减过的隔离，未扣减的释放），随后操作员才给出成功结果。对账把失败时已到达的
+结算当作这次成功的结算，不再改账：
+
+- 隔离：动作开始时已按预留量扣减，隔离与扣减同额，批次数量与真实成功一致；物料实例保持隔离状态，
+  人工核实后经物料修改（`lifecycle_status`）放行。实际用量与预留不同时用 reconcile-quantity 校正（它接受 consumed / quarantined）。
+- 释放：扣减先于驱动调用，预留仍是 active 才会被释放，说明设备没有用过这批库存；操作员在系统外
+  消耗的库存按批次盘点 / 校正入账。
+- 仍 active（例如动作执行前预检失败、Host 没结算）：与真实成功相同，按原预留补扣。
+
+只按 attempt 持久的 suc_type 识别人工结论；其他成功终态遇到隔离 / 释放仍是冲突。
 非本工作流权威的预留不参与自动结算；存在本地任务但其 attempt 缺失的记录报错。
 
 ## 崩溃窗口与幂等
@@ -56,6 +69,11 @@ issues 非空时增加独立暂停原因 inventory_reconciliation，它暂停**�
 身份漂移、未知执行、托管阻止释放、后台空闲重试、诊断 API 和真实 HostLink 虚拟驱动调用。
 HostLink 测试验证调用驱动前已消费预留、调用一次、重开两库后数量不再扣减。
 这不代表真实实验硬件、多 slave 或部分实际用量结算已经完成验收。
+
+人工替换为成功另有端到端测试：真实 HostLink 驱动抛错 → 开始时已扣减、Host 隔离预留并打开决策 →
+经 `/api/v1/error-decisions` 选 operator_intervention → 任务成功，对账无问题、不暂停派发、数量不变；
+以及隔离 / 释放 / 仍 active 三种预留的对账单测，和设备回执成功遇到隔离仍暂停派发的反例
+（`tests/server/test_workflow_inventory_recovery.py`）。
 
 
 本阶段验证：相关回归 509 passed / 2 skipped；随后最终针对库存、诊断和生命周期的

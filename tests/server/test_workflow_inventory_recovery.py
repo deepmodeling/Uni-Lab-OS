@@ -224,6 +224,50 @@ def test_success_cannot_reconsume_quarantined_inventory(stack):
     assert stack.quantities() == (15,15,0)
 
 
+def test_genuine_success_conflict_still_pauses_dispatch(stack):
+    """设备回执的成功遇到已隔离的库存仍是冲突：报告问题并暂停派发，库存不动。"""
+    task, job, payload = stack.create()
+    reservation = stack.materials.get_inventory_reservation_by_job(job)
+    stack.materials.quarantine_inventory_reservation(_mutation("quarantine_inventory_reservation", job_uuid=job),
+        InventoryReservationTransition(reservation_uuid=reservation.reservation_uuid, reason="人工隔离"))
+    stack.workflow.record_workflow_node_job_terminal(job, status="succeeded", error_info=[],
+        return_info={"suc": True, "suc_type": "normal", "return_value": {}})
+    scheduler = BackendScheduler(stack.workflow, _ListenerOnlyBackend(), materials_gateway=stack.client)
+    try:
+        assert "inventory_reconciliation" in scheduler.dispatch_pause_reasons
+        assert scheduler.inventory_recovery_snapshot()["issues"][0]["job_uuid"] == job
+        assert stack.quantities() == (15, 15, 0)
+    finally:
+        scheduler.stop()
+
+
+@pytest.mark.parametrize("settled,quantities", [("quarantine", (15, 15, 0)), ("release", (20, 20, 0))])
+def test_operator_success_keeps_the_failed_attempt_settlement(stack, settled, quantities):
+    """人工替换为成功：失败时已到达的隔离 / 释放就是结算结果，不报冲突、不再改账。"""
+    task, job, payload = stack.create()
+    reservation = stack.materials.get_inventory_reservation_by_job(job)
+    getattr(stack.materials, f"{settled}_inventory_reservation")(
+        _mutation(f"{settled}_inventory_reservation", job_uuid=job),
+        InventoryReservationTransition(reservation_uuid=reservation.reservation_uuid, reason="action_failed"))
+    stack.workflow.record_workflow_node_job_terminal(job, status="succeeded", error_info=[],
+        return_info={"suc": True, "suc_type": "operator_intervention", "return_value": {}},
+        error_resolution={"decision_id": "decision-1", "selected_action": "operator_intervention"})
+    for _ in range(2):
+        report = stack.recovery.reconcile()
+        assert not report["issues"] and not report["changed"], report
+    assert stack.materials.get_inventory_reservation_by_job(job).status == f"{settled}d"
+    assert stack.quantities() == quantities
+
+
+def test_operator_success_on_active_reservation_deducts_like_a_real_success(stack):
+    task, job, payload = stack.create()
+    stack.workflow.record_workflow_node_job_terminal(job, status="succeeded", error_info=[],
+        return_info={"suc": True, "suc_type": "operator_intervention", "return_value": {}})
+    report = stack.recovery.reconcile()
+    assert not report["issues"] and report["changed"][0]["status"] == "consumed", report
+    assert stack.quantities() == (15, 15, 0)
+
+
 def test_startup_reuses_pending_reservation_and_preserves_new_batch_identity(stack):
     task, job, payload = stack.create()
     scheduler = BackendScheduler(stack.workflow, _ListenerOnlyBackend(), materials_gateway=stack.client)
@@ -386,6 +430,62 @@ def test_hostlink_consumes_before_one_driver_call_and_reopen_never_deducts_again
         assert calls == [5]
     finally:
         reopened.close()
+
+
+def test_failed_action_replaced_by_operator_success_does_not_pause_dispatch(tmp_path):
+    """真实 HostLink 驱动失败：开始时已扣减，失败后 Host 隔离预留再打开决策；操作员经
+    ``/api/v1/error-decisions`` 人工替换为成功后，库存对账不得把它当冲突而全局暂停派发。"""
+    from unilabos.backend.hostlink.backend import HostLinkBackend
+    from unilabos.backend.hostlink.host_node import HostNode
+    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+    from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
+    from unilabos.server.api.runtime.diagnostics import create_backend_app
+    from unilabos.server.backend.execution import JobExecutionBackend
+    value = Stack(tmp_path)
+    task, job, payload = value.create()
+    calls = []
+    def on_operate(solvent):
+        assert value.materials.get_inventory_reservation_by_job(job).status == "consumed"
+        calls.append(solvent["quantity"])
+        raise RuntimeError("设备报错：液位传感器无读数")
+    local = HostLinkLocalRuntime()
+    node = local.add_driver(HostLinkDriverSpec(device_id="reactor", driver_class=InventoryDriver, config={},
+        action_names=("operate",), action_value_mappings={"operate":{"type":"UniLabJsonCommand"}}))
+    node.driver.callback = on_operate
+    runtime = HostLinkBackend(local, is_slave=False)
+    local.start()
+    adapter = HostNode("host_node", runtime, bridges=[])
+    backend = JobExecutionBackend(host_node_getter=lambda: adapter, materials_gateway=value.client)
+    adapter.bridges = [backend]
+    backend.start()
+    scheduler = BackendScheduler(value.workflow, backend, materials_gateway=value.client)
+    # 与本机装配一致：调度器是本机派发 job 的失败决策 owner
+    backend.result_bridges.append(scheduler)
+    try:
+        scheduler.submit(task["uuid"])
+        wait_for(lambda: backend.list_error_decisions())
+        assert value.materials.get_inventory_reservation_by_job(job).status == "quarantined"
+        [decision] = backend.list_error_decisions()
+        with TestClient(create_backend_app(lambda: scheduler, lambda: backend)) as client:
+            ok_data(client.post(f"/api/v1/error-decisions/{decision['decision_id']}", json={
+                "action": "operator_intervention", "result": {"done": True}, "reason": "现场确认已完成"}))
+        wait_for(lambda: value.workflow.get_workflow_task(task["uuid"])["status"] in {"succeeded", "failed"})
+        assert value.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded"
+        assert value.workflow.get_workflow_node_job(job)["return_info"]["suc_type"] == "operator_intervention"
+        report = scheduler._reconcile_inventory()
+        assert not report["issues"], report
+        assert "inventory_reconciliation" not in scheduler.dispatch_pause_reasons
+        assert value.materials.get_inventory_reservation_by_job(job).status == "quarantined"
+        assert value.quantities() == (15, 15, 0)
+        assert calls == [5]
+    finally:
+        scheduler.stop()
+        backend.stop()
+        clear_execution_adapter(adapter)
+        adapter.stop()
+        HostNode.reset_state()
+        runtime.stop()
+        value.close()
 
 
 def test_idle_scheduler_retries_failed_inventory_without_new_task_events(stack):

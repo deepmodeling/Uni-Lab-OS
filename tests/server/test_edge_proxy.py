@@ -1,4 +1,4 @@
-"""调度权威把 Host 专有路由经控制面 WS 交给 Host 在进程内执行；Host 不在线时 503；权威自己的域不转发。"""
+"""调度权威把 Host 专有路由经控制面 WS 交给 Host 在进程内执行；Host 不在线时 HTTP 200 + 业务码 5001；权威自己的域不转发。"""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ def test_proxy_forwards_host_routes_over_control_plane(host_app: FastAPI, author
     assert client.get("/api/v1/workflows").status_code == 404
 
 
-def test_proxy_returns_503_while_host_is_offline(host_app: FastAPI, authority_app: FastAPI) -> None:
+def test_proxy_returns_5001_while_host_is_offline(host_app: FastAPI, authority_app: FastAPI) -> None:
     edge_control.set_edge_control_service(_FakeEdgeControl(host_app, connected=False))
     response = TestClient(authority_app).get("/api/v1/telemetry/states")
     # Host 不在线：HTTP 200 + 业务码 5001（503 → 5001），仍带 Retry-After
@@ -130,6 +130,9 @@ def test_proxy_logs_host_offline_once_per_episode(
         offline = [r for r in caplog.records if "尚未接入" in r.getMessage()]
         assert len(offline) == 1
         assert "GET /api/v1/telemetry/states" in offline[0].getMessage()
+        # 日志说的状态要与实际回给前端的一致：HTTP 200 + 业务码 5001，不是 503
+        assert "HTTP 200 + 业务码 5001" in offline[0].getMessage()
+        assert "返回 503" not in offline[0].getMessage()
 
         fake.connected = True
         assert client.get("/api/v1/telemetry/states").status_code == 200

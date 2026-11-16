@@ -81,7 +81,7 @@ def _note_host_offline(method: str, path: str) -> None:
         return
     _host_offline_logged = True
     logger.info(
-        "[EdgeProxy] Host 尚未接入控制面，Host 专有路由暂返回 503（首个请求 %s %s）",
+        "[EdgeProxy] Host 尚未接入控制面，Host 专有路由暂返回 HTTP 200 + 业务码 5001（首个请求 %s %s）",
         method,
         path,
     )

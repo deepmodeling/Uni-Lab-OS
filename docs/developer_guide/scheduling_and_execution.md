@@ -274,23 +274,27 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 
 ## 5. 一轮统一调度如何进行
 
-`BackendScheduler` 对每个 DAG-ready 节点执行以下步骤：
+`BackendScheduler` 对每个 DAG-ready 节点执行以下步骤（`_start_node`）：
 
-1. 解析上游 Job 输出到当前 action 参数。
-2. 从设备 action 注册信息读取 `materials_need_lock` 参数名（未声明时注册表已按物料入参默认填好，
+1. 全局在途作业容量已满时带 `job_dispatch_capacity` 排队（5.0.1）；`material_io` 节点改走自己的路径（4.1）。
+2. 就绪时才预留的库存（`on_ready`、条件分支、引用上游结果的需求）在这里预留（7）。
+3. 解析上游 Job 输出到当前 action 参数，按需求 key 注入库存分配，按严格动作合同校验参数形状。
+4. 从设备 action 注册信息读取 `materials_need_lock` 参数名（未声明时注册表已按物料入参默认填好，
    `materials_free` 排除的除外）与 `always_free` 声明
    （节点 `execution_policy.always_free` 显式声明优先）。`always_free` 只免除该动作自身的
    `(device_id, action_name)` 隐式动作锁，物料 claim 仍要获取。
-3. 从 action 参数提取权威 `material_uuid`；参数未传或为空表示没有物料、不加锁；给了值却解析不出
-   权威 UUID 直接失败。
-4. 合并 Task 仓储 reservation 已分配的实体物料 UUID。
-5. 构造一个 `SchedulerResourceRequest`，其中同时包含：
+5. 从 action 参数提取权威 `material_uuid`；参数未传或为空表示没有物料、不加锁；给了值却解析不出
+   权威 UUID 直接失败。合并 Task 仓储 reservation 已分配的实体物料 UUID。
+6. **派发前物料健全性检查**（见下文）：引用的物料此刻是否仍能用。
+7. 物料 / 库位合同（`validate_resource_values`）、物理合同（`physical_contract.py`）与托管合同
+   （`tenancy_contract.py`）；遇到临时资源条件排队（见下文）。
+8. 构造一个 `SchedulerResourceRequest`，其中同时包含：
    - `(device_id, action_name)` 动作 claim；
    - 所有 action 参数物料 claim；
    - 所有仓储分配实体物料 claim。
-6. 先过持久准入 `ResourceIntervals.admit()`（`runtime.db` 的资源区间、使用权与等待记录，
+9. 先过持久准入 `ResourceIntervals.admit()`（`runtime.db` 的资源区间、使用权与等待记录，
    见 5.0），通过后 `SchedulerResourceManager.acquire()` 以 all-or-nothing 方式登记内存占用。
-7. 状态为 `held` 才标记 Node Job running 并下发；状态为 `waiting` 时只留在
+10. 状态为 `held` 才标记 Node Job running 并下发；状态为 `waiting` 时只留在
    Scheduler 的等待集合中，执行端完全不可见。
 
 一个 Job 不会只持有部分锁；等待顺序由持久准入决定（5.0）。
@@ -306,6 +310,31 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 只剩信封业务码：6007 按 `site_occupied`、6011（活动 Claim 或入口预留）按 `site_claimed` 等待。合同错误（库位不属于所选容器、
 夹爪角色缺失或重复、参数不符合 Schema、未知冲突）照常失败。这类等待者不持有资源，也不算在等设备：同一任务里
 要同一台设备的兄弟节点不为它让行（腾出库位的可能正是兄弟节点）。
+
+**派发前物料健全性检查**（`scheduler/material_sanity.py`，负责人 2026-11-17 批准）：建任务、预留库存之后到节点就绪之间，
+物料可能被删除、消耗、隔离、挪走，或被别的任务拿去。节点就绪后、解析物料 / 物理合同和构造资源申请之前，调度器收集动作
+引用的全部物料——严格合同的 ResourceSlot 字段（锁或免锁）、`materials_need_lock` 参数、本作业库存预留里的物料实例与
+内容物容器——连同本作业的预留，向物料权威做**一次**批量只读（`material_sanity_facts`；HTTP 物料网关为
+`POST /api/v1/inventory/material-sanity`，不写库、不做判定）。没有物料参数、也没有预留的节点不做这次读取。
+
+| 检查 | 不通过时 |
+| --- | --- |
+| 物料还在：未删除、生命周期不是 `consumed` / `retired` / `quarantined` | 预检报错（`deleted` / `unusable`） |
+| 生命周期相容：`active`，或被本作业 / 本任务的库存预留占着（`reserved` / `in_use`） | 被其他任务的有效预留占着（`reserved`）→ 排队 `inventory_reserved_by_other_tasks`；被其他任务已开始的预留占着（`in_use`）或找不到对应预留 → 预检报错（`lifecycle_conflict`） |
+| 物理合同声明的来源库位（搬运来源 owner / 库位、分步抓取来源） | 复用物理合同的结论，不重算位置：物理合同报 `transfer_source_site_missing` 时，物料被另一作业未结算的物理动作占着、或调度侧另一 attempt 正在实际使用它（持久准入 `workflow_resource_use`，可能正在搬）→ 照旧排队；否则不会自己回来 → 预检报错（`moved`：在别的库位；`off_site`：不在任何库位） |
+| 库存分配与本作业持有的预留一致：预留仍是 `active` 且属于本作业，同一容器 / 批次，批次未隔离，现量 > 0，单位可换算 | 预检报错（`reservation_missing` / `reservation_inactive` / `allocation_mismatch` / `lot_missing` / `lot_quarantined` / `content_missing` / `quantity_depleted` / `unit_not_convertible` …） |
+| 没有被另一作业未结算的物理动作占着（`material_execution_hold`） | 排队 `site_claimed` |
+
+归类沿用已有的三类，不新增类别：会自己解除的条件按上面的临时资源条件排队（attempt 不持有任何东西，原因写在
+`control_data.wait_reason`，资源变化或 5 秒兜底时重试）；物料没了或不能用、但操作员能处理（恢复、替换、补料、挪回原位）
+的，开动作执行前预检决策（`category="preflight"`，与库存不足同一套 retry / skip / operator_intervention / abort），错误项为
+`{"code": "material_sanity", "stage": "preflight", "scope": "action", "message", "materials": [{"reason", "material_uuid",
+"sources", "message", "details"}]}`，`sources` 是引用该物料的参数名（库存分配记为 `inventory:<需求键>`），预留与批次 / 内容物
+的项没有 `material_uuid`，在 `details` 里给 `reservation_uuid` 与需求 `key`；同一次检查里
+既有要处理的项又有临时条件时先开决策。预检重试不消耗 attempt，同一 attempt 重新走 `_start_node`，恢复后通过即派发；
+放弃时任务按 `node_preflight_failed` 收敛。参数不是物料、类型不符、引用从未在物料权威登记过的 UUID 属于合同 / 编程错误，
+不归这里判，照常由合同校验失败。物理合同已经校验的内容（目标库位、夹爪、设备祖先）不在这里重复检查；
+物料权威准备物理动作时（`prepare_material_execution`）仍会在事务内再核一次。
 
 ### 5.0 持久准入与等待顺序
 
@@ -567,6 +596,7 @@ Backend 必须先更新调度事实，然后下发 `release_failed` 或 replacem
 | 库存执行边界 | `unilabos/server/backend/inventory.py` |
 | 统一调度服务 | `unilabos/server/backend/scheduler/service.py` |
 | 动作/物料资源管理 | `unilabos/server/backend/scheduler/resource_manager.py` |
+| 临时资源条件 / 派发前物料健全性检查 | `unilabos/server/backend/scheduler/resource_wait_policy.py`、`material_sanity.py`（物料权威侧只读事实 `unilabos/server/services/materials/sanity.py`） |
 | DAG runner | `unilabos/server/backend/scheduler/dag/` |
 | Backend 诊断 API | `unilabos/server/api/runtime/diagnostics.py` |
 | HostLink 网络与执行 adapter | `unilabos/backend/hostlink/` |

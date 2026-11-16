@@ -46,6 +46,13 @@ from unilabos.server.backend.scheduler.payloads import build_job_start_payload
 from unilabos.server.backend.scheduler.materials import (
     material_uuids_for_parameters,
 )
+from unilabos.server.backend.scheduler.material_sanity import (
+    MaterialProblem,
+    MaterialSanity,
+    error_item as material_sanity_error,
+    material_references,
+)
+from unilabos.server.backend.scheduler.resource_keys import material_lock_key
 from unilabos.server.backend.scheduler.models import (
     ActionLockClaim,
     MaterialLockClaim,
@@ -1304,6 +1311,8 @@ class BackendScheduler:
                 self._open_preflight_decision(task, node, spec, [shortage.error_item()])
                 return
         job_uuid = spec["current_job_uuid"]
+        sanity: Optional[MaterialSanity] = None
+        problems: list[MaterialProblem] = []
         try:
             args = self._resolve_action_args(node.node_id)
             # InventoryRequirement 是节点上的声明；权威预留后解析出的具体出库内容
@@ -1312,10 +1321,6 @@ class BackendScheduler:
             from unilabos.registry.typed_contract import validate_action_values
 
             args = validate_action_values(spec.get("param_schema"), args, managed_resources=True)
-            if spec.get("param_schema"):
-                from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
-
-                validate_resource_values(spec["param_schema"], args, self.materials_gateway)
             parameter_names = self._material_lock_parameters(
                 node.device_id,
                 node.action,
@@ -1324,29 +1329,28 @@ class BackendScheduler:
                 material_uuids_for_parameters(parameter_names, args)
             )
             material_uuids.update(spec.get("reserved_material_uuids") or ())
-            from .physical_contract import resolve_physical_contract
-            physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
-            material_uuids.update(physical.get("material_ids", []))
-            spec["physical_contract"] = physical
-            spec["resolved_action_args"] = args
-            spec["materials_need_lock"] = parameter_names
-            spec["always_free"] = self._action_always_free(node, spec)
-            # 资源申请以当前 attempt 为 owner：acquire 对同一 owner 幂等重放，重试
-            # 的新 attempt 必须是新的申请才能重新排队获取。
-            from .tenancy_contract import resolve_tenancy_contract
-            tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
-            if physical:
-                tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
-                if physical.get("device_tenancy"):
-                    if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
-                        raise ValueError("搬运托管与显式设备托管合同不一致")
-                    tenancy["device_tenancy"] = physical["device_tenancy"]
+            # 派发前物料健全性检查：引用的物料规划后被删除 / 消耗 / 被拿走、预留失效……在合同解析前一次读清
+            sanity = self._material_sanity(task, spec, args, parameter_names)
+            problems = sanity.problems() if sanity is not None else []
+            if not problems:
+                tenancy = self._resolve_resource_contracts(node, spec, args, parameter_names, material_uuids)
         except Exception as error:
             # 目标库位被占、夹爪忙、来源暂不在库位……是临时条件：继续排队，资源变化时重试
             code = temporary_resource_condition(error)
             if code is None:
                 raise
+            # 来源库位对不上而没有任何作业正占着这个物料：不会自己回来，是规划后被挪走 → 预检报错
+            moved = sanity.relocation_problem(
+                error, lambda material_uuid: self._intervals.actual_users(
+                    str(material_lock_key(material_uuid)), exclude_job_uuid=job_uuid),
+            ) if sanity is not None else None
+            if moved is not None:
+                self._hold_for_material_sanity(task, node, spec, [moved])
+                return
             self._wait_for_condition(task, node, job_uuid, code, str(error))
+            return
+        if problems:
+            self._hold_for_material_sanity(task, node, spec, problems)
             return
         self._clear_condition_wait(job_uuid)
         if self._physical_recovery.blockers(job_uuid, material_uuids, {node.device_id, *tenancy.get("device_claims", [])}):
@@ -1393,6 +1397,67 @@ class BackendScheduler:
             self._waiting_resource_jobs[job_uuid] = (task, node)
         if record.status == "held":
             self._dispatch_held_node(task, node)
+
+    def _resolve_resource_contracts(
+        self, node: DagNode, spec: Dict[str, Any], args: Dict[str, Any], parameter_names: list[str],
+        material_uuids: set[str],
+    ) -> Dict[str, Any]:
+        """物料与库位合同、物理合同、托管合同：补全 ``material_uuids``，返回资源申请的托管字段。"""
+
+        if spec.get("param_schema"):
+            from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+            validate_resource_values(spec["param_schema"], args, self.materials_gateway)
+        from .physical_contract import resolve_physical_contract
+        physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        material_uuids.update(physical.get("material_ids", []))
+        spec["physical_contract"] = physical
+        spec["resolved_action_args"] = args
+        spec["materials_need_lock"] = parameter_names
+        spec["always_free"] = self._action_always_free(node, spec)
+        # 资源申请以当前 attempt 为 owner：acquire 对同一 owner 幂等重放，重试
+        # 的新 attempt 必须是新的申请才能重新排队获取。
+        from .tenancy_contract import resolve_tenancy_contract
+        tenancy = resolve_tenancy_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
+        if physical:
+            tenancy["device_claims"] = sorted(set(tenancy.get("device_claims", [])) | set(physical["device_ids"]))
+            if physical.get("device_tenancy"):
+                if tenancy.get("device_tenancy") and tenancy["device_tenancy"] != physical["device_tenancy"]:
+                    raise ValueError("搬运托管与显式设备托管合同不一致")
+                tenancy["device_tenancy"] = physical["device_tenancy"]
+        return tenancy
+
+    def _material_sanity(
+        self, task: Dict[str, Any], spec: Dict[str, Any], args: Mapping[str, Any], lock_parameters: Any,
+    ) -> Optional[MaterialSanity]:
+        """一次读出节点引用物料与本作业预留的事实（``material_sanity.py``）；没有物料参数、没有预留的节点不读。"""
+
+        reader = getattr(self.materials_gateway, "material_sanity_facts", None)
+        if not callable(reader):
+            return None
+        items = list(spec.get("inventory_reservation_items") or [])
+        references = material_references(spec.get("param_schema"), args, lock_parameters, items)
+        reservation_uuid = spec.get("inventory_reservation_uuid")
+        if not references and not reservation_uuid:
+            return None
+        facts = reader({"material_uuids": sorted(references), "reservation_uuid": reservation_uuid})
+        return MaterialSanity(job_uuid=str(spec["current_job_uuid"]), task_uuid=str(task["uuid"]),
+                              references=references, facts=dict(facts or {}), reservation_uuid=reservation_uuid,
+                              reservation_items=items)
+
+    def _hold_for_material_sanity(
+        self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any], problems: list[MaterialProblem],
+    ) -> None:
+        """检查没过：有操作员要处理的项就开动作执行前预检决策，否则（全是临时条件）不持有任何东西地排队。"""
+
+        job_uuid = str(spec["current_job_uuid"])
+        blocking = [item for item in problems if item.wait_code is None]
+        if blocking:
+            self._clear_condition_wait(job_uuid)
+            self._open_preflight_decision(task, node, spec, [material_sanity_error(blocking)])
+            return
+        self._wait_for_condition(task, node, job_uuid, str(problems[0].wait_code),
+                                 "；".join(item.message for item in problems))
 
     def _executor_ready(self) -> bool:
         """执行适配器（HostLink / ROS2 host node）是否已注册；未就绪时不派发。"""
@@ -2476,6 +2541,8 @@ class BackendScheduler:
                 spec["inventory_allocations"] = allocation_arguments(
                     reservation.items, action_schema=spec.get("param_schema"),
                 )
+                # 原样留一份分配：派发前物料健全性检查据此确认预留里的容器 / 批次没有变
+                spec["inventory_reservation_items"] = [item.model_dump(mode="json") for item in reservation.items]
 
     def _reserve_ready_inventory(self, task: Dict[str, Any], node: DagNode) -> bool:
         """节点就绪时预留它的库存；不足抛 :class:`RuntimeInventoryShortage`（执行报错）。"""
@@ -2967,6 +3034,7 @@ class BackendScheduler:
         spec["job_uuids"].append(str(next_job["uuid"]))
         spec.pop("inventory_reservation_uuid", None)
         spec.pop("inventory_allocations", None)
+        spec.pop("inventory_reservation_items", None)
         spec["inventory_requirements"] = list(spec.get("inventory_template") or [])
         spec["reserved_material_uuids"] = []
 

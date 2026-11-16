@@ -354,6 +354,14 @@ class ResourceIntervals:
                 "AND j.status IN ('running','dispatched','cancel_requested','execution_unknown','intervention_required') "
                 "AND NOT EXISTS (SELECT 1 FROM workflow_resource_admission a WHERE a.job_uuid=c.job_uuid)")]
 
+    def actual_users(self, lock_key: str, *, exclude_job_uuid: str | None = None) -> list[str]:
+        """此刻实际使用该键的 attempt（持久准入写下的 ``workflow_resource_use``，含超时后仍保留的占用）。"""
+
+        with self.store.write_lock:
+            return [row["job_uuid"] for row in self.store.connection.execute(
+                "SELECT job_uuid FROM workflow_resource_use WHERE lock_key=?", (lock_key,))
+                if row["job_uuid"] != exclude_job_uuid]
+
     def blocking_jobs(self, request: SchedulerResourceRequest) -> list[str]:
         """区间准入未通过的申请此刻被哪些 attempt 挡住：实际使用者与其他任务的区间获得者。"""
 

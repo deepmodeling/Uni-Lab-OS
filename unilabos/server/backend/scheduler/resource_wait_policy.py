@@ -32,11 +32,16 @@ _BUSINESS_CODE_CONDITIONS = {6007: "site_occupied", 6011: "site_claimed"}
 
 
 class ResourceConditionWait(ValueError):
-    """派发前解析资源合同时遇到的临时条件；``code`` 取 :data:`TEMPORARY_RESOURCE_CONDITIONS`。"""
+    """派发前解析资源合同时遇到的临时条件；``code`` 取 :data:`TEMPORARY_RESOURCE_CONDITIONS`。
 
-    def __init__(self, code: str, message: str) -> None:
+    ``material_uuid``：条件落在哪个物料上（如不在声明来源库位上的待搬运物料），派发前物料健全性检查
+    （``material_sanity.py``）据此区分「另一作业正在搬它」（继续等）与「规划后被挪走」（预检报错）。
+    """
+
+    def __init__(self, code: str, message: str, *, material_uuid: Optional[str] = None) -> None:
         super().__init__(message)
         self.wait_code = code
+        self.material_uuid = material_uuid
 
 
 def temporary_resource_condition(error: BaseException) -> Optional[str]:

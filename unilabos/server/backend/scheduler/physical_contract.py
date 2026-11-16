@@ -55,7 +55,8 @@ def resolve_physical_contract(
         parent = aggregate(identity).material.parent_material_uuid
         if not parent:
             # 物料暂时不在任何库位（运输中、被取下）：等它回到库位，不算合同错误
-            raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有权威来源容器")
+            raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有权威来源容器",
+                                        material_uuid=identity)
         # 台面型 Site 的物料直接挂在 Site 所属物料下；载架型 Site（仓库等）的物料挂在
         # 该 Site 的 holder 下，Site 属于 holder 的父物料
         for owner in (parent, aggregate(parent).material.parent_material_uuid):
@@ -67,7 +68,8 @@ def resolve_physical_contract(
                 return owner, matches[0].site_uuid
             if matches:
                 break
-        raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有唯一权威来源库位")
+        raise ResourceConditionWait("transfer_source_site_missing", "待搬运物料没有唯一权威来源库位",
+                                    material_uuid=identity)
 
     def gripper(owners, role, material):
         matches = [
@@ -111,7 +113,8 @@ def resolve_physical_contract(
                 or values.get(transfer.get("source_site_name_param")),
             )
             if (requested_owner, requested_site.site_uuid) != (source_owner, source_site):
-                raise ResourceConditionWait("transfer_source_site_missing", "声明的搬运来源与权威库位不一致")
+                raise ResourceConditionWait("transfer_source_site_missing", "声明的搬运来源与权威库位不一致",
+                                            material_uuid=identity)
         executor = materials.get_material_by_resource_id(device_id)
         gripper([executor.material.material_uuid], transfer["gripper_site_role"], identity)
         owner_device(target_owner)
@@ -140,7 +143,8 @@ def resolve_physical_contract(
             raise ValueError("分步搬运的夹爪必须归属于设备，才能跨动作托管")
         if step["operation"] == "pick":
             if (source_owner, source_site) != (end_owner, end_site.site_uuid):
-                raise ResourceConditionWait("transfer_source_site_missing", "抓取来源与权威库位不一致")
+                raise ResourceConditionWait("transfer_source_site_missing", "抓取来源与权威库位不一致",
+                                            material_uuid=identity)
             target_owner, target_site = carrier, grip.site_uuid
             tenancy = DeviceTenancyTransition(material_uuid=identity, acquire_device_id=carrier_device)
         else:

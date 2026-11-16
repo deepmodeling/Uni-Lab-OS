@@ -40,6 +40,7 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
    `material_io` 人工装入 / 取走 / 补量节点后来决定补上，作为作者显式写出的独立一步（`ctx.material_io(...)`，见下面「需要确认的三点」）。
 7. **builder 模式删除**：工作流只按源码静态编译（`registry/workflow_ast.py` + `workflow_helpers.py`），与 V1 一样只认 if / with。
 8. **数据库**：四个库都是 v1 基线、没有迁移链（V1 的 store_migrations 之类归此）；结构不一致且无迁移路径时拒绝启动，提示重建。
+   位置、锁、表清单与 V1 库文件对照见 [微后端数据库](../databases.md)。
 9. 与 V1 的已知有意差异（不算缺口）：发布后被编辑的工作流按发布指纹调用工站时拒绝（3003）且 dev 运行当前图；`resolve-uncertain` 后作业为
    `failed`；`mark_used` 存为 `retired`；部分路由按 V1 返回裸 JSON；`/error-decisions` 加可选 `Idempotency-Key`；消耗列表多 `inventory_type:"lot"`；
    读接口免 token；Host 启动期返回 200 + 5001 + `Retry-After`。

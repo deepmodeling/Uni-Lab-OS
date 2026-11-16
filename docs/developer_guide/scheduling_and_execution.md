@@ -4,6 +4,7 @@
 `unilabos/server/backend/` 为准；四个 SQLite 库（`runtime.db` / `materials.db` /
 `telemetry.db` / `history.db`）的建表 DDL 与行模型以 `unilabos/server/database/tables/`
 为唯一来源，各库通过对应 Service 单 writer 写入，业务代码不跨库外键、不 `ATTACH`。
+位置、锁、表清单与各进程的写入范围见 [微后端数据库](databases.md)。
 
 ## 1. 核心约束
 

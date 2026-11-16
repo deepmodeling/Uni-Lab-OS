@@ -45,6 +45,7 @@ from unilabos.server.backend.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
 from unilabos.server.backend.scheduler.payloads import build_job_start_payload
 from unilabos.server.backend.scheduler.materials import (
     material_uuids_for_parameters,
+    resolve_material_name_references,
 )
 from unilabos.server.backend.scheduler.material_sanity import (
     MaterialProblem,
@@ -1326,6 +1327,10 @@ class BackendScheduler:
                 node.device_id,
                 node.action,
             )
+            if self.materials_gateway is not None:
+                # 只按名字引用的物料（如挂载目标 {"name": ...}）先解析出 uuid：物料锁锁到真实物料，
+                # 执行面按同一 uuid 取物料
+                args = resolve_material_name_references(parameter_names, args, self.materials_gateway)
             material_uuids = set(
                 material_uuids_for_parameters(parameter_names, args)
             )
@@ -3498,12 +3503,10 @@ class BackendScheduler:
         try:
             args = self._resolve_action_args(node.node_id)
             args.update(spec.get("inventory_allocations") or {})
-            material_uuids = set(
-                material_uuids_for_parameters(
-                    self._material_lock_parameters(node.device_id, node.action),
-                    args,
-                )
-            )
+            parameter_names = self._material_lock_parameters(node.device_id, node.action)
+            if self.materials_gateway is not None:
+                args = resolve_material_name_references(parameter_names, args, self.materials_gateway)
+            material_uuids = set(material_uuids_for_parameters(parameter_names, args))
         except Exception:  # noqa: BLE001 - 物料解析失败不影响设备锁
             logger.warning(
                 "恢复的 attempt %s 无法解析物料锁，只保留设备动作锁", job_uuid, exc_info=True

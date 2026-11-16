@@ -24,7 +24,10 @@ from unilabos.server.backend.execution_queue import (
     format_job_log,
 )
 from unilabos.server.backend.scheduler.payloads import DispatchPayload
-from unilabos.server.backend.scheduler.materials import material_uuids_for_parameters
+from unilabos.server.backend.scheduler.materials import (
+    material_uuids_for_parameters,
+    resolve_material_name_references,
+)
 from unilabos.server.backend.inventory import (
     ExecutionInventoryCoordinator,
     ExecutionInventoryError,
@@ -223,7 +226,12 @@ class JobExecutionBackend:
                     )
                 )
             )
-            material_uuids_for_parameters(parameter_names, job_info.action_args)
+            action_args = job_info.action_args
+            gateway = self._inventory_authority.gateway if self._inventory_authority is not None else None
+            if gateway is not None:
+                # 只按名字引用的物料与调度权威同样解析（不改写参数，执行面仍按原入参解析）
+                action_args = resolve_material_name_references(parameter_names, action_args, gateway)
+            material_uuids_for_parameters(parameter_names, action_args)
         except (TypeError, ValueError) as exc:
             self._reject_job(
                 job_info,

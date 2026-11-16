@@ -215,6 +215,39 @@ def test_one_scheduler_serializes_the_complete_action_and_material_set() -> None
     assert scheduler.resources.request_for_owner("run-2-a1").status == "held"
 
 
+def test_name_only_mount_target_locks_the_resolved_material() -> None:
+    """挂载目标只给名字（物料入参一律加锁后不再豁免）：派发前按权威解析出 uuid 再加锁，执行面拿到同一 uuid。"""
+
+    from types import SimpleNamespace
+
+    class _NamedMaterials(_Materials):
+        def search_materials(self, name: str) -> list[Any]:
+            found = {"bench_deck": "deck-uuid"}.get(name)
+            return [SimpleNamespace(material=SimpleNamespace(material_uuid=found))] if found else []
+
+    workflow = _Workflow()
+    executor = _Executor()
+    scheduler = BackendScheduler(
+        workflow,  # type: ignore[arg-type]
+        executor,
+        materials_gateway=_NamedMaterials(),
+        materials_need_lock_resolver=lambda _device, _action: ["resource", "mount_resource"],
+    )
+    task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
+    node = DagNode(node_id="run-mount", device_id="host_node", action="apply_deduct_resource")
+    _attach(scheduler, workflow, task, node)
+    scheduler._run_specs["run-mount"]["base_param"] = {  # noqa: SLF001
+        "resource": {"uuid": "plate-uuid"},
+        "mount_resource": {"name": "bench_deck"},
+    }
+
+    scheduler._start_node(task, node)  # noqa: SLF001
+
+    identifiers = scheduler.resources.request_for_owner("run-mount-a1").identifiers
+    assert sorted(item.material_uuid for item in identifiers if item.kind == "material") == ["deck-uuid", "plate-uuid"]
+    assert executor.dispatched[0]["action_args"]["mount_resource"] == {"name": "bench_deck", "uuid": "deck-uuid"}
+
+
 def test_reserved_warehouse_material_is_part_of_the_same_resource_request() -> None:
     workflow = _Workflow()
     executor = _Executor()

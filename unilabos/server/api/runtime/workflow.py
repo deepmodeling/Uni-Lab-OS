@@ -559,7 +559,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             raise WorkflowError("workflow_template_unavailable")
         template = registry.get_workflow_template(body.template_uuid)
         if template is None:
-            raise WorkflowError("workflow_template_not_found")
+            # 全新库在 Host 首次上报前没有任何模板：说清楚是还没上报，而不是模板不存在
+            raise WorkflowError("workflow_template_not_found" if registry.has_report() else "registry_not_reported")
         catalog = DeviceCatalog.from_materials_service(get_materials_service())
         try:
             payload = materialize_workflow_template(
@@ -614,7 +615,8 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             raise WorkflowError("workflow_template_unavailable")
         template = registry.get_workflow_template(body.template_uuid)
         if template is None:
-            raise WorkflowError("workflow_template_not_found")
+            # 全新库在 Host 首次上报前没有任何模板：说清楚是还没上报，而不是模板不存在
+            raise WorkflowError("workflow_template_not_found" if registry.has_report() else "registry_not_reported")
         try:
             payload = materialize_workflow_template(
                 template, DeviceCatalog.from_materials_service(get_materials_service()),

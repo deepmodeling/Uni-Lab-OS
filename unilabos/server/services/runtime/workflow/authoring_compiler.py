@@ -219,6 +219,12 @@ class WorkflowAuthoringCompiler:
         except (WorkflowTemplateBindingError, ValueError) as exc:
             raise _CompileError(_error("graph_invalid", str(exc))) from None
 
+        if any(node.get("type") == "device_action" for node in payload["nodes"]) and not _registry_reported():
+            # 动作类型 / 合同都来自 Host 上报的注册表；没上报就编译只会得到猜测的动作类型
+            raise _CompileError(_error(
+                "registry_not_reported",
+                "注册表尚未上报：调度权威不扫描注册表，等待 Host 启动并上报设备注册表后再编译",
+            ))
         applied_nodes = {str(item["uuid"]): item for item in applied_graph.get("nodes") or []}
         catalog = self._catalog_provider()
         for node in payload["nodes"]:
@@ -369,6 +375,14 @@ class WorkflowAuthoringCompiler:
                 )],
             }
         return result
+
+
+def _registry_reported() -> bool:
+    """本进程的注册表目录是否可用（调度权威要收到过 Host 上报，见 ``registry/catalog.py``）。"""
+
+    from unilabos.registry.catalog import catalog_reported
+
+    return catalog_reported()
 
 
 def _registry_action_type(catalog: Any, node: Mapping[str, Any]) -> str:

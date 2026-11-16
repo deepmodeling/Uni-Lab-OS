@@ -139,6 +139,10 @@ _ERRORS = {
         503,
         "工作流模板暂不可用（注册表权威未就绪）",
     ),
+    "registry_not_reported": (
+        503,
+        "注册表尚未上报：调度权威不扫描注册表，等待 Host 启动并上报设备注册表后重试",
+    ),
     "template_binding_invalid": (
         422,
         "工作流模板的角色未能绑定到设备，请在 bindings 中指定",

@@ -423,8 +423,8 @@ class MaterialInstantiate(ServerObject):
     """「物料出库/实例化」入口参数：按 registry 资源类名实例化并权威登记。
 
     与 MaterialTreeCreate 的关系：微前端没有 PLR，无法生成完整草稿树；本模型
-    只描述「资源类 + 实例名」，由微后端（Host 进程内已加载 registry/PLR）实例化
-    草稿并转 MaterialTreeCreate 落库（权威发 uuid）。出库产物随后以
+    只描述「资源类 + 实例名」，由微后端按注册表目录（调度权威里是 Host 上报的生效
+    条目）找到 PLR 类、实例化草稿并转 MaterialTreeCreate 落库（权威发 uuid）。出库产物随后以
     ResourceSlot 引用 {id, uuid} 形态提交给动作参数（unilabos_deduct_resource）。
     """
 

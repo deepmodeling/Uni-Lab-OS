@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.server.services.runtime.workflow.common import WorkflowGraph, build_protocol_graph
-from unilabos.registry.registry import lab_registry
+from unilabos.registry.catalog import device_entry
 
 
 # ==================== 字段映射配置 ====================
@@ -81,7 +81,8 @@ def get_action_handles(resource_name: str, template_name: str) -> Dict[str, List
     """
     result = {"source": [], "target": []}
 
-    device_info = lab_registry.device_type_registry.get(resource_name, {})
+    # 调度权威没有本地扫描：读 Host 上报的生效设备条目（registry/catalog.py）
+    device_info = device_entry(resource_name) or {}
     if not device_info:
         return result
 

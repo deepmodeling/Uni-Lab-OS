@@ -49,12 +49,10 @@ def create_graph_router(service: GraphService) -> APIRouter:
     async def upsert_graph(value: GraphUpsertRequest) -> Dict[str, Any]:
         device_site_templates = value.device_site_templates
         if device_site_templates is None:
-            from unilabos.registry.registry import lab_registry
+            # 调用方没给模板 Site：调度权威用 Host 上报的生效设备条目，Host 用本地扫描
+            from unilabos.resources.adapters.device_site import registry_device_site_templates
 
-            device_site_templates = {
-                device_id: (entry or {}).get("available_sites") or []
-                for device_id, entry in lab_registry.device_type_registry.items()
-            }
+            device_site_templates = registry_device_site_templates()
         return service.upsert_graph(
             name=value.name,
             payload=value.payload,

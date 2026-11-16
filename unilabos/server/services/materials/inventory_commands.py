@@ -73,7 +73,7 @@ class UnsupportedCommand(MaterialValidationError):
 
 
 def instantiate_tree(value: MaterialInstantiate) -> MaterialTreeCreate:
-    """registry 资源类 → 物料创建树（Host 进程内已加载 registry / PLR）。"""
+    """registry 资源类 → 物料创建树（资源类取本进程注册表目录，见 ``registry/catalog.py``）。"""
 
     from unilabos.resources.adapters.plr_materials import plr_resources_to_create
     from unilabos.resources.materials import instantiate_registry_resource

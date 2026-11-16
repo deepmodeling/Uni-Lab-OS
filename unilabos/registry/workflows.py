@@ -779,16 +779,15 @@ def _step_node_uuid(workflow_uuid_value: str, index: int) -> str:
 
 
 def _action_type_from_registry(klass: str, action: str) -> str:
-    """从 registry 设备类条目查动作类型（UniLabJsonCommand 等）；未知返回空。"""
+    """从 registry 设备类条目查动作类型（UniLabJsonCommand 等）；未知返回空。
 
-    try:
-        from unilabos.registry.registry import lab_registry
-    except Exception:  # noqa: BLE001 - registry 不可用时按空类型透传
-        return ""
-    if lab_registry is None:
-        return ""
-    entry = lab_registry.device_type_registry.get(klass) or {}
-    mappings = entry.get("class", {}).get("action_value_mappings", {}) or {}
+    调度权威读 Host 上报的生效条目，Host 读本地扫描（``registry/catalog.py``）。
+    """
+
+    from unilabos.registry.catalog import device_entry
+
+    entry = device_entry(klass) or {}
+    mappings = (entry.get("class") or {}).get("action_value_mappings", {}) or {}
     mapping = mappings.get(action)
     if not isinstance(mapping, Mapping):
         return ""

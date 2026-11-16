@@ -12,6 +12,13 @@
 ``unilab --role backend``
     只起权威，不带 Host；Edge 进程用 ``--address`` 接入（可以在另一台机器），同样只需
     出向连接。四库落 ``<root>/backend``，与同机 Edge 的库完全隔离，避免 SQLite 跨进程并发写。
+
+两种形态下权威都**不扫描注册表**：设备 / 资源 / 工作流模板目录（工作流编译与模板实例化用的
+设备目录、节点模板、动作 Schema、出库可选的资源类）只来自 Host 的注册表上报，Registry
+Authority 按接受规则（单机部署全部接受、驱动包版本升高的接受，其余待确认）维护；物料权威里的
+资源模板由 Host 经物料权威地址同步（默认拓扑的 Host 子进程自动指向权威）。全新库在首次上报前
+目录为空：目录类读接口返回空（节点模板只有权威自带的结构模板），需要设备目录的操作（工作流
+编译、模板实例化、按资源类出库）明确报「注册表尚未上报」。
 """
 
 from __future__ import annotations
@@ -69,7 +76,6 @@ def _install_stop_signals() -> None:
 
 def run_backend_process(
     args_dict: Dict[str, Any],
-    registry: Any,
     working_dir: str,
     *,
     launch_host: bool = False,
@@ -84,7 +90,6 @@ def run_backend_process(
         remote_material_sync_dispatcher,
     )
     from unilabos.client.materials import LocalMaterialsClient
-    from unilabos.resources.adapters.registry_materials import sync_registry_resources
     from unilabos.server.api.app import (
         ManagementPortInUseError,
         ensure_port_available,
@@ -155,16 +160,16 @@ def run_backend_process(
         configure_edge_proxy(True)
         configure_remote_device_relay(True)
         materials_service.set_resource_sync_dispatcher(remote_material_sync_dispatcher)
-        template_report = sync_registry_resources(registry, materials_gateway)
+        # 资源模板不在这里按本地扫描登记：Host 经物料权威地址同步（权威不扫描注册表）
         set_materials_gateway(materials_gateway)
         print_status(
             f"物料权威已就绪: {paths.materials_db} "
-            f"({template_report.resource_count} 个资源模板)",
+            f"({len(materials_service.list_templates())} 个资源模板，Host 接入后同步)",
             "info",
         )
 
         # 调度权威 + Registry Authority 同一步装配（与默认 Host 同一函数）；
-        # Registry Authority 接收 Edge 的全量快照并按条目维护版本。
+        # Registry Authority 接收 Edge 的全量快照并按条目维护版本，是权威注册表目录的唯一来源。
         edge_control = EdgeControlService()
         set_edge_control_service(edge_control)
 
@@ -176,9 +181,9 @@ def run_backend_process(
         print_status(
             f"注册表权威已就绪: {paths.runtime_db}"
             + (
-                f"（{active_entries} 个生效条目）"
+                f"（{active_entries} 个生效条目，Host 上报后更新）"
                 if active_entries
-                else "（等待 Host 首次上报）"
+                else "（目录为空，等待 Host 首次上报；权威不扫描注册表）"
             ),
             "info",
         )

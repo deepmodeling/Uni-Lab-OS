@@ -107,7 +107,10 @@ def test_node_templates_project_registry_actions(lab) -> None:
     assert summary["node_type"] == "ILab" and summary["type"] == "UniLabJsonCommand"
     assert summary["resource_template"]["name"] == "pump"
     assert _ok(client.get("/api/v1/workflow-node-templates", params={"keyword": "nothing"}))["items"] == []
-    assert _ok(client.get("/api/v1/workflow-node-templates", params={"node_type": "condition"}))["items"] == []
+    # 结构模板是权威自己的控制结构：host_node 条目还没上报也照样在宿主节点名下投影
+    structural = _ok(client.get("/api/v1/workflow-node-templates", params={"node_type": "condition"}))["items"]
+    assert [item["uuid"] for item in structural] == [action_template_uuid("host_node", "condition")]
+    assert structural[0]["resource_template"]["name"] == "host_node"
 
     detail = _ok(client.get(f"/api/v1/workflow-node-templates/{template_uuid}"))
     assert detail["template"]["uuid"] == template_uuid

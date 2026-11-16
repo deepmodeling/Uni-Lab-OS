@@ -93,13 +93,14 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
         """registry 可实例化资源类目录（前端出库选择器的数据源）。
 
         只列 pylabrobot 类型（可被 /instantiate 实例化）；显示名走 registry
-        display_name 约定，缺省回退资源类 id。
+        display_name 约定，缺省回退资源类 id。调度权威读 Host 上报的生效条目
+        （首次上报前为空），Host 进程读本地扫描（``registry/catalog.py``）。
         """
-        from unilabos.registry.registry import lab_registry
+        from unilabos.registry.catalog import resource_entries
         from unilabos.registry.utils.tools import resolve_registry_display_name
 
         items = []
-        for resource_id, entry in lab_registry.resource_type_registry.items():
+        for resource_id, entry in resource_entries().items():
             if not isinstance(entry, dict):
                 continue
             cls = entry.get("class")

@@ -315,9 +315,12 @@ _WORKFLOW_NOT_ALLOWED = frozenset({
     "device_action_not_allowed",
     "local_task_authority_forbidden",
 })
-_WORKFLOW_UNAVAILABLE = frozenset({"template_catalog_unavailable", "workflow_template_unavailable"})
+_WORKFLOW_UNAVAILABLE = frozenset(
+    {"template_catalog_unavailable", "workflow_template_unavailable", "registry_not_reported"}
+)
 #: V1 同路由也输出 ``error.code`` 的符号码（前端据此区分身份拒绝与普通 3003 CAS 冲突）。
 _WORKFLOW_SYMBOLS = frozenset({
+    "registry_not_reported",
     "workflow_identity_mismatch",
     "debug_not_allowed",
     "debug_task_conflict",

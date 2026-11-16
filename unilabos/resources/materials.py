@@ -632,17 +632,24 @@ def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
     （``POST /api/v1/inventory/commands``）共用此入口；随后的权威登记同样走
     create_tree，两条路径语义一致。需要 dict 形态时交给
     ``ResourceTreeSet.from_plr_resources``。只有 ``class.type == "pylabrobot"`` 的
-    registry 资源类可实例化。
+    registry 资源类可实例化。资源类目录在调度权威里是 Host 上报的生效条目，在 Host
+    里是本地扫描（``registry/catalog.py``）；调度权威尚未收到上报时报「注册表尚未上报」。
     """
 
     if not str(name or "").strip():
         raise ValueError("按资源类名创建物料时必须提供 name")
     import importlib
+    from collections.abc import Mapping
 
-    from unilabos.registry.registry import lab_registry
+    from unilabos.registry.catalog import RegistryNotReported, require_reported, resource_entry
 
-    entry = lab_registry.resource_type_registry.get(class_name)
-    class_info = entry.get("class") if isinstance(entry, dict) else None
+    entry = resource_entry(class_name)
+    if entry is None:
+        try:
+            require_reported(f"按资源类 {class_name!r} 实例化")
+        except RegistryNotReported as exc:
+            raise ValueError(str(exc)) from exc
+    class_info = entry.get("class") if isinstance(entry, Mapping) else None
     if not isinstance(class_info, dict) or class_info.get("type") != "pylabrobot":
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
     module_name, _, attribute = str(class_info.get("module") or "").partition(":")

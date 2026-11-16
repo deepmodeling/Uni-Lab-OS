@@ -22,6 +22,10 @@ V1 的节点模板来自设备注册表的模板投影（每个设备类 × 动�
 只作编辑提示，``schema`` 留空，真正的校验仍由保存整图时的结构校验完成；条件与循环的 ``goal_default`` 是能直接
 保存的最小参数，节点面板拖入后即可保存再改参数；``material_io`` 必须指明库位与物料，``goal_default`` 只带模式与
 确认设置，保存前要填好。
+
+结构模板是调度权威自己的控制结构、不是设备定义（资源模板身份是 ``template_uuid("host_node")``，与上报
+无关）：权威不扫描注册表，Host 还没上报（全新库）时也照样投影；host_node 条目上报后只用来取显示名、
+避开同名动作。
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ DEFAULT_VISIBLE_NODE_TYPES = frozenset(
     {"ILab", "device_action", "py_script", "tool_call", "manual_confirm", "condition", "repeat_until", "loop",
      "material_io"}
 )
-#: 结构模板的所有者：与 V1 一样挂在宿主节点的资源模板下，随注册表里的 host_node 条目投影。
+#: 结构模板的所有者：与 V1 一样挂在宿主节点的资源模板下（host_node 条目未上报时同样投影）。
 STRUCTURAL_TEMPLATE_OWNER = "host_node"
 #: 结构模板的类身份：作者在 ``@workflow`` 里经 ctx 写出的控制结构（与设备动作的业务身份不冲突）。
 _STRUCTURAL_TEMPLATE_CLASS = "unilabos.registry.workflows:WorkflowBuildContext"
@@ -281,7 +285,8 @@ def project_registry_templates(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """生效的设备注册表条目 → (节点模板, 连接点模板)。无法投影的动作记日志后跳过。
 
-    宿主节点条目另带结构模板（见 ``structural_templates``）。
+    结构模板（见 ``structural_templates``）总是挂在宿主节点名下：host_node 条目已上报时用它的显示名
+    并避开它的动作名，没有上报时用固定的宿主节点摘要。
     """
 
     from unilabos.registry.action_template_projection import (
@@ -292,6 +297,7 @@ def project_registry_templates(
 
     templates: List[Dict[str, Any]] = []
     handles: List[Dict[str, Any]] = []
+    owner_projected = False
     for payload in payloads:
         if str(payload.get("registry_type") or "") != "device":
             continue
@@ -368,6 +374,18 @@ def project_registry_templates(
             structural, structural_handles = structural_templates(resource_summary, reserved_names=seen_names)
             templates.extend(structural)
             handles.extend(structural_handles)
+            owner_projected = True
+    if not owner_projected:
+        # 权威自带的控制结构不依赖 host_node 条目是否已上报
+        structural, structural_handles = structural_templates(
+            {
+                "uuid": resource_template_uuid_of(STRUCTURAL_TEMPLATE_OWNER),
+                "name": STRUCTURAL_TEMPLATE_OWNER,
+                "display_name": STRUCTURAL_TEMPLATE_OWNER,
+            }
+        )
+        templates.extend(structural)
+        handles.extend(structural_handles)
     return templates, handles
 
 

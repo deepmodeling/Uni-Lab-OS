@@ -718,8 +718,6 @@ def _run_main():
     ):
         prebind_host_server()
 
-    from unilabos.registry.registry import build_registry
-
     # 显示启动横幅
     print_unilab_banner(args_dict)
 
@@ -786,6 +784,18 @@ def _run_main():
             # 社区包设备直接以 community.<ns>.<id> 注册（扫描期命名空间化），不做 alias 桥接
             args_dict["_community_namespaces"] = community_result.namespaces
 
+    # 调度权威进程：--role backend 只起权威（Edge 用 --address 接入）；默认拓扑则由
+    # 权威持有管理端口并把 Host 作为子进程拉起，安静点重启只重启 Host。
+    # 权威不扫描注册表：设备 / 资源 / 工作流模板目录只来自 Host 的上报（Registry Authority
+    # 按接受规则维护，见 server/services/runtime/registry.py）。上面的环境检查、社区包依赖安装
+    # 仍在这里做，因为 Host 子进程带 --skip_env_check 启动。设备图与设备运行时都在 Host 进程里。
+    explicit_backend_role = args_dict.get("role") == "backend"
+    if not check_mode and (explicit_backend_role or _runs_local_authority(args_dict)):
+        from unilabos.app.backend_main import run_backend_process
+
+        run_backend_process(args_dict, working_dir, launch_host=not explicit_backend_role)
+        return
+
     # 管理 API 装的驱动包（unilabos_data/driver_packages.json 中已启用者）并入扫描目录，
     # 安装后安静点重启即可加载，不用改启动命令。
     if not check_mode:
@@ -807,8 +817,10 @@ def _run_main():
             args_dict["devices"] = (args_dict.get("devices") or []) + ledger_dirs
             print_status(f"驱动包台账挂载目录: {', '.join(ledger_dirs)}", "info")
 
-    # Step 0: AST 分析优先 + YAML 注册表加载
+    # Step 0: AST 分析优先 + YAML 注册表加载（只在 Host / Slave / check_mode 进程里）
     # Host 的模板同步需要完整 config_info；check_mode 也执行实际 import 验证。
+    from unilabos.registry.registry import build_registry
+
     devices_dirs = args_dict.get("devices", None)
     complete_registry = args_dict.get("complete_registry", False) or check_mode
     external_only = args_dict.get("external_devices_only", False)
@@ -849,18 +861,6 @@ def _run_main():
         sys.stdout.flush()
         sys.stderr.flush()
         os._exit(0)
-
-    # 调度权威进程：--role backend 只起权威（Edge 用 --address 接入）；默认拓扑则由
-    # 权威持有管理端口并把 Host 作为子进程拉起，安静点重启只重启 Host。
-    # 设备图与设备运行时都在 Host 进程里，下面的 Host 路径只在 Host 进程走。
-    explicit_backend_role = args_dict.get("role") == "backend"
-    if explicit_backend_role or _runs_local_authority(args_dict):
-        from unilabos.app.backend_main import run_backend_process
-
-        run_backend_process(
-            args_dict, lab_registry, working_dir, launch_host=not explicit_backend_role
-        )
-        return
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
     from unilabos.server.backend.legacy_adaptor import get_backend_client
@@ -1039,8 +1039,8 @@ def _run_main():
             except Exception as exc:
                 print_status(f"开机拓扑边对齐失败（不影响运行）: {exc}", "warning")
 
-        # 启动时上报完整注册表快照给 Registry Authority：服务端按条目版本化变更，
-        # 按接受规则决定直接生效还是挂起待确认
+        # 启动时上报完整注册表快照给 Registry Authority：这是调度权威注册表目录的唯一来源
+        # （权威不自己扫描）。服务端按条目版本化变更，按接受规则决定直接生效还是挂起待确认
         # （规则 B：单机部署全部接受；规则 A：驱动包版本升高的接受），上报因此带本机机器标识、
         # 每个条目所属的驱动包版本和当前连着的 Slave；之后接入的 Slave 由补报器告知权威。
         # 设备包里的 @workflow 是工作流**模板**，随同一份快照上报（registry_type=workflow），

@@ -106,7 +106,8 @@ class ParsedActionContract:
         """仅供解析器组合规范动作合同（Action Contract）。
 
         参数说明：输入/输出合同保存工作流值；两组资源模板符号保存静态兼容约束；
-        ``input_material_lock_free`` 保存显式免锁输入；``input_site_selectors`` 保存
+        ``input_material_lock_free`` 保存写了已废弃 ``MaterialLock(free=True)`` 的输入（只用于告警，
+        不再免锁）；``input_site_selectors`` 保存
         已完成跨字段验证的库位选择器（SiteSelector）关系；``token`` 防止外部构造
         未验证对象。返回：不可变动作合同。异常：令牌不匹配时抛出 ``TypeError``。
         """
@@ -163,9 +164,9 @@ class ParsedActionContract:
         site_selectors = dict(self.input_site_selectors)
         for parameter in inputs:
             name = parameter["name"]
-            material_lock = None
-            if _has_resource_slot(parameter["schema"]):
-                material_lock = name not in self.input_material_lock_free
+            # 物料入参一律加共享资源锁；已废弃的 MaterialLock(free=True) 只保留在
+            # input_material_lock_free 里供扫描告警，不再免锁。
+            material_lock = True if _has_resource_slot(parameter["schema"]) else None
             field = _action_value_schema(
                 parameter["schema"],
                 material_lock=material_lock,

@@ -21,7 +21,11 @@ class AllowedResourceTemplates:
 
 @dataclass(frozen=True, slots=True)
 class MaterialLock:
-    """显式声明动作输入物料占位符（ResourceSlot）不取得物料锁。"""
+    """已废弃：曾用于声明动作输入物料占位符（ResourceSlot）不取得物料锁。
+
+    物料锁不再按参数豁免，每个物料入参都默认加共享资源锁。为让旧驱动照常导入与扫描，
+    ``MaterialLock(free=True)`` 仍可写、仍按原语法校验，但注册表扫描会忽略它并告警。
+    """
 
     free: bool
 

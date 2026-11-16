@@ -2198,7 +2198,7 @@ class JobExecutionBackend:
 def make_device_materials_need_lock_resolver(
     host_node_getter: Optional[Callable[[], Any]] = None,
 ) -> Callable[[str, str], List[str]]:
-    """读取 ``@action(materials_need_lock=[...])`` 的参数名声明。
+    """读取注册表按签名推导出的物料锁参数名（动作条目的 ``materials_need_lock``）。
 
     查找顺序（对齐「Slave 与 Host 同注册表副本」机制）：
 

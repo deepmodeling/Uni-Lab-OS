@@ -22,7 +22,8 @@ def render_parameter_descriptor(
     """从规范参数事实生成确定性注解 AST。
 
     参数说明：``descriptor`` 保存类型、展示和约束；``resource_template_names``
-    保存源码局部符号；``material_lock_free`` 保存显式免物料锁声明；
+    保存源码局部符号；``material_lock_free`` 回写源码里已废弃的 ``MaterialLock(free=True)``
+    （不再免锁）；
     ``site_selector`` 保存可选库位选择器（SiteSelector）关系。返回：补齐位置的
     Python 注解表达式；不读取作者源码或数据库。
     """

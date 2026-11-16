@@ -31,7 +31,7 @@ GUIDE = """# 本机 MCP / protocol
 ## 发现与工作流
 1. system_health、system_hostlink_peers 与 runtime_v1_endpoints_list 查在线设备及设备 ID。
 2. registry_workflow_templates_list 读取已注册工作流模板与角色；
-   registry_entries_get 读取驱动动作 schema、错误策略与 materials_need_lock。
+   registry_entries_get 读取驱动动作 schema、错误策略与 materials_need_lock（按签名推导的物料锁参数）。
 3. 模板复用用 workflow_workflow_from_template（template_uuid、bindings、可选 name）；
    创建新的流程用 workflow_workflow_create → workflow_graph_save。
    保存图必须带当前 revision、完整 nodes/edges、正确端口；定义只保存不执行。
@@ -60,7 +60,7 @@ GUIDE = """# 本机 MCP / protocol
   绝不回退外层 type/klass。材料位置与 substances 内容分开。
 - materials 写入口保持 InventoryMutation 信封与原有事务校验；移交由服务端变更权威，
   源设备卸载、目标设备 service load，不在 MCP 本地改树。
-- 动作锁和 materials_need_lock 交给调度；复现竞争要先提交同组多个任务，再等待，
+- 动作锁和物料锁交给调度（物料入参默认都加锁，驱动不能按动作豁免）；复现竞争要先提交同组多个任务，再等待，
   查 system_scheduler_resources 的 waiting/blockers 以及设备返回的审计证据。
 - protocol_batch 可以同时提交多个公开操作（最多 16），用于真正制造并发竞争。
   它不是事务：某项失败不回滚其他项，也不会自动重试。只能批量执行用户已授权的操作。

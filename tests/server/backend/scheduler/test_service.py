@@ -215,6 +215,60 @@ def test_one_scheduler_serializes_the_complete_action_and_material_set() -> None
     assert scheduler.resources.request_for_owner("run-2-a1").status == "held"
 
 
+def test_resource_request_locks_every_material_parameter_despite_removed_overrides(tmp_path) -> None:
+    """调度申请取注册表推导的物料锁：旧驱动的 materials_free 不再让任何物料入参漏锁。"""
+
+    from types import SimpleNamespace
+
+    from unilabos.registry.ast_registry_scanner import _parse_file
+    from unilabos.registry.registry import Registry
+    from unilabos.server.backend.execution import make_device_materials_need_lock_resolver
+
+    source = tmp_path / "legacy_lock_driver.py"
+    source.write_text(
+        '''
+from typing import List, Optional
+from unilabos.registry.decorators import action, device
+from unilabos.registry.placeholder_type import ResourceSlot
+
+@device(id="legacy_lock_device", category=["test"])
+class Driver:
+    @action(materials_free=["blank", "tips"])
+    def use(self, plate: ResourceSlot, blank: Optional[ResourceSlot] = None,
+            tips: List[ResourceSlot] = None, volume: float = 1.0) -> None:
+        pass
+''',
+        encoding="utf-8",
+    )
+    devices, _resources, _workflows = _parse_file(source, tmp_path)
+    mappings = Registry()._build_device_entry_from_ast("legacy_lock_device", devices[0])["class"]["action_value_mappings"]
+    host = SimpleNamespace(_action_value_mappings={"device-a": mappings}, devices_instances={})
+    workflow = _Workflow()
+    executor = _Executor()
+    scheduler = BackendScheduler(
+        workflow,  # type: ignore[arg-type]
+        executor,
+        materials_need_lock_resolver=make_device_materials_need_lock_resolver(lambda: host),
+    )
+    task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
+    node = DagNode(node_id="run-1", device_id="device-a", action="use")
+    _attach(scheduler, workflow, task, node)
+    scheduler._run_specs["run-1"]["base_param"] = {  # noqa: SLF001
+        "plate": {"uuid": "plate-1"},
+        "blank": {"uuid": "blank-1"},
+        "tips": [{"uuid": "tip-1"}, {"uuid": "tip-2"}],
+        "volume": 2.0,
+    }
+
+    scheduler._start_node(task, node)  # noqa: SLF001
+
+    identifiers = scheduler.resources.request_for_owner("run-1-a1").identifiers
+    assert sorted(item.material_uuid for item in identifiers if item.kind == "material") == [
+        "blank-1", "plate-1", "tip-1", "tip-2",
+    ]
+    assert executor.dispatched[0]["materials_need_lock"] == ["plate", "blank", "tips"]
+
+
 def test_name_only_mount_target_locks_the_resolved_material() -> None:
     """挂载目标只给名字（物料入参一律加锁后不再豁免）：派发前按权威解析出 uuid 再加锁，执行面拿到同一 uuid。"""
 

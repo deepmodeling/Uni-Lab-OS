@@ -1,4 +1,5 @@
 """严格合同显式接入 dev，旧驱动兼容且合同约束进入真正执行路径。"""
+import logging
 from pathlib import Path
 from uuid import uuid4
 
@@ -38,10 +39,18 @@ class Driver:
     return Registry()._build_device_entry_from_ast("typed_test", devices[0])["class"]["action_value_mappings"]
 
 
-def test_registry_keeps_required_fields_defaults_named_results_and_material_locks(tmp_path):
+def test_registry_keeps_required_fields_defaults_named_results_and_material_locks(tmp_path, monkeypatch, caplog):
+    from unilabos.registry import material_locks
+
+    monkeypatch.setattr(material_locks, "_warned_definitions", set())
+    caplog.set_level(logging.WARNING, logger="unilabos.registry.material_locks")
     actions = typed_action(tmp_path)
     typed = actions["dispense"]
-    assert typed["materials_need_lock"] == ["source"]
+    # 已废弃的 MaterialLock(free=True) 照常解析但不再免锁：每个物料入参都加锁，并告警一次
+    assert typed["materials_need_lock"] == ["source", "reference"]
+    assert typed["schema"]["properties"]["goal"]["properties"]["reference"]["x-unilabos-material-lock"] is True
+    (warning,) = [record.getMessage() for record in caplog.records if record.name == "unilabos.registry.material_locks"]
+    assert "driver.Driver.dispense" in warning and "reference: MaterialLock(free=True)" in warning
     assert typed["goal_default"] == {"volume": 1.0}
     assert set(typed["schema"]["properties"]["goal"]["required"]) == {"source", "reference"}
     assert typed["placeholder_keys"] == {"source": "unilabos_resources", "reference": "unilabos_resources"}

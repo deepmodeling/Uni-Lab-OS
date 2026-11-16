@@ -86,7 +86,8 @@ class ParsedParameter:
         """仅供解析器从规范参数合同构造不可变结果。
 
         参数说明：``contract`` 是已校验工作流输入合同；``resource_templates``
-        保存资源模板源码符号；``material_lock_free`` 保存显式免物料锁声明；
+        保存资源模板源码符号；``material_lock_free`` 记录源码里写了已废弃的
+        ``MaterialLock(free=True)``（只用于回写源码与告警，不再免锁）；
         ``site_selector`` 保存可选库位选择器（SiteSelector）关系；``token`` 防止
         外部绕过解析边界。返回：不可变解析参数。异常：令牌不匹配时抛出
         ``TypeError``。
@@ -499,7 +500,7 @@ def _parse_material_lock(
     *,
     path: str,
 ) -> bool:
-    """解析动作输入物料锁（Material Lock）的唯一显式免锁形式。"""
+    """解析已废弃的 ``MaterialLock(free=True)``：保留语法校验与源码回写，调用方只用来告警，不再免锁。"""
 
     if not _slot_shape(schema) or call.args or len(call.keywords) != 1:
         _fail(path)

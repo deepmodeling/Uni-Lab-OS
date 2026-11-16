@@ -13,11 +13,15 @@ class TypedActionValueError(ValueError):
 
 
 def material_lock_parameters(schema: Mapping[str, Any]) -> list[str]:
-    """从规范字段取最终物料锁集合，包括数组和可空字段。"""
+    """从规范字段取最终物料锁集合，包括数组和可空字段。
+
+    带物料标记的字段一律加锁：旧合同里 ``MaterialLock(free=True)`` 留下的 ``false`` 标记同样
+    忽略（物料锁不再按参数豁免）。
+    """
     def locked(value: Any) -> bool:
         if not isinstance(value, Mapping):
             return False
-        return value.get("x-unilabos-material-lock") is True or locked(value.get("items")) or any(
+        return isinstance(value.get("x-unilabos-material-lock"), bool) or locked(value.get("items")) or any(
             locked(member) for member in value.get("anyOf", ())
         )
 

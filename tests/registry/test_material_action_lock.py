@@ -4,8 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from unilabos.registry import material_locks
 from unilabos.registry.ast_registry_scanner import scan_directory
-from unilabos.registry.decorators import action, get_action_meta
+
+
+@pytest.fixture(autouse=True)
+def fresh_override_warnings(monkeypatch):
+    monkeypatch.setattr(material_locks, "_warned_definitions", set())
 
 
 def _registry():
@@ -16,26 +21,10 @@ def _registry():
     return Registry()
 
 
-def test_action_keeps_material_lock_parameter_names() -> None:
-    @action(materials_need_lock=["target", "source", "target"])
-    def transfer(self, source, target):
-        return None
+def test_removed_lock_list_no_longer_locks_plain_parameters(tmp_path) -> None:
+    """旧的 materials_need_lock 能把非物料类型的入参（如 dict）列进锁集合；移除后要用物料类型或
+    placeholder_keys 把它标成物料入参，锁才会加上。"""
 
-    assert get_action_meta(transfer)["materials_need_lock"] == [
-        "target",
-        "source",
-    ]
-
-
-def test_action_rejects_invalid_material_lock_declaration() -> None:
-    with pytest.raises(TypeError, match="参数名列表"):
-
-        @action(materials_need_lock="source")
-        def transfer(self, source):
-            return None
-
-
-def test_ast_registry_publishes_material_lock_metadata(tmp_path) -> None:
     source = tmp_path / "material_lock_driver.py"
     source.write_text(
         '''
@@ -45,6 +34,10 @@ from unilabos.registry.decorators import action, device
 class Driver:
     @action(materials_need_lock=["source", "target"])
     def transfer(self, source: dict, target: dict) -> None:
+        pass
+
+    @action(placeholder_keys={"plate": "unilabos_resources"})
+    def process(self, plate: dict, tag: str = "") -> None:
         pass
 ''',
         encoding="utf-8",
@@ -56,15 +49,12 @@ class Driver:
             executor=executor,
         )
 
-    action_args = scanned["devices"]["material_lock_test"]["actions"][
-        "transfer"
-    ]["action_args"]
-    assert action_args["materials_need_lock"] == ["source", "target"]
+    actions = scanned["devices"]["material_lock_test"]["actions"]
+    assert "materials_need_lock" not in actions["transfer"]["action_args"]
 
-    entry = _registry()._build_device_entry_from_ast(
+    mappings = _registry()._build_device_entry_from_ast(
         "material_lock_test",
         scanned["devices"]["material_lock_test"],
-    )
-    assert entry["class"]["action_value_mappings"]["transfer"][
-        "materials_need_lock"
-    ] == ["source", "target"]
+    )["class"]["action_value_mappings"]
+    assert mappings["transfer"]["materials_need_lock"] == []
+    assert mappings["process"]["materials_need_lock"] == ["plate"]

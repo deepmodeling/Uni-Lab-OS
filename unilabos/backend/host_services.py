@@ -222,9 +222,6 @@ class HostServices:
         display_name="物料出库并挂载",
         description="申请扣减物料并挂载（接收服务端已扣减的单个根物料，挂载到目标设备的目标物料上）",
         always_free=True,
-        # 挂载目标允许只给名字（{"name": ...}），执行时才回权威解析，派发前没有可锁的身份；
-        # 挂载本身由目标设备 RESOURCE_APPEND 串行。出库物料 resource 照常默认加锁。
-        materials_free=["mount_resource"],
         placeholder_keys={
             "resource": PLACEHOLDER_DEDUCT_RESOURCE,
             "device_id": PLACEHOLDER_DEVICES,
@@ -284,6 +281,7 @@ class HostServices:
         （单 ResourceSlot）。框架在 send_goal 把以下两种入参形态解析为单个 PLR 实例：
         - list：一棵树的扁平节点组（上游 handle 的 @flatten）→ 装配成一个物料（这一组必须只有一个根）。
         - dict：资源引用 → 按 uuid with_children 拉取一个物料。
+        两者与其它物料入参一样在执行期间加物料锁，传值时须带物料权威发的 uuid。
 
         两种用法：
         - 仅登记/透传（不传 mount_resource）：把出库物料经 labware 输出，
@@ -321,7 +319,6 @@ class HostServices:
         display_name="设置物料内容物",
         description="设置物料内容物（液体/固体，默认单位 微升/微克）；接收单个物料，设置后输出",
         always_free=True,
-        materials_need_lock=["resource"],
         placeholder_keys={"resource": PLACEHOLDER_DEDUCT_REAGENT},
         handles=[
             ActionInputHandle(
@@ -375,7 +372,6 @@ class HostServices:
         display_name="废弃物料",
         description="废弃台面物料（指定设备 + uuid：云端销毁并通知该设备本地移除）",
         always_free=True,
-        materials_need_lock=["resource"],
         placeholder_keys={
             "resource": PLACEHOLDER_NODES,
             "device_id": PLACEHOLDER_DEVICES,
@@ -421,7 +417,6 @@ class HostServices:
         display_name="转移物料",
         description="转移物料（系统派发）：把已物理就位的物料在系统中改挂到目标设备的目标孔位（人工/机械臂工作流的统一末步）",
         always_free=True,
-        materials_need_lock=["resource", "mount_resource"],
         placeholder_keys={
             "target_device": PLACEHOLDER_DEVICES,
             "mount_resource": PLACEHOLDER_NODES,
@@ -519,8 +514,6 @@ class HostServices:
         display_name="测试物料传递",
         description="诊断动作：回显传入的物料 / 设备 / 样品，用于验证 ResourceSlot、DeviceSlot 与 handle 链路",
         always_free=True,
-        # 只回显、不改变物料：不占用物料锁
-        materials_free=["resource", "resources"],
         handles=[
             ActionInputHandle(
                 key="input_resources",

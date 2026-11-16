@@ -139,9 +139,8 @@ def material_uuids_for_parameters(
         resolved = extract_material_uuids(value)
         if not resolved:
             raise ValueError(
-                f"materials_need_lock 参数 {name!r} 无法解析权威物料 UUID："
-                "物料入参默认加锁，请传带 uuid 的物料引用；确实不需要独占时在 "
-                "@action 里用 materials_free 排除该参数"
+                f"物料参数 {name!r} 无法解析权威物料 UUID："
+                "动作的物料入参都默认加锁，请传带 uuid 的物料引用"
             )
         material_uuids.update(resolved)
     return tuple(sorted(material_uuids))

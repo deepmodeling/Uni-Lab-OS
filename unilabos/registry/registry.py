@@ -32,8 +32,9 @@ from unilabos.registry.action_timeout import (
     normalize_execution_timeout,
 )
 from unilabos.registry.material_locks import (
-    effective_material_lock_parameters,
-    normalize_material_parameter_names,
+    REMOVED_MATERIAL_LOCK_OPTIONS,
+    default_material_lock_parameters,
+    warn_ignored_material_lock_override,
 )
 from unilabos.registry.decorators import (
     get_device_meta,
@@ -1124,13 +1125,10 @@ class Registry:
             _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
             entry["feedback_interval"] = _fb_iv
             entry["error_policy"] = (action_args or {}).get("error_policy") or {}
-            # 未带 @action 的 auto- 动作同样默认独占物料入参
-            entry["materials_need_lock"] = effective_material_lock_parameters(
-                (action_args or {}).get("materials_need_lock"),
+            # 每个物料入参默认加共享资源锁（未带 @action 的 auto- 动作同样如此）
+            entry["materials_need_lock"] = default_material_lock_parameters(
                 params=params,
-                free=(action_args or {}).get("materials_free"),
                 placeholder_keys=(action_args or {}).get("placeholder_keys"),
-                action_name=action_name,
             )
             _apply_action_timeouts(
                 entry,
@@ -1309,12 +1307,9 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
-            action_entry["materials_need_lock"] = effective_material_lock_parameters(
-                action_args.get("materials_need_lock"),
+            action_entry["materials_need_lock"] = default_material_lock_parameters(
                 params=method_params,
-                free=action_args.get("materials_free"),
                 placeholder_keys=action_args.get("placeholder_keys"),
-                action_name=action_name,
             )
             _apply_action_timeouts(
                 action_entry,
@@ -1532,7 +1527,7 @@ class Registry:
             return Path(BasicConfig.working_dir) / "registry_cache.pkl"
         return None
 
-    _CACHE_VERSION = 9  # 9：YAML 条目未声明 materials_need_lock 时按 placeholder 默认加锁
+    _CACHE_VERSION = 10  # 10：物料锁不再按动作改写，YAML 里的 materials_need_lock / materials_free 一律忽略
     # 同一进程内的缓存文件快照：(mtime_ns, size, data)。AST / YAML / config_info 几个阶段各自
     # 加载一次同一个十几 MB 的 pickle 要几百毫秒；文件没变就复用已加载的对象。
     _config_cache_memo: Optional[Tuple[int, int, dict]] = None
@@ -2222,8 +2217,8 @@ class Registry:
         }
         status_str_type_mapping = {}
         device_ids = []
-        # 未显式声明 materials_need_lock 的 (device_id, action)：运行时用推导值，写回 YAML 时不落键
-        derived_material_locks: set = set()
+        # 补全路径上已按签名推导物料锁的 (device_id, action)：之后不再按 placeholder 重算
+        signature_material_locks: set = set()
 
         skip_ids = set()
         for device_id, device_config in data.items():
@@ -2274,6 +2269,15 @@ class Registry:
                     or device_config["class"]["action_value_mappings"] is None
                 ):
                     device_config["class"]["action_value_mappings"] = {}
+                # 已移除的按动作改写物料锁：值忽略，按定义告警一次；补全写回时这些键随之消失
+                for action_name, action_config in device_config["class"]["action_value_mappings"].items():
+                    if not isinstance(action_config, dict):
+                        continue
+                    ignored = [f"{key}:" for key in REMOVED_MATERIAL_LOCK_OPTIONS if key in action_config]
+                    if ignored:
+                        warn_ignored_material_lock_override(f"{file}:{device_id}.{action_name}", ignored)
+                        for key in REMOVED_MATERIAL_LOCK_OPTIONS:
+                            action_config.pop(key, None)
                 device_config["class"]["supported_backends"] = (
                     normalize_supported_backends(
                         device_config["class"].get("supported_backends"),
@@ -2443,19 +2447,13 @@ class Registry:
                             "handles": old_cfg.get("handles", []),
                             "placeholder_keys": merged_pk,
                             "error_policy": old_cfg.get("error_policy") or {},
-                            # 手写 YAML 未写 materials_need_lock 时同样默认独占物料入参
-                            "materials_need_lock": effective_material_lock_parameters(
-                                old_cfg.get("materials_need_lock"),
+                            # 手写 YAML 的动作同样给每个物料入参默认加锁
+                            "materials_need_lock": default_material_lock_parameters(
                                 params=v["args"],
-                                free=old_cfg.get("materials_free"),
                                 placeholder_keys=merged_pk,
-                                action_name=action_key,
                             ),
                         }
-                        if old_cfg.get("materials_free") is not None:
-                            entry["materials_free"] = list(old_cfg["materials_free"])
-                        if old_cfg.get("materials_need_lock") is None:
-                            derived_material_locks.add((device_id, action_key))
+                        signature_material_locks.add((device_id, action_key))
                         if v.get("always_free"):
                             entry["always_free"] = True
                         # 手写 YAML 里的超时声明同样经校验后保留（表达式归一化）
@@ -2504,20 +2502,12 @@ class Registry:
                 )
                 for action_name, action_config in device_config["class"]["action_value_mappings"].items():
                     action_config.setdefault("error_policy", {})
-                    # YAML 不写 materials_need_lock = 默认：placeholder 标为物料的字段加锁。
-                    # 补全写回时只保留显式声明，默认值每次加载重新推导。
-                    if (device_id, action_name) not in derived_material_locks:
-                        # 补全路径上已按签名推导过的条目不再重算（其 materials_free 已消化）
-                        if action_config.get("materials_need_lock") is None:
-                            derived_material_locks.add((device_id, action_name))
-                        action_config["materials_need_lock"] = (
-                            effective_material_lock_parameters(
-                                action_config.get("materials_need_lock"),
-                                params=None,
-                                free=action_config.get("materials_free"),
-                                placeholder_keys=action_config.get("placeholder_keys"),
-                                action_name=action_name,
-                            )
+                    # 签名未知的 YAML 条目：placeholder 标为物料的字段加锁。推导值不写回 YAML，
+                    # 每次加载重新推导；补全路径上已按签名推导过的条目不再重算。
+                    if (device_id, action_name) not in signature_material_locks:
+                        action_config["materials_need_lock"] = default_material_lock_parameters(
+                            params=None,
+                            placeholder_keys=action_config.get("placeholder_keys"),
                         )
                     if "handles" not in action_config:
                         action_config["handles"] = {}
@@ -2586,8 +2576,8 @@ class Registry:
                 dev_cfg.pop("file_path", None)
                 dev_cfg.pop("registry_type", None)
                 mappings = (dev_cfg.get("class") or {}).get("action_value_mappings") or {}
-                for action_name, action_cfg in mappings.items():
-                    if (dev_id, action_name) in derived_material_locks and isinstance(action_cfg, dict):
+                for action_cfg in mappings.values():
+                    if isinstance(action_cfg, dict):
                         action_cfg.pop("materials_need_lock", None)
             try:
                 with open(file, "w", encoding="utf-8") as f:

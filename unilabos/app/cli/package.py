@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from unilabos.registry.init_enforce import validate_init_param_enforce
+from unilabos.registry.material_locks import default_material_lock_parameters
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
 
@@ -329,9 +330,12 @@ def build_action_value_mappings(actions: Dict[str, Any]) -> Dict[str, Any]:
         }
         if goal_default:
             entry["goal_default"] = goal_default
-        materials_need_lock = action_args.get("materials_need_lock")
-        if isinstance(materials_need_lock, list):
-            entry["materials_need_lock"] = list(materials_need_lock)
+        # 与注册表同一规则：每个物料入参默认加锁（AST 扫描结果不再携带推导值）
+        placeholder_keys = action_args.get("placeholder_keys")
+        entry["materials_need_lock"] = default_material_lock_parameters(
+            params=[param for param in params if isinstance(param, dict)],
+            placeholder_keys=placeholder_keys if isinstance(placeholder_keys, dict) else None,
+        )
         result[name] = entry
     return result
 

@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
-from unilabos.registry.material_locks import effective_material_lock_parameters
+from unilabos.registry.material_locks import (
+    REMOVED_MATERIAL_LOCK_OPTIONS,
+    warn_ignored_material_lock_override,
+)
 from unilabos.registry.module_scope import resolve_relative_module
 from unilabos.registry.utils.tools import resolve_registry_display_name
 from unilabos.resources.objects.site import normalize_available_sites
@@ -39,7 +42,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 20      # 20：缓存记录扫描失败原因（命中时照样报告）
+_CACHE_VERSION = 21      # 21：动作不再携带推导的 materials_need_lock，旧的物料锁改写不进缓存
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1065,6 +1068,12 @@ def _extract_class_body(
         action_dec = _find_method_decorator(item, "action")
         if action_dec is not None and _is_registry_decorator("action", import_map):
             action_args = _extract_decorator_args(action_dec, import_map)
+            # 已移除的按动作改写物料锁：值忽略、不进缓存与注册表，按定义告警一次
+            # （与装饰器同一身份 模块.类.方法）。物料入参一律由注册表按签名默认加锁。
+            definition = f"{module_name}.{cls_node.name}.{method_name}"
+            ignored_lock_options = [f"{name}=" for name in REMOVED_MATERIAL_LOCK_OPTIONS if name in action_args]
+            for name in REMOVED_MATERIAL_LOCK_OPTIONS:
+                action_args.pop(name, None)
             contract_kind = action_args.get("contract", "legacy")
             if contract_kind not in {"legacy", "typed"}:
                 raise ValueError("contract 仅支持 legacy 或 typed")
@@ -1080,6 +1089,9 @@ def _extract_class_body(
                 )
 
                 parsed = parse_action_contract(module, item, module_name=module_name, is_package=is_package)
+                ignored_lock_options.extend(
+                    f"{name}: MaterialLock(free=True)" for name in parsed.input_material_lock_free
+                )
                 canonical_schema = parsed.to_action_schema(
                     action_name=method_name, description=str(action_args.get("description") or ""),
                 )
@@ -1093,8 +1105,6 @@ def _extract_class_body(
                     canonical_schema["x-unilabos-action-contract"]["resource_contract"] = resource_contract
                 if any(action_args.get(key) for key in ("goal", "result", "placeholder_keys")):
                     raise ValueError("typed 合同不接受重命名字段或 placeholder_keys 覆盖")
-                if "materials_need_lock" in action_args or "materials_free" in action_args:
-                    raise ValueError("typed 动作请用 MaterialLock 注解声明免锁")
             elif action_args.get("resource_contract") is not None:
                 raise ValueError("资源合同必须绑定 typed 动作")
             # 补全 @action 装饰器的默认值（与 decorators.py 中 action() 签名一致）
@@ -1119,15 +1129,9 @@ def _extract_class_body(
                 action_args["error_policy"] = (
                     normalize_error_policy(action_args["error_policy"]) or {}
                 )
+            if ignored_lock_options:
+                warn_ignored_material_lock_override(definition, ignored_lock_options)
             method_params = _extract_method_params(item, import_map)
-            # 物料入参默认加锁：这里落成最终列表，materials_free 已经消化，不再下传。
-            action_args["materials_need_lock"] = effective_material_lock_parameters(
-                action_args.get("materials_need_lock"),
-                params=method_params,
-                free=action_args.pop("materials_free", None),
-                placeholder_keys=action_args.get("placeholder_keys"),
-                action_name=method_name,
-            )
             # 超时字段与装饰器同一套校验：硬超时必须是正数秒；软超时可以是秒或只引用
             # 动作入参的四则运算表达式（归一化为规范字符串写入注册表）。
             from unilabos.registry.action_timeout import (

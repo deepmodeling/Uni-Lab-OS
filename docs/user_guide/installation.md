@@ -120,7 +120,7 @@ unilab --disable_browser --port 8002
 这只是误用 `--no-deps` 后的恢复入口，正常安装不依靠首次启动时再下载依赖；
 恢复入口允许访问普通包源，严格离线安装应使用前面的安装入口/锁定清单。
 
-两个修正版是默认物料依赖：`pylabrobot==0.2.2+unilabos.6285d662effa.ot10` 固定到已验证的 fork 提交，
+两个修正版是默认物料依赖：`pylabrobot==1.0.0b1+unilabos.6a8f3dda7642.ot10` 固定到已验证的 fork 提交，
 `opentrons-shared-data==10.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
 普通上游 `opentrons-shared-data` 仍限制 NumPy 1，不能替换修正版。
 PLR 自身也声明了这个 Opentrons 数据包前置依赖；从完整配套 `wheelhouse` 只安装 PLR 时，

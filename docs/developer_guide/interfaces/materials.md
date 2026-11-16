@@ -154,6 +154,8 @@ MutationResult<T> = {
 | POST /reservations/{uuid}/quarantine | quarantine_inventory_reservation | InventoryReservationTransition |
 
 **例外**：POST `/links` 直接接收 MaterialLinkUpsert，DELETE `/links/{uuid}` 不带 Mutation；
+POST `/links/ensure` 接收 `{"links": [node-link 连线…]}`，是 Host 开机时对齐图中连线的入口（按
+`source_uuid` / `target_uuid` 幂等写入，端点不在权威的边跳过，返回 created / updated / unchanged / skipped 计数）；
 POST `/snapshots/compare` 直接接收 MaterialSnapshot（只比较）；POST `/notify-device` 接收 ResourceTreeNotify；
 POST `/changes/ack` 接收 LedgerAcknowledge。不能给这些接口强行套 Mutation。
 

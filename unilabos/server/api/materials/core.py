@@ -9,7 +9,7 @@ V1 已覆盖的能力改由 V1 路径提供，dev 旧路径删除（不保留双
   V1 Backend DTO 的模板 / 物料见 ``/api/v1/resource-templates``、``/api/v1/materials``。
 
 这里保留：按 Job 读预留、registry 资源类目录、按 resource_id 读物料、物料树快照、
-库存预检、拓扑边写入、快照比对、设备通知、账本确认、物料 SSE、物理动作执行（``/executions``）。
+库存预检、拓扑边写入（单条 upsert 与开机图批量对齐）、快照比对、设备通知、账本确认、物料 SSE、物理动作执行（``/executions``）。
 响应走统一信封（资源口径），领域异常按 ``envelope.DOMAIN_ERRORS`` 换算业务码。
 """
 
@@ -61,6 +61,12 @@ class MaterialLinkUpsert(ServerObject):
     source_handle: str = ""
     target_handle: str = ""
     extra: dict = Field(default_factory=dict)
+
+
+class MaterialLinksEnsure(ServerObject):
+    """开机图拓扑边对齐：node-link link 对象原样提交（端点按 ``source_uuid`` / ``target_uuid``）。"""
+
+    links: list[dict] = Field(default_factory=list)
 
 
 def _call(function, *args, **kwargs):
@@ -129,6 +135,14 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             target_handle=value.target_handle,
             extra=value.extra,
         )
+
+    @router.post("/links/ensure")
+    def ensure_links(value: MaterialLinksEnsure):
+        """开机图拓扑边幂等对齐（Host 启动时经物料客户端调用）：端点不在权威的边跳过，不报错。
+
+        整批在一个写事务里，同步路由放到线程池，不在事件循环上等物料写锁。
+        """
+        return _call(service.ensure_links, value.links)
 
     @router.delete("/links/{link_uuid}")
     async def delete_link(link_uuid: str):

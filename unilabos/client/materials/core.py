@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -241,6 +242,9 @@ class LocalMaterialsClient:
 
     def apply_delta(self, mutation, value):
         return self.service.apply_delta(bind_payload(mutation, value), value)
+
+    def ensure_links(self, links: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+        return self.service.ensure_links(links)
 
     def changes(self, *, after_sequence: int = 0, limit: int = 100):
         return self.service.changes(after_sequence=after_sequence, limit=limit)
@@ -759,6 +763,13 @@ class HTTPMaterialsClient:
 
     def apply_delta(self, mutation, value: MaterialDelta):
         return MutationResult[MaterialDeltaResult].model_validate(self._command(mutation, value))
+
+    # -- 拓扑边 ----------------------------------------------------
+
+    def ensure_links(self, links: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+        """开机图拓扑边对齐，写进权威的 ``material_link``；返回 created / updated / unchanged / skipped 计数。"""
+
+        return dict(self._request("POST", "/links/ensure", {"links": [dict(link) for link in links]}))
 
     # -- 账本 ------------------------------------------------------
 

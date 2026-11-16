@@ -589,16 +589,20 @@ def _free_port() -> int:
 class _Unilab:
     """本测试拉起的一个 ``unilab`` 进程（输出写到日志文件）。"""
 
-    def __init__(self, tmp_path: Path, name: str, args: list[str], *, root: Path) -> None:
+    def __init__(
+        self, tmp_path: Path, name: str, args: list[str], *, root: Path, builtin_devices: bool = False
+    ) -> None:
         self.root = root
         self.log = tmp_path / f"{name}.log"
         self.port = _free_port()
         package = tmp_path / "empty_devices"
         package.mkdir(exist_ok=True)
+        # 默认只挂空驱动包、跳过内置注册表（启动快）；要加载内置虚拟设备的图时放开
+        devices = [] if builtin_devices else ["--external_devices_only", "--devices", str(package)]
         command = [
             sys.executable, "-m", "unilabos.app.main", "--backend", "hostlink", "--skip_env_check",
-            "--config", str(EXAMPLE_CONFIG), "--disable_browser", "--external_devices_only",
-            "--devices", str(package), "--port", str(self.port), "--hostlink_port", str(_free_port()),
+            "--config", str(EXAMPLE_CONFIG), "--disable_browser", *devices,
+            "--port", str(self.port), "--hostlink_port", str(_free_port()),
             "--working_dir", str(tmp_path / f"{name}-work"), "--server_database_root", str(root),
             *args,
         ]

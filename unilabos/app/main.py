@@ -1021,23 +1021,21 @@ def _run_main():
                 "info",
             )
 
-        # 图中的 links 在物料节点就绪后幂等写入 material_link。运行期间的
+        # 图中的 links 在物料节点就绪后幂等写入物料权威的 material_link，与上面的
+        # 节点对齐走同一个物料客户端：默认拓扑的 Host 子进程不持有物料（它的
+        # <根目录>/edge/materials.db 是空的），要经 HTTP 写调度权威。运行期间的
         # 拓扑变更继续写入该表，并由 /api/v1/graphs/live/payload 实时导出。
         if resource_edge_info:
             try:
-                from unilabos.server.composition import get_server_services
-
-                local_services = get_server_services()
-                if local_services is not None:
-                    link_stats = local_services.materials.ensure_links(
-                        resource_edge_info
-                    )
-                    print_status(
-                        "开机拓扑边对齐完成: "
-                        f"新建 {link_stats['created']} / 更新 {link_stats['updated']} / "
-                        f"不变 {link_stats['unchanged']} / 跳过 {link_stats['skipped']}",
-                        "info",
-                    )
+                link_stats = server_stack.materials_gateway.ensure_links(
+                    resource_edge_info
+                )
+                print_status(
+                    "开机拓扑边对齐完成: "
+                    f"新建 {link_stats['created']} / 更新 {link_stats['updated']} / "
+                    f"不变 {link_stats['unchanged']} / 跳过 {link_stats['skipped']}",
+                    "info",
+                )
             except Exception as exc:
                 print_status(f"开机拓扑边对齐失败（不影响运行）: {exc}", "warning")
 

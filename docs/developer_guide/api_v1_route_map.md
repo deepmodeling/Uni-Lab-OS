@@ -146,7 +146,7 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
   - `/workflow-tasks/{uuid}/interventions`, `/workflow-node-jobs/{uuid}/results|feedback-history|begin|started`.
 - **Registry:** `/api/v1/registry/*` (12 routes: digest, entries, versions, apply/dismiss/restore, reports, pending-impacts, workflow-templates).
 - **Materials:**
-  - `/api/v1/materials/*` (42 routes: templates, lots, stocktake, reservations, executions, trees, instantiate, instances, links, snapshots, notify-device, changes, events, registry-classes, inventory/preview).
+  - `/api/v1/materials/*` (42 routes: templates, lots, stocktake, reservations, executions, trees, instantiate, instances, links (+ `links/ensure`: startup graph links, written by the Host through its materials client), snapshots, notify-device, changes, events, registry-classes, inventory/preview).
   - `/api/v1/chemicals` (5) and `/api/v1/graphs` (6).
 - **Host data plane:** `/api/v1/runtime/*` (27), `/api/v1/telemetry/*` (6), `/api/v1/edge/history/*` (7, moved from `/api/v1/history/*`). All served on the Host and proxied by the authority.
 - **Operations:**

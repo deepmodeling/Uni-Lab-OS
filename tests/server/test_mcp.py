@@ -146,6 +146,9 @@ def test_local_only_and_rebinding_guard(application, peer, headers, expected):
         response = client.post("/mcp", headers={"Accept": "application/json, text/event-stream", **headers},
                                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert response.status_code == expected, response.text
+        if expected == 403:
+            # 本机门禁的拒绝正文与管理 API 同为信封（403 → 1001）
+            assert response.json()["code"] == 1001 and response.json()["error"]["msg"]
 
 
 def test_business_failure_is_error_but_failed_task_is_data(application, contract):
@@ -218,23 +221,23 @@ def test_material_defaults_and_idempotency_use_real_http_authority(tmp_path, con
             "payload": {"name": "mcp-water"},
         }}))
         assert not created.isError, created
-        # 写入经统一库存命令入口：body 是 V1 裸命令结果，result 为 MutationResult，其 data 才是模板
-        assert created.structuredContent["body"]["status"] == "completed"
-        template_uuid = created.structuredContent["body"]["result"]["data"]["template_uuid"]
+        # 写入经统一库存命令入口：body 是信封，data 是命令结果，result 为 MutationResult，其 data 才是模板
+        assert created.structuredContent["body"]["data"]["status"] == "completed"
+        template_uuid = created.structuredContent["body"]["data"]["result"]["data"]["template_uuid"]
         arguments = {"body": {"command_uuid": "lot-command", "effect_key": "lot-effect", "operation": "inbound_inventory_lot",
                                "payload": {"template_uuid": template_uuid, "unit": "ul", "quantity": 500}}}
         result = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
         assert not result.isError, result
-        assert result.structuredContent["body"]["result"]["data"]["quantity_total"] == 500
+        assert result.structuredContent["body"]["data"]["result"]["data"]["quantity_total"] == 500
         replay = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert not replay.isError and replay.structuredContent["body"]["replayed"]
-        assert replay.structuredContent["body"]["result"]["data"]["quantity_total"] == 500
+        assert not replay.isError and replay.structuredContent["body"]["data"]["replayed"]
+        assert replay.structuredContent["body"]["data"]["result"]["data"]["quantity_total"] == 500
         arguments["body"]["payload"]["quantity"] = 600
         conflict = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        # 同幂等键不同请求：HTTP 200 + 拒绝结果（业务码 4002），MCP 按 code != 0 标 isError
+        # 同幂等键不同请求：HTTP 200 + 失败信封（业务码 4002，拒绝码在 error.code），MCP 按 code != 0 标 isError
         assert conflict.isError and conflict.structuredContent["http_status"] == 200
-        assert conflict.structuredContent["body"]["status"] == "rejected"
         assert conflict.structuredContent["body"]["code"] == 4002
+        assert conflict.structuredContent["body"]["error"]["details"]["command_id"] == "lot-command"
     finally:
         service.close()
 

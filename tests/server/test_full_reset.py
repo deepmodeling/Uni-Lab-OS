@@ -137,7 +137,9 @@ def test_full_reset_real_split_runtime(tmp_path):
         req = urllib.request.Request(f"http://127.0.0.1:{management}/api/v1{path}", data=data,
                                      headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:
-            return json.load(response)
+            body = json.load(response)
+        assert body["code"] == 0, body  # 全部 JSON 路由（含探针）都是统一信封
+        return body.get("data")
     with log.open("w", encoding="utf-8") as stream:
         process = subprocess.Popen(command, env=env, stdout=stream, stderr=subprocess.STDOUT)
         try:

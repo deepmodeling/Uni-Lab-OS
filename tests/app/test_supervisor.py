@@ -380,6 +380,38 @@ def test_host_child_serves_backend_http_in_process(monkeypatch: pytest.MonkeyPat
     assert posted[-1].status_code == 404
 
 
+def test_host_child_reads_the_enveloped_reply_to_its_backend_http_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """权威按统一信封答复回送：业务失败是 HTTP 200 + code != 0，Host 要按信封判断并告警。"""
+
+    import asyncio
+
+    import httpx
+
+    from unilabos.protocol.runtime.control import EdgeHttpResponse
+    from unilabos.server.backend.legacy_adaptor import websocket as websocket_module
+    from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+
+    replies = [
+        httpx.Response(200, json={"code": 0, "data": {"accepted": True}}),
+        httpx.Response(200, json={"accepted": True}),  # 旧权威的裸答复也接受
+        httpx.Response(200, json={"code": 1000, "error": {"msg": "request_uuid mismatch"}}),
+    ]
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: replies.pop(0)), **kwargs),
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(websocket_module.logger, "warning", lambda message, *args: warnings.append(message % args))
+    client = BackendWebSocketClient(websocket_url="ws://authority/api/v1/ws/schedule")
+    monkeypatch.setattr(client, "backend_url", lambda: "http://authority")
+    for _ in range(2):
+        asyncio.run(client._post_http_response(EdgeHttpResponse(request_uuid="r-1", status_code=200)))
+    assert warnings == []
+    asyncio.run(client._post_http_response(EdgeHttpResponse(request_uuid="r-1", status_code=200)))
+    assert len(warnings) == 1 and "request_uuid mismatch" in warnings[0]
+
+
 def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: pytest.MonkeyPatch) -> None:
     """控制 WS 先于 setup_server 连上权威：路由没挂好之前不能对 app 执行（否则把"还没挂 /history"
     误报成 404，权威拉结果 payload 会拿到空）；等不到就回 503 而不是 404。"""

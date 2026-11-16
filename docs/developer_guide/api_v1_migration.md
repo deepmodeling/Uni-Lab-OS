@@ -25,7 +25,9 @@
    `<working_dir>/station_api_key`，不自动生成；都没有时工站入口一律 401 + 1002。检查在 `api/app.py` 的
    `StationKeyMiddleware`，工站路由的依赖里再查一次。
 5. **全部 JSON API 使用 V1 信封与业务码**，包括物料、runtime、telemetry、history 等原来
-   直出 DTO 的路由。
+   直出 DTO 的路由。2026-11-17 起（负责人「能统一全部统一」）原来的例外也改为信封：健康 / 就绪探针、
+   V1 进程管理 `/v1/*`、库存命令 `POST /api/v1/inventory/commands`、Host↔权威内部通道、不存在的路由；只有 SSE
+   与文件下载不包信封。
 6. **V1 独有领域全部迁移**：工站异常处理、试剂/样品/当前内容物/入站、工作区与布局、
    时间计划与时间线，以及工作流作者、任务观测、设备与注册表中缺失的路由。
 
@@ -37,26 +39,40 @@
 `error.code` 仅在 V1 同路由也输出符号码时输出（如 `workflow_identity_mismatch`、
 `preflight_failed`），`details` 与 V1 一致。
 
-例外，仍用 HTTP 状态码表达：
+下列情况保留非 200 的 HTTP 状态码，但正文同样是信封：
 
-- 工站密钥缺失或错误（只有 `POST /api/v1/station/workflow-invocations`）：HTTP 401，信封业务码 `1002`。
-- 请求体不是合法 JSON 或校验失败：HTTP 200，业务码 `1000`（所有 `/api/v1` 路由一律走信封，
-  不再保留 FastAPI 默认 422）。
-- SSE（`text/event-stream`）、文件下载、健康探针 `/health` 的纯文本或流式响应不包信封。
-- `GET /api/v1/readiness`、`GET /api/v1/health` 按 V1 原样不包信封：探针看 HTTP 状态（就绪 200、否则 503）。
-  readiness 字段按 V1：`status`（`ready` / `starting` / `failed`）、`capabilities`、`phase`、`workflowRuntime`、
-  可选 `observability`；dev 的探针摘要 `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，
-  dev 原来的 `not_ready` 改为 V1 的 `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端
-  归属改名 `scheduler_mode`，`execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但当前 backend 跑不了而
-  没有启动的设备（`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），分进程时经控制面读 Host。
-- V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、`/v1/logs/{component}`）按 V1
-  原样：路径不带 `/api` 前缀、成功是裸 JSON（提交操作 HTTP 202），失败是 HTTP 状态码 + `{"error": {code, message,
-  details?}}`（不存在 404、`operation_conflict` / `revision_conflict` 409、其余 400；dev 增加日志暂不可读 503
-  `component_unavailable`）。不鉴权。详见下文「进程管理协议（p8 落地）」。
-- `POST /api/v1/inventory/commands` 按 V1 原样返回裸结果 `{command_id, status, result | error, error_code, replayed}`
-  （V1 控制台按 `status` 判断，业务拒绝也是 HTTP 200）；拒绝结果另带 `code`（本表业务码）。它同时是 dev 全部
-  `materials.v1` 幂等变更的唯一写入口（body 为带 `protocol_version` / `command_uuid` / `operation` 的变更信封，
-  原路径参数放在 `target_uuid`），dev 按操作拆分的写路由已删除。
+- 工站密钥缺失或错误（只有 `POST /api/v1/station/workflow-invocations`）：HTTP 401，业务码 `1002`。
+- 全量重置维护闸门：HTTP 503，业务码 `5001`。
+- 就绪探针 `GET /api/v1/readiness`：就绪 HTTP 200 + `{"code": 0, "data": <摘要>}`；未就绪 HTTP 503 +
+  `{"code": 5001, "error": {"msg": <原因>, "code": "not_ready", "details": <同样的摘要>}}`（探针只看状态码；HTTP 503
+  与 5001 一一对应，维护闸门的 503 正文没有摘要）。
+- 不存在的路由 HTTP 404 + `{"code": 4001, "error": {"msg": "Not Found", "code": "not_found"}}`、方法不允许 HTTP 405 +
+  1001（`method_not_allowed`）：由应用级兜底（`envelope.install_envelope_fallback`）输出，不再是框架默认的
+  `{"detail": ...}`。
+
+其余约定：
+
+- 请求体不是合法 JSON 或校验失败：HTTP 200，业务码 `1000`（不再保留 FastAPI 默认 422）。
+- 只有 SSE（`text/event-stream`）与文件下载（物料 3D 模型资产）不包信封。
+- `GET /api/v1/health`：HTTP 200 + `{"code": 0, "data": {...}}`。readiness 摘要字段按 V1：`status`（`ready` /
+  `starting` / `failed`）、`capabilities`、`phase`、`workflowRuntime`、可选 `observability`；dev 的探针摘要
+  `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，dev 原来的 `not_ready` 状态改为 V1 的
+  `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端归属改名 `scheduler_mode`，
+  `execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但当前 backend 跑不了而没有启动的设备
+  （`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），分进程时经控制面读 Host。
+- V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、
+  `/v1/logs/{component}`）路径按 V1 不带 `/api` 前缀，响应是信封：成功 `data` 为快照 / 操作文档 / 日志尾部（提交操作
+  HTTP 202），失败 HTTP 200 + 业务码，V1 的符号码（`operation_not_found`、`operation_conflict`、`revision_conflict`、
+  `invalid_request`、`component_invalid`、`component_unavailable` …）放在 `error.code`，`details` 原样：不存在 4001、
+  冲突 3003、日志暂不可读 5001、其余 1000（`envelope.process_management_business_code`）。不鉴权。详见下文
+  「进程管理协议（p8 落地）」。
+- `POST /api/v1/inventory/commands`：完成为 `{"code": 0, "data": {command_id, status: "completed", result, replayed}}`；
+  被拒（含同一 `command_id` 的拒绝重放）为 HTTP 200 + `{"code": <业务码>, "error": {"msg", "code": <error_code>,
+  "details": {command_id, replayed}}}`。它同时是 dev 全部 `materials.v1` 幂等变更的唯一写入口（body 为带
+  `protocol_version` / `command_uuid` / `operation` 的变更信封，原路径参数放在 `target_uuid`），dev 按操作拆分的写路由
+  已删除。
+- Host↔权威内部通道 `GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}` 同样是信封（不存在 4001、
+  控制服务未就绪 5001、`request_uuid` 不一致 1000）。
 
 统一入口：`unilabos/server/api/envelope.py`。V1 的 `backend_response.py` / `_success` / `_error`
 不另行复制。
@@ -72,14 +88,15 @@
   换算：`WORKFLOW`（404→3002）、`RESOURCE`（404→4001、409→4002）、`GENERIC`（404→4001、409→3003）；
   400 / 422→1000，401→1002（保留 HTTP 401），403→1001，503→5001，其余→1。请求校验失败与非法 JSON 在
   路由类里就地换成 1000，不再依赖应用级异常处理器或路径前缀登记。未登记的异常照常 HTTP 500（服务端缺陷）。
-- **不包信封**的端点用 `@raw_response` 标记：`/api/v1/health`、`/api/v1/readiness`（探针看 HTTP 状态码）；
-  SSE、文件下载等非 JSON 响应与生成器端点自动透传。Host↔权威内部通道 `/api/v1/edge/http-responses/*`
-  （以及 `/api/v1` 之外的 `/edge/commands/*`）保持普通路由：Host 回送结果时按 HTTP 状态判断成败。
+- **不包信封**的端点用 `@raw_response` 标记，现在只有文件下载（物料 3D 模型资产）；SSE 等非 JSON 响应与生成器
+  端点自动透传。探针、`/v1/*`、库存命令与 Host↔权威内部通道都是普通信封路由（Host 回送结果后按信封判断成败）。
   `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001。
 - **中间件级拒绝**保留 HTTP 状态码、正文是信封：工站密钥 401 + 1002，全量重置维护闸门 503 + 5001。
-- 契约测试 `tests/server/test_api_envelope_contract.py` 会装配全部路由，断言每个 `/api/v1` JSON 路由都是
-  信封路由（白名单只有上面的探针与内部通道）。新增路由器忘了用 `envelope_router` 会直接失败。
-- dev 内部调用方统一解包一次：`HTTPClient`（`envelope=False` 只给探针）、`client/utils/envelope.py` 的
+- **应用级兜底**：`envelope.install_envelope_fallback(app)` 登记的处理器把路由层的 `HTTPException`（不存在 404、
+  方法不允许 405 等）也输出成信封并保留状态码；管理 API 应用（`api/app.py`）已登记。
+- 契约测试 `tests/server/test_api_envelope_contract.py` 会装配全部路由（含 `/v1/*` 与内部通道），断言每个 JSON
+  路由都是信封路由（白名单只有文件下载）。新增路由器忘了用 `envelope_router` 会直接失败。
+- dev 内部调用方统一解包一次：`HTTPClient`（`envelope=False` 只给非微后端对端）、`client/utils/envelope.py` 的
   `request_json` / `decode_json_body`（urllib 客户端）、`edge_proxy.edge_response_data`（权威经控制面读 Host）。
   失败抛 `EnvelopeError(code, error, symbol, details, http_status)`；各领域客户端错误（`RuntimeHTTPError`
   等）的 `status_code` 按业务码换算回 HTTP 语义，`business_code` 保留原码。
@@ -183,7 +200,8 @@ PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `uni
 应用上（`server/api/process_management.py`，与 Workflow Authority 同归属：默认 `unilab`、`--role backend`、
 `--no-safe-restart` 单进程都有；`--address` 的 Host 子进程没有），逻辑在 `server/services/process_management.py`。
 统一分支不再有 Workspace Host 这一概念，代码、表名（`process_management_*`）和 MCP 操作（`process-management.*`）
-都叫进程管理；只有线上合同沿用 V1：路径、错误码和 `schemaVersion: "unilab-workspace-host/v1"` 不变，V1 客户端无需改动。
+都叫进程管理；线上合同沿用 V1 的路径、请求体、文档字段、错误符号码和 `schemaVersion: "unilab-workspace-host/v1"`，
+但 2026-11-17 起响应包统一信封、错误不再用 HTTP 状态码区分（符号码在 `error.code`），V1 客户端需要改为解包信封。
 
 | V1 | dev |
 |---|---|
@@ -204,9 +222,10 @@ PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `uni
 | `local.reset-state`、`plc.*`、`renderer.*`、`configuration.update`、`authority.switch`、`release.*`、`material.template.validate` | 照 V1 先受理、执行失败 `command_unsupported`（全量重置走 `POST /api/v1/reset`） |
 | `GET /v1/logs/{component}?maxBytes=` 直接读日志文件尾部 | 只读应用选定的日志：权威主日志（`utils/runtime_logs.read_log_file`）、Host 的 `/hostlink/logs` 来源 `host` / `managed:<id>`；`maxBytes` 范围同 V1（1–4 MiB），但读取端单次最多 256 KiB / 1000 行（`truncated` 标出） |
 
-时间字段（`submittedAt` 等）是 ISO 8601 UTC 毫秒（V1 为秒）。客户端：`HTTPLifecycleClient.workspace_snapshot` /
-`submit_workspace_operation` / `workspace_operation` / `wait_workspace_operation` / `execute_workspace_operation` /
-`workspace_logs`（失败抛 `protocol.runtime.process_management.ProcessManagementError`）；MCP：`process-management.*` 四个操作。
+时间字段（`submittedAt` 等）是 ISO 8601 UTC 毫秒（V1 为秒）。响应是统一信封（见上文「响应信封」），V1 的错误符号码在
+`error.code`。客户端：`HTTPLifecycleClient.workspace_snapshot` / `submit_workspace_operation` / `workspace_operation` /
+`wait_workspace_operation` / `execute_workspace_operation` / `workspace_logs`（解包信封；失败抛
+`protocol.runtime.process_management.ProcessManagementError`，`code` 取自 `error.code`）；MCP：`process-management.*` 四个操作。
 
 ## 同路径不同语义的处理（V1 合同优先）
 

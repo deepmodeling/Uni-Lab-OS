@@ -86,7 +86,7 @@ def build_contract_app(workdir: Path) -> Tuple[FastAPI, Any]:
     workflow = WorkflowService(":memory:")
     install_workflow_api(app, workflow)
     install_registry_api(app)
-    # V1 进程管理协议（/v1/*，裸 JSON）：与 Workflow Authority 同归属
+    # V1 进程管理协议（/v1/*，统一信封）：与 Workflow Authority 同归属
     install_process_management_api(app, workflow)
     # 诊断路由（health / hostlink / scheduler / restart / 人工决策）：handler 里才会取真实对象
     app.include_router(create_backend_router(lambda: None, lambda: None))
@@ -112,7 +112,7 @@ def annotate(document: Dict[str, Any]) -> Dict[str, Any]:
         "unilabos_version": unilabos.__version__,
         "roles": ["host", "backend", "any"],
         "sse": [f"{API_PREFIX}/events", f"{API_PREFIX}/materials/events"],
-        # 不带 /api 前缀、裸 JSON 的 V1 进程管理路由
+        # 不带 /api 前缀的 V1 进程管理路由（统一信封）
         "process_management_prefix": PROCESS_MANAGEMENT_PREFIX,
     }
     return document

@@ -5,6 +5,10 @@ Edge 侧对接方式与云端 Backend 完全一致：
 - ``WS /api/v1/ws/schedule``：短通知通道（backend_session / backend_change /
   edge_change / edge_change_ack / runtime_logs_changed / ping / pong）
 - ``GET /edge/commands/{command_uuid}``：命令权威正文
+- ``POST /api/v1/edge/http-responses/{request_uuid}``：Host 回送 ``backend_http`` 的执行结果
+
+两条 HTTP 路由与其它管理 API 一样走统一信封（``{"code": 0, "data": ...}``；不存在 4001、控制服务未就绪
+5001、request_uuid 不一致 1000，均为 HTTP 200）。不鉴权。
 """
 
 from __future__ import annotations
@@ -15,9 +19,10 @@ import logging
 import queue
 from typing import Any, Optional
 
-from fastapi import APIRouter, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from unilabos.protocol.runtime.control import EdgeHttpResponse
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.backend.edge_control import (
     EdgeControlService,
     get_edge_control_service,
@@ -25,7 +30,7 @@ from unilabos.server.backend.edge_control import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["EdgeControl"])
+router = envelope_router(tags=["EdgeControl"])
 
 
 def _require_service() -> EdgeControlService:

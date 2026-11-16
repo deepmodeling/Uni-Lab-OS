@@ -14,8 +14,9 @@
   ``active``（上台只是放到父物料或库位上），used → 未删除的 ``retired``，consumed → ``consumed``，
   discarded → 软删除；``expected_version`` 对实例是物料版本、对内容物是 ``content_version``、对批次是批次版本。
 
-响应保持 V1 的裸结果 ``{command_id, status, result | error, error_code, replayed}``（V1 控制台按
-``status`` 判断，不经信封）；拒绝时另带 ``code``（V1 业务码）。
+本模块返回 V1 的命令结果 ``{command_id, status, result | error, error_code, replayed}``，拒绝时另带 ``code``
+（V1 业务码）；路由（``api/materials/inventory.py``）把它放进统一信封：完成为 ``data``，拒绝为失败信封
+（业务码 ``code``、``error.code`` = ``error_code``、``error.details`` = ``{command_id, replayed}``）。
 """
 
 from __future__ import annotations
@@ -93,7 +94,7 @@ def instantiate_tree(value: MaterialInstantiate) -> MaterialTreeCreate:
 
 
 class InventoryCommands:
-    """统一库存命令入口的执行器；返回值即 HTTP 响应体（V1 裸结果）。"""
+    """统一库存命令入口的执行器；返回 V1 命令结果，路由再放进统一信封。"""
 
     def __init__(self, materials: MaterialsService, *, contents: Optional[ContentContract] = None) -> None:
         self.materials = materials

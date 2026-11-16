@@ -1,6 +1,7 @@
 """微后端 HTTP API 的统一响应信封与业务码（V1.0 合同）。
 
-所有 ``/api/v1`` JSON 路由都用同一个形状：
+所有 JSON 路由（``/api/v1/*``、V1 进程管理 ``/v1/*``、Host↔权威内部通道 ``/edge/commands/*``，以及健康 /
+就绪探针）都用同一个形状：
 
 - 成功：HTTP 200（创建类可 201 / 202），``{"code": 0, "data": <payload>}``；无数据的命令省略 ``data``。
 - 失败：HTTP 200，``{"code": <业务码>, "error": {"msg": "<中文说明>", "code"?: "<符号码>", "details"?: {...}}}``。
@@ -11,7 +12,9 @@
   OpenAPI 的响应模型同步改为 ``Envelope[原模型]``；
 - 路由函数抛出 :class:`ApiError`、``HTTPException``、请求校验失败或已登记的领域异常时，
   统一转成失败信封（HTTP 状态码 → 业务码的换算按路由器的 :class:`ErrorProfile`）；
-- SSE / 文件下载等非 JSON 响应、生成器流式端点和 :func:`raw_response` 标记的端点原样返回。
+- SSE / 文件下载等非 JSON 响应、生成器流式端点和 :func:`raw_response` 标记的端点原样返回；
+- 没有匹配到路由（404 / 405）等框架层错误由 :func:`install_envelope_fallback` 登记的应用级处理器输出信封，
+  保留原 HTTP 状态码。
 
 业务码表以 V1 为准（``unilabos/app/scheduler/inventory/backend_contract.py`` 与
 ``workflow_api._business_code``），dev 原来的 ``unauthorized = 4001`` 改为 ``1002``，以免与 V1
@@ -400,6 +403,36 @@ _MATERIAL_CONFLICT_KINDS: Dict[str, int] = {
 }
 
 
+#: V1 进程管理（``/v1/*``）的符号码 → 业务码；V1 原来按 HTTP 状态区分：不存在 404、冲突 409、暂不可读 503、其余 400。
+_PROCESS_NOT_FOUND = frozenset({
+    "operation_not_found", "host_not_found", "not_found", "host_resource_not_found", "layout_preview_not_found",
+})
+_PROCESS_CONFLICT = frozenset({"operation_conflict", "revision_conflict", "host_already_running", "host_busy"})
+_PROCESS_UNAVAILABLE = frozenset({"component_unavailable", "host_unavailable", "host_unreachable"})
+
+
+def process_management_business_code(error_code: str) -> int:
+    """进程管理符号码 → 业务码（不存在 4001、冲突 3003、暂不可读 5001、其余参数错误 1000）。"""
+
+    if error_code in _PROCESS_NOT_FOUND:
+        return RESOURCE_NOT_FOUND
+    if error_code in _PROCESS_CONFLICT:
+        return STATE_CONFLICT
+    if error_code in _PROCESS_UNAVAILABLE:
+        return SERVICE_UNAVAILABLE
+    return INVALID_PARAMETER
+
+
+def _process_management_error(exc: Any) -> ApiError:
+    code = str(getattr(exc, "code", "") or "")
+    return ApiError(
+        process_management_business_code(code),
+        getattr(exc, "message", "") or str(exc),
+        symbol=code or None,
+        details=getattr(exc, "details", None),
+    )
+
+
 def _material_not_found(exc: Any) -> ApiError:
     subject = str(getattr(exc, "subject", "") or "")
     return ApiError(_MATERIAL_NOT_FOUND_SUBJECTS.get(subject, RESOURCE_NOT_FOUND), str(exc))
@@ -478,6 +511,8 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.device_processes.DeviceProcessError": _message_not_found(INVALID_PARAMETER),
     # 调度权威生命周期
     f"{_BACKEND}.lifecycle.SchedulerUnavailable": _fixed(SERVICE_UNAVAILABLE),
+    # V1 进程管理（/v1/*）：符号码留在 error.code
+    "unilabos.protocol.runtime.process_management.ProcessManagementError": _process_management_error,
     f"{_BACKEND}.reset.ResetConflict": _fixed(STATE_CONFLICT),
 }
 
@@ -512,6 +547,44 @@ def to_api_error(exc: BaseException, profile: ErrorProfile = GENERIC) -> Optiona
     return None
 
 
+# ── 应用级兜底 ───────────────────────────────────────────────────
+
+
+async def http_exception_envelope(request: Request, exc: StarletteHTTPException) -> Response:
+    """应用级兜底：没有匹配到任何路由（404）、方法不允许（405）等框架层 ``HTTPException`` 也输出信封。
+
+    这些不是某个路由的业务失败，所以保留原 HTTP 状态码（与中间件级拒绝一样），只把正文换成信封：
+    404 → 4001（``error.code = "not_found"``），405 → 1001（``method_not_allowed``），其余按 :func:`code_for_status`。
+    信封路由自己抛出的 ``HTTPException`` 已在路由类里换算，不会走到这里。
+    """
+
+    if exc.status_code < 400:
+        from fastapi.exception_handlers import http_exception_handler
+
+        return await http_exception_handler(request, exc)
+    message, details = _detail_message(exc.detail)
+    if exc.status_code == 404:
+        code, symbol = RESOURCE_NOT_FOUND, "not_found"
+    elif exc.status_code == 405:
+        code, symbol = OPERATION_NOT_ALLOWED, "method_not_allowed"
+    else:
+        code, symbol = code_for_status(exc.status_code), None
+    return error_response(
+        code,
+        message,
+        symbol=symbol,
+        details=details,
+        http_status=exc.status_code,
+        headers=getattr(exc, "headers", None),
+    )
+
+
+def install_envelope_fallback(app: Any) -> None:
+    """给 FastAPI 应用登记 :func:`http_exception_envelope`（管理 API 应用在 ``api/app.py`` 里登记）。"""
+
+    app.add_exception_handler(StarletteHTTPException, http_exception_envelope)
+
+
 # ── 信封路由 ─────────────────────────────────────────────────────
 
 DataT = TypeVar("DataT")
@@ -529,7 +602,7 @@ _RAW = "raw"
 
 
 def raw_response(endpoint: Callable[..., Any]) -> Callable[..., Any]:
-    """标记端点不走信封：健康 / 就绪探针、文件下载、Host↔权威内部通道等。
+    """标记端点不走信封：文件下载等非 JSON 响应（当前只有物料 3D 模型资产）。
 
     被标记的端点保持 FastAPI 默认行为（返回值、HTTPException、422 都不改写）。
     """
@@ -729,10 +802,13 @@ __all__ = [
     "envelope_router",
     "error_body",
     "error_response",
+    "http_exception_envelope",
+    "install_envelope_fallback",
     "is_raw_endpoint",
     "iter_api_routes",
     "ok_body",
     "ok_response",
+    "process_management_business_code",
     "raw_response",
     "register_domain_error",
     "to_api_error",

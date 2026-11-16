@@ -539,14 +539,20 @@ class BackendWebSocketClient(BaseBackendClient):
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 reply = await client.post(url, json=response.model_dump(mode="json"), headers=headers)
-            if reply.status_code >= 300:
-                logger.warning(
-                    "[ControlProtocol] 回送 backend_http 结果失败: HTTP %s %s",
-                    reply.status_code,
-                    reply.text[:200],
-                )
         except httpx.HTTPError as exc:
             logger.warning("[ControlProtocol] 回送 backend_http 结果失败: %s", exc)
+            return
+        from unilabos.client.utils.envelope import EnvelopeError, decode_json_body
+
+        # 权威按统一信封答复：业务失败是 HTTP 200 + code != 0（旧权威的裸 {"accepted"} 也接受）
+        try:
+            decode_json_body(reply.content, http_status=reply.status_code, envelope=False)
+        except (EnvelopeError, ValueError) as exc:
+            logger.warning(
+                "[ControlProtocol] 回送 backend_http 结果失败: HTTP %s %s",
+                reply.status_code,
+                str(exc)[:200],
+            )
 
     async def _send_handler(self) -> None:
         while self._connected and self._websocket is not None:

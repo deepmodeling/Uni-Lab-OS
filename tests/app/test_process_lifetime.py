@@ -635,7 +635,9 @@ class _Unilab:
 
     def health(self) -> dict[str, Any]:
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/v1/health", timeout=10) as response:
-            return json.load(response)
+            body = json.load(response)
+        assert body["code"] == 0, body  # 存活探针同样是统一信封
+        return body["data"]
 
     def host_child_pid(self) -> int:
         """等默认拓扑的 Host 子进程接入控制面并持有 <根目录>/edge，返回它的 pid。"""

@@ -1,8 +1,10 @@
 """V1 Edge 库存操作面 ``/api/v1/inventory/*``（统一信封，``limit`` 分页 + 具名数组）。
 
 - ``POST /inventory/commands`` 是全部库存写入的唯一命令入口（dev ``materials.v1`` 变更与 V1
-  类型化命令，见 ``services/materials/inventory_commands.py``）。它按 V1 原样返回裸结果
-  ``{command_id, status, ...}``，不包信封：V1 控制台按 ``status`` 判断，业务拒绝也是 HTTP 200。
+  类型化命令，见 ``services/materials/inventory_commands.py``）。与其它路由一样走统一信封：完成为
+  ``{"code": 0, "data": {command_id, status: "completed", result, replayed}}``；被拒（含同一 ``command_id`` 的
+  拒绝重放）为 HTTP 200 + ``{"code": <业务码>, "error": {"msg", "code": <error_code>, "details": {command_id,
+  replayed}}}``。
 - 读路由返回 dev 的运营 DTO（批次 / 物料聚合 / 模板 / 预留），并附 V1 的标识别名
   （``lot_id`` / ``edge_uuid`` / ``template_id`` / ``reservation_id``）。
 - ``/inventory/ingress-reservations`` 是工站入站库位预留。
@@ -16,15 +18,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, FastAPI, Query
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from unilabos.server.api.envelope import (
     INTERNAL_ERROR,
     RESOURCE,
-    EnvelopeResponse,
+    ApiError,
     envelope_router,
-    raw_response,
+    ok_response,
     to_api_error,
 )
 from unilabos.server.services.materials import MaterialsService
@@ -110,9 +111,9 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
                 "ledger_sequence": service.latest_ledger_sequence()}
 
     @router.post("/commands")
-    @raw_response
-    def post_command(body: Dict[str, Any] = Body(...)) -> JSONResponse:
-        """统一库存命令入口（幂等）：成功与业务拒绝都是 HTTP 200 + 裸结果；未知异常照常上抛。"""
+    def post_command(body: Dict[str, Any] = Body(...)) -> Any:
+        """统一库存命令入口（幂等）：完成返回命令结果；业务拒绝是失败信封（``error.code`` 为拒绝码，
+        ``error.details`` 带 ``command_id`` / ``replayed``）；未知异常照常上抛。"""
 
         try:
             result = commands.execute(body, _code_of)
@@ -121,7 +122,15 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
             result = {"command_id": str(body.get("command_id") or body.get("command_uuid") or ""),
                       "status": "rejected", "error": str(exc), "error_code": getattr(exc, "code", "invalid"),
                       "code": _code_of(exc)}
-        return EnvelopeResponse(content=result)
+        if result.get("status") == "rejected":
+            raise ApiError(
+                int(result.get("code") or INTERNAL_ERROR),
+                str(result.get("error") or "command rejected"),
+                symbol=str(result.get("error_code") or "inventory_error"),
+                details={"command_id": result.get("command_id") or "", "replayed": bool(result.get("replayed"))},
+            )
+        # 有界编码器：建树等结果可能嵌套很深
+        return ok_response(result)
 
     @router.post("/material-io/check")
     def check_material_io(body: MaterialIOCheckRequest) -> Any:

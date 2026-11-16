@@ -1,4 +1,4 @@
-"""生命周期 SDK：地址、token、超时、不重试管理命令和无启动副作用。"""
+"""生命周期 SDK：地址、超时、探针信封、不重试管理命令和无启动副作用。"""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -32,7 +32,7 @@ def _mock_http(client, handler):
     client._http._client = httpx.Client(base_url=config.base_url, transport=httpx.MockTransport(handler))
 
 
-def test_sdk_roundtrip_reuses_authority_token_and_handles_starting(monkeypatch):
+def test_sdk_roundtrip_handles_starting(monkeypatch):
     workflow = MagicMock()
     workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
     scheduler = BackendScheduler(workflow, MagicMock())
@@ -46,6 +46,29 @@ def test_sdk_roundtrip_reuses_authority_token_and_handles_starting(monkeypatch):
         assert client.begin_drain().phase == "drained"
         assert client.readiness().status == "starting"
         assert client.resume_from_drain().phase == "running"
+
+
+def test_readiness_reads_the_summary_from_the_not_ready_envelope():
+    """未就绪：HTTP 503 + 5001，摘要在 error.details；维护闸门的 5001 没有摘要，照常抛错。"""
+
+    from unilabos.client.utils.envelope import EnvelopeError
+
+    summary = {"status": "starting", "phase": "host_restarting", "workflowRuntime": "ready",
+               "scheduler": "local", "execution": "restarting", "reasons": ["Host 子进程未接入控制面（启动或重启中）"]}
+    replies = [
+        httpx.Response(503, json={"code": 5001, "error": {"msg": summary["reasons"][0], "code": "not_ready",
+                                                          "details": summary}}),
+        httpx.Response(503, json={"code": 5001, "error": {"msg": "正在全量重置，停止接受业务请求"}}),
+        httpx.Response(200, json=envelope({**summary, "status": "ready", "phase": "ready", "execution": "ready",
+                                           "reasons": []})),
+    ]
+    with HTTPLifecycleClient("http://localhost:8002") as client:
+        _mock_http(client, lambda request: replies.pop(0))
+        assert client.readiness().phase == "host_restarting"
+        with pytest.raises(EnvelopeError) as caught:
+            client.readiness()
+        assert caught.value.code == 5001 and caught.value.http_status == 503
+        assert client.readiness().status == "ready"
 
 
 def test_offline_query_never_starts_a_process_or_retries(monkeypatch):

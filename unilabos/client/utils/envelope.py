@@ -1,13 +1,14 @@
 """响应信封解析（微后端 V1 合同与旧云端 Backend 共用）。
 
-微后端 ``/api/v1`` 的 JSON 路由（见 ``unilabos/server/api/envelope.py``）::
+微后端的 JSON 路由（``/api/v1/*``、``/v1/*`` 进程管理、``/edge/commands/*``，见
+``unilabos/server/api/envelope.py``）::
 
     成功：{"code": 0, "data": ...}                     （无数据命令省略 data）
     失败：{"code": N, "error": {"msg": "...", "code"?: "<符号码>", "details"?: {...}}}
 
-业务失败固定 HTTP 200；工站密钥缺失或错误（HTTP 401，1002）与全量重置维护闸门（HTTP 503，
-5001）是中间件级拒绝，状态码不是 200，但正文同样是信封。健康 / 就绪探针、SSE 与文件下载
-不包信封。
+业务失败固定 HTTP 200。保留其它 HTTP 状态码、正文同样是信封的：工站密钥缺失或错误（401，1002）、
+全量重置维护闸门（503，5001）、就绪探针未就绪（503，5001，摘要在 ``error.details``）、路由不存在（404，
+4001）/ 方法不允许（405，1001）。只有 SSE 与文件下载不包信封。
 
 旧云端 Backend 的形状是 ``{"code", "error": "<文案>", "data", "timestamp"}``，同样能解析。
 """
@@ -249,7 +250,7 @@ def decode_json_body(
     - 信封：``code == 0`` 返回 ``data``；否则抛 :class:`EnvelopeError`（任何 HTTP 状态码都一样）；
     - 非信封的错误响应（路由不存在、代理 / 网关错误）：抛 :class:`EnvelopeError`，业务码按
       HTTP 状态换算，``http_status`` 为真实状态码；
-    - 非信封的成功响应：``envelope=False``（探针等不包信封的端点）原样返回，否则抛 ``ValueError``。
+    - 非信封的成功响应：``envelope=False``（兼容非微后端的对端）原样返回，否则抛 ``ValueError``。
     """
 
     text = body.decode("utf-8", errors="replace") if isinstance(body, (bytes, bytearray)) else str(body)

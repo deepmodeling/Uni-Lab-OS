@@ -1,8 +1,8 @@
 """统一信封机制（``unilabos/server/api/envelope.py``）的契约测试。
 
 覆盖：成功包装、各类失败（HTTPException 按错误口径、ApiError、领域异常、请求校验、非法 JSON）、
-不包信封的端点（探针、SSE、未知异常）、完整装配后的 ``/api/v1`` 路由审计、工站密钥
-（401 → 1002）、SSE 事件名映射与 Python 客户端解包。
+不包信封的端点（文件下载、SSE、未知异常）、应用级兜底（404 / 405）、完整装配后的全部 JSON 路由审计（含探针、
+``/v1/*`` 进程管理、Host↔权威内部通道与库存命令）、工站密钥（401 → 1002）、SSE 事件名映射与 Python 客户端解包。
 """
 
 from __future__ import annotations
@@ -74,9 +74,9 @@ def _probe_app(profile=envelope.GENERIC) -> FastAPI:
     def query(limit: int = Query(ge=1)) -> int:
         return limit
 
-    @router.get("/health")
+    @router.get("/raw")
     @raw_response
-    def health() -> dict:
+    def raw() -> dict:
         return {"status": "ok"}
 
     @router.get("/stream")
@@ -166,7 +166,7 @@ def test_validation_and_malformed_json_return_code_1000() -> None:
 
 def test_raw_endpoints_streams_and_unknown_exceptions_are_not_enveloped() -> None:
     client = TestClient(_probe_app(), raise_server_exceptions=False)
-    assert client.get("/api/v1/probe/health").json() == {"status": "ok"}
+    assert client.get("/api/v1/probe/raw").json() == {"status": "ok"}
     stream = client.get("/api/v1/probe/stream")
     assert stream.headers["content-type"].startswith("text/event-stream") and stream.text == "data: 1\n\n"
     # 未登记的异常是服务端缺陷：照常 500，不伪装成业务失败
@@ -202,6 +202,12 @@ def test_raw_endpoints_streams_and_unknown_exceptions_are_not_enveloped() -> Non
         (lambda: _graph("identity_conflict"), 4002, None),
         (lambda: _chemical("conflict"), 4002, None),
         (lambda: _chemical("not_found"), 4001, None),
+        # V1 进程管理：符号码留在 error.code
+        (lambda: _process("operation_not_found"), 4001, "operation_not_found"),
+        (lambda: _process("revision_conflict"), 3003, "revision_conflict"),
+        (lambda: _process("operation_conflict"), 3003, "operation_conflict"),
+        (lambda: _process("component_unavailable"), 5001, "component_unavailable"),
+        (lambda: _process("invalid_request"), 1000, "invalid_request"),
     ],
 )
 def test_domain_errors_map_through_the_central_table(exc_factory, code, symbol) -> None:
@@ -230,6 +236,12 @@ def _graph(code: str):
     from unilabos.server.services.materials.graph import GraphError
 
     return GraphError(code, "graph")
+
+
+def _process(code: str):
+    from unilabos.protocol.runtime.process_management import ProcessManagementError
+
+    return ProcessManagementError(code, "进程管理")
 
 
 def _chemical(code: str):
@@ -262,15 +274,19 @@ def test_code_table_matches_v1() -> None:
 
 # ── 完整装配后的路由审计 ─────────────────────────────────────────
 
-#: 允许不走信封的 ``/api/v1`` 路由：探针、Host↔权威内部通道（见 docs/developer_guide/api_v1_migration.md）。
-_RAW_ALLOWED = {
+#: 允许不走信封的 JSON 路由：只有文件下载（物料 3D 模型资产；资产缺失时的 404 由应用级兜底输出信封）。
+_RAW_ALLOWED = {"/api/v1/material-models/{asset_path:path}"}
+#: 2026-11-17 之前不包信封、现在必须是信封路由的端点
+_FORMERLY_RAW = {
     "/api/v1/health",
     "/api/v1/readiness",
-    "/api/v1/edge/http-responses/{request_uuid}",
-    # 物料 3D 模型资产是文件下载（V1 缺失时 HTTP 404）
-    "/api/v1/material-models/{asset_path:path}",
-    # 库存命令入口按 V1 原样返回裸结果 {command_id, status, ...}（V1 控制台按 status 判断）
     "/api/v1/inventory/commands",
+    "/api/v1/edge/http-responses/{request_uuid}",
+    "/edge/commands/{command_uuid}",
+    "/v1/snapshot",
+    "/v1/operations",
+    "/v1/operations/{operation_id}",
+    "/v1/logs/{component}",
 }
 
 
@@ -280,6 +296,7 @@ def _full_app(tmp_path) -> tuple[FastAPI, list]:
     from unilabos.server.api.driver_package_graphs import create_driver_package_graphs_router
     from unilabos.server.api.driver_packages import create_driver_packages_router
     from unilabos.server.api.host_relay import create_host_relay_router
+    from unilabos.server.api.process_management import install_process_management_api
     from unilabos.server.api.runtime import create_backend_router, install_edge_control_api
     from unilabos.server.api.runtime.logs import create_runtime_logs_router
     from unilabos.server.api.runtime.registry import install_registry_api
@@ -304,32 +321,35 @@ def _full_app(tmp_path) -> tuple[FastAPI, list]:
     install_registry_api(app)
     install_server_apis(app, services)
     install_edge_control_api(app)
+    install_process_management_api(app, workflow)
     return app, [services, workflow]
 
 
-def test_every_api_v1_json_route_is_enveloped(tmp_path) -> None:
+def test_every_json_route_is_enveloped(tmp_path) -> None:
     from fastapi.routing import APIRoute
 
     app, closers = _full_app(tmp_path)
     try:
         routes = [(path, route) for path, route in iter_api_routes(app.routes) if isinstance(route, APIRoute)]
-        api_routes = [(path, route) for path, route in routes if path.startswith("/api/v1")]
-        assert len(api_routes) > 150
+        assert len(routes) > 150
         unwrapped = sorted(
-            path for path, route in api_routes
+            path for path, route in routes
             if path not in _RAW_ALLOWED
             and not (isinstance(route, EnvelopeRoute) and not envelope.is_raw_endpoint(route.endpoint))
         )
         assert unwrapped == []
-        # 探针确实是裸 JSON，内部通道保持普通路由
-        raw = {path for path, route in api_routes if envelope.is_raw_endpoint(route.endpoint)}
-        assert {"/api/v1/health", "/api/v1/readiness"} <= raw
+        # 探针、进程管理、内部通道与库存命令都已是信封路由；文件下载仍是普通字节响应
+        enveloped = {path for path, route in routes if path in _FORMERLY_RAW and not envelope.is_raw_endpoint(route.endpoint)}
+        assert enveloped == _FORMERLY_RAW
+        raw = {path for path, route in routes if envelope.is_raw_endpoint(route.endpoint)}
+        assert raw == _RAW_ALLOWED
     finally:
         for closer in closers:
             closer.close()
 
 
-def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
+def test_full_app_answers_errors_with_the_envelope(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("unilabos.server.api.runtime.control.get_edge_control_service", lambda: None)
     app, closers = _full_app(tmp_path)
     try:
         with TestClient(app) as client:
@@ -345,10 +365,46 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
             error_of(client.put("/api/v1/lab/profile", content=b"[", headers={"content-type": "application/json"}), 1000)
             assert ok_data(client.get("/api/v1/lab/profile"))["grid"]["revision"] == 0
             assert ok_data(client.get("/api/v1/lab/layout"))["placements"] == []
-            assert client.get("/api/v1/health").json()["status"] == "ok"
+            assert ok_data(client.get("/api/v1/health"))["status"] == "ok"
+            # 进程管理与内部通道同样是信封：V1 符号码在 error.code
+            assert error_of(client.get("/v1/operations/never-submitted"), 4001)["code"] == "operation_not_found"
+            error_of(client.get("/edge/commands/00000000-0000-0000-0000-000000000000"), 5001)
+            error_of(client.post("/api/v1/edge/http-responses/r-1", json={"request_uuid": "r-2", "status_code": 200}), 1000)
+            # 文件下载缺失：路由抛 404，由应用级兜底输出信封（完整应用里登记；这里是框架默认）
+            assert client.get("/api/v1/material-models/none.glb").status_code == 404
     finally:
         for closer in closers:
             closer.close()
+
+
+def _fallback_app() -> FastAPI:
+    app = FastAPI()
+    envelope.install_envelope_fallback(app)
+
+    @app.get("/api/v1/only-get")
+    def only_get() -> dict:
+        return {"code": 0}
+
+    return app
+
+
+def test_unmatched_routes_keep_their_status_but_answer_with_the_envelope() -> None:
+    client = TestClient(_fallback_app())
+    missing = client.get("/api/v1/no-such-route")
+    assert error_of(missing, envelope.RESOURCE_NOT_FOUND, status=404) == {"msg": "Not Found", "code": "not_found"}
+    wrong_method = client.post("/api/v1/only-get", json={})
+    error = error_of(wrong_method, envelope.OPERATION_NOT_ALLOWED, status=405)
+    assert error["code"] == "method_not_allowed" and wrong_method.headers["allow"] == "GET"
+    # 管理 API 应用本身登记了兜底
+    from unilabos.server.api.app import app as management_app
+
+    assert error_of(TestClient(management_app).get("/api/v1/no-such-route"), 4001, status=404)["code"] == "not_found"
+
+
+def test_http_client_reports_unmatched_routes_with_the_business_code() -> None:
+    with pytest.raises(EnvelopeError) as caught:
+        _client_for(_fallback_app()).get("/no-such-route")
+    assert (caught.value.code, caught.value.symbol, caught.value.http_status) == (4001, "not_found", 404)
 
 
 # ── 工站密钥（唯一的鉴权） ───────────────────────────────────────
@@ -450,7 +506,7 @@ def test_http_client_unwraps_once_and_raises_typed_errors(monkeypatch) -> None:
     with pytest.raises(EnvelopeError) as caught:
         client.get("/probe/api-error")
     assert (caught.value.code, caught.value.symbol, caught.value.details) == (6007, "site_occupied", {"site_uuid": "s1"})
-    assert client.get("/probe/health", envelope=False) == {"status": "ok"}
+    assert client.get("/probe/raw", envelope=False) == {"status": "ok"}
 
 
 def test_http_client_reports_the_station_key_rejection_as_1002(monkeypatch) -> None:

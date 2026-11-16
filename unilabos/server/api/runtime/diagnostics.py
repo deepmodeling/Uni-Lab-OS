@@ -7,11 +7,16 @@ from collections.abc import Callable, Mapping
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from unilabos.config.config import BasicConfig
-from unilabos.server.api.envelope import envelope_router, raw_response
+from unilabos.server.api.envelope import (
+    SERVICE_UNAVAILABLE,
+    EnvelopeResponse,
+    envelope_router,
+    error_response,
+    ok_response,
+)
 from unilabos.protocol.runtime.lifecycle import (
     HealthStatus,
     ReadinessStatus,
@@ -215,24 +220,35 @@ def create_backend_router(
         except Exception:  # noqa: BLE001 - 探针不因装配查询失败而失败
             return "disabled"
 
-    @router.get("/readiness", response_model=ReadinessStatus, responses={503: {"model": ReadinessStatus}})
-    @raw_response
-    def readiness() -> JSONResponse:
-        """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同）。
+    @router.get(
+        "/readiness",
+        response_model=ReadinessStatus,
+        responses={503: {"description": "未就绪：信封 5001，error.code = not_ready，error.details 是同样的就绪摘要"}},
+    )
+    def readiness() -> EnvelopeResponse:
+        """就绪探针：能接收并执行任务时 HTTP 200，否则 503（Kubernetes readiness 合同，探针只看状态码）。
 
         与 ``/health``（进程存活，恒 200）不同：Host 子进程启动 / 安静点重启期间、执行适配器
-        尚未注册时返回 503；全量重置期间维护闸门同样返回 503。响应只含状态摘要。
-        探针按 HTTP 状态码判定，所以本端点不包信封（``raw_response``）。
+        尚未注册时返回 503；全量重置期间维护闸门同样返回 503。正文是统一信封：就绪为
+        ``{"code": 0, "data": <摘要>}``；未就绪为 ``{"code": 5001, "error": {"msg": <原因>, "code": "not_ready",
+        "details": <摘要>}}``（HTTP 503 与 5001 一一对应，维护闸门的 503 正文同样是 5001，只是没有摘要）。
         """
 
         ready, summary = _readiness()
-        return JSONResponse(status_code=200 if ready else 503, content=summary)
+        if ready:
+            return ok_response(summary)
+        return error_response(
+            SERVICE_UNAVAILABLE,
+            "；".join(summary["reasons"]) or "运行时尚未就绪",
+            symbol="not_ready",
+            details=summary,
+            http_status=503,
+        )
 
     # unavailable_devices 只在非空时出现：不让 response_model 用缺省值把它补成 []
     @router.get("/health", response_model=HealthStatus, response_model_exclude_unset=True)
-    @raw_response
     def health() -> dict[str, Any]:
-        """存活探针：恒 HTTP 200 的裸 JSON（与 ``/readiness`` 一样不包信封，探针只看状态码与字段）。
+        """存活探针：恒 HTTP 200，正文是统一信封 ``{"code": 0, "data": {...}}``（探针只看状态码）。
 
         ``unavailable_devices``（dev 扩展，只在非空时出现）：本进程设备 runtime 跳过的设备（设备图里有、
         当前 backend 跑不了）及原因。存活探针只读本进程数据、不经控制面问 Host（前端每几秒轮询一次，

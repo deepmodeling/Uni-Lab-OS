@@ -157,16 +157,16 @@ def test_proxy_disabled_when_not_configured(host_app: FastAPI, authority_app: Fa
 def test_health_reports_host_child_state(monkeypatch: pytest.MonkeyPatch) -> None:
     client = TestClient(create_backend_app(get_scheduler=lambda: object()))
     edge_proxy.configure_edge_proxy(False)
-    assert client.get("/api/v1/health").json()["execution"] == "disabled"
+    assert client.get("/api/v1/health").json()["data"]["execution"] == "disabled"
 
     edge_proxy.configure_edge_proxy(True)
     try:
         monkeypatch.setattr(edge_control, "get_edge_control_service", lambda: None)
-        assert client.get("/api/v1/health").json()["execution"] == "restarting"
+        assert client.get("/api/v1/health").json()["data"]["execution"] == "restarting"
         monkeypatch.setattr(
             edge_control, "get_edge_control_service", lambda: SimpleNamespace(connected=True)
         )
-        assert client.get("/api/v1/health").json()["execution"] == "ready"
+        assert client.get("/api/v1/health").json()["data"]["execution"] == "ready"
     finally:
         edge_proxy.configure_edge_proxy(False)
 

@@ -10,7 +10,8 @@ from typing import Any, Self
 
 import httpx
 
-from unilabos.client.http import HTTPClient, HTTPClientConfig
+from unilabos.client.http import SERVICE_UNAVAILABLE_CODE, HTTPClient, HTTPClientConfig
+from unilabos.client.utils.envelope import EnvelopeError
 from unilabos.protocol.runtime.lifecycle import (
     HealthStatus,
     ReadinessStatus,
@@ -48,7 +49,7 @@ class HTTPLifecycleClient:
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("HTTP 超时必须为有限正数")
         # 重启/重置在响应丢失后不能盲目重试，调用方应重新查询状态。
-        # 管理 API 统一信封；只有 /health、/readiness 两个探针是裸 JSON。
+        # 管理 API（含探针与 /v1/* 进程管理）一律统一信封。
         api_root = normalize_api_address(base_url)
         self._http = HTTPClient(
             HTTPClientConfig(api_root, timeout=timeout, max_retries=0),
@@ -59,15 +60,20 @@ class HTTPLifecycleClient:
         self._timeout = timeout
 
     def health(self) -> HealthStatus:
-        return HealthStatus.model_validate(self._http.get("/health", envelope=False))
+        return HealthStatus.model_validate(self._http.get("/health"))
 
     def readiness(self) -> ReadinessStatus:
+        """就绪为 HTTP 200 + ``data``；未就绪为 HTTP 503 + 5001，同样的摘要在 ``error.details``。
+
+        维护闸门（全量重置中）的 503 + 5001 没有摘要，照常抛 :class:`EnvelopeError`。
+        """
+
         try:
-            payload = self._http.get("/readiness", envelope=False)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code != 503:
+            payload = self._http.get("/readiness")
+        except EnvelopeError as exc:
+            if exc.code != SERVICE_UNAVAILABLE_CODE or not isinstance(exc.details, dict) or "status" not in exc.details:
                 raise
-            payload = exc.response.json()
+            payload = exc.details
         return ReadinessStatus.model_validate(payload)
 
     def restart_status(self) -> RestartStatus:
@@ -127,23 +133,19 @@ class HTTPLifecycleClient:
                 raise SchedulerDrainTimeout(status)
             time.sleep(min(poll_interval, remaining))
 
-    # ── V1 进程管理协议（/v1/*，裸 JSON；失败抛 ProcessManagementError） ──────────
+    # ── V1 进程管理协议（/v1/*，统一信封；失败抛 ProcessManagementError，V1 符号码取自 error.code） ──
 
     def _workspace(self, method: str, path: str, *, json: Any = None, timeout: float | None = None) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {"envelope": False, "timeout": timeout or self._timeout}
+        kwargs: dict[str, Any] = {"timeout": timeout or self._timeout}
         if json is not None:
             kwargs["json"] = json
         try:
             payload = self._http._request(method, f"{self._service_root}{path}", **kwargs)
-        except httpx.HTTPStatusError as exc:
-            try:
-                failure = exc.response.json().get("error") or {}
-            except (ValueError, AttributeError):
-                failure = {}
+        except EnvelopeError as exc:
             raise ProcessManagementError(
-                str(failure.get("code") or "host_request_failed"),
-                str(failure.get("message") or f"进程管理 HTTP {exc.response.status_code}"),
-                details=failure.get("details"),
+                str(exc.symbol or "host_request_failed"),
+                str(exc.error or f"进程管理请求失败（业务码 {exc.code}）"),
+                details=exc.details,
             ) from exc
         except httpx.HTTPError as exc:
             raise ProcessManagementError("host_unreachable", f"进程管理服务不可达：{self._service_root}") from exc

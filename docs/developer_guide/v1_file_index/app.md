@@ -105,7 +105,7 @@ MISSING：`app/cli/lab.py`。
 | unilabos/workspace_host/cli.py | 178 | DROPPED | #1；status/start/stop/restart/logs → `unilab runtime status\|drain\|resume\|restart\|reset`（`app/cli/runtime.py`）与 `/v1/*`；`workspace init` → `.cursor/skills/create-device-package` | |
 | unilabos/workspace_host/client.py | 274 | DROPPED | #1；替代为 `HTTPLifecycleClient.workspace_*`（`client/runtime/lifecycle.py`） | |
 | unilabos/workspace_host/discovery.py | 95 | DROPPED | #1；单实例锁 → `server/database/root_lock.py`；本地令牌不移植（dev 的控制面 token 也已于 11-17 取消） | |
-| unilabos/workspace_host/host.py | 2521 | DROPPED | #1；其协议 `/v1/snapshot`、`/v1/operations[/{id}]`、`/v1/logs/{component}` 已由 `server/api/process_management.py` + `server/services/process_management.py` 提供（route map p8，D02） | 抽查：FIFO 操作、重放 / 冲突 409、`expectedRevision`、未完成操作重启后 `operation_interrupted` 均在 |
+| unilabos/workspace_host/host.py | 2521 | DROPPED | #1；其协议 `/v1/snapshot`、`/v1/operations[/{id}]`、`/v1/logs/{component}` 已由 `server/api/process_management.py` + `server/services/process_management.py` 提供（route map p8，D02） | 抽查：FIFO 操作、重放 / 冲突（V1 的 409，11-17 起为信封 3003 + `error.code`）、`expectedRevision`、未完成操作重启后 `operation_interrupted` 均在 |
 | unilabos/workspace_host/launch.py | 675 | DROPPED | #1 | backend / edge / PLC 启动计划；dev 由 `host_child_command` 派生 |
 | unilabos/workspace_host/material_layout.py | 488 | PORTED | `server/services/materials/workspace_layout.py`（`material.layout.inspect\|preview\|apply`） | 布局源由图文件改为 materials.db 物料树，修订 = 根树 `state_hash` 汇总；preview / apply CAS 语义保留 |
 | unilabos/workspace_host/material_template_worker.py | 90 | DROPPED | #1、#3；`material.template.validate` 不支持，模板由注册表权威上报时校验，静态检查用 `unilab package inspect` / `--check_mode` | |

@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_body, error_of, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.protocol.materials import InventoryMutation, MaterialMove
 from unilabos.server.api.materials import install_materials_api
@@ -71,7 +71,7 @@ def _move_command(client, material_uuid: str, site_uuid: str) -> dict:
     mutation = InventoryMutation(command_uuid=str(uuid4()), effect_key="move_material", operation="move_material",
                                  actor_uuid="operator-1")
     body = bind_payload(mutation, MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid))
-    return client.post("/api/v1/inventory/commands", json=body.model_dump(mode="json", exclude_none=False)).json()
+    return command_body(client.post("/api/v1/inventory/commands", json=body.model_dump(mode="json", exclude_none=False)))
 
 
 def test_site_template_whitelist_rejects_other_templates_on_every_placement(stack) -> None:

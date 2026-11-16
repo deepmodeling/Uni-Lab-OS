@@ -79,10 +79,12 @@ def test_control_websocket_and_host_routes_need_no_token(control_app) -> None:
         ) as websocket:
             assert websocket.receive_json()["action"] == "backend_session"
 
+        # 鉴权已取消；两条内部通道与其它管理 API 一样是统一信封
         missing = client.get("/edge/commands/00000000-0000-0000-0000-000000000000")
-        assert missing.status_code != 401
+        assert missing.status_code == 200 and missing.json()["code"] == 4001
         body = EdgeHttpResponse(request_uuid="r-1", status_code=200).model_dump(mode="json")
-        assert client.post("/api/v1/edge/http-responses/r-1", json=body).status_code == 200
+        reply = client.post("/api/v1/edge/http-responses/r-1", json=body)
+        assert reply.status_code == 200 and reply.json() == {"code": 0, "data": {"accepted": False}}
 
 
 def _write_app() -> FastAPI:

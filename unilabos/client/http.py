@@ -39,7 +39,7 @@ class HTTPClientConfig:
     timeout: float = 30.0
     max_retries: int = 3
     retry_backoff: float = 1.0
-    # 微后端全部 JSON API 使用信封；只有健康 / 就绪探针等端点按调用传 envelope=False。
+    # 微后端全部 JSON API（含探针与 /v1/* 进程管理）使用信封；envelope=False 只给不是微后端的地址。
     response_envelope: bool = True
 
 
@@ -88,7 +88,7 @@ class HTTPClient:
 
         Args:
             envelope: 本次响应是否为信封；缺省取 ``config.response_envelope``。
-                不包信封的端点（``/health``、``/readiness``）传 ``False``。
+                微后端的 JSON 路由全部是信封，只有非微后端地址才传 ``False``。
 
         Returns:
             响应数据（已解析信封）

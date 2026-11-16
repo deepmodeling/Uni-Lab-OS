@@ -3,8 +3,8 @@
 V1 的 Workspace Host 是独立的工作区监督进程；统一分支里它对应 dev 已有的进程管理：
 ``unilab`` 调度权威进程（``app/backend_main.py``）就是监督者，直接看护 Host 子进程
 （``app/supervisor.py`` 的 ``HostChildSupervisor``），受管 Slave / 设备进程由 Host 的
-``services/device_processes.py`` 管理。这里只保留 V1 的线上合同：路径不带 ``/api`` 前缀、
-响应是裸 JSON（不包信封）、失败用 HTTP 状态码 + ``{"error": {code, message, details?}}``。
+``services/device_processes.py`` 管理。这里保留 V1 的线上合同：路径不带 ``/api`` 前缀、请求体与文档字段、
+符号错误码；响应按统一信封输出（2026-11-17 起，V1 的符号码放在 ``error.code``，业务码见 ``api/envelope.py``）。
 
 组件名沿用 V1 的 ``backend`` / ``edge`` / ``plc`` / ``renderer``，dev 额外给每个受管设备进程
 一个 ``managed:<process_id>`` 组件（与 ``/api/v1/hostlink/log-sources`` 的来源标识一致）。
@@ -92,20 +92,6 @@ class ProcessManagementError(RuntimeError):
         return payload
 
 
-def error_http_status(code: str) -> int:
-    """V1 ``_error_status``：不存在 404、冲突 409，其余 400；dev 增加不可用 503。"""
-
-    if code in {"operation_not_found", "host_not_found", "not_found"}:
-        return 404
-    if code in {"operation_conflict", "revision_conflict", "host_already_running"}:
-        return 409
-    if code == "unauthorized":
-        return 401
-    if code == "component_unavailable":
-        return 503
-    return 400
-
-
 class WorkspaceOperationRequest(BaseModel):
     """``POST /v1/operations`` 请求体（V1 原样）。"""
 
@@ -175,16 +161,6 @@ class WorkspaceLogTail(BaseModel):
     content: str
 
 
-class ProcessManagementErrorDetail(BaseModel):
-    code: str
-    message: str = ""
-    details: Any = None
-
-
-class ProcessManagementErrorBody(BaseModel):
-    error: ProcessManagementErrorDetail
-
-
 __all__ = [
     "DEFAULT_LOG_MAX_BYTES",
     "MANAGED_COMPONENT_PREFIX",
@@ -201,8 +177,6 @@ __all__ = [
     "V1_COMPONENT_NAMES",
     "WorkspaceComponent",
     "ProcessManagementError",
-    "ProcessManagementErrorBody",
-    "ProcessManagementErrorDetail",
     "WorkspaceLogTail",
     "WorkspaceOperation",
     "WorkspaceOperationRequest",

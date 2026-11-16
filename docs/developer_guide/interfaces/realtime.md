@@ -208,8 +208,8 @@ Host 在本进程 ASGI 应用执行后出站 POST
 
 | 接口 | 请求 / 返回 |
 | --- | --- |
-| GET /edge/commands/{command_uuid} | BackendCommandDocument；不存在 404、控制服务未就绪 503 |
-| POST /api/v1/edge/http-responses/{request_uuid} | EdgeHttpResponse → `{accepted}` |
+| GET /edge/commands/{command_uuid} | 信封 data 为 BackendCommandDocument；不存在 4001、控制服务未就绪 5001（均 HTTP 200） |
+| POST /api/v1/edge/http-responses/{request_uuid} | EdgeHttpResponse → 信封 data `{accepted}`；request_uuid 不一致 1000 |
 | POST /api/v1/hostlink/material-sync | MaterialDeviceSync → 设备 resource service 同步结果 |
 | POST /api/v1/hostlink/notify-device | ResourceTreeNotify → ResourceTreeNotifyResult |
 

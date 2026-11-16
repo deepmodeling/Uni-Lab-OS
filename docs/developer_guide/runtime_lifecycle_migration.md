@@ -22,7 +22,7 @@
 | 接口 | 行为 |
 | --- | --- |
 | `GET /api/v1/health` | 原有存活查询，响应字段保持 |
-| `GET /api/v1/readiness` | 原有就绪查询；排空或维护暂停时返回 503，health 仍返回 200 |
+| `GET /api/v1/readiness` | 原有就绪查询；排空或维护暂停时返回 503（信封 5001，摘要在 `error.details`），health 仍返回 200 |
 | `GET/POST/DELETE /api/v1/restart` | 原有查询、请求、取消；默认只重启主 runtime，backend 常驻 |
 | `GET/POST /api/v1/reset` | 原有预览和显式确认；仍在停机、关库后归档，未搬入 V1 旧库扫描/删库逻辑 |
 | `GET /api/v1/scheduler/drain` | 新增，只读状态查询 |
@@ -57,7 +57,7 @@ with HTTPLifecycleClient("http://127.0.0.1:8002") as client:
     # client.request_restart(RestartRequest(mode="quiescent", scope="edge"))
 ```
 
-构造、查询和关闭客户端都不启动或停止进程；离线抛 HTTP 连接异常，不伪造成功状态。排空等待失败不杀进程、不自动恢复派发。重启/重置不自动重试：响应丢失时由调用方查询已有状态，避免重复执行。生命周期 API 返回裸 DTO，HTTPClient 新增显式配置，原业务接口的信封解析默认行为保持。
+构造、查询和关闭客户端都不启动或停止进程；离线抛 HTTP 连接异常，不伪造成功状态。排空等待失败不杀进程、不自动恢复派发。重启/重置不自动重试：响应丢失时由调用方查询已有状态，避免重复执行。生命周期 API 的响应（含 `/health`、`/readiness` 与 `/v1/*`）都是统一信封，SDK 解包一次后返回 DTO；未就绪时 `readiness()` 从 5001 的 `error.details` 取摘要。
 
 ## 仍需逐项处理的旧 Workspace 协议
 

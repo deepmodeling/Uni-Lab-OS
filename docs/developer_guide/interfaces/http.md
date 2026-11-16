@@ -14,7 +14,8 @@ python -m unilabos.app.main --port 8003 --disable_browser
 curl http://127.0.0.1:8003/api/v1/health
 ```
 
-健康响应示例：`{"status":"ok","scheduler":"local","execution":"ready"}`（探针不包信封，见下文「响应信封」）。
+健康响应示例：`{"code":0,"data":{"status":"ok","scheduler":"ready","scheduler_mode":"local","execution":"ready"}}`
+（探针同样是统一信封，见下文「响应信封」；就绪探针 `/readiness` 未就绪时是 HTTP 503 + 5001，摘要在 `error.details`）。
 `execution` 可为 `ready`、`restarting`、`disabled`；HTTP 进程在线不等于目标设备已注册。
 执行前还要读取 `/runtime/endpoints?state=online` 的 `device_routes` 与 `action_capabilities`。
 
@@ -60,8 +61,9 @@ HTTP 401，正文是信封 `{"code": 1002, "error": {"msg": ...}}`，带 `WWW-Au
 
 ## 响应信封
 
-**所有 `/api/v1` JSON 路由**（workflow、graphs、chemicals、registry、materials、runtime、telemetry、history、
-lab、诊断、生命周期、驱动包、受管进程、日志、debug）用同一个信封，由 `unilabos/server/api/envelope.py` 的
+**所有 JSON 路由**（workflow、graphs、chemicals、registry、materials、库存命令、runtime、telemetry、history、
+lab、诊断、健康 / 就绪探针、生命周期、驱动包、受管进程、日志、debug、V1 进程管理 `/v1/*`、Host↔权威内部通道
+`/edge/commands/*` 与 `/api/v1/edge/*`）用同一个信封，由 `unilabos/server/api/envelope.py` 的
 `EnvelopeRoute` 统一包装：
 
 ```json
@@ -73,12 +75,14 @@ lab、诊断、生命周期、驱动包、受管进程、日志、debug）用同
 - 成功：HTTP 200（创建类 201、后台受理 202），`data` 是原来直出的 DTO / 数组；无数据的命令只有 `{"code":0}`。
 - 业务失败：**HTTP 200**，`error.msg` 为中文说明；`error.code`（符号码）与 `error.details` 只在 V1 同路由也输出时出现。
 - 请求体不是合法 JSON、请求体 / 查询参数校验失败：HTTP 200 + 1000，不再是 FastAPI 默认 422。
-- 中间件级拒绝保留 HTTP 状态码、正文仍是信封：工站密钥缺失或错误 **401 + 1002**；全量重置维护闸门
-  **503 + 5001**。
-- 不包信封：SSE（`/api/v1/events`、`/api/v1/materials/events`）、文件下载、存活 / 就绪探针
-  `/api/v1/health` 与 `/api/v1/readiness`（探针按 HTTP 状态码判定，就绪失败仍是 503），以及 Host↔权威内部通道
-  `/api/v1/edge/*`（Host 回送 backend_http 结果）和 `/edge/commands/*`。
-- 不存在的路由仍是框架默认的 HTTP 404 `{"detail":"Not Found"}`（没有匹配到任何合同）。
+- 保留非 200 状态码、正文仍是信封的只有：工站密钥缺失或错误 **401 + 1002**；全量重置维护闸门 **503 + 5001**；
+  就绪探针未就绪 **503 + 5001**（`error.code = "not_ready"`，`error.details` 是同样的就绪摘要，探针只看状态码）；
+  不存在的路由 **404 + 4001**（`error.code = "not_found"`）、方法不允许 **405 + 1001**（`method_not_allowed`）。
+- 不包信封的只有 SSE（`/api/v1/events`、`/api/v1/materials/events`）与文件下载（物料 3D 模型资产）。
+- `POST /api/v1/inventory/commands`：完成为 `{"code":0,"data":{"command_id","status":"completed","result","replayed"}}`；
+  被拒（含拒绝重放）为 HTTP 200 + `{"code":<业务码>,"error":{"msg","code":<error_code>,"details":{"command_id","replayed"}}}`。
+- `/v1/*` 进程管理：V1 的错误符号码在 `error.code`（不存在 4001、冲突 3003、日志暂不可读 5001、其余 1000），
+  不再用 HTTP 404 / 409 / 400 / 503 区分。
 
 materials.v1 的幂等写结果 `MutationResult`（含 `data`、账本区间与 replayed）整体放在信封的 `data` 里，
 即 `{"code":0,"data":{"data":...,"replayed":false,...}}`。

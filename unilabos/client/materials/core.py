@@ -108,7 +108,7 @@ class LocalMaterialsClient:
         return self.service.executions.prepare(value)
 
     def inventory_command(self, command: dict[str, Any]) -> dict[str, Any]:
-        """V1 类型化库存命令（与 HTTP 客户端同一裸结果）：``status`` 为 ``completed`` / ``rejected``，同一
+        """V1 类型化库存命令（与 HTTP 客户端同一结果形状）：``status`` 为 ``completed`` / ``rejected``，同一
         ``command_id`` 重放返回首次结果。"""
 
         from unilabos.server.api.envelope import INTERNAL_ERROR, RESOURCE, to_api_error
@@ -447,6 +447,22 @@ _LOT_ALIASES = ("lot_id", "template_id")
 _RESERVATION_ALIASES = ("reservation_id", "workflow_id", "node_id")
 
 
+def _rejected_command(error: "MaterialsHTTPError") -> Optional[dict[str, Any]]:
+    """库存命令的失败信封（``error.details`` 带 ``command_id``）→ V1 拒绝结果；不是命令拒绝时返回 ``None``。"""
+
+    details = error.details if isinstance(error.details, dict) else None
+    if details is None or "command_id" not in details:
+        return None
+    return {
+        "command_id": str(details.get("command_id") or ""),
+        "status": "rejected",
+        "error": error.detail,
+        "error_code": error.symbol or "inventory_error",
+        "code": error.business_code,
+        "replayed": bool(details.get("replayed")),
+    }
+
+
 def _strip(item: Any, aliases: tuple[str, ...]) -> Any:
     if not isinstance(item, dict):
         return item
@@ -496,14 +512,22 @@ class HTTPMaterialsClient:
         return self._request("GET", path, root=True)
 
     def inventory_command(self, command: dict[str, Any]) -> dict[str, Any]:
-        """V1 类型化库存命令（``{command_id, type, payload, expected_version?, actor?}``），原样返回裸结果。
+        """V1 类型化库存命令（``{command_id, type, payload, expected_version?, actor?}``），返回 V1 命令结果。
 
         ``status`` 为 ``completed`` / ``rejected``；同一 ``command_id`` 重放返回首次结果（``replayed``）。
-        业务拒绝不抛异常，由调用方按 ``status`` 判断。
+        业务拒绝不抛异常，由调用方按 ``status`` 判断：接口把拒绝作为失败信封返回（业务码、``error.code`` 为
+        ``error_code``、``error.details`` 带 ``command_id`` / ``replayed``），这里还原成
+        ``{command_id, status: "rejected", error, error_code, code, replayed}``。
         """
 
-        response = self._request("POST", "/inventory/commands", command, root=True, envelope=False)
-        if not isinstance(response, dict) or response.get("status") not in {"completed", "rejected"}:
+        try:
+            response = self._request("POST", "/inventory/commands", command, root=True)
+        except MaterialsHTTPError as exc:
+            rejected = _rejected_command(exc)
+            if rejected is None:
+                raise
+            return rejected
+        if not isinstance(response, dict) or response.get("status") != "completed":
             raise MaterialsHTTPError(502, "库存命令返回了无法解析的响应")
         return response
 
@@ -526,14 +550,10 @@ class HTTPMaterialsClient:
         body = bind_payload(mutation, value).model_dump(mode="json", exclude_none=False)
         if target_uuid is not None:
             body["target_uuid"] = target_uuid
-        response = self._request("POST", "/inventory/commands", body, root=True, envelope=False)
-        if not isinstance(response, dict) or response.get("status") not in {"completed", "rejected"}:
+        # 拒绝是失败信封，_request 已按业务码抛 MaterialsHTTPError（error_code 在 symbol）
+        response = self._request("POST", "/inventory/commands", body, root=True)
+        if not isinstance(response, dict) or response.get("status") != "completed":
             raise MaterialsHTTPError(502, "库存命令返回了无法解析的响应")
-        if response["status"] == "rejected":
-            raise MaterialsHTTPError.from_envelope_error(
-                EnvelopeError(int(response.get("code") or 1), str(response.get("error") or "command rejected"),
-                              symbol=response.get("error_code"))
-            )
         return response["result"]
 
     # -- 模板 ------------------------------------------------------

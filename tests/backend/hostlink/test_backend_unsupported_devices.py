@@ -112,7 +112,7 @@ def test_hostlink_diagnostics_and_health_list_the_skipped_device(registry, monke
 
     health = client.get("/api/v1/health")
     assert health.status_code == 200
-    assert [item["device_id"] for item in health.json()["unavailable_devices"]] == ["arm"]
+    assert [item["device_id"] for item in health.json()["data"]["unavailable_devices"]] == ["arm"]
     peers = client.get("/api/v1/hostlink/peers").json()["data"]
     assert peers["unavailable_devices"][0]["device_id"] == "arm"
     assert peers["unavailable_devices"][0]["supported_backends"] == ["ros2"]

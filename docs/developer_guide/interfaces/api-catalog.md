@@ -15,7 +15,7 @@ operation、完整默认字段、幂等键和 MutationResult 见 [物料写请�
 其余 `B: 类型名` 为该类型的直接 JSON，不能外面再套一个 data。
 
 未特别标注的成功通常为 HTTP 200。**所有 JSON 路由都走统一信封** `{code,data}`，必须先检查 code；
-表中“直出 X”指信封 `data` 就是 X（不再额外包装）。不包信封的只有探针 `/health`、`/readiness`、SSE 与文件下载。
+表中“直出 X”指信封 `data` 就是 X（不再额外包装）。不包信封的只有 SSE 与文件下载（探针、`/v1/*` 与内部通道同样是信封）。
 业务失败为 HTTP 200 + 业务码，见 [响应规则](http.md)；下文的“404 / 409 / 422 / 503”按该页的换算表对应
 4001（或 3002）/ 3003（或 4002）/ 1000 / 5001。
 OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每个角色都挂载全体路由。
@@ -28,8 +28,8 @@ OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/health` | — | 裸 JSON（不包信封）：status、scheduler、execution；execution 可为 ready/restarting/disabled |
-| GET | `/api/v1/readiness` | — | 就绪探针（不包信封）：能接收并执行任务时 200，否则 503；body 含 status（ready/not_ready）、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
+| GET | `/api/v1/health` | — | 直出 HealthStatus：status、scheduler（ready/disabled）、scheduler_mode、execution；execution 可为 ready/restarting/disabled |
+| GET | `/api/v1/readiness` | — | 就绪探针：能接收并执行任务时 HTTP 200 + 直出 ReadinessStatus；否则 HTTP 503 + 5001（`error.code=not_ready`，同样的摘要在 `error.details`）。摘要含 status（ready/starting/failed）、phase、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
 | GET | `/api/v1/ping` | Q: client_timestamp?: number | 回显客户端时间与服务端秒级时间戳，不是任务心跳 |
 | GET | `/api/v1/scheduler/resources` | — | 调度资源快照；本进程无调度权威时 503 |
 | GET | `/api/v1/restart` | — | 当前重启请求状态 |
@@ -437,8 +437,8 @@ inline 的 HTTP JSON 正文是 Base64，解码后最多 262144 字节；external
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/edge/commands/{command_uuid}` | 路径身份 | BackendCommandDocument；注意没有 `/api/v1` 前缀；未找到 404，服务未就绪 503 |
-| POST | `/api/v1/edge/http-responses/{request_uuid}` | B: EdgeHttpResponse | `{accepted:bool}`；path/body request_uuid 必须一致 |
+| GET | `/edge/commands/{command_uuid}` | 路径身份 | 直出 BackendCommandDocument；注意没有 `/api/v1` 前缀；未找到 4001，服务未就绪 5001 |
+| POST | `/api/v1/edge/http-responses/{request_uuid}` | B: EdgeHttpResponse | 直出 `{accepted:bool}`；path/body request_uuid 不一致 1000 |
 | POST | `/api/v1/hostlink/material-sync` | B: MaterialDeviceSync | 设备服务结果；unload/load 失败返回 409，不能直接当权威移位接口 |
 | POST | `/api/v1/hostlink/notify-device` | B: ResourceTreeNotify | ResourceTreeNotifyResult；转发已发生的权威物料变更 |
 

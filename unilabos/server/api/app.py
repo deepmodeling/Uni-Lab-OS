@@ -17,7 +17,7 @@ from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.config.station_key import is_station_path, station_key_accepted
-from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response
+from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response, install_envelope_fallback
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -165,6 +165,8 @@ class StationKeyMiddleware:
 app.add_middleware(StationKeyMiddleware)
 # noinspection PyTypeChecker
 app.add_middleware(ConfiguredCORSMiddleware)
+# 不存在的路由（404）、方法不允许（405）也输出信封，保留原 HTTP 状态码
+install_envelope_fallback(app)
 
 
 @app.exception_handler(ClientDisconnect)

@@ -22,8 +22,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import unilabos.server.backend.restart as restart_module
+from tests.api_envelope import error_of, ok_data
 from unilabos.config.config import BasicConfig
 from unilabos.protocol.runtime.process_management import SCHEMA_VERSION, ProcessManagementError
+from unilabos.server.api.envelope import install_envelope_fallback
 from unilabos.server.api.process_management import install_process_management_api
 from unilabos.server.backend.restart import RestartCoordinator
 from unilabos.server.backend.scheduler.service import BackendScheduler
@@ -161,6 +163,7 @@ class Stack:
             management_port=8002, supervisor=self.supervisor, database_root=str(tmp_path), edge_database_root=str(tmp_path / "edge"),
         )
         self.app = FastAPI()
+        install_envelope_fallback(self.app)
         self.service = self.install(self.app)
         self.client = TestClient(self.app)
 
@@ -183,7 +186,7 @@ class Stack:
     def wait(self, operation_id: str, timeout: float = 10.0) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            document = self.client.get(f"/v1/operations/{operation_id}").json()
+            document = ok_data(self.client.get(f"/v1/operations/{operation_id}"))
             if document.get("phase") in {"succeeded", "failed"}:
                 return document
             time.sleep(0.02)
@@ -191,8 +194,7 @@ class Stack:
 
     def execute(self, command: str, parameters: dict | None = None, **options) -> dict[str, Any]:
         response = self.submit(command, parameters, **options)
-        assert response.status_code == 202, response.text
-        return self.wait(response.json()["operationId"])
+        return self.wait(ok_data(response, status=202)["operationId"])
 
     def close(self) -> None:
         self.service.close()
@@ -213,11 +215,11 @@ def stack(monkeypatch, tmp_path):
 
 def test_snapshot_reports_the_dev_process_tree(stack: Stack) -> None:
     response = stack.client.get("/v1/snapshot")
-    assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    snapshot = response.json()
-    # 裸 JSON，不包信封
-    assert "code" not in snapshot
+    # 统一信封：快照在 data 里
+    snapshot = ok_data(response, status=200)
+    # 控制面 token 已取消：V1 的 host.tokenPath 不再输出
+    assert "tokenPath" not in snapshot["host"]
     assert snapshot["schemaVersion"] == SCHEMA_VERSION
     assert snapshot["revision"] == snapshot["eventCursor"] >= 1
     assert snapshot["host"]["phase"] == "ready" and snapshot["host"]["endpoint"] == "http://127.0.0.1:8002"
@@ -238,19 +240,19 @@ def test_snapshot_reports_the_dev_process_tree(stack: Stack) -> None:
     for component in components.values():
         assert {"name", "phase", "pid", "address", "generation", "logPath", "diagnostic", "capabilities"} <= set(component)
     # 状态不变时修订号不变
-    assert stack.client.get("/v1/snapshot").json()["revision"] == snapshot["revision"]
+    assert ok_data(stack.client.get("/v1/snapshot"))["revision"] == snapshot["revision"]
 
 
 def test_snapshot_revision_follows_process_state(stack: Stack) -> None:
-    first = stack.client.get("/v1/snapshot").json()
+    first = ok_data(stack.client.get("/v1/snapshot"))
     stack.gateway.processes[0].update(status="crashed", pid=None, last_error="exit 1")
-    crashed = stack.client.get("/v1/snapshot").json()
+    crashed = ok_data(stack.client.get("/v1/snapshot"))
     assert crashed["revision"] == first["revision"] + 1
     assert crashed["components"]["managed:proc-1"]["phase"] == "failed"
     assert crashed["components"]["managed:proc-1"]["diagnostic"] == "exit 1"
     # Host 掉线：edge 进入 starting（子进程在、控制面断开），受管进程不可见
     stack.edge.connected = False
-    offline = stack.client.get("/v1/snapshot").json()
+    offline = ok_data(stack.client.get("/v1/snapshot"))
     assert offline["revision"] == crashed["revision"] + 1
     assert offline["components"]["edge"]["phase"] == "starting"
     assert "managed:proc-1" not in offline["components"]
@@ -263,46 +265,45 @@ def test_operation_is_recoverable_idempotent_and_conflicts(stack: Stack) -> None
     """V1 test_operation_is_recoverable_idempotent_and_audited 的 dev 版本。"""
 
     submitted = stack.submit("scheduler.drain", operation_id="drain-once")
-    assert submitted.status_code == 202
-    document = submitted.json()
+    document = ok_data(submitted, status=202)
     assert document["schemaVersion"] == SCHEMA_VERSION
     assert document["operationId"] == "drain-once" and document["command"] == "scheduler.drain"
     assert document["requestHash"] == request_hash("drain-once", "scheduler.drain", {}, None)
     assert document["phase"] in {"pending", "running", "succeeded"}
     duplicate = stack.submit("scheduler.drain", operation_id="drain-once")
-    assert duplicate.status_code == 202 and duplicate.json()["requestHash"] == document["requestHash"]
+    assert ok_data(duplicate, status=202)["requestHash"] == document["requestHash"]
     completed = stack.wait("drain-once")
     assert completed["phase"] == "succeeded" and completed["error"] is None
     assert completed["result"]["phase"] == "drained" and completed["result"]["requested"] is True
     assert completed["startedAt"] and completed["finishedAt"]
     # 重放不重复执行：仍是同一条记录
-    assert stack.submit("scheduler.drain", operation_id="drain-once").json() == completed
-    assert stack.client.get("/v1/operations/drain-once").json() == completed
+    assert ok_data(stack.submit("scheduler.drain", operation_id="drain-once")) == completed
+    assert ok_data(stack.client.get("/v1/operations/drain-once")) == completed
 
     conflict = stack.submit("scheduler.resume", operation_id="drain-once")
-    assert conflict.status_code == 409
-    assert conflict.json()["error"]["code"] == "operation_conflict"
+    # 冲突：HTTP 200 + 3003，V1 符号码在 error.code
+    assert error_of(conflict, 3003)["code"] == "operation_conflict"
+    assert conflict.headers["cache-control"] == "no-store"
     # expectedRevision 参与请求指纹
-    assert stack.submit("scheduler.drain", operation_id="drain-once", expected_revision=1).status_code == 409
+    refingerprinted = stack.submit("scheduler.drain", operation_id="drain-once", expected_revision=1)
+    assert error_of(refingerprinted, 3003)["code"] == "operation_conflict"
 
 
 def test_expected_revision_conflict_reports_actual(stack: Stack) -> None:
-    revision = stack.client.get("/v1/snapshot").json()["revision"]
+    revision = ok_data(stack.client.get("/v1/snapshot"))["revision"]
     stale = stack.submit("scheduler.resume", expected_revision=revision + 5)
-    assert stale.status_code == 409
-    assert stale.json()["error"] == {
-        "code": "revision_conflict", "message": "进程管理 revision 已变化",
+    assert error_of(stale, 3003) == {
+        "msg": "进程管理 revision 已变化", "code": "revision_conflict",
         "details": {"expected": revision + 5, "actual": revision},
     }
     # 提交前先观测进程状态：Host 子进程换了 pid，旧修订号即失效
     stack.supervisor.pid = 9999
     moved = stack.submit("scheduler.resume", expected_revision=revision)
-    assert moved.status_code == 409 and moved.json()["error"]["details"]["actual"] == revision + 1
+    assert error_of(moved, 3003)["details"]["actual"] == revision + 1
     accepted = stack.submit("scheduler.resume", expected_revision=revision + 1)
-    assert accepted.status_code == 202
-    stack.wait(accepted.json()["operationId"])
+    stack.wait(ok_data(accepted, status=202)["operationId"])
     # 成功的写操作递增修订号
-    assert stack.client.get("/v1/snapshot").json()["revision"] == revision + 2
+    assert ok_data(stack.client.get("/v1/snapshot"))["revision"] == revision + 2
 
 
 @pytest.mark.parametrize(
@@ -320,8 +321,7 @@ def test_expected_revision_conflict_reports_actual(stack: Stack) -> None:
 )
 def test_submit_validation_uses_v1_errors(stack: Stack, body: bytes, message: str) -> None:
     response = stack.client.post("/v1/operations", content=body)
-    assert response.status_code == 400
-    assert response.json() == {"error": {"code": "invalid_request", "message": message}}
+    assert error_of(response, 1000) == {"msg": message, "code": "invalid_request"}
 
 
 def test_writes_need_no_token_and_lookups_report_v1_errors(stack: Stack) -> None:
@@ -330,14 +330,12 @@ def test_writes_need_no_token_and_lookups_report_v1_errors(stack: Stack) -> None
         "/v1/operations", json={"operationId": "legacy-header", "command": "scheduler.drain", "parameters": {}},
         headers={"X-UniLab-Token": "anything"},
     )
-    assert accepted.status_code == 202
-    assert stack.client.get("/v1/snapshot").status_code == 200
-    missing = stack.client.get("/v1/operations/never-submitted")
-    assert missing.status_code == 404
-    assert missing.json()["error"]["code"] == "operation_not_found"
-    assert stack.client.get("/v1/operations/a%5Cb").json()["error"]["code"] == "invalid_request"
-    unknown = stack.client.get("/v1/unknown")
-    assert (unknown.status_code, unknown.json()) == (404, {"error": {"code": "not_found"}})
+    assert ok_data(accepted, status=202)["operationId"] == "legacy-header"
+    assert ok_data(stack.client.get("/v1/snapshot"))["schemaVersion"] == SCHEMA_VERSION
+    assert error_of(stack.client.get("/v1/operations/never-submitted"), 4001)["code"] == "operation_not_found"
+    assert error_of(stack.client.get("/v1/operations/a%5Cb"), 1000)["code"] == "invalid_request"
+    # 未知 /v1/* 路径与其它不存在的路由一样：应用级兜底，HTTP 404 + 信封 4001
+    assert error_of(stack.client.get("/v1/unknown"), 4001, status=404)["code"] == "not_found"
 
 
 def test_operations_run_in_submission_order(stack: Stack) -> None:
@@ -345,8 +343,8 @@ def test_operations_run_in_submission_order(stack: Stack) -> None:
 
     calls: list[str] = []
     stack.service._dispatch = lambda operation_id, command, parameters: calls.append(command) or {"command": command}
-    first = stack.submit("os.restart", operation_id="os").json()
-    second = stack.submit("local.reset-state", operation_id="reset").json()
+    first = ok_data(stack.submit("os.restart", operation_id="os"))
+    second = ok_data(stack.submit("local.reset-state", operation_id="reset"))
     assert stack.wait(first["operationId"])["phase"] == "succeeded"
     assert stack.wait(second["operationId"])["phase"] == "succeeded"
     assert calls == ["os.restart", "local.reset-state"]
@@ -397,7 +395,7 @@ def test_os_restart_goes_through_the_restart_coordinator(stack: Stack, monkeypat
         return SimpleNamespace(status_code=200, body_bytes=lambda: b'{"code":0,"data":{"pending":true}}')
 
     monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", edge_http)
-    revision = stack.client.get("/v1/snapshot").json()["revision"]
+    revision = ok_data(stack.client.get("/v1/snapshot"))["revision"]
     result = stack.execute("os.restart", {"timeoutSeconds": 10}, expected_revision=revision)
     assert result["phase"] == "succeeded", result
     assert posted == [("POST", "/api/v1/restart", b'{"mode": "immediate", "scope": "process"}')]
@@ -412,12 +410,12 @@ def test_os_restart_goes_through_the_restart_coordinator(stack: Stack, monkeypat
 def test_os_restart_waits_for_quiescence_and_reports_cancel(stack: Stack, monkeypatch) -> None:
     monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_http", lambda *a, **k: pytest.fail("未安静前不得通知 Host"))
     stack.active[:] = ["job-1"]
-    submitted = stack.submit("os.restart", {"timeoutSeconds": 10}).json()
+    submitted = ok_data(stack.submit("os.restart", {"timeoutSeconds": 10}))
     deadline = time.monotonic() + 5
     while not stack.coordinator.status()["pending"] and time.monotonic() < deadline:
         time.sleep(0.01)
     assert stack.scheduler.dispatch_paused
-    assert stack.client.get(f"/v1/operations/{submitted['operationId']}").json()["phase"] == "running"
+    assert ok_data(stack.client.get(f"/v1/operations/{submitted['operationId']}"))["phase"] == "running"
     stack.coordinator.cancel()  # 等价于 DELETE /api/v1/restart
     failed = stack.wait(submitted["operationId"])
     assert failed["phase"] == "failed" and failed["error"]["code"] == "restart_canceled"
@@ -459,7 +457,7 @@ def test_workspace_stop_keeps_the_host_when_drain_times_out(stack: Stack) -> Non
 
 def test_host_lifecycle_needs_a_supervised_host_child(stack: Stack) -> None:
     stack.context.supervisor = None
-    snapshot = stack.client.get("/v1/snapshot").json()
+    snapshot = ok_data(stack.client.get("/v1/snapshot"))
     assert snapshot["configuration"]["topology"] == "authority"
     assert snapshot["components"]["edge"]["metadata"]["supervised"] is False
     for command in ("os.start", "os.stop", "workspace.stop"):
@@ -502,32 +500,31 @@ def test_logs_are_bounded_and_never_take_paths(stack: Stack, monkeypatch, tmp_pa
     log = tmp_path / "authority.log"
     log.write_text("第一行\nsecond line\n结尾行\n", encoding="utf-8")
     monkeypatch.setattr("unilabos.utils.runtime_logs.current_log_path", lambda: log)
-    full = stack.client.get("/v1/logs/backend").json()
+    full = ok_data(stack.client.get("/v1/logs/backend"))
     assert full == {"component": "backend", "logPath": str(log), "content": "第一行\nsecond line\n结尾行\n",
                     "truncated": False, "sourceId": "backend"}
     # 按字节截尾，不切开多字节字符
-    tail = stack.client.get("/v1/logs/backend", params={"maxBytes": 8}).json()
+    tail = ok_data(stack.client.get("/v1/logs/backend", params={"maxBytes": 8}))
     # 最后 8 字节 = 「结」的最后一个续字节 + 「尾行\n」（7 字节）：丢掉残字节
     assert tail["content"] == "尾行\n" and tail["truncated"] is True
-    assert stack.client.get("/v1/logs/backend", params={"maxBytes": 4 * 1024 * 1024}).status_code == 200
+    assert ok_data(stack.client.get("/v1/logs/backend", params={"maxBytes": 4 * 1024 * 1024}))["component"] == "backend"
     for value in ("0", str(4 * 1024 * 1024 + 1), "-1"):
         rejected = stack.client.get("/v1/logs/backend", params={"maxBytes": value})
-        assert rejected.status_code == 400
-        assert rejected.json()["error"] == {"code": "invalid_request", "message": "maxBytes 超出范围"}
-    assert stack.client.get("/v1/logs/backend", params={"maxBytes": "abc"}).json()["error"]["code"] == "invalid_request"
+        assert error_of(rejected, 1000) == {"msg": "maxBytes 超出范围", "code": "invalid_request"}
+    assert error_of(stack.client.get("/v1/logs/backend", params={"maxBytes": "abc"}), 1000)["code"] == "invalid_request"
 
     stack.gateway.logs["host"] = _batch("host", ["host 启动", "HostLink ready"], "/data/edge.log")
     stack.gateway.logs["managed:proc-1"] = _batch("managed:proc-1", ["slave up"], "/data/proc-1.log")
-    edge = stack.client.get("/v1/logs/edge").json()
+    edge = ok_data(stack.client.get("/v1/logs/edge"))
     assert (edge["logPath"], edge["content"], edge["sourceId"]) == ("/data/edge.log", "host 启动\nHostLink ready\n", "host")
-    assert stack.client.get("/v1/logs/managed:proc-1").json()["content"] == "slave up\n"
-    assert stack.client.get("/v1/logs/plc").json() == {"component": "plc", "logPath": None, "content": ""}
+    assert ok_data(stack.client.get("/v1/logs/managed:proc-1"))["content"] == "slave up\n"
+    assert ok_data(stack.client.get("/v1/logs/plc")) == {"component": "plc", "logPath": None, "content": ""}
     for component in ("nope", "managed:..", "managed:missing", "managed:a%20b"):
         response = stack.client.get(f"/v1/logs/{component}")
-        assert response.status_code == 400 and response.json()["error"]["code"] == "component_invalid", component
+        assert error_of(response, 1000)["code"] == "component_invalid", component
     stack.gateway.offline = True
     unavailable = stack.client.get("/v1/logs/edge")
-    assert unavailable.status_code == 503 and unavailable.json()["error"]["code"] == "component_unavailable"
+    assert error_of(unavailable, 5001)["code"] == "component_unavailable"
 
 
 # ── 行为：布局 preview / apply 经操作通道 ───────────────────────────
@@ -546,7 +543,7 @@ def test_layout_preview_and_apply_compare_and_set(stack: Stack, tmp_path: Path) 
         device = _device(materials, "device-a", x=10, y=20, size=100)
         inspected = stack.execute("material.layout.inspect")["result"]
         revision = inspected["revision"]
-        host_revision = stack.client.get("/v1/snapshot").json()["revision"]
+        host_revision = ok_data(stack.client.get("/v1/snapshot"))["revision"]
         preview = stack.execute("material.layout.preview", {
             "expectedRevision": revision,
             "changeSet": {"nodes": [{"sourceNodeId": "device-a", "positionMm": [50, 60, 0]}]},
@@ -555,7 +552,7 @@ def test_layout_preview_and_apply_compare_and_set(stack: Stack, tmp_path: Path) 
         preview_id = preview["result"]["previewId"]
         assert preview["result"]["previewArtifact"]["operationId"] == preview["operationId"]
         # preview 只读：不改物料、不递增 Host 修订号
-        assert stack.client.get("/v1/snapshot").json()["revision"] == host_revision
+        assert ok_data(stack.client.get("/v1/snapshot"))["revision"] == host_revision
         assert materials.get_tree(device).nodes[0].position.position_x == 10
 
         stale = stack.execute("material.layout.apply", {"previewId": preview_id, "expectedRevision": "sha256:" + "0" * 64})
@@ -581,7 +578,7 @@ def test_layout_without_materials_authority_fails(stack: Stack) -> None:
     assert stack.execute("material.layout.inspect")["error"]["code"] == "layout_unavailable"
 
 
-# ── MCP：目录登记的四个工具经进程内 ASGI 调到同一组路由 ────────────────
+# ── MCP：目录登记的四个工具经进程内 ASGI 调到同一组路由（输出保留原始信封） ──
 
 
 def test_mcp_tools_reach_the_process_management_routes(stack: Stack, monkeypatch) -> None:
@@ -592,20 +589,23 @@ def test_mcp_tools_reach_the_process_management_routes(stack: Stack, monkeypatch
 
     protocol = ProtocolMCP(stack.app, export_openapi())
     snapshot = asyncio.run(protocol.call_tool("process_management_snapshot", {}))
-    assert not snapshot.isError and snapshot.structuredContent["body"]["schemaVersion"] == SCHEMA_VERSION
+    assert not snapshot.isError and snapshot.structuredContent["body"]["data"]["schemaVersion"] == SCHEMA_VERSION
     submitted = asyncio.run(protocol.call_tool("process_management_operations_submit", {
         "body": {"operationId": "mcp-drain", "command": "scheduler.drain", "parameters": {}},
     }))
     assert not submitted.isError and submitted.structuredContent["http_status"] == 202
     assert stack.wait("mcp-drain")["phase"] == "succeeded"
     fetched = asyncio.run(protocol.call_tool("process_management_operations_get", {"path": {"operation_id": "mcp-drain"}}))
-    assert fetched.structuredContent["body"]["phase"] == "succeeded"
+    assert fetched.structuredContent["body"]["data"]["phase"] == "succeeded"
     logs = asyncio.run(protocol.call_tool("process_management_logs_tail", {
         "path": {"component": "plc"}, "query": {"maxBytes": 1024},
     }))
-    assert logs.structuredContent["body"] == {"component": "plc", "logPath": None, "content": ""}
+    assert logs.structuredContent["body"] == {"code": 0, "data": {"component": "plc", "logPath": None, "content": ""}}
     missing = asyncio.run(protocol.call_tool("process_management_operations_get", {"path": {"operation_id": "nope"}}))
-    assert missing.isError and missing.structuredContent["http_status"] == 404
+    # 业务失败：HTTP 200 + 4001 信封，MCP 按 code != 0 标 isError
+    assert missing.isError and missing.structuredContent["http_status"] == 200
+    assert missing.structuredContent["body"]["code"] == 4001
+    assert missing.structuredContent["body"]["error"]["code"] == "operation_not_found"
 
 
 # ── SDK：HTTPLifecycleClient 的进程管理方法（V1 WorkspaceHostClient 用例） ──

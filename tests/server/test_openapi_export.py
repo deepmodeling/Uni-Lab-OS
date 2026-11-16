@@ -51,7 +51,7 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     meta = document["info"]["x-openlab-protocol"]
     assert meta["api_version"] == "v1" and meta["api_prefix"] == "/api/v1"
     assert meta["sse"] == ["/api/v1/events", "/api/v1/materials/events"]
-    # V1 进程管理的四个路由按 V1 原样不带 /api 前缀（裸 JSON），其余都在 /api/v1 下
+    # V1 进程管理的四个路由按 V1 原样不带 /api 前缀（同样是统一信封），其余都在 /api/v1 下
     assert all(path.startswith(("/api/v1/", "/v1/")) for path in document["paths"])
     assert sorted(path for path in document["paths"] if path.startswith("/v1/")) == [
         "/v1/logs/{component}", "/v1/operations", "/v1/operations/{operation_id}", "/v1/snapshot",
@@ -70,9 +70,16 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     drain_envelope = schemas["Envelope_SchedulerDrainStatus_"]
     assert set(drain_envelope["properties"]) == {"code", "data"}
     assert drain_envelope["properties"]["data"] == {"$ref": "#/components/schemas/SchedulerDrainStatus"}
-    # 探针不包信封：/health 仍直接引用 HealthStatus
+    # 探针同样是信封：/health 的响应模型是 Envelope[HealthStatus]；/v1/* 进程管理也是
     assert operations["GET /api/v1/health"]["responses"]["200"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/HealthStatus"
+        "$ref": "#/components/schemas/Envelope_HealthStatus_"
+    }
+    assert schemas["Envelope_HealthStatus_"]["properties"]["data"] == {"$ref": "#/components/schemas/HealthStatus"}
+    assert operations["GET /v1/snapshot"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Envelope_WorkspaceSnapshot_"
+    }
+    assert operations["POST /v1/operations"]["responses"]["202"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/Envelope_WorkspaceOperation_"
     }
     assert {"HealthStatus", "ReadinessStatus", "RestartRequest", "RestartStatus", "ResetRequest", "ResetStatus"} <= schemas.keys()
 

@@ -11,7 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import error_of, ok_data
+from tests.api_envelope import command_body, error_of, ok_data
 from unilabos.client.materials import HTTPMaterialsClient, LocalMaterialsClient, bind_payload
 from unilabos.protocol.materials import (
     InventoryLotInbound,
@@ -60,9 +60,9 @@ def _tree(name: str, template: str = "bottle", *, sites=None) -> MaterialTreeCre
 def _seed(client) -> tuple[str, str]:
     template = ResourceTemplateWrite(template_uuid="bottle-template", name="bottle", resource_type="container",
                                      class_name="Container")
-    result = client.post("/api/v1/inventory/commands", json=_command("put_template", template))
-    assert result.status_code == 200 and result.json()["status"] == "completed", result.text
-    created = client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree("瓶-A"))).json()
+    result = command_body(client.post("/api/v1/inventory/commands", json=_command("put_template", template)))
+    assert result["status"] == "completed", result
+    created = command_body(client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree("瓶-A"))))
     assert created["status"] == "completed", created
     return "bottle-template", created["result"]["data"]["root_material_uuid"]
 
@@ -71,18 +71,24 @@ def test_command_entry_runs_materials_v1_mutations_idempotently(stack) -> None:
     _service, client = stack
     template_uuid, material_uuid = _seed(client)
     patch = _command("patch_material", MaterialPatch(barcode="BC-9"), target_uuid=material_uuid)
-    first = client.post("/api/v1/inventory/commands", json=patch).json()
-    replay = client.post("/api/v1/inventory/commands", json=patch).json()
-    # V1 裸结果：不包信封，command_id 是 dev 的 command_uuid
+    first = command_body(client.post("/api/v1/inventory/commands", json=patch))
+    replay = command_body(client.post("/api/v1/inventory/commands", json=patch))
+    # 完成：信封 data 是 V1 命令结果，command_id 是 dev 的 command_uuid
     assert set(first) == {"command_id", "status", "result", "replayed"}
     assert first["status"] == "completed" and first["replayed"] is False
     assert replay["replayed"] is True and replay["result"]["data"]["material"]["barcode"] == "BC-9"
-    missing = client.post("/api/v1/inventory/commands", json=_command(
-        "patch_material", MaterialPatch(name="x"), target_uuid="no-such-material")).json()
+    # 拒绝：HTTP 200 + 失败信封，拒绝码在 error.code，command_id / replayed 在 error.details
+    wire = client.post("/api/v1/inventory/commands", json=_command(
+        "patch_material", MaterialPatch(name="x"), target_uuid="no-such-material"))
+    assert wire.status_code == 200 and set(wire.json()) == {"code", "error"} and wire.json()["code"] == 6000
+    assert set(wire.json()["error"]) == {"msg", "code", "details"}
+    assert set(wire.json()["error"]["details"]) == {"command_id", "replayed"}
+    missing = command_body(wire)
     assert missing["status"] == "rejected" and missing["code"] == 6000 and missing["error_code"] == "not_found:material"
-    no_target = client.post("/api/v1/inventory/commands", json=_command("put_data", MaterialDataWrite())).json()
+    assert missing["command_id"] and missing["replayed"] is False
+    no_target = command_body(client.post("/api/v1/inventory/commands", json=_command("put_data", MaterialDataWrite())))
     assert no_target["status"] == "rejected" and no_target["code"] == 1000
-    unknown = client.post("/api/v1/inventory/commands", json=_command("explode", MaterialPatch())).json()
+    unknown = command_body(client.post("/api/v1/inventory/commands", json=_command("explode", MaterialPatch())))
     assert unknown["status"] == "rejected" and unknown["error_code"] == "unsupported_command"
 
     # 读路由：具名数组 + V1 标识别名
@@ -107,38 +113,38 @@ def test_typed_lot_commands_inbound_correct_reconcile_and_reads(stack) -> None:
     _seed(client)
     reagent = ResourceTemplateWrite(template_uuid="naoh-template", name="naoh", resource_type="reagent", class_name="Reagent")
     client.post("/api/v1/inventory/commands", json=_command("put_template", reagent))
-    inbound = client.post("/api/v1/inventory/commands", json={
+    inbound = command_body(client.post("/api/v1/inventory/commands", json={
         "command_id": "cmd-inbound-1", "type": "inventory.inbound", "actor": "operator-1",
         "payload": {"template_id": "naoh", "lot_id": "lot-naoh", "quantity": 500, "unit": "ml",
                     "batch_no": "B1", "warehouse_zone_id": "zone-storage"},
-    }).json()
+    }))
     assert inbound["status"] == "completed" and inbound["result"]["lot_id"] == "lot-naoh"
     # 同一 command_id 重放返回首次结果，不再执行
-    again = client.post("/api/v1/inventory/commands", json={
+    again = command_body(client.post("/api/v1/inventory/commands", json={
         "command_id": "cmd-inbound-1", "type": "inventory.inbound", "actor": "operator-1",
         "payload": {"template_id": "naoh", "lot_id": "lot-naoh", "quantity": 500, "unit": "ml",
                     "batch_no": "B1", "warehouse_zone_id": "zone-storage"},
-    }).json()
+    }))
     assert again["replayed"] is True and service.get_inventory_lot("lot-naoh").quantity_total == 500
-    conflict = client.post("/api/v1/inventory/commands", json={
-        "command_id": "cmd-inbound-1", "type": "inventory.inbound", "payload": {"template_id": "naoh", "quantity": 1}}).json()
+    conflict = command_body(client.post("/api/v1/inventory/commands", json={
+        "command_id": "cmd-inbound-1", "type": "inventory.inbound", "payload": {"template_id": "naoh", "quantity": 1}}))
     assert conflict["status"] == "rejected" and conflict["code"] == 3003
 
     lot = ok_data(client.get("/api/v1/inventory/lots/lot-naoh"))
     assert lot["warehouse_zone_id"] == "zone-storage" and lot["lot_id"] == "lot-naoh"
-    corrected = client.post("/api/v1/inventory/commands", json={
+    corrected = command_body(client.post("/api/v1/inventory/commands", json={
         "command_id": "cmd-correct-1", "type": "inventory.lot.correct", "actor": "operator-1",
         "payload": {"lot_id": "lot-naoh", "expected_version": lot["version"], "measured_quantity": 480.5,
                     "quarantined": True, "reason": "称重复核"},
-    }).json()
+    }))
     assert corrected["status"] == "completed" and corrected["result"]["quantity_total"] == 480.5
     assert ok_data(client.get("/api/v1/inventory/lots"))["lots"][0]["quarantined"] is True
-    rejected = client.post("/api/v1/inventory/commands", json={
+    rejected = command_body(client.post("/api/v1/inventory/commands", json={
         "command_id": "cmd-reconcile-1", "type": "inventory.reconcile_count", "actor": "operator-1",
-        "payload": {"lot_id": "lot-naoh", "measured_count": 3, "reason": "盘点"}}).json()
+        "payload": {"lot_id": "lot-naoh", "measured_count": 3, "reason": "盘点"}}))
     assert rejected["status"] == "rejected" and rejected["code"] == 1000
-    unsupported = client.post("/api/v1/inventory/commands", json={
-        "command_id": "cmd-x", "type": "material.teleport", "payload": {}}).json()
+    unsupported = command_body(client.post("/api/v1/inventory/commands", json={
+        "command_id": "cmd-x", "type": "material.teleport", "payload": {}}))
     assert unsupported["status"] == "rejected" and unsupported["error_code"] == "unsupported_command"
     processed = ok_data(client.get("/api/v1/inventory/commands/processed"))["commands"]
     assert {"cmd-inbound-1", "cmd-correct-1", "cmd-reconcile-1"} <= {item["command_id"] for item in processed}
@@ -166,15 +172,17 @@ def test_reagent_dispense_command_matches_v1_console_contract(stack) -> None:
                     "targets": [{"material_uuid": item["uuid"], "quantity": 10} for item in targets], "reason": "分装"},
     }
     response = client.post("/api/v1/inventory/commands", json=command)
-    body = response.json()
-    assert response.status_code == 200 and body["command_id"] == "dispense-1" and body["status"] == "completed", body
+    # 完成的命令结果整体放在信封 data 里
+    assert response.status_code == 200 and response.json()["code"] == 0, response.text
+    body = response.json()["data"]
+    assert body["command_id"] == "dispense-1" and body["status"] == "completed", body
     assert body["result"]["source"]["quantity"] == 80 and body["result"]["source"]["quantity_unit"] == "ml"
     assert [item["quantity"] for item in body["result"]["targets"]] == [10, 10]
     assert all(item["reagent_uuid"] and isinstance(item["revision"], int) for item in body["result"]["targets"])
-    assert client.post("/api/v1/inventory/commands", json=command).json()["replayed"] is True
+    assert command_body(client.post("/api/v1/inventory/commands", json=command))["replayed"] is True
     assert ok_data(client.get(f"/api/v1/reagents/{reagent['uuid']}"))["quantity"] == 80
-    too_much = client.post("/api/v1/inventory/commands", json={**command, "command_id": "dispense-2", "payload": {
-        **command["payload"], "expected_revision": None, "targets": [{"material_uuid": source["uuid"], "quantity": 500}]}}).json()
+    too_much = command_body(client.post("/api/v1/inventory/commands", json={**command, "command_id": "dispense-2", "payload": {
+        **command["payload"], "expected_revision": None, "targets": [{"material_uuid": source["uuid"], "quantity": 500}]}}))
     assert too_much["status"] == "rejected"
 
 
@@ -188,8 +196,8 @@ def test_content_reservations_prevent_overdrawing_a_bottle(stack) -> None:
         "material_uuid": bottle["uuid"], "reagent_info_uuid": info["uuid"], "quantity": 100, "quantity_unit": "ml"}), status=201)
 
     def reserve(command_id, task, quantity, unit="ml"):
-        return client.post("/api/v1/inventory/commands", json={"command_id": command_id, "type": "content.reserve", "payload": {
-            "substance_uuid": reagent["uuid"], "task_uuid": task, "node_uuid": "n1", "quantity": quantity, "quantity_unit": unit}}).json()
+        return command_body(client.post("/api/v1/inventory/commands", json={"command_id": command_id, "type": "content.reserve", "payload": {
+            "substance_uuid": reagent["uuid"], "task_uuid": task, "node_uuid": "n1", "quantity": quantity, "quantity_unit": unit}}))
 
     first = reserve("r-1", "task-a", 60)
     assert first["status"] == "completed" and first["result"]["status"] == "active"
@@ -199,8 +207,8 @@ def test_content_reservations_prevent_overdrawing_a_bottle(stack) -> None:
     assert ok_data(client.get(f"/api/v1/reagents/{reagent['uuid']}"))["active_workflow_reserved_quantity"] == 100
     # 人工改量不能低于活动预留
     error_of(client.put(f"/api/v1/reagents/{reagent['uuid']}", json={"quantity": 50, "quantity_unit": "ml"}), 3003)
-    consumed = client.post("/api/v1/inventory/commands", json={"command_id": "c-1", "type": "content.consume", "payload": {
-        "reservation_uuid": first["result"]["reservation_uuid"], "quantity": 55}}).json()
+    consumed = command_body(client.post("/api/v1/inventory/commands", json={"command_id": "c-1", "type": "content.consume", "payload": {
+        "reservation_uuid": first["result"]["reservation_uuid"], "quantity": 55}}))
     assert consumed["status"] == "completed" and consumed["result"]["status"] == "consumed"
     assert ok_data(client.get(f"/api/v1/reagents/{reagent['uuid']}"))["quantity"] == 45
     history = ok_data(client.get(f"/api/v1/materials/{bottle['uuid']}/reagent-history"))["items"]
@@ -216,8 +224,8 @@ def test_material_source_bindings_share_or_exclude_and_block_delete(stack) -> No
     bottle = ok_data(client.post("/api/v1/materials", json={"resource_template_uuid": identities["bottle"], "name": "瓶"}), status=201)
 
     def bind(command_id, task, policy):
-        return client.post("/api/v1/inventory/commands", json={"command_id": command_id, "type": "source.bind", "payload": {
-            "task_uuid": task, "node_uuid": "n1", "material_uuid": bottle["uuid"], "custody_policy": policy}}).json()
+        return command_body(client.post("/api/v1/inventory/commands", json={"command_id": command_id, "type": "source.bind", "payload": {
+            "task_uuid": task, "node_uuid": "n1", "material_uuid": bottle["uuid"], "custody_policy": policy}}))
 
     assert bind("b-1", "task-a", "shared_source")["status"] == "completed"
     assert bind("b-2", "task-b", "shared_source")["status"] == "completed"
@@ -225,8 +233,8 @@ def test_material_source_bindings_share_or_exclude_and_block_delete(stack) -> No
     assert exclusive["status"] == "rejected" and exclusive["code"] == 6011
     error_of(client.delete(f"/api/v1/materials/{bottle['uuid']}"), 6011)
     for task in ("task-a", "task-b"):
-        assert client.post("/api/v1/inventory/commands", json={
-            "command_id": f"rel-{task}", "type": "source.release", "payload": {"task_uuid": task}}).json()["status"] == "completed"
+        assert command_body(client.post("/api/v1/inventory/commands", json={
+            "command_id": f"rel-{task}", "type": "source.release", "payload": {"task_uuid": task}}))["status"] == "completed"
     assert bind("b-4", "task-c", "task_exclusive")["status"] == "completed"
 
 
@@ -235,13 +243,13 @@ def test_station_ingress_reservation_lifecycle(stack) -> None:
 
     _service, client = stack
     _seed(client)
-    rack = client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(
+    rack = command_body(client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(
         "入口架", sites=[SiteCreate(template_name="bottle", site_index=index, label=label)
-                      for index, label in enumerate(("IN-1", "IN-2"))]))).json()["result"]["data"]
+                      for index, label in enumerate(("IN-1", "IN-2"))]))))["result"]["data"]
     rack_aggregate = ok_data(client.get(f"/api/v1/inventory/instances/{rack['root_material_uuid']}"))
     sites = [site["site_uuid"] for site in rack_aggregate["sites"]]
     carrier_uuid, other_carrier, third_carrier = (
-        client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))).json()
+        command_body(client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))))
         ["result"]["data"]["root_material_uuid"] for name in ("载体", "载体-2", "载体-3")
     )
     request = {"idempotency_key": "agv-1", "carrier_material_uuid": carrier_uuid, "candidate_site_uuids": sites,
@@ -280,18 +288,18 @@ def test_active_ingress_reservation_protects_its_site(stack) -> None:
 
     service, client = stack
     _seed(client)
-    rack = client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(
+    rack = command_body(client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(
         "入口架", sites=[SiteCreate(template_name="bottle", site_index=index, label=label)
-                      for index, label in enumerate(("IN-1", "IN-2"))]))).json()["result"]["data"]
+                      for index, label in enumerate(("IN-1", "IN-2"))]))))["result"]["data"]
     sites = [site["site_uuid"] for site in ok_data(client.get(f"/api/v1/inventory/instances/{rack['root_material_uuid']}"))["sites"]]
     carrier, other_carrier, bottle = (
-        client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))).json()
+        command_body(client.post("/api/v1/inventory/commands", json=_command("create_material_tree", _tree(name))))
         ["result"]["data"]["root_material_uuid"] for name in ("载体", "载体-2", "瓶-B")
     )
 
     def move(material_uuid: str, site_uuid: str) -> dict:
-        return client.post("/api/v1/inventory/commands", json=_command(
-            "move_material", MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid))).json()
+        return command_body(client.post("/api/v1/inventory/commands", json=_command(
+            "move_material", MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid))))
 
     reserved = ok_data(client.post("/api/v1/inventory/ingress-reservations", json={
         "idempotency_key": "agv-1", "carrier_material_uuid": carrier, "candidate_site_uuids": [sites[0]],

@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api_envelope import ok_data
+from tests.api_envelope import command_body, ok_data
 from unilabos.client.materials import bind_payload
 from unilabos.protocol.materials import (
     InventoryMutation,
@@ -42,7 +42,7 @@ def stack(tmp_path):
 def _dev(client, operation: str, value) -> dict:
     mutation = InventoryMutation(command_uuid=str(uuid4()), effect_key=operation, operation=operation)
     body = bind_payload(mutation, value).model_dump(mode="json", exclude_none=False)
-    result = client.post(COMMANDS, json=body).json()
+    result = command_body(client.post(COMMANDS, json=body))
     assert result["status"] == "completed", result
     return result["result"]["data"]
 
@@ -50,9 +50,7 @@ def _dev(client, operation: str, value) -> dict:
 def _run(client, command_type: str, payload: dict, *, command_id: str | None = None, **extra) -> dict:
     body = {"command_id": command_id or str(uuid4()), "type": command_type, "actor": "operator-1",
             "payload": payload, **extra}
-    response = client.post(COMMANDS, json=body)
-    assert response.status_code == 200
-    return response.json()
+    return command_body(client.post(COMMANDS, json=body))
 
 
 def _templates(client) -> dict[str, str]:
@@ -245,8 +243,8 @@ def test_adjust_lot_requires_audit_and_keeps_reserved_quantity(stack) -> None:
     assert reserved["status"] == "completed", reserved
     for payload, actor in (({"lot_id": "lot-1", "new_total": 400}, "operator-1"),
                            ({"lot_id": "lot-1", "new_total": 400, "reason": "盘点"}, "")):
-        refused = client.post(COMMANDS, json={"command_id": str(uuid4()), "type": "material.adjust", "actor": actor,
-                                              "payload": payload}).json()
+        refused = command_body(client.post(COMMANDS, json={"command_id": str(uuid4()), "type": "material.adjust", "actor": actor,
+                                              "payload": payload}))
         assert refused["status"] == "rejected" and refused["code"] == 1000
     below = _run(client, "material.adjust", {"lot_id": "lot-1", "new_total": 50, "reason": "盘点"})
     assert below["status"] == "rejected" and below["code"] in {3003, 4002}

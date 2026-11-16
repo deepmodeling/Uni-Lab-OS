@@ -12,7 +12,9 @@
 
 以吸液为例：消息重发或 Host 崩溃后，仅有“命令已发送”无法判断是否已经吸过。持久开始许可与 attempt 身份、结果记录结合，才能区分可恢复派发的未开始动作与需要核实的未知执行。即使已经取得许可，设备仍可能尚未动作，所以不能据此推断实际吸液量。
 
-本次没有实现 dev 的 begin/fencing 握手，也没有把当前内存资源锁变成持久租约。
+#358 当时没有实现 dev 的 begin/fencing 握手，也没有把内存资源锁变成持久租约。两者现已实现：Host 调用设备前经
+`server/backend/execution_start.py`（`ExecutionStartGuard`）向调度权威 `begin_execution` 领取开始许可，领到后才消费库存并记录开始回执；
+派发前的资源声明、租约与栅栏持久化在 runtime.db 的 `workflow_execution_claim` / `workflow_execution_lease` / `workflow_execution_fence`。
 
 ## 这次接入的能力
 
@@ -61,7 +63,8 @@
 
 ### 人工计数盘点
 
-`POST /api/v1/materials/lots/{lot_uuid}/stocktake`，请求使用既有 `InventoryMutation` 信封：
+没有单独的盘点路由：经统一库存命令入口 `POST /api/v1/inventory/commands` 提交，请求使用既有 `InventoryMutation` 信封
+（带 `command_uuid` 即按 materials.v1 变更处理，`operation=stocktake_inventory_lot`）：
 
 ```json
 {
@@ -73,6 +76,9 @@
   "payload":{"lot_uuid":"tips-lot","expected_version":4,"measured_count":96,"reason":"人工逐件核对"}
 }
 ```
+
+也可以发 V1 类型化命令 `{"command_id": …, "type": "inventory.reconcile_count", "payload": {"lot_id", "measured_count", "expected_version", "reason"}}`，
+两者走同一个 `MaterialsService.stocktake_inventory_lot`。响应是 HTTP 200 的裸结果 `{command_id, status, result | error}`。
 
 仅用于离散整数库存；重复相同命令幂等回放，版本变化或涉及预留/隔离/已登记实物的差异返回冲突。它记录人工核对，不冒充已验证的称重/计数设备 Job 证据。Local/HTTPMaterialsClient 同时提供 `preview_inventory` 与 `stocktake_inventory_lot`。
 
@@ -122,15 +128,28 @@ def dose(
     ...
 ```
 
-严格声明由 AST 静态解析，不执行作者模块。支持的有限注解语言、默认值、资源引用、SiteSelector 和具名返回来自 V1 的规范解析器。必填参数不再被类型默认值补成 0/空串；物料默认在动作使用期间互斥，免锁用 `MaterialLock(free=True)` 声明。用户所说的“共享”是空闲时可以借出，并不意味着免锁或同时使用；跨动作的共享/独占区间尚未完整接入。兼容装饰器断言不能覆盖规范字段；格式错误的显式 typed 动作不能悄悄降级为普通动作。
+严格声明由 AST 静态解析，不执行作者模块。支持的有限注解语言、默认值、资源引用、SiteSelector 和具名返回来自 V1 的规范解析器。必填参数不再被类型默认值补成 0/空串；物料默认在动作使用期间互斥，免锁用 `MaterialLock(free=True)` 声明。用户所说的“共享”是空闲时可以借出，并不意味着免锁或同时使用；跨动作的共享/独占区间尚未完整接入。兼容装饰器断言不能覆盖规范字段；格式错误的显式 typed 动作不能悄悄降级为普通动作：AST 扫描报错时整个源文件被跳过（`ast_registry_scanner.py`），文件里的其他设备也一起缺席。
 
-规范 Schema 的 `x-unilabos-action-contract.version` 为 2。输入/输出 handles、默认值、选择器和物料锁由同一份 Schema 派生。画布节点即使没有动作模板，也会从当前注册表取合同并冻结到任务。实际参数在调度端与 Host 调用前验证；返回值不符合合同会进入失败决策，不上报成功。人工替换结果也遵守返回合同，无效替换保留待决策记录。
+规范 Schema 的 `x-unilabos-action-contract.version` 为 2。输入/输出 handles、默认值、选择器和物料锁由同一份 Schema 派生。画布节点即使没有动作模板，建任务时也会从当前注册表取合同并冻结到任务，前提是此刻注册表里有这台设备的这个动作。实际参数在调度端与 Host 调用前验证；返回值不符合合同会进入失败决策，不上报成功。人工替换结果也遵守返回合同，无效替换保留待决策记录。
+
+### 已知缺口
+
+- 建任务时注册表里查不到该设备 / 动作（Host 尚未上报、设备未加载）就不冻结合同：建任务与派发都跳过类型化校验和
+  `order_sensitive` 检查；Host 调用前仍按自己当前的 Schema 校验，但声明了 `resource_contract` 的动作会因计划里没有冻结的资源合同被拒绝。
+- 只在建任务、运行预检、派发与 Host 调用前校验参数；保存图、发布工作流、暂停期间改入口参数（`edit_input`）都不做类型化参数校验，问题要到派发时才暴露。
+- Host 按驱动**当前**的 Schema 校验输入与返回值，只要求 `resource_contract` 与冻结值一致；建任务之后驱动改了参数或返回 Schema，
+  新 Schema 直接生效，不要求重建任务。
+- 旧 WS 协议直接派发的作业不经调度器托管，只有 Host 侧校验；声明了任何 `resource_contract`（包括只有 `order_sensitive`）的 typed 动作都会被拒绝。
+- 反馈（feedback）不校验。`@action` 装饰器本身只检查 `contract` 取值、JSON 动作与 `resource_contract` 形状，不拒绝 typed 动作上的
+  `goal` / `result` / `placeholder_keys` / `materials_need_lock` / `materials_free`；这些由 AST 扫描拒绝。
+- 仓库内置设备都还没有使用 `contract="typed"`，现有覆盖来自测试（`tests/registry/test_typed_contract_dev_wiring.py`、
+  `tests/server/test_typed_action_execution.py`、`tests/registry/test_action_resource_contract.py`）。
 
 ## 尚未达到 V1 完整运行期对等
 
 这次提供可独立接入 dev 的库存增量、预检和严格动作合同，不宣称整个 V1 库存运行期已经移植：
 
-- V1 的内容物共享数量预留、运行时补料分支与数量预留 Saga，尚未取代 dev 的 lot 预留模型。
+- 内容物共享数量预留已实现，是与 `material`、`lot` 并列的第三种需求 `kind="content"`（`material_content_reservation`，多任务共享余量、随作业结算与恢复）；V1 的数量预留 Saga 由尝试上冻结的库存请求与恢复对账（`scheduler/attempt_inventory.py`、`scheduler/inventory_recovery.py`）承担；运行时补料分支按决定不做，缺料是预检报错，人工补料用 `material_io`。
 - 搬运 / 分装按实际回执结算已接入（`materials/execution.py`）；与通用扣减去重：同一作业在分装来源容器上声明的内容物预留不再按计划量扣减，动作开始时预留保持有效（其他任务拿不走），物理结算时按分装实际取走的量记为已消费（`settled_by="aliquot"`，V1 `settled_quantity` 的做法），现场核实不结算分装时按未取用释放（2026-11-16）。可信测量 Job 自动盘点尚未接入。
 - `device_tenancy`、`transfer`、`transfer_step`、`operate_in_place`、`aliquot` 只在调度器托管（`managed_resources`）下接受，脱离托管的运行值校验仍拒绝；`order_sensitive` 只约束计划：与同一资源上无先后关系的兄弟动作在发布和创建任务时被拒绝（`scheduler/interval_plan.py`）。（2026-11-15 更新）
 - 正式前端在独立 Uni-Lab FE 仓库；本轮只读核验其代码和 API，不修改该仓库业务实现。主仓库调试站已移除。

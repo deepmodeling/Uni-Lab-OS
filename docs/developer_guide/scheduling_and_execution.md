@@ -384,9 +384,12 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
 
 “每轮调度都带着物料和仓储”不等于“每轮重复扣库存”。正确事务边界是：
 
-1. **Task 准入时一次性预留**：Scheduler 将该 Task 所有声明的
-   `inventory_requirements` 交给 `MaterialsService.reserve_task_inventory()`，使用
-   一个事务 all-or-nothing 创建 Job reservation。数量不足（`InsufficientInventoryError`）
+1. **预留按尝试建，默认在 Task 准入时一次建齐**：每个尝试（job）一行 `inventory_reservation`。Task 准入时，
+   Scheduler 把所有**不延迟**的需求（各节点运行首个尝试的 `inventory_requirements`）交给
+   `MaterialsService.reserve_task_inventory()`，一个事务 all-or-nothing 建齐。延迟的需求在节点就绪时才预留：
+   节点 `meta_data.inventory_mode="on_ready"`（`ctx.run(..., inventory_mode="on_ready")`），或节点带条件守卫、需求字段引用了入口参数 / 上游结果
+   （`protocol/runtime/inventory.py:inventory_deferred`）；解析后的请求冻结在尝试的 `control_data.inventory_request`。
+   重试的新尝试、循环的下一轮各自重新预留一次。准入时数量不足（`InsufficientInventoryError`）
    或设备/动作缺失时，任务在派发前落 `failed` + `error_info[0].code=plan_not_executable`
    （message 为权威原文，如 ``requirement 'water' is short by 440 ml``），节点运行
    `canceled`，设备不被调用；这是调度的正常业务终态，调度器只记 WARNING。
@@ -405,7 +408,7 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    声明，不是设备参数：权威预留后解析出的**出库内容**由调度器按需求 `key` 注入同名动作参数
    （`material` → ResourceSlot 引用 `{"uuid": material_uuid, ...}`，框架在 `send_goal`
    解析成 PLR 实例；`lot` → `{"quantity", "unit", "lots": [{"lot_uuid", "quantity"}]}`），
-   设备拿到的已经是具体分配，不需要也不应该自己选 lot 或扣数量。两种 `kind` 区分的是账目
+   设备拿到的已经是具体分配，不需要也不应该自己选 lot 或扣数量。`material` 与 `lot` 区分的是账目
    形态而不是物料种类：`material` 是有 uuid、可放到位点的实例（按件登记，
    `active → reserved → in_use`，不扣数量）；`lot` 是 `inventory_lot` 的按量库存
    （`available → reserved`，动作开始 `total/reserved` 同减），耗材同样可以走这一形态。
@@ -428,14 +431,26 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    与预留无法换算的单位；内容物单位换算一律按物态 / 浓度 / 密度进行，换算不了就拒绝。
 2. **每轮资源重算都带入物料**：每个 Node 的完整资源申请包含 action 参数物料和
    reservation 分配出的实体物料，所以不同设备也不能同时操作同一物料。
-3. **驱动调用前只消费一次**：`ExecutionInventoryCoordinator` 校验 reservation
-   的 `job_uuid`、Task、revision 和 requirements，然后在 `send_goal` 前 consume。
-4. **终态收口**：未 consume 的 active reservation 在 Task 终态释放；已经 consume
-   的数量不返还，失败或取消的实体物料进入 quarantine，成功按账本完成。
+3. **驱动调用前只消费一次**：Host 的 `ExecutionInventoryCoordinator`（`backend/inventory.py`）派发时校验 reservation
+   的 `job_uuid`、Task、revision 和 requirements；有开始许可的作业在领到许可（`begin_execution` 返回 START）之后、
+   记录开始回执之前 consume，没有许可的作业在 `send_goal` 前 consume。
+4. **终态收口按尝试，不按 Task**：
+   - Host 收到驱动终态：成功不再改预留（动作开始时已 consume）；失败、取消或硬超时时，仍 `active`（未开始）的预留释放，
+     已 `consumed` 的转 `quarantined`、数量不退回；派发前被拒、开始前被撤销的作业释放预留。
+   - 调度器对账（`scheduler/inventory_recovery.py`；启动时、作业释放资源时、任务收尾时，以及每轮资源重算，含每 5 秒的兜底）按尝试的持久状态补齐：
+     pending 且预留 active 时复用；在飞、结果不明、待人工时保持不动；succeeded 时 active 的预留补 consume；
+     failed / canceled / timeout / skipped 时，开始许可已领用（旧作业没有开始凭据时以 `started_at` 为准）或预留已
+     consumed，转 `quarantined`，否则释放——同一 Task 仍有设备托管时释放推迟到托管结束。
+     对不上的情况（成功尝试的预留已被释放或隔离、可能执行过的尝试已被释放、身份或需求不一致、派发引用的预留不存在）
+     记为 issue，并加全局派发暂停原因 `inventory_reconciliation`，见 [工作流跨库库存恢复](workflow_inventory_recovery.md)。
+   - 实际用量：批次可以按设备返回值里的 `inventory_consumptions`（物理结算时）或
+     `POST /api/v1/workflow-node-jobs/{uuid}/reconcile-quantity`（预留已 consumed / quarantined 后）各按差额更正**一次**，
+     两条路径共用同一个幂等效果键 `physical.inventory:<lot>`，少用的退回批次，多用的从可用量里扣；内容物的规则见上文。
 
 Scheduler 不直接修改 `material_substance` 快照：批次的数量权威是 `inventory_lot`，容器内容物的
 数量权威是 `material_substance`（预留在 `material_content_reservation`，消费与更正记在
-`material_content_history`），所有 reserve/consume/release/quarantine 事实进入 `inventory_ledger`。命令以
+`material_content_history`，不写 `inventory_ledger`）。批次、物料实例与预留本身的 reserve / consume / release /
+quarantine 事实进入 `inventory_ledger`。命令以
 `(command_uuid, effect_key)` 幂等，因此恢复和重复投递不会重复扣减。
 
 ## 8. Edge 内部通信机制

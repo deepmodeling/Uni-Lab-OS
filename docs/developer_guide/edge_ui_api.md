@@ -34,7 +34,7 @@ graphs / lab / scheduler / restart / health；Host 专有的 `runtime`、`teleme
 Graph Authority（`POST /graphs` 可随请求带 `device_site_templates`，用 Host 自己的注册表实例化
 模板 Site；启动登记带 `on_existing="adopt"`——权威已有该图时以权威为准只补新增，前端 / CLI
 上传缺省 `replace` 即编辑）；Host 包里的 `@workflow` 是**工作流模板**，随注册表快照一起上报
-（`POST /resource-templates` 的一个条目，`registry_type=workflow`），不直接落成
+（`POST /api/v1/registry/reports` 的一个条目，`registry_type=workflow`），不直接落成
 工作流。注册表上报按内容哈希增量进行（先 `GET /registry/digest`，只为权威没有的哈希附完整定义），
 见下文 `/api/v1/registry/*`。两侧的控制面在 `runtime.v1` 之内闭环：Host 上报的注册表快照带
 `always_free` / `error_policy` / `timeout` / `execution_timeout`，权威据此解析动作锁、重试上限与
@@ -115,11 +115,13 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   "Edge 上报"，取值表见 `examples/materials_operations_guide.md §2.2.1`）；
 - `/api/v1/telemetry`：设备最新状态和事件；
 - `/api/v1/edge/history`：payload 与统一历史事件（`/api/v1/history` 归 V1 运行历史）；
-- `/api/v1/lab/layout`：实验室布局（区域 / 围墙像素格，叠在物料权威设备位置之上）。runtime.db
-  `lab_layout` 单行文档，一个 Host 一份、所有前端共享：`GET` 从未保存时返回 `revision 0` 的空布局
-  （不是 404），`PUT {revision, cell_size, zones, walls}` 整份替换、revision 乐观锁不匹配 409，
-  `DELETE` 重置；不变量（格子只属一个区域、区域与围墙互斥、`#rrggbb`、规模上限）在服务端校验（422）。
-  前端不再把布局存 localStorage，只在连的是没有该接口的老微后端时降级；
+- `/api/v1/lab/*`（权威回答）：实验室布局。网格布局（区域 / 围墙像素格，叠在物料权威设备位置之上）是
+  runtime.db `lab_layout` 单行文档，所有前端共享：`GET /lab/profile` 与 `GET /lab/layout` 都带 `grid`，从未保存时是
+  `revision 0` 的空布局；`PUT /lab/profile` 带 `grid: {revision, cell_size, zones, walls}` 整份替换，revision 不匹配返回
+  业务码 3003，`grid: null` 重置；不变量（格子只属一个区域、区域与围墙互斥、`#rrggbb`、规模上限）不满足返回业务码 1000。
+  原 `PUT|DELETE /lab/layout` 已删除。V1 的档案（名称 / 领域包）、矩形分区与在台摆放在 materials.db
+  （`lab_meta` / `lab_zone` / `lab_placement`），经 `/lab/profile`、`/lab/zones`、`/lab/placements`、`/lab/layout`、
+  `/lab/warehouse`、`/lab/assembly/{id}` 读写，见 [微后端数据库](databases.md)；
 - `/api/v1/health`、`/api/v1/hostlink/peers`：轻量诊断；
 - `/api/v1/ping?client_timestamp=`：HTTP ping-pong，回显客户端时间戳并附服务端时钟。
   Host 到 Backend 的链路由 Backend 会话（`legacy_adaptor/session.py` 的
@@ -131,13 +133,13 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   重启。默认拓扑下 `auto` 解析为 `edge`：只重启 Host 子进程——权威通知它退出（退出码 75），
   子进程看护器以相同参数拉起，Host 重连控制面后自动恢复派发；管理端口全程在线，前端连接
   不断，`health.execution` 短暂变为 `restarting`；等待中的任务由调度恢复链路继续，不会
-  失败。权威进程自己常驻，显式 `scope=process` 会被拒绝（422）；只有接远端 Backend 的
+  失败。权威进程自己常驻，显式 `scope=process` 会被拒绝（HTTP 200 + 业务码 1000）；只有接远端 Backend 的
   顶层 Host（CLI `--address`）才走整进程重启，由薄监督进程以相同参数拉起。
   `unilab --no-safe-restart` 关闭全部编排（调试用：重启只退出、不拉起）。GET 查询等待
   状态（含 `effective_scope`、`safe_restart`），DELETE 取消并恢复派发；body 可选
   `{"mode": "immediate"}` 跳过安静等待、`{"scope": "edge"|"process"}` 显式指定作用域。
-- `/api/v1/scheduler/resources`：调度权威（Backend）可读；不提供调度权威的进程以 503
-  明确表示应去其 Backend 地址读取。
+- `/api/v1/scheduler/resources`：调度权威（Backend）可读；不提供调度权威的进程返回 HTTP 200 +
+  业务码 5001，明确表示应去其 Backend 地址读取。
 - `/api/v1/driver-packages`（带执行面的 Host）：驱动包管理，与 `--devices <目录>` 同一套
   机制、**不 pip install 包体**。`POST /install`（202，返回可轮询的 operation）接受 GitHub
   仓库地址 `https://github.com/<owner>/<repo>[@ref]`、zip / tar.gz 归档地址或本机目录：远端来源
@@ -171,7 +173,7 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本。与 Workflow Authority
   同归属、同一 `setup_server()` 挂载。Host 启动时按**内容哈希增量**上报（协议对象见
   `unilabos.protocol.runtime.registry`）：先 `GET /registry/digest` 取权威持有的
-  `{active: {name: content_sha256}, pending: {…}}`，再 `POST /resource-templates` 发
+  `{active: {name: content_sha256}, pending: {…}}`，再 `POST /registry/reports`（JSON，可 gzip）发
   `{entries: [{id, content_sha256, payload?}]}`——每个条目（设备 / 资源 / 包里 `@workflow`
   声明的工作流模板）都带哈希，集合本身决定哪些既有条目软移除，只有权威没有该哈希的条目
   才附完整 `payload`。首次上报索引为空即全量，之后每次启动只剩几 KB 的哈希清单；权威对
@@ -181,7 +183,7 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   `entries` 列条目状态；`pending-impacts` 把挂起冲突映射到受影响的
   workflow 节点；`entries/{name}/apply` 确认待处理版本，`dismiss` 忽略挂起，
   `restore/{version}` 还原历史版本。
-  只提供执行面的进程没有该域，前端按 404/503 静默降级。
+  只提供执行面的进程不挂载该域（HTTP 404），注册表服务尚未就绪时返回业务码 5001，前端按这两种情况静默降级。
 - 工作流模板：`GET /api/v1/registry/workflow-templates` 列出生效的 `@workflow` 模板
   （`uuid` / `display_name` / `roles` / `nodes` / `edges`，与前端「工作流模板」面板的用户模板
   同形：动作节点用角色占位，`run` 的角色是设备 id、`run_template` 的角色是设备类
@@ -227,7 +229,7 @@ UI 的恢复基线来自四库 API，而不是进程内事件缓存：
 3. retry 必须表现为调度权威（Backend 的 Workflow Authority）在同一事务里创建的新
    attempt/job；Host 不在原 Job 上本地重排。画布以节点运行为单位展示：当前状态来自
    节点运行投影，历史来自 `attempts`。
-4. 调度资源页面要识别 `/scheduler/resources` 的 503：这表示所连进程不提供调度权威，
+4. 调度资源页面要识别 `/scheduler/resources` 的业务码 5001：这表示所连进程不提供调度权威，
    应去其 Backend 地址读取，不是服务故障。
 
 ### 工作流模板参数：预填、确认与 API 导入

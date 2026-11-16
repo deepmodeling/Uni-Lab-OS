@@ -64,7 +64,34 @@ unilab package operation <operation_id> --wait --timeout 300
 | 发现与加载 | `registry/`、`app/community_packages.py`、`backend/runtime/driver_creator.py` | 沿用 dev 的扫描、社区引用解析、类加载 |
 | 进程 | `app/backend_main.py`、`app/supervisor.py`、`server/services/device_processes.py` | 监督 Host 和多个 slave，包管理不再另设进程所有者 |
 
-服务现有边界继续保留：依赖安装发生在 Host 解释器中，文件回滚不回滚 pip/uv 对共享环境的修改；操作历史在 Host 内存中，Host 重启后不能靠旧 operation ID 恢复进度。当前源码回滚覆盖进程内异常，不是断电/强杀恢复；包变更与进程重启仍需统一协调。具体复查结果见 [后续调整项](dev_package_runtime_audit.md)。
+依赖安装发生在 Host 解释器中，文件回滚不回滚 pip/uv 对共享环境的修改。
+
+### 操作记录与中断恢复
+
+包操作记录持久保存在 `<working_dir>/driver_package_operations.json`（`server/services/driver_package_journal.py`，
+临时文件 + fsync + 原子替换）：每条操作带进度日志、版本号、阶段，以及切换前 / 后的台账快照和源码备份位置。
+Host 重启后旧 operation ID 仍可用 `GET /api/v1/driver-packages/operations[/{id}]` 或 `unilab package operation <id>` 查询；
+已结束的操作保留最近 30 条（`OPERATION_HISTORY_LIMIT`），待确认的操作不会被挤掉。
+
+驱动包服务启动时持有跨进程变更锁检查仍是 `running` 的操作，只按已落盘的台账判断，不重放下载或依赖安装：
+
+| 台账现状 | 处理 | `recovery.outcome` |
+| --- | --- | --- |
+| 等于切换后的快照 | 保留新源码，删除备份 | `committed` |
+| 等于切换前的快照 | 把备份恢复回原位置（新装的目录移除） | `rolled_back` |
+| 两者都不是，或源码 / 台账读不了 | 不动源码 | `manual_repair_required` |
+
+这些操作都改为 `interrupted` 并要求人工确认（`requires_confirmation`）。依赖安装开始后失败、台账已提交后失败的操作同样要求确认，
+因为共享环境可能已被改动。存在待确认（或仍在运行）的操作时，新的包变更和受管 Slave 启动被拒绝；Host 启动时只起管理服务，
+设备 runtime 与受管 Slave 保持停止。处置步骤：
+
+1. 核实环境后 `POST /api/v1/driver-packages/operations/{id}/confirm`，body `{expected_version, reason}`；只登记核实，不重启；
+2. `manual_repair_required` 的操作先修好源码 / 台账，再 `POST /api/v1/driver-packages/operations/{id}/recover`（同样的 body）重新检查，然后确认；
+3. 确认后手动重启 Host 生效。
+
+包变更、受管 Slave 启动 / 重启和 Host 重启共用 `<working_dir>/.host-mutation.lock` 跨进程锁（`server/services/host_mutations.py`）：
+Host 重启先关闭新变更入口，等当前操作及其最终记录落盘后持锁直到退出，`immediate` 重启也不截断包操作。
+早期复查记录见 [后续调整项](dev_package_runtime_audit.md)。
 
 ## 设备源码变化与重启提示
 

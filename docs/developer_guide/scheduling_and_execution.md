@@ -222,7 +222,11 @@ edge、不占设备动作锁，执行器永远收不到它。作者写法见
    （不阻止 runtime 排空）。调度器每 5 秒的兜底重算也把到期的确认单收为超时。
 4. **一次库存命令**：批准后提交一条类型化库存命令 `material.io`（`inventory_commands.py` → `materials/material_io.py`），
    `command_id = workflow.material_io:<attempt>`，全部写入在一个 materials.db 事务里；首次结果（完成或拒绝）存在
-   `inventory_processed_command`，同一 attempt 重放只返回首次结果。设备台面经已有的 materials → device 同步拿到变化。
+   `inventory_processed_command`，同一 attempt 重放只返回首次结果。material_io 只写 materials.db，**不触发**任何设备同步：
+   物料权威推到设备的只有 `transfer_material`（经 resource sync dispatcher 做 unload / load 投影）和显式的
+   `POST /api/v1/materials/notify-device`（旧云端物料通知的翻译层另有自己的分发），所以设备驱动手里的台面 / `resource_tracker` 不会因 material_io 改变。之后的动作
+   以 ResourceSlot 引用这件物料时，执行端在本地 tracker 里找不到就按 uuid 从物料权威取子树、装配实例
+   （`backend/hostlink/local_runtime.py:_resolve_resource_slot`）。material_io 之后是否补发设备同步尚未决定。
 
 | 决策 / 结果 | 节点 | 库存 |
 | --- | --- | --- |

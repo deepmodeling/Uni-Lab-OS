@@ -424,24 +424,16 @@ def spin(self, cycles: int = 3) -> Dict[str, Any]:
 
 ```python
 def my_action(self, param: float) -> Dict[str, Any]:
-    """执行操作"""
-    try:
-        # 执行操作...
-        result = self._do_something(param)
+    """执行操作；失败时抛异常，不返回失败字典"""
+    # 执行操作；设备报错时 _do_something 抛出的异常直接向上传播，节点按失败结算
+    result = self._do_something(param)
 
-        return {
-            "success": True,              # 必需：操作是否成功
-            "message": "操作完成",          # 推荐：用户友好的消息
-            "result": result,             # 可选：具体结果数据
-            "param_used": param,          # 可选：记录使用的参数
-            # 其他有用的信息...
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "操作失败"
-        }
+    return {
+        "message": "操作完成",          # 推荐：用户友好的消息
+        "result": result,             # 可选：具体结果数据
+        "param_used": param,          # 可选：记录使用的参数
+        # 其他有用的信息...
+    }
 ```
 
 **最佳实践示例（参考 `host_node.test_latency`）：**
@@ -485,42 +477,32 @@ def test_latency(self) -> Dict[str, Any]:
 
 **返回值设计建议：**
 
-1. **始终包含 `success` 字段**：布尔值，表示操作是否成功
+1. **成败靠异常表达**：失败就 `raise`；返回值里的 `success` / `error` 字段只是展示数据，不影响结算
 2. **包含 `message` 字段**：字符串，提供用户友好的描述
 3. **使用有意义的键名**：使用描述性的键名（如 `avg_rtt_ms` 而不是 `v1`）
 4. **包含单位**：在键名中包含单位（如 `_ms`、`_ml`、`_celsius`）
 5. **记录重要参数**：返回使用的关键参数值，便于追溯
-6. **错误信息详细**：失败时包含 `error` 字段和详细的错误描述
+6. **错误信息详细**：异常消息写清原因和关键参数，它会记进作业的错误信息
 7. **避免返回大数据**：不要返回大型数组或二进制数据，这会影响前端性能
 
 **错误处理示例：**
 
 ```python
 def risky_operation(self, param: float) -> Dict[str, Any]:
-    """可能失败的操作"""
+    """可能失败的操作：参数非法、通信失败都抛异常"""
     if param < 0:
-        return {
-            "success": False,
-            "error": "参数不能为负数",
-            "message": f"无效参数: {param}",
-            "param": param
-        }
+        raise ValueError(f"参数不能为负数: {param}")
 
     try:
         result = self._execute(param)
-        return {
-            "success": True,
-            "message": "操作成功",
-            "result": result,
-            "param": param
-        }
     except IOError as e:
-        return {
-            "success": False,
-            "error": "通信错误",
-            "message": str(e),
-            "device_status": self._status
-        }
+        # 补充上下文后重新抛出，保留原始异常链
+        raise RuntimeError(f"通信错误（设备状态 {self._status}）: {e}") from e
+    return {
+        "message": "操作成功",
+        "result": result,
+        "param": param
+    }
 ```
 
 ## 特殊参数类型：ResourceSlot 和 DeviceSlot
@@ -991,28 +973,20 @@ def post_init(self, node, sites=None, resources=None, site_resources=None):
 
 ### 基本错误处理
 
+普通 `@action` 的成败只看方法有没有抛异常（见「返回值设计指南」）。捕获异常是为了更新设备状态或补充上下文，
+处理完要继续抛出，不能改成返回 `{"success": False}`，否则节点按成功结算。
+
 ```python
 def operation_with_error_handling(self, param: float) -> Dict[str, Any]:
     """带错误处理的操作"""
     try:
         result = self._risky_operation(param)
-        return {
-            "success": True,
-            "result": result
-        }
     except ValueError as e:
-        return {
-            "success": False,
-            "error": "Invalid parameter",
-            "message": str(e)
-        }
+        raise ValueError(f"Invalid parameter: {e}") from e
     except IOError as e:
         self._status = "error"
-        return {
-            "success": False,
-            "error": "Communication error",
-            "message": str(e)
-        }
+        raise RuntimeError(f"Communication error: {e}") from e
+    return {"result": result}
 ```
 
 ### 自定义异常

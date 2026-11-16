@@ -357,8 +357,12 @@ unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 unilab --ak your_ak --sk your_sk -g slave1.json \
   --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302
 unilab --ak your_ak --sk your_sk -g slave2.json \
-  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --working-dir ~/unilab-slave2
 ```
+
+从节点不启动 HTTP 服务（管理 API 只在 Host / 调度权威上），不需要 `--port-management`。同一台机器上的
+每个从节点要有自己的数据库根目录（`--working-dir` 或 `--server-database-root`），否则后启动的那个拿不到
+`unilab.lock`，以退出码 73 退出（见 [微后端数据库](databases.md) 第 3 节）。
 
 ### 云端集成模式
 
@@ -462,8 +466,8 @@ ros2 service list | grep host_node
 # 基本从节点启动
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
 
-# 指定不同端口（如果多个从节点在同一台机器）
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port-management 8003
+# 同一台机器上的第二个从节点：不监听 HTTP 端口，只需另一个数据库根目录
+unilab --ak your_ak --sk your_sk -g slave2.json --is_slave --working_dir ~/unilab-slave2
 
 # 跳过等待主节点（独立测试）
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --slave_no_host
@@ -679,14 +683,14 @@ unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 
 ```bash
 # liquid_handler.json
-unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port-management 8003
+unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave
 ```
 
 ### 房间 C - 从节点 2
 
 ```bash
 # analytical.json
-unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port-management 8004
+unilab --ak your_ak --sk your_sk -g analytical.json --is_slave
 ```
 
 ---

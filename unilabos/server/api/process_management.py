@@ -5,9 +5,7 @@
 dev 增加组件日志暂不可读 503）。与 ``/health``、``/readiness`` 一样是统一信封的例外，见
 ``docs/developer_guide/api_v1_migration.md``。
 
-鉴权按 dev 约定：写操作（``POST /v1/operations``）由 ``ControlTokenMiddleware`` 检查
-``X-UniLab-Token``，拒绝时为 HTTP 401 + V1 形状的 ``{"error": {"code": "unauthorized"}}``；读操作与其它
-dev GET 一样不需要 token（V1 的 Host 本地 token 对读也生效，dev 不沿用）。
+不鉴权（V1 的 Host 本地 token 不沿用，dev 的控制面 token 也已取消）。
 
 只挂在调度权威（有 Workflow Authority 的进程）上：默认 ``unilab``、``--role backend`` 与
 ``--no-safe-restart`` 单进程；配置了 ``--address`` 的 Host 子进程不挂。

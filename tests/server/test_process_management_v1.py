@@ -23,9 +23,7 @@ from fastapi.testclient import TestClient
 
 import unilabos.server.backend.restart as restart_module
 from unilabos.config.config import BasicConfig
-from unilabos.config.control_token import TOKEN_HEADER
 from unilabos.protocol.runtime.process_management import SCHEMA_VERSION, ProcessManagementError
-from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.process_management import install_process_management_api
 from unilabos.server.backend.restart import RestartCoordinator
 from unilabos.server.backend.scheduler.service import BackendScheduler
@@ -36,9 +34,6 @@ from unilabos.server.services.process_management import (
     ProcessManagementService,
     request_hash,
 )
-
-TOKEN = "process-management-test-token"
-
 
 class FakeEdge:
     """调度权威侧的控制面视图：Host 是否在线、当前 Host 进程身份。"""
@@ -147,7 +142,6 @@ def _batch(source_id: str, lines: list[str], path: str) -> dict[str, Any]:
 class Stack:
     def __init__(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.setattr(restart_module, "_POLL_INTERVAL_SECONDS", 0.01)
-        monkeypatch.setattr(BasicConfig, "control_token", TOKEN)
         monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
         self.edge = FakeEdge()
         # 重启协调器经模块级入口判断「本进程是带控制面的调度权威」
@@ -167,7 +161,6 @@ class Stack:
             management_port=8002, supervisor=self.supervisor, database_root=str(tmp_path), edge_database_root=str(tmp_path / "edge"),
         )
         self.app = FastAPI()
-        self.app.add_middleware(ControlTokenMiddleware)
         self.service = self.install(self.app)
         self.client = TestClient(self.app)
 
@@ -180,13 +173,12 @@ class Stack:
         )
 
     def submit(self, command: str, parameters: dict | None = None, *, operation_id: str | None = None,
-               expected_revision: int | None = None, token: str | None = TOKEN):
+               expected_revision: int | None = None):
         body: dict[str, Any] = {"operationId": operation_id or str(uuid4()), "command": command,
                                 "parameters": parameters or {}}
         if expected_revision is not None:
             body["expectedRevision"] = expected_revision
-        headers = {TOKEN_HEADER: token} if token else {}
-        return self.client.post("/v1/operations", json=body, headers=headers)
+        return self.client.post("/v1/operations", json=body)
 
     def wait(self, operation_id: str, timeout: float = 10.0) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
@@ -327,16 +319,18 @@ def test_expected_revision_conflict_reports_actual(stack: Stack) -> None:
     ],
 )
 def test_submit_validation_uses_v1_errors(stack: Stack, body: bytes, message: str) -> None:
-    response = stack.client.post("/v1/operations", content=body, headers={TOKEN_HEADER: TOKEN})
+    response = stack.client.post("/v1/operations", content=body)
     assert response.status_code == 400
     assert response.json() == {"error": {"code": "invalid_request", "message": message}}
 
 
-def test_writes_need_the_control_token_and_reads_do_not(stack: Stack) -> None:
-    rejected = stack.submit("scheduler.drain", token=None)
-    assert rejected.status_code == 401
-    assert rejected.json()["error"]["code"] == "unauthorized"
-    assert stack.submit("scheduler.drain", token="wrong").status_code == 401
+def test_writes_need_no_token_and_lookups_report_v1_errors(stack: Stack) -> None:
+    # 控制面 token 已取消：不带凭据、或旧客户端仍带 X-UniLab-Token，都照常受理
+    accepted = stack.client.post(
+        "/v1/operations", json={"operationId": "legacy-header", "command": "scheduler.drain", "parameters": {}},
+        headers={"X-UniLab-Token": "anything"},
+    )
+    assert accepted.status_code == 202
     assert stack.client.get("/v1/snapshot").status_code == 200
     missing = stack.client.get("/v1/operations/never-submitted")
     assert missing.status_code == 404
@@ -596,7 +590,6 @@ def test_mcp_tools_reach_the_process_management_routes(stack: Stack, monkeypatch
     from unilabos.server.mcp.server import ProtocolMCP
     from unilabos.server.openapi_export import export_openapi
 
-    monkeypatch.setattr("unilabos.config.control_token.client_token", lambda: TOKEN)
     protocol = ProtocolMCP(stack.app, export_openapi())
     snapshot = asyncio.run(protocol.call_tool("process_management_snapshot", {}))
     assert not snapshot.isError and snapshot.structuredContent["body"]["schemaVersion"] == SCHEMA_VERSION

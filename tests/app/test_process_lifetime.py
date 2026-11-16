@@ -31,7 +31,6 @@ from unilabos.server.database.root_lock import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_CONFIG = Path(unilabos.__file__).resolve().parent / "config" / "example_config.py"
-CONTROL_TOKEN = "process-lifetime-test-token"
 POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="Windows 没有可从外部投递的 SIGTERM / SIGINT")
 
 
@@ -609,7 +608,7 @@ class _Unilab:
         self._stream = self.log.open("w", encoding="utf-8")
         self.process = subprocess.Popen(
             command,
-            env=_env(UNILABOS_BASICCONFIG_CONTROL_TOKEN=CONTROL_TOKEN),
+            env=_env(),
             stdout=self._stream,
             stderr=subprocess.STDOUT,
             # POSIX 上独立会话：测试对它发的信号不会波及测试进程自己
@@ -749,6 +748,8 @@ def test_remote_address_host_survives_a_link_drop_but_follows_its_local_supervis
     restarted: Optional[subprocess.Popen[bytes]] = None
     try:
         host.wait_for(lambda: host.text().count("[ControlProtocol] Connected to") >= 1, "远端 Host 接入权威")
+        # 控制面 token 已取消：两边都没配任何凭据，远端 Host 照样接入；权威也不再生成 token 文件
+        assert not (tmp_path / "backend-work" / "control_token").exists()
         holder = read_database_root_holder(host_root)
         assert holder is not None and holder["role"] == "Host"
         inner = int(holder["pid"])
@@ -764,7 +765,7 @@ def test_remote_address_host_survives_a_link_drop_but_follows_its_local_supervis
         # 权威回到同一地址：Host 重新接入
         restarted = subprocess.Popen(
             backend.process.args,
-            env=_env(UNILABOS_BASICCONFIG_CONTROL_TOKEN=CONTROL_TOKEN),
+            env=_env(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=os.name != "nt",

@@ -10,7 +10,6 @@ from urllib.request import Request, urlopen
 
 from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
 
-from unilabos.config.control_token import client_headers
 
 from unilabos.server.database.tables.runtime import (
     AdapterCommandOutboxRecord,
@@ -269,7 +268,7 @@ class HTTPRuntimeClient:
 
     def _request(self, method: str, path: str, body: Optional[Any] = None) -> Any:
         data = None
-        headers = {"Accept": "application/json", **client_headers()}
+        headers = {"Accept": "application/json"}
         if body is not None:
             if hasattr(body, "model_dump"):
                 body = body.model_dump(mode="json", exclude_none=False)

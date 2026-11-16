@@ -279,23 +279,23 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `scheduler_max_in_flight_jobs` | int | `100` | 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限；超出的作业排队，有作业结束后按先后放行 |
 | `scheduler_max_active_tasks` | int | `500` | 全局运行中任务（`running` / `canceling`）上限；超出的任务保持 `pending`，按提交先后启动 |
 | `scheduler_max_tasks_per_workflow` | int | `100` | 同一工作流的运行中任务上限；只让该工作流的后续任务排队 |
-| `control_token`          | str  | `""`          | 调度权威与 Host 之间控制面的共享 token，见下文「控制面 token」 |
+| `station_api_key`        | str  | `""`          | V1 工站调用 `POST /api/v1/station/workflow-invocations` 的密钥（`Authorization: Bearer <key>`），见下文「管理 API 鉴权」 |
 | `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
 | `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |
 
-#### 控制面 token
+#### 管理 API 鉴权
 
-管理 API 的一切写操作（POST / PUT / PATCH / DELETE），以及 Host 专属的控制面（控制 WebSocket
-`/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`），都要求请求头
-`X-UniLab-Token`（只认这个请求头；`Authorization: Bearer` 留给 V1 工站 api_key），否则 WebSocket 握手被拒
-（HTTP 403）、HTTP 返回 401 + 业务码 1002。
-读操作不需要。浏览器前端在连接设置里填写 token；`unilab token` 打印它。
+管理 API 与 Host↔权威控制面（控制 WebSocket `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、
+`POST /api/v1/edge/http-responses/{uuid}`）**不鉴权**：读写请求都不需要任何凭据，控制 WebSocket 握手也不检查
+凭据。原来的控制面 token（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）已取消；旧客户端仍带
+`X-UniLab-Token` 请求头时直接忽略，旧配置里的 `BasicConfig.control_token` / 环境变量
+`UNILABOS_BASICCONFIG_CONTROL_TOKEN` 也静默忽略。管理端口只应暴露给可信网络；`cors_allow_origins` 可收窄允许
+跨域访问的网页来源。
 
-- 调度权威：`control_token` 留空时首次启动生成 `<工作目录>/control_token`（权限 0600），之后沿用；启动日志会打印它的位置。
-- 默认双进程拓扑：Host 子进程由权威经环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` 拿到 token，无需配置。
-- `--role backend` + 远端 Host（`--address`）：在 Host 的配置文件填 `control_token`（或设上面的环境变量）为权威那份 token；
-  两者在同一台机器、同一工作目录时，Host 直接读 `<工作目录>/control_token`。
-- 更换 token：停止 unilab，删除 `<工作目录>/control_token` 后重启，并在前端里重新填写。
+唯一的鉴权是 V1 工站调用 `POST /api/v1/station/workflow-invocations`：请求头必须是
+`Authorization: Bearer <station_api_key>`，缺失或错误一律 HTTP 401 + 业务码 1002（本机未配置密钥时同样拒绝）。
+密钥取 `BasicConfig.station_api_key`（或环境变量 `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的
+`UNILABOS_EDGECONTROLCONFIG_API_KEY`），都为空时读运维放置的 `<工作目录>/station_api_key`；权威不自动生成。
 
 #### 数据库位置
 

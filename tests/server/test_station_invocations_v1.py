@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from tests.api_envelope import error_of
 from tests.server.v1_lifecycle_support import Stack
 from unilabos.config.config import BasicConfig
-from unilabos.server.api.app import ConfiguredCORSMiddleware, ControlTokenMiddleware
+from unilabos.server.api.app import ConfiguredCORSMiddleware, StationKeyMiddleware
 from unilabos.server.api.runtime.workflow import create_workflow_app
 
 STATION = "/api/v1/station/workflow-invocations"
@@ -35,7 +35,7 @@ def _legacy(workflow_name: str, **extra):
             "input": {}, **extra}
 
 
-def test_station_key_is_required_and_control_token_does_not_replace_it(stack: Stack, monkeypatch) -> None:
+def test_station_key_is_required_and_the_legacy_token_header_does_not_replace_it(stack: Stack, monkeypatch) -> None:
     stack.create_workflow(["device-a"])
     body = _legacy("生命周期测试")
     for headers in ({}, {"Authorization": "Bearer wrong"}, {"X-UniLab-Token": "anything"}, {"Authorization": KEY}):
@@ -96,18 +96,19 @@ def test_canonical_invocation_pins_the_published_revision(stack: Stack) -> None:
                                headers=AUTH), 1000)
 
 
-def test_control_token_middleware_lets_valid_station_key_through_only(stack: Stack, monkeypatch) -> None:
+def test_station_key_middleware_guards_only_the_station_entry(stack: Stack, monkeypatch) -> None:
     stack.create_workflow(["device-a"])  # 夹具经无中间件的应用建工作流
-    monkeypatch.setattr(BasicConfig, "control_token", "control-secret")
     app = create_workflow_app(stack.service)
-    app.add_middleware(ControlTokenMiddleware)
+    app.add_middleware(StationKeyMiddleware)
     app.add_middleware(ConfiguredCORSMiddleware)
     with TestClient(app) as client:
         body = _legacy("生命周期测试")
         assert client.post(STATION, json=body, headers=AUTH).status_code == 201
-        for headers in ({}, {"X-UniLab-Token": "control-secret"}, {"Authorization": "Bearer control-secret"}):
+        for headers in ({}, {"X-UniLab-Token": "anything"}, {"Authorization": "Bearer wrong"}):
             rejected = client.post(STATION, json=body, headers=headers)
             assert rejected.status_code == 401 and rejected.json()["code"] == 1002
-        # 工站密钥不能代替控制面 token 做其他写操作
-        other = client.post("/api/v1/workflows", json={"name": "x"}, headers=AUTH)
-        assert other.status_code == 401
+            assert rejected.headers["www-authenticate"].startswith("Bearer")
+        # 其余写操作不鉴权：无凭据、带旧 token 头或带工站密钥都照常处理
+        for index, headers in enumerate(({}, {"X-UniLab-Token": "anything"}, AUTH)):
+            created = client.post("/api/v1/workflows", json={"name": f"x-{index}"}, headers=headers)
+            assert created.status_code in (200, 201) and created.json()["code"] == 0, created.text

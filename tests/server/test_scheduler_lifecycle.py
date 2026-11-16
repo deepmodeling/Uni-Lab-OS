@@ -7,8 +7,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
-from unilabos.config.config import BasicConfig
-from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.lifecycle import SchedulerLifecycle
 from unilabos.server.backend.restart import RestartCoordinator
@@ -140,33 +138,21 @@ def test_remote_runtime_and_scheduler_reservations_are_combined(stack, monkeypat
     assert status.active_device_job_count == 3
 
 
-def test_drain_api_authentication_readiness_and_idempotency(stack, monkeypatch):
+def test_drain_api_readiness_and_idempotency(stack, monkeypatch):
     scheduler, backend, _ = stack
-    monkeypatch.setattr(BasicConfig, "control_token", "test-lifecycle-token")
     app = create_backend_app(lambda: scheduler, lambda: backend)
-    app.add_middleware(ControlTokenMiddleware)
     with TestClient(app) as client:
         assert ok_data(client.get("/api/v1/scheduler/drain"))["phase"] == "running"
-        # 就绪 / 存活探针不包信封，仍按 HTTP 状态码判定
+        # 就绪 / 存活探针仍按 HTTP 状态码判定
         assert client.get("/api/v1/readiness").status_code == 200
-        error_of(client.post("/api/v1/scheduler/drain", json={}), 1002, status=401)
-        assert not scheduler.dispatch_paused
-        headers = {"X-UniLab-Token": "test-lifecycle-token"}
-        # Bearer 留给 V1 工站 api_key，不能代替控制面 token
-        error_of(
-            client.post("/api/v1/scheduler/drain", json={}, headers={"Authorization": "Bearer test-lifecycle-token"}),
-            1002,
-            status=401,
-        )
-        assert not scheduler.dispatch_paused
-        first = client.post("/api/v1/scheduler/drain", json={}, headers=headers)
-        second = client.post("/api/v1/scheduler/drain", json={}, headers=headers)
+        # 写操作不鉴权；旧客户端仍带的 X-UniLab-Token 直接忽略
+        first = client.post("/api/v1/scheduler/drain", json={})
+        second = client.post("/api/v1/scheduler/drain", json={}, headers={"X-UniLab-Token": "anything"})
         assert ok_data(first) == ok_data(second)
+        assert scheduler.dispatch_paused
         assert client.get("/api/v1/readiness").status_code == 503
         assert client.get("/api/v1/health").status_code == 200
-        error_of(client.post("/api/v1/scheduler/drain/resume", json={}), 1002, status=401)
-        assert scheduler.dispatch_paused
-        assert ok_data(client.post("/api/v1/scheduler/drain/resume", json={}, headers=headers))["phase"] == "running"
+        assert ok_data(client.post("/api/v1/scheduler/drain/resume", json={}))["phase"] == "running"
         assert client.get("/api/v1/readiness").status_code == 200
 
 

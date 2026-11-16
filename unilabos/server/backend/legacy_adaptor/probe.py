@@ -14,7 +14,6 @@ from typing import Literal, Optional
 import requests
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.config.control_token import client_headers
 from unilabos.utils import logger
 
 BackendProtocol = Literal["runtime.v1", "legacy"]
@@ -36,7 +35,7 @@ def _api_base(address: str) -> str:
 
 
 def _auth_headers() -> dict[str, str]:
-    return {"Authorization": f"Lab {BasicConfig.auth_secret()}", **client_headers()}
+    return {"Authorization": f"Lab {BasicConfig.auth_secret()}"}
 
 
 def _looks_like_runtime_v1(base: str, session: requests.Session) -> Optional[bool]:

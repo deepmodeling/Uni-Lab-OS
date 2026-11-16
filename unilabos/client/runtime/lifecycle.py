@@ -36,7 +36,7 @@ class SchedulerDrainTimeout(TimeoutError):
 
 
 class HTTPLifecycleClient:
-    """管理一个 backend 及其主 runtime；复用控制面 token 与地址规范化。"""
+    """管理一个 backend 及其主 runtime；复用地址规范化。"""
 
     def __init__(
         self,

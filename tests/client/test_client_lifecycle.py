@@ -10,9 +10,7 @@ from pydantic import ValidationError
 
 from tests.api_envelope import envelope
 from unilabos.client.runtime import HTTPLifecycleClient, SchedulerDrainTimeout
-from unilabos.config.config import BasicConfig
 from unilabos.protocol.runtime.lifecycle import RestartRequest, ResetRequest, SchedulerDrainStatus
-from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.runtime.diagnostics import create_backend_app
 from unilabos.server.backend.scheduler.service import BackendScheduler
 
@@ -35,12 +33,10 @@ def _mock_http(client, handler):
 
 
 def test_sdk_roundtrip_reuses_authority_token_and_handles_starting(monkeypatch):
-    monkeypatch.setattr(BasicConfig, "control_token", "test-sdk-token")
     workflow = MagicMock()
     workflow.connection.execute.return_value.fetchone.return_value = None  # 无需库存的空权威
     scheduler = BackendScheduler(workflow, MagicMock())
     app = create_backend_app(lambda: scheduler, lambda: SimpleNamespace())
-    app.add_middleware(ControlTokenMiddleware)
     with HTTPLifecycleClient("http://testserver/api/v1") as client:
         client._http._client.close()
         client._http._client = TestClient(app, base_url="http://testserver/api/v1")

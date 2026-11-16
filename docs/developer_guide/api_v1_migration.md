@@ -17,12 +17,13 @@
    以及 `server/api/edge_proxy.py` 的转发规则。不保留双路径别名。
 3. **dev 独有能力保留。** V1 没有的 dev 路由（如资源区间、借还、托管、包操作恢复、
    执行许可）保持现有路径，但响应信封与业务码也改为下述 V1 约定。
-4. **写操作保留 dev 控制面 token。** 前端改为在请求头 `X-UniLab-Token` 中携带 token。
-   `Authorization: Bearer` 留给 V1 工站调用的 api_key（`POST /api/v1/station/workflow-invocations`），
-   控制面中间件不再把 Bearer 当控制面 token，避免两者冲突。dev 内部客户端统一改用 `X-UniLab-Token`。
-   工站密钥（p7-d）：`BasicConfig.station_api_key`（环境变量 `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的
-   `UNILABOS_EDGECONTROLCONFIG_API_KEY`），为空时读 `<working_dir>/station_api_key`，不自动生成；都没有时工站入口一律
-   401。中间件对工站入口只认有效工站密钥（HTTP 401 + 1002），控制面 token 不能代替它，它也不能代替控制面 token。
+4. **管理 API 不鉴权（2026-11-17 起）。** dev 原来的控制面 token（`X-UniLab-Token`、`<working_dir>/control_token`、
+   `unilab token`，以及控制 WebSocket 握手的 1008 拒绝）已全部取消；旧客户端仍带 `X-UniLab-Token` 时忽略（CORS 预检
+   仍放行这个头）。唯一保留的是 V1 工站调用的 api_key：`POST /api/v1/station/workflow-invocations` 只认
+   `Authorization: Bearer <station_api_key>`（p7-d）：`BasicConfig.station_api_key`（环境变量
+   `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的 `UNILABOS_EDGECONTROLCONFIG_API_KEY`），为空时读
+   `<working_dir>/station_api_key`，不自动生成；都没有时工站入口一律 401 + 1002。检查在 `api/app.py` 的
+   `StationKeyMiddleware`，工站路由的依赖里再查一次。
 5. **全部 JSON API 使用 V1 信封与业务码**，包括物料、runtime、telemetry、history 等原来
    直出 DTO 的路由。
 6. **V1 独有领域全部迁移**：工站异常处理、试剂/样品/当前内容物/入站、工作区与布局、
@@ -38,7 +39,7 @@
 
 例外，仍用 HTTP 状态码表达：
 
-- 控制面 token 缺失或错误：HTTP 401，信封业务码 `1002`。
+- 工站密钥缺失或错误（只有 `POST /api/v1/station/workflow-invocations`）：HTTP 401，信封业务码 `1002`。
 - 请求体不是合法 JSON 或校验失败：HTTP 200，业务码 `1000`（所有 `/api/v1` 路由一律走信封，
   不再保留 FastAPI 默认 422）。
 - SSE（`text/event-stream`）、文件下载、健康探针 `/health` 的纯文本或流式响应不包信封。
@@ -51,9 +52,7 @@
 - V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、`/v1/logs/{component}`）按 V1
   原样：路径不带 `/api` 前缀、成功是裸 JSON（提交操作 HTTP 202），失败是 HTTP 状态码 + `{"error": {code, message,
   details?}}`（不存在 404、`operation_conflict` / `revision_conflict` 409、其余 400；dev 增加日志暂不可读 503
-  `component_unavailable`）。写操作仍要 `X-UniLab-Token`，被拒时是 HTTP 401 + V1 形状的
-  `{"error": {"code": "unauthorized"}}`（不是信封 1002）；读操作与其它 dev GET 一样不需要 token。详见下文
-  「进程管理协议（p8 落地）」。
+  `component_unavailable`）。不鉴权。详见下文「进程管理协议（p8 落地）」。
 - `POST /api/v1/inventory/commands` 按 V1 原样返回裸结果 `{command_id, status, result | error, error_code, replayed}`
   （V1 控制台按 `status` 判断，业务拒绝也是 HTTP 200）；拒绝结果另带 `code`（本表业务码）。它同时是 dev 全部
   `materials.v1` 幂等变更的唯一写入口（body 为带 `protocol_version` / `command_uuid` / `operation` 的变更信封，
@@ -77,7 +76,7 @@
   SSE、文件下载等非 JSON 响应与生成器端点自动透传。Host↔权威内部通道 `/api/v1/edge/http-responses/*`
   （以及 `/api/v1` 之外的 `/edge/commands/*`）保持普通路由：Host 回送结果时按 HTTP 状态判断成败。
   `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001。
-- **中间件级拒绝**保留 HTTP 状态码、正文是信封：控制面 token 401 + 1002，全量重置维护闸门 503 + 5001。
+- **中间件级拒绝**保留 HTTP 状态码、正文是信封：工站密钥 401 + 1002，全量重置维护闸门 503 + 5001。
 - 契约测试 `tests/server/test_api_envelope_contract.py` 会装配全部路由，断言每个 `/api/v1` JSON 路由都是
   信封路由（白名单只有上面的探针与内部通道）。新增路由器忘了用 `envelope_router` 会直接失败。
 - dev 内部调用方统一解包一次：`HTTPClient`（`envelope=False` 只给探针）、`client/utils/envelope.py` 的
@@ -95,7 +94,7 @@
 | 1 | 未归类内部错误 | V1/dev |
 | 1000 | 参数或载荷不合法 | V1/dev |
 | 1001 | 只读模式、调试不允许、设备动作不允许 | V1 |
-| 1002 | 写操作缺少或带错控制面 token（dev 原 4001，改号以免与 V1 冲突） | 统一分支 |
+| 1002 | 调用凭据无效：V1 工站调用缺少或带错工站密钥（HTTP 401；dev 原 4001，改号以免与 V1 冲突） | V1/统一分支 |
 | 2005 | 数据库冲突 | V1 |
 | 3002 | 工作流或任务不存在 | V1/dev |
 | 3003 | 状态冲突：修订过期、唯一键重复、状态不允许 | V1/dev |
@@ -188,7 +187,7 @@ PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `uni
 
 | V1 | dev |
 |---|---|
-| V1 Workspace Host 进程（`host` 段） | 常驻的调度权威进程（pid、管理地址、控制面 token 文件） |
+| V1 Workspace Host 进程（`host` 段） | 常驻的调度权威进程（pid、管理地址、平台；V1 的 `tokenPath` 不输出：没有 token 文件） |
 | 组件 `backend` | 调度权威本身（常驻；`metadata.scheduler` = 排空状态，`metadata.restart` = 重启协调器状态） |
 | 组件 `edge` | Host：默认拓扑是 `HostChildSupervisor` 看护的子进程（pid / 崩溃次数 / 退出码 + 控制面连接推导阶段）；`--role backend` 是经控制面接入的远端 Host（不受本进程看护）；单进程时就是本进程 |
 | （无） | 组件 `managed:<process_id>`：Host 的受管设备进程（`services/device_processes.py`），与 `/hostlink/log-sources` 的来源标识一致 |

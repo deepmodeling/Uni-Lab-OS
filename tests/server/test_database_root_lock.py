@@ -379,9 +379,6 @@ def test_real_split_runtime_locks_both_roots_and_survives_host_restart(tmp_path:
 
     def request(path: str, payload: Any = None) -> Any:
         headers = {"Content-Type": "application/json"}
-        token = work / "control_token"
-        if token.exists():
-            headers["X-UniLab-Token"] = token.read_text(encoding="utf-8").strip()
         data = None if payload is None else json.dumps(payload).encode()
         req = urllib.request.Request(f"http://127.0.0.1:{management}/api/v1{path}", data=data, headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:

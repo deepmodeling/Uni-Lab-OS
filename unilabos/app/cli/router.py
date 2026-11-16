@@ -12,7 +12,7 @@ from .package import (
 )
 
 CLIENT_COMMANDS = frozenset(
-    {"login", "logout", "whoami", "config", "material", "workflow", "graph", "token"}
+    {"login", "logout", "whoami", "config", "material", "workflow", "graph"}
 )
 PACKAGE_COMMANDS = frozenset({"package", "pkg"})
 RUNTIME_COMMANDS = frozenset({"runtime"})
@@ -418,14 +418,6 @@ def register_cli_commands(
         help="Output in JSON format (for AI agent consumption)",
     )
 
-    token_parser = subparsers.add_parser(
-        "token",
-        help="Print the control token that write requests need (OpenLabSite, scripts)",
-    )
-    token_parser.add_argument(
-        "--json", action="store_true", default=argparse.SUPPRESS, help="Output in JSON format."
-    )
-
     login_parser = subparsers.add_parser("login", help="Save ak/sk to session file")
     login_parser.add_argument("--ak", type=str, required=True, help="Access key")
     login_parser.add_argument("--sk", type=str, required=True, help="Secret key")
@@ -509,10 +501,9 @@ def _prepare_command_session(
     from unilabos.config.working_dir import resolve_working_dir
 
     working_dir = resolve_working_dir(values.get("working_dir"), values.get("config"))
-    # SDK 在工作目录里找控制面 token（写操作需要），与调度权威用同一个工作目录
     from unilabos.config.config import BasicConfig
 
-    # 同一解释器可以连续执行多个管理命令，不能沿用上一次目录的令牌。
+    # 与调度权威用同一个工作目录；同一解释器连续执行多个管理命令时不沿用上一次的目录。
     BasicConfig.working_dir = str(working_dir)
 
     address = values.get("address")
@@ -545,9 +536,7 @@ def run_client_command(
 
     session_manager = session_manager or _prepare_command_session(args, parser)
 
-    if command == "token":
-        _cmd_token(values, session_manager)
-    elif command == "login":
+    if command == "login":
         cmd_login(args, session_manager)
     elif command == "logout":
         cmd_logout(args, session_manager)
@@ -594,33 +583,6 @@ def run_client_command(
     sys.stdout.flush()
     sys.stderr.flush()
     return True
-
-
-def _cmd_token(values: dict[str, Any], session_manager: Any) -> None:
-    """打印控制面 token：stdout 只有 token 本身（便于 ``$(unilab token)``），说明写到 stderr。"""
-
-    import json
-
-    from unilabos.config.control_token import TOKEN_ENV, client_token, token_path
-
-    path = token_path(session_manager.working_dir)
-    token = client_token()
-    if not token:
-        print(
-            f"还没有控制面 token：{path} 不存在。先启动一次 unilab（调度权威首次启动时生成），"
-            f"或设置 BasicConfig.control_token / 环境变量 {TOKEN_ENV}。",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-    if values.get("json"):
-        print(json.dumps({"token": token, "path": str(path), "header": "X-UniLab-Token"}, ensure_ascii=False))
-        return
-    print(token)
-    print(
-        f"（来自 {path}；写请求带请求头 X-UniLab-Token: <token>，"
-        "OpenLabSite 在连接设置的「控制令牌」里填写）",
-        file=sys.stderr,
-    )
 
 
 def _run_doctor_command(args: argparse.Namespace) -> bool:

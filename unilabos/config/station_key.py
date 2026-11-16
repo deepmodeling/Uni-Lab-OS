@@ -6,11 +6,11 @@ V1 把这把密钥放在 ``EdgeControlConfig.api_key``（配置文件或环境�
 
 - ``BasicConfig.station_api_key``（配置文件 / 环境变量 ``UNILABOS_BASICCONFIG_STATION_API_KEY``）优先；
 - 为空时读 ``<working_dir>/station_api_key``（运维放置的文件，权威不自动生成：工站密钥由上游 Backend
-  分发，不能像控制面 token 那样本地生成）；
+  分发，不能本地生成）；
 - V1 的环境变量 ``UNILABOS_EDGECONTROLCONFIG_API_KEY`` 作为迁移兼容仍被识别。
 
-与控制面 token（``X-UniLab-Token``）是两把独立的密钥：控制面 token 不能调用工站入口，工站密钥也不能
-代替控制面 token 做其他写操作。本模块不依赖 FastAPI。
+这是管理 API 唯一的鉴权（检查在 ``api/app.py`` 的 ``StationKeyMiddleware`` 与工站入口路由的依赖里）；
+其余路由不鉴权。本模块不依赖 FastAPI。
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ STATION_KEY_ENV = "UNILABOS_BASICCONFIG_STATION_API_KEY"
 #: V1 ``EdgeControlConfig.api_key`` 的环境变量（迁移兼容）
 STATION_KEY_V1_ENV = "UNILABOS_EDGECONTROLCONFIG_API_KEY"
 STATION_KEY_FILENAME = "station_api_key"
-#: 只接受工站密钥、不接受控制面 token 的写入口（V1 工站调用）
+#: 只接受工站密钥的写入口（V1 工站调用）
 STATION_KEY_PATHS = ("/api/v1/station/workflow-invocations",)
 
 

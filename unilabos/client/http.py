@@ -1,7 +1,7 @@
 """HTTP 客户端
 
 基于 httpx 的 HTTP 客户端，提供：
-- ak/sk 认证（Authorization: Lab <base64(ak:sk)>）与控制面 token（X-UniLab-Token）
+- ak/sk 认证（Authorization: Lab <base64(ak:sk)>）
 - 重试机制（指数退避，仅对 5xx 和网络错误）
 - 响应信封解析：返回 ``data``；``code != 0`` 一律抛 :class:`EnvelopeError`（带业务码、
   符号码、details 与真实 HTTP 状态码），不论 HTTP 状态是 200（业务失败）还是 401 / 503
@@ -81,9 +81,6 @@ class HTTPClient:
             secret = self.get_auth_secret()
             if secret:
                 headers["Authorization"] = f"Lab {secret}"
-        from unilabos.config.control_token import client_headers
-
-        headers.update(client_headers())
         return headers
 
     def _request(self, method: str, path: str, *, envelope: Optional[bool] = None, **kwargs) -> Any:

@@ -535,9 +535,7 @@ class HTTPWorkflowClient:
             return
 
         deadline = time.monotonic() + timeout
-        from unilabos.config.control_token import client_headers
-
-        headers = {"Accept": "text/event-stream", "Cache-Control": "no-cache", **client_headers()}
+        headers = {"Accept": "text/event-stream", "Cache-Control": "no-cache"}
         if self._auth_secret:
             headers["Authorization"] = f"Lab {self._auth_secret}"
         if after > 0:

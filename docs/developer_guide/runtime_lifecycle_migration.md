@@ -13,7 +13,7 @@
 | 调度 | `unilabos/server/backend/scheduler/service.py` | 按来源保存派发暂停，覆盖已获派发许可到执行端登记之间的窗口 |
 | API | `unilabos/server/api/runtime/lifecycle.py` | V1 三条 drain 路由，装入现有 diagnostics router |
 | 现有生命周期 | `server/backend/restart.py`、`app/backend_main.py` | 重启和重置各自持有暂停来源，解除时保留其他来源 |
-| SDK | `unilabos/client/runtime/lifecycle.py` | HTTPLifecycleClient，复用 HTTPClient、地址规范化与控制面 token；不自动启动进程 |
+| SDK | `unilabos/client/runtime/lifecycle.py` | HTTPLifecycleClient，复用 HTTPClient 与地址规范化；不自动启动进程 |
 
 `server/backend` 放协调实现，公开 DTO 放 `protocol/runtime`，API 和 SDK 分别放 `server/api/runtime`、`client/runtime`。协议命名沿 Dev 的 runtime 层；`edge` 继续作为兼容的重启 scope，不做整仓名称替换。
 
@@ -29,7 +29,7 @@
 | `POST /api/v1/scheduler/drain` | 新增，幂等阻止新派发；已经获得许可的动作继续完成 |
 | `POST /api/v1/scheduler/drain/resume` | 新增，仅解除显式 drain |
 
-写请求使用请求头 `X-UniLab-Token`（不再接受 Bearer）；没有本地 Scheduler 的 Host 返回业务码 5001，客户端应连接 backend。三个 drain 路径和 `phase/active_device_job_count/active_device_job_ids` 保留 V1 最小合同，附加 `requested/dispatch_paused/pause_reasons`。已有 restart/reset DTO 的 diagnostics import 仍可用。
+写请求不需要凭据（控制面 token 已于 2026-11-17 取消）；没有本地 Scheduler 的 Host 返回业务码 5001，客户端应连接 backend。三个 drain 路径和 `phase/active_device_job_count/active_device_job_ids` 保留 V1 最小合同，附加 `requested/dispatch_paused/pause_reasons`。已有 restart/reset DTO 的 diagnostics import 仍可用。
 
 `phase` 的含义：未暂停为 running；已暂停且有在途作业为 draining；已暂停且无在途作业为 drained。drained 表示设备执行端排空，不代表所有工作流完成。排队节点、任务级暂停和人工确认等待都保留。执行态未知的设备 attempt 阻止排空，需先裁决。
 

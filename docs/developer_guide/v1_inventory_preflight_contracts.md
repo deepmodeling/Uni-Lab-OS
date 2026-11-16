@@ -82,7 +82,7 @@
 
 仅用于离散整数库存；重复相同命令幂等回放，版本变化或涉及预留/隔离/已登记实物的差异返回冲突。它记录人工核对，不冒充已验证的称重/计数设备 Job 证据。Local/HTTPMaterialsClient 同时提供 `preview_inventory` 与 `stocktake_inventory_lot`。
 
-这些 POST 路由沿用现有写请求 token 中间件；预检本身只读。
+这些 POST 路由与其它管理 API 一样不鉴权（控制面 token 已于 2026-11-17 取消）；预检本身只读。
 
 ## 容量
 

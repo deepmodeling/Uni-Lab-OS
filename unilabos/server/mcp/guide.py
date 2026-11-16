@@ -17,7 +17,7 @@ GUIDE = """# 本机 MCP / protocol
 - 每个业务工具与公开 HTTP 操作一一对应，名字将操作 ID 中的点/横线改成下划线。
 - path 填路径参数，query 填查询参数，body 填 protocol 定义的 JSON 请求体。
 - 输出 http_status + body 保留原始 HTTP 信封：成功 `{"code": 0, "data": ...}`，失败 HTTP 200 +
-  `{"code": 业务码, "error": {"msg": ...}}`（1000 参数、1002 token、3002 工作流/任务不存在、3003 状态冲突、
+  `{"code": 业务码, "error": {"msg": ...}}`（1000 参数、1002 工站密钥无效、3002 工作流/任务不存在、3003 状态冲突、
   4001 资源不存在、5001 暂不可用，物料 6000 段）。HTTP 错误或 code != 0 会标 isError；
   工作流业务终态 failed 则是一次成功查询得到的失败事实，不能改写成 succeeded。
 - 有分页的列表先用较小 page_size；大响应会存入有限、短期缓存，按 result_id 读，不会静默丢失。

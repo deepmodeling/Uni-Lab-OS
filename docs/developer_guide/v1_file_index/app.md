@@ -68,7 +68,7 @@ MISSING：`app/cli/lab.py`。
 | unilabos/app/web/__init__.py | 37 | N/A | — | 惰性导出 |
 | unilabos/app/web/api.py | 1435 | PORTED | `server/api/runtime/registry.py`（`/devices`、`/authoring/device-catalog`、`/online-devices`、`/actions`、`/devices/{id}/actions[/…/schema]`）、`server/api/runtime/workflow_definition.py`（`/job/*`）、`server/api/materials/resources.py`（`/resources`）、`server/api/workspace.py`（`/file-browser`）、`server/api/runtime/diagnostics.py`（`/health`） | 三个 `/ws/device_status\|registry_editor\|status_page` 与文件导入分析服务于旧页面，route map 标 V1-DEPRECATED |
 | unilabos/app/web/client.py | 816 | PORTED | `server/backend/legacy_adaptor/legacy/http.py:LegacyBackendHTTPClient`（文档串注明线协议一致） | V1 本地模式本就不挂这条云端桥 |
-| unilabos/app/web/console.py | 173 | DROPPED | D01（仓库无内置控制台，正式 UI 是 uni-lab-fe）；route map `GET /`、`MOUNT /console` 为 n/a | 附带的 Host 白名单 / 同源检查（默认关闭）没有对应；写操作改由 `ControlTokenMiddleware`（`X-UniLab-Token`）保护，读接口免 token（#9） |
+| unilabos/app/web/console.py | 173 | DROPPED | D01（仓库无内置控制台，正式 UI 是 uni-lab-fe）；route map `GET /`、`MOUNT /console` 为 n/a | 附带的 Host 白名单 / 同源检查（默认关闭）没有对应；dev 曾用控制面 token（`X-UniLab-Token`）保护写操作，11-17 取消，管理 API 不鉴权（只有工站调用要工站密钥） |
 | unilabos/app/web/controller.py | 626 | PORTED | `server/services/runtime/devices.py`（设备 / 动作 / schema / 忙闲）、`/job/add` 作为 ad-hoc 设备动作任务 | |
 | unilabos/app/web/device_catalog.py | 368 | PORTED | `server/services/runtime/devices.py`（`backend_devices`、`authoring_catalog`） | 字段与 V1 投影一致（含 `workflow_node_template_uuid`、`riskLevel`、输入输出 Schema、忙闲） |
 | unilabos/app/web/openapi_descriptions.py | 380 | PARTIAL | `server/openapi_export.py`（导出全集 + `x-openlab-role`）；说明来自处理函数文档串与少量 `summary=` | V1 为每个操作给出通俗中文 summary / description（禁用 backend、dto、信封、幂等等术语，`tests/app/test_openapi_documentation.py` 强制覆盖）；统一分支无这层，361 个路由装饰器中约 57 个带 `summary=` |
@@ -91,7 +91,7 @@ MISSING：`app/cli/lab.py`。
 | unilabos/client/__init__.py | 76 | N/A | `client/__init__.py` | 导出表 |
 | unilabos/client/domain.py | 768 | PORTED | `client/runtime/workflow.py:HTTPWorkflowClient`（list / inspect / create_task / command_task / wait_authoring / watch_task） | 差异：不再经 Workspace Host 发现 Authority（#1）；无 debug 任务（V1 410）；`inspect_task` 不带事件；`watch_task` 改为 SSE 失效通知 + HTTP 快照，不再读 `/workflow-tasks/{uuid}/events` 持久时间线 |
 | unilabos/client/envelope.py | 81 | PORTED | `client/utils/envelope.py` | 同时解析微后端 V1 信封与旧云端形状 |
-| unilabos/client/http.py | 146 | PORTED | `client/http.py` | 增加 `X-UniLab-Token`、`Retry-After` 重试 |
+| unilabos/client/http.py | 146 | PORTED | `client/http.py` | 增加 `Retry-After` 重试（曾带的 `X-UniLab-Token` 已随控制面 token 取消） |
 | unilabos/client/material_layout.py | 80 | PORTED | `client/runtime/lifecycle.py:HTTPLifecycleClient.execute_workspace_operation`（`material.layout.*`） | 无专用薄封装 |
 | unilabos/client/material_renderer.py | 390 | DROPPED | #1；`protocol/runtime/process_management.py:UNSUPPORTED_V1_COMMANDS` 的 `renderer.*`（「dev 不托管渲染器」） | Workbench renderer 自动化客户端 |
 | unilabos/client/material_template.py | 47 | DROPPED | #1；`material.template.validate` → 「物料模板由注册表权威在上报时校验」 | |
@@ -104,7 +104,7 @@ MISSING：`app/cli/lab.py`。
 | unilabos/workspace_host/authority_sync.py | 486 | DROPPED | #1；`authority.switch` 不支持 | |
 | unilabos/workspace_host/cli.py | 178 | DROPPED | #1；status/start/stop/restart/logs → `unilab runtime status\|drain\|resume\|restart\|reset`（`app/cli/runtime.py`）与 `/v1/*`；`workspace init` → `.cursor/skills/create-device-package` | |
 | unilabos/workspace_host/client.py | 274 | DROPPED | #1；替代为 `HTTPLifecycleClient.workspace_*`（`client/runtime/lifecycle.py`） | |
-| unilabos/workspace_host/discovery.py | 95 | DROPPED | #1；单实例锁 → `server/database/root_lock.py`，本地令牌 → control token | |
+| unilabos/workspace_host/discovery.py | 95 | DROPPED | #1；单实例锁 → `server/database/root_lock.py`；本地令牌不移植（dev 的控制面 token 也已于 11-17 取消） | |
 | unilabos/workspace_host/host.py | 2521 | DROPPED | #1；其协议 `/v1/snapshot`、`/v1/operations[/{id}]`、`/v1/logs/{component}` 已由 `server/api/process_management.py` + `server/services/process_management.py` 提供（route map p8，D02） | 抽查：FIFO 操作、重放 / 冲突 409、`expectedRevision`、未完成操作重启后 `operation_interrupted` 均在 |
 | unilabos/workspace_host/launch.py | 675 | DROPPED | #1 | backend / edge / PLC 启动计划；dev 由 `host_child_command` 派生 |
 | unilabos/workspace_host/material_layout.py | 488 | PORTED | `server/services/materials/workspace_layout.py`（`material.layout.inspect\|preview\|apply`） | 布局源由图文件改为 materials.db 物料树，修订 = 根树 `state_hash` 汇总；preview / apply CAS 语义保留 |

@@ -39,13 +39,19 @@
 | C01 | 远端 CI 待做 | 已消解 | #358 新增的 15 个文件全部在 #361 中；#361 合入后关闭 #358 |
 | T01 / T02 | TODO | **开放** | 等用户提供设备状态合同 / 工站测试材料 |
 | U01 | 待逐项核验 | 已核验 | 492 个 V1 源文件逐个对照，见 [`v1_file_index/`](v1_file_index/README.md)；找出的缺口与处理结论列在其 README「缺口处理」 |
-| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings`（建任务时落到冻结计划里对应的 `kind="content"` 需求，决定实际预留哪份试剂 / 当前内容物，对不上声明需求即拒绝；`tests/server/test_task_inventory_bindings.py`） / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `material_io` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 `X-UniLab-Token`、V1 信封、5001 + `Retry-After` 重试） |
+| F01–F07 | 前端与 Dev 不兼容 | 后端已就绪，**FE 待适配** | Dev 已按 V1 合同提供 `workflow_type` 与状态过滤、`inventory_bindings`（建任务时落到冻结计划里对应的 `kind="content"` 需求，决定实际预留哪份试剂 / 当前内容物，对不上声明需求即拒绝；`tests/server/test_task_inventory_bindings.py`） / `priority` / `expected_revision`、job 的 `topological_index` / `executor_kind`、`/inventory/*` 与 `/reagents`、`/devices` 与作者目录（节点模板含 `condition` / `loop` / `material_io` / `group` 结构模板）、任务展示 / 执行锁 / 人工确认 / 干预（`api_v1_route_map.md` p7-a–p7-d）；正式前端 uni-lab-fe 尚未改为调用它们（另需 V1 信封、5001 + `Retry-After` 重试；控制面 token 已于 11-17 取消，不再需要） |
 | F08 | Center 分流 | 不变 | Center / project / experiment 路由不属于 OS 本地 backend |
 | F09 | 未执行 | **开放** | FE 适配后与 T02 一起做浏览器联调 |
 
 11-09「作者语法的实测结果」现已变化：`workflow()` 仍需 `display_name`（保持必填）；锁写作 `with ctx.lock(...)`；`ctx.parallel` 已有；
 builder 模式已移除，工作流只按源码编译；支持等待测量结果再判断 `measurement.qualified`；
 `condition` 节点已接入调度器；`estimate_duration_*` 已实现（A01）。
+
+**2026-11-17 协议简化（负责人决定）。** 控制面 token 全部取消：管理 API 写请求、`/v1/*`、控制 WebSocket 握手
+（原 1008 拒绝）、`/edge/commands/*` 与 `/api/v1/edge/http-responses/*` 都不再鉴权，`<working_dir>/control_token`
+不再生成，`unilab token` 删除，SDK / Host / MCP 不再带 `X-UniLab-Token`（旧客户端带了也忽略）。唯一保留的凭据是
+V1 工站调用的 `Authorization: Bearer <station_api_key>`（`api/app.py` 的 `StationKeyMiddleware` + 路由依赖），业务码
+1002 只由它产生。
 
 剩余顺序建议：正式前端适配与 F09 / T02 联调 → U01 → T01。
 I02、W01、A03 `order_sensitive` 已完成；缺料是预检报错（任务级直接失败、动作级挂起待补料重试），只是被其他任务预留则排队等待（2026-11-16），执行中失败是执行报错（用户决定）；builder 模式已移除。

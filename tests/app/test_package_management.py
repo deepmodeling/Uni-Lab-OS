@@ -10,8 +10,6 @@ from fastapi.testclient import TestClient
 from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_cli_command
 from unilabos.client.http import HTTPClient
-from unilabos.config.config import BasicConfig
-from unilabos.server.api.app import ControlTokenMiddleware
 from unilabos.server.api.driver_packages import create_driver_packages_router
 from unilabos.server.services import driver_packages as dp
 
@@ -20,12 +18,10 @@ from unilabos.server.services import driver_packages as dp
 def package_stack(tmp_path, monkeypatch):
     service = dp.DriverPackageService(tmp_path / "host")
     monkeypatch.setattr(dp, "_service", service)
-    monkeypatch.setattr(BasicConfig, "control_token", "package-cli-test")
     installed = []
     monkeypatch.setattr(service, "_install_dependencies", lambda deps, upgrade, log: installed.append(deps) or "uv")
     app = FastAPI()
     app.include_router(create_driver_packages_router())
-    app.add_middleware(ControlTokenMiddleware)
     original = HTTPClient.__init__
 
     def connect(self, config, get_auth_secret=None):

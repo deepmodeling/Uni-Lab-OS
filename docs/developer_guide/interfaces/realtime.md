@@ -138,9 +138,9 @@ reset 表示文件轮转/进程重启等导致游标重新定位；truncated 表
 
 WebSocket 消息统一为 `{"action":"...","data":{...}}`。不是 HostLink 的 req/resp 信封。
 
-**鉴权。** 控制 WebSocket、`GET /edge/commands/{uuid}` 与 `POST /api/v1/edge/http-responses/{uuid}` 都要求
-控制面 token（只认请求头 `X-UniLab-Token`；`Authorization: Bearer` 留给 V1 工站 api_key）：握手缺失或不符时以
-HTTP 403 拒绝，HTTP 路由返回 401。这两条 Host↔权威内部 HTTP 通道不包信封。token 的来源见 [配置指南](../../advanced_usage/configuration.md) 的「控制面 token」。
+**鉴权。** 控制 WebSocket、`GET /edge/commands/{uuid}` 与 `POST /api/v1/edge/http-responses/{uuid}` 不鉴权
+（原来的控制面 token 已取消；旧 Host 仍带 `X-UniLab-Token` 时忽略）。控制通道只应暴露给可信网络：后连上控制
+WebSocket 的一方会接管 Host 会话（后来者赢）。
 
 | action | 方向 | data 模型 / 含义 |
 | --- | --- | --- |

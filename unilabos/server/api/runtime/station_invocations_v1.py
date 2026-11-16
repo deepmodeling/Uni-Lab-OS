@@ -1,7 +1,7 @@
 """V1 工站调用入口 ``POST /api/v1/station/workflow-invocations``（上游 Backend → 本工站）。
 
 鉴权按 V1：``Authorization: Bearer <station_api_key>``（密钥见 ``unilabos/config/station_key.py``），缺失或
-错误为 HTTP 401 + 信封 1002；控制面 token 不能代替工站密钥。控制面中间件在请求进入路由前已按同一规则放行
+错误为 HTTP 401 + 信封 1002。``api/app.py`` 的 ``StationKeyMiddleware`` 在请求进入路由前已按同一规则放行
 或拒绝，这里在依赖里再校验一次，使不经中间件装配的应用（测试、嵌入式）同样拒绝无密钥调用；依赖先于请求体
 校验执行，所以无密钥的非法请求也先得到 401。业务语义见 ``services/runtime/workflow/station_invocations.py``。
 """

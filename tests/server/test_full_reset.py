@@ -134,9 +134,6 @@ def test_full_reset_real_split_runtime(tmp_path):
     def request(path, payload=None):
         data = None if payload is None else json.dumps(payload).encode()
         headers = {"Content-Type": "application/json"}
-        token_path = work / "control_token"
-        if token_path.exists():
-            headers["X-UniLab-Token"] = token_path.read_text(encoding="utf-8").strip()
         req = urllib.request.Request(f"http://127.0.0.1:{management}/api/v1{path}", data=data,
                                      headers=headers)
         with urllib.request.urlopen(req, timeout=10) as response:

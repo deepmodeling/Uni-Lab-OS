@@ -39,26 +39,24 @@ Host 不在线或中继超时，Host 专属请求返回 **HTTP 200 + 业务码 5
 
 ## 认证与网络边界
 
-**写操作需要控制面 token。** 管理 API 的 POST / PUT / PATCH / DELETE 必须带请求头 `X-UniLab-Token: <token>`，
-即使只监听 127.0.0.1 也一样：CORS 默认放行所有来源（`BasicConfig.cors_allow_origins`），
-没有 token 时任何网页都能经浏览器向本机后端提交任务、启动设备。缺少或带错时返回 HTTP 401，
-正文是信封 `{"code": 1002, "error": {"msg": ...}}`，带 `WWW-Authenticate: X-UniLab-Token realm="unilab"`。
-读操作（GET、SSE `/api/v1/events`）不需要 token。
+**管理 API 不鉴权。** 读写请求（含 SSE `/api/v1/events`）都不需要任何凭据；原来的控制面 token
+（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）已取消，旧客户端仍带 `X-UniLab-Token`
+请求头时直接忽略（CORS 预检仍放行这个头，旧前端的跨域写请求不会被浏览器拦下）。CORS 默认放行所有来源
+（`BasicConfig.cors_allow_origins`），即任何能访问管理端口的网页都能经浏览器提交任务、启动设备：
+管理端口只应暴露给可信网络，对外部署要在反向代理上落实 TLS 与访问控制。CORS 放行的请求头包括
+`Authorization`、`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`（以及已取消的 `X-UniLab-Token`）。
 
-`Authorization: Bearer` **不再**被当作控制面 token：它留给 V1 工站调用的 api_key（`/stations/*`），
-只带 Bearer 的写请求同样返回 401 / 1002。CORS 放行的请求头包括 `X-UniLab-Token`、`Authorization`、
-`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`。
+**唯一的鉴权是 V1 工站调用。** `POST /api/v1/station/workflow-invocations` 只认
+`Authorization: Bearer <station_api_key>`（密钥见配置指南「管理 API 鉴权」）；缺失、错误或本机未配置密钥时返回
+HTTP 401，正文是信封 `{"code": 1002, "error": {"msg": ...}}`，带 `WWW-Authenticate: Bearer realm="unilab-station"`。
+检查在 `api/app.py` 的 `StationKeyMiddleware`，工站入口路由的依赖里再查一次（不经中间件装配的应用同样拒绝）。
 
-- token 由调度权威首次启动时生成在 `<工作目录>/control_token`（或取 `BasicConfig.control_token`），见配置指南「控制面 token」；
-  在同一台机器上执行 `unilab token` 打印它（stdout 只有 token 本身）。
-- `unilab` 启动时打开的导航页地址带 `#token=...`（URL 片段，不发给服务器），导航页只把它交给内置推荐前端
-  （OpenLabSite：`#/?backend=<地址>&token=<token>`），随后从地址栏抹掉；站点索引里的第三方前端拿不到。
-- Python SDK、CLI、Host 都会自动从配置 / 环境变量 / 工作目录里找到 token；MCP 端点 `/mcp` 不经此检查
-  （它只接受本机且拒绝一切浏览器 Origin），其工具在进程内调用 API 时自带 token。
+- `unilab` 启动时打开导航页 `/`；导航页把本机地址交给内置推荐前端（OpenLabSite：`#/?backend=<地址>`），
+  站点索引里的第三方前端拿不到。
+- MCP 端点 `/mcp` 只接受本机且拒绝一切浏览器 Origin；其工具在进程内经 ASGI 调用管理 API。
 
-对外部署仍需在可信网络或反向代理上落实 TLS 与访问控制：token 只证明调用方拿到了本机的这份密钥，
 驱动包安装、任务提交、干预和 reset 均可能改变设备或实验数据。SDK 中的 `Authorization: Lab <base64(ak:sk)>`
-是上游 Backend 认证能力，与控制面 token 无关。
+是上游 Backend 认证能力，与本机管理 API 无关。
 
 ## 响应信封
 
@@ -75,7 +73,7 @@ lab、诊断、生命周期、驱动包、受管进程、日志、debug）用同
 - 成功：HTTP 200（创建类 201、后台受理 202），`data` 是原来直出的 DTO / 数组；无数据的命令只有 `{"code":0}`。
 - 业务失败：**HTTP 200**，`error.msg` 为中文说明；`error.code`（符号码）与 `error.details` 只在 V1 同路由也输出时出现。
 - 请求体不是合法 JSON、请求体 / 查询参数校验失败：HTTP 200 + 1000，不再是 FastAPI 默认 422。
-- 中间件级拒绝保留 HTTP 状态码、正文仍是信封：控制面 token 缺失或错误 **401 + 1002**；全量重置维护闸门
+- 中间件级拒绝保留 HTTP 状态码、正文仍是信封：工站密钥缺失或错误 **401 + 1002**；全量重置维护闸门
   **503 + 5001**。
 - 不包信封：SSE（`/api/v1/events`、`/api/v1/materials/events`）、文件下载、存活 / 就绪探针
   `/api/v1/health` 与 `/api/v1/readiness`（探针按 HTTP 状态码判定，就绪失败仍是 503），以及 Host↔权威内部通道
@@ -93,7 +91,7 @@ materials.v1 的幂等写结果 `MutationResult`（含 `data`、账本区间与 
 | 1 | 未归类内部错误；检查 error.msg |
 | 1000 | 请求参数 / 载荷不合法：字段校验、JSON 解析、模板或 Site 绑定错误 |
 | 1001 | 只读模式、调试不允许、设备动作不允许、当前调度权威模式不允许 |
-| 1002 | 写操作缺少或带错控制面 token（HTTP 401；dev 旧码 4001 已改） |
+| 1002 | V1 工站调用缺少或带错工站密钥（HTTP 401；只由 `/station/workflow-invocations` 产生；dev 旧码 4001 已改） |
 | 2005 | 数据库冲突 |
 | 3002 | 工作流或任务（含节点运行、作业、人工确认）不存在 |
 | 3003 | 状态冲突：revision / hash 过期、唯一键重复、当前状态不允许该操作 |

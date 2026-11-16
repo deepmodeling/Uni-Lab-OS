@@ -770,12 +770,9 @@ class ProcessManagementService:
         return components, fingerprint
 
     def snapshot(self) -> dict[str, Any]:
-        from unilabos.config.control_token import token_path
-
         components, fingerprint = self._observe()
         revision = self.store.observe(fingerprint)
         working_dir = _working_dir()
-        token_file = token_path(working_dir)
         return {
             "schemaVersion": SCHEMA_VERSION,
             "revision": revision,
@@ -786,7 +783,6 @@ class ProcessManagementService:
                 "phase": "ready",
                 "pid": os.getpid(),
                 "endpoint": self._address(),
-                "tokenPath": str(token_file) if token_file.is_file() else None,
                 "platform": platform.system().lower(),
             },
             "configuration": {

@@ -224,11 +224,8 @@ class InstanceSynchronizer:
     ) -> Dict[str, Any]:
         url = f"{self.backend_api}{path}"
         target = urlsplit(url)
-        from unilabos.config.control_token import client_headers
-
         headers = dict(kwargs.pop("headers", {}) or {})
         headers.setdefault("Content-Type", "application/json")
-        headers.update(client_headers())
         with span(
             "edge.http.instance.sync",
             kind="client",

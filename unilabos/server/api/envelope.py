@@ -77,7 +77,7 @@ CODE_MESSAGES: Dict[int, str] = {
     INTERNAL_ERROR: "服务内部错误",
     INVALID_PARAMETER: "提交内容格式不正确",
     OPERATION_NOT_ALLOWED: "当前模式不允许该操作",
-    UNAUTHORIZED: "写操作需要有效的控制面 token",
+    UNAUTHORIZED: "调用凭据无效",
     DATABASE_CONFLICT: "数据库冲突",
     WORKFLOW_NOT_FOUND: "工作流或任务不存在",
     STATE_CONFLICT: "状态冲突，请刷新后重试",
@@ -173,7 +173,7 @@ def error_response(
     http_status: int = 200,
     headers: Optional[Mapping[str, str]] = None,
 ) -> EnvelopeResponse:
-    """失败信封：业务失败固定 HTTP 200；只有控制面 token（401）等中间件级拒绝带别的状态码。"""
+    """失败信封：业务失败固定 HTTP 200；只有工站密钥（401）等中间件级拒绝带别的状态码。"""
 
     return EnvelopeResponse(
         status_code=http_status,

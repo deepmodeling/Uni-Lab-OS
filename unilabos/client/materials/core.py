@@ -9,7 +9,6 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from unilabos.client.utils.envelope import APIHTTPError, EnvelopeError, request_json
-from unilabos.config.control_token import client_headers
 
 from unilabos.protocol.materials import InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
@@ -476,7 +475,7 @@ class HTTPMaterialsClient:
         self, method: str, path: str, body: Optional[Any] = None, *, root: bool = False, envelope: bool = True,
     ) -> Any:
         data = None
-        headers = {"Accept": "application/json", **client_headers()}
+        headers = {"Accept": "application/json"}
         if body is not None:
             if hasattr(body, "model_dump"):
                 body = body.model_dump(mode="json", exclude_none=False)

@@ -1,8 +1,8 @@
 """统一信封机制（``unilabos/server/api/envelope.py``）的契约测试。
 
 覆盖：成功包装、各类失败（HTTPException 按错误口径、ApiError、领域异常、请求校验、非法 JSON）、
-不包信封的端点（探针、SSE、未知异常）、完整装配后的 ``/api/v1`` 路由审计、控制面 token
-（只认 X-UniLab-Token，401 → 1002）、SSE 事件名映射与 Python 客户端解包。
+不包信封的端点（探针、SSE、未知异常）、完整装配后的 ``/api/v1`` 路由审计、工站密钥
+（401 → 1002）、SSE 事件名映射与 Python 客户端解包。
 """
 
 from __future__ import annotations
@@ -351,36 +351,44 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path) -> None:
             closer.close()
 
 
-# ── 控制面 token ─────────────────────────────────────────────────
+# ── 工站密钥（唯一的鉴权） ───────────────────────────────────────
 
 
-def _token_app() -> FastAPI:
-    from unilabos.server.api.app import ConfiguredCORSMiddleware, ControlTokenMiddleware
+def _station_app() -> FastAPI:
+    from unilabos.server.api.app import ConfiguredCORSMiddleware, StationKeyMiddleware
 
-    router = envelope_router(prefix="/api/v1/things")
+    router = envelope_router(prefix="/api/v1")
 
-    @router.post("")
+    @router.post("/things")
     def create() -> dict:
         return {"created": True}
 
+    @router.post("/station/workflow-invocations")
+    def invoke() -> dict:
+        return {"invoked": True}
+
     app = FastAPI()
     app.include_router(router)
-    app.add_middleware(ControlTokenMiddleware)
+    app.add_middleware(StationKeyMiddleware)
     app.add_middleware(ConfiguredCORSMiddleware)
     return app
 
 
-def test_control_token_only_accepts_x_unilab_token(monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "control_token", "secret")
+def test_station_key_rejection_is_401_with_code_1002_and_other_writes_are_open(monkeypatch) -> None:
+    monkeypatch.setattr(BasicConfig, "station_api_key", "station-secret")
     monkeypatch.setattr(BasicConfig, "cors_allow_origins", "*")
-    client = TestClient(_token_app())
-    missing = client.post("/api/v1/things", json={})
+    client = TestClient(_station_app())
+    missing = client.post("/api/v1/station/workflow-invocations", json={})
     error = error_of(missing, envelope.UNAUTHORIZED, status=401)
-    assert "X-UniLab-Token" in error["msg"]
-    assert missing.headers["www-authenticate"].startswith("X-UniLab-Token")
-    # Bearer 留给 V1 工站 api_key：控制面不再接受
-    error_of(client.post("/api/v1/things", json={}, headers={"Authorization": "Bearer secret"}), 1002, status=401)
-    assert ok_data(client.post("/api/v1/things", json={}, headers={"X-UniLab-Token": "secret"})) == {"created": True}
+    assert "station_api_key" in error["msg"]
+    assert missing.headers["www-authenticate"].startswith("Bearer")
+    accepted = client.post(
+        "/api/v1/station/workflow-invocations", json={}, headers={"Authorization": "Bearer station-secret"}
+    )
+    assert ok_data(accepted) == {"invoked": True}
+    # 其余写操作不鉴权；已取消的 X-UniLab-Token 照常带着也不影响
+    assert ok_data(client.post("/api/v1/things", json={})) == {"created": True}
+    assert ok_data(client.post("/api/v1/things", json={}, headers={"X-UniLab-Token": "stale"})) == {"created": True}
     preflight = client.options(
         "/api/v1/things",
         headers={
@@ -432,7 +440,6 @@ def _client_for(app: FastAPI, **config) -> HTTPClient:
 
 
 def test_http_client_unwraps_once_and_raises_typed_errors(monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "control_token", "")
     client = _client_for(_probe_app(WORKFLOW))
     assert client.get("/probe/item") == {"name": "a", "count": 0}
     assert client.delete("/probe/items/x") is None
@@ -446,12 +453,11 @@ def test_http_client_unwraps_once_and_raises_typed_errors(monkeypatch) -> None:
     assert client.get("/probe/health", envelope=False) == {"status": "ok"}
 
 
-def test_http_client_reports_the_token_rejection_as_1002(monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "control_token", "secret")
+def test_http_client_reports_the_station_key_rejection_as_1002(monkeypatch) -> None:
+    monkeypatch.setattr(BasicConfig, "station_api_key", "station-secret")
     monkeypatch.setattr(BasicConfig, "cors_allow_origins", "*")
-    monkeypatch.setattr("unilabos.config.control_token.client_token", lambda: "wrong")
     with pytest.raises(EnvelopeError) as caught:
-        _client_for(_token_app()).post("/things", json={})
+        _client_for(_station_app()).post("/station/workflow-invocations", json={})
     assert caught.value.code == 1002 and caught.value.http_status == 401
 
 

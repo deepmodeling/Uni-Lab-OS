@@ -22,10 +22,9 @@ def _app(tmp_path) -> TestClient:
 
 
 def test_code_table_is_shared() -> None:
-    # 旧类别名保留给外部调用方；unauthorized 按 V1 码表改为 1002（4001 是 V1 的「资源不存在」）
+    # 旧类别名保留给外部调用方；管理 API 不鉴权，「unauthorized」类别与 1002 一并删除
     assert BUSINESS_CODES == {
-        "ok": 0, "internal": 1, "invalid": 1000, "unauthorized": 1002, "not_found": 3002, "conflict": 3003,
-        "unavailable": 5001,
+        "ok": 0, "internal": 1, "invalid": 1000, "not_found": 3002, "conflict": 3003, "unavailable": 5001,
     }
 
 

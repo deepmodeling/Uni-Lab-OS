@@ -4,8 +4,8 @@
 - ak/sk 认证（Authorization: Lab <base64(ak:sk)>）
 - 重试机制（指数退避，仅对 5xx 和网络错误）
 - 响应信封解析：返回 ``data``；``code != 0`` 一律抛 :class:`EnvelopeError`（带业务码、
-  符号码、details 与真实 HTTP 状态码），不论 HTTP 状态是 200（业务失败）还是 401 / 503
-  （中间件级拒绝）
+  符号码、details 与真实 HTTP 状态码），不论 HTTP 状态是 200（业务失败）还是 404 / 503
+  （路由不存在 / 维护闸门等框架级拒绝）
 """
 
 import time

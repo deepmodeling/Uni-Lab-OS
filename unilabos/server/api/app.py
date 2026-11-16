@@ -16,8 +16,7 @@ from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.config.station_key import is_station_path, station_key_accepted
-from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, UNAUTHORIZED, error_response, install_envelope_fallback
+from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, error_response, install_envelope_fallback
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -113,8 +112,8 @@ class ConfiguredCORSMiddleware:
                 allow_origins=cors_allow_origins(),
                 allow_credentials=True,
                 allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-                # Authorization 留给 V1 工站 api_key（Bearer <station_api_key>）。X-UniLab-Token 是已取消的
-                # 控制面 token：旧前端仍会带它，预检必须放行，否则浏览器直接拦下写请求；服务端忽略其值。
+                # 管理 API 不鉴权。Authorization（已取消的 V1 工站密钥 Bearer <api_key>）与 X-UniLab-Token（已取消的
+                # 控制面 token）仍在允许列表里：旧客户端还会带它们，预检必须放行，否则浏览器直接拦下请求；服务端忽略其值。
                 allow_headers=[
                     "Authorization",
                     "Content-Type",
@@ -130,41 +129,6 @@ class ConfiguredCORSMiddleware:
         await self._inner(scope, receive, send)
 
 
-#: 需要工站密钥的 HTTP 方法（工站入口只有写操作）。
-WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-
-
-class StationKeyMiddleware:
-    """V1 工站调用（``STATION_KEY_PATHS``）只认工站密钥 ``Authorization: Bearer <station_api_key>``。
-
-    密钥见 ``unilabos/config/station_key.py``；缺失、错误或本机未配置密钥时一律 HTTP 401 +
-    信封 ``{"code": 1002, "error": {"msg": ...}}``（V1 同口径），经外层 CORS 中间件补上跨域头，
-    浏览器能读到原因。其余管理 API 不做鉴权（控制面 token 已取消，旧客户端带的 ``X-UniLab-Token``
-    请求头直接忽略）。
-    """
-
-    def __init__(self, app) -> None:
-        self._app = app
-
-    async def __call__(self, scope, receive, send) -> None:
-        if scope.get("type") == "http" and scope.get("method") in WRITE_METHODS and is_station_path(scope.get("path", "")):
-            from starlette.datastructures import Headers
-
-            if not station_key_accepted(Headers(scope=scope)):
-                response = error_response(
-                    UNAUTHORIZED,
-                    "工站调用凭据无效：请求头 Authorization: Bearer <station_api_key>",
-                    http_status=401,
-                    headers={"WWW-Authenticate": 'Bearer realm="unilab-station"'},
-                )
-                await response(scope, receive, send)
-                return
-        await self._app(scope, receive, send)
-
-
-# 中间件后加的在外层：先登记工站密钥检查、再登记 CORS，401 响应也带跨域头。
-# noinspection PyTypeChecker
-app.add_middleware(StationKeyMiddleware)
 # noinspection PyTypeChecker
 app.add_middleware(ConfiguredCORSMiddleware)
 # 不存在的路由（404）、方法不允许（405）也输出信封，保留原 HTTP 状态码

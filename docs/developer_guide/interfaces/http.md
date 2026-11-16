@@ -40,18 +40,14 @@ Host 不在线或中继超时，Host 专属请求返回 **HTTP 200 + 业务码 5
 
 ## 认证与网络边界
 
-**管理 API 不鉴权。** 读写请求（含 SSE `/api/v1/events`）都不需要任何凭据；原来的控制面 token
-（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）已取消，旧客户端仍带 `X-UniLab-Token`
-请求头时直接忽略（CORS 预检仍放行这个头，旧前端的跨域写请求不会被浏览器拦下）。CORS 默认放行所有来源
+**管理 API 不鉴权。** 读写请求（含 SSE `/api/v1/events` 与 V1 工站调用 `POST /api/v1/station/workflow-invocations`）
+都不需要任何凭据。原来的控制面 token（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）与 V1 工站密钥
+（`Authorization: Bearer <station_api_key>`、`<工作目录>/station_api_key`）都已取消，旧客户端仍带这两个请求头时直接
+忽略（CORS 预检仍放行它们，旧前端的跨域请求不会被浏览器拦下）。CORS 默认放行所有来源
 （`BasicConfig.cors_allow_origins`），即任何能访问管理端口的网页都能经浏览器提交任务、启动设备：
 管理端口只应暴露给可信网络，对外部署要在反向代理上落实 TLS 与访问控制。CORS 放行的请求头包括
-`Authorization`、`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`（以及已取消的 `X-UniLab-Token`）；
+`Authorization`、`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`、`X-UniLab-Token`（后两种凭据头只为兼容旧客户端）；
 暴露给浏览器的响应头有 `Retry-After`（Host 启动 / 重启中的 5001 带它，跨域前端据此安排重试）。
-
-**唯一的鉴权是 V1 工站调用。** `POST /api/v1/station/workflow-invocations` 只认
-`Authorization: Bearer <station_api_key>`（密钥见配置指南「管理 API 鉴权」）；缺失、错误或本机未配置密钥时返回
-HTTP 401，正文是信封 `{"code": 1002, "error": {"msg": ...}}`，带 `WWW-Authenticate: Bearer realm="unilab-station"`。
-检查在 `api/app.py` 的 `StationKeyMiddleware`，工站入口路由的依赖里再查一次（不经中间件装配的应用同样拒绝）。
 
 - `unilab` 启动时打开导航页 `/`；导航页把本机地址交给内置推荐前端（OpenLabSite：`#/?backend=<地址>`），
   站点索引里的第三方前端拿不到。
@@ -76,7 +72,7 @@ lab、诊断、健康 / 就绪探针、生命周期、驱动包、受管进程�
 - 成功：HTTP 200（创建类 201、后台受理 202），`data` 是原来直出的 DTO / 数组；无数据的命令只有 `{"code":0}`。
 - 业务失败：**HTTP 200**，`error.msg` 为中文说明；`error.code`（符号码）与 `error.details` 只在 V1 同路由也输出时出现。
 - 请求体不是合法 JSON、请求体 / 查询参数校验失败：HTTP 200 + 1000，不再是 FastAPI 默认 422。
-- 保留非 200 状态码、正文仍是信封的只有：工站密钥缺失或错误 **401 + 1002**；全量重置维护闸门 **503 + 5001**；
+- 保留非 200 状态码、正文仍是信封的只有：全量重置维护闸门 **503 + 5001**；
   就绪探针未就绪 **503 + 5001**（`error.code = "not_ready"`，`error.details` 是同样的就绪摘要，探针只看状态码）；
   不存在的路由 **404 + 4001**（`error.code = "not_found"`）、方法不允许 **405 + 1001**（`method_not_allowed`）。
 - 不包信封的只有 SSE（`/api/v1/events`、`/api/v1/materials/events`）与文件下载（物料 3D 模型资产）。
@@ -96,7 +92,6 @@ materials.v1 的幂等写结果 `MutationResult`（含 `data`、账本区间与 
 | 1 | 未归类内部错误；检查 error.msg |
 | 1000 | 请求参数 / 载荷不合法：字段校验、JSON 解析、模板或 Site 绑定错误 |
 | 1001 | 只读模式、调试不允许、设备动作不允许、当前调度权威模式不允许 |
-| 1002 | V1 工站调用缺少或带错工站密钥（HTTP 401；只由 `/station/workflow-invocations` 产生；dev 旧码 4001 已改） |
 | 2005 | 数据库冲突 |
 | 3002 | 工作流或任务（含节点运行、作业、人工确认）不存在 |
 | 3003 | 状态冲突：revision / hash 过期、唯一键重复、当前状态不允许该操作 |
@@ -108,7 +103,7 @@ materials.v1 的幂等写结果 `MutationResult`（含 `data`、账本区间与 
 | 5003 / 5004 | 模板定义不合法 / 模板数据冲突 |
 | 6000–6011 | 物料：6000 物料不存在、6001 模板不存在、6002 模板不可变、6003 父级不存在、6004 父级成环、6006 库位不存在、6007 库位已占用、6008 库位不允许该模板、6009 库位成环、6010 身份冲突、6011 仍被未结算动作占用 |
 
-HTTP 状态码到业务码的换算（路由抛 `HTTPException` 时）：400 / 422 → 1000，401 → 1002，403 → 1001，
+HTTP 状态码到业务码的换算（路由抛 `HTTPException` 时）：400 / 422 → 1000，403 → 1001，
 404 → 3002（工作流域）或 4001（其余），409 → 3003（物料 / 化学品 / 设备图域为 4002），503 → 5001，其余 → 1。
 dev 领域异常（`WorkflowError`、`MaterialNotFoundError`、`GraphError`、`ChemicalError` 等）的映射集中在
 `envelope.DOMAIN_ERRORS`。Python 客户端（`HTTPClient` 与各领域 HTTP 客户端）解包一次：返回 `data`，

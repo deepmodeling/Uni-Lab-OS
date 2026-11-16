@@ -2,7 +2,8 @@
 
 覆盖：成功包装、各类失败（HTTPException 按错误口径、ApiError、领域异常、请求校验、非法 JSON）、
 不包信封的端点（文件下载、SSE、未知异常）、应用级兜底（404 / 405）、完整装配后的全部 JSON 路由审计（含探针、
-``/v1/*`` 进程管理、Host↔权威内部通道与库存命令）、工站密钥（401 → 1002）、SSE 事件名映射与 Python 客户端解包。
+``/v1/*`` 进程管理、Host↔权威内部通道与库存命令）、管理 API 不鉴权（旧凭据请求头被忽略、码表里没有 1002）、
+SSE 事件名映射与 Python 客户端解包。
 """
 
 from __future__ import annotations
@@ -143,9 +144,13 @@ def test_http_exceptions_map_to_business_codes_at_http_200(profile, status, code
     assert error == {"msg": f"status {status}"}
 
 
-def test_401_keeps_its_http_status_with_code_1002() -> None:
+def test_no_route_produces_401_or_code_1002() -> None:
+    """管理 API 不鉴权：码表里没有「未授权」，路由里偶然抛出的 401 也只是未归类的业务失败（HTTP 200 + 1）。"""
+
+    assert not hasattr(envelope, "UNAUTHORIZED") and 1002 not in envelope.CODE_MESSAGES
+    assert "unauthorized" not in envelope.BUSINESS_CODES
     client = TestClient(_probe_app())
-    assert error_of(client.get("/api/v1/probe/status/401"), envelope.UNAUTHORIZED, status=401)
+    assert error_of(client.get("/api/v1/probe/status/401"), envelope.INTERNAL_ERROR) == {"msg": "status 401"}
 
 
 def test_api_error_carries_symbol_and_details() -> None:
@@ -252,7 +257,7 @@ def _chemical(code: str):
 
 def test_code_table_matches_v1() -> None:
     assert {
-        "INVALID_PARAMETER": 1000, "OPERATION_NOT_ALLOWED": 1001, "UNAUTHORIZED": 1002, "DATABASE_CONFLICT": 2005,
+        "INVALID_PARAMETER": 1000, "OPERATION_NOT_ALLOWED": 1001, "DATABASE_CONFLICT": 2005,
         "WORKFLOW_NOT_FOUND": 3002, "STATE_CONFLICT": 3003, "REAGENT_INFO_IN_USE": 4000,
         "RESOURCE_NOT_FOUND": 4001, "RESOURCE_DATA_CONFLICT": 4002, "RESOURCE_TEMPLATE_NOT_FOUND": 5000,
         "SERVICE_UNAVAILABLE": 5001, "TEMPLATE_DEFINITION_INVALID": 5003, "TEMPLATE_DATA_CONFLICT": 5004,
@@ -261,7 +266,7 @@ def test_code_table_matches_v1() -> None:
         "MATERIAL_SITE_OCCUPIED": 6007, "MATERIAL_SITE_TEMPLATE_NOT_ALLOWED": 6008, "MATERIAL_SITE_CYCLE": 6009,
         "MATERIAL_IDENTITY_CONFLICT": 6010, "MATERIAL_ACTIVE_CLAIM_CONFLICT": 6011,
     } == {name: getattr(envelope, name) for name in (
-        "INVALID_PARAMETER", "OPERATION_NOT_ALLOWED", "UNAUTHORIZED", "DATABASE_CONFLICT", "WORKFLOW_NOT_FOUND",
+        "INVALID_PARAMETER", "OPERATION_NOT_ALLOWED", "DATABASE_CONFLICT", "WORKFLOW_NOT_FOUND",
         "STATE_CONFLICT", "REAGENT_INFO_IN_USE", "RESOURCE_NOT_FOUND", "RESOURCE_DATA_CONFLICT",
         "RESOURCE_TEMPLATE_NOT_FOUND", "SERVICE_UNAVAILABLE", "TEMPLATE_DEFINITION_INVALID",
         "TEMPLATE_DATA_CONFLICT", "MATERIAL_NOT_FOUND", "MATERIAL_TEMPLATE_NOT_FOUND",
@@ -269,7 +274,7 @@ def test_code_table_matches_v1() -> None:
         "MATERIAL_SITE_NOT_FOUND", "MATERIAL_SITE_OCCUPIED", "MATERIAL_SITE_TEMPLATE_NOT_ALLOWED",
         "MATERIAL_SITE_CYCLE", "MATERIAL_IDENTITY_CONFLICT", "MATERIAL_ACTIVE_CLAIM_CONFLICT",
     )}
-    assert set(envelope.CODE_MESSAGES) >= {0, 1, 1000, 1001, 1002, 3002, 3003, 4001, 5001, 6000}
+    assert set(envelope.CODE_MESSAGES) >= {0, 1, 1000, 1001, 3002, 3003, 4001, 5001, 6000}
 
 
 # ── 完整装配后的路由审计 ─────────────────────────────────────────
@@ -407,11 +412,11 @@ def test_http_client_reports_unmatched_routes_with_the_business_code() -> None:
     assert (caught.value.code, caught.value.symbol, caught.value.http_status) == (4001, "not_found", 404)
 
 
-# ── 工站密钥（唯一的鉴权） ───────────────────────────────────────
+# ── 不鉴权：旧凭据请求头被忽略 ─────────────────────────────────────
 
 
-def _station_app() -> FastAPI:
-    from unilabos.server.api.app import ConfiguredCORSMiddleware, StationKeyMiddleware
+def _open_app() -> FastAPI:
+    from unilabos.server.api.app import ConfiguredCORSMiddleware
 
     router = envelope_router(prefix="/api/v1")
 
@@ -425,26 +430,17 @@ def _station_app() -> FastAPI:
 
     app = FastAPI()
     app.include_router(router)
-    app.add_middleware(StationKeyMiddleware)
     app.add_middleware(ConfiguredCORSMiddleware)
     return app
 
 
-def test_station_key_rejection_is_401_with_code_1002_and_other_writes_are_open(monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "station_api_key", "station-secret")
+def test_writes_and_station_calls_ignore_stale_credentials(monkeypatch) -> None:
     monkeypatch.setattr(BasicConfig, "cors_allow_origins", "*")
-    client = TestClient(_station_app())
-    missing = client.post("/api/v1/station/workflow-invocations", json={})
-    error = error_of(missing, envelope.UNAUTHORIZED, status=401)
-    assert "station_api_key" in error["msg"]
-    assert missing.headers["www-authenticate"].startswith("Bearer")
-    accepted = client.post(
-        "/api/v1/station/workflow-invocations", json={}, headers={"Authorization": "Bearer station-secret"}
-    )
-    assert ok_data(accepted) == {"invoked": True}
-    # 其余写操作不鉴权；已取消的 X-UniLab-Token 照常带着也不影响
-    assert ok_data(client.post("/api/v1/things", json={})) == {"created": True}
-    assert ok_data(client.post("/api/v1/things", json={}, headers={"X-UniLab-Token": "stale"})) == {"created": True}
+    client = TestClient(_open_app())
+    for headers in ({}, {"Authorization": "Bearer old-station-key"}, {"X-UniLab-Token": "stale"}):
+        assert ok_data(client.post("/api/v1/station/workflow-invocations", json={}, headers=headers)) == {"invoked": True}
+        assert ok_data(client.post("/api/v1/things", json={}, headers=headers)) == {"created": True}
+    # 旧客户端仍带这两个请求头：预检必须放行，否则浏览器直接拦下请求
     preflight = client.options(
         "/api/v1/things",
         headers={
@@ -509,14 +505,6 @@ def test_http_client_unwraps_once_and_raises_typed_errors(monkeypatch) -> None:
     assert client.get("/probe/raw", envelope=False) == {"status": "ok"}
 
 
-def test_http_client_reports_the_station_key_rejection_as_1002(monkeypatch) -> None:
-    monkeypatch.setattr(BasicConfig, "station_api_key", "station-secret")
-    monkeypatch.setattr(BasicConfig, "cors_allow_origins", "*")
-    with pytest.raises(EnvelopeError) as caught:
-        _client_for(_station_app()).post("/station/workflow-invocations", json={})
-    assert caught.value.code == 1002 and caught.value.http_status == 401
-
-
 def test_body_decoder_and_domain_client_errors() -> None:
     assert decode_json_body(b'{"code":0,"data":[1]}') == [1]
     assert decode_json_body(b'{"code":0}') is None
@@ -529,9 +517,11 @@ def test_body_decoder_and_domain_client_errors() -> None:
     with pytest.raises(ValueError):
         decode_json_body(b'{"status":"ok"}')
     assert decode_json_body(b'{"status":"ok"}', envelope=False) == {"status": "ok"}
-    assert [http_status_for_code(code) for code in (1000, 1002, 3002, 3003, 4001, 4002, 5001, 6007, 1)] == [
-        422, 401, 404, 409, 404, 409, 503, 409, 500,
+    assert [http_status_for_code(code) for code in (1000, 1001, 3002, 3003, 4001, 4002, 5001, 6007, 1)] == [
+        422, 403, 404, 409, 404, 409, 503, 409, 500,
     ]
+    # 1002 已不在码表里：按未归类处理
+    assert http_status_for_code(1002) == 500
 
     class DemoHTTPError(APIHTTPError):
         api_name = "demo"

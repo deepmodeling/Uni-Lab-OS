@@ -10,9 +10,10 @@ from unilabos.utils import logger
 HOST_NODE_REGISTRY_NAME = "host_node"
 DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
 _ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# 已删除的配置字段：旧配置文件 / 环境变量里还写着时静默忽略（control_token：控制面 token 已取消）。
+# 已删除的配置字段：旧配置文件 / 环境变量里还写着时静默忽略（control_token / station_api_key：控制面 token 与
+# V1 工站密钥已取消，管理 API 不鉴权）。
 _REMOVED_CONFIG_FIELDS = {
-    "BasicConfig": frozenset({"app_bridges", "communication_protocol", "control_token"}),
+    "BasicConfig": frozenset({"app_bridges", "communication_protocol", "control_token", "station_api_key"}),
 }
 # 与配置覆盖共用 UNILABOS_ 前缀、但由进程编排 / 可观测性模块自行读取的环境变量，
 # 不是 ``UNILABOS_<Config类>_<字段>`` 覆盖，解析时直接跳过（不告警）。
@@ -28,7 +29,7 @@ _NON_CONFIG_ENV_KEYS = frozenset(
 
 
 # 值不进日志的配置字段（小写）。
-_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "station_api_key"})
+_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk"})
 
 
 class BasicConfig:
@@ -37,11 +38,6 @@ class BasicConfig:
     ak = ""
     sk = ""
     working_dir = ""
-    # V1 工站调用（``POST /api/v1/station/workflow-invocations``）的协议密钥，对应 V1 的
-    # ``EdgeControlConfig.api_key``：上游 Backend 以 ``Authorization: Bearer <key>`` 调用。
-    # 留空时读 <working_dir>/station_api_key（不自动生成）；都没有则工站调用一律 401。
-    # 见 unilabos/config/station_key.py。
-    station_api_key = ""
     # 允许跨域访问管理 API 的来源，逗号分隔（如 "https://xuwznln.github.io,http://localhost:5173"）；
     # "*" 为全部允许（默认）。
     cors_allow_origins = "*"

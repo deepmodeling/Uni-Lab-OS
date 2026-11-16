@@ -51,11 +51,11 @@ Uni-Lab-OS 的 `8002` 端口提供微后端 API 和入口导航页。用户界�
 
 - 全部 JSON 响应（含健康 / 就绪探针、`/v1/*` 进程管理、库存命令和 Host↔权威内部通道）都是统一信封
   `{"code": 0, "data": ...}` / `{"code": N, "error": {"msg", "code"?, "details"?}}`，业务失败为 HTTP 200。保留其它状态码
-  的只有：工站密钥 401 + 1002、全量重置维护闸门 503 + 5001、就绪探针未就绪 503 + 5001（摘要在 `error.details`）、
+  的只有：全量重置维护闸门 503 + 5001、就绪探针未就绪 503 + 5001（摘要在 `error.details`）、
   不存在的路由 404 + 4001 / 方法不允许 405 + 1001。只有 SSE 与文件下载不包信封。码表见
   [HTTP 接入](interfaces/http.md#响应信封)。
-- 管理 API 不鉴权（控制面 token 已取消，旧客户端带的 `X-UniLab-Token` 被忽略）；唯一的凭据是 V1 工站调用
-  `POST /api/v1/station/workflow-invocations` 的 `Authorization: Bearer <station_api_key>`。管理端口只应暴露给可信网络。
+- 管理 API 不鉴权（含 V1 工站调用 `POST /api/v1/station/workflow-invocations`）：控制面 token 与 V1 工站密钥都已取消，
+  旧客户端带的 `X-UniLab-Token` / `Authorization: Bearer` 被忽略。管理端口只应暴露给可信网络。
 
 ## Backend 控制面
 

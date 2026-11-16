@@ -1,7 +1,6 @@
-"""管理 API 与控制面不再有控制面 token：写请求、控制 WebSocket 与 Host 专属路由都不鉴权，旧客户端带的
-``X-UniLab-Token`` 被忽略；CORS 可配置；导航页只把后端地址交给内置前端；旧配置项静默忽略。
-
-唯一保留的鉴权是 V1 工站密钥（见 ``tests/server/test_station_invocations_v1.py``）。
+"""管理 API 与控制面不鉴权：控制面 token 与 V1 工站密钥都已取消，写请求、工站调用、控制 WebSocket 与 Host
+专属路由都不检查凭据，旧客户端带的 ``X-UniLab-Token`` / ``Authorization: Bearer`` 被忽略；CORS 可配置；导航页只把
+后端地址交给内置前端；旧配置项静默忽略。
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from unilabos.protocol.runtime.control import EdgeHttpResponse
 from unilabos.server.api.app import (
     RECOMMENDED_FRONTENDS,
     ConfiguredCORSMiddleware,
-    StationKeyMiddleware,
     _render_catalog_page,
     browser_landing_url,
 )
@@ -34,25 +32,33 @@ def _isolated_config(monkeypatch, tmp_path):
     yield
 
 
-def test_control_token_module_and_config_field_are_gone() -> None:
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("unilabos.config.control_token")
-    assert not hasattr(BasicConfig, "control_token")
+def test_credential_modules_and_config_fields_are_gone() -> None:
+    for module in ("unilabos.config.control_token", "unilabos.config.station_key"):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module)
+    assert not hasattr(BasicConfig, "control_token") and not hasattr(BasicConfig, "station_api_key")
+    import unilabos.server.api.app as app_module
+
+    assert not hasattr(app_module, "StationKeyMiddleware") and not hasattr(app_module, "ControlTokenMiddleware")
 
 
-def test_old_control_token_config_and_env_are_ignored_quietly(monkeypatch, caplog) -> None:
+def test_old_credential_config_and_env_are_ignored_quietly(monkeypatch, caplog) -> None:
     from unilabos.config import config as config_module
 
     module = ModuleType("lab_old_config")
-    module.BasicConfig = type("BasicConfig", (), {"control_token": "left-over", "cors_allow_origins": "*"})
+    module.BasicConfig = type(
+        "BasicConfig", (), {"control_token": "left-over", "station_api_key": "left-over", "cors_allow_origins": "*"}
+    )
     config_module._update_config_from_module(module)
-    assert not hasattr(BasicConfig, "control_token")
+    assert not hasattr(BasicConfig, "control_token") and not hasattr(BasicConfig, "station_api_key")
 
     monkeypatch.setenv("UNILABOS_BASICCONFIG_CONTROL_TOKEN", "left-over")
+    monkeypatch.setenv("UNILABOS_BASICCONFIG_STATION_API_KEY", "left-over")
     with caplog.at_level(logging.INFO):
         config_module._update_config_from_env()
-    assert not hasattr(BasicConfig, "control_token")
-    assert "CONTROL_TOKEN" not in caplog.text and "left-over" not in caplog.text
+    assert not hasattr(BasicConfig, "control_token") and not hasattr(BasicConfig, "station_api_key")
+    assert "CONTROL_TOKEN" not in caplog.text and "STATION_API_KEY" not in caplog.text
+    assert "left-over" not in caplog.text
 
 
 @pytest.fixture
@@ -89,7 +95,6 @@ def test_control_websocket_and_host_routes_need_no_token(control_app) -> None:
 
 def _write_app() -> FastAPI:
     app = FastAPI()
-    app.add_middleware(StationKeyMiddleware)
     app.add_middleware(ConfiguredCORSMiddleware)
 
     @app.post("/api/v1/things")
@@ -230,7 +235,6 @@ def test_mcp_in_process_writes_reach_the_routes(tmp_path) -> None:
 
     service = MaterialsService(tmp_path / "materials.db")
     app = FastAPI()
-    app.add_middleware(StationKeyMiddleware)
     install_materials_api(app, service)
     protocol = ProtocolMCP(app, export_openapi())
     try:

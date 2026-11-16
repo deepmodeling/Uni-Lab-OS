@@ -17,8 +17,8 @@
   保留原 HTTP 状态码。
 
 业务码表以 V1 为准（``unilabos/app/scheduler/inventory/backend_contract.py`` 与
-``workflow_api._business_code``），dev 原来的 ``unauthorized = 4001`` 改为 ``1002``，以免与 V1
-的 4001（资源不存在）冲突。dev 领域异常到业务码的映射集中在本模块 :data:`DOMAIN_ERRORS`，
+``workflow_api._business_code``）。管理 API 不鉴权（控制面 token 与 V1 工站密钥都已取消），所以没有
+「未授权」业务码（dev 原来的 4001 与后来的 1002 都已删除）。dev 领域异常到业务码的映射集中在本模块 :data:`DOMAIN_ERRORS`，
 路由里不写业务码数字。约定见 ``docs/developer_guide/api_v1_migration.md``。
 """
 
@@ -51,7 +51,6 @@ OK = 0
 INTERNAL_ERROR = 1
 INVALID_PARAMETER = 1000
 OPERATION_NOT_ALLOWED = 1001
-UNAUTHORIZED = 1002
 DATABASE_CONFLICT = 2005
 WORKFLOW_NOT_FOUND = 3002
 STATE_CONFLICT = 3003
@@ -80,7 +79,6 @@ CODE_MESSAGES: Dict[int, str] = {
     INTERNAL_ERROR: "服务内部错误",
     INVALID_PARAMETER: "提交内容格式不正确",
     OPERATION_NOT_ALLOWED: "当前模式不允许该操作",
-    UNAUTHORIZED: "调用凭据无效",
     DATABASE_CONFLICT: "数据库冲突",
     WORKFLOW_NOT_FOUND: "工作流或任务不存在",
     STATE_CONFLICT: "状态冲突，请刷新后重试",
@@ -109,7 +107,6 @@ BUSINESS_CODES: Dict[str, int] = {
     "ok": OK,
     "internal": INTERNAL_ERROR,
     "invalid": INVALID_PARAMETER,
-    "unauthorized": UNAUTHORIZED,
     "not_found": WORKFLOW_NOT_FOUND,
     "conflict": STATE_CONFLICT,
     "unavailable": SERVICE_UNAVAILABLE,
@@ -176,7 +173,7 @@ def error_response(
     http_status: int = 200,
     headers: Optional[Mapping[str, str]] = None,
 ) -> EnvelopeResponse:
-    """失败信封：业务失败固定 HTTP 200；只有工站密钥（401）等中间件级拒绝带别的状态码。"""
+    """失败信封：业务失败固定 HTTP 200；只有维护闸门、就绪探针（503）与路由不存在（404 / 405）等带别的状态码。"""
 
     return EnvelopeResponse(
         status_code=http_status,
@@ -249,8 +246,6 @@ def code_for_status(status: int, profile: ErrorProfile = GENERIC) -> int:
 
     if status in (400, 422):
         return INVALID_PARAMETER
-    if status == 401:
-        return UNAUTHORIZED
     if status == 403:
         return OPERATION_NOT_ALLOWED
     if status == 404:
@@ -537,7 +532,6 @@ def to_api_error(exc: BaseException, profile: ErrorProfile = GENERIC) -> Optiona
             code,
             message,
             details=details,
-            http_status=401 if code == UNAUTHORIZED else 200,
             headers=getattr(exc, "headers", None),
         )
     for cls in type(exc).__mro__:
@@ -655,7 +649,6 @@ def _rewrap_response(response: Response, profile: ErrorProfile) -> Response:
         code,
         message,
         details=details,
-        http_status=401 if code == UNAUTHORIZED else 200,
         headers=headers,
     )
 
@@ -819,7 +812,6 @@ __all__ = [
     "INTERNAL_ERROR",
     "INVALID_PARAMETER",
     "OPERATION_NOT_ALLOWED",
-    "UNAUTHORIZED",
     "DATABASE_CONFLICT",
     "WORKFLOW_NOT_FOUND",
     "STATE_CONFLICT",

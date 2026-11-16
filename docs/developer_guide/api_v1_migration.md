@@ -18,12 +18,10 @@
 3. **dev 独有能力保留。** V1 没有的 dev 路由（如资源区间、借还、托管、包操作恢复、
    执行许可）保持现有路径，但响应信封与业务码也改为下述 V1 约定。
 4. **管理 API 不鉴权（2026-11-17 起）。** dev 原来的控制面 token（`X-UniLab-Token`、`<working_dir>/control_token`、
-   `unilab token`，以及控制 WebSocket 握手的 1008 拒绝）已全部取消；旧客户端仍带 `X-UniLab-Token` 时忽略（CORS 预检
-   仍放行这个头）。唯一保留的是 V1 工站调用的 api_key：`POST /api/v1/station/workflow-invocations` 只认
-   `Authorization: Bearer <station_api_key>`（p7-d）：`BasicConfig.station_api_key`（环境变量
-   `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的 `UNILABOS_EDGECONTROLCONFIG_API_KEY`），为空时读
-   `<working_dir>/station_api_key`，不自动生成；都没有时工站入口一律 401 + 1002。检查在 `api/app.py` 的
-   `StationKeyMiddleware`，工站路由的依赖里再查一次。
+   `unilab token`，以及控制 WebSocket 握手的 1008 拒绝）与 V1 工站调用的 api_key（p7-d 移植的
+   `Authorization: Bearer <station_api_key>`、`BasicConfig.station_api_key`、`<working_dir>/station_api_key`）都已取消；
+   旧客户端仍带 `X-UniLab-Token` / `Authorization` 时忽略（CORS 预检仍放行这两个头），旧配置字段与环境变量静默忽略。
+   因此没有「未授权」业务码（1002 已从码表删除）。
 5. **全部 JSON API 使用 V1 信封与业务码**，包括物料、runtime、telemetry、history 等原来
    直出 DTO 的路由。2026-11-17 起（负责人「能统一全部统一」）原来的例外也改为信封：健康 / 就绪探针、
    V1 进程管理 `/v1/*`、库存命令 `POST /api/v1/inventory/commands`、Host↔权威内部通道、不存在的路由；只有 SSE
@@ -41,7 +39,6 @@
 
 下列情况保留非 200 的 HTTP 状态码，但正文同样是信封：
 
-- 工站密钥缺失或错误（只有 `POST /api/v1/station/workflow-invocations`）：HTTP 401，业务码 `1002`。
 - 全量重置维护闸门：HTTP 503，业务码 `5001`。
 - 就绪探针 `GET /api/v1/readiness`：就绪 HTTP 200 + `{"code": 0, "data": <摘要>}`；未就绪 HTTP 503 +
   `{"code": 5001, "error": {"msg": <原因>, "code": "not_ready", "details": <同样的摘要>}}`（探针只看状态码；HTTP 503
@@ -86,13 +83,13 @@
 - **失败只抛异常**：`ApiError(业务码常量, msg, symbol=?, details=?)`；dev 服务层异常登记在
   `envelope.DOMAIN_ERRORS`（按异常类完整路径沿 MRO 匹配）；过渡期的 `HTTPException` 按路由器的错误口径
   换算：`WORKFLOW`（404→3002）、`RESOURCE`（404→4001、409→4002）、`GENERIC`（404→4001、409→3003）；
-  400 / 422→1000，401→1002（保留 HTTP 401），403→1001，503→5001，其余→1。请求校验失败与非法 JSON 在
+  400 / 422→1000，403→1001，503→5001，其余→1。请求校验失败与非法 JSON 在
   路由类里就地换成 1000，不再依赖应用级异常处理器或路径前缀登记。未登记的异常照常 HTTP 500（服务端缺陷）。
 - **不包信封**的端点用 `@raw_response` 标记，现在只有文件下载（物料 3D 模型资产）；SSE 等非 JSON 响应与生成器
   端点自动透传。探针、`/v1/*`、库存命令与 Host↔权威内部通道都是普通信封路由（Host 回送结果后按信封判断成败）。
   `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001 + `Retry-After: 3`
   （CORS `expose_headers` 含 `Retry-After`，跨域前端能读到）。
-- **中间件级拒绝**保留 HTTP 状态码、正文是信封：工站密钥 401 + 1002，全量重置维护闸门 503 + 5001。
+- **中间件级拒绝**保留 HTTP 状态码、正文是信封：全量重置维护闸门 503 + 5001（管理 API 不鉴权，没有 401）。
 - **应用级兜底**：`envelope.install_envelope_fallback(app)` 登记的处理器把路由层的 `HTTPException`（不存在 404、
   方法不允许 405 等）也输出成信封并保留状态码；管理 API 应用（`api/app.py`）已登记。
 - 契约测试 `tests/server/test_api_envelope_contract.py` 会装配全部路由（含 `/v1/*` 与内部通道），断言每个 JSON
@@ -112,7 +109,6 @@
 | 1 | 未归类内部错误 | V1/dev |
 | 1000 | 参数或载荷不合法 | V1/dev |
 | 1001 | 只读模式、调试不允许、设备动作不允许 | V1 |
-| 1002 | 调用凭据无效：V1 工站调用缺少或带错工站密钥（HTTP 401；dev 原 4001，改号以免与 V1 冲突） | V1/统一分支 |
 | 2005 | 数据库冲突 | V1 |
 | 3002 | 工作流或任务不存在 | V1/dev |
 | 3003 | 状态冲突：修订过期、唯一键重复、状态不允许 | V1/dev |

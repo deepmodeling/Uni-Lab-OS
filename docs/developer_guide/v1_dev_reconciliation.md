@@ -49,9 +49,9 @@ builder 模式已移除，工作流只按源码编译；支持等待测量结果
 
 **2026-11-17 协议简化（负责人决定）。** 控制面 token 全部取消：管理 API 写请求、`/v1/*`、控制 WebSocket 握手
 （原 1008 拒绝）、`/edge/commands/*` 与 `/api/v1/edge/http-responses/*` 都不再鉴权，`<working_dir>/control_token`
-不再生成，`unilab token` 删除，SDK / Host / MCP 不再带 `X-UniLab-Token`（旧客户端带了也忽略）。唯一保留的凭据是
-V1 工站调用的 `Authorization: Bearer <station_api_key>`（`api/app.py` 的 `StationKeyMiddleware` + 路由依赖），业务码
-1002 只由它产生。响应信封全部统一（「能统一全部统一」）：`/health`、`/readiness`（保留 200 / 503，未就绪为 5001，摘要在
+不再生成，`unilab token` 删除，SDK / Host / MCP 不再带 `X-UniLab-Token`（旧客户端带了也忽略）。V1 工站调用的
+`Authorization: Bearer <station_api_key>` 同样取消（`BasicConfig.station_api_key`、`<working_dir>/station_api_key` 一并删除，
+旧请求头忽略），管理 API 不再有任何鉴权，业务码 1002 从码表删除。响应信封全部统一（「能统一全部统一」）：`/health`、`/readiness`（保留 200 / 503，未就绪为 5001，摘要在
 `error.details`）、`/v1/*` 进程管理（V1 错误符号码移到 `error.code`）、`POST /api/v1/inventory/commands`（拒绝为失败信封）、
 `/edge/commands/*` 与 `/api/v1/edge/http-responses/*`、不存在的路由（404 + 4001）都改为 `{code, data | error}`；只有 SSE 与
 文件下载不包信封。SDK、CLI、MCP 与测试同步改为解包信封。CORS 的 `expose_headers` 加上 `Retry-After`，浏览器能读到

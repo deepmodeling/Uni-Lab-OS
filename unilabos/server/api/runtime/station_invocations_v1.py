@@ -1,21 +1,18 @@
 """V1 工站调用入口 ``POST /api/v1/station/workflow-invocations``（上游 Backend → 本工站）。
 
-鉴权按 V1：``Authorization: Bearer <station_api_key>``（密钥见 ``unilabos/config/station_key.py``），缺失或
-错误为 HTTP 401 + 信封 1002。``api/app.py`` 的 ``StationKeyMiddleware`` 在请求进入路由前已按同一规则放行
-或拒绝，这里在依赖里再校验一次，使不经中间件装配的应用（测试、嵌入式）同样拒绝无密钥调用；依赖先于请求体
-校验执行，所以无密钥的非法请求也先得到 401。业务语义见 ``services/runtime/workflow/station_invocations.py``。
+不鉴权（2026-11-17 起）：V1 的工站密钥 ``Authorization: Bearer <api_key>`` 已取消，上游仍带这个请求头时忽略。
+业务语义见 ``services/runtime/workflow/station_invocations.py``。
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter
 from pydantic import Field, field_validator, model_validator
 
-from unilabos.config.station_key import station_key_accepted
 from unilabos.protocol.runtime.workflow import normalize_json_object, validate_uuid
-from unilabos.server.api.envelope import UNAUTHORIZED, WORKFLOW, ApiError, envelope_router
+from unilabos.server.api.envelope import WORKFLOW, envelope_router
 from unilabos.server.api.runtime.workflow import HashToken, WorkflowInventoryBindingRequest, _StrictModel, _success
 
 
@@ -77,19 +74,10 @@ class StationWorkflowInvocationRequest(_StrictModel):
         return self
 
 
-def require_station_key(request: Request) -> None:
-    """V1：工站密钥未配置或不匹配一律 HTTP 401（信封 1002）。"""
-
-    if not station_key_accepted(request.headers):
-        raise ApiError(UNAUTHORIZED, "工站调用凭据无效", http_status=401,
-                       headers={"WWW-Authenticate": 'Bearer realm="unilab-station"'})
-
-
 def create_station_invocation_router(service: Any) -> APIRouter:
     router = envelope_router(profile=WORKFLOW, prefix="/api/v1", tags=["station"])
 
-    @router.post("/station/workflow-invocations", summary="上游 Backend 提交工站工作流调用",
-                 dependencies=[Depends(require_station_key)])
+    @router.post("/station/workflow-invocations", summary="上游 Backend 提交工站工作流调用")
     def submit_station_workflow(body: StationWorkflowInvocationRequest) -> Any:
         """首次与幂等重放都返回同一任务（HTTP 201）；同调用键不同请求为 3003。"""
 
@@ -116,4 +104,4 @@ def create_station_invocation_router(service: Any) -> APIRouter:
     return router
 
 
-__all__ = ["StationWorkflowInvocationRequest", "create_station_invocation_router", "require_station_key"]
+__all__ = ["StationWorkflowInvocationRequest", "create_station_invocation_router"]

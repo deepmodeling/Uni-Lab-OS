@@ -279,23 +279,22 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `scheduler_max_in_flight_jobs` | int | `100` | 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限；超出的作业排队，有作业结束后按先后放行 |
 | `scheduler_max_active_tasks` | int | `500` | 全局运行中任务（`running` / `canceling`）上限；超出的任务保持 `pending`，按提交先后启动 |
 | `scheduler_max_tasks_per_workflow` | int | `100` | 同一工作流的运行中任务上限；只让该工作流的后续任务排队 |
-| `station_api_key`        | str  | `""`          | V1 工站调用 `POST /api/v1/station/workflow-invocations` 的密钥（`Authorization: Bearer <key>`），见下文「管理 API 鉴权」 |
 | `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
 | `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |
 
 #### 管理 API 鉴权
 
-管理 API 与 Host↔权威控制面（控制 WebSocket `/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、
-`POST /api/v1/edge/http-responses/{uuid}`）**不鉴权**：读写请求都不需要任何凭据，控制 WebSocket 握手也不检查
-凭据。原来的控制面 token（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）已取消；旧客户端仍带
-`X-UniLab-Token` 请求头时直接忽略，旧配置里的 `BasicConfig.control_token` / 环境变量
-`UNILABOS_BASICCONFIG_CONTROL_TOKEN` 也静默忽略。管理端口只应暴露给可信网络；`cors_allow_origins` 可收窄允许
-跨域访问的网页来源。
+管理 API（含 V1 工站调用 `POST /api/v1/station/workflow-invocations`）与 Host↔权威控制面（控制 WebSocket
+`/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`）**不鉴权**：
+读写请求都不需要任何凭据，控制 WebSocket 握手也不检查凭据。原来的两种凭据都已取消（2026-11-17）：
 
-唯一的鉴权是 V1 工站调用 `POST /api/v1/station/workflow-invocations`：请求头必须是
-`Authorization: Bearer <station_api_key>`，缺失或错误一律 HTTP 401 + 业务码 1002（本机未配置密钥时同样拒绝）。
-密钥取 `BasicConfig.station_api_key`（或环境变量 `UNILABOS_BASICCONFIG_STATION_API_KEY`，兼容 V1 的
-`UNILABOS_EDGECONTROLCONFIG_API_KEY`），都为空时读运维放置的 `<工作目录>/station_api_key`；权威不自动生成。
+- 控制面 token（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）；
+- V1 工站密钥（`Authorization: Bearer <station_api_key>`、`BasicConfig.station_api_key`、`<工作目录>/station_api_key`）。
+
+旧客户端仍带 `X-UniLab-Token` 或 `Authorization` 请求头时直接忽略；旧配置里的 `BasicConfig.control_token` /
+`BasicConfig.station_api_key` 及对应环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` /
+`UNILABOS_BASICCONFIG_STATION_API_KEY` 静默忽略，旧的 `control_token` / `station_api_key` 文件不再读取。管理端口只应
+暴露给可信网络；`cors_allow_origins` 可收窄允许跨域访问的网页来源。
 
 #### 数据库位置
 

@@ -43,7 +43,7 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
    位置、锁、表清单与 V1 库文件对照见 [微后端数据库](../databases.md)。
 9. 与 V1 的已知有意差异（不算缺口）：发布后被编辑的工作流按发布指纹调用工站时拒绝（3003）且 dev 运行当前图；`resolve-uncertain` 后作业为
    `failed`；`mark_used` 存为 `retired`；原按 V1 返回裸 JSON 的路由（探针、`/v1/*`、库存命令）11-17 起也是统一信封；`/error-decisions` 加可选 `Idempotency-Key`；消耗列表多 `inventory_type:"lot"`；
-   管理 API 不鉴权（控制面 token 11-17 取消，只有 V1 工站调用要工站密钥）；Host 启动期返回 200 + 5001 + `Retry-After`。
+   管理 API 不鉴权（控制面 token 与 V1 工站密钥 11-17 都已取消）；Host 启动期返回 200 + 5001 + `Retry-After`。
 
 ## 缺口处理
 

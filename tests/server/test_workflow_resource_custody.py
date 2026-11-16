@@ -6,6 +6,8 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from unilabos.protocol.runtime.resource_intervals import DeviceTenancyTransition, DeviceTenancyRequirement
+from unilabos.server.backend.scheduler.models import MaterialLockClaim
+from unilabos.server.backend.scheduler.resource_keys import material_lock_key
 from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
 from unilabos.server.services.runtime.workflow.resource_loans import ResourceLoans
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
@@ -322,6 +324,40 @@ def test_loaded_material_or_device_cannot_be_lent(service):
         conn.execute("UPDATE workflow_task SET control_status='paused' WHERE uuid=?",(task['uuid'],))
         with pytest.raises(StoreConflict,match='样品'):
             ResourceLoans.lend(conn,owner['owner_uuid'],loan_uuid=str(uuid4()),borrower_task_uuid=other['uuid'],expected_version=owner['version'],reason='借用')
+
+
+def test_default_material_lock_is_shared_exclusive_in_use_and_free_while_idle(service):
+    """默认物料锁是共享资源锁：动作使用期间互斥、也不能借走；空闲时不被持有，别的任务不用借出就能用。
+
+    与上面的设备托管（独占：装载期间样品和设备都不能借出）相对照。
+    """
+    intervals = ResourceIntervals(service)
+    epoch = ExecutionClaims(service).activate_authority()
+    plate = str(uuid4())
+    claims = [MaterialLockClaim(material_uuid=plate)]
+    owner, other = make_task(service, ("reactor", "reader")), make_task(service, ("washer",))
+    first = request_for(service, owner, 0).model_copy(update={"material_lock_claims": claims})
+    competing = request_for(service, other).model_copy(update={"material_lock_claims": claims})
+    assert intervals.admit(first, epoch)
+    # 使用期间互斥：另一台设备上的动作拿不到同一块板
+    assert not intervals.admit(competing, epoch)
+    with service.transaction() as conn:
+        conn.execute("UPDATE workflow_task SET control_status='paused' WHERE uuid=?", (owner["uuid"],))
+        held = next(row for row in intervals.snapshot(owner["uuid"]) if row["lock_key"] == material_lock_key(plate))
+        with pytest.raises(StoreConflict, match="仍有动作占用"):
+            ResourceLoans.lend(conn, held["owner_uuid"], loan_uuid=str(uuid4()), borrower_task_uuid=other["uuid"],
+                               expected_version=held["version"], reason="借用")
+    finish(service, intervals, first)
+    # 原任务暂停在两步之间：板空闲、不被持有，等着的任务直接拿到，不需要借出
+    assert material_lock_key(plate) not in {row["lock_key"] for row in intervals.snapshot()}
+    assert intervals.admit(competing, epoch)
+    with service.transaction() as conn:
+        conn.execute("UPDATE workflow_task SET control_status='active' WHERE uuid=?", (owner["uuid"],))
+    # 原任务恢复后的下一步要等对方用完，不会与它同时使用
+    second = request_for(service, owner, 1).model_copy(update={"material_lock_claims": claims})
+    assert not intervals.admit(second, epoch)
+    finish(service, intervals, competing)
+    assert intervals.admit(second, epoch)
 
 
 def test_unknown_borrow_must_settle_before_manual_return(service):

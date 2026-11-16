@@ -107,7 +107,8 @@ def test_authority_retries_pending_writeback_on_restart_and_watches_external_edi
 
         # 外部编辑器改了源码：监视线程重新编译出对应的新候选
         edited = SOURCE.replace("amount: float = 2.0", "amount: float = 3.0")
-        target.write_text(edited)
+        # 按字节写：Windows 上 write_text 会写成 CRLF，而监视器按文件原始字节计算 draft_hash
+        target.write_bytes(edited.encode("utf-8"))
         _wait_for(lambda: (service.get_authoring_record(workflow["uuid"]).get("candidate") or {})
                   .get("draft_hash") == _hash(edited))
         assert service.get_authoring_record(workflow["uuid"])["observed_draft_hash"] == _hash(edited)

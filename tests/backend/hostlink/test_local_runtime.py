@@ -144,6 +144,9 @@ class ServiceDriver:
 
 
 class DecoratedRuntimeDriver:
+    #: concurrent_action 每次执行的 (开始, 结束) 单调时钟区间
+    concurrent_spans: list[tuple[float, float]] = []
+
     def __init__(self, device_id=None, config=None):
         self.device_id = device_id
         self.node = None
@@ -176,7 +179,9 @@ class DecoratedRuntimeDriver:
         return resource.name
 
     async def concurrent_action(self, duration: float) -> float:
+        started = time.monotonic()
         await self.node.sleep(duration)
+        type(self).concurrent_spans.append((started, time.monotonic()))
         return duration
 
 
@@ -534,22 +539,23 @@ def test_hostlink_runtime_honors_topic_config_period_and_name() -> None:
 def test_hostlink_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
     runtime = _decorated_runtime()
     runtime.start()
+    DecoratedRuntimeDriver.concurrent_spans.clear()
     try:
-        async def run_both() -> tuple[list[float], float]:
-            started = time.monotonic()
-            values = await asyncio.gather(
+        async def run_both() -> list[float]:
+            return await asyncio.gather(
                 runtime.call_action_async(
-                    "decorated", "concurrent_action", duration=0.05
+                    "decorated", "concurrent_action", duration=0.2
                 ),
                 runtime.call_action_async(
-                    "decorated", "concurrent_action", duration=0.05
+                    "decorated", "concurrent_action", duration=0.2
                 ),
             )
-            return values, time.monotonic() - started
 
-        values, elapsed = asyncio.run(run_both())
-        assert values == [0.05, 0.05]
-        assert elapsed < 0.09
+        assert asyncio.run(run_both()) == [0.2, 0.2]
+        # 两次执行区间重叠，说明第二个没有排在第一个之后。不用墙钟上限：慢机器上调度开销会误报
+        spans = DecoratedRuntimeDriver.concurrent_spans
+        assert len(spans) == 2
+        assert max(start for start, _ in spans) < min(end for _, end in spans)
     finally:
         runtime.stop()
 

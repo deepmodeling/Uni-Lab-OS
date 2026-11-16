@@ -45,7 +45,8 @@ Host 不在线或中继超时，Host 专属请求返回 **HTTP 200 + 业务码 5
 请求头时直接忽略（CORS 预检仍放行这个头，旧前端的跨域写请求不会被浏览器拦下）。CORS 默认放行所有来源
 （`BasicConfig.cors_allow_origins`），即任何能访问管理端口的网页都能经浏览器提交任务、启动设备：
 管理端口只应暴露给可信网络，对外部署要在反向代理上落实 TLS 与访问控制。CORS 放行的请求头包括
-`Authorization`、`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`（以及已取消的 `X-UniLab-Token`）。
+`Authorization`、`Idempotency-Key`、`X-Workflow-Filename`、`Last-Event-ID`（以及已取消的 `X-UniLab-Token`）；
+暴露给浏览器的响应头有 `Retry-After`（Host 启动 / 重启中的 5001 带它，跨域前端据此安排重试）。
 
 **唯一的鉴权是 V1 工站调用。** `POST /api/v1/station/workflow-invocations` 只认
 `Authorization: Bearer <station_api_key>`（密钥见配置指南「管理 API 鉴权」）；缺失、错误或本机未配置密钥时返回

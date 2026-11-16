@@ -156,6 +156,27 @@ def test_cors_allows_every_origin_by_default_and_can_be_restricted(monkeypatch) 
         assert anyone.headers["access-control-allow-origin"] == "https://anything.example"
 
 
+def test_cors_exposes_retry_after_on_host_starting_answers(monkeypatch) -> None:
+    """Host 启动 / 重启中的 5001 带 ``Retry-After``：跨域前端要能读到它（CORS expose_headers）。"""
+
+    from unilabos.server.api import edge_proxy
+
+    app = FastAPI()
+    app.add_middleware(ConfiguredCORSMiddleware)
+    edge_proxy.configure_edge_proxy(True)
+    monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
+    app.include_router(edge_proxy.create_edge_proxy_router())
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/runtime/endpoints", headers={"Origin": "https://fe.example"})
+    finally:
+        edge_proxy.configure_edge_proxy(False)
+    assert response.status_code == 200 and response.json()["code"] == 5001
+    assert response.headers["retry-after"] == "3"
+    exposed = [item.strip().lower() for item in response.headers["access-control-expose-headers"].split(",")]
+    assert "retry-after" in exposed
+
+
 def test_browser_opens_the_plain_landing_page(monkeypatch) -> None:
     monkeypatch.setattr(HTTPConfig, "remote_addr", "")
     assert browser_landing_url("0.0.0.0", 8002) == "http://localhost:8002/"

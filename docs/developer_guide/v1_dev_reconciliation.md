@@ -54,7 +54,8 @@ V1 工站调用的 `Authorization: Bearer <station_api_key>`（`api/app.py` 的 
 1002 只由它产生。响应信封全部统一（「能统一全部统一」）：`/health`、`/readiness`（保留 200 / 503，未就绪为 5001，摘要在
 `error.details`）、`/v1/*` 进程管理（V1 错误符号码移到 `error.code`）、`POST /api/v1/inventory/commands`（拒绝为失败信封）、
 `/edge/commands/*` 与 `/api/v1/edge/http-responses/*`、不存在的路由（404 + 4001）都改为 `{code, data | error}`；只有 SSE 与
-文件下载不包信封。SDK、CLI、MCP 与测试同步改为解包信封。
+文件下载不包信封。SDK、CLI、MCP 与测试同步改为解包信封。CORS 的 `expose_headers` 加上 `Retry-After`，浏览器能读到
+Host 启动中 5001 的重试间隔。
 
 剩余顺序建议：正式前端适配与 F09 / T02 联调 → U01 → T01。
 I02、W01、A03 `order_sensitive` 已完成；缺料是预检报错（任务级直接失败、动作级挂起待补料重试），只是被其他任务预留则排队等待（2026-11-16），执行中失败是执行报错（用户决定）；builder 模式已移除。

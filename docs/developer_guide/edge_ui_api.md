@@ -96,7 +96,8 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   的 `envelope_router` / `EnvelopeRoute`，业务码表见 [HTTP 约定](interfaces/http.md)，只追加）；
   materials.v1 写入的 `InventoryMutation → MutationResult` 放在信封 `data` 里；健康 / 就绪探针、库存命令、`/v1/*`
   进程管理与 Host↔权威内部通道同样是信封（就绪探针未就绪 HTTP 503 + 5001，不存在的路由 HTTP 404 + 4001），
-  只有 SSE 与文件下载不包信封；
+  只有 SSE 与文件下载不包信封；Host 启动 / 重启中的 5001 带 `Retry-After`，它在 CORS `expose_headers` 里，
+  跨域前端能读到；
 - 字段 snake_case；权威身份 `*_uuid`；新增时间字段一律 `*_at_ms`（UTC epoch 毫秒整数）；
   枚举小写；新增枚举值算加法变更，客户端必须容忍；
 - 列表：人看的用 `page / page_size → {items, total, page, page_size}`；子记录用 `limit / offset`；

@@ -124,6 +124,8 @@ class ConfiguredCORSMiddleware:
                     "X-Workflow-Filename",
                     LEGACY_TOKEN_HEADER,
                 ],
+                # Host 启动 / 重启中的 5001 带 Retry-After：跨域前端要能读到它才能按建议间隔重试
+                expose_headers=["Retry-After"],
             )
         await self._inner(scope, receive, send)
 

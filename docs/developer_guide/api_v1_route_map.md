@@ -51,7 +51,8 @@ Database versions: on the 0.13 release line all four databases start at schema v
 > 1000 at HTTP 200), `POST /api/v1/inventory/commands` (completed → `data`; rejected → failure envelope with the
 > rejection code in `error.code` and `{command_id, replayed}` in `error.details`), `/edge/commands/*` and
 > `/api/v1/edge/http-responses/*`, and unmatched routes (404 + 4001 / 405 + 1001 from an app-level handler). Only SSE
-> and file downloads stay raw.
+> and file downloads stay raw. CORS exposes `Retry-After`, so a browser can read it on the 5001 "Host starting"
+> answers.
 
 These matter more than any single route. Each item gives evidence from both trees.
 
@@ -79,7 +80,7 @@ These matter more than any single route. Each item gives evidence from both tree
 - **Control token on every write.** DEV's `ControlTokenMiddleware` rejects every POST/PUT/PATCH/DELETE that lacks `X-UniLab-Token` or `Authorization: Bearer <control token>`, with HTTP 401 and code 4001 (`api/app.py:121-152`). V1 has no API token, only a host allow-list and a same-origin check (`app/web/console.py:101-126`). A V1-written FE therefore gets 401 on every write until it learns the token. *(Resolved 2026-11-17: the control token was removed; writes need no credential.)*
 - **Two meanings for Bearer.** V1 `/station/workflow-invocations` expects `Bearer <EdgeControlConfig.api_key>` (`workflow_api.py:1740`), which collides with DEV's Bearer control token. *(Resolved: the foundation moved the control token to `X-UniLab-Token`; p7-d gives the station key its own config `BasicConfig.station_api_key`, see the route row. Since 2026-11-17 the station key is the only credential.)*
 - **Capability gating.** V1 gates writes and debugging with `RuntimeCapabilities` (`can_edit_definitions`, `can_view_drafts`, `can_run_unpublished`, `can_debug`, `can_execute_device_actions`; `app/runtime_capabilities.py:18-27`, `workflow_api.py:278-310`) and publishes them in `/readiness.capabilities`. DEV has no such gate or projection.
-- **CORS.** DEV's `allow_headers` is `Authorization, Content-Type, Accept, Last-Event-ID, X-UniLab-Token` (`api/app.py:110`). V1 also allows `Idempotency-Key`, `X-Workflow-Filename`, `trace_id`, `traceparent` and `tracestate` (`app/web/server.py:283-293`). A cross-origin V1 FE that sends `Idempotency-Key` (interventions, station decisions) or `X-Workflow-Filename` (Python import) fails the CORS preflight on DEV.
+- **CORS.** DEV's `allow_headers` is `Authorization, Content-Type, Accept, Last-Event-ID, X-UniLab-Token` (`api/app.py:110`). V1 also allows `Idempotency-Key`, `X-Workflow-Filename`, `trace_id`, `traceparent` and `tracestate` (`app/web/server.py:283-293`). A cross-origin V1 FE that sends `Idempotency-Key` (interventions, station decisions) or `X-Workflow-Filename` (Python import) fails the CORS preflight on DEV. *(Resolved by the foundation for the two headers; since 2026-11-17 `expose_headers` includes `Retry-After`.)*
 
 **4. Pagination.**
 - Workflow lists are the same on both sides: `page`/`page_size`, returning `{items, has_more, page, page_size(, total)}` (V1 `workflow_api.py:1317`, DEV `runtime/workflow.py:579`).

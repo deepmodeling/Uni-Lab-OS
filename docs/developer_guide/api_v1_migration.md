@@ -90,7 +90,8 @@
   路由类里就地换成 1000，不再依赖应用级异常处理器或路径前缀登记。未登记的异常照常 HTTP 500（服务端缺陷）。
 - **不包信封**的端点用 `@raw_response` 标记，现在只有文件下载（物料 3D 模型资产）；SSE 等非 JSON 响应与生成器
   端点自动透传。探针、`/v1/*`、库存命令与 Host↔权威内部通道都是普通信封路由（Host 回送结果后按信封判断成败）。
-  `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001。
+  `edge_proxy` 字节级透传 Host 已包好的信封；Host 不在线时返回 HTTP 200 + 5001 + `Retry-After: 3`
+  （CORS `expose_headers` 含 `Retry-After`，跨域前端能读到）。
 - **中间件级拒绝**保留 HTTP 状态码、正文是信封：工站密钥 401 + 1002，全量重置维护闸门 503 + 5001。
 - **应用级兜底**：`envelope.install_envelope_fallback(app)` 登记的处理器把路由层的 `HTTPException`（不存在 404、
   方法不允许 405 等）也输出成信封并保留状态码；管理 API 应用（`api/app.py`）已登记。

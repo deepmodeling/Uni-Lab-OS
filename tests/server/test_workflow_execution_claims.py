@@ -153,6 +153,37 @@ def test_uncertain_dispatch_and_scheduler_stop_keep_locks_until_late_result(tmp_
         service.close()
 
 
+def test_stopped_scheduler_never_takes_the_authority_back(tmp_path):
+    """停掉的调度器收到迟到的提交或控制唤醒不能复活：复活会换掉代次，接管的新调度器派发全被拒绝。"""
+    path = tmp_path / "runtime.db"
+    service = WorkflowService(path)
+    task, job = make_task(service)
+    executor = Executor()
+    old = BackendScheduler(service, executor)
+    old.start(recover=False)
+    old.stop()
+    new = BackendScheduler(service, executor)
+
+    def current_epoch() -> str:
+        with sqlite3.connect(path) as conn:
+            return conn.execute("SELECT epoch FROM workflow_execution_authority WHERE singleton=1").fetchone()[0]
+
+    try:
+        old.submit(task["uuid"])
+        old._on_task_control(task["uuid"])  # noqa: SLF001 - 模拟迟到的控制唤醒
+        assert current_epoch() == new._authority_epoch  # noqa: SLF001
+        assert old._thread is None  # noqa: SLF001 - 旧实例没有被重新拉起
+        new.submit(task["uuid"])
+        wait_for(lambda: len(executor.dispatched) == 1)
+        assert executor.dispatched[0]["job_id"] == job
+        executor.finish(0, {})
+        wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    finally:
+        new.stop()
+        old.stop()
+        service.close()
+
+
 def test_legacy_inflight_blocks_new_dispatch_until_reconciled(tmp_path):
     service = WorkflowService(tmp_path / "runtime.db")
     old_task, old_job = make_task(service)

@@ -446,9 +446,19 @@ class BackendScheduler:
             )
 
     def start(self, *, recover: bool = True) -> None:
+        self._start(recover=recover, allow_restart=True)
+
+    def _start(self, *, recover: bool, allow_restart: bool) -> bool:
+        """启动调度线程；``allow_restart=False`` 时已停止的实例保持停止并返回 False。
+
+        停止后被迟到的提交、控制唤醒隐式复活，会换掉执行代次，使已经接管的新调度器每次派发都被
+        代次栅栏拒绝；只有显式 ``start()`` 才能重启一个已停止的实例。
+        """
         with self._guard:
+            if self._stopping and not allow_restart:
+                return False
             if self._thread is not None and self._thread.is_alive():
-                return
+                return True
             if self._stopping:
                 self._authority_epoch = self._execution_claims.activate_authority()
             self._stopping = False
@@ -464,11 +474,14 @@ class BackendScheduler:
         if recover:
             for task in self.workflow.list_recoverable_workflow_tasks():
                 self.submit(str(task["uuid"]))
+        return True
 
     def submit(self, task_uuid: str) -> None:
         """Queue a persisted task; duplicate submissions share one active runner."""
 
-        self.start(recover=False)
+        if not self._start(recover=False, allow_restart=False):
+            logger.warning("调度器已停止，忽略任务 %s 的提交", task_uuid)
+            return
         assert self._loop is not None
         with self._guard:
             if task_uuid in self._runners or task_uuid in self._scheduled:
@@ -495,7 +508,9 @@ class BackendScheduler:
 
     def _on_task_control(self, task_uuid: str) -> None:
         """命令先落库，再在调度线程唤醒原 DAG；不新建任务或独立单点 job。"""
-        self.start(recover=False)
+        if not self._start(recover=False, allow_restart=False):
+            logger.warning("调度器已停止，忽略任务 %s 的控制唤醒", task_uuid)
+            return
         assert self._loop is not None
 
         def wake() -> None:

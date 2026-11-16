@@ -6,7 +6,46 @@
 本文的 Conda 命令适用于 0.13 及之后的发布。如果 channel 尚未提供该版本，请先使用
 下方源码安装；旧的 0.12.2 Conda 包仍包含 ROS，升级源码不会自动卸载旧环境中的 ROS。
 
-## 配套 wheel 发行包（推荐，无须 Conda）
+## uv 安装（不需要 ROS 时的默认方式）
+
+不需要 ROS 时推荐用 [uv](https://docs.astral.sh/uv/)：它按需下载 CPython 3.14，解析和安装都比 pip 快得多。
+需要 ROS 时仍使用下文的 Conda 档位。PLR fork 与 Opentrons NumPy 2 修正版（下称“配套 wheel”）
+不在公共 PyPI，每种方式都要用 `--find-links` 指向一个配套 wheel 目录。按实际能拿到的来源选择：
+
+| 配套 wheel 来源 | 说明 |
+| --- | --- |
+| 本地构建 `scripts/build_wheel_release.py --dependencies-only` | 源码安装；0.13 正式 Release 发布前唯一的公开途径，需要 Git 和网络，源码按 SHA256 校验 |
+| Release 附件 `unilabos-<版本>-wheelhouse-<平台>.zip` 中的 `wheelhouse/` | 只有已发布该版本附件时可用；可完全离线 |
+| [配套 wheel 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/wheel-release.yml) 的 artifact | 开发版本；需要登录 GitHub 下载，保留 90 天 |
+
+源码安装：
+
+```bash
+git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
+cd Uni-Lab-OS
+uv venv --python 3.14 --seed   # 新建 .venv；--seed 带上 pip，构建配套 wheel 时使用
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
+uv pip install --find-links dist/companion/wheelhouse .
+python scripts/verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+发行包离线安装，在解压目录执行：
+
+```bash
+uv venv --python 3.14
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+uv pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+先激活 `.venv`，`uv pip install` 和后续命令就都作用于它。开发者可用
+`python scripts/dev_install.py` 一步完成源码方式并改为可编辑安装，见下文“Python 安装”。
+扩展档位同样可用 uv：`uv pip install --find-links <配套 wheel 目录> ".[full]"`。
+
+## 配套 wheel 发行包（标准库安装入口，无须 uv / Conda）
 
 下载对应平台的 `unilabos-<版本>-wheelhouse-<平台>.zip` 并解压。需要自行安装 Python 3.14；
 Windows x64、Linux x64、macOS Intel/Apple Silicon 分别提供独立产物，不能混用。
@@ -41,27 +80,36 @@ python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.13.0rc1"
 
 ## Python 安装
 
-准备一个独立的 Python 3.14 环境，避免复用旧 ROS 环境：
+源码开发用 `scripts/dev_install.py`，一步完成构建配套 wheel、可编辑安装和依赖检查：
 
 ```bash
-python -m venv .venv
-# Linux / macOS
-source .venv/bin/activate
-# Windows PowerShell 改用：.venv\Scripts\Activate.ps1
-
 git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-python scripts/dev_install.py
+python scripts/dev_install.py          # 装有 uv 时，启动它的 Python 不必是 3.14
+source .venv/bin/activate              # Windows PowerShell：.venv\Scripts\Activate.ps1
 unilab --help
-python -m unilabos.app.main --disable_browser --port 8002
+unilab --disable_browser --port 8002
 ```
+
+安装工具默认 `--installer auto`：找到 `uv` 就用 uv，否则提示后回退当前解释器的 pip；
+`--installer uv|pip` 可显式指定，旧参数 `--use-pip` 等同 `--installer pip`。目标环境按以下顺序确定：
+
+1. `--venv <目录>`：已存在时必须是 CPython 3.14 环境，否则新建；
+2. 脚本由已激活的 venv / Conda 环境中的解释器运行时，直接装入该环境（须为 CPython 3.14），
+   Conda + `--skip-deps` 的用法不变；
+3. 否则使用项目根目录的 `.venv`，不存在时新建。
+
+新建环境时，uv 执行 `uv venv --seed --python cpython3.14`（本机没有 3.14 时自动下载；`--seed` 带上 pip，
+配套 wheel 构建要用），pip 方式用当前解释器的 `venv` 模块，因此必须由 CPython 3.14 运行脚本。
+脚本不会装入全局解释器，避免改动系统或其他工具的 Python。
 
 首次运行按提示选择工作目录和配置；不带 `-g` 时以空设备图启动，可从微前端安装设备包。
 安装时已声明微后端、调度、物料、HostLink 和 CLI 所需的 Python 依赖，不再需要额外安装
 `unilabos_msgs`、执行 `colcon build` 或手动补一个 requirements 清单。
 
-源码安装入口会从固定源码构建配套 wheel，再可编辑安装 UniLabOS。此构建过程需要 Git、
-Python 包源和 GitHub；如果已有配套包，用 `python scripts/dev_install.py --wheelhouse <解压目录>/wheelhouse`
+源码安装入口先用目标环境的解释器从固定源码构建配套 wheel，再以 `--find-links` 可编辑安装 UniLabOS，
+最后执行 `uv pip check` / `pip check`。此构建过程需要 Git、Python 包源和 GitHub；
+如果已有配套包，用 `python scripts/dev_install.py --wheelhouse <解压目录>/wheelhouse`
 可以跳过这一步。构建产物不会上传 PyPI，源码下载以 SHA256 校验。
 
 用户安装 wheel 并提供 `--find-links` 时，也会自动安装其 `Requires-Dist` 依赖，不需要源码仓库。
@@ -87,7 +135,8 @@ pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，�
 | full | `python scripts/dev_install.py --extras full` | 全部 Python 依赖：内置驱动 SDK、文档、测试、开发工具及 ROS Python 辅助依赖 |
 
 已有配套 wheel 时追加 `--wheelhouse <解压目录>/wheelhouse`。非源码安装使用
-`python -m pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.13.0rc1"`。
+`uv pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.13.0rc1"`
+（没有 uv 时换成 `python -m pip install`，参数相同）。
 默认离线 wheel 包只锁定默认依赖；扩展档位还需联网取得公共依赖，不能宣称整套 full 离线可用。
 pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesupport**，
 需要这些组件时使用下方 Conda 对应档位。专有硬件 SDK、系统驱动和许可证仍按设备包要求准备。

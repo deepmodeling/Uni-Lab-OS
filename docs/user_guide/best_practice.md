@@ -806,7 +806,8 @@ python scripts/dev_install.py --extras full
 - pip 不安装原生 ROS；完整 ROS 环境使用 `unilabos-full`，硬件系统驱动仍按设备包准备
 - `dev_install.py` 先构建固定 PLR / Opentrons 配套 wheel，再安装源码；普通包可使用清华镜像
 - 已有发行包时，可用 `--wheelhouse <解压目录>/wheelhouse` 跳过配套依赖构建；修正版不在公共 PyPI
-- 已安装 `uv` 时脚本优先使用它，并明确指定当前 Python；否则使用 pip
+- 已安装 `uv` 时脚本默认用它安装，否则提示后回退 pip（`--installer pip` 可显式改用 pip）
+- 在已激活的 Conda / venv 中运行时装入该环境；否则装入项目根目录 `.venv`（不存在时以 Python 3.14 新建）
 - 可编辑模式：代码修改**立即生效**，无需重新安装
 
 **如果安装失败或速度太慢**，可以手动执行（使用清华镜像）：

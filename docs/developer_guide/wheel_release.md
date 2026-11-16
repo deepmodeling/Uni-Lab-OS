@@ -22,8 +22,12 @@
 
 ```bash
 python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
-python -m pip install --find-links dist/companion/wheelhouse -e ".[full]"
+uv pip install --find-links dist/companion/wheelhouse -e ".[full]"
+# 没有 uv 时：python -m pip install --find-links dist/companion/wheelhouse -e ".[full]"
 ```
+
+构建脚本本身用当前解释器的 `pip wheel`，因此用 uv 新建环境时加 `--seed`（`scripts/dev_install.py` 会自动处理）。
+`hostlink-no-ros` CI 用 uv 安装主包，发行包的三种验收安装仍用 pip，两条安装路径都有覆盖。
 
 在当前目标平台构建完整包：
 

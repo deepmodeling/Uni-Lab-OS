@@ -41,25 +41,44 @@ MoveIt、RViz、ROS 原生驱动和图像管线仍需要相应 ROS 环境。
 
 ## 快速开始
 
-### 1. 默认无 ROS 安装
+### 1. 默认无 ROS 安装（默认用 uv）
 
-源码安装（新 Conda 版本发布前也可使用）：
+不需要 ROS 时用 [uv](https://docs.astral.sh/uv/) 安装：uv 按需下载 CPython 3.14，安装比 pip 快得多；
+需要 ROS 时仍用下文的 Conda。修正版 Opentrons 和固定 PLR 这两个“配套 wheel”不在 PyPI，
+所以每种方式都要用 `--find-links` 指向配套 wheel 目录。
+
+源码安装。目前还没有带 0.13 配套 wheel 的正式 Release，需要先从固定且校验 SHA256 的源码
+本地构建（需要 Git 和网络）：
 
 ```bash
 git clone -b dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-python -m venv .venv
+uv venv --python 3.14 --seed   # 新建 .venv；--seed 带上 pip，构建配套 wheel 时使用
 # Linux/macOS: source .venv/bin/activate
-# Windows PowerShell: .venv/Scripts/Activate.ps1
-python scripts/dev_install.py
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
+uv pip install --find-links dist/companion/wheelhouse .
+python scripts/verify_installation.py --assert-no-ros
 unilab --disable-browser
 ```
 
-也可解压对应平台的配套 wheel 包，用 Python 3.14 执行 `python install_wheel_release.py`：
-自动新建环境、离线安装全部默认依赖，并实际验证 Opentrons 96 孔板创建。
-修正版 Opentrons 和固定 PLR wheel 随发行附件分发，不上传 PyPI；仅对公共源执行
-`pip install unilabos` 找不到它们，需要安装入口或 `--find-links <配套包>/wheelhouse`。
-上面的源码安装工具会先构建配套依赖。详见[安装指南](docs/user_guide/installation.md)。
+开发者也可直接运行 `python scripts/dev_install.py`（装有 uv 时，启动它的 Python 不必是 3.14）：
+它用 uv 完成同样的步骤并改为可编辑安装，目标是已激活的 venv / Conda 环境，否则用 uv 新建 `./.venv`；
+没有 uv 时提示后回退 pip。
+
+发行包完全离线安装：从 Release 附件下载并解压 `unilabos-<版本>-wheelhouse-<平台>.zip`，在解压目录执行：
+
+```bash
+uv venv --python 3.14
+# 按上面的方式激活 .venv 后
+uv pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+没有 uv 时，在解压目录执行 `python install_wheel_release.py`，用 pip 完成同样的安装。
+发行包只附在已发布的 Release 上；0.13 正式发布前请使用源码方式。仅对公共源执行
+`pip install unilabos` 或 `uv pip install unilabos` 找不到配套 wheel。详见[安装指南](docs/user_guide/installation.md)。
 
 **0.13+ 默认 Conda 包发布后**：
 

@@ -6,7 +6,7 @@ This file provides guidance for coding agents working in this repository.
 
 ```bash
 # Default installation needs only Python 3.14; ROS 2 is explicitly optional
-python scripts/dev_install.py  # builds companion PLR / Opentrons wheels; no PyPI upload
+python scripts/dev_install.py  # uv by default (pip fallback): active venv/Conda env, else ./.venv on CPython 3.14; builds companion PLR / Opentrons wheels, no PyPI upload
 python scripts/dev_install.py --extras full  # docs, tests, driver SDKs and development tools
 
 # Run with a device graph

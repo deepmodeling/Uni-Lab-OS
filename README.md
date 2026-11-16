@@ -42,27 +42,51 @@ See the [installation guide](docs/user_guide/installation.md) and
 
 ## Quick Start
 
-### 1. Install without ROS (default)
+### 1. Install without ROS (default: uv)
 
-From source (works before the new Conda release is published):
+When ROS is not needed, install with [uv](https://docs.astral.sh/uv/): it fetches
+CPython 3.14 on demand and installs much faster than pip. ROS installs keep using
+Conda (below). The patched Opentrons and pinned PLR "companion" wheels are not on
+PyPI, so every recipe points uv at a companion wheel directory with `--find-links`.
+
+From source. No published release carries 0.13 companion wheels yet, so the
+recipe builds them locally from pinned, SHA256-checked sources (needs Git and
+network access):
 
 ```bash
 git clone -b dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-python -m venv .venv
+uv venv --python 3.14 --seed   # creates .venv; --seed adds pip for the wheel build
 # Linux/macOS: source .venv/bin/activate
-# Windows PowerShell: .venv/Scripts/Activate.ps1
-python scripts/dev_install.py
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
+uv pip install --find-links dist/companion/wheelhouse .
+python scripts/verify_installation.py --assert-no-ros
 unilab --disable-browser
 ```
 
-Alternatively, extract the platform-specific companion wheel bundle and run
-`python install_wheel_release.py` with Python 3.14. It creates a new environment,
-installs all default dependencies offline and verifies an Opentrons 96-well plate.
-The patched Opentrons and pinned PLR wheels are release assets, not PyPI uploads.
-Bare `pip install unilabos` against PyPI cannot discover these companion wheels;
-use the installer or `--find-links <bundle>/wheelhouse`. Source development uses
-the helper above to build them first. See the [installation guide](docs/user_guide/installation.md).
+Developers can run `python scripts/dev_install.py` instead; with uv installed,
+the launching Python does not need to be 3.14. It runs the same steps as an
+editable install, into the active venv / Conda environment or else into a
+`./.venv` it creates, and falls back to pip with a notice when uv is missing.
+
+From a release bundle, fully offline: extract
+`unilabos-<version>-wheelhouse-<platform>.zip` from the release assets and run
+inside it:
+
+```bash
+uv venv --python 3.14
+# activate .venv as above, then
+uv pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+Without uv, `python install_wheel_release.py` in the bundle does the same with
+pip. Bundles are attached only to published releases; until a 0.13 release is
+out, use the source recipe. Bare `pip install unilabos` or `uv pip install unilabos`
+against PyPI cannot discover the companion wheels. See the
+[installation guide](docs/user_guide/installation.md).
 
 For the **0.13+ default Conda package**, once published:
 

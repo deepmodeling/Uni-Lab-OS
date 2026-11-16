@@ -1329,6 +1329,15 @@ class MaterialsService(MaterialsRepository):
                 if not nested:
                     self.connection.rollback()
 
+    def material_sanity_facts(
+        self, material_uuids: Sequence[str], *, reservation_uuid: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """派发前物料健全性检查的一次只读事实（不写库、不判定），见 ``materials/sanity.py``。"""
+
+        from .sanity import material_sanity_facts
+
+        return material_sanity_facts(self, material_uuids, reservation_uuid=reservation_uuid)
+
     def _candidate_inventory_lots(
         self,
         requirement: InventoryRequirement,

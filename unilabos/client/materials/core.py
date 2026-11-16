@@ -129,6 +129,12 @@ class LocalMaterialsClient:
         return MaterialIO(self.service).check(
             payload["param"], task_uuid=payload["task_uuid"], job_uuid=payload["job_uuid"])
 
+    def material_sanity_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """派发前物料健全性检查的一次只读事实：``{"material_uuids": [...], "reservation_uuid": 可空}``。"""
+
+        return self.service.material_sanity_facts(
+            list(payload.get("material_uuids") or []), reservation_uuid=payload.get("reservation_uuid"))
+
     def validate_material_execution(self, value):
         return self.service.executions.validate(value)
 
@@ -506,6 +512,14 @@ class HTTPMaterialsClient:
         """工作流人工装入 / 取走 / 补量步骤的试运行（不写库），返回冻结的执行计划；不能执行时按业务码抛错。"""
 
         return self._request("POST", "/inventory/material-io/check", payload, root=True)
+
+    def material_sanity_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """派发前物料健全性检查的一次只读事实（``POST /inventory/material-sanity``，不写库）。"""
+
+        return self._request("POST", "/inventory/material-sanity", {
+            "material_uuids": list(payload.get("material_uuids") or []),
+            "reservation_uuid": payload.get("reservation_uuid"),
+        }, root=True)
 
     def _command(self, mutation: InventoryMutation, value: Any, *, target_uuid: Optional[str] = None) -> Any:
         """``materials.v1`` 变更经统一命令入口；拒绝结果按业务码还原成 HTTP 语义的异常。"""

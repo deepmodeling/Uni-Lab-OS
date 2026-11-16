@@ -8,6 +8,7 @@
 - ``/inventory/ingress-reservations`` 是工站入站库位预留。
 - ``POST /inventory/material-io/check`` 是工作流人工装入 / 取走 / 补量步骤确认前的试运行（不写库）；确认后的写入
   走统一命令入口的 ``material.io`` 类型化命令。
+- ``POST /inventory/material-sanity`` 是调度器派发前物料健全性检查的一次只读事实（不写库，不做判定）。
 """
 
 from __future__ import annotations
@@ -57,6 +58,14 @@ class MaterialIOCheckRequest(BaseModel):
     param: Dict[str, Any]
     task_uuid: str = Field(min_length=1)
     job_uuid: str = Field(min_length=1)
+
+
+class MaterialSanityRequest(BaseModel):
+    """派发前物料健全性检查要读的物料与本作业的库存预留。"""
+
+    model_config = ConfigDict(extra="forbid")
+    material_uuids: List[str] = Field(default_factory=list, max_length=2000)
+    reservation_uuid: Optional[str] = None
 
 
 def _code_of(exc: BaseException) -> int:
@@ -122,6 +131,13 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
         from unilabos.server.services.materials.material_io import MaterialIO
 
         return MaterialIO(service, contents=contents).check(body.param, task_uuid=body.task_uuid, job_uuid=body.job_uuid)
+
+    @router.post("/material-sanity")
+    def material_sanity(body: MaterialSanityRequest) -> Any:
+        """调度器在节点就绪、申请资源前读一次：物料是否还在、生命周期、库位、未结算物理动作占用、占着它的
+        库存预留，以及本作业预留的各条分配现状。只读不写；等待还是预检报错由调度器判定。"""
+
+        return service.material_sanity_facts(body.material_uuids, reservation_uuid=body.reservation_uuid)
 
     @router.get("/commands/processed")
     def processed_commands(limit: int = Query(default=200, ge=1, le=500)) -> Any:

@@ -276,6 +276,11 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 > load / unload / refill) before its confirmation — the write's own code in a rolled-back savepoint, returning the frozen
 > plan (mount / site / template / material UUIDs and the lock set) or the write's error (6007 / 6011 are waits for the
 > scheduler). The write after approval is the typed command `material.io` on `/inventory/commands`.
+> Dev-only (2026-11-17): `POST /api/v1/inventory/material-sanity` (`{"material_uuids": [...], "reservation_uuid": null}`)
+> is the scheduler's one batched read for the pre-dispatch material sanity check: per material whether it was ever
+> registered, deleted, its lifecycle, site, the job holding it in an unsettled physical action and the reservations
+> claiming it; plus the job's reservation with the current lot / content state of each allocation. Read-only, no verdict
+> (the scheduler classifies; see `scheduling_and_execution.md`).
 
 | class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
 |---|---|---|---|---|---|

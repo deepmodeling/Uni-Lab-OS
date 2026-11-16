@@ -35,7 +35,8 @@ Graph Authority（`POST /graphs` 可随请求带 `device_site_templates`，用 H
 模板 Site；启动登记带 `on_existing="adopt"`——权威已有该图时以权威为准只补新增，前端 / CLI
 上传缺省 `replace` 即编辑）；Host 包里的 `@workflow` 是**工作流模板**，随注册表快照一起上报
 （`POST /api/v1/registry/reports` 的一个条目，`registry_type=workflow`），不直接落成
-工作流。注册表上报按内容哈希增量进行（先 `GET /registry/digest`，只为权威没有的哈希附完整定义），
+工作流。**调度权威不扫描注册表**：它的设备 / 资源 / 工作流模板目录只来自 Host 的上报（按内容哈希
+增量进行：先 `GET /registry/digest`，只为权威没有的哈希附完整定义），变化按接受规则生效或待确认，
 见下文 `/api/v1/registry/*`。两侧的控制面在 `runtime.v1` 之内闭环：Host 上报的注册表快照带
 `always_free` / `error_policy` / `timeout` / `execution_timeout`，权威据此解析动作锁、重试上限与
 超时看门狗（软超时表达式按最终参数求值后随 `execute_job` 下发）；Host 失败打开终态闸门后发
@@ -170,19 +171,37 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   受管日志统一经 `GET /api/v1/hostlink/logs?source_id=managed:<id>` 读取。驱动崩溃只影响该子进程，Host 与物料权威不受影响。
   这两组路由只在 Host 上挂载（Backend 返回 404），前端按能力缺失降级。协议细节见
   [OpenLabSite](https://github.com/Xuwznln/OpenLabSite) 仓库 `docs/protocol/driver-packages.md`。
-- `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本。与 Workflow Authority
-  同归属、同一 `setup_server()` 挂载。Host 启动时按**内容哈希增量**上报（协议对象见
-  `unilabos.protocol.runtime.registry`）：先 `GET /registry/digest` 取权威持有的
-  `{active: {name: content_sha256}, pending: {…}}`，再 `POST /registry/reports`（JSON，可 gzip）发
-  `{entries: [{id, content_sha256, payload?}]}`——每个条目（设备 / 资源 / 包里 `@workflow`
-  声明的工作流模板）都带哈希，集合本身决定哪些既有条目软移除，只有权威没有该哈希的条目
-  才附完整 `payload`。首次上报索引为空即全量，之后每次启动只剩几 KB 的哈希清单；权威对
-  带 payload 的条目自己重算哈希，只发哈希却对不上的条目列入结果的 `missing`，Host 补上
-  payload 再报一次。旧形状 `{resources: [...], workflow_templates: [...]}`（全量定义）仍被接受，
-  Host 遇到没有 digest 端点的旧权威也会退回这种形状。
-  `entries` 列条目状态；`pending-impacts` 把挂起冲突映射到受影响的
-  workflow 节点；`entries/{name}/apply` 确认待处理版本，`dismiss` 忽略挂起，
+- `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本，也是权威注册表目录的**唯一来源**
+  （权威不扫描设备 / 资源定义；工作流编译与模板实例化用的设备目录、节点模板、动作 Schema、出库
+  可选的资源类都读这里的生效条目）。与 Workflow Authority 同归属、同一 `setup_server()` 挂载。
+  Host 启动时按**内容哈希增量**上报（协议对象见 `unilabos.protocol.runtime.registry`）：先
+  `GET /registry/digest` 取权威持有的 `{active: {name: content_sha256}, pending: {…}}`，再
+  `POST /registry/reports`（JSON，可 gzip）发 `{machine_id, slaves, entries: [{id, content_sha256, payload?, package,
+  package_version}]}`——每个条目（设备 / 资源 / 包里 `@workflow` 声明的工作流模板）都带哈希与所属
+  驱动包（不进哈希），集合本身决定哪些既有条目移除，只有权威没有该哈希的条目才附完整 `payload`。
+  首次上报索引为空即全量，之后每次启动只剩几 KB 的哈希清单；权威对带 payload 的条目自己重算哈希，
+  只发哈希却对不上的条目列入结果的 `missing`，Host 补上 payload 再报一次。上报失败时 Host 在后台
+  重试直到成功。旧形状 `{resources: [...], workflow_templates: [...]}`（全量定义）仍被接受，Host
+  遇到没有 digest 端点的旧权威也会退回这种形状。
+  **接受规则**：新增或变化的条目（以及 Host 不再上报的条目）先挂起，命中规则才直接生效——
+  规则 B（单机部署）：上报带的 `machine_id` 等于权威自己的（`utils/machine_identity.py`，单进程
+  时进程内上报必然同机），且权威没有记录任何跨机器 Slave，则本次全部变化生效（默认 `unilab`
+  的权威 + Host 子进程 + 受管 Slave 总是如此，不需要人工确认）；规则 A（驱动包升级）：条目所属
+  驱动包的版本号（PEP 440）比已接受内容的包版本高时生效，新条目与同一驱动包已接受条目的最高
+  版本比较。其余变化挂起，`pending_reason` 写明是 `cross-machine-reporter`（`--address` 接入的
+  Host 在另一台机器，或上报不带机器标识）还是 `cross-machine-slave`；变化删改了活跃 workflow
+  引用的动作时附冲突明细（规则命中直接生效时记进上报统计的 `auto_accepted[].conflicts`）。
+  跨机器 Slave 由 Host 告知：上报带当时连着的 Slave（HostLink HELLO 自报的 `machine_id`），之后
+  每有 Slave 接入 Host 再 `POST /registry/slaves` 补报；`machine_id` 不等于权威的（或旧 Slave
+  没有）即记入 `registry_remote_slave`，直到 `DELETE /registry/slaves/{machine_name}` 删除。
+  `GET /registry/status` 给出是否已收到上报、最近一次上报的统计与判定、挂起数和当前的规则 B 判定；
+  `entries` 列条目状态（`pending_change` 为 `add` / `update` / `remove`，`package` /
+  `package_version` 是规则 A 的基准）；`pending-impacts` 把挂起冲突映射到受影响的 workflow 节点；
+  `entries/{name}/apply` 接受挂起的变化，`dismiss` 忽略（Host 再报同一内容会再次挂起，复用同一
+  版本号），`pending/apply` / `pending/dismiss`（`{names?}`，缺省为全部）批量处理，
   `restore/{version}` 还原历史版本。
+  全新库在首次上报前目录为空：读接口返回空（节点模板只有权威自带的结构模板），工作流编译、
+  `from-template` / `template-instances` 与按资源类出库明确报 `registry_not_reported`。
   只提供执行面的进程不挂载该域（HTTP 404），注册表服务尚未就绪时返回业务码 5001，前端按这两种情况静默降级。
 - 工作流模板：`GET /api/v1/registry/workflow-templates` 列出生效的 `@workflow` 模板
   （`uuid` / `display_name` / `roles` / `nodes` / `edges`，与前端「工作流模板」面板的用户模板

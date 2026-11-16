@@ -141,10 +141,13 @@ Workflow、Graph 等使用 `page/page_size`；runtime/history/telemetry 常用 `
 ## 注册表、图与布局
 
 1. `GET /registry/digest` 获取已持有内容哈希。
-2. `POST /resource-templates` 可发送 gzip JSON `RegistryReport`：
-   `entries:[{id,content_sha256,payload?}]`，权威缺少的内容才附 payload；检查返回的 `missing`。
-3. 条目可能为 active/pending/removed/unusable。使用 `/registry/entries/{name}` 与 `/versions`
-   查看差异，`/apply`、`/dismiss`、`/restore/{version}` 才改变生效状态。
+2. `POST /registry/reports` 可发送 gzip JSON `RegistryReport`：
+   `{machine_id, slaves, entries:[{id,content_sha256,payload?,package,package_version}]}`，权威缺少的内容才附
+   payload；检查返回的 `missing`。权威不扫描注册表，这是它目录的唯一来源。
+3. 条目可能为 active/pending/removed/unusable。新增 / 变化 / 消失先挂起，除非规则 B（上报的 `machine_id`
+   等于权威的、且没有记录跨机器 Slave）或规则 A（驱动包版本号升高）成立；`GET /registry/status` 给出判定。
+   使用 `/registry/entries/{name}` 与 `/versions` 查看差异，`/apply`、`/dismiss`（及批量 `/registry/pending/apply|dismiss`）、
+   `/restore/{version}` 才改变生效状态。
 4. `GET /registry/workflow-templates` 返回声明式模板，不是已经运行过的工作流。
 
 **哈希增量是“正文增量”，不是“条目列表增量”**：RegistryReport.entries 必须包含 Host 当前全部条目。

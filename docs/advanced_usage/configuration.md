@@ -265,6 +265,7 @@ unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 | `is_host_mode`           | bool | `True`        | 是否为主站模式                             |
 | `slave_no_host`          | bool | `False`       | 从站模式下是否跳过等待主机服务             |
 | `machine_name`           | str  | `"undefined"` | 机器名称，自动从 hostname 获取（不可配置） |
+| `machine_id`             | str  | `""`          | 本机身份，判断调度权威、Host、Slave 是否同一台机器（注册表自动接受的规则 B）；留空取操作系统机器标识的摘要，同一宿主机上的多个容器要算同一台时填同一个值 |
 | `vis_2d_enable`          | bool | `False`       | 是否启用 2D 可视化                         |
 | `enable_resource_load`   | bool | `True`        | 是否启用资源加载                           |
 | `log_level`              | str  | `"DEBUG"`     | 日志级别                                   |

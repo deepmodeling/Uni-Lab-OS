@@ -50,6 +50,26 @@ builder 模式已移除，工作流只按源码编译；支持等待测量结果
 剩余顺序建议：正式前端适配与 F09 / T02 联调 → U01 → T01。
 I02、W01、A03 `order_sensitive` 已完成；缺料是预检报错（任务级直接失败、动作级挂起待补料重试），只是被其他任务预留则排队等待（2026-11-16），执行中失败是执行报错（用户决定）；builder 模式已移除。
 
+### 注册表只来自 Host 上报（负责人 2026-11-17 决定）
+
+之前默认 `unilab` 的调度权威进程在拉起 Host 子进程前自己也跑一遍 `build_registry`（YAML + AST 扫描），与 Host
+各扫一次；权威的物料资源模板、出库资源类、图登记缺省 Site、模板实例化的动作类型都读这份本地扫描。负责人决定：
+要用 Slave，就由 Host 上报注册表，权威不自己扫描；注册表变化要让用户确认，驱动包版本号升高的自动接受，没有跨机器
+Slave 时全部自动接受。现在：
+
+| 方面 | 现在 | 证据 |
+| --- | --- | --- |
+| 权威不扫描 | `app/main.py` 在权威路径（默认拓扑、`--role backend`）上不调用 `build_registry`、不并入驱动包台账目录，`run_backend_process` 不再收注册表、不再登记资源模板（资源模板由 Host 经物料权威地址同步）；Host / Slave / `--check_mode` / `--no-safe-restart` 照常扫描 | `tests/app/test_registry_upload_only.py` |
+| 目录来源 | 权威的目录只来自上报：设备目录 / 动作 Schema / 节点模板 / 工作流模板本来就读 Registry Authority；出库资源类、按资源类实例化、`POST /graphs` 缺省 Site、模板实例化动作类型、旧 JSON 导入的 handle 改经 `registry/catalog.py`（有 Registry Authority 读生效条目，否则读本地扫描）；设备条目的上报投影带 `available_sites` | `tests/server/test_registry_catalog.py` |
+| 首次上报前 | 全新库目录为空，读接口返回空；结构模板（条件 / 循环 / 分组 / 人工物料）是权威自己的控制结构，照样投影；工作流编译、`from-template` / `template-instances`、按资源类出库报 `registry_not_reported`；`GET /registry/status` 给出 `reported`；Host 上报失败后台重试 | 同上 |
+| 接受规则 | 新增 / 变化 / Host 不再上报的条目先挂起；规则 B：上报 `machine_id`（`utils/machine_identity.py`）等于权威的、且 `registry_remote_slave` 为空时全部生效；规则 A：条目所属驱动包版本（`registry/package_provenance.py`：台账 → unilabos → `pyproject.toml`）比已接受内容的高时生效；冲突明细不再决定挂起，只附在挂起条目上或记进 `auto_accepted` | `tests/server/test_registry_authority.py::TestAcceptanceRules`、`tests/registry/test_registry_report_metadata.py` |
+| 跨机器 Slave | Slave 在 HostLink HELLO 带 `machine_id`；Host 上报带当时连着的 Slave，之后每有 Slave 接入再 `POST /registry/slaves`；不同机的被持久记下，`DELETE /registry/slaves/{machine_name}` 删除 | 同上 |
+| 确认接口 | 沿用 `entries/{name}/apply|dismiss`，新增批量 `pending/apply|dismiss`、`status`、`slaves`；V1 没有对应路由 | `api_v1_route_map.md` |
+| 默认拓扑 | 权威 + Host 子进程 + 受管 Slave 同机，规则 B 成立，启动不需要人工确认 | `test_registry_upload_only.py` 的真实进程用例；七个 README demo 在 `UNILABOS_E2E_TOPOLOGY=split` 下通过 |
+
+`runtime.db` v1 基线增加 `registry_entry.package_*`、`registry_entry_state` 的包基准 / 挂起原因 / 待确认移除和
+`registry_remote_slave` 表（发布前直接并进 v1，旧开发库按 D05 处理）。
+
 ### U01 缺口补齐：工作流（2026-11-16）
 
 | V1 文件 | 之前 | 现在 | 证据 |

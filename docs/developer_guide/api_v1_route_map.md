@@ -144,7 +144,7 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
   - `/workflow-resource-intervals|loans|device-tenancies` (+ release, lend, return).
   - Manual confirmations: list, get and decide, by confirmation and per task.
   - `/workflow-tasks/{uuid}/interventions`, `/workflow-node-jobs/{uuid}/results|feedback-history|begin|started`.
-- **Registry:** `/api/v1/registry/*` (12 routes: digest, entries, versions, apply/dismiss/restore, reports, pending-impacts, workflow-templates).
+- **Registry:** `/api/v1/registry/*` (18 routes: digest, entries, versions, apply/dismiss/restore, reports, pending-impacts, workflow-templates; 2026-11-17: `status`, `slaves` (POST announce / GET list / DELETE forget), `pending/apply`, `pending/dismiss`). V1 has no registry-acceptance routes (its registry is local to each process), so these stay dev-only. Since 2026-11-17 the authority does not scan the registry: its catalog comes only from Host reports, and changes are pending unless rule A (driver package version increased) or rule B (single machine: the reporting Host has the authority's `machine_id` and no cross-machine Slave is recorded) applies; see `edge_ui_api.md`.
 - **Materials:**
   - `/api/v1/materials/*` (42 routes: templates, lots, stocktake, reservations, executions, trees, instantiate, instances, links (+ `links/ensure`: startup graph links, written by the Host through its materials client), snapshots, notify-device, changes, events, registry-classes, inventory/preview).
   - `/api/v1/chemicals` (5) and `/api/v1/graphs` (6).

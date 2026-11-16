@@ -90,13 +90,19 @@ graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；�
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/registry/digest` | — | 信封；已持有内容摘要，用于上报前判定是否需正文 |
-| POST | `/api/v1/resource-templates` | B: RegistryReport JSON，可 gzip | 信封；上报统计及 missing；路径虽叫 resource-templates，报告不只包含物料模板 |
+| POST | `/api/v1/registry/reports` | B: RegistryReport JSON（`machine_id`、`slaves`、`entries[].package/package_version`），可 gzip | 信封；上报统计（含 `auto_accepted` 与规则 B 判定 `acceptance`）及 missing；不满足接受规则的变化挂起 |
+| GET | `/api/v1/registry/status` | — | 信封；是否已收到上报、最近一次上报、挂起数、当前规则 B 判定与跨机器 Slave |
+| POST | `/api/v1/registry/slaves` | B: `{edge_uuid, machine_id, slaves:[{machine_name, machine_id}]}` | 信封；Host 补报连着的 Slave，跨机器的被记下 |
+| GET | `/api/v1/registry/slaves` | — | 信封 data.slaves；权威记着的跨机器 Slave |
+| DELETE | `/api/v1/registry/slaves/{machine_name}` | — | 信封；删除一条跨机器 Slave 记录（不存在 4001） |
+| POST | `/api/v1/registry/pending/apply` | B: `{names?: [...]}` | 信封 `{entries, failed}`；批量接受挂起的变化，缺省全部 |
+| POST | `/api/v1/registry/pending/dismiss` | B: `{names?: [...]}` | 信封 `{entries, failed}`；批量忽略，缺省全部 |
 | GET | `/api/v1/registry/entries` | Q: status="" | 信封 data.entries，可筛 active/pending/removed/unusable |
 | GET | `/api/v1/registry/entries/{name}` | — | 信封；生效/挂起定义及冲突 |
 | GET | `/api/v1/registry/entries/{name}/versions` | — | 信封 data.versions，版本历史 |
 | GET | `/api/v1/registry/entries/{name}/versions/{version}` | version 为整数 | 信封；指定历史版本全文 |
-| POST | `/api/v1/registry/entries/{name}/apply` | — | 信封；挂起版本生效，可能影响已有工作流 |
-| POST | `/api/v1/registry/entries/{name}/dismiss` | — | 信封；忽略挂起版本，保留历史 |
+| POST | `/api/v1/registry/entries/{name}/apply` | — | 信封；接受挂起的变化（新版本生效 / 待确认移除即软移除），可能影响已有工作流 |
+| POST | `/api/v1/registry/entries/{name}/dismiss` | — | 信封；忽略挂起的变化，保留历史；Host 再报同一内容会再次挂起 |
 | POST | `/api/v1/registry/entries/{name}/restore/{version}` | version 为整数 | 信封；以历史版本形成新的生效版本 |
 | GET | `/api/v1/registry/pending-impacts` | — | 信封 data.impacts，待升级定义影响面 |
 | GET | `/api/v1/registry/reports` | Q: page=1（>=1）、page_size=50（1..200） | 信封；上报批次分页 |

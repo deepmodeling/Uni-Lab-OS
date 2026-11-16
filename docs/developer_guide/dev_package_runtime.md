@@ -54,6 +54,20 @@ unilab package operation <operation_id> --wait --timeout 300
 
 升级先在候选源码上完成扫描，旧源码在新台账提交前保留可回滚备份；台账写入异常时，升级或卸载会恢复旧源码。源码包的随包图只从登记的 `package_root` 发现，兼容平铺、`src/` 和根目录本身是 Python 包的布局；同名旧 pip 分发不能覆盖或补回源码已删除的图。
 
+### 包版本与调度权威的注册表接受
+
+调度权威不扫描注册表，它的设备 / 资源 / 工作流模板目录只来自 Host 重启后的注册表上报（`POST /api/v1/registry/reports`，
+见 [edge_ui_api](edge_ui_api.md) 的 `/api/v1/registry/*`）。上报的每个条目带所属驱动包与包版本，由
+`registry/package_provenance.py` 按条目源文件解析：先查本 Host 的台账（文件在已登记包的 `package_root` 或包目录下 →
+台账里的包名与版本），再看是不是 unilabos 自身（内置设备、YAML 资源、`host_node` → `unilabos.__version__`），否则取
+最近的 `pyproject.toml` 的 `[project]` name / version（`--devices` 挂载的源码树、社区包；动态版本取不到时为空）。
+包版本不进条目内容哈希。
+
+权威据此判定变化能否自动接受：单机部署（Host 与权威同一台机器、没有跨机器 Slave，默认 `unilab` 即如此）全部接受；
+否则只有**包版本号升高**（PEP 440 比较，和已接受内容上次被上报时的包版本比；新条目和同一包已接受条目的最高版本比）
+的变化自动接受，其余挂起待用户在前端确认。所以给跨机器部署发驱动包更新时请提升 `pyproject.toml` 的版本号；
+不改版本的本地改动、降级、换包或不知道属于哪个包的条目都要人工确认。
+
 | 层 | 所有者 | 职责 |
 | --- | --- | --- |
 | CLI | `app/cli/package.py` | 参数、静态检查、调用 SDK、展示操作结果 |

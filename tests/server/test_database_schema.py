@@ -54,10 +54,11 @@ EXPECTED_TABLES = {
         "workflow_authoring",
         "workflow_publication",
         "frontend_event",
-        # registry authority（edge 注册表版本快照）
+        # registry authority（edge 注册表版本快照 + 跨机器 Slave 记录）
         "registry_entry",
         "registry_entry_state",
         "registry_report",
+        "registry_remote_slave",
         "lab_layout",
         # schema v12：V1 进程管理操作记录与快照修订号
         "process_management_operation",
@@ -215,7 +216,7 @@ def test_aggregate_fields_and_material_storage_exceptions(tmp_path) -> None:
 def test_total_table_count_stays_small() -> None:
     # 图域并入 materials：material_link（拓扑边）+ lab_graph（命名快照）；
     # workflow / registry 并入 runtime：调度产物与注册表条目版本同库单写者
-    # （registry 为条目级版本三表：entry / entry_state / report）；
+    # （registry 为条目级版本三表：entry / entry_state / report，外加规则 B 的跨机器 Slave 记录）；
     # workflow 节点执行为两级：workflow_node_run（节点运行）+ workflow_node_job（attempt）；
     # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
@@ -226,9 +227,9 @@ def test_total_table_count_stays_small() -> None:
     # runtime：V1 实验操作类别、结构化人工交互、工站错误处置（工站控制 / 控制命令 /
     # 处置会话 / 工站错误）与进程管理（工作区操作记录 / 快照修订号）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 50,
+        "runtime": 51,
         "materials": 26,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 83
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 84

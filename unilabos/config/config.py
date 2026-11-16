@@ -73,6 +73,9 @@ class BasicConfig:
     # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
     host_node_name = "host_node"
     machine_name = "undefined"
+    # 本机身份（判断调度权威、Host、Slave 是否同一台机器，见 utils/machine_identity.py）；
+    # 留空时取操作系统的机器标识摘要。同一宿主机上的多个容器要算作同一台时显式填同一个值。
+    machine_id = ""
     vis_2d_enable = False
     no_update_feedback = False
     enable_resource_load = True

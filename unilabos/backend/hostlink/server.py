@@ -673,6 +673,8 @@ class HostLinkServer:
                         "addr": peer_key,
                         "node_id": node_id,
                         "machine_name": machine_name,
+                        # Slave 自报的本机身份（utils/machine_identity.py）；旧 Slave 没有
+                        "machine_id": str(data.get("machine_id") or "").strip(),
                         "role": str(data.get("role") or "slave"),
                         "device_ids": device_ids,
                         "devices": devices,
@@ -787,6 +789,7 @@ class HostLinkServer:
         from unilabos.utils.log_notices import log_notices
 
         log_notices.changed(f"slave:{peer['node_id']}", sources_changed=True)
+        _notify_peer_listeners(peer)
         return {
             "server_time": time.time(),
             "heartbeat_timeout": self.heartbeat_timeout,
@@ -839,6 +842,38 @@ _server_lock = threading.Lock()
 _server: Optional[HostLinkServer] = None
 
 
+_peer_listeners: List[Callable[[Dict[str, Any]], None]] = []
+_peer_listeners_lock = threading.Lock()
+
+
+def add_peer_listener(listener: Callable[[Dict[str, Any]], None]) -> Callable[[], None]:
+    """Slave 每次 HELLO（接入 / 重连）后回调 ``listener(peer 快照)``；返回取消函数。
+
+    回调在 HostLink 请求线程里同步执行，必须很快返回（耗时工作交给自己的线程）。
+    """
+
+    with _peer_listeners_lock:
+        _peer_listeners.append(listener)
+
+    def remove() -> None:
+        with _peer_listeners_lock:
+            if listener in _peer_listeners:
+                _peer_listeners.remove(listener)
+
+    return remove
+
+
+def _notify_peer_listeners(peer: Dict[str, Any]) -> None:
+    with _peer_listeners_lock:
+        listeners = list(_peer_listeners)
+    snapshot = dict(peer)
+    for listener in listeners:
+        try:
+            listener(snapshot)
+        except Exception:  # noqa: BLE001 - 监听者故障不影响 Slave 握手
+            logger.exception("[HostLink] Slave 接入回调失败")
+
+
 def set_hostlink_server(server: Optional[HostLinkServer]) -> None:
     global _server
     with _server_lock:
@@ -857,6 +892,7 @@ __all__ = [
     "HostLinkServer",
     "HostStage",
     "NOT_READY_RETRY_AFTER",
+    "add_peer_listener",
     "get_hostlink_server",
     "set_hostlink_server",
 ]

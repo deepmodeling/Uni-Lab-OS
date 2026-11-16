@@ -1040,22 +1040,37 @@ def _run_main():
                 print_status(f"开机拓扑边对齐失败（不影响运行）: {exc}", "warning")
 
         # 启动时上报完整注册表快照给 Registry Authority：服务端按条目版本化变更，
-        # 并挂起会影响活跃 workflow 的 action 变更。设备包里的 @workflow 是工作流
-        # **模板**，随同一份快照上报（registry_type=workflow），由前端插入画布或经
-        # POST /workflows/from-template 实例化，不再直接落成工作流。权威在远端
-        # （--address）时走 HTTP；本机持有调度权威时直接写进程内服务，两条路径共用同一投影。
+        # 按接受规则决定直接生效还是挂起待确认
+        # （规则 B：单机部署全部接受；规则 A：驱动包版本升高的接受），上报因此带本机机器标识、
+        # 每个条目所属的驱动包版本和当前连着的 Slave；之后接入的 Slave 由补报器告知权威。
+        # 设备包里的 @workflow 是工作流**模板**，随同一份快照上报（registry_type=workflow），
+        # 由前端插入画布或经 POST /workflows/from-template 实例化。权威在别的进程（默认拓扑的
+        # 子进程、--address）时走 HTTP，失败时后台重试直到成功；单进程（--no-safe-restart）时
+        # 直接写进程内服务，两条路径共用同一投影。
+        from unilabos.server.backend.legacy_adaptor.sync.slaves import (
+            http_slave_sender,
+            local_slave_sender,
+            start_slave_announcer,
+        )
+
         registry_report = None
+        edge_uuid = BasicConfig.machine_name or BasicConfig.host_node_name or ""
         if HTTPConfig.remote_addr:
             # 远端模式只接入 runtime.v1 微后端；注册表、物料、工作流和调度
             # 均由后端权威承接。旧云端字段兼容属于 Backend 侧
             # ``legacy_adaptor``，不能在 Edge 启动时分叉出第二套上联链路。
             from unilabos.server.backend.legacy_adaptor.sync.templates import (
                 report_registry_snapshot,
+                retry_registry_report_in_background,
             )
 
             registry_report = report_registry_snapshot(
                 lab_registry, HTTPConfig.remote_addr
             )
+            if registry_report is None:
+                print_status("注册表上报失败：后台重试中，调度权威在收到上报前没有这些设备的目录", "warning")
+                retry_registry_report_in_background(lab_registry, HTTPConfig.remote_addr)
+            start_slave_announcer(http_slave_sender(HTTPConfig.remote_addr, edge_uuid=edge_uuid))
         else:
             from unilabos.server.backend.legacy_adaptor.sync.templates import (
                 report_registry_snapshot_local,
@@ -1067,10 +1082,13 @@ def _run_main():
                 registry_report = report_registry_snapshot_local(
                     lab_registry,
                     local_registry_service,
-                    edge_uuid=BasicConfig.machine_name or BasicConfig.host_node_name or "",
+                    edge_uuid=edge_uuid,
                 )
+                start_slave_announcer(local_slave_sender(local_registry_service, edge_uuid=edge_uuid))
         if registry_report is not None:
-            counts = (registry_report.summary or {}).get("counts", {})
+            summary = registry_report.summary or {}
+            counts = summary.get("counts", {})
+            acceptance = summary.get("acceptance") or {}
             print_status(
                 f"注册表已上报: 设备 {registry_report.device_count} "
                 f"资源 {registry_report.resource_count} "
@@ -1084,6 +1102,17 @@ def _run_main():
                 ),
                 "info",
             )
+            if counts.get("pending"):
+                reason = {
+                    "cross-machine-reporter": "本 Host 与调度权威不在同一台机器",
+                    "cross-machine-slave": "调度权威记录着跨机器 Slave "
+                    + "、".join(acceptance.get("remote_slaves") or []),
+                }.get(str(acceptance.get("reason") or ""), "未满足自动接受规则")
+                print_status(
+                    f"注册表有 {counts['pending']} 项变化待确认（{reason}；驱动包版本升高的变化自动接受）："
+                    "请在前端确认或忽略（POST /api/v1/registry/pending/apply|dismiss）",
+                    "warning",
+                )
 
         # 微后端必须先于控制链路接收命令，避免首个 job_start 绕过生命周期权威。
         comm_client.start()

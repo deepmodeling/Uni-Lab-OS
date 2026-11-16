@@ -1,4 +1,9 @@
-"""把 Edge Registry 按内容哈希增量上报到微后端 Registry Authority（协议见 protocol.runtime.registry）。"""
+"""把 Edge Registry 按内容哈希增量上报到微后端 Registry Authority（协议见 protocol.runtime.registry）。
+
+调度权威自己不扫描注册表，它的目录只来自这里的上报。每个条目带所属驱动包与包版本（不进内容
+哈希，见 ``registry/package_provenance.py``），上报带本机机器标识与当前连着的 Slave：权威据此
+判断变化能否自动接受（规则 A / B，见 ``services/runtime/registry.py``）。
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,8 @@ import gzip
 import json
 import logging
 import copy
+import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional
 from urllib.parse import urlsplit
@@ -20,6 +27,7 @@ from unilabos.protocol.runtime.registry import (
     RegistryDigest,
     RegistryReport,
     RegistryReportEntry,
+    RegistrySlave,
 )
 from unilabos.utils.serialization import normalize_json
 from unilabos.utils.tracing import inject_trace_context, span
@@ -75,16 +83,18 @@ class TemplateSynchronizer:
 
         devices, resources, workflows = collect_registry_templates(registry)
         definitions = [*devices, *resources, *workflows]
+        packages = collect_registry_packages(registry, workflows)
+        slaves = current_hostlink_slaves()
         digest = self._fetch_digest()
         if digest is None:
-            result = self._post_full_snapshot(devices, resources, workflows)
+            result = self._post_full_snapshot(devices, resources, workflows, slaves)
             return _build_report(result, devices, resources, workflows)
 
         hashes = {definition["id"]: canonical_hash(definition) for definition in definitions}
         need_payload = {
             name for name, sha in hashes.items() if not digest.holds(name, sha)
         }
-        result = self._post_hashed_report(definitions, hashes, need_payload)
+        result = self._post_hashed_report(definitions, hashes, need_payload, packages, slaves)
         missing = [str(name) for name in result.get("missing") or []]
         if missing:
             # 权威对不上我们声明的哈希（极少见：本地哈希与权威重算不一致等）：补全定义再报一次
@@ -94,7 +104,7 @@ class TemplateSynchronizer:
                 ", ".join(missing[:10]) + ("…" if len(missing) > 10 else ""),
             )
             result = self._post_hashed_report(
-                definitions, hashes, need_payload | set(missing)
+                definitions, hashes, need_payload | set(missing), packages, slaves
             )
         return _build_report(result, devices, resources, workflows)
 
@@ -136,14 +146,23 @@ class TemplateSynchronizer:
         definitions: list[Dict[str, Any]],
         hashes: Mapping[str, str],
         need_payload: set[str],
+        packages: Optional[Mapping[str, tuple[str, str]]] = None,
+        slaves: Iterable[Mapping[str, str]] = (),
     ) -> Dict[str, Any]:
+        from unilabos.utils.machine_identity import machine_id
+
+        packages = packages or {}
         report = RegistryReport(
             edge_uuid=BasicConfig.machine_name or "",
+            machine_id=machine_id(),
+            slaves=[RegistrySlave.model_validate(slave) for slave in slaves],
             entries=[
                 RegistryReportEntry(
                     id=definition["id"],
                     content_sha256=hashes[definition["id"]],
                     payload=definition if definition["id"] in need_payload else None,
+                    package=packages.get(definition["id"], ("", ""))[0],
+                    package_version=packages.get(definition["id"], ("", ""))[1],
                 )
                 for definition in definitions
             ],
@@ -162,9 +181,16 @@ class TemplateSynchronizer:
         devices: list[Dict[str, Any]],
         resources: list[Dict[str, Any]],
         workflows: list[Dict[str, Any]],
+        slaves: Iterable[Mapping[str, str]] = (),
     ) -> Dict[str, Any]:
+        from unilabos.utils.machine_identity import machine_id
+
         # 旧权威：工作流模板单独一个键，只认 resources 的权威会原样忽略
-        payload: Dict[str, Any] = {"resources": [*devices, *resources]}
+        payload: Dict[str, Any] = {
+            "resources": [*devices, *resources],
+            "machine_id": machine_id(),
+            "slaves": [dict(slave) for slave in slaves],
+        }
         if workflows:
             payload["workflow_templates"] = workflows
         return self._post_report(
@@ -242,6 +268,38 @@ def collect_registry_templates(
     return devices, resources, workflows
 
 
+def collect_registry_packages(
+    registry: Any, workflows: Iterable[Mapping[str, Any]] = ()
+) -> Dict[str, tuple[str, str]]:
+    """条目 id → (驱动包名, 包版本)：规则 A 的依据，解析失败不阻断上报。"""
+
+    from unilabos.registry.package_provenance import registry_entry_packages
+
+    try:
+        return registry_entry_packages(registry, workflows)
+    except Exception as exc:  # noqa: BLE001 - 没有包信息只是规则 A 不适用
+        logger.warning("[Registry Sync] 解析条目所属驱动包失败，本次上报不带包版本: %s", exc)
+        return {}
+
+
+def current_hostlink_slaves() -> list[Dict[str, str]]:
+    """本 Host 的 HostLink 当前认识的 Slave（machine_name + 自报的 machine_id）。"""
+
+    try:
+        from unilabos.backend.hostlink.server import get_hostlink_server
+    except Exception:  # noqa: BLE001 - 精简环境没有 HostLink
+        return []
+    server = get_hostlink_server()
+    if server is None:
+        return []
+    slaves: list[Dict[str, str]] = []
+    for peer in server.peers():
+        name = str(peer.get("machine_name") or "").strip()
+        if name and str(peer.get("role") or "slave") == "slave":
+            slaves.append({"machine_name": name, "machine_id": str(peer.get("machine_id") or "")})
+    return slaves
+
+
 def _build_report(
     result: Mapping[str, Any],
     devices: list[Dict[str, Any]],
@@ -286,16 +344,29 @@ def report_registry_snapshot_local(
     *,
     edge_uuid: str = "",
 ) -> Optional[TemplateSyncReport]:
-    """本机持有 Registry Authority 时，把自身扫描结果直接写入进程内服务（fail-open）。
+    """单进程（``--no-safe-restart``）时，把自身扫描结果直接写入进程内服务（fail-open）。
 
-    与 :func:`report_registry_snapshot` 走同一投影和同一 ``RegistryService.report``
-    入口，只是不经过 HTTP；默认 Host 与 ``--role backend`` 因此维护同一套条目版本。
+    与 :func:`report_registry_snapshot` 走同一投影、同一份驱动包信息和同一
+    ``RegistryService.report_entries`` 入口，只是不经过 HTTP；进程内上报必然与权威同机。
     """
+
+    from unilabos.server.services.runtime.registry import RegistryReporter
 
     try:
         devices, resources, workflows = collect_registry_templates(registry)
-        result = registry_service.report(
-            [*devices, *resources, *workflows], edge_uuid=edge_uuid
+        packages = collect_registry_packages(registry, workflows)
+        result = registry_service.report_entries(
+            [
+                {
+                    "id": definition["id"],
+                    "content_sha256": canonical_hash(definition),
+                    "payload": definition,
+                    "package": packages.get(definition["id"], ("", ""))[0],
+                    "package_version": packages.get(definition["id"], ("", ""))[1],
+                }
+                for definition in (*devices, *resources, *workflows)
+            ],
+            reporter=RegistryReporter.local(edge_uuid=edge_uuid, slaves=current_hostlink_slaves()),
         )
         return _build_report(result, devices, resources, workflows)
     except Exception as exc:  # noqa: BLE001 - 注册表镜像缺失不阻断启动
@@ -320,6 +391,35 @@ def report_registry_snapshot(
     except (TemplateSyncError, requests.RequestException) as exc:
         logger.warning("[Registry Sync] 注册表上报失败（不阻断启动）: %s", exc)
         return None
+
+
+def retry_registry_report_in_background(
+    registry: Any,
+    backend_address: str,
+    *,
+    first_delay_s: float = 5.0,
+    max_delay_s: float = 60.0,
+) -> threading.Thread:
+    """启动时上报失败后在后台重试，直到成功为止（调度权威的目录只来自 Host 上报）。"""
+
+    def run() -> None:
+        delay = first_delay_s
+        while True:
+            time.sleep(delay)
+            report = report_registry_snapshot(registry, backend_address)
+            if report is not None:
+                logger.info(
+                    "[Registry Sync] 注册表补报成功: 设备 %d 资源 %d 工作流模板 %d",
+                    report.device_count,
+                    report.resource_count,
+                    report.workflow_count,
+                )
+                return
+            delay = min(delay * 2, max_delay_s)
+
+    thread = threading.Thread(target=run, name="registry-report-retry", daemon=True)
+    thread.start()
+    return thread
 
 
 def _collect_templates(
@@ -380,6 +480,10 @@ def _template_definition(
     schema = _initial_parameter_schema(source.get("init_param_schema"))
     if schema:
         definition["init_param_schema"] = schema
+    sites = _object_list(source.get("available_sites"))
+    if sites:
+        # 设备模板 Site：权威没有本地注册表，图登记（POST /graphs）缺省的 Site 定义从这里取
+        definition["available_sites"] = [dict(site) for site in sites]
     for field in ("description", "icon", "cover"):
         value = source.get(field)
         if value is not None:

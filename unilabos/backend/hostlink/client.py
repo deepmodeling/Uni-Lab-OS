@@ -31,6 +31,7 @@ from unilabos.backend.hostlink.protocol import (
 )
 from unilabos.backend.hostlink.ros_assist import RosNetworkInfo
 from unilabos.utils import logger
+from unilabos.utils.machine_identity import machine_id
 
 #: 等 Host 的默认上限（秒）：连接阶段与 Host 启动中的就绪等待各自计时
 DEFAULT_HOST_WAIT_TIMEOUT = 120.0
@@ -260,6 +261,8 @@ class HostLinkClient:
             "node_id": self.node_id,
             "device_ids": list(self.device_ids),
             "machine_name": self.machine_name,
+            # 本机身份：Host 据此告诉调度权威这个 Slave 是否与它同机（注册表接受规则 B）
+            "machine_id": machine_id(),
             "role": "slave",
             "protocol_version": PROTOCOL_VERSION,
             "capabilities": list(self.capabilities),

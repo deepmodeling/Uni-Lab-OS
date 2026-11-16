@@ -7,8 +7,13 @@
   每个条目都带哈希，权威没有该哈希的才带 payload；结果里的 ``missing`` 列出仍缺定义的条目。
 - 旧全量快照：``{"resources": [...], "workflow_templates": [...]}``，每个条目都是完整定义。
 
-其余端点提供条目状态、版本历史、挂起版本确认或忽略、历史还原、上报批次统计，
-以及生效的工作流模板列表。
+上报带 Host 的 ``machine_id`` 与当时连着的 Slave，权威据此做接受规则判定（见
+``services/runtime/registry.py``）：不满足规则的变化挂起，经 ``entries/{name}/apply|dismiss``
+或批量的 ``pending/apply|dismiss`` 确认或忽略。``POST /registry/slaves`` 供 Host 在 Slave 接入时
+补报；``GET /registry/slaves`` / ``DELETE /registry/slaves/{machine_name}`` 查看、删除权威记着的
+跨机器 Slave；``GET /registry/status`` 给出目录是否已上报与当前的规则 B 判定。
+
+其余端点提供条目状态、版本历史、历史还原、上报批次统计，以及生效的工作流模板列表。
 """
 
 from __future__ import annotations
@@ -22,9 +27,16 @@ from pydantic import ValidationError
 
 from unilabos.server.api.envelope import envelope_router
 
-from unilabos.protocol.runtime.registry import RegistryDigest, RegistryReport
+from unilabos.protocol.runtime.registry import (
+    RegistryDigest,
+    RegistryPendingSelection,
+    RegistryReport,
+    RegistrySlave,
+    RegistrySlaveAnnouncement,
+)
 from unilabos.server.services.runtime.registry import (
     RegistryAuthorityError,
+    RegistryReporter,
     RegistryService,
     get_registry_service,
 )
@@ -43,6 +55,22 @@ def _ok(data: Any) -> Any:
     """成功载荷；信封由路由类统一包装（``api/envelope.py``）。"""
 
     return data
+
+
+def _reporter(edge_uuid: str, machine_id: Any, slaves: Any) -> RegistryReporter:
+    """HTTP 上报者：机器标识与 Slave 都来自请求体，缺省按跨机器处理（不是进程内上报）。"""
+
+    parsed = []
+    for raw in slaves if isinstance(slaves, list) else []:
+        try:
+            parsed.append(RegistrySlave.model_validate(raw).model_dump(mode="json"))
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid slave: {exc}") from exc
+    return RegistryReporter(
+        edge_uuid=edge_uuid,
+        machine_id=str(machine_id or ""),
+        slaves=tuple(parsed),
+    )
 
 
 @router.get("/api/v1/registry/digest")
@@ -81,7 +109,11 @@ async def report_resource_templates(request: Request) -> Any:
         try:
             report = service.report_entries(
                 [item.model_dump(mode="json") for item in report_body.entries],
-                edge_uuid=edge_uuid,
+                reporter=_reporter(
+                    edge_uuid,
+                    report_body.machine_id,
+                    [slave.model_dump(mode="json") for slave in report_body.slaves],
+                ),
             )
         except RegistryAuthorityError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -95,11 +127,62 @@ async def report_resource_templates(request: Request) -> Any:
         raise HTTPException(status_code=400, detail="workflow_templates must be a list")
     try:
         report = service.report(
-            [*payload["resources"], *workflow_templates], edge_uuid=edge_uuid
+            [*payload["resources"], *workflow_templates],
+            reporter=_reporter(edge_uuid, payload.get("machine_id"), payload.get("slaves")),
         )
     except RegistryAuthorityError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _ok(report)
+
+
+@router.get("/api/v1/registry/status")
+def get_registry_status() -> Any:
+    """目录状态：是否收到过 Host 上报、最近一次上报的统计与判定、挂起数、跨机器 Slave。"""
+
+    return _ok(_require_service().status())
+
+
+@router.post("/api/v1/registry/slaves")
+def announce_registry_slaves(body: RegistrySlaveAnnouncement) -> Any:
+    """Host 告知它连着的 Slave（Slave 接入时补报）；跨机器的被记下，规则 B 随之不成立。"""
+
+    service = _require_service()
+    added = service.record_slaves(
+        _reporter(body.edge_uuid, body.machine_id, [slave.model_dump(mode="json") for slave in body.slaves])
+    )
+    return _ok({"added": added, "acceptance": service.acceptance()})
+
+
+@router.get("/api/v1/registry/slaves")
+def list_registry_remote_slaves() -> Any:
+    """权威记着的跨机器 Slave（规则 B 因它们不成立）。"""
+
+    service = _require_service()
+    return _ok({"slaves": service.list_remote_slaves(), "acceptance": service.acceptance()})
+
+
+@router.delete("/api/v1/registry/slaves/{machine_name}")
+def forget_registry_remote_slave(machine_name: str) -> Any:
+    """删除一条跨机器 Slave 记录（确认不再使用）；该 Slave 再次接入会被重新记下。"""
+
+    try:
+        return _ok(_require_service().forget_remote_slave(machine_name))
+    except RegistryAuthorityError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/api/v1/registry/pending/apply")
+def apply_registry_pending(body: RegistryPendingSelection) -> Any:
+    """批量接受挂起的变化；``names`` 为空时接受全部。"""
+
+    return _ok(_require_service().apply_pending_many(body.names))
+
+
+@router.post("/api/v1/registry/pending/dismiss")
+def dismiss_registry_pending(body: RegistryPendingSelection) -> Any:
+    """批量忽略挂起的变化；``names`` 为空时忽略全部。"""
+
+    return _ok(_require_service().dismiss_pending_many(body.names))
 
 
 @router.get("/api/v1/registry/workflow-templates")
@@ -153,7 +236,7 @@ def get_registry_entry_version(name: str, version: int) -> Any:
 
 @router.post("/api/v1/registry/entries/{name}/apply")
 def apply_registry_entry(name: str) -> Any:
-    """把挂起版本切换为生效版本。"""
+    """接受挂起的变化：挂起版本切换为生效版本，待确认移除则软移除。"""
 
     try:
         return _ok(_require_service().apply_pending(name))
@@ -163,7 +246,7 @@ def apply_registry_entry(name: str) -> Any:
 
 @router.post("/api/v1/registry/entries/{name}/dismiss")
 def dismiss_registry_entry(name: str) -> Any:
-    """忽略挂起版本（历史保留，生效版本不动）。"""
+    """忽略挂起的变化（历史保留，生效版本不动；Host 再报同一内容会再次挂起）。"""
 
     try:
         return _ok(_require_service().dismiss_pending(name))

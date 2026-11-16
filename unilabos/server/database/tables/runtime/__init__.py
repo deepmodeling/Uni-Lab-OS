@@ -5,7 +5,7 @@ runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
 - ``control``：微后端命令与执行控制（backend_session / command_inbox /
   execution_job / adapter outbox-inbox 等）；
 - ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
-- ``registry``：Edge 注册表快照（条目级版本模型三表）；
+- ``registry``：Edge 注册表快照（条目级版本模型三表 + 跨机器 Slave 记录）；
 - ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）；
 - ``process_management``：V1 进程管理协议的操作记录与快照修订号。
 
@@ -41,6 +41,7 @@ from unilabos.server.database.tables.runtime.registry import (
     REGISTRY_TABLE_MODELS,
     RegistryEntryRecord,
     RegistryEntryStateRecord,
+    RegistryRemoteSlaveRecord,
     RegistryReportRecord,
 )
 from unilabos.server.database.tables.runtime.workflow import (
@@ -172,6 +173,7 @@ __all__ = [
     # registry（注册表快照）
     "RegistryEntryRecord",
     "RegistryEntryStateRecord",
+    "RegistryRemoteSlaveRecord",
     "RegistryReportRecord",
     # lab（实验室布局）
     "LabLayoutRecord",

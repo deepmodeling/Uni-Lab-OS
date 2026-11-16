@@ -264,3 +264,41 @@ def test_notify_resource_tree_update_semantics(
 
     monkeypatch.setattr(downlink, "get_hostlink_server", lambda: _BrokenServer())
     assert notify_resource_tree_update("remote_dev", "add", ["u3"]) is False
+
+
+def test_notify_reports_a_change_the_device_could_not_apply_as_false(
+    fake_device: _FakeNode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """设备逐条应用、单条失败只写在 results 里：任何一条 success=False 都不算确认。"""
+
+    async def rejected(operations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        fake_device.tree_sync_calls.append(operations)
+        return {"results": [{"success": False, "action": "update", "error": "容器不在台面上"}], "total": 1}
+
+    monkeypatch.setattr(fake_device, "apply_resource_tree_update", rejected)
+    assert notify_resource_tree_update(fake_device.device_id, "update", ["u1"]) is False
+    assert fake_device.tree_sync_calls == [[{"action": "update", "data": ["u1"]}]]
+
+
+def _authority_relay(monkeypatch: pytest.MonkeyPatch) -> List[Any]:
+    """调度权威形态：设备下行一律经 Host 中继，查本进程设备表即失败（ros2 形态下会去导入 rclpy）。"""
+
+    posted: List[Any] = []
+
+    def relay(path: str, payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+        posted.append((path, payload))
+        return {"notified": True} if path.endswith("/notify-device") else {"success": payload["action"] == "load"}
+
+    def no_local_lookup(_device_id: str) -> Any:
+        raise AssertionError("调度权威不能查本进程设备表")
+
+    monkeypatch.setattr(downlink, "_remote_device_relay", True)
+    monkeypatch.setattr(downlink, "_relay_post", relay)
+    monkeypatch.setattr(downlink, "get_local_device_node", no_local_lookup)
+    return posted
+
+
+def test_notify_from_the_authority_relays_without_a_local_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    posted = _authority_relay(monkeypatch)
+    assert notify_resource_tree_update("bench", "update", ["u1"]) is True
+    assert posted == [("/api/v1/hostlink/notify-device", {"device_id": "bench", "action": "update", "resource_uuids": ["u1"]})]

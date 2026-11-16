@@ -48,7 +48,7 @@ class ResourceTreeNotify(ServerObject):
 
 class ResourceTreeNotifyResult(ServerObject):
     notified: Optional[bool] = Field(
-        description="True=设备已确认投影；False=通知失败；null=设备未注册被跳过"
+        description="True=设备已确认投影；False=通知失败或设备没能应用；null=设备未注册被跳过"
     )
 
 

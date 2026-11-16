@@ -202,7 +202,8 @@ move、transfer 与工作流搬运派发前的预检共用同一组放入检查�
 这是软件投影同步，不代表软件会替代机械臂完成物理搬运。
 
 ROS2 与 HostLink 的此路径共用 HostLink 下行 resource service，不能把 transfer 写成 ROS2 专有能力。
-`notify-device` 响应中的 notified 只有 true 表示确认完成；false/null 都不能当成已经加载。
+`notify-device` 响应中的 notified 只有 true 表示确认完成（设备逐条应用，任何一条没应用上也是 false）；false/null
+都不能当成已经加载。
 
 ## 内容、快照与前端同步
 

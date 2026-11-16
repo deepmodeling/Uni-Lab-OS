@@ -287,21 +287,21 @@ def notify_resource_tree_update(
     设备经 HostLink 下行 RPC。
 
     Returns:
-        True 分发完成；False 分发失败；None 设备不可达（有意跳过）。
+        True 设备已确认；False 分发失败或设备没能应用（见日志）；None 设备不可达（有意跳过）。
     """
     operations = [{"action": str(action), "data": list(resource_uuid_list)}]
     try:
+        if _remote_device_relay:
+            # 调度权威进程：设备都在 Host 进程里，整条通知转交 Host 中继（权威不加载设备运行时，不先查本进程）
+            result = _relay_post(
+                "/api/v1/hostlink/notify-device",
+                {"device_id": str(device_id), "action": str(action), "resource_uuids": list(resource_uuid_list)},
+                DEFAULT_DOWNLINK_TIMEOUT,
+            )
+            notified = result.get("notified") if isinstance(result, dict) else None
+            return notified if notified is None else bool(notified)
         if get_local_device_node(device_id) is None:
             server = get_hostlink_server()
-            if server is None and _remote_device_relay:
-                # 调度权威进程：设备都在 Host 进程里，整条通知转交 Host 中继
-                result = _relay_post(
-                    "/api/v1/hostlink/notify-device",
-                    {"device_id": str(device_id), "action": str(action), "resource_uuids": list(resource_uuid_list)},
-                    DEFAULT_DOWNLINK_TIMEOUT,
-                )
-                notified = result.get("notified") if isinstance(result, dict) else None
-                return notified if notified is None else bool(notified)
             if server is None or not server.has_device(device_id):
                 logger.info(
                     "[Downlink] 设备 %s 不在本进程、也不在 HostLink 在线表，跳过资源树 %s 分发",
@@ -309,7 +309,16 @@ def notify_resource_tree_update(
                     action,
                 )
                 return None
-        sync_resource_tree_to_device(device_id, operations, DEFAULT_DOWNLINK_TIMEOUT)
+        result = sync_resource_tree_to_device(device_id, operations, DEFAULT_DOWNLINK_TIMEOUT)
+        # 设备逐条应用，单条失败记在 results 里而不抛出：只有全部成功才算确认
+        failures = [
+            item for item in (result.get("results") or []) if isinstance(item, dict) and item.get("success") is False
+        ] if isinstance(result, dict) else []
+        if failures:
+            logger.warning(
+                "[Downlink] 设备 %s 没能应用资源树 %s：%s", device_id, action, failures[0].get("error") or failures[0]
+            )
+            return False
         return True
     except Exception:
         logger.exception("[Downlink] 资源树 %s 分发到 %s 失败", action, device_id)

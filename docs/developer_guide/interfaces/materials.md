@@ -179,6 +179,7 @@ POST `/changes/ack` 接收 LedgerAcknowledge。不能给这些接口强行套 Mu
 | move | 原子更新权威父子关系、Site 占用与账本；不等于远端设备已经 load |
 | transfer | 权威位置提交后，按顺序通知来源设备 unload、目标设备 load；全部确认才返回成功 |
 | notify-device | 显式通知设备重载物料树；不代替权威创建/移动 |
+| 工作流 material_io | 写库后按模式向挂载物料所属设备发 load / unload（`MaterialDeviceSync`）或资源树 update；失败不回滚库存，结果在节点输出 `device_sync` |
 
 transfer payload：source_device_id、target_device_id、items。
 每个 item 为 material_uuid、target_material_uuid、target_site（Site UUID、label/index 或 null）。

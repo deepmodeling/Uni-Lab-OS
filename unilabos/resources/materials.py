@@ -518,6 +518,29 @@ def owner_device_of(
 
     gw = gateway or resolve_materials_gateway()
     uuid_ = material_uuid(value, "归属推断")
+    device_id, root = _walk_owner_device(gw, uuid_)
+    if device_id is None:
+        raise ValueError(
+            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.name}）未登记所属设备；"
+            "根树须经 materials.create(node=) 或挂载到设备（append_resource）后才可推断"
+        )
+    return device_id
+
+
+def find_owner_device(
+    value: Any,
+    *,
+    gateway: MaterialGateway | None = None,
+) -> Optional[str]:
+    """与 :func:`owner_device_of` 同一规则，但物料不属于任何设备（普通货架等未登记归属的根树）时返回 None。"""
+
+    gw = gateway or resolve_materials_gateway()
+    return _walk_owner_device(gw, material_uuid(value, "归属推断"))[0]
+
+
+def _walk_owner_device(gw: MaterialGateway, uuid_: str) -> Tuple[Optional[str], Any]:
+    """沿权威 parent 链找最近的设备祖先；返回 ``(设备 ID 或 None, 停下时的物料身份)``，链成环时抛错。"""
+
     current = gw.get_material(uuid_)
     seen = {uuid_}
     while True:
@@ -525,7 +548,7 @@ def owner_device_of(
         if identity.resource_type == "device":
             # 设备图落库本来就有全局 ID。不能继续爬到工作站根，把子设备的物料误送给父设备；
             # 也不能优先用物料自身的旧绑定，跨设备 transfer 后应跟随新的权威父链。
-            return str(identity.resource_id)
+            return str(identity.resource_id), identity
         if not identity.parent_material_uuid:
             break
         parent_uuid = str(identity.parent_material_uuid)
@@ -535,12 +558,7 @@ def owner_device_of(
         current = gw.get_material(parent_uuid)
     root = current.material
     device_id = str((root.extra or {}).get(EXTRA_BOUND_DEVICE) or "").strip()
-    if not device_id:
-        raise ValueError(
-            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.name}）未登记所属设备；"
-            "根树须经 materials.create(node=) 或挂载到设备（append_resource）后才可推断"
-        )
-    return device_id
+    return device_id or None, root
 
 
 def search(
@@ -1053,6 +1071,7 @@ __all__ = [
     "assign",
     "create",
     "ensure",
+    "find_owner_device",
     "from_str",
     "get",
     "instantiate_registry_resource",

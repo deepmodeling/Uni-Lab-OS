@@ -302,3 +302,31 @@ def test_notify_from_the_authority_relays_without_a_local_lookup(monkeypatch: py
     posted = _authority_relay(monkeypatch)
     assert notify_resource_tree_update("bench", "update", ["u1"]) is True
     assert posted == [("/api/v1/hostlink/notify-device", {"device_id": "bench", "action": "update", "resource_uuids": ["u1"]})]
+
+
+def test_send_material_sync_from_the_authority_relays_and_requires_a_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted = _authority_relay(monkeypatch)
+    command = {"transfer_uuid": "t1", "device_id": "bench", "action": "load", "material_uuids": ["u1"],
+               "destination_site_uuids": ["s1"]}
+    assert downlink.send_material_sync(command)["success"] is True
+    with pytest.raises(RuntimeError, match="material_sync 失败"):
+        downlink.send_material_sync({**command, "action": "unload", "destination_site_uuids": []})
+    assert [item[0] for item in posted] == ["/api/v1/hostlink/material-sync"] * 2 and posted[0][1] == command
+
+
+def test_send_material_sync_on_the_host_goes_to_the_local_device(
+    fake_device: _FakeNode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    received: List[Dict[str, Any]] = []
+
+    async def material_sync(command: Dict[str, Any]) -> Dict[str, Any]:
+        received.append(command)
+        return {"success": True, "action": command["action"], "replayed": False}
+
+    monkeypatch.setattr(fake_device, "material_sync", material_sync, raising=False)
+    command = {"transfer_uuid": "t1", "device_id": fake_device.device_id, "action": "unload",
+               "material_uuids": ["u1"], "destination_site_uuids": []}
+    assert downlink.send_material_sync(command)["action"] == "unload"
+    assert received == [command]

@@ -27,6 +27,7 @@ DEFAULT_DOWNLINK_TIMEOUT = 30.0
 
 # 调度权威进程没有设备也没有 HostLink server：物料投影下行经控制面 WS 交给 Host 进程
 # 在进程内执行 /api/v1/hostlink/{material-sync,notify-device}（server/api/host_relay.py）。
+# 权威里的 transfer 投影、工作流 material_io 写库后的台面同步都走这里。
 _remote_device_relay = False
 
 
@@ -257,6 +258,23 @@ def material_sync_to_device(
     return server.request_device(str(device_id), ActionType.MATERIAL_SYNC, payload, timeout)
 
 
+def send_material_sync(command: Any, timeout: float = DEFAULT_DOWNLINK_TIMEOUT) -> Dict[str, Any]:
+    """从当前进程把一条 ``MaterialDeviceSync``（load / unload）送到设备并等确认；设备没确认就抛异常。
+
+    调度权威（没有设备）经控制面交给 Host 中继；Host 进程里本地设备直调，跨机（Slave）经 HostLink RPC。
+    中继先于本进程查找：权威不加载设备运行时（ros2 形态下查 ``registered_devices`` 会去导入 rclpy）。
+    """
+    data = command.model_dump(mode="json", exclude_none=False) if hasattr(command, "model_dump") else dict(command)
+    device_id = str(data.get("device_id") or "")
+    if _remote_device_relay:
+        result = _relay_post("/api/v1/hostlink/material-sync", data, timeout)
+    else:
+        result = material_sync_to_device(device_id, data, timeout)
+    if not isinstance(result, dict) or not result.get("success"):
+        raise RuntimeError(f"设备 {device_id!r} material_sync 失败：{result}")
+    return result
+
+
 def device_manage_to_device(
     device_id: str,
     action: str,
@@ -343,5 +361,6 @@ __all__ = [
     "remote_device_relay",
     "remote_material_sync_dispatcher",
     "run_node_coroutine",
+    "send_material_sync",
     "sync_resource_tree_to_device",
 ]

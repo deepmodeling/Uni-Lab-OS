@@ -222,24 +222,37 @@ edge、不占设备动作锁，执行器永远收不到它。作者写法见
    （不阻止 runtime 排空）。调度器每 5 秒的兜底重算也把到期的确认单收为超时。
 4. **一次库存命令**：批准后提交一条类型化库存命令 `material.io`（`inventory_commands.py` → `materials/material_io.py`），
    `command_id = workflow.material_io:<attempt>`，全部写入在一个 materials.db 事务里；首次结果（完成或拒绝）存在
-   `inventory_processed_command`，同一 attempt 重放只返回首次结果。material_io 只写 materials.db，**不触发**任何设备同步：
-   物料权威推到设备的只有 `transfer_material`（经 resource sync dispatcher 做 unload / load 投影）和显式的
-   `POST /api/v1/materials/notify-device`（旧云端物料通知的翻译层另有自己的分发），所以设备驱动手里的台面 / `resource_tracker` 不会因 material_io 改变。之后的动作
-   以 ResourceSlot 引用这件物料时，执行端在本地 tracker 里找不到就按 uuid 从物料权威取子树、装配实例
-   （`backend/hostlink/local_runtime.py:_resolve_resource_slot`）。material_io 之后是否补发设备同步尚未决定。
+   `inventory_processed_command`，同一 attempt 重放只返回首次结果。
+5. **台面同步**（负责人 2026-11-17 决定）：库存命令完成后，把变化投影到挂载物料所属设备的台面
+   （`scheduler/material_io.py:sync_material_io_device`）。设备 = 从 `mount` 沿权威父链往上最近的设备物料
+   （`resources/materials.py:find_owner_device`；独立根树按它登记的所属设备）。load 与 transfer 的目标端相同，发
+   `MaterialDeviceSync(action="load", destination_site_uuids=[库位])`，设备从权威拉取新物料挂到同一库位；unload 发
+   `action="unload"`，设备把物料连同子树从台面移除；refill 发资源树 `update`（与 `notify-device` 同一路径），设备按权威
+   当前状态重载这只容器的内容物。下行经 `backend/hostlink/downlink.py`（`send_material_sync` /
+   `notify_resource_tree_update`）：调度权威与 Host 分开时经控制面交给 Host 的 `/api/v1/hostlink/{material-sync,notify-device}`
+   中继（权威不查本进程设备表），Host 本进程的设备直调，托管 Slave 上的设备经 HostLink RPC；和 transfer 一样在收敛批准的
+   同一调用里等设备确认（下行超时 30 秒，Host 不在线时立即失败）。结果记在节点输出
+   `return_value.device_sync = {status: ok | skipped | failed, device_id, action, material_uuids, reason}`。与 transfer 一样
+   库存是权威：同步失败（设备或 Host 不在线、设备没能应用）不回滚写入，节点照样成功，只记一条中文告警并带原因；挂载物料
+   不属于任何设备（普通货架）时 `skipped`，不告警。设备要能把新物料反序列化成 PLR 资源；load 现在只按模板写物料身份、
+   不带 PLR `config`，这样的物料 load 同步是 `failed`（`config.type 必须是非空 PLR 类名字符串`）。
 
 | 决策 / 结果 | 节点 | 库存 |
 | --- | --- | --- |
-| 批准，load 完成 | succeeded，`return_value.material = {uuid}`（`material_uuid`、`name`、`site_uuid` …），后面的步骤像引用动作结果一样引用它 | 按模板建新物料（展开模板库位），放到库位上；可选登记试剂 |
-| 批准，unload 完成 | succeeded，`affected_material_uuids` | `detach`：解除挂载，物料留在库存；`soft_delete`：软删除（`material_with_contents` 连同子物料与内容物） |
-| 批准，refill 完成 | succeeded，`quantity_added` / `quantity` | 原位容器唯一试剂加量（单位可换算），记一条 `add` 内容物历史；位置不变、不新建物料 |
+| 批准，load 完成 | succeeded，`return_value.material = {uuid}`（`material_uuid`、`name`、`site_uuid`、`device_sync` …），后面的步骤像引用动作结果一样引用它 | 按模板建新物料（展开模板库位），放到库位上；可选登记试剂 |
+| 批准，unload 完成 | succeeded，`affected_material_uuids`、`device_sync` | `detach`：解除挂载，物料留在库存；`soft_delete`：软删除（`material_with_contents` 连同子物料与内容物） |
+| 批准，refill 完成 | succeeded，`quantity_added` / `quantity`、`device_sync` | 原位容器唯一试剂加量（单位可换算），记一条 `add` 内容物历史；位置不变、不新建物料 |
 | 批准但写库被拒（如确认期间有人手工占了库位） | failed，`material_io_rejected` + `material_error_code`（`conflict:site_occupied`）+ `business_code`（6007） | 不变 |
 | 拒绝 / 超时 | failed（`manual_confirmation_rejected`）/ timeout（`manual_confirmation_timed_out`） | 不变 |
 | 取消任务 | 确认单收为 `canceled`，节点 canceled | 不变 |
 
 恢复：确认待决时重启，恢复的 Claim 继续持锁，任务接管后读回同一张确认单等决策；批准后、写库前或写库后应答前崩溃
 （或物料权威暂时不可达），attempt 保持 `pending` 继续持锁，兜底重算或重启接管时用同一命令身份重提——没写过就写一次，
-写过就只重放结果。确认单的 `skip` 决策（`decision_action=skip`）把节点记为 skipped，不写库存。
+写过就只重放结果。写库后、记终态前崩溃时，重放会再送一次台面同步，这是安全的：三种投影都是「对齐权威现状」（load 先丢掉
+台面上同 UUID 的副本再挂，unload 只移除还在的，update 载入权威的绝对数量而不是增量），命令身份同时作 `transfer_uuid`，
+同一设备进程已应用过的直接回 `replayed`；发送前再读一次权威，物料已不在（load / refill）或又回到（unload）这个库位时
+`skipped`，不投影旧变化。只在 attempt 还是 `pending` 时发送：终态落库后同一决策再次送达（例如批准按同一幂等键重发）
+不再重发同步。确认单的 `skip` 决策（`decision_action=skip`）把节点记为 skipped，不写库存。
 
 ### 4.2 Backend-controlled（接入云端）
 

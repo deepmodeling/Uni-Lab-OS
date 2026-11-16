@@ -1937,6 +1937,7 @@ class BackendScheduler:
                     if response.get("status") == "completed":
                         job_status = "succeeded"
                         value = {**dict(response.get("result") or {}), **value}
+                        value["device_sync"] = self._sync_material_io_device(job_uuid, frozen["plan"], value)
                     else:
                         job_status = "failed"
                         errors = [rejection_error(response)]
@@ -1969,6 +1970,26 @@ class BackendScheduler:
         finally:
             with self._guard:
                 self._material_io_settling.discard(job_uuid)
+
+    def _sync_material_io_device(
+        self, job_uuid: str, plan: Mapping[str, Any], result: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """库存命令已完成：把变化投影到所属设备的台面（见 ``material_io.sync_material_io_device``）。
+
+        只在 attempt 仍 ``pending``（首次收敛，或写库后、记终态前崩溃的重放）时发送；终态已落库后同一决策
+        再次送达（例如批准请求按同一幂等键重发）不再重发同步，节点输出里已经有首次的 ``device_sync``。
+        """
+        from unilabos.server.services.materials.material_io import material_io_command_id
+        from .material_io import sync_material_io_device
+
+        try:
+            pending = (self.workflow.get_workflow_node_job(job_uuid) or {}).get("status") == "pending"
+        except Exception:  # noqa: BLE001 - 读不到 attempt 就照常发送：投影幂等，重发无害
+            pending = True
+        if not pending:
+            return {"status": "skipped", "reason": "attempt 已结束，台面同步只随首次收敛发送"}
+        return sync_material_io_device(
+            self.materials_gateway, plan, result, command_id=material_io_command_id(job_uuid))
 
     def _retry_material_io_settlements(self) -> None:
         """已批准、库存写入暂时失败的人工物料步骤按同一命令身份重提（兜底重算时）。"""

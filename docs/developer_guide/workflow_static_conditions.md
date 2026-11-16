@@ -161,7 +161,7 @@ V1 的 `with repeat_until(max_iterations=…, carry={...}) as loop: … loop.nex
 ## 人工装入 / 取走 / 补量（material_io）
 
 `ctx.material_io(...)` 声明一步人工物料操作：执行到这里停下等人确认，确认后由权威在库存里装入、取走或补量，
-不派发任何设备动作。它和 `ctx.run` 一样返回步骤，结果可以被后面的步骤引用；全部参数都是关键字参数。
+不派发任何设备动作（只把库存变化同步到所属设备的台面）。它和 `ctx.run` 一样返回步骤，结果可以被后面的步骤引用；全部参数都是关键字参数。
 
 ```python
 from unilabos.registry.workflows import workflow
@@ -201,7 +201,11 @@ def refresh(ctx, *, volume: float = 20.0):
 （`node_type=material_io`，带一对 ready 连接点）；它的 `goal_default` 只带模式与确认设置，保存前要填好库位与该模式的
 必填字段。`/authoring/generate-python` 把 material_io 节点生成 `ctx.material_io(...)`。
 
-运行时的锁定、确认、库存写入与恢复见 [调度与执行架构](scheduling_and_execution.md#人工装入--取走--补量material_io)。
+库存写好后，权威把变化同步到挂载物料所属设备（沿父链往上最近的设备）的台面一次：load 让设备把新物料挂到库位上，
+unload 让设备把物料从台面移除，refill 让设备重载这只容器的内容物。结果在步骤输出的 `device_sync`（`ok` / `skipped` /
+`failed` 与原因）；同步失败不回滚库存、步骤照样成功，挂载物料不属于任何设备（普通货架）时 `skipped`。
+
+运行时的锁定、确认、库存写入、台面同步与恢复见 [调度与执行架构](scheduling_and_execution.md#人工装入--取走--补量material_io)。
 material_io 是作者显式写出的独立一步，和运行中缺料的动作执行前预检决策（`stage=preflight`）互不依赖；V1 的
 `material_source(supports_replenishment=True)` + `sufficient` 补料分支不移植。
 

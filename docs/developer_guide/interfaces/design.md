@@ -167,13 +167,15 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 
 ## 8. 锁声明集中使用，不升级为隐式嵌套锁
 
-物料天然带锁：动作的物料入参（`ResourceSlot`、`List[ResourceSlot]`、`Optional[ResourceSlot]`，或
-`placeholder_keys` 标为 `unilabos_resources` 的入参）默认在执行期间独占。只读、不改变物料的入参用
-`@action(materials_free=["参数名"])` 排除；`@action(materials_need_lock=[...])` 显式给出最终集合，
-`[]` 表示整个动作不锁物料，两者不能同时写。注册表条目里的 `materials_need_lock` 是推导后的最终列表，
-运行时先解析实际 UUID，再交调度处理；可选物料入参未传或为空时没有物料，也就不加锁。
-YAML 注册表条目同一规则：不写 `materials_need_lock` 即默认，`placeholder_keys` 标为 `unilabos_resources`
-的字段加锁（`materials_free` 排除）；`--complete_registry` / `--check_mode` 只把显式声明写回 YAML，默认值每次加载重新推导。
+物料天然带锁：动作的每个物料入参（`ResourceSlot`、`List[ResourceSlot]`、`Optional[ResourceSlot]`，或
+`placeholder_keys` 标为 `unilabos_resources` 的入参）都加共享资源锁——执行期间独占，正常终态释放，物料空闲时
+不被持有，因此不需要借出；不能借出的独占只有设备托管（见 [资源借还与设备托管](../workflow_resource_custody.md)）。
+驱动不能按动作豁免或收窄这一集合：旧的 `@action(materials_free=...)` / `@action(materials_need_lock=...)`、YAML
+条目里的同名键和 typed 动作的 `MaterialLock(free=True)` 照常加载，但值被忽略，每个定义告警一次。
+注册表条目里的 `materials_need_lock` 是框架按签名推导出的只读结果（签名未知的 YAML 条目按
+`placeholder_keys` 推导），运行时先解析实际 UUID，再交调度处理；可选物料入参未传或为空时没有物料，也就不加锁，
+给了值却解析不出权威 UUID 时拒绝派发。`--complete_registry` / `--check_mode` 不把这个推导值写回 YAML，
+写回时同时删掉旧的改写键。
 物料资源锁保护同一对象的并发使用；库存 reservation 保护某批次的可用数量；Site 占用表达物料所在位置。
 三者不是同一个标志，也不能互相代用。
 

@@ -279,8 +279,8 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 1. 全局在途作业容量已满时带 `job_dispatch_capacity` 排队（5.0.1）；`material_io` 节点改走自己的路径（4.1）。
 2. 就绪时才预留的库存（`on_ready`、条件分支、引用上游结果的需求）在这里预留（7）。
 3. 解析上游 Job 输出到当前 action 参数，按需求 key 注入库存分配，按严格动作合同校验参数形状。
-4. 从设备 action 注册信息读取 `materials_need_lock` 参数名（未声明时注册表已按物料入参默认填好，
-   `materials_free` 排除的除外）与 `always_free` 声明
+4. 从设备 action 注册信息读取 `materials_need_lock` 参数名（注册表按签名推导出的全部物料入参，
+   驱动不能按动作豁免）与 `always_free` 声明
    （节点 `execution_policy.always_free` 显式声明优先）。`always_free` 只免除该动作自身的
    `(device_id, action_name)` 隐式动作锁，物料 claim 仍要获取。
 5. 从 action 参数提取权威 `material_uuid`；参数未传或为空表示没有物料、不加锁；给了值却解析不出
@@ -354,6 +354,12 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
   从前往后给等待者加让行边，会闭合环路的让行边不加——后到者直接取得空闲资源。同一状态下任何调用顺序
   得到同样的裁决。
 - 等待图接口（`wait_graph`）的 `waiting_since` 就是 `enqueued_at`。
+
+物料锁是共享资源锁（负责人 2026-11-17 决定「默认共享锁」）：物料键不进冻结的区间计划，每把物料锁的所有者
+就是本次 attempt——准入时取得，正常终态释放；取消未完成、执行结果未知或超时后驱动仍在执行时继续持有。物料空闲
+时不被任何任务持有，等待者直接取得，不需要借出；正在使用的物料不能借出（`lend` 要求区间没有实际使用）。
+设备键不同：同一任务相邻动作的设备区间跨动作持有，空闲时只能经显式借出（`workflow_resource_custody.md`）给别的
+任务用。不能借出的独占只有设备托管（`resource_contract.device_tenancy`）：装载到卸载之间样品和设备都不能借出。
 
 派发每个 attempt 时，调度器还会按注册表 `@action(estimate_duration_fixed / estimate_duration_express)`
 用最终 `action_args` 求出预计时长，写在 attempt 上（`estimated_s` / `estimate_source`）。
@@ -521,7 +527,7 @@ Backend WebSocket notice
 reservation 不合法或物料 UUID 契约错误时，立即拒绝。它不会在 Edge 内部悄悄排队。
 
 HostLink 主从通信位于 `unilabos/backend/hostlink/`。Slave 同步设备 action 注册信息到 Host，
-Host 因而能读取远端设备的 `materials_need_lock` 和 status policy；动作执行仍由
+Host 因而能读取远端设备推导出的 `materials_need_lock` 和 status policy；动作执行仍由
 HostLink adapter 路由到实际 Slave。
 
 ## 9. 四库与 Service

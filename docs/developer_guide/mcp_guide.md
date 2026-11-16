@@ -49,7 +49,7 @@ default_tools_approval_mode = "writes"
 2. `system_health`：当前服务健康状态；Host 未就绪时不能把 API 在线当作设备在线。
 3. `system_hostlink_peers`、`runtime_v1_endpoints_list`：Host/Slave、在线路由、设备 ID 和动作能力。
 4. `registry_workflow_templates_list`：工作流模板与角色绑定；`registry_entries_get`：
-   所需驱动动作的参数、错误策略和 `materials_need_lock`。
+   所需驱动动作的参数、错误策略和 `materials_need_lock`（按签名推导的物料锁参数）。
 5. `protocol_search`：用具体关键词缩小操作范围；`protocol_inspect`：调用前确认字段和必填项。
 
 当前有 132 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
@@ -300,7 +300,7 @@ payload，不产生另一套数据模型。相同命令/效果的重传用相同
 
 ## 8. 并发与锁
 
-动作锁和 `materials_need_lock` 由调度处理，本指南不引入新的嵌套锁机制。
+动作锁和物料锁由调度处理（每个物料入参默认加锁，驱动不能按动作豁免），本指南不引入新的嵌套锁机制。
 需要验证竞争时先创建好同组流程，然后用 `protocol_batch` 同时提交；不要先等 A 完成才提交 B。
 
 ```json

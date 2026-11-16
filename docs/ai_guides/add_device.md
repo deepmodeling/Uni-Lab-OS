@@ -321,9 +321,10 @@ async def transfer(self, source: ResourceSlot, target: ResourceSlot, volume: flo
 | `DeviceSlot` | 单选设备下拉框 |
 | `List[DeviceSlot]` | 多选设备下拉框 |
 
-`ResourceSlot` 入参默认带物料锁：动作执行期间独占所选物料，同一物料上的其它动作排队等待。
-只读、不改变物料的入参用 `@action(materials_free=["参数名"])` 排除；`@action(materials_need_lock=[...])`
-显式给出最终集合（`[]` 表示整个动作不锁物料）。`always_free=True` 只免除设备动作锁，物料锁照常申请。
+`ResourceSlot` 入参（含列表 / Optional，以及 `placeholder_keys` 标为 `unilabos_resources` 的入参）一律带物料锁，
+是共享资源锁：动作执行期间独占所选物料，同一物料上的其它动作排队等待；动作结束即释放，物料空闲时不被持有。
+驱动不能按动作豁免或收窄：旧的 `materials_free` / `materials_need_lock` 参数会被忽略并告警一次，不要再写。
+`always_free=True` 只免除设备动作锁，物料锁照常申请。
 
 ### Python → ROS 类型映射
 
@@ -1238,7 +1239,7 @@ def manual_confirm(
 |---|---|
 | `node_type=NodeType.ILAB` 配人工弹窗 | 必须 `NodeType.MANUAL_CONFIRM`，否则前端不会弹窗 |
 | 漏写 `always_free=True` | 设备会被「等待人工」长期锁住，其它动作排队 |
-| 等待人工的动作带 `ResourceSlot` 入参却只是转交数据 | 物料默认带锁，等待期间这些物料一直被独占；不需要独占时写 `materials_free` |
+| 等待人工的动作带 `ResourceSlot` 入参却只是转交数据 | 物料入参一律带锁，等待期间这些物料一直被独占；只转交数据时不要用 `ResourceSlot`，改由图连线传上游输出 |
 | 漏写 `placeholder_keys["assignee_user_ids"]` | 指派人字段退化成普通字符串数组输入框，无法搜索用户 |
 | 函数返回 `List[ResourceSlot]`（PLR 对象）给下游 | 必须 `ResourceTreeSet.from_plr_resources(x).dump()` 转 dict |
 | `ActionOutputHandle.data_source=HANDLE` | 输出口必须 `EXECUTOR`，否则下游拿不到数据 |

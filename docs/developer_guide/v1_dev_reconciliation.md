@@ -18,7 +18,7 @@
 | D03 | 现场验收待做 | 不变 | 现场验收并入 T02 |
 | D04 / D06 | 按设计消解 / 已配置 | 不变 | |
 | D05 | 按设计消解 | 不变 | 0.13 未发布，四个库都仍是 v1 基线（等待顺序、预计时长等结构变化直接并进 v1）；发布后加迁移时只认已发布版本的结构指纹 |
-| M01 | Dev 已有 | 已有 | |
+| M01 | Dev 已有 | 已实现（按负责人 2026-11-17 决定「默认共享锁」收口） | 每个物料入参都加共享资源锁：`@action(materials_need_lock / materials_free)`、YAML 同名键与 typed `MaterialLock(free=True)` 的按动作豁免已移除，旧驱动照常加载、忽略并按定义告警一次（`registry/material_locks.py`，`tests/registry/test_default_material_locks.py`）；共享语义见下方「锁的统一语义」（`test_workflow_resource_custody.py::test_default_material_lock_is_shared_exclusive_in_use_and_free_while_idle`） |
 | M02 | 部分基础 | 已实现 | 显式作用域 `ctx.resource_scope`、空闲借出与归还（`resource_loans.py`）、持久区间准入与老化优先级排队（SC-N4）；目标库位被占、夹爪忙、来源暂不在库位等临时资源条件让 attempt 撤回占用继续排队、资源变化时重试，不再记 `dispatch_not_sent` 失败（V1 `resource_wait_policy`，`test_resource_condition_wait.py`）；`test_workflow_resource_custody.py`、`test_workflow_resource_intervals.py`、`test_resource_admission_order.py` |
 | W01 | 不支持 | 已实现 | `with ctx.lock("reactor"):` 是 `ctx.resource_scope` 的简写，编译结果逐项相同（`tests/registry/test_workflow_lock_sugar.py`、`test_cross_loop_resource_scopes.py::test_lock_sugar_holds_one_interval_across_real_loop_rounds`）；按用户决定 `@workflow` 的 `display_name` 保持必填 |
 | W02 | 未接通 | 已实现 | 工作流只按源码静态编译（builder 模式已按用户决定移除），支持按动作结果的 if/elif/else，辅助函数编译前按源码展开 |
@@ -107,7 +107,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 
 | ID | 当前状态 | 下一步与关闭条件 |
 | --- | --- | --- |
-| M01 默认物料锁 | Dev 已有；本轮只纠正术语 | ResourceSlot 等物料参数默认申请互斥锁，正常终态释放。保留显式免锁例外；不得把共享资源解释成 `materials_free`。 |
+| M01 默认物料锁 | 已实现（2026-11-17） | 每个物料参数默认加共享资源锁：使用期间互斥，正常终态释放，空闲时不持有。负责人 2026-11-17 决定不保留按动作的显式免锁或收窄（`materials_free` / `materials_need_lock` / `MaterialLock(free=True)` 一律忽略并告警）。 |
 | M02 空闲借出 / 独占区间 | 已实现（11-14 复核，见「当前状态」） | 明确所有者区间、动作使用区间、借出和归还、取消/异常/未知执行。验收：A 空闲时 B 可借共享资源；A 占用使用时不能冲突；独占资源在整个声明区间不得借出。 |
 | W01 `@workflow()` / `action.lock.x()` | 用户给定写法当前不支持 | Dev 装饰器需要 `display_name`，函数接收 ctx；`action` 无 `lock` 属性。先冻结作者接口，再接入资源区间；不能仅新增一个装饰器别名就宣称锁语义完成。 |
 | W02 action 返回值驱动 `if/else` | Dev 未接通；V1 有实现和专门测试 | 将上游具名输出绑定到条件节点，等待生产者完成，再只执行命中分支；未选节点标记 skipped。覆盖 false、缺字段、非布尔、失败/重试、冻结快照、暂停恢复。已按 V1 的静态编译实现（`compiler="ast"`），2026-11-13 起为默认，辅助函数在编译前按源码展开；builder 模式里对结果判断真假会在注册时报错。 |
@@ -132,9 +132,11 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 
 按用户最新定义：共享资源在所有者空闲期间可以借给其他任务；独占资源在占用区间内不能借出。两者在真正使用期间都需要互斥。“共享”不是读写锁中的共享读，也不是允许两个设备同时拿同一件物料。
 
-历史要求“默认加锁”已有实现。Dev 的 `registry/material_locks.py` 生成默认锁列表，`server/backend/scheduler/resource_manager.py` 一次申请完整锁集合；已开始动作的取消在实际结束前不释放，未知执行等待核实。已有 `begin_handoff` 会把所有权直接交给后继，并验证物料 handle 证据；这种交接不等于把资源空闲期借给第三个任务。
+历史要求“默认加锁”已有实现。Dev 的 `registry/material_locks.py` 生成默认锁列表（2026-11-17 起驱动不能再按动作改写，见 M01），`server/backend/scheduler/resource_manager.py` 一次申请完整锁集合；已开始动作的取消在实际结束前不释放，未知执行等待核实。已有 `begin_handoff` 会把所有权直接交给后继，并验证物料 handle 证据；这种交接不等于把资源空闲期借给第三个任务。
 
-V1 的 `scheduling/resource_bindings.py` 区分完整绑定和 `active_resource_ids`，支持显式区间内纯所有权共享、活动使用互斥。这可作为 M02 参考，但不能仅凭名字中的 shared 就断言已覆盖用户所说的跨任务空闲借出。`MaterialLock(free=True)` 是免锁，不是默认共享锁。
+V1 的 `scheduling/resource_bindings.py` 区分完整绑定和 `active_resource_ids`，支持显式区间内纯所有权共享、活动使用互斥。这可作为 M02 参考，但不能仅凭名字中的 shared 就断言已覆盖用户所说的跨任务空闲借出。`MaterialLock(free=True)` 是免锁，不是默认共享锁；2026-11-17 起它与 `materials_free` 一样被忽略。
+
+2026-11-17 收口（负责人：「对，默认共享锁」）：物料锁就是共享资源锁。代码里没有单独的 shared / exclusive 标志，语义由区间与使用权的拆分给出：物料键不进冻结的区间计划，所有者就是本次 attempt，准入时取得、正常终态释放（取消未完成、执行结果未知、超时后驱动仍在执行时继续持有），所以物料只在真正使用时被占，空闲时不被任何任务持有，等待者直接取得，用不到显式借出；正在使用的物料也不能借出。设备区间在同一任务的相邻动作间跨动作持有，空闲时只能经 `lend` 显式借出。不能借出的独占目前只有设备托管（`resource_contract.device_tenancy`，样品与设备在装载到卸载之间都不能借出）；没有按物料参数声明“独占、不可借出”的写法。
 
 ## 作者语法的实测结果（11-09 原始记录）
 

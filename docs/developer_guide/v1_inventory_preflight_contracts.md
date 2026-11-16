@@ -113,7 +113,6 @@ from typing import Annotated, TypedDict
 from pydantic import Field
 from unilabos.registry.decorators import action
 from unilabos.registry.placeholder_type import ResourceSlot
-from unilabos.registry.annotations import MaterialLock
 
 class DoseResult(TypedDict):
     actual_volume: float
@@ -122,13 +121,13 @@ class DoseResult(TypedDict):
 def dose(
     self,
     source: ResourceSlot,
-    reference: Annotated[ResourceSlot, MaterialLock(free=True)],
+    reference: ResourceSlot,
     volume: Annotated[float, Field(ge=0)] = 1.0,
 ) -> DoseResult:
     ...
 ```
 
-严格声明由 AST 静态解析，不执行作者模块。支持的有限注解语言、默认值、资源引用、SiteSelector 和具名返回来自 V1 的规范解析器。必填参数不再被类型默认值补成 0/空串；物料默认在动作使用期间互斥，免锁用 `MaterialLock(free=True)` 声明。用户所说的“共享”是空闲时可以借出，并不意味着免锁或同时使用；跨动作的共享/独占区间尚未完整接入。兼容装饰器断言不能覆盖规范字段；格式错误的显式 typed 动作不能悄悄降级为普通动作：AST 扫描报错时整个源文件被跳过（`ast_registry_scanner.py`），文件里的其他设备也一起缺席。
+严格声明由 AST 静态解析，不执行作者模块。支持的有限注解语言、默认值、资源引用、SiteSelector 和具名返回来自 V1 的规范解析器。必填参数不再被类型默认值补成 0/空串；每个物料入参（上例的 `source` 与 `reference`）都加共享资源锁，在动作使用期间互斥。已废弃的 `MaterialLock(free=True)` 仍可写、仍按原语法校验，但不再免锁，扫描时按定义告警一次（负责人 2026-11-17 决定）。用户所说的“共享”是空闲时可以借出，并不意味着免锁或同时使用：物料锁只在动作使用期间持有，空闲时不被持有；不能借出的独占只有设备托管。兼容装饰器断言不能覆盖规范字段；格式错误的显式 typed 动作不能悄悄降级为普通动作：AST 扫描报错时整个源文件被跳过（`ast_registry_scanner.py`），文件里的其他设备也一起缺席。
 
 规范 Schema 的 `x-unilabos-action-contract.version` 为 2。输入/输出 handles、默认值、选择器和物料锁由同一份 Schema 派生。画布节点即使没有动作模板，建任务时也会从当前注册表取合同并冻结到任务，前提是此刻注册表里有这台设备的这个动作。实际参数在调度端与 Host 调用前验证；返回值不符合合同会进入失败决策，不上报成功。人工替换结果也遵守返回合同，无效替换保留待决策记录。
 
@@ -141,7 +140,7 @@ def dose(
   新 Schema 直接生效，不要求重建任务。
 - 旧 WS 协议直接派发的作业不经调度器托管，只有 Host 侧校验；声明了任何 `resource_contract`（包括只有 `order_sensitive`）的 typed 动作都会被拒绝。
 - 反馈（feedback）不校验。`@action` 装饰器本身只检查 `contract` 取值、JSON 动作与 `resource_contract` 形状，不拒绝 typed 动作上的
-  `goal` / `result` / `placeholder_keys` / `materials_need_lock` / `materials_free`；这些由 AST 扫描拒绝。
+  `goal` / `result` / `placeholder_keys`；这些由 AST 扫描拒绝。`materials_need_lock` / `materials_free` 和普通动作一样被忽略并告警一次。
 - 仓库内置设备都还没有使用 `contract="typed"`，现有覆盖来自测试（`tests/registry/test_typed_contract_dev_wiring.py`、
   `tests/server/test_typed_action_execution.py`、`tests/registry/test_action_resource_contract.py`）。
 

@@ -154,7 +154,7 @@ Workflow、Graph 等使用 `page/page_size`；runtime/history/telemetry 常用 `
 列表返回 data.templates、data.entries、data.versions、data.impacts 等不同包装，不能都按 data 数组处理。
 
 Registry 目录里的动作 schema、goal_default、placeholder_keys、error_policy、timeout、
-execution_timeout、materials_need_lock、supported_backends 是编辑与调度输入。
+execution_timeout、materials_need_lock（按签名推导的物料锁参数，只读）、supported_backends 是编辑与调度输入。
 真正在线能力仍需比对 runtime endpoint，尤其是 Workstation 动态子设备。
 
 设备图用 `/graphs`，工作流图用 `/workflows/{uuid}/graph`，不能混用。

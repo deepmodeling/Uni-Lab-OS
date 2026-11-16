@@ -89,9 +89,9 @@ from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 @device(id="docs.material_inspector", category=["demo"],
         supported_backends=["hostlink", "ros2"])
 class MaterialInspector:
-    @action(materials_need_lock=["resource"])
+    @action()
     def inspect_material(self, resource: ResourceSlot, site: SiteSlot) -> dict:
-        # resource 已由框架解析为单个权威 PLR Resource；site 是 Site UUID 字符串。
+        # resource 已由框架解析为单个权威 PLR Resource，执行期间默认加物料锁；site 是 Site UUID 字符串。
         return {"resource_name": resource.name, "site_uuid": str(site)}
 ```
 
@@ -104,7 +104,7 @@ class MaterialInspector:
 | list[ResourceSlot] | 多个物料，每项独立解析；不能把一棵树的节点列表误当多个输入物料 |
 | SiteSlot | 字符串，选择器提交权威 Site UUID；模板标签导入规则见工作流章 |
 | DeviceSlot | 设备 id 字符串，不是 PLR Resource |
-| materials_need_lock | 需要独占的真实输入参数名；最终参数必须能解析权威 UUID |
+| 物料锁 | 每个物料入参都加共享资源锁（执行期间独占），参数值必须能解析权威 UUID；注册表条目的 `materials_need_lock` 是推导结果，`@action` 的 `materials_need_lock` / `materials_free` 已移除（旧代码写了照常加载，值被忽略并告警） |
 | goal_default | 参数预填，不等于用户已确认资源/Site |
 | placeholder_keys | 控制前端选择器类型，不创建业务数据 |
 

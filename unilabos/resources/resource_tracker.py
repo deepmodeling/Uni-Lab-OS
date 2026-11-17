@@ -1050,6 +1050,7 @@ class ResourceTreeSet(object):
             parent_resource: Optional[ResourceDict],
             states: dict,
             uuids: list,
+            label: str,
         ) -> ResourceDictInstance:
             (
                 current_uuid,
@@ -1130,6 +1131,7 @@ class ResourceTreeSet(object):
                 "id": d["name"],
                 "uuid": current_uuid,
                 "name": d["name"],
+                "display_name": label,
                 "parent": parent_resource,  # 直接传入 ResourceDict 对象
                 "parent_uuid": parent_uuid,  # 使用 parent_uuid 而不是 parent 对象
                 "type": replace_plr_type(d.get("category", "")),
@@ -1183,10 +1185,27 @@ class ResourceTreeSet(object):
             )
             current_resource = current_instance.res_content
 
-            # 递归处理子节点，传入当前节点的 ResourceDict 作为 parent
+            # 递归处理子节点，传入当前节点的 ResourceDict 作为 parent。
+            # 孔位等 ItemizedResource 孩子的人读标签取 ordering 标识（"A1"），
+            # 不取 PLR 名（可能带父名前缀，第 3 期之后裸标签孔的 PLR 名是 uuid）。
+            ordering = d.get("ordering")
+            child_labels = (
+                {
+                    item_name: str(identifier)
+                    for identifier, item_name in ordering.items()
+                    if isinstance(item_name, str)
+                }
+                if isinstance(ordering, Mapping)
+                else {}
+            )
             current_instance.children = [
                 resource_plr_inner(
-                    child_resource, child_dict, current_resource, states, uuids
+                    child_resource,
+                    child_dict,
+                    current_resource,
+                    states,
+                    uuids,
+                    child_labels.get(child_dict["name"], child_dict["name"]),
                 )
                 for child_resource, child_dict in iter_serialized_plr_children(plr_resource, d)
             ]
@@ -1205,7 +1224,12 @@ class ResourceTreeSet(object):
 
             # 根节点没有父节点，传入 None
             root_instance = resource_plr_inner(
-                resource, serialized_data, None, all_states, uuid_list
+                resource,
+                serialized_data,
+                None,
+                all_states,
+                uuid_list,
+                serialized_data["name"],
             )
             tree_instance = ResourceTreeInstance(root_instance)
             trees.append(tree_instance)

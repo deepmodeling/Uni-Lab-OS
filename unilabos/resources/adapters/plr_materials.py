@@ -514,10 +514,9 @@ def resource_tree_to_snapshot(
             {
                 **node.material.model_dump(mode="json"),
                 "name": resource.name,
-                # 展示名以权威为准；PLR 运行时不承载 display_name，
-                # 空值回退权威避免快照把自定义展示名重置回 name。
-                "display_name": resource.display_name
-                or node.material.display_name,
+                # 展示名只以权威为准：PLR 运行时不承载 display_name，序列化出的
+                # 标签（PLR 名 / ordering 标识）不能覆盖用户编辑过的展示名。
+                "display_name": node.material.display_name,
                 "description": resource.description,
                 "machine_name": resource.machine_name,
                 "barcode": resource.barcode,

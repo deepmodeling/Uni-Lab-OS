@@ -564,8 +564,19 @@ class ResourceDict(BaseModel):
         return self.parent.uuid if self.parent is not None else None
 
     @property
+    def plr_name(self) -> str:
+        """PLR 树里的名字（PLR 键）：``config.name``，没有时沿用 ``name``。
+
+        PLR 名在整棵 PLR 树内唯一、创建后不可改，驱动和 PLR 自身都按它查找；
+        物料层的人读标签是 ``display_name``，身份是 ``uuid``。
+        """
+
+        key = self.config.get("name") if isinstance(self.config, dict) else None
+        return key if isinstance(key, str) and key.strip() else self.name
+
+    @property
     def parent_instance_name(self) -> Optional[str]:
-        return self.parent.name if self.parent is not None else None
+        return self.parent.plr_name if self.parent is not None else None
 
     @property
     def is_root_node(self) -> bool:

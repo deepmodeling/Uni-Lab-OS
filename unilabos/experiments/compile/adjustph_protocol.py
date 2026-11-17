@@ -74,7 +74,7 @@ def find_acid_base_vessel(G: nx.DiGraph, reagent: str) -> str:
     debug_print(f"📋 方法2: 模糊名称匹配...")
     for node_id in G.nodes():
         if G.nodes[node_id].get('type') == 'container':
-            node_name = G.nodes[node_id].get('name', '').lower()
+            node_name = (G.nodes[node_id].get('display_name') or '').lower()
             
             # 检查是否包含任何搜索名称
             for search_name in search_names:
@@ -111,7 +111,7 @@ def find_acid_base_vessel(G: nx.DiGraph, reagent: str) -> str:
             
             available_containers.append({
                 'id': node_id,
-                'name': G.nodes[node_id].get('name', ''),
+                'name': G.nodes[node_id].get('display_name') or node_id,
                 'liquids': liquid_types,
                 'reagent_name': vessel_data.get('reagent_name', '')
             })

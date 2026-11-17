@@ -31,6 +31,12 @@ from unilabos.resources.bioyond.YB_warehouse_material import (
 from unilabos.utils.datacore import push_csv_by_config
 from unilabos.utils.log import logger
 from unilabos.registry.registry import lab_registry
+from unilabos.devices.workstation.mixing_judgment_query import (
+    JUDGMENT_COLUMN,
+    MixingQueryError,
+    lookup_mixing_judgments,
+    mixing_column_enabled,
+)
 
 def _iso_local_now_ms() -> str:
     # 文档要求：到毫秒 + Z，例如 2025-08-15T05:43:22.814Z
@@ -175,13 +181,15 @@ class BioyondCellWorkstation(BioyondWorkstation):
         self._robot_pos_lock = threading.Lock()
         self._robot_joint_cache: Optional[Dict[str, Any]] = None
         self._gantry_pos_cache: Optional[Dict[str, Any]] = None
-        if self.debug_mode:
-            logger.info("debug_mode=True，不启动机器人坐标轮询（坐标属性返回 {}）")
-        else:
-            threading.Thread(
-                target=self._robot_pos_poll_loop, daemon=True, name="bioyond-robot-pos-poller"
-            ).start()
-            logger.info(f"机器人坐标轮询线程已启动（每 {self._ROBOT_POS_PERIOD_S} 秒）")
+        # [坐标查询暂停] 暂不启动 2.43/2.44 坐标轮询；恢复方法见 docs/coordinate_poll_and_log_restore.md
+        # if self.debug_mode:
+        #     logger.info("debug_mode=True，不启动机器人坐标轮询（坐标属性返回 {}）")
+        # else:
+        #     threading.Thread(
+        #         target=self._robot_pos_poll_loop, daemon=True, name="bioyond-robot-pos-poller"
+        #     ).start()
+        #     logger.info(f"机器人坐标轮询线程已启动（每 {self._ROBOT_POS_PERIOD_S} 秒）")
+        logger.info("[坐标查询暂停] 配液站机器人/龙门架坐标轮询未启动")
 
         logger.info(f"✅ BioyondCellWorkstation 初始化完成 (debug_mode={self.debug_mode})")
         logger.info(
@@ -220,8 +228,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     # ========== 机器人坐标采集（2.43 关节 / 2.44 三轴）==========
     # 后台轮询间隔 = ROS topic 发布周期。走 LIMS HTTP 查询，比 DUCO 那种本地服务贵，
-    # 故取 1 秒而非 0.5 秒；两者共用同一常量，要改频率只动这一处。
-    _ROBOT_POS_PERIOD_S = 1.0
+    # 故取 2 秒而非 0.5 秒；两者共用同一常量，要改频率只动这一处。
+    _ROBOT_POS_PERIOD_S = 5.0
     # 连续失败次数达到该阈值后丢弃缓存（置 None），避免对外发布过期坐标
     _ROBOT_POS_MAX_FAIL = 3
 
@@ -361,17 +369,18 @@ class BioyondCellWorkstation(BioyondWorkstation):
         # 父类负责 deck 初始化、同步器、各监控线程与 deck 上传，必须先跑完
         super().post_init(ros_node)
 
-        # 机器人坐标：把发布周期从框架默认 5 秒调到与轮询一致的 _ROBOT_POS_PERIOD_S。
-        # 单独 try 兜住，避免注册表没声明 status_types 时把父类已完成的初始化连带报错。
-        try:
-            for name in ("robot_joint_positions", "gantry_positions"):
-                pub = ros_node._property_publishers.get(name)
-                if pub is not None:
-                    pub.change_frequency(self._ROBOT_POS_PERIOD_S)
-                else:
-                    logger.warning(f"[机器人坐标] 未找到属性发布者 {name}，请检查注册表 status_types 是否已声明")
-        except Exception as e:
-            logger.error(f"[机器人坐标] 调整发布频率失败: {e}")
+        # [坐标查询暂停] 机器人坐标发布频率调整随坐标属性一起暂停（注册表已注释，找不到发布者会刷 warning）
+        # # 机器人坐标：把发布周期从框架默认 5 秒调到与轮询一致的 _ROBOT_POS_PERIOD_S。
+        # # 单独 try 兜住，避免注册表没声明 status_types 时把父类已完成的初始化连带报错。
+        # try:
+        #     for name in ("robot_joint_positions", "gantry_positions"):
+        #         pub = ros_node._property_publishers.get(name)
+        #         if pub is not None:
+        #             pub.change_frequency(self._ROBOT_POS_PERIOD_S)
+        #         else:
+        #             logger.warning(f"[机器人坐标] 未找到属性发布者 {name}，请检查注册表 status_types 是否已声明")
+        # except Exception as e:
+        #     logger.error(f"[机器人坐标] 调整发布频率失败: {e}")
 
     # ========== 配液/分液进度属性（前端可轮询，对齐扣电站 data_order_completion_percentage）==========
     @property
@@ -560,33 +569,34 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
     # 返回类型必须是 str：Host 状态回调只接受标量，list/dict 会被框架强转为 String，语义不可靠。
 
-    @property
-    def robot_joint_positions(self) -> str:
-        """2.43 各机器人关节坐标，JSON 字符串；无数据时返回 "{}"
-
-        形如 {"robots": [{"frame": -1, "joints": [四轴], "extjoints": [扩增轴...]}], "ts": 秒}
-
-        ⚠️ extjoints 长度按机器人实际配置变化，**不可**固定按下标取。实测现场
-        （172.16.28.128:44389）frame -1/-16 回 2 个（夹爪 + 导轨），而 -12/-14 只回 1 个。
-        下游要认某根轴，必须结合 frame 判断，而不是假定 extjoints[1] 就是导轨。
-        """
-        with self._robot_pos_lock:
-            cache = self._robot_joint_cache
-        if not cache:
-            return "{}"
-        return json.dumps({"robots": cache["items"], "ts": cache["ts"]})
-
-    @property
-    def gantry_positions(self) -> str:
-        """2.44 各三轴机器人坐标，JSON 字符串；无数据时返回 "{}"
-
-        形如 {"gantries": [{"frame": 3, "x": .., "y": .., "z": ..}], "ts": 秒}
-        """
-        with self._robot_pos_lock:
-            cache = self._gantry_pos_cache
-        if not cache:
-            return "{}"
-        return json.dumps({"gantries": cache["items"], "ts": cache["ts"]})
+    # [坐标查询暂停] 两个坐标属性暂时注释掉（注册表 yaml 同步注释），恢复时一并取消注释
+    # @property
+    # def robot_joint_positions(self) -> str:
+    #     """2.43 各机器人关节坐标，JSON 字符串；无数据时返回 "{}"
+    #
+    #     形如 {"robots": [{"frame": -1, "joints": [四轴], "extjoints": [扩增轴...]}], "ts": 秒}
+    #
+    #     ⚠️ extjoints 长度按机器人实际配置变化，**不可**固定按下标取。实测现场
+    #     （172.16.28.128:44389）frame -1/-16 回 2 个（夹爪 + 导轨），而 -12/-14 只回 1 个。
+    #     下游要认某根轴，必须结合 frame 判断，而不是假定 extjoints[1] 就是导轨。
+    #     """
+    #     with self._robot_pos_lock:
+    #         cache = self._robot_joint_cache
+    #     if not cache:
+    #         return "{}"
+    #     return json.dumps({"robots": cache["items"], "ts": cache["ts"]})
+    #
+    # @property
+    # def gantry_positions(self) -> str:
+    #     """2.44 各三轴机器人坐标，JSON 字符串；无数据时返回 "{}"
+    #
+    #     形如 {"gantries": [{"frame": 3, "x": .., "y": .., "z": ..}], "ts": 秒}
+    #     """
+    #     with self._robot_pos_lock:
+    #         cache = self._gantry_pos_cache
+    #     if not cache:
+    #         return "{}"
+    #     return json.dumps({"gantries": cache["items"], "ts": cache["ts"]})
 
     # http报送服务，返回数据部分
     def process_step_finish_report(self, report_request):
@@ -2847,6 +2857,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
         供下游通过 UniLab output handle 引用。
         """
         logger.info(f"[{tag}] 即将提交 {len(orders)} 个订单")
+        # 溶解度判定的时间窗从这里起算，覆盖配液过程中已经返回的结果
+        batch_started_at = time.time()
         self._preflight_check_reagents(orders, tag)
         response = self._post_lims("/api/lims/order/orders", orders)
         logger.info(f"[{tag}] 接口返回: {response}")
@@ -3296,6 +3308,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "original_response": response,
             "vial_321_source_pos": {"x": vial_321_x, "y": vial_321_y, "z": vial_321_z},
             "vial_32_source_pos": {"x": vial_32_x, "y": vial_32_y, "z": vial_32_z},
+            "batch_started_at": batch_started_at,
         }
 
         logger.info("=" * 80)
@@ -4889,6 +4902,7 @@ class BioyondCellWorkstation(BioyondWorkstation):
         CSV 表头:
         orderCode, orderName, 配液瓶类型, 配液瓶二维码, 分液瓶类型, 分液瓶二维码,
         目标配液质量比, 真实配液质量比, 时间
+        实机 172.16.28.128 在末尾追加 Judgment of mixing state（1/0/-1，按 orderName 对齐）
 
         Args:
             final_result: _submit_and_wait_orders 返回的完整结果
@@ -4939,20 +4953,25 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     vial_map.setdefault(oc, []).append(vb_list)
 
         export_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        include_mixing = mixing_column_enabled(self.bioyond_config.get("api_host", ""))
+        mixing_by_name = self._lookup_mixing_judgments(reports, final_result) if include_mixing else {}
 
         logger.info(f"[CSV导出] 开始导出, 订单数={len(reports)}, 路径={csv_file}")
 
+        header = [
+            "orderCode", "orderName",
+            "配液瓶类型", "配液瓶二维码",
+            "分液瓶类型", "分液瓶二维码",
+            "目标配液质量比", "真实配液质量比",
+            "各试剂允差", "总质量允差",
+            "时间",
+        ]
+        if include_mixing:
+            header.append(JUDGMENT_COLUMN)
+
         with open(csv_file, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
-            # 写表头
-            writer.writerow([
-                "orderCode", "orderName",
-                "配液瓶类型", "配液瓶二维码",
-                "分液瓶类型", "分液瓶二维码",
-                "目标配液质量比", "真实配液质量比",
-                "各试剂允差", "总质量允差",
-                "时间",
-            ])
+            writer.writerow(header)
 
             for report in reports:
                 order_code = report.get("orderCode", "N/A")
@@ -4993,14 +5012,17 @@ class BioyondCellWorkstation(BioyondWorkstation):
                 mass_tolerance_str = json.dumps(mass_tolerance, ensure_ascii=False) if mass_tolerance else ""
                 total_mass_tolerance_str = "" if total_mass_tolerance is None else str(total_mass_tolerance)
 
-                writer.writerow([
+                row = [
                     order_code, order_name,
                     prep_type, prep_barcode,
                     vial_type_str, vial_barcode_str,
                     target_ratio_str, real_ratio_str,
                     mass_tolerance_str, total_mass_tolerance_str,
                     export_time,
-                ])
+                ]
+                if include_mixing:
+                    row.append(mixing_by_name.get(order_name, "") if order_name and order_name != "N/A" else "")
+                writer.writerow(row)
 
                 logger.info(
                     f"[CSV导出] 写入: orderCode={order_code}, "
@@ -5012,6 +5034,38 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         logger.info(f"[CSV导出] ✅ 导出完成: {csv_file}")
         return csv_file
+
+    def _lookup_mixing_judgments(self, reports: List[Dict], final_result: Dict) -> Dict[str, str]:
+        """按本批 orderName 查询溶解度。失败或没有时间窗时返回空字典，调用方把格子留空。"""
+        names: List[str] = []
+        seen = set()
+        duplicated = set()
+        for report in reports:
+            name = report.get("orderName") or ""
+            if not name or name == "N/A":
+                continue
+            if name in seen:
+                duplicated.add(name)
+            else:
+                seen.add(name)
+                names.append(name)
+        if duplicated:
+            logger.warning(
+                f"[CSV导出] 本批 orderName 重复，溶解度判定无法按 orderCode 区分: {sorted(duplicated)}"
+            )
+        started = final_result.get("batch_started_at")
+        if isinstance(started, bool) or not isinstance(started, (int, float)):
+            logger.warning("[CSV导出] 缺少 batch_started_at，溶解度列留空，避免贴上上一轮结果")
+            return {}
+        if not names:
+            return {}
+        try:
+            found = lookup_mixing_judgments(names, float(started))
+        except (MixingQueryError, OSError, TimeoutError, json.JSONDecodeError) as exc:
+            logger.warning(f"[CSV导出] 溶解度查询失败，该列留空: {exc}")
+            return {}
+        logger.info(f"[CSV导出] 溶解度命中 {len(found)}/{len(names)} 个 orderName")
+        return found
 
     # ==================== 按 orderCode 导出实验报告（不依赖 order_finish 推送）====================
 

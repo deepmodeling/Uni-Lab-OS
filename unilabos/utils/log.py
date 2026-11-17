@@ -190,6 +190,10 @@ def configure_logger(loglevel=None, working_dir=None):
     Args:
         loglevel: 日志级别，可以是字符串（'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'）
                  或logging模块的常量（如logging.DEBUG）或TRACE_LEVEL
+        working_dir: 工作目录(``unilabos_data``)，None 时不写文件
+
+    Returns:
+        日志文件绝对路径(未配置文件时为 None)。每次启动新建 ``logs/<日期 时间>.log``。
     """
     # 获取根日志记录器
     root_logger = logging.getLogger()
@@ -227,20 +231,19 @@ def configure_logger(loglevel=None, working_dir=None):
     # ROS 节点的状态更新日志过于频繁，设置为 INFO
     logging.getLogger('unilabos.ros.nodes.presets.host_node').setLevel(logging.INFO)
 
-    # 如果指定了工作目录，添加文件处理器
+    # 如果指定了工作目录，添加文件处理器（每次启动新建文件）
+    log_filepath = None
     if working_dir is not None:
         logs_dir = os.path.join(working_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
 
-        # 生成日志文件名：日期 时间.log
+        # 生成日志文件名：日期 时间.log（每次启动新建一个文件，不累加）
         log_filename = datetime.now().strftime("%Y-%m-%d %H-%M-%S") + ".log"
         log_filepath = os.path.join(logs_dir, log_filename)
 
-        # 创建文件处理器
         file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
         file_handler.setLevel(TRACE_LEVEL)
 
-        # 使用不带颜色的格式化器
         file_formatter = ColoredFormatter(use_colors=False)
         file_handler.setFormatter(file_formatter)
 
@@ -248,6 +251,7 @@ def configure_logger(loglevel=None, working_dir=None):
 
     logging.getLogger("asyncio").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.INFO)
+    return log_filepath
 
 
 # ============================================================================
@@ -284,7 +288,7 @@ def get_comm_logger() -> logging.Logger:
 def configure_comm_logger(working_dir=None, loglevel=None):
     """为服务端通信(WebSocket)配置独立日志，复用 ``ColoredFormatter`` 逻辑。
 
-    - 独立文件：``<working_dir>/logs/ws_comm_<日期 时间>.log``，TRACE 全量落本地
+    - 独立文件：``<working_dir>/logs/ws_comm_<日期 时间>.log``（每次启动新建），TRACE 全量落本地
     - 微秒级时间戳 + 线程名，便于排查 queue 机制、收发时序与并发标识
     - ``propagate=False``，与主日志解耦，避免日志混在一起
     - 控制台仍保留实时输出（级别与主控制台一致），不丢失现有可见性
@@ -374,7 +378,7 @@ def get_comm_logger() -> logging.Logger:
 def configure_comm_logger(working_dir=None, loglevel=None):
     """为服务端通信(WebSocket)配置独立日志，复用 ``ColoredFormatter`` 逻辑。
 
-    - 独立文件：``<working_dir>/logs/ws_comm_<日期 时间>.log``，TRACE 全量落本地
+    - 独立文件：``<working_dir>/logs/ws_comm_<日期 时间>.log``（每次启动新建），TRACE 全量落本地
     - 微秒级时间戳 + 线程名，便于排查 queue 机制、收发时序与并发标识
     - ``propagate=False``，与主日志解耦，避免日志混在一起
     - 控制台仍保留实时输出（级别与主控制台一致），不丢失现有可见性

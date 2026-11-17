@@ -26,6 +26,10 @@ from unilabos.devices.workstation.coin_cell_assembly.YB_YH_materials import (
     apply_coin_cell_stock_to_deck,
 )
 from unilabos.resources.graphio import convert_resources_to_type
+from unilabos.devices.workstation.coin_cell_assembly.alignment_query import (
+    ALIGNMENT_CSV_COLUMNS,
+    backfill_alignment_csv,
+)
 from unilabos.utils.log import logger
 import struct
 
@@ -152,11 +156,12 @@ def _coerce_deck_input(deck: Any) -> Optional[Deck]:
 
 #构建物料系统
 
-# 旁观者采集：组装记录 CSV 表头（与 func_pack_get_msg_cmd 的表头一致，去掉配方相关列）
+# 旁观者采集：组装记录 CSV 表头。去掉配方列，末尾与控制模式一样带对中四列。
 _OBSERVER_ASSEMBLY_HEADER = [
     'Time', 'open_circuit_voltage', 'pole_weight',
     'assembly_time', 'target_assembly_pressure', 'real_assembly_pressure', 'electrolyte_volume',
     'data_coin_type', 'electrolyte_code', 'coin_cell_code',
+    *ALIGNMENT_CSV_COLUMNS,
 ]
 
 # 旁观者采集：Neware 提交 CSV 表头，必须与 submit_from_csv_export_ndax 校验的列名逐字一致
@@ -313,10 +318,13 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         self._duco_lock = threading.Lock()  # 保护 _duco_state 的读写
         self._duco_state = None  # 最近一帧 /api/state 原始 JSON，无有效数据时为 None
         self._duco_fail_count = 0  # 连续请求失败次数
-        self._duco_thread = threading.Thread(
-            target=self._duco_poll_loop, daemon=True, name="duco-state-poller"
-        )
-        self._duco_thread.start()
+        # [坐标查询暂停] 暂不启动 DUCO 轮询；恢复方法见 docs/coordinate_poll_and_log_restore.md
+        # self._duco_thread = threading.Thread(
+        #     target=self._duco_poll_loop, daemon=True, name="duco-state-poller"
+        # )
+        # self._duco_thread.start()
+        self._duco_thread = None
+        logger.info("[坐标查询暂停] 扣电站 DUCO 机械臂状态轮询未启动")
 
     # ===================== DUCO 机械臂状态采集 ======================
 
@@ -458,13 +466,14 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         else:
             logger.info("[物料余量] stock_refresh_interval=0，不启动周期采集")
 
-        # DUCO 机械臂位置：把发布周期从框架默认 5 秒调到与 HTTP 轮询一致的 _DUCO_PERIOD_S
-        for name in ("duco_joint_positions", "duco_tcp_pose"):
-            pub = ros_node._property_publishers.get(name)
-            if pub is not None:
-                pub.change_frequency(self._DUCO_PERIOD_S)
-            else:
-                logger.warning(f"[DUCO] 未找到属性发布者 {name}，请检查注册表 status_types 是否已声明")
+        # [坐标查询暂停] DUCO 发布频率调整随坐标属性一起暂停（注册表已注释，找不到发布者会刷 warning）
+        # # DUCO 机械臂位置：把发布周期从框架默认 5 秒调到与 HTTP 轮询一致的 _DUCO_PERIOD_S
+        # for name in ("duco_joint_positions", "duco_tcp_pose"):
+        #     pub = ros_node._property_publishers.get(name)
+        #     if pub is not None:
+        #         pub.change_frequency(self._DUCO_PERIOD_S)
+        #     else:
+        #         logger.warning(f"[DUCO] 未找到属性发布者 {name}，请检查注册表 status_types 是否已声明")
 
     # 批量操作在这里写
     async def change_hole_sheet_to_2(self, hole: MaterialHole):
@@ -865,32 +874,33 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
     # ================== DUCO 机械臂位置（只读 HTTP 缓存） ==================
     # 返回类型必须是 str：Host 状态回调只接受标量，list/dict 会被框架强转为 String，语义不可靠。
 
-    @property
-    def duco_joint_positions(self) -> str:
-        """DUCO 六轴实际关节角，JSON 字符串，单位 rad；无数据时返回 "{}" """
-        state = self._duco_snapshot()
-        if state is None:
-            return "{}"
-        joints = state.get("joint_actual_position")
-        if not isinstance(joints, list) or len(joints) != 6:
-            return "{}"
-        return json.dumps({"joints_rad": [float(v) for v in joints], "ts": state.get("timestamp")})
-
-    @property
-    def duco_tcp_pose(self) -> str:
-        """DUCO TCP 实际位姿，JSON 字符串，位置单位 m、姿态单位 rad；无数据时返回 "{}" """
-        state = self._duco_snapshot()
-        if state is None:
-            return "{}"
-        pose = state.get("tcp_pose")
-        if not isinstance(pose, list) or len(pose) != 6:
-            return "{}"
-        x, y, z, rx, ry, rz = (float(v) for v in pose)
-        return json.dumps({
-            "x": x, "y": y, "z": z,
-            "rx": rx, "ry": ry, "rz": rz,
-            "ts": state.get("timestamp"),
-        })
+    # [坐标查询暂停] 两个 DUCO 属性暂时注释掉（注册表 yaml 同步注释），恢复时一并取消注释
+    # @property
+    # def duco_joint_positions(self) -> str:
+    #     """DUCO 六轴实际关节角，JSON 字符串，单位 rad；无数据时返回 "{}" """
+    #     state = self._duco_snapshot()
+    #     if state is None:
+    #         return "{}"
+    #     joints = state.get("joint_actual_position")
+    #     if not isinstance(joints, list) or len(joints) != 6:
+    #         return "{}"
+    #     return json.dumps({"joints_rad": [float(v) for v in joints], "ts": state.get("timestamp")})
+    #
+    # @property
+    # def duco_tcp_pose(self) -> str:
+    #     """DUCO TCP 实际位姿，JSON 字符串，位置单位 m、姿态单位 rad；无数据时返回 "{}" """
+    #     state = self._duco_snapshot()
+    #     if state is None:
+    #         return "{}"
+    #     pose = state.get("tcp_pose")
+    #     if not isinstance(pose, list) or len(pose) != 6:
+    #         return "{}"
+    #     x, y, z, rx, ry, rz = (float(v) for v in pose)
+    #     return json.dumps({
+    #         "x": x, "y": y, "z": z,
+    #         "rx": rx, "ry": ry, "rz": rz,
+    #         "ts": state.get("timestamp"),
+    #     })
 
     @property
     def data_pole_weight(self) -> float:
@@ -2089,7 +2099,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     'assembly_time', 'target_assembly_pressure', 'real_assembly_pressure', 'electrolyte_volume', 
                     'data_coin_type', 'electrolyte_code', 'coin_cell_code',
                     'orderName', 'prep_bottle_barcode', 'vial_bottle_barcodes',
-                    'target_mass_ratio', 'real_mass_ratio'
+                    'target_mass_ratio', 'real_mass_ratio',
+                    *ALIGNMENT_CSV_COLUMNS,
                 ])
                 #立刻写入磁盘
                 csvfile.flush()
@@ -2160,8 +2171,10 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 data_assembly_time, target_assembly_pressure, data_assembly_pressure, data_electrolyte_volume,
                 data_coin_type, data_electrolyte_code, data_coin_cell_code,
                 formulation_order_name, prep_bottle_barcode, vial_bottle_barcodes,
-                target_ratio_str, real_ratio_str
+                target_ratio_str, real_ratio_str,
+                *([""] * len(ALIGNMENT_CSV_COLUMNS)),
             ])
+            self._alignment_csv_for_batch = self.csv_export_file
             #立刻写入磁盘
             csvfile.flush()
         self._software_battery_counter = getattr(self, "_software_battery_counter", 0) + 1
@@ -2203,6 +2216,18 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         #将允许读取标志位置True
         self.success = True
         return self.success
+
+    def _backfill_alignment_csv(self, csv_file: str = "") -> None:
+        """按每行 coin_cell_code 回填对中四列。失败不中断组装或旁观采集结果。"""
+        csv_file = csv_file or getattr(self, "_alignment_csv_for_batch", None)
+        if not csv_file or not os.path.isfile(csv_file):
+            logger.info("[对中回填] 本批没有组装 CSV，跳过")
+            return
+        try:
+            filled = backfill_alignment_csv(csv_file)
+            logger.info(f"[对中回填] 完成: {csv_file}, 命中 {filled} 行")
+        except Exception as exc:
+            logger.warning(f"[对中回填] 失败，四列保持为空: {exc}")
 
     def func_allpack_cmd_simp(
         self, 
@@ -2336,6 +2361,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             logger.info("✓ 单次滴液模式")
         
         logger.info("✓ 设备参数设置完成")
+        # 只回填本批实际写出的组装 CSV，避免碰到上一批文件
+        self._alignment_csv_for_batch = None
         
         # 步骤2: 执行组装流程（含断点续传）
         summary_csv_file = os.path.join(file_path, "duandian.csv")
@@ -2465,6 +2492,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
             os.remove(summary_csv_file)
         # 全部完成后等待依华发送完成信号
         self.func_pack_send_finished_cmd()
+        self._backfill_alignment_csv()
         
         # 返回JSON格式数据
         result = {
@@ -2786,6 +2814,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 snapshot["assembly_time"], snapshot["target_assembly_pressure"], snapshot["real_assembly_pressure"],
                 snapshot["electrolyte_volume"], snapshot["data_coin_type"],
                 snapshot["electrolyte_code"], snapshot["coin_cell_code"],
+                *([""] * len(ALIGNMENT_CSV_COLUMNS)),
             ])
             csvfile.flush()
 
@@ -2808,7 +2837,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         poll_interval: float = 0.5,
         battery_system: str = "",
     ) -> Dict[str, Any]:
-        """旁观者采集：不下发任务、不写任何线圈，只轮询依华工站的已完成电池计数。计数跳变时记录跳变前一拍的快照，同时追加写入组装记录 CSV 和 Neware 提交 CSV。
+        """旁观者采集：不下发任务、不写任何线圈，只轮询依华工站的已完成电池计数。计数跳变时记录跳变前一拍的快照，同时追加写入组装记录 CSV 和 Neware 提交 CSV。组装记录末尾带对中四列，采集结束时按 coin_cell_code 回填；Neware 提交 CSV 不加这四列。
 
         Args:
             file_path: 导出目录，两个 CSV 的输出目录，不存在会自动创建
@@ -2938,6 +2967,8 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                 time.sleep(poll_interval)
         finally:
             self._observer_running = False
+            if os.path.isfile(assembly_file):
+                self._backfill_alignment_csv(assembly_file)
 
         end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logger.info("=" * 60)

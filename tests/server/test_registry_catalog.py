@@ -130,6 +130,42 @@ def test_registry_classes_and_instantiation_follow_the_reported_catalog(authorit
         materials.close()
 
 
+def test_material_io_load_instantiates_from_the_reported_catalog(authority, tmp_path) -> None:
+    """调度权威上的人工装入：注册表同步的模板以资源条目 id 为名，按 Host 上报的生效条目实例化；
+    上报前、或只有本地扫描里有的资源类，挂到设备上都被拒绝。"""
+
+    from tests.server.test_material_io_inventory import _ensure_template, _param, device_deck
+    from unilabos.client.materials.core import LocalMaterialsClient
+    from unilabos.resources.adapters.registry_materials import register_resource_definitions
+    from unilabos.server.services.materials import MaterialsService
+    from unilabos.server.services.materials.core import MaterialValidationError
+    from unilabos.server.services.materials.material_io import MaterialIO, material_io_command_id
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    gateway = LocalMaterialsClient(materials)
+    try:
+        register_resource_definitions([TIP_RACK], gateway)
+        _ensure_template(materials, "scanned-only-template", "scanned_only")
+        mount, _sites = device_deck(materials)
+        material_io = MaterialIO(materials)
+        with pytest.raises(MaterialValidationError, match="注册表尚未上报"):
+            material_io.plan(_param("load", mount, site="A1", resource_template="tip_rack_300"),
+                             task_uuid="task", job_uuid="j0")
+
+        _report(authority, TIP_RACK)
+        with pytest.raises(MaterialValidationError, match="registry 资源类不可实例化: 'scanned_only'"):
+            material_io.plan(_param("load", mount, site="A1", resource_template="scanned_only"),
+                             task_uuid="task", job_uuid="j1")
+        plan = material_io.check(_param("load", mount, site="A1", resource_template="tip_rack_300"),
+                                 task_uuid="task", job_uuid="j2")
+        response = gateway.inventory_command({"command_id": material_io_command_id("j2"), "type": "material.io",
+                                              "payload": plan, "actor": "scheduler"})
+        assert response["status"] == "completed", response
+        assert len(materials.get_tree(response["result"]["material_uuid"]).nodes) == 1 + 96 + 96
+    finally:
+        materials.close()
+
+
 def test_graph_site_templates_and_template_action_types_use_reported_entries(authority) -> None:
     from unilabos.registry.workflows import _action_type_from_registry
     from unilabos.resources.adapters.device_site import registry_device_site_templates

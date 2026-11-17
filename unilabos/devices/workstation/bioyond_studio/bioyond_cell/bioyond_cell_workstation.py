@@ -3311,6 +3311,8 @@ class BioyondCellWorkstation(BioyondWorkstation):
             "batch_started_at": batch_started_at,
         }
 
+        self._attach_mixing_judgments(final_result)
+
         logger.info("=" * 80)
         logger.info(f"[{tag}] 返回报文数量: {len(all_reports)}, 分液瓶板数量: {len(all_vial_plates)}")
         for idx, vial_plate in enumerate(all_vial_plates, 1):
@@ -4954,7 +4956,14 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         export_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         include_mixing = mixing_column_enabled(self.bioyond_config.get("api_host", ""))
-        mixing_by_name = self._lookup_mixing_judgments(reports, final_result) if include_mixing else {}
+        already_attached = any(
+            isinstance(item, dict) and JUDGMENT_COLUMN in item for item in mass_ratios
+        )
+        mixing_by_name = (
+            {}
+            if (not include_mixing or already_attached)
+            else self._lookup_mixing_judgments(reports, final_result)
+        )
 
         logger.info(f"[CSV导出] 开始导出, 订单数={len(reports)}, 路径={csv_file}")
 
@@ -5021,7 +5030,10 @@ class BioyondCellWorkstation(BioyondWorkstation):
                     export_time,
                 ]
                 if include_mixing:
-                    row.append(mixing_by_name.get(order_name, "") if order_name and order_name != "N/A" else "")
+                    if JUDGMENT_COLUMN in ratio_info:
+                        row.append("" if ratio_info.get(JUDGMENT_COLUMN) is None else str(ratio_info.get(JUDGMENT_COLUMN)))
+                    else:
+                        row.append(mixing_by_name.get(order_name, "") if order_name and order_name != "N/A" else "")
                 writer.writerow(row)
 
                 logger.info(
@@ -5034,6 +5046,24 @@ class BioyondCellWorkstation(BioyondWorkstation):
 
         logger.info(f"[CSV导出] ✅ 导出完成: {csv_file}")
         return csv_file
+
+    def _attach_mixing_judgments(self, final_result: Dict) -> None:
+        """把溶解度判定写进 mass_ratios，随配方 handle 交给扣电和新威大表。
+
+        非实机、查询失败或对不上 orderName 时写空串，键始终存在。
+        """
+        ratios = final_result.get("mass_ratios") or []
+        reports = final_result.get("reports") or []
+        mixing_by_name: Dict[str, str] = {}
+        if mixing_column_enabled(self.bioyond_config.get("api_host", "")):
+            mixing_by_name = self._lookup_mixing_judgments(reports, final_result)
+        for item in ratios:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("orderName") or ""
+            item[JUDGMENT_COLUMN] = (
+                mixing_by_name.get(name, "") if name and name != "N/A" else ""
+            )
 
     def _lookup_mixing_judgments(self, reports: List[Dict], final_result: Dict) -> Dict[str, str]:
         """按本批 orderName 查询溶解度。失败或没有时间窗时返回空字典，调用方把格子留空。"""

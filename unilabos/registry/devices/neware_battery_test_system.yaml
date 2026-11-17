@@ -712,13 +712,23 @@ neware_battery_test_system:
                       vial_bottle_barcodes:
                         type: string
                         title: 分液瓶条码
+                      total_mass_tolerance:
+                        title: 总质量允差
+                        description: (真实总质量-目标总质量)/目标总质量，来自配液 mass_ratios；没有时为空
+                        anyOf:
+                        - type: number
+                        - type: 'null'
+                      "Judgment of mixing state":
+                        type: string
+                        title: Judgment of mixing state
+                        description: 混匀溶解度判定（1/0/-1），按 orderName 对齐；非实机或未命中为空
                       error:
                         type: string
                         title: 错误信息
                 assembly_data:
                   title: 组装数据
                   type: array
-                  description: 扣电组装数据列表（每颗电池一个对象，含 Time/open_circuit_voltage/pole_weight 等 9 字段）
+                  description: 扣电组装数据列表（每颗电池一个对象，含 Time/open_circuit_voltage/pole_weight/coaxiality 等字段）
                   items:
                     type: object
                     additionalProperties: false
@@ -753,6 +763,10 @@ neware_battery_test_system:
                       coin_cell_code:
                         type: string
                         title: 扣式电池编码
+                      coaxiality:
+                        type: string
+                        title: 同轴度
+                        description: 扣电对中回填的 coaxiality，未命中为空
                 csv_export_dir:
                   type: string
                   default: 'D:\2604Agentic_test'

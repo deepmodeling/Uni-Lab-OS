@@ -8,7 +8,7 @@ import types
 import urllib.error
 import urllib.request
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from functools import wraps
 from pylabrobot.resources import Deck, Resource as PLRResource
 from unilabos_msgs.msg import Resource
@@ -2229,6 +2229,36 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         except Exception as exc:
             logger.warning(f"[对中回填] 失败，四列保持为空: {exc}")
 
+    def _attach_coaxiality(self, batteries: List[Dict[str, Any]]) -> None:
+        """把本批组装 CSV 里已回填的 coaxiality 写回 assembly_data，供新威大表使用。
+
+        按 Time + coin_cell_code 对上 CSV 行。文件不存在、列为空或对不上时写空串。
+        """
+        csv_file = getattr(self, "_alignment_csv_for_batch", None)
+        rows: List[Dict[str, str]] = []
+        if csv_file and os.path.isfile(csv_file):
+            try:
+                with open(csv_file, newline="", encoding="utf-8") as handle:
+                    rows = list(csv.DictReader(handle))
+            except Exception as exc:
+                logger.warning(f"[对中回填] 读取同轴度失败，assembly_data 该字段留空: {exc}")
+                rows = []
+        used = set()
+        for battery in batteries:
+            code = str(battery.get("coin_cell_code") or "").strip()
+            stamp = str(battery.get("Time") or "").strip()
+            value = ""
+            for index, row in enumerate(rows):
+                if index in used:
+                    continue
+                row_code = str(row.get("coin_cell_code") or "").strip()
+                row_time = str(row.get("Time") or "").strip()
+                if row_code == code and row_time == stamp:
+                    value = row.get("coaxiality") or ""
+                    used.add(index)
+                    break
+            battery["coaxiality"] = value
+
     def func_allpack_cmd_simp(
         self, 
         elec_num, 
@@ -2465,6 +2495,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
                     "data_coin_type": getattr(self, "data_coin_type", 0),
                     "electrolyte_code": electrolyte_qr_code,
                     "coin_cell_code": battery_qr_code,
+                    "coaxiality": "",
                 }
                 battery_data_list.append(battery_info)
                 print(f"已收集第 {coin_num_N + 1} 个电池数据: 电池码={battery_info['coin_cell_code']}, 电解液码={battery_info['electrolyte_code']}")
@@ -2493,6 +2524,7 @@ class CoinCellAssemblyWorkstation(WorkstationBase):
         # 全部完成后等待依华发送完成信号
         self.func_pack_send_finished_cmd()
         self._backfill_alignment_csv()
+        self._attach_coaxiality(battery_data_list)
         
         # 返回JSON格式数据
         result = {

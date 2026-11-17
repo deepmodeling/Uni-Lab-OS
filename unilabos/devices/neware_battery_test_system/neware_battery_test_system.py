@@ -31,6 +31,7 @@ from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.ros.nodes.base_device_node import ROS2DeviceNode
 from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
 from unilabos.utils.datacore import push_csv_by_config
+from unilabos.devices.workstation.mixing_judgment_query import JUDGMENT_COLUMN
 
 # ========================
 # OSS 上传工具函数
@@ -2146,6 +2147,7 @@ class NewareBatteryTestSystem:
                 "data_coin_type":       2,
                 "electrolyte_code":     f"EL-20260421{i:02d}",
                 "coin_cell_code":       f"CC-20260421{i:02d}",
+                "coaxiality":           f"0.{i:03d}mm",
             }
             for i in range(1, 17)
         ]
@@ -2302,8 +2304,9 @@ class NewareBatteryTestSystem:
         - 人工在前端按 A/B/C 三种模式之一填写 4 个电池参数（collector_mass / active_material /
           capacity / battery_system(xml工步)），并选择 target_device 与 mount_resource（通道）
         - 后端按优先级 B > C > A 展开为长度 N 的 4 个 list；下游 submit_auto_export_excel 接口不变
-        - 内部把 assembly_data 解包为 9 个并行数组，把 pole_weight / coin_cell_code 透传给下游
+        - 内部把 assembly_data 解包为并行数组，把 pole_weight / coin_cell_code 透传给下游
         - 把所有数据整合后写入 {csv_export_dir}/{YYYYMMDD}/battery_test_{YYYYMMDD_HHMMSS}.csv
+          额外带上配液的 total_mass_tolerance、Judgment of mixing state，以及扣电的 coaxiality
 
         Args:
             resource:        扣电组装物料系统（无需选择）—— 由系统自动管理的扣电资源列表
@@ -2360,6 +2363,7 @@ class NewareBatteryTestSystem:
         data_coin_type = [b.get("data_coin_type", 0) for b in assembly_data]
         electrolyte_code = [b.get("electrolyte_code", "") for b in assembly_data]
         coin_cell_code = [b.get("coin_cell_code", "") for b in assembly_data]
+        coaxiality = [b.get("coaxiality", "") for b in assembly_data]
 
         # 按优先级 B > C > A 展开为长度 N 的 4 个 list
         collector_mass, active_material, capacity, battery_system = self._expand_battery_params(
@@ -2393,6 +2397,7 @@ class NewareBatteryTestSystem:
                     "data_coin_type": data_coin_type,
                     "electrolyte_code": electrolyte_code,
                     "coin_cell_code": coin_cell_code,
+                    "coaxiality": coaxiality,
                 },
                 collector_mass=collector_mass,
                 active_material=active_material,
@@ -2498,9 +2503,10 @@ class NewareBatteryTestSystem:
         header = [
             "Time", "open_circuit_voltage", "pole_weight",
             "assembly_time", "assembly_pressure", "target_assembly_pressure", "electrolyte_volume",
-            "data_coin_type", "electrolyte_code", "coin_cell_code",
+            "data_coin_type", "electrolyte_code", "coin_cell_code", "coaxiality",
             "orderName", "prep_bottle_barcode", "vial_bottle_barcodes",
-            "target_mass_ratio", "real_mass_ratio",
+            "target_mass_ratio", "real_mass_ratio", "total_mass_tolerance",
+            JUDGMENT_COLUMN,
             "collector_mass", "active_material", "capacity", "battery_system",
             "channel_name",
         ]
@@ -2542,6 +2548,8 @@ class NewareBatteryTestSystem:
                     form = {}
                 target_ratio = form.get("target_mass_ratio", {}) if isinstance(form, dict) else {}
                 real_ratio = form.get("real_mass_ratio", {}) if isinstance(form, dict) else {}
+                total_tol = form.get("total_mass_tolerance", None) if isinstance(form, dict) else None
+                judgment = form.get(JUDGMENT_COLUMN, "") if isinstance(form, dict) else ""
                 ch_name = self._extract_channel_name(mount_resource[i]) if mount_resource and i < len(mount_resource) else ""
 
                 writer.writerow([
@@ -2555,11 +2563,14 @@ class NewareBatteryTestSystem:
                     safe_get(assembly_rows["data_coin_type"], i, 0),
                     safe_get(assembly_rows["electrolyte_code"], i),
                     safe_get(assembly_rows["coin_cell_code"], i),
+                    safe_get(assembly_rows.get("coaxiality", []), i),
                     form.get("orderName", "") if isinstance(form, dict) else "",
                     form.get("prep_bottle_barcode", "") if isinstance(form, dict) else "",
                     form.get("vial_bottle_barcodes", "") if isinstance(form, dict) else "",
                     json.dumps(target_ratio, ensure_ascii=False) if target_ratio else "",
                     json.dumps(real_ratio, ensure_ascii=False) if real_ratio else "",
+                    "" if total_tol is None else total_tol,
+                    "" if judgment is None else judgment,
                     safe_get(collector_mass, i, ""),
                     safe_get(active_material, i, ""),
                     safe_get(capacity, i, ""),

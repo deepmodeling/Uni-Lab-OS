@@ -126,9 +126,11 @@ ordering 标识。
 }
 ```
 
-旧图里容器常写成 `"class": null` 或 `"class": "container"`、没有 `config.type`：这样的节点在两种 backend
-下都会在开机对齐物料时被权威拒绝（`class_name ... does not match template 'container' class_name
-'RegularContainer'`），Host 起不来，需要按上面的形状改写。
+旧图里容器常写成 `"class": null` 或 `"class": "container"`、没有 `config.type`，`config` 里还可能混着
+`filter_type` 这类业务字段。这样的图不用手改：`-g` 与 `unilab graph upload` 读图时按注册表补齐
+（见下文「规范化与校验」第 1 步），文件本身不动。不经读图边界、直接交给 Graph Authority 的
+payload 不做这一步，权威会按模板拒绝（`class_name ... does not match template 'container'
+class_name 'RegularContainer'`）。
 
 `children` 是资源树的递归容器，不属于 `ResourceDict` 领域字段。平铺 JSON 图应在
 子节点上使用 `parent_uuid`，必要时同时提供便于阅读的 `parent`。
@@ -198,6 +200,24 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
    `data.liquid=[{"liquid_type": ..., "liquid_volume": ...}]` 在节点还没有
    `liquids` / `substances` 时转为 `substances`（单位 `ul`，与 `max_volume` 同单位），
    `data.liquid` 原样保留给协议编译器读取。
+
+   缺 PLR 类的旧物料节点（`type` 不是 `device`，且没有 `config.type`；或有 `config.type`、没有
+   `template_name`、`class` 却写成模板名）按注册表补齐成上文「物料节点的类与模板」的形状：
+
+   - 模板依次取 `template_name`、`class`、`type`（`class` 为空的 dev 时代容器写
+     `"type": "container"`，即同名注册表模板），写回 `template_name`；
+   - PLR 类名只从注册表查：该模板注册表条目的 `config_info[0].config.type`（物料权威登记模板时
+     用的同一规则；条目没有 `config_info` 时按条目的 `class.module` 实例化一次取类名），写进
+     `class`，`config.type` 缺失时一并补上；
+   - 补上 `config.type` 的节点，`config` 里该 PLR 类构造器不接受的键（如 `filter_type`）挪进
+     `data`；
+   - 模板不在注册表、条目不是 PLR 资源类、或节点已有的 `config.type` 与注册表的类不一致时报错，
+     消息写明节点 `id` 与模板，不按名字猜类名。
+
+   `-g` 的读图发生在 Host / Slave 进程，查本进程扫描的注册表；`unilab graph upload` 在 CLI
+   进程读图，经 `GET /api/v1/registry/status` 与 `GET /api/v1/registry/entries/{模板}` 查上传目标
+   调度权威的注册表（Host 上报的目录；权威还没收到过上报时直接报错）。已是当前写法的节点原样
+   不动，升级结果再读一次不再变化。
 2. Graph Authority（`server/services/materials/graph.py`）登记该图：为草稿节点和
    Site 发号、把 `name` 写成 uuid（按上文规则迁移旧名）、实例化设备模板 Site、拒绝身份冲突；权威已有同名图时以权威为准，只补
    文件新增的节点和连线。
@@ -239,7 +259,8 @@ Authority 存储的形态）；旧格式图请先经 `unilab graph upload` 或 `
 `virtual_heating_platform_demo.json`、`lctest.json` 等）都能在默认的 HostLink backend 下直接启动并
 真实执行（不需要 `--test_mode`）；`tests/devices/test_virtual_devices_hostlink.py` 逐张检查这些图的
 物料能按模板建出来。`comprehensive_protocol/comprehensive_slim.json` 例外：它的根节点模板
-`workstation.example` 不在 Registry 中，台面数据也是旧版 PLR 的序列化，仅作历史参考。
+`workstation.example` 不在 Registry 中，台面数据也是旧版 PLR 的序列化，仅作历史参考；`-g` 读它时
+在读图边界就拒绝启动，错误写明是哪个节点、哪个模板（枪头盒的 `config.type` 与注册表模板的类不一致）。
 
 可使用完整 Registry 检查设备类和动作定义：
 

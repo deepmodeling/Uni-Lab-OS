@@ -1,0 +1,1158 @@
+{
+    "nodes": [
+        {
+            "id": "OrganicSynthesisStation",
+            "name": "有机化学流程综合测试工作站",
+            "children": [
+                "multiway_valve_1",
+                "multiway_valve_2",
+                "transfer_pump_1",
+                "transfer_pump_2",
+                "reagent_bottle_1",
+                "reagent_bottle_2",
+                "reagent_bottle_3",
+                "reagent_bottle_4",
+                "reagent_bottle_5",
+                "centrifuge_1",
+                "rotavap_1",
+                "main_reactor",
+                "heater_1",
+                "stirrer_1",
+                "stirrer_2",
+                "waste_bottle_1",
+                "waste_bottle_2",
+                "solenoid_valve_1",
+                "solenoid_valve_2",
+                "solenoid_valve_3",
+                "vacuum_pump_1",
+                "gas_source_1",
+                "h2_gas_source",
+                "filter_1",
+                "column_1",
+                "separator_1",
+                "collection_bottle_1",
+                "collection_bottle_2",
+                "collection_bottle_3",
+                "solid_dispenser_1",
+                "solid_reagent_bottle_1",
+                "solid_reagent_bottle_2",
+                "solid_reagent_bottle_3"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 600,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": [
+                    "AddProtocol",
+                    "StartStirProtocol",
+                    "StopStirProtocol",
+                    "StirProtocol",
+                    "RunColumnProtocol",
+                    "CentrifugeProtocol",
+                    "FilterProtocol",
+                    "CleanVesselProtocol",
+                    "DissolveProtocol",
+                    "FilterThroughProtocol",
+                    "WashSolidProtocol",
+                    "SeparateProtocol",
+                    "EvaporateProtocol",
+                    "HeatChillProtocol",
+                    "HeatChillStartProtocol",
+                    "HeatChillStopProtocol",
+                    "EvacuateAndRefillProtocol",
+                    "PumpTransferProtocol",
+                    "AdjustPHProtocol",
+                    "ResetHandlingProtocol",
+                    "DryProtocol",
+                    "HydrogenateProtocol",
+                    "RecrystallizeProtocol"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "八通阀门1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 400,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "positions": 8
+            },
+            "data": {
+                "valve_state": "Ready",
+                "current_position": 1
+            }
+        },
+        {
+            "id": "multiway_valve_2",
+            "name": "八通阀门2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 800,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "positions": 8
+            },
+            "data": {
+                "valve_state": "Ready",
+                "current_position": 1
+            }
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "转移泵1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 350,
+                "y": 250,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 25.0,
+                "transfer_rate": 10.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_volume": 0.0
+            }
+        },
+        {
+            "id": "transfer_pump_2",
+            "name": "转移泵2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 850,
+                "y": 250,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 25.0,
+                "transfer_rate": 10.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_volume": 0.0
+            }
+        },
+        {
+            "id": "reagent_bottle_1",
+            "name": "试剂瓶1-DMF",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 200,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 200,
+                "size_y": 150,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [["DMF", 500.0]],
+                "pending_liquids": [["DMF", 500.0]]
+            }
+        },
+        {
+            "id": "reagent_bottle_2",
+            "name": "试剂瓶2-乙酸乙酯",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 250,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 200,
+                "size_y": 150,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [["ethyl_acetate", 1000.0]],
+                "pending_liquids": [["ethyl_acetate", 1000.0]]
+            }
+        },
+        {
+            "id": "reagent_bottle_3",
+            "name": "试剂瓶3-己烷",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 300,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 300,
+                "size_y": 150,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [["hexane", 1000.0]],
+                "pending_liquids": [["hexane", 1000.0]]
+            }
+        },
+        {
+            "id": "reagent_bottle_4",
+            "name": "试剂瓶4-甲醇",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 900,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 900,
+                "size_y": 150,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [["methanol", 1000.0]],
+                "pending_liquids": [["methanol", 1000.0]]
+            }
+        },
+        {
+            "id": "reagent_bottle_5",
+            "name": "试剂瓶5-水",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 950,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 950,
+                "size_y": 150,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [["water", 1000.0]],
+                "pending_liquids": [["water", 1000.0]]
+            }
+        },
+        {
+            "id": "centrifuge_1",
+            "name": "离心机",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_centrifuge",
+            "position": {
+                "x": 200,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "max_speed": 15000.0,
+                "max_temp": 40.0,
+                "min_temp": 4.0
+            },
+            "data": {
+                "current_speed": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "rotavap_1",
+            "name": "旋转蒸发仪",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_rotavap",
+            "position": {
+                "x": 300,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "max_temp": 180.0,
+                "max_rotation_speed": 280.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_temp": 25.0,
+                "rotation_speed": 0.0
+            }
+        },
+        {
+            "id": "main_reactor",
+            "name": "主反应器",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 400,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "type": "RegularContainer",
+                "category": "container"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "heater_1",
+            "name": "加热器",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 450,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_temp": 200.0,
+                "min_temp": -20.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_temp": 25.0
+            }
+        },
+        {
+            "id": "stirrer_1",
+            "name": "搅拌器1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 350,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_speed": 2000.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_speed": 0.0
+            }
+        },
+        {
+            "id": "stirrer_2",
+            "name": "搅拌器2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 351,
+                "y": 451,
+                "z": 0
+            },
+            "config": {
+                "max_speed": 2000.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_speed": 0.0
+            }
+        },
+        {
+            "id": "waste_bottle_1",
+            "name": "废液瓶1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 500,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 500,
+                "size_y": 400,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "waste_bottle_2",
+            "name": "废液瓶2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 1100,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 1100,
+                "size_y": 500,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "solenoid_valve_1",
+            "name": "电磁阀1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_solenoid_valve",
+            "position": {
+                "x": 700,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "voltage": 12.0,
+                "response_time": 0.1
+            },
+            "data": {
+                "valve_state": "Closed",
+                "is_open": false
+            }
+        },
+        {
+            "id": "solenoid_valve_2",
+            "name": "电磁阀2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_solenoid_valve",
+            "position": {
+                "x": 700,
+                "y": 150,
+                "z": 0
+            },
+            "config": {
+                "voltage": 12.0,
+                "response_time": 0.1
+            },
+            "data": {
+                "valve_state": "Closed",
+                "is_open": false
+            }
+        },
+        {
+            "id": "solenoid_valve_3",
+            "name": "氢气电磁阀",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_solenoid_valve",
+            "position": {
+                "x": 450,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "voltage": 12.0,
+                "response_time": 0.1,
+                "gas_compatible": true
+            },
+            "data": {
+                "valve_state": "Closed",
+                "is_open": false
+            }
+        },
+        {
+            "id": "vacuum_pump_1",
+            "name": "真空泵",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_vacuum_pump",
+            "position": {
+                "x": 650,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "max_vacuum": 0.1,
+                "pump_rate": 50.0
+            },
+            "data": {
+                "status": "Off",
+                "current_vacuum": 1.0
+            }
+        },
+        {
+            "id": "gas_source_1",
+            "name": "气源",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_gas_source",
+            "position": {
+                "x": 650,
+                "y": 150,
+                "z": 0
+            },
+            "config": {},
+            "data": {
+                "gas_type": "nitrogen",
+                "max_pressure": 5.0
+            }
+        },
+        {
+            "id": "h2_gas_source",
+            "name": "氢气气源",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_gas_source",
+            "position": {
+                "x": 500,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "max_pressure": 10.0,
+                "gas_type": "hydrogen"
+            },
+            "data": {
+                "gas_type": "hydrogen",
+                "max_pressure": 10.0,
+                "current_pressure": 0.0,
+                "status": "OFF"
+            }
+        },
+        {
+            "id": "filter_1",
+            "name": "过滤器",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_filter",
+            "position": {
+                "x": 900,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "filter_type": "membrane",
+                "max_pressure": 5.0
+            },
+            "data": {
+                "status": "Ready",
+                "pressure": 0.0
+            }
+        },
+        {
+            "id": "column_1",
+            "name": "洗脱柱",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_column",
+            "position": {
+                "x": 950,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "column_type": "silica_gel",
+                "length": 30.0,
+                "diameter": 2.5
+            },
+            "data": {
+                "status": "Ready",
+                "loaded": false
+            }
+        },
+        {
+            "id": "separator_1",
+            "name": "分液器",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_separator",
+            "position": {
+                "x": 1000,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "volume": 250.0,
+                "has_phases": true
+            },
+            "data": {
+                "status": "Ready",
+                "phase_separation": false
+            }
+        },
+        {
+            "id": "collection_bottle_1",
+            "name": "接收瓶1",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 900,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 250.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 900,
+                "size_y": 500,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "collection_bottle_2",
+            "name": "接收瓶2",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 950,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 250.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 950,
+                "size_y": 500,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "collection_bottle_3",
+            "name": "接收瓶3",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 1050,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 250.0,
+                "type": "RegularContainer",
+                "category": "container",
+                "size_x": 1050,
+                "size_y": 500,
+                "size_z": 0
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": []
+            }
+        },
+        {
+            "id": "solid_dispenser_1",
+            "name": "固体粉末加样器",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "device",
+            "class": "virtual_solid_dispenser",
+            "position": {
+                "x": 600,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_capacity": 100.0,
+                "precision": 0.001
+            },
+            "data": {
+                "status": "Ready",
+                "current_reagent": "",
+                "dispensed_amount": 0.0,
+                "total_operations": 0
+            }
+        },
+        {
+            "id": "solid_reagent_bottle_1",
+            "name": "固体试剂瓶1-氯化钠",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 550,
+                "y": 250,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0,
+                "size_x": 550,
+                "size_y": 250,
+                "size_z": 0,
+                "type": "RegularContainer",
+                "category": "container"
+            },
+            "data": {
+                "current_mass": 500.0,
+                "reagent_name": "sodium_chloride",
+                "physical_state": "solid"
+            }
+        },
+        {
+            "id": "solid_reagent_bottle_2",
+            "name": "固体试剂瓶2-碳酸钠",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 600,
+                "y": 250,
+                "z": 0
+            },
+            "config": {
+                "size_x": 600,
+                "size_y": 250,
+                "size_z": 0,
+                "type": "RegularContainer",
+                "category": "container"
+            },
+            "data": {
+                "current_mass": 500.0,
+                "reagent_name": "sodium_carbonate",
+                "physical_state": "solid"
+            }
+        },
+        {
+            "id": "solid_reagent_bottle_3",
+            "name": "固体试剂瓶3-氯化镁",
+            "children": [],
+            "parent": "OrganicSynthesisStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 650,
+                "y": 250,
+                "z": 0
+            },
+            "config": {
+                "size_x": 650,
+                "size_y": 250,
+                "size_z": 0,
+                "type": "RegularContainer",
+                "category": "container"
+            },
+            "data": {
+                "current_mass": 500.0,
+                "reagent_name": "magnesium_chloride",
+                "physical_state": "solid"
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_pump1_valve1",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump",
+                "multiway_valve_1": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve1_reagent1",
+            "source": "multiway_valve_1",
+            "target": "reagent_bottle_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "reagent_bottle_1": "top"
+            }
+        },
+        {
+            "id": "link_valve1_reagent2",
+            "source": "multiway_valve_1",
+            "target": "reagent_bottle_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "reagent_bottle_2": "top"
+            }
+        },
+        {
+            "id": "link_valve1_reagent3",
+            "source": "multiway_valve_1",
+            "target": "reagent_bottle_3",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "reagent_bottle_3": "top"
+            }
+        },
+        {
+            "id": "link_valve1_centrifuge",
+            "source": "multiway_valve_1",
+            "target": "centrifuge_1",
+            "type": "transport",
+            "port": {
+                "multiway_valve_1": "4",
+                "centrifuge_1": "centrifuge"
+            }
+        },
+        {
+            "id": "link_valve1_rotavap",
+            "source": "multiway_valve_1",
+            "target": "rotavap_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "5",
+                "rotavap_1": "samplein"
+            }
+        },
+        {
+            "id": "link_valve1_reactor",
+            "source": "multiway_valve_1",
+            "target": "main_reactor",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "6",
+                "main_reactor": "top"
+            }
+        },
+        {
+            "id": "link_valve1_waste1",
+            "source": "multiway_valve_1",
+            "target": "waste_bottle_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "7",
+                "waste_bottle_1": "top"
+            }
+        },
+        {
+            "id": "link_valve1_valve2",
+            "source": "multiway_valve_1",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "8",
+                "multiway_valve_2": "1"
+            }
+        },
+        {
+            "id": "link_pump2_valve2",
+            "source": "transfer_pump_2",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_2": "transferpump",
+                "multiway_valve_2": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve2_solenoid1",
+            "source": "multiway_valve_2",
+            "target": "solenoid_valve_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "2",
+                "solenoid_valve_1": "in"
+            }
+        },
+        {
+            "id": "link_vacuum_solenoid1",
+            "source": "vacuum_pump_1",
+            "target": "solenoid_valve_1",
+            "type": "fluid",
+            "port": {
+                "vacuum_pump_1": "vacuumpump",
+                "solenoid_valve_1": "out"
+            }
+        },
+        {
+            "id": "link_valve2_solenoid2",
+            "source": "multiway_valve_2",
+            "target": "solenoid_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "3",
+                "solenoid_valve_2": "out"
+            }
+        },
+        {
+            "id": "link_gas_solenoid2",
+            "source": "gas_source_1",
+            "target": "solenoid_valve_2",
+            "type": "fluid",
+            "port": {
+                "gas_source_1": "gassource",
+                "solenoid_valve_2": "in"
+            }
+        },
+        {
+            "id": "link_valve2_filter",
+            "source": "multiway_valve_2",
+            "target": "filter_1",
+            "type": "transport",
+            "port": {
+                "multiway_valve_2": "4",
+                "filter_1": "filterin"
+            }
+        },
+        {
+            "id": "link_valve2_column",
+            "source": "multiway_valve_2",
+            "target": "column_1",
+            "type": "transport",
+            "port": {
+                "multiway_valve_2": "5",
+                "column_1": "columnin"
+            }
+        },
+        {
+            "id": "link_column_collection2",
+            "source": "column_1",
+            "target": "collection_bottle_2",
+            "type": "transport",
+            "port": {
+                "column_1": "columnout",
+                "collection_bottle_2": "top"
+            }
+        },
+        {
+            "id": "link_valve2_separator",
+            "source": "multiway_valve_2",
+            "target": "separator_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "6",
+                "separator_1": "separatorin"
+            }
+        },
+        {
+            "id": "link_separator_collection3",
+            "source": "separator_1",
+            "target": "collection_bottle_3",
+            "type": "fluid",
+            "port": {
+                "separator_1": "bottomphaseout",
+                "collection_bottle_3": "top"
+            }
+        },
+        {
+            "id": "link_valve2_reagent4",
+            "source": "multiway_valve_2",
+            "target": "reagent_bottle_4",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "7",
+                "reagent_bottle_4": "top"
+            }
+        },
+        {
+            "id": "link_valve2_reagent5",
+            "source": "multiway_valve_2",
+            "target": "reagent_bottle_5",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "8",
+                "reagent_bottle_5": "top"
+            }
+        },
+        {
+            "id": "mech_stirrer_reactor",
+            "source": "stirrer_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "stirrer_1": "stirrer",
+                "main_reactor": "bind"
+            }
+        },
+        {
+            "id": "thermal_heater_reactor",
+            "source": "heater_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "heater_1": "heatchill",
+                "main_reactor": "bind"
+            }
+        },
+        {
+            "id": "link_separator_waste2",
+            "source": "separator_1",
+            "target": "waste_bottle_2",
+            "type": "fluid",
+            "port": {
+                "separator_1": "topphaseout",
+                "waste_bottle_2": "top"
+            }
+        },
+        {
+            "id": "mech_stirrer2_separator",
+            "source": "stirrer_2",
+            "target": "separator_1",
+            "type": "mechanical",
+            "port": {
+                "stirrer_2": "stirrer",
+                "separator_1": "bind"
+            }
+        },
+        {
+            "id": "link_filter_filtrate_to_collection1",
+            "source": "filter_1",
+            "target": "collection_bottle_1",
+            "type": "transport",
+            "port": {
+                "filter_1": "filtrateout",
+                "collection_bottle_1": "top"
+            }
+        },
+        {
+            "id": "link_filter_retentate_to_waste1",
+            "source": "filter_1",
+            "target": "waste_bottle_1",
+            "type": "transport",
+            "port": {
+                "filter_1": "retentateout",
+                "waste_bottle_1": "top"
+            }
+        },
+        {
+            "id": "link_h2_gas_to_valve3",
+            "source": "h2_gas_source",
+            "target": "solenoid_valve_3",
+            "type": "fluid",
+            "port": {
+                "h2_gas_source": "gassource",
+                "solenoid_valve_3": "in"
+            }
+        },
+        {
+            "id": "link_valve3_to_reactor",
+            "source": "solenoid_valve_3",
+            "target": "main_reactor",
+            "type": "fluid",
+            "port": {
+                "solenoid_valve_3": "out",
+                "main_reactor": "top"
+            }
+        },
+        {
+            "id": "link_solid_dispenser_to_reactor",
+            "source": "solid_dispenser_1",
+            "target": "main_reactor",
+            "type": "resource",
+            "port": {
+                "solid_dispenser_1": "SolidOut",
+                "main_reactor": "top"
+            }
+        },
+        {
+            "id": "link_solid_bottle1_to_dispenser",
+            "source": "solid_reagent_bottle_1",
+            "target": "solid_dispenser_1",
+            "type": "resource",
+            "port": {
+                "solid_reagent_bottle_1": "bottom",
+                "solid_dispenser_1": "SolidIn"
+            }
+        },
+        {
+            "id": "link_solid_bottle2_to_dispenser",
+            "source": "solid_reagent_bottle_2",
+            "target": "solid_dispenser_1",
+            "type": "resource",
+            "port": {
+                "solid_reagent_bottle_2": "bottom",
+                "solid_dispenser_1": "SolidIn"
+            }
+        },
+        {
+            "id": "link_solid_bottle3_to_dispenser",
+            "source": "solid_reagent_bottle_3",
+            "target": "solid_dispenser_1",
+            "type": "resource",
+            "port": {
+                "solid_reagent_bottle_3": "bottom",
+                "solid_dispenser_1": "SolidIn"
+            }
+        }
+    ]
+}

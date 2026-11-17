@@ -302,13 +302,15 @@ def test_legacy_graph_boundary_moves_names_out_of_the_way() -> None:
         "nodes": [
             {"id": "station", "name": "工作站", "type": "device", "config": {}},
             {"id": "deck", "name": "deck_main", "type": "deck", "parent": "station", "config": {"type": "Deck"}},
-            {"id": "plate", "name": identity, "type": "plate", "parent": "deck", "config": {}},
+            {"id": "plate", "name": identity, "type": "plate", "parent": "deck", "config": {"type": "Plate"}},
         ],
         "links": [],
     }
     assert legacy_graph_markers(payload) == {"name 不是 uuid": 2}
     reports: list[str] = []
-    upgraded = upgrade_legacy_graph_payload(payload, source="lab.json", report=reports.append)
+    upgraded = upgrade_legacy_graph_payload(
+        payload, source="lab.json", report=reports.append, resource_entry=lambda _name: None
+    )
     station, deck, plate = upgraded["nodes"]
     assert "name 不是 uuid ×2" in reports[0]
     assert "name" not in station and station["display_name"] == "工作站" and station["config"] == {}

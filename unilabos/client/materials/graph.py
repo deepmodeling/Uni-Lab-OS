@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any, Mapping, Optional, Sequence
+from urllib.parse import quote
 
 from unilabos.client.http import HTTPClient, HTTPClientConfig
 from unilabos.utils.address import normalize_api_address
@@ -98,6 +99,16 @@ class HTTPGraphClient:
 
     def delete_graph(self, identity: str) -> dict[str, Any]:
         return self._http.delete(f"/graphs/{identity}")
+
+    # 旧格式图上传前按模板补 PLR 类名：查同一调度权威的注册表（Host 上报的目录）
+
+    def registry_status(self) -> dict[str, Any]:
+        """``GET /registry/status``：是否收到过 Host 的注册表上报等。"""
+        return self._http.get("/registry/status")
+
+    def registry_entry(self, name: str) -> dict[str, Any]:
+        """``GET /registry/entries/{name}``：条目状态与生效 payload；不存在时服务端回 404。"""
+        return self._http.get(f"/registry/entries/{quote(str(name), safe='')}")
 
 
 __all__ = ["HTTPGraphClient"]

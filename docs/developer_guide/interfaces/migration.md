@@ -50,7 +50,8 @@
 | 枚举 basic 等 backend | CLI 正式仅 hostlink / ros2 | 特殊 ROS 能力继续 ros2；MoveIt/RViz 不支持 HostLink |
 
 旧图的单次升级留在图读取/上传边界（`legacy_adaptor/legacy/graph.py`）；
-不能因此让当前 Graph Authority 或 PLR 序列化同时接受多套互相矛盾的字段。
+不能因此让当前 Graph Authority 或 PLR 序列化同时接受多套互相矛盾的字段。缺 `config.type` 的旧物料节点
+也在这一步按注册表（模板 → 条目 `config_info` 的 PLR 类名）补齐，查不到就报错，不按名字猜。
 旧云端 Legacy 适配仍是独立边界，本次既不删除，也不改写它的协议。
 
 ## 已知缺口：文档不能替代码兑现

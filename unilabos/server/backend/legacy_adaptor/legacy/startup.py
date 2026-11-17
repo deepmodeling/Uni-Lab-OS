@@ -25,12 +25,20 @@ from unilabos.utils.banner_print import print_status
 
 
 def upgrade_startup_graph_payload(payload: Mapping[str, Any], file_path: str) -> Dict[str, Any]:
-    """``-g`` 文件读入后的唯一旧格式入口：识别到旧字段就整图转换并打 WARNING。"""
+    """``-g`` 文件读入后的唯一旧格式入口：识别到旧字段就整图转换并打 WARNING。
+
+    读图发生在 Host / Slave 进程（本地注册表构建之后、登记 Graph Authority 之前；调度权威进程
+    不读 ``-g``），旧物料节点的 PLR 类名按模板查本进程目录 ``registry/catalog.resource_entry``
+    （此时即本地扫描的注册表）。升级失败抛 :class:`LegacyGraphError`（``ValueError``）。
+    """
+
+    from unilabos.registry.catalog import resource_entry
 
     return upgrade_legacy_graph_payload(
         payload,
         source=f"启动图 {file_path}",
         report=lambda message: print_status(message, "warning"),
+        resource_entry=resource_entry,
     )
 
 

@@ -80,7 +80,13 @@ def _resource_type(definition: Mapping[str, Any]) -> str:
     return "resource"
 
 
-def _class_name(definition: Mapping[str, Any]) -> str | None:
+def registry_resource_class_name(definition: Mapping[str, Any]) -> str | None:
+    """注册表资源条目的 PLR 类名：``config_info`` 里序列化的 ``config.type``，其次非通用的 ``class.type``。
+
+    物料权威登记模板时用它填 ``class_name``，并按它校验物料的 ``class``；旧格式图在读图边界按
+    同一规则补齐 PLR 类名。条目没有 ``config_info``、``class.type`` 又是通用后端名时返回 None。
+    """
+
     components = [
         item
         for item in _array(definition.get("config_info"))
@@ -167,7 +173,7 @@ def registry_definition_to_template(
         name=name,
         display_name=str(definition.get("display_name") or name),
         resource_type=_resource_type(definition),
-        class_name=_class_name(definition),
+        class_name=registry_resource_class_name(definition),
         module_name=str(class_definition.get("module") or "") or None,
         template_version=str(definition.get("version") or "registry-v1"),
         category=category,
@@ -266,5 +272,6 @@ __all__ = [
     "RegistryTemplateReport",
     "register_resource_definitions",
     "registry_definition_to_template",
+    "registry_resource_class_name",
     "sync_registry_resources",
 ]

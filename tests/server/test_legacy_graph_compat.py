@@ -22,6 +22,21 @@ from unilabos.server.backend.legacy_adaptor.legacy.graph import (
 )
 
 
+def _plr_entry(class_name: str) -> dict:
+    """注册表资源条目的最小形状：``config_info`` 给出模板实例化出的 PLR 类。"""
+
+    return {
+        "registry_type": "resource",
+        "class": {"type": "pylabrobot", "module": f"pylabrobot.resources:{class_name}"},
+        "config_info": [{"config": {"type": class_name}}],
+    }
+
+
+#: 旧图里缺 PLR 类的物料按模板查注册表（读图边界的 ``resource_entry``）
+REGISTRY = {"plate": _plr_entry("Plate"), "well": _plr_entry("Well"), "container": _plr_entry("Container")}
+registry_entry = REGISTRY.get
+
+
 def _legacy_node(**overrides):
     node = {
         "uuid": str(uuid4()),
@@ -186,12 +201,16 @@ def test_dev_era_container_liquid_becomes_substances():
         "data": {"liquid": [{"liquid_type": "DMF", "liquid_volume": 800.0}]},
     }
     payload = {"nodes": [flask], "links": []}
-    assert legacy_graph_markers(payload) == {"旧液体字段": 1}
-    upgraded = upgrade_legacy_graph_payload(payload, source="t", report=lambda _message: None)
+    assert legacy_graph_markers(payload) == {"旧液体字段": 1, "物料缺 config.type": 1}
+    upgraded = upgrade_legacy_graph_payload(
+        payload, source="t", report=lambda _message: None, resource_entry=registry_entry
+    )
     assert upgraded["nodes"][0]["data"]["liquids"] == [["DMF", 800.0, "ul"]]
+    assert upgraded["nodes"][0]["config"]["type"] == "Container"
     assert legacy_graph_markers(upgraded) == {}
     # 空列表不是旧字段
-    assert legacy_graph_markers({"nodes": [{**flask, "data": {"liquid": []}}], "links": []}) == {}
+    current_flask = {**flask, "config": {"type": "Container", "max_volume": 1000.0}, "data": {"liquid": []}}
+    assert legacy_graph_markers({"nodes": [current_flask], "links": []}) == {}
 
 
 def test_occupied_by_resolves_only_current_children():
@@ -251,8 +270,8 @@ def _legacy_export():
             _legacy_node(uuid=plate_a, id="plate_a", name="plate_a", type="plate", **{"class": "plate"}, parent="ws", parent_uuid=ws_uuid),
             _legacy_node(uuid=plate_b, id="plate_b", name="plate_b", type="plate", **{"class": "plate"}, parent="ws", parent_uuid=ws_uuid),
             # 两块板各有一个 A1 孔：id 相同、uuid 不同、parent 不同
-            _legacy_node(uuid=well_a, id="A1", name="A1", type="well", parent="plate_a", parent_uuid=plate_a),
-            _legacy_node(uuid=well_b, id="A1", name="A1", type="well", parent="plate_b", parent_uuid=plate_b),
+            _legacy_node(uuid=well_a, id="A1", name="A1", type="well", **{"class": "well"}, parent="plate_a", parent_uuid=plate_a),
+            _legacy_node(uuid=well_b, id="A1", name="A1", type="well", **{"class": "well"}, parent="plate_b", parent_uuid=plate_b),
         ],
         # 旧后端边只有 uuid 对与下划线 handle 名
         "edges": [
@@ -294,15 +313,25 @@ def test_legacy_graph_markers_and_upgrade_report():
     assert markers["边仅有 uuid 端点"] == 2
     assert markers["边 source_handle/target_handle"] == 1
 
+    # 板和孔都没有 config.type：按 class 里写的模板查注册表补齐
+    assert markers["物料缺 config.type"] == 4
+
     reports: list[str] = []
-    upgraded = upgrade_legacy_graph_payload(payload, source="启动图 lab.json", report=reports.append)
+    upgraded = upgrade_legacy_graph_payload(
+        payload, source="启动图 lab.json", report=reports.append, resource_entry=registry_entry
+    )
     assert len(reports) == 1 and reports[0].startswith("启动图 lab.json 使用旧格式图字段")
     assert "根级 position ×6" in reports[0]
     assert legacy_graph_markers(upgraded) == {}
+    plate, well = upgraded["nodes"][2], upgraded["nodes"][4]
+    assert (plate["template_name"], plate["class"], plate["config"]["type"]) == ("plate", "Plate", "Plate")
+    assert (well["template_name"], well["class"], well["config"]["type"]) == ("well", "Well", "Well")
 
     # 当前契约的图：不转换、不提示
     reports.clear()
-    same = upgrade_legacy_graph_payload(upgraded, source="x", report=reports.append)
+    same = upgrade_legacy_graph_payload(
+        upgraded, source="x", report=reports.append, resource_entry=registry_entry
+    )
     assert same == upgraded and reports == []
 
 

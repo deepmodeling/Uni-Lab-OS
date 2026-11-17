@@ -73,7 +73,7 @@ class TestResourceActionReturn(TypedDict):
 class TestActionDevice:
     """集中放置测试用动作的虚拟设备。"""
 
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, **kwargs):
         """
@@ -96,9 +96,9 @@ class TestActionDevice:
         }
 
     @not_action
-    def post_init(self, ros_node: "DeviceNode") -> None:
+    def post_init(self, node: "DeviceNode") -> None:
         """保存运行节点引用，供后续扩展跨设备调用使用。"""
-        self._ros_node = ros_node
+        self._node = node
 
     @property
     @topic_config(period=2.0)

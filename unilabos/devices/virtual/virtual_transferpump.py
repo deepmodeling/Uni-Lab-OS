@@ -18,7 +18,7 @@ class VirtualPumpMode(Enum):
 class VirtualTransferPump:
     """虚拟转移泵类 - 模拟泵的基本功能，无需实际硬件 🚰"""
 
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
         """
@@ -57,8 +57,8 @@ class VirtualTransferPump:
         )
         print(f"📊 最大容量: {self.max_volume}mL | 端口: {self.port}")
 
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """初始化虚拟泵 🚀"""
@@ -111,7 +111,7 @@ class VirtualTransferPump:
     async def _simulate_operation(self, duration: float):
         """模拟操作延时 ⏱️"""
         self._status = "Busy"
-        await self._ros_node.sleep(duration)
+        await self._node.sleep(duration)
         self._status = "Idle"
 
     def _calculate_duration(self, volume: float, velocity: float = None) -> float:
@@ -236,7 +236,7 @@ class VirtualTransferPump:
 
                     # 等待一小步时间
                     if i < steps and step_duration > 0:
-                        await self._ros_node.sleep(step_duration)
+                        await self._node.sleep(step_duration)
             else:
                 # 移动距离很小，直接完成
                 self._position = target_position
@@ -356,7 +356,7 @@ class VirtualTransferPump:
 
         # 短暂停顿
         self.logger.debug("⏸️ 短暂停顿...")
-        await self._ros_node.sleep(0.1)
+        await self._node.sleep(0.1)
 
         # 排液
         await self.dispense(volume, dispense_velocity)

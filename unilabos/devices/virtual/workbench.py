@@ -192,7 +192,7 @@ class VirtualWorkbench:
     4. 加热完成后, 机械臂将物料移动到目标位置Cn
     """
 
-    _ros_node: DeviceNode
+    _node: DeviceNode
 
     # 配置常量
     ARM_OPERATION_TIME: float = 2  # 机械臂操作时间(秒)
@@ -267,9 +267,9 @@ class VirtualWorkbench:
         )
 
     @not_action
-    def post_init(self, ros_node: DeviceNode):
-        """ROS节点初始化后回调"""
-        self._ros_node = ros_node
+    def post_init(self, node: DeviceNode):
+        """运行节点（DeviceNode）初始化后回调"""
+        self._node = node
 
     @not_action
     def initialize(self) -> bool:
@@ -416,7 +416,7 @@ class VirtualWorkbench:
         function_args: str = "{}",
     ) -> dict:
         """
-        演示通过 _ros_node 便捷函数跨设备调用动作（走 serial JSON 指令通道）。
+        演示通过设备节点（DeviceNode）的便捷函数跨设备调用动作（走 serial JSON 指令通道）。
 
         Args:
             target_device[目标设备]: 被调用设备的 ID（可带或不带 /devices/ 前缀）。
@@ -429,7 +429,7 @@ class VirtualWorkbench:
         # call_device_action 只接受 dict 入参（序列化由其内部完成）；UI 传来的是 JSON 字符串，这里先解析成 dict
         kwargs = json.loads(function_args) if function_args else {}
         # 同步 action 在线程池中执行，使用同步便捷函数即可（阻塞安全）
-        return_value = self._ros_node.call_device_action(target_device, function_name, kwargs)
+        return_value = self._node.call_device_action(target_device, function_name, kwargs)
         return {"success": True, "target_device": target_device, "function_name": function_name, "return_value": return_value}
 
     @action(
@@ -632,8 +632,8 @@ class VirtualWorkbench:
             target_device,
             mount_resource,
             [None] * len(mount_resource),
-            source_device_id=self._ros_node.device_id,
-            source_device_uuid=self._ros_node.resource_uuid,
+            source_device_id=self._node.device_id,
+            source_device_uuid=self._node.resource_uuid,
         )
 
     @action(

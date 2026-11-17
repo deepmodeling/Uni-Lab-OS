@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class VirtualCentrifuge:
     """Virtual centrifuge device - 简化版，只保留核心功能"""
     
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -38,8 +38,8 @@ class VirtualCentrifuge:
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
     
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """Initialize virtual centrifuge"""
@@ -140,7 +140,7 @@ class VirtualCentrifuge:
                     break
                 
                 # 每秒更新一次
-                await self._ros_node.sleep(1.0)
+                await self._node.sleep(1.0)
             
             # 离心完成
             self.data.update({

@@ -186,7 +186,7 @@ def refresh(ctx, *, volume: float = 20.0):
 | `mode` | `"load"` | `"unload"` | `"refill"` | 字面量 |
 | `mount` | 必填 | 必填 | 必填 | 挂载物料：`{"uuid": ...}`、物料 UUID 或物料业务 ID（`resource_id`）；可用工作流输入 |
 | `site` | 必填 | 必填 | 必填 | `mount` 上的库位名（不区分大小写）或库位 UUID；可用工作流输入。调度器锁定的就是它所属的 `mount` |
-| `resource_template` | 必填 | — | — | 新物料的资源模板名或模板 UUID |
+| `resource_template` | 必填 | — | — | 新物料的资源模板名或模板 UUID。注册表同步的模板（名字就是注册表资源条目 id）建出整棵 PLR 树，带默认子物料（如吸头盒里的吸头）；`mount` 属于设备时必须是这种模板，否则起跑即失败 |
 | `material` | — | 必填 | 必填 | 要取走 / 补量的物料，必须正在 `site` 上；可以是前面步骤的结果（`box.material`）或工作流输入 |
 | `material_name` / `barcode` | 可选 | — | — | 新物料名（缺省按模板短名加本地时间生成）、条码（不能带首尾空白） |
 | `reagent` | 可选 | — | 必填 | 对象字面量；`quantity` 为正数（可用工作流输入）+ `quantity_unit`。load 另要 `reagent_info_uuid`，或 `name` / `cas`（已登记的 CAS 或唯一同名身份直接复用，没有就按 `name` 新建）；refill 只能有 `quantity` / `quantity_unit`，换了一瓶请用 unload 再 load |
@@ -201,9 +201,11 @@ def refresh(ctx, *, volume: float = 20.0):
 （`node_type=material_io`，带一对 ready 连接点）；它的 `goal_default` 只带模式与确认设置，保存前要填好库位与该模式的
 必填字段。`/authoring/generate-python` 把 material_io 节点生成 `ctx.material_io(...)`。
 
-库存写好后，权威把变化同步到挂载物料所属设备（沿父链往上最近的设备）的台面一次：load 让设备把新物料挂到库位上，
-unload 让设备把物料从台面移除，refill 让设备重载这只容器的内容物。结果在步骤输出的 `device_sync`（`ok` / `skipped` /
-`failed` 与原因）；同步失败不回滚库存、步骤照样成功，挂载物料不属于任何设备（普通货架）时 `skipped`。
+库存写好后，权威把变化同步到挂载物料所属设备（沿父链往上最近的设备）的台面：load 让设备把新物料（连同子物料）挂到
+库位上，unload 让设备把物料从台面移除，refill 让设备重载这只容器的内容物。结果在步骤输出的 `device_sync`（`ok` /
+`skipped` 与原因）；挂载物料不属于任何设备（普通货架）时 `skipped`。与 transfer 一样，同步失败不回滚库存，但设备确认前
+这一步不算完成：步骤保持运行，按同一命令身份重发（不会多装一件、不会多加一次量），设备回来后才成功；设备一直回不来就取消
+任务，库存保持已写入。
 
 运行时的锁定、确认、库存写入、台面同步与恢复见 [调度与执行架构](scheduling_and_execution.md#人工装入--取走--补量material_io)。
 material_io 是作者显式写出的独立一步，和运行中缺料的动作执行前预检决策（`stage=preflight`）互不依赖；V1 的

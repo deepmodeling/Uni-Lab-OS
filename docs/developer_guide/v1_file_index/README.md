@@ -107,5 +107,5 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
 ### 需要确认的三点（已答）
 
 - 物料只是被别的任务占用（不是真缺）：**等待**。已补：*wait while inventory is only held by other tasks*。
-- `material_io`：作为后端本地执行的工作流节点补上（load / unload / refill，人工确认后一次物料事务改库存，不派发到 Host）。已补：*ctx.material_io declares a manual load / unload / refill step*、*a material.io command loads, unloads or refills in one transaction*、*run material_io steps on the authority after a manual confirmation*；写库后同步所属设备的台面（负责人 2026-11-17 决定）：*sync the owning device's deck after a material_io step writes inventory*；写法与行为见 `workflow_static_conditions.md`、`scheduling_and_execution.md`。
+- `material_io`：作为后端本地执行的工作流节点补上（load / unload / refill，人工确认后一次物料事务改库存，不派发到 Host）。已补：*ctx.material_io declares a manual load / unload / refill step*、*a material.io command loads, unloads or refills in one transaction*、*run material_io steps on the authority after a manual confirmation*；写库后同步所属设备的台面（负责人 2026-11-17 决定）：*sync the owning device's deck after a material_io step writes inventory*；装入也真的同步到台面（按注册表资源类建 PLR 树、带默认子物料；同步与 transfer 一样等设备确认）：*a material_io load builds the template's PLR tree so the deck can sync it*、*a material_io step waits for the device to confirm its deck sync, as transfer does*；写法与行为见 `workflow_static_conditions.md`、`scheduling_and_execution.md`。
 - 容器内容规则：见 E25，不改。

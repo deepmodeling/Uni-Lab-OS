@@ -84,6 +84,35 @@ def test_actual_plan_rejects_static_invalid_values_but_defers_upstream_values(tm
         service.close()
 
 
+def test_plan_decodes_template_schema_stored_as_json_text(tmp_path):
+    """节点模板行里的 schema 是 JSON 文本（注册表投影的旧合同动作都是这样）。
+
+    执行计划原样带文本时，调度器派发前的物料核对对它调 ``.get`` 直接失败，旧合同设备
+    （内置虚拟设备的全部动作）一进工作流就跑不了；计划里要是字典。
+    """
+
+    import json
+
+    from unilabos.server.backend.scheduler.material_sanity import material_references
+
+    action = typed_action(tmp_path)["legacy"]
+    node_uuid, template_uuid = str(uuid4()), str(uuid4())
+    graph = {"workflow": {"uuid": str(uuid4()), "revision": 1}, "nodes": [{
+        "uuid": node_uuid, "workflow_node_template_uuid": template_uuid, "type": "device_action", "disabled": False,
+        "param": {"anything": 1}, "execution_policy": {}, "meta_data": {"target_device_id": "dev"},
+    }], "edges": [], "node_templates": [
+        {"uuid": template_uuid, "node_type": "device_action", "schema": json.dumps(action["schema"])}
+    ], "handle_templates": []}
+    service = WorkflowService(":memory:")
+    try:
+        plan, _jobs = service._build_execution_plan(graph, run_mode="normal", target_node_uuid=None)
+        schema = plan["nodes"][0]["param_schema"]
+        assert schema == action["schema"]
+        assert material_references(schema, {"anything": 1}, [], []) == {}
+    finally:
+        service.close()
+
+
 def test_nodes_without_template_freeze_registered_contract(tmp_path):
     action = typed_action(tmp_path)["dispense"]
     service = WorkflowService(":memory:")

@@ -108,6 +108,8 @@ class MaterialCreateRequest(V1Model):
     parent_uuid: Optional[str] = None
     barcode: str = ""
     name: str
+    # dev 超集：显示名；缺省取 name（V1 客户端把 name 当显示名）
+    display_name: Optional[str] = None
     description: Optional[str] = None
     meta_data: Dict[str, Any] = Field(default_factory=dict)
     config: Dict[str, Any] = Field(default_factory=dict)
@@ -122,7 +124,9 @@ class MaterialUpdateRequest(V1Model):
     resource_template_uuid: Optional[str] = None
     parent_uuid: Optional[str] = None
     barcode: Optional[str] = None
+    # V1 的 name 是显示名，只改 display_name；dev 超集也可直接给 display_name（优先）
     name: Optional[str] = None
+    display_name: Optional[str] = None
     description: Optional[str] = None
     meta_data: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None

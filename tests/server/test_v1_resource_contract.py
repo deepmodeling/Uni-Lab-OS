@@ -88,6 +88,27 @@ def test_resource_template_sync_receipt_list_detail_update_delete(client) -> Non
     error_of(client.get(f"/api/v1/resource-templates/{identities['bottle_500ml']}"), 5000)
 
 
+def test_v1_material_name_is_the_display_name(client) -> None:
+    """V1 POST 的 name 落到 display_name；PUT 的 name / display_name 只改 display_name。"""
+
+    identities = _templates(client)
+    created = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-1",
+    }), status=201)
+    assert created["display_name"] == "瓶-1"
+    labelled = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-2", "display_name": "二号瓶",
+    }), status=201)
+    assert labelled["display_name"] == "二号瓶"
+
+    renamed = ok_data(client.put(f"/api/v1/materials/{created['uuid']}", json={"name": "瓶-改"}))
+    assert renamed["display_name"] == "瓶-改" and renamed["name"] == created["name"]
+    relabelled = ok_data(client.put(f"/api/v1/materials/{created['uuid']}", json={
+        "name": "忽略", "display_name": "一号瓶",
+    }))
+    assert relabelled["display_name"] == "一号瓶" and relabelled["name"] == created["name"]
+
+
 def test_material_create_place_update_ledger_and_delete(client) -> None:
     identities = _templates(client)
     rack = ok_data(client.post("/api/v1/materials", json={
@@ -120,7 +141,9 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
     updated = ok_data(client.put(f"/api/v1/materials/{bottle['uuid']}", json={
         "name": "瓶-改", "expected_revision": bottle["revision"], "config": {"capacity": {"max_volume_ul": 500000}},
     }))
-    assert updated["name"] == "瓶-改" and updated["config"]["capacity"] == {"max_volume_ul": 500000}
+    # V1 的 name 是显示名：PUT 只改 display_name，不连带改物料 name
+    assert updated["display_name"] == "瓶-改" and updated["config"]["capacity"] == {"max_volume_ul": 500000}
+    assert updated["name"] == bottle["name"]
     error_of(client.put(f"/api/v1/materials/{bottle['uuid']}", json={"name": "x", "expected_revision": 1}), 4002)
     error_of(client.put(f"/api/v1/materials/{bottle['uuid']}", json={
         "resource_template_uuid": identities["tube_rack_2"]}), 6002)

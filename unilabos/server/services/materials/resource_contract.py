@@ -521,6 +521,8 @@ class ResourceContract:
 
         template_uuid = optional_uuid(values.get("resource_template_uuid"))
         name = str(values.get("name") or "").strip()
+        # V1 客户端把 name 当显示名：请求的 name 落到 display_name（dev 超集允许显式给出 display_name）
+        display_name = str(values.get("display_name") or "").strip() or name
         if not template_uuid or not name:
             raise MaterialValidationError("resource_template_uuid and name are required")
         template = self._template_meta(template_uuid)
@@ -557,7 +559,7 @@ class ResourceContract:
             identity=MaterialIdentityWrite(
                 resource_id=self._resource_id(name),
                 name=name,
-                display_name=name,
+                display_name=display_name,
                 description=str(values.get("description") or ""),
                 resource_type=template.resource_type,
                 class_name=template.class_name or template.resource_type or "Resource",
@@ -656,9 +658,13 @@ class ResourceContract:
                     "Material barcode or sibling name conflicts with an existing material", conflict="identity"
                 )
         patch: dict[str, Any] = {}
-        for key in ("name", "description", "barcode", "meta_data"):
+        for key in ("description", "barcode", "meta_data"):
             if key in specified and values.get(key) is not None:
-                patch[key] = values[key] if key != "name" else str(values[key]).strip()
+                patch[key] = values[key]
+        # V1 的 name 是显示名：只改 display_name（显式给出的 display_name 优先），不动物料 name
+        for key in ("name", "display_name"):
+            if key in specified and str(values.get(key) or "").strip():
+                patch["display_name"] = str(values[key]).strip()
         if "config" in specified and isinstance(values.get("config"), Mapping):
             config = dict(values["config"])
             previous = dict(material.config)
@@ -668,8 +674,6 @@ class ResourceContract:
                     config[key] = previous[key]
             patch["config"] = config
         if patch:
-            if "name" in patch:
-                patch["display_name"] = patch["name"]
             value = MaterialPatch.model_validate(patch)
             try:
                 self.materials.patch_material(
@@ -679,7 +683,7 @@ class ResourceContract:
             except MaterialNoChangeError:
                 pass
             except MaterialConflictError as exc:
-                if exc.conflict is None and ("name" in patch or "barcode" in patch):
+                if exc.conflict is None and "barcode" in patch:
                     raise MaterialConflictError(
                         "Material barcode or sibling name conflicts with an existing material", conflict="identity"
                     ) from None

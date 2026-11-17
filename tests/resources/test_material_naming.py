@@ -168,6 +168,18 @@ def test_devices_keep_their_config_and_get_a_display_name(service) -> None:
     assert device.display_name == "工作站"
 
 
+def test_reagent_views_name_the_container_by_its_display_label(service) -> None:
+    from unilabos.server.services.materials.contents import ContentContract
+
+    bottle = _created(service, _node("bottle-1", display_name="缓冲液瓶"))["bottle-1"]
+    contents = ContentContract(service, compound_source=None)
+    chemical = contents.create_reagent_info({"name": "水", "cas": "7732-18-5"})["uuid"]
+    contents.create_reagent({"material_uuid": bottle.material_uuid, "reagent_info_uuid": chemical,
+                             "quantity": 5, "quantity_unit": "mL"})
+    listed = contents.list_reagents(keyword="缓冲液")
+    assert [item["container_name"] for item in listed["items"]] == ["缓冲液瓶"]
+
+
 def test_the_database_refuses_a_name_other_than_the_uuid(service) -> None:
     import sqlite3
 

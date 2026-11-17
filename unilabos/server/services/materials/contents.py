@@ -342,7 +342,7 @@ class ContentContract:
     _REAGENT_SELECT = (
         "SELECT mc.*, ms.material_uuid AS ms_material_uuid, ms.name AS substance_name, ms.quantity, ms.quantity_unit, "
         "ms.physical_state, ms.chemical_uuid, ms.meta_data_json, ms.composition_json, ms.observed_at_ms, "
-        "m.barcode AS container_barcode, m.name AS container_name, m.version AS material_revision, "
+        "m.barcode AS container_barcode, m.display_name AS container_name, m.version AS material_revision, "
         "m.config_json, m.template_uuid, c.name AS chemical_name, c.name_en, c.aliases_json, c.cas, "
         "c.molecular_formula, c.smiles, c.inchi_key, c.molecular_weight, "
         "c.density_g_per_ml AS chemical_density FROM material_content mc "
@@ -494,7 +494,7 @@ class ContentContract:
                 clauses.append(f"LOWER({column})=LOWER(?)")
                 params.append(value.strip())
         if keyword.strip():
-            clauses.append("(LOWER(COALESCE(c.name, ms.name)) LIKE LOWER(?) OR LOWER(m.name) LIKE LOWER(?))")
+            clauses.append("(LOWER(COALESCE(c.name, ms.name)) LIKE LOWER(?) OR LOWER(m.display_name) LIKE LOWER(?))")
             params.extend([f"%{keyword.strip()}%"] * 2)
         clause = " AND ".join(clauses)
         total = len(self._reagent_query(clause, params))

@@ -352,9 +352,13 @@ def test_developer_install_prefers_uv_and_falls_back_to_pip(monkeypatch, capsys)
     assert dev_install.resolve_installer("pip") == "pip"
     monkeypatch.setattr(dev_install.shutil, "which", lambda executable: None)
     assert dev_install.resolve_installer("auto") == "pip"
-    assert "未找到 uv" in capsys.readouterr().out
-    with pytest.raises(RuntimeError, match="未找到 uv"):
+    out = capsys.readouterr().out
+    # 回退 pip 时给出可以直接复制的 uv 安装命令
+    assert "未找到 uv" in out and "pip install uv" in out
+    assert ("install.ps1" if sys.platform == "win32" else "install.sh") in out
+    with pytest.raises(RuntimeError, match="未找到 uv") as error:
         dev_install.resolve_installer("uv")
+    assert "pip install uv" in str(error.value)
 
 
 def test_developer_install_creates_python314_venv_with_uv_outside_environments(monkeypatch, tmp_path):

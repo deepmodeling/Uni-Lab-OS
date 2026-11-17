@@ -372,7 +372,13 @@ def _load_startup_graph(
                 upgrade_startup_graph_payload,
             )
 
-            graph_payload = upgrade_startup_graph_payload(_read_graph_json(file_path), file_path)
+            try:
+                graph_payload = upgrade_startup_graph_payload(
+                    _read_graph_json(file_path), file_path
+                )
+            except ValueError as exc:
+                print_status(f"启动图 {file_path} 无法转换为当前契约，拒绝启动: {exc}", "error")
+                os._exit(1)
             file_path = _register_graph_file_to_authority(
                 file_path, args_dict, working_dir, graph_payload
             )

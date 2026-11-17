@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 from unilabos.client import (
     EnvelopeError,
@@ -54,7 +54,56 @@ def _create_graph_client(
     )
 
 
-def _load_graph_file(file_path: str) -> dict[str, Any]:
+def _registry_resource_lookup(client: HTTPGraphClient) -> Callable[[str], Optional[dict[str, Any]]]:
+    """旧格式图上传用的「模板名 → 注册表资源条目」：查上传目标调度权威的注册表（Host 上报的目录）。
+
+    只在图里真有缺 PLR 类的旧物料节点时才发请求；先确认权威收到过注册表上报（否则所有模板都
+    查不到，报「未上报」比报「模板不在注册表」更准确），再按模板逐个查并缓存。
+    """
+
+    from unilabos.server.backend.legacy_adaptor.legacy.graph import LegacyGraphError
+
+    cache: dict[str, Optional[dict[str, Any]]] = {}
+    checked = False
+
+    def lookup(name: str) -> Optional[dict[str, Any]]:
+        nonlocal checked
+        if name in cache:
+            return cache[name]
+        if not checked:
+            try:
+                status = client.registry_status()
+            except Exception as error:  # noqa: BLE001 - 连不上 / 路由不存在 / 信封错误都归为「读不到注册表」
+                raise LegacyGraphError(
+                    f"旧格式图需要按模板查注册表补齐 PLR 类名，但无法读取 {client.base_url} 的注册表: {error}"
+                ) from error
+            if not (isinstance(status, dict) and status.get("reported")):
+                raise LegacyGraphError(
+                    f"{client.base_url} 的调度权威尚未收到 Host 的注册表上报，无法按模板补齐旧格式图的"
+                    " PLR 类名；先启动 Host 再上传"
+                )
+            checked = True
+        try:
+            detail = client.registry_entry(name)
+        except EnvelopeError as error:
+            # 条目不存在是业务码 4001（HTTP 语义 404）；其余错误照实报
+            if error.status_code != 404:
+                raise LegacyGraphError(f"查询注册表模板 {name!r} 失败: {error}") from error
+            detail = None
+        payload = detail.get("active_payload") if isinstance(detail, dict) else None
+        status_flags = detail.get("status") if isinstance(detail, dict) else None
+        usable = (
+            isinstance(payload, dict)
+            and payload.get("registry_type") == "resource"
+            and "removed" not in (status_flags or [])
+        )
+        cache[name] = payload if usable else None
+        return cache[name]
+
+    return lookup
+
+
+def _load_graph_file(file_path: str, client: HTTPGraphClient) -> dict[str, Any]:
     """读取待上传的图文件；旧格式图在此转成当前契约，Graph Authority 只收当前契约。"""
 
     path = Path(file_path)
@@ -74,7 +123,10 @@ def _load_graph_file(file_path: str) -> dict[str, Any]:
     from unilabos.server.backend.legacy_adaptor.legacy.graph import upgrade_legacy_graph_payload
 
     return upgrade_legacy_graph_payload(
-        payload, source=f"graph 文件 {file_path}", report=print_warning
+        payload,
+        source=f"graph 文件 {file_path}",
+        report=print_warning,
+        resource_entry=_registry_resource_lookup(client),
     )
 
 
@@ -120,7 +172,7 @@ def cmd_graph_command(args: Any, session_manager: SessionManager) -> None:
     try:
         client = _create_graph_client(args, session_manager)
         if action == "upload":
-            payload = _load_graph_file(args.graph_file)
+            payload = _load_graph_file(args.graph_file, client)
             name = args.graph_name or Path(args.graph_file).stem
             data = client.upsert_graph(
                 name=name,

@@ -15,24 +15,41 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
 - 边只有 ``source_uuid`` / ``target_uuid`` 与下划线 ``source_handle`` /
   ``target_handle``，顶层键叫 ``edges``；
 - 物料 ``name`` 是人读标签而不是 uuid（当前契约里 ``name`` 等于 uuid，标签在
-  ``display_name``，PLR 键在 ``config.name``）。
+  ``display_name``，PLR 键在 ``config.name``）；
+- dev 时代的物料节点（容器最常见）没有 PLR 类：``class`` 为空或写成注册表模板名
+  （``"container"``），``config`` 里没有 ``type``，``config`` 里还可能混着 PLR 构造器
+  不认的业务字段（``filter_type``）。当前契约是 ``template_name`` = 注册表模板、
+  ``class`` = ``config.type`` = 该模板的 PLR 类名（物料权威按模板校验 ``class``，PLR 按
+  ``config.type`` 构造）。
 
 这些形状只在**接收旧数据的边界**被识别并一次性转换：``-g`` 启动文件与
 ``unilab graph upload`` 的读取入口（:func:`upgrade_legacy_graph_payload`）、旧后端
 物料通知的拉取（:func:`normalize_legacy_material_nodes`）。Graph Authority
 （含其 ``load_graph_payload`` 运行时装配）、物料权威只接受当前契约，不认识这里列出的任何旧字段；剥离旧后端支持
 时删除本模块及其调用点即可。
+
+物料的 PLR 类名只从注册表查（读图边界传入 ``resource_entry``：模板名 → 注册表资源条目），
+查不到就报错指出节点和模板，不按名字猜。
 """
 
 from __future__ import annotations
 
 import copy
+import importlib
+import inspect
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 from unilabos.resources.objects.naming import legacy_label, migrated_name_fields
 from unilabos.utils.log import get_comm_logger
 
 logger = get_comm_logger()
+
+#: 模板名 → 注册表资源条目（``registry/catalog.resource_entry`` 的形状）；查不到返回 None。
+ResourceEntryLookup = Callable[[str], Optional[Mapping[str, Any]]]
+
+
+class LegacyGraphError(ValueError):
+    """旧格式图无法按注册表升级成当前契约；消息指出节点与模板。"""
 
 #: 旧后端 / 旧图在 ``pose`` 里使用的向量字段别名。
 _LEGACY_POSE_VECTOR_ALIASES = {"position_3d": "position3d", "position3D": "position3d"}
@@ -250,10 +267,214 @@ def _migrate_legacy_name(node: Dict[str, Any]) -> None:
     node.pop("name")
 
 
+#: PLR ``Resource.deserialize`` 自己消费、不进构造器的键。
+_PLR_DESERIALIZE_KEYS = frozenset(
+    {"type", "parent_name", "location", "children", "rotation", "barcode",
+     "preferred_pickup_location", "metadata"}
+)
+#: ``ResourceTreeSet.to_plr_resources`` 组装 PLR 字典时剥掉或用根字段覆盖的 config 键。
+_TRACKER_CONFIG_KEYS = frozenset(
+    {"capacity", "sites", "template_name", "name", "size_x", "size_y", "size_z", "category", "model"}
+)
+
+
+def _config_mapping(node: Mapping[str, Any]) -> Mapping[str, Any]:
+    config = node.get("config")
+    return config if isinstance(config, Mapping) else {}
+
+
+def _is_material_node(node: Mapping[str, Any]) -> bool:
+    """物料节点：``type`` 写了且不是设备（缺 ``type`` 的节点按设备处理，与命名迁移一致）。"""
+
+    node_type = str(node.get("type") or "").strip()
+    return bool(node_type) and node_type != "device"
+
+
+def _material_plr_class_marker(node: Mapping[str, Any]) -> Optional[str]:
+    """物料节点缺 PLR 类时返回对应的旧格式标记，否则 None。
+
+    - ``config.type`` 缺失：dev 时代容器（``class`` 为空 / 写成模板名），PLR 无从构造；
+    - ``config.type`` 已有但 ``class`` 写的是模板名（没有 ``template_name``、``class`` 与
+      ``config.type`` 不同）：物料权威把 ``class`` 当类名与模板的类比对，必然拒绝。
+
+    ``class`` 为空而 ``config.type`` 已有的节点是合法的当前写法（权威回退到 ``config.type``），
+    不算旧格式。
+    """
+
+    if not _is_material_node(node):
+        return None
+    plr_type = str(_config_mapping(node).get("type") or "").strip()
+    if not plr_type:
+        return "物料缺 config.type"
+    legacy_class = str(node.get("class") or "").strip()
+    if not str(node.get("template_name") or "").strip() and legacy_class and legacy_class != plr_type:
+        return "物料 class 写成模板名"
+    return None
+
+
+def _registry_entry_plr_class(entry: Mapping[str, Any], template: str, label: Any) -> str:
+    """注册表资源条目 → PLR 类名。
+
+    与物料权威登记模板时的规则一致（``config_info`` 里序列化的 ``config.type``，其次非通用的
+    ``class.type``）；条目没有 ``config_info`` 时（Slave 进程不生成）按条目的 ``class.module``
+    导入并实例化一次取类名——仍是注册表声明的类，不按名字猜。
+    """
+
+    from unilabos.resources.adapters.registry_materials import registry_resource_class_name
+
+    class_name = registry_resource_class_name(entry)
+    if class_name:
+        return class_name
+    class_info = entry.get("class")
+    class_info = class_info if isinstance(class_info, Mapping) else {}
+    module = str(class_info.get("module") or "")
+    if class_info.get("type") != "pylabrobot" or ":" not in module:
+        raise LegacyGraphError(
+            f"旧格式图节点 {label} 的模板 {template!r} 在注册表里不是 PLR 资源类"
+            f"（class.type={class_info.get('type')!r}），无法补齐 config.type"
+        )
+    module_path, _, attribute = module.partition(":")
+    try:
+        from pylabrobot.resources import Resource as PLRResource
+
+        target = getattr(importlib.import_module(module_path), attribute)
+        if isinstance(target, type):
+            resource_class = target
+        else:
+            resource_class = type(target(name=template))
+    except Exception as exc:  # noqa: BLE001 - 导入 / 构造失败都归为「查不出类名」
+        raise LegacyGraphError(
+            f"旧格式图节点 {label} 的模板 {template!r} 的 PLR 类无法从注册表条目 {module} 得到：{exc}"
+        ) from exc
+    if not issubclass(resource_class, PLRResource):
+        raise LegacyGraphError(
+            f"旧格式图节点 {label} 的模板 {template!r} 在注册表里不是 PLR 资源类（{module}）"
+        )
+    return resource_class.__name__
+
+
+def _plr_constructor_keys(class_name: str, entry: Mapping[str, Any]) -> Optional[frozenset]:
+    """PLR 类构造器（沿 ``**kwargs`` 透传的父类链）接受的参数名；判断不了返回 None。"""
+
+    from unilabos.resources.resource_tracker import find_plr_resource_class
+
+    class_info = entry.get("class")
+    module = str(class_info.get("module") or "") if isinstance(class_info, Mapping) else ""
+    if ":" in module:
+        try:
+            # CLI 等没有扫描注册表的进程：先导入条目模块，让类登记进 PLR 子类表
+            importlib.import_module(module.partition(":")[0])
+        except Exception:  # noqa: BLE001 - 导入失败再按已加载类 / 本地注册表查
+            pass
+    resource_class = find_plr_resource_class(class_name)
+    if resource_class is None:
+        return None
+    keys = set()
+    for klass in resource_class.__mro__:
+        init = klass.__dict__.get("__init__")
+        if init is None:
+            continue
+        try:
+            parameters = inspect.signature(init).parameters.values()
+        except (TypeError, ValueError):
+            return None
+        forwards = False
+        for parameter in parameters:
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                forwards = True
+            elif parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            ):
+                keys.add(parameter.name)
+        if not forwards:
+            return frozenset(keys)
+    return None
+
+
+def _move_foreign_config_to_data(
+    node: Dict[str, Any], class_name: str, entry: Mapping[str, Any], label: Any
+) -> None:
+    """dev 时代 config 里 PLR 构造器不认的业务字段（如 ``filter_type``）挪进 ``data``。
+
+    只用于原本没有 ``config.type`` 的节点：那份 config 从来不是 PLR 序列化，补上类型后
+    才第一次交给 PLR 构造。构造器参数判断不了（类在本进程导入不了、整条链都是 ``**kwargs``）
+    时原样保留。
+    """
+
+    accepted = _plr_constructor_keys(class_name, entry)
+    if accepted is None:
+        logger.warning(
+            "[LegacyGraph] 节点 %s 的 PLR 类 %s 在本进程无法确定构造参数，config 原样保留", label, class_name
+        )
+        return
+    config = node["config"]
+    foreign = [
+        key
+        for key in config
+        if key not in accepted and key not in _PLR_DESERIALIZE_KEYS and key not in _TRACKER_CONFIG_KEYS
+    ]
+    if not foreign:
+        return
+    data = node.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        node["data"] = data
+    for key in foreign:
+        value = config.pop(key)
+        if key in data and data[key] != value:
+            raise LegacyGraphError(
+                f"旧格式图节点 {label} 的 config.{key} 不是 PLR 类 {class_name} 的构造参数，"
+                f"要挪进 data 但 data.{key} 已有不同的值"
+            )
+        data[key] = value
+
+
+def _fill_material_plr_class(
+    node: Dict[str, Any], resource_entry: ResourceEntryLookup, label: Any
+) -> None:
+    """旧格式物料节点按注册表补齐 ``template_name`` / ``class`` / ``config.type``。
+
+    模板依次取 ``template_name``、``class``（旧图把模板名写在这里）、``type``（``class``
+    为空的 dev 时代容器写 ``"type": "container"``，即同名注册表模板）。模板不在注册表、
+    条目给不出 PLR 类，或节点已有的 ``config.type`` 与注册表的类不一致，都报错。
+    """
+
+    if _material_plr_class_marker(node) is None:
+        return
+    config = _config_mapping(node)
+    plr_type = str(config.get("type") or "").strip()
+    template = str(node.get("template_name") or "").strip()
+    source = "template_name"
+    if not template:
+        template, source = str(node.get("class") or "").strip(), "class"
+    if not template and not plr_type:
+        template, source = str(node.get("type") or "").strip(), "type"
+    entry = resource_entry(template) if template else None
+    if entry is None:
+        raise LegacyGraphError(
+            f"旧格式图节点 {label} 的模板 {template!r}（取自 {source}）不在注册表中，"
+            "无法确定它的 PLR 类（config.type）；请安装提供该模板的驱动包，"
+            "或把节点改成当前写法（template_name + class + config.type）"
+        )
+    class_name = _registry_entry_plr_class(entry, template, label)
+    if plr_type and plr_type != class_name:
+        raise LegacyGraphError(
+            f"旧格式图节点 {label} 的 config.type={plr_type!r} 与注册表模板 {template!r} "
+            f"的 PLR 类 {class_name!r} 不一致：图里是旧版 PLR 序列化，需按当前模板重新创建该物料"
+        )
+    node["template_name"] = template
+    node["class"] = class_name
+    if not plr_type:
+        node["config"] = {**config, "type": class_name}
+        _move_foreign_config_to_data(node, class_name, entry, label)
+
+
 def normalize_legacy_graph_node(
     node: Dict[str, Any],
     *,
     children_by_parent: Optional[Mapping[str, Mapping[str, str]]] = None,
+    resource_entry: Optional[ResourceEntryLookup] = None,
 ) -> Dict[str, Any]:
     """把一个旧形状节点就地转成当前契约，返回同一个 ``node``。
 
@@ -265,18 +486,24 @@ def normalize_legacy_graph_node(
     - 平铺 Site 的 ``occupied_by`` → ``occupied_material_uuid``
       （需传 ``children_by_parent``，见 :func:`legacy_graph_children_index`）；
     - 非 UUID 的 name 迁到 ``display_name`` 与 PLR 键 ``config.name``（见
-      :func:`_migrate_legacy_name`）。
+      :func:`_migrate_legacy_name`）；
+    - 传了 ``resource_entry``（读图边界）时，缺 PLR 类的物料节点按注册表补齐
+      ``template_name`` / ``class`` / ``config.type``，config 里 PLR 构造器不认的业务字段
+      挪进 ``data``（见 :func:`_fill_material_plr_class`）；查不到抛 :class:`LegacyGraphError`。
+      不传时只做形状转换（旧后端物料拉取）。
 
     绝不覆盖已有的新字段；对已是当前契约的节点是恒等变换。
     """
 
+    label = node.get("id", node.get("name"))
+    if resource_entry is not None:
+        _fill_material_plr_class(node, resource_entry, label)
     if not str(node.get("template_name") or "").strip():
         legacy_class = str(node.get("class") or "").strip()
         if legacy_class:
             node["template_name"] = legacy_class
     node.pop("children", None)
 
-    label = node.get("id", node.get("name"))
     _normalize_legacy_tracker_state(node, label)
     _normalize_legacy_sites(node, children_by_parent)
     _migrate_legacy_name(node)
@@ -340,18 +567,25 @@ def normalize_legacy_graph_link(
     return item
 
 
-def normalize_legacy_graph(payload: Mapping[str, Any]) -> Dict[str, Any]:
+def normalize_legacy_graph(
+    payload: Mapping[str, Any],
+    *,
+    resource_entry: Optional[ResourceEntryLookup] = None,
+) -> Dict[str, Any]:
     """整图转换：返回一份当前契约形状的新 payload（``nodes`` + ``links``）。
 
     其余顶层键（``directed`` / ``graph`` 等 node-link 元数据）原样保留；旧后端
     的 ``edges`` 键并入 ``links``。端点不在节点集合中的边丢弃并记日志。
+    ``resource_entry`` 见 :func:`normalize_legacy_graph_node`。
     """
 
     graph = copy.deepcopy(dict(payload))
     nodes = [dict(node) for node in graph.get("nodes") or [] if isinstance(node, Mapping)]
     children = legacy_graph_children_index(nodes)
     for node in nodes:
-        normalize_legacy_graph_node(node, children_by_parent=children)
+        normalize_legacy_graph_node(
+            node, children_by_parent=children, resource_entry=resource_entry
+        )
 
     raw_links = graph.get("links")
     legacy_edges = graph.pop("edges", None)
@@ -390,6 +624,9 @@ def legacy_graph_markers(payload: Mapping[str, Any]) -> Dict[str, int]:
             continue
         if node.get("class") and not str(node.get("template_name") or "").strip():
             hit("class 无 template_name")
+        material_marker = _material_plr_class_marker(node)
+        if material_marker:
+            hit(material_marker)
         if legacy_label(node.get("name")):
             hit("name 不是 uuid")
         if "position" in node:
@@ -446,15 +683,23 @@ def upgrade_legacy_graph_payload(
     *,
     source: str,
     report: Callable[[str], None],
+    resource_entry: ResourceEntryLookup,
 ) -> Dict[str, Any]:
-    """图文件读取边界：识别到旧字段就整图转换并经 ``report`` 提示，否则原样返回。"""
+    """图文件读取边界：识别到旧字段就整图转换并经 ``report`` 提示，否则原样返回。
+
+    ``resource_entry`` 按模板名查注册表资源条目（``-g`` 在 Host / Slave 进程里查本进程目录
+    ``registry/catalog.resource_entry``；``unilab graph upload`` 查上传目标调度权威的注册表），
+    给缺 PLR 类的旧物料节点补齐类名。查不到时抛 :class:`LegacyGraphError`，消息指出节点与模板。
+    升级结果再升级是恒等（幂等）。
+    """
 
     markers = legacy_graph_markers(payload)
     if not markers:
         return dict(payload)
+    upgraded = normalize_legacy_graph(payload, resource_entry=resource_entry)
     summary = "、".join(f"{name} ×{count}" for name, count in markers.items())
     report(f"{source} 使用旧格式图字段（{summary}），已按旧后端契约转换为当前 node-link 契约")
-    return normalize_legacy_graph(payload)
+    return upgraded
 
 
 def normalize_legacy_material_node(
@@ -495,6 +740,8 @@ def normalize_legacy_material_nodes(
 
 
 __all__ = [
+    "LegacyGraphError",
+    "ResourceEntryLookup",
     "legacy_graph_children_index",
     "legacy_graph_markers",
     "normalize_legacy_graph",

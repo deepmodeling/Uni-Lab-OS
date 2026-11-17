@@ -1,211 +1,263 @@
-import asyncio
-import logging
-from typing import Dict, Any, Optional, TYPE_CHECKING
+"""虚拟柱层析装置：样品从源容器上柱、洗脱，收集到目标容器。
 
-if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+分离时长按柱长与最大流速估算（至少 20 秒模拟时间）；源 / 目标容器在本设备可见时，
+把源容器里的液体整体转到目标容器（PLR 体积跟踪器）。
+"""
 
-class VirtualColumn:
-    """Virtual column device for RunColumn protocol 🏛️"""
-    
-    _node: "DeviceNode"
-    
-    def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
-        # 处理可能的不同调用方式
-        if device_id is None and 'id' in kwargs:
-            device_id = kwargs.pop('id')
-        if config is None and 'config' in kwargs:
-            config = kwargs.pop('config')
-        
-        # 设置默认值
-        self.device_id = device_id or "unknown_column"
-        self.config = config or {}
-        
-        self.logger = logging.getLogger(f"VirtualColumn.{self.device_id}")
-        self.data = {}
-        
-        # 从config或kwargs中获取配置参数
-        self.port = self.config.get('port') or kwargs.get('port', 'VIRTUAL')
-        self._max_flow_rate = self.config.get('max_flow_rate') or kwargs.get('max_flow_rate', 10.0)
-        self._column_length = self.config.get('column_length') or kwargs.get('column_length', 25.0)
-        self._column_diameter = self.config.get('column_diameter') or kwargs.get('column_diameter', 2.0)
-        
-        print(f"🏛️ === 虚拟色谱柱 {self.device_id} 已创建 === ✨")
-        print(f"📏 柱参数: 流速={self._max_flow_rate}mL/min | 长度={self._column_length}cm | 直径={self._column_diameter}cm 🔬")
-    
-    def post_init(self, node: "DeviceNode"):
-        self._node = node
-    
-    async def initialize(self) -> bool:
-        """Initialize virtual column 🚀"""
-        self.logger.info(f"🔧 初始化虚拟色谱柱 {self.device_id} ✨")
-        
-        self.data.update({
-            "status": "Idle",
-            "column_state": "Ready", 
-            "current_flow_rate": 0.0,
-            "max_flow_rate": self._max_flow_rate,
-            "column_length": self._column_length,
-            "column_diameter": self._column_diameter,
-            "processed_volume": 0.0,
-            "progress": 0.0,
-            "current_status": "Ready for separation"
-        })
-        
-        self.logger.info(f"✅ 色谱柱 {self.device_id} 初始化完成 🏛️")
-        self.logger.info(f"📊 设备规格: 最大流速 {self._max_flow_rate}mL/min | 柱长 {self._column_length}cm 📏")
-        return True
-    
-    async def cleanup(self) -> bool:
-        """Cleanup virtual column 🧹"""
-        self.logger.info(f"🧹 清理虚拟色谱柱 {self.device_id} 🔚")
-        
-        self.data.update({
-            "status": "Offline",
-            "column_state": "Offline",
-            "current_status": "System offline"
-        })
-        
-        self.logger.info(f"✅ 色谱柱 {self.device_id} 清理完成 💤")
-        return True
-    
-    async def run_column(self, from_vessel: str, to_vessel: str, column: str, **kwargs) -> bool:
-        """Execute column chromatography run - matches RunColumn action 🏛️"""
-        
-        # 提取额外参数
-        rf = kwargs.get('rf', '0.3')
-        solvent1 = kwargs.get('solvent1', 'ethyl_acetate')
-        solvent2 = kwargs.get('solvent2', 'hexane')
-        ratio = kwargs.get('ratio', '30:70')
-        
-        self.logger.info(f"🏛️ 开始柱层析分离: {from_vessel} → {to_vessel} 🚰")
-        self.logger.info(f"  🧪 使用色谱柱: {column}")
-        self.logger.info(f"  🎯 Rf值: {rf}")
-        self.logger.info(f"  🧪 洗脱溶剂: {solvent1}:{solvent2} ({ratio}) 💧")
-        
-        # 更新设备状态
-        self.data.update({
-            "status": "Running",
-            "column_state": "Separating",
-            "current_status": "🏛️ Column separation in progress",
-            "progress": 0.0,
-            "processed_volume": 0.0,
-            "current_from_vessel": from_vessel,
-            "current_to_vessel": to_vessel,
-            "current_column": column,
-            "current_rf": rf,
-            "current_solvents": f"{solvent1}:{solvent2} ({ratio})"
-        })
-        
-        # 模拟柱层析分离过程
-        # 假设处理时间基于流速和柱子长度
-        base_time = (self._column_length * 2) / self._max_flow_rate  # 简化计算
-        separation_time = max(base_time, 20.0)  # 最少20秒
-        
-        self.logger.info(f"⏱️ 预计分离时间: {separation_time:.1f}秒 ⌛")
-        self.logger.info(f"📏 柱参数: 长度 {self._column_length}cm | 流速 {self._max_flow_rate}mL/min 🌊")
-        
-        steps = 20  # 分20个步骤模拟分离过程
-        step_time = separation_time / steps
-        
-        for i in range(steps):
-            await self._node.sleep(step_time)
-            
-            progress = (i + 1) / steps * 100
-            volume_processed = (i + 1) * 5.0  # 假设每步处理5mL
-            
-            # 不同阶段的状态描述
-            if progress <= 25:
-                phase = "🌊 样品上柱阶段"
-                phase_emoji = "📥"
-            elif progress <= 50:
-                phase = "🧪 洗脱开始"
-                phase_emoji = "💧"
-            elif progress <= 75:
-                phase = "⚗️ 成分分离中"
-                phase_emoji = "🔄"
-            else:
-                phase = "🎯 收集产物"
-                phase_emoji = "📤"
-            
-            # 更新状态
-            status_msg = f"{phase_emoji} {phase}: {progress:.1f}% | 💧 已处理: {volume_processed:.1f}mL"
-            
-            self.data.update({
-                "progress": progress,
-                "processed_volume": volume_processed,
-                "current_status": status_msg,
-                "current_phase": phase
-            })
-            
-            # 进度日志（每25%打印一次）
-            if progress >= 25 and (i + 1) % 5 == 0:  # 每5步（25%）打印一次
-                self.logger.info(f"📊 分离进度: {progress:.0f}% | {phase} | 💧 {volume_processed:.1f}mL 完成 ✨")
-        
-        # 分离完成
-        final_status = f"✅ 柱层析分离完成: {from_vessel} → {to_vessel} | 💧 共处理 {volume_processed:.1f}mL"
-        
-        self.data.update({
-            "status": "Idle",
-            "column_state": "Ready",
-            "current_status": final_status,
-            "progress": 100.0,
-            "final_volume": volume_processed
-        })
-        
-        self.logger.info(f"🎉 柱层析分离完成! ✨")
-        self.logger.info(f"📊 分离结果:")
-        self.logger.info(f"  🥽 源容器: {from_vessel}")
-        self.logger.info(f"  🥽 目标容器: {to_vessel}")
-        self.logger.info(f"  🏛️ 使用色谱柱: {column}")
-        self.logger.info(f"  💧 处理体积: {volume_processed:.1f}mL")
-        self.logger.info(f"  🧪 洗脱条件: {solvent1}:{solvent2} ({ratio})")
-        self.logger.info(f"  🎯 Rf值: {rf}")
-        self.logger.info(f"  ⏱️ 总耗时: {separation_time:.1f}秒 🏁")
-        
-        return True
-    
-    # 状态属性
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, Optional
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import UL_PER_ML, VesselRef, VirtualDevice, nested_settings
+from unilabos.registry.decorators import (
+    DataSource,
+    InputHandle,
+    OutputHandle,
+    Side,
+    action,
+    device,
+    topic_config,
+)
+
+#: 最短分离时间（模拟秒）
+MIN_SEPARATION_SECONDS = 20.0
+_PHASES = ((25.0, "样品上柱"), (50.0, "开始洗脱"), (75.0, "组分分离"), (100.0, "收集产物"))
+
+
+@device(
+    id="virtual_column",
+    display_name="虚拟柱层析装置",
+    category=["virtual_device"],
+    description="模拟上柱、洗脱、收集的虚拟柱层析装置，供柱层析协议与示例图使用",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        InputHandle(
+            key="columnin",
+            data_type="transport",
+            label="columnin",
+            side=Side.WEST,
+            data_key="from_vessel",
+            data_source=DataSource.HANDLE,
+            description="样品输入口",
+        ),
+        OutputHandle(
+            key="columnout",
+            data_type="transport",
+            label="columnout",
+            side=Side.EAST,
+            data_key="to_vessel",
+            data_source=DataSource.HANDLE,
+            description="产物输出口",
+        ),
+    ],
+)
+class VirtualColumn(VirtualDevice):
+    """柱长 column_length（cm）、柱径 column_diameter（cm）、最大流速 max_flow_rate（mL/s）。"""
+
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_flow_rate: float = 10.0,
+        column_length: float = 25.0,
+        column_diameter: float = 2.0,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟柱层析装置。
+
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_flow_rate[最大流速]: 最大流速（mL/s）。
+            column_length[柱长]: 柱长（cm）。
+            column_diameter[柱径]: 柱内径（cm）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+        """
+        settings = nested_settings(
+            kwargs,
+            max_flow_rate=max_flow_rate,
+            column_length=column_length,
+            column_diameter=column_diameter,
+            port=port,
+            time_scale=time_scale,
+        )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_column", settings["time_scale"])
+        self._max_flow_rate = float(settings["max_flow_rate"])
+        self._column_length = float(settings["column_length"])
+        self._column_diameter = float(settings["column_diameter"])
+        if min(self._max_flow_rate, self._column_length, self._column_diameter) <= 0:
+            raise ValueError("max_flow_rate、column_length、column_diameter 都必须大于 0")
+        self.port = str(settings["port"])
+        self._column_state = "Ready"
+        self._current_phase = "待机"
+        self._current_flow_rate = 0.0
+        self._processed_volume = 0.0
+        self._final_volume = 0.0
+
+    # ============ 状态 ============
+
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
-        return self.data.get("status", "❓ Unknown")
-    
+        """Idle / Running / Error。"""
+        return self._status
+
     @property
+    @topic_config(period=1.0)
     def column_state(self) -> str:
-        return self.data.get("column_state", "❓ Unknown")
-    
+        """Ready / Separating / Completed / Stopped / Error。"""
+        return self._column_state
+
     @property
-    def current_flow_rate(self) -> float:
-        return self.data.get("current_flow_rate", 0.0)
-    
-    @property
-    def max_flow_rate(self) -> float:
-        return self.data.get("max_flow_rate", 0.0)
-    
-    @property
-    def column_length(self) -> float:
-        return self.data.get("column_length", 0.0)
-    
-    @property
-    def column_diameter(self) -> float:
-        return self.data.get("column_diameter", 0.0)
-    
-    @property
-    def processed_volume(self) -> float:
-        return self.data.get("processed_volume", 0.0)
-    
-    @property
-    def progress(self) -> float:
-        return self.data.get("progress", 0.0)
-    
-    @property
-    def current_status(self) -> str:
-        return self.data.get("current_status", "📋 Ready")
-    
-    @property
+    @topic_config(period=1.0)
     def current_phase(self) -> str:
-        return self.data.get("current_phase", "🏠 待机中")
-    
+        """当前阶段：样品上柱 / 开始洗脱 / 组分分离 / 收集产物。"""
+        return self._current_phase
+
     @property
+    @topic_config(period=1.0)
+    def current_status(self) -> str:
+        """最近一次操作的说明。"""
+        return self._message
+
+    @property
+    @topic_config(period=1.0)
+    def current_flow_rate(self) -> float:
+        """当前流速（mL/s）。"""
+        return self._current_flow_rate
+
+    @property
+    @topic_config(period=1.0)
+    def processed_volume(self) -> float:
+        """已处理体积（mL）。"""
+        return round(self._processed_volume, 6)
+
+    @property
+    @topic_config(period=1.0)
     def final_volume(self) -> float:
-        return self.data.get("final_volume", 0.0)
+        """上一次分离收集的体积（mL）。"""
+        return round(self._final_volume, 6)
+
+    @property
+    @topic_config(period=1.0)
+    def progress(self) -> float:
+        """当前分离进度（%）。"""
+        return self._progress
+
+    @property
+    @topic_config(period=5.0)
+    def max_flow_rate(self) -> float:
+        """最大流速（mL/s）。"""
+        return self._max_flow_rate
+
+    @property
+    @topic_config(period=5.0)
+    def column_length(self) -> float:
+        """柱长（cm）。"""
+        return self._column_length
+
+    @property
+    @topic_config(period=5.0)
+    def column_diameter(self) -> float:
+        """柱内径（cm）。"""
+        return self._column_diameter
+
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="回到就绪")
+    async def initialize(self) -> bool:
+        """初始化：回到就绪。"""
+        self._reset("Ready")
+        return True
+
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的分离并离线")
+    async def cleanup(self) -> bool:
+        """清理：请求停止当前分离。"""
+        self._request_stop()
+        self._reset("Offline")
+        return True
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:RunColumn",
+        display_name="柱层析",
+        description="样品从源容器上柱、洗脱并收集到目标容器",
+        feedback_interval=0.5,
+    )
+    async def run_column(
+        self,
+        from_vessel: VesselRef,
+        to_vessel: VesselRef,
+        column: str,
+        rf: str = "",
+        pct1: str = "",
+        pct2: str = "",
+        solvent1: str = "",
+        solvent2: str = "",
+        ratio: str = "",
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """运行柱层析。
+
+        Args:
+            from_vessel[样品容器]: 样品所在的源容器。
+            to_vessel[收集容器]: 收集产物的容器。
+            column[色谱柱]: 色谱柱名称或图节点 id。
+            rf[Rf 值]: 目标组分的 Rf 值，仅记录。
+            pct1[溶剂1比例]: 溶剂 1 百分比，仅记录。
+            pct2[溶剂2比例]: 溶剂 2 百分比，仅记录。
+            solvent1[溶剂1]: 洗脱溶剂 1，仅记录。
+            solvent2[溶剂2]: 洗脱溶剂 2，仅记录。
+            ratio[溶剂比]: 溶剂比例，仅记录。
+        """
+        source, target = self._vessel_label(from_vessel), self._vessel_label(to_vessel)
+        duration = max(self._column_length * 2.0 / self._max_flow_rate, MIN_SEPARATION_SECONDS)
+        bed_volume = math.pi * (self._column_diameter / 2.0) ** 2 * self._column_length
+
+        def step(fraction: float) -> None:
+            percent = fraction * 100.0
+            self._current_phase = next(name for limit, name in _PHASES if percent <= limit + 1e-9)
+            self._processed_volume = bed_volume * fraction
+
+        with self._operation("Running", f"柱层析 {source or '?'} → {target or '?'}（{column}）", action_context):
+            self._column_state = "Separating"
+            self._current_flow_rate = self._max_flow_rate
+            self._processed_volume = 0.0
+            completed = False
+            try:
+                await self._simulate(duration, action_context, on_step=step, feedback={"column": str(column)})
+                completed = True
+            finally:
+                self._current_flow_rate = 0.0
+                self._column_state = "Completed" if completed else "Stopped"
+            taken = self._transfer_liquid(from_vessel, to_vessel, float("inf"))
+            self._final_volume = sum(item[1] for item in taken) / UL_PER_ML if taken else bed_volume
+            self._processed_volume = self._final_volume
+        self._current_phase = "完成"
+        self._message = f"柱层析完成：{source or '?'} → {target or '?'}，收集 {self._final_volume:.3f} mL"
+        return {
+            "success": True,
+            "from_vessel": source,
+            "to_vessel": target,
+            "column": str(column),
+            "collected_volume": round(self._final_volume, 6),
+            "solvents": {"solvent1": solvent1, "solvent2": solvent2, "ratio": ratio, "rf": rf},
+        }
+
+    # ============ 内部 ============
+
+    def _reset(self, state: str) -> None:
+        with self._lock:
+            self._status = "Idle"
+            self._column_state = state
+            self._current_phase = "待机"
+            self._current_flow_rate = 0.0
+            self._processed_volume = 0.0
+            self._remaining_time = 0.0
+
+    def __repr__(self) -> str:
+        return f"VirtualColumn({self.device_id}: {self._column_state}, {self._current_phase})"

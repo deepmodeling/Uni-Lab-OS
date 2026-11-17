@@ -1,360 +1,286 @@
-import asyncio
-import logging
-import time as time_module
-from typing import Dict, Any, Optional, TYPE_CHECKING
+"""虚拟旋转蒸发仪：按温度、真空度、转速蒸发溶剂。
 
-if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+水系溶剂自动提高温度（≥ 80°C）与压力（≥ 0.2 bar），乙醇 / 甲醇 / 丙酮等易挥发溶剂自动降低
+（≤ 50°C、≤ 0.05 bar）。容器在本设备可见时，蒸发结束从容器里去掉该溶剂（未给溶剂时去掉全部液体，
+只留固体），写回 PLR 体积跟踪器。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional, Union
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    UL_PER_ML,
+    VesselRef,
+    VirtualDevice,
+    nested_settings,
+    parse_duration,
+)
+from unilabos.registry.decorators import (
+    DataSource,
+    InputHandle,
+    OutputHandle,
+    Side,
+    action,
+    device,
+    topic_config,
+)
+
+MIN_TEMP = 10.0
+MIN_ROTATION_SPEED = 10.0
+MIN_PRESSURE, MAX_PRESSURE = 0.01, 1.0
+AMBIENT_TEMPERATURE = 25.0
+ATMOSPHERE_BAR = 1.0
+_AQUEOUS = ("water", "aqueous")
+_VOLATILE = ("ethanol", "methanol", "acetone")
 
 
-def debug_print(message):
-    """调试输出 🔍"""
-    print(f"🌪️ [ROTAVAP] {message}", flush=True)
+@device(
+    id="virtual_rotavap",
+    display_name="虚拟旋转蒸发仪",
+    category=["virtual_device"],
+    description="按温度、真空度与转速蒸发溶剂的虚拟旋转蒸发仪，供蒸发协议与示例图使用",
+    icon="Rotaryevaporator.webp",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        InputHandle(
+            key="samplein",
+            data_type="fluid",
+            label="sample_in",
+            side=Side.NORTH,
+            data_key="vessel_in",
+            data_source=DataSource.HANDLE,
+            description="样品连接口",
+        ),
+        OutputHandle(
+            key="productout",
+            data_type="fluid",
+            label="product_out",
+            side=Side.SOUTH,
+            data_key="product_out",
+            data_source=DataSource.HANDLE,
+            description="浓缩产物出口",
+        ),
+        OutputHandle(
+            key="solventout",
+            data_type="fluid",
+            label="solvent_out",
+            side=Side.EAST,
+            data_key="solvent_out",
+            data_source=DataSource.HANDLE,
+            description="冷凝溶剂出口",
+        ),
+    ],
+)
+class VirtualRotavap(VirtualDevice):
+    """温度 10 ~ max_temp（°C），转速 10 ~ max_rotation_speed（RPM），真空 0.01 ~ 1 bar。"""
 
-
-class VirtualRotavap:
-    """Virtual rotary evaporator device - 简化版，只保留核心功能 🌪️"""
-
-    _node: "DeviceNode"
-
-    def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
-        # 处理可能的不同调用方式
-        if device_id is None and "id" in kwargs:
-            device_id = kwargs.pop("id")
-        if config is None and "config" in kwargs:
-            config = kwargs.pop("config")
-
-        # 设置默认值
-        self.device_id = device_id or "unknown_rotavap"
-        self.config = config or {}
-
-        self.logger = logging.getLogger(f"VirtualRotavap.{self.device_id}")
-        self.data = {}
-
-        # 从config或kwargs中获取配置参数
-        self.port = self.config.get("port") or kwargs.get("port", "VIRTUAL")
-        self._max_temp = self.config.get("max_temp") or kwargs.get("max_temp", 180.0)
-        self._max_rotation_speed = self.config.get("max_rotation_speed") or kwargs.get("max_rotation_speed", 280.0)
-
-        # 处理其他kwargs参数
-        skip_keys = {"port", "max_temp", "max_rotation_speed"}
-        for key, value in kwargs.items():
-            if key not in skip_keys and not hasattr(self, key):
-                setattr(self, key, value)
-
-        print(f"🌪️ === 虚拟旋转蒸发仪 {self.device_id} 已创建 === ✨")
-        print(f"🔥 温度范围: 10°C ~ {self._max_temp}°C | 🌀 转速范围: 10 ~ {self._max_rotation_speed} RPM")
-
-    def post_init(self, node: "DeviceNode"):
-        self._node = node
-
-    async def initialize(self) -> bool:
-        """Initialize virtual rotary evaporator 🚀"""
-        self.logger.info(f"🔧 初始化虚拟旋转蒸发仪 {self.device_id} ✨")
-
-        # 只保留核心状态
-        self.data.update(
-            {
-                "status": "🏠 待机中",
-                "rotavap_state": "Ready",  # Ready, Evaporating, Completed, Error
-                "current_temp": 25.0,
-                "target_temp": 25.0,
-                "rotation_speed": 0.0,
-                "vacuum_pressure": 1.0,  # 大气压
-                "evaporated_volume": 0.0,
-                "progress": 0.0,
-                "remaining_time": 0.0,
-                "message": "🌪️ Ready for evaporation",
-            }
-        )
-
-        self.logger.info(f"✅ 旋转蒸发仪 {self.device_id} 初始化完成 🌪️")
-        self.logger.info(
-            f"📊 设备规格: 温度范围 10°C ~ {self._max_temp}°C | 转速范围 10 ~ {self._max_rotation_speed} RPM"
-        )
-        return True
-
-    async def cleanup(self) -> bool:
-        """Cleanup virtual rotary evaporator 🧹"""
-        self.logger.info(f"🧹 清理虚拟旋转蒸发仪 {self.device_id} 🔚")
-
-        self.data.update(
-            {
-                "status": "💤 离线",
-                "rotavap_state": "Offline",
-                "current_temp": 25.0,
-                "rotation_speed": 0.0,
-                "vacuum_pressure": 1.0,
-                "message": "💤 System offline",
-            }
-        )
-
-        self.logger.info(f"✅ 旋转蒸发仪 {self.device_id} 清理完成 💤")
-        return True
-
-    async def evaporate(
+    def __init__(
         self,
-        vessel: str,
-        pressure: float = 0.1,
-        temp: float = 60.0,
-        time: float = 180.0,
-        stir_speed: float = 100.0,
-        solvent: str = "",
-        **kwargs,
-    ) -> bool:
-        """Execute evaporate action - 简化版 🌪️"""
+        device_id: Optional[str] = None,
+        max_temp: float = 180.0,
+        max_rotation_speed: float = 280.0,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟旋转蒸发仪。
 
-        # 规范化时间，并在无效输入时采用默认值。
-        if isinstance(time, str):
-            try:
-                time = float(time)
-            except ValueError:
-                self.logger.error(f"❌ 无法转换时间参数 '{time}' 为数值，使用默认值180.0秒")
-                time = 180.0
-        elif not isinstance(time, (int, float)):
-            self.logger.error(f"❌ 时间参数类型无效: {type(time)}，使用默认值180.0秒")
-            time = 180.0
-
-        # 确保time是float类型; 并加速
-        time = float(time) / 10.0
-
-        # vessel 指向设备自身时直接执行本机模拟。
-        if vessel == self.device_id:
-            debug_print(f"🎯 在设备 {self.device_id} 上直接执行蒸发操作")
-            actual_vessel = self.device_id
-        else:
-            actual_vessel = vessel
-
-        # 参数预处理
-        if solvent:
-            self.logger.info(f"🧪 识别到溶剂: {solvent}")
-            # 根据溶剂调整参数
-            solvent_lower = solvent.lower()
-            if any(s in solvent_lower for s in ["water", "aqueous"]):
-                temp = max(temp, 80.0)
-                pressure = max(pressure, 0.2)
-                self.logger.info(f"💧 水系溶剂：调整参数 → 温度 {temp}°C, 压力 {pressure} bar")
-            elif any(s in solvent_lower for s in ["ethanol", "methanol", "acetone"]):
-                temp = min(temp, 50.0)
-                pressure = min(pressure, 0.05)
-                self.logger.info(f"⚡ 易挥发溶剂：调整参数 → 温度 {temp}°C, 压力 {pressure} bar")
-
-        self.logger.info(f"🌪️ 开始蒸发操作: {actual_vessel}")
-        self.logger.info(f"  🥽 容器: {actual_vessel}")
-        self.logger.info(f"  🌡️ 温度: {temp}°C")
-        self.logger.info(f"  💨 真空度: {pressure} bar")
-        self.logger.info(f"  ⏰ 时间: {time}s")
-        self.logger.info(f"  🌀 转速: {stir_speed} RPM")
-        if solvent:
-            self.logger.info(f"  🧪 溶剂: {solvent}")
-
-        # 验证参数
-        if temp > self._max_temp or temp < 10.0:
-            error_msg = f"🌡️ 温度 {temp}°C 超出范围 (10-{self._max_temp}°C) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update(
-                {
-                    "status": f"❌ 错误: 温度超出范围",
-                    "rotavap_state": "Error",
-                    "current_temp": 25.0,
-                    "progress": 0.0,
-                    "evaporated_volume": 0.0,
-                    "message": error_msg,
-                }
-            )
-            return False
-
-        if stir_speed > self._max_rotation_speed or stir_speed < 10.0:
-            error_msg = f"🌀 旋转速度 {stir_speed} RPM 超出范围 (10-{self._max_rotation_speed} RPM) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update(
-                {
-                    "status": f"❌ 错误: 转速超出范围",
-                    "rotavap_state": "Error",
-                    "current_temp": 25.0,
-                    "progress": 0.0,
-                    "evaporated_volume": 0.0,
-                    "message": error_msg,
-                }
-            )
-            return False
-
-        if pressure < 0.01 or pressure > 1.0:
-            error_msg = f"💨 真空度 {pressure} bar 超出范围 (0.01-1.0 bar) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update(
-                {
-                    "status": f"❌ 错误: 压力超出范围",
-                    "rotavap_state": "Error",
-                    "current_temp": 25.0,
-                    "progress": 0.0,
-                    "evaporated_volume": 0.0,
-                    "message": error_msg,
-                }
-            )
-            return False
-
-        # 使用规范化后的时长开始蒸发。
-        self.logger.info(f"🚀 启动蒸发程序! 预计用时 {time/60:.1f}分钟 ⏱️")
-
-        self.data.update(
-            {
-                "status": f"🌪️ 蒸发中: {actual_vessel}",
-                "rotavap_state": "Evaporating",
-                "current_temp": temp,
-                "target_temp": temp,
-                "rotation_speed": stir_speed,
-                "vacuum_pressure": pressure,
-                "remaining_time": time,
-                "progress": 0.0,
-                "evaporated_volume": 0.0,
-                "message": f"🌪️ Evaporating {actual_vessel} at {temp}°C, {pressure} bar, {stir_speed} RPM",
-            }
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_temp[最高温度]: 水浴最高温度（°C）。
+            max_rotation_speed[最高转速]: 最高旋转速度（RPM）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+        """
+        settings = nested_settings(
+            kwargs, max_temp=max_temp, max_rotation_speed=max_rotation_speed, port=port, time_scale=time_scale
         )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_rotavap", settings["time_scale"])
+        self._max_temp = float(settings["max_temp"])
+        self._max_rotation_speed = float(settings["max_rotation_speed"])
+        self.port = str(settings["port"])
+        self._rotavap_state = "Ready"
+        self._current_temp = AMBIENT_TEMPERATURE
+        self._rotation_speed = 0.0
+        self._vacuum_pressure = ATMOSPHERE_BAR
+        self._evaporated_volume = 0.0
 
-        try:
-            # 蒸发过程 - 实时更新进度
-            start_time = time_module.time()
-            total_time = time
-            last_logged_progress = 0
+    # ============ 状态 ============
 
-            while True:
-                current_time = time_module.time()
-                elapsed = current_time - start_time
-                remaining = max(0, total_time - elapsed)
-                progress = min(100.0, (elapsed / total_time) * 100)
-
-                # 模拟蒸发体积 - 根据溶剂类型调整
-                if solvent and any(s in solvent.lower() for s in ["water", "aqueous"]):
-                    evaporated_vol = progress * 0.6  # 水系溶剂蒸发慢
-                elif solvent and any(s in solvent.lower() for s in ["ethanol", "methanol", "acetone"]):
-                    evaporated_vol = progress * 1.0  # 易挥发溶剂蒸发快
-                else:
-                    evaporated_vol = progress * 0.8  # 默认蒸发量
-
-                # 更新完整运行状态。
-                status_msg = f"🌪️ 蒸发中: {actual_vessel} | 🌡️ {temp}°C | 💨 {pressure} bar | 🌀 {stir_speed} RPM | 📊 {progress:.1f}% | ⏰ 剩余: {remaining:.0f}s"
-
-                self.data.update(
-                    {
-                        "remaining_time": remaining,
-                        "progress": progress,
-                        "evaporated_volume": evaporated_vol,
-                        "current_temp": temp,
-                        "status": status_msg,
-                        "message": f"🌪️ Evaporating: {progress:.1f}% complete, 💧 {evaporated_vol:.1f}mL evaporated, ⏰ {remaining:.0f}s remaining",
-                    }
-                )
-
-                # 进度日志（每25%打印一次）
-                if progress >= 25 and int(progress) % 25 == 0 and int(progress) != last_logged_progress:
-                    self.logger.info(
-                        f"📊 蒸发进度: {progress:.0f}% | 💧 已蒸发: {evaporated_vol:.1f}mL | ⏰ 剩余: {remaining:.0f}s ✨"
-                    )
-                    last_logged_progress = int(progress)
-
-                # 时间到了，退出循环
-                if remaining <= 0:
-                    break
-
-                # 每秒更新一次
-                await self._node.sleep(1.0)
-
-            # 蒸发完成
-            if solvent and any(s in solvent.lower() for s in ["water", "aqueous"]):
-                final_evaporated = 60.0  # 水系溶剂
-            elif solvent and any(s in solvent.lower() for s in ["ethanol", "methanol", "acetone"]):
-                final_evaporated = 100.0  # 易挥发溶剂
-            else:
-                final_evaporated = 80.0  # 默认
-
-            self.data.update(
-                {
-                    "status": f"✅ 蒸发完成: {actual_vessel} | 💧 蒸发量: {final_evaporated:.1f}mL",
-                    "rotavap_state": "Completed",
-                    "evaporated_volume": final_evaporated,
-                    "progress": 100.0,
-                    "current_temp": temp,
-                    "remaining_time": 0.0,
-                    "rotation_speed": 0.0,
-                    "vacuum_pressure": 1.0,
-                    "message": f"✅ Evaporation completed: {final_evaporated}mL evaporated from {actual_vessel}",
-                }
-            )
-
-            self.logger.info(f"🎉 蒸发操作完成! ✨")
-            self.logger.info(f"📊 蒸发结果:")
-            self.logger.info(f"  🥽 容器: {actual_vessel}")
-            self.logger.info(f"  💧 蒸发量: {final_evaporated:.1f}mL")
-            self.logger.info(f"  🌡️ 蒸发温度: {temp}°C")
-            self.logger.info(f"  💨 真空度: {pressure} bar")
-            self.logger.info(f"  🌀 旋转速度: {stir_speed} RPM")
-            self.logger.info(f"  ⏱️ 总用时: {total_time:.0f}s")
-            if solvent:
-                self.logger.info(f"  🧪 处理溶剂: {solvent} 🏁")
-
-            return True
-
-        except Exception as e:
-            # 出错处理
-            error_msg = f"蒸发过程中发生错误: {str(e)} 💥"
-            self.logger.error(f"❌ {error_msg}")
-
-            self.data.update(
-                {
-                    "status": f"❌ 蒸发错误: {str(e)}",
-                    "rotavap_state": "Error",
-                    "current_temp": 25.0,
-                    "progress": 0.0,
-                    "evaporated_volume": 0.0,
-                    "rotation_speed": 0.0,
-                    "vacuum_pressure": 1.0,
-                    "message": f"❌ Evaporation failed: {str(e)}",
-                }
-            )
-            return False
-
-    # === 核心状态属性 ===
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
-        return self.data.get("status", "❓ Unknown")
+        """Idle / Evaporating / Error。"""
+        return self._status
 
     @property
+    @topic_config(period=1.0)
     def rotavap_state(self) -> str:
-        return self.data.get("rotavap_state", "Unknown")
+        """Ready / Evaporating / Completed / Stopped / Error。"""
+        return self._rotavap_state
 
     @property
+    @topic_config(period=1.0)
     def current_temp(self) -> float:
-        return self.data.get("current_temp", 25.0)
+        """水浴温度（°C）。"""
+        return self._current_temp
 
     @property
+    @topic_config(period=1.0)
     def rotation_speed(self) -> float:
-        return self.data.get("rotation_speed", 0.0)
+        """旋转速度（RPM）。"""
+        return self._rotation_speed
 
     @property
+    @topic_config(period=1.0)
     def vacuum_pressure(self) -> float:
-        return self.data.get("vacuum_pressure", 1.0)
+        """真空度（bar）。"""
+        return self._vacuum_pressure
 
     @property
+    @topic_config(period=1.0)
     def evaporated_volume(self) -> float:
-        return self.data.get("evaporated_volume", 0.0)
+        """已蒸发体积（mL）。"""
+        return round(self._evaporated_volume, 6)
 
     @property
+    @topic_config(period=1.0)
     def progress(self) -> float:
-        return self.data.get("progress", 0.0)
+        """当前蒸发进度（%）。"""
+        return self._progress
 
     @property
+    @topic_config(period=1.0)
+    def remaining_time(self) -> float:
+        """剩余模拟时间（s）。"""
+        return self._remaining_time
+
+    @property
+    @topic_config(period=1.0)
     def message(self) -> str:
-        return self.data.get("message", "")
+        """最近一次操作的说明。"""
+        return self._message
 
     @property
+    @topic_config(period=5.0)
     def max_temp(self) -> float:
+        """水浴最高温度（°C）。"""
         return self._max_temp
 
     @property
+    @topic_config(period=5.0)
     def max_rotation_speed(self) -> float:
+        """最高旋转速度（RPM）。"""
         return self._max_rotation_speed
 
-    @property
-    def remaining_time(self) -> float:
-        return self.data.get("remaining_time", 0.0)
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="停转、泄压、回到室温")
+    async def initialize(self) -> bool:
+        """初始化：停转、泄压。"""
+        self._halt("Ready")
+        return True
+
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的蒸发并离线")
+    async def cleanup(self) -> bool:
+        """清理：请求停止当前蒸发。"""
+        self._request_stop()
+        self._halt("Offline")
+        return True
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:Evaporate",
+        display_name="旋转蒸发",
+        description="按温度、真空度与转速蒸发 time 秒；按溶剂自动调整温度与压力",
+        feedback_interval=0.5,
+    )
+    async def evaporate(
+        self,
+        vessel: VesselRef,
+        pressure: float = 0.1,
+        temp: float = 60.0,
+        time: Union[float, str] = 180.0,
+        stir_speed: float = 100.0,
+        solvent: str = "",
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """旋转蒸发。
+
+        Args:
+            vessel[容器]: 待蒸发的容器。
+            pressure[真空度]: 真空度（bar），0.01 ~ 1。
+            temp[温度]: 水浴温度（°C）。
+            time[时长]: 蒸发时长，数字按秒，也可写 "30 min"。
+            stir_speed[转速]: 旋转速度（RPM）。
+            solvent[溶剂]: 要蒸掉的溶剂名；不填时蒸干全部液体。
+        """
+        temperature, vacuum = float(temp), float(pressure)
+        solvent_name = str(solvent or "").strip()
+        lowered = solvent_name.lower()
+        if any(item in lowered for item in _AQUEOUS):
+            temperature, vacuum = max(temperature, 80.0), max(vacuum, 0.2)
+        elif any(item in lowered for item in _VOLATILE):
+            temperature, vacuum = min(temperature, 50.0), min(vacuum, 0.05)
+        if not MIN_TEMP <= temperature <= self._max_temp:
+            self._reject(f"温度 {temperature:g}°C 超出范围 {MIN_TEMP:g} ~ {self._max_temp:g}°C")
+        speed = float(stir_speed)
+        if not MIN_ROTATION_SPEED <= speed <= self._max_rotation_speed:
+            self._reject(f"旋转速度 {speed:g} RPM 超出范围 {MIN_ROTATION_SPEED:g} ~ {self._max_rotation_speed:g} RPM")
+        if not MIN_PRESSURE <= vacuum <= MAX_PRESSURE:
+            self._reject(f"真空度 {vacuum:g} bar 超出范围 {MIN_PRESSURE:g} ~ {MAX_PRESSURE:g} bar")
+        duration = parse_duration(time)
+        if duration <= 0:
+            self._reject(f"蒸发时长必须大于 0，收到 {time!r}")
+        label = self._vessel_label(vessel)
+        rate = 0.6 if any(item in lowered for item in _AQUEOUS) else 1.0 if any(item in lowered for item in _VOLATILE) else 0.8
+
+        def step(fraction: float) -> None:
+            self._evaporated_volume = 100.0 * rate * fraction
+
+        with self._operation("Evaporating", f"蒸发 {label or '容器'}：{temperature:g}°C，{vacuum:g} bar，{speed:g} RPM", action_context):
+            self._rotavap_state = "Evaporating"
+            self._current_temp, self._vacuum_pressure, self._rotation_speed = temperature, vacuum, speed
+            self._evaporated_volume = 0.0
+            completed = False
+            try:
+                await self._simulate(duration, action_context, on_step=step, feedback={"current_temp": temperature})
+                completed = True
+            finally:
+                self._rotation_speed = 0.0
+                self._vacuum_pressure = ATMOSPHERE_BAR
+                self._current_temp = AMBIENT_TEMPERATURE
+                self._rotavap_state = "Completed" if completed else "Stopped"
+            names: List[str] = [solvent_name] if solvent_name else []
+            removed = self._drop_from_vessel(vessel, names)
+            if removed > 0:
+                self._evaporated_volume = removed / UL_PER_ML
+        self._message = f"蒸发完成：{label or '容器'}，蒸出 {self._evaporated_volume:.3f} mL" + (
+            f" {solvent_name}" if solvent_name else ""
+        )
+        return {
+            "success": True,
+            "vessel": label,
+            "temp": temperature,
+            "pressure": vacuum,
+            "stir_speed": speed,
+            "time": duration,
+            "evaporated_volume": round(self._evaporated_volume, 6),
+        }
+
+    # ============ 内部 ============
+
+    def _halt(self, state: str) -> None:
+        with self._lock:
+            self._status = "Idle"
+            self._rotavap_state = state
+            self._current_temp = AMBIENT_TEMPERATURE
+            self._rotation_speed = 0.0
+            self._vacuum_pressure = ATMOSPHERE_BAR
+            self._remaining_time = 0.0
+
+    def __repr__(self) -> str:
+        return f"VirtualRotavap({self.device_id}: {self._rotavap_state})"

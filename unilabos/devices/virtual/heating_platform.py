@@ -1,12 +1,14 @@
-"""Three-site virtual heating platform used by the OpenLab demo.
+"""三工位虚拟加热平台。
 
-The driver deliberately exercises the same boundaries as a physical driver:
+驱动刻意走与真实驱动相同的边界：
 
-* actions are dispatched through HostLink;
-* scalar properties are published through the normal device-state bridge;
-* the heating platform is the measurement authority and publishes telemetry;
-* material identity, occupancy and the latest passive temperature projection
-  are written through ``materials.v1`` rather than a private demo store.
+* 动作经 HostLink 派发；
+* 标量状态走常规的设备状态通道发布；
+* 平台是温度的测量来源，按工位发布遥测；
+* 物料身份、工位占用与最新温度投影都通过 ``materials.v1`` 写入物料权威，没有私有的演示存储。
+
+加热时长是模拟时间：真实等待 = ``duration_seconds`` × 时间倍率（图节点 ``config.time_scale``，
+没配时取 ``BasicConfig.virtual_time_scale``，默认很快）；示例图把倍率设为 1，按真实时长画出升温曲线。
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from uuid import uuid4
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.backend.hostlink.protocol import LinkError
+from unilabos.devices.virtual.simulation import resolve_time_scale
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.resources.objects.pose import (
     ResourceDictPosition,
@@ -114,6 +117,8 @@ class VirtualHeatingPlatform:
         self.update_interval_s = max(
             0.05, float(self.config.get("update_interval_s", 0.25))
         )
+        # 模拟时间倍率：真实等待 = duration_seconds × time_scale
+        self.time_scale = resolve_time_scale(self.config.get("time_scale"))
         self._lock = RLock()
         self._provision_lock = RLock()
         self._platform_uuid = ""
@@ -480,8 +485,9 @@ class VirtualHeatingPlatform:
         if not material_uuid:
             raise RuntimeError(f"site {site_id} has no material")
         start_temperature = float(self._sites[site_id]["temperature_c"])
-        steps = max(1, min(120, int(duration_seconds / self.update_interval_s) + 1))
-        delay = float(duration_seconds) / steps
+        wall_seconds = float(duration_seconds) * self.time_scale
+        steps = max(1, min(120, int(wall_seconds / self.update_interval_s) + 1))
+        delay = wall_seconds / steps
         for step in range(1, steps + 1):
             action_context.raise_if_cancelled()
             ratio = step / steps
@@ -507,7 +513,7 @@ class VirtualHeatingPlatform:
                     "progress": round(ratio * 100.0, 3),
                 }
             )
-            if step < steps:
+            if step < steps and delay > 0:
                 time.sleep(delay)
         return {
             "success": True,

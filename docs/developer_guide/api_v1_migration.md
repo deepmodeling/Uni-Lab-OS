@@ -157,7 +157,8 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   当前内容物是 `material_substance` 行上的角色，数量仍以 substance 为唯一权威）、`material_content_history`、
   `material_state_history`、`material_content_reservation`（容器内容物数量预留，防并发超量抽取）、
   `material_source_binding`（`task_exclusive` / `shared_source`）、`station_ingress_reservation`、
-  `inventory_processed_command`、`lab_meta` / `lab_zone` / `lab_placement`，以及未删除非空条码唯一索引；
+  `inventory_processed_command`，以及未删除非空条码唯一索引（当时一并移植的实验室档案 / 分区 / 摆放
+  `lab_meta` / `lab_zone` / `lab_placement` 已按负责人 2026-11-17 决定删除）；
   `inventory_lot` 带 `location_site_uuid` / `warehouse_zone_id`。这些都在 schema v1 基线里。批次可经 `correct_inventory_lot`（命令 `inventory.lot.correct`）按实测量
   校正，适用于质量 / 体积批次与已隔离批次。
 - 工站入站预留（`/inventory/ingress-reservations`）保护它的库位：`reserved`（未过期）或 `in_transit` 期间，
@@ -229,7 +230,7 @@ PLC 仿真器与渲染器。统一分支**不新建这个进程**：dev 的 `uni
 | 路径 | 处理 |
 |---|---|
 | `/api/v1/history/*` | 归 V1（工作流与作业历史）。dev 的事件/载荷存储改到 `/api/v1/edge/history/*`，Host 客户端与 edge 代理同步修改 |
-| `GET /api/v1/lab/layout` | 归 V1（已放置实例视图）。dev 的带修订网格文档并入 V1 的 lab profile/placements 模型 |
+| `GET /api/v1/lab/layout` | 曾归 V1（已放置实例视图），dev 的带修订网格文档并入 V1 的 lab profile/placements 模型；负责人 2026-11-17 决定整组 `/api/v1/lab/*` 连同 `lab_meta` / `lab_zone` / `lab_placement` / `lab_layout` 删除 |
 | `POST /api/v1/resource-templates` | 归 V1（返回身份回执）。Host 启动时的注册表上报改为 `POST /api/v1/registry/reports` |
 | `/api/v1/error-decisions` | 归 V1 实际合同（`app/scheduler/api.py`）：列表 `{"decisions": [...]}`；请求体即 V1 `ErrorDecisionIn`（`action` / `option` / `result` / `reason` 均可选，`action` 不强制、不默认，都不给时执行面按 V1 设备侧口径缺省 `abort`）；成功 `{"decision_id", "status": "delivered"}`；决策已不在等待按 V1 的 HTTP 404，经信封换成该路由口径的"不存在"（诊断路由为 GENERIC，即 4001）。dev 增量扩展可选：`Idempotency-Key` 重放、操作员身份（请求体 `operator_id` 或请求上下文）、物理结果未知只允许补记或终止（3003）。**勘误**：本行早先写作"`items`、`resolved`、409 语义按 V1"，与 V1 实际合同不符（那是 dev 原口径），已按 V1 代码更正 |
 | 任务命令 | 归 V1：`pause` 与 `switch_to_step` 分开，`expected_revision` 可选；dev 的重复放行保护改由幂等键承担 |

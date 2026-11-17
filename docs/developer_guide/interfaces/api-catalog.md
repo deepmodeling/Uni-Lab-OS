@@ -80,12 +80,11 @@ external_only=false、auto_start=true、restart_policy="on-failure"、max_restar
 graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；简化 devices 的每项必填 id、class，
 可带 name=""、config={}、pose=null。不要对已有进程重新生成设备身份。
 
-## 注册表与设备图、实验室布局
+## 注册表与设备图
 
-注册表负责能力版本，图记录拓扑，布局记录展示区域；三者不可相互替代。
+注册表负责能力版本，图记录拓扑，二者不可相互替代。实验室布局（`/api/v1/lab/*`）已按负责人 2026-11-17 决定删除。
 源码：[注册表 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/registry.py)、
-[设备图 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/materials/graph.py)、
-[布局模型](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/protocol/runtime/lab.py)。
+[设备图 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/materials/graph.py)。
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
@@ -118,9 +117,6 @@ graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；�
 | GET | `/api/v1/graphs/{identity}` | identity 可为 uuid 或 name | 信封；图元数据 |
 | GET | `/api/v1/graphs/{identity}/payload` | — | 信封；指定图快照的 node-link 正文 |
 | DELETE | `/api/v1/graphs/{identity}` | — | 信封；删除图快照，不能当成通用物料删除 |
-| GET | `/api/v1/lab/layout` | — | 直出 LabLayoutRead；从未保存时 revision=0 |
-| PUT | `/api/v1/lab/layout` | B: LabLayoutWrite | 直出 LabLayoutRead；整份替换，版本过期返回 409 |
-| DELETE | `/api/v1/lab/layout` | — | 204；清除保存的区域/围墙布局 |
 
 RegistryReport 的 entries 必须包含 Host 当前完整条目目录，只让未命中哈希的正文增量上传。
 仅发送“改变的几个名字”可能导致其他条目被软移除。该 handler 自行读取 Request，
@@ -128,9 +124,6 @@ RegistryReport 的 entries 必须包含 Host 当前完整条目目录，只让�
 
 GraphUpsertRequest 必填 name、payload；可选 uuid、tags=[]、description、meta_data={}、device_site_templates，
 on_existing 默认 replace，启动登记用 adopt。设备图与工作流图有不同合同，不接受互换。
-LabLayoutWrite 必填 revision>=0、cell_size>0 且 <=100000，zones/walls 默认为空数组。
-zone 有 id/name/color/cells；cells 和 walls 用 `col,row` 整数字符串。区域 ID 不重复，格子不能同时属于不同区域或围墙，
-最多 200 个区域、100000 个格子。
 
 ## 工作流定义与 Python 编辑
 

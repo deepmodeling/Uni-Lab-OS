@@ -119,13 +119,9 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   "Edge 上报"，取值表见 `examples/materials_operations_guide.md §2.2.1`）；
 - `/api/v1/telemetry`：设备最新状态和事件；
 - `/api/v1/edge/history`：payload 与统一历史事件（`/api/v1/history` 归 V1 运行历史）；
-- `/api/v1/lab/*`（权威回答）：实验室布局。网格布局（区域 / 围墙像素格，叠在物料权威设备位置之上）是
-  runtime.db `lab_layout` 单行文档，所有前端共享：`GET /lab/profile` 与 `GET /lab/layout` 都带 `grid`，从未保存时是
-  `revision 0` 的空布局；`PUT /lab/profile` 带 `grid: {revision, cell_size, zones, walls}` 整份替换，revision 不匹配返回
-  业务码 3003，`grid: null` 重置；不变量（格子只属一个区域、区域与围墙互斥、`#rrggbb`、规模上限）不满足返回业务码 1000。
-  原 `PUT|DELETE /lab/layout` 已删除。V1 的档案（名称 / 领域包）、矩形分区与在台摆放在 materials.db
-  （`lab_meta` / `lab_zone` / `lab_placement`），经 `/lab/profile`、`/lab/zones`、`/lab/placements`、`/lab/layout`、
-  `/lab/warehouse`、`/lab/assembly/{id}` 读写，见 [微后端数据库](databases.md)；
+- 实验室布局 `/api/v1/lab/*`（档案、网格布局、分区、摆放、仓储视图、组合树、演示种子）按负责人 2026-11-17 决定
+  整组删除，对应的 materials.db `lab_meta` / `lab_zone` / `lab_placement` 与 runtime.db `lab_layout` 一并删除；
+  物料树用 `GET /api/v1/materials/instances/{uuid}/tree`，批次 / 模板 / 实例用 `/api/v1/inventory/*`；
 - `/api/v1/health`、`/api/v1/hostlink/peers`：轻量诊断；
 - `/api/v1/ping?client_timestamp=`：HTTP ping-pong，回显客户端时间戳并附服务端时钟。
   Host 到 Backend 的链路由 Backend 会话（`legacy_adaptor/session.py` 的

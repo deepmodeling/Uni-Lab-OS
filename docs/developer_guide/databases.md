@@ -20,8 +20,8 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 
 | 键 | 文件 | 规格里的职责（`role`） | `synchronous` | 无迁移路径时 | 内容 |
 | --- | --- | --- | --- | --- | --- |
-| `runtime` | `runtime.db` | critical microbackend command and execution control, workflow authority and registry snapshots | `FULL` | `refuse` | 工作流定义 / 任务 / 节点运行 / 作业、调度持久事实（执行认领、资源区间、设备托管、等待队列）、注册表条目版本、实验室网格布局、V1 进程管理记录；Host 侧的 runtime.v1 命令与执行作业 |
-| `materials` | `materials.db` | resource, material, site, topology link and lab graph authority | `FULL` | `refuse` | 物料权威：资源模板、物料树、库位、拓扑边、命名设备图快照、批次 / 预留 / 账本、内容物、化学品、物理执行结算、实验室档案 / 分区 / 摆放 |
+| `runtime` | `runtime.db` | critical microbackend command and execution control, workflow authority and registry snapshots | `FULL` | `refuse` | 工作流定义 / 任务 / 节点运行 / 作业、调度持久事实（执行认领、资源区间、设备托管、等待队列）、注册表条目版本、V1 进程管理记录；Host 侧的 runtime.v1 命令与执行作业 |
+| `materials` | `materials.db` | resource, material, site, topology link and lab graph authority | `FULL` | `refuse` | 物料权威：资源模板、物料树、库位、拓扑边、命名设备图快照、批次 / 预留 / 账本、内容物、化学品、物理执行结算 |
 | `telemetry` | `telemetry.db` | high-frequency device state and telemetry | `NORMAL` | `rebuild` | 设备最新状态与状态事件 |
 | `history` | `history.db` | large payload and append-only audit history | `NORMAL` | `rebuild` | 大载荷与只追加的作业 / 决策审计事件 |
 
@@ -31,7 +31,7 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 同一个库文件上可以有多个"域服务"共用一条连接和一把写锁（`sqlite_domain.py`）：
 
 - `runtime.db`：宿主 `RuntimeService`（`server/services/runtime/data.py`），共存 `WorkflowService`、
-  `RegistryService`、`LabLayoutService`；
+  `RegistryService`；
 - `materials.db`：宿主 `MaterialsService`（`server/services/materials/core.py`），共存 `GraphService`、`ChemicalService`；
 - `telemetry.db`：`TelemetryService`；`history.db`：`HistoryService`。
 
@@ -251,14 +251,13 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 | `workflow_error_session` / `workflow_station_error` | V1 工站错误处置会话与错误决策 |
 | `workflow_human_interaction` | 设备 / 工作流向操作员发起的结构化人工交互及回复 |
 
-**注册表、布局、进程管理**
+**注册表、进程管理**
 
 | 表 | 用途 |
 | --- | --- |
 | `registry_entry` | 每个注册表条目每个版本一行不可变完整定义 |
 | `registry_entry_state` | 每个条目一行可变状态：生效版本、待确认版本、软移除 / 不可用 |
 | `registry_report` | 每次 Host 上报的批次统计 |
-| `lab_layout` | 实验室网格布局（区域 / 围墙像素格）单行文档，`revision` 乐观锁；经 `GET /lab/profile` 的 `grid` 读、`PUT /lab/profile` 带 `grid` 写 |
 | `process_management_operation` / `process_management_state` | V1 进程管理协议的幂等操作记录与快照修订号 |
 
 ### 6.2 materials.db（`tables/materials.py`）
@@ -292,13 +291,8 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 | `material_execution` / `material_execution_hold` | 一次设备尝试的冻结物理计划与结算；未结算动作对物料 / 库位的唯一占用 |
 | `chemical` | 化学品定义（CAS / InChIKey 可空唯一） |
 
-**实验室档案**
-
-| 表 | 用途 |
-| --- | --- |
-| `lab_meta` | 档案键值（名称、领域包） |
-| `lab_zone` | 2D 矩形分区（实验台 / 仪器区 / 存储区 …） |
-| `lab_placement` | 分区里的在台摆放（容器实例或设备） |
+实验室档案 / 分区 / 摆放（`lab_meta` / `lab_zone` / `lab_placement`）与 runtime.db 的网格布局（`lab_layout`）
+按负责人 2026-11-17 的决定已删除，连同 `/api/v1/lab/*` 路由。
 
 ### 6.3 telemetry.db（`tables/telemetry.py`）
 
@@ -323,8 +317,8 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 
 | 库 | 权威 `<root>` | Host 子进程 `<root>/edge` |
 | --- | --- | --- |
-| runtime.db | 工作流、任务、调度持久事实、注册表、`lab_layout`、进程管理 | 只有运行控制表：`backend_session`、`executor_endpoint`、`command_inbox`、`execution_job`、`adapter_command_outbox`、`backend_event_outbox`（`server/backend/coordinator.py:WorkflowBusinessCoordinator`） |
-| materials.db | 物料权威、Graph Authority、库存、`lab_meta` / `lab_zone` / `lab_placement` 全部 | 基本为空：Host 子进程带 `--material_microbackend_addr <权威>`，物料经 HTTP 写到权威（`server/startup.py:setup_host_server_stack`） |
+| runtime.db | 工作流、任务、调度持久事实、注册表、进程管理 | 只有运行控制表：`backend_session`、`executor_endpoint`、`command_inbox`、`execution_job`、`adapter_command_outbox`、`backend_event_outbox`（`server/backend/coordinator.py:WorkflowBusinessCoordinator`） |
+| materials.db | 物料权威、Graph Authority、库存全部 | 基本为空：Host 子进程带 `--material_microbackend_addr <权威>`，物料经 HTTP 写到权威（`server/startup.py:setup_host_server_stack`） |
 | telemetry.db | 建表后不写 | 设备状态投影（`server/backend/telemetry.py:TelemetryDeviceStateProjection`） |
 | history.db | 建表后不写 | 作业转移、反馈、结果、日志、错误快照与决策审计（`coordinator.py`、`composition.py` 的状态事件监听） |
 
@@ -461,7 +455,7 @@ V1 由 `app/runtime_storage.py` 在一个运行目录下打开三类本地库（
 
 | V1 | 统一分支 | 说明 |
 | --- | --- | --- |
-| `inventory.db`（`app/scheduler/inventory/store.py`、`reagent_store.py`、`content_store.py`、`ingress_schema.py`） | `materials.db` | 单一库存权威，不另建 inventory.db。`sample` / `current_substance` 合成按角色区分的 `material_content`；`sync_outbox` 由 `inventory_ledger.delivery_status` 代替；`lab_meta` / `lab_zone` / `lab_placement`、`inventory_lot` / `inventory_reservation`、`station_ingress_reservation` 同名保留 |
+| `inventory.db`（`app/scheduler/inventory/store.py`、`reagent_store.py`、`content_store.py`、`ingress_schema.py`） | `materials.db` | 单一库存权威，不另建 inventory.db。`sample` / `current_substance` 合成按角色区分的 `material_content`；`sync_outbox` 由 `inventory_ledger.delivery_status` 代替；`inventory_lot` / `inventory_reservation`、`station_ingress_reservation` 同名保留；V1 的 `lab_meta` / `lab_zone` / `lab_placement` 移植后按负责人 2026-11-17 决定删除 |
 | `device_state.db`（`app/scheduler/device_state.py`） | `telemetry.db` | latest / history 两表由 `device_state_latest` / `telemetry_event` 承担 |
 | `workflow_history.db`（`workflow/store.py` 及其迁移、`app/scheduler/history.py`） | `runtime.db` 工作流域 | `workflow_runs` / `job_runs` 从表变成只读视图；V1 `store_migrations` 不移植（四库都是 v1 基线） |
 | `inventory.db` 的派发准入（`app/scheduler/inventory/dispatch_admission.py`：`station_execution_claim` / `_fence_counter` / `_lock_lease`）与 `workflow_history.db` 的执行锁（`workflow/store_migrations.py`：`execution_claim`、`execution_lock_waiter`、`task_device_tenancy` 等） | `runtime.db` `workflow_execution_*`、`workflow_resource_*`、`workflow_device_tenancy` + `materials.db` `material_execution*` | 执行认领、栅栏、租约、等待与托管在 runtime.db，物理计划与结算在 materials.db |
@@ -471,4 +465,4 @@ V1 由 `app/runtime_storage.py` 在一个运行目录下打开三类本地库（
 | `.unilabos/runtime/workbench/operations/<id>.json`（Workspace Host） | `runtime.db` `process_management_*` | 操作记录与修订号持久化 |
 | 工作目录进程锁（`runtime_storage.py:_RuntimeDirectoryLock`） | `<root>/unilab.lock` | 锁的是数据库根目录，冲突退出码 73 |
 | — | `history.db` | dev 新增：大载荷与审计事件 |
-| — | `materials.db` `lab_graph` / `material_link`、`runtime.db` `lab_layout` | dev 的 Graph Authority 快照、拓扑边与网格布局 |
+| — | `materials.db` `lab_graph` / `material_link` | dev 的 Graph Authority 快照与拓扑边（dev 的网格布局 `runtime.db` `lab_layout` 按负责人 2026-11-17 决定删除） |

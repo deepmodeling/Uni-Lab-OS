@@ -14,7 +14,7 @@
 | ID | 11-09 | 2026-11-14 | 证据 / 剩余 |
 | --- | --- | --- | --- |
 | D01 | 本地已完成 | 已完成 | 仓库已无 `frontend/` |
-| D02 | 业务协议待归位 | 已完成 | `protocol/runtime/` 下 `lifecycle`、`lab`（布局）、`logs`、`process_management`；V1 `/v1/operations` 等已移植（`api_v1_route_map.md` p8） |
+| D02 | 业务协议待归位 | 已完成 | `protocol/runtime/` 下 `lifecycle`、`logs`、`process_management`（`lab` 布局协议随实验室布局按负责人 11-17 决定删除）；V1 `/v1/operations` 等已移植（`api_v1_route_map.md` p8） |
 | D03 | 现场验收待做 | 不变 | 现场验收并入 T02 |
 | D04 / D06 | 按设计消解 / 已配置 | 不变 | |
 | D05 | 按设计消解 | 不变 | 0.13 未发布，四个库都仍是 v1 基线（等待顺序、预计时长等结构变化直接并进 v1）；发布后加迁移时只认已发布版本的结构指纹 |
@@ -79,6 +79,25 @@ Slave 时全部自动接受。现在：
 
 `runtime.db` v1 基线增加 `registry_entry.package_*`、`registry_entry_state` 的包基准 / 挂起原因 / 待确认移除和
 `registry_remote_slave` 表（发布前直接并进 v1，旧开发库按 D05 处理）。
+
+### 删除实验室档案 / 分区 / 摆放与网格布局（负责人 2026-11-17 决定）
+
+负责人决定实验室布局那几张表不保留、全部删除。0.13 未发布，结构变化直接并进 v1 基线（不写迁移），旧开发库按 D05 处理。
+
+| 删除的 | 原来是什么 |
+| --- | --- |
+| materials.db `lab_meta` / `lab_zone` / `lab_placement` | 从 V1 inventory.db 移植的实验室档案（名称、领域包）、二维矩形分区、分区里的在台摆放 |
+| runtime.db `lab_layout` | dev 的网格布局文档（区域 / 围墙像素格，revision 乐观锁），之前并入 `/lab/profile` 的 `grid` |
+| `server/services/materials/lab.py`、`server/services/runtime/lab.py`、`protocol/runtime/lab.py`、`server/api/materials/lab.py`（及 `server/api/runtime/lab.py` 旧导入位置） | 档案 / 分区 / 摆放 / 仓储视图 / 组合树 / 演示种子的服务、网格文档服务、协议对象、路由 |
+| `/api/v1/lab/*` 全部 10 条路由 | `profile`（GET / PUT）、`layout`、`zones`（POST / DELETE）、`placements`（POST / DELETE）、`warehouse`、`assembly/{id}`、`demo` |
+| MCP `lab-v1.*` 4 个操作 | 档案读写、布局视图、仓储视图 |
+
+保留不动：`lab_graph`（命名设备图快照，`-g` 启动与节点身份对账依赖它）、`material_link`（拓扑边）、`site`（库位）、
+批次上的 `warehouse_zone_id`。原 `/lab/assembly/{id}` 包的物料树仍是 `GET /api/v1/materials/instances/{uuid}/tree`，
+批次 / 模板 / 实例仍在 `/api/v1/inventory/*`。证据：`tests/server/test_database_schema.py`（表清单与已删除表）、
+`test_openapi_export.py`、`test_mcp.py`（导出契约与 MCP 目录里没有 `/api/v1/lab/*`）。
+外部影响：OpenLab 的实验室地图（`LabMapView`、`src/features/lab-layout.ts`、`@openlab/protocol` 的 `lab-v1` 域）读写的就是这些路由，
+需要在前端下线或改为不依赖它们。
 
 ### U01 缺口补齐：工作流（2026-11-16）
 

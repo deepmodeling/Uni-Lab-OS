@@ -108,6 +108,10 @@ def test_v1_material_name_is_the_display_name(client) -> None:
     }))
     assert relabelled["display_name"] == "一号瓶" and relabelled["name"] == created["name"]
 
+    # 列表的 name 筛选按显示名匹配
+    listed = ok_data(client.get("/api/v1/materials", params={"name": "二号"}))
+    assert [item["uuid"] for item in listed["items"]] == [labelled["uuid"]]
+
 
 def test_material_create_place_update_ledger_and_delete(client) -> None:
     identities = _templates(client)

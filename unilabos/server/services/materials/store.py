@@ -481,11 +481,13 @@ class MaterialsRepository:
     def search_materials_by_name(
         self, name: str, *, include_deleted: bool = False
     ) -> list[MaterialRecord]:
-        sql = "SELECT * FROM material WHERE name=?"
+        """按人读标签（``display_name``）精确查找；也接受物料 ``name`` 本身。"""
+
+        sql = "SELECT * FROM material WHERE (display_name=? OR name=?)"
         if not include_deleted:
             sql += " AND deleted_at_ms IS NULL"
         sql += " ORDER BY material_uuid"
-        rows = self.connection.execute(sql, (name,))
+        rows = self.connection.execute(sql, (name, name))
         return [self._material(row) for row in rows]
 
     def list_materials(
@@ -494,7 +496,7 @@ class MaterialsRepository:
         if roots_only:
             rows = self.connection.execute(
                 "SELECT * FROM material WHERE parent_material_uuid IS NULL "
-                "AND deleted_at_ms IS NULL ORDER BY LOWER(name),material_uuid"
+                "AND deleted_at_ms IS NULL ORDER BY LOWER(display_name),material_uuid"
             )
         elif parent_material_uuid is not None:
             rows = self.connection.execute(

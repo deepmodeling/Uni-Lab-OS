@@ -171,7 +171,7 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
         status: Optional[str] = Query(default=None),
         limit: int = _LIMIT,
         roots_only: bool = Query(default=False),
-        name: Optional[str] = Query(default=None, description="按名称精确搜索"),
+        name: Optional[str] = Query(default=None, description="按显示名 display_name 精确搜索"),
         all: bool = Query(default=False, description="dev 扩展：不截断（Host 同步全量读取）"),
     ) -> Any:
         items = service.search_materials(name) if name is not None else service.list_materials(roots_only=roots_only)

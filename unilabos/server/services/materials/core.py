@@ -2010,7 +2010,7 @@ class MaterialsService(MaterialsRepository):
         return self.get_material(record.material_uuid)
 
     def search_materials(self, name: str) -> list[MaterialAggregateRead]:
-        """按名称精确搜索；与 get 系不同，未命中返回空列表而不抛错。"""
+        """按人读标签 ``display_name`` 精确搜索；与 get 系不同，未命中返回空列表而不抛错。"""
         return self._with_chemicals(
             [
                 self._aggregate(record.material_uuid)

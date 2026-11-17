@@ -444,7 +444,8 @@ class ResourceContract:
         where = ["deleted_at_ms IS NULL"]
         params: list[Any] = []
         if name:
-            where.append("name LIKE ?")
+            # V1 的 name 筛选按人读标签匹配
+            where.append("display_name LIKE ?")
             params.append(f"%{name}%")
         if barcode:
             where.append("barcode = ?")

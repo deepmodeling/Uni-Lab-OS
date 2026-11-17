@@ -6,7 +6,7 @@
   （支持 registry 资源类名直接创建；``node=`` 自动登记进设备 tracker）；
 - ``ensure``：保证权威中存在与输入 uuid 一致的物料树（开机对齐 / 扣减落库）；
 - ``get``：按 uuid 或 resource id 取物料树（未命中抛错）；
-- ``search``：按名称精确搜索物料树（未命中返回 []）；
+- ``search``：按人读标签 ``display_name`` 精确搜索物料树（未命中返回 []）；
 - ``resolve``：把单个 ResourceSlot 原始入参解析成带 uuid 的 PLR 实例；
 - ``assign``：把权威已创建的物料挂载到设备的目标父物料下（append 门面）；
 - ``update``：把带权威 uuid 的（部分）物料树 diff/apply 回 authority；
@@ -567,7 +567,7 @@ def search(
     with_children: bool = True,
     gateway: MaterialGateway | None = None,
 ) -> List[ResourceTreeInstance]:
-    """按名称精确搜索权威物料；未命中返回 []（get 系未命中会抛错）。"""
+    """按人读标签 ``display_name`` 精确搜索权威物料；未命中返回 []（get 系未命中会抛错）。"""
 
     gw = gateway or resolve_materials_gateway()
     trees: List[ResourceTreeInstance] = []

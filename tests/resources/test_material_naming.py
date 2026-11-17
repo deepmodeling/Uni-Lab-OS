@@ -8,7 +8,13 @@ import pytest
 
 from tests.plr_fixtures import plate
 from unilabos.client.materials import LocalMaterialsClient
-from unilabos.protocol.materials import InventoryMutation, MaterialPatch
+from unilabos.protocol.materials import (
+    InventoryMutation,
+    MaterialIdentityWrite,
+    MaterialNodeCreate,
+    MaterialPatch,
+    MaterialTreeCreate,
+)
 from unilabos.resources import materials
 from unilabos.resources.adapters.plr_materials import resource_tree_to_snapshot
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -49,3 +55,36 @@ def test_runtime_snapshot_keeps_the_authority_display_name(service) -> None:
     snapshot = resource_tree_to_snapshot(ResourceTreeSet.from_plr_resources([root]), baseline)
     by_uuid = {node.material.material_uuid: node.material for node in snapshot.nodes}
     assert by_uuid[root.unilabos_uuid].display_name == "我的板"
+
+
+def _root(resource_id: str, *, name: str, display_name: str = "") -> MaterialTreeCreate:
+    return MaterialTreeCreate(
+        nodes=[
+            MaterialNodeCreate(
+                client_ref="root",
+                identity=MaterialIdentityWrite(
+                    resource_id=resource_id,
+                    name=name,
+                    display_name=display_name,
+                    resource_type="container",
+                    class_name="Container",
+                    template_name="bottle",
+                ),
+            )
+        ]
+    )
+
+
+def test_search_and_root_order_use_the_display_name(service) -> None:
+    """按名字搜索与根物料排序都按人读标签，而不是物料 name。"""
+
+    first = service.create_tree(
+        _mutation("create_material_tree"), _root("bottle-b", name="bottle-b", display_name="alpha")
+    ).data.root_material_uuid
+    second = service.create_tree(
+        _mutation("create_material_tree"), _root("bottle-a", name="bottle-a", display_name="beta")
+    ).data.root_material_uuid
+
+    assert [item.material.material_uuid for item in service.search_materials("alpha")] == [first]
+    roots = [item.material.material_uuid for item in service.list_materials(roots_only=True)]
+    assert roots == [first, second]

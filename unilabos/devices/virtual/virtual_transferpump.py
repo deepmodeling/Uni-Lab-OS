@@ -43,6 +43,8 @@ class VirtualTransferPump:
         self._position = 0.0  # float
         self._max_velocity = 5.0  # float
         self._current_volume = 0.0  # float
+        # 泵头集成的分配阀当前通道（直连容器的泵由协议编译器按图里连线的端口名切换）
+        self._valve_position = ""
 
         # 快速模式使用固定的短时长模拟移动和喷射。
         self._fast_mode = True  # 是否启用快速模式
@@ -98,6 +100,28 @@ class VirtualTransferPump:
     @property
     def transfer_rate(self) -> float:
         return self._transfer_rate
+
+    @property
+    def valve_position(self) -> str:
+        """泵头集成阀当前通道（图中连线的端口名） 🔀"""
+        return self._valve_position
+
+    def set_valve_position(self, command: Union[int, str]) -> str:
+        """
+        切换泵头集成阀的通道 🔀
+
+        协议编译器把 virtual_transfer_pump 当作泵阀一体设备：泵直接连容器时，吸液 / 排液前
+        先按图里该连线在泵一侧的端口名（如 inlet、outlet）切换通道。
+
+        Args:
+            command: 目标通道（端口名或编号）
+        """
+        port = str(command).strip()
+        if not port:
+            raise ValueError("泵阀通道不能为空")
+        self._valve_position = port
+        self.logger.info(f"🔀 泵阀切换到通道 {port}")
+        return f"✅ 泵阀已切换到通道 {port}"
 
     def set_max_velocity(self, velocity: float):
         """设置最大速度 (ml/s) 🌊"""

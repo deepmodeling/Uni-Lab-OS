@@ -3272,6 +3272,40 @@ virtual_transfer_pump:
           title: set_position参数
           type: object
         type: SetPumpPosition
+      set_valve_position:
+        error_policy: {}
+        feedback: {}
+        goal:
+          command: command
+        goal_default:
+          command: null
+        handles: {}
+        placeholder_keys: {}
+        result: {}
+        schema:
+          description: ''
+          properties:
+            feedback:
+              title: SendCmd_Feedback
+            goal:
+              properties:
+                command:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  description: 目标通道（端口名或编号）
+              required:
+              - command
+              title: SendCmd_Goal
+              type: object
+            result:
+              title: SendCmd_Result
+              type: string
+          required:
+          - goal
+          title: set_valve_position参数
+          type: object
+        type: SendCmd
       transfer:
         error_policy: {}
         feedback: {}
@@ -3328,6 +3362,7 @@ virtual_transfer_pump:
       remaining_capacity: float
       status: str
       transfer_rate: float
+      valve_position: str
     supported_backends:
     - hostlink
     - ros2
@@ -3371,6 +3406,8 @@ virtual_transfer_pump:
           type: string
         transfer_rate:
           type: number
+        valve_position:
+          type: string
       required:
       - current_volume
       - max_velocity
@@ -3378,6 +3415,7 @@ virtual_transfer_pump:
       - remaining_capacity
       - status
       - transfer_rate
+      - valve_position
       type: object
   version: 1.0.0
 virtual_vacuum_pump:

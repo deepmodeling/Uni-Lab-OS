@@ -201,7 +201,9 @@ def test_load_instantiates_the_registry_class_with_its_default_children(material
     new = first["result"]["material_uuid"]
     tree = materials.get_tree(new)
     root = next(node.material for node in tree.nodes if node.material.material_uuid == new)
-    assert (root.name, root.display_name, root.barcode) == ("新吸头盒", "新吸头盒", "TR-1")
+    # name 是物料 UUID，人看的标签在 display_name；PLR 键（config.name）是按标签实例化出的 PLR 名
+    assert (root.name, root.display_name, root.barcode) == (new, "新吸头盒", "TR-1")
+    assert root.config["name"] == "新吸头盒"
     assert (root.template_name, root.template_uuid) == (template, plan["template_uuid"])
     assert root.meta_data["material_io"] == {"task_uuid": TASK, "job_uuid": job}
     assert root.config["type"] == root.class_name and root.resource_type == "tip_rack"
@@ -242,7 +244,9 @@ def test_load_onto_a_shelf_keeps_identity_only_for_a_template_without_a_registry
                                       task_uuid=TASK, job_uuid="shelf")
     new = _command(gateway, plan, "shelf")["result"]["material_uuid"]
     [node] = materials.get_tree(new).nodes
-    assert (node.material.template_name, node.material.class_name, node.material.config) == ("tip_box", "Container", {})
+    assert (node.material.template_name, node.material.class_name) == ("tip_box", "Container")
+    # 只写身份：没有 PLR 结构（config 只有权威给新根补的 PLR 键 = resource_id）
+    assert node.material.config == {"name": node.material.resource_id} and node.material.name == new
     assert materials.occupied_site(new).site_uuid == sites["A1"]
 
 

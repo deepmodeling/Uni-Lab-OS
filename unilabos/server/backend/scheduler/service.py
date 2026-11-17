@@ -78,7 +78,8 @@ from unilabos.server.backend.scheduler.resource_manager import (
     SchedulerResourceManager,
 )
 from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
-from unilabos.server.services.runtime.workflow.service import WorkflowService
+from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
+from unilabos.server.services.runtime.workflow.task_lifecycle import TERMINAL_TASK
 
 logger = logging.getLogger(__name__)
 
@@ -1443,7 +1444,15 @@ class BackendScheduler:
         facts = reader({"material_uuids": sorted(references), "reservation_uuid": reservation_uuid})
         return MaterialSanity(job_uuid=str(spec["current_job_uuid"]), task_uuid=str(task["uuid"]),
                               references=references, facts=dict(facts or {}), reservation_uuid=reservation_uuid,
-                              reservation_items=items)
+                              reservation_items=items, task_finished=self._task_finished)
+
+    def _task_finished(self, task_uuid: str) -> Optional[bool]:
+        """库存预留所属的任务是否已结束；本库里查不到这个任务时为 None（由预留状态决定）。"""
+
+        try:
+            return str(self.workflow.get_workflow_task(task_uuid).get("status") or "") in TERMINAL_TASK
+        except WorkflowError:
+            return None
 
     def _hold_for_material_sanity(
         self, task: Dict[str, Any], node: DagNode, spec: Dict[str, Any], problems: list[MaterialProblem],

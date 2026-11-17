@@ -7,7 +7,7 @@
 | 检查 | 不通过时 |
 | --- | --- |
 | 物料还在：未删除、未消耗、未退役、未隔离 | 预检报错（操作员恢复 / 替换后重试） |
-| 生命周期相容：``active``，或被本作业 / 本任务的库存预留占着（``reserved`` / ``in_use``） | 被其他任务的有效预留占着 → 排队（``inventory_reserved_by_other_tasks``）；其余 → 预检报错 |
+| 生命周期相容：``active``，或被本作业 / 本任务的库存预留占着（``reserved`` / ``in_use``），或停在已结束任务留下的 ``in_use`` | 预留它的其他任务还没结束 → 排队（``inventory_reserved_by_other_tasks``）；``reserved`` 却没有未结束任务的预留 → 预检报错 |
 | 物理合同声明的来源库位：复用 ``physical_contract`` 的结论，不再重算 | 另一作业的未结算动作正占着它 → 照旧排队；否则「规划后被挪走」→ 预检报错 |
 | 库存分配与本作业持有的预留一致：同一容器 / 批次、现量 > 0、单位可换算 | 预检报错 |
 | 没有被另一作业未结算的物理动作占着 | 排队（``site_claimed``） |
@@ -136,6 +136,16 @@ class MaterialSanity:
     facts: dict[str, Any]
     reservation_uuid: Optional[str] = None
     reservation_items: list[dict[str, Any]] = field(default_factory=list)
+    #: 预留所属任务是否已结束；None 表示查不到这个任务（只在调度器里能查任务状态，缺省都查不到）
+    task_finished: Callable[[str], Optional[bool]] = lambda _task_uuid: None
+
+    def _held_by_unfinished_task(self, reservation: Mapping[str, Any]) -> bool:
+        """这条预留背后的任务还会不会用这个物料：任务没结束就会；查不到任务时有效（active）的预留仍算占着。"""
+
+        finished = self.task_finished(str(reservation.get("task_uuid") or ""))
+        if finished is None:
+            return reservation.get("status") == "active"
+        return not finished
 
     def _material(self, identity: str) -> dict[str, Any]:
         return dict((self.facts.get("materials") or {}).get(identity) or {"exists": False})
@@ -174,18 +184,22 @@ class MaterialSanity:
         if status in _CLAIMED:
             reservations = list(fact.get("reservations") or [])
             if not any(item.get("task_uuid") == self.task_uuid for item in reservations):
-                others = [item for item in reservations if item.get("status") == "active"]
-                if status == "reserved" and others:
+                # 其他任务还没结束：它可能还要用这个物料，排队等它结束（与「被别的任务占着就等待」一致）
+                running = [item for item in reservations if self._held_by_unfinished_task(item)]
+                if running:
+                    holder = running[0]
                     found.append(problem(
-                        "reserved_by_other_task", f"{label} 被任务 {others[0].get('task_uuid')} 的库存预留占着",
+                        f"{status}_by_other_task", f"{label} 被任务 {holder.get('task_uuid')} 的库存预留占着",
                         wait_code=WAIT_RESERVED_BY_OTHER_TASKS, lifecycle_status=status,
-                        task_uuid=others[0].get("task_uuid"), job_uuid=others[0].get("job_uuid")))
-                else:
+                        task_uuid=holder.get("task_uuid"), job_uuid=holder.get("job_uuid")))
+                elif status == "reserved":
+                    # 预留推进的 reserved 却找不到未结束任务的预留：状态与预留对不上，交给操作员
                     holders = sorted({str(item.get("task_uuid")) for item in reservations})
-                    message = (f"{label} 处于 {status}，归任务 {'、'.join(holders)} 的库存预留，不属于本任务"
-                               if holders else f"{label} 处于 {status}，但没有对应的库存预留")
+                    message = (f"{label} 处于 reserved，归已结束任务 {'、'.join(holders)} 的库存预留"
+                               if holders else f"{label} 处于 reserved，但没有对应的库存预留")
                     found.append(problem("lifecycle_conflict", message, lifecycle_status=status,
                                          task_uuids=holders))
+                # in_use 且没有未结束任务的预留：dev 不会把用过的物料改回 active，已结束任务留下的 in_use 视为可用
         elif status != "active":
             found.append(problem("unusable", f"{label} 的生命周期 {status or '未知'} 不允许用于动作",
                                  lifecycle_status=status))

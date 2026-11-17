@@ -320,7 +320,7 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 | 检查 | 不通过时 |
 | --- | --- |
 | 物料还在：未删除、生命周期不是 `consumed` / `retired` / `quarantined` | 预检报错（`deleted` / `unusable`） |
-| 生命周期相容：`active`，或被本作业 / 本任务的库存预留占着（`reserved` / `in_use`） | 被其他任务的有效预留占着（`reserved`）→ 排队 `inventory_reserved_by_other_tasks`；被其他任务已开始的预留占着（`in_use`）或找不到对应预留 → 预检报错（`lifecycle_conflict`） |
+| 生命周期相容：`active`，或被本作业 / 本任务的库存预留占着（`reserved` / `in_use`），或停在已结束任务留下的 `in_use`（dev 不把用过的物料改回 `active`，视为可用） | 预留它的其他任务还没结束（`reserved` 或 `in_use`）→ 排队 `inventory_reserved_by_other_tasks`；`reserved` 却没有未结束任务的预留 → 预检报错（`lifecycle_conflict`） |
 | 物理合同声明的来源库位（搬运来源 owner / 库位、分步抓取来源） | 复用物理合同的结论，不重算位置：物理合同报 `transfer_source_site_missing` 时，物料被另一作业未结算的物理动作占着、或调度侧另一 attempt 正在实际使用它（持久准入 `workflow_resource_use`，可能正在搬）→ 照旧排队；否则不会自己回来 → 预检报错（`moved`：在别的库位；`off_site`：不在任何库位） |
 | 库存分配与本作业持有的预留一致：预留仍是 `active` 且属于本作业，同一容器 / 批次，批次未隔离，现量 > 0，单位可换算 | 预检报错（`reservation_missing` / `reservation_inactive` / `allocation_mismatch` / `lot_missing` / `lot_quarantined` / `content_missing` / `quantity_depleted` / `unit_not_convertible` …） |
 | 没有被另一作业未结算的物理动作占着（`material_execution_hold`） | 排队 `site_claimed` |

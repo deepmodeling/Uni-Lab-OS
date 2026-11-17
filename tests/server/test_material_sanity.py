@@ -403,16 +403,50 @@ def test_relocation_keeps_waiting_while_another_attempt_holds_the_material():
 
 
 def test_lifecycle_claimed_by_this_task_passes_and_by_others_is_classified():
+    finished = {"done"}
+
     def claimed(status, reservations):
-        return _sanity({"lifecycle_status": status, "reservations": reservations}).problems()
+        return _sanity({"lifecycle_status": status, "reservations": reservations},
+                       task_finished=lambda task_uuid: task_uuid in finished).problems()
 
     assert claimed("in_use", [{"task_uuid": "task", "job_uuid": "earlier", "status": "consumed"}]) == []
+    # 其他任务还没结束：不管预留是 active 还是已开始（consumed），都排队等它
     [waiting] = claimed("reserved", [{"task_uuid": "other", "job_uuid": "j", "status": "active"}])
     assert (waiting.reason, waiting.wait_code) == ("reserved_by_other_task", "inventory_reserved_by_other_tasks")
-    [stuck] = claimed("in_use", [{"task_uuid": "other", "job_uuid": "j", "status": "consumed"}])
-    assert (stuck.reason, stuck.wait_code) == ("lifecycle_conflict", None)
+    [busy] = claimed("in_use", [{"task_uuid": "other", "job_uuid": "j", "status": "consumed"}])
+    assert (busy.reason, busy.wait_code) == ("in_use_by_other_task", "inventory_reserved_by_other_tasks")
+    # 已结束任务留下的 in_use（dev 不改回 active）、没有任何预留的 in_use：视为可用
+    assert claimed("in_use", [{"task_uuid": "done", "job_uuid": "j", "status": "consumed"}]) == []
+    assert claimed("in_use", []) == []
+    # reserved 却没有未结束任务的预留：状态与预留对不上，交给操作员
     [orphan] = claimed("reserved", [])
     assert (orphan.reason, orphan.wait_code) == ("lifecycle_conflict", None)
+    [stale] = claimed("reserved", [{"task_uuid": "done", "job_uuid": "j", "status": "active"}])
+    assert (stale.reason, stale.wait_code) == ("lifecycle_conflict", None)
+    # 查不到任务（调度器以外、或任务记录已不在）：有效预留仍算占着，已开始的预留按用完
+    unknown = _sanity({"lifecycle_status": "in_use", "reservations": [
+        {"task_uuid": "gone", "job_uuid": "j", "status": "active"}]}).problems()
+    assert [item.wait_code for item in unknown] == ["inventory_reserved_by_other_tasks"]
+    assert _sanity({"lifecycle_status": "in_use", "reservations": [
+        {"task_uuid": "gone", "job_uuid": "j", "status": "consumed"}]}).problems() == []
+
+
+def test_material_left_in_use_by_a_finished_task_dispatches_without_a_decision(tmp_path):
+    """用过的物料停在 in_use（dev 不改回 active）：后来的任务显式引用它照常派发，不弹预检决策。"""
+
+    stack, executor = Stack(tmp_path), Executor()
+    [plate] = _containers(stack, 1)
+    stack.materials.patch_material(_mutation("patch_material"), plate, MaterialPatch(lifecycle_status="in_use"))
+    node = _node("处理", "process", "robot", {"plate": {"uuid": plate}})
+    scheduler, task = _run(stack, executor, [node], {"process": _PROCESS})
+    try:
+        wait_for(lambda: len(executor.dispatched) == 1)
+        assert not scheduler.list_reconciliation_decisions()
+        executor.finish(0, {})
+        wait_for(lambda: _status(stack, task) == "succeeded")
+    finally:
+        scheduler.stop()
+        stack.close()
 
 
 def test_references_cover_typed_slots_lock_parameters_and_reservation_items():

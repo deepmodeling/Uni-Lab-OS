@@ -163,7 +163,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 200,
                 "y": 150,
@@ -188,7 +189,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 250,
                 "y": 150,
@@ -213,7 +215,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 300,
                 "y": 150,
@@ -238,7 +241,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 150,
@@ -263,7 +267,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 950,
                 "y": 150,
@@ -332,7 +337,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 400,
                 "y": 450,
@@ -414,7 +420,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 500,
                 "y": 400,
@@ -439,7 +446,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 1100,
                 "y": 500,
@@ -654,7 +662,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 500,
@@ -679,7 +688,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 950,
                 "y": 500,
@@ -704,7 +714,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 1050,
                 "y": 500,
@@ -752,7 +763,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 550,
                 "y": 250,
@@ -778,7 +790,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 250,
@@ -803,7 +816,8 @@
             "children": [],
             "parent": "OrganicSynthesisStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 650,
                 "y": 250,

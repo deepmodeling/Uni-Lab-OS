@@ -160,8 +160,8 @@ def generate_clean_vessel_protocol(
             # 调用成熟的 pump_protocol 算法
             add_solvent_actions = generate_pump_protocol(
                 G=G,
-                from_vessel=solvent_vessel,
-                to_vessel=vessel_id,  # 🔧 使用 vessel_id
+                from_vessel_id=solvent_vessel,
+                to_vessel_id=vessel_id,  # 🔧 使用 vessel_id
                 volume=volume,
                 flowrate=2.5,  # 适中的流速，避免飞溅
                 transfer_flowrate=2.5
@@ -228,8 +228,8 @@ def generate_clean_vessel_protocol(
             # 调用成熟的 pump_protocol 算法
             remove_waste_actions = generate_pump_protocol(
                 G=G,
-                from_vessel=vessel_id,  # 🔧 使用 vessel_id
-                to_vessel=waste_vessel,
+                from_vessel_id=vessel_id,  # 🔧 使用 vessel_id
+                to_vessel_id=waste_vessel,
                 volume=volume,
                 flowrate=2.5,  # 适中的流速
                 transfer_flowrate=2.5

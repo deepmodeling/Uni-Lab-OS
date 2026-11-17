@@ -11,13 +11,12 @@ class VirtualSolenoidValve:
     虚拟电磁阀门 - 简单的开关型阀门，只有开启和关闭两个状态
     """
     
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
     
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
-        # 从配置中获取参数，提供默认值
-        if config is None:
-            config = {}
-        
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        config = {**kwargs, **(config or {})}
+
         self.device_id = device_id
         self.port = config.get("port", "VIRTUAL")
         self.voltage = config.get("voltage", 12.0)
@@ -28,8 +27,8 @@ class VirtualSolenoidValve:
         self._valve_state = "Closed"  # "Open" or "Closed"
         self._is_open = False
     
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """初始化设备"""
@@ -59,7 +58,7 @@ class VirtualSolenoidValve:
 
     async def set_valve_position(self, command: str = None, **kwargs):
         """
-        设置阀门位置 - ROS动作接口
+        设置阀门位置 - 动作接口
         
         Args:
             command: "OPEN"/"CLOSED" 或其他控制命令
@@ -72,7 +71,7 @@ class VirtualSolenoidValve:
         self._status = "Busy"
         
         # 模拟阀门响应时间
-        await self._ros_node.sleep(self.response_time)
+        await self._node.sleep(self.response_time)
         
         # 处理不同的命令格式
         if isinstance(command, str):
@@ -105,11 +104,11 @@ class VirtualSolenoidValve:
         }
 
     async def open(self, **kwargs):
-        """打开电磁阀 - ROS动作接口"""
+        """打开电磁阀 - 动作接口"""
         return await self.set_valve_position(command="OPEN")
 
     async def close(self, **kwargs):
-        """关闭电磁阀 - ROS动作接口"""
+        """关闭电磁阀 - 动作接口"""
         return await self.set_valve_position(command="CLOSED")
 
     async def set_status(self, string: str = None, **kwargs):
@@ -132,12 +131,11 @@ class VirtualSolenoidValve:
         
         return await self.set_valve_position(command=command)
 
-    def toggle(self):
+    async def toggle(self):
         """切换阀门状态"""
         if self._is_open:
-            return self.close()
-        else:
-            return self.open()
+            return await self.close()
+        return await self.open()
 
     def is_closed(self) -> bool:
         """检查阀门是否关闭"""

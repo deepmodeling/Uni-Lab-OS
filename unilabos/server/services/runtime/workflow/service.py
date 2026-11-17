@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import hashlib
+import json
 import logging
 import os
 import re
@@ -2427,7 +2428,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             if source_handle_uuids:
                 planned_node["source_handle_uuids"] = source_handle_uuids
             if template is not None and template.get("schema") is not None:
-                planned_node["param_schema"] = template["schema"]
+                planned_node["param_schema"] = self._template_param_schema(template["schema"])
             if self._action_schema_resolver is not None and kind == "device_action":
                 device_id = str((node.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid") or planned_param.get("device_id") or "")
                 action_name = str(node.get("action_name") or planned_param.get("action") or "")
@@ -2509,6 +2510,22 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             seen.add(identity)
             current = nodes.get(identity)
         return False
+
+    @staticmethod
+    def _template_param_schema(schema: Any) -> Any:
+        """节点模板行里的 schema 是 JSON 文本，执行计划里的 ``param_schema`` 按字典读取。
+
+        调度器的物料核对、物理 / 托管合同都对它调 ``.get``；原样放文本，注册表投影出的
+        旧合同动作（内置虚拟设备的全部动作）一进工作流就在派发前失败。
+        """
+
+        if not isinstance(schema, str):
+            return schema
+        try:
+            decoded = json.loads(schema) if schema.strip() else None
+        except ValueError:
+            return None
+        return decoded if isinstance(decoded, dict) else None
 
     @staticmethod
     def _handle_data_key(handle: Dict[str, Any]) -> str:

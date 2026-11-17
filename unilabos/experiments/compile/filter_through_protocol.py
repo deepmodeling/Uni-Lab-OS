@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 import networkx as nx
 from .pump_protocol import generate_pump_protocol
+from .utils.vessel_parser import get_vessel
 
 
 def get_vessel_liquid_volume(G: nx.DiGraph, vessel: str) -> float:
@@ -70,8 +71,8 @@ def find_eluting_solvent_vessel(G: nx.DiGraph, eluting_solvent: str) -> str:
 
 def generate_filter_through_protocol(
     G: nx.DiGraph,
-    from_vessel: str,
-    to_vessel: str,
+    from_vessel: dict | str,
+    to_vessel: dict | str,
     filter_through: str,
     eluting_solvent: str = "",
     eluting_volume: float = 0.0,
@@ -108,7 +109,10 @@ def generate_filter_through_protocol(
         )
     """
     action_sequence = []
-    
+    # 协议模型的容器参数是 {"id": ...} 字典（也兼容直接给容器 id）
+    from_vessel, _ = get_vessel(from_vessel)
+    to_vessel, _ = get_vessel(to_vessel)
+
     print(f"FILTER_THROUGH: 开始生成通过过滤协议")
     print(f"  - 源容器: {from_vessel}")
     print(f"  - 目标容器: {to_vessel}")
@@ -153,8 +157,8 @@ def generate_filter_through_protocol(
         # 使用成熟的 pump_protocol 算法进行液体转移
         sample_transfer_actions = generate_pump_protocol(
             G=G,
-            from_vessel=from_vessel,
-            to_vessel=filter_through_vessel,
+            from_vessel_id=from_vessel,
+            to_vessel_id=filter_through_vessel,
             volume=transfer_volume,
             flowrate=0.8,  # 较慢的流速，避免冲击过滤介质
             transfer_flowrate=1.2
@@ -190,8 +194,8 @@ def generate_filter_through_protocol(
                 # 将洗脱溶剂转移到过滤介质
                 eluting_transfer_actions = generate_pump_protocol(
                     G=G,
-                    from_vessel=eluting_vessel,
-                    to_vessel=filter_through_vessel,
+                    from_vessel_id=eluting_vessel,
+                    to_vessel_id=filter_through_vessel,
                     volume=eluting_volume,
                     flowrate=0.6,  # 洗脱用更慢的流速
                     transfer_flowrate=1.0

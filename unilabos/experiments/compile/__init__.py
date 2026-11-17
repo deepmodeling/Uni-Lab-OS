@@ -46,7 +46,7 @@ action_protocol_generators = {
     HeatChillStopProtocol: generate_heat_chill_stop_protocol,
     HydrogenateProtocol: generate_hydrogenate_protocol,
     PumpTransferProtocol: generate_pump_protocol_with_rinsing,
-    TransferProtocol: generate_pump_protocol,
+    TransferProtocol: generate_pump_protocol_with_rinsing,
     RecrystallizeProtocol: generate_recrystallize_protocol,
     ResetHandlingProtocol: generate_reset_handling_protocol,
     RunColumnProtocol: generate_run_column_protocol,

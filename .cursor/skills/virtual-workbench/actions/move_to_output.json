@@ -8,10 +8,14 @@
     "type": "object",
     "properties": {
       "station_id": {
-        "type": "integer"
+        "type": "integer",
+        "title": "加热台ID",
+        "description": "已完成加热的加热台编号。"
       },
       "material_number": {
-        "type": "integer"
+        "type": "integer",
+        "title": "物料编号",
+        "description": "要移动到输出位置的物料编号，对应 Cn。"
       }
     },
     "required": [
@@ -19,6 +23,9 @@
       "material_number"
     ]
   },
-  "goal_default": {},
+  "goal_default": {
+    "station_id": 0,
+    "material_number": 0
+  },
   "placeholder_keys": {}
 }

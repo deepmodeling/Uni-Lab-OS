@@ -29,7 +29,10 @@
         {
             "id": "reactor",
             "parent": "ReactorX",
-            "type": "container"
+            "type": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
+            "config": {"type": "RegularContainer", "max_volume": 5000.0}
         },
         {
             "id": "vacuum_valve",
@@ -96,11 +99,25 @@ unilab -g unilabos/test/experiments/mock_reactor.json
 
 ### 2. 执行抽真空和充气操作
 
-启动后，您可以使用以下命令执行抽真空操作：
+默认的 HostLink backend 下，在网页端对 `ReactorX` 发起 `EvacuateAndRefillProtocol`，或直接调用
+微后端的单动作接口。动作的物料入参都要带物料 uuid（`id` 留给协议编译器查拓扑），uuid 可从
+`GET http://localhost:8002/api/v1/graphs/live/payload` 里 `reactor` 节点读到：
+
+```bash
+curl -s -X POST http://localhost:8002/api/v1/job/add -H "Content-Type: application/json" -d '{
+  "device_id": "ReactorX",
+  "action": "EvacuateAndRefillProtocol",
+  "action_type": "EvacuateAndRefillProtocol",
+  "action_args": {"vessel": {"id": "reactor", "uuid": "<reactor 的物料 uuid>"}, "gas": "nitrogen"}
+}'
+# 返回 data.jobId；GET /api/v1/job/<jobId>/status 查看进度（status 4 为成功）
+```
+
+以 `--backend ros2` 启动时也可以直接发 ROS Action：
 
 ```bash
 ros2 action send_goal /devices/ReactorX/EvacuateAndRefillProtocol unilabos_msgs/action/EvacuateAndRefill "{vessel: reactor, gas: N2, repeats: 2}"
 ```
 
-此命令会通过 ROS 通信触发工作站执行抽真空和充气操作。运行期间可在
+两种方式都会触发工作站编译协议，再依次调用真空泵、气源和电磁阀等虚拟设备执行抽真空和充气。运行期间可在
 `http://localhost:8002/api/docs` 查看当前微后端提供的状态与遥测接口。

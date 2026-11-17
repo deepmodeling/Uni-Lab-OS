@@ -217,20 +217,31 @@ def instantiate_driver(
 
     kwargs: Dict[str, Any]
     if "config" in parameters:
-        # ``config`` 仍收到整份节点配置（旧驱动从 config 里读参数）；同时声明的其他具名
-        # 参数按名取节点配置里的同名键（与 ROS 2 平铺传参一致），不能静默退回默认值。
-        kwargs = {"config": config}
-        for name, parameter in parameters.items():
-            if (
-                name != "config"
-                and name in config
-                and parameter.kind
-                in (
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                    inspect.Parameter.KEYWORD_ONLY,
-                )
+        nested = config.get("config")
+        if isinstance(nested, dict):
+            # 节点配置按构造签名写了 ``config`` 键（注册表 init_param_schema 的形状，前端
+            # 也这样生成）：与 ROS 2 平铺传参一致，``config`` 只收这一层，其余键照常按名
+            # 传入（驱动接受 **kwargs 时一并传入），不能把整份节点配置再包一层。
+            kwargs = {"config": dict(nested)}
+            pass_extras = accepts_kwargs
+        else:
+            # ``config`` 收到整份节点配置（旧驱动从 config 里读参数）
+            kwargs = {"config": config}
+            pass_extras = False
+        # 同时声明的其他具名参数按名取节点配置里的同名键（与 ROS 2 平铺传参一致），
+        # 不能静默退回默认值。
+        for name, value in config.items():
+            if name == "config":
+                continue
+            parameter = parameters.get(name)
+            if parameter is None:
+                if pass_extras:
+                    kwargs[name] = value
+            elif parameter.kind in (
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
             ):
-                kwargs[name] = config[name]
+                kwargs[name] = value
     else:
         kwargs = dict(config)
 
@@ -953,6 +964,10 @@ class HostLinkDeviceNode(DeviceNode):
                     self._resolve_resource_slot(value) for value in values
                 ]
 
+        if PARAM_SAMPLE_UUIDS in signature.parameters:
+            # 与 ROS 2 一致：作业没带样品映射（单动作调用、跨设备调用）时注入空映射，
+            # 而不是让把 sample_uuids 声明为必填的驱动因缺参失败
+            resolved.setdefault(PARAM_SAMPLE_UUIDS, {})
         sample_uuids = resolved.get(PARAM_SAMPLE_UUIDS)
         if isinstance(sample_uuids, dict):
             resolved[PARAM_SAMPLE_UUIDS] = {

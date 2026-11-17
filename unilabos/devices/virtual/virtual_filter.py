@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 class VirtualFilter:
     """Virtual filter device - 完全按照 Filter.action 规范 🌊"""
 
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         if device_id is None and "id" in kwargs:
@@ -36,8 +36,8 @@ class VirtualFilter:
             if key not in skip_keys and not hasattr(self, key):
                 setattr(self, key, value)
 
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """Initialize virtual filter 🚀"""
@@ -174,7 +174,7 @@ class VirtualFilter:
                 if remaining <= 0:
                     break
 
-                await self._ros_node.sleep(1.0)
+                await self._node.sleep(1.0)
 
             # 过滤完成
             final_temp = temp if continue_heatchill else 25.0

@@ -223,13 +223,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 50,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -247,13 +249,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 150,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -271,13 +275,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 250,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -295,13 +301,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 650,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -319,13 +327,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 350,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -343,13 +353,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 450,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -367,13 +379,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 550,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -386,13 +400,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -405,13 +421,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -424,13 +442,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -443,13 +463,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -462,13 +484,15 @@
             "children": [],
             "parent": "HeatChillProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {

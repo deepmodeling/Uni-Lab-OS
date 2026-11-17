@@ -48,7 +48,8 @@ def find_rotavap_device(G: nx.DiGraph, vessel: str = None) -> Optional[str]:
     # 在所有设备中查找旋转蒸发仪
     debug_print("🔎 在所有设备中搜索旋转蒸发仪... 🕵️‍♀️")
     rotavap_candidates = []
-    
+    name_candidates = []
+
     for node_id, node_data in G.nodes(data=True):
         node_class = node_data.get('class', '')
         node_type = node_data.get('type', '')
@@ -62,9 +63,12 @@ def find_rotavap_device(G: nx.DiGraph, vessel: str = None) -> Optional[str]:
             rotavap_candidates.append(node_id)
             debug_print(f"🌟 找到旋转蒸发仪候选: {node_id} (class: {node_class}) 🌪️")
         elif any(keyword in str(node_id).lower() for keyword in ['rotavap', 'rotary', 'evaporat']):
-            rotavap_candidates.append(node_id)
-            debug_print(f"🌟 找到旋转蒸发仪候选 (按名称): {node_id} 🌪️")
-    
+            # 按名称只作兜底：工作站自身的 id 也可能含 evaporate
+            if 'workstation' not in str(node_class).lower():
+                name_candidates.append(node_id)
+                debug_print(f"🌟 找到旋转蒸发仪候选 (按名称): {node_id} 🌪️")
+
+    rotavap_candidates = rotavap_candidates or name_candidates
     if rotavap_candidates:
         selected = rotavap_candidates[0]  # 选择第一个找到的
         debug_print(f"🎯 选择旋转蒸发仪: {selected} 🏆")

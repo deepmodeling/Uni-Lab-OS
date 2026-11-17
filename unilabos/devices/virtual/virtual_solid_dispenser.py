@@ -16,11 +16,12 @@ class VirtualSolidDispenser:
     - 简单反馈：成功/失败 + 消息 📊
     """
     
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
     
     def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
         self.device_id = device_id or "virtual_solid_dispenser"
-        self.config = config or {}
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        self.config = {**kwargs, **(config or {})}
         
         # 设备参数
         self.max_capacity = float(self.config.get('max_capacity', 100.0))  # 最大加样量 (g)
@@ -37,8 +38,8 @@ class VirtualSolidDispenser:
         print(f"⚗️ === 虚拟固体分配器 {self.device_id} 创建成功! === ✨")
         print(f"📊 设备规格: 最大容量 {self.max_capacity}g | 精度 {self.precision}g 🎯")
     
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
     
     async def initialize(self) -> bool:
         """初始化固体加样器 🚀"""
@@ -271,7 +272,7 @@ class VirtualSolidDispenser:
             
             for i in range(steps):
                 progress = (i + 1) / steps * 100
-                await self._ros_node.sleep(step_time)
+                await self._node.sleep(step_time)
                 if i % 2 == 0:  # 每隔一步显示进度
                     self.logger.debug(f"📊 加样进度: {progress:.0f}% | {amount_emoji} 正在分配 {reagent}...")
             

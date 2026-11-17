@@ -100,9 +100,8 @@ class VirtualMultiwayValve:
                 pos_desc = f"端口{pos}"
             
             old_position = self._current_position
-            old_port = self.get_current_port()
-            
-            self.logger.info(f"🔄 阀门切换: {old_position}({old_port}) → {pos} {pos_emoji}")
+
+            self.logger.info(f"🔄 阀门切换: {old_position}({self.current_port}) → {pos} {pos_emoji}")
             
             self._status = "Busy"
             self._valve_state = "Moving"
@@ -119,18 +118,17 @@ class VirtualMultiwayValve:
             self._status = "Idle"
             self._valve_state = "Ready"
             
-            current_port = self.get_current_port()
-            success_msg = f"✅ 阀门已切换到位置 {pos} ({current_port}) {pos_emoji}"
+            success_msg = f"✅ 阀门已切换到位置 {pos} ({self.current_port}) {pos_emoji}"
             
             self.logger.info(success_msg)
             return success_msg
             
         except ValueError as e:
-            error_msg = f"❌ 阀门切换失败: {str(e)}"
+            # 失败要抛给运行时：返回错误字符串会被当成动作成功
             self._status = "Error"
             self._valve_state = "Error"
-            self.logger.error(error_msg)
-            return error_msg
+            self.logger.error(f"❌ 阀门切换失败: {str(e)}")
+            raise
 
     def set_to_pump_position(self):
         """切换到transfer pump位置（0号位）🚰"""

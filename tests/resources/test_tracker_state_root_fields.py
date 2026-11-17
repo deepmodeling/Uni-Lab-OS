@@ -23,6 +23,7 @@ from unilabos.resources.resource_tracker import (
     TRACKER_STATE_KEYS,
     ResourceDict,
     ResourceDictInstance,
+    ResourceTreeInstance,
     ResourceTreeSet,
     assemble_tracker_state,
 )
@@ -274,6 +275,34 @@ def test_plr_container_tracker_state_survives_resource_tree_roundtrip(monkeypatc
     assert roundtripped.barcode_symbology == "code128"
     assert roundtripped.meta_data == {"vendor": {"lot": "A-1"}}
     assert "location" not in roundtripped.data
+
+
+def test_authority_contents_without_history_load_after_tracker_rewrite():
+    """权威只存内容物不存历史：快照留在 data 里的历史提交点不能让 PLR 拒绝装配。
+
+    容器内容被体积跟踪器改写（set_liquids 会记出多条历史）后经快照写回权威，再按权威形态
+    （liquid_history=None）装配回 PLR：旧行为把 history_checkpoint=3 原样交给
+    load_state，超出由 1 条内容物重建的历史，抛 ``Invalid liquid history checkpoint``。
+    """
+
+    container = RegularContainer(name="beaker", size_x=10, size_y=10, size_z=20, max_volume=100.0)
+    container.tracker.add_liquid("water", 20.0)
+    container.tracker.set_liquids([("ethanol", 5.0, "ul")])
+    container.unilabos_uuid = str(uuid4())
+    snapshot = ResourceTreeSet.from_plr_resources([container]).root_nodes[0].res_content
+    assert snapshot.data["history_checkpoint"] > len(snapshot.substances)
+
+    authority_shaped = ResourceDict.model_validate(
+        {
+            **snapshot.model_dump(by_alias=True, exclude={"parent"}),
+            "liquid_history": None,
+        }
+    )
+
+    (loaded,) = ResourceTreeSet(
+        [ResourceTreeInstance(ResourceDictInstance(authority_shaped))]
+    ).to_plr_resources()
+    assert loaded.tracker.get_liquids() == [("ethanol", 5.0, "ul")]
 
 
 @pytest.mark.parametrize("position", [None, {"x": 0, "y": 0, "z": 0}, {"x": 10, "y": 20, "z": 30}])

@@ -18,7 +18,7 @@ class VirtualPumpMode(Enum):
 class VirtualTransferPump:
     """虚拟转移泵类 - 模拟泵的基本功能，无需实际硬件 🚰"""
 
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
         """
@@ -31,22 +31,20 @@ class VirtualTransferPump:
         """
         self.device_id = device_id or "virtual_transfer_pump"
 
-        # 从config或kwargs中获取参数，确保类型正确
-        if config:
-            self.max_volume = float(config.get("max_volume", 25.0))
-            self.port = config.get("port", "VIRTUAL")
-        else:
-            self.max_volume = float(kwargs.get("max_volume", 25.0))
-            self.port = kwargs.get("port", "VIRTUAL")
-
-        self._transfer_rate = float(kwargs.get("transfer_rate", 0))
-        self.mode = kwargs.get("mode", VirtualPumpMode.Normal)
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        settings = {**kwargs, **(config or {})}
+        self.max_volume = float(settings.get("max_volume", 25.0))
+        self.port = settings.get("port", "VIRTUAL")
+        self._transfer_rate = float(settings.get("transfer_rate", 0))
+        self.mode = settings.get("mode", VirtualPumpMode.Normal)
 
         # 状态变量 - 确保都是正确类型
         self._status = "Idle"
         self._position = 0.0  # float
         self._max_velocity = 5.0  # float
         self._current_volume = 0.0  # float
+        # 泵头集成的分配阀当前通道（直连容器的泵由协议编译器按图里连线的端口名切换）
+        self._valve_position = ""
 
         # 快速模式使用固定的短时长模拟移动和喷射。
         self._fast_mode = True  # 是否启用快速模式
@@ -61,8 +59,8 @@ class VirtualTransferPump:
         )
         print(f"📊 最大容量: {self.max_volume}mL | 端口: {self.port}")
 
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """初始化虚拟泵 🚀"""
@@ -103,6 +101,28 @@ class VirtualTransferPump:
     def transfer_rate(self) -> float:
         return self._transfer_rate
 
+    @property
+    def valve_position(self) -> str:
+        """泵头集成阀当前通道（图中连线的端口名） 🔀"""
+        return self._valve_position
+
+    def set_valve_position(self, command: Union[int, str]) -> str:
+        """
+        切换泵头集成阀的通道 🔀
+
+        协议编译器把 virtual_transfer_pump 当作泵阀一体设备：泵直接连容器时，吸液 / 排液前
+        先按图里该连线在泵一侧的端口名（如 inlet、outlet）切换通道。
+
+        Args:
+            command: 目标通道（端口名或编号）
+        """
+        port = str(command).strip()
+        if not port:
+            raise ValueError("泵阀通道不能为空")
+        self._valve_position = port
+        self.logger.info(f"🔀 泵阀切换到通道 {port}")
+        return f"✅ 泵阀已切换到通道 {port}"
+
     def set_max_velocity(self, velocity: float):
         """设置最大速度 (ml/s) 🌊"""
         self._max_velocity = max(0.1, min(50.0, velocity))  # 限制在合理范围内
@@ -115,7 +135,7 @@ class VirtualTransferPump:
     async def _simulate_operation(self, duration: float):
         """模拟操作延时 ⏱️"""
         self._status = "Busy"
-        await self._ros_node.sleep(duration)
+        await self._node.sleep(duration)
         self._status = "Idle"
 
     def _calculate_duration(self, volume: float, velocity: float = None) -> float:
@@ -240,7 +260,7 @@ class VirtualTransferPump:
 
                     # 等待一小步时间
                     if i < steps and step_duration > 0:
-                        await self._ros_node.sleep(step_duration)
+                        await self._node.sleep(step_duration)
             else:
                 # 移动距离很小，直接完成
                 self._position = target_position
@@ -360,7 +380,7 @@ class VirtualTransferPump:
 
         # 短暂停顿
         self.logger.debug("⏸️ 短暂停顿...")
-        await self._ros_node.sleep(0.1)
+        await self._node.sleep(0.1)
 
         # 排液
         await self.dispense(volume, dispense_velocity)

@@ -1,6 +1,9 @@
-import asyncio
 import time
 from typing import Dict, Any, Optional
+
+# set_status 收到的开关字符串（协议编译器发 ON / OFF）
+_OPEN_STATES = frozenset({"OPEN", "ON"})
+_CLOSED_STATES = frozenset({"CLOSED", "CLOSE", "OFF"})
 
 
 class VirtualVacuumPump:
@@ -8,7 +11,8 @@ class VirtualVacuumPump:
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         self.device_id = device_id or "unknown_vacuum_pump"
-        self.config = config or {}
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数
+        self.config = {**kwargs, **(config or {})}
         self.data = {}
         self._status = "OPEN"
 
@@ -40,8 +44,10 @@ class VirtualVacuumPump:
     def close(self):
         self._status = "CLOSED"
 
-    def is_open(self):
-        return self._status
+    def is_open(self) -> bool:
+        """真空泵是否打开"""
+        return str(self._status).upper() in _OPEN_STATES
 
-    def is_closed(self):
-        return not self._status
+    def is_closed(self) -> bool:
+        """真空泵是否关闭"""
+        return str(self._status).upper() in _CLOSED_STATES

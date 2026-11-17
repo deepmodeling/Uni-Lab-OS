@@ -195,6 +195,88 @@ def test_driver_instantiation_supports_config_and_flat_styles() -> None:
     assert flat_driver.port == "B"
 
 
+class ConfigAndExtrasDriver:
+    def __init__(self, device_id=None, config=None, **kwargs):
+        self.device_id = device_id
+        self.config = config
+        self.extras = kwargs
+
+
+def test_nested_config_key_reaches_driver_config_like_ros2() -> None:
+    """节点配置按构造签名写成 ``{"config": {...}}`` 时，驱动的 ``config`` 只收这一层。
+
+    ROS 2 把节点配置平铺成构造参数（``config=`` 就是内层字典）；HostLink 过去把整份节点
+    配置再包一层传进去，驱动读不到参数、静默退回默认值。
+    """
+
+    driver = instantiate_driver(
+        ConfigAndExtrasDriver,
+        "bench",
+        {"config": {"arm_operation_time": 3.0}, "port": "COM3"},
+    )
+
+    assert driver.config == {"arm_operation_time": 3.0}
+    assert driver.extras == {"port": "COM3"}
+    assert driver.device_id == "bench"
+    # 平铺写法不变：config 仍是整份节点配置
+    flat = instantiate_driver(ConfigAndExtrasDriver, "bench", {"port": "COM3"})
+    assert flat.config == {"port": "COM3"} and flat.extras == {}
+
+
+class SampleDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+
+    def tag(self, sample_uuids, label: str) -> dict:
+        return {"label": label, "samples": dict(sample_uuids)}
+
+    def peer_tag(self, target_device: str) -> dict:
+        return self._node.call_device_action(target_device, "tag", {"label": "peer"})
+
+    def post_init(self, node) -> None:
+        self._node = node
+
+
+def test_missing_sample_uuids_is_injected_as_empty_mapping_like_ros2() -> None:
+    """作业没带样品映射（单动作、跨设备调用）时，必填的 ``sample_uuids`` 注入空映射。
+
+    ROS 2 一律注入 ``sample_uuids or {}``；HostLink 过去只在作业带样品时注入，
+    把它声明为必填参数的驱动（虚拟工作台的四个动作）直接因缺参失败。
+    """
+
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("caller", SampleDriver, {}))
+    runtime.add_driver(HostLinkDriverSpec("target", SampleDriver, {}))
+    runtime.start()
+    try:
+        assert runtime.call_action("target", "tag", label="direct") == {"label": "direct", "samples": {}}
+        assert runtime.call_action("caller", "peer_tag", target_device="target") == {
+            "label": "peer",
+            "samples": {},
+        }
+        # 作业带了样品映射时照常透传
+        assert runtime.call_action("target", "tag", label="x", sample_uuids={"s1": "m1"})["samples"] == {
+            "s1": "m1"
+        }
+    finally:
+        runtime.stop()
+
+
+def test_virtual_workbench_reads_nested_graph_config() -> None:
+    from unilabos.devices.virtual.workbench import VirtualWorkbench
+
+    workbench = instantiate_driver(
+        VirtualWorkbench,
+        "workbench_1",
+        {"config": {"arm_operation_time": 3.0, "heating_time": 10.0, "num_heating_stations": 2}},
+    )
+
+    assert workbench.ARM_OPERATION_TIME == 3.0
+    assert workbench.HEATING_TIME == 10.0
+    assert workbench.NUM_HEATING_STATIONS == 2
+    assert sorted(workbench._heating_stations) == [1, 2]
+
+
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
     yaml_registry = yaml.safe_load(
         Path("unilabos/registry/devices/liquid_handler.yaml").read_text(

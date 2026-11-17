@@ -15,7 +15,7 @@ def debug_print(message):
 class VirtualRotavap:
     """Virtual rotary evaporator device - 简化版，只保留核心功能 🌪️"""
 
-    _ros_node: "DeviceNode"
+    _node: "DeviceNode"
 
     def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
         # 处理可能的不同调用方式
@@ -45,8 +45,8 @@ class VirtualRotavap:
         print(f"🌪️ === 虚拟旋转蒸发仪 {self.device_id} 已创建 === ✨")
         print(f"🔥 温度范围: 10°C ~ {self._max_temp}°C | 🌀 转速范围: 10 ~ {self._max_rotation_speed} RPM")
 
-    def post_init(self, ros_node: "DeviceNode"):
-        self._ros_node = ros_node
+    def post_init(self, node: "DeviceNode"):
+        self._node = node
 
     async def initialize(self) -> bool:
         """Initialize virtual rotary evaporator 🚀"""
@@ -258,7 +258,7 @@ class VirtualRotavap:
                     break
 
                 # 每秒更新一次
-                await self._ros_node.sleep(1.0)
+                await self._node.sleep(1.0)
 
             # 蒸发完成
             if solvent and any(s in solvent.lower() for s in ["water", "aqueous"]):

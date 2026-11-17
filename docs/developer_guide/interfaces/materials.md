@@ -22,6 +22,10 @@
 
 | 字段 | 本版本的解释 |
 | --- | --- |
+| material.name | 恒等于 `material_uuid`（所有物料，包括设备），不可修改；不要把它当标签显示或匹配 |
+| material.display_name | 人读标签，可重名、可编辑；按名字搜索 / 排序 / V1 的 `name` 都落在这里 |
+| resource_id | 业务 id，全局唯一、人可读；编译器、调度与设备寻址用它，不从 uuid 派生 |
+| config.name | PLR 键：PyLabRobot 树里的名字，整棵 PLR 树内唯一、创建后不可改（设备没有）。默认沿用迁移前的 name；新建根物料取 `resource_id`；Opentrons 裸 `"A1"` 这类「名字等于 ordering 标识」的孔和管取 uuid |
 | template_name | 注册表/模板名称，不是 PLR Python 实现类 |
 | config.type | **PLR 反序列化唯一允许读取的实现类信息** |
 | resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR。它来自 PLR `category`，是物料实例的属性：同一模板（如按类名共用的组件模板 `Well`）的物料可以有不同的 resource_type，模板上的值只是按模板新建物料时的默认值，建树不再要求两者一致 |
@@ -45,8 +49,9 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 
 两种入口：
 
-1. `POST /instantiate`：payload 为 `MaterialInstantiate`，必填 `registry_class`、`name`，
-   可选 `barcode`（默认 null）。适合没有 PLR 运行时的微前端；可选类由 `/registry-classes` 提供。
+1. `POST /instantiate`：payload 为 `MaterialInstantiate`，必填 `registry_class`，`name`（PLR 根名 /
+   业务 id）与 `display_name`（人读标签）至少给一个，缺省时互相回退；可选 `barcode`（默认 null）。
+   适合没有 PLR 运行时的微前端；可选类由 `/registry-classes` 提供。
    权威展开为建树命令，使用 `operation="create_material_tree"`。
 2. `POST /trees`：payload 为 `MaterialTreeCreate`。适合驱动/图同步提交已经序列化的完整草稿。
    `nodes` 必须非空、仅一个根、父节点在前、`client_ref` 唯一。
@@ -55,6 +60,14 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 `MaterialNodeCreate.material_uuid` 默认不填，由权威分配；开机图等需保留外部身份的场景可显式填写，
 这表示**有条件创建**，不是覆盖已存在同 UUID 的记录。
 返回 `data.client_ref_map` 建立草稿引用到权威 UUID 的映射。
+
+`identity.name` 可以不填：权威总是把它写成物料 uuid。填了 UUID 形式的值即是身份（大写、花括号、
+无连字符的写法按 UUID 规范化）：没有 `material_uuid` 时被采纳，与 `material_uuid` 不一致或已被占用时
+以 `identity` 冲突拒绝。填了旧式标签则迁到 `display_name`（为空时）与 `config.name`（缺失时，设备除外）。
+`display_name` 为空时权威依次回退旧名、PLR 键、`resource_id`。根物料的人读标签可以重名，唯一的是
+`resource_id`。快照（`apply_material_snapshot`）不回写 `name` / `display_name`，`name` 与 PLR 键
+`config.name` 都不可改；`patch_material` 没有 `name` 字段，改标签用 `display_name`，整体提交
+`config` 时缺 `name` 沿用现值、给出不同值拒绝。
 
 模板 `POST /templates` 不允许调用者指定 template_uuid；PUT 已有模板时路径与 payload 身份必须一致。
 模板列表默认 `include_definition=false`，要拿完整定义应显式设为 true 或 GET 单项。

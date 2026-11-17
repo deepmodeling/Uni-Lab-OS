@@ -110,6 +110,22 @@ Slave 时全部自动接受。现在：
 
 | `workflow/authoring_material_io.py`（作者 API 与发布校验）；`app/scheduler/inventory/material_io.py`（人工装入 / 取走 / 补量运行时） | 不做（#6）：`node_templates.py` 只列入可见类型，编译器没有 `material_io()`，调度器不接 | 已实现（负责人 2026-11-16 决定，结构按 dev） | 作者写 `x = ctx.material_io(mode=..., mount=..., site=..., ...)`（AST 编译，三种模式的必填 / 禁止字段与 V1 规则一致，`reagent` 为对象字面量、`quantity` 正数或工作流输入；新物料名用 `material_name`，`name=` 与 `ctx.run` 一样是步骤名），保存整图与起跑再各校验一次（`protocol/runtime/material_io.py`）；`host_node` 名下投影「人工物料」结构模板，`generate-python` 生成同一写法。`executor_kind=material_io` 由权威侧调度器本地执行、从不派发 Host：起跑时物料权威试运行（`POST /inventory/material-io/check`，保存点内回滚）得到锁定集合（`mount`，unload / refill 另加 `material`）——库位被占 / 被其他任务占用按 `resource_wait_policy` 排队不失败；以 attempt 为 owner 取得物料锁（持久区间准入 + 执行 Claim，重启先于任务恢复，其他任务要用该库位的动作按原规则排队），持锁再试运行一次后冻结计划、开 durable 人工确认单（复用 `manual_confirm` 的确认单、超时、取消；5 秒兜底重算现在也收到期确认单）；批准后一条 `material.io` 类型化库存命令在一个事务里装入（模板建物料 + 放入库位 + 可选试剂，已有物料不覆盖）/ 取走（`detach` / `soft_delete` × `material_only` / `material_with_contents`）/ 补量（原位唯一试剂加量），命令身份 = attempt，重放只写一次；写库被拒节点失败带物料错误码，拒绝 / 超时失败、库存不变，取消即取消；写库后把变化同步到挂载物料所属设备的台面（负责人 2026-11-17 决定「补一次同步」：load / unload 发 transfer 同款 `MaterialDeviceSync`，refill 发资源树 `update`，权威经 Host 中继；与 transfer 一样设备确认才算完成：失败不回滚库存，attempt 留在 pending、按同一命令身份重发直到设备确认，取消任务即以取消收口，结果在 `device_sync`，普通货架 `skipped`；重放同一命令再送一次是幂等的，终态落库后不再重发）。V1 的自动命名、模板白名单、试剂身份（`reagent_info_uuid` / CAS / 名称）一并保留；装入的模板是注册表 PLR 资源类（注册表同步的模板以资源条目 id 为名）时与 `instantiate_material` 同一条路实例化出整棵树、带默认子物料（负责人 2026-11-17 决定「装入也必须真的同步到台面」），挂载物料属于设备而模板不能实例化时试运行即拒绝，普通货架上不能实例化的模板只写身份（与 `POST /materials` 相同）。`tests/registry/test_workflow_material_io.py`、`tests/server/test_material_io_inventory.py`、`tests/server/test_material_io_scheduler.py`（排队、库位被占前后、重启待决 / 批准未写 / 写后未记各收敛一次、取消、执行器零派发）、`tests/server/test_material_io_device_sync.py` 与 `tests/backend/hostlink/test_material_io_deck_sync.py`（真实 HostLink 设备台面上装入枪头盒连同孔位与枪头、台面同步三种模式、普通货架跳过、失败保留库存并按同一命令重发、取消收口、重放、权威经 Host 中继） |
 
+### 物料 name 是 uuid（负责人 2026-11-17 决定，与 V1 有意不同）
+
+V1 客户端把物料的 `name` 当显示名。dev 里物料层 `name` 恒等于 `material_uuid`（所有物料，包括设备），
+人读标签是 `display_name`，PyLabRobot 树里用的名字（PLR 键）单独存 `config.name`，`resource_id` / 图 `id` /
+`device_id` 保持人可读。兼容做法与剩余差异：
+
+| 方面 | 现在 | 证据 |
+| --- | --- | --- |
+| V1 写入 | `POST /materials` 的 `name` 落到 `display_name`（dev 超集可直接给 `display_name`），新根物料的 PLR 键取 `resource_id`；`PUT /materials/{uuid}` 的 `name` / `display_name` 只改 `display_name` | `tests/server/test_v1_resource_contract.py::test_v1_material_name_is_the_display_name` |
+| V1 读取 | **有意差异**：`GET /materials`、`/resources`、`/inventory/instances` 返回的 `name` 是 uuid，显示名在同一对象的 `display_name`；`?name=` 筛选 / 精确搜索按 `display_name` 匹配，根物料按 `display_name` 排序 | `tests/resources/test_material_naming.py` |
+| 唯一性 | 根物料名唯一索引删除（`material` 表加 `CHECK (name = material_uuid)`，v1 基线原地修改）；显示名可重名，唯一的是 `resource_id` | 同上 |
+| 旧数据 | 旧图在读取边界与 Graph Authority 对账时迁移（已是 UUID 的 name 作为身份复用）；旧开发库按 D05 拒绝启动并提示重建 | `tests/server/test_database_schema_versions.py` |
+
+需要跟着改的客户端：按 `name` 显示或匹配物料的地方改读 `display_name`，写入时把标签放 `display_name`
+（`patch_material` 已没有 `name` 字段），工作流参数里的物料引用用 `uuid` 或 `resource_id`。
+
 ## 基线与原始目标（11-09 原始记录）
 
 | 对象 | 固定版本 | 当前含义 |

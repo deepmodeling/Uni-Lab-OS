@@ -26,10 +26,11 @@ from unilabos.resources.resource_tracker import (
     ResourceTreeSet,
 )
 from unilabos.resources.objects.site import (
-    SITE_DEFINITION_FIELDS,
     ResourceSite,
     SiteDefinition,
     normalize_available_sites,
+    site_definition_extra,
+    site_instance_definition,
     validate_instantiated_sites,
 )
 from unilabos.utils import logger
@@ -127,20 +128,21 @@ def _site_create_payload(
         "parent_link": site["parent_link"],
         "description": site["description"],
         "meta_data": site["meta_data"],
-        "extra": {},
+        "extra": site_definition_extra(site),
     }
 
 
 def registry_device_site_templates() -> Dict[str, List[Dict[str, Any]]]:
-    """已构建注册表的 ``template_name -> available_sites``；注册表不可用时为空。"""
+    """本进程注册表目录的 ``template_name -> available_sites``；目录不可用时为空。
 
-    try:
-        from unilabos.registry.registry import lab_registry
-    except Exception:  # noqa: BLE001 - 未装 ROS 消息包等环境缺失：视为无设备模板
-        return {}
+    调度权威读 Host 上报的生效设备条目，Host 读本地扫描（``registry/catalog.py``）。
+    """
+
+    from unilabos.registry.catalog import device_entries
+
     return {
         device_id: list((entry or {}).get("available_sites") or [])
-        for device_id, entry in lab_registry.device_type_registry.items()
+        for device_id, entry in device_entries().items()
     }
 
 
@@ -269,9 +271,7 @@ def _adopt_authority_children(device_config: ResourceDictInstance, tree_read: An
 
 
 def _definition_of(site: Mapping[str, Any]) -> Dict[str, Any]:
-    return SiteDefinition.model_validate(
-        {key: site[key] for key in SITE_DEFINITION_FIELDS if key in site}
-    ).model_dump()
+    return site_instance_definition(site)
 
 
 def _check_authority_sites(

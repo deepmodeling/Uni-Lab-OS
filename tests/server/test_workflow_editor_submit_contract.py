@@ -102,7 +102,7 @@ def test_editor_submit_path_without_node_templates() -> None:
         service.close()
 
 
-def test_depends_on_cycle_is_rejected_at_task_creation() -> None:
+def test_depends_on_cycle_is_rejected_before_saving_graph() -> None:
     service = WorkflowService(":memory:")
     client = TestClient(create_workflow_app(service))
     try:
@@ -118,9 +118,11 @@ def test_depends_on_cycle_is_rejected_at_task_creation() -> None:
                 "edges": [],
             },
         ).json()
-        assert saved["code"] == 0, saved
-        task = client.post("/api/v1/workflow-tasks", json={"execution_kind": "workflow", "workflow_uuid": workflow["uuid"]}).json()
-        assert task["code"] == 1000  # StoreConflict("workflow graph contains a cycle") → invalid_input
+        assert saved["code"] == 1000, saved
+        assert "循环" in saved["error"]["msg"]
+        graph = service.get_graph(workflow["uuid"])
+        assert graph["nodes"] == []
+        assert graph["workflow"]["revision"] == workflow["revision"]
     finally:
         service.close()
 

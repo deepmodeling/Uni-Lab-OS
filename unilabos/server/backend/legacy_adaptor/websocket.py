@@ -21,7 +21,6 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
-from unilabos.config.control_token import client_headers
 from unilabos.server.backend.legacy_adaptor.session import BaseBackendClient
 from unilabos.server.backend.legacy_adaptor.url import build_backend_websocket_url
 from unilabos.protocol.runtime.data import RUNTIME_PROTOCOL_VERSION
@@ -244,7 +243,6 @@ class BackendWebSocketClient(BaseBackendClient):
                         "Authorization": f"Lab {BasicConfig.auth_secret()}",
                         "EdgeSession": self.client_id,
                         "EdgeProtocol": RUNTIME_PROTOCOL_VERSION,
-                        **client_headers(),
                     },
                     logger=ws_logger,
                 ) as websocket:
@@ -483,7 +481,10 @@ class BackendWebSocketClient(BaseBackendClient):
             response = await self._execute_local_http(request)
         except Exception as exc:  # noqa: BLE001 - 执行失败也要回一个响应，别让 Backend 干等
             logger.exception("[ControlProtocol] backend_http %s %s 执行失败", request.method, request.path)
-            body = json.dumps({"detail": f"host request failed: {exc}"}).encode("utf-8")
+            from unilabos.server.api.envelope import INTERNAL_ERROR, error_body
+
+            # 未归类的执行失败：保持 HTTP 500，正文仍是统一信封（业务码 1）
+            body = json.dumps(error_body(INTERNAL_ERROR, f"Host 执行请求失败：{exc}"), ensure_ascii=False).encode("utf-8")
             response = EdgeHttpResponse(
                 request_uuid=request.request_uuid,
                 status_code=500,
@@ -501,11 +502,16 @@ class BackendWebSocketClient(BaseBackendClient):
         # 权威随即来拉结果 payload。路由未挂好时对 app 执行只会得到误导性的 404，这里先等。
         wait_seconds = min(30.0, float(request.timeout_seconds or 30.0))
         if not await asyncio.to_thread(wait_routes_ready, wait_seconds):
-            body = json.dumps({"detail": "host management routes are not mounted yet"}).encode("utf-8")
+            from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, error_body
+
+            # 与权威侧「Host 不在线」同形：HTTP 200 + 业务码 5001，浏览器经代理看到的是统一信封
+            body = json.dumps(
+                error_body(SERVICE_UNAVAILABLE, "Host 管理路由尚未挂载完成，请稍后重试"), ensure_ascii=False
+            ).encode("utf-8")
             return EdgeHttpResponse(
                 request_uuid=request.request_uuid,
-                status_code=503,
-                headers={"content-type": "application/json"},
+                status_code=200,
+                headers={"content-type": "application/json", "retry-after": "3"},
                 body_base64=base64.b64encode(body).decode("ascii"),
             )
         transport = httpx.ASGITransport(app=app)
@@ -513,11 +519,7 @@ class BackendWebSocketClient(BaseBackendClient):
             upstream = await client.request(
                 request.method,
                 request.path,
-                # 权威已在转发前校验过调用方；本进程的应用照样检查写请求，出示自己那份 token
-                headers={
-                    **{k: v for k, v in request.headers.items() if k.lower() not in self._HOP_HEADERS},
-                    **client_headers(),
-                },
+                headers={k: v for k, v in request.headers.items() if k.lower() not in self._HOP_HEADERS},
                 content=base64.b64decode(request.body_base64) if request.body_base64 else None,
                 timeout=request.timeout_seconds,
             )
@@ -534,18 +536,23 @@ class BackendWebSocketClient(BaseBackendClient):
         url = f"{self.backend_url()}/api/v1/edge/http-responses/{response.request_uuid}"
         secret = BasicConfig.auth_secret()
         headers = {"Authorization": f"Lab {secret}"} if secret else {}
-        headers.update(client_headers())
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 reply = await client.post(url, json=response.model_dump(mode="json"), headers=headers)
-            if reply.status_code >= 300:
-                logger.warning(
-                    "[ControlProtocol] 回送 backend_http 结果失败: HTTP %s %s",
-                    reply.status_code,
-                    reply.text[:200],
-                )
         except httpx.HTTPError as exc:
             logger.warning("[ControlProtocol] 回送 backend_http 结果失败: %s", exc)
+            return
+        from unilabos.client.utils.envelope import EnvelopeError, decode_json_body
+
+        # 权威按统一信封答复：业务失败是 HTTP 200 + code != 0（旧权威的裸 {"accepted"} 也接受）
+        try:
+            decode_json_body(reply.content, http_status=reply.status_code, envelope=False)
+        except (EnvelopeError, ValueError) as exc:
+            logger.warning(
+                "[ControlProtocol] 回送 backend_http 结果失败: HTTP %s %s",
+                reply.status_code,
+                str(exc)[:200],
+            )
 
     async def _send_handler(self) -> None:
         while self._connected and self._websocket is not None:

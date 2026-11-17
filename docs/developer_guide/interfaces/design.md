@@ -99,14 +99,17 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 身份校验、版本推进、幂等、账本与通知属于业务操作。文件目录叫 service 或 repository 并不能替代这个边界。
 实体自身的版本、命令身份和来源游标用于协调跨库/跨进程变更，不能拿一个库的 sequence 当作全系统事务号。
 
-每个库声明 `schema_version` 和一串线性迁移，库内版本记在 `PRAGMA user_version`。库内版本较低且迁移连续时，
-启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，并与当前声明逐表核对结构，不符就整体回滚。
-改表必须提升 `schema_version` 并补迁移（`tests/server/test_database_schema_versions.py` 固定各库指纹）。
+每个库声明 `schema_version` 和一串线性迁移，库内版本记在 `PRAGMA user_version`。0.13 发布线上四个库的结构都从
+**v1** 开始：开发期的迁移链（runtime v2–v12、materials v2–v8）已压平为 v1 基线；发布前的结构变化直接并进 v1，
+发布后改表时从 v2 起追加，并把 v1 的结构指纹登记进 `released_checksums`（同号不同指纹的库按无迁移路径处理）。库内版本较低且迁移连续时，启动会先备份为 `<file>.pre-v<N>-<时间戳>.bak`，再在一个事务里执行迁移，
+并与当前声明逐表核对结构，不符就整体回滚。
+改表必须提升 `schema_version` 并补迁移（`tests/server/test_database_schema_versions.py` 固定各库版本与指纹）。
 改 CHECK / 列约束用 `rebuild_table_migration`（建新表 → 拷贝同名列 → 删旧表 → 改名 → 重建索引，依赖视图与触发器原样重建），
-迁移里的建表语句是该版本冻结的字面量；`runtime.db` 的迁移链在 `tables/runtime/migrations.py`。
-没有迁移路径时，开发期四个库都改名保留为 `.bak-时间戳` 后重建空库；正式发布前 `runtime.db` 与 `materials.db`
-改为拒绝启动并保留旧库原样（`on_unmigratable="refuse"`），届时 `BasicConfig.database_rebuild_on_mismatch = True`
-可显式允许重建。
+迁移里的建表语句是该版本冻结的字面量，不引用之后还会演进的表规格。
+没有迁移路径（指纹不同且没有迁移、库内没有版本，或库内版本高于代码版本——例如 0.13 之前的开发库）时，
+`runtime.db` 与 `materials.db` 拒绝启动并保留旧库原样（`on_unmigratable="refuse"`），
+`BasicConfig.database_rebuild_on_mismatch = True` 可显式允许把旧库改名为 `.bak-时间戳` 后重建；
+`telemetry.db` 与 `history.db` 自动改名保留后重建空库。
 升级前仍建议备份，不应带着正在执行的实验直接试升级。
 实现依据：[数据库初始化策略](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/database/schema.py)。
 
@@ -164,13 +167,15 @@ HTTP 503 也不能证明数据库没有写入。处理方应核对账本、权�
 
 ## 8. 锁声明集中使用，不升级为隐式嵌套锁
 
-物料天然带锁：动作的物料入参（`ResourceSlot`、`List[ResourceSlot]`、`Optional[ResourceSlot]`，或
-`placeholder_keys` 标为 `unilabos_resources` 的入参）默认在执行期间独占。只读、不改变物料的入参用
-`@action(materials_free=["参数名"])` 排除；`@action(materials_need_lock=[...])` 显式给出最终集合，
-`[]` 表示整个动作不锁物料，两者不能同时写。注册表条目里的 `materials_need_lock` 是推导后的最终列表，
-运行时先解析实际 UUID，再交调度处理；可选物料入参未传或为空时没有物料，也就不加锁。
-YAML 注册表条目同一规则：不写 `materials_need_lock` 即默认，`placeholder_keys` 标为 `unilabos_resources`
-的字段加锁（`materials_free` 排除）；`--complete_registry` / `--check_mode` 只把显式声明写回 YAML，默认值每次加载重新推导。
+物料天然带锁：动作的每个物料入参（`ResourceSlot`、`List[ResourceSlot]`、`Optional[ResourceSlot]`，或
+`placeholder_keys` 标为 `unilabos_resources` 的入参）都加共享资源锁——执行期间独占，正常终态释放，物料空闲时
+不被持有，因此不需要借出；不能借出的独占只有设备托管（见 [资源借还与设备托管](../workflow_resource_custody.md)）。
+驱动不能按动作豁免或收窄这一集合：旧的 `@action(materials_free=...)` / `@action(materials_need_lock=...)`、YAML
+条目里的同名键和 typed 动作的 `MaterialLock(free=True)` 照常加载，但值被忽略，每个定义告警一次。
+注册表条目里的 `materials_need_lock` 是框架按签名推导出的只读结果（签名未知的 YAML 条目按
+`placeholder_keys` 推导），运行时先解析实际 UUID，再交调度处理；可选物料入参未传或为空时没有物料，也就不加锁，
+给了值却解析不出权威 UUID 时拒绝派发。`--complete_registry` / `--check_mode` 不把这个推导值写回 YAML，
+写回时同时删掉旧的改写键。
 物料资源锁保护同一对象的并发使用；库存 reservation 保护某批次的可用数量；Site 占用表达物料所在位置。
 三者不是同一个标志，也不能互相代用。
 

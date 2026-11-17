@@ -356,12 +356,13 @@ def test_payload_client_reads_history_payload_via_backend_http() -> None:
     def _edge_side() -> None:
         message = service.outgoing.get(timeout=2)
         request = BackendHttpRequest.model_validate(message["data"])
-        assert request.path == "/api/v1/history/payloads/payload-9"
+        assert request.path == "/api/v1/edge/history/payloads/payload-9"
         service.complete_http_response(
             EdgeHttpResponse(
                 request_uuid=request.request_uuid,
                 status_code=200,
-                body_base64=__import__("base64").b64encode(json.dumps(document).encode()).decode(),
+                # Host 的 history 路由输出统一信封，权威解包 data
+                body_base64=__import__("base64").b64encode(json.dumps({"code": 0, "data": document}).encode()).decode(),
             )
         )
 
@@ -760,3 +761,16 @@ def test_reconnect_of_the_same_host_process_keeps_jobs_in_flight() -> None:
 
     assert not _wait_for(lambda: calls, timeout=0.2)
     assert service.active_job_ids() == ["job-1"]
+
+
+def test_unknown_start_event_reaches_scheduler_as_unknown_not_failure():
+    from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+    detail = {"status": "failed", "return_info": {"uncertainty_reason": "开始不确定"}}
+    service = _service({"payload-1": detail})
+    service.attach_connection()
+    service.dispatch(_dispatch_payload())
+    seen = []
+    service.add_job_finished_listener(lambda *args: seen.append(args))
+    assert service.handle_message("edge_change", _edge_change(1, event_type="execution.execution_unknown"))
+    assert seen[0][3] == SUCCESS_TYPE_EXECUTION_UNKNOWN
+    assert seen[0][4]["uncertainty_reason"] == "开始不确定"

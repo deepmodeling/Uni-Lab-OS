@@ -83,7 +83,7 @@ def get_vessel_display_info(vessel: Union[str, dict]) -> str:
     """
     if isinstance(vessel, dict):
         vessel_id = vessel.get("id", "unknown")
-        vessel_name = vessel.get("name", "")
+        vessel_name = vessel.get("display_name", "")
         if vessel_name:
             return f"{vessel_id} ({vessel_name})"
         else:

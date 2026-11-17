@@ -1,9 +1,11 @@
-"""公共 Workflow HTTP 边界使用的有界非递归 JSON 编解码器。"""
+"""公共工作流（Workflow）HTTP 边界使用的有界非递归 JSON 编解码器。"""
 
 from __future__ import annotations
 
+import json
 import math
 import re
+import sys
 from json.decoder import scanstring
 from json.encoder import encode_basestring
 from typing import Any
@@ -12,16 +14,94 @@ MAX_BACKEND_JSON_DEPTH = 10_000
 
 _JSON_NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 _JSON_WHITESPACE = " \t\r\n"
+_JSON_INTEGER_CHUNK_DIGITS = 9
+_JSON_INTEGER_CHUNK_BASE = 10**_JSON_INTEGER_CHUNK_DIGITS
 _MISSING = object()
+
+
+def _decode_json_integer(raw: str) -> int:
+    """分块解码任意位数的 JSON integer，不改变解释器全局限制。"""
+
+    negative = raw.startswith("-")
+    digits = raw[1:] if negative else raw
+    first_width = len(digits) % _JSON_INTEGER_CHUNK_DIGITS
+    if first_width == 0:
+        first_width = _JSON_INTEGER_CHUNK_DIGITS
+    value = int(digits[:first_width])
+    for offset in range(first_width, len(digits), _JSON_INTEGER_CHUNK_DIGITS):
+        value = value * _JSON_INTEGER_CHUNK_BASE + int(
+            digits[offset : offset + _JSON_INTEGER_CHUNK_DIGITS]
+        )
+    return -value if negative else value
+
+
+def _encode_json_integer(value: int) -> str:
+    """分块编码任意位数的 JSON integer，不改变解释器全局限制。"""
+
+    if value == 0:
+        return "0"
+    negative = value < 0
+    remaining = -value if negative else value
+    chunks: list[int] = []
+    while remaining:
+        remaining, chunk = divmod(remaining, _JSON_INTEGER_CHUNK_BASE)
+        chunks.append(chunk)
+    parts = [str(chunks.pop())]
+    while chunks:
+        parts.append(f"{chunks.pop():0{_JSON_INTEGER_CHUNK_DIGITS}d}")
+    encoded = "".join(parts)
+    return f"-{encoded}" if negative else encoded
 
 
 def decode_json_bytes(
     body: bytes,
     *,
     max_depth: int = MAX_BACKEND_JSON_DEPTH,
+    max_integer_digits: int | None = 4300,
 ) -> Any:
     """在不修改 Python 递归上限的情况下解码一个 UTF-8 JSON 值。"""
 
+    if max_integer_digits is not None and (
+        type(max_integer_digits) is not int or max_integer_digits < 1
+    ):
+        raise ValueError("JSON integer digit limit must be a positive integer")
+    # 常见浅层大图使用原生扫描器；它在解释器递归上限前退出，因此只有该
+    # 上限不超过合同深度预算时才可走此路径。深层值回退到原来的迭代解码器，
+    # 不提高进程递归上限，也不改变整数预算和非有限数值的拒绝规则。
+    if type(max_depth) is int and max_depth >= sys.getrecursionlimit():
+        def integer(raw: str) -> int:
+            if max_integer_digits is not None and len(raw) - raw.startswith("-") > max_integer_digits:
+                raise ValueError("JSON integer exceeds the external digit limit")
+            return _decode_json_integer(raw)
+
+        def floating(raw: str) -> float:
+            value = float(raw)
+            if not math.isfinite(value):
+                raise ValueError("JSON numbers must be finite")
+            return value
+
+        def constant(raw: str) -> Any:
+            raise ValueError("invalid JSON token")
+
+        try:
+            return json.loads(
+                body.decode("utf-8"), parse_int=integer,
+                parse_float=floating, parse_constant=constant,
+            )
+        except RecursionError:
+            pass
+    return _decode_json_bytes_iterative(
+        body, max_depth=max_depth, max_integer_digits=max_integer_digits,
+    )
+
+
+def _decode_json_bytes_iterative(
+    body: bytes,
+    *,
+    max_depth: int,
+    max_integer_digits: int | None,
+) -> Any:
+    """保留深层 JSON 和较小显式预算的非递归解码路径。"""
     text = body.decode("utf-8")
     length = len(text)
     position = 0
@@ -98,7 +178,10 @@ def decode_json_bytes(
             if not math.isfinite(value):
                 raise ValueError("JSON numbers must be finite")
         else:
-            value = int(raw)
+            digit_count = len(raw) - int(raw.startswith("-"))
+            if max_integer_digits is not None and digit_count > max_integer_digits:
+                raise ValueError("JSON integer exceeds the external digit limit")
+            value = _decode_json_integer(raw)
         deliver(value)
         return match.end()
 
@@ -186,7 +269,7 @@ def encode_json(value: Any, *, sort_keys: bool = False) -> bytes:
         elif type(item) is bool:
             output.append("true" if item else "false")
         elif type(item) is int:
-            output.append(str(item))
+            output.append(_encode_json_integer(item))
         elif type(item) is float:
             if not math.isfinite(item):
                 raise ValueError("JSON numbers must be finite")
@@ -207,7 +290,10 @@ def encode_json(value: Any, *, sort_keys: bool = False) -> bytes:
             for index in range(len(entries) - 1, -1, -1):
                 key, child = entries[index]
                 if not isinstance(key, str):
-                    raise ValueError("JSON object keys must be strings")
+                    # 保持公共 JSON 编码合同既有的 ValueError 语义。
+                    raise ValueError(  # noqa: TRY004
+                        "JSON object keys must be strings"
+                    )
                 stack.append(("value", child))
                 stack.append(("token", ":"))
                 stack.append(("token", encode_basestring(key)))
@@ -216,6 +302,12 @@ def encode_json(value: Any, *, sort_keys: bool = False) -> bytes:
         else:
             raise ValueError(f"{type(item).__name__} is not a JSON value")
     return "".join(output).encode("utf-8")
+
+
+def clone_json(value: Any) -> Any:
+    """用公共非递归 codec 复制一个有界 JSON 值。"""
+
+    return decode_json_bytes(encode_json(value))
 
 
 def strict_json_equal(left: Any, right: Any) -> bool:
@@ -241,6 +333,7 @@ def strict_json_equal(left: Any, right: Any) -> bool:
 
 __all__ = [
     "MAX_BACKEND_JSON_DEPTH",
+    "clone_json",
     "decode_json_bytes",
     "encode_json",
     "strict_json_equal",

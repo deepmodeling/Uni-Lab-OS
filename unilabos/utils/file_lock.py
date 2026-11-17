@@ -20,11 +20,11 @@ except ImportError:  # pragma: no cover - 由 POSIX 回归覆盖
 _WINDOWS_LOCK_ERRORS = {errno.EACCES, errno.EAGAIN, errno.EDEADLK}
 
 
-def acquire_exclusive_file_lock(stream: BinaryIO) -> None:
-    """阻塞获取 ``stream`` 对应文件的跨进程排他锁。"""
+def acquire_exclusive_file_lock(stream: BinaryIO, *, blocking: bool = True) -> None:
+    """获取跨进程排他锁；非阻塞模式竞争失败时抛出 BlockingIOError。"""
 
     if _fcntl is not None:
-        _fcntl.flock(stream.fileno(), _fcntl.LOCK_EX)
+        _fcntl.flock(stream.fileno(), _fcntl.LOCK_EX | (0 if blocking else _fcntl.LOCK_NB))
         return
     if _msvcrt is None:  # pragma: no cover - CPython 支持的平台均有一个实现
         raise RuntimeError("当前平台不支持进程级文件锁")
@@ -44,6 +44,8 @@ def acquire_exclusive_file_lock(stream: BinaryIO) -> None:
         except OSError as exc:
             if exc.errno not in _WINDOWS_LOCK_ERRORS:
                 raise
+            if not blocking:
+                raise BlockingIOError(exc.errno, "文件正在被其他进程使用") from exc
             time.sleep(0.05)
 
 

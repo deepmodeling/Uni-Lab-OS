@@ -27,7 +27,7 @@
 
 | 原文主题 / 旧表述 | 当前应如何说明 | 详细依据 |
 | --- | --- | --- |
-| Python 3.10+ 的接入环境 | 本版以 Python 3.12 为运行基线；ROS2 Jazzy/Humble 依赖环境分开说明，HostLink 无需 ROS 通信运行时 | [迁移](migration.md) |
+| Python 3.10+ 的接入环境 | 本版以 Python 3.14（cp314）为运行基线；ROS2 Jazzy/Humble 依赖环境分开说明，HostLink 无需 ROS 通信运行时 | [迁移](migration.md) |
 | `displayname` 与 `display_name` 的示例/兼容说法 | 当前装饰器签名使用 `display_name`，不能继续给新驱动推荐旧 keyword | [Python 接入](python-cli-mcp.md) |
 | 设备能力声明自动变成 ROS 接口 | 声明交给共享执行内核，按 HostLink 或 ROS2 初始化；特殊 ROS 能力不能宣称通用支持 | [设计](design.md) |
 | DDS 负责订阅的发现与重连 | 这只适用于 ROS2 对应链路；HostLink、控制 WS 和前端 SSE 各有自己的连接生命周期 | [实时通道](realtime.md) |

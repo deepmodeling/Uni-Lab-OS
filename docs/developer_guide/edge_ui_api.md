@@ -29,13 +29,14 @@ graphs / lab / scheduler / restart / health；Host 专有的 `runtime`、`teleme
 `hostlink`、`status-incidents`、`driver-packages`、`device-processes` 由
 `unilabos/server/api/edge_proxy.py` 作为 runtime.v1 的 `backend_http` 通知经 WS 下发，Host 对
 自己的 ASGI 应用在进程内执行后 `POST /api/v1/edge/http-responses/{request_uuid}` 送回，权威再
-回给浏览器（Host 不在线返回 503）。权威拉 durable 事件正文、通知 Host 重启、物料投影中继
+回给浏览器（Host 不在线返回 HTTP 200 + 业务码 5001）。权威拉 durable 事件正文、通知 Host 重启、物料投影中继
 （`/api/v1/hostlink/{material-sync,notify-device}`）走的是同一条通道。Host 子进程的 `-g <uuid|名称>` 与启动图登记经 HTTP 走权威的
 Graph Authority（`POST /graphs` 可随请求带 `device_site_templates`，用 Host 自己的注册表实例化
 模板 Site；启动登记带 `on_existing="adopt"`——权威已有该图时以权威为准只补新增，前端 / CLI
 上传缺省 `replace` 即编辑）；Host 包里的 `@workflow` 是**工作流模板**，随注册表快照一起上报
-（`POST /resource-templates` 的一个条目，`registry_type=workflow`），不直接落成
-工作流。注册表上报按内容哈希增量进行（先 `GET /registry/digest`，只为权威没有的哈希附完整定义），
+（`POST /api/v1/registry/reports` 的一个条目，`registry_type=workflow`），不直接落成
+工作流。**调度权威不扫描注册表**：它的设备 / 资源 / 工作流模板目录只来自 Host 的上报（按内容哈希
+增量进行：先 `GET /registry/digest`，只为权威没有的哈希附完整定义），变化按接受规则生效或待确认，
 见下文 `/api/v1/registry/*`。两侧的控制面在 `runtime.v1` 之内闭环：Host 上报的注册表快照带
 `always_free` / `error_policy` / `timeout` / `execution_timeout`，权威据此解析动作锁、重试上限与
 超时看门狗（软超时表达式按最终参数求值后随 `execute_job` 下发）；Host 失败打开终态闸门后发
@@ -88,12 +89,15 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - 路径 `/api/v1/<复数 kebab-case 集合>[/{snake_case_uuid}][/<子集合>][/<动词>]`；领域动作用
   `POST …/<动词>`（`/start`、`/apply`、`/launch`），不在路径里放 CRUD 动词；
 - 方法语义：PUT 整体设定、PATCH 局部、DELETE 幂等；空体请求不要求 `Content-Type: application/json`；
-- 状态码：201 同步创建、202 异步长操作（返回 operation 资源供轮询）、204 无正文删除、
-  404 不存在或未挂载、409 状态冲突、422 一切可修正的请求错误（不用 400）、503 能力未装配；
-  直出 DTO 域的错误正文统一 `{"detail": …}`；
-- 响应形态按域固定：直出 DTO；Backend 信封 `{code, data | error: {msg}}`（workflow / graphs / chemicals
-  业务失败 HTTP 恒 200，业务码表见 [HTTP 约定](interfaces/http.md)，只追加；registry 成功走信封、
-  错误用 HTTP 4xx）；materials.v1 写信封 `InventoryMutation → MutationResult`；
+- 状态码：201 同步创建、202 异步长操作（返回 operation 资源供轮询），无数据命令 200 + `{"code":0}`；
+  业务失败一律 HTTP 200 + 业务码（不存在 3002 / 4001、冲突 3003 / 4002、请求错误 1000、能力未装配 5001），
+  路由里抛 `HTTPException` 时由信封路由按状态码换算；
+- 响应形态统一为 V1 信封 `{code, data | error: {msg[, code, details]}}`（`unilabos/server/api/envelope.py`
+  的 `envelope_router` / `EnvelopeRoute`，业务码表见 [HTTP 约定](interfaces/http.md)，只追加）；
+  materials.v1 写入的 `InventoryMutation → MutationResult` 放在信封 `data` 里；健康 / 就绪探针、库存命令、`/v1/*`
+  进程管理与 Host↔权威内部通道同样是信封（就绪探针未就绪 HTTP 503 + 5001，不存在的路由 HTTP 404 + 4001），
+  只有 SSE 与文件下载不包信封；Host 启动 / 重启中的 5001 带 `Retry-After`，它在 CORS `expose_headers` 里，
+  跨域前端能读到；
 - 字段 snake_case；权威身份 `*_uuid`；新增时间字段一律 `*_at_ms`（UTC epoch 毫秒整数）；
   枚举小写；新增枚举值算加法变更，客户端必须容忍；
 - 列表：人看的用 `page / page_size → {items, total, page, page_size}`；子记录用 `limit / offset`；
@@ -114,12 +118,12 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   写请求应显式填 `actor_type: "human"`，不要依赖默认值 `edge`（`edge` 应展示为
   "Edge 上报"，取值表见 `examples/materials_operations_guide.md §2.2.1`）；
 - `/api/v1/telemetry`：设备最新状态和事件；
-- `/api/v1/history`：payload 与统一历史事件；
-- `/api/v1/lab/layout`：实验室布局（区域 / 围墙像素格，叠在物料权威设备位置之上）。runtime.db
-  `lab_layout` 单行文档，一个 Host 一份、所有前端共享：`GET` 从未保存时返回 `revision 0` 的空布局
-  （不是 404），`PUT {revision, cell_size, zones, walls}` 整份替换、revision 乐观锁不匹配 409，
-  `DELETE` 重置；不变量（格子只属一个区域、区域与围墙互斥、`#rrggbb`、规模上限）在服务端校验（422）。
-  前端不再把布局存 localStorage，只在连的是没有该接口的老微后端时降级；
+- `/api/v1/edge/history`：payload 与统一历史事件（`/api/v1/history` 归 V1 运行历史）；
+- `/api/v1/lab/*`（权威回答，只读写 materials.db）：`GET /lab/warehouse` 按品类（模板）聚合批次 / 数量 / 在库实例 /
+  `warehouse_zone_id` 分布；`GET /lab/assembly/{id}` 是根物料 + 递归子件的组合树（`placement` 恒为 null）；
+  `POST /lab/demo` 幂等写入演示模板与批次。实验室档案、网格布局、分区与摆放（`/lab/profile`、`/lab/layout`、
+  `/lab/zones`、`/lab/placements`，materials.db `lab_meta` / `lab_zone` / `lab_placement` 与 runtime.db `lab_layout`）
+  按负责人 2026-11-17 决定删除；
 - `/api/v1/health`、`/api/v1/hostlink/peers`：轻量诊断；
 - `/api/v1/ping?client_timestamp=`：HTTP ping-pong，回显客户端时间戳并附服务端时钟。
   Host 到 Backend 的链路由 Backend 会话（`legacy_adaptor/session.py` 的
@@ -131,13 +135,13 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   重启。默认拓扑下 `auto` 解析为 `edge`：只重启 Host 子进程——权威通知它退出（退出码 75），
   子进程看护器以相同参数拉起，Host 重连控制面后自动恢复派发；管理端口全程在线，前端连接
   不断，`health.execution` 短暂变为 `restarting`；等待中的任务由调度恢复链路继续，不会
-  失败。权威进程自己常驻，显式 `scope=process` 会被拒绝（422）；只有接远端 Backend 的
+  失败。权威进程自己常驻，显式 `scope=process` 会被拒绝（HTTP 200 + 业务码 1000）；只有接远端 Backend 的
   顶层 Host（CLI `--address`）才走整进程重启，由薄监督进程以相同参数拉起。
   `unilab --no-safe-restart` 关闭全部编排（调试用：重启只退出、不拉起）。GET 查询等待
   状态（含 `effective_scope`、`safe_restart`），DELETE 取消并恢复派发；body 可选
   `{"mode": "immediate"}` 跳过安静等待、`{"scope": "edge"|"process"}` 显式指定作用域。
-- `/api/v1/scheduler/resources`：调度权威（Backend）可读；不提供调度权威的进程以 503
-  明确表示应去其 Backend 地址读取。
+- `/api/v1/scheduler/resources`：调度权威（Backend）可读；不提供调度权威的进程返回 HTTP 200 +
+  业务码 5001，明确表示应去其 Backend 地址读取。
 - `/api/v1/driver-packages`（带执行面的 Host）：驱动包管理，与 `--devices <目录>` 同一套
   机制、**不 pip install 包体**。`POST /install`（202，返回可轮询的 operation）接受 GitHub
   仓库地址 `https://github.com/<owner>/<repo>[@ref]`、zip / tar.gz 归档地址或本机目录：远端来源
@@ -162,25 +166,44 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
 - `/api/v1/device-processes`（带执行面的 Host）：受管设备进程。一条规格 = 设备节点列表
   （服务端展开为 slave 图，uuid 沿用物料权威已有设备身份）+ 要挂载的驱动包 + 重启策略；
   `start` 以 `python -m unilabos --is_slave --host_node_ip … -g <图>` 拉起本机子进程，经
-  HostLink 接回本 Host；`never / on-failure / always` 三种看护策略，退避重启、超过
+  HostLink 接回本 Host（数据库根目录为各自的 `<working_dir>/device_processes/<id>/database`，不与
+  Host / 权威共用）；`never / on-failure / always` 三种看护策略，退避重启、超过
   `max_restarts` 停在 `crashed`；`auto_start` 的进程随 Host 启动拉起、Host 退出时终止；
   受管日志统一经 `GET /api/v1/hostlink/logs?source_id=managed:<id>` 读取。驱动崩溃只影响该子进程，Host 与物料权威不受影响。
   这两组路由只在 Host 上挂载（Backend 返回 404），前端按能力缺失降级。协议细节见
   [OpenLabSite](https://github.com/Xuwznln/OpenLabSite) 仓库 `docs/protocol/driver-packages.md`。
-- `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本。与 Workflow Authority
-  同归属、同一 `setup_server()` 挂载。Host 启动时按**内容哈希增量**上报（协议对象见
-  `unilabos.protocol.runtime.registry`）：先 `GET /registry/digest` 取权威持有的
-  `{active: {name: content_sha256}, pending: {…}}`，再 `POST /resource-templates` 发
-  `{entries: [{id, content_sha256, payload?}]}`——每个条目（设备 / 资源 / 包里 `@workflow`
-  声明的工作流模板）都带哈希，集合本身决定哪些既有条目软移除，只有权威没有该哈希的条目
-  才附完整 `payload`。首次上报索引为空即全量，之后每次启动只剩几 KB 的哈希清单；权威对
-  带 payload 的条目自己重算哈希，只发哈希却对不上的条目列入结果的 `missing`，Host 补上
-  payload 再报一次。旧形状 `{resources: [...], workflow_templates: [...]}`（全量定义）仍被接受，
-  Host 遇到没有 digest 端点的旧权威也会退回这种形状。
-  `entries` 列条目状态；`pending-impacts` 把挂起冲突映射到受影响的
-  workflow 节点；`entries/{name}/apply` 确认待处理版本，`dismiss` 忽略挂起，
+- `/api/v1/registry/*`（调度权威所在进程）：条目级注册表版本，也是权威注册表目录的**唯一来源**
+  （权威不扫描设备 / 资源定义；工作流编译与模板实例化用的设备目录、节点模板、动作 Schema、出库
+  可选的资源类都读这里的生效条目）。与 Workflow Authority 同归属、同一 `setup_server()` 挂载。
+  Host 启动时按**内容哈希增量**上报（协议对象见 `unilabos.protocol.runtime.registry`）：先
+  `GET /registry/digest` 取权威持有的 `{active: {name: content_sha256}, pending: {…}}`，再
+  `POST /registry/reports`（JSON，可 gzip）发 `{machine_id, slaves, entries: [{id, content_sha256, payload?, package,
+  package_version}]}`——每个条目（设备 / 资源 / 包里 `@workflow` 声明的工作流模板）都带哈希与所属
+  驱动包（不进哈希），集合本身决定哪些既有条目移除，只有权威没有该哈希的条目才附完整 `payload`。
+  首次上报索引为空即全量，之后每次启动只剩几 KB 的哈希清单；权威对带 payload 的条目自己重算哈希，
+  只发哈希却对不上的条目列入结果的 `missing`，Host 补上 payload 再报一次。上报失败时 Host 在后台
+  重试直到成功。旧形状 `{resources: [...], workflow_templates: [...]}`（全量定义）仍被接受，Host
+  遇到没有 digest 端点的旧权威也会退回这种形状。
+  **接受规则**：新增或变化的条目（以及 Host 不再上报的条目）先挂起，命中规则才直接生效——
+  规则 B（单机部署）：上报带的 `machine_id` 等于权威自己的（`utils/machine_identity.py`，单进程
+  时进程内上报必然同机），且权威没有记录任何跨机器 Slave，则本次全部变化生效（默认 `unilab`
+  的权威 + Host 子进程 + 受管 Slave 总是如此，不需要人工确认）；规则 A（驱动包升级）：条目所属
+  驱动包的版本号（PEP 440）比已接受内容的包版本高时生效，新条目与同一驱动包已接受条目的最高
+  版本比较。其余变化挂起，`pending_reason` 写明是 `cross-machine-reporter`（`--address` 接入的
+  Host 在另一台机器，或上报不带机器标识）还是 `cross-machine-slave`；变化删改了活跃 workflow
+  引用的动作时附冲突明细（规则命中直接生效时记进上报统计的 `auto_accepted[].conflicts`）。
+  跨机器 Slave 由 Host 告知：上报带当时连着的 Slave（HostLink HELLO 自报的 `machine_id`），之后
+  每有 Slave 接入 Host 再 `POST /registry/slaves` 补报；`machine_id` 不等于权威的（或旧 Slave
+  没有）即记入 `registry_remote_slave`，直到 `DELETE /registry/slaves/{machine_name}` 删除。
+  `GET /registry/status` 给出是否已收到上报、最近一次上报的统计与判定、挂起数和当前的规则 B 判定；
+  `entries` 列条目状态（`pending_change` 为 `add` / `update` / `remove`，`package` /
+  `package_version` 是规则 A 的基准）；`pending-impacts` 把挂起冲突映射到受影响的 workflow 节点；
+  `entries/{name}/apply` 接受挂起的变化，`dismiss` 忽略（Host 再报同一内容会再次挂起，复用同一
+  版本号），`pending/apply` / `pending/dismiss`（`{names?}`，缺省为全部）批量处理，
   `restore/{version}` 还原历史版本。
-  只提供执行面的进程没有该域，前端按 404/503 静默降级。
+  全新库在首次上报前目录为空：读接口返回空（节点模板只有权威自带的结构模板），工作流编译、
+  `from-template` / `template-instances` 与按资源类出库明确报 `registry_not_reported`。
+  只提供执行面的进程不挂载该域（HTTP 404），注册表服务尚未就绪时返回业务码 5001，前端按这两种情况静默降级。
 - 工作流模板：`GET /api/v1/registry/workflow-templates` 列出生效的 `@workflow` 模板
   （`uuid` / `display_name` / `roles` / `nodes` / `edges`，与前端「工作流模板」面板的用户模板
   同形：动作节点用角色占位，`run` 的角色是设备 id、`run_template` 的角色是设备类
@@ -226,7 +249,7 @@ UI 的恢复基线来自四库 API，而不是进程内事件缓存：
 3. retry 必须表现为调度权威（Backend 的 Workflow Authority）在同一事务里创建的新
    attempt/job；Host 不在原 Job 上本地重排。画布以节点运行为单位展示：当前状态来自
    节点运行投影，历史来自 `attempts`。
-4. 调度资源页面要识别 `/scheduler/resources` 的 503：这表示所连进程不提供调度权威，
+4. 调度资源页面要识别 `/scheduler/resources` 的业务码 5001：这表示所连进程不提供调度权威，
    应去其 Backend 地址读取，不是服务故障。
 
 ### 工作流模板参数：预填、确认与 API 导入
@@ -270,8 +293,9 @@ UI 的恢复基线来自四库 API，而不是进程内事件缓存：
 #### 当前请求合同
 
 `POST /api/v1/workflows/from-template` 和 `PUT /api/v1/workflows/{uuid}/graph` 接受
-`site_binding_mode: "resolve" | "preserve"`，默认 `resolve`。脚本 / CLI / MCP 默认自动解析；
-浏览器的草稿与确认后保存都显式传 `preserve`，不允许一次 HTTP 保存自动替用户确认。
+`site_binding_mode: "resolve" | "preserve"`。`from-template` 默认 `resolve`；`PUT /graph` 按 V1 合同默认
+`preserve`（原样保存草稿），脚本 / CLI / MCP 等程序化导入显式传 `resolve` 自动解析（`client/runtime/workflow.py`
+的 `save_workflow_graph` 已这样做）。浏览器的草稿与确认后保存都按 `preserve` 保存，不允许一次 HTTP 保存自动替用户确认。
 未登记目标设备或尚无生效动作声明时，`resolve` 返回 Backend 业务码 `1000`（HTTP 200），
 要求先登记或显式存为待校验草稿。缺失/歧义 Site 的错误同样包含节点、参数及原因。
 

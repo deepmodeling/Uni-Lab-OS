@@ -287,8 +287,11 @@ class MaterialIdentityWrite(ServerObject):
     resource_id: NonEmptyStr
     parent_material_uuid: Optional[NonEmptyStr] = None
     lot_uuid: Optional[NonEmptyStr] = None
-    name: NonEmptyStr
-    # 展示名；空值由权威落库时回退 name（与 device 的 id/display_name 约定一致）。
+    # 物料 name 恒等于 material_uuid，由权威写入。写入请求可以不给；给了 UUID 形式即身份
+    # （须与 material_uuid 一致，没有 material_uuid 时被采纳），给了旧式标签则迁到
+    # display_name（为空时）与 PLR 键 config.name（缺失时）。
+    name: str = ""
+    # 人读标签；为空时权威依次回退旧名、PLR 键、resource_id。
     display_name: str = ""
     description: str = ""
     resource_type: NonEmptyStr = "resource"
@@ -309,6 +312,7 @@ class MaterialIdentityWrite(ServerObject):
 
 
 class MaterialIdentityRead(MaterialIdentityWrite):
+    name: NonEmptyStr
     template_uuid: NonEmptyStr
     material_uuid: NonEmptyStr
     ordinal: int = Field(default=0, ge=0)
@@ -423,21 +427,32 @@ class MaterialInstantiate(ServerObject):
     """「物料出库/实例化」入口参数：按 registry 资源类名实例化并权威登记。
 
     与 MaterialTreeCreate 的关系：微前端没有 PLR，无法生成完整草稿树；本模型
-    只描述「资源类 + 实例名」，由微后端（Host 进程内已加载 registry/PLR）实例化
-    草稿并转 MaterialTreeCreate 落库（权威发 uuid）。出库产物随后以
+    只描述「资源类 + 实例名」，由微后端按注册表目录（调度权威里是 Host 上报的生效
+    条目）找到 PLR 类、实例化草稿并转 MaterialTreeCreate 落库（权威发 uuid）。出库产物随后以
     ResourceSlot 引用 {id, uuid} 形态提交给动作参数（unilabos_deduct_resource）。
     """
 
     registry_class: NonEmptyStr = Field(
         description="registry 资源类 id（resource_type_registry 的键）"
     )
-    name: NonEmptyStr = Field(
-        description="实例名（权威库展示名，同时作为 ResourceSlot 引用的 id）"
+    name: Optional[NonEmptyStr] = Field(
+        default=None,
+        description="实例名：PLR 根名，同时作为 ResourceSlot 引用的 id；缺省取 display_name",
+    )
+    display_name: Optional[NonEmptyStr] = Field(
+        default=None,
+        description="人读标签；缺省取 name",
     )
     barcode: Optional[str] = Field(
         default=None,
         description="可选条码；提供时写入实例化产物根节点的 barcode 字段",
     )
+
+    @model_validator(mode="after")
+    def _require_a_name(self) -> "MaterialInstantiate":
+        if not self.name and not self.display_name:
+            raise ValueError("instantiate requires name or display_name")
+        return self
 
 
 class MaterialAggregateRead(ServerObject):
@@ -458,7 +473,7 @@ class MaterialTreeRead(ServerObject):
 
 
 class MaterialPatch(ServerObject):
-    name: Optional[NonEmptyStr] = None
+    # 物料 name 等于 uuid，不可修改；改人读标签用 display_name。
     display_name: Optional[NonEmptyStr] = None
     description: Optional[str] = None
     machine_name: Optional[str] = None
@@ -559,6 +574,34 @@ class InventoryLotInbound(ServerObject):
     unit: NonEmptyStr
     quantity: float = Field(gt=0)
     expiry_at_ms: Optional[int] = Field(default=None, ge=0)
+    # 批次所在库位与仓储分区（V1 lot location / warehouse zone）；补充入库时不改变既有位置
+    location_site_uuid: Optional[NonEmptyStr] = None
+    warehouse_zone_id: str = ""
+
+
+class InventoryLotCorrection(ServerObject):
+    """批次数量与位置校正：适用于任意计量单位（含质量 / 体积）与已隔离批次。
+
+    ``measured_quantity`` 为空时只改位置；给出时按实测总量校正，可用量随差额调整，
+    不能低于已预留量。``quarantined`` 给出时同时设置或解除批次隔离。
+    """
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_quantity: Optional[float] = Field(default=None, ge=0, allow_inf_nan=False)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: Optional[str] = None
+    quarantined: Optional[bool] = None
+    reason: NonEmptyStr
+
+
+class InventoryStocktake(ServerObject):
+    """人工盘点计数库存；预留或已实例化库存的差异必须另行复核。"""
+
+    lot_uuid: NonEmptyStr
+    expected_version: int = Field(ge=1, strict=True)
+    measured_count: int = Field(ge=0, strict=True)
+    reason: NonEmptyStr
 
 
 class InventoryLotRead(ServerObject):
@@ -574,19 +617,23 @@ class InventoryLotRead(ServerObject):
     created_at_ms: int = Field(ge=0)
     updated_at_ms: int = Field(ge=0)
     version: int = Field(ge=1)
+    location_site_uuid: Optional[str] = None
+    warehouse_zone_id: str = ""
 
 
 class InventoryRequirement(ServerObject):
     """调度器冻结的一项库存需求。
 
-    两种 kind 区分的是账目形态而不是物料种类：``material`` 表示独立物料实例
+    三种 kind 区分的是账目形态而不是物料种类：``material`` 表示独立物料实例
     （有 uuid、可放到位点的个体，例如枪头盒、孔板、试剂瓶），只改变生命周期而不
     扣数量；``lot`` 表示按量计量的 ``inventory_lot`` 库存（散装试剂、散装耗材等），
-    按 lot FIFO 从 available 预留并在动作开始时扣减。
+    按 lot FIFO 从 available 预留并在动作开始时扣减；``content`` 表示某个容器里的
+    一份内容物（``material_uuid`` 是容器，用 ``substance_uuid`` 或容器内唯一的
+    ``substance_name`` 选中），多个任务共享同一份内容物的余量，在动作开始时扣减。
     """
 
     key: NonEmptyStr
-    kind: Literal["material", "lot"]
+    kind: Literal["material", "lot", "content"]
     material_uuid: Optional[NonEmptyStr] = None
     template_uuid: Optional[NonEmptyStr] = None
     lot_uuid: Optional[NonEmptyStr] = None
@@ -594,9 +641,33 @@ class InventoryRequirement(ServerObject):
     site_uuid: Optional[NonEmptyStr] = None
     quantity: Optional[float] = Field(default=None, gt=0)
     unit: Optional[NonEmptyStr] = None
+    substance_uuid: Optional[NonEmptyStr] = None
+    substance_name: Optional[NonEmptyStr] = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_content_fields(self, handler: Any) -> Any:
+        # 内容物专用字段为空时不进入序列化：material / lot 需求的形状与请求哈希保持升级前不变
+        data = handler(self)
+        if isinstance(data, dict):
+            for name in ("substance_uuid", "substance_name"):
+                if data.get(name) is None:
+                    data.pop(name, None)
+        return data
 
     @model_validator(mode="after")
     def _validate_requirement(self) -> "InventoryRequirement":
+        if self.kind == "content":
+            if self.material_uuid is None:
+                raise ValueError("content requirement needs the container material_uuid")
+            if (self.substance_uuid is None) == (self.substance_name is None):
+                raise ValueError("content requirement needs exactly one of substance_uuid/substance_name")
+            if self.quantity is None or self.unit is None:
+                raise ValueError("content requirement needs quantity and unit")
+            if any(value is not None for value in (self.template_uuid, self.lot_uuid, self.parent_material_uuid, self.site_uuid)):
+                raise ValueError("content requirement cannot carry lot or warehouse selectors")
+            return self
+        if self.substance_uuid is not None or self.substance_name is not None:
+            raise ValueError("only content requirements can select a substance")
         if self.kind == "material":
             if self.quantity is not None or self.unit is not None or self.lot_uuid is not None:
                 raise ValueError("material requirement cannot carry lot quantity fields")
@@ -670,12 +741,25 @@ class InventoryTaskReservationCreate(ServerObject):
 
 class InventoryAllocation(ServerObject):
     key: NonEmptyStr
-    kind: Literal["material", "lot"]
+    kind: Literal["material", "lot", "content"]
     material_uuid: Optional[NonEmptyStr] = None
     template_uuid: NonEmptyStr
     lot_uuid: Optional[NonEmptyStr] = None
     quantity: Optional[float] = Field(default=None, gt=0)
     unit: Optional[NonEmptyStr] = None
+    #: ``content``：选中的内容物，以及随预留创建的 ``material_content_reservation``
+    substance_uuid: Optional[NonEmptyStr] = None
+    content_reservation_uuid: Optional[NonEmptyStr] = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_content_fields(self, handler: Any) -> Any:
+        # 内容物专用字段为空时不进入序列化：material / lot 需求的形状与请求哈希保持升级前不变
+        data = handler(self)
+        if isinstance(data, dict):
+            for name in ("substance_uuid", "content_reservation_uuid"):
+                if data.get(name) is None:
+                    data.pop(name, None)
+        return data
 
 
 class InventoryReservationRead(ServerObject):
@@ -721,6 +805,19 @@ class MaterialSnapshot(ServerObject):
     root_material_uuid: NonEmptyStr
     nodes: list[MaterialAggregateRead]
     state_hash: Optional[NonEmptyStr] = None
+
+
+#: 快照唯一可以退役的物料类型。设备丢弃的枪头从父节点的运行时结构中消失；
+#: 快照把该节点写成 ``lifecycle_status="retired"`` 且 ``parent_material_uuid=None``，
+#: 权威在同一写事务内将其退役（软删除：保留记录与账本）。其他类型仍不能借快照
+#: 创建或删除。
+SNAPSHOT_RETIRABLE_RESOURCE_TYPES = frozenset({"tip"})
+
+
+def snapshot_retirable(resource_type: str) -> bool:
+    """该业务类型的物料能否由设备快照退役（目前只有被丢弃的枪头）。"""
+
+    return str(resource_type or "").casefold() in SNAPSHOT_RETIRABLE_RESOURCE_TYPES
 
 
 class MaterialSnapshotChange(ServerObject):
@@ -845,6 +942,7 @@ __all__ = [
     "ChemicalSummary",
     "InventoryAllocation",
     "InventoryChange",
+    "InventoryLotCorrection",
     "InventoryLotInbound",
     "InventoryLotRead",
     "InventoryMutation",
@@ -887,5 +985,7 @@ __all__ = [
     "SiteDelta",
     "SiteRead",
     "SiteWrite",
+    "SNAPSHOT_RETIRABLE_RESOURCE_TYPES",
     "SUBSTANCE_CHEMICAL_FIELDS",
+    "snapshot_retirable",
 ]

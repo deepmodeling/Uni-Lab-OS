@@ -27,6 +27,7 @@ DEFAULT_DOWNLINK_TIMEOUT = 30.0
 
 # 调度权威进程没有设备也没有 HostLink server：物料投影下行经控制面 WS 交给 Host 进程
 # 在进程内执行 /api/v1/hostlink/{material-sync,notify-device}（server/api/host_relay.py）。
+# 权威里的 transfer 投影、工作流 material_io 写库后的台面同步都走这里。
 _remote_device_relay = False
 
 
@@ -42,7 +43,8 @@ def remote_device_relay() -> bool:
 def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     import json
 
-    from unilabos.server.api.edge_proxy import edge_http
+    from unilabos.client.utils.envelope import EnvelopeError
+    from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
     response = edge_http(
         "POST",
@@ -53,15 +55,12 @@ def _relay_post(path: str, payload: Dict[str, Any], timeout: float) -> Any:
     )
     if response is None:
         raise RuntimeError(f"Host 进程不在线，无法经控制面执行 {path}")
-    text = response.body_bytes().decode("utf-8", errors="replace")
     try:
-        parsed = json.loads(text) if text else None
-    except ValueError:
-        parsed = None
-    if response.status_code >= 300:
-        detail = parsed.get("detail", text) if isinstance(parsed, dict) else text
-        raise RuntimeError(f"Host 中继 {path} 返回 HTTP {response.status_code}: {detail}")
-    return parsed
+        return edge_response_data(response)
+    except EnvelopeError as exc:
+        raise RuntimeError(f"Host 中继 {path} 失败（业务码 {exc.code}）: {exc.error}") from exc
+    except ValueError as exc:
+        raise RuntimeError(f"Host 中继 {path} 返回无效响应（HTTP {response.status_code}）") from exc
 
 
 def remote_material_sync_dispatcher(command: Any) -> Dict[str, Any]:
@@ -153,7 +152,7 @@ def local_resource_append(data: Dict[str, Any]) -> Dict[str, Any]:
     device_id = str(data.get("device_id") or "")
     node = _require_local_device_node(device_id)
     payload = {key: value for key, value in data.items() if key != "device_id"}
-    return run_node_coroutine(node, node.append_resource(payload))
+    return node.append_resource_blocking(payload)
 
 
 def local_material_sync(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -259,6 +258,23 @@ def material_sync_to_device(
     return server.request_device(str(device_id), ActionType.MATERIAL_SYNC, payload, timeout)
 
 
+def send_material_sync(command: Any, timeout: float = DEFAULT_DOWNLINK_TIMEOUT) -> Dict[str, Any]:
+    """从当前进程把一条 ``MaterialDeviceSync``（load / unload）送到设备并等确认；设备没确认就抛异常。
+
+    调度权威（没有设备）经控制面交给 Host 中继；Host 进程里本地设备直调，跨机（Slave）经 HostLink RPC。
+    中继先于本进程查找：权威不加载设备运行时（ros2 形态下查 ``registered_devices`` 会去导入 rclpy）。
+    """
+    data = command.model_dump(mode="json", exclude_none=False) if hasattr(command, "model_dump") else dict(command)
+    device_id = str(data.get("device_id") or "")
+    if _remote_device_relay:
+        result = _relay_post("/api/v1/hostlink/material-sync", data, timeout)
+    else:
+        result = material_sync_to_device(device_id, data, timeout)
+    if not isinstance(result, dict) or not result.get("success"):
+        raise RuntimeError(f"设备 {device_id!r} material_sync 失败：{result}")
+    return result
+
+
 def device_manage_to_device(
     device_id: str,
     action: str,
@@ -289,21 +305,21 @@ def notify_resource_tree_update(
     设备经 HostLink 下行 RPC。
 
     Returns:
-        True 分发完成；False 分发失败；None 设备不可达（有意跳过）。
+        True 设备已确认；False 分发失败或设备没能应用（见日志）；None 设备不可达（有意跳过）。
     """
     operations = [{"action": str(action), "data": list(resource_uuid_list)}]
     try:
+        if _remote_device_relay:
+            # 调度权威进程：设备都在 Host 进程里，整条通知转交 Host 中继（权威不加载设备运行时，不先查本进程）
+            result = _relay_post(
+                "/api/v1/hostlink/notify-device",
+                {"device_id": str(device_id), "action": str(action), "resource_uuids": list(resource_uuid_list)},
+                DEFAULT_DOWNLINK_TIMEOUT,
+            )
+            notified = result.get("notified") if isinstance(result, dict) else None
+            return notified if notified is None else bool(notified)
         if get_local_device_node(device_id) is None:
             server = get_hostlink_server()
-            if server is None and _remote_device_relay:
-                # 调度权威进程：设备都在 Host 进程里，整条通知转交 Host 中继
-                result = _relay_post(
-                    "/api/v1/hostlink/notify-device",
-                    {"device_id": str(device_id), "action": str(action), "resource_uuids": list(resource_uuid_list)},
-                    DEFAULT_DOWNLINK_TIMEOUT,
-                )
-                notified = result.get("notified") if isinstance(result, dict) else None
-                return notified if notified is None else bool(notified)
             if server is None or not server.has_device(device_id):
                 logger.info(
                     "[Downlink] 设备 %s 不在本进程、也不在 HostLink 在线表，跳过资源树 %s 分发",
@@ -311,7 +327,16 @@ def notify_resource_tree_update(
                     action,
                 )
                 return None
-        sync_resource_tree_to_device(device_id, operations, DEFAULT_DOWNLINK_TIMEOUT)
+        result = sync_resource_tree_to_device(device_id, operations, DEFAULT_DOWNLINK_TIMEOUT)
+        # 设备逐条应用，单条失败记在 results 里而不抛出：只有全部成功才算确认
+        failures = [
+            item for item in (result.get("results") or []) if isinstance(item, dict) and item.get("success") is False
+        ] if isinstance(result, dict) else []
+        if failures:
+            logger.warning(
+                "[Downlink] 设备 %s 没能应用资源树 %s：%s", device_id, action, failures[0].get("error") or failures[0]
+            )
+            return False
         return True
     except Exception:
         logger.exception("[Downlink] 资源树 %s 分发到 %s 失败", action, device_id)
@@ -336,5 +361,6 @@ __all__ = [
     "remote_device_relay",
     "remote_material_sync_dispatcher",
     "run_node_coroutine",
+    "send_material_sync",
     "sync_resource_tree_to_device",
 ]

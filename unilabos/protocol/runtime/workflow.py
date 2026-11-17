@@ -85,6 +85,22 @@ def validate_uuid(value: str) -> str:
     return str(parsed)
 
 
+def normalize_manual_confirmation(value: Any) -> JsonObject:
+    """校验 V1 节点人工确认配置：空对象，或只含 1..86400 秒的 ``timeout_seconds``。"""
+
+    if value is None:
+        return {}
+    config = normalize_json_object(value)
+    if not config:
+        return {}
+    if set(config) - {"timeout_seconds"}:
+        raise ValueError("manual_confirmation 只允许 timeout_seconds")
+    timeout = config.get("timeout_seconds", 3600)
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86_400:
+        raise ValueError("manual_confirmation.timeout_seconds 必须在 1..86400")
+    return {"timeout_seconds": timeout}
+
+
 class WorkflowNodeWrite(BaseModel):
     """Complete WorkflowNode payload used by full-graph reconciliation."""
 
@@ -110,6 +126,8 @@ class WorkflowNodeWrite(BaseModel):
     script: Optional[str] = None
     description: Optional[str] = None
     meta_data: JsonObject = Field(default_factory=dict)
+    #: V1 节点人工确认配置（只允许 ``timeout_seconds``）；空对象表示未配置。
+    manual_confirmation: JsonObject = Field(default_factory=dict)
 
     @field_validator(
         "pose",
@@ -120,6 +138,11 @@ class WorkflowNodeWrite(BaseModel):
     @classmethod
     def _json_object(cls, value: Any) -> JsonObject:
         return normalize_json_object(value)
+
+    @field_validator("manual_confirmation", mode="before")
+    @classmethod
+    def _manual_confirmation(cls, value: Any) -> JsonObject:
+        return normalize_manual_confirmation(value)
 
     @field_validator("param")
     @classmethod
@@ -361,6 +384,7 @@ __all__ = [
     "WorkflowNodeWrite",
     "normalize_json_array",
     "normalize_json_object",
+    "normalize_manual_confirmation",
     "validate_json_value",
     "validate_uuid",
 ]

@@ -198,7 +198,6 @@ class ImportManager:
         from unilabos.registry.ast_registry_scanner import (
             _collect_imports,
             _extract_class_body,
-            _filepath_to_module,
         )
 
         result: Dict[str, Any] = {
@@ -224,17 +223,10 @@ class ImportManager:
             logger.warning(f"[ImportManager] 解析文件 {file_path} 失败: {e}")
             return result
 
-        # 推导 module dotted path → 构建 import_map
-        python_path = Path(file_path)
-        for sp in sorted(sys.path, key=len, reverse=True):
-            try:
-                Path(file_path).relative_to(sp)
-                python_path = Path(sp)
-                break
-            except ValueError:
-                continue
-        module_dotted = _filepath_to_module(Path(file_path), python_path)
-        import_map = _collect_imports(tree, module_dotted)
+        # 模块身份即 module_path 的模块部分（相对导入据此解析）→ 构建 import_map
+        import_map = _collect_imports(
+            tree, module_name, is_package=os.path.basename(file_path) == "__init__.py"
+        )
         result["import_map"] = import_map
 
         # 定位目标类 AST 节点

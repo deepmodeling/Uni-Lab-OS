@@ -196,8 +196,9 @@ def test_manual_confirmation_api_records_decision() -> None:
             param=run["param"],
         )
         client = TestClient(create_workflow_app(service))
+        # V1 路径按作业寻址；dev 的确认人 / 决策幂等键作为可选扩展字段保留
         response = client.post(
-            f"/api/v1/workflow-manual-confirmations/{opened['uuid']}/decision",
+            f"/api/v1/workflow-node-jobs/{run['current_job_uuid']}/manual-confirmation",
             json={
                 "action": "approve",
                 "confirmed_by": "alice",
@@ -206,6 +207,17 @@ def test_manual_confirmation_api_records_decision() -> None:
         )
         assert response.status_code == 200
         assert response.json()["data"]["status"] == "approved"
+        # V1 只接受 approve / reject
+        invalid = client.post(
+            f"/api/v1/workflow-node-jobs/{run['current_job_uuid']}/manual-confirmation", json={"action": "cancel"},
+        )
+        assert invalid.json()["code"] == 1000
+        # 已有决策后换一个决策：状态冲突
+        conflict = client.post(
+            f"/api/v1/workflow-node-jobs/{run['current_job_uuid']}/manual-confirmation",
+            json={"action": "reject", "confirmed_by": "alice", "decision_idempotency_key": "api-manual-2"},
+        )
+        assert conflict.json()["code"] == 3003
         assert client.get(
             f"/api/v1/workflow-manual-confirmations/{opened['uuid']}"
         ).json()["data"]["confirmed_by"] == "alice"

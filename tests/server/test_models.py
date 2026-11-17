@@ -35,6 +35,23 @@ def test_material_cannot_parent_itself() -> None:
             resource_id="resource",
             template_uuid="template",
             parent_material_uuid="material",
+            name="material",
+            display_name="name",
+            resource_type="resource",
+            class_name="Resource",
+            template_name="template",
+            lifecycle_status="active",
+            created_at_ms=1,
+            updated_at_ms=1,
+        )
+
+
+def test_material_name_must_be_its_uuid() -> None:
+    with pytest.raises(ValidationError, match="name must equal material_uuid"):
+        MaterialRecord(
+            material_uuid="material",
+            resource_id="resource",
+            template_uuid="template",
             name="name",
             display_name="name",
             resource_type="resource",

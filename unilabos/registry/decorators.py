@@ -52,6 +52,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from unilabos.registry.material_locks import (
+    REMOVED_MATERIAL_LOCK_OPTIONS,
+    warn_ignored_material_lock_override,
+)
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
 from unilabos.resources.objects.site import (
     SiteDefinitionInput,
@@ -373,6 +377,8 @@ def device(
 
 # 区分 "用户没传 action_type" 和 "用户传了 None"
 _ACTION_TYPE_UNSET = object()
+#: 未声明 estimate_duration_fixed（区别于显式 None：不提供兜底）
+_ESTIMATE_UNSET = object()
 
 
 # noinspection PyShadowingNames
@@ -393,10 +399,13 @@ def action(
     node_type: Optional["NodeType"] = None,
     feedback_interval: Optional[float] = None,
     error_policy: Optional[Dict[str, Any]] = None,
-    materials_need_lock: Optional[List[str]] = None,
-    materials_free: Optional[List[str]] = None,
     timeout: Optional[float] = None,
     execution_timeout: Optional[Union[float, str]] = None,
+    estimate_duration_fixed: Any = _ESTIMATE_UNSET,
+    estimate_duration_express: str = "",
+    contract: str = "legacy",
+    resource_contract: Optional[Dict[str, Any]] = None,
+    **removed_options: Any,
 ):
     """
     动作方法装饰器
@@ -430,15 +439,10 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
+        contract: legacy 保留既有签名推断；typed 用 AST 编译严格参数和具名返回合同。
+        resource_contract: typed 动作的资源角色声明；未接通的物理结算或长期托管语义在运行前拒绝。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
-        materials_need_lock: 本动作执行期间需要独占的物料参数名列表（最终集合）。
-                             不写时默认独占全部物料入参（ResourceSlot / List[ResourceSlot]，
-                             或 placeholder_keys 标为 unilabos_resources 的入参）；
-                             显式写 [] 表示不锁任何物料。参数值为空（None / 未传）时
-                             不加锁，非空时必须能解析出由物料权威分配的 UUID。
-        materials_free: 默认加锁时要排除的物料参数名（只读、不改变物料的入参）。
-                        不能与 materials_need_lock 同时声明。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
                  TimeoutException 进入错误决策链；None 表示不限时。
         execution_timeout: 业务软超时。秒数，或引用动作入参的四则运算表达式
@@ -446,13 +450,34 @@ def action(
                            到期后动作继续执行，执行面以 ExecutionTimeoutException 打开
                            一条带 wait 选项的决策；表达式在下发时按真实 action_args
                            （叠加 goal_default）求值。详见 unilabos.registry.action_timeout。
+        estimate_duration_fixed: 预计时长兜底（秒，≥ 0）。不写时调度器按 60 s 兜底；写 None
+                                 表示不提供兜底。只用于时间线 / 监控 / ETA，不是准入条件。
+        estimate_duration_express: 按动作入参计算预计时长的四则运算表达式，与 execution_timeout
+                                   同一语法（"cycles * 2"，也认 V1 的 "{cycles} * 2"）；派发时
+                                   按真实 action_args 求值，失败时退回兜底。
+                                   详见 unilabos.registry.action_duration。
+        removed_options: 只接受已移除的 ``materials_need_lock`` / ``materials_free``，让旧驱动照常
+                         加载：值被忽略，按定义告警一次。物料锁不再按动作改写：每个物料入参
+                         （ResourceSlot / List[ResourceSlot]，或 placeholder_keys 标为
+                         unilabos_resources 的入参）都默认加共享资源锁，见
+                         unilabos.registry.material_locks。参数值为空（None / 未传）时不加锁，
+                         非空时必须能解析出由物料权威分配的 UUID。
     """
 
+    unexpected = sorted(set(removed_options) - set(REMOVED_MATERIAL_LOCK_OPTIONS))
+    if unexpected:
+        raise TypeError(f"action() got an unexpected keyword argument {unexpected[0]!r}")
+    if contract not in {"legacy", "typed"}:
+        raise ValueError("contract 仅支持 legacy 或 typed")
+    if contract == "typed" and action_type not in (_ACTION_TYPE_UNSET, None):
+        raise ValueError("typed 合同仅支持 JSON 动作")
+    if resource_contract is not None and contract != "typed":
+        raise ValueError("资源合同必须绑定 typed 动作")
+
     def decorator(func: F) -> F:
-        import asyncio as _asyncio
         import inspect as _inspect
 
-        if _asyncio.iscoroutinefunction(func):
+        if _inspect.iscoroutinefunction(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
                 return await func(*args, **kwargs)
@@ -479,6 +504,11 @@ def action(
             "auto_prefix": auto_prefix,
             "parent": parent,
         }
+        if contract == "typed":
+            from unilabos.registry.action_resource_contract import normalize_action_resource_contract
+
+            meta["contract_kind"] = "typed"
+            meta["resource_contract"] = normalize_action_resource_contract(resource_contract)
         if feedback_interval is not None:
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:
@@ -489,18 +519,14 @@ def action(
 
             normalized_error_policy = normalize_error_policy(error_policy) or {}
         meta["error_policy"] = normalized_error_policy
-        from unilabos.registry.material_locks import (
-            effective_material_lock_parameters,
-        )
+        if removed_options:
+            # 与 AST 扫描同一身份（模块.类.方法）：同一定义在一个进程里只告警一次
+            warn_ignored_material_lock_override(
+                f"{func.__module__}.{func.__qualname__}",
+                (f"{name}=" for name in sorted(removed_options)),
+            )
 
         signature_parameters = _inspect.signature(func).parameters
-        meta["materials_need_lock"] = effective_material_lock_parameters(
-            materials_need_lock,
-            params=signature_parameters.values(),
-            free=materials_free,
-            placeholder_keys=placeholder_keys,
-            action_name=func.__qualname__,
-        )
         from unilabos.registry.action_timeout import (
             normalize_action_timeout,
             normalize_execution_timeout,
@@ -517,6 +543,22 @@ def action(
         )
         if normalized_execution_timeout is not None:
             meta["execution_timeout"] = normalized_execution_timeout
+        from unilabos.registry.action_duration import (
+            EXPRESS_FIELD,
+            FIXED_FIELD,
+            normalize_estimate_duration_express,
+            normalize_estimate_duration_fixed,
+        )
+
+        if estimate_duration_fixed is not _ESTIMATE_UNSET:
+            meta[FIXED_FIELD] = normalize_estimate_duration_fixed(
+                estimate_duration_fixed, action_name=func.__qualname__
+            )
+        normalized_express = normalize_estimate_duration_express(
+            estimate_duration_express, action_parameter_names=signature_parameters, action_name=func.__qualname__,
+        )
+        if normalized_express:
+            meta[EXPRESS_FIELD] = normalized_express
         wrapper._action_registry_meta = meta  # type: ignore[attr-defined]
         wrapper._action_error_policy = normalized_error_policy  # type: ignore[attr-defined]
 

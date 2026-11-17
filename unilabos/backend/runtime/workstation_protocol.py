@@ -23,6 +23,22 @@ class WorkstationNodeTempError(Exception):
     """协议步骤内的日志占位（log_message），不代表失败。"""
 
 
+#: 协议编译器读取的物理拓扑图（``networkx.Graph``，节点为设备 / 物料，边带端口）。
+#: Host 启动装配 ``-g`` 图时写入（``unilabos.app.main._load_startup_graph``）。
+_physical_setup_graph: Any = None
+
+
+def set_physical_setup_graph(graph: Any) -> None:
+    """登记本进程的物理拓扑图（Host 启动装配设备图后调用）。"""
+    global _physical_setup_graph
+    _physical_setup_graph = graph
+
+
+def physical_setup_graph() -> Any:
+    """协议编译器 ``generator(G=...)`` 使用的物理拓扑图；未装配设备图时为 None。"""
+    return _physical_setup_graph
+
+
 def setup_protocol_names(protocol_type: Any) -> List[str]:
     """把 registry 的 protocol_type 配置规范成协议名列表。"""
     if not protocol_type:
@@ -79,10 +95,15 @@ async def update_protocol_resources(node: "DeviceNode", values: List[Any]) -> No
         for res_data in resource_list:
             if not isinstance(res_data, dict):
                 continue
-            res_name = res_data.get("id") or res_data.get("name")
-            if not res_name:
-                continue
-            plr = node.resource_tracker.figure_resource({"name": res_name}, try_mode=False)
+            # 按 uuid 找本地实例；没有 uuid 时按 PLR 键（图节点 id）
+            if res_data.get("uuid"):
+                query = {"uuid": res_data["uuid"]}
+            else:
+                res_name = res_data.get("id") or (res_data.get("config") or {}).get("name") or res_data.get("name")
+                if not res_name:
+                    continue
+                query = {"name": res_name}
+            plr = node.resource_tracker.figure_resource(query, try_mode=False)
             res = node.resource_tracker.parent_resource(plr)
             if res is None:
                 res = plr

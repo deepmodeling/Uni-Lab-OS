@@ -388,7 +388,8 @@ class LegacyMaterialMirror:
             # delete），只跟踪 material 聚合即可覆盖整棵根树的重发。
             if row.aggregate_type != "material":
                 continue
-            if row.operation == "delete":
+            # delete 与快照退役被丢弃的枪头（retire）都是软删除：节点已不在任何根下
+            if row.operation in {"delete", "retire"}:
                 deleted.append(row.aggregate_uuid)
                 continue
             root = self._root_of(row.aggregate_uuid)

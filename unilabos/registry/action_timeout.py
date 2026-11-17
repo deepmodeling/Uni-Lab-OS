@@ -8,7 +8,8 @@
   ``ExecutionTimeoutException`` 打开一条决策（多一个 ``wait`` 选项）；操作员可以继续等待、
   终止或替换结果。表达式引用动作入参，支持 ``+ - * /``、括号、一元正负号与数字字面量，
   例如 ``"duration * 1.5 + 30"``。声明期只校验语法与参数名，注册表保存归一化后的字符串；
-  执行面在下发时用真实 ``action_args``（叠加注册表 ``goal_default``）求值。
+  执行面在下发时用真实 ``action_args``（叠加注册表 ``goal_default``）求值。入参名也可以按 V1
+  的写法放在花括号里（``{duration} * 1.5``）。语法与求值规则见 ``action_expression``。
 """
 
 from __future__ import annotations
@@ -18,10 +19,13 @@ import math
 from collections.abc import Iterable, Mapping
 from typing import Any, Dict, List, Optional, Union
 
-TimeoutSpec = Union[float, str]
+from unilabos.registry.action_expression import (
+    evaluate_param_expression,
+    expression_names,
+    parse_param_expression,
+)
 
-_ALLOWED_BINARY = (ast.Add, ast.Sub, ast.Mult, ast.Div)
-_ALLOWED_UNARY = (ast.UAdd, ast.USub)
+TimeoutSpec = Union[float, str]
 
 
 class TimeoutExpressionError(ValueError):
@@ -131,103 +135,19 @@ def evaluate_execution_timeout(
 
 
 def _parse_expression(expression: str, *, action_name: str = "action") -> ast.AST:
-    try:
-        tree = ast.parse(expression, mode="eval")
-    except SyntaxError as exc:
-        raise TimeoutExpressionError(
-            f"{action_name} 的 execution_timeout 表达式语法错误: {expression!r} ({exc.msg})"
-        ) from None
-    _validate_node(tree.body, expression, action_name)
-    return tree.body
-
-
-def _validate_node(node: ast.AST, expression: str, action_name: str) -> None:
-    if isinstance(node, ast.BinOp):
-        if not isinstance(node.op, _ALLOWED_BINARY):
-            raise TimeoutExpressionError(
-                f"{action_name} 的 execution_timeout 只支持 + - * /: {expression!r}"
-            )
-        _validate_node(node.left, expression, action_name)
-        _validate_node(node.right, expression, action_name)
-        return
-    if isinstance(node, ast.UnaryOp):
-        if not isinstance(node.op, _ALLOWED_UNARY):
-            raise TimeoutExpressionError(
-                f"{action_name} 的 execution_timeout 只支持一元正负号: {expression!r}"
-            )
-        _validate_node(node.operand, expression, action_name)
-        return
-    if isinstance(node, ast.Constant):
-        if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
-            raise TimeoutExpressionError(
-                f"{action_name} 的 execution_timeout 只允许数字字面量: {expression!r}"
-            )
-        return
-    if isinstance(node, ast.Name):
-        return
-    raise TimeoutExpressionError(
-        f"{action_name} 的 execution_timeout 只允许入参名、数字与四则运算: {expression!r}"
+    return parse_param_expression(
+        expression, field="execution_timeout", action_name=action_name, error=TimeoutExpressionError,
     )
 
 
 def _referenced_names(node: ast.AST) -> List[str]:
-    names: List[str] = []
-    for child in ast.walk(node):
-        if isinstance(child, ast.Name) and child.id not in names:
-            names.append(child.id)
-    return names
+    return expression_names(node)
 
 
 def _evaluate(node: ast.AST, values: Dict[str, Any], *, action_name: str) -> float:
-    if isinstance(node, ast.Constant):
-        return float(node.value)
-    if isinstance(node, ast.Name):
-        if node.id not in values:
-            raise TimeoutExpressionError(
-                f"{action_name} 的 execution_timeout 缺少参数 {node.id!r} 的值"
-            )
-        return _coerce_number(node.id, values[node.id], action_name=action_name)
-    if isinstance(node, ast.UnaryOp):
-        operand = _evaluate(node.operand, values, action_name=action_name)
-        return -operand if isinstance(node.op, ast.USub) else operand
-    if isinstance(node, ast.BinOp):
-        left = _evaluate(node.left, values, action_name=action_name)
-        right = _evaluate(node.right, values, action_name=action_name)
-        if isinstance(node.op, ast.Add):
-            return left + right
-        if isinstance(node.op, ast.Sub):
-            return left - right
-        if isinstance(node.op, ast.Mult):
-            return left * right
-        if right == 0:
-            raise TimeoutExpressionError(f"{action_name} 的 execution_timeout 表达式除以零")
-        return left / right
-    raise TimeoutExpressionError(f"{action_name} 的 execution_timeout 表达式包含不支持的节点")
-
-
-def _coerce_number(name: str, value: Any, *, action_name: str) -> float:
-    if isinstance(value, bool):
-        raise TimeoutExpressionError(
-            f"{action_name} 的 execution_timeout 参数 {name!r} 是布尔值，不能参与运算"
-        )
-    if isinstance(value, (int, float)):
-        number = float(value)
-    elif isinstance(value, str):
-        try:
-            number = float(value.strip())
-        except ValueError:
-            raise TimeoutExpressionError(
-                f"{action_name} 的 execution_timeout 参数 {name!r} 不是数字: {value!r}"
-            ) from None
-    else:
-        raise TimeoutExpressionError(
-            f"{action_name} 的 execution_timeout 参数 {name!r} 类型为 {type(value).__name__}，不能参与运算"
-        )
-    if not math.isfinite(number):
-        raise TimeoutExpressionError(
-            f"{action_name} 的 execution_timeout 参数 {name!r} 不是有限数: {value!r}"
-        )
-    return number
+    return evaluate_param_expression(
+        node, values, field="execution_timeout", action_name=action_name, error=TimeoutExpressionError,
+    )
 
 
 __all__ = [

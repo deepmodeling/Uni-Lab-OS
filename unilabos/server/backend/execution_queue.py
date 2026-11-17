@@ -87,6 +87,7 @@ class JobInfo:
     # 调度权威随 execute_job 下发的超时（秒）；None 时执行面按本地注册表副本解析
     timeout_seconds: Optional[float] = None
     execution_timeout_seconds: Optional[float] = None
+    execution_payload: dict[str, Any] = field(default_factory=dict)
 
     def update_timestamp(self) -> None:
         self.last_update_time = time.time()

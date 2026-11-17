@@ -5,7 +5,7 @@ channels:
   - uni-lab
 dependencies:
   # Basics
-  - python=3.12.13
+  - python=3.14.10
   - compilers
   - cmake
   - make
@@ -14,7 +14,7 @@ dependencies:
   - sphinx_rtd_theme
   # Data Visualization
   - numpy >=2,<3
-  - uni-lab::opentrons-shared-data=9.1.0+unilabos.np2.1=py312_np2_1
+  - uni-lab::opentrons-shared-data=10.1.0+unilabos.np2.1=py314_np2_1
   - scipy
   - pandas
   - networkx
@@ -23,8 +23,7 @@ dependencies:
   # Device communication
   - pyserial
   - pyusb
-  - pylibftdi
-  - pymodbus >=3.6.9,<4
+  - pymodbus >=3.6.9,<4,!=3.8.0,!=3.8.1
   - python-can
   - pyvisa
   - opencv
@@ -41,7 +40,7 @@ dependencies:
   - jupyros
   # ros
   - colcon-common-extensions
-  - robostack-jazzy::ros2-distro-mutex=0.15.*
+  - robostack-jazzy::ros2-distro-mutex=0.20.*
   - ros-jazzy-desktop-full
   - ros-jazzy-control-msgs
   - ros-jazzy-sensor-msgs
@@ -68,5 +67,4 @@ dependencies:
   - jinja2
   - pip:
       - paho-mqtt
-      - pprp>=0.2.7
       - git+https://github.com/Xuwznln/pylabrobot

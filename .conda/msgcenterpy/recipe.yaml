@@ -6,16 +6,16 @@ source:
   sha256: 802aba5767298de43218b329b7a1fd3ccfe67904ecf6bab1905409caf75dae86
 build:
   noarch: python
-  number: 0
+  number: 1
   script: python -m pip install . --no-deps --no-build-isolation
 requirements:
   host:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - pip
     - setuptools >=68
     - wheel
   run:
-    - python >=3.12,<3.13
+    - python >=3.14,<3.15
     - pydantic >=2
     - jsonschema >=4.25
     - pyyaml >=6

@@ -9,6 +9,9 @@ from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Mapping
 
 from unilabos.protocol.runtime.loop import parse_loop_spec, references_loop_placeholder
+from unilabos.protocol.runtime.condition import validate_condition_graph
+from unilabos.protocol.runtime.input_binding import input_references
+from unilabos.protocol.runtime.value_binding import result_references, validate_result_binding_graph
 from unilabos.protocol.utils.json_codec import encode_json, strict_json_equal
 from unilabos.protocol.utils.workflow_hierarchy import (
     HierarchyError,
@@ -87,6 +90,13 @@ def validate_graph(
         for node in nodes
     }
     declared_parameters = _declared_parameter_names(workflow_meta_data)
+    from unilabos.protocol.runtime.inventory import normalize_inventory, inventory_deferred
+    for node in nodes:
+        inventory = normalize_inventory(node_meta_data[node.uuid].get("inventory_requirements") or [])
+        inventory_deferred(inventory, policy=node.execution_policy, mode=node_meta_data[node.uuid].get("inventory_mode", "task"))
+        unknown = input_references(inventory) - declared_parameters
+        if unknown:
+            raise GraphValidationError(f"库存引用了未声明的入口参数：{sorted(unknown)}")
     for node in nodes:
         _validate_param_references(
             node,
@@ -104,6 +114,12 @@ def validate_graph(
     except HierarchyError as exc:
         raise GraphValidationError(str(exc)) from exc
     _validate_loop_nodes(enabled, kinds, parents, effective_params)
+    _validate_material_io_nodes(enabled, kinds, effective_params)
+    try:
+        condition_dependencies = validate_condition_graph(enabled, kinds, parents, effective_params)
+        result_dependencies = validate_result_binding_graph(enabled, kinds, parents, effective_params)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise GraphValidationError(f"条件控制流无效：{exc}") from exc
     enabled_edges: List[WorkflowEdgeWrite] = []
     incoming: Dict[tuple[str, str], str] = {}
     connected_inputs: Dict[tuple[str, str], str] = {}
@@ -129,7 +145,12 @@ def validate_graph(
                 _handle_data_key(target_handle)
             )
 
-    _validate_edge_cycles(enabled, enabled_edges, parents)
+    extra_pairs = {(source, target) for dependencies in (condition_dependencies, result_dependencies)
+                   for target, sources in dependencies.items() for source in sources}
+    extra_pairs.update((source, target) for target, node in enabled.items()
+                       for source in node.execution_policy.get("depends_on", [])
+                       if source in enabled and source != target)
+    _validate_edge_cycles(enabled, enabled_edges, parents, extra_pairs=extra_pairs)
     for node_uuid, node in enabled.items():
         param = effective_params[node_uuid]
         bindings = bindings_by_node[node_uuid]
@@ -190,7 +211,10 @@ def validate_graph(
         if _node_kind(node, templates) == "device_action":
             if node.material_uuid is None:
                 raise GraphValidationError("设备动作节点必须绑定 material_uuid")
-        if parents.get(node_uuid) is None and references_loop_placeholder(param):
+        # 循环自己的下一轮 carry 在本循环体里求值，可以用本循环的迭代变量
+        own_scope = {key: value for key, value in param.items() if key != "carry_next"} \
+            if _node_kind(node, templates) == "loop" else param
+        if parents.get(node_uuid) is None and references_loop_placeholder(own_scope):
             raise GraphValidationError(
                 f"节点 {node.name!r} 引用了 {{{{loop.*}}}} 迭代变量，但它不在任何循环体内"
             )
@@ -223,6 +247,24 @@ def _validate_loop_nodes(
             raise GraphValidationError(
                 f"{node.name!r}: 空循环体的 while 循环必须设置 interval_seconds（轮询间隔）"
             )
+
+
+def _validate_material_io_nodes(
+    enabled: Mapping[str, WorkflowNodeWrite],
+    kinds: Mapping[str, str],
+    effective_params: Mapping[str, Dict[str, Any]],
+) -> None:
+    """人工装入 / 取走 / 补量节点按模式校验必填与禁止字段；引用（工作流输入、上游结果）留到运行时解析。"""
+
+    from unilabos.protocol.runtime.material_io import MaterialIOParamError, normalize_material_io_param
+
+    for node_uuid, node in enabled.items():
+        if kinds.get(node_uuid) != "material_io":
+            continue
+        try:
+            normalize_material_io_param(effective_params.get(node_uuid) or node.param or {})
+        except MaterialIOParamError as exc:
+            raise GraphValidationError(f"{node.name!r}: {exc}") from exc
 
 
 def _validate_parent_cycles(nodes: Iterable[WorkflowNodeWrite]) -> None:
@@ -281,6 +323,7 @@ def _node_kind(
         "tool_call": "tool_call",
         "manual_confirm": "manual_confirm",
         "loop": "loop",
+        "material_io": "material_io",
     }
     kind = aliases.get(str(raw_kind).strip().lower())
     if kind is None:
@@ -292,13 +335,14 @@ def _validate_edge_cycles(
     enabled: Mapping[str, WorkflowNodeWrite],
     edges: Iterable[WorkflowEdgeWrite],
     parents: Mapping[str, str | None],
+    *, extra_pairs: Iterable[tuple[str, str]] = (),
 ) -> None:
     """跨循环边界的边提升到同级后做环检测：循环体内外的依赖都归到容器上。"""
 
     try:
         pairs = lifted_pairs(
             parents,
-            ((edge.source_node_uuid, edge.target_node_uuid) for edge in edges),
+            [*((edge.source_node_uuid, edge.target_node_uuid) for edge in edges), *extra_pairs],
         )
     except HierarchyError as exc:
         raise GraphValidationError(str(exc)) from exc
@@ -375,7 +419,7 @@ def _validate_required_handles(
             raise GraphValidationError(f"输入 {data_key!r} 存在多个 Provider")
         if handle.get("required") and provider_count != 1:
             raise GraphValidationError(f"缺少必填输入 {data_key!r}")
-        if has_default and not _declared_type_matches(
+        if has_default and not input_references(param[data_key]) and not result_references(param[data_key]) and not _declared_type_matches(
             param[data_key],
             handle.get("type"),
         ):
@@ -404,16 +448,23 @@ def _validate_param_references(
 ) -> None:
     """param 顶层的 ``{"kind": "workflow_input", "parameter": 名}`` 必须引用已声明的入口参数。"""
 
-    for key, value in param.items():
-        if _argument_reference(value) != "workflow_input":
-            continue
-        parameter = value.get("parameter")
-        if set(value) != {"kind", "parameter"} or not isinstance(parameter, str):
-            raise GraphValidationError(f"节点 {node.name!r} 的参数 {key!r} 引用格式无效")
-        if parameter not in declared:
-            raise GraphValidationError(
-                f"节点 {node.name!r} 的参数 {key!r} 引用了未声明的入口参数 {parameter!r}"
-            )
+    from unilabos.protocol.runtime.input_binding import input_references
+
+    try:
+        names = set() if node.type == "condition" else input_references(param)
+        if node.type == "condition":
+            from unilabos.protocol.runtime.condition import condition_input_references
+
+            names.update(condition_input_references(param))
+        elif node.type == "loop":
+            from unilabos.protocol.runtime.loop import loop_input_references
+
+            names.update(loop_input_references(param))
+    except ValueError as exc:
+        raise GraphValidationError(str(exc)) from exc
+    unknown = names - declared
+    if unknown:
+        raise GraphValidationError(f"节点 {node.name!r} 引用了未声明的入口参数 {sorted(unknown)}")
 
 
 def _validated_input_bindings(
@@ -545,6 +596,10 @@ def _validate_schema_value(
 ) -> None:
     if depth > _MAX_SCHEMA_DEPTH:
         raise GraphValidationError("JSON Schema 校验深度超限")
+    if ignore_required and isinstance(value, Mapping) and value.get("kind") in ("node_output", "workflow_input", "workflow_literal"):
+        # 来源与作用域已校验；实际值在派发时完成严格类型校验。
+        result_references(value)
+        return
     if schema is True:
         return
     if schema is False or not isinstance(schema, dict):
@@ -710,6 +765,8 @@ def _validate_required_properties(
     depth: int,
 ) -> None:
     if depth > _MAX_SCHEMA_DEPTH or isinstance(schema, bool):
+        return
+    if isinstance(value, Mapping) and value.get("kind") in ("node_output", "workflow_input", "workflow_literal"):
         return
     if not isinstance(schema, dict):
         return

@@ -290,8 +290,8 @@ class MaterialsRepository:
             INSERT INTO inventory_lot(
                 lot_uuid,template_uuid,batch_no,unit,quantity_total,
                 quantity_available,quantity_reserved,expiry_at_ms,quarantined,
-                created_at_ms,updated_at_ms,version
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                created_at_ms,updated_at_ms,version,location_site_uuid,warehouse_zone_id
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 values["lot_uuid"], values["template_uuid"], values["batch_no"],
@@ -299,6 +299,7 @@ class MaterialsRepository:
                 values["quantity_available"], values["quantity_reserved"],
                 values["expiry_at_ms"], values["quarantined"],
                 values["created_at_ms"], values["updated_at_ms"], values["version"],
+                values["location_site_uuid"], values["warehouse_zone_id"],
             ),
         )
 
@@ -308,7 +309,8 @@ class MaterialsRepository:
             """
             UPDATE inventory_lot SET template_uuid=?,batch_no=?,unit=?,
                 quantity_total=?,quantity_available=?,quantity_reserved=?,
-                expiry_at_ms=?,quarantined=?,updated_at_ms=?,version=?
+                expiry_at_ms=?,quarantined=?,updated_at_ms=?,version=?,
+                location_site_uuid=?,warehouse_zone_id=?
             WHERE lot_uuid=? AND version=?
             """,
             (
@@ -316,6 +318,7 @@ class MaterialsRepository:
                 values["quantity_total"], values["quantity_available"],
                 values["quantity_reserved"], values["expiry_at_ms"],
                 values["quarantined"], values["updated_at_ms"], values["version"],
+                values["location_site_uuid"], values["warehouse_zone_id"],
                 values["lot_uuid"], values["version"] - 1,
             ),
         )
@@ -478,11 +481,13 @@ class MaterialsRepository:
     def search_materials_by_name(
         self, name: str, *, include_deleted: bool = False
     ) -> list[MaterialRecord]:
-        sql = "SELECT * FROM material WHERE name=?"
+        """按人读标签（``display_name``）精确查找；也接受物料 ``name`` 本身。"""
+
+        sql = "SELECT * FROM material WHERE (display_name=? OR name=?)"
         if not include_deleted:
             sql += " AND deleted_at_ms IS NULL"
         sql += " ORDER BY material_uuid"
-        rows = self.connection.execute(sql, (name,))
+        rows = self.connection.execute(sql, (name, name))
         return [self._material(row) for row in rows]
 
     def list_materials(
@@ -491,7 +496,7 @@ class MaterialsRepository:
         if roots_only:
             rows = self.connection.execute(
                 "SELECT * FROM material WHERE parent_material_uuid IS NULL "
-                "AND deleted_at_ms IS NULL ORDER BY LOWER(name),material_uuid"
+                "AND deleted_at_ms IS NULL ORDER BY LOWER(display_name),material_uuid"
             )
         elif parent_material_uuid is not None:
             rows = self.connection.execute(
@@ -677,6 +682,24 @@ class MaterialsRepository:
         self.connection.execute(
             "DELETE FROM material_substance WHERE material_uuid=?", (material_uuid,)
         )
+        # V1 内容物角色（试剂 / 样品 / 当前内容物）挂在 substance_uuid 上：被替换掉的内容物
+        # 同步移除角色行与仍活动的数量预留；保留下来的 substance_uuid 角色不变。
+        kept = [record.substance_uuid for record in records]
+        placeholders = ",".join("?" for _ in kept) or "''"
+        self.connection.execute(
+            f"DELETE FROM material_content WHERE material_uuid=? "
+            f"AND substance_uuid NOT IN ({placeholders})",
+            (material_uuid, *kept),
+        )
+        self.connection.execute(
+            f"UPDATE material_content_reservation SET status='released', version=version+1, "
+            f"updated_at_ms=MAX(updated_at_ms, created_at_ms) WHERE material_uuid=? AND status='active' "
+            f"AND substance_uuid NOT IN ({placeholders})",
+            (material_uuid, *kept),
+        )
+        self._insert_substances(records)
+
+    def _insert_substances(self, records: Sequence[MaterialSubstanceRecord]) -> None:
         for record in records:
             values = record.model_dump(mode="json")
             self.connection.execute(

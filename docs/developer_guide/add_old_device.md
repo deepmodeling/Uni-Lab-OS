@@ -6,6 +6,8 @@
 
 > **💡 提示：** 本文档介绍如何为没有现成驱动的设备开发驱动程序。如果您的设备已经有 SDK 或驱动，请直接参考 {doc}`add_device`。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库只保留框架依赖的内置设备代码（工作站基类、虚拟设备、抽象液体处理器）；厂商驱动和新设备都放在独立驱动包里，详见 {doc}`add_device` 开头的说明。下文 `module:` 示例中的 `my_device_pkg.xxx` 指你的驱动包模块路径。
+
 ## 有串口字符串指令集文档的设备：Python 串口通信（常见 RS485, RS232, USB）
 
 开发方式：对照厂家给出的指令集文档，实现相应发送指令字符串的 python 函数。可参考 [注射泵串口驱动样例](https://github.com/TablewareBox/runze-syringe-pump)
@@ -16,7 +18,7 @@ Modbus 与 RS485、RS232 不一样的地方在于，会有更多直接寄存器�
 
 Uni-Lab 开发团队在仓库中提供了 3 个样例：
 
-- 单一机械设备**电夹爪**，通讯协议可见 [增广夹爪通讯协议](https://doc.rmaxis.com/docs/communication/fieldbus/)，驱动代码位于 `unilabos/devices/gripper/rmaxis_v4.py`
+- 单一机械设备**电夹爪**，通讯协议可见 [增广夹爪通讯协议](https://doc.rmaxis.com/docs/communication/fieldbus/)，驱动代码已随厂商驱动迁出主仓库（原 `unilabos/devices/gripper/rmaxis_v4.py`），现放在外部驱动包中
 - 执行多设备复杂任务逻辑的**PLC**，Uni-Lab 提供了基于地址表的接入方式和点动工作流编写，测试代码位于 `unilabos/device_comms/modbus_plc/test/test_workflow.py`
 
 ---
@@ -35,6 +37,11 @@ Uni-Lab 开发团队在仓库中提供了 3 个样例：
 ```powershell
 pip install pywinauto
 ```
+
+框架自带的辅助模块 `unilabos.utils.pywinauto_util` 在模块级导入 `pywinauto` 与 `psutil`，两者都在 `unilabos[full]`
+（及 conda 的 `unilabos-full`）里以 Windows 条件声明；驱动包若直接使用该模块，应在自己的依赖里同样以
+`sys_platform == "win32"` 声明这两个包。该模块只支持 Windows，其它平台导入会直接报 `ImportError`，因此请在
+需要 GUI 自动化的代码路径里延迟导入它，不要在串口等通用驱动的模块级导入。
 
 如需录制 GUI 操作，请另行安装
 [pywinauto-recorder](https://github.com/beuaaa/pywinauto_recorder)，并遵循其版本对应的使用说明。

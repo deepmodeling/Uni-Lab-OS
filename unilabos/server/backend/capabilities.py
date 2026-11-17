@@ -173,6 +173,28 @@ def build_endpoint_capabilities(
                     observed_at_ms=observed_at_ms,
                 )
             )
+    # 设备图里有、但本 backend 跑不了而被跳过的设备：登记一条停用的 route（不带动作能力），
+    # 设备目录据此显示"不可用"及原因，而不是让它像离线设备一样无声无息。
+    unavailable: Dict[str, Dict[str, Any]] = dict(
+        getattr(adapter, "unavailable_devices", None) or {}
+    )
+    for device_id in sorted(set(unavailable) - set(devices_names)):
+        record = _json_safe(dict(unavailable[device_id] or {}))
+        route_config = {"unavailable": record}
+        registry_name = str(record.get("registry_name") or "")
+        if registry_name:
+            route_config["registry_name"] = registry_name
+        routes.append(
+            DeviceRoute(
+                route_uuid=f"route:{device_id}",
+                device_uuid=device_id,
+                driver_key=device_id,
+                enabled=False,
+                selected=False,
+                config_hash=canonical_hash(route_config),
+                config=route_config,
+            )
+        )
     return routes, capabilities
 
 

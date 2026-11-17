@@ -438,9 +438,15 @@ def test_pure_hostlink_slave_registers_material_downlink_handlers() -> None:
 
     assert callable(HostLinkBackend._handle_resource_tree_sync)
     assert callable(HostLinkBackend._handle_resource_append)
-    for name in ("_handle_resource_tree_sync", "_handle_resource_append"):
-        source = inspect.getsource(getattr(HostLinkBackend, name))
-        assert "run_node_coroutine" in source
+    from unilabos.backend.runtime.node import DeviceNode
+
+    tree_sync_source = inspect.getsource(HostLinkBackend._handle_resource_tree_sync)
+    assert "run_node_coroutine" in tree_sync_source
+    # 挂载经 DeviceNode.append_resource_blocking（同一 run_node_coroutine，外加提交点握手）
+    append_source = inspect.getsource(HostLinkBackend._handle_resource_append)
+    assert "append_resource_blocking" in append_source
+    assert "run_node_coroutine" in inspect.getsource(DeviceNode.append_resource_blocking)
+    for source in (tree_sync_source, append_source):
         assert "rclpy" not in source
 
 

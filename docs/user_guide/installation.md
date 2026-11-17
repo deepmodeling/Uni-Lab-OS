@@ -1,14 +1,53 @@
 # Uni-Lab-OS 安装指南
 
-从 **0.12.3** 起，默认安装和运行均使用 **HostLink，不需要 ROS**。Python 要求为
-`>=3.12,<3.13`；Windows、Linux、macOS 可使用相同的 Python 入口。
+从 **0.13** 起，默认安装和运行均使用 **HostLink，不需要 ROS**。Python 要求为
+`>=3.14,<3.15`；Windows、Linux、macOS 可使用相同的 Python 入口。
 
-本文的 Conda 命令适用于 0.12.3 及之后的发布。如果 channel 尚未提供该版本，请先使用
+本文的 Conda 命令适用于 0.13 及之后的发布。如果 channel 尚未提供该版本，请先使用
 下方源码安装；旧的 0.12.2 Conda 包仍包含 ROS，升级源码不会自动卸载旧环境中的 ROS。
 
-## 配套 wheel 发行包（推荐，无须 Conda）
+## uv 安装（不需要 ROS 时的默认方式）
 
-下载对应平台的 `unilabos-<版本>-wheelhouse-<平台>.zip` 并解压。需要自行安装 Python 3.12；
+不需要 ROS 时推荐用 [uv](https://docs.astral.sh/uv/)：它按需下载 CPython 3.14，解析和安装都比 pip 快得多。
+需要 ROS 时仍使用下文的 Conda 档位。PLR fork 与 Opentrons NumPy 2 修正版（下称“配套 wheel”）
+不在公共 PyPI，每种方式都要用 `--find-links` 指向一个配套 wheel 目录。按实际能拿到的来源选择：
+
+| 配套 wheel 来源 | 说明 |
+| --- | --- |
+| 本地构建 `scripts/build_wheel_release.py --dependencies-only` | 源码安装；0.13 正式 Release 发布前唯一的公开途径，需要 Git 和网络，源码按 SHA256 校验 |
+| Release 附件 `unilabos-<版本>-wheelhouse-<平台>.zip` 中的 `wheelhouse/` | 只有已发布该版本附件时可用；可完全离线 |
+| [配套 wheel 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/wheel-release.yml) 的 artifact | 开发版本；需要登录 GitHub 下载，保留 90 天 |
+
+源码安装：
+
+```bash
+git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
+cd Uni-Lab-OS
+uv venv --python 3.14 --seed   # 新建 .venv；--seed 带上 pip，构建配套 wheel 时使用
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
+uv pip install --find-links dist/companion/wheelhouse .
+python scripts/verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+发行包离线安装，在解压目录执行：
+
+```bash
+uv venv --python 3.14
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+uv pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python verify_installation.py --assert-no-ros
+unilab --disable-browser
+```
+
+先激活 `.venv`，`uv pip install` 和后续命令就都作用于它。开发者可用
+`python scripts/dev_install.py` 一步完成源码方式并改为可编辑安装，见下文“Python 安装”。
+扩展档位同样可用 uv：`uv pip install --find-links <配套 wheel 目录> ".[full]"`。
+
+## 配套 wheel 发行包（标准库安装入口，无须 uv / Conda）
+
+下载对应平台的 `unilabos-<版本>-wheelhouse-<平台>.zip` 并解压。需要自行安装 Python 3.14；
 Windows x64、Linux x64、macOS Intel/Apple Silicon 分别提供独立产物，不能混用。
 在解压目录执行：
 
@@ -27,13 +66,13 @@ PLR fork 和 Opentrons NumPy 2 修正版只作为配套文件提供，**不上�
 未发布正式 Release 时，可从 [配套 wheel 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/wheel-release.yml)
 的成功 artifact 获取；`local-test` 文件仅供本地验证，不是正式发布版本。
 
-已有独立 Python 3.12 环境时，也可由 pip 自动解析依赖：
+已有独立 Python 3.14 环境时，也可由 pip 自动解析依赖：
 
 ```bash
 # 完整离线、精确版本与文件哈希：推荐保留安装入口的默认行为
 python -m pip install --no-index --find-links ./wheelhouse --require-hashes -r requirements.lock
 # 只指定主包，自动安装所需依赖（不锁定清单中全部间接依赖版本）
-python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.12.3"
+python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.13.0rc1"
 ```
 
 只复制 `unilabos.whl`、不提供配套目录，或直接对公共源执行 `pip install unilabos`，
@@ -41,27 +80,36 @@ python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.12.3"
 
 ## Python 安装
 
-准备一个独立的 Python 3.12 环境，避免复用旧 ROS 环境：
+源码开发用 `scripts/dev_install.py`，一步完成构建配套 wheel、可编辑安装和依赖检查：
 
 ```bash
-python -m venv .venv
-# Linux / macOS
-source .venv/bin/activate
-# Windows PowerShell 改用：.venv\Scripts\Activate.ps1
-
 git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-python scripts/dev_install.py
+python scripts/dev_install.py          # 装有 uv 时，启动它的 Python 不必是 3.14
+source .venv/bin/activate              # Windows PowerShell：.venv\Scripts\Activate.ps1
 unilab --help
-python -m unilabos.app.main --disable_browser --port 8002
+unilab --disable_browser --port 8002
 ```
+
+安装工具默认 `--installer auto`：找到 `uv` 就用 uv，否则提示后回退当前解释器的 pip；
+`--installer uv|pip` 可显式指定，旧参数 `--use-pip` 等同 `--installer pip`。目标环境按以下顺序确定：
+
+1. `--venv <目录>`：已存在时必须是 CPython 3.14 环境，否则新建；
+2. 脚本由已激活的 venv / Conda 环境中的解释器运行时，直接装入该环境（须为 CPython 3.14），
+   Conda + `--skip-deps` 的用法不变；
+3. 否则使用项目根目录的 `.venv`，不存在时新建。
+
+新建环境时，uv 执行 `uv venv --seed --python cpython3.14`（本机没有 3.14 时自动下载；`--seed` 带上 pip，
+配套 wheel 构建要用），pip 方式用当前解释器的 `venv` 模块，因此必须由 CPython 3.14 运行脚本。
+脚本不会装入全局解释器，避免改动系统或其他工具的 Python。
 
 首次运行按提示选择工作目录和配置；不带 `-g` 时以空设备图启动，可从微前端安装设备包。
 安装时已声明微后端、调度、物料、HostLink 和 CLI 所需的 Python 依赖，不再需要额外安装
 `unilabos_msgs`、执行 `colcon build` 或手动补一个 requirements 清单。
 
-源码安装入口会从固定源码构建配套 wheel，再可编辑安装 UniLabOS。此构建过程需要 Git、
-Python 包源和 GitHub；如果已有配套包，用 `python scripts/dev_install.py --wheelhouse <解压目录>/wheelhouse`
+源码安装入口先用目标环境的解释器从固定源码构建配套 wheel，再以 `--find-links` 可编辑安装 UniLabOS，
+最后执行 `uv pip check` / `pip check`。此构建过程需要 Git、Python 包源和 GitHub；
+如果已有配套包，用 `python scripts/dev_install.py --wheelhouse <解压目录>/wheelhouse`
 可以跳过这一步。构建产物不会上传 PyPI，源码下载以 SHA256 校验。
 
 用户安装 wheel 并提供 `--find-links` 时，也会自动安装其 `Requires-Dist` 依赖，不需要源码仓库。
@@ -72,8 +120,8 @@ Python 包源和 GitHub；如果已有配套包，用 `python scripts/dev_instal
 这只是误用 `--no-deps` 后的恢复入口，正常安装不依靠首次启动时再下载依赖；
 恢复入口允许访问普通包源，严格离线安装应使用前面的安装入口/锁定清单。
 
-两个修正版是默认物料依赖：`pylabrobot==0.2.2+unilabos.6285d662effa` 固定到已验证的 fork 提交，
-`opentrons-shared-data==9.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
+两个修正版是默认物料依赖：`pylabrobot==1.0.0b1+unilabos.6a8f3dda7642.ot10` 固定到已验证的 fork 提交，
+`opentrons-shared-data==10.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
 普通上游 `opentrons-shared-data` 仍限制 NumPy 1，不能替换修正版。
 PLR 自身也声明了这个 Opentrons 数据包前置依赖；从完整配套 `wheelhouse` 只安装 PLR 时，
 pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，也无须安装完整的 `opentrons` SDK。
@@ -87,7 +135,8 @@ pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，�
 | full | `python scripts/dev_install.py --extras full` | 全部 Python 依赖：内置驱动 SDK、文档、测试、开发工具及 ROS Python 辅助依赖 |
 
 已有配套 wheel 时追加 `--wheelhouse <解压目录>/wheelhouse`。非源码安装使用
-`python -m pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.12.3"`。
+`uv pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.13.0rc1"`
+（没有 uv 时换成 `python -m pip install`，参数相同）。
 默认离线 wheel 包只锁定默认依赖；扩展档位还需联网取得公共依赖，不能宣称整套 full 离线可用。
 pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesupport**，
 需要这些组件时使用下方 Conda 对应档位。专有硬件 SDK、系统驱动和许可证仍按设备包要求准备。
@@ -98,7 +147,7 @@ pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesup
 默认只启用 Uni-Lab 和 conda-forge，不添加 RoboStack channel：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.12.3"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
 conda activate unilab
 unilab --help
 unilab --disable_browser --port 8002
@@ -110,12 +159,12 @@ unilab --disable_browser --port 8002
 | `unilabos-ros2` | 显式选装 Jazzy 或 Humble 的设备通信扩展 | 是 |
 | `unilabos-full` | 完整运行、文档、测试、开发工具及 ROS Desktop / MoveIt | 是 |
 
-默认包的 build 为 `py312_0`。不再发布 `unilabos-env` 中间包；这与用户自行创建的
+默认包的 build 为 `py314_0`。不再发布 `unilabos-env` 中间包；这与用户自行创建的
 名为 `unilab` 的 Conda 环境不是同一概念，不会删除或更改已有环境。
 ROS 扩展使用另一个包名，避免 Conda 在同名默认包的 ROS / 非 ROS 变体之间自行选择。
 
 只安装 `unilabos` 即会直接带上 PLR fork、`msgcenterpy` 及 NumPy 2 修复版
-`opentrons-shared-data=9.1.0+unilabos.np2.1=py312_np2_1`，不要求用户另装环境中间包
+`opentrons-shared-data=10.1.0+unilabos.np2.1=py314_np2_1`，不要求用户另装环境中间包
 或 ROS 扩展。发行自检会实际创建 Opentrons 96 孔板，并检查 NumPy 2 积分接口，不能只验证 import。
 
 ## 运行 Host 与 Slave
@@ -127,12 +176,24 @@ unilab -g host.json --machine_name lab-host --port 8002 --hostlink_port 7302
 # 另一台机器（或同机另一个进程）
 unilab --is_slave -g slave.json --machine_name lab-slave --host_node_ip 192.168.1.10 --hostlink_port 7302
 
-# 单独的调度/物料权威，不启动设备
-unilab --role backend --port 8081
+# 单独的调度/物料权威，不启动设备（端口默认 8002，与默认启动同一个 --port 设置）
+unilab --role backend
 ```
+
+`--role backend` 与用 `--address` 接入它的 Edge 都会监听自己的 `--port`（默认都是 `8002`），
+在同一台机器上运行时给 Edge 换一个端口，例如 `--address http://127.0.0.1:8002 --port 8003`。
 
 默认启动会分为微后端权威和 Host 子进程；前端只连接管理端 HTTP 端口，
 Slave 连接 HostLink TCP 端口。同机时 Host IP 可用 `127.0.0.1`。
+前端是独立部署的静态站点：推荐的 [OpenLab](https://xuwznln.github.io/OpenLabSite/) 可以从
+`http://127.0.0.1:8002/` 导航页的卡片进入（`unilab` 启动时自动打开的导航页会把后端地址和控制令牌一起交给它），
+也可以直接打开后在「连接设置」里填 `http://<主机>:8002`；写操作需要的控制令牌由 `unilab token` 打印。
+正式前端 Uni-Lab FE 需要自行部署，同样填管理端地址，不要填 HostLink 端口。
+调度权威不自己扫描设备注册表，设备与资源目录由 Host 启动时上报。所有进程在同一台机器上时
+（默认启动、受管设备进程、同机的 Slave），上报的变化自动生效；有 Slave 在另一台机器上时，
+注册表的变化要经确认才生效（驱动包版本号升高的变化仍自动生效）：启动日志会提示待确认的
+条目数，用 `POST /api/v1/registry/pending/apply`（或前端的注册表确认入口）确认；不再使用的跨机器
+Slave 用 `DELETE /api/v1/registry/slaves/<machine_name>` 删除记录。
 设备归属可以提前登记，但必须完成 `post_init/setup/initialize` 后才会进入可调度设备快照。
 
 无 ROS 安装支持普通设备驱动、Workstation/sub-device、动作与 Service、物料创建及 transfer、
@@ -146,17 +207,17 @@ HTTP/FFmpeg 等非 ROS 图像方案不因此被禁用，但仍需安装自己的
 
 ```bash
 # Jazzy
-mamba create -n unilab-jazzy --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-ros2=0.12.3=jazzy_0"
+mamba create -n unilab-jazzy --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-ros2=0.13.0rc1=jazzy_1"
 conda activate unilab-jazzy
 unilab --backend ros2 -g graph.json
 
 # Humble：在另一个环境执行
-mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.12.3=humble_0"
+mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.13.0rc1=humble_1"
 ```
 
-ROS 扩展保持 Python 3.12.13 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
+ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
 安装扩展后也必须使用 `--backend ros2`，不会偷偷切换默认 backend。
-需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.12.3=jazzy_0` 或 `humble_0`，
+需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.13.0rc1=jazzy_1` 或 `humble_1`，
 这些大型组件的可用性还取决于平台和 RoboStack 包。
 
 自定义 ROS Action/消息参见[添加动作](../developer_guide/add_action.md)。
@@ -167,7 +228,7 @@ ROS 扩展保持 Python 3.12.13 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
 需要连同 ROS 运行与文档一起开发时，创建完整环境后可编辑安装源码：
 
 ```bash
-mamba create -n unilab-full --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.12.3=jazzy_0"
+mamba create -n unilab-full --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.13.0rc1=jazzy_1"
 conda activate unilab-full
 python scripts/dev_install.py --extras full
 python -m pytest tests/

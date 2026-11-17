@@ -414,7 +414,7 @@ def run_fake_device(
 
 
 def run_doctor(args: Dict[str, Any]) -> int:
-    """由 unilab CLI 调度；args 来自 argparse（见 app/main.py doctor 子命令）。"""
+    """由 unilab CLI 调度；args 来自 argparse（``app/cli/router.py`` 的 doctor 子命令）。"""
     role = args.get("doctor_command") or "net"
     hostlink_addr = (args.get("hostlink_addr") or "").strip()
     default_port = 7302

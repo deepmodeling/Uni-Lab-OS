@@ -1,13 +1,23 @@
-"""Registry Authority：条目级版本的上报替换、冲突挂起与还原。
+"""Registry Authority：条目级版本的上报替换、接受规则、挂起确认与还原。
 
-Edge 通过 ``/resource-templates`` 上报完整模板快照，本服务按条目独立处理：
+权威自己不扫描设备 / 资源定义：它的注册表目录（工作流编译用的设备目录、节点模板、动作
+Schema、工作流模板）只来自 Host 经 ``/registry/reports`` 的上报（单进程时进程内直接写）。
+本服务按条目独立处理：
 
-- 任何字段变化都生成一个不可变的新版本；
-- 变化条目做表关系冲突检测：被 workflow 节点引用的 action 被删除或定义
-  变化时挂起为 pending 版本，由 ``apply`` 确认或 ``dismiss`` 忽略；
-  无冲突的版本直接生效；
-- 上报集合里消失的条目软移除（版本历史保留，可 ``restore`` 复活）；
-- 每次上报落一条批次统计（新增/更新/挂起/移除/复活/不变/不可用）；
+- 任何字段变化都生成一个不可变的新版本（同一内容的挂起 / 被忽略版本复用原版本号）；
+- 新增或变化的条目先挂起为 pending 版本，命中自动接受规则才直接生效：
+
+  - **规则 B（单机部署）**：上报的 Host 与权威在同一台机器（上报带的 ``machine_id`` 等于权威的，
+    或单进程时进程内上报），并且权威没有记录到任何跨机器 Slave（``registry_remote_slave``）时，
+    本次上报的全部变化（新增 / 更新 / 移除）直接生效；
+  - **规则 A（驱动包升级）**：条目所属驱动包的版本号（PEP 440）比已接受内容的包版本高时直接
+    生效；新条目与同一驱动包已接受条目里最高的包版本比较；
+
+  其余由前端 ``apply`` 确认或 ``dismiss`` 忽略（批量接口同语义）。变化删改了被活跃 workflow
+  引用的 action 时附冲突明细：挂起时供前端标出受影响节点，规则命中直接生效时记进上报统计；
+- 上报集合里消失的既有条目：规则 B 成立时软移除（版本历史保留，可 ``restore`` 或再次上报复活），
+  否则挂起为待确认移除；
+- 每次上报落一条批次统计（新增/更新/挂起/移除/复活/不变/不可用/自动接受与规则 B 判定）；
 - 为调度器提供 ``materials_need_lock`` 镜像查询（读生效版本）。
 """
 
@@ -19,15 +29,19 @@ import sqlite3
 import threading
 import time
 import uuid as uuid_module
-from typing import Any, Callable, Collection, Dict, List, Mapping, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Callable, Collection, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 try:  # 200 个条目的 payload 合计十几 MB，orjson 解析比标准库快数倍
     import orjson as _orjson
 except ImportError:  # pragma: no cover - orjson 是可选加速
     _orjson = None
 
+from packaging.version import InvalidVersion, Version
+
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.runtime.registry import (
+    RegistryAcceptance,
     RegistryAffectedNode,
     RegistryEntrySummary,
     RegistryPendingImpact,
@@ -38,6 +52,7 @@ from unilabos.server.database.tables.runtime import (
     RUNTIME_DATABASE,
     RegistryEntryRecord,
     RegistryEntryStateRecord,
+    RegistryRemoteSlaveRecord,
     RegistryReportRecord,
 )
 
@@ -51,7 +66,14 @@ REGISTRY_TEMPLATE_NAMESPACE = uuid_module.uuid5(
 #: ``workflow``：设备包 ``@workflow`` 声明的工作流模板，与设备 / 资源同一套条目版本化。
 _VALID_REGISTRY_TYPES = frozenset({"device", "resource", "workflow"})
 #: ``loop``：循环容器（``with ctx.loop_for / ctx.loop_while``），循环体节点以 ``parent`` 指向它。
-_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop"})
+_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop", "condition"})
+
+#: 规则 B 不成立的原因（``RegistryPendingReason``）。
+REASON_REMOTE_REPORTER = "cross-machine-reporter"
+REASON_REMOTE_SLAVE = "cross-machine-slave"
+#: 自动接受依据（``RegistryAcceptRule``）。
+RULE_SINGLE_MACHINE = "single-machine"
+RULE_PACKAGE_UPGRADE = "package-upgrade"
 
 #: 返回活跃 workflow 节点对模板 action 的引用明细行，字段见
 #: ``WorkflowService.list_template_action_references``（template_uuid / action /
@@ -69,12 +91,64 @@ def template_uuid(name: str) -> str:
     return str(uuid_module.uuid5(REGISTRY_TEMPLATE_NAMESPACE, str(name)))
 
 
+@dataclass(frozen=True)
+class RegistryReporter:
+    """一次上报（或 Slave 告知）的来源。
+
+    ``in_process``：与权威同进程的上报（``--no-safe-restart``），必然同机；否则以 ``machine_id``
+    与权威自己的机器标识比较，空值按跨机器处理。``slaves`` 是 Host 当时连着的 Slave
+    （``{"machine_name", "machine_id"}``），跨机器的会被记进 ``registry_remote_slave``。
+    """
+
+    edge_uuid: str = ""
+    machine_id: str = ""
+    slaves: tuple[Mapping[str, Any], ...] = ()
+    in_process: bool = False
+
+    @classmethod
+    def local(cls, *, edge_uuid: str = "", slaves: Iterable[Mapping[str, Any]] = ()) -> "RegistryReporter":
+        return cls(edge_uuid=edge_uuid, slaves=tuple(slaves), in_process=True)
+
+
+class _Reported(NamedTuple):
+    """规范化后的一个上报条目：完整定义（只发哈希时为 None）、声明的哈希、所属驱动包。"""
+
+    payload: Optional[Dict[str, Any]]
+    claimed_sha: Optional[str]
+    package: str = ""
+    package_version: str = ""
+
+
+@dataclass(frozen=True)
+class _Acceptance:
+    single_machine: bool
+    reason: str
+    reporter_machine_id: str
+    remote_slaves: tuple[str, ...]
+
+    def as_dict(self) -> Dict[str, Any]:
+        return RegistryAcceptance(
+            single_machine=self.single_machine,
+            reason=self.reason,  # type: ignore[arg-type] - 只放合法原因
+            reporter_machine_id=self.reporter_machine_id,
+            remote_slaves=list(self.remote_slaves),
+        ).model_dump(mode="python")
+
+
+def _parse_version(value: str) -> Optional[Version]:
+    try:
+        return Version(str(value or "").strip()) if str(value or "").strip() else None
+    except InvalidVersion:
+        return None
+
+
 class RegistryService(SqliteDomain):
-    """串行化 registry 三表读写，维护生效条目的内存索引。
+    """串行化 registry 四表读写，维护生效条目的内存索引。
 
     生产环境表落 ``runtime.db``：把 RuntimeService 实例作为 ``database``
     传入即共享其 connection 与 write_lock（同库单连接单写者）；测试可传
-    路径独立建一个 runtime 库（同一 RUNTIME_DATABASE 规格）。
+    路径独立建一个 runtime 库（同一 RUNTIME_DATABASE 规格）。``machine_id`` 是权威
+    自己的机器标识（缺省取 ``utils/machine_identity.machine_id()``），规则 B 拿上报的与它比较。
     """
 
     def __init__(
@@ -82,13 +156,20 @@ class RegistryService(SqliteDomain):
         database: DomainDatabase,
         *,
         reference_rows_resolver: Optional[ReferenceRowsResolver] = None,
+        machine_id: Optional[str] = None,
     ) -> None:
         super().__init__(database, RUNTIME_DATABASE)
         self._resolver = reference_rows_resolver
         self._lock = threading.RLock()
+        if machine_id is None:
+            from unilabos.utils.machine_identity import machine_id as local_machine_id
+
+            machine_id = local_machine_id()
+        self.machine_id = str(machine_id)
         # 生效条目的 content_sha256 索引：上报比对只看哈希，不必为每个条目重算 payload 哈希
         self._active_hashes: Dict[str, str] = {}
         self._active: Dict[str, Dict[str, Any]] = self._load_active_payloads()
+        self._reported = False
 
     # ── registry_entry（不可变版本行） ──────────────────────────
 
@@ -105,8 +186,8 @@ class RegistryService(SqliteDomain):
                 """
                 INSERT INTO registry_entry(
                     name,version,created_at_ms,source,edge_uuid,
-                    restored_from,content_sha256,payload
-                ) VALUES (?,?,?,?,?,?,?,?)
+                    restored_from,content_sha256,package_name,package_version,payload
+                ) VALUES (?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     values["name"],
@@ -116,6 +197,8 @@ class RegistryService(SqliteDomain):
                     values["edge_uuid"],
                     values["restored_from"],
                     values["content_sha256"],
+                    values["package_name"],
+                    values["package_version"],
                     _dump(values["payload"]),
                 ),
             )
@@ -127,6 +210,14 @@ class RegistryService(SqliteDomain):
                 (name, version),
             ).fetchone()
             return self._entry(row) if row is not None else None
+
+    def _entry_sha(self, name: str, version: int) -> Optional[str]:
+        with self.write_lock:
+            row = self.connection.execute(
+                "SELECT content_sha256 FROM registry_entry WHERE name=? AND version=?",
+                (name, version),
+            ).fetchone()
+            return str(row[0]) if row is not None else None
 
     def _max_entry_version(self, name: str) -> int:
         with self.write_lock:
@@ -165,8 +256,9 @@ class RegistryService(SqliteDomain):
                 """
                 INSERT INTO registry_entry_state(
                     name,template_uuid,active_version,pending_version,
-                    pending_conflicts,unusable_reason,removed_at_ms,updated_at_ms
-                ) VALUES (?,?,?,?,?,?,?,?)
+                    pending_conflicts,unusable_reason,removed_at_ms,updated_at_ms,
+                    package_name,package_version,pending_reason,pending_removal_at_ms
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(name) DO UPDATE SET
                     template_uuid=excluded.template_uuid,
                     active_version=excluded.active_version,
@@ -174,7 +266,11 @@ class RegistryService(SqliteDomain):
                     pending_conflicts=excluded.pending_conflicts,
                     unusable_reason=excluded.unusable_reason,
                     removed_at_ms=excluded.removed_at_ms,
-                    updated_at_ms=excluded.updated_at_ms
+                    updated_at_ms=excluded.updated_at_ms,
+                    package_name=excluded.package_name,
+                    package_version=excluded.package_version,
+                    pending_reason=excluded.pending_reason,
+                    pending_removal_at_ms=excluded.pending_removal_at_ms
                 """,
                 (
                     values["name"],
@@ -185,6 +281,10 @@ class RegistryService(SqliteDomain):
                     values["unusable_reason"],
                     values["removed_at_ms"],
                     values["updated_at_ms"],
+                    values["package_name"],
+                    values["package_version"],
+                    values["pending_reason"],
+                    values["pending_removal_at_ms"],
                 ),
             )
 
@@ -227,6 +327,133 @@ class RegistryService(SqliteDomain):
             )
             return int(cursor.lastrowid)
 
+    def has_report(self) -> bool:
+        """是否收到过 Host 的上报（全新库在首次上报前为 False，目录为空）。"""
+
+        if self._reported:
+            return True
+        with self.write_lock:
+            row = self.connection.execute("SELECT 1 FROM registry_report LIMIT 1").fetchone()
+        self._reported = row is not None
+        return self._reported
+
+    # ── registry_remote_slave（跨机器 Slave） ─────────────────────
+
+    def record_slaves(self, reporter: RegistryReporter) -> List[str]:
+        """记下 Host 报来的 Slave 里不在权威这台机器上的；返回本次新记下的 machine_name。
+
+        机器标识等于权威的 Slave 是本机的（受管 Slave 必然如此）：不记录，之前因换机而留下的
+        同名记录随之删除。没有机器标识的旧 Slave 按跨机器记录。
+        """
+
+        now_ms = int(time.time() * 1000)
+        added: List[str] = []
+        with self._lock:
+            for raw in reporter.slaves:
+                name = str((raw or {}).get("machine_name") or "").strip()
+                if not name:
+                    continue
+                slave_machine = str((raw or {}).get("machine_id") or "").strip()
+                with self.write():
+                    if slave_machine and slave_machine == self.machine_id:
+                        self.connection.execute(
+                            "DELETE FROM registry_remote_slave WHERE machine_name=?", (name,)
+                        )
+                        continue
+                    existed = self.connection.execute(
+                        "SELECT 1 FROM registry_remote_slave WHERE machine_name=?", (name,)
+                    ).fetchone()
+                    self.connection.execute(
+                        """
+                        INSERT INTO registry_remote_slave(
+                            machine_name,machine_id,edge_uuid,first_seen_at_ms,last_seen_at_ms
+                        ) VALUES (?,?,?,?,?)
+                        ON CONFLICT(machine_name) DO UPDATE SET
+                            machine_id=excluded.machine_id,
+                            edge_uuid=excluded.edge_uuid,
+                            last_seen_at_ms=excluded.last_seen_at_ms
+                        """,
+                        (name, slave_machine, str(reporter.edge_uuid or ""), now_ms, now_ms),
+                    )
+                if existed is None:
+                    added.append(name)
+        if added:
+            logger.warning(
+                "[Registry] 记录到跨机器 Slave %s：之后的注册表变化需在前端确认（驱动包版本升高的除外）",
+                ", ".join(added),
+            )
+        return added
+
+    def list_remote_slaves(self) -> List[Dict[str, Any]]:
+        with self.write_lock:
+            rows = self.connection.execute(
+                "SELECT * FROM registry_remote_slave ORDER BY machine_name"
+            ).fetchall()
+        return [RegistryRemoteSlaveRecord.model_validate(dict(row)).model_dump(mode="python") for row in rows]
+
+    def forget_remote_slave(self, machine_name: str) -> Dict[str, Any]:
+        """删除一条跨机器 Slave 记录（用户确认它不再使用）；不存在时报错。"""
+
+        with self._lock:
+            with self.write():
+                cursor = self.connection.execute(
+                    "DELETE FROM registry_remote_slave WHERE machine_name=?", (str(machine_name or ""),)
+                )
+            if cursor.rowcount == 0:
+                raise RegistryAuthorityError(f"remote slave {machine_name} not found")
+        return {"machine_name": str(machine_name), "remaining": [row["machine_name"] for row in self.list_remote_slaves()]}
+
+    def acceptance(self, reporter: Optional[RegistryReporter] = None) -> Dict[str, Any]:
+        """规则 B 判定（不改任何状态）；``reporter`` 缺省视为与权威同机的 Host。"""
+
+        return self._acceptance(reporter or RegistryReporter.local()).as_dict()
+
+    def _acceptance(self, reporter: RegistryReporter) -> _Acceptance:
+        reporter_machine = self.machine_id if reporter.in_process else str(reporter.machine_id or "")
+        remote = tuple(row["machine_name"] for row in self.list_remote_slaves())
+        if reporter_machine != self.machine_id:
+            reason = REASON_REMOTE_REPORTER
+        elif remote:
+            reason = REASON_REMOTE_SLAVE
+        else:
+            reason = ""
+        return _Acceptance(
+            single_machine=not reason,
+            reason=reason,
+            reporter_machine_id=reporter_machine,
+            remote_slaves=remote,
+        )
+
+    def status(self) -> Dict[str, Any]:
+        """目录状态：是否收到过上报、最近一次上报、挂起数、当前的规则 B 判定。"""
+
+        with self.write_lock:
+            row = self.connection.execute(
+                "SELECT * FROM registry_report ORDER BY report_id DESC LIMIT 1"
+            ).fetchone()
+        last_report = None
+        if row is not None:
+            values = dict(row)
+            summary = _load(values["summary"])
+            last_report = {
+                "report_id": values["report_id"],
+                "created_at_ms": values["created_at_ms"],
+                "edge_uuid": values["edge_uuid"],
+                "counts": summary.get("counts", {}),
+                "acceptance": summary.get("acceptance"),
+            }
+        with self._lock:
+            states = self._list_states()
+        return {
+            "reported": last_report is not None,
+            "last_report": last_report,
+            "active_count": len(self._active),
+            "pending_count": sum(1 for state in states if _has_pending(state)),
+            "machine_id": self.machine_id,
+            "acceptance": self.acceptance(),
+            "remote_slaves": self.list_remote_slaves(),
+        }
+
     # ------------------------------------------------------------------
     # 上报（条目级替换）
     # ------------------------------------------------------------------
@@ -246,14 +473,13 @@ class RegistryService(SqliteDomain):
                 if state.active_version is not None:
                     sha = self._active_hashes.get(state.name)
                     if sha is None:
-                        entry = self.find_entry(state.name, state.active_version)
-                        sha = entry.content_sha256 if entry is not None else None
+                        sha = self._entry_sha(state.name, state.active_version)
                     if sha is not None:
                         active[state.name] = sha
                 if state.pending_version is not None:
-                    entry = self.find_entry(state.name, state.pending_version)
-                    if entry is not None:
-                        pending[state.name] = entry.content_sha256
+                    sha = self._entry_sha(state.name, state.pending_version)
+                    if sha is not None:
+                        pending[state.name] = sha
         return {"active": active, "pending": pending}
 
     def report(
@@ -261,15 +487,18 @@ class RegistryService(SqliteDomain):
         definitions: Sequence[Mapping[str, Any]],
         *,
         edge_uuid: str = "",
+        reporter: Optional[RegistryReporter] = None,
     ) -> Dict[str, Any]:
-        """全量上报（旧形状：每个条目都是完整定义）。逐条目比对：变了就为该条目升版本；
-        被 workflow 引用的 action 发生删除/变化时挂起为 pending，否则自动生效。"""
+        """全量上报（旧形状：每个条目都是完整定义，不带驱动包信息）。
+
+        ``reporter`` 缺省为进程内上报（与权威同机）。
+        """
 
         entries, unusable = _normalize_definitions(definitions)
         return self._report(
-            {name: (entry, None) for name, entry in entries.items()},
+            {name: _Reported(entry, None) for name, entry in entries.items()},
             unusable,
-            edge_uuid=edge_uuid,
+            reporter=_with_edge(reporter, edge_uuid),
         )
 
     def report_entries(
@@ -277,14 +506,15 @@ class RegistryService(SqliteDomain):
         entries: Sequence[Mapping[str, Any]],
         *,
         edge_uuid: str = "",
+        reporter: Optional[RegistryReporter] = None,
     ) -> Dict[str, Any]:
-        """按哈希增量的全量上报：``[{id, content_sha256, payload?}]``。
+        """按哈希增量的全量上报：``[{id, content_sha256, payload?, package?, package_version?}]``。
 
         带 payload 的条目与旧形状同样处理（哈希由权威自己重算）；只带哈希的条目必须命中
         权威已有的生效 / 挂起版本，否则进结果的 ``missing``，由 Host 补 payload 再报。
         """
 
-        normalized: Dict[str, tuple[Optional[Dict[str, Any]], Optional[str]]] = {}
+        normalized: Dict[str, _Reported] = {}
         unusable: List[Dict[str, str]] = []
         for raw in entries:
             if not isinstance(raw, Mapping):
@@ -305,18 +535,24 @@ class RegistryService(SqliteDomain):
             if payload is not None and not isinstance(payload, Mapping):
                 unusable.append({"id": name, "reason": "not-an-object"})
                 continue
-            normalized[name] = (dict(payload) if payload is not None else None, claimed or None)
-        return self._report(normalized, unusable, edge_uuid=edge_uuid)
+            normalized[name] = _Reported(
+                dict(payload) if payload is not None else None,
+                claimed or None,
+                str(raw.get("package") or "").strip(),
+                str(raw.get("package_version") or "").strip(),
+            )
+        return self._report(normalized, unusable, reporter=_with_edge(reporter, edge_uuid))
 
     def _report(
         self,
-        entries: Mapping[str, tuple[Optional[Dict[str, Any]], Optional[str]]],
+        entries: Mapping[str, _Reported],
         unusable: List[Dict[str, str]],
         *,
-        edge_uuid: str,
+        reporter: RegistryReporter,
     ) -> Dict[str, Any]:
         referenced = self._referenced_actions()
         now_ms = int(time.time() * 1000)
+        edge_uuid = str(reporter.edge_uuid or "")
 
         detail: Dict[str, Any] = {
             "added": [],
@@ -326,40 +562,43 @@ class RegistryService(SqliteDomain):
             "removed": [],
             "revived": [],
             "unusable": unusable,
+            "auto_accepted": [],
         }
         missing: List[str] = []
 
         with self._lock:
-            for name, (payload, claimed_sha) in entries.items():
-                if payload is not None:
+            # 先记下 Host 当时连着的跨机器 Slave，再做规则 B 判定
+            self.record_slaves(reporter)
+            acceptance = self._acceptance(reporter)
+            accepted_versions = self._accepted_package_versions()
+            for name, reported in entries.items():
+                if reported.payload is not None:
                     self._report_entry(
-                        name, payload, referenced, now_ms, edge_uuid, detail
+                        name, reported, referenced, now_ms, edge_uuid, acceptance, accepted_versions, detail
                     )
-                elif not self._report_hash_only(name, claimed_sha or "", now_ms, detail):
+                elif not self._report_hash_only(
+                    name, reported, referenced, now_ms, acceptance, accepted_versions, detail
+                ):
                     missing.append(name)
 
-            # 上报集合外的既有条目转为软移除；非 active 条目不重复计数。
-            # 只发哈希、尚待补 payload 的条目也在集合里，不会被误判为移除。
+            # 上报集合外的既有条目：规则 B 成立时软移除，否则挂起为待确认移除；只挂起着、
+            # 从未生效的新条目直接撤回挂起。只发哈希、尚待补 payload 的条目也在集合里，
+            # 不会被误判为移除。
             reported_names = set(entries)
             for state in self._list_states():
                 if state.name in reported_names:
                     continue
-                if state.removed_at_ms is not None or state.active_version is None:
-                    continue
-                state.removed_at_ms = now_ms
-                state.updated_at_ms = now_ms
-                self._upsert_state(state)
-                self._drop_active(state.name)
-                detail["removed"].append(state.name)
+                self._report_absent(state, referenced, now_ms, acceptance, detail)
 
-            summary = _summarize(detail, total=len(entries))
+            summary = _summarize(detail, total=len(entries), acceptance=acceptance)
             report_id = self._insert_report(
                 RegistryReportRecord(
                     created_at_ms=now_ms,
-                    edge_uuid=str(edge_uuid or ""),
+                    edge_uuid=edge_uuid,
                     summary=summary,
                 )
             )
+            self._reported = True
 
         return {
             "report_id": report_id,
@@ -373,63 +612,158 @@ class RegistryService(SqliteDomain):
             "missing": missing,
         }
 
+    def _accepted_package_versions(self) -> Dict[str, Version]:
+        """各驱动包已接受（生效且未移除）条目里最高的包版本：新条目的规则 A 基准。"""
+
+        best: Dict[str, Version] = {}
+        for state in self._list_states():
+            if state.active_version is None or state.removed_at_ms is not None or not state.package_name:
+                continue
+            parsed = _parse_version(state.package_version)
+            if parsed is not None and (state.package_name not in best or parsed > best[state.package_name]):
+                best[state.package_name] = parsed
+        return best
+
+    def _accept_rule(
+        self,
+        state: Optional[RegistryEntryStateRecord],
+        reported: _Reported,
+        acceptance: _Acceptance,
+        accepted_versions: Mapping[str, Version],
+    ) -> Optional[str]:
+        """新增 / 变化条目的自动接受依据；None 表示挂起待确认。"""
+
+        if acceptance.single_machine:
+            return RULE_SINGLE_MACHINE
+        new_version = _parse_version(reported.package_version)
+        if not reported.package or new_version is None:
+            return None
+        if state is not None and state.active_version is not None:
+            # 已有接受内容：只与它的包比较（换了包、旧记录没有包版本都不算升级）
+            if state.package_name != reported.package:
+                return None
+            base = _parse_version(state.package_version)
+        else:
+            base = accepted_versions.get(reported.package)
+        if base is not None and new_version > base:
+            return RULE_PACKAGE_UPGRADE
+        return None
+
     def _report_hash_only(
-        self, name: str, claimed_sha: str, now_ms: int, detail: Dict[str, Any]
+        self,
+        name: str,
+        reported: _Reported,
+        referenced: Mapping[str, Collection[str]],
+        now_ms: int,
+        acceptance: _Acceptance,
+        accepted_versions: Mapping[str, Version],
+        detail: Dict[str, Any],
     ) -> bool:
-        """只带哈希的条目：命中生效版本按"未变"（软移除的则复活），命中挂起版本按"仍挂起"。
+        """只带哈希的条目：命中生效版本按"未变"（软移除的则复活），命中挂起版本按"仍挂起"
+        （此时接受规则成立则直接生效）。
 
         Returns:
             False 表示权威没有这个哈希的版本，需要 Host 补完整 payload。
         """
 
+        claimed_sha = reported.claimed_sha or ""
         state = self._find_state(name)
         if state is None or not claimed_sha:
             return False
         active_sha = self._active_hashes.get(name)
-        active_entry = None
         if state.active_version is not None and active_sha is None:
             # 软移除条目不在活跃索引中：从版本表读生效版本
-            active_entry = self.find_entry(name, state.active_version)
-            active_sha = active_entry.content_sha256 if active_entry is not None else None
+            active_sha = self._entry_sha(name, state.active_version)
 
         if state.active_version is not None and active_sha == claimed_sha:
-            was_removed = state.removed_at_ms is not None
-            changed = bool(state.unusable_reason) or was_removed
-            state.unusable_reason = ""
-            if was_removed:
-                state.removed_at_ms = None
-                detail["revived"].append(name)
-                payload = active_entry.payload if active_entry is not None else None
-                if payload is None:
-                    stored = self.find_entry(name, state.active_version)
-                    payload = stored.payload if stored is not None else {}
-                self._set_active(name, payload, claimed_sha)
-            else:
-                detail["unchanged"].append(name)
-            if changed:
-                state.updated_at_ms = now_ms
-                self._upsert_state(state)
+            self._keep_active(state, reported, now_ms, detail)
             return True
 
         if state.pending_version is not None:
-            pending = self.find_entry(name, state.pending_version)
-            if pending is not None and pending.content_sha256 == claimed_sha:
-                # 同一份挂起内容再报一次：不再生成新版本，等前端确认或忽略
-                detail["pending"].append(
-                    {"name": name, "conflicts": list(state.pending_conflicts)}
-                )
+            if self._entry_sha(name, state.pending_version) == claimed_sha:
+                self._hold_pending(state, reported, referenced, now_ms, acceptance, accepted_versions, detail)
                 return True
         return False
+
+    def _keep_active(
+        self,
+        state: RegistryEntryStateRecord,
+        reported: _Reported,
+        now_ms: int,
+        detail: Dict[str, Any],
+    ) -> None:
+        """上报内容与生效版本相同：不生成版本；软移除的复活，挂起的移除 / 过时的新版本撤回。"""
+
+        name = state.name
+        was_removed = state.removed_at_ms is not None
+        changed = bool(state.unusable_reason) or was_removed or _has_pending(state)
+        state.unusable_reason = ""
+        # Host 又报回生效内容：之前挂起的新版本 / 移除已不是 Host 的现状
+        state.pending_version = None
+        state.pending_conflicts = []
+        state.pending_reason = ""
+        state.pending_removal_at_ms = None
+        if reported.package and (
+            state.package_name != reported.package or state.package_version != reported.package_version
+        ):
+            # 规则 A 的基准跟着 Host 现在交付这份内容的包版本走
+            state.package_name = reported.package
+            state.package_version = reported.package_version
+            changed = True
+        if was_removed:
+            state.removed_at_ms = None
+            detail["revived"].append(name)
+            if state.active_version is not None:
+                stored = self.find_entry(name, state.active_version)
+                if stored is not None:
+                    self._set_active(name, stored.payload, stored.content_sha256)
+        else:
+            detail["unchanged"].append(name)
+        if changed:
+            state.updated_at_ms = now_ms
+            self._upsert_state(state)
+
+    def _hold_pending(
+        self,
+        state: RegistryEntryStateRecord,
+        reported: _Reported,
+        referenced: Mapping[str, Collection[str]],
+        now_ms: int,
+        acceptance: _Acceptance,
+        accepted_versions: Mapping[str, Version],
+        detail: Dict[str, Any],
+    ) -> None:
+        """同一份挂起内容再报一次：不再生成新版本；接受规则这次成立就直接生效。"""
+
+        rule = self._accept_rule(state, reported, acceptance, accepted_versions)
+        if rule is None:
+            state.pending_reason = acceptance.reason
+            state.pending_removal_at_ms = None
+            state.updated_at_ms = now_ms
+            self._upsert_state(state)
+            detail["pending"].append(_pending_item(state, acceptance.reason))
+            return
+        pending = self.find_entry(state.name, int(state.pending_version or 0))
+        if pending is None:
+            raise RegistryAuthorityError(f"entry {state.name} pending version missing")
+        conflicts = self._conflicts_against_active(state, pending.payload, referenced)
+        was_new = state.active_version is None
+        self._activate(state, pending, reported, now_ms)
+        detail["added" if was_new else "updated"].append(state.name)
+        detail["auto_accepted"].append({"name": state.name, "rule": rule, "conflicts": conflicts})
 
     def _report_entry(
         self,
         name: str,
-        entry: Dict[str, Any],
+        reported: _Reported,
         referenced: Mapping[str, Collection[str]],
         now_ms: int,
         edge_uuid: str,
+        acceptance: _Acceptance,
+        accepted_versions: Mapping[str, Version],
         detail: Dict[str, Any],
     ) -> None:
+        entry = dict(reported.payload or {})
         state = self._find_state(name)
         usability = _usability_issue(entry)
 
@@ -443,87 +777,157 @@ class RegistryService(SqliteDomain):
             return
 
         content_sha = canonical_hash(entry)
-        active_payload = self._active.get(name)
         active_sha = self._active_hashes.get(name)
-        was_removed = state is not None and state.removed_at_ms is not None
+        if state is not None and state.active_version is not None and active_sha is None:
+            # 软移除条目不在活跃索引中，需从版本表读取生效内容的哈希。
+            active_sha = self._entry_sha(name, state.active_version)
 
-        if state is not None and state.active_version is not None and active_payload is None:
-            # 软移除条目不在活跃索引中，需从版本表读取生效内容。
-            stored = self.find_entry(name, state.active_version)
-            if stored is not None:
-                active_payload = stored.payload
-                active_sha = stored.content_sha256
+        if state is not None and state.active_version is not None and active_sha == content_sha:
+            # 相同内容不会生成版本；重新上报可恢复软移除条目。
+            self._keep_active(state, reported, now_ms, detail)
+            return
 
         if (
             state is not None
-            and state.active_version is not None
-            and active_payload is not None
-            and active_sha == content_sha
+            and state.pending_version is not None
+            and self._entry_sha(name, state.pending_version) == content_sha
         ):
-            # 相同内容不会生成版本；重新上报可恢复软移除条目。
-            changed = bool(state.unusable_reason) or was_removed
-            state.unusable_reason = ""
-            if was_removed:
-                state.removed_at_ms = None
-                detail["revived"].append(name)
-                self._set_active(name, entry, content_sha)
-            else:
-                detail["unchanged"].append(name)
-            if changed:
-                state.updated_at_ms = now_ms
-                self._upsert_state(state)
+            self._hold_pending(state, reported, referenced, now_ms, acceptance, accepted_versions, detail)
             return
 
-        version = self._max_entry_version(name) + 1
-        self._insert_entry(
-            RegistryEntryRecord(
+        # 同一份内容刚被忽略过（最新版本行既不生效也不挂起）：复用那个版本号，不重复存一份
+        version = self._max_entry_version(name)
+        latest = self.find_entry(name, version) if version else None
+        if not (
+            latest is not None
+            and latest.content_sha256 == content_sha
+            and (state is None or latest.version != state.active_version)
+        ):
+            version += 1
+            latest = RegistryEntryRecord(
                 name=name,
                 version=version,
                 created_at_ms=now_ms,
                 source="edge-report",
-                edge_uuid=str(edge_uuid or ""),
+                edge_uuid=edge_uuid,
                 content_sha256=content_sha,
+                package_name=reported.package,
+                package_version=reported.package_version,
                 payload=entry,
             )
-        )
+            self._insert_entry(latest)
 
-        if state is None or state.active_version is None:
-            # 首个有效版本直接生效。
-            record = state or _new_state(name, now_ms)
-            record.active_version = version
-            record.pending_version = None
-            record.pending_conflicts = []
-            record.unusable_reason = ""
-            record.removed_at_ms = None
-            record.updated_at_ms = now_ms
-            self._upsert_state(record)
-            self._set_active(name, entry, content_sha)
-            detail["added"].append(name)
+        record = state or _new_state(name, now_ms)
+        record.unusable_reason = ""
+        conflicts = self._conflicts_against_active(record, entry, referenced)
+        rule = self._accept_rule(state, reported, acceptance, accepted_versions)
+        if rule is not None:
+            was_new = record.active_version is None
+            if record.removed_at_ms is not None:
+                detail["revived"].append(name)
+            self._activate(record, latest, reported, now_ms)
+            detail["added" if was_new else "updated"].append(name)
+            detail["auto_accepted"].append({"name": name, "rule": rule, "conflicts": conflicts})
             return
 
-        conflicts = _detect_conflicts(
-            active_payload or {},
-            entry,
-            referenced.get(state.template_uuid, ()),
-        )
-        state.unusable_reason = ""
-        if was_removed:
-            state.removed_at_ms = None
-            detail["revived"].append(name)
+        # 挂起待确认：生效版本（以及软移除状态）不动
+        record.pending_version = version
+        record.pending_conflicts = conflicts
+        record.pending_reason = acceptance.reason
+        record.pending_removal_at_ms = None
+        record.updated_at_ms = now_ms
+        self._upsert_state(record)
+        detail["pending"].append(_pending_item(record, acceptance.reason))
 
-        if conflicts:
-            # 影响活跃 workflow 的 action 变更需要显式确认。
-            state.pending_version = version
-            state.pending_conflicts = conflicts
-            detail["pending"].append({"name": name, "conflicts": conflicts})
-        else:
-            state.active_version = version
+    def _report_absent(
+        self,
+        state: RegistryEntryStateRecord,
+        referenced: Mapping[str, Collection[str]],
+        now_ms: int,
+        acceptance: _Acceptance,
+        detail: Dict[str, Any],
+    ) -> None:
+        """Host 这次没有上报的既有条目。"""
+
+        if state.active_version is None or state.removed_at_ms is not None:
+            # 从未生效的新条目 / 已软移除的条目：Host 不再提供，撤回挂起的版本
+            if state.pending_version is not None:
+                state.pending_version = None
+                state.pending_conflicts = []
+                state.pending_reason = ""
+                state.updated_at_ms = now_ms
+                self._upsert_state(state)
+            return
+        conflicts = [
+            {"action": action, "reason": "action-removed"}
+            for action in sorted(
+                {str(item) for item in referenced.get(state.template_uuid, ())}
+                & set(_action_definitions(self._active.get(state.name) or {}))
+            )
+        ]
+        if acceptance.single_machine:
+            state.removed_at_ms = now_ms
             state.pending_version = None
             state.pending_conflicts = []
-            self._set_active(name, entry, content_sha)
-            detail["updated"].append(name)
+            state.pending_reason = ""
+            state.pending_removal_at_ms = None
+            state.updated_at_ms = now_ms
+            self._upsert_state(state)
+            self._drop_active(state.name)
+            detail["removed"].append(state.name)
+            detail["auto_accepted"].append(
+                {"name": state.name, "rule": RULE_SINGLE_MACHINE, "conflicts": conflicts}
+            )
+            return
+        # 待确认移除替换掉之前挂起的新版本：Host 现在连这个条目都没有了
+        if state.pending_removal_at_ms is None:
+            state.pending_removal_at_ms = now_ms
+        state.pending_version = None
+        state.pending_conflicts = conflicts
+        state.pending_reason = acceptance.reason
         state.updated_at_ms = now_ms
         self._upsert_state(state)
+        detail["pending"].append(_pending_item(state, acceptance.reason))
+
+    def _conflicts_against_active(
+        self,
+        state: RegistryEntryStateRecord,
+        candidate: Mapping[str, Any],
+        referenced: Mapping[str, Collection[str]],
+    ) -> List[Dict[str, str]]:
+        if state.active_version is None:
+            return []
+        active_payload = self._active.get(state.name)
+        if active_payload is None:
+            stored = self.find_entry(state.name, state.active_version)
+            active_payload = stored.payload if stored is not None else {}
+        return _detect_conflicts(active_payload, candidate, referenced.get(state.template_uuid, ()))
+
+    def _activate(
+        self,
+        state: RegistryEntryStateRecord,
+        entry: RegistryEntryRecord,
+        reported: Optional[_Reported],
+        now_ms: int,
+    ) -> None:
+        """把版本行设为生效（复活软移除），清掉挂起；包基准取上报的（没有则取版本行的）。"""
+
+        state.active_version = entry.version
+        state.pending_version = None
+        state.pending_conflicts = []
+        state.pending_reason = ""
+        state.pending_removal_at_ms = None
+        state.unusable_reason = ""
+        state.removed_at_ms = None
+        if reported is not None and reported.package:
+            state.package_name = reported.package
+            state.package_version = reported.package_version
+        else:
+            state.package_name = entry.package_name
+            state.package_version = entry.package_version
+        state.updated_at_ms = now_ms
+        self._upsert_state(state)
+        self._set_active(state.name, entry.payload, entry.content_sha256)
 
     def _set_active(self, name: str, payload: Mapping[str, Any], content_sha: str) -> None:
         self._active[name] = dict(payload)
@@ -538,10 +942,20 @@ class RegistryService(SqliteDomain):
     # ------------------------------------------------------------------
 
     def apply_pending(self, name: str) -> Dict[str, Any]:
-        """把挂起版本切换为生效版本。"""
+        """接受挂起的变化：挂起版本切换为生效版本，待确认移除则软移除。"""
 
         with self._lock:
             state = self._require_state(name)
+            now_ms = int(time.time() * 1000)
+            if state.pending_removal_at_ms is not None:
+                state.removed_at_ms = now_ms
+                state.pending_removal_at_ms = None
+                state.pending_conflicts = []
+                state.pending_reason = ""
+                state.updated_at_ms = now_ms
+                self._upsert_state(state)
+                self._drop_active(state.name)
+                return self._entry_summary(state)
             if state.pending_version is None:
                 raise RegistryAuthorityError(f"entry {name} has no pending version")
             entry = self.find_entry(name, state.pending_version)
@@ -549,32 +963,56 @@ class RegistryService(SqliteDomain):
                 raise RegistryAuthorityError(
                     f"entry {name} pending version {state.pending_version} missing"
                 )
-            state.active_version = state.pending_version
-            state.pending_version = None
-            state.pending_conflicts = []
-            state.removed_at_ms = None
-            state.updated_at_ms = int(time.time() * 1000)
-            self._upsert_state(state)
-            self._set_active(name, entry.payload, entry.content_sha256)
+            self._activate(state, entry, None, now_ms)
             return self._entry_summary(state)
 
     def dismiss_pending(self, name: str) -> Dict[str, Any]:
-        """忽略挂起版本（版本行保留在历史里，生效版本不动）。"""
+        """忽略挂起的变化（版本行保留在历史里，生效版本不动）。
+
+        Host 下次上报仍是这份内容时会再次挂起（复用同一版本号）：挂起表示 Host 的现状与
+        已接受目录不一致，只要不一致就会提示。
+        """
 
         with self._lock:
             state = self._require_state(name)
-            if state.pending_version is None:
+            if state.pending_version is None and state.pending_removal_at_ms is None:
                 raise RegistryAuthorityError(f"entry {name} has no pending version")
             state.pending_version = None
+            state.pending_removal_at_ms = None
             state.pending_conflicts = []
+            state.pending_reason = ""
             state.updated_at_ms = int(time.time() * 1000)
             self._upsert_state(state)
             return self._entry_summary(state)
+
+    def apply_pending_many(self, names: Sequence[str] = ()) -> Dict[str, Any]:
+        """批量接受；``names`` 为空时接受全部挂起条目。逐条执行，失败的列入 ``failed``。"""
+
+        return self._pending_many(self.apply_pending, names)
+
+    def dismiss_pending_many(self, names: Sequence[str] = ()) -> Dict[str, Any]:
+        """批量忽略；``names`` 为空时忽略全部挂起条目。"""
+
+        return self._pending_many(self.dismiss_pending, names)
+
+    def _pending_many(self, action: Callable[[str], Dict[str, Any]], names: Sequence[str]) -> Dict[str, Any]:
+        with self._lock:
+            targets = [str(name) for name in names if str(name).strip()] or [
+                state.name for state in self._list_states() if _has_pending(state)
+            ]
+            done: List[Dict[str, Any]] = []
+            failed: List[Dict[str, str]] = []
+            for name in dict.fromkeys(targets):
+                try:
+                    done.append(action(name))
+                except RegistryAuthorityError as exc:
+                    failed.append({"name": name, "error": str(exc)})
+        return {"entries": done, "failed": failed}
 
     def restore(self, name: str, version: int) -> Dict[str, Any]:
         """把历史版本内容还原为新的生效版本（版本号继续自增）。
 
-        显式人工操作：不走冲突挂起，同时清掉挂起版本、复活软移除条目。
+        显式人工操作：不走接受规则，同时清掉挂起的变化、复活软移除条目。
         """
 
         with self._lock:
@@ -589,32 +1027,27 @@ class RegistryService(SqliteDomain):
             if (
                 state.active_version is not None
                 and state.removed_at_ms is None
+                and not _has_pending(state)
                 and name in self._active
                 and self._active_hashes.get(name) == snapshot.content_sha256
             ):
                 return self._entry_summary(state)
 
             new_version = self._max_entry_version(name) + 1
-            self._insert_entry(
-                RegistryEntryRecord(
-                    name=name,
-                    version=new_version,
-                    created_at_ms=now_ms,
-                    source="restore",
-                    edge_uuid=snapshot.edge_uuid,
-                    restored_from=snapshot.version,
-                    content_sha256=snapshot.content_sha256,
-                    payload=snapshot.payload,
-                )
+            restored = RegistryEntryRecord(
+                name=name,
+                version=new_version,
+                created_at_ms=now_ms,
+                source="restore",
+                edge_uuid=snapshot.edge_uuid,
+                restored_from=snapshot.version,
+                content_sha256=snapshot.content_sha256,
+                package_name=snapshot.package_name,
+                package_version=snapshot.package_version,
+                payload=snapshot.payload,
             )
-            state.active_version = new_version
-            state.pending_version = None
-            state.pending_conflicts = []
-            state.unusable_reason = ""
-            state.removed_at_ms = None
-            state.updated_at_ms = now_ms
-            self._upsert_state(state)
-            self._set_active(name, snapshot.payload, snapshot.content_sha256)
+            self._insert_entry(restored)
+            self._activate(state, restored, None, now_ms)
             return self._entry_summary(state)
 
     # ------------------------------------------------------------------
@@ -640,11 +1073,7 @@ class RegistryService(SqliteDomain):
         """
 
         with self._lock:
-            pending_states = [
-                state
-                for state in self._list_states()
-                if state.pending_version is not None
-            ]
+            pending_states = [state for state in self._list_states() if _has_pending(state)]
         if not pending_states:
             return []
         rows = self._reference_rows()
@@ -673,6 +1102,8 @@ class RegistryService(SqliteDomain):
                     template_uuid=state.template_uuid,
                     active_version=state.active_version,
                     pending_version=int(state.pending_version or 0),
+                    pending_change=_pending_change(state),  # type: ignore[arg-type]
+                    pending_reason=state.pending_reason,  # type: ignore[arg-type]
                     conflicts=list(state.pending_conflicts),
                     affected_nodes=affected,
                 ).model_dump(mode="python")
@@ -703,6 +1134,8 @@ class RegistryService(SqliteDomain):
                 "edge_uuid": record.edge_uuid,
                 "restored_from": record.restored_from,
                 "content_sha256": record.content_sha256,
+                "package_name": record.package_name,
+                "package_version": record.package_version,
             }
             for record in records
         ]
@@ -751,6 +1184,33 @@ class RegistryService(SqliteDomain):
             ]
         templates.sort(key=lambda item: (str(item.get("display_name") or ""), str(item.get("id"))))
         return templates
+
+    def active_payloads(self, registry_type: str = "") -> List[Dict[str, Any]]:
+        """生效条目 payload（按名称排序）；``registry_type`` 非空时只取该类型（如 ``device``）。"""
+
+        with self._lock:
+            payloads = [
+                dict(payload)
+                for _name, payload in sorted(self._active.items())
+                if not registry_type or str(payload.get("registry_type") or "") == registry_type
+            ]
+        return payloads
+
+    def active_payload(self, name: str, registry_type: str = "") -> Optional[Dict[str, Any]]:
+        """单个生效条目的 payload（浅拷贝）；不存在、已移除或类型不符时为 None。"""
+
+        with self._lock:
+            payload = self._active.get(str(name or ""))
+        if payload is None or (registry_type and str(payload.get("registry_type") or "") != registry_type):
+            return None
+        return dict(payload)
+
+    def active_fingerprint(self) -> str:
+        """生效条目集合的内容指纹（名称 + 内容哈希）；模板投影据此判断是否需要重算。"""
+
+        with self._lock:
+            pairs = sorted(self._active_hashes.items())
+        return canonical_hash(pairs)
 
     def get_workflow_template(self, template_uuid: str) -> Optional[Dict[str, Any]]:
         """按模板 uuid 取生效模板；找不到（或已软移除）返回 None。"""
@@ -817,28 +1277,44 @@ class RegistryService(SqliteDomain):
             raise RegistryAuthorityError(f"entry {name} not found")
         return state
 
-    @staticmethod
-    def _entry_summary(state: RegistryEntryStateRecord) -> Dict[str, Any]:
+    def _entry_summary(self, state: RegistryEntryStateRecord) -> Dict[str, Any]:
         status: List[str] = []
         if state.removed_at_ms is not None:
             status.append("removed")
         elif state.active_version is not None:
             status.append("active")
-        if state.pending_version is not None:
+        if _has_pending(state):
             status.append("pending")
         if state.unusable_reason:
             status.append("unusable")
+        pending_package_version = ""
+        if state.pending_version is not None:
+            pending = self._list_entry_package(state.name, state.pending_version)
+            pending_package_version = pending[1] if pending is not None else ""
         return RegistryEntrySummary(
             name=state.name,
             template_uuid=state.template_uuid,
             active_version=state.active_version,
             pending_version=state.pending_version,
             pending_conflicts=list(state.pending_conflicts),
+            pending_change=_pending_change(state),  # type: ignore[arg-type]
+            pending_reason=state.pending_reason,  # type: ignore[arg-type]
+            pending_package_version=pending_package_version,
+            package=state.package_name,
+            package_version=state.package_version,
             unusable_reason=state.unusable_reason,
             removed_at_ms=state.removed_at_ms,
             updated_at_ms=state.updated_at_ms,
             status=status,  # type: ignore[arg-type] - 上面只放合法标签
         ).model_dump(mode="python")
+
+    def _list_entry_package(self, name: str, version: int) -> Optional[tuple[str, str]]:
+        with self.write_lock:
+            row = self.connection.execute(
+                "SELECT package_name, package_version FROM registry_entry WHERE name=? AND version=?",
+                (name, version),
+            ).fetchone()
+        return (str(row[0]), str(row[1])) if row is not None else None
 
 
 # ----------------------------------------------------------------------
@@ -863,6 +1339,40 @@ def _new_state(name: str, now_ms: int) -> RegistryEntryStateRecord:
         updated_at_ms=now_ms,
     )
 
+
+def _has_pending(state: RegistryEntryStateRecord) -> bool:
+    return state.pending_version is not None or state.pending_removal_at_ms is not None
+
+
+def _pending_change(state: RegistryEntryStateRecord) -> str:
+    if state.pending_removal_at_ms is not None:
+        return "remove"
+    if state.pending_version is not None:
+        return "add" if state.active_version is None else "update"
+    return ""
+
+
+def _pending_item(state: RegistryEntryStateRecord, reason: str) -> Dict[str, Any]:
+    return {
+        "name": state.name,
+        "conflicts": list(state.pending_conflicts),
+        "change": _pending_change(state),
+        "reason": reason,
+    }
+
+
+def _with_edge(reporter: Optional[RegistryReporter], edge_uuid: str) -> RegistryReporter:
+    """缺省上报者为进程内（与权威同机）；显式给的 ``edge_uuid`` 覆盖上报者里的。"""
+
+    reporter = reporter or RegistryReporter.local()
+    if edge_uuid and edge_uuid != reporter.edge_uuid:
+        return RegistryReporter(
+            edge_uuid=edge_uuid,
+            machine_id=reporter.machine_id,
+            slaves=reporter.slaves,
+            in_process=reporter.in_process,
+        )
+    return reporter
 
 def _normalize_definitions(
     definitions: Sequence[Mapping[str, Any]],
@@ -943,6 +1453,32 @@ def _workflow_template_issue(entry: Mapping[str, Any]) -> str:
             return "invalid-node-description"
     # 循环体成员的 parent 必须指向本模板里的 loop 节点
     kinds_by_key = {str(node.get("key")): str(node.get("kind") or "") for node in nodes}
+    if any(node.get("kind") == "condition" or node.get("condition_guards") for node in nodes):
+        from unilabos.protocol.runtime.condition import remap_expression, validate_condition_graph
+
+        identities = {key: str(uuid_module.uuid5(uuid_module.NAMESPACE_URL, key)) for key in keys}
+        try:
+            bound = {}
+            for node in nodes:
+                identity = identities[node["key"]]
+                param = dict(node.get("param") or {})
+                if node.get("kind") == "condition":
+                    param = remap_expression(param, identities.__getitem__, reference_key="node_key")
+                bound[identity] = {
+                    "param": param,
+                    "execution_policy": {"condition_guards": [
+                        {"node_uuid": identities[guard["node_key"]], "equals": guard["equals"]}
+                        for guard in node.get("condition_guards", [])
+                    ]},
+                    "meta_data": {"inventory_requirements": node.get("inventory_requirements")},
+                }
+            validate_condition_graph(
+                bound, {identities[key]: kind for key, kind in kinds_by_key.items()},
+                {identities[node["key"]]: identities[node["parent"]] if node.get("parent") else None for node in nodes},
+                {key: node["param"] for key, node in bound.items()},
+            )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return "invalid-condition-node"
     for node in nodes:
         parent = node.get("parent")
         if parent is None:
@@ -1023,7 +1559,7 @@ def _detect_conflicts(
     return conflicts
 
 
-def _summarize(detail: Mapping[str, Any], *, total: int) -> Dict[str, Any]:
+def _summarize(detail: Mapping[str, Any], *, total: int, acceptance: Optional[_Acceptance] = None) -> Dict[str, Any]:
     return RegistryReportSummary(
         counts={
             "total": total,
@@ -1034,6 +1570,7 @@ def _summarize(detail: Mapping[str, Any], *, total: int) -> Dict[str, Any]:
             "removed": len(detail.get("removed", [])),
             "revived": len(detail.get("revived", [])),
             "unusable": len(detail.get("unusable", [])),
+            "auto_accepted": len(detail.get("auto_accepted", [])),
         },
         added=list(detail.get("added", [])),
         updated=list(detail.get("updated", [])),
@@ -1041,6 +1578,8 @@ def _summarize(detail: Mapping[str, Any], *, total: int) -> Dict[str, Any]:
         removed=list(detail.get("removed", [])),
         revived=list(detail.get("revived", [])),
         unusable=list(detail.get("unusable", [])),
+        auto_accepted=list(detail.get("auto_accepted", [])),
+        acceptance=acceptance.as_dict() if acceptance is not None else None,
     ).model_dump(mode="python")
 
 
@@ -1061,9 +1600,14 @@ def get_registry_service() -> Optional[RegistryService]:
 
 
 __all__ = [
+    "REASON_REMOTE_REPORTER",
+    "REASON_REMOTE_SLAVE",
     "REGISTRY_TEMPLATE_NAMESPACE",
+    "RULE_PACKAGE_UPGRADE",
+    "RULE_SINGLE_MACHINE",
     "ReferenceRowsResolver",
     "RegistryAuthorityError",
+    "RegistryReporter",
     "RegistryService",
     "get_registry_service",
     "set_registry_service",

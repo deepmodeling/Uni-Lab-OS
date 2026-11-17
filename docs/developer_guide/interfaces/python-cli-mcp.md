@@ -89,9 +89,9 @@ from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 @device(id="docs.material_inspector", category=["demo"],
         supported_backends=["hostlink", "ros2"])
 class MaterialInspector:
-    @action(materials_need_lock=["resource"])
+    @action()
     def inspect_material(self, resource: ResourceSlot, site: SiteSlot) -> dict:
-        # resource 已由框架解析为单个权威 PLR Resource；site 是 Site UUID 字符串。
+        # resource 已由框架解析为单个权威 PLR Resource，执行期间默认加物料锁；site 是 Site UUID 字符串。
         return {"resource_name": resource.name, "site_uuid": str(site)}
 ```
 
@@ -104,7 +104,7 @@ class MaterialInspector:
 | list[ResourceSlot] | 多个物料，每项独立解析；不能把一棵树的节点列表误当多个输入物料 |
 | SiteSlot | 字符串，选择器提交权威 Site UUID；模板标签导入规则见工作流章 |
 | DeviceSlot | 设备 id 字符串，不是 PLR Resource |
-| materials_need_lock | 需要独占的真实输入参数名；最终参数必须能解析权威 UUID |
+| 物料锁 | 每个物料入参都加共享资源锁（执行期间独占），参数值必须能解析权威 UUID；注册表条目的 `materials_need_lock` 是推导结果，`@action` 的 `materials_need_lock` / `materials_free` 已移除（旧代码写了照常加载，值被忽略并告警） |
 | goal_default | 参数预填，不等于用户已确认资源/Site |
 | placeholder_keys | 控制前端选择器类型，不创建业务数据 |
 
@@ -205,19 +205,21 @@ python -m unilabos.app.main --backend hostlink --is-slave --machine-name lab-sla
 unilab workflow list --address http://127.0.0.1:8003 --json
 unilab workflow upload -f workflow.json -n "实验流程" --address http://127.0.0.1:8003
 unilab workflow run WORKFLOW_UUID --mode step --address http://127.0.0.1:8003 --json
+unilab workflow run WORKFLOW_UUID --inputs '{"count": 3}' --address http://127.0.0.1:8003   # 或 --inputs @inputs.json
+unilab workflow command TASK_UUID step --address http://127.0.0.1:8003   # pause / resume / step / cancel
 unilab workflow inspect TASK_UUID --kind task --address http://127.0.0.1:8003 --json
 unilab graph --help
 unilab package --help
-unilab token          # 打印写操作需要的控制面 token（stdout 只有 token；--json 带文件位置）
+unilab doctor net --hostlink-addr 192.168.1.10   # HostLink/ROS 组网分层诊断，不启动运行时
 ```
 
-CLI 与 Python SDK 的写请求自动带控制面 token：取 `BasicConfig.control_token`、环境变量
-`UNILABOS_BASICCONFIG_CONTROL_TOKEN`，或工作目录（默认 `~/.unilabos`）下的 `control_token`。
-连接另一台机器上的权威时，把那台机器 `unilab token` 的输出设到上述环境变量。
+管理 API 不鉴权，CLI 与 Python SDK 的请求不带任何凭据（原来的 `unilab token` 与控制面 token 已取消）。
 
 实际替换 UUID/路径；run 会创建真实任务，不是 dry-run。
 package/pkg 已合入 app.cli，不使用旧 package_cli 入口；命令处理完成后不启动设备运行时。
-当前 CLI 未提供 task commands 的独立 step/resume 子命令，提交 step 模式后通过 HTTP/前端操作。
+`--inputs` 是工作流入口参数（JSON 对象，或 `@文件` 读取），按工作流的 input_contract 校验；不给时提交 `{}`。
+`workflow command` 幂等提交任务控制命令（`continue` 是 V1 的 `resume` 别名，`step` 可用 `--target-node` 指定节点）；
+重传同一命令时用 `--idempotency-key` 带上原键。命令被业务拒绝（例如任务未暂停时 resume）时仍输出命令投影，原因在 `result.reason`，退出码为 1。
 
 session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 code，utils/output.py 负责 CLI 输出；
 它们不是四库业务仓库，也不是三个重复的数据库连接层。
@@ -227,7 +229,7 @@ session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 
 服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP，
 GET/POST/DELETE；当前 stateless、JSON 响应模式。它独立于 SSE 观察端与设备 WS。
 仅 loopback 对端且无 Origin 请求可访问；浏览器/远端会得到 403，尚未就绪 503。
-MCP 端点本身不要求控制面 token（见 HTTP 文档「认证与网络边界」）；工具在进程内调用管理 API 时自动带上。
+工具在进程内经 ASGI 调用管理 API（管理 API 不鉴权，见 HTTP 文档「认证与网络边界」）。
 不要把本机开放工具等同于用户已授权执行硬件。
 
 本版 **131 个白名单业务工具 + 6 个辅助工具**，完整 inputSchema/annotations

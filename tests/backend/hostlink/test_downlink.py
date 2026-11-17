@@ -15,6 +15,7 @@ from typing import Any, Dict, List
 import pytest
 
 from unilabos.backend.hostlink.protocol import ActionType
+from unilabos.backend.runtime.node import DeviceNode
 from unilabos.backend.hostlink import downlink
 from unilabos.backend.hostlink.downlink import (
     local_resource_append,
@@ -86,9 +87,12 @@ class _FakeNode:
         self.tree_sync_calls.append(operations)
         return {"results": [{"success": True}], "total": len(operations)}
 
-    async def append_resource(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def append_resource(self, payload: Dict[str, Any], *, commit_point: Any = None) -> Dict[str, Any]:
         self.append_calls.append(payload)
         return {"created_resource_tree": [[{"id": "r1"}]], "substance_resource_tree": []}
+
+    # 阻塞挂载入口与真实设备节点同一实现（提交点握手见 DeviceNode.append_resource_blocking）
+    append_resource_blocking = DeviceNode.append_resource_blocking
 
 
 @pytest.fixture(params=["hostlink", "ros2"])
@@ -260,3 +264,69 @@ def test_notify_resource_tree_update_semantics(
 
     monkeypatch.setattr(downlink, "get_hostlink_server", lambda: _BrokenServer())
     assert notify_resource_tree_update("remote_dev", "add", ["u3"]) is False
+
+
+def test_notify_reports_a_change_the_device_could_not_apply_as_false(
+    fake_device: _FakeNode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """设备逐条应用、单条失败只写在 results 里：任何一条 success=False 都不算确认。"""
+
+    async def rejected(operations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        fake_device.tree_sync_calls.append(operations)
+        return {"results": [{"success": False, "action": "update", "error": "容器不在台面上"}], "total": 1}
+
+    monkeypatch.setattr(fake_device, "apply_resource_tree_update", rejected)
+    assert notify_resource_tree_update(fake_device.device_id, "update", ["u1"]) is False
+    assert fake_device.tree_sync_calls == [[{"action": "update", "data": ["u1"]}]]
+
+
+def _authority_relay(monkeypatch: pytest.MonkeyPatch) -> List[Any]:
+    """调度权威形态：设备下行一律经 Host 中继，查本进程设备表即失败（ros2 形态下会去导入 rclpy）。"""
+
+    posted: List[Any] = []
+
+    def relay(path: str, payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
+        posted.append((path, payload))
+        return {"notified": True} if path.endswith("/notify-device") else {"success": payload["action"] == "load"}
+
+    def no_local_lookup(_device_id: str) -> Any:
+        raise AssertionError("调度权威不能查本进程设备表")
+
+    monkeypatch.setattr(downlink, "_remote_device_relay", True)
+    monkeypatch.setattr(downlink, "_relay_post", relay)
+    monkeypatch.setattr(downlink, "get_local_device_node", no_local_lookup)
+    return posted
+
+
+def test_notify_from_the_authority_relays_without_a_local_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    posted = _authority_relay(monkeypatch)
+    assert notify_resource_tree_update("bench", "update", ["u1"]) is True
+    assert posted == [("/api/v1/hostlink/notify-device", {"device_id": "bench", "action": "update", "resource_uuids": ["u1"]})]
+
+
+def test_send_material_sync_from_the_authority_relays_and_requires_a_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    posted = _authority_relay(monkeypatch)
+    command = {"transfer_uuid": "t1", "device_id": "bench", "action": "load", "material_uuids": ["u1"],
+               "destination_site_uuids": ["s1"]}
+    assert downlink.send_material_sync(command)["success"] is True
+    with pytest.raises(RuntimeError, match="material_sync 失败"):
+        downlink.send_material_sync({**command, "action": "unload", "destination_site_uuids": []})
+    assert [item[0] for item in posted] == ["/api/v1/hostlink/material-sync"] * 2 and posted[0][1] == command
+
+
+def test_send_material_sync_on_the_host_goes_to_the_local_device(
+    fake_device: _FakeNode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    received: List[Dict[str, Any]] = []
+
+    async def material_sync(command: Dict[str, Any]) -> Dict[str, Any]:
+        received.append(command)
+        return {"success": True, "action": command["action"], "replayed": False}
+
+    monkeypatch.setattr(fake_device, "material_sync", material_sync, raising=False)
+    command = {"transfer_uuid": "t1", "device_id": fake_device.device_id, "action": "unload",
+               "material_uuids": ["u1"], "destination_site_uuids": []}
+    assert downlink.send_material_sync(command)["action"] == "unload"
+    assert received == [command]

@@ -697,7 +697,8 @@ def test_device_children_are_seeded_from_authority_not_graph(authority):
     held = {child.res_content.uuid: child for child in booted.children}
     assert set(held) == {plate_uuid, bench_uuid}
     assert all(child.res_content.parent is booted.res_content for child in booted.children)
-    assert held[plate_uuid].res_content.name == "plate-1"
+    # 物料 name 是 uuid；旧名迁到人读标签与 PLR 键
+    assert held[plate_uuid].res_content.display_name == held[plate_uuid].res_content.plr_name == "plate-1"
     assert booted.res_content.sites[0].occupied_material_uuid == plate_uuid
     # 权威树里的形态与运行期 append_resource 装载的一致（materials.get 同源）
     assert materials.get(plate_uuid, gateway=authority).trees[0].root_node.res_content.uuid_parent == owner_uuid
@@ -748,7 +749,7 @@ def test_device_created_with_children_adopts_them_back(authority):
     )
     assert [child.res_content.uuid for child in device_config.children] == [deck_uuid]
     assert device_config.children[0].res_content.id == "device-1/deck-1"
-    assert device_config.children[0].res_content.name == "deck-1"
+    assert device_config.children[0].res_content.plr_name == "deck-1"
     assert authority.get_material(deck_uuid).material.parent_material_uuid == owner_uuid
 
 
@@ -826,3 +827,104 @@ def test_material_sites_require_backend_identity_and_drop_available_sites():
                 "sites_initialized": True,
             }
         )
+
+
+# ── 库位模板白名单：包作者的声明随实例化进权威并在放入时生效 ────────────────
+
+WHITELIST_SITES = [
+    {"index": "A1", "label": "A1", "allowed_resource_template_uuids": ["plate_96", "PLATE_96"]},
+    {"index": "A2", "label": "A2"},
+]
+
+
+def test_site_template_whitelist_is_a_definition_field_kept_in_instance_extra():
+    definitions = normalize_available_sites(WHITELIST_SITES)
+    assert definitions[0]["allowed_resource_template_uuids"] == ["plate_96"]
+    # 不限制模板时定义形状与引入白名单前一致
+    assert "allowed_resource_template_uuids" not in definitions[1]
+    assert "allowed_resource_template_uuids" not in normalize_available_sites(AVAILABLE_SITES)[0]
+
+    from unilabos.resources.objects.site import ResourceSite, validate_instantiated_sites
+
+    owner_uuid = str(uuid4())
+    instance = {
+        **{key: value for key, value in definitions[0].items() if key != "allowed_resource_template_uuids"},
+        "uuid": str(uuid4()), "template_name": "dev_t", "material_uuid": owner_uuid,
+        "extra": {"allowed_resource_template_uuids": ["plate_96"]},
+    }
+    ResourceSite.model_validate(instance)
+    second = {**definitions[1], "uuid": str(uuid4()), "template_name": "dev_t", "material_uuid": owner_uuid}
+    assert len(validate_instantiated_sites(
+        definitions, owner_uuid=owner_uuid, template_name="dev_t", current_sites=[instance, second],
+        sites_initialized=True,
+    )) == 2
+    with pytest.raises(ValueError, match="固定定义.*冲突"):
+        validate_instantiated_sites(
+            definitions, owner_uuid=owner_uuid, template_name="dev_t",
+            current_sites=[{**instance, "extra": {}}, second], sites_initialized=True,
+        )
+
+
+def test_graph_instantiates_registry_site_whitelist_into_extra():
+    from unilabos.resources.objects.site import ResourceSite
+    from unilabos.server.services.materials.graph import reconcile_graph_payload
+
+    payload = {"nodes": [{"id": "dev-1", "type": "device", "template_name": "dev_t", "config": {}}], "links": []}
+    normalized, _summary = reconcile_graph_payload(
+        payload, None, str(uuid4()), device_site_templates={"dev_t": WHITELIST_SITES},
+    )
+    first, second = normalized["nodes"][0]["sites"]
+    assert "allowed_resource_template_uuids" not in first
+    assert first["extra"] == {"allowed_resource_template_uuids": ["plate_96"]}
+    assert not second.get("extra")
+    for site in (first, second):
+        ResourceSite.model_validate(site)
+
+
+def test_registry_site_template_whitelist_takes_effect_in_authority(authority):
+    """注册表 available_sites 里写的模板名白名单：设备在权威实例化后，放入不在白名单的模板报 6008。"""
+
+    from unilabos.protocol.materials import (
+        InventoryMutation,
+        MaterialIdentityWrite,
+        MaterialMove,
+        MaterialNodeCreate,
+        MaterialTreeCreate,
+    )
+    from unilabos.server.services.materials import MaterialConflictError
+
+    owner_uuid = str(uuid4())
+    device_config = _device_resource(uuid=owner_uuid, sites=None, sites_initialized=False)
+    apply_device_authority_state(
+        device_config, {"available_sites": WHITELIST_SITES}, "available_sites_test_device", gateway=authority,
+    )
+    a1, a2 = device_config.res_content.sites
+    assert a1.extra == {"allowed_resource_template_uuids": ["plate_96"]} and a2.extra == {}
+    # 再次装配同一设备：权威快照与注册表定义一致（白名单从 extra 读回），不算定义漂移
+    again = _device_resource(uuid=owner_uuid, sites=None, sites_initialized=False)
+    apply_device_authority_state(
+        again, {"available_sites": WHITELIST_SITES}, "available_sites_test_device", gateway=authority,
+    )
+    assert [site.uuid for site in again.res_content.sites] == [a1.uuid, a2.uuid]
+
+    service = authority.service
+
+    def mutation(operation: str) -> InventoryMutation:
+        return InventoryMutation(command_uuid=str(uuid4()), effect_key=operation, operation=operation,
+                                 actor_type="scheduler")
+
+    def material(template_name: str) -> str:
+        created = service.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
+            client_ref="m", identity=MaterialIdentityWrite(
+                resource_id=f"{template_name}-{uuid4().hex[:6]}", name=template_name, resource_type="container",
+                class_name="Container", template_name=template_name),
+        )]))
+        return created.data.root_material_uuid
+
+    plate, tube = material("plate_96"), material("tube_15ml")
+    with pytest.raises(MaterialConflictError, match="只接受资源模板 plate_96") as raised:
+        service.move_material(mutation("move_material"), MaterialMove(material_uuid=tube, destination_site_uuid=a1.uuid))
+    assert raised.value.conflict == "site_template"
+    service.move_material(mutation("move_material"), MaterialMove(material_uuid=tube, destination_site_uuid=a2.uuid))
+    service.move_material(mutation("move_material"), MaterialMove(material_uuid=plate, destination_site_uuid=a1.uuid))
+    assert service.get_site(a1.uuid).occupied_material_uuid == plate

@@ -1,7 +1,7 @@
 # Neware Battery Test System — Action Index
 
 设备 ID: `neware_battery_test_system`
-源码: `unilabos/devices/neware_battery_test_system/neware_battery_test_system.py`
+源码: 新威电池测试驱动包中的 `neware_battery_test_system.py`（原 `unilabos/devices/neware_battery_test_system/`，已迁出主仓库）
 设备类: `NewareBatteryTestSystem`
 
 ---

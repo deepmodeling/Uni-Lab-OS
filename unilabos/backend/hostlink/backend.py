@@ -20,7 +20,11 @@ from unilabos.backend.hostlink.topic import (
 from unilabos.backend.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.backend.hostlink.protocol import ActionType, LinkError
-from unilabos.backend.hostlink.server import HostLinkServer, set_hostlink_server
+from unilabos.backend.hostlink.server import (
+    HostLinkServer,
+    HostStage,
+    set_hostlink_server,
+)
 from unilabos.utils import logger
 
 
@@ -28,6 +32,28 @@ def to_wire_value(value: Any) -> Any:
     """Convert driver values, including ROS messages, for HostLink JSON."""
 
     return message_to_value(value)
+
+
+def _device_call_payload(
+    caller_device_id: str,
+    device_id: str,
+    action_name: str,
+    arguments: Optional[Dict[str, Any]],
+    action_id: str,
+    test_mode: bool,
+) -> Dict[str, Any]:
+    """Slave 发起跨设备调用的 ``DEVICE_CALL`` 载荷；测试模式才带 ``test_mode``（旧 Host 忽略该字段）。"""
+
+    payload: Dict[str, Any] = {
+        "caller_device_id": caller_device_id,
+        "device_id": device_id,
+        "action": action_name,
+        "arguments": dict(arguments or {}),
+        "action_id": action_id,
+    }
+    if test_mode:
+        payload["test_mode"] = True
+    return payload
 
 
 class HostLinkBackend:
@@ -76,6 +102,10 @@ class HostLinkBackend:
         与持有的物料，需要 HostLink 已连上 Host；与 Host / ROS2 Slave「先对齐权威、再
         建设备」的顺序一致。设备仍由 ``local.start()`` 反向启动（工作站 post_init 前
         其子设备已就绪），随后把完整设备描述立刻通告 Host。
+
+        Host 先开端口再装配设备：接管进程启动时预绑定的 server（没有则当场绑定），
+        Slave 从此可以握手、登记与心跳；物料请求在物料权威接入后放行，设备 / service
+        调用在本机设备全部启动、host 服务注册后放行，之前一律回「Host 启动中」。
         """
 
         if self._started:
@@ -107,11 +137,16 @@ class HostLinkBackend:
                     get_materials_gateway,
                 )
 
+                # 1) 端口最先可连：Slave 的握手、登记与心跳从这里起就被接受
+                server = self._attach_host_server()
                 self.local.set_resource_service(
                     AuthorityResourceService(
                         gateway_provider=get_materials_gateway
                     )
                 )
+                # 2) 物料权威与 Host 开机物料对齐都在设备 runtime 启动前完成
+                #    （app/main.py），Slave 的物料请求从此放行
+                server.mark_ready(HostStage.MATERIALS)
                 if populate is not None:
                     populate(self.local)
                 self.local.start()
@@ -120,20 +155,39 @@ class HostLinkBackend:
                 from unilabos.backend.hostlink.host_services import register_host_services
 
                 register_host_services(self)
-                self._start_host()
+                self._bind_material_transfer_dispatcher()
+                # 3) 本机设备与 host 服务全部就绪：放行设备 / service 调用
+                server.hello_payload["devices"] = self.local.descriptors()
+                server.mark_ready(HostStage.DEVICES)
+                logger.info(
+                    "[HostLink backend] Host 已就绪：%s:%d，本地设备=%s",
+                    HostLinkConfig.bind,
+                    server.port,
+                    sorted(self.local.devices),
+                )
         except Exception:
             self.stop()
             raise
         self._started = True
 
-    def _start_host(self) -> None:
-        self.server = HostLinkServer(
-            bind=HostLinkConfig.bind,
-            port=HostLinkConfig.port,
-            heartbeat_timeout=HostLinkConfig.heartbeat_timeout,
-            request_timeout=HostLinkConfig.request_timeout,
+    def _attach_host_server(self) -> HostLinkServer:
+        """接管进程启动时预绑定的 HostLink server（没有则当场绑定），并装配请求处理器。
+
+        server 处于启动期门控：依赖物料权威 / 本机设备的请求在 :meth:`start` 标记对应
+        阶段就绪前回「Host 启动中」，Slave 原样重试，不会拿到错误结果。
+        """
+
+        from unilabos.backend.hostlink.startup import (
+            adopt_prebound_host_server,
+            create_host_server,
         )
-        self.server.hello_payload = {
+
+        server = adopt_prebound_host_server()
+        prebound = server is not None
+        if server is None:
+            server = create_host_server()
+        self.server = server
+        server.hello_payload = {
             "backend": "hostlink",
             "role": "host",
             "devices": self.local.descriptors(),
@@ -218,15 +272,17 @@ class HostLinkBackend:
             ActionType.MATERIAL_APPLY_DELTA,
             self._handle_material_apply_delta,
         )
-        self.server.start()
-        set_hostlink_server(self.server)
-        self._bind_material_transfer_dispatcher()
+        if not prebound:
+            server.start()
+            set_hostlink_server(server)
         logger.info(
-            "[HostLink backend] Host 已启动：%s:%d，本地设备=%s",
+            "[HostLink backend] Host 端口%s：%s:%d；等待 %s 就绪后放行物料与设备请求",
+            "已在进程启动时打开" if prebound else "已打开",
             HostLinkConfig.bind,
-            self.server.port,
-            sorted(self.local.devices),
+            server.port,
+            "、".join(server.pending_stages()) or "（无）",
         )
+        return server
 
     @staticmethod
     def _handle_material_template_list(
@@ -509,7 +565,7 @@ class HostLinkBackend:
         device_id = str(data.get("device_id") or "")
         node = self._require_local_resource_node(device_id)
         payload = {key: value for key, value in data.items() if key != "device_id"}
-        return run_node_coroutine(node, node.append_resource(payload))
+        return node.append_resource_blocking(payload)
 
     def _handle_material_sync(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """``MATERIAL_SYNC``：微后端 transfer 的设备侧投影（unload/load）。"""
@@ -540,6 +596,7 @@ class HostLinkBackend:
             device_descriptors=self.local.descriptors(),
             heartbeat_payload_provider=self._heartbeat_payload,
             on_status_change=self._on_client_status_change,
+            host_wait_timeout=HostLinkConfig.host_wait_timeout,
         )
         from unilabos.client.materials import HostLinkMaterialsClient
 
@@ -594,10 +651,26 @@ class HostLinkBackend:
         if client is None:
             raise RuntimeError("HostLink Slave client 尚未创建")
         host = str(HostLinkConfig.host or "").strip()
+        wait_timeout = float(HostLinkConfig.host_wait_timeout)
         if BasicConfig.slave_no_host:
             client.start()
-        elif not client.connect_blocking(HostLinkConfig.connect_timeout):
-            raise LinkError(f"无法连接 HostLink Host：{host}:{HostLinkConfig.port}")
+        else:
+            # Host 可能晚于 Slave 启动（或正在重启）：按退避重连直到端口可连，而不是一次
+            # 连接超时就放弃。Host 端口在其进程启动之初就打开，通常几秒内即可连上。
+            logger.info(
+                "[HostLink backend] 正在连接 Host=%s:%d（未就绪时按退避重试，最长 %gs）",
+                host,
+                HostLinkConfig.port,
+                wait_timeout,
+            )
+            if not client.connect_blocking(wait_timeout):
+                reason = client.last_error or "未收到 HELLO 应答"
+                raise LinkError(
+                    f"{wait_timeout:g}s 内无法连接 HostLink Host {host}:{HostLinkConfig.port}"
+                    f"（最后一次错误：{reason}）。请确认 Host 已启动、--host_node_ip / "
+                    "--hostlink_port 与 Host 一致且端口未被防火墙拦截；Host 启动较慢时可调大 "
+                    "HostLinkConfig.host_wait_timeout（--hostlink_host_wait_timeout）"
+                )
         logger.info(
             "[HostLink backend] Slave 已连上 Host=%s:%d，本地设备=%s",
             host,
@@ -1032,6 +1105,23 @@ class HostLinkBackend:
             action_id=str(data.get("action_id") or "") or ActionContext().action_id,
             feedback_callback=self._send_action_feedback,
         )
+        if data.get("test_mode"):
+            # 调用方在测试模式下发起的跨设备调用：目标驱动在本进程，由这里判定是否模拟
+            mocked = self.local.test_mode_mock(
+                device_id,
+                action,
+                test_mode=True,
+                caller_device_id=str(data.get("caller_device_id") or ""),
+            )
+            if mocked is not None:
+                return {
+                    "device_id": device_id,
+                    "action": action,
+                    "action_id": context.action_id,
+                    "status": "succeeded",
+                    "result": to_wire_value(mocked),
+                    "state": to_wire_value(self.local.devices[device_id].snapshot_status()),
+                }
         with self._actions_lock:
             self._actions[context.action_id] = (device_id, context)
         try:
@@ -1105,11 +1195,25 @@ class HostLinkBackend:
             action_id=action_id,
             feedback_callback=forward_feedback,
         )
+        test_mode = bool(data.get("test_mode"))
+        if test_mode:
+            mocked = self.local.test_mode_mock(
+                device_id, action, test_mode=True, caller_device_id=caller_device_id
+            )
+            if mocked is not None:
+                return {
+                    "device_id": device_id,
+                    "action": action,
+                    "action_id": action_id,
+                    "status": "succeeded",
+                    "result": to_wire_value(mocked),
+                }
         try:
             result = self.call_action(
                 device_id,
                 action,
                 action_context=context,
+                _test_mode=test_mode,
                 **arguments,
             )
             status = "succeeded"
@@ -1224,6 +1328,7 @@ class HostLinkBackend:
         /,
         *,
         action_context: Optional[ActionContext] = None,
+        _test_mode: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Call a local device, or route a Host call to an online Slave.
@@ -1231,6 +1336,9 @@ class HostLinkBackend:
         ``device_id`` / ``action_name`` 是 positional-only：host_node 的
         apply_deduct_resource / discard_resource 等动作自身就带 ``device_id``
         参数，经 ``**kwargs`` 展开时不得与位置参数撞名。
+
+        ``_test_mode``：跨设备调用来自测试模式下运行的驱动；目标在 Slave 上时随请求带过去，
+        由 Slave 按目标驱动的 ``run_in_test_mode`` 判定是否模拟。
         """
 
         device_id = str(device_id)
@@ -1258,6 +1366,7 @@ class HostLinkBackend:
                 action_name,
                 kwargs,
                 action_id=context.action_id,
+                test_mode=_test_mode,
             )
         finally:
             with self._actions_lock:
@@ -1277,6 +1386,7 @@ class HostLinkBackend:
         *,
         action_context: Optional[ActionContext] = None,
         request_timeout: Optional[float] = None,
+        _test_mode: bool = False,
         **kwargs: Any,
     ) -> Any:
         """Await a local or remote device action without blocking a thread."""
@@ -1301,6 +1411,7 @@ class HostLinkBackend:
                 kwargs,
                 timeout=request_timeout,
                 action_id=context.action_id,
+                test_mode=_test_mode,
             )
         except asyncio.CancelledError:
             context.request_cancel()
@@ -1334,6 +1445,11 @@ class HostLinkBackend:
         target = self.local._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        # --test_mode：目标在本机且驱动未声明 run_in_test_mode 时模拟；跨机时随请求带给目标进程判定
+        mocked = self.local.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
+        test_mode = bool(BasicConfig.test_mode)
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1348,6 +1464,7 @@ class HostLinkBackend:
                 target,
                 action_name,
                 action_context=context,
+                _test_mode=test_mode,
                 **dict(arguments or {}),
             )
         client = self.client
@@ -1360,13 +1477,9 @@ class HostLinkBackend:
         try:
             response = client.request(
                 ActionType.DEVICE_CALL,
-                {
-                    "caller_device_id": caller_device_id,
-                    "device_id": target,
-                    "action": action_name,
-                    "arguments": dict(arguments or {}),
-                    "action_id": context.action_id,
-                },
+                _device_call_payload(
+                    caller_device_id, target, action_name, arguments, context.action_id, test_mode
+                ),
                 timeout=options.get("timeout"),
             )
         finally:
@@ -1391,6 +1504,10 @@ class HostLinkBackend:
         target = self.local._normalize_device_id(device_id)
         if target == caller_device_id:
             raise ValueError("跨设备动作不能回调当前设备自身")
+        mocked = self.local.test_mode_mock(target, action_name, caller_device_id=caller_device_id)
+        if mocked is not None:
+            return mocked
+        test_mode = bool(BasicConfig.test_mode)
         context = options.get("action_context")
         if context is None and (
             options.get("action_id") or options.get("feedback_callback")
@@ -1406,6 +1523,7 @@ class HostLinkBackend:
                 action_name,
                 action_context=context,
                 request_timeout=options.get("timeout"),
+                _test_mode=test_mode,
                 **dict(arguments or {}),
             )
         client = self.client
@@ -1418,13 +1536,9 @@ class HostLinkBackend:
         try:
             response = await client.request_async(
                 ActionType.DEVICE_CALL,
-                {
-                    "caller_device_id": caller_device_id,
-                    "device_id": target,
-                    "action": action_name,
-                    "arguments": dict(arguments or {}),
-                    "action_id": context.action_id,
-                },
+                _device_call_payload(
+                    caller_device_id, target, action_name, arguments, context.action_id, test_mode
+                ),
                 timeout=options.get("timeout"),
             )
         except asyncio.CancelledError:

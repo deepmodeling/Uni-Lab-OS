@@ -22,17 +22,25 @@
 
 | 字段 | 本版本的解释 |
 | --- | --- |
+| material.name | 恒等于 `material_uuid`（所有物料，包括设备），不可修改；不要把它当标签显示或匹配 |
+| material.display_name | 人读标签，可重名、可编辑；按名字搜索 / 排序 / V1 的 `name` 都落在这里 |
+| resource_id | 业务 id，全局唯一、人可读；编译器、调度与设备寻址用它，不从 uuid 派生 |
+| config.name | PLR 键：PyLabRobot 树里的名字，整棵 PLR 树内唯一、创建后不可改（设备没有）。默认沿用迁移前的 name；新建根物料取 `resource_id`；Opentrons 裸 `"A1"` 这类「名字等于 ordering 标识」的孔和管取 uuid |
 | template_name | 注册表/模板名称，不是 PLR Python 实现类 |
 | config.type | **PLR 反序列化唯一允许读取的实现类信息** |
-| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR |
+| resource_type / ResourceDict 外层 type | 业务资源类型，如 device/resource/deck；不能回退用它实例化 PLR。它来自 PLR `category`，是物料实例的属性：同一模板（如按类名共用的组件模板 `Well`）的物料可以有不同的 resource_type，模板上的值只是按模板新建物料时的默认值，建树不再要求两者一致 |
 | class_name / ResourceDict.klass（JSON alias 为 class） | 当前模型仍存在的字段；不能当作 config.type 的兜底 |
 | category | `ResourceTemplateWrite.category: list[str]`；不是所有 MaterialIdentity 都有同名字段 |
 | allowed_resource_categories | Site 的前端匹配提示；不是 allowed_resource_template_uuids 白名单 |
+| allowed_resource_template_uuids | Site 的模板白名单（模板 UUID 或模板名），在 Site `extra` 里；非空时放入其他模板报 6008 |
 
 因此本版不能宣称已经彻底删除 `klass`/`class_name`；已落实的是 **PLR 不从外层 type/class 猜实现类**。
 构造自定义 PLR 资源前应加载相应包/注册表，缺失或无法解析 `config.type` 必须修复定义，不能静默改成 Resource。
 Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子关系、位点存在性与占用冲突，
-“不强制 category”不等于“不检查位置一致性”。
+“不强制 category”不等于“不检查位置一致性”。模板白名单由权威强制：放入时按物料模板 UUID 或模板名
+匹配（不区分大小写），不匹配报 `site_template`（6008）；物料占用自己的 Site 报 `site_cycle`（6009），
+放进自己后代的 Site 或挂到后代下报 `parent_cycle`（6004）。初始建树（`POST /trees`、开机图）不按白名单
+拦截，与 V1 一致。
 
 ## 创建：草稿不是已登记物料
 
@@ -41,8 +49,9 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 
 两种入口：
 
-1. `POST /instantiate`：payload 为 `MaterialInstantiate`，必填 `registry_class`、`name`，
-   可选 `barcode`（默认 null）。适合没有 PLR 运行时的微前端；可选类由 `/registry-classes` 提供。
+1. `POST /instantiate`：payload 为 `MaterialInstantiate`，必填 `registry_class`，`name`（PLR 根名 /
+   业务 id）与 `display_name`（人读标签）至少给一个，缺省时互相回退；可选 `barcode`（默认 null）。
+   适合没有 PLR 运行时的微前端；可选类由 `/registry-classes` 提供。
    权威展开为建树命令，使用 `operation="create_material_tree"`。
 2. `POST /trees`：payload 为 `MaterialTreeCreate`。适合驱动/图同步提交已经序列化的完整草稿。
    `nodes` 必须非空、仅一个根、父节点在前、`client_ref` 唯一。
@@ -51,6 +60,14 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 `MaterialNodeCreate.material_uuid` 默认不填，由权威分配；开机图等需保留外部身份的场景可显式填写，
 这表示**有条件创建**，不是覆盖已存在同 UUID 的记录。
 返回 `data.client_ref_map` 建立草稿引用到权威 UUID 的映射。
+
+`identity.name` 可以不填：权威总是把它写成物料 uuid。填了 UUID 形式的值即是身份（大写、花括号、
+无连字符的写法按 UUID 规范化）：没有 `material_uuid` 时被采纳，与 `material_uuid` 不一致或已被占用时
+以 `identity` 冲突拒绝。填了旧式标签则迁到 `display_name`（为空时）与 `config.name`（缺失时，设备除外）。
+`display_name` 为空时权威依次回退旧名、PLR 键、`resource_id`。根物料的人读标签可以重名，唯一的是
+`resource_id`。快照（`apply_material_snapshot`）不回写 `name` / `display_name`，`name` 与 PLR 键
+`config.name` 都不可改；`patch_material` 没有 `name` 字段，改标签用 `display_name`，整体提交
+`config` 时缺 `name` 沿用现值、给出不同值拒绝。
 
 模板 `POST /templates` 不允许调用者指定 template_uuid；PUT 已有模板时路径与 payload 身份必须一致。
 模板列表默认 `include_definition=false`，要拿完整定义应显式设为 true 或 GET 单项。
@@ -150,6 +167,8 @@ MutationResult<T> = {
 | POST /reservations/{uuid}/quarantine | quarantine_inventory_reservation | InventoryReservationTransition |
 
 **例外**：POST `/links` 直接接收 MaterialLinkUpsert，DELETE `/links/{uuid}` 不带 Mutation；
+POST `/links/ensure` 接收 `{"links": [node-link 连线…]}`，是 Host 开机时对齐图中连线的入口（按
+`source_uuid` / `target_uuid` 幂等写入，端点不在权威的边跳过，返回 created / updated / unchanged / skipped 计数）；
 POST `/snapshots/compare` 直接接收 MaterialSnapshot（只比较）；POST `/notify-device` 接收 ResourceTreeNotify；
 POST `/changes/ack` 接收 LedgerAcknowledge。不能给这些接口强行套 Mutation。
 
@@ -173,10 +192,16 @@ POST `/changes/ack` 接收 LedgerAcknowledge。不能给这些接口强行套 Mu
 | move | 原子更新权威父子关系、Site 占用与账本；不等于远端设备已经 load |
 | transfer | 权威位置提交后，按顺序通知来源设备 unload、目标设备 load；全部确认才返回成功 |
 | notify-device | 显式通知设备重载物料树；不代替权威创建/移动 |
+| 工作流 material_io | 写库后按模式向挂载物料所属设备发 load / unload（`MaterialDeviceSync`）或资源树 update；与 transfer 一样设备确认才算完成，失败不回滚库存，调度器按同一命令身份重发，结果在节点输出 `device_sync`。load 按注册表资源类建整棵 PLR 树（与 `instantiate_material` 同一条路），设备挂载点上的模板不能实例化时试运行即拒绝 |
 
 transfer payload：source_device_id、target_device_id、items。
 每个 item 为 material_uuid、target_material_uuid、target_site（Site UUID、label/index 或 null）。
 同一请求不能重复物料或占据同一目标 Site；目标必须存在且未被其他物料占用。
+
+move、transfer 与工作流搬运派发前的预检共用同一组放入检查：目标 Site 有活动的工站入站预留
+（`/api/v1/inventory/ingress-reservations`，`reserved` 未过期或 `in_transit`）时拒绝，冲突类别
+`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位。这是临时条件，
+预留接收、取消或过期后同一请求可以重试。
 
 执行顺序：
 
@@ -191,7 +216,8 @@ transfer payload：source_device_id、target_device_id、items。
 这是软件投影同步，不代表软件会替代机械臂完成物理搬运。
 
 ROS2 与 HostLink 的此路径共用 HostLink 下行 resource service，不能把 transfer 写成 ROS2 专有能力。
-`notify-device` 响应中的 notified 只有 true 表示确认完成；false/null 都不能当成已经加载。
+`notify-device` 响应中的 notified 只有 true 表示确认完成（设备逐条应用，任何一条没应用上也是 false）；false/null
+都不能当成已经加载。
 
 ## 内容、快照与前端同步
 
@@ -223,6 +249,7 @@ ResourceDict/PLR 侧可以使用 `(名称, 数量, 单位)` 三元组，经适�
 `snapshots/compare` 返回差异而不落库；apply 用完整同构快照更新既有聚合，
 **不允许借快照创建/删除物料或 Site**。新增走 create，删除走显式 delete，跨设备走 transfer。
 delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch 当成合法 delta。
+
 本地 observer 对 assign/unassign 与状态变化形成快照/diff，然后通过权威写入；普通 Python 属性赋值本身不是远端写入确认。
 
 前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表。
@@ -231,6 +258,37 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 
 `/changes` 的完整账本提供来源 actor、command/job、版本、delta 与投递状态。
 `/changes/ack` 是同步消费者确认，不是浏览器关闭提示的接口。
+
+### 被丢弃的枪头随快照退役
+
+“不允许借快照删除物料”只有一个例外：**被设备丢弃的枪头**（`resource_type` 为 `tip`）。
+例如拿起后丢进废料槽，或从孔位取下不放回。
+快照里该节点写成 `lifecycle_status="retired"` 且 `parent_material_uuid=null`，其余字段与权威一致。
+权威在同一写事务内将其退役，与快照里的其他变化一起成功或失败：
+
+- 表示与显式 delete 相同：`lifecycle_status=retired` 加软删除（`deleted_at_ms`）。
+  物料行、最后所在的父节点与账本都保留，不做硬删除；它不再占用 `resource_id` 和根名唯一索引。
+- 账本操作为 `retire`，delta 含 `reason: "tip_discarded"`、`previous_lifecycle_status`、`parent_material_uuid`。
+  `snapshots/compare` 把它显示为 identity 段变化（`lifecycle_status`、`parent_material_uuid`）。
+- 退役后，实例、树、列表读取不再返回它（GET 单个实例为 404），从权威恢复时也不会再出现。
+  `GET /api/v1/materials/{uuid}/ledger`、`/changes` 与 SSE `materials.changed`（`operation=retire`）仍可见。
+- 只有非根的枪头可以这样写；其他类型返回 `validation_error`（cannot create or delete）。
+  退役枪头不能同时改位置、内容或其他身份字段。
+  处于 reserved / quarantined / consumed 的枪头返回 `conflict:state`。
+  被未结算物理动作占用的枪头照常以 `active_claim` 拒绝。
+
+设备侧由 `resource_tree_to_snapshot` 生成这种节点，条件是同时满足下面三条：
+
+1. 枪头在权威里的父节点在本次上报里。
+2. 枪头本身不在上报里。
+3. 枪头不在设备运行时仍持有的物料里（`ResourceTreeSet.runtime_material_uuids`）。
+
+第 3 条的取值是从上报资源的 PLR 顶层祖先遍历出的全部物料。
+例如只上报台面时，旧式液体处理器通道上拿着的枪头仍算“持有”，不会被退役。
+父节点不在上报里、局部上报没有覆盖的子树，都不推断丢弃。
+树集来自原始字典或权威读回时（`runtime_material_uuids` 为 None）同样不推断。
+`update_resource` / `materials.update` 与 HostLink、ROS2 的快照观察者共用这条路径。
+退役与 `material.mark_used` / `material.consume` 一样只改变实例的生命周期，不扣减 lot 数量。
 
 ## 库存与物料锁
 
@@ -244,8 +302,8 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 任务批量预留先做整体准入，库存不足不能派发“部分成功”的实验。
 reservation 的 consume/release/quarantine 由执行生命周期或明确业务操作驱动，观察前端不要自行消耗。
 
-物料锁是另一层：动作的物料入参默认独占（`materials_free` 排除，`materials_need_lock` 显式覆盖，
-规则见 [设计约定](design.md)），交给调度器按绑定后的身份占用。库存预留不自动等于设备动作锁，也不代表实现了多层子工作流锁升级。
+物料锁是另一层：动作的每个物料入参都加共享资源锁，执行期间独占、驱动不能按动作豁免（规则见
+[设计约定](design.md)），交给调度器按绑定后的身份占用。库存预留不自动等于设备动作锁，也不代表实现了多层子工作流锁升级。
 
 ## 化学品定义
 
@@ -254,9 +312,9 @@ CAS 登记号与 InChIKey 是可空的唯一键，只在未删除的行之间唯
 CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写；另有名称、英文名、别名、分子式、SMILES、
 分子量、密度与物态（liquid / solid / gas / unknown）。修改与删除带 `expected_version`，过期返回 3003。
 
-物料内容物通过可空的 `MaterialSubstance.chemical_uuid` 引用化学品定义（materials.db v3，
-`material_substance.chemical_uuid`；化学品是软删除，故不设外键）。v4 增加 `chemical_unlinked`：
-显式解除过关联的内容物不再按名称自动匹配。四条内容写入路径（建树、put_data、快照、增量）落库前统一确定引用。
+物料内容物通过可空的 `MaterialSubstance.chemical_uuid` 引用化学品定义（materials.db
+`material_substance.chemical_uuid`；化学品是软删除，故不设外键）。`chemical_unlinked` 记录显式解除：
+解除过关联的内容物不再按名称自动匹配。四条内容写入路径（建树、put_data、快照、增量）落库前统一确定引用。
 下文"同名的已有内容物"指同一物料上名称相同（不区分大小写）、已关联或已解除的一份（多份同名时优先同位次）。
 `chemical_uuid` 的三种写法：
 
@@ -269,8 +327,6 @@ CAS 校验格式与校验位，InChIKey 校验 27 位标准格式并统一大写
    设备按名称上报内容物既不会丢掉关联，也不会让已解除的重新关联；
 4. 省略且没有可沿用的状态：内容物名称与化学品的名称、英文名、任一别名或 CAS 不区分大小写精确相等，
    且恰好一个未删除化学品命中时自动关联；歧义或无命中保持未关联。
-
-v3 的库升级到 v4 时所有内容物都是未解除（v3 存不下"解除过"），与升级前的行为一致。
 
 两个字段只在显式给出时才进入请求 dump：旧载荷与旧版本存下的请求哈希不变（升级前发出的命令升级后重发仍是幂等重放），
 “省略”与“显式 null”是两个不同的请求。快照 / 增量的内容比较不看引用；只有显式给出且与现值不同的引用才算变化。

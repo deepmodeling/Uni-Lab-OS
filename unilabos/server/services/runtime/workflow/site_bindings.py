@@ -56,8 +56,9 @@ class SiteBindingIndex:
                 return identity
             raise SiteBindingError(f"目标物料 UUID {identity!r} 不存在")
         label = str(ref.get("name") or ref.get("id") or "")
+        # 名字引用按人读标签 / 业务 id 匹配（物料 name 是 uuid 时也照样命中）
         matches = [uuid for uuid, item in self.materials.items()
-                   if label and label in (item.get("name"), item.get("resource_id"))]
+                   if label and label in (item.get("display_name"), item.get("name"), item.get("resource_id"))]
         if len(matches) != 1:
             raise SiteBindingError(f"目标物料 {label!r} 匹配到 {len(matches)} 项，请明确物料 UUID")
         return matches[0]
@@ -84,7 +85,7 @@ class SiteBindingIndex:
         else:
             matches = [site for site in candidates if site.get("label") == value]
         if len(matches) != 1:
-            owner = self.materials[scope].get("name", scope)
+            owner = self.materials[scope].get("display_name") or self.materials[scope].get("name", scope)
             raise SiteBindingError(
                 f"Site {value!r} 在 {owner!r} 范围匹配到 {len(matches)} 项；"
                 "请明确目标物料及 site_uuid（失效 UUID 不按标签回退）"

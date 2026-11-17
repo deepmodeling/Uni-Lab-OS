@@ -1,0 +1,195 @@
+# U01 rest 区：V1.0 → 统一分支（#361 `6f94ec04`）逐文件核验
+
+范围：183 个 V1 文件（registry / resources / ros / hostlink / package_manager / compile / device_comms / config / utils / messages / device_mesh / 顶层）。只读核验，未改任何仓库。
+
+**统计（183）**：PORTED 111 · DROPPED 16 · PARTIAL 15 · MISSING 6 · N/A 35
+
+分区：compile 27 · config 3 · device_comms 17 · device_mesh 2 · hostlink 7 · messages 1 · package_manager 41 · registry 28 · resources 12 · ros 26 · utils 17 · 顶层 2。子表原稿：`rest/mine.md`（其余）、`rest/pm.md`（package_manager）、`rest/ros.md`（ros + hostlink）。
+
+「第 N 条」指 README 已定列表 的「已定的有意不移植」编号；A01/A03/M01/I04/D01 等是 `v1_dev_reconciliation.md` 的 ID。
+
+| V1 文件 | 行数 | 结论 | 统一分支对应 / 依据 | 备注 |
+| --- | --- | --- | --- | --- |
+| unilabos/__init__.py | 1 | N/A | `unilabos/__init__.py` | 只有版本号 |
+| unilabos/__main__.py | 6 | PORTED | `unilabos/__main__.py`（逐字相同） | — |
+| unilabos/compile/__init__.py | 57 | PORTED | `experiments/compile/__init__.py` | 协议名 → 生成器映射一致；参数模型改从 `experiments.models` 导入 |
+| unilabos/compile/add_protocol.py | 422 | PORTED | `experiments/compile/add_protocol.py:generate_add_protocol` | 删了 `add_liquid_volume` / `add_solid_mass` / `add_solid_moles` 等便捷包装（V1 全仓库无调用方；0361795c 按死代码清理） |
+| unilabos/compile/adjustph_protocol.py | 634 | PORTED | `experiments/compile/adjustph_protocol.py:generate_adjust_ph_protocol` | 删了未被引用的 `generate_adjust_ph_protocol_stepwise` 和插入动作序列的 `create_action_log` 日志伪动作 |
+| unilabos/compile/agv_transfer_protocol.py | 53 | PORTED | `experiments/compile/agv_transfer_protocol.py` | 逐字相同 |
+| unilabos/compile/centrifuge_protocol.py | 286 | PORTED | `experiments/compile/centrifuge_protocol.py` | 删了 low/high/standard/cold/ultra 五个预设包装（无调用方） |
+| unilabos/compile/clean_protocol.py | 62 | PORTED | `experiments/compile/clean_protocol.py` | — |
+| unilabos/compile/clean_vessel_protocol.py | 450 | PORTED | `experiments/compile/clean_vessel_protocol.py` | 删了 quick/thorough/organic 预设包装（无调用方） |
+| unilabos/compile/dissolve_protocol.py | 964 | PORTED | `experiments/compile/dissolve_protocol.py` | 删了 `dissolve_solid_by_mass/moles` 等包装 |
+| unilabos/compile/dry_protocol.py | 335 | PORTED | `experiments/compile/dry_protocol.py` | 删了 quick/thorough 包装 |
+| unilabos/compile/evacuateandrefill_protocol.py | 752 | PORTED | `experiments/compile/evacuateandrefill_protocol.py` | 删了 nitrogen/argon/air/inert 预设包装 |
+| unilabos/compile/evacuateandrefill_protocol_old.py | 143 | PORTED | `experiments/compile/evacuateandrefill_protocol_old.py` | 逐字相同 |
+| unilabos/compile/evaporate_protocol.py | 412 | PORTED | `experiments/compile/evaporate_protocol.py` | — |
+| unilabos/compile/filter_protocol.py | 368 | PORTED | `experiments/compile/filter_protocol.py` | — |
+| unilabos/compile/filter_through_protocol.py | 388 | PORTED | `experiments/compile/filter_through_protocol.py` | 删了 gravity/celite/column/SPE 预设包装 |
+| unilabos/compile/heatchill_protocol.py | 330 | PORTED | `experiments/compile/heatchill_protocol.py` | — |
+| unilabos/compile/hydrogenate_protocol.py | 459 | PORTED | `experiments/compile/hydrogenate_protocol.py` | — |
+| unilabos/compile/pump_protocol.py | 918 | PORTED | `experiments/compile/pump_protocol.py` | 拓扑查找从节点 `class` 改为读 `template_name`（与 Graph Authority 节点字段一致） |
+| unilabos/compile/recrystallize_protocol.py | 391 | PORTED | `experiments/compile/recrystallize_protocol.py` | — |
+| unilabos/compile/reset_handling_protocol.py | 388 | PORTED | `experiments/compile/reset_handling_protocol.py` | 删了 `reset_main_reactor` / `reset_with_water` 等包装 |
+| unilabos/compile/run_column_protocol.py | 809 | PORTED | `experiments/compile/run_column_protocol.py` | 删了溶剂配比预设包装 |
+| unilabos/compile/separate_protocol.py | 846 | PORTED | `experiments/compile/separate_protocol.py` | — |
+| unilabos/compile/stir_protocol.py | 479 | PORTED | `experiments/compile/stir_protocol.py` | 删了 `stir_briefly/slowly/vigorously…` 包装 |
+| unilabos/compile/utils/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/compile/utils/logger_util.py | 35 | PORTED | `experiments/compile/utils/logger_util.py` | — |
+| unilabos/compile/utils/unit_parser.py | 214 | PORTED | `experiments/compile/utils/unit_parser.py` | 逐字相同 |
+| unilabos/compile/utils/vessel_parser.py | 280 | PORTED | `experiments/compile/utils/vessel_parser.py` | 逐字相同 |
+| unilabos/compile/wash_solid_protocol.py | 548 | PORTED | `experiments/compile/wash_solid_protocol.py` | 删了 `wash_with_water/ethanol…` 包装 |
+| unilabos/config/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/config/config.py | 311 | PARTIAL | `config/config.py`（BasicConfig / HTTPConfig / HostLinkConfig / OTelConfig / ROSConfig） | 缺两组字段：① 日志滚动与清理的 `file_log_level`、`log_detailed`、`log_max_bytes`、`log_backup_count`、`log_retention_days`、`log_total_max_bytes`、`log_cleanup_interval_seconds` 及其启动校验 `_validate_log_config`（见 log_storage）；② `OTelConfig.logs_enabled/logs_endpoint/logs_protocol`（见 tracing）。其余差异按设计：`action_mode` → `test_mode`；`control_plane/process_role/workflow_editable_package_roots/workspace_*` 属第 1 条；`frontend_allowed_hosts/frontend_same_origin` 随 React 控制台删除（D01）；`EdgeControlConfig.api_key` 曾移植为 `BasicConfig.station_api_key`，11-17 随工站密钥一并取消（管理 API 不鉴权），其余 Edge 协议字段属第 4 条 |
+| unilabos/config/example_config.py | 59 | PORTED | `config/example_config.py` | 示例改为新字段；V1 示例里的日志滚动字段随上一行缺失 |
+| unilabos/device_comms/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/device_comms/modbus_plc/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/device_comms/modbus_plc/client.py | 544 | PORTED | `device_comms/modbus_plc/client.py` | — |
+| unilabos/device_comms/modbus_plc/modbus.py | 161 | PORTED | `device_comms/modbus_plc/modbus.py` | 统一分支多了 pymodbus 3.6.9–3.x 的 `slave/device_id`、`word_order` 兼容层 |
+| unilabos/device_comms/modbus_plc/server.py | 37 | PORTED | `device_comms/modbus_plc/server.py` | 逐字相同 |
+| unilabos/device_comms/modbus_plc/test/__init__.py | 0 | N/A | 同路径保留 | 空文件 |
+| unilabos/device_comms/modbus_plc/test/client.py | 109 | N/A | 同路径保留 | 手工联调脚本 |
+| unilabos/device_comms/modbus_plc/test/node_test.py | 46 | N/A | 同路径保留 | 手工联调脚本 |
+| unilabos/device_comms/modbus_plc/test/server.py | 42 | N/A | 同路径保留 | 手工联调脚本 |
+| unilabos/device_comms/modbus_plc/test/test_workflow.py | 169 | N/A | 同路径保留 | 手工联调脚本 |
+| unilabos/device_comms/opcua_client/__init__.py | 8 | N/A | 同路径保留 | 只做 re-export |
+| unilabos/device_comms/opcua_client/client.py | 1392 | PORTED | `device_comms/opcua_client/client.py` | 统一分支修了类属性字典被多个客户端共用的问题（节点表改为每个实例一份） |
+| unilabos/device_comms/opcua_client/node/__init__.py | 9 | N/A | 同路径保留 | 只做 re-export |
+| unilabos/device_comms/opcua_client/node/uniopcua.py | 304 | PORTED | `device_comms/opcua_client/node/uniopcua.py` | — |
+| unilabos/device_comms/opcua_client/server.py | 311 | PORTED | `device_comms/opcua_client/server.py` | — |
+| unilabos/device_comms/rpc.py | 67 | PORTED | `device_comms/rpc.py` | — |
+| unilabos/device_comms/universal_driver.py | 228 | PORTED | `device_comms/universal_driver.py` | — |
+| unilabos/device_mesh/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/device_mesh/resource_visalization.py | 407 | PORTED | `device_mesh/resource_visalization.py` | — |
+| unilabos/hostlink/__init__.py | 39 | N/A | `backend/hostlink/__init__.py` | 仅 re-export |
+| unilabos/hostlink/client.py | 482 | PORTED | `backend/hostlink/client.py:HostLinkClient`（hello/ping、自动重连、请求通道、Host→Slave 反向 handler、`ros_info`） | 统一分支还有「Host 启动中」退避重试、async 请求、设备描述上报、日志读取。差异：节点身份取 `machine_name`（不再从 device_ids 推导）；`register_handler(capability=)` 和 hello 刷新没了；`hostlink.request` 的 OTel span 和 trace 注入没移植（随 utils/tracing 的结论处理） |
+| unilabos/hostlink/doctor.py | 481 | PORTED | `backend/hostlink/doctor.py` | 只改了 import 路径（相似度 0.98） |
+| unilabos/hostlink/protocol.py | 188 | PORTED | `backend/hostlink/protocol.py` | NDJSON 帧、信封、`LineReader` 都保留；V1 的 `material`（query_key=uuid/id）由 `material.tree.get` / `material.resource-id.get` 等一组 `material.*` 动作取代；新增 chunk 分帧（256 MB 整消息上限）和 `HOST_NOT_READY` |
+| unilabos/hostlink/resolver.py | 91 | DROPPED | 背景 #4（dev 物料权威）：启动图先经 `GraphService.upsert_graph` 入 Graph Authority，Slave 的物料请求经 `backend/hostlink/materials_proxy.py` / `network.py` 代理到权威 | V1 是「数据库未命中时在 Host 本地树上兜底解析」。统一分支不存在「配置树尚未入库」的状态，所以不需要本地兜底 |
+| unilabos/hostlink/ros_assist.py | 312 | PORTED | `backend/hostlink/ros_assist.py`（`RosNetworkInfo`、`build_host_ros_info`、`apply_ros_network_env`）；托管 Fast DDS Discovery Server 和 `ROS_SUPER_CLIENT` 在 `backend/hostlink/network.py` | 新增 `validate_domain_id`（0–232） |
+| unilabos/hostlink/server.py | 533 | PORTED | `backend/hostlink/server.py:HostLinkServer`（peer 注册、心跳在线判定、`request_device`、旧 socket 被顶替后忽略） | 差异：身份必须是显式 `machine_name`，重名的活跃连接直接拒绝（V1 按 device_ids 交集认同一 Slave）；`has_device(capability=)` 的过滤没了（V1 无调用方）；`hostlink.handle` span 没了。新增启动阶段闸门、设备状态和设备目录 |
+| unilabos/messages/__init__.py | 647 | PORTED | `experiments/models.py` | 27 个 XDL 协议 Pydantic 模型，类名与字段逐一对上 |
+| unilabos/package_manager/__init__.py | 308 | N/A | — | 只做惰性 re-export 门面 |
+| unilabos/package_manager/cli.py | 293 | PARTIAL | `app/cli/package.py`（`register_package_commands` / `cmd_package`） | `inspect` 已移植；`add/update/remove`（工作区依赖 + 锁）换成 `install/upgrade/uninstall/enable/disable/list/catalog/changes/operations`，走 `/api/v1/driver-packages`；**`package build`（审计 wheel）和 `package upload`（发布到云端广场）都没有** |
+| unilabos/package_manager/driver_runtime/__init__.py | 10 | N/A | — | 只做 re-export |
+| unilabos/package_manager/driver_runtime/model.py | 143 | PORTED | `backend/runtime/definition.py:DeviceDefinition` | 激活结果是 driver_class / runtime_config / status_types / action_value_mappings / hardware_interface；不带 V1 的 content_hash、package_catalog_digest 包证据 |
+| unilabos/package_manager/driver_runtime/python_activation.py | 300 | PORTED | `backend/runtime/definition.py:resolve_device_definition`（+ `registry/init_enforce.merge_init_param_enforce`、`utils/import_manager`） | 查注册表、校验 class.module、合并 init_param_enforce、只加载选中的类。没有 FQID 与唯一短名二选一的歧义解析（dev 用 template_name 直接查） |
+| unilabos/package_manager/package_catalog/__init__.py | 54 | N/A | — | 只做 re-export |
+| unilabos/package_manager/package_catalog/compilers/__init__.py | 1 | N/A | — | 空包 |
+| unilabos/package_manager/package_catalog/compilers/python/__init__.py | 5 | N/A | — | 只做 re-export |
+| unilabos/package_manager/package_catalog/compilers/python/compiler.py | 341 | PORTED | `registry/package_layout.py:scan_package_dirs` + `registry/ast_registry_scanner.py:scan_directory`；`app/cli/package.py:scan_package_devices` | 静态 AST 编译，不执行作者代码；扫描失败时 inspect 报错。没有生成带内容摘要的 PackageCatalog（摘要缺口记在 model.py） |
+| unilabos/package_manager/package_catalog/compilers/python/registry.py | 424 | PORTED | `registry/ast_registry_scanner.py`、`registry/registry.py`（`_build_*_entry_from_ast`，重复 `@device/@resource id` 报错，L496–524） | 社区包按 `community.<ns>.<id>` 加命名空间 |
+| unilabos/package_manager/package_catalog/compilers/python/workflow.py | 173 | PORTED | 包内 `@workflow` 经 AST 扫描进入 `Registry.workflow_registry`；`registry/workflow_ast.py` 静态编译（简报第 7 条） | V1 的 workflow manifest + UUID 由 `registry/workflows.py:workflow_uuid_for(source_path)` 取代；作者 DSL 用 dev 的 |
+| unilabos/package_manager/package_catalog/material_models.py | 373 | MISSING | 只有路由空壳：`server/api/materials/resources.py:302` `GET /api/v1/material-models/{path}`，但 `materials/core.py:241` 调 `create_v1_resource_router(service)` 时没有传 `material_model_catalog`，所以永远 404 | V1 把包注册表里的 `model.entry/format`（glb/gltf/xacro/stl…）编译成按模板索引的模型快照，并在授权目录内供应资产（带 ETag）。统一分支注册表保留了 `model` 字段，但没有编译器，也没有资产目录；`workspace_layout._asset_ref` 要求的 `/api/v1/material-models/` 地址也就读不到 |
+| unilabos/package_manager/package_catalog/material_shapes.py | 566 | MISSING | 路由空壳：`resources.py:298` `GET /api/v1/material-shapes` 固定返回 `{"items": []}` | V1 读 `model.shape` 指向的 2.5D 外形 YAML（box/cylinder/grid/sites…，校验图元与 style token），做跨包去重和摘要校验后供前端渲染。统一分支没有对应实现 |
+| unilabos/package_manager/package_catalog/model.py | 391 | PARTIAL | 定义模型 → `Registry` 的 device / resource / workflow 条目（社区 FQID） | 缺 RFC 8785 规范化的 `catalog_digest` / `content_digest` 和资产摘要，包没有可复现的内容身份（也影响锁漂移检测；`package.catalog.json` 不再产出） |
+| unilabos/package_manager/package_catalog/project_metadata.py | 232 | PORTED | `server/services/driver_packages.py:read_project_metadata`、`app/cli/package.py:read_pyproject`、`registry/package_layout.py:declared_registry_paths` | name / version / dependencies / `[tool.unilabos.registry].paths` 已移植；`[tool.unilabos.startup]`（graph / config / app_bridges / ensure_dependencies）属工作区产品启动，简报第 1 条 DROPPED；解析器分成三处，不再是唯一权威 |
+| unilabos/package_manager/package_catalog/registry_snapshot.py | 489 | PORTED | `registry/registry.py:Registry.setup`（多挂载合并、社区命名空间、跨目录重复 id 拒绝） | 按图有限激活改成设备初始化时惰性 import（`backend/runtime/definition.py`）；没有不可变快照指纹，也没有原子热发布（V1 产品路径同样只能重启生效） |
+| unilabos/package_manager/package_catalog/sources.py | 138 | PORTED | `driver_packages._package_target` / `_assert_safe_member`、`driver_package_journal._managed_path`、`server/api/workspace.py:browse` | 拒绝符号链接和越界路径的检查分散在各处 |
+| unilabos/package_manager/package_distribution/__init__.py | 54 | N/A | — | 只做 re-export |
+| unilabos/package_manager/package_distribution/adapters/__init__.py | 19 | N/A | — | 只做 re-export |
+| unilabos/package_manager/package_distribution/adapters/cloud.py | 208 | MISSING | 无。`app/oss_upload.py` 存在但没有调用方；`legacy_adaptor/legacy/http.py` 的 `POST /lab/resource` 只用于运行时上报注册表 | V1 `package upload`：先构建审计 wheel，再经 OSS 预签名直传，然后带 package_info + source_registry 发 `POST /lab/resource`，把社区包发布到云端广场。统一分支 CLI 无法发布社区包 |
+| unilabos/package_manager/package_distribution/adapters/directory.py | 249 | PORTED | `server/services/driver_packages.py:start_install/_run_install` + `registry/package_layout.package_device_ids` | 安装后用 AST 列出设备。pip-spec / `name==version` 安装已按 `dev_package_runtime.md` 撤除（改为 GitHub / 归档 / Host 本机目录源码树 + uv 装依赖）；V1 这个函数本来也没有 CLI 入口 |
+| unilabos/package_manager/package_distribution/archive.py | 98 | PORTED | `app/cli/package.py:build_archive` / `ARCHIVE_EXCLUDE_DIRS` | 排除规则一致，只少了 `.claude/.codex skills` 子树的排除 |
+| unilabos/package_manager/package_distribution/build.py | 749 | MISSING | 无 | V1 `package build`：在暂存树里嵌入 PackageCatalog，构建标准 wheel，再从 wheel 反解源码重编译，核对 RECORD、闭包、内容一致，产出 artifact_digest 和发布投影。统一分支只有 inspect 生成的 tar.gz（可当归档 URL 安装），没有可审计的发布产物 |
+| unilabos/package_manager/package_distribution/dependency_manager.py | 503 | PARTIAL | `driver_packages.py`（install / `--upgrade` / uninstall、台账、写互斥 409）、`host_mutations.py`、`driver_package_journal.py`（崩溃恢复） | 增删改、写前校验候选源码、失败回滚已有。缺两点：①安装时不检查新包与已装包的跨包定义冲突（V1 `validate_complete_generation` 在写盘前拒绝；dev 要到下次 Host 启动 `Registry.setup` 才抛「id 重复」）；②启动时不重编译核对锁摘要，外部包源码改了也照常启动（V1 拒绝启动）。`dev_package_runtime_audit.md` 把「源码不可变版本」列为待办 |
+| unilabos/package_manager/package_distribution/errors.py | 8 | N/A | — | 只有错误类（`app/cli/package.py:PackageCLIError`） |
+| unilabos/package_manager/package_distribution/inspection.py | 223 | PORTED | `app/cli/package.py:inspect_package` | 差异：不写 `package.catalog.json`；`resources.json` 只投影设备（@device + YAML），V1 规范路径会连 @resource 模板一起投影（这两项只供 upload 使用）；默认输出目录是包内 `dist/`（V1 是同级 `dist/`） |
+| unilabos/package_manager/package_distribution/legacy_projection.py | 330 | PORTED | `app/cli/package.py`：`build_action_value_mappings` / `build_resources` / `build_resources_from_registry` / `build_package_info` / `_map_handles` | 几乎逐行一致 |
+| unilabos/package_manager/package_distribution/lock_codec.py | 110 | PORTED | `driver_packages.load_ledger/save_ledger`、`driver_package_journal.ledger_data`（格式损坏时拒绝覆盖） | 「声明 yaml + 锁 json」两个文件合成一份 `driver_packages.json` 台账 |
+| unilabos/package_manager/package_distribution/models.py | 255 | PARTIAL | `driver_packages.py:DriverPackageRecord` | 记录有 name / spec / version / source_kind / sha256（仅远端归档）/ device_ids / dependencies；缺 `catalog_digest`、`content_digest`、`definition_fqids`，台账无法证明包内容与定义集合未漂移 |
+| unilabos/package_manager/package_distribution/registry_discovery.py | 278 | PORTED | `app/cli/package.py`（`normalize_name` / `resolve_class_namespace` / `read_pyproject` / `scan_package_devices` / `read_registry_yaml_devices` / `read_external_registry_devices`）+ `registry/package_layout.py` | — |
+| unilabos/package_manager/package_distribution/transaction.py | 183 | PORTED | `server/services/host_mutations.py`（跨进程文件锁安静点）+ `driver_package_journal.atomic_json/recover_operations` + `driver_packages._source_transaction` | dev 另外加了持久操作日志和中断后需人工确认 |
+| unilabos/package_manager/workspace_runtime/__init__.py | 92 | N/A | — | 只做 re-export |
+| unilabos/package_manager/workspace_runtime/activation.py | 599 | DROPPED | 简报第 1 条（工作区产品代） | WorkspaceRegistryRuntime 是「主包 + 锁定依赖 + 固定图 + 工作流源码计划」的产品代。注册表发布和 import 根由 `Registry.setup` 与 `package_layout.find_import_root` 承担 |
+| unilabos/package_manager/workspace_runtime/authoring_mounts.py | 234 | PORTED | `server/api/workspace.py:package_mount_projection`，`GET /api/v1/workspace/package-mounts`（route map L434） | `workspace-package-mounts/v1` 投影基于 dev 台账；没有可编辑主包，`editable` 恒为 false（工作区产品已去掉） |
+| unilabos/package_manager/workspace_runtime/authoring_worker.py | 642 | DROPPED | 简报第 1 条 | 在隔离子进程里编译候选代、校验所选模块可导入，属工作区产品启动；dev 在设备初始化时进程内 import |
+| unilabos/package_manager/workspace_runtime/discovery.py | 455 | DROPPED | 简报第 1 条 | `WorkspaceStartupPlan`（工作区 → graph / config / bridges 启动参数、workflow manifest 校验）；dev 用 `unilab -g/--devices` 和驱动包台账 |
+| unilabos/package_manager/workspace_runtime/generation.py | 596 | DROPPED | 简报第 1 条；`dev_package_runtime.md`「先提示、手动确认后调用现有重启接口」 | 替代实现是 `driver_source_changes.py`（变更文件、进程范围、restart_request）。V1 会预编译候选（失败时保留旧代），按 graph / binary deps / 动作合同 / 驱动实现 / 资源结构分类重启原因，并在空闲时自动请求重启；dev 不预校验、不自动重启 |
+| unilabos/package_manager/workspace_runtime/initialization.py | 433 | DROPPED | 简报第 1 条（V1 只从 `workspace_host/cli.py` 调用） | 新建驱动包改用 `.cursor/skills/create-device-package`（AGENTS.md） |
+| unilabos/package_manager/workspace_runtime/lifecycle.py | 481 | DROPPED | 简报第 1 条 | 工作区产品生命周期组合根 |
+| unilabos/package_manager/workspace_runtime/monitor.py | 464 | PORTED | `server/services/driver_source_changes.py`（每 2 s 算内容摘要、连续两次一致才发布、有忽略规则、包事务期间暂停） | 观察对象从工作区根改为 Host / slave 实际挂载的驱动源码；图文件改动不在其中（dev 的图在 Graph Authority） |
+| unilabos/package_manager/workspace_runtime/package_source.py | 217 | DROPPED | 简报第 1 条 | 「包目录 + 来源」在同一候选代配对；import 根由 `package_layout.find_import_root` 承担；外形聚合的缺口记在 material_shapes.py |
+| unilabos/registry/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/registry/action_contract_schema.py | 954 | PORTED | `registry/action_contract_schema.py` | 与 V1 基本一致；统一分支只在 `contract="typed"` 时解析（A02） |
+| unilabos/registry/action_execution_metadata.py | 38 | DROPPED | 第 4 条 + 对账表 A03 | V1 用 `executor_kind="material_transfer"` 标记由 OS 托管的物料搬运执行器。统一分支执行器种类由节点类型推导（`services/runtime/workflow/service.py:_executor_kind`）；搬运记账是 Host 的 `transfer_resource` 动作（`backend/host_services.py`）加 A03 的 `transfer` / `transfer_step` 资源合同 |
+| unilabos/registry/action_policy.py | 184 | PARTIAL | `registry/action_policy.py`（`normalize_error_policy`、`resolve_error_options`） | 只支持按异常类名映射的 options（扁平列表视为 `"*"`）。缺 V1 2.6 的扁平写法：① `allow_retry` / `allow_skip` 不会自动加入重试 / 跳过选项；只写这两个键而不给 `options` 时，统一分支在 `@action` 导入阶段报「options 必须非空」，驱动注册失败。② 自定义选项的 `then`（retry/skip/abort 后续动作）被静默丢弃。③ 没有 `default_on_user_timeout` 别名。④ 显式空策略不再补「终止」选项。另外 `SUCCESS_TYPE_SKIP` 的取值从 `"user_bypass_error"` 改成了 `"skip"`。统一分支自己的文档（`interfaces/reference-comparison.md`）把旧写法列为不再适用 |
+| unilabos/registry/action_resource_contract.py | 643 | PORTED | `registry/action_resource_contract.py` | 已在调度器托管下启用（A03） |
+| unilabos/registry/action_result_schema.py | 376 | PORTED | `registry/action_result_schema.py` | 逐字相同 |
+| unilabos/registry/action_template_projection.py | 492 | PORTED | `registry/action_template_projection.py` | 逐字相同；`node_templates.py` 调它的 `compile_action_template_handles` |
+| unilabos/registry/annotation_rendering.py | 190 | PORTED | `registry/annotation_rendering.py` | 逐字相同 |
+| unilabos/registry/annotation_schema.py | 760 | PORTED | `registry/annotation_schema.py` | 逐字相同 |
+| unilabos/registry/annotations.py | 65 | PORTED | `registry/annotations.py` | 逐字相同 |
+| unilabos/registry/ast_registry_scanner.py | 1311 | PORTED | `registry/ast_registry_scanner.py`（文件级缓存、`_collect_literal_constants`、`available_sites` 常量解析） | 跟随装饰器差异：不再提取 `metadata`、`displayname`、`ExecutorKind`、`exception_handling`、`action_name`（见 decorators）；V1 对每个 `@action` 都做 AST 强类型解析，统一分支只解析 `contract="typed"` |
+| unilabos/registry/decorators.py | 882 | PARTIAL | `registry/decorators.py`（`device` / `action` / `resource` / `topic_config` / `always_free` / `not_action`） | V1 作者接口里有六个参数统一分支运行时装饰器不接受，驱动传了会在导入时 TypeError：`@action(action_name=…)`（对外动作名与方法名不同；AST 注册路径 `registry.py:1060` 却仍按它登记公开名、不记方法名，派发按公开名找方法，见 base_device_node 行）、`exception_handling=False`（异常不进人工决策）、`executor_kind`、`default_on_user_timeout`、`displayname`；`@device(metadata=…)`（供应商 / 规格等扩展元数据）。`legacy_action` 对应 `contract="legacy"`（默认）。`display_name` 只认新拼写是统一分支文档里的明确决定。统一分支另加了 `contract`、`supported_backends`、`SiteSlot`；曾加的 `materials_need_lock` / `materials_free` 已按负责人 2026-11-17 决定移除（每个物料入参默认加共享资源锁），旧驱动传了照常加载、忽略并告警 |
+| unilabos/registry/in_memory_template_projection_store.py | 348 | DROPPED | 第 4 条 | V1 给不开 SQLite 的纯 Authoring Web 进程用的进程内模板代际存储。统一分支只把模板投影写进 runtime.db（`services/runtime/workflow/node_templates.py`） |
+| unilabos/registry/init_enforce.py | 86 | PORTED | `registry/init_enforce.py` | 逐字相同 |
+| unilabos/registry/local_template_identity.py | 548 | PORTED | `resources/adapters/registry_materials.py:sync_registry_resources` / `register_resource_definitions`（启动时 `app/backend_main.py:158`、`server/startup.py:150`） | 注册表资源按 `definition_hash` 幂等同步成物料模板，UUID 稳定。没有 V1 的库位 `initial_material_template` 短名 → UUID 二次解析（见 site_definition） |
+| unilabos/registry/material_lock_schema.py | 503 | PORTED | `registry/material_locks.py`（默认锁集合）+ `registry/typed_contract.py:material_lock_parameters`（`x-unilabos-material-lock` 标记、jsonschema 校验）+ `server/backend/scheduler/materials.py:material_uuids_for_parameters` | 都只认物料权威发的 UUID；参数非空却解析不出 UUID 时拒绝派发（M01）。物料字段一律加锁，`MaterialLock(free=True)` 留下的 `false` 标记同样忽略（2026-11-17） |
+| unilabos/registry/module_scope.py | 746 | PORTED | `registry/module_scope.py` | — |
+| unilabos/registry/package_generation.py | 123 | DROPPED | 第 1 条（与 pm 表 `registry_snapshot.py` 一致） | V1 原子发布「软件包注册表代」，并解析 FQID / 唯一短名。统一分支由 `Registry.setup` 一次装配（含社区命名空间），改包后重启生效 |
+| unilabos/registry/placeholder_type.py | 59 | PORTED | `registry/placeholder_type.py` | 统一分支另加 `SiteSlot` / `PLACEHOLDER_SITES`，`ResourceSlotRawInput` 也接受 str |
+| unilabos/registry/registry.py | 2783 | PORTED | `registry/registry.py:Registry` | 去掉了 `publish_package_snapshot` / `resolve_definition` / `package_snapshot`（第 1 条）和 `_apply_action_execution_metadata`（见 decorators）。旧锁字段处理与预计时长默认值由 `material_locks` 和 A01 的 `action_duration` 承担 |
+| unilabos/registry/runtime_device_catalog.py | 217 | PARTIAL | 设备身份：Registry Authority 条目（`services/runtime/registry.py`）+ `services/runtime/devices.py`（`/devices`，动作模板 UUID 用 `template_identity`） | V1 在内存里为包内每个设备建模板目录：用确定性的 `device_template_uuid`，并在 `GET /resource-templates`（`resource_type` 为空或 device）里列出。统一分支只在设备进图建实例时懒创建设备模板（`materials/core.py` 约 2302 行，`uuid4()` 随机 UUID），没进图的包设备不出现在 `/resource-templates`。影响：前端从模板列表放置设备，或跨实例 / Backend 按设备模板 UUID 对账时对不上 |
+| unilabos/registry/site_selector_schema.py | 251 | PORTED | `registry/site_selector_schema.py`（+ `site_selector_value_schema.py`） | 逐字相同 |
+| unilabos/registry/template_delta.py | 431 | PORTED | `server/services/runtime/registry.py:RegistryService.report_entries`（条目级不可变版本；每批统计新增 / 更新 / 挂起 / 移除 / 复活 / 不变 / 自动接受；新增 / 变化 / 消失先挂起，单机部署或驱动包版本升高时自动接受；软移除可 restore）+ `node_templates.py`（不再生效的模板软删除） | 做法是 dev 的条目版本，不是 V1 的投影成员 manifest，行为等价；接受规则是 dev 自己的（V1 每个进程本地加载注册表，没有这一步） |
+| unilabos/registry/template_identity.py | 146 | PORTED | `registry/template_identity.py` | 逐字相同；`node_templates.py`、`devices.py` 在用 |
+| unilabos/registry/template_projection.py | 1215 | PORTED | `server/services/runtime/workflow/node_templates.py:NodeTemplateCatalog.sync_registry_templates` / `project_registry_templates` | 注册表动作投影进 runtime.db 的 `workflow_node_template` / `workflow_handle_template`（`authority_id=registry-template-projection`，V1 的确定性 UUID，指纹不变不重算）。结构节点模板（dev 的 condition / loop / group / material_io）总挂在 host_node 资源模板下投影，不依赖 host_node 条目是否已上报。资源模板「源码别名 → UUID」映射只服务 V1 的创作内核，随第 7 条一起去掉 |
+| unilabos/registry/template_snapshot.py | 402 | PORTED | `Registry.setup`（只在 Host / Slave 进程）→ Host 经 `/registry/reports` 上报完整快照（`RegistryService`，`digest` / `active_fingerprint`）；Backend 模板同步在 `server/backend/legacy_adaptor/sync/templates.py` | 第 4 条；调度权威不扫描，目录只来自上报 |
+| unilabos/registry/utils.py | 765 | PORTED | `registry/utils/tools.py` | `displayname` → `display_name`；插槽类型多了 `SiteSlot` |
+| unilabos/registry/yaml_ref.py | 86 | PORTED | `registry/utils/yaml_ref.py` | — |
+| unilabos/resources/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/resources/container.py | 89 | PORTED | `resources/presets/container.py:RegularContainer` | 去掉了注释掉的旧实现 |
+| unilabos/resources/graphio.py | 1306 | DROPPED | 第 2 条 | node-link 读取 / 规范化、通信边（serial / io_device 端口注入）在 `server/services/materials/graph.py:load_graph_payload`；`physical_setup_graph` 在 `backend/runtime/workstation_protocol.py`；PLR 互转进了 `ResourceTreeSet`；Bioyond 转换随厂商驱动移出（第 3 条） |
+| unilabos/resources/instance_identity.py | 15 | DROPPED | 第 2 / 4 条 | V1 拿条码作图节点实例身份，缺省 `UNILAB-GRAPH-<id>`。统一分支由 Graph Authority 分配身份；`legacy_adaptor/sync/instances.py` 同步旧云端时要求节点显式带 barcode，没有缺省值 |
+| unilabos/resources/itemized_carrier.py | 538 | PORTED | `resources/presets/itemized_carrier.py` | 库位 UUID 挂在库位 holder 上（`unilabos_site_uuid`），并和权威 `ResourceSite` 核对；V1 的 `site_name_for_uuid` / `site_name_for_child` 辅助方法没有了 |
+| unilabos/resources/liquids.py | 161 | PORTED | `resources/materials.py`（`set_substance_on_target` / `resolve_substance_targets` / `resolve_site_spot` / `apply_substances`） | — |
+| unilabos/resources/plr_additional_res_reg.py | 16 | PORTED | `resources/plr_additional_res_reg.py` | 扩展成 `register_plr_module()` / `@register_plr_class`，供外部驱动包登记 PLR 类 |
+| unilabos/resources/registry.py | 140 | DROPPED | 第 3 条 | 硬编码的厂商工作站 schema 表，加上旧云端 `resource_add` 用的 `add_schema`；统一分支的旧云端适配层不再用它 |
+| unilabos/resources/resource_graph_node_kind.py | 29 | DROPPED | 第 4 条 | V1 把 well / tipspot 图节点当 Backend Site。dev 的物料权威把孔位 / 枪头位建成子物料（见 I04） |
+| unilabos/resources/resource_tracker.py | 1715 | PORTED | `resources/resource_tracker.py`（`ResourceTreeSet.from_plr_resources` / `to_plr_resources` / `dump` / `load`，模块级 `walk_resources` / `set_uuids_by_name` 等）+ `resources/objects/resource.py`（`ResourceDict*`、`assemble_tracker_state`）+ `resources/plr_identity.py` | ① `merge_remote_resources`（从云端启动 JSON 合并物料）随旧云端启动一起去掉，第 2 / 4 条；② `merge_disjoint_trees_by_id` 只被 V1 host_node 使用（见 ros 表）；③ V1 的 `normalize_plr_tracker_states` 以 PLR 默认状态为基线，只覆盖当前 PLR 认识的持久字段；统一分支直接 `load_all_state`，并由 `prepare_plr_restore` 转换枪头状态 |
+| unilabos/resources/site_definition.py | 282 | PARTIAL | `resources/objects/site.py:SiteDefinition` / `normalize_available_sites` / `validate_instantiated_sites` | 几何迁移、label/index 校验已移植。缺两个准入 / 默认内容字段：① `allowed_resource_template_uuids`：V1 挂载时拒绝不在白名单的模板（`site_template_not_allowed`），统一分支没有这个字段，只在 V1 DTO 里从 `extra` 透传；② `initial_material_template_uuid` / `initial_material_template`：V1 实例化模板时自动创建库位默认内容物，统一分支 `resource_contract.py` 固定返回 `initial_material_uuids: []`。V1 的 `content_type` 变成 `allowed_resource_categories`，只作前端筛选提示、不强制。影响：包作者声明的库位准入限制和默认内容不生效 |
+| unilabos/resources/warehouse.py | 154 | PORTED | `resources/presets/warehouse.py` | — |
+| unilabos/ros/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/action_transport.py | 175 | PARTIAL | 运行时 JSON 命令端点：`registry/registry.py:_add_builtin_actions`（每台设备补 `_execute_driver_command[_async]`，上报注册表时过滤掉）；派发时等待：`backend/ros2/presets/host_node.py:_send_goal_ros2` 的 `wait_for_server(30s)` | 缺的是「宣告可调度前所有必需 ROS 动作端点必须就绪」这道失败即关闭的门（`required_action_endpoint_ids` + `wait_for_action_endpoints`，失败报 `device_action_transport_not_ready`）。统一分支本机设备在 `_register_local_device` 里直接标在线，端点没起来要到派发时等 30 s 才失败。只影响可选的 ROS2 backend，影响小 |
+| unilabos/ros/device_node_wrapper.py | 89 | PORTED | `backend/ros2/device_node_wrapper.py` | 只改了 import |
+| unilabos/ros/executor.py | 42 | PORTED | `backend/ros2/main_slave_run.py:_spin_forever` | 做法不同：V1 的 `RuntimeExecutor` 静默丢弃已取消或已销毁定时器的过期事件，执行线程退出就 fail-fast；统一分支捕获 spin 里的任何异常、记 error 后继续 spin，执行线程不会死。结果等价，只是那类竞态会多一条 error 日志 |
+| unilabos/ros/hostlink_runtime.py | 48 | PORTED | `backend/hostlink/network.py:setup_host_network_service`（由 `backend/ros2/main_slave_run.py:main` 在 `rclpy.init` 前调用）；`backend/hostlink/startup.py:prebind_host_server` | V1 的 `attach_hostlink_runtime`（把 HostNode 资源树挂给 resolver）随 resolver 一并不需要 |
+| unilabos/ros/initialize_device.py | 84 | PORTED | `backend/ros2/initialize_device.py` + `backend/runtime/definition.py:resolve_device_definition` | V1 经 `package_manager.driver_runtime.activate_python_driver` 做 FQID 和包证据的关闭式校验，这部分归 package_manager 的结论；运行时映射见 action_transport 行 |
+| unilabos/ros/logging.py | 164 | MISSING | 无对应：统一分支没有 `RCUTILS_LOGGING_USE_STDOUT`、`--enable-stdout-logs`、`--disable-external-lib-logs`，也没有 fd 2 tee 和日志容量策略；`backend/ros2/main_slave_run.py` 默认参数是 `["--log-level", "debug"]` | V1 在 `rclpy.init` 前接管 ROS 原生控制台（spdlog / rcutils）输出，写进 `working_dir/logs/ros_console_*` 并受 `LogPolicy` 容量限制，同时禁止外部库自带的日志文件。统一分支 `--backend ros2` 下 ROS 原生日志默认 debug 级、写 `~/.ros/log`，没有上限，也不进 unilab 日志。依赖 utils/log_storage、process_output（同属缺口，归 utils 行） |
+| unilabos/ros/logging_acceptance.py | 130 | N/A | — | 在目标 ROS 环境验证 logging.py 的验收脚本，不承载产品功能；随 logging.py 一起处理 |
+| unilabos/ros/main_slave_run.py | 371 | PORTED | `backend/ros2/main_slave_run.py:main/slave` | 组网先于 DDS、Slave 物料对齐（`materials.ensure` 经 HostLink）、下行 handler 都在。差异：①V1 等 `/node_info_update` 时 ROS 停止就退出，30 s 注册超时，Host 回非 OK 就失败；统一分支 `wait_for_service()` 无限等，`call_async(...).result()` 不等待、不检查结果；②V1 用 `SignalHandlerOptions.NO` 防 rclpy 抢先关 context，统一分支用默认信号处理；③edge_runtime 控制面就绪等待属背景 #1；④原生日志接管见 logging.py 行 |
+| unilabos/ros/msgs/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/msgs/message_converter.py | 919 | PORTED | `backend/ros2/msgs/message_converter.py` | `Resource` 消息改成整个 dict 经 JSON 放进 `Resource.data`，条码和液体状态随整体传输，V1 的 `obtain_config_with_barcode` / `obtain_data_with_uuid` 归位逻辑不再需要；新增 JointState 转换；协议模型来自 `experiments/models` |
+| unilabos/ros/nodes/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/nodes/base_device_node.py | 4167 | PARTIAL | 核心在 `backend/ros2/base_device_node.py` + `backend/runtime/node.py`（资源树 add/update/remove、`append_resource`、`device_manage`、`transfer_to_new_resource`、`DeviceAsyncMutex`）+ `backend/runtime/resource.py`（`AuthorityResourceService`、`MaterialSnapshotObserver` 取代动作后 `update_resource` 回写）；超时看门狗在 `server/backend/execution.py`（ADR 0008）；开始许可由 `backend/ros2/presets/host_node.py:634/688` 在发 goal 前确认（`server/backend/execution_start.py`）；失败决策：Host 暂存后由后端裁决（`server/backend/execution.py:handle_action_error_decision`，retry 是新 attempt） | 缺口：①**`fallback_action` + `then` 恢复动作**：V1 选中带 `fallback_action` 的选项后，在设备端执行该恢复方法，再按 `then` 重试、跳过或终止（2.6 语义）；统一分支只做归一化（`registry/action_policy.py`），Host 和后端都不执行，`option.then` 被删，选中这类选项作业直接 failed（`tests/test_action_policy.py::test_fallback_release_is_failed_and_never_dispatched_by_host`）。②**`@action(action_name=...)` 改名动作**：V1 注册表记 `method_name`，执行时由 `_resolve_driver_method_name` 映射回驱动方法；统一分支运行时 `@action` 的签名里没有 `action_name`（驱动模块导入即 TypeError），而 AST 注册路径（`registry/registry.py:1060`）仍按 `action_name` 登记公开名、不记方法名，ROS2 `get_real_function(driver, action_name)` 和 HostLink `getattr(driver, action_name.removeprefix("auto-"))` 都按公开名取方法——两条路都让改名动作不可用。③驱动可选的 `get_error_snapshot()` 不再进决策报告。④原生 ROS 动作里没填的可选 `Resource` 字段：V1 把空占位原样交给驱动（`_resource_lookup_identity`），统一分支取 `resource_data["id"]` 报 KeyError，整个动作失败（只影响 ROS2）。⑤设备端 `action.execute` span 和 retry、decision 事件没了（归 tracing）。按设计不需要的：生产投影 UUID 映射（`_resolve_production_runtime_resource` 等，背景 #1/#4）、`station_controlled` 设备端开始屏障（改在 Host 层） |
+| unilabos/ros/nodes/presets/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/nodes/presets/camera.py | 77 | PORTED | `backend/ros2/presets/camera.py` | 只少了 `prepare_ros_logging` 包装（见 logging.py 行）；参数名 `device_uuid` 改为 `resource_uuid` |
+| unilabos/ros/nodes/presets/controller_node.py | 125 | PORTED | `backend/ros2/presets/controller_node.py` | 只改了 import |
+| unilabos/ros/nodes/presets/host_node.py | 3175 | PARTIAL | 分布在 `backend/ros2/presets/host_node.py`（发现、ActionClient、send_goal、结果回调、node_info_update、控制器）、`backend/runtime/host_adapter.py`（锁上报、ping-pong、test_latency、test_mode 返回）、`backend/host_services.py` + `backend/host_material_actions.py`（manual_confirm / apply_deduct_resource / set_substance / discard_resource / transfer_resource / test_resource）、`backend/hostlink/downlink.py`（资源树同步、设备管理下行）、`backend/hostlink/host_node.py` | 缺口：**持久驱动命令账本钩子**。V1 `device_dispatch_block_reason`、`device_unknown_command_ids`、`resolve_unknown_device_command`、`retire_settled_device_command` 读写驱动可选实现的 `dispatch_block_reason()` / `unknown_command_ids()` / `resolve_unknown_command()` / `retire_settled_command()`，由 edge_control 阻断派发、转交人工 UNKNOWN 对账、回传已结算 ACK。统一分支全仓搜不到这些名字；未知执行只在调度器层裁决（R02），不通知驱动账本。V1 树内没有驱动实现这些钩子（只有测试），影响限于自带命令日志的外部驱动。其他差异已有替代：`create_resource(_detailed)` 改用 `apply_deduct_resource(registry_class, material_name)` / `materials.create`；`transfer_manual` 改用 `manual_confirm`（`docs/developer_guide/examples/materials_operations_guide.md:435`）；`--action_mode simulate` 的 dry-run（不构造驱动，只在 edge_runtime 角色生效，背景 #1）由 `--test_mode` 覆盖，但驱动仍会被构造；Slave 上报后定向建 ActionClient、端点就绪才标在线（`_register_reported_remote_device` / `_has_ready_action_client`）由周期发现加 `ROS_SUPER_CLIENT` 承担；ROS 资源服务 `/resources/*` 和 `c2s_update_resource_tree` 由 HostLink `material.*` 加物料权威取代 |
+| unilabos/ros/nodes/presets/joint_republisher.py | 74 | PORTED | `backend/ros2/presets/joint_republisher.py` | 只少了 logging 包装 |
+| unilabos/ros/nodes/presets/resource_mesh_manager.py | 1225 | PORTED | `backend/ros2/presets/resource_mesh_manager.py` | `graphio.initialize_resources` 改为 `resources/materials.py:instantiate_registry_resource` + `ResourceTreeSet`（背景 #2）；按 uuid 建索引 |
+| unilabos/ros/nodes/presets/serial_node.py | 86 | PORTED | `backend/ros2/presets/serial_node.py` | 只改了 import |
+| unilabos/ros/nodes/presets/workstation.py | 606 | PORTED | `backend/ros2/presets/workstation.py:ROS2WorkstationNode` + 共享逻辑 `backend/runtime/workstation_protocol.py`；HostLink 对应 `backend/hostlink/workstation.py:WorkstationNode` | 协议名和模型解析、资源展开和回写抽成两个 backend 共用 |
+| unilabos/ros/nodes/resource_slot_hydration.py | 551 | PARTIAL | 目标解析：`backend/ros2/base_device_node.py:_resolve_slot_value_sync/_async`、`_convert_resources_sync`；`backend/hostlink/local_runtime.py:_resolve_resource_slot`；形态识别 `backend/runtime/resource_slot.py` | 统一分支只按目标 uuid 取 with_children 子树，再在本设备 tracker 里找本地实例，找不到就用新装配的裸实例（只记 warning）。缺的是 V1 的**父上下文水合**：先查目标拿到 `parent_uuid`，再按父 uuid 取整棵父树，校验唯一根、父关系一致、不重复，失败即关闭，最后把父树里的目标交给驱动，使 `resource.parent` / `parent.sites` 可用；父根是 device 时保持一次查询。影响：ResourceSlot 指向不在本设备台面上的物料（例如跨设备搬运的来源）时，驱动拿到的物料没有父级和库位。生产投影（`install_production_resource_nodes` 等，Backend UUID 与本地 UUID 互译）属背景 #1/#4，Graph Authority 只有一套身份，不需要 |
+| unilabos/ros/scripts/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/scripts/pydantic2rosmsg.py | 56 | N/A | — | 占位开发脚本（`MODULES = ['my_pydantic_models']`），全仓没有引用 |
+| unilabos/ros/utils/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/ros/utils/driver_creator.py | 383 | PORTED | `backend/runtime/driver_creator.py`（`DeviceClassCreator` / `PyLabRobotCreator` / `WorkstationNodeCreator`、`select_driver_creator`、`pylabrobot_setup_finished`） | 改为两个 backend 共用：setup 后开体积跟踪、`vis_2d_enable` 时开 Visualizer 都保留 |
+| unilabos/utils/__init__.py | 8 | N/A | — | — |
+| unilabos/utils/banner_print.py | 183 | PORTED | `utils/banner_print.py` | — |
+| unilabos/utils/cls_creator.py | 139 | PORTED | `utils/cls_creator.py` | 无调用方的 `create_config_from_instance` 已删 |
+| unilabos/utils/decorator.py | 145 | PORTED | `utils/decorator.py` | — |
+| unilabos/utils/environment_check.py | 490 | PORTED | `utils/environment_check.py` | 版本比较改用 `packaging` 的 specifier |
+| unilabos/utils/exception.py | 53 | PORTED | `backend/runtime/exception.py`（`DeviceClassInvalid`、`TimeoutException`、`ExecutionTimeoutException`、`DeviceActionError`） | — |
+| unilabos/utils/fastapi/__init__.py | 0 | N/A | — | 空文件 |
+| unilabos/utils/fastapi/log_adapter.py | 112 | PORTED | `utils/fastapi/log_adapter.py:access_log_func` | V1 的 `PollingAccessFilter` 直接丢弃白名单轮询 GET；统一分支把只读 / 管道请求降到 TRACE（仍落盘） |
+| unilabos/utils/import_manager.py | 420 | PORTED | `utils/import_manager.py` | — |
+| unilabos/utils/json_path.py | 59 | PORTED | `server/backend/scheduler/parameters.py`（`split_path` / `json_get` / `json_get_exists`，gjson 语义） | — |
+| unilabos/utils/log.py | 504 | PARTIAL | `utils/log.py:configure_logger` / `configure_comm_logger` + `utils/runtime_logs.py` + `utils/log_notices.py` | 着色、TRACE、通信独立日志、有界读取已有。缺：每次启动一个普通 `FileHandler`，无滚动、无总量和保留期清理（见 log_storage）；没有 `log_detailed` / `file_log_level`（文件固定 TRACE 全量）；没有 `_CommForwardingHandler` |
+| unilabos/utils/log_storage.py | 444 | MISSING | 无（统一分支 grep 不到 `RotatingFileHandler` / 清理逻辑） | V1 的诊断日志：按 `log_max_bytes` × `log_backup_count` 滚动，跨进程占用锁；后台每 `log_cleanup_interval_seconds` 清理超过 `log_retention_days` 和 `log_total_max_bytes`（默认 7 天 / 2 GiB）的旧日志；子进程原始输出用 `RotatingByteWriter`。统一分支每次启动新建一个 TRACE 全量日志文件（加 ws_comm 日志），受管 Slave 的 `process.log` 只追加不滚动。影响：长期运行的工站日志目录无限增长，可能占满磁盘 |
+| unilabos/utils/process_output.py | 320 | DROPPED | 第 1 条 | V1 Workspace Host 的子进程输出接收器（独立进程，保持进程收养语义，有界队列隔离磁盘故障）。统一分支受管 Slave 的输出由 `server/services/device_processes.py:_pump_output` 线程写 `process.log`；它不滚动，算在 log_storage 缺口里 |
+| unilabos/utils/pywinauto_util.py | 167 | PORTED | `utils/pywinauto_util.py` | — |
+| unilabos/utils/tools.py | 55 | PORTED | `utils/serialization.py:normalize_json`（orjson 加速） | `fast_dumps` 并入 serialization；`uuid_to_str`（ROS UUID 数组）在统一分支没有调用方 |
+| unilabos/utils/tracing.py | 1481 | PARTIAL | `utils/tracing.py`（`initialize_tracing`、`span`、`DetachedSpan`、`inject/extract_trace_context`、`install_http_tracing`） | Span、W3C 上下文传播、HTTP 追踪已有。缺：① OTLP 日志导出（`OTelConfig.logs_*`、`_SanitizingOtelLogHandler`）；② OTel 关闭时也生成本地 `trace_id` 关联日志（V1 `_new_local_trace_id`）；③ 把任务 / 作业身份挂到 span 上（`attach/capture_workflow_execution_identity`）；④ 导出器连不上时的日志限流（`_RateLimitingOtelExporterFilter`）；⑤ `trace_ui_base_url`、`submit/await_with_context`。只影响可观测性，不影响仪器控制 |
+| unilabos/utils/type_check.py | 150 | PORTED | `utils/serialization.py`（`TypeEncoder`、`NoAliasDumper`、`ResultInfoEncoder`、`serialize_result_info`） | V1 的 `ResultInfoEncoder` 把结果里的 PLR `Resource` 编码成 `{"uuid": <权威 UUID>}`（`unilabos_reference_uuid`）。统一分支的编码器不认 Resource，动作返回 PLR 对象时退回 `__dict__`；这条行为在 base_device_node 里，见 ros 表 |

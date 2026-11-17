@@ -1,14 +1,22 @@
-"""YAML 设备同样物料天然带锁：不写 materials_need_lock = 默认，补全写回只保留显式声明。"""
+"""YAML 设备同样物料天然带锁：旧的 materials_need_lock / materials_free 键忽略并告警，推导值不写回。"""
 
 from __future__ import annotations
 
+import logging
 import textwrap
 from pathlib import Path
 
+import pytest
 import yaml
 
-from unilabos.registry.material_locks import effective_material_lock_parameters
+from unilabos.registry import material_locks
 from unilabos.registry.registry import Registry
+
+
+@pytest.fixture(autouse=True)
+def fresh_override_warnings(monkeypatch):
+    monkeypatch.setattr(material_locks, "_warned_definitions", set())
+
 
 _DRIVER = '''
 from typing import List
@@ -93,40 +101,42 @@ def _mappings(data: dict) -> dict:
     return data["yaml_lock_test"]["class"]["action_value_mappings"]
 
 
-def test_unknown_signature_derives_from_material_placeholders() -> None:
-    keys = {"plate": "unilabos_resources", "device": "unilabos_devices", "tips": "unilabos_resources"}
-    assert effective_material_lock_parameters(None, params=None, placeholder_keys=keys) == ["plate", "tips"]
-    assert effective_material_lock_parameters(None, params=None, placeholder_keys=keys, free=["tips"]) == ["plate"]
-    assert effective_material_lock_parameters([], params=None, placeholder_keys=keys) == []
+def _override_warnings(caplog) -> list[str]:
+    return [record.getMessage() for record in caplog.records if record.name == "unilabos.registry.material_locks"]
 
 
-def test_runtime_load_derives_default_locks_for_yaml_devices(tmp_path) -> None:
+def test_runtime_load_ignores_removed_overrides_in_yaml(tmp_path, caplog) -> None:
+    caplog.set_level(logging.WARNING, logger="unilabos.registry.material_locks")
     data, _complete, ok, _ids = Registry()._load_single_device_file(_write(tmp_path), complete_registry=False)
     assert ok
     mappings = _mappings(data)
     assert mappings["fill"]["materials_need_lock"] == ["plate"]
-    assert mappings["look"]["materials_need_lock"] == []  # 显式 [] 仍是不锁
-    assert mappings["compare"]["materials_need_lock"] == ["sample"]  # materials_free 排除
+    # 显式 [] 与 materials_free 都不再豁免：placeholder 标为物料的字段一律加锁
+    assert mappings["look"]["materials_need_lock"] == ["plate"]
+    assert mappings["compare"]["materials_need_lock"] == ["sample", "references"]
+    assert "materials_free" not in mappings["compare"]
+    messages = _override_warnings(caplog)
+    assert len(messages) == 2
+    assert any("yaml_lock_test.look" in message and "materials_need_lock:" in message for message in messages)
+    assert any("yaml_lock_test.compare" in message and "materials_free:" in message for message in messages)
 
 
-def test_completion_writes_back_only_explicit_declarations(tmp_path, monkeypatch) -> None:
+def test_completion_drops_removed_overrides_and_never_writes_derived_locks(tmp_path, monkeypatch) -> None:
     monkeypatch.syspath_prepend(str(tmp_path))
     path = _write(tmp_path)
     data, _complete, ok, _ids = Registry()._load_single_device_file(path, complete_registry=True)
     assert ok
     mappings = _mappings(data)
     assert mappings["fill"]["materials_need_lock"] == ["plate"]
-    assert mappings["look"]["materials_need_lock"] == []
-    assert mappings["compare"]["materials_need_lock"] == ["sample"]
+    assert mappings["look"]["materials_need_lock"] == ["plate"]
+    assert mappings["compare"]["materials_need_lock"] == ["sample", "references"]
     # 未声明的 auto- 动作按签名推导；没有物料入参的就是空
     assert mappings["auto-shake"]["materials_need_lock"] == []
 
     written = _mappings(yaml.safe_load(path.read_text(encoding="utf-8")))
-    assert "materials_need_lock" not in written["fill"]
-    assert "materials_need_lock" not in written["compare"]
-    assert "materials_need_lock" not in written["auto-shake"]
-    assert written["look"]["materials_need_lock"] == []
-    assert written["compare"]["materials_free"] == ["references"]
+    for name in ("fill", "look", "compare", "auto-shake"):
+        assert "materials_need_lock" not in written[name]
+        assert "materials_free" not in written[name]
 
     # 再补全一次结果不变（CI check_mode 依赖这一点）
     before = path.read_text(encoding="utf-8")

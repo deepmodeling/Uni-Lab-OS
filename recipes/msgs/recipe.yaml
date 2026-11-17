@@ -1,12 +1,12 @@
 package:
   name: ros-jazzy-unilabos-msgs
-  version: 0.12.1
+  version: 0.12.2
 source:
   path: ../../unilabos_msgs
   target_directory: src
 
 build:
-  number: 0
+  number: 1
   script:
   - if: win
     then:
@@ -26,7 +26,7 @@ requirements:
   build:
   - ${{ compiler('cxx') }}
   - ${{ compiler('c') }}
-  - python ==3.12.13
+  - python ==3.14.10
   - numpy >=2,<3
   - if: build_platform != target_platform
     then:
@@ -50,8 +50,8 @@ requirements:
     then:
     - vs2022_win-64
   host:
-  - python ==3.12.13
-  - python_abi 3.12.* *_cp312
+  - python ==3.14.10
+  - python_abi 3.14.* *_cp314
   - numpy >=2,<3
   - pip
   - if: build_platform == target_platform
@@ -66,17 +66,17 @@ requirements:
   - robostack-jazzy::ros-jazzy-rosidl-default-generators
   - robostack-jazzy::ros-jazzy-std-msgs
   - robostack-jazzy::ros-jazzy-geometry-msgs
-  - robostack-jazzy::ros2-distro-mutex 0.15.* jazzy_*
+  - robostack-jazzy::ros2-distro-mutex 0.20.* jazzy_*
   run:
-  - python >=3.12,<3.13
-  - python_abi 3.12.* *_cp312
+  - python >=3.14,<3.15
+  - python_abi 3.14.* *_cp314
   - numpy >=2,<3
   - robostack-jazzy::ros-jazzy-action-msgs
   - robostack-jazzy::ros-jazzy-ros-workspace
   - robostack-jazzy::ros-jazzy-rosidl-default-runtime
   - robostack-jazzy::ros-jazzy-std-msgs
   - robostack-jazzy::ros-jazzy-geometry-msgs
-  - robostack-jazzy::ros2-distro-mutex 0.15.* jazzy_*
+  - robostack-jazzy::ros2-distro-mutex 0.20.* jazzy_*
   - if: osx and x86_64
     then:
     - __osx >=${{ MACOSX_DEPLOYMENT_TARGET|default('10.14') }}

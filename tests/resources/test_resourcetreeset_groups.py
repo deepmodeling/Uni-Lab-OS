@@ -33,7 +33,7 @@ def test_nested_groups_roundtrip_one_root_per_group() -> None:
     restored = ResourceTreeSet.load(payload)
 
     assert len(restored.trees) == 2
-    assert [tree.root_node.res_content.name for tree in restored.trees] == [
+    assert [tree.root_node.res_content.plr_name for tree in restored.trees] == [
         "first",
         "second",
     ]

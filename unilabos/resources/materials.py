@@ -6,7 +6,7 @@
   （支持 registry 资源类名直接创建；``node=`` 自动登记进设备 tracker）；
 - ``ensure``：保证权威中存在与输入 uuid 一致的物料树（开机对齐 / 扣减落库）；
 - ``get``：按 uuid 或 resource id 取物料树（未命中抛错）；
-- ``search``：按名称精确搜索物料树（未命中返回 []）；
+- ``search``：按人读标签 ``display_name`` 精确搜索物料树（未命中返回 []）；
 - ``resolve``：把单个 ResourceSlot 原始入参解析成带 uuid 的 PLR 实例；
 - ``assign``：把权威已创建的物料挂载到设备的目标父物料下（append 门面）；
 - ``update``：把带权威 uuid 的（部分）物料树 diff/apply 回 authority；
@@ -518,6 +518,29 @@ def owner_device_of(
 
     gw = gateway or resolve_materials_gateway()
     uuid_ = material_uuid(value, "归属推断")
+    device_id, root = _walk_owner_device(gw, uuid_)
+    if device_id is None:
+        raise ValueError(
+            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.display_name}）未登记所属设备；"
+            "根树须经 materials.create(node=) 或挂载到设备（append_resource）后才可推断"
+        )
+    return device_id
+
+
+def find_owner_device(
+    value: Any,
+    *,
+    gateway: MaterialGateway | None = None,
+) -> Optional[str]:
+    """与 :func:`owner_device_of` 同一规则，但物料不属于任何设备（普通货架等未登记归属的根树）时返回 None。"""
+
+    gw = gateway or resolve_materials_gateway()
+    return _walk_owner_device(gw, material_uuid(value, "归属推断"))[0]
+
+
+def _walk_owner_device(gw: MaterialGateway, uuid_: str) -> Tuple[Optional[str], Any]:
+    """沿权威 parent 链找最近的设备祖先；返回 ``(设备 ID 或 None, 停下时的物料身份)``，链成环时抛错。"""
+
     current = gw.get_material(uuid_)
     seen = {uuid_}
     while True:
@@ -525,7 +548,7 @@ def owner_device_of(
         if identity.resource_type == "device":
             # 设备图落库本来就有全局 ID。不能继续爬到工作站根，把子设备的物料误送给父设备；
             # 也不能优先用物料自身的旧绑定，跨设备 transfer 后应跟随新的权威父链。
-            return str(identity.resource_id)
+            return str(identity.resource_id), identity
         if not identity.parent_material_uuid:
             break
         parent_uuid = str(identity.parent_material_uuid)
@@ -535,12 +558,7 @@ def owner_device_of(
         current = gw.get_material(parent_uuid)
     root = current.material
     device_id = str((root.extra or {}).get(EXTRA_BOUND_DEVICE) or "").strip()
-    if not device_id:
-        raise ValueError(
-            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.name}）未登记所属设备；"
-            "根树须经 materials.create(node=) 或挂载到设备（append_resource）后才可推断"
-        )
-    return device_id
+    return device_id or None, root
 
 
 def search(
@@ -549,7 +567,7 @@ def search(
     with_children: bool = True,
     gateway: MaterialGateway | None = None,
 ) -> List[ResourceTreeInstance]:
-    """按名称精确搜索权威物料；未命中返回 []（get 系未命中会抛错）。"""
+    """按人读标签 ``display_name`` 精确搜索权威物料；未命中返回 []（get 系未命中会抛错）。"""
 
     gw = gateway or resolve_materials_gateway()
     trees: List[ResourceTreeInstance] = []
@@ -607,23 +625,43 @@ def resolve(
     return resources[0]
 
 
-def _instantiate_registry_resource(class_name: str, name: str) -> Any:
-    """按 registry 资源类名实例化本地草稿（发给权威创建前的载体）。
+def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
+    """按 registry 资源类名实例化本地 PLR 草稿（无 uuid，发给权威创建前的载体）。
 
-    与微后端 ``POST /materials/instantiate`` 端点同款实例化入口；随后的
-    权威登记同样走 create_tree，两条路径语义一致。
+    ``materials.create("类名", name=...)``、微后端库存命令 ``instantiate_material``
+    （``POST /api/v1/inventory/commands``）与工作流人工装入（``material.io`` load）共用此入口；
+    随后的权威登记同样走 create_tree，几条路径语义一致。需要 dict 形态时交给
+    ``ResourceTreeSet.from_plr_resources``。只有 ``class.type == "pylabrobot"`` 的
+    registry 资源类可实例化。资源类目录在调度权威里是 Host 上报的生效条目，在 Host
+    里是本地扫描（``registry/catalog.py``）；调度权威尚未收到上报时报「注册表尚未上报」。
+    不可实例化（没有条目、不是 PLR 类、本进程导入不了或构造失败）一律抛 ``ValueError``。
     """
 
     if not str(name or "").strip():
         raise ValueError("按资源类名创建物料时必须提供 name")
-    from pylabrobot.resources.resource import Resource as ResourcePLR
+    import importlib
+    from collections.abc import Mapping
 
-    from unilabos.resources.graphio import initialize_resource
+    from unilabos.registry.catalog import RegistryNotReported, require_reported, resource_entry
 
-    draft = initialize_resource(
-        {"name": str(name), "class": class_name}, resource_type=ResourcePLR
-    )
-    if not isinstance(draft, ResourcePLR):
+    entry = resource_entry(class_name)
+    if entry is None:
+        try:
+            require_reported(f"按资源类 {class_name!r} 实例化")
+        except RegistryNotReported as exc:
+            raise ValueError(str(exc)) from exc
+    class_info = entry.get("class") if isinstance(entry, Mapping) else None
+    if not isinstance(class_info, dict) or class_info.get("type") != "pylabrobot":
+        raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
+    module = str(class_info.get("module") or "")
+    module_name, _, attribute = module.partition(":")
+    try:
+        resource_class = getattr(importlib.import_module(module_name), attribute)
+        draft = resource_class(name=str(name))
+    except (ImportError, AttributeError, TypeError) as exc:
+        # 本进程装不上这个类（调度权威没装驱动包、类名写错、构造函数还要别的参数）：与「不可实例化」同一类错误
+        raise ValueError(f"registry 资源类 {class_name!r} 无法实例化（{module}）：{exc}") from exc
+    if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
     return draft
 
@@ -664,7 +702,7 @@ def create(
     """
 
     if isinstance(plr_resource, str):
-        plr_resource = _instantiate_registry_resource(plr_resource, name)
+        plr_resource = instantiate_registry_resource(plr_resource, name)
     resources = (
         list(plr_resource)
         if isinstance(plr_resource, (list, tuple))
@@ -739,23 +777,26 @@ def assign(
     执行并阻塞等待完成。
 
     - ``resources``：PLR 实例（带权威 uuid）或 uuid 字符串，单个或列表；
-    - ``parent``：目标父物料（实例或名字）；None 表示挂到设备自身
+    - ``parent``：目标父物料（实例、uuid 或 PLR 键）；None 表示挂到设备自身
       （只登记进 tracker，不做 assign）；
     - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
-    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）。
+    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
+    - ``timeout``：只约束提交点之前（等锁、从权威拉取物料），超时取消挂载、什么都不改；
+      本地挂上之后，权威 move 与快照回报一定走完再返回（大台面的整树快照要几十秒），
+      不会在提交之后被取消（见 ``DeviceNode.append_resource_blocking``）。
 
     本函数为阻塞式，供驱动线程 / 脚本调用；已在节点执行器内的异步代码
     请直接 ``await node.append_resource(payload)``。
     """
-
-    from unilabos.backend.runtime.async_utils import run_node_coroutine
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
     resource_uuids = [material_uuid(item) for item in items]
     if parent is None:
         bind_parent_id = str(node.device_id)
     else:
-        bind_parent_id = str(getattr(parent, "name", parent))
+        bind_parent_id = str(
+            getattr(parent, "unilabos_uuid", None) or getattr(parent, "name", parent)
+        )
     other: Dict[str, Any] = {}
     if slot is not None and str(slot).strip() != "":
         other["slot"] = str(slot)
@@ -769,7 +810,7 @@ def assign(
     }
     if other:
         payload["other_calling_param"] = other
-    return run_node_coroutine(node, node.append_resource(payload), timeout)
+    return node.append_resource_blocking(payload, timeout)
 
 
 async def snapshot(
@@ -1045,8 +1086,10 @@ __all__ = [
     "assign",
     "create",
     "ensure",
+    "find_owner_device",
     "from_str",
     "get",
+    "instantiate_registry_resource",
     "material_uuid",
     "owner_device_of",
     "remove",

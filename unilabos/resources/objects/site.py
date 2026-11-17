@@ -26,8 +26,10 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    SerializerFunctionWrapHandler,
     ValidationInfo,
     field_validator,
+    model_serializer,
     model_validator,
 )
 from typing_extensions import NotRequired, TypedDict
@@ -39,6 +41,11 @@ from unilabos.resources.objects.pose import (
     _copy_mapping_payload,
     normalize_site_pose_payload,
 )
+
+
+#: 库位准入白名单的字段名（V1 同名）。定义里是顶层字段；实例 Site 没有这个顶层字段，放在
+#: ``extra`` 里随物料权威持久化，由物料移动统一校验（不在白名单的模板报 6008）。
+SITE_TEMPLATE_WHITELIST_KEY = "allowed_resource_template_uuids"
 
 
 class SiteDefinition(BaseModel):
@@ -64,9 +71,26 @@ class SiteDefinition(BaseModel):
             "Edge and backend do not enforce compatibility"
         ),
     )
+    allowed_resource_template_uuids: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Resource templates this Site accepts: template UUIDs or template names "
+            "(registry ids; the portable form, since template UUIDs are allocated per "
+            "materials database). Empty accepts any template. Enforced on every placement "
+            "(V1 site_template_not_allowed, 6008)"
+        ),
+    )
     parent_link: str = ""
     description: str = ""
     meta_data: Dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_whitelist(self, handler: SerializerFunctionWrapHandler) -> Dict[str, Any]:
+        # 不限制模板时不输出该字段：注册表条目、缓存与实例快照的形状与引入白名单前一致
+        data = handler(self)
+        if isinstance(data, dict) and not data.get(SITE_TEMPLATE_WHITELIST_KEY):
+            data.pop(SITE_TEMPLATE_WHITELIST_KEY, None)
+        return data
 
     @model_validator(mode="before")
     @classmethod
@@ -95,7 +119,7 @@ class SiteDefinition(BaseModel):
                 raise ValueError("Site.index 不能为空")
         return value
 
-    @field_validator("allowed_resource_categories")
+    @field_validator("allowed_resource_categories", "allowed_resource_template_uuids")
     @classmethod
     def _normalize_string_list(
         cls, values: List[str], info: ValidationInfo
@@ -115,6 +139,32 @@ class SiteDefinition(BaseModel):
 
 SiteDefinitionInput: TypeAlias = Union[SiteDefinition, Mapping[str, Any]]
 SITE_DEFINITION_FIELDS: tuple[str, ...] = tuple(SiteDefinition.model_fields)
+
+
+def site_template_whitelist(extra: Optional[Mapping[str, Any]]) -> List[str]:
+    """实例 Site ``extra`` 里的准入白名单（模板 UUID 或模板名）；空列表表示不限制。"""
+
+    values = (extra or {}).get(SITE_TEMPLATE_WHITELIST_KEY) if isinstance(extra, Mapping) else None
+    if not isinstance(values, (list, tuple)):
+        return []
+    return [str(item).strip() for item in values if str(item).strip()]
+
+
+def site_definition_extra(definition: Mapping[str, Any]) -> Dict[str, Any]:
+    """定义实例化为 Site 时写进实例 ``extra`` 的字段（目前只有准入白名单）。"""
+
+    allowed = list(definition.get(SITE_TEMPLATE_WHITELIST_KEY) or [])
+    return {SITE_TEMPLATE_WHITELIST_KEY: allowed} if allowed else {}
+
+
+def site_instance_definition(site: Mapping[str, Any]) -> Dict[str, Any]:
+    """从实例 Site 取回它的定义（白名单从 ``extra`` 读回），用于与注册表定义比对。"""
+
+    payload = {key: site[key] for key in SITE_DEFINITION_FIELDS if key in site}
+    allowed = site_template_whitelist(site.get("extra"))
+    if allowed:
+        payload[SITE_TEMPLATE_WHITELIST_KEY] = allowed
+    return SiteDefinition.model_validate(payload).model_dump()
 
 
 class ResourceSiteType(TypedDict):
@@ -300,10 +350,7 @@ def _site_payload(value: Any) -> Dict[str, Any]:
 
 
 def _definition_from_instance(value: Any) -> Dict[str, Any]:
-    payload = _site_payload(value)
-    return SiteDefinition.model_validate(
-        {key: payload[key] for key in SITE_DEFINITION_FIELDS if key in payload}
-    ).model_dump()
+    return site_instance_definition(_site_payload(value))
 
 
 def validate_instantiated_sites(
@@ -404,11 +451,15 @@ def validate_instantiated_sites(
 
 __all__ = [
     "SITE_DEFINITION_FIELDS",
+    "SITE_TEMPLATE_WHITELIST_KEY",
     "ResourceSite",
     "ResourceSiteType",
     "SiteDefinition",
     "SiteDefinitionInput",
     "normalize_available_sites",
     "normalize_site_pose_payload",
+    "site_definition_extra",
+    "site_instance_definition",
+    "site_template_whitelist",
     "validate_instantiated_sites",
 ]

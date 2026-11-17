@@ -14,8 +14,10 @@
 operation、完整默认字段、幂等键和 MutationResult 见 [物料写请求](materials.md)。
 其余 `B: 类型名` 为该类型的直接 JSON，不能外面再套一个 data。
 
-未特别标注的成功通常为 HTTP 200。表中的“信封”指 `{code,data}`，必须进一步检查 code；
-“直出”不经过此信封。错误与 201/202/204 例外见 [响应规则](http.md)。
+未特别标注的成功通常为 HTTP 200。**所有 JSON 路由都走统一信封** `{code,data}`，必须先检查 code；
+表中“直出 X”指信封 `data` 就是 X（不再额外包装）。不包信封的只有 SSE 与文件下载（探针、`/v1/*` 与内部通道同样是信封）。
+业务失败为 HTTP 200 + 业务码，见 [响应规则](http.md)；下文的“404 / 409 / 422 / 503”按该页的换算表对应
+4001（或 3002）/ 3003（或 4002）/ 1000 / 5001。
 OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每个角色都挂载全体路由。
 
 ## 平台状态、重启与诊断
@@ -26,8 +28,8 @@ OpenAPI 中 `{}` 响应 schema 不表示返回空对象，目录也不承诺每�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/health` | — | 直出 status、scheduler、execution；execution 可为 ready/restarting/disabled |
-| GET | `/api/v1/readiness` | — | 就绪探针：能接收并执行任务时 200，否则 503；body 含 status（ready/not_ready）、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
+| GET | `/api/v1/health` | — | 直出 HealthStatus：status、scheduler（ready/disabled）、scheduler_mode、execution；execution 可为 ready/restarting/disabled |
+| GET | `/api/v1/readiness` | — | 就绪探针：能接收并执行任务时 HTTP 200 + 直出 ReadinessStatus；否则 HTTP 503 + 5001（`error.code=not_ready`，同样的摘要在 `error.details`）。摘要含 status（ready/starting/failed）、phase、scheduler、execution（ready/starting/restarting/disabled）、reasons。`/health` 只表示进程存活 |
 | GET | `/api/v1/ping` | Q: client_timestamp?: number | 回显客户端时间与服务端秒级时间戳，不是任务心跳 |
 | GET | `/api/v1/scheduler/resources` | — | 调度资源快照；本进程无调度权威时 503 |
 | GET | `/api/v1/restart` | — | 当前重启请求状态 |
@@ -78,23 +80,29 @@ external_only=false、auto_start=true、restart_policy="on-failure"、max_restar
 graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；简化 devices 的每项必填 id、class，
 可带 name=""、config={}、pose=null。不要对已有进程重新生成设备身份。
 
-## 注册表与设备图、实验室布局
+## 注册表与设备图
 
-注册表负责能力版本，图记录拓扑，布局记录展示区域；三者不可相互替代。
+注册表负责能力版本，图记录拓扑，二者不可相互替代。实验室档案 / 布局（`/lab/profile`、`/lab/layout`、`/lab/zones`、`/lab/placements`）已按负责人 2026-11-17 决定删除；
+仓储与组合树视图（`/lab/warehouse`、`/lab/assembly/{id}`）见 [Edge UI API](../edge_ui_api.md)。
 源码：[注册表 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/registry.py)、
-[设备图 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/materials/graph.py)、
-[布局模型](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/protocol/runtime/lab.py)。
+[设备图 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/materials/graph.py)。
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
 | GET | `/api/v1/registry/digest` | — | 信封；已持有内容摘要，用于上报前判定是否需正文 |
-| POST | `/api/v1/resource-templates` | B: RegistryReport JSON，可 gzip | 信封；上报统计及 missing；路径虽叫 resource-templates，报告不只包含物料模板 |
+| POST | `/api/v1/registry/reports` | B: RegistryReport JSON（`machine_id`、`slaves`、`entries[].package/package_version`），可 gzip | 信封；上报统计（含 `auto_accepted` 与规则 B 判定 `acceptance`）及 missing；不满足接受规则的变化挂起 |
+| GET | `/api/v1/registry/status` | — | 信封；是否已收到上报、最近一次上报、挂起数、当前规则 B 判定与跨机器 Slave |
+| POST | `/api/v1/registry/slaves` | B: `{edge_uuid, machine_id, slaves:[{machine_name, machine_id}]}` | 信封；Host 补报连着的 Slave，跨机器的被记下 |
+| GET | `/api/v1/registry/slaves` | — | 信封 data.slaves；权威记着的跨机器 Slave |
+| DELETE | `/api/v1/registry/slaves/{machine_name}` | — | 信封；删除一条跨机器 Slave 记录（不存在 4001） |
+| POST | `/api/v1/registry/pending/apply` | B: `{names?: [...]}` | 信封 `{entries, failed}`；批量接受挂起的变化，缺省全部 |
+| POST | `/api/v1/registry/pending/dismiss` | B: `{names?: [...]}` | 信封 `{entries, failed}`；批量忽略，缺省全部 |
 | GET | `/api/v1/registry/entries` | Q: status="" | 信封 data.entries，可筛 active/pending/removed/unusable |
 | GET | `/api/v1/registry/entries/{name}` | — | 信封；生效/挂起定义及冲突 |
 | GET | `/api/v1/registry/entries/{name}/versions` | — | 信封 data.versions，版本历史 |
 | GET | `/api/v1/registry/entries/{name}/versions/{version}` | version 为整数 | 信封；指定历史版本全文 |
-| POST | `/api/v1/registry/entries/{name}/apply` | — | 信封；挂起版本生效，可能影响已有工作流 |
-| POST | `/api/v1/registry/entries/{name}/dismiss` | — | 信封；忽略挂起版本，保留历史 |
+| POST | `/api/v1/registry/entries/{name}/apply` | — | 信封；接受挂起的变化（新版本生效 / 待确认移除即软移除），可能影响已有工作流 |
+| POST | `/api/v1/registry/entries/{name}/dismiss` | — | 信封；忽略挂起的变化，保留历史；Host 再报同一内容会再次挂起 |
 | POST | `/api/v1/registry/entries/{name}/restore/{version}` | version 为整数 | 信封；以历史版本形成新的生效版本 |
 | GET | `/api/v1/registry/pending-impacts` | — | 信封 data.impacts，待升级定义影响面 |
 | GET | `/api/v1/registry/reports` | Q: page=1（>=1）、page_size=50（1..200） | 信封；上报批次分页 |
@@ -110,9 +118,6 @@ graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；�
 | GET | `/api/v1/graphs/{identity}` | identity 可为 uuid 或 name | 信封；图元数据 |
 | GET | `/api/v1/graphs/{identity}/payload` | — | 信封；指定图快照的 node-link 正文 |
 | DELETE | `/api/v1/graphs/{identity}` | — | 信封；删除图快照，不能当成通用物料删除 |
-| GET | `/api/v1/lab/layout` | — | 直出 LabLayoutRead；从未保存时 revision=0 |
-| PUT | `/api/v1/lab/layout` | B: LabLayoutWrite | 直出 LabLayoutRead；整份替换，版本过期返回 409 |
-| DELETE | `/api/v1/lab/layout` | — | 204；清除保存的区域/围墙布局 |
 
 RegistryReport 的 entries 必须包含 Host 当前完整条目目录，只让未命中哈希的正文增量上传。
 仅发送“改变的几个名字”可能导致其他条目被软移除。该 handler 自行读取 Request，
@@ -120,9 +125,6 @@ RegistryReport 的 entries 必须包含 Host 当前完整条目目录，只让�
 
 GraphUpsertRequest 必填 name、payload；可选 uuid、tags=[]、description、meta_data={}、device_site_templates，
 on_existing 默认 replace，启动登记用 adopt。设备图与工作流图有不同合同，不接受互换。
-LabLayoutWrite 必填 revision>=0、cell_size>0 且 <=100000，zones/walls 默认为空数组。
-zone 有 id/name/color/cells；cells 和 walls 用 `col,row` 整数字符串。区域 ID 不重复，格子不能同时属于不同区域或围墙，
-最多 200 个区域、100000 个格子。
 
 ## 工作流定义与 Python 编辑
 
@@ -203,8 +205,8 @@ ManualConfirmationDecisionRequest 必填 action，可带 confirmed_by、comment�
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/error-decisions` | — | `{items:[...]}`；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
-| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision | `{decision_id,status:"resolved"}`；过期/拒绝可返回 409 |
+| GET | `/api/v1/error-decisions` | — | `{decisions:[...]}`（V1）；失败闸门及重启对账所需决策；没有 `/pending` 子路由 |
+| POST | `/api/v1/error-decisions/{decision_id}` | B: ErrorDecision（V1 ErrorDecisionIn：action / option / result / reason；可选 operator_id、Idempotency-Key 头） | `{decision_id,status:"delivered"}`；不在等待（处理过 / 超时 / 设备离线）为"不存在"（4001） |
 | GET | `/api/v1/status-incidents` | Q: device_id=""、include_terminal=false | `{host_ready,incidents,holds}`；状态策略不可用时 503 |
 | POST | `/api/v1/status-incidents/{incident_id}` | B: StatusIncidentDecision | incident 的 ack；不存在 404、冲突 409、无效选择 422 |
 
@@ -283,7 +285,7 @@ transfer 还需识别设备投影失败。不要收到错误后直接改数据�
 
 面向执行适配器和诊断工具。下面的“job”是执行层记录，不能替代前端提交 workflow-task 的业务入口。
 所有列表的 limit 默认 100，范围 1..1000；标有 after_sequence 的接口默认 0 且 >=0。
-其他 `?` 筛选默认不设。返回直出，未找到 404、状态冲突 409、协议无效 422。
+其他 `?` 筛选默认不设。成功 `data` 为记录本身；未找到 4001、状态冲突 3003、协议无效 1000。
 
 源码：[Runtime 路由](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/data.py)、
 [请求模型](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/protocol/runtime/data.py)、
@@ -394,13 +396,13 @@ state、properties、connection_state、alarms 使用公共 JSON 字段，不要
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
-| POST | `/api/v1/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
-| GET | `/api/v1/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
-| POST | `/api/v1/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
-| GET | `/api/v1/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
-| POST | `/api/v1/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
-| GET | `/api/v1/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
+| GET | `/api/v1/edge/history/events` | Q: after_sequence=0、limit=100、event_types=[]、job_uuid?、endpoint_uuid?、device_uuid?、event_key?、occurred_from_ms?、occurred_through_ms? | HistoryEventRecord 数组；limit 1..1000，序号/毫秒非负；event_types 用重复 query 键 |
+| POST | `/api/v1/edge/history/events` | B: HistoryEventAppend | HistoryEventRecord，服务端分配账本 sequence |
+| GET | `/api/v1/edge/history/events/{event_uuid}` | — | 单个 HistoryEventRecord |
+| POST | `/api/v1/edge/history/events/{event_uuid}/replacement` | B: ManualResultReplacement | 新替换事件；supersedes_event_uuid 必须等于路径身份 |
+| GET | `/api/v1/edge/history/events/{event_uuid}/replacement-chain` | — | HistoryEventRecord 数组，完整替换链 |
+| POST | `/api/v1/edge/history/payloads` | B: InlinePayloadWrite 或 ExternalPayloadWrite | PayloadObjectRead；按 storage_kind 区分正文与外部引用 |
+| GET | `/api/v1/edge/history/payloads/{payload_uuid}` | — | PayloadObjectRead；缺失不是空内容 |
 
 事件类型为 job_transition/action_availability/job_feedback/job_result/job_log/error_snapshot/decision_audit。
 HistoryEventAppend 关联 job/endpoint/device、payload、版本和来源；人工替换保留 actor 与原始事件。
@@ -429,8 +431,8 @@ inline 的 HTTP JSON 正文是 Base64，解码后最多 262144 字节；external
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/edge/commands/{command_uuid}` | 路径身份 | BackendCommandDocument；注意没有 `/api/v1` 前缀；未找到 404，服务未就绪 503 |
-| POST | `/api/v1/edge/http-responses/{request_uuid}` | B: EdgeHttpResponse | `{accepted:bool}`；path/body request_uuid 必须一致 |
+| GET | `/edge/commands/{command_uuid}` | 路径身份 | 直出 BackendCommandDocument；注意没有 `/api/v1` 前缀；未找到 4001，服务未就绪 5001 |
+| POST | `/api/v1/edge/http-responses/{request_uuid}` | B: EdgeHttpResponse | 直出 `{accepted:bool}`；path/body request_uuid 不一致 1000 |
 | POST | `/api/v1/hostlink/material-sync` | B: MaterialDeviceSync | 设备服务结果；unload/load 失败返回 409，不能直接当权威移位接口 |
 | POST | `/api/v1/hostlink/notify-device` | B: ResourceTreeNotify | ResourceTreeNotifyResult；转发已发生的权威物料变更 |
 

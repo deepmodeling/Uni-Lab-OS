@@ -7,6 +7,31 @@ class DeviceClassInvalid(Exception):
     pass
 
 
+class DeviceBackendUnsupported(DeviceClassInvalid):
+    """设备类声明的 ``supported_backends`` 不含当前 backend（如只能跑在 ROS 2 上的 MoveIt 设备）。
+
+    与注册表缺失、模板名非法等配置错误不同：设备本身没问题，只是不能在这个 backend 上运行。
+    HostLink 启动时据此跳过该设备（其余设备照常启动）并上报不可用原因。
+    """
+
+    def __init__(
+        self,
+        device_id: str,
+        *,
+        backend_name: str,
+        supported_backends: tuple[str, ...] | list[str],
+        registry_name: str = "",
+    ) -> None:
+        self.device_id = str(device_id)
+        self.backend_name = str(backend_name)
+        self.supported_backends = [str(item) for item in supported_backends]
+        self.registry_name = str(registry_name or "")
+        super().__init__(
+            f"Device [{self.device_id}] does not support backend {self.backend_name!r}; "
+            f"supported: {', '.join(self.supported_backends)}"
+        )
+
+
 class ActionTimeoutBase(RuntimeError):
     """``@action`` 超时闸门触发时由执行面构造的异常基类。
 
@@ -26,11 +51,14 @@ class ActionTimeoutBase(RuntimeError):
         device_id: str = "",
         elapsed_seconds: Optional[float] = None,
         message: str = "",
+        driver_still_running: bool = False,
     ) -> None:
         self.action_name = action_name
         self.device_id = device_id
         self.timeout_seconds = float(timeout_seconds)
         self.elapsed_seconds = elapsed_seconds
+        # 同步驱动的线程杀不掉：超时报出时它仍在执行，执行面据此继续持有锁（ADR 0008）
+        self.driver_still_running = bool(driver_still_running)
         super().__init__(message or self._default_message())
 
     def _default_message(self) -> str:
@@ -57,6 +85,8 @@ class ActionTimeoutBase(RuntimeError):
         }
         if self.elapsed_seconds is not None:
             info["elapsed_seconds"] = float(self.elapsed_seconds)
+        if self.driver_still_running:
+            info["driver_still_running"] = True
         return info
 
 

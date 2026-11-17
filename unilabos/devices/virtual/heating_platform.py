@@ -262,7 +262,7 @@ class VirtualHeatingPlatform:
                             client_ref="platform",
                             identity=MaterialIdentityWrite(
                                 resource_id=self.device_id,
-                                name="三工位虚拟加热平台",
+                                display_name="三工位虚拟加热平台",
                                 description="OpenLab HostLink heating demo",
                                 resource_type="resource",
                                 class_name="VirtualHeatingPlatform",
@@ -304,7 +304,7 @@ class VirtualHeatingPlatform:
                                 client_ref="sample",
                                 identity=MaterialIdentityWrite(
                                     resource_id=sample_resource_id,
-                                    name=f"加热样品 {index}",
+                                    display_name=f"加热样品 {index}",
                                     description=f"虚拟加热工位 {index} 的真实 materials.v1 物料",
                                     resource_type="resource",
                                     class_name="Resource",
@@ -364,7 +364,7 @@ class VirtualHeatingPlatform:
                 state["material_uuid"] = site.occupied_material_uuid or ""
                 if site.occupied_material_uuid:
                     material = gateway.get_material(site.occupied_material_uuid)
-                    state["material_name"] = material.material.name
+                    state["material_name"] = material.material.display_name
                     state["temperature_c"] = float(
                         material.data.data.get("temperature_c", AMBIENT_TEMPERATURE_C)
                     )

@@ -10,6 +10,7 @@ from unilabos.backend.runtime.definition import (
     iter_device_config_entries,
     resolve_device_definition,
 )
+from unilabos.backend.runtime.exception import DeviceBackendUnsupported
 from unilabos.backend.hostlink.backend import HostLinkBackend
 from unilabos.backend.hostlink.local_runtime import (
     HostLinkDriverSpec,
@@ -51,6 +52,16 @@ def populate_runtime(
     for entry in iter_device_config_entries(devices_config):
         device_id = entry.device_id
         node = entry.config
+        if entry.parent_device_id in runtime.unavailable_devices:
+            # 父设备没起来，子设备也没有宿主：一并跳过并说明原因
+            _mark_unavailable(
+                runtime,
+                device_id,
+                registry_name=str(node.res_content.template_name or ""),
+                reason=f"父设备 {entry.parent_device_id!r} 在 backend hostlink 上不可用，子设备一并跳过",
+                parent_device_id=entry.parent_device_id,
+            )
+            continue
         if is_host_node_config(node.res_content):
             # host node 按 template_name 判别且全图只能有一个；服务设备由
             # backend.start() 注册，这里只记录图中声明的身份（uuid），
@@ -67,11 +78,27 @@ def populate_runtime(
                 "[HostLink] 图中的 host node 由内置 host 服务承载，跳过驱动创建"
             )
             continue
-        definition = resolve_device_definition(
-            device_id,
-            node,
-            backend_name="hostlink",
-        )
+        try:
+            definition = resolve_device_definition(
+                device_id,
+                node,
+                backend_name="hostlink",
+            )
+        except DeviceBackendUnsupported as exc:
+            # 设备本身没问题，只是只能跑在别的 backend（如 MoveIt 设备只支持 ros2）：
+            # 跳过它，其余设备照常启动；原因写日志并随能力快照 / 诊断接口上报
+            _mark_unavailable(
+                runtime,
+                device_id,
+                registry_name=exc.registry_name,
+                reason=(
+                    f"设备类只支持 backend {', '.join(exc.supported_backends)}，"
+                    "当前 backend 为 hostlink，已跳过"
+                ),
+                supported_backends=exc.supported_backends,
+                parent_device_id=entry.parent_device_id,
+            )
+            continue
         runtime.add_driver(
             HostLinkDriverSpec(
                 device_id=device_id,
@@ -89,6 +116,43 @@ def populate_runtime(
             )
         )
     return runtime
+
+
+def _mark_unavailable(
+    runtime: HostLinkLocalRuntime,
+    device_id: str,
+    *,
+    registry_name: str,
+    reason: str,
+    supported_backends: Optional[list[str]] = None,
+    parent_device_id: str = "",
+) -> None:
+    record: dict[str, Any] = {
+        "device_id": device_id,
+        "registry_name": registry_name,
+        "backend": "hostlink",
+        "reason": reason,
+    }
+    if supported_backends is not None:
+        record["supported_backends"] = list(supported_backends)
+    if parent_device_id:
+        record["parent_device_id"] = parent_device_id
+    runtime.unavailable_devices[device_id] = record
+    logger.error(
+        "[HostLink] 设备 %s（%s）不可用，未启动：%s；其余设备照常启动",
+        device_id,
+        registry_name or "-",
+        reason,
+    )
+
+
+def unavailable_devices() -> list[dict[str, Any]]:
+    """本进程 HostLink runtime 因 backend 不支持而跳过的设备（供诊断 / 健康接口）。"""
+
+    runtime = _runtime
+    local = getattr(runtime, "local", None)
+    records = getattr(local, "unavailable_devices", None) or {}
+    return [dict(records[device_id]) for device_id in sorted(records)]
 
 
 def _align_slave_materials(resources_config: Any) -> None:
@@ -230,5 +294,6 @@ __all__ = [
     "populate_runtime",
     "slave",
     "startup_populate",
+    "unavailable_devices",
     "validate_environment",
 ]

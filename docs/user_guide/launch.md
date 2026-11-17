@@ -84,7 +84,7 @@ Uni-Lab 的启动过程分为以下几个阶段：
 
 支持两种方式：
 
-- **本地文件**：使用 `-g` 指定图谱文件（支持 JSON 和 GraphML 格式）
+- **本地文件**：使用 `-g` 指定图谱文件（仅支持 node-link JSON；GraphML 已不再支持）
 - **远程资源**：不指定本地文件即可
 
 ### 7. 注册表构建
@@ -92,6 +92,10 @@ Uni-Lab 的启动过程分为以下几个阶段：
 - 构建设备和资源注册表
 - 支持自定义注册表路径 (`--registry_path`)
 - 可选择补全注册表信息 (`--complete_registry`)
+- `--check_mode` 只构建并校验注册表后退出：真实 import 每个注册的设备 / 资源类。AST 扫描失败而被跳过的文件
+  （日志 `AST 扫描文件失败`）、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目一视同仁）
+  都会让它以退出码 1 结束，并逐条列出问题；补全写回 YAML 时，找不到类源码的条目原样保留，交给导入校验判定；
+  `supported_backends` 不含当前 backend 的设备（例如 HostLink 下的 ROS 2 专用节点）导入失败只记为跳过。
 
 ### 8. 设备验证和注册
 
@@ -126,7 +130,7 @@ unilab --config path/to/your/config.py
 
 ### 1. 组态&拓扑图
 
-使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前支持 GraphML 和 node-link JSON 两种格式。格式可参照 `tests/experiments` 下的启动文件。
+使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前只支持 node-link JSON 格式（GraphML 需先转换为 node-link JSON，`-g foo.graphml` 会拒绝启动）。格式可参照 `unilabos/test/experiments` 下的启动文件。
 
 `-g <文件>.json` 是**创建入口，不是运行真相**。启动时文件先登记到 Graph Authority
 （materials.db 的图快照），随后一切从权威拉取——设备的位点、持有的物料都以权威为准：
@@ -240,10 +244,17 @@ unilab -g slave.json --is-slave \
 - `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。配置了 `--address`（backend-controlled 模式）时，浏览器打开的是 backend 管理页；本进程 `/` 只保留指向调度权威的路标页和设备侧 API 文档入口。
 - `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
 - `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
+- `--hostlink-host-wait-timeout`：Slave 等 Host 的上限，默认 `120` 秒。
 - `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
 - `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。
 - `--no-ros-assist`：仅用于 ROS2 backend；保留 HostLink 设备发现，不覆盖 Slave 的 ROS2 环境。
 - `--disable-hostlink`：完全关闭 HostLink，使用 ROS2/DDS 默认发现流程。
+
+Host 和 Slave 不分先后启动。`hostlink` Host 进程读完配置就打开 HostLink 端口（早于注册表、
+设备图与设备启动），Slave 随即可以连上并登记设备；Host 的物料权威或本机设备还没就绪时，
+相关请求会收到「Host 启动中」并由 Slave 自动重试。Slave 先启动时按退避重连，最多等
+`--hostlink-host-wait-timeout` 秒（默认 120）仍连不上才报错退出。详见
+[组网概览](../developer_guide/networking_overview.md)。
 
 选择 `--backend hostlink` 时不能使用 `--disable-hostlink`，Slave 也必须提供
 `--host-node-ip`。`7302` 只供 Host/Slave 进程通信，不提供浏览器页面；Host 进程的

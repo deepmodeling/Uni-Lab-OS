@@ -877,6 +877,7 @@ class RuntimeService(SqliteDomain):
     _TRANSITIONS = {
         "accepted": {"dispatch_pending", "rejected", "canceled"},
         "dispatch_pending": {
+            "execution_unknown",
             "dispatched",
             "succeeded",
             "rejected",

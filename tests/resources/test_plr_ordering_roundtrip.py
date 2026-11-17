@@ -35,6 +35,7 @@ def _plate_4x3(name: str) -> Plate:
         model="ordering_probe_plate",
         ordered_items=create_ordered_items_2d(
             Well,
+            name_prefix=name,
             num_items_x=4,
             num_items_y=3,
             dx=12.0,
@@ -82,7 +83,7 @@ def test_authority_roundtrip_preserves_well_identity(tmp_path) -> None:
             if node.material.material_uuid
             == created.get_well("A2").unilabos_uuid
         )
-        assert a2_node.material.name == "probe_plate_well_A2"
+        assert a2_node.material.config["name"] == "probe_plate_well_A2"
         assert [
             (entry.name, entry.quantity) for entry in a2_node.data.substances
         ] == [("Water", 40.0)]

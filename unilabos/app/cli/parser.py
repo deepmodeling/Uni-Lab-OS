@@ -97,7 +97,8 @@ def _register_runtime_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "进程角色：auto（默认）启动调度权威进程并把 Host 作为子进程拉起（同机、"
             "同一管理端口）；backend 只启动调度权威（scheduler + workflow + runtime.v1 "
-            "控制面服务端，无设备/无 ROS），Edge 进程配置 --address 指向它后可独立重启。"
+            "控制面服务端，无设备/无 ROS，与默认权威同用 --port，默认 8002），Edge 进程配置 "
+            "--address 指向它后可独立重启。"
         ),
     )
     _add(
@@ -230,6 +231,16 @@ def _register_hostlink_arguments(parser: argparse.ArgumentParser) -> None:
         type=float,
         default=None,
         help="单次 HostLink TCP 连接/握手超时（秒），默认 5。",
+    )
+    _add(
+        group,
+        "--hostlink_host_wait_timeout",
+        type=float,
+        default=None,
+        help=(
+            "Slave 等 Host 的上限（秒），默认 120：启动时按退避重连直到 Host 端口可连，"
+            "以及 Host 启动中「未就绪」的请求按退避重试，两者各自计时。"
+        ),
     )
     _add(
         group,

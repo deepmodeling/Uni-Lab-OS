@@ -123,7 +123,7 @@ def test_client_disconnect_during_body_read_is_not_an_asgi_error() -> None:
 def test_start_server_bounds_graceful_shutdown(monkeypatch, platform, tmp_path) -> None:
     if platform == "win32" and sys.platform != "win32":
         pytest.skip("Windows IOCP 专用入口")
-    # start_server 会确定控制面 token：落在临时工作目录，不写真实的 ~/.unilabos
+    # 工作目录指向临时目录：start_server 不应在其中写任何文件（控制面 token 已取消）
     from unilabos.config.config import BasicConfig
 
     monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
@@ -169,6 +169,7 @@ def test_start_server_bounds_graceful_shutdown(monkeypatch, platform, tmp_path) 
     assert captured["timeout_graceful_shutdown"] == app_module.GRACEFUL_SHUTDOWN_TIMEOUT_S
     assert 0 < app_module.GRACEFUL_SHUTDOWN_TIMEOUT_S <= 30
     assert app_module.request_server_shutdown() is False  # run 返回后已清空引用
+    assert not (tmp_path / "control_token").exists()
 
 
 def test_abort_serving_stops_control_plane_wait_even_before_it_starts(monkeypatch, tmp_path) -> None:

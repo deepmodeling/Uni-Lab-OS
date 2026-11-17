@@ -86,6 +86,8 @@ class ExecutionInventoryCoordinator:
     def _validate_reservation(
         reservation: InventoryReservationRead,
         payload: Mapping[str, Any],
+        *,
+        allowed_statuses: frozenset[str] = frozenset({"active", "consumed"}),
     ) -> None:
         expected = {
             "job_uuid": str(payload.get("job_id") or ""),
@@ -134,7 +136,7 @@ class ExecutionInventoryCoordinator:
             raise ExecutionInventoryError(
                 "inventory reservation requirements do not match dispatched job"
             )
-        if reservation.status not in {"active", "consumed"}:
+        if reservation.status not in allowed_statuses:
             raise ExecutionInventoryError(
                 f"inventory reservation is {reservation.status}, cannot execute"
             )

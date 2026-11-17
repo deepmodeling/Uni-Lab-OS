@@ -3,6 +3,7 @@
 > **文档类型**：物料系统实战指南  
 > **适用场景**：工作站物料系统构建、Deck/Warehouse/Carrier/Bottle 配置  
 > **前置知识**：PyLabRobot 基础 | 资源管理概念
+> **驱动位置**：本文涉及的厂商驱动与物料预设（Bioyond 工作站、Bioyond 物料预设）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 ## 概述
 

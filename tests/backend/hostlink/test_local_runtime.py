@@ -144,6 +144,9 @@ class ServiceDriver:
 
 
 class DecoratedRuntimeDriver:
+    #: concurrent_action 每次执行的 (开始, 结束) 单调时钟区间
+    concurrent_spans: list[tuple[float, float]] = []
+
     def __init__(self, device_id=None, config=None):
         self.device_id = device_id
         self.node = None
@@ -176,7 +179,9 @@ class DecoratedRuntimeDriver:
         return resource.name
 
     async def concurrent_action(self, duration: float) -> float:
+        started = time.monotonic()
         await self.node.sleep(duration)
+        type(self).concurrent_spans.append((started, time.monotonic()))
         return duration
 
 
@@ -191,27 +196,12 @@ def test_driver_instantiation_supports_config_and_flat_styles() -> None:
 
 
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
-    from concurrent.futures import ThreadPoolExecutor
-
-    from unilabos.registry.ast_registry_scanner import scan_directory
-    from unilabos.registry.registry import Registry
-
     yaml_registry = yaml.safe_load(
         Path("unilabos/registry/devices/liquid_handler.yaml").read_text(
             encoding="utf-8"
         )
     )
     entries = {"liquid_handler": yaml_registry["liquid_handler"]}
-
-    # prcxi 已迁到 @device 装饰器（无 YAML 条目）：按 AST 扫描结果构建注册表条目。
-    prcxi_dir = Path("unilabos/devices/liquid_handling/prcxi").resolve()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        scanned = scan_directory(
-            prcxi_dir, python_path=prcxi_dir.parents[3], executor=executor
-        )
-    entries["liquid_handler.prcxi"] = Registry()._build_device_entry_from_ast(
-        "liquid_handler.prcxi", scanned["devices"]["liquid_handler.prcxi"]
-    )
 
     for name, entry in entries.items():
         class_config = entry["class"]
@@ -549,22 +539,23 @@ def test_hostlink_runtime_honors_topic_config_period_and_name() -> None:
 def test_hostlink_runtime_does_not_queue_scheduler_dispatched_actions() -> None:
     runtime = _decorated_runtime()
     runtime.start()
+    DecoratedRuntimeDriver.concurrent_spans.clear()
     try:
-        async def run_both() -> tuple[list[float], float]:
-            started = time.monotonic()
-            values = await asyncio.gather(
+        async def run_both() -> list[float]:
+            return await asyncio.gather(
                 runtime.call_action_async(
-                    "decorated", "concurrent_action", duration=0.05
+                    "decorated", "concurrent_action", duration=0.2
                 ),
                 runtime.call_action_async(
-                    "decorated", "concurrent_action", duration=0.05
+                    "decorated", "concurrent_action", duration=0.2
                 ),
             )
-            return values, time.monotonic() - started
 
-        values, elapsed = asyncio.run(run_both())
-        assert values == [0.05, 0.05]
-        assert elapsed < 0.09
+        assert asyncio.run(run_both()) == [0.2, 0.2]
+        # 两次执行区间重叠，说明第二个没有排在第一个之后。不用墙钟上限：慢机器上调度开销会误报
+        spans = DecoratedRuntimeDriver.concurrent_spans
+        assert len(spans) == 2
+        assert max(start for start, _ in spans) < min(end for _, end in spans)
     finally:
         runtime.stop()
 
@@ -587,4 +578,99 @@ def test_hostlink_runtime_reports_direct_ros_node_calls_clearly() -> None:
         ):
             runtime.call_action("ros-guard", "create_guard")
     finally:
+        runtime.stop()
+
+
+def test_hostlink_turns_on_plr_volume_tracking_after_liquid_handler_setup() -> None:
+    """FRAMEWORK_GAPS #23：HostLink 自己调用 setup，之后要与 ROS 2 一样打开 PLR 体积跟踪。"""
+
+    from pylabrobot.resources import does_volume_tracking, set_volume_tracking
+
+    set_volume_tracking(enabled=False)
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(
+        HostLinkDriverSpec(
+            "liquid-handler",
+            LiquidHandlerAbstract,
+            {"backend": "simulator"},
+            device_config=DeviceConfig(),
+        )
+    )
+    try:
+        assert does_volume_tracking() is False
+        runtime.start()
+        assert runtime.devices["liquid-handler"].driver.setup_called is True
+        assert does_volume_tracking() is True
+    finally:
+        runtime.stop()
+        set_volume_tracking(enabled=False)
+
+
+def test_hostlink_leaves_volume_tracking_alone_for_plain_drivers() -> None:
+    from pylabrobot.resources import does_volume_tracking, set_volume_tracking
+
+    set_volume_tracking(enabled=False)
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("dev-1", AsyncDriver, {}))
+    try:
+        runtime.start()
+        assert does_volume_tracking() is False
+    finally:
+        runtime.stop()
+
+
+_status_getter_entered = threading.Event()
+_status_getter_release = threading.Event()
+
+
+class BlockingStatusDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+        self.getter_threads: list[str] = []
+
+    def post_init(self, node) -> None:
+        self.node = node
+
+    @property
+    @topic_config(period=0.02)
+    def status(self) -> str:
+        self.getter_threads.append(threading.current_thread().name)
+        _status_getter_entered.set()
+        _status_getter_release.wait(10)  # 模拟一次慢的 TCP 查询
+        return "idle"
+
+    async def ping(self) -> str:
+        return "pong"
+
+
+def test_hostlink_blocking_status_getter_does_not_stall_device_actions() -> None:
+    """FRAMEWORK_GAPS #21：阻塞的状态 getter 不能在设备事件循环上执行，拖住该设备的动作。"""
+
+    import concurrent.futures
+
+    _status_getter_entered.clear()
+    _status_getter_release.clear()
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(
+        HostLinkDriverSpec(
+            "slow-status",
+            BlockingStatusDriver,
+            {},
+            action_names=("ping",),
+            status_names=("status",),
+        )
+    )
+    runtime.start()
+    try:
+        assert _status_getter_entered.wait(5), "状态定时发布没有调用 getter"
+        node = runtime.devices["slow-status"]
+        future = asyncio.run_coroutine_threadsafe(node.call_action_async("ping"), node._loop)
+        try:
+            assert future.result(timeout=2) == "pong"
+        except concurrent.futures.TimeoutError:
+            pytest.fail("状态 getter 阻塞了设备事件循环，动作无法执行")
+        # 状态 getter 只在状态线程上求值：启动扫描 @subscribe 时不求值 property，也不上事件循环
+        assert set(node.driver.getter_threads) == {"hostlink-status-slow-status"}
+    finally:
+        _status_getter_release.set()
         runtime.stop()

@@ -39,14 +39,14 @@ class MySystemRPC(BaseRequest):
         return self._request("order/create", order_data)
 ```
 
-参考：`unilabos/devices/workstation/bioyond_studio/bioyond_rpc.py`（`BioyondV1RPC`）
+参考：Bioyond 驱动包中的 `bioyond_rpc.py`（`BioyondV1RPC`，原 `unilabos/devices/workstation/bioyond_studio/`）
 
 ### 1.2 HTTP 回调服务
 
 接收外部系统报送的标准模式。使用 `WorkstationHTTPService`，在 `post_init` 中启动。
 
 ```python
-from unilabos.devices.workstation.workstation_http_service import WorkstationHTTPService
+from bioyond_driver_pkg.workstation_http_service import WorkstationHTTPService  # 已随 Bioyond 驱动迁出主仓库
 
 
 class MyWorkstation(WorkstationBase):
@@ -94,7 +94,7 @@ def process_order_finish_report(self, report_request, used_materials) -> Dict[st
     return {"success": True}
 ```
 
-参考：`unilabos/devices/workstation/workstation_http_service.py`
+参考：Bioyond 驱动包中的 `workstation_http_service.py`（原 `unilabos/devices/workstation/workstation_http_service.py`）
 
 ### 1.3 连接监控
 
@@ -124,7 +124,7 @@ class ConnectionMonitor:
             time.sleep(self.check_interval)
 ```
 
-参考：`unilabos/devices/workstation/bioyond_studio/station.py`（`ConnectionMonitor`）
+参考：Bioyond 驱动包中的 `station.py`（`ConnectionMonitor`，原 `unilabos/devices/workstation/bioyond_studio/station.py`）
 
 ---
 

@@ -1,4 +1,5 @@
-"""Registry Authority：条目级版本、workflow 引用冲突、还原与上报 API。"""
+"""Registry Authority：条目级版本、接受规则（单机 / 驱动包升级 / 待确认）、workflow 引用冲突、
+还原与上报 API。"""
 
 from __future__ import annotations
 
@@ -10,14 +11,21 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.base import canonical_hash
 from unilabos.server.api.runtime.registry import install_registry_api
 from unilabos.server.services.runtime.registry import (
     RegistryAuthorityError,
+    RegistryReporter,
     RegistryService,
     set_registry_service,
     template_uuid,
 )
+
+#: 测试里权威自己的机器标识；上报带同一个值即"同机"
+AUTHORITY_MACHINE = "authority-machine"
+#: 另一台机器上的 Host（--role backend + 远端 --address）
+REMOTE = RegistryReporter(edge_uuid="far-host", machine_id="other-machine")
 
 
 def _device(name: str, *, module: str = "pkg.mod:Cls", lock=None, goal=None) -> dict[str, Any]:
@@ -90,9 +98,9 @@ def refs():
 
 @pytest.fixture()
 def service(tmp_path, refs):
-    # registry 三表落 runtime.db（同一 RUNTIME_DATABASE 规格，无第五个库）
+    # registry 四表落 runtime.db（同一 RUNTIME_DATABASE 规格，无第五个库）
     instance = RegistryService(
-        tmp_path / "runtime.db", reference_rows_resolver=lambda: refs
+        tmp_path / "runtime.db", reference_rows_resolver=lambda: refs, machine_id=AUTHORITY_MACHINE
     )
     try:
         yield instance
@@ -126,6 +134,8 @@ class TestEntryReport:
                 "edge_uuid": "",
                 "restored_from": None,
                 "content_sha256": service.entry_versions("pump")[0]["content_sha256"],
+                "package_name": "",
+                "package_version": "",
             }
         ]
 
@@ -151,68 +161,79 @@ class TestEntryReport:
 
 
 class TestReferenceConflicts:
-    def test_referenced_action_change_goes_pending(self, service, refs) -> None:
+    """变化删改了活跃 workflow 引用的 action：挂起时附冲突明细，规则命中直接生效时记进统计。"""
+
+    def test_referenced_action_change_pending_carries_conflicts(self, service, refs) -> None:
         service.report([_device("pump", goal={"speed": 1})])
         refs.append(_ref_row("pump", "run"))
 
-        report = service.report([_device("pump", goal={"speed": 2})])
+        report = service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
 
         pending = report["summary"]["pending"]
         assert pending == [
-            {"name": "pump", "conflicts": [{"action": "run", "reason": "action-changed"}]}
+            {
+                "name": "pump",
+                "conflicts": [{"action": "run", "reason": "action-changed"}],
+                "change": "update",
+                "reason": "cross-machine-reporter",
+            }
         ]
         state = service.list_entries()[0]
         assert state["active_version"] == 1 and state["pending_version"] == 2
         assert state["status"] == ["active", "pending"]
 
-    def test_referenced_action_removed_goes_pending(self, service, refs) -> None:
+    def test_referenced_action_removed_pending_carries_conflicts(self, service, refs) -> None:
         service.report([_device("pump")])
         refs.append(_ref_row("pump", "run"))
         without_action = _device("pump")
         without_action["class"]["action_value_mappings"] = {}
 
-        report = service.report([without_action])
+        report = service.report([without_action], reporter=REMOTE)
 
         assert report["summary"]["pending"][0]["conflicts"] == [
             {"action": "run", "reason": "action-removed"}
         ]
 
-    def test_broken_reference_does_not_block_update(self, service, refs) -> None:
+    def test_single_machine_applies_conflicting_change_and_records_it(self, service, refs) -> None:
+        """规则 B：单机部署的变化全部生效，即使删改了被引用的 action——Host 已经在跑新代码。"""
+
+        service.report([_device("pump", goal={"speed": 1})])
+        refs.append(_ref_row("pump", "run"))
+
+        report = service.report([_device("pump", goal={"speed": 2})])
+
+        assert report["summary"]["updated"] == ["pump"] and report["summary"]["pending"] == []
+        assert report["summary"]["auto_accepted"] == [
+            {"name": "pump", "rule": "single-machine",
+             "conflicts": [{"action": "run", "reason": "action-changed"}]}
+        ]
+        assert service.list_entries()[0]["active_version"] == 2
+        assert service.pending_impacts() == []
+
+    def test_broken_reference_adds_no_conflict(self, service, refs) -> None:
         service.report([_device("pump")])
         refs.append(_ref_row("pump", "ghost-action"))  # 基线版本也不包含该动作。
 
-        report = service.report([_device("pump", module="pkg.mod:V2")])
+        report = service.report([_device("pump", module="pkg.mod:V2")], reporter=REMOTE)
 
-        assert report["summary"]["updated"] == ["pump"]
-
-    def test_unreferenced_field_change_with_reference_present(self, service, refs) -> None:
-        """被引用的 action 没变时，其他字段变化仍自动生效。"""
-
-        service.report([_device("pump")])
-        refs.append(_ref_row("pump", "run"))
-        changed = _device("pump")
-        changed["description"] = "新描述"
-
-        report = service.report([changed])
-
-        assert report["summary"]["updated"] == ["pump"]
-        assert service.list_entries()[0]["active_version"] == 2
+        assert report["summary"]["pending"][0]["conflicts"] == []
 
     def test_apply_pending_activates_new_version(self, service, refs) -> None:
         service.report([_device("pump", goal={"speed": 1}, lock=["v1"])])
         refs.append(_ref_row("pump", "run"))
-        service.report([_device("pump", goal={"speed": 2}, lock=["v2"])])
+        service.report([_device("pump", goal={"speed": 2}, lock=["v2"])], reporter=REMOTE)
         assert service.material_lock_parameters("pump", "run") == ["v1"]
 
         state = service.apply_pending("pump")
 
         assert state["active_version"] == 2 and state["pending_version"] is None
+        assert state["pending_reason"] == "" and state["pending_change"] == ""
         assert service.material_lock_parameters("pump", "run") == ["v2"]
 
     def test_dismiss_pending_keeps_active(self, service, refs) -> None:
         service.report([_device("pump", goal={"speed": 1})])
         refs.append(_ref_row("pump", "run"))
-        service.report([_device("pump", goal={"speed": 2})])
+        service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
 
         state = service.dismiss_pending("pump")
 
@@ -222,8 +243,8 @@ class TestReferenceConflicts:
     def test_new_report_overrides_stale_pending(self, service, refs) -> None:
         service.report([_device("pump", goal={"speed": 1})])
         refs.append(_ref_row("pump", "run"))
-        service.report([_device("pump", goal={"speed": 2})])
-        service.report([_device("pump", goal={"speed": 3})])
+        service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
+        service.report([_device("pump", goal={"speed": 3})], reporter=REMOTE)
 
         state = service.list_entries()[0]
         assert state["active_version"] == 1 and state["pending_version"] == 3
@@ -239,7 +260,7 @@ class TestReferenceConflicts:
         service.report([_device("pump", goal={"speed": 1}), _device("stirrer")])
         refs.append(_ref_row("pump", "run", node="n-run", node_name="进料"))
         refs.append(_ref_row("pump", "idle", node="n-idle"))  # 引用了未冲突 action
-        service.report([_device("pump", goal={"speed": 2}), _device("stirrer")])
+        service.report([_device("pump", goal={"speed": 2}), _device("stirrer")], reporter=REMOTE)
 
         impacts = service.pending_impacts()
 
@@ -262,6 +283,242 @@ class TestReferenceConflicts:
     def test_pending_impacts_empty_without_pending(self, service) -> None:
         service.report([_device("pump")])
         assert service.pending_impacts() == []
+
+
+def _entries(*definitions: dict[str, Any], package: str = "", version: str = "") -> list[dict[str, Any]]:
+    """按哈希增量上报的条目（带完整定义与所属驱动包）。"""
+
+    return [
+        {
+            "id": definition["id"],
+            "content_sha256": canonical_hash(definition),
+            "payload": definition,
+            "package": package,
+            "package_version": version,
+        }
+        for definition in definitions
+    ]
+
+
+class TestAcceptanceRules:
+    """新增 / 变化先挂起，除非规则 A（驱动包版本升高）或规则 B（单机部署）成立。"""
+
+    def test_remote_first_report_is_pending_and_catalog_stays_empty(self, service) -> None:
+        report = service.report([_device("pump")], reporter=REMOTE)
+
+        assert report["summary"]["counts"]["pending"] == 1 and report["summary"]["added"] == []
+        assert report["summary"]["acceptance"] == {
+            "single_machine": False, "reason": "cross-machine-reporter",
+            "reporter_machine_id": "other-machine", "remote_slaves": [],
+        }
+        entry = service.list_entries()[0]
+        assert entry["status"] == ["pending"] and entry["active_version"] is None
+        assert entry["pending_change"] == "add" and entry["pending_reason"] == "cross-machine-reporter"
+        assert service.active_payloads() == [] and service.action_definition("pump", "run") is None
+        # 挂起内容也算持有：Host 重启后只发哈希
+        assert service.digest()["pending"] == {"pump": canonical_hash(_device("pump"))}
+
+        applied = service.apply_pending("pump")
+        assert applied["status"] == ["active"] and applied["active_version"] == 1
+        assert service.action_definition("pump", "run") is not None
+
+    def test_same_machine_reporter_and_in_process_report_are_single_machine(self, service) -> None:
+        same_machine = RegistryReporter(edge_uuid="host", machine_id=AUTHORITY_MACHINE)
+        report = service.report([_device("pump")], reporter=same_machine)
+        assert report["summary"]["added"] == ["pump"]
+        assert report["summary"]["auto_accepted"] == [{"name": "pump", "rule": "single-machine", "conflicts": []}]
+        assert report["summary"]["acceptance"]["single_machine"] is True
+
+        in_process = service.report([_device("pump"), _device("stirrer")])
+        assert in_process["summary"]["added"] == ["stirrer"]
+
+    def test_cross_machine_slave_blocks_rule_b_until_forgotten(self, service) -> None:
+        service.report([_device("pump", goal={"speed": 1})])
+        lab_b = {"machine_name": "lab-b", "machine_id": "machine-b"}
+        report = service.report(
+            [_device("pump", goal={"speed": 2})], reporter=RegistryReporter.local(slaves=[lab_b])
+        )
+        assert report["summary"]["pending"][0]["reason"] == "cross-machine-slave"
+        assert report["summary"]["acceptance"]["remote_slaves"] == ["lab-b"]
+        assert [row["machine_name"] for row in service.list_remote_slaves()] == ["lab-b"]
+        # 记录是持久的：Slave 这次没连着，下一次上报照样不算单机
+        held = service.report([_device("pump", goal={"speed": 2})])
+        assert held["summary"]["pending"][0]["reason"] == "cross-machine-slave"
+        assert service.status()["acceptance"]["single_machine"] is False
+
+        assert service.forget_remote_slave("lab-b")["remaining"] == []
+        with pytest.raises(RegistryAuthorityError, match="not found"):
+            service.forget_remote_slave("lab-b")
+        # 规则 B 恢复：Host 再报同一份挂起内容即直接生效（不再多生成版本）
+        accepted = service.report([_device("pump", goal={"speed": 2})])
+        assert accepted["summary"]["updated"] == ["pump"]
+        assert accepted["summary"]["auto_accepted"][0]["rule"] == "single-machine"
+        assert [version["version"] for version in service.entry_versions("pump")] == [2, 1]
+
+    def test_local_and_managed_slaves_keep_rule_b(self, service) -> None:
+        service.report([_device("pump", goal={"speed": 1})])
+        managed = {"machine_name": "host_managed_p1", "machine_id": AUTHORITY_MACHINE}
+        report = service.report(
+            [_device("pump", goal={"speed": 2})], reporter=RegistryReporter.local(slaves=[managed])
+        )
+        assert report["summary"]["updated"] == ["pump"]
+        assert service.list_remote_slaves() == []
+
+    def test_slave_without_machine_id_counts_as_cross_machine(self, service) -> None:
+        added = service.record_slaves(RegistryReporter.local(slaves=[{"machine_name": "old-slave"}]))
+        assert added == ["old-slave"]
+        assert service.acceptance()["reason"] == "cross-machine-slave"
+        # 同名 Slave 换到权威这台机器上：记录随之删除
+        service.record_slaves(
+            RegistryReporter.local(slaves=[{"machine_name": "old-slave", "machine_id": AUTHORITY_MACHINE}])
+        )
+        assert service.acceptance()["single_machine"] is True
+
+    def test_rule_a_package_upgrade_accepts_cross_machine_change(self, service) -> None:
+        service.report_entries(_entries(_device("pump", goal={"speed": 1}), package="lab-drivers", version="1.0.0"))
+        assert service.list_entries()[0]["package_version"] == "1.0.0"
+
+        report = service.report_entries(
+            _entries(_device("pump", goal={"speed": 2}), package="lab-drivers", version="1.1.0"), reporter=REMOTE
+        )
+
+        assert report["summary"]["updated"] == ["pump"]
+        assert report["summary"]["auto_accepted"] == [{"name": "pump", "rule": "package-upgrade", "conflicts": []}]
+        entry = service.list_entries()[0]
+        assert entry["active_version"] == 2 and entry["package"] == "lab-drivers"
+        assert entry["package_version"] == "1.1.0"
+        assert service.entry_versions("pump")[0]["package_version"] == "1.1.0"
+
+    @pytest.mark.parametrize(
+        ("package", "version"),
+        [
+            ("lab-drivers", "1.0.0"),  # 版本没变：Host 上改了代码但没发版
+            ("lab-drivers", "0.9.0"),  # 降级
+            ("lab-drivers", "dev-build"),  # 不是 PEP 440 版本号
+            ("other-drivers", "2.0.0"),  # 换了驱动包
+            ("", ""),  # 不知道属于哪个包
+        ],
+    )
+    def test_rule_a_needs_a_higher_version_of_the_same_package(self, service, package, version) -> None:
+        service.report_entries(_entries(_device("pump", goal={"speed": 1}), package="lab-drivers", version="1.0.0"))
+
+        report = service.report_entries(
+            _entries(_device("pump", goal={"speed": 2}), package=package, version=version), reporter=REMOTE
+        )
+
+        assert [item["name"] for item in report["summary"]["pending"]] == ["pump"]
+        assert service.list_entries()[0]["active_version"] == 1
+
+    def test_unchanged_report_moves_the_package_baseline(self, service) -> None:
+        """包升级但条目没变：基准跟到新版本，之后同版本里的改动不算升级。"""
+
+        service.report_entries(_entries(_device("pump", goal={"speed": 1}), package="lab-drivers", version="1.0.0"))
+        unchanged = service.report_entries(
+            _entries(_device("pump", goal={"speed": 1}), package="lab-drivers", version="1.1.0"), reporter=REMOTE
+        )
+        assert unchanged["summary"]["counts"]["unchanged"] == 1
+        assert service.list_entries()[0]["package_version"] == "1.1.0"
+
+        edited = service.report_entries(
+            _entries(_device("pump", goal={"speed": 2}), package="lab-drivers", version="1.1.0"), reporter=REMOTE
+        )
+        assert [item["name"] for item in edited["summary"]["pending"]] == ["pump"]
+
+    def test_new_entry_of_an_upgraded_package_is_accepted_but_a_new_package_is_not(self, service) -> None:
+        service.report_entries(_entries(_device("pump"), package="lab-drivers", version="1.0.0"))
+
+        report = service.report_entries(
+            [
+                *_entries(_device("pump"), _device("valve"), package="lab-drivers", version="1.2.0"),
+                *_entries(_device("arm"), package="arm-drivers", version="3.0.0"),
+            ],
+            reporter=REMOTE,
+        )
+
+        assert report["summary"]["added"] == ["valve"]
+        assert [item["name"] for item in report["summary"]["pending"]] == ["arm"]
+        assert report["summary"]["pending"][0]["change"] == "add"
+
+    def test_cross_machine_removal_waits_for_acceptance(self, service, refs) -> None:
+        service.report([_device("pump"), _device("stirrer")])
+        refs.append(_ref_row("stirrer", "run"))
+
+        report = service.report([_device("pump")], reporter=REMOTE)
+
+        assert report["summary"]["removed"] == []
+        assert report["summary"]["pending"] == [
+            {"name": "stirrer", "conflicts": [{"action": "run", "reason": "action-removed"}],
+             "change": "remove", "reason": "cross-machine-reporter"}
+        ]
+        stirrer = service.entry_detail("stirrer")
+        assert stirrer["status"] == ["active", "pending"] and stirrer["pending_change"] == "remove"
+        assert service.action_definition("stirrer", "run") is not None  # 确认前照常服务
+        impact = service.pending_impacts()[0]
+        assert impact["pending_change"] == "remove" and impact["pending_version"] == 0
+        assert impact["affected_nodes"][0]["action"] == "run"
+
+        # 忽略：保留条目；Host 再报回来时待确认移除自动撤回
+        service.dismiss_pending("stirrer")
+        assert service.entry_detail("stirrer")["status"] == ["active"]
+        service.report([_device("pump")], reporter=REMOTE)
+        service.report([_device("pump"), _device("stirrer")], reporter=REMOTE)
+        assert service.entry_detail("stirrer")["status"] == ["active"]
+
+        # 接受：软移除
+        service.report([_device("pump")], reporter=REMOTE)
+        applied = service.apply_pending("stirrer")
+        assert applied["status"] == ["removed"]
+        assert service.action_definition("stirrer", "run") is None
+
+    def test_withdrawn_new_entry_drops_its_pending_version(self, service) -> None:
+        service.report([_device("pump")], reporter=REMOTE)
+        service.report([], reporter=REMOTE)
+        assert service.list_entries()[0]["status"] == []
+        assert service.pending_impacts() == []
+
+    def test_dismissed_change_is_proposed_again_without_a_new_version(self, service) -> None:
+        service.report([_device("pump", goal={"speed": 1})])
+        service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
+        service.dismiss_pending("pump")
+
+        again = service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
+
+        assert [item["name"] for item in again["summary"]["pending"]] == ["pump"]
+        assert service.list_entries()[0]["pending_version"] == 2
+        assert [version["version"] for version in service.entry_versions("pump")] == [2, 1]
+
+    def test_host_reporting_the_accepted_content_withdraws_a_stale_pending(self, service) -> None:
+        service.report([_device("pump", goal={"speed": 1})])
+        service.report([_device("pump", goal={"speed": 2})], reporter=REMOTE)
+
+        service.report([_device("pump", goal={"speed": 1})], reporter=REMOTE)
+
+        entry = service.list_entries()[0]
+        assert entry["status"] == ["active"] and entry["pending_version"] is None
+
+    def test_batch_apply_and_dismiss(self, service) -> None:
+        service.report([_device("a"), _device("b"), _device("c")], reporter=REMOTE)
+
+        applied = service.apply_pending_many(["a", "ghost"])
+        assert [entry["name"] for entry in applied["entries"]] == ["a"]
+        assert applied["failed"][0]["name"] == "ghost"
+
+        dismissed = service.dismiss_pending_many()
+        assert sorted(entry["name"] for entry in dismissed["entries"]) == ["b", "c"]
+        assert service.list_entries(status="pending") == []
+        assert [payload["id"] for payload in service.active_payloads()] == ["a"]
+
+    def test_status_reports_whether_the_host_reported(self, service) -> None:
+        status = service.status()
+        assert status["reported"] is False and status["last_report"] is None
+        assert status["machine_id"] == AUTHORITY_MACHINE and service.has_report() is False
+
+        service.report([_device("pump")], reporter=REMOTE)
+
+        status = service.status()
+        assert status["reported"] is True and status["pending_count"] == 1
+        assert status["last_report"]["acceptance"]["reason"] == "cross-machine-reporter"
+        assert service.has_report() is True
 
 
 class TestRemoveRestore:
@@ -469,13 +726,13 @@ class TestHashedReport:
         service.report([_device("pump", goal={"speed": 1})])
         refs.append(_ref_row("pump", "run"))
         changed = _device("pump", goal={"speed": 2})
-        service.report([changed])  # 被引用的 action 变了 → 挂起 v2
+        service.report([changed], reporter=REMOTE)  # 跨机器上报的变化 → 挂起 v2
         digest = service.digest()
         assert digest["pending"] == {"pump": canonical_hash(changed)}
         assert digest["active"]["pump"] == canonical_hash(_device("pump", goal={"speed": 1}))
 
         # Host 重启后再报同一份挂起内容：只发哈希即可，不再多生成版本
-        report = service.report_entries([self._entry(changed, with_payload=False)])
+        report = service.report_entries([self._entry(changed, with_payload=False)], reporter=REMOTE)
         assert report["missing"] == []
         assert [item["name"] for item in report["summary"]["pending"]] == ["pump"]
         assert [v["version"] for v in service.entry_versions("pump")] == [2, 1]
@@ -514,10 +771,10 @@ class TestRegistryApi:
 
     def test_gzip_report_roundtrip(self, client) -> None:
         body = gzip.compress(
-            json.dumps({"resources": [_device("pump")]}).encode("utf-8")
+            json.dumps({"resources": [_device("pump")], "machine_id": AUTHORITY_MACHINE}).encode("utf-8")
         )
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             content=body,
             headers={
                 "Content-Type": "application/json",
@@ -535,9 +792,13 @@ class TestRegistryApi:
         assert data["summary"]["counts"]["added"] == 1
 
     def test_entry_endpoints(self, client, refs) -> None:
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a", goal={"v": 1})]})
+        client.post(
+            "/api/v1/registry/reports",
+            json={"resources": [_device("a", goal={"v": 1})], "machine_id": AUTHORITY_MACHINE},
+        )
         refs.append(_ref_row("a", "run"))
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a", goal={"v": 2})]})
+        # 不带机器标识的上报按跨机器处理：变化挂起
+        client.post("/api/v1/registry/reports", json={"resources": [_device("a", goal={"v": 2})]})
 
         pending = client.get("/api/v1/registry/entries", params={"status": "pending"}).json()["data"]
         assert [e["name"] for e in pending["entries"]] == ["a"]
@@ -563,33 +824,56 @@ class TestRegistryApi:
         assert reports["total"] == 2
 
     def test_apply_without_pending_returns_409(self, client) -> None:
-        client.post("/api/v1/resource-templates", json={"resources": [_device("a")]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("a")], "machine_id": AUTHORITY_MACHINE})
         response = client.post("/api/v1/registry/entries/a/apply")
-        assert response.status_code == 409
+        # 没有挂起版本：状态冲突 3003（HTTP 200 信封）
+        error_of(response, 3003)
 
     def test_invalid_body_rejected(self, client) -> None:
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             content=b"not-json",
             headers={"Content-Type": "application/json"},
         )
-        assert response.status_code == 400
+        error_of(response, 1000)
 
     def test_missing_service_returns_503(self, service) -> None:
         app = FastAPI()
         install_registry_api(app)
         set_registry_service(None)
         response = TestClient(app).get("/api/v1/registry/entries")
-        assert response.status_code == 503
+        error_of(response, 5001)
+
+    @pytest.mark.parametrize("malformed", [False, True])
+    def test_condition_template_report_validates_branch_references(self, client, service, malformed) -> None:
+        template = _workflow_template("demo.workflows:conditional", "条件演示")
+        action = template["nodes"][0]
+        template["nodes"] = [
+            {"key": "condition", "kind": "condition", "name": "判定",
+             "param": {"version": 1, "expression": {"lit": True}}},
+            {**action, "condition_guards": [{"node_key": "missing" if malformed else "condition", "equals": True}]},
+        ]
+        template["edges"] = [{"source": "condition", "target": "step-0"}]
+        response = client.post(
+            "/api/v1/registry/reports",
+            json={"resources": [], "workflow_templates": [template], "machine_id": AUTHORITY_MACHINE},
+        )
+        assert response.status_code == 200
+        if malformed:
+            assert service.list_workflow_templates() == []
+            assert service.entry_detail(template["id"])["unusable_reason"] == "invalid-condition-node"
+        else:
+            assert service.get_workflow_template(template["uuid"])["nodes"] == template["nodes"]
 
     def test_workflow_templates_ride_the_snapshot_report(self, client, service) -> None:
         """包里的 @workflow 模板随同一份快照上报（独立键，旧权威忽略），与设备条目同一套
         版本化：内容变了升版本、从快照里消失即软移除、再出现即复活。"""
 
         template = _workflow_template("demo.workflows:tour", "位点操作演示")
+        local = {"machine_id": AUTHORITY_MACHINE}
         response = client.post(
-            "/api/v1/resource-templates",
-            json={"resources": [_device("pump")], "workflow_templates": [template]},
+            "/api/v1/registry/reports",
+            json={"resources": [_device("pump")], "workflow_templates": [template], **local},
         ).json()
         assert response["code"] == 0
         assert [item["name"] for item in response["data"]["templates"]] == ["demo.workflows:tour", "pump"]
@@ -610,10 +894,11 @@ class TestRegistryApi:
             "nodes": [{**template["nodes"][0], "description": "把样品放到 A1"}],
         }
         client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={
                 "resources": [_device("pump")],
                 "workflow_templates": [template, broken, bad_guide, guided],
+                **local,
             },
         )
         assert [item["id"] for item in service.list_workflow_templates()] == [
@@ -629,20 +914,58 @@ class TestRegistryApi:
         assert stored_guided["nodes"][0]["description"] == "把样品放到 A1"
 
         # 包卸载：快照里没有模板 → 软移除，列表为空；再上报复活
-        client.post("/api/v1/resource-templates", json={"resources": [_device("pump")]})
+        client.post("/api/v1/registry/reports", json={"resources": [_device("pump")], **local})
         assert service.list_workflow_templates() == []
         assert "removed" in service.entry_detail("demo.workflows:tour")["status"]
         client.post(
-            "/api/v1/resource-templates",
-            json={"resources": [_device("pump")], "workflow_templates": [template]},
+            "/api/v1/registry/reports",
+            json={"resources": [_device("pump")], "workflow_templates": [template], **local},
         )
         assert [item["uuid"] for item in service.list_workflow_templates()] == [template["uuid"]]
 
-        # 只认 resources 的旧客户端形状照常工作；workflow_templates 不是列表则 400
-        assert client.post(
-            "/api/v1/resource-templates",
+        # 只认 resources 的旧客户端形状照常工作；workflow_templates 不是列表则 1000
+        error_of(client.post(
+            "/api/v1/registry/reports",
             json={"resources": [_device("pump")], "workflow_templates": {"x": 1}},
-        ).status_code == 400
+        ), 1000)
+
+    def test_acceptance_endpoints(self, client, service) -> None:
+        status = ok_data(client.get("/api/v1/registry/status"))
+        assert status["reported"] is False and status["acceptance"]["single_machine"] is True
+
+        # Slave 接入后 Host 补报：跨机器的被记下，同机的不记
+        announced = ok_data(client.post("/api/v1/registry/slaves", json={
+            "edge_uuid": "host", "machine_id": AUTHORITY_MACHINE,
+            "slaves": [{"machine_name": "lab-b", "machine_id": "machine-b"},
+                       {"machine_name": "host_managed_p1", "machine_id": AUTHORITY_MACHINE}],
+        }))
+        assert announced["added"] == ["lab-b"] and announced["acceptance"]["reason"] == "cross-machine-slave"
+        listed = ok_data(client.get("/api/v1/registry/slaves"))
+        assert [row["machine_name"] for row in listed["slaves"]] == ["lab-b"]
+
+        report = ok_data(client.post("/api/v1/registry/reports", json={
+            "machine_id": AUTHORITY_MACHINE,
+            "slaves": [{"machine_name": "lab-b", "machine_id": "machine-b"}],
+            "entries": _entries(_device("a"), _device("b")),
+        }))
+        assert report["summary"]["counts"]["pending"] == 2
+        assert report["summary"]["acceptance"]["reason"] == "cross-machine-slave"
+
+        applied = ok_data(client.post("/api/v1/registry/pending/apply", json={"names": ["a"]}))
+        assert [entry["name"] for entry in applied["entries"]] == ["a"]
+        dismissed = ok_data(client.post("/api/v1/registry/pending/dismiss", json={}))
+        assert [entry["name"] for entry in dismissed["entries"]] == ["b"]
+
+        forgot = ok_data(client.delete("/api/v1/registry/slaves/lab-b"))
+        assert forgot["remaining"] == []
+        error_of(client.delete("/api/v1/registry/slaves/lab-b"), 4001)
+        status = ok_data(client.get("/api/v1/registry/status"))
+        assert status["reported"] is True and status["acceptance"]["single_machine"] is True
+        # 规则 B 恢复后 Host 再报：被忽略的 b 直接生效
+        again = ok_data(client.post("/api/v1/registry/reports", json={
+            "machine_id": AUTHORITY_MACHINE, "entries": _entries(_device("a"), _device("b")),
+        }))
+        assert again["summary"]["added"] == ["b"]
 
     def test_digest_and_hashed_report_shapes(self, client) -> None:
         pump = _device("pump")
@@ -650,10 +973,11 @@ class TestRegistryApi:
         assert digest == {"protocol_version": "runtime.v1", "active": {}, "pending": {}}
 
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={
                 "protocol_version": "runtime.v1",
                 "edge_uuid": "host-a",
+                "machine_id": AUTHORITY_MACHINE,
                 "entries": [{"id": "pump", "content_sha256": canonical_hash(pump), "payload": pump}],
             },
         ).json()
@@ -665,7 +989,7 @@ class TestRegistryApi:
 
         # 只发哈希：对得上就"未变"，对不上进 missing
         response = client.post(
-            "/api/v1/resource-templates",
+            "/api/v1/registry/reports",
             json={"entries": [
                 {"id": "pump", "content_sha256": canonical_hash(pump)},
                 {"id": "stirrer", "content_sha256": canonical_hash(_device("stirrer"))},
@@ -673,11 +997,11 @@ class TestRegistryApi:
         ).json()["data"]
         assert response["summary"]["counts"]["unchanged"] == 1 and response["missing"] == ["stirrer"]
 
-        # 形状错误（entries 不是列表 / 条目缺字段）→ 400
-        assert client.post("/api/v1/resource-templates", json={"entries": {"x": 1}}).status_code == 400
-        assert client.post(
-            "/api/v1/resource-templates", json={"entries": [{"content_sha256": "x"}]}
-        ).status_code == 400
+        # 形状错误（entries 不是列表 / 条目缺字段）→ 1000
+        error_of(client.post("/api/v1/registry/reports", json={"entries": {"x": 1}}), 1000)
+        error_of(client.post(
+            "/api/v1/registry/reports", json={"entries": [{"content_sha256": "x"}]}
+        ), 1000)
 
 
 class _SessionOverTestClient:
@@ -718,7 +1042,11 @@ class TestTemplateSynchronizerOverHttp:
     """Host 侧上报客户端：首次全量、之后只发哈希、变更只发变更、缺定义补发、旧权威回退。"""
 
     @pytest.fixture()
-    def stack(self, service):
+    def stack(self, service, monkeypatch):
+        from unilabos.config.config import BasicConfig
+
+        # 上报客户端与权威在同一台机器（Host 的机器标识等于权威的）
+        monkeypatch.setattr(BasicConfig, "machine_id", AUTHORITY_MACHINE)
         app = FastAPI()
         install_registry_api(app)
         set_registry_service(service)

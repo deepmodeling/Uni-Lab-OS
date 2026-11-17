@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import command_result, error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient, bind_payload
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
@@ -324,12 +325,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
         )
         with TestClient(app) as client:
             response = client.post(
-                "/api/v1/materials/lots/inbound",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("inbound_inventory_lot"), inbound
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
+            command_result(response)
 
             request = InventoryReservationCreate(
                 task_uuid="task-http",
@@ -347,21 +348,20 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                 ],
             )
             response = client.post(
-                "/api/v1/materials/reservations",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation("reserve_inventory", job_uuid="job-http"),
                     request,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            reservation_uuid = response.json()["data"]["reservation_uuid"]
+            reservation_uuid = command_result(response)["data"]["reservation_uuid"]
 
             transition = InventoryReservationTransition(
                 reservation_uuid=reservation_uuid,
                 reason="action_start",
             )
             response = client.post(
-                f"/api/v1/materials/reservations/{reservation_uuid}/consume",
+                "/api/v1/inventory/commands",
                 json=bind_payload(
                     _mutation(
                         "consume_inventory_reservation",
@@ -370,11 +370,12 @@ def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -
                     transition,
                 ).model_dump(mode="json", exclude_none=False),
             )
-            assert response.status_code == 200, response.text
-            assert response.json()["data"]["status"] == "consumed"
-            assert client.get(
+            assert command_result(response)["data"]["status"] == "consumed"
+            assert ok_data(client.get(
                 "/api/v1/materials/reservations/by-job/job-http"
-            ).json()["status"] == "consumed"
+            ))["status"] == "consumed"
+            listed = ok_data(client.get("/api/v1/inventory/reservations", params={"task_uuid": "task-http"}))
+            assert [item["reservation_id"] for item in listed["reservations"]] == [reservation_uuid]
     finally:
         service.close()
 
@@ -674,11 +675,12 @@ class _ListenerOnlyBackend:
 def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> None:
     service = MaterialsService(tmp_path / "materials.db")
     client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
     try:
         _template(service, "reagent-template", "reagent")
         _inbound(service, lot_uuid="lot-a", quantity=5)
         scheduler = BackendScheduler(
-            object(),
+            workflow,
             _ListenerOnlyBackend(),
             materials_gateway=client,
         )
@@ -725,12 +727,66 @@ def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> N
         }
 
         scheduler._release_unconsumed_task_inventory("task-local")  # noqa: SLF001
+        # 没有 runtime 尝试事实的外部预留不能仅凭清理调用返还；真实终态由恢复测试覆盖。
         assert [
             item.status
             for item in service.list_inventory_reservations(task_uuid="task-local")
-        ] == ["released", "released"]
-        assert service.get_inventory_lot("lot-a").quantity_available == 5
+        ] == ["active", "active"]
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
     finally:
+        workflow.close()
+        service.close()
+
+
+def test_backend_scheduler_reserves_container_content_for_the_task(tmp_path) -> None:
+    """容器内容物需求（I02）与批次同一条路径：任务开始整批预留，分配结果按需求 key 注入动作参数。"""
+    from unilabos.server.backend.scheduler.service import allocation_arguments
+    from unilabos.server.services.materials.contents import ContentContract
+    from unilabos.server.services.materials.resource_contract import ResourceContract
+
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
+    try:
+        contents = ContentContract(service, compound_source=None)
+        contract = ResourceContract(service)
+        template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource"}])["templates"][0]
+        bottle = contract.create_material({"resource_template_uuid": template["uuid"], "name": "缓冲液瓶"})
+        info = contents.create_reagent_info({"name": "PBS", "physical_state": "liquid"})
+        reagent = contents.create_reagent({"material_uuid": bottle["uuid"], "reagent_info_uuid": info["uuid"],
+                                           "quantity": 10, "quantity_unit": "ml"})
+        scheduler = BackendScheduler(workflow, _ListenerOnlyBackend(), materials_gateway=client)
+        requirement = InventoryRequirement(
+            key="buffer", kind="content", material_uuid=bottle["uuid"], substance_name="PBS", quantity=4, unit="ml",
+        ).model_dump(mode="json", exclude_none=False)
+        specs = {
+            run: {"workflow_node_uuid": f"node-{run}", "inventory_requirements": [requirement],
+                  "scheduler_revision": 1, "current_job_uuid": f"{run}-attempt-1"}
+            for run in ("run-a", "run-b")
+        }
+
+        scheduler._reserve_task_inventory({"uuid": "task-content"}, specs)  # noqa: SLF001
+
+        assert contents.get_reagent(reagent["uuid"])["active_workflow_reserved_quantity"] == 8
+        assert specs["run-a"]["inventory_allocations"] == {"buffer": {
+            "key": "buffer", "kind": "content", "material_uuid": bottle["uuid"],
+            "substance_uuid": reagent["uuid"], "quantity": 4.0, "unit": "ml"}}
+        # 参数是带物料锁的 ResourceSlot 时，给容器本身的引用
+        [reservation] = service.list_inventory_reservations(task_uuid="task-content")[:1]
+        locked = allocation_arguments(
+            [item for item in reservation.items],
+            action_schema={"properties": {"goal": {"properties": {"buffer": {"x-unilabos-material-lock": True}}}}},
+        )
+        assert locked == {"buffer": {"uuid": bottle["uuid"]}}
+        # 余量 2 ml 不够第三个任务的 4 ml：整批拒绝
+        with pytest.raises(Exception, match="缺少 2 ml"):
+            scheduler._reserve_task_inventory(  # noqa: SLF001
+                {"uuid": "task-short"},
+                {"run-c": {"workflow_node_uuid": "node-c", "inventory_requirements": [requirement],
+                           "scheduler_revision": 1, "current_job_uuid": "run-c-attempt-1"}},
+            )
+    finally:
+        workflow.close()
         service.close()
 
 

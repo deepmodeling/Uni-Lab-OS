@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.device_processes import create_device_processes_router
 from unilabos.server.services import device_processes as dpx
 from unilabos.server.services import driver_packages as dp
@@ -86,6 +87,10 @@ def test_create_writes_graph_and_command(service: dpx.DeviceProcessService, tmp_
     assert command[command.index("--devices") + 1] == str(tmp_path / "acme_devices")
     assert command[command.index("-g") + 1] == str(graph)
     assert command[command.index("--host_node_ip") + 1] == "127.0.0.1"
+    # 一个数据库根目录只归一个进程：受管 Slave 不与 Host / 权威共用 <working_dir>/database
+    assert command[command.index("--server_database_root") + 1] == str(
+        dpx.process_dir(tmp_path, view["id"]) / "database"
+    )
 
     with pytest.raises(dpx.DeviceProcessError):
         service.create(_payload(package_names=["ghost"]))
@@ -173,11 +178,11 @@ def test_router_roundtrip(service: dpx.DeviceProcessService) -> None:
     app.include_router(create_device_processes_router())
     client = TestClient(app)
 
-    listing = client.get("/api/v1/device-processes").json()
+    listing = ok_data(client.get("/api/v1/device-processes"))
     assert listing["hostlink"]["host"] == "127.0.0.1"
     assert listing["processes"] == []
 
-    classes = client.get("/api/v1/device-processes/device-classes").json()
+    classes = ok_data(client.get("/api/v1/device-processes/device-classes"))
     assert any(item["id"] == "acme_pump" and item["package"] == "acme-devices" for item in classes)
 
     created = client.post(
@@ -189,13 +194,54 @@ def test_router_roundtrip(service: dpx.DeviceProcessService) -> None:
             "external_only": True,
         },
     )
-    assert created.status_code == 201, created.text
-    process_id = created.json()["id"]
-    assert created.json()["graph_nodes"][0]["template_name"] == "acme_pump"
+    created = ok_data(created, status=201)
+    process_id = created["id"]
+    assert created["graph_nodes"][0]["template_name"] == "acme_pump"
 
-    assert client.post(f"/api/v1/device-processes/{process_id}/start").json()["status"] == "running"
-    assert client.post(f"/api/v1/device-processes/{process_id}/start").status_code == 409
+    assert ok_data(client.post(f"/api/v1/device-processes/{process_id}/start"))["status"] == "running"
+    error_of(client.post(f"/api/v1/device-processes/{process_id}/start"), 3003)
+    # 日志路由不存在：框架默认 404（没有匹配的合同，不是业务信封）
     assert client.get(f"/api/v1/device-processes/{process_id}/logs?tail=10").status_code == 404
-    assert client.post(f"/api/v1/device-processes/{process_id}/stop").json()["status"] == "stopped"
-    assert client.delete(f"/api/v1/device-processes/{process_id}").status_code == 204
-    assert client.get(f"/api/v1/device-processes/{process_id}").status_code == 404
+    assert ok_data(client.post(f"/api/v1/device-processes/{process_id}/stop"))["status"] == "stopped"
+    assert ok_data(client.delete(f"/api/v1/device-processes/{process_id}")) is None
+    error_of(client.get(f"/api/v1/device-processes/{process_id}"), 4001)
+
+
+def test_managed_slave_follows_its_host_and_shutdown_stops_all_at_once(
+    service: dpx.DeviceProcessService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """受管 Slave 跟随 Host（Host 被强制结束时自行退出）；Host 退出时先一起请全部 Slave 退出再限时等待。"""
+
+    import os
+
+    from unilabos.app import lifetime
+
+    events: list[str] = []
+    envs: list[dict[str, str]] = []
+
+    class RecordingPopen(FakePopen):
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            super().__init__(command, **kwargs)
+            envs.append(dict(kwargs["env"]))
+
+        def terminate(self) -> None:
+            events.append(f"terminate {self.pid}")
+            super().terminate()
+
+        def wait(self, timeout: float | None = None) -> int:
+            events.append(f"wait {self.pid}")
+            return super().wait(timeout)
+
+    monkeypatch.setattr(dpx.subprocess, "Popen", RecordingPopen)
+    first = service.create(_payload(name="泵站 1"))["id"]
+    second = service.create(_payload(name="泵站 2", graph_nodes=[dpx.build_device_node("pump_2", "acme_pump")]))["id"]
+    service.start(first)
+    service.start(second)
+
+    # 拉起线程可能是 API 工作线程 / 定时器线程：只写父进程 pid，不启用跟随拉起线程的 Linux 死亡信号
+    assert [env[lifetime.PARENT_PID_ENV] for env in envs] == [str(os.getpid())] * 2
+    assert all(lifetime.PARENT_DEATH_SIGNAL_ENV not in env for env in envs)
+
+    service.shutdown()
+    pids = [proc.pid for proc in RecordingPopen.instances[-2:]]
+    assert events == [f"terminate {pids[0]}", f"terminate {pids[1]}", f"wait {pids[0]}", f"wait {pids[1]}"]

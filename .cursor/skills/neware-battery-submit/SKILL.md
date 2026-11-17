@@ -9,7 +9,7 @@ description: Submit Neware battery test experiments — query channel status, se
 
 - **device_id**: `neware_battery_test_system`
 - **device_name**: `NEWARE_BATTERY_TEST_SYSTEM`
-- **Python 源码**: `unilabos/devices/neware_battery_test_system/neware_battery_test_system.py`
+- **Python 源码**: 新威电池测试驱动包中的 `neware_battery_test_system.py`（原 `unilabos/devices/neware_battery_test_system/`，已迁出主仓库）
 - **设备类**: `NewareBatteryTestSystem`
 - **通道结构**: devid（设备号）→ subdevid（排号）→ chlid（通道号），通道名格式 `设备号-排号-通道号`
 - **可放电池的通道状态**: `stop` / `protect` / `finish`（`working` 状态的通道正在使用中）

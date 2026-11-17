@@ -3,20 +3,20 @@
 import asyncio
 import errno
 import json
-from urllib.parse import quote
 import socket
 import sys
 import threading
+import time
 import webbrowser
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import ClientDisconnect
 from starlette.responses import Response
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.config.control_token import TOKEN_HEADER, authority_token, token_accepted
+from unilabos.server.api.envelope import SERVICE_UNAVAILABLE, error_response, install_envelope_fallback
 from unilabos.server import lifecycle
 from unilabos.utils.fastapi.log_adapter import setup_fastapi_logging
 from unilabos.utils.log import info, error
@@ -31,8 +31,8 @@ RECOMMENDED_FRONTENDS = (
         "name": "OpenLab",
         "url": "https://xuwznln.github.io/OpenLabSite/",
         "description": "面向 Uni-Lab OS 微后端的社区实验室前端。",
-        # 本页经 URL 片段把控制令牌交给它（见 _TOKEN_HANDOFF_SCRIPT）
-        "token_handoff": True,
+        # 本页把自己的地址经 URL 片段交给它（见 _BACKEND_HANDOFF_SCRIPT）
+        "backend_handoff": True,
     },
 )
 
@@ -81,6 +81,11 @@ workflow_routes_mounted = False
 registry_routes_mounted = False
 driver_packages_mounted = False
 edge_proxy_mounted = False
+process_management_mounted = False
+
+#: 已取消的控制面 token 请求头：只为兼容旧客户端留在 CORS 允许列表里，任何地方都不读取它。
+LEGACY_TOKEN_HEADER = "X-UniLab-Token"
+
 
 def cors_allow_origins() -> list[str]:
     """``BasicConfig.cors_allow_origins``：逗号分隔的来源；空或含 ``*`` 即全部允许（默认）。"""
@@ -107,60 +112,27 @@ class ConfiguredCORSMiddleware:
                 allow_origins=cors_allow_origins(),
                 allow_credentials=True,
                 allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-                allow_headers=["Authorization", "Content-Type", "Accept", "Last-Event-ID", TOKEN_HEADER],
+                # 管理 API 不鉴权。Authorization（已取消的 V1 工站密钥 Bearer <api_key>）与 X-UniLab-Token（已取消的
+                # 控制面 token）仍在允许列表里：旧客户端还会带它们，预检必须放行，否则浏览器直接拦下请求；服务端忽略其值。
+                allow_headers=[
+                    "Authorization",
+                    "Content-Type",
+                    "Accept",
+                    "Last-Event-ID",
+                    "Idempotency-Key",
+                    "X-Workflow-Filename",
+                    LEGACY_TOKEN_HEADER,
+                ],
+                # Host 启动 / 重启中的 5001 带 Retry-After：跨域前端要能读到它才能按建议间隔重试
+                expose_headers=["Retry-After"],
             )
         await self._inner(scope, receive, send)
 
 
-#: 需要控制面 token 的 HTTP 方法：管理 API 的一切写操作。读（GET / HEAD）和预检（OPTIONS）不需要。
-WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-#: 不经 token 检查的写入口：MCP 端点自带 Host 白名单并拒绝一切浏览器 Origin（见 server/mcp）。
-TOKEN_EXEMPT_PATHS = ("/mcp",)
-
-
-class ControlTokenMiddleware:
-    """管理 API 的写请求必须出示控制面 token（``X-UniLab-Token`` 或 ``Authorization: Bearer``）。
-
-    CORS 默认放行所有来源，任何网页都能向本机后端发请求；没有 token 时，随便打开的一个网页就能
-    创建任务、启动设备。token 见 ``unilabos/config/control_token.py``；本进程没有 token（单元测试、
-    嵌入式装配）时不检查。被拒的请求返回 HTTP 401 + ``{"code": 4001, ...}``，经外层 CORS 中间件
-    补上跨域头，浏览器能读到原因。
-    """
-
-    def __init__(self, app) -> None:
-        self._app = app
-
-    async def __call__(self, scope, receive, send) -> None:
-        if (
-            scope.get("type") == "http"
-            and scope.get("method") in WRITE_METHODS
-            and not any(
-                scope.get("path", "") == prefix or scope.get("path", "").startswith(prefix + "/")
-                for prefix in TOKEN_EXEMPT_PATHS
-            )
-        ):
-            from starlette.datastructures import Headers
-
-            if not token_accepted(Headers(scope=scope)):
-                message = (
-                    "写操作需要控制面 token：请求头 X-UniLab-Token 或 Authorization: Bearer <token>。"
-                    "在运行 unilab 的机器上执行 `unilab token` 查看"
-                )
-                response = JSONResponse(
-                    status_code=401,
-                    content={"code": 4001, "error": {"msg": message}, "detail": "control token missing or invalid"},
-                    headers={"WWW-Authenticate": 'Bearer realm="unilab"'},
-                )
-                await response(scope, receive, send)
-                return
-        await self._app(scope, receive, send)
-
-
-# 中间件后加的在外层：先登记 token 检查、再登记 CORS，401 响应也带跨域头。
-# noinspection PyTypeChecker
-app.add_middleware(ControlTokenMiddleware)
 # noinspection PyTypeChecker
 app.add_middleware(ConfiguredCORSMiddleware)
+# 不存在的路由（404）、方法不允许（405）也输出信封，保留原 HTTP 状态码
+install_envelope_fallback(app)
 
 
 @app.exception_handler(ClientDisconnect)
@@ -184,7 +156,8 @@ async def reset_maintenance_gate(request: Request, call_next):
     controller = get_reset_controller()
     if controller is not None and controller.pending and request.method != "OPTIONS":
         if request.url.path not in ("/api/v1/reset", "/api/v1/health"):
-            return JSONResponse({"detail": "正在全量重置，停止接受业务请求"}, status_code=503)
+            # 进程级维护闸门（不是某个路由的业务失败）：保留 HTTP 503，正文仍是信封 5001
+            return error_response(SERVICE_UNAVAILABLE, "正在全量重置，停止接受业务请求", http_status=503)
     return await call_next(request)
 
 
@@ -213,28 +186,21 @@ def _render_cards(items) -> str:
             '<a class="card" href="{url}" target="_blank" rel="noreferrer"{handoff}>'
             '<strong>{name}</strong><span>{description}</span>'
             '<code>{url}</code></a>'
-        ).format(handoff=' data-token-handoff="1"' if item.get("token_handoff") else "", **item)
+        ).format(handoff=' data-backend-handoff="1"' if item.get("backend_handoff") else "", **item)
         for item in items
     )
 
 
-#: 浏览器以 ``/#token=<t>`` 打开本页时（``unilab`` 启动时自动打开的地址），把 token 经 URL 片段交给
-#: 内置推荐前端（``data-token-handoff``），站点索引里的第三方前端拿不到；随后从地址栏抹掉片段。
-#: 片段不会发给任何服务器，本页也不把 token 写进 DOM 文本。
-_TOKEN_HANDOFF_SCRIPT = """
+#: 把本页的地址经 URL 片段交给内置推荐前端（``data-backend-handoff``），点开即连到本机后端；
+#: 站点索引里的第三方前端不带。片段不会发给任何服务器。
+_BACKEND_HANDOFF_SCRIPT = """
 <script>
 (function () {
-  var match = /(?:^#|&)token=([^&]+)/.exec(window.location.hash || "");
-  if (!match) return;
-  var token = decodeURIComponent(match[1]);
-  try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
   var backend = window.location.origin;
-  document.querySelectorAll("a.card[data-token-handoff]").forEach(function (card) {
+  document.querySelectorAll("a.card[data-backend-handoff]").forEach(function (card) {
     var base = card.getAttribute("href").split("#")[0];
-    card.setAttribute("href", base + "#/?backend=" + encodeURIComponent(backend) + "&token=" + encodeURIComponent(token));
+    card.setAttribute("href", base + "#/?backend=" + encodeURIComponent(backend));
   });
-  var note = document.getElementById("token-note");
-  if (note) note.textContent = "已为推荐前端带上本机的控制令牌（写操作需要它）。";
 })();
 </script>
 """
@@ -319,7 +285,7 @@ def _render_catalog_page(title: str, intro: str, sections, *, site_index_url: st
         _SITE_INDEX_SCRIPT.replace("__SITE_INDEX_URL__", json.dumps(site_index_url))
         if site_index_url
         else ""
-    ) + _TOKEN_HANDOFF_SCRIPT
+    ) + _BACKEND_HANDOFF_SCRIPT
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -345,7 +311,6 @@ def _render_catalog_page(title: str, intro: str, sections, *, site_index_url: st
 <body><main>
   <h1>{title}</h1>
   <p>{intro}</p>
-  <p id="token-note" class="index-note"></p>
   {body}
 </main>{script}</body>
 </html>"""
@@ -408,7 +373,7 @@ def setup_server() -> FastAPI:
     """幂等挂载当前运行角色所需的 API 路由。"""
     global edge_routes_mounted, materials_routes_mounted, server_routes_mounted
     global workflow_routes_mounted, registry_routes_mounted, driver_packages_mounted
-    global edge_proxy_mounted
+    global edge_proxy_mounted, process_management_mounted
 
     from unilabos.server.api.edge_proxy import create_edge_proxy_router, edge_proxy_enabled
 
@@ -436,6 +401,10 @@ def setup_server() -> FastAPI:
             app.include_router(create_driver_package_graphs_router())
             app.include_router(create_device_processes_router())
             app.include_router(create_runtime_logs_router())
+            from unilabos.server.api.workspace import create_workspace_router
+
+            # V1 工作区只读面（驱动包挂载 / 工作目录浏览）
+            app.include_router(create_workspace_router())
             # 调度权威（materials 权威）把物料投影下行经这里送到设备
             app.include_router(create_host_relay_router())
             driver_packages_mounted = True
@@ -474,6 +443,21 @@ def setup_server() -> FastAPI:
                 workflow_routes_mounted = True
         except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
             error(f"[Microbackend] 挂载本机 Workflow Authority 失败: {exc}")
+
+    # V1 进程管理协议（/v1/snapshot、/v1/operations、/v1/logs）：调度权威就是 dev 的工作区监督者，
+    # 与 Workflow Authority 同归属；操作记录落 runtime.db。
+    if not process_management_mounted:
+        try:
+            from unilabos.server.backend.composition import get_workflow_service
+
+            workflow_service = get_workflow_service()
+            if workflow_service is not None:
+                from unilabos.server.api.process_management import install_process_management_api
+
+                install_process_management_api(app, workflow_service)
+                process_management_mounted = True
+        except Exception as exc:  # noqa: BLE001 - 保留基础管理 API
+            error(f"[Microbackend] 挂载进程管理路由失败: {exc}")
 
     # Registry Authority 与 Workflow Authority 同归属：调度权威随本进程装配时挂载
     # 条目级注册表版本 API；只提供执行面的 Host 不挂载。
@@ -546,9 +530,22 @@ _routes_ready = threading.Event()
 
 
 def wait_routes_ready(timeout: float) -> bool:
-    """等待本进程管理 API 路由挂载完成；返回是否就绪。"""
+    """等待本进程管理 API 路由挂载完成；返回是否就绪。
 
-    return _routes_ready.wait(timeout)
+    停机一开始就放弃等待：这些等待跑在控制 WS 事件循环的线程池里，路由永远挂不好时
+    （主线程在 ``setup_server`` 里就收到了停机信号）会让解释器退出时逐个 join 它们，一次
+    SIGTERM 被拖上几分钟。
+    """
+
+    deadline = time.monotonic() + max(0.0, timeout)
+    while not _routes_ready.is_set():
+        if lifecycle.shutting_down() or _abort_serving.is_set():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        _routes_ready.wait(min(0.2, remaining))
+    return True
 
 
 def request_server_shutdown() -> bool:
@@ -618,10 +615,7 @@ def browser_landing_url(host: str, port: int) -> str:
     if remote:
         return f"{remote}/"
     # noinspection HttpUrlsUsage
-    url = f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
-    token = authority_token()
-    # 片段不发给服务器；导航页把它交给内置推荐前端后立即从地址栏抹掉
-    return f"{url}#token={quote(token, safe='')}" if token else url
+    return f"http://{host if host != '0.0.0.0' else 'localhost'}:{port}/"
 
 
 class ManagementPortInUseError(OSError):
@@ -654,6 +648,10 @@ def ensure_port_available(host: str, port: int) -> None:
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     probe = socket.socket(family, socket.SOCK_STREAM)
     try:
+        # POSIX 与 Uvicorn 使用相同的 TIME_WAIT 复用语义；仍拒绝活动监听者。
+        # Windows 的 SO_REUSEADDR 会允许共享监听端口，因此不启用。
+        if sys.platform != "win32":
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         probe.bind((host, port))
     except OSError as exc:
         if _is_addr_in_use(exc):
@@ -696,17 +694,10 @@ def start_server(host: str = "0.0.0.0", port: int = 8002, open_browser: bool = T
     # 配置日志
     log_config = setup_fastapi_logging()
 
-    # 写操作需要控制面 token：调度权威 / 单进程模式在这里确定（已由 backend_main 确定时沿用）
-    from unilabos.config.control_token import ensure_authority_token
-    from unilabos.config.working_dir import resolve_working_dir
-
-    ensure_authority_token(BasicConfig.working_dir or resolve_working_dir(None))
-
     # 启动前打开浏览器
     if open_browser:
         url = browser_landing_url(host, port)
-        # 日志会转发给前端：只记不带片段（token）的地址
-        info(f"[Web] 正在打开浏览器访问: {url.split('#', 1)[0]}")
+        info(f"[Web] 正在打开浏览器访问: {url}")
         try:
             webbrowser.open(url)
         except Exception as e:

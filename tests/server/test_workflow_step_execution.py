@@ -82,6 +82,16 @@ def command(client, task, kind="step", *, revision=None, key=None):
     })
 
 
+def outcome(response):
+    """V1：受理返回 201 + 命令投影；业务拒绝是 status=rejected（含 result.reason），不是接口错误。"""
+
+    body = response.json()
+    assert body["code"] == 0, body
+    assert response.status_code == 201
+    command = body["data"]
+    return command["status"], command["result"].get("reason")
+
+
 @pytest.mark.parametrize("parallel", [False, True])
 def test_one_click_one_attempt_and_no_locks_for_waiting_nodes(stack, parallel):
     service, executor, scheduler, client = stack
@@ -90,10 +100,10 @@ def test_one_click_one_attempt_and_no_locks_for_waiting_nodes(stack, parallel):
     time.sleep(0.08)
     assert executor.dispatched == []
     for index in range(3):
-        assert command(client, task).status_code == 200
+        assert outcome(command(client, task)) == ("pending", None)
         wait_for(lambda: len(executor.dispatched) == index + 1)
         # 同一动作尚未完成时，连点也不能积攒许可。
-        assert command(client, task).json()["code"] == 3003
+        assert outcome(command(client, task)) == ("rejected", "task_is_not_paused_step")
         time.sleep(0.03)
         assert len(executor.dispatched) == index + 1
         executor.finish(index)
@@ -105,7 +115,7 @@ def test_one_click_one_attempt_and_no_locks_for_waiting_nodes(stack, parallel):
     wait_for(lambda: service.get_workflow_task(task["uuid"])["status"] == "succeeded")
     assert {p["task_id"] for p in executor.dispatched} == {task["uuid"]}
     assert all(run["attempt_count"] == 1 for run in service.list_workflow_node_runs(task["uuid"]))
-    assert command(client, task).json()["code"] == 3003
+    assert outcome(command(client, task)) == ("rejected", "task_is_terminal")
 
 
 def test_two_tabs_and_replayed_command_do_not_grant_twice(stack):
@@ -118,9 +128,10 @@ def test_two_tabs_and_replayed_command_do_not_grant_twice(stack):
     wait_for(lambda: len(executor.dispatched) == 1)
     executor.finish(0)
     wait_for(lambda: service.get_workflow_task(task["uuid"])["control_status"] == "paused")
-    assert command(client, task, revision=0, key=winning_key).status_code == 200
+    # 同键重放返回原命令（不再发第二个许可）；过期修订 3003；同键换命令按参数错误拒绝
+    assert outcome(command(client, task, revision=0, key=winning_key))[0] in {"pending", "succeeded"}
     assert command(client, task, revision=0, key="stale-page").json()["code"] == 3003
-    assert command(client, task, "resume", revision=0, key=winning_key).json()["code"] == 3003
+    assert command(client, task, "resume", revision=0, key=winning_key).json()["code"] == 1000
     time.sleep(0.05)
     assert len(executor.dispatched) == 1
 
@@ -132,7 +143,8 @@ def test_resume_continues_original_dag_with_normal_parallelism(stack, during_ste
     if during_step:
         command(client, task)
         wait_for(lambda: len(executor.dispatched) == 1)
-    assert command(client, task, "resume").json()["data"]["run_mode"] == "normal"
+    assert outcome(command(client, task, "resume")) == ("succeeded", None)
+    assert service.get_workflow_task(task["uuid"])["run_mode"] == "normal"
     wait_for(lambda: len(executor.dispatched) == 3)
     for index in range(3):
         executor.finish(index)
@@ -161,7 +173,7 @@ def test_normal_mode_is_unchanged_and_invalid_controls_are_rejected(stack):
     _, executor, _, client = stack
     task = create_task(client, mode="normal", parallel=True)
     wait_for(lambda: len(executor.dispatched) == 3)
-    assert command(client, task).json()["code"] == 3003
+    assert outcome(command(client, task)) == ("rejected", "task_is_not_paused_step")
     for data in [{}, {"type": "step", "expected_revision": True, "idempotency_key": "x"},
                  {"type": "retry", "expected_revision": 0, "idempotency_key": "x"}]:
         response = client.post(f"/api/v1/workflow-tasks/{task['uuid']}/commands", json=data)
@@ -217,7 +229,7 @@ def test_restart_preserves_step_progress_without_replaying_devices(tmp_path, inf
         with TestClient(create_workflow_app(service)) as client:
             if inflight:
                 wait_for(lambda: service.get_workflow_task(task["uuid"])["control_status"] == "waiting_reconciliation")
-                assert command(client, task, "resume").json()["code"] == 3003
+                assert outcome(command(client, task, "resume")) == ("rejected", "task_is_not_paused_step")
                 assert service.list_workflow_node_runs(task["uuid"])[0]["status"] in {"execution_unknown", "intervention_required"}
             else:
                 assert service.get_workflow_task(task["uuid"])["control_status"] == "paused"

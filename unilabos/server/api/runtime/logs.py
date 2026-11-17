@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.runtime.logs import RuntimeLogBatch, RuntimeLogSources
 from unilabos.server.services.runtime.logs import (
     LogSourceNotFound,
@@ -11,7 +12,7 @@ from unilabos.server.services.runtime.logs import (
 
 
 def create_runtime_logs_router() -> APIRouter:
-    router = APIRouter(prefix="/api/v1/hostlink", tags=["runtime-logs"])
+    router = envelope_router(prefix="/api/v1/hostlink", tags=["runtime-logs"])
 
     @router.get("/log-sources", response_model=RuntimeLogSources)
     def sources(response: Response) -> RuntimeLogSources:

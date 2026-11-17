@@ -10,22 +10,35 @@ from unilabos.utils import logger
 HOST_NODE_REGISTRY_NAME = "host_node"
 DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
 _ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# 已删除的配置字段：旧配置文件 / 环境变量里还写着时忽略（control_token / station_api_key：控制面 token 与
+# V1 工站密钥已取消，管理 API 不鉴权；HTTPConfig.backend_port：--role backend 与默认权威统一用 BasicConfig.port）。
 _REMOVED_CONFIG_FIELDS = {
-    "BasicConfig": frozenset({"app_bridges", "communication_protocol"}),
+    "BasicConfig": frozenset({"app_bridges", "communication_protocol", "control_token", "station_api_key"}),
+    "HTTPConfig": frozenset({"backend_port"}),
 }
+# 其中仍有替代项、值被忽略会改变行为的字段：启动时提示一次替代项（其余已删除字段静默忽略）。
+_REMOVED_CONFIG_REPLACEMENTS = {
+    ("HTTPConfig", "backend_port"): (
+        "--role backend 与默认权威共用一个管理端口，请改用 --port（或配置文件的 BasicConfig.port），默认 8002"
+    ),
+}
+# 本进程已提示过的已删除字段：配置文件与环境变量都写了时也只提示一次
+_warned_removed_fields: set[tuple[str, str]] = set()
 # 与配置覆盖共用 UNILABOS_ 前缀、但由进程编排 / 可观测性模块自行读取的环境变量，
 # 不是 ``UNILABOS_<Config类>_<字段>`` 覆盖，解析时直接跳过（不告警）。
 _NON_CONFIG_ENV_KEYS = frozenset(
     {
         "UNILABOS_SUPERVISOR_INNER",  # app.supervisor：当前进程处于监督循环内
         "UNILABOS_HOST_CHILD",  # app.supervisor：由调度权威拉起的 Host 子进程
+        "UNILABOS_PARENT_PID",  # app.lifetime：本进程应跟随的本机父进程 pid
+        "UNILABOS_PARENT_DEATH_SIGNAL",  # app.lifetime：可启用 Linux PR_SET_PDEATHSIG
         "UNILABOS_OTEL_ENABLED",  # utils.tracing：是否创建 OTLP exporter
     }
 )
 
 
 # 值不进日志的配置字段（小写）。
-_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk", "control_token"})
+_SECRET_CONFIG_FIELDS = frozenset({"ak", "sk"})
 
 
 class BasicConfig:
@@ -34,23 +47,26 @@ class BasicConfig:
     ak = ""
     sk = ""
     working_dir = ""
-    # 调度权威与 Host 之间控制面（控制 WebSocket、命令正文、backend_http 回送）的共享 token，
-    # 见 unilabos/config/control_token.py。权威留空时首次启动生成并保存在 <working_dir>/control_token；
-    # Host 子进程由权威经环境变量传入；远端 Host（--address 指向另一台机器）在这里填权威那份 token。
-    control_token = ""
     # 允许跨域访问管理 API 的来源，逗号分隔（如 "https://xuwznln.github.io,http://localhost:5173"）；
     # "*" 为全部允许（默认）。
     cors_allow_origins = "*"
     # 四个数据库（runtime / materials / telemetry / history）所在目录；命令行
     # --server_database_root 优先。留空时使用工作目录下的 database/（每个实例各自一份）。
     server_database_root = ""
-    # 库结构不一致且没有迁移路径时，策略为 refuse 的库拒绝启动；设为 True 则改为把旧库改名为
-    # .bak-<时间戳> 后重建空库。开发期四个库都是 rebuild，本开关在发布切换为 refuse 后才起作用。
+    # 库结构不一致且没有迁移路径时，策略为 refuse 的库（runtime / materials）拒绝启动、保留旧库；
+    # 设为 True 则改为把旧库改名为 .bak-<时间戳> 后重建空库。telemetry / history 本来就自动重建。
     database_rebuild_on_mismatch = False
     # 调度锁授予策略：auto（有原生库用原生，否则 Python FIFO）/ python / native（找不到原生库报错）。
     scheduler_grant_policy = "auto"
     # 原生策略库路径；留空时依次查环境变量 UNILABOS_SCHEDULER_GRANT_LIBRARY、<working_dir>/native/。
     scheduler_grant_library = ""
+    # 调度容量（默认值同 V1 workflow/scheduler_capacity.py）：超出的任务 / 作业按先后排队，不失败。
+    # 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限：
+    scheduler_max_in_flight_jobs = 100
+    # 全局运行中任务（running / canceling）上限；未开始的任务保持 pending 排队：
+    scheduler_max_active_tasks = 500
+    # 同一工作流运行中任务上限：
+    scheduler_max_tasks_per_workflow = 100
     # 由微后端组合根一次解析；四个数据库 writer 不得自行推导路径。
     server_database_paths = None
     config_path = ""
@@ -59,6 +75,9 @@ class BasicConfig:
     # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
     host_node_name = "host_node"
     machine_name = "undefined"
+    # 本机身份（判断调度权威、Host、Slave 是否同一台机器，见 utils/machine_identity.py）；
+    # 留空时取操作系统的机器标识摘要。同一宿主机上的多个容器要算作同一台时显式填同一个值。
+    machine_id = ""
     vis_2d_enable = False
     no_update_feedback = False
     enable_resource_load = True
@@ -111,8 +130,8 @@ class WSConfig:
 # HTTP配置
 class HTTPConfig:
     # Host 连接的 Backend（调度权威）地址：config 文件或 --address 给了用给的，为空表示
-    # 本机自己的 Backend 端口（backend_port）。HTTP 数据面与 runtime.v1 控制 WebSocket
-    # 都走这一个地址。不内置任何云端地址；环境快捷选项仅保留在 UniLabOS-Launcher。
+    # 本机调度权威的管理端口（BasicConfig.port，默认权威与 --role backend 共用）。HTTP 数据面与
+    # runtime.v1 控制 WebSocket 都走这一个地址。不内置任何云端地址；环境快捷选项仅保留在 UniLabOS-Launcher。
     remote_addr = ""
     # 控制 WebSocket 的低层覆盖；CLI 只暴露统一 --address。为空时从 Backend 地址派生：
     # runtime.v1 的 WS 控制面与 HTTP API 同 host 同端口。
@@ -124,11 +143,9 @@ class HTTPConfig:
     # Host 访问的物料权威地址；为空时与 Backend 地址相同。
     material_microbackend_addr = ""
     material_query_timeout = 10
-    # Backend（--role backend）管理 API / 控制 WebSocket 的监听端口（Host 缺省连接的就是它）。
-    # Backend 不再主动连 Host：Host 不监听端口，Backend 需要的 Host 数据经控制 WS 的
-    # backend_http 请求由 Host 在进程内执行并回送。edge_data_addr 仅为兼容旧配置保留、不再使用。
+    # Backend 不再主动连 Host：Backend 需要的 Host 数据经控制 WS 的 backend_http 请求由 Host
+    # 在进程内执行并回送。edge_data_addr 仅为兼容旧配置保留、不再使用。
     edge_data_addr = ""
-    backend_port = 8081
     # 驱动包索引镜像（JSON，结构同 https://github.com/Xuwznln/awesome-lab-devices 的 index.json）。
     # 官方索引默认由 OpenLab 前端在浏览器里直接读取；只有浏览器出不了网、需要 Edge 侧
     # 内网镜像时才配这里。为空时 /driver-packages/catalog 只并入本地
@@ -146,7 +163,9 @@ class HostLinkConfig:
     advertise_ip = ""  # Host 下发给 Slave 的可达地址；空时自动探测
     heartbeat_interval = 5.0
     heartbeat_timeout = 15.0
-    connect_timeout = 5.0
+    connect_timeout = 5.0  # 单次 TCP 连接 / HELLO 握手超时
+    # Slave 等 Host 的上限（秒）：启动时等端口可连、以及 Host 启动中「未就绪」请求的重试，各自计时
+    host_wait_timeout = 120.0
     request_timeout = 10.0
     ros_assist_apply = True
     ros_domain_id = ""  # 空时沿用 ROS_DOMAIN_ID
@@ -192,6 +211,17 @@ class ROSConfig:
     ]
 
 
+def _ignore_removed_field(class_name: str, field: str, source: str) -> None:
+    """已删除的字段一律忽略；有替代项的在本进程第一次遇到时打一条警告。"""
+
+    key = (class_name, field)
+    replacement = _REMOVED_CONFIG_REPLACEMENTS.get(key)
+    if replacement is None or key in _warned_removed_fields:
+        return
+    _warned_removed_fields.add(key)
+    logger.warning(f"[ENV] 配置项 {class_name}.{field} 已删除，{source}里的值被忽略：{replacement}")
+
+
 def _update_config_from_module(module):
     for name, obj in globals().items():
         if isinstance(obj, type) and name.endswith("Config"):
@@ -199,6 +229,7 @@ def _update_config_from_module(module):
                 for attr in dir(getattr(module, name)):
                     if not attr.startswith("_"):
                         if attr in _REMOVED_CONFIG_FIELDS.get(name, ()):
+                            _ignore_removed_field(name, attr, "配置文件")
                             continue
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
@@ -225,6 +256,9 @@ def _update_config_from_env():
 
             if matched_cls is None:
                 logger.warning(f"[ENV] 未找到类：{class_key}")
+                continue
+            if field_key.lower() in _REMOVED_CONFIG_FIELDS.get(matched_cls.__name__, ()):
+                _ignore_removed_field(matched_cls.__name__, field_key.lower(), f"环境变量 {env_key} ")
                 continue
 
             # 查找类属性（不区分大小写）

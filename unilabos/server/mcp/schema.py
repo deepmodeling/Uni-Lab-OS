@@ -23,7 +23,16 @@ def mutation_payload_spec(operation_id: str):
         "materials-v1.move": (materials.MaterialMove, ["move_material"]),
         "materials-v1.transfer": (materials.MaterialTransfer, ["transfer_material"]),
         "materials-v1.lots.inbound": (materials.InventoryLotInbound, ["inbound_inventory_lot"]),
+        "materials-v1.lots.correct": (materials.InventoryLotCorrection, ["correct_inventory_lot"]),
     }.get(operation_id)
+
+
+#: 统一库存命令入口：dev ``materials.v1`` 变更全部经这里，body 是带 operation 的变更信封。
+COMMANDS_PATH = "/api/v1/inventory/commands"
+#: 原路径参数（物料 uuid）在命令里放到顶层 ``target_uuid``。
+TARGETED_OPERATIONS = frozenset({
+    "materials-v1.instances.patch", "materials-v1.instances.data", "materials-v1.instances.position",
+})
 
 
 def normalize_body(operation: Operation, body: dict) -> dict:
@@ -34,12 +43,20 @@ def normalize_body(operation: Operation, body: dict) -> dict:
     from unilabos.client.materials import bind_payload
     from unilabos.protocol.materials import InventoryMutation
 
-    mutation = InventoryMutation.model_validate(body)
+    values = dict(body)
+    target_uuid = values.pop("target_uuid", None)
+    if spec[1] == ["create_material_tree"] and values.get("operation") == "create_material_tree":
+        # 出库实例化：服务端展开 registry 资源类，载荷是 MaterialInstantiate
+        values["operation"] = "instantiate_material"
+    mutation = InventoryMutation.model_validate(values)
     payload = spec[0].model_validate(mutation.payload)
     # 原始 payload 已经严格解析，先取出，再像 HTTP client 那样显式绑定完整 typed payload。
     # 不能把省略默认值的原 JSON 与补齐后的 model_dump 直接比较，否则合法入库也会报 422。
     envelope = mutation.model_copy(update={"payload": {}})
-    return bind_payload(envelope, payload).model_dump(mode="json", exclude_none=False)
+    bound = bind_payload(envelope, payload).model_dump(mode="json", exclude_none=False)
+    if target_uuid is not None:
+        bound["target_uuid"] = target_uuid
+    return bound
 
 
 def input_schema(document: dict[str, Any], operation: Operation) -> dict[str, Any]:
@@ -67,6 +84,26 @@ def input_schema(document: dict[str, Any], operation: Operation) -> dict[str, An
             properties[location]["required"] = mandatory
             required.append(location)
     request = spec.get("requestBody")
+    command_body: dict[str, Any] | None = None
+    command_defs: dict[str, Any] = {}
+    command_spec = mutation_payload_spec(operation.id) if operation.path == COMMANDS_PATH else None
+    if command_spec is not None:
+        # 命令入口的 OpenAPI 请求体是通用对象：直接用 protocol 的变更模型 + 本操作载荷模型给出 body 契约
+        from unilabos.protocol.materials import InventoryMutation
+
+        model, names = command_spec
+        command_body = InventoryMutation.model_json_schema()
+        command_defs = command_body.pop("$defs", {})
+        payload = model.model_json_schema()
+        command_defs.update(payload.pop("$defs", {}))
+        command_body["properties"]["payload"] = payload
+        command_body["properties"]["operation"]["enum"] = names
+        command_body.setdefault("required", []).append("payload")
+        if operation.id in TARGETED_OPERATIONS:
+            command_body["properties"]["target_uuid"] = {"type": "string", "description": "目标物料 uuid"}
+            command_body["required"].append("target_uuid")
+        required.append("body")
+        request = None
     if request:
         content = request["content"]
         if "application/json" not in content:
@@ -103,6 +140,9 @@ def input_schema(document: dict[str, Any], operation: Operation) -> dict[str, An
                     rewrite(child)
 
     rewrite(schema)
+    if command_body is not None:
+        properties["body"] = command_body
+        definitions.update(command_defs)
     # HTTP 在 handler 内校验 InventoryMutation.payload，OpenAPI 因而只看到 JsonObject。
     # 在 MCP 中引用同一个 protocol 模型补齐该段；不重新定义 DTO、不改变线上信封。
     if "InventoryMutation" in definitions:

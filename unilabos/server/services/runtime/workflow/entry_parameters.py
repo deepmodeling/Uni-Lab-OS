@@ -95,17 +95,21 @@ def substitute_entry_references(
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """把 param 顶层的入口参数引用换成任务输入值；未提供的可选参数对应键移除。"""
 
-    result = dict(param)
+    from unilabos.protocol.runtime.input_binding import map_input_bindings, literal_input
+
+    result = {}
     bindings: dict[str, str] = {}
+    def resolve(name: str) -> Any:
+        if name not in entry_input:
+            raise EntryParameterError("workflow_input_required", f"/input/{name}")
+        return literal_input(entry_input[name])
     for key, value in param.items():
         name = entry_reference(value)
-        if name is None:
-            continue
-        bindings[str(key)] = name
-        if name in entry_input:
-            result[key] = _plain(entry_input[name])
-        else:
-            result.pop(key)
+        if name is not None:
+            bindings[str(key)] = name
+            if name not in entry_input:
+                continue
+        result[key] = map_input_bindings(value, resolve)
     return result, bindings
 
 
@@ -128,8 +132,12 @@ def resolve_declared_output(
     for descriptor in outputs:
         name = str(descriptor.get("name") or "")
         found, value = resolver.resolve(bindings.get(name), depth=0)
-        if found:
-            result[name] = value
+        if not found:
+            raise EntryParameterError("workflow_output_missing", f"/output/{name}")
+        try:
+            result[name] = validate_value(descriptor["schema"], value, path=f"/output/{name}")
+        except WorkflowValueSchemaError as exc:
+            raise EntryParameterError("workflow_output_invalid", exc.path) from exc
     return result
 
 
@@ -179,7 +187,7 @@ class _OutputResolver:
 
     def _run_value(self, node_uuid: str, path: str) -> tuple[bool, Any]:
         run = self._runs.get(node_uuid)
-        if run is None or run.get("status") not in {"succeeded", "skipped"}:
+        if run is None or run.get("status") != "succeeded":
             return False, None
         value = (run.get("return_info") or {}).get("return_value")
         if not path:

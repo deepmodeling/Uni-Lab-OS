@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,6 +27,8 @@ class HostServerStack:
 
 #: 工作目录下的数据库子目录：四个库、Host 子进程的 edge/ 与 ``--role backend`` 的 backend/ 都在这里。
 DATABASE_DIRNAME = "database"
+#: ``--role backend`` 独立权威的四库子目录（与同机 Edge 的库隔离）
+BACKEND_DATABASE_DIRNAME = "backend"
 #: 0.12.x 的默认位置。工作目录下还没有数据库而这里已有时继续沿用，升级后数据不会“消失”。
 LEGACY_DATABASE_ROOT = "~/.unilabos"
 _DATABASE_FILES = ("runtime.db", "materials.db", "telemetry.db", "history.db")
@@ -66,6 +69,19 @@ def configured_database_root(args: Mapping[str, Any], *, working_dir: str | Path
         if text:
             return text
     return default_database_root(working_dir)
+
+
+def process_database_root(args: Mapping[str, Any], *, working_dir: str | Path) -> str:
+    """本进程自己打开的四库根目录：``--role backend`` 是 ``<根目录>/backend``，其余模式是根目录本身。
+
+    默认拓扑的 Host 子进程由权威以 ``--server_database_root <根目录>/edge`` 拉起，同样由这里解析；
+    根目录本身的位置规则见 :func:`configured_database_root`。
+    """
+
+    root = configured_database_root(args, working_dir=working_dir)
+    if args.get("role") == "backend":
+        return os.path.join(os.path.expanduser(root), BACKEND_DATABASE_DIRNAME)
+    return root
 
 
 def resolve_database_paths(
@@ -110,7 +126,11 @@ def setup_host_server_stack(
         setup_materials_service,
     )
 
+    from unilabos.server.database import claim_database_root
+
     paths = resolve_database_paths(args, working_dir=working_dir)
+    # 一个根目录只归一个进程：启动入口已经取过锁时这里是同一把（进程内可重入）
+    claim_database_root(paths.root)
     try:
         address_arg = args.get("material_microbackend_addr")
         if address_arg is not None:
@@ -169,6 +189,7 @@ def setup_host_server_stack(
 
 __all__ = [
     "HostServerStack",
+    "process_database_root",
     "resolve_database_paths",
     "setup_host_server_stack",
 ]

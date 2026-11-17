@@ -12,9 +12,12 @@ from .package import (
 )
 
 CLIENT_COMMANDS = frozenset(
-    {"login", "logout", "whoami", "config", "material", "workflow", "graph", "token"}
+    {"login", "logout", "whoami", "config", "material", "workflow", "graph"}
 )
 PACKAGE_COMMANDS = frozenset({"package", "pkg"})
+RUNTIME_COMMANDS = frozenset({"runtime"})
+#: 现场组网诊断：不读会话、不建工作目录，也不启动 runtime（net 层连 rclpy 都不导入）。
+DOCTOR_COMMANDS = frozenset({"doctor"})
 
 
 def _add_client_connection_options(
@@ -98,6 +101,11 @@ def _register_workflow_authority_commands(workflow_actions: Any) -> None:
         dest="target_node",
         default=None,
     )
+    workflow_run.add_argument(
+        "--inputs",
+        default="{}",
+        help="Workflow entry input: a JSON object, or @path/to/file.json",
+    )
     workflow_run.add_argument("--operation_id", "--operation-id", default=None)
     workflow_run.add_argument("--follow", action="store_true")
     workflow_run.add_argument("--after", type=int, default=0)
@@ -134,6 +142,36 @@ def _register_workflow_authority_commands(workflow_actions: Any) -> None:
         include_auth=True,
         jsonl=True,
     )
+
+    workflow_command = workflow_actions.add_parser(
+        "command",
+        help="Submit a Task control command (pause / resume / step / cancel) idempotently",
+    )
+    workflow_command.add_argument("task_uuid")
+    workflow_command.add_argument(
+        "type",
+        # continue 是 V1 CLI 的 resume 别名
+        choices=["pause", "resume", "continue", "step", "cancel"],
+        help=(
+            "pause closes the dispatch gate (running actions finish); resume reopens it or leaves step mode; "
+            "step releases one node; cancel cancels the Task (continue = resume)"
+        ),
+    )
+    workflow_command.add_argument(
+        "--target_node",
+        "--target-node",
+        dest="target_node",
+        default=None,
+        help="Node to release (step only)",
+    )
+    workflow_command.add_argument(
+        "--idempotency_key",
+        "--idempotency-key",
+        dest="idempotency_key",
+        default=None,
+        help="Reuse the key when retrying the same command (default: a new key)",
+    )
+    _add_client_connection_options(workflow_command, include_auth=True)
 
     workflow_authoring = workflow_actions.add_parser(
         "authoring",
@@ -268,6 +306,100 @@ def _register_graph_commands(subparsers: Any) -> None:
     _add_graph_backend_options(graph_delete)
 
 
+def _register_doctor_commands(subparsers: Any) -> None:
+    """``unilab doctor``：Host / Slave 组网分层诊断（TCP 通路 → ROS 收发）。"""
+
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Network diagnostics: TCP probe, ROS talker/listener pair, fake device",
+        description=(
+            "逐层定位「设备不上线」卡在哪一层：net 只测 HostLink TCP 通路与握手；"
+            "talker / listener 成对测 ROS 收发；fake-device 以设备身份发探测并检查 Host 服务可见性。"
+            "不启动设备运行时。"
+        ),
+    )
+    doctor_actions = doctor_parser.add_subparsers(
+        title="doctor subcommands", dest="doctor_command", required=True
+    )
+
+    def add_common(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument(
+            "--hostlink_addr",
+            "--hostlink-addr",
+            dest="hostlink_addr",
+            default="",
+            help=(
+                "Host ip[:port] (default port 7302): TCP probe target; talker/listener/fake-device "
+                "also fetch the ROS network settings through the HostLink handshake"
+            ),
+        )
+        command_parser.add_argument(
+            "--peer",
+            default="",
+            help=(
+                "Peer ip list (comma separated) for unicast-only diagnosis "
+                "(sets ROS_STATIC_PEERS; discovery defaults to OFF)"
+            ),
+        )
+        # 顶层已有同名参数：这里不给默认值，免得覆盖 ``unilab --ros_domain_id N doctor ...``
+        command_parser.add_argument(
+            "--ros_domain_id",
+            "--ros-domain-id",
+            dest="ros_domain_id",
+            type=int,
+            default=argparse.SUPPRESS,
+            help="ROS domain id override",
+        )
+        command_parser.add_argument(
+            "--discovery",
+            default="",
+            choices=["", "OFF", "LOCALHOST", "SUBNET"],
+            help="ROS_AUTOMATIC_DISCOVERY_RANGE (default: OFF when --peer is given)",
+        )
+        command_parser.add_argument("--topic", default="/unilab_doctor", help="Probe topic")
+        command_parser.add_argument("--rate", type=float, default=1.0, help="Publish rate in Hz")
+        command_parser.add_argument(
+            "--duration",
+            type=float,
+            default=0.0,
+            help="Seconds to run, 0 = until Ctrl-C",
+        )
+
+    doctor_net = doctor_actions.add_parser(
+        "net", help="Layer 1: HostLink TCP channel probe (connect, hello, ping RTT; no ROS needed)"
+    )
+    add_common(doctor_net)
+    doctor_net.add_argument("--count", type=int, default=5, help="Ping count")
+    doctor_talker = doctor_actions.add_parser("talker", help="Layer 2: publish ROS probe messages")
+    add_common(doctor_talker)
+    doctor_listener = doctor_actions.add_parser(
+        "listener", help="Layer 2: receive ROS probes, report loss/latency"
+    )
+    add_common(doctor_listener)
+    doctor_listener.add_argument(
+        "--quiet", action="store_true", help="Only print the final summary"
+    )
+    doctor_fake = doctor_actions.add_parser(
+        "fake-device",
+        help="Fake device: probe as a device and check host service visibility",
+    )
+    add_common(doctor_fake)
+    doctor_fake.add_argument(
+        "--device_id",
+        "--device-id",
+        dest="device_id",
+        default="",
+        help="Fake device id (default: random)",
+    )
+    doctor_fake.add_argument(
+        "--no_service_check",
+        "--no-service-check",
+        dest="no_service_check",
+        action="store_true",
+        help="Skip the host registration service visibility check",
+    )
+
+
 def register_cli_commands(
     parser: argparse.ArgumentParser,
     subparsers: Any,
@@ -275,19 +407,15 @@ def register_cli_commands(
     """注册不参与设备 runtime bootstrap 的命令。"""
 
     register_package_commands(subparsers)
+    from .runtime import register_runtime_commands
+
+    register_runtime_commands(subparsers)
+    _register_doctor_commands(subparsers)
 
     parser.add_argument(
         "--json",
         action="store_true",
         help="Output in JSON format (for AI agent consumption)",
-    )
-
-    token_parser = subparsers.add_parser(
-        "token",
-        help="Print the control token that write requests need (OpenLabSite, scripts)",
-    )
-    token_parser.add_argument(
-        "--json", action="store_true", default=argparse.SUPPRESS, help="Output in JSON format."
     )
 
     login_parser = subparsers.add_parser("login", help="Save ak/sk to session file")
@@ -372,12 +500,11 @@ def _prepare_command_session(
     values = vars(args)
     from unilabos.config.working_dir import resolve_working_dir
 
-    working_dir = resolve_working_dir(values.get("working_dir"))
-    # SDK 在工作目录里找控制面 token（写操作需要），与调度权威用同一个工作目录
+    working_dir = resolve_working_dir(values.get("working_dir"), values.get("config"))
     from unilabos.config.config import BasicConfig
 
-    if not str(BasicConfig.working_dir or "").strip():
-        BasicConfig.working_dir = str(working_dir)
+    # 与调度权威用同一个工作目录；同一解释器连续执行多个管理命令时不沿用上一次的目录。
+    BasicConfig.working_dir = str(working_dir)
 
     address = values.get("address")
     args.address_resolved = resolve_address(address) if address else None
@@ -409,9 +536,7 @@ def run_client_command(
 
     session_manager = session_manager or _prepare_command_session(args, parser)
 
-    if command == "token":
-        _cmd_token(values, session_manager)
-    elif command == "login":
+    if command == "login":
         cmd_login(args, session_manager)
     elif command == "logout":
         cmd_logout(args, session_manager)
@@ -429,6 +554,7 @@ def run_client_command(
             "inspect",
             "run",
             "watch",
+            "command",
             "authoring",
         }:
             cmd_workflow_command(args, session_manager)
@@ -459,31 +585,17 @@ def run_client_command(
     return True
 
 
-def _cmd_token(values: dict[str, Any], session_manager: Any) -> None:
-    """打印控制面 token：stdout 只有 token 本身（便于 ``$(unilab token)``），说明写到 stderr。"""
+def _run_doctor_command(args: argparse.Namespace) -> bool:
+    """执行组网诊断；诊断失败按 ``run_doctor`` 的退出码退出（1 参数错误，2 / 3 诊断不通过）。"""
 
-    import json
+    from unilabos.backend.hostlink.doctor import run_doctor
 
-    from unilabos.config.control_token import TOKEN_ENV, client_token, token_path
-
-    path = token_path(session_manager.working_dir)
-    token = client_token()
-    if not token:
-        print(
-            f"还没有控制面 token：{path} 不存在。先启动一次 unilab（调度权威首次启动时生成），"
-            f"或设置 BasicConfig.control_token / 环境变量 {TOKEN_ENV}。",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-    if values.get("json"):
-        print(json.dumps({"token": token, "path": str(path), "header": "X-UniLab-Token"}, ensure_ascii=False))
-        return
-    print(token)
-    print(
-        f"（来自 {path}；写请求带请求头 X-UniLab-Token 或 Authorization: Bearer <token>，"
-        "OpenLabSite 在连接设置的「控制令牌」里填写）",
-        file=sys.stderr,
-    )
+    code = run_doctor(vars(args))
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if code:
+        raise SystemExit(code)
+    return True
 
 
 def run_cli_command(
@@ -493,9 +605,16 @@ def run_cli_command(
     """统一分发所有无需启动设备 runtime 的 CLI 子命令。"""
 
     command = getattr(args, "command", None)
-    if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS:
+    if command in DOCTOR_COMMANDS:
+        return _run_doctor_command(args)
+    if command not in CLIENT_COMMANDS | PACKAGE_COMMANDS | RUNTIME_COMMANDS:
         return False
     session_manager = _prepare_command_session(args, parser)
+    if command in RUNTIME_COMMANDS:
+        from .runtime import run_runtime_command
+
+        run_runtime_command(args, session_manager)
+        return True
     if command in PACKAGE_COMMANDS:
         return run_package_command(
             vars(args),
@@ -511,7 +630,9 @@ def run_cli_command(
 
 __all__ = [
     "CLIENT_COMMANDS",
+    "DOCTOR_COMMANDS",
     "PACKAGE_COMMANDS",
+    "RUNTIME_COMMANDS",
     "register_cli_commands",
     "run_cli_command",
     "run_client_command",

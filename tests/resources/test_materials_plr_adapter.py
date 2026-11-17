@@ -181,3 +181,40 @@ def test_materials_create_rejects_multiple_root_inputs() -> None:
 
     with pytest.raises(ValueError, match="一次只能创建一个 PLR 根物料"):
         materials.create(roots)
+
+
+def test_one_plr_class_may_carry_several_categories(tmp_path) -> None:
+    """FRAMEWORK_GAPS #28：PLR ``category`` 是实例属性，同一个类可以有多种。
+
+    子节点按类名共用组件模板（``Well``），模板的 resource_type 只是首个实例的默认值；
+    物料自己的 resource_type 才是它的类型，不能因为与模板不同就拒绝建树。
+    """
+
+    from pylabrobot.resources import Coordinate, Resource, Well
+
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+
+    def rack(name: str, category: str) -> Resource:
+        root = Resource(name, size_x=50, size_y=50, size_z=10, category="tube_rack")
+        root.unilabos_extra = {"unilabos_resource_class": "category-rack"}
+        root.assign_child_resource(
+            Well(f"{name}_A1", size_x=10, size_y=10, size_z=40, category=category),
+            Coordinate(1, 1, 0),
+        )
+        return root
+
+    try:
+        wells = materials.create(rack("wells", "well"), gateway=client)
+        tubes = materials.create(rack("tubes", "tube"), gateway=client)
+
+        def child_identity(root_uuid: str):
+            node = service.get_tree(root_uuid).nodes[1]
+            return node.material.template_name, node.material.resource_type
+
+        assert child_identity(wells.unilabos_uuid) == ("Well", "well")
+        assert child_identity(tubes.unilabos_uuid) == ("Well", "tube")
+        restored = materials.get(tubes.unilabos_uuid, gateway=client).to_plr_resources()[0]
+        assert restored.children[0].category == "tube"
+    finally:
+        service.close()

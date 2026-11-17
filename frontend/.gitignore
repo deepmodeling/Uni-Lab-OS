@@ -1,6 +1,0 @@
-node_modules
-dist
-*.tsbuildinfo
-.env.local
-# 仓库根 .gitignore 的 Python 通用规则 `lib/` 不能吞掉前端源码
-!/src/lib/

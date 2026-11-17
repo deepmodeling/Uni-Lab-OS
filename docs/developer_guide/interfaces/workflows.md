@@ -145,8 +145,15 @@ POST `/workflow-tasks` 可带 `input`：按合同校验（未知键、缺必填�
    ```
 
    子工作流按所选发布的冻结快照**内联展开**：父图多一个组合调用节点（无 Job，仅画布/追溯/边界映射）
-   和它展开出的普通节点与连线，节点 uuid 由调用 uuid 派生。展开节点各自申请设备 / 物料锁，
-   没有组级锁。静态实参下推到内部节点 param；未给出的可选输入在父图里不存在。
+   和它展开出的普通节点与连线，节点 uuid 由调用 uuid 派生。展开节点各自申请设备 / 物料锁；
+   子工作流声明的资源作用域（`with ctx.lock(...)` / `ctx.resource_scope` / `PUT .../resource-scopes`）
+   随调用投影到父图身份空间，记在组合调用节点的 `meta_data.unilab.composite.resource_scopes`
+   （作用域 id 按调用派生，`source_scope_id` 记原名；`root` 在父图里按包住这次调用的 `with` 处理），
+   调度器建任务时与父图直接声明的作用域合并规划，持有方式和直接运行子工作流完全一样。
+   父图作用域的 `node_uuids` 可以写组合调用节点（定义层只看得到它），等价于它展开出的全部节点；
+   子工作流的顶层作用域嵌套在覆盖这次调用的最深作用域下（含嵌套组合里外层子操作的作用域）。
+   子作用域引用了子图外节点时插入被拒（`composite_boundary_mapping_invalid`）。
+   静态实参下推到内部节点 param；未给出的可选输入在父图里不存在。
    成功 201，返回 `{invocation_uuid, contract_pin, graph}`，父图 revision +1。
    子工作流未发布 code=3002；递归（插入自身、子工作流内含父工作流）、缺必填实参、实参类型不符等
    展开诊断 code=1000，消息含诊断码与路径（如 `composite_recursive_reference（/composite/child_workflow_uuid）`）。
@@ -319,14 +326,57 @@ HTTP 记录确认后由调度器消费，不是 handler 内直接执行下一个
 
 这三个比较分别防止草稿、编译候选和图的并发覆盖，不能只传一个 revision。
 
+### 源码回写与平台差异
+
+保存草稿、应用后写回规范化源码、恢复待回写记录时，后端把 Python 源码写回登记的源码文件
+（托管源码在 `<db 根>/workflow_sources/workflows/*.py`，设备包源码在包根下的 `workflows/<名称>.py`）。
+`WorkflowService` 在模块加载时按平台能力选一次回写后端（`_SOURCE_WRITE_BACKEND`），两个后端对外契约相同：
+
+- 按 `expected_draft_hash` 做内容比较后交换（CAS）：内容与期望哈希不符、期望有文件但文件已缺失、
+  期望无文件但文件已存在，都返回 `draft_hash_conflict`（“草稿已被其他程序修改”）；
+- 在同目录写临时文件并 fsync，再原子替换；失败不留下临时文件；
+- 只写登记包根内固定的 `workflows/<名称>.py`，不跟随符号链接；
+- 替换前保留原稿 `.cas` 备份，替换后验证成功才删除。替换一旦发布，异常路径绝不覆盖或删除
+  无法证明属于本进程的内容，备份留给人工或 Git 恢复。
+
+| 后端 | 平台 | 并发检测 |
+|---|---|---|
+| `linux_lease` | Linux（`F_SETLEASE`、`signal.sigtimedwait`、`O_DIRECTORY` 与 `dir_fd` 齐备） | 目录 FD 相对操作；在写 lease 下比较并替换：目标已被其他进程打开时拿不到 lease，期间有进程打开或写入会打断 lease，两种情况都返回冲突 |
+| `portable` | macOS、Windows，以及缺上述任一原语的平台 | 按路径操作，逐级 lstat 拒绝符号链接与目录联接；目标旁 sidecar 锁 `.<名称>.py.lock`（`utils/file_lock`：POSIX flock，Windows msvcrt）在读-哈希-比较-替换全程持有；替换后验证内容哈希 |
+
+可移植后端的保证较弱。没有 lease，就发现不了外部编辑器仍打开着源码文件，也检测不到外部程序在
+最后一次哈希确认与替换之间写入的内容，这部分写入会被覆盖。本仓库的进程之间由 sidecar 锁串行化；
+外部写入只有发生在替换之后、发布后验证之前，才会返回冲突并保留 `.cas` 备份。
+Windows 上目标被其他程序打开导致替换失败（PermissionError）同样返回 `draft_hash_conflict`；
+Windows 不支持目录 fsync，跳过这一步。sidecar 锁文件常驻，不随写入删除。
+在外部编辑器里改源码时，先在编辑器里保存，再到浏览器保存或应用；遇到冲突按提示刷新查看差异。
+测试用 `UNILABOS_SOURCE_WRITE_BACKEND=portable` 在 Linux 上强制可移植后端。
+
+### 外部编辑与待回写恢复
+
+已登记源码归本机 Workflow Authority（调度权威进程；`--no-safe-restart` 时是单进程 Host）所有，
+`server/backend/composition.py:setup_local_scheduler` 装配调度器后：
+
+1. 先同步跑一遍 `recover_registered_sources`：外部改过的源码重新编译出候选（事件 cause
+   `external_draft_changed` / `recovered`）；Apply 已提交但写回失败留下的 `writeback_status=pending`
+   （应用响应里的 `draft_writeback_pending` 警告）在文件仍是写回前内容或已丢失时重新写回并结清，
+   文件已经是应用后的内容则直接结清。单个源码失败只记日志，不挡启动；
+2. 再启动 `WorkflowSourceMonitor` 守护线程（每秒扫描一次，签名稳定 0.25 s 后才处理）：外部编辑器保存
+   后重新编译出候选，仍为 pending 的写回按退避持续重试；单个源码出意外错误只影响它自己，下一轮继续。
+
+`shutdown_backend_services` 在关闭共享的 runtime.db 之前先停监视线程（最多等 5 s，卡在一次编译或
+文件读写里就记警告继续停机，守护线程随进程退出），不影响停机限时 `lifetime.SHUTDOWN_DEADLINE_S`。
+
 设备包 `@workflow` 是另一种声明入口：ctx.run/ctx.run_template 声明步骤，
-ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件。
+ctx.loop_for/ctx.loop_while 声明由调度器执行的循环，ctx.device_state/ctx.step_output 构造条件；
+源码里也可以直接写原生 `while <条件>:` / `for i in range(n)`，循环前赋值、循环体里重新赋值的变量在
+轮次之间携带（见 workflow_static_conditions.md「循环与跨轮携带的变量」）。
 循环变量 `{{loop.index}}`、`{{loop.iteration}}`、`{{loop.count}}` 由运行时处理。
 这不等同于支持把任意 Python while/try/except 直接变成可恢复的工作流。
 
 已发布子工作流通过冻结的发布快照与输入/输出 handle 合同展开，不能只凭函数名调用（见上文“工作流即节点”）。
 **本轮没有升级嵌套作用域锁**：父组资源预占、组内并行竞争等讨论不能当成本版已兑现能力。
-跨设备共享物料声明依然使用 `@action(materials_need_lock=["输入参数名"])`，让调度器集中处理。
+跨设备共享物料靠物料入参的默认锁（每个 `ResourceSlot` 入参执行期间独占），由调度器集中处理，驱动不按动作改写。
 
 ## 源码与回归依据
 

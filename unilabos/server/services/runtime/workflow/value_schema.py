@@ -92,6 +92,23 @@ def normalize_value_schema(raw: Any, *, path: str = "/schema") -> dict[str, Any]
                 f"{path}/required",
             )
         schema["required"] = list(dict.fromkeys(required))
+    bound_pairs = {"integer": ("minimum", "maximum"), "number": ("minimum", "maximum"),
+                   "string": ("minLength", "maxLength"), "array": ("minItems", "maxItems")}
+    if value_type in bound_pairs:
+        lower, upper = bound_pairs[value_type]
+        for key in (lower, upper):
+            if key not in schema:
+                continue
+            bound = schema[key]
+            valid = type(bound) in {int, float} and math.isfinite(bound)
+            if value_type != "number":
+                valid = type(bound) is int
+            if value_type in {"string", "array"}:
+                valid = valid and bound >= 0
+            if not valid:
+                raise WorkflowValueSchemaError("workflow_schema_invalid", f"{path}/{key}")
+        if lower in schema and upper in schema and schema[lower] > schema[upper]:
+            raise WorkflowValueSchemaError("workflow_schema_invalid", path)
     enum = schema.get("enum")
     if enum is not None:
         if not isinstance(enum, list) or not enum:
@@ -150,6 +167,13 @@ def validate_value(
     )
     if not valid:
         raise WorkflowValueSchemaError("workflow_value_invalid", path)
+    limits = {"integer": ("minimum", "maximum", value), "number": ("minimum", "maximum", value),
+              "string": ("minLength", "maxLength", len(value) if isinstance(value, str) else 0),
+              "array": ("minItems", "maxItems", len(value) if isinstance(value, list) else 0)}
+    if kind in limits:
+        lower, upper, actual = limits[kind]
+        if lower in normalized and actual < normalized[lower] or upper in normalized and actual > normalized[upper]:
+            raise WorkflowValueSchemaError("workflow_value_invalid", path)
     if kind == "array":
         return [
             validate_value(normalized["items"], item, path=f"{path}/{index}")
@@ -207,8 +231,20 @@ def schema_is_assignable(
         return source_slot and target_slot
     source_type = source.get("type")
     target_type = target.get("type")
+    if "enum" in source:
+        try:
+            for item in source["enum"]:
+                validate_value(target, item)
+            return True
+        except WorkflowValueSchemaError:
+            return False
+    for lower, upper in (("minimum", "maximum"), ("minLength", "maxLength"), ("minItems", "maxItems")):
+        if lower in target and (lower not in source or source[lower] < target[lower]):
+            return False
+        if upper in target and (upper not in source or source[upper] > target[upper]):
+            return False
     if source_type == "integer" and target_type == "number":
-        return True
+        return "enum" not in target
     if source_type != target_type:
         return False
     if source_type == "array":

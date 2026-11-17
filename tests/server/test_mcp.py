@@ -56,8 +56,14 @@ def rpc(client, method, params=None, request_id=1):
 
 def test_all_public_operations_use_current_protocol(contract, application):
     protocol = application.state.protocol_mcp
-    assert len(OPERATIONS) == 131
-    assert len(protocol.tools) == 137
+    # +23 V1 工作流作者 / 设备目录；-1 V1 任务生命周期合并重复路由；+6 V1 库存 / 工作区；
+    # +12 V1 作业 / 库存接缝（消费事实、数量核对、结果未知处置、类型化实例命令）；
+    # +4 V1 进程管理协议（快照、提交 / 查询操作、组件日志）；+1 任务运行事件时间线；
+    # +5 注册表接受（目录状态、批量接受 / 忽略、跨机器 Slave 列表 / 删除）；
+    # -3 实验室档案读写 / 布局视图（lab-v1，负责人 11-17 决定删除；仓储视图保留）
+    assert len(OPERATIONS) == 179
+    assert len(protocol.tools) == 185
+    assert [op.path for op in OPERATIONS if op.path.startswith("/api/v1/lab/")] == ["/api/v1/lab/warehouse"]
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -66,7 +72,7 @@ def test_all_public_operations_use_current_protocol(contract, application):
         assert operation.method.lower() in contract["paths"][operation.path]
     operations = {(op.method, op.path) for op in OPERATIONS}
     for method, path in operations:
-        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/history/")):
+        if path.startswith(("/api/v1/runtime/", "/api/v1/telemetry/", "/api/v1/edge/history/")):
             assert method == "GET", (method, path)
         assert "/snapshots/" not in path
         assert "/reservations" not in path or method == "GET"
@@ -100,7 +106,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 137
+        assert len(rpc(client, "tools/list")["tools"]) == 185
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})
@@ -142,6 +148,9 @@ def test_local_only_and_rebinding_guard(application, peer, headers, expected):
         response = client.post("/mcp", headers={"Accept": "application/json, text/event-stream", **headers},
                                json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         assert response.status_code == expected, response.text
+        if expected == 403:
+            # 本机门禁的拒绝正文与管理 API 同为信封（403 → 1001）
+            assert response.json()["code"] == 1001 and response.json()["error"]["msg"]
 
 
 def test_business_failure_is_error_but_failed_task_is_data(application, contract):
@@ -214,18 +223,23 @@ def test_material_defaults_and_idempotency_use_real_http_authority(tmp_path, con
             "payload": {"name": "mcp-water"},
         }}))
         assert not created.isError, created
-        template_uuid = created.structuredContent["body"]["data"]["template_uuid"]
+        # 写入经统一库存命令入口：body 是信封，data 是命令结果，result 为 MutationResult，其 data 才是模板
+        assert created.structuredContent["body"]["data"]["status"] == "completed"
+        template_uuid = created.structuredContent["body"]["data"]["result"]["data"]["template_uuid"]
         arguments = {"body": {"command_uuid": "lot-command", "effect_key": "lot-effect", "operation": "inbound_inventory_lot",
                                "payload": {"template_uuid": template_uuid, "unit": "ul", "quantity": 500}}}
         result = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
         assert not result.isError, result
-        assert result.structuredContent["body"]["data"]["quantity_total"] == 500
+        assert result.structuredContent["body"]["data"]["result"]["data"]["quantity_total"] == 500
         replay = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert not replay.isError and replay.structuredContent["body"]["replayed"]
-        assert replay.structuredContent["body"]["data"]["quantity_total"] == 500
+        assert not replay.isError and replay.structuredContent["body"]["data"]["replayed"]
+        assert replay.structuredContent["body"]["data"]["result"]["data"]["quantity_total"] == 500
         arguments["body"]["payload"]["quantity"] = 600
         conflict = asyncio.run(protocol.call_tool("materials_v1_lots_inbound", arguments))
-        assert conflict.isError and conflict.structuredContent["http_status"] == 409
+        # 同幂等键不同请求：HTTP 200 + 失败信封（业务码 4002，拒绝码在 error.code），MCP 按 code != 0 标 isError
+        assert conflict.isError and conflict.structuredContent["http_status"] == 200
+        assert conflict.structuredContent["body"]["code"] == 4002
+        assert conflict.structuredContent["body"]["error"]["details"]["command_id"] == "lot-command"
     finally:
         service.close()
 
@@ -247,6 +261,55 @@ def test_graph_validation_error_explains_how_to_fix(tmp_path, contract):
         }))
         assert result.isError
         assert "material_uuid" in result.structuredContent["body"]["error"]["msg"]
+    finally:
+        service.close()
+
+
+def test_task_events_tool_follows_the_task_timeline_by_cursor(tmp_path, contract):
+    from unilabos.server.api.runtime.workflow import create_workflow_app
+    from unilabos.server.services.runtime.workflow.service import WorkflowService
+
+    service = WorkflowService(tmp_path / "runtime.db")
+    protocol = ProtocolMCP(create_workflow_app(service), contract)
+    tool = next(tool for tool in protocol.tools if tool.name == "workflow_task_events")
+    assert tool.annotations.readOnlyHint is True
+    validator = Draft202012Validator(tool.inputSchema)
+
+    def call(name, arguments):
+        result = asyncio.run(protocol.call_tool(name, arguments))
+        assert not result.isError, result.structuredContent
+        return result.structuredContent["body"]["data"]
+
+    def events(task_uuid, **query):
+        arguments = {"path": {"task_uuid": task_uuid}, "query": query}
+        validator.validate(arguments)
+        return call("workflow_task_events", arguments)
+
+    try:
+        workflow = call("workflow_workflow_create", {"body": {"name": "事件观察"}})
+        call("workflow_graph_save", {"path": {"workflow_uuid": workflow["uuid"]}, "body": {
+            "revision": workflow["revision"], "edges": [],
+            "nodes": [{"uuid": "6f2c4f0e-6a4f-4b8e-9d55-0d3c1f0e7a11", "name": "人工确认", "type": "manual_confirm"}],
+        }})
+        task = call("workflow_task_create", {"body": {"workflow_uuid": workflow["uuid"]}})
+        first = events(task["uuid"], after_sequence="0", limit="500")
+        assert set(first) == {"items", "next_cursor", "has_more"} and first["has_more"] is False
+        cursor = first["next_cursor"]
+
+        call("workflow_task_command", {"path": {"task_uuid": task["uuid"]},
+                                       "body": {"type": "cancel", "idempotency_key": "mcp-cancel"}})
+        later = events(task["uuid"], after_sequence=str(cursor))
+        assert later["items"], "取消后应有新的任务事件"
+        assert all(item["sequence"] > cursor and item["workflow_task_uuid"] == task["uuid"]
+                   for item in later["items"])
+        assert later["next_cursor"] == later["items"][-1]["sequence"]
+        everything = first["items"] + later["items"]
+        paged = events(task["uuid"], after_sequence="0", limit="1")
+        assert paged["items"] == everything[:1]
+        assert paged["has_more"] is (len(everything) > 1)
+        # 游标已到末尾：没有新事件，next_cursor 原样返回
+        assert events(task["uuid"], after_sequence=str(later["next_cursor"])) == {
+            "items": [], "next_cursor": later["next_cursor"], "has_more": False}
     finally:
         service.close()
 

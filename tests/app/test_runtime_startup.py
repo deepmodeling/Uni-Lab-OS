@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import socket
+import sys
 import threading
 
 import pytest
@@ -63,6 +64,22 @@ def test_port_check_reports_actionable_hint_when_in_use() -> None:
 
 
 # ── 启动编排：等设备 runtime 真正就绪 ──────────────────────────────────
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows 不复用 TIME_WAIT 端口")
+def test_port_check_allows_closed_connections_but_rejects_live_reusable_listener() -> None:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as holder:
+        holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        holder.bind(("127.0.0.1", 0))
+        holder.listen(1)
+        port = holder.getsockname()[1]
+        with pytest.raises(ManagementPortInUseError):
+            ensure_port_available("127.0.0.1", port)
+        with socket.create_connection(("127.0.0.1", port), timeout=2) as client:
+            accepted, _ = holder.accept()
+            accepted.close()  # 服务端主动关闭，留下真实 TIME_WAIT 连接。
+            assert client.recv(1) == b""
+    ensure_port_available("127.0.0.1", port)
 
 
 @pytest.fixture()

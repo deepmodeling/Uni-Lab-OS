@@ -6,13 +6,16 @@
 
 ## 支持的文件格式
 
-Uni-Lab-OS 支持 JSON 和 GraphML。JSON 由 Python 标准库严格解析，因此不能包含
-注释或尾随逗号。GraphML 适合通过 yEd 等图形化工具编辑。
+设备图只支持 node-link JSON。JSON 由 Python 标准库严格解析，因此不能包含注释或
+尾随逗号。GraphML 已不再支持：`unilab -g foo.graphml` 会直接拒绝启动，请先把图转换
+为下文的 node-link JSON（顶层 `nodes` + `links`，层级用 `parent` / `parent_uuid`
+表达）。
 
-启动时通过 `-g` 指定设备图：
+启动时通过 `-g` 指定设备图文件，或已登记到本机 Graph Authority 的图名 / uuid：
 
 ```bash
 unilab -g path/to/device_graph.json
+unilab -g device_graph          # 复用已登记的图
 ```
 
 ## JSON 结构
@@ -25,7 +28,8 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
     {
       "id": "workstation_1",
       "uuid": "79a4cbaa-f053-4f0f-b186-9dca9f5fbd58",
-      "name": "主工作站",
+      "name": "79a4cbaa-f053-4f0f-b186-9dca9f5fbd58",
+      "display_name": "主工作站",
       "type": "device",
       "class": "workstation",
       "config": {},
@@ -38,7 +42,8 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
     {
       "id": "reactor_1",
       "uuid": "f2d9082c-c4d9-46d9-bb92-4dc8614158c0",
-      "name": "反应器",
+      "name": "f2d9082c-c4d9-46d9-bb92-4dc8614158c0",
+      "display_name": "反应器",
       "type": "device",
       "class": "reactor",
       "parent": "workstation_1",
@@ -59,15 +64,15 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
 
 | 字段 | 说明 |
 | --- | --- |
-| `id` | 图内唯一的稳定标识。缺省时使用 `name` |
+| `id` | 图内唯一、人可读的稳定标识（编译器、调度与设备寻址都用它）。缺省时取 PLR 键 / `display_name` |
 | `uuid` | 微后端分配的资源 UUID；严格导入时必须提供 |
-| `name` | 资源名称。缺省时使用 `id` |
-| `display_name` | 面向界面的显示名称 |
+| `name` | 物料名，恒等于 `uuid`（见下文「物料命名」）。可以省略 |
+| `display_name` | 面向界面的人读标签，可重名、可编辑 |
 | `type` | 节点类型；图导入缺省值为 `device` |
 | `class` | Registry 中的设备或资源类名 |
 | `parent` | 父节点的 `id` |
 | `parent_uuid` | 父节点 UUID；同时提供时优先按 UUID 建立关系 |
-| `config` | 驱动构造参数和设备配置 |
+| `config` | 驱动构造参数和设备配置；非设备物料的 `config.name` 是 PLR 键 |
 | `data` | 运行时状态数据 |
 | `extra` | Uni-Lab-OS 通信与转换元数据 |
 | `pose` | 相对父资源的位置、几何尺寸和可视化布局 |
@@ -79,8 +84,28 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
 | `resource_template_uuid` | 微后端资源模板 UUID |
 | `sites` | 载架 Site 实例 |
 
-图文件应显式提供 `uuid`。传输输入也可通过 `data.unilabos_uuid` 携带同一 UUID；
-若两者同时存在，则值必须一致。加载器不会为严格导入的数据随机生成 UUID。
+`-g` 本地文件中没有 `uuid` 的草稿节点由 Graph Authority 登记时发号（按图 uuid +
+节点 `id` 稳定派生，重复导入结果一致）；已有 `uuid` 的节点沿用该身份。传输输入也可
+通过 `data.unilabos_uuid` 携带同一 UUID；若两者同时存在，则值必须一致。装配运行时
+结构时每个节点都必须带 UUID，不会随机生成。
+
+### 物料命名
+
+物料层的 `name` 恒等于 `uuid`（设备节点同样如此），人读标签放 `display_name`。
+PyLabRobot 树里用的名字（PLR 键）单独保存在 `config.name`：PLR 名在整棵 PLR 树内唯一、
+创建后不可改，驱动和 PLR 自身按它查找（如 `_resource_child_name` 引用的就是 PLR 键）。
+设备不是 PLR 资源，`config` 是驱动构造参数，不写 PLR 键。`id` 保持人可读，不从
+uuid 派生。
+
+旧图里 `name` 是标签：登记时若 `name` 已是 UUID 形式（大写、花括号、无连字符也算），
+就作为该节点的身份复用（节点另带的 `uuid` 与它不一致时拒绝，报 `identity_conflict`）；
+否则把它迁到 `display_name`（为空时）和 `config.name`（缺失时），再写成 uuid。导出的
+新图里 `name` 就是 uuid，重新导入是幂等的。
+
+Opentrons 板 / 管架里「名字就是 ordering 标识」的孔和管（裸 `"A1"`）用 uuid 作 PLR 键，
+父节点 `config.ordering` 同步改成 `{"A1": <uuid>}`；`plate["A1"]`、`get_item("A1")` 照常
+可用，同一台面上两块这样的板不再撞名。驱动若用 `get_resource("A1")` 按名找孔需要改用
+ordering 标识。
 
 `children` 是资源树的递归容器，不属于 `ResourceDict` 领域字段。平铺 JSON 图应在
 子节点上使用 `parent_uuid`，必要时同时提供便于阅读的 `parent`。
@@ -118,8 +143,8 @@ host node 是运行时内置的服务设备，按 `class: host_node` 判别，�
 嵌套的向量必须完整包含 `x`、`y`、`z`。可用布局为 `2d`、`x-y`、`z-y`
 和 `x-z`；截面类型可用 `rectangle`、`circle` 和 `rounded_rectangle`。
 
-GraphML 节点可使用顶层 `x`、`y`、`z`，加载器会将其规范化到
-`pose.position`。若这些坐标与已有 `pose.position` 冲突，导入会失败。
+节点顶层的 `x`、`y`、`z` 会被规范化到 `pose.position`。若这些坐标与已有
+`pose.position` 冲突，导入会失败。
 
 ### Links
 
@@ -142,14 +167,25 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
 
 ## 规范化与校验
 
-图加载过程执行以下处理：
+`-g <文件>.json` 的读取链路：
 
-1. 校验节点 UUID，并拒绝 UUID 缺失或冲突。
-2. 为缺失的 `type`、`name`、`class`、`config`、`data` 和 `extra` 填充模型允许的默认值。
-3. 将 GraphML 的标签、父子关系和顶层坐标转换为规范字段。
-4. 按 `parent_uuid` 或 `parent` 建立资源树，并校验 UUID 唯一性。
-5. 规范化连接端点及端口。
-6. 为设备树补充本机 `machine_name`。
+1. 旧格式图（`class` 无 `template_name`、根级 `position`、`children` 列表、
+   `edges` 键、`name` 不是 uuid 等）在读取边界由 `server/backend/legacy_adaptor/legacy/graph.py`
+   一次性转换为当前契约，并打印 WARNING。旧液体字段一并转成内容物：dev 时代容器的
+   `data.liquid=[{"liquid_type": ..., "liquid_volume": ...}]` 在节点还没有
+   `liquids` / `substances` 时转为 `substances`（单位 `ul`，与 `max_volume` 同单位），
+   `data.liquid` 原样保留给协议编译器读取。
+2. Graph Authority（`server/services/materials/graph.py`）登记该图：为草稿节点和
+   Site 发号、把 `name` 写成 uuid（按上文规则迁移旧名）、实例化设备模板 Site、拒绝身份冲突；权威已有同名图时以权威为准，只补
+   文件新增的节点和连线。
+3. `load_graph_payload()` 把权威 payload 装配成运行时结构：
+   - 校验节点 UUID；为缺失的 `type`（`device`）、`name`（取 uuid）、`config` 等填充默认值；
+     顶层 `x/y/z` 折叠进 `pose.position`，根级 `position` 拒绝；
+   - 按 `parent_uuid` 或 `parent` 建立 `ResourceTreeSet`，并校验 UUID 唯一性；
+   - 补齐连接端点的 id / UUID，把 `port` 规范成 `{端点 id: 端口}`；
+   - 生成协议编译器使用的 NetworkX 物理拓扑图，并按 `communication` 连接把串口 /
+     I/O 端口写进设备 `config`；
+   - 为设备树补充本机 `machine_name`，连接转换为 `sourceHandle` / `targetHandle`。
 
 节点中的未知根字段会移入 `config`，但图文件应直接把驱动参数写在 `config`
 中，以便模型审查和前端编辑。
@@ -157,13 +193,20 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
 ## Python 加载接口
 
 ```python
-from unilabos.resources.graphio import read_graphml, read_node_link_json
+import json
 
-graph, resources, links = read_node_link_json("device_graph.json")
-graph, resources, links = read_graphml("device_graph.graphml")
+from unilabos.server.services.materials.graph import load_graph_payload
+
+with open("device_graph.json", encoding="utf-8") as stream:
+    payload = json.load(stream)
+loaded = load_graph_payload(payload, machine_name="lab-pc")
+loaded.resource_tree_set     # ResourceTreeSet
+loaded.links                 # backend 形态的连接列表
+loaded.physical_setup_graph  # NetworkX 物理拓扑图
 ```
 
-返回值依次为 NetworkX 图、`ResourceTreeSet` 和规范化连接列表。
+`load_graph_payload` 只接受当前契约且每个节点带 UUID 的 payload（即 Graph
+Authority 存储的形态）；旧格式图请先经 `unilab graph upload` 或 `-g` 登记。
 
 ## 示例与排查
 
@@ -190,4 +233,5 @@ unilab --check_mode --complete_registry --skip_env_check -g path/to/device_graph
 - `unilabos/resources/objects/resource.py`
 - `unilabos/resources/objects/pose.py`
 - `unilabos/resources/resource_tracker.py`
-- `unilabos/resources/graphio.py`
+- `unilabos/server/services/materials/graph.py`
+- `unilabos/server/backend/legacy_adaptor/legacy/graph.py`

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Protocol, Sequence
+from typing import Any, Collection, Mapping, Optional, Protocol, Sequence
 
+from unilabos.resources.objects.naming import PLR_KEY_FIELD, canonical_uuid, plr_key
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
-from unilabos.protocol.materials import InventoryMutation, MutationResult
+from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children, material_serialization
+from unilabos.protocol.materials import InventoryMutation, MutationResult, snapshot_retirable
 from unilabos.protocol.materials import (
     MaterialAggregateRead,
     MaterialDataDelta,
@@ -210,6 +212,9 @@ def resource_tree_to_create(
     默认不携带实例 UUID（由权威分配）；``adopt_uuid=True`` 时把草稿节点的
     uuid 作为显式 material_uuid 提交（带条件的创建），供开机图对齐、
     出库扣减产物落库等要求「uuid 与外部一致」的场景使用。
+
+    物料 name 由权威写成 uuid：草稿 name 已是 UUID（草稿 uuid）时不提交，免得被当成
+    身份采纳；仍是旧式标签时原样提交，由权威迁到 display_name 与 PLR 键。
     """
 
     if len(value.trees) != 1:
@@ -243,7 +248,11 @@ def resource_tree_to_create(
                 material_uuid=resource.uuid if adopt_uuid else None,
                 identity=MaterialIdentityWrite(
                     resource_id=resource_ids[resource.uuid],
-                    name=resource.name,
+                    name=(
+                        resource.name
+                        if canonical_uuid(resource.name) is None or adopt_uuid
+                        else ""
+                    ),
                     display_name=resource.display_name,
                     description=resource.description,
                     resource_type=resource.type,
@@ -300,12 +309,32 @@ def plr_resources_to_create(resources: Sequence[Any]) -> MaterialTreeCreate:
                         f"PLR 资源 {resource.name} 已有 Site UUID；"
                         "已有物料应走更新而不是创建"
                     )
-        for child in getattr(resource, "children", []) or []:
+        for child in material_children(resource):
             validate_new(child)
 
     for resource in resources:
         validate_new(resource)
-    draft_resources = copy.deepcopy(list(resources))
+        # 先校验原对象的提交状态；TipSpot 的 legacy tracker 使用进程侧表，
+        # deepcopy 不会复制其待提交历史，不能等复制后再判断。
+        material_serialization(resource)
+    # PLR legacy TipTracker 以 object 单例标记“无待提交操作”；普通 deepcopy
+    # 会复制该哨兵，导致已提交枪头被误认为历史对象。保留哨兵的对象身份。
+    memo = {}
+
+    def remember_tracker_sentinels(resource):
+        for field in ("head", "head96") if has_legacy_tip_channels(resource) else ():
+            channels = getattr(resource, field, None)
+            if isinstance(channels, dict):
+                for tracker in channels.values():
+                    marker = getattr(tracker, "_before", None)
+                    if type(marker) is object:
+                        memo[id(marker)] = marker
+        for child in material_children(resource):
+            remember_tracker_sentinels(child)
+
+    for resource in resources:
+        remember_tracker_sentinels(resource)
+    draft_resources = copy.deepcopy(list(resources), memo)
     tree = ResourceTreeSet.from_plr_resources(
         draft_resources, known_random_uuid=True
     )
@@ -401,11 +430,41 @@ class SnapshotUuidMismatchError(ValueError):
     """
 
 
+def discarded_tip_uuids(
+    runtime_uuids: Collection[str],
+    base: MaterialTreeRead,
+    runtime_material_uuids: Optional[Collection[str]],
+) -> set[str]:
+    """权威基线里已被设备丢弃的枪头。
+
+    规则（同时满足）：权威节点的 ``resource_type`` 可由快照退役（枪头）；它的权威
+    父节点在本次上报里（父节点的运行时结构孩子是完整的）；它本身既不在上报里，
+    也不在设备运行时仍持有的物料中（``runtime_material_uuids``）。
+
+    ``runtime_material_uuids`` 为 ``None`` 表示上报不是从运行时 PLR 实例序列化来的
+    （原始字典、权威读回的树），缺席不能证明丢弃，一律不退役。未上报父节点下的
+    缺席节点（``allow_partial`` 的局部上报）同样不退役。
+    """
+
+    if runtime_material_uuids is None:
+        return set()
+    return {
+        node.material.material_uuid
+        for node in base.nodes
+        if snapshot_retirable(node.material.resource_type)
+        and node.material.material_uuid != base.root_material_uuid
+        and node.material.parent_material_uuid in runtime_uuids
+        and node.material.material_uuid not in runtime_uuids
+        and node.material.material_uuid not in runtime_material_uuids
+    }
+
+
 def resource_tree_to_snapshot(
     value: ResourceTreeSet | Sequence[Any],
     base: MaterialTreeRead,
     *,
     allow_partial: bool = False,
+    runtime_material_uuids: Optional[Collection[str]] = None,
 ) -> MaterialSnapshot:
     """用运行时资源覆盖下载基线。
 
@@ -415,8 +474,15 @@ def resource_tree_to_snapshot(
 
     ``allow_partial`` 用于设备仅上报孔位或子树的场景；未上报的权威节点保持
     不变。无论是否局部更新，运行时都不能夹带权威树之外的 UUID。
+
+    唯一的结构缺席例外是被丢弃的枪头（规则见 :func:`discarded_tip_uuids`）：快照把
+    它写成 ``lifecycle_status="retired"``、``parent_material_uuid=None``，由权威在同一
+    事务内退役。``runtime_material_uuids`` 缺省取 ``ResourceTreeSet`` 自带的运行时
+    证据；序列输入必须由调用方显式传入，否则不推断丢弃。
     """
 
+    if runtime_material_uuids is None and isinstance(value, ResourceTreeSet):
+        runtime_material_uuids = value.runtime_material_uuids
     resources = (
         [item.res_content for item in value.all_nodes]
         if isinstance(value, ResourceTreeSet)
@@ -430,13 +496,21 @@ def resource_tree_to_snapshot(
         raise SnapshotUuidMismatchError(
             "runtime tree contains material UUIDs outside downloaded tree"
         )
-    if not allow_partial and runtime.keys() != authoritative_uuids:
+    discarded = discarded_tip_uuids(runtime.keys(), base, runtime_material_uuids)
+    if not allow_partial and runtime.keys() | discarded != authoritative_uuids:
         raise SnapshotUuidMismatchError(
             "runtime tree does not match downloaded material UUID set"
         )
     nodes: list[MaterialAggregateRead] = []
     for node in base.nodes:
         resource = runtime.get(node.material.material_uuid)
+        if node.material.material_uuid in discarded:
+            retired = node.model_copy(deep=True)
+            retired.material = retired.material.model_copy(
+                update={"lifecycle_status": "retired", "parent_material_uuid": None}
+            )
+            nodes.append(retired)
+            continue
         if resource is None:
             nodes.append(node.model_copy(deep=True))
             continue
@@ -444,14 +518,17 @@ def resource_tree_to_snapshot(
         if parent_material_uuid not in authoritative_uuids:
             # 设备/Deck 挂载关系不属于 materials.db 的物料父子关系。
             parent_material_uuid = node.material.parent_material_uuid
+        # PLR 键创建后不可改：运行时 config 没带 name（手写的字典树）时沿用权威值
+        config = dict(resource.config)
+        if not plr_key(config) and plr_key(node.material.config):
+            config[PLR_KEY_FIELD] = plr_key(node.material.config)
         identity = MaterialIdentityRead.model_validate(
             {
                 **node.material.model_dump(mode="json"),
-                "name": resource.name,
-                # 展示名以权威为准；PLR 运行时不承载 display_name，
-                # 空值回退权威避免快照把自定义展示名重置回 name。
-                "display_name": resource.display_name
-                or node.material.display_name,
+                # 物料 name 是 uuid、展示名只以权威为准：快照都不回写。PLR 运行时
+                # 不承载 display_name，序列化出的标签不能覆盖用户编辑过的展示名。
+                "name": node.material.name,
+                "display_name": node.material.display_name,
                 "description": resource.description,
                 "machine_name": resource.machine_name,
                 "barcode": resource.barcode,
@@ -459,7 +536,7 @@ def resource_tree_to_snapshot(
                 "resource_schema": resource.resource_schema,
                 "model": resource.model,
                 "icon_uri": resource.icon,
-                "config": resource.config,
+                "config": config,
                 "extra": {
                     key: item
                     for key, item in resource.extra.items()
@@ -575,6 +652,7 @@ __all__ = [
     "MaterialGateway",
     "SUBSTANCE_METADATA_EXTRA",
     "create_plr_materials",
+    "discarded_tip_uuids",
     "material_tree_to_plr_resources",
     "material_tree_to_resource_tree",
     "plr_resources_to_create",

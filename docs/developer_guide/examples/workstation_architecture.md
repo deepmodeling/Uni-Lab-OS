@@ -3,6 +3,7 @@
 > **文档类型**：架构设计指南与实战案例  
 > **适用场景**：大型工作站接入、子设备管理、物料系统集成  
 > **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **驱动位置**：本文涉及的厂商驱动与物料预设（Bioyond 工作站、`workstation_http_service.py` 等）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 > **Backend 边界**：Workstation 不是 ROS2 专属设备。选择 `hostlink` 时，运行时会
 > 初始化对应的 HostLink node，并以 HostLink 初始化其 sub-device；普通 Python 驱动的
@@ -214,7 +215,7 @@ classDiagram
         +create_ros_action_server(action_name, mapping)
         +execute_single_action(device_id, action, kwargs)
         +update_resource(resources)
-        +transfer_resource_to_another(resources, target, sites)
+        +material_sync(command)
         +_setup_hardware_proxy(device, comm_device, read, write)
     }
 
@@ -281,7 +282,7 @@ classDiagram
         +workflow_sequence: List
 
         +post_init(ros_node)
-        +transfer_resource_to_another()
+        +resource_tree_transfer(old_parent, resource, new_parent)
         +resource_tree_add(resources)
         +append_to_workflow_sequence(name)
         +get_all_workflows()
@@ -651,7 +652,9 @@ class PLCWorkstation(WorkstationBase):
 - `create_ros_action_server(action_name, mapping)`: 创建 Action 服务器
 - `execute_single_action(device_id, action, kwargs)`: 执行单个动作
 - `update_resource(resources)`: 同步物料到云端
-- `transfer_resource_to_another(...)`: 跨设备物料转移
+- `material_sync(command)`: 权威 transfer 的设备侧投影（unload / load）。节点没有发起转移的方法：
+  驱动调用 `materials.transfer(物料, 目标设备, 目标物料, Site, source_device_id=node.device_id)`，
+  见 {doc}`materials_operations_guide` 2.6
 
 ## 9. 配置参数说明
 

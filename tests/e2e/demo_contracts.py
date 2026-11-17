@@ -10,7 +10,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 from pathlib import Path
 
-from tests.e2e.readme_demos import E2E_CONTROL_TOKEN, DemoSpec, api_request
+from tests.e2e.readme_demos import DemoSpec, api_request
 
 
 @contextmanager
@@ -28,9 +28,6 @@ def demo_smoke(spec: DemoSpec, source: Path):
         importlib.invalidate_caches()
         smoke = importlib.import_module(f"{spec.package}.smoke")
         assert Path(smoke.__file__).resolve() == (source / spec.package / "smoke.py").resolve()
-        # demo 的 smoke 自己定控制面 token；这里的运行时由 harness 拉起，用 harness 那份
-        if hasattr(smoke, "CONTROL_TOKEN"):
-            smoke.CONTROL_TOKEN = E2E_CONTROL_TOKEN
         yield smoke
     finally:
         sys.path.remove(str(source))
@@ -96,7 +93,7 @@ class DemoContracts:
                 if index in {1, 3}:
                     # API 导入已经把 SiteSlot 绑定成 uuid，驱动会原样回报该 uuid。
                     # 按权威核对 UUID 和实际占位，保留原始返回值并提供 label -> UUID 绑定。
-                    deck = api_request(self.port, f"/materials/instances/{smoke.DECK_UUID}")
+                    deck = api_request(self.port, f"/inventory/instances/{smoke.DECK_UUID}")
                     label = "T3" if index == 1 else "T4"
                     site = next(site for site in deck["sites"] if site["label"] == label)
                     projected = deepcopy(proof)
@@ -107,7 +104,7 @@ class DemoContracts:
                 functions[index](projected)
             elif package == "inventory_demo":
                 # 每步完成后、下一步提交前直查；不能用整个运行期间出现过的值充当这一刻的证据。
-                proof["lot"] = api_request(self.port, f"/materials/lots/{smoke.WATER_LOT_UUID}")
+                proof["lot"] = api_request(self.port, f"/inventory/lots/{smoke.WATER_LOT_UUID}")
                 [smoke.assert_restock, smoke.assert_dispense_ok, smoke.assert_dispense_short, smoke.assert_audit][
                     index
                 ](proof)
@@ -141,7 +138,8 @@ class DemoContracts:
         final = {
             "site_occupancy": {
                 site["label"]: (
-                    nodes[site["occupied_material_uuid"]]["material"]["name"]
+                    # 物料 name 是 uuid，人读标签在 display_name
+                    nodes[site["occupied_material_uuid"]]["material"]["display_name"]
                     if site.get("occupied_material_uuid")
                     else ""
                 )
@@ -149,7 +147,7 @@ class DemoContracts:
             },
             "class_names": sorted({node["material"]["config"]["type"] for node in tree["nodes"]}),
             "root_children": sorted(
-                node["material"]["name"]
+                node["material"]["display_name"]
                 for node in tree["nodes"]
                 if node["material"]["parent_material_uuid"] == smoke.DECK_UUID
             ),
@@ -165,8 +163,9 @@ class DemoContracts:
         selected_uuid = succeeded["plates"][fill["plate_name"]]["material_uuid"]
         selected = api_request(self.port, f"/materials/instances/{selected_uuid}/tree")
         root = next(n for n in selected["nodes"] if n["material"]["material_uuid"] == selected_uuid)
-        well_name = root["material"]["config"]["ordering"]["A1"]
-        well = next(n for n in selected["nodes"] if n["material"]["name"] == well_name)
+        # ordering 的值是孔的 PLR 键（config.name）
+        well_key = root["material"]["config"]["ordering"]["A1"]
+        well = next(n for n in selected["nodes"] if n["material"]["config"].get("name") == well_key)
         assert well["material"]["parent_material_uuid"] == selected_uuid
         assert well["data"]["data"]["volume"] == 1200
         substances = well["data"]["substances"]

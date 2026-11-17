@@ -10,7 +10,7 @@ from unilabos.resources.materials import EXTRA_BOUND_DEVICE, owner_device_of
 def record(uuid, *, parent=None, resource_type="resource", resource_id=None, owner=None):
     return SimpleNamespace(material=SimpleNamespace(
         material_uuid=uuid, parent_material_uuid=parent, resource_type=resource_type,
-        resource_id=resource_id or uuid, name=uuid,
+        resource_id=resource_id or uuid, name=uuid, display_name=resource_id or uuid,
         extra={EXTRA_BOUND_DEVICE: owner} if owner else {},
     ))
 

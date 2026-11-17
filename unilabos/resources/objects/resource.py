@@ -24,6 +24,7 @@ from unilabos.resources.objects.joint_state import (
     ResourceJointState,
     ResourceJointStateType,
 )
+from unilabos.resources.objects.naming import plr_key
 from unilabos.resources.objects.site import ResourceSite, ResourceSiteType
 from unilabos.resources.objects.state import (
     LiquidHistoryEntry,
@@ -83,9 +84,11 @@ class ResourceDict(BaseModel):
 
     id: str = Field(description="Resource ID")
     uuid: str = Field(description="Resource UUID")
-    name: str = Field(description="Resource name")
+    name: str = Field(
+        description="Material name; equals the uuid once the authority has written it"
+    )
     display_name: str = Field(
-        description="Display name; authority falls back to name when empty",
+        description="Human-readable label; the authority fills it when empty",
         default="",
     )
     description: str = Field(description="Resource description", default="")
@@ -206,6 +209,9 @@ class ResourceDict(BaseModel):
                 "资源缺少 UUID；请先通过微后端 runtime create 或 strict import"
             )
         content["uuid"] = resolved_uuid
+        # 物料 name 等于 uuid；没给 name 的节点按此补齐（旧式标签由写入入口迁移）。
+        if not content.get("name"):
+            content["name"] = resolved_uuid
 
         # display_name=None 归一化为空字符串，不在此处回退到 name；权威写入层
         # 负责默认值，避免快照上传覆盖用户自定义展示名。
@@ -432,6 +438,23 @@ class ResourceDict(BaseModel):
                 raise ValueError("根字段 pose.position 与 config.pose.position 冲突")
         normalized_pose = normalized_root_pose or normalized_config_pose
 
+        # PLR state.location 是同一位置的快照，不应成为第二份权威数据。
+        # 旧数据仅在没有显式 pose.position 时迁入；显式 None 也表示清空位置。
+        if content.get("type") != "device" and "location" in data:
+            state_location = data.pop("location")
+            has_position = any(
+                isinstance(pose, ResourceDictPosition)
+                or (isinstance(pose, dict) and "position" in pose)
+                for pose in (root_pose, config_pose)
+            )
+            if not has_position:
+                if isinstance(state_location, dict):
+                    state_location = dict(state_location)
+                    state_location.pop("type", None)
+                normalized_pose = ResourceDictPosition.model_validate(
+                    {**(normalized_pose or {}), "position": state_location}
+                ).model_dump()
+
         content.pop("available_sites", None)
         config.pop("available_sites", None)
 
@@ -547,8 +570,19 @@ class ResourceDict(BaseModel):
         return self.parent.uuid if self.parent is not None else None
 
     @property
+    def plr_name(self) -> str:
+        """PLR 树里的名字（PLR 键）：``config.name``，没有时沿用 ``name``。
+
+        PLR 名在整棵 PLR 树内唯一、创建后不可改，驱动和 PLR 自身都按它查找；
+        物料层的人读标签是 ``display_name``，身份是 ``uuid``（物料 ``name`` 与它相同）。
+        规则见 :mod:`unilabos.resources.objects.naming`。
+        """
+
+        return plr_key(self.config) or self.name
+
+    @property
     def parent_instance_name(self) -> Optional[str]:
-        return self.parent.name if self.parent is not None else None
+        return self.parent.plr_name if self.parent is not None else None
 
     @property
     def is_root_node(self) -> bool:
@@ -587,6 +621,9 @@ PLR_CONFIG_ROOT_KEYS = (
 
 def assemble_tracker_state(resource: ResourceDict) -> Dict[str, Any]:
     state = copy.deepcopy(resource.data)
+    if resource.type != "device":
+        # 防止调用方直接修改 data 后，旧快照在 load_all_state 中覆盖 pose/Site。
+        state.pop("location", None)
     for state_key in TRACKER_STATE_KEYS:
         root_value = getattr(resource, state_key)
         if root_value is not None:

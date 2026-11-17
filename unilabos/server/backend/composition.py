@@ -164,6 +164,13 @@ def setup_local_scheduler(
         services.runtime,
         authority_profile=SchedulerAuthorityProfile.LOCAL_SCHEDULER,
     )
+    from unilabos.server.services.runtime.workflow.authoring_compiler import WorkflowAuthoringCompiler
+
+    # 工作流作者：设备包 @workflow 同一静态编译器；源码托管在数据库根目录旁的 workflow_sources/
+    service.configure_authoring(
+        compiler=WorkflowAuthoringCompiler(),
+        source_root=services.paths.root / "workflow_sources",
+    )
     scheduler = BackendScheduler(
         service,
         execution_backend,
@@ -173,12 +180,17 @@ def setup_local_scheduler(
         ),
         device_state_reader=make_device_state_reader(execution_backend),
     )
+    service.configure_preflight(
+        materials=_materials_gateway, endpoints=read_preflight_endpoints,
+        action_schema_resolver=getattr(execution_backend, "resolve_action_schema", None),
+    )
     service.set_task_submitter(scheduler.submit)
     # 本机调度器是其派发 job 的生命周期 owner：失败 attempt 挂起等待决策时由它
     # 把 attempt/节点运行置为 intervention_required（执行面按 origin 路由）。
     execution_backend.result_bridges.append(scheduler)
     scheduler.start(recover=True)
     _start_event_retention(service)
+    _start_source_monitor(service)
     _workflow_service = service
     _scheduler = scheduler
     _setup_registry_authority(services.runtime)
@@ -215,6 +227,71 @@ def _stop_event_retention() -> None:
         _event_retention = None
 
 
+_source_monitor: Any = None
+
+
+def _start_source_monitor(service: Any) -> None:
+    """本机 Workflow Authority 拥有已注册的工作流源码。
+
+    启动时先恢复一遍：外部改过的源码重新编译出候选，上次 Apply 写回失败留下的
+    ``writeback_status=pending`` 立即重试；之后由监视线程持续跟进外部编辑和写回重试。
+    单个源码恢复失败只记日志，不挡 Authority 启动（监视线程会继续重试）。
+    """
+
+    global _source_monitor
+    if _source_monitor is not None:
+        return
+    from unilabos.server.services.runtime.workflow.source_monitor import WorkflowSourceMonitor
+
+    def report(workflow_uuid: str, exc: Exception) -> None:
+        logger.warning("[WorkflowIntegration] 工作流 %s 的源码启动恢复失败，交给监视线程重试: %s",
+                       workflow_uuid, exc)
+
+    try:
+        service.recover_registered_sources(on_error=report)
+    except Exception:  # noqa: BLE001 - 连源码清单都读不出来时同样交给监视线程
+        logger.exception("[WorkflowIntegration] 工作流源码启动恢复失败，交给监视线程重试")
+    monitor = WorkflowSourceMonitor(service, interval_seconds=1.0, settle_seconds=0.25)
+    monitor.start()
+    _source_monitor = monitor
+
+
+def _stop_source_monitor() -> None:
+    global _source_monitor
+    if _source_monitor is None:
+        return
+    try:
+        _source_monitor.stop()
+    except RuntimeError as exc:
+        # 线程卡在一次编译 / 文件读写里：守护线程随进程退出，不能拖住停机
+        logger.warning("[WorkflowIntegration] %s，继续停机", exc)
+    _source_monitor = None
+
+
+def read_preflight_endpoints() -> list[dict[str, Any]]:
+    """与浏览器共享当前 Host 的在线能力快照，避免读取权威进程的空遥测镜像。"""
+    from unilabos.client.utils.envelope import EnvelopeError
+    from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
+    from unilabos.server.composition import get_server_services
+
+    if edge_proxy_enabled():
+        response = edge_http("GET", "/api/v1/runtime/endpoints?limit=1000", timeout=5.0)
+        if response is None:
+            raise RuntimeError("Host 在线能力暂不可用")
+        try:
+            result = edge_response_data(response)
+        except EnvelopeError as exc:
+            raise RuntimeError(f"Host 在线能力暂不可用：{exc.error}") from exc
+    else:
+        services = get_server_services()
+        if services is None:
+            raise RuntimeError("设备运行服务尚未启动")
+        result = services.runtime.list_endpoint_snapshots(limit=1000)
+    if not isinstance(result, list):
+        raise ValueError("设备能力快照格式无效")
+    return [item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item) for item in result]
+
+
 def make_device_state_reader(execution_backend: Any):
     """工作流 while 循环读设备状态字段的入口：``device_id -> {field: {"value", "updated_at"}}``。
 
@@ -223,24 +300,24 @@ def make_device_state_reader(execution_backend: Any):
     ``GET /api/v1/telemetry/states`` 再按 device_uuid 取最新一条。
     """
 
-    import json
-
     projection = getattr(execution_backend, "device_state", None)
     latest_for = getattr(projection, "latest_for", None)
     if callable(latest_for):
         return latest_for
 
     def read_via_host(device_id: str) -> dict[str, Any]:
-        from unilabos.server.api.edge_proxy import edge_http
+        from unilabos.client.utils.envelope import EnvelopeError
+        from unilabos.server.api.edge_proxy import edge_http, edge_response_data
 
         response = edge_http("GET", "/api/v1/telemetry/states", timeout=5.0)
         if response is None:
             raise RuntimeError("Host 未接入控制面，读不到设备状态")
-        if response.status_code != 200:
+        try:
+            states = edge_response_data(response)
+        except (EnvelopeError, ValueError) as exc:
             raise RuntimeError(
-                f"Host 遥测接口返回 {response.status_code}，读不到设备状态"
-            )
-        states = json.loads(response.body_bytes().decode("utf-8") or "[]")
+                f"Host 遥测接口失败（HTTP {response.status_code}），读不到设备状态：{exc}"
+            ) from exc
         latest: Optional[dict[str, Any]] = None
         for state in states if isinstance(states, list) else []:
             if not isinstance(state, dict) or str(state.get("device_uuid")) != str(device_id):
@@ -368,6 +445,10 @@ def setup_execution_backend(
             else _materials_gateway
         ),
     )
+    from unilabos.config.config import HTTPConfig
+    if HTTPConfig.remote_addr:
+        from unilabos.client.runtime.workflow import HTTPWorkflowClient
+        backend.configure_execution_authority(HTTPWorkflowClient(HTTPConfig.remote_addr, timeout=5.0))
     coordinator = WorkflowBusinessCoordinator(
         services.runtime,
         services.history,
@@ -427,7 +508,8 @@ def shutdown_backend_services() -> None:
         _scheduler.stop()
         if _backend is not None and _scheduler in _backend.result_bridges:
             _backend.result_bridges.remove(_scheduler)
-    # 先等清理线程结束当前事务，再关闭共享的 runtime.db 连接。
+    # 先等后台线程（源码监视、事件清理）结束当前事务，再关闭共享的 runtime.db 连接。
+    _stop_source_monitor()
     _stop_event_retention()
     if _workflow_service is not None:
         _workflow_service.set_task_submitter(None)

@@ -9,9 +9,10 @@
 从图文件到协议执行的完整链路：
 
 ```
-实验图 JSON
-    ↓  graphio.read_node_link_json()
-physical_setup_graph (NetworkX DiGraph)
+实验图 JSON（unilab -g）
+    ↓  legacy 适配层升级旧格式 → Graph Authority 登记（发号 / 模板 Site）
+    ↓  load_graph_payload(权威 payload)（server/services/materials/graph.py）
+physical_setup_graph (NetworkX Graph，边带 port；workstation_protocol.physical_setup_graph())
     ↓  ROS2WorkstationNode._setup_protocol_names(protocol_type)
 为每个 protocol_name 创建 ActionServer
     ↓  收到 Action Goal
@@ -20,7 +21,7 @@ _create_protocol_execute_callback()
 protocol_kwargs (Python dict)
     ↓  向 Host 查询 Resource 类型参数的当前状态
 protocol_kwargs 更新（vessel 带上 children、data 等）
-    ↓  protocol_steps_generator(G=physical_setup_graph, **protocol_kwargs)
+    ↓  protocol_steps_generator(G=physical_setup_graph(), **protocol_kwargs)
 List[Dict] 动作序列
     ↓  逐步 execute_single_action / 并行 create_task
 子设备 ActionClient 执行
@@ -44,7 +45,7 @@ def _setup_protocol_names(self, protocol_type):
 
 1. `convert_from_ros_msg_with_mapping(goal, action_value_mapping["goal"])` — ROS Goal → Python dict
 2. 对 `Resource` 类型字段，通过 `resource_get` Service 查询 Host 的最新资源状态
-3. `protocol_steps_generator(G=physical_setup_graph, **protocol_kwargs)` — 调用编译函数
+3. `protocol_steps_generator(G=physical_setup_graph(), **protocol_kwargs)` — 调用编译函数
 4. 遍历 steps：`dict` 串行执行，`list` 并行执行
 5. `execute_single_action` 通过 `_action_clients[device_id]` 向子设备发送 Action Goal
 6. 执行完毕后通过 `resource_update` Service 更新资源状态
@@ -201,7 +202,8 @@ else:
 |------|------|
 | 协议执行回调 | `unilabos/backend/ros2/presets/workstation.py` |
 | ROS 消息映射 | `unilabos/backend/ros2/msgs/message_converter.py` |
-| 物理拓扑图 | `unilabos/resources/graphio.py` (`physical_setup_graph`) |
+| 物理拓扑图（装配） | `unilabos/server/services/materials/graph.py` (`load_graph_payload`) |
+| 物理拓扑图（读取） | `unilabos/backend/runtime/workstation_protocol.py` (`physical_setup_graph()`) |
 | 单位解析 | `unilabos/experiments/compile/utils/unit_parser.py` |
 | 容器解析 | `unilabos/experiments/compile/utils/vessel_parser.py` |
 | 溶解协议（组合示例） | `unilabos/experiments/compile/dissolve_protocol.py` |

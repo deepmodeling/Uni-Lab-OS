@@ -164,7 +164,7 @@ class Observer:
         with (self.output / "observations.jsonl").open("w", encoding="utf-8") as stream:
             while not self.stop_event.is_set():
                 for name, path in (("tasks", "/workflow-tasks?page=1&page_size=100"),
-                                   ("locks", "/scheduler/resources"), ("lots", "/materials/lots")):
+                                   ("locks", "/scheduler/resources"), ("lots", "/inventory/lots")):
                     try:
                         data = api_request(self.port, path)
                         encoded = json.dumps(data, ensure_ascii=False, sort_keys=True)

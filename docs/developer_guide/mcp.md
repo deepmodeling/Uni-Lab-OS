@@ -42,8 +42,8 @@ tool_timeout_sec = 60
 | 系统与运行态 | 健康、HostLink peers、Host/Slave 日志、调度资源、会话、endpoint、job/command 查询 |
 | 工作流 | 模板绑定、新建/保存图、整图/单点提交、逐步/自动切换、attempt/结果/反馈、人工确认、authoring |
 | 注册表 | 生效/挂起条目、版本、影响范围、升级、还原、工作流模板 |
-| 物料与库存 | 模板、实例化、物料树、位置、内容物、移动/跨设备移交、拓扑边、批次入库、预留与账本查询 |
-| 图与布局 | Graph Authority、实时拓扑、实验室布局 |
+| 物料与库存 | 模板、实例化、物料树、位置、内容物、移动/跨设备移交、拓扑边、批次入库、预留与账本查询、按品类的仓储视图 |
+| 设备图 | Graph Authority、实时拓扑 |
 | 遥测与历史 | 事件、来源游标、历史 payload 查询 |
 | 异常决策 | 状态事件、动作异常、用户授权的中止/重试/人工替换 |
 | 驱动包与进程 | 包发现/安装/启停/卸载、随包图、受管设备进程管理 |
@@ -85,7 +85,9 @@ tool_timeout_sec = 60
 其他项。工具不自动重试。设备动作必须经 `workflow_task_create` 交给调度执行。
 
 现有实时变化仍使用 SSE 通知加 HTTP 拉取：`/api/v1/events` 与
-`/api/v1/materials/events`。无限 SSE 流不作为一次 MCP 工具结果返回。
+`/api/v1/materials/events`。无限 SSE 流不作为一次 MCP 工具结果返回；
+单个任务的运行事件由 `workflow_task_events`（`/api/v1/workflow-tasks/{task_uuid}/events`）
+按 `after_sequence` 游标分页读取。
 
 ## 安全
 

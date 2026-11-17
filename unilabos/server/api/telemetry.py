@@ -6,6 +6,7 @@ from typing import Literal, Optional, TypeVar
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query
 
+from unilabos.server.api.envelope import envelope_router
 from unilabos.protocol.telemetry import (
     TelemetryEventQuery,
     TelemetryIngestRequest,
@@ -45,7 +46,7 @@ def _event_query(**values: object) -> TelemetryEventQuery:
 def create_telemetry_router(service: TelemetryService) -> APIRouter:
     """创建 telemetry router，不提供 event/state/cursor 的任意改写或删除。"""
 
-    router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry-v1"])
+    router = envelope_router(prefix="/api/v1/telemetry", tags=["telemetry-v1"])
 
     @router.post("/events")
     async def ingest(request: TelemetryIngestRequest):

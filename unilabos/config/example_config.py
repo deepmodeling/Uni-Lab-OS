@@ -24,7 +24,8 @@ class HostLinkConfig:
     advertise_ip = ""  # Host 多网卡时填写 Slave 可达 IP
     heartbeat_interval = 5.0
     heartbeat_timeout = 15.0
-    connect_timeout = 5.0
+    connect_timeout = 5.0  # 单次连接/握手超时
+    host_wait_timeout = 120.0  # Slave 等 Host 端口可连、等 Host 启动就绪的上限
     request_timeout = 10.0
     ros_assist_apply = True
     ros_domain_id = ""  # Host 可在此统一配置，也可用 --ros-domain-id

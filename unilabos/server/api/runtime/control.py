@@ -5,6 +5,10 @@ Edge 侧对接方式与云端 Backend 完全一致：
 - ``WS /api/v1/ws/schedule``：短通知通道（backend_session / backend_change /
   edge_change / edge_change_ack / runtime_logs_changed / ping / pong）
 - ``GET /edge/commands/{command_uuid}``：命令权威正文
+- ``POST /api/v1/edge/http-responses/{request_uuid}``：Host 回送 ``backend_http`` 的执行结果
+
+两条 HTTP 路由与其它管理 API 一样走统一信封（``{"code": 0, "data": ...}``；不存在 4001、控制服务未就绪
+5001、request_uuid 不一致 1000，均为 HTTP 200）。不鉴权。
 """
 
 from __future__ import annotations
@@ -15,11 +19,10 @@ import logging
 import queue
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-
-from unilabos.config.control_token import token_accepted
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from unilabos.protocol.runtime.control import EdgeHttpResponse
+from unilabos.server.api.envelope import envelope_router
 from unilabos.server.backend.edge_control import (
     EdgeControlService,
     get_edge_control_service,
@@ -27,14 +30,7 @@ from unilabos.server.backend.edge_control import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["EdgeControl"])
-
-
-def require_control_token(request: Request) -> None:
-    """Host 专属路由：没有出示有效的控制面 token 一律 401（见 unilabos/config/control_token.py）。"""
-
-    if not token_accepted(request.headers):
-        raise HTTPException(status_code=401, detail="control token missing or invalid")
+router = envelope_router(tags=["EdgeControl"])
 
 
 def _require_service() -> EdgeControlService:
@@ -44,7 +40,7 @@ def _require_service() -> EdgeControlService:
     return service
 
 
-@router.get("/edge/commands/{command_uuid}", dependencies=[Depends(require_control_token)])
+@router.get("/edge/commands/{command_uuid}")
 def get_edge_command(command_uuid: str) -> dict[str, Any]:
     """Edge 收到 backend_change 通知后拉取的权威命令文档。"""
 
@@ -57,7 +53,6 @@ def get_edge_command(command_uuid: str) -> dict[str, Any]:
 @router.post(
     "/api/v1/edge/http-responses/{request_uuid}",
     include_in_schema=False,
-    dependencies=[Depends(require_control_token)],
 )
 def receive_edge_http_response(request_uuid: str, response: EdgeHttpResponse) -> dict[str, Any]:
     """Edge 把 ``backend_http`` 请求在进程内执行后的结果送回这里（Edge 自己不监听端口）。"""
@@ -170,14 +165,6 @@ async def edge_schedule_socket(websocket: WebSocket) -> None:
     service = get_edge_control_service()
     if service is None:
         await websocket.close(code=1013, reason="edge control service not ready")
-        return
-    if not token_accepted(websocket.headers):
-        # 握手阶段就拒绝（HTTP 403）：未鉴权的连接不能挤掉真正的 Host（后来者赢）
-        logger.warning(
-            "[EdgeControl] 拒绝未携带有效控制面 token 的控制连接（来自 %s）",
-            websocket.client.host if websocket.client else "未知地址",
-        )
-        await websocket.close(code=1008, reason="control token missing or invalid")
         return
     await websocket.accept()
     # EdgeSession 由 Host 控制客户端在进程启动时生成、断线重连不变：用它识别 Host 是否重启过。

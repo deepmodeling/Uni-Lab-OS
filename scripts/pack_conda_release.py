@@ -31,7 +31,7 @@ def main() -> None:
                    if isinstance(node, ast.Assign)
                    and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets))
     channel = Path(args.channel).resolve()
-    package = channel / args.platform / f"unilabos-{version}-py312_0.conda"
+    package = channel / args.platform / f"unilabos-{version}-py314_0.conda"
     if not package.is_file():
         raise RuntimeError(f"缺少当前源码对应的默认包：{package}；不回退到远端 latest")
     subprocess.run([sys.executable, "-m", "conda_index", str(channel)], check=True)
@@ -39,7 +39,7 @@ def main() -> None:
     prefix = str(Path(args.prefix).resolve())
     subprocess.run([*conda, "create", "-y", "-p", prefix, "--override-channels",
                     "-c", str(channel), "-c", "conda-forge", "-c", "uni-lab",
-                    f"unilabos=={version}=py312_0", "conda-pack", "zstandard"], check=True)
+                    f"unilabos=={version}=py314_0", "conda-pack", "zstandard"], check=True)
     run = [*conda, "run", "--no-capture-output", "-p", prefix]
     subprocess.run([*run, "python", "-m", "pip", "check"], check=True)
     subprocess.run([*run, "python", "scripts/verify_installation.py", "--assert-no-ros"], check=True)

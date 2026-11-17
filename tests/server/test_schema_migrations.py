@@ -190,8 +190,44 @@ def test_unknown_older_schema_is_refused_and_left_untouched(tmp_path) -> None:
 def test_newer_database_than_code_is_refused(tmp_path) -> None:
     path = tmp_path / "demo.db"
     initialize_database(path, V2).close()
-    with pytest.raises(DatabaseMigrationRequired, match="不低于代码版本"):
+    with pytest.raises(DatabaseMigrationRequired, match="高于代码版本"):
         initialize_database(path, V1)
+
+
+def test_newer_database_is_refused_even_when_the_fingerprint_matches(tmp_path) -> None:
+    """版本基线压平后：旧开发库的结构可能与新基线逐字相同，但库内版本更高，不能直接复用。"""
+    path = tmp_path / "demo.db"
+    _seed_v1(path)
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA user_version = 5")
+    connection.close()
+
+    with pytest.raises(DatabaseMigrationRequired, match="高于代码版本"):
+        initialize_database(path, V1)
+    assert _peek(path, "PRAGMA user_version") == [(5,)]
+    assert _peek(path, "SELECT name FROM item") == [("plate",)]
+
+
+def test_same_version_with_a_foreign_fingerprint_is_refused_not_half_migrated(tmp_path) -> None:
+    """登记了已发布版本的指纹后，同号不同指纹的库（如版本基线压平前的开发库）没有迁移路径，按 refuse 保留原样。"""
+    path = tmp_path / "demo.db"
+    _seed_v1(path)
+    connection = sqlite3.connect(path)
+    with connection:
+        connection.execute(f"UPDATE {SCHEMA_IDENTITY_TABLE.name} SET checksum='pre-baseline-dev'")
+    connection.close()
+    guarded = DatabaseSpec(
+        key="demo", filename="demo.db", role="demo", synchronous="NORMAL", tables=V2.tables, schema_version=2,
+        migrations=(TO_V2,), on_unmigratable="refuse", released_checksums=((1, V1.checksum),),
+    )
+    with pytest.raises(DatabaseMigrationRequired, match="已发布的 v1"):
+        initialize_database(path, guarded)
+    assert _peek(path, "PRAGMA user_version") == [(1,)]
+    assert not list(tmp_path.glob("demo.db.pre-v2-*.bak"))
+    # 指纹与已发布的 v1 一致时照常迁移
+    _seed_v1(tmp_path / "clean" / "demo.db")
+    initialize_database(tmp_path / "clean" / "demo.db", guarded).close()
+    assert _peek(tmp_path / "clean" / "demo.db", "PRAGMA user_version") == [(2,)]
 
 
 @pytest.mark.parametrize("versions", [(3,), (2, 4)])

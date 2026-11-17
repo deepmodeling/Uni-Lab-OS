@@ -13,12 +13,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import command_rejected, command_result, error_of, ok_data
 from unilabos.registry.registry import lab_registry
 from unilabos.server.api.materials import install_materials_api
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.server.services.materials import MaterialsService
 
-REGISTRY_CLASS = "test_prcxi_300ul_tips"
+REGISTRY_CLASS = "test_tip_rack_300ul"
 
 
 @pytest.fixture()
@@ -28,13 +29,10 @@ def registry_entry(monkeypatch: pytest.MonkeyPatch) -> None:
         REGISTRY_CLASS,
         {
             "class": {
-                "module": (
-                    "unilabos.devices.liquid_handling.prcxi."
-                    "prcxi_labware:PRCXI_300ul_Tips"
-                ),
+                "module": "pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_300ul",
                 "type": "pylabrobot",
             },
-            "display_name": "PRCXI 300ul 枪头盒",
+            "display_name": "300ul 枪头盒",
         },
     )
 
@@ -60,10 +58,10 @@ def test_registry_classes_lists_instantiable_entries(
             assert listed.status_code == 200
             row = next(
                 item
-                for item in listed.json()
+                for item in ok_data(listed)
                 if item["registry_class"] == REGISTRY_CLASS
             )
-            assert row["display_name"] == "PRCXI 300ul 枪头盒"
+            assert row["display_name"] == "300ul 枪头盒"
     finally:
         service.close()
 
@@ -75,14 +73,13 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
     try:
         with TestClient(app) as client:
             resp = client.post(
-                "/api/v1/materials/instantiate",
+                "/api/v1/inventory/commands",
                 json=_mutation_body(
                     "instantiate_material",
                     {"registry_class": REGISTRY_CLASS, "name": "tips_outbound_1"},
                 ),
             )
-            assert resp.status_code == 200, resp.text
-            tree = resp.json()["data"]
+            tree = command_result(resp)["data"]
             root_uuid = tree["root_material_uuid"]
             assert root_uuid
             root = next(
@@ -90,13 +87,33 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
                 for node in tree["nodes"]
                 if node["material"]["material_uuid"] == root_uuid
             )
-            assert root["material"]["name"] == "tips_outbound_1"
-            # tip rack 带 96 个 tip spot 子节点（整棵树权威登记）
-            assert len(tree["nodes"]) == 97
+            assert root["material"]["display_name"] == "tips_outbound_1"
+            assert root["material"]["name"] == root_uuid
+            # tip rack 带 96 个 tip spot 子节点，每个孔位下一支已命名的 Tip：
+            # 维护版 PLR 起枪头是孔位的结构孩子，与孔位一样整棵树权威登记（1 + 96 + 96）
+            materials = {
+                node["material"]["material_uuid"]: node["material"]
+                for node in tree["nodes"]
+            }
+            spots = [
+                item
+                for item in materials.values()
+                if item["parent_material_uuid"] == root_uuid
+            ]
+            tips = [
+                item for item in materials.values() if item["resource_type"] == "tip"
+            ]
+            assert len(spots) == 96
+            assert {item["resource_type"] for item in spots} == {"tip_spot"}
+            assert len(tips) == 96
+            assert sorted(item["parent_material_uuid"] for item in tips) == sorted(
+                item["material_uuid"] for item in spots
+            )
+            assert len(tree["nodes"]) == 1 + 96 + 96
 
-            fetched = client.get(f"/api/v1/materials/instances/{root_uuid}")
+            fetched = client.get(f"/api/v1/inventory/instances/{root_uuid}")
             assert fetched.status_code == 200
-            assert fetched.json()["material"]["name"] == "tips_outbound_1"
+            assert ok_data(fetched)["material"]["display_name"] == "tips_outbound_1"
     finally:
         service.close()
 
@@ -111,7 +128,7 @@ def test_instantiate_with_barcode_writes_root_barcode(
     try:
         with TestClient(app) as client:
             resp = client.post(
-                "/api/v1/materials/instantiate",
+                "/api/v1/inventory/commands",
                 json=_mutation_body(
                     "instantiate_material",
                     {
@@ -121,8 +138,7 @@ def test_instantiate_with_barcode_writes_root_barcode(
                     },
                 ),
             )
-            assert resp.status_code == 200, resp.text
-            tree = resp.json()["data"]
+            tree = command_result(resp)["data"]
             root_uuid = tree["root_material_uuid"]
             root = next(
                 node
@@ -137,9 +153,42 @@ def test_instantiate_with_barcode_writes_root_barcode(
             ]
             assert all(not node["material"]["barcode"] for node in children)
 
-            fetched = client.get(f"/api/v1/materials/instances/{root_uuid}")
+            fetched = client.get(f"/api/v1/inventory/instances/{root_uuid}")
             assert fetched.status_code == 200
-            assert fetched.json()["material"]["barcode"] == "BC-20260830-001"
+            assert ok_data(fetched)["material"]["barcode"] == "BC-20260830-001"
+    finally:
+        service.close()
+
+
+def test_instantiate_accepts_a_display_name(tmp_path, registry_entry) -> None:
+    """出库可给人读标签：落到根节点 display_name；只给 display_name 时它也作实例名。"""
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app) as client:
+            for payload, label in (
+                ({"name": "tips_labelled", "display_name": "我的枪头盒"}, "我的枪头盒"),
+                ({"display_name": "第二盒"}, "第二盒"),
+            ):
+                resp = client.post(
+                    "/api/v1/inventory/commands",
+                    json=_mutation_body("instantiate_material", {"registry_class": REGISTRY_CLASS, **payload}),
+                )
+                tree = command_result(resp)["data"]
+                root = next(
+                    node["material"]
+                    for node in tree["nodes"]
+                    if node["material"]["material_uuid"] == tree["root_material_uuid"]
+                )
+                assert root["display_name"] == label
+            command_rejected(
+                client.post(
+                    "/api/v1/inventory/commands",
+                    json=_mutation_body("instantiate_material", {"registry_class": REGISTRY_CLASS}),
+                ),
+                1000,
+            )
     finally:
         service.close()
 
@@ -151,12 +200,49 @@ def test_instantiate_unknown_registry_class_rejected(tmp_path) -> None:
     try:
         with TestClient(app) as client:
             resp = client.post(
-                "/api/v1/materials/instantiate",
+                "/api/v1/inventory/commands",
                 json=_mutation_body(
                     "instantiate_material",
                     {"registry_class": "not_exist_class", "name": "x"},
                 ),
             )
-            assert resp.status_code == 422
+            # registry 资源类不可实例化：参数不合法 1000（命令入口的拒绝结果）
+            command_rejected(resp, 1000)
+    finally:
+        service.close()
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "unilabos_no_such_package.resources:tip_rack",  # 本进程没装这个包（如调度权威没装驱动包）
+        "pylabrobot.resources.opentrons.tip_racks:no_such_tip_rack",  # 模块里没有这个类
+        "pylabrobot.resources:Coordinate",  # 构造函数不接受 name
+    ],
+)
+def test_instantiate_a_class_this_process_cannot_build_is_rejected(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, module: str
+) -> None:
+    """注册表里有条目、但本进程导入不了或构造不了：同样是参数不合法的拒绝，而不是 500。"""
+
+    monkeypatch.setitem(
+        lab_registry.resource_type_registry,
+        "test_unbuildable_class",
+        {"class": {"module": module, "type": "pylabrobot"}},
+    )
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.post(
+                "/api/v1/inventory/commands",
+                json=_mutation_body(
+                    "instantiate_material",
+                    {"registry_class": "test_unbuildable_class", "name": "x"},
+                ),
+            )
+            body = command_rejected(resp, 1000)
+            assert "无法实例化" in str(body)
     finally:
         service.close()

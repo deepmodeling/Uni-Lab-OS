@@ -94,8 +94,8 @@ def ensure_host_node_resource(
                 f"[Host Node] 图中 host node id '{content.id}' 与配置实例名 "
                 f"'{device_id}' 不一致，以配置为准"
             )
-            if content.name == content.id:
-                content.name = device_id
+            if content.display_name in ("", content.id):
+                content.display_name = device_id
             content.id = device_id
         content.type = "device"
         # 设备实例的 template_name 必须与注册表名一致（缺省会回退到
@@ -113,7 +113,8 @@ def ensure_host_node_resource(
         "id": device_id,
         "uuid": str(uuid.uuid4()),
         "parent_uuid": "",
-        "name": device_id,
+        # 物料 name 等于 uuid（ResourceDict 缺省补齐），人读标签是 display_name
+        "display_name": device_id,
         "type": "device",
         "class": HOST_NODE_REGISTRY_NAME,
         "template_name": HOST_NODE_REGISTRY_NAME,
@@ -155,6 +156,8 @@ class HostNode(HostAdapterBase, Node):
     初始化，占据 ``/devices/<device_id>`` 命名空间；本类以
     ``host_coordinator`` 名义加入全局 executor。
     """
+
+    supports_execution_start_guard = True
 
     _instance: ClassVar[Optional["HostNode"]] = None
     _ready_event: ClassVar[threading.Event] = threading.Event()
@@ -629,6 +632,8 @@ class HostNode(HostAdapterBase, Node):
                         f"[Host Node] action_type 兜底解析: {device_id}/{action_name} -> {action_type}"
                     )
         if BasicConfig.test_mode:
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             action_id = f"/devices/{device_id}/{action_name}"
             self.lab_logger().info(
                 f"[TEST MODE] 模拟执行: {action_id} (job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"
@@ -681,6 +686,8 @@ class HostNode(HostAdapterBase, Node):
                 )
             goal_uuid_obj = UUID(uuid=list(u.bytes))
 
+            from unilabos.server.backend.execution_start import confirm_execution_start
+            confirm_execution_start(item)
             future = action_client.send_goal_async(
                 goal_msg,
                 feedback_callback=lambda feedback_msg: self.feedback_callback(

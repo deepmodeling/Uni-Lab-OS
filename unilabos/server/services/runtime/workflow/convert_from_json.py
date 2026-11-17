@@ -23,22 +23,22 @@ JSON 工作流转换模块
 import json
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from unilabos.server.services.runtime.workflow.common import WorkflowGraph, build_protocol_graph
-from unilabos.registry.registry import lab_registry
+from unilabos.registry.catalog import device_entry
 
 
 # ==================== 字段映射配置 ====================
 
 # action 到 resource_name 的映射
 ACTION_RESOURCE_MAPPING: Dict[str, str] = {
-    # 生物实验操作
-    "transfer_liquid": "liquid_handler.prcxi",
-    "transfer": "liquid_handler.prcxi",
-    "incubation": "incubator.prcxi",
-    "move_labware": "labware_mover.prcxi",
-    "oscillation": "shaker.prcxi",
+    # 生物实验操作：默认映射到内置抽象移液站 liquid_handler。厂商驱动（PRCXI 等）已移出核心，
+    # 由驱动包提供注册表 id；导入时用 action_resource_mapping 覆盖，例如
+    # {"transfer_liquid": "liquid_handler.prcxi", "incubation": "incubator.prcxi"}。
+    # incubation / move_labware / oscillation 没有内置设备，未覆盖时回退为 device.<操作名>。
+    "transfer_liquid": "liquid_handler",
+    "transfer": "liquid_handler",
     # 有机化学操作
     "HeatChillToTemp": "heatchill.chemputer",
     "StopHeatChill": "heatchill.chemputer",
@@ -60,8 +60,8 @@ ARGS_FIELD_MAPPING: Dict[str, str] = {
     # "old_field_name": "new_field_name",
 }
 
-# 默认工作站名称
-DEFAULT_WORKSTATION = "PRCXI"
+# 默认工作站名称（内置抽象移液站；驱动包场景由调用方传入实际工作站名）
+DEFAULT_WORKSTATION = "liquid_handler"
 
 
 # ==================== 核心转换函数 ====================
@@ -72,7 +72,7 @@ def get_action_handles(resource_name: str, template_name: str) -> Dict[str, List
     从 registry 获取指定设备和动作的 handles 配置
 
     Args:
-        resource_name: 设备资源名称，如 "liquid_handler.prcxi"
+        resource_name: 设备资源名称，如 "liquid_handler"
         template_name: 动作模板名称，如 "transfer_liquid"
 
     Returns:
@@ -81,7 +81,8 @@ def get_action_handles(resource_name: str, template_name: str) -> Dict[str, List
     """
     result = {"source": [], "target": []}
 
-    device_info = lab_registry.device_type_registry.get(resource_name, {})
+    # 调度权威没有本地扫描：读 Host 上报的生效设备条目（registry/catalog.py）
+    device_info = device_entry(resource_name) or {}
     if not device_info:
         return result
 
@@ -210,6 +211,9 @@ def convert_from_json(
     data: Union[str, PathLike, Dict[str, Any]],
     workstation_name: str = DEFAULT_WORKSTATION,
     validate: bool = True,
+    action_resource_mapping: Optional[Dict[str, str]] = None,
+    create_resource_defaults: Optional[Dict[str, str]] = None,
+    device_name: Optional[str] = None,
 ) -> WorkflowGraph:
     """
     从 JSON 数据或文件转换为 WorkflowGraph
@@ -219,8 +223,13 @@ def convert_from_json(
 
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
-        workstation_name: 工作站名称，默认 "PRCXi"
+        workstation_name: 工作站（设备实例）名称，默认内置 "liquid_handler"；动作节点与设液节点的
+            device_name 取它（驱动包场景如 PRCXI 传其设备实例名）
         validate: 是否校验句柄配置，默认 True
+        action_resource_mapping: 覆盖默认的 action → 注册表 id 映射（与 ACTION_RESOURCE_MAPPING 合并），
+            用于指向驱动包提供的设备，例如 {"transfer_liquid": "liquid_handler.prcxi"}
+        create_resource_defaults: 覆盖建板节点的 device_id / parent_template / class_name（见 common.CREATE_RESOURCE_DEFAULTS）
+        device_name: 显式指定动作节点与设液节点的设备实例名，优先于 workstation_name
 
     Returns:
         WorkflowGraph: 构建好的工作流图
@@ -268,8 +277,10 @@ def convert_from_json(
         labware_info=labware_info,
         protocol_steps=protocol_steps,
         workstation_name=workstation_name,
-        action_resource_mapping=ACTION_RESOURCE_MAPPING,
+        action_resource_mapping={**ACTION_RESOURCE_MAPPING, **(action_resource_mapping or {})},
         labware_defs=labware_defs,
+        create_resource_defaults=create_resource_defaults,
+        device_name=device_name or workstation_name,
     )
 
     # 校验句柄配置
@@ -293,7 +304,7 @@ def convert_json_to_node_link(
 
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
-        workstation_name: 工作站名称，默认 "PRCXi"
+        workstation_name: 工作站名称，默认内置 "liquid_handler"
 
     Returns:
         Dict: node-link 格式的工作流数据
@@ -311,7 +322,7 @@ def convert_json_to_workflow_list(
 
     Args:
         data: JSON 文件路径、字典数据、或 JSON 字符串
-        workstation_name: 工作站名称，默认 "PRCXi"
+        workstation_name: 工作站名称，默认内置 "liquid_handler"
 
     Returns:
         List: 工作流节点列表

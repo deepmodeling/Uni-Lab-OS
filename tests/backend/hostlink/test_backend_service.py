@@ -10,6 +10,7 @@ import time
 
 import pytest
 
+from tests.api_envelope import ok_data
 from unilabos.backend.hostlink.network import (
     SERVICE_OWNER,
     get_host_network_service,
@@ -193,9 +194,9 @@ def test_host_microbackend_owns_listener_material_and_ros(
         assert ros_response["owner"] == SERVICE_OWNER
         assert ros_response["ros"]["domain_id"] == 73
 
-        status = TestClient(create_backend_app()).get(
+        status = ok_data(TestClient(create_backend_app()).get(
             "/api/v1/hostlink/peers"
-        ).json()
+        ))
         assert status["role"] == "host"
         assert status["owner"] == SERVICE_OWNER
         assert status["host_id"] == "edge-host-test"

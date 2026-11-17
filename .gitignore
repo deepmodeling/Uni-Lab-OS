@@ -253,3 +253,6 @@ ros-*-unilabos-msgs-*.tar.bz2
 test_config.py
 
 
+
+# scripts/build_conda_release.py 的默认产物目录
+conda-artifacts/

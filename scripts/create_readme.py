@@ -82,7 +82,7 @@ Verification:
 -------------
 
 The verify_installation.py script will check:
-  - Python version (3.12 / cp312)
+  - Python version (3.14 / cp314)
   - HostLink runtime and microbackend (no ROS installation required)
   - Uni-Lab-OS installation and dependencies
 
@@ -102,7 +102,7 @@ Build Information:
 
   Source:   {branch}
   Platform: {platform}
-  Python:   3.12 (cp312)
+  Python:   3.14 (cp314)
   Date:     {build_date}
 
 Troubleshooting:

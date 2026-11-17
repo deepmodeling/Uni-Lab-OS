@@ -155,6 +155,9 @@ def test_host_child_command_points_back_to_authority() -> None:
     assert tail[tail.index("--address") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--material_microbackend_addr") + 1] == "http://127.0.0.1:8002"
     assert tail[tail.index("--server_database_root") + 1] == "/root/edge"
+    # 权威的单库覆盖不传给 Host 子进程：四库全部落在 edge 根目录下，不与权威打开同一个文件
+    for key in ("runtime", "materials", "telemetry", "history"):
+        assert tail[tail.index(f"--{key}_db") + 1] == ""
     assert "--skip_env_check" in tail and "--disable_browser" in tail
     # Host 子进程不监听端口：不再给它 --port
     assert "--port" not in tail
@@ -246,6 +249,16 @@ def test_host_child_supervisor_backs_off_after_crash(monkeypatch: pytest.MonkeyP
     child._thread.join(timeout=5)
     assert launched == 3
     assert child.crash_count == 2
+    # V1 进程管理快照的 edge 组件据此推导阶段：子进程已正常退出、不再看护
+    assert child.state() == {
+        "pid": None,
+        "alive": False,
+        "supervising": False,
+        "stop_requested": False,
+        "restart_count": 0,
+        "crash_count": 2,
+        "last_exit_code": 0,
+    }
 
 
 def test_host_child_supervisor_stop_requests_graceful_exit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,6 +380,38 @@ def test_host_child_serves_backend_http_in_process(monkeypatch: pytest.MonkeyPat
     assert posted[-1].status_code == 404
 
 
+def test_host_child_reads_the_enveloped_reply_to_its_backend_http_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """权威按统一信封答复回送：业务失败是 HTTP 200 + code != 0，Host 要按信封判断并告警。"""
+
+    import asyncio
+
+    import httpx
+
+    from unilabos.protocol.runtime.control import EdgeHttpResponse
+    from unilabos.server.backend.legacy_adaptor import websocket as websocket_module
+    from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+
+    replies = [
+        httpx.Response(200, json={"code": 0, "data": {"accepted": True}}),
+        httpx.Response(200, json={"accepted": True}),  # 旧权威的裸答复也接受
+        httpx.Response(200, json={"code": 1000, "error": {"msg": "request_uuid mismatch"}}),
+    ]
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient",
+        lambda **kwargs: real_client(transport=httpx.MockTransport(lambda request: replies.pop(0)), **kwargs),
+    )
+    warnings: list[str] = []
+    monkeypatch.setattr(websocket_module.logger, "warning", lambda message, *args: warnings.append(message % args))
+    client = BackendWebSocketClient(websocket_url="ws://authority/api/v1/ws/schedule")
+    monkeypatch.setattr(client, "backend_url", lambda: "http://authority")
+    for _ in range(2):
+        asyncio.run(client._post_http_response(EdgeHttpResponse(request_uuid="r-1", status_code=200)))
+    assert warnings == []
+    asyncio.run(client._post_http_response(EdgeHttpResponse(request_uuid="r-1", status_code=200)))
+    assert len(warnings) == 1 and "request_uuid mismatch" in warnings[0]
+
+
 def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: pytest.MonkeyPatch) -> None:
     """控制 WS 先于 setup_server 连上权威：路由没挂好之前不能对 app 执行（否则把"还没挂 /history"
     误报成 404，权威拉结果 payload 会拿到空）；等不到就回 503 而不是 404。"""
@@ -379,7 +424,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
 
     host_app = FastAPI()
 
-    @host_app.get("/api/v1/history/payloads/p1")
+    @host_app.get("/api/v1/edge/history/payloads/p1")
     async def payload():
         return {"inline_payload": "e30="}
 
@@ -400,17 +445,19 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
     monkeypatch.setattr(client, "_post_http_response", capture)
     asyncio.run(
         client._serve_backend_http(
-            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/history/payloads/p1", "timeout_seconds": 5}
+            {"request_uuid": "req-3", "method": "GET", "path": "/api/v1/edge/history/payloads/p1", "timeout_seconds": 5}
         )
     )
     assert waited == [5.0]
-    assert posted[-1].status_code == 503
-    assert "not mounted" in json.loads(posted[-1].body_bytes())["detail"]
+    # 路由未挂好：与「Host 不在线」同形，HTTP 200 + 业务码 5001
+    reply = json.loads(posted[-1].body_bytes())
+    assert posted[-1].status_code == 200 and reply["code"] == 5001
+    assert "尚未挂载" in reply["error"]["msg"]
 
     # 路由就绪后同一请求正常执行
     monkeypatch.setattr(app_module, "wait_routes_ready", lambda timeout: True)
     asyncio.run(
-        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/history/payloads/p1"})
+        client._serve_backend_http({"request_uuid": "req-4", "method": "GET", "path": "/api/v1/edge/history/payloads/p1"})
     )
     assert posted[-1].status_code == 200
 

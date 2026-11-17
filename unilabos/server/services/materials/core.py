@@ -16,6 +16,7 @@ from unilabos.server.services.materials.chemicals import (
     resolve_substance_chemicals,
 )
 from unilabos.server.services.materials.store import MaterialsRepository
+from unilabos.server.services.materials.quantity import convert_quantity, quantity_tolerance
 from unilabos.server.database.tables.materials import (
     InventoryCommandEffectRecord,
     InventoryLedgerRecord,
@@ -32,10 +33,13 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
+    ACTOR_BACKEND,
     ChemicalSummary,
     InventoryAllocation,
+    InventoryLotCorrection,
     InventoryLotInbound,
     InventoryLotRead,
+    InventoryStocktake,
     InventoryRequirement,
     InventoryReservationCreate,
     InventoryReservationRead,
@@ -50,6 +54,7 @@ from unilabos.protocol.materials import (
     MaterialDeviceSync,
     MaterialIdentityRead,
     MaterialMove,
+    MaterialNodeCreate,
     MaterialPatch,
     MaterialDelta,
     MaterialDeltaResult,
@@ -65,7 +70,17 @@ from unilabos.protocol.materials import (
     ResourceTemplateWrite,
     SiteCreate,
     SiteRead,
+    snapshot_retirable,
 )
+from unilabos.resources.objects.naming import (
+    PLR_KEY_FIELD,
+    MaterialNameConflict,
+    check_name_identity,
+    migrated_name_fields,
+    plr_key,
+    rekey_bare_label_items,
+)
+from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
     data_semantic,
@@ -78,12 +93,35 @@ from unilabos.server.services.materials.snapshot import (
 class MaterialsServiceError(RuntimeError):
     code = "materials_error"
 
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        subject: Optional[str] = None,
+        conflict: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        #: 不存在的对象：material / site / template / parent / lot / reservation / resource …
+        self.subject = subject
+        #: 冲突类别：site_occupied / site_ingress_reserved / active_claim / identity / content_reserved …；
+        #: None 为一般冲突
+        self.conflict = conflict
+
+
+#: 冲突类别：目标库位正由 AGV 入口预留（``station_ingress_reservation`` 的 reserved / in_transit）
+#: 留给入站载体。预留接收、取消或过期后自然解除，调度侧应按「临时资源条件」等待，而不是判失败。
+SITE_INGRESS_RESERVED = "site_ingress_reserved"
+
 
 class MaterialNotFoundError(MaterialsServiceError):
+    """业务码由 ``subject`` 决定（``api/envelope.py`` 集中换算），不再按消息文字判断。"""
+
     code = "not_found"
 
 
 class MaterialConflictError(MaterialsServiceError):
+    """业务码由 ``conflict`` 类别决定（``api/envelope.py`` 集中换算）；一般冲突为 4002。"""
+
     code = "conflict"
 
 
@@ -116,6 +154,23 @@ ResourceSyncDispatcher = Callable[[MaterialDeviceSync], Any]
 
 #: 拓扑边身份命名空间：同两端/同 handle/同类型的边跨启动稳定同 uuid。
 MATERIAL_LINK_NAMESPACE = uuid5(NAMESPACE_URL, "unilabos://material-links")
+
+
+def _keep_plr_key(current: Mapping[str, Any], desired: Mapping[str, Any]) -> dict[str, Any]:
+    """PLR 键创建后不可改：新 config 缺 ``name`` 时沿用现值，给了不同的值即拒绝。"""
+
+    result = dict(desired)
+    current_key = plr_key(current)
+    if not current_key:
+        return result
+    desired_key = plr_key(result)
+    if not desired_key:
+        result[PLR_KEY_FIELD] = current_key
+    elif desired_key != current_key:
+        raise MaterialValidationError(
+            f"PLR 键 config.name 创建后不可修改: {current_key!r} -> {desired_key!r}"
+        )
+    return result
 
 
 def material_link_uuid(
@@ -189,6 +244,8 @@ class MaterialsService(MaterialsRepository):
         super().__init__(database)
         self._resource_sync_dispatcher = resource_sync_dispatcher
         self._transfer_lock = threading.RLock()
+        from .execution import MaterialExecutions
+        self.executions = MaterialExecutions(self)
 
     def set_resource_sync_dispatcher(
         self,
@@ -263,11 +320,14 @@ class MaterialsService(MaterialsRepository):
                             MaterialNoChangeError.code: MaterialNoChangeError,
                             InsufficientInventoryError.code: InsufficientInventoryError,
                         }
-                        error_type = error_types.get(
-                            existing.error_code or "", RejectedMutationError
-                        )
+                        # 拒绝码形如 ``not_found:material`` / ``conflict:site_occupied``，
+                        # 重放时还原同一业务码（subject / conflict 类别）。
+                        base_code, _, qualifier = (existing.error_code or "").partition(":")
+                        error_type = error_types.get(base_code, RejectedMutationError)
                         raise error_type(
-                            existing.error_message or "mutation was previously rejected"
+                            existing.error_message or "mutation was previously rejected",
+                            subject=qualifier or None if error_type is MaterialNotFoundError else None,
+                            conflict=qualifier or None if error_type is MaterialConflictError else None,
                         )
                     if existing.status != "applied":
                         raise MaterialConflictError("mutation is already applying")
@@ -291,6 +351,17 @@ class MaterialsService(MaterialsRepository):
                 effect_started = True
                 self._check_preconditions(mutation.preconditions)
                 applied = apply(timestamp)
+                self.executions.guard_mutation(mutation, applied.affected)
+                # 所有内容、快照、配置变更在同一写事务的最终状态校验容量。
+                capacity_materials = {item.aggregate_uuid for item in applied.affected if item.aggregate_type == "material"}
+                for item in applied.affected:
+                    if item.aggregate_type == "resource_template":
+                        capacity_materials.update(row[0] for row in self.connection.execute(
+                            "SELECT material_uuid FROM material WHERE template_uuid=? AND deleted_at_ms IS NULL",
+                            (item.aggregate_uuid,),
+                        ).fetchall())
+                for identity in capacity_materials:
+                    self._validate_material_capacity(identity)
                 if not applied.sequences:
                     raise MaterialNoChangeError("mutation produced no aggregate change")
                 result = result_model(
@@ -357,7 +428,10 @@ class MaterialsService(MaterialsRepository):
                     request_json=request,
                     request_hash=request_hash,
                     status="rejected",
-                    error_code=error.code,
+                    error_code=error.code + (
+                        f":{error.subject}" if error.subject
+                        else f":{error.conflict}" if error.conflict else ""
+                    ),
                     error_message=str(error),
                     started_at_ms=timestamp,
                     updated_at_ms=timestamp,
@@ -369,9 +443,21 @@ class MaterialsService(MaterialsRepository):
         self, preconditions: list[AggregatePrecondition]
     ) -> None:
         for condition in preconditions:
-            version, state_hash = self._aggregate_version_hash(
-                condition.aggregate_type, condition.aggregate_uuid
-            )
+            try:
+                version, state_hash = self._aggregate_version_hash(
+                    condition.aggregate_type, condition.aggregate_uuid
+                )
+            except MaterialNotFoundError:
+                # 读基线之后被软删除（delete / 快照退役枪头）：调用方的基线已过期，
+                # 是版本冲突而不是引用错误，调用方应重读后再算
+                if not self._aggregate_was_deleted(
+                    condition.aggregate_type, condition.aggregate_uuid
+                ):
+                    raise
+                raise MaterialConflictError(
+                    f"{condition.aggregate_type} {condition.aggregate_uuid} was deleted",
+                    conflict="state",
+                ) from None
             if condition.expected_version is not None and (
                 version != condition.expected_version
             ):
@@ -386,13 +472,24 @@ class MaterialsService(MaterialsRepository):
                     f"{condition.aggregate_type} {condition.aggregate_uuid} state changed"
                 )
 
+    def _aggregate_was_deleted(self, aggregate_type: str, aggregate_uuid: str) -> bool:
+        """聚合曾存在、现已软删除（区别于从未存在的引用）。"""
+
+        if aggregate_type == "material":
+            record = MaterialsRepository.get_material(self, aggregate_uuid, include_deleted=True)
+        elif aggregate_type == "site":
+            record = self.get_site(aggregate_uuid, include_deleted=True)
+        else:
+            return False
+        return record is not None and record.deleted_at_ms is not None
+
     def _aggregate_version_hash(
         self, aggregate_type: str, aggregate_uuid: str
     ) -> tuple[int, str]:
         if aggregate_type == "resource_template":
             record = MaterialsRepository.get_template(self, aggregate_uuid)
             if record is None:
-                raise MaterialNotFoundError(f"template not found: {aggregate_uuid}")
+                raise MaterialNotFoundError(f"template not found: {aggregate_uuid}", subject="template")
             return record.version, self._template_state_hash(record)
         if aggregate_type == "material":
             aggregate = self._aggregate(aggregate_uuid)
@@ -400,18 +497,18 @@ class MaterialsService(MaterialsRepository):
         if aggregate_type == "site":
             record = self.get_site(aggregate_uuid)
             if record is None:
-                raise MaterialNotFoundError(f"site not found: {aggregate_uuid}")
+                raise MaterialNotFoundError(f"site not found: {aggregate_uuid}", subject="site")
             return record.version, self._site_state_hash(record)
         if aggregate_type == "lot":
             record = self.get_lot(aggregate_uuid)
             if record is None:
-                raise MaterialNotFoundError(f"inventory lot not found: {aggregate_uuid}")
+                raise MaterialNotFoundError(f"inventory lot not found: {aggregate_uuid}", subject="lot")
             return record.version, self._lot_state_hash(record)
         if aggregate_type == "reservation":
             record = self.get_reservation(aggregate_uuid)
             if record is None:
                 raise MaterialNotFoundError(
-                    f"inventory reservation not found: {aggregate_uuid}"
+                    f"inventory reservation not found: {aggregate_uuid}", subject="reservation"
                 )
             return record.version, self._reservation_state_hash(record)
         raise MaterialValidationError(
@@ -456,10 +553,7 @@ class MaterialsService(MaterialsRepository):
     @staticmethod
     def _lot_state_hash(record: InventoryLotRecord) -> str:
         return canonical_hash(
-            record.model_dump(
-                mode="json",
-                exclude={"created_at_ms", "updated_at_ms", "version"},
-            )
+            record.model_dump(mode="json", exclude={"created_at_ms", "updated_at_ms", "version"})
         )
 
     @staticmethod
@@ -484,7 +578,7 @@ class MaterialsService(MaterialsRepository):
     def get_inventory_lot(self, lot_uuid: str) -> InventoryLotRead:
         record = self.get_lot(lot_uuid)
         if record is None:
-            raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}")
+            raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}", subject="lot")
         return self._lot_read(record)
 
     def list_inventory_lots(
@@ -514,7 +608,7 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[InventoryLotRead]:
             if MaterialsRepository.get_template(self, value.template_uuid) is None:
                 raise MaterialNotFoundError(
-                    f"template not found: {value.template_uuid}"
+                    f"template not found: {value.template_uuid}", subject="template"
                 )
             lot_uuid = value.lot_uuid or str(uuid4())
             current = self.get_lot(lot_uuid)
@@ -530,7 +624,11 @@ class MaterialsService(MaterialsRepository):
                     expiry_at_ms=value.expiry_at_ms,
                     created_at_ms=timestamp,
                     updated_at_ms=timestamp,
+                    location_site_uuid=value.location_site_uuid,
+                    warehouse_zone_id=value.warehouse_zone_id,
                 )
+                if value.location_site_uuid is not None:
+                    self._require_lot_site(value.location_site_uuid)
                 self.insert_lot(updated)
                 previous_version = 0
             else:
@@ -590,13 +688,119 @@ class MaterialsService(MaterialsRepository):
             apply,
         )
 
+    def stocktake_inventory_lot(
+        self, mutation: InventoryMutation, value: InventoryStocktake,
+    ) -> MutationResult[InventoryLotRead]:
+        """人工核对数量后校正；身份、预留和版本冲突不自动覆盖。"""
+        if mutation.operation != "stocktake_inventory_lot" or not mutation.actor_uuid:
+            raise MaterialValidationError("盘点需要正确操作类型及明确的操作人")
+
+        def apply(timestamp: int) -> _Applied[InventoryLotRead]:
+            current = self.get_lot(value.lot_uuid)
+            if current is None:
+                raise MaterialNotFoundError("盘点批次不存在", subject="lot")
+            if current.version != value.expected_version:
+                raise MaterialConflictError("盘点期间库存版本已变化，请重新核对")
+            if current.unit.casefold() not in {"count", "piece", "粒"} or not current.quantity_total.is_integer():
+                raise MaterialValidationError("计数盘点只适用于离散整数库存")
+            if current.quantity_total != value.measured_count:
+                identified = self.connection.execute(
+                    "SELECT material_uuid FROM material WHERE lot_uuid=? AND deleted_at_ms IS NULL LIMIT 1",
+                    (current.lot_uuid,),
+                ).fetchone()
+                if current.quarantined or current.quantity_reserved > 0 or identified is not None:
+                    raise MaterialConflictError("stocktake_review_required: 差异涉及隔离、预留或已登记物料，必须先复核")
+            updated = self._advance_lot(
+                current, total_delta=value.measured_count - current.quantity_total,
+                available_delta=value.measured_count - current.quantity_total, timestamp=timestamp,
+            )
+            self.update_lot(updated)
+            state_hash = self._lot_state_hash(updated)
+            sequence = self._ledger(
+                mutation, aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                operation="inventory.lot.stocktake", previous_version=current.version,
+                aggregate_version=updated.version, state_hash=state_hash, timestamp=timestamp,
+                delta={"previous_count": current.quantity_total, "measured_count": value.measured_count,
+                       "reason": value.reason, "source": "operator"},
+            )
+            return _Applied(self._lot_read(updated), [AggregateVersion(
+                aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                version=updated.version, state_hash=state_hash,
+            )], [sequence])
+
+        return self._run_mutation(mutation, value, MutationResult[InventoryLotRead], apply)
+
+    def _require_lot_site(self, site_uuid: str) -> None:
+        row = self.connection.execute(
+            "SELECT 1 FROM site WHERE site_uuid=? AND deleted_at_ms IS NULL", (site_uuid,)
+        ).fetchone()
+        if row is None:
+            raise MaterialNotFoundError(f"site not found: {site_uuid}", subject="site")
+
+    def correct_inventory_lot(
+        self, mutation: InventoryMutation, value: InventoryLotCorrection,
+    ) -> MutationResult[InventoryLotRead]:
+        """按实测总量与位置校正批次；质量 / 体积批次与已隔离批次也可校正（需明确操作人）。"""
+        if mutation.operation != "correct_inventory_lot" or not mutation.actor_uuid:
+            raise MaterialValidationError("批次校正需要正确操作类型及明确的操作人")
+
+        def apply(timestamp: int) -> _Applied[InventoryLotRead]:
+            current = self.get_lot(value.lot_uuid)
+            if current is None:
+                raise MaterialNotFoundError(f"inventory lot not found: {value.lot_uuid}", subject="lot")
+            if current.version != value.expected_version:
+                raise MaterialConflictError("校正期间库存版本已变化，请重新核对")
+            updates: dict[str, Any] = {}
+            delta: dict[str, Any] = {"reason": value.reason, "source": "operator"}
+            if value.measured_quantity is not None:
+                measured = float(value.measured_quantity)
+                if measured + quantity_tolerance(measured, current.quantity_reserved) < current.quantity_reserved:
+                    raise MaterialConflictError("实测总量低于已预留量，请先释放或结算预留")
+                difference = measured - current.quantity_total
+                available = max(0.0, current.quantity_available + difference)
+                available = min(available, max(0.0, measured - current.quantity_reserved))
+                updates.update(quantity_total=measured, quantity_available=available)
+                delta.update(previous_quantity=current.quantity_total, measured_quantity=measured, unit=current.unit)
+            if value.location_site_uuid is not None:
+                location = value.location_site_uuid.strip() or None
+                if location is not None:
+                    self._require_lot_site(location)
+                updates["location_site_uuid"] = location
+                delta["location_site_uuid"] = location
+            if value.warehouse_zone_id is not None:
+                updates["warehouse_zone_id"] = value.warehouse_zone_id.strip()
+                delta["warehouse_zone_id"] = updates["warehouse_zone_id"]
+            if value.quarantined is not None:
+                updates["quarantined"] = value.quarantined
+                delta["quarantined"] = value.quarantined
+            if not updates:
+                raise MaterialValidationError("批次校正至少需要数量、位置或隔离状态之一")
+            updated = current.model_copy(
+                update={**updates, "updated_at_ms": max(timestamp, current.updated_at_ms), "version": current.version + 1}
+            )
+            InventoryLotRecord.model_validate(updated.model_dump())
+            self.update_lot(updated)
+            state_hash = self._lot_state_hash(updated)
+            sequence = self._ledger(
+                mutation, aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                operation="inventory.lot.correct", previous_version=current.version,
+                aggregate_version=updated.version, state_hash=state_hash, timestamp=timestamp,
+                delta=delta,
+            )
+            return _Applied(self._lot_read(updated), [AggregateVersion(
+                aggregate_type="lot", aggregate_uuid=current.lot_uuid,
+                version=updated.version, state_hash=state_hash,
+            )], [sequence])
+
+        return self._run_mutation(mutation, value, MutationResult[InventoryLotRead], apply)
+
     def get_inventory_reservation(
         self, reservation_uuid: str
     ) -> InventoryReservationRead:
         record = self.get_reservation(reservation_uuid)
         if record is None:
             raise MaterialNotFoundError(
-                f"inventory reservation not found: {reservation_uuid}"
+                f"inventory reservation not found: {reservation_uuid}", subject="reservation"
             )
         return self._reservation_read(record)
 
@@ -606,7 +810,7 @@ class MaterialsService(MaterialsRepository):
         record = self.get_reservation_by_job(job_uuid)
         if record is None:
             raise MaterialNotFoundError(
-                f"inventory reservation not found for job: {job_uuid}"
+                f"inventory reservation not found for job: {job_uuid}", subject="reservation"
             )
         return self._reservation_read(record)
 
@@ -648,63 +852,46 @@ class MaterialsService(MaterialsRepository):
                     f"inventory reservation already exists: {reservation_uuid}"
                 )
 
-            allocations: list[InventoryAllocation] = []
-            selected_materials: set[str] = set()
+            allocations, shortages = self._plan_inventory(value.requirements, timestamp)
+            if shortages:
+                # 预检报告提供中文说明，既有预留接口保留示例和调用方依赖的错误文案。
+                raise InsufficientInventoryError("; ".join(
+                    f"requirement {item['key']!r} is short by {item['shortage']:g} {item['unit']}"
+                    if item["kind"] == "lot" else item["message"]
+                    for item in shortages
+                ))
             material_updates: list[tuple[MaterialRecord, MaterialRecord]] = []
             lot_reserved: dict[str, float] = {}
-
-            for requirement in value.requirements:
-                if requirement.kind == "material":
-                    material = self._select_inventory_material(
-                        requirement,
-                        selected_materials=selected_materials,
-                    )
-                    selected_materials.add(material.material_uuid)
-                    updated = material.model_copy(
-                        update={
-                            "lifecycle_status": "reserved",
-                            "updated_at_ms": timestamp,
-                            "version": material.version + 1,
-                        }
-                    )
+            for allocation in allocations:
+                if allocation.kind == "material":
+                    material = MaterialsRepository.get_material(self, allocation.material_uuid)
+                    assert material is not None
+                    updated = material.model_copy(update={
+                        "lifecycle_status": "reserved", "updated_at_ms": timestamp,
+                        "version": material.version + 1,
+                    })
                     material_updates.append((material, updated))
-                    allocations.append(
-                        InventoryAllocation(
-                            key=requirement.key,
-                            kind="material",
-                            material_uuid=material.material_uuid,
-                            template_uuid=material.template_uuid,
-                        )
+                elif allocation.kind == "lot":
+                    lot_reserved[allocation.lot_uuid] = (
+                        lot_reserved.get(allocation.lot_uuid, 0.0) + allocation.quantity
                     )
+            # 内容物：随作业预留创建 material_content_reservation；其他任务的可用量即时扣除这份预留
+            contents = None
+            for index, allocation in enumerate(allocations):
+                if allocation.kind != "content":
                     continue
-
-                remaining = float(requirement.quantity or 0)
-                candidates = self._candidate_inventory_lots(requirement, timestamp)
-                for lot in candidates:
-                    already = lot_reserved.get(lot.lot_uuid, 0.0)
-                    available = lot.quantity_available - already
-                    take = min(available, remaining)
-                    if take <= 1e-9:
-                        continue
-                    lot_reserved[lot.lot_uuid] = already + take
-                    allocations.append(
-                        InventoryAllocation(
-                            key=requirement.key,
-                            kind="lot",
-                            template_uuid=lot.template_uuid,
-                            lot_uuid=lot.lot_uuid,
-                            quantity=take,
-                            unit=lot.unit,
-                        )
-                    )
-                    remaining -= take
-                    if remaining <= 1e-9:
-                        break
-                if remaining > 1e-9:
-                    raise InsufficientInventoryError(
-                        f"requirement {requirement.key!r} is short by {remaining:g} "
-                        f"{requirement.unit}"
-                    )
+                contents = contents or self._content_contract()
+                content_reservation_uuid = str(uuid4())
+                contents.reserve_content({
+                    "reservation_uuid": content_reservation_uuid,
+                    "substance_uuid": allocation.substance_uuid,
+                    "task_uuid": value.task_uuid,
+                    "node_uuid": value.node_uuid,
+                    "job_uuid": value.job_uuid,
+                    "quantity": allocation.quantity,
+                    "quantity_unit": allocation.unit,
+                })
+                allocations[index] = allocation.model_copy(update={"content_reservation_uuid": content_reservation_uuid})
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
@@ -732,7 +919,7 @@ class MaterialsService(MaterialsRepository):
             for lot_uuid, quantity in sorted(lot_reserved.items()):
                 current = self.get_lot(lot_uuid)
                 if current is None:
-                    raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}")
+                    raise MaterialNotFoundError(f"inventory lot not found: {lot_uuid}", subject="lot")
                 updated = self._advance_lot(
                     current,
                     available_delta=-quantity,
@@ -903,6 +1090,7 @@ class MaterialsService(MaterialsRepository):
         requirement: InventoryRequirement,
         *,
         selected_materials: set[str],
+        ignore_reservations: bool = False,
     ) -> MaterialRecord:
         if requirement.material_uuid is not None:
             candidates = [MaterialsRepository.get_material(self, requirement.material_uuid)]
@@ -910,7 +1098,7 @@ class MaterialsService(MaterialsRepository):
             site = self.get_site(requirement.site_uuid)
             if site is None:
                 raise MaterialNotFoundError(
-                    f"warehouse Site not found: {requirement.site_uuid}"
+                    f"warehouse Site not found: {requirement.site_uuid}", subject="site"
                 )
             candidates = [
                 MaterialsRepository.get_material(self, site.occupied_material_uuid)
@@ -922,10 +1110,11 @@ class MaterialsService(MaterialsRepository):
                 MaterialsRepository.list_materials(self),
                 key=lambda item: (item.created_at_ms, item.material_uuid),
             )
+        usable = {"active", "reserved"} if ignore_reservations else {"active"}
         for material in candidates:
             if material is None or material.material_uuid in selected_materials:
                 continue
-            if material.lifecycle_status != "active":
+            if material.lifecycle_status not in usable:
                 continue
             if (
                 requirement.template_uuid is not None
@@ -945,33 +1134,265 @@ class MaterialsService(MaterialsRepository):
             f"({identity})"
         )
 
+    def _plan_inventory(
+        self, requirements: Sequence[InventoryRequirement], timestamp: int, *,
+        ignore_reservations: bool = False, short_indexes: Optional[list[int]] = None,
+    ) -> tuple[list[InventoryAllocation], list[dict[str, Any]]]:
+        """整批需求共用虚拟余量；与真正预留复用同一筛选、单位换算和顺序。
+
+        ``ignore_reservations`` 把其他预留占着的量也当作可用（实物够不够）；``short_indexes`` 收集
+        出现短缺的需求下标（每条需求至多一条短缺）。
+        """
+        allocations: list[InventoryAllocation] = []
+        shortages: list[dict[str, Any]] = []
+        selected_materials: set[str] = set()
+        lot_reserved: dict[str, float] = {}
+        content_planned: dict[str, float] = {}
+        for index, requirement in enumerate(requirements):
+            before = len(shortages)
+            self._plan_one(requirement, timestamp, allocations, shortages, selected_materials, lot_reserved,
+                           content_planned, ignore_reservations=ignore_reservations)
+            if short_indexes is not None and len(shortages) > before:
+                short_indexes.append(index)
+        return allocations, shortages
+
+    def _plan_one(self, requirement: InventoryRequirement, timestamp: int, allocations: list[InventoryAllocation],
+                  shortages: list[dict[str, Any]], selected_materials: set[str], lot_reserved: dict[str, float],
+                  content_planned: dict[str, float], *, ignore_reservations: bool) -> None:
+        """规划一条需求：分配追加到 ``allocations``，短缺追加到 ``shortages``。"""
+        if requirement.kind == "content":
+            planned = self._plan_content(requirement, content_planned, ignore_reservations=ignore_reservations)
+            if isinstance(planned, InventoryAllocation):
+                allocations.append(planned)
+            else:
+                shortages.append(planned)
+            return
+        if requirement.kind == "material":
+            try:
+                material = self._select_inventory_material(requirement, selected_materials=selected_materials,
+                                                           ignore_reservations=ignore_reservations)
+            except (InsufficientInventoryError, MaterialNotFoundError) as error:
+                shortages.append({"key": requirement.key, "kind": "material", "message": str(error)})
+                return
+            selected_materials.add(material.material_uuid)
+            allocations.append(InventoryAllocation(
+                key=requirement.key, kind="material", material_uuid=material.material_uuid,
+                template_uuid=material.template_uuid,
+            ))
+            return
+        requested = remaining = float(requirement.quantity)
+        for lot in self._candidate_inventory_lots(requirement, timestamp, include_reserved=ignore_reservations):
+            # 分配与流水始终以原批次单位记账；跨批次需求以请求单位比较。
+            converted = convert_quantity(1.0, lot.unit, requirement.unit)
+            assert converted is not None
+            factor = converted[0]
+            held = lot.quantity_reserved if ignore_reservations else 0.0
+            available = max(0.0, lot.quantity_available + held - lot_reserved.get(lot.lot_uuid, 0.0))
+            take = min(available, remaining / factor)
+            if take <= 0:
+                continue
+            lot_reserved[lot.lot_uuid] = lot_reserved.get(lot.lot_uuid, 0.0) + take
+            allocations.append(InventoryAllocation(
+                key=requirement.key, kind="lot", template_uuid=lot.template_uuid,
+                lot_uuid=lot.lot_uuid, quantity=take, unit=lot.unit,
+            ))
+            remaining -= take * factor
+            if remaining <= quantity_tolerance(requested, remaining):
+                remaining = 0.0
+                break
+        if remaining > 0:
+            shortages.append({
+                "key": requirement.key, "kind": "lot", "lot_uuid": requirement.lot_uuid,
+                "template_uuid": requirement.template_uuid, "required": requested,
+                "available": requested - remaining, "shortage": remaining, "unit": requirement.unit,
+                "message": f"库存需求 {requirement.key} 缺少 {remaining:g} {requirement.unit}",
+            })
+
+    # ── 内容物（容器里的一份 substance）数量 ───────────────────────────
+
+    def _content_contract(self) -> Any:
+        from unilabos.server.services.materials.contents import ContentContract
+
+        return ContentContract(self, compound_source=None)
+
+    def _content_substance(self, requirement: InventoryRequirement) -> Any:
+        """按容器 + substance_uuid / 容器内唯一的 substance_name 选中一份内容物。"""
+
+        rows = self.connection.execute(
+            "SELECT ms.substance_uuid, ms.material_uuid, ms.name, ms.quantity, ms.quantity_unit, ms.physical_state, "
+            "mc.concentration_value, mc.density_g_per_ml, m.template_uuid FROM material_substance ms "
+            "JOIN material m USING(material_uuid) LEFT JOIN material_content mc USING(substance_uuid) "
+            "WHERE ms.material_uuid=? AND m.deleted_at_ms IS NULL AND m.lifecycle_status NOT IN ('retired','quarantined') "
+            "AND (ms.substance_uuid=? OR (? IS NOT NULL AND ms.name=?))",
+            (requirement.material_uuid, requirement.substance_uuid, requirement.substance_name, requirement.substance_name),
+        ).fetchall()
+        label = requirement.substance_uuid or requirement.substance_name
+        if not rows:
+            raise MaterialNotFoundError(f"容器 {requirement.material_uuid} 里没有内容物 {label}", subject="material")
+        if len(rows) > 1:
+            raise MaterialValidationError(f"容器 {requirement.material_uuid} 里有多份名为 {label} 的内容物，请改用 substance_uuid")
+        return rows[0]
+
+    def content_reserved(
+        self, substance_uuid: str, unit: str, *, physical: Mapping[str, Any],
+        exclude_reservation: Optional[str] = None, exclude_task: Optional[str] = None,
+    ) -> float:
+        """某份内容物上仍有效的预留合计（换算到 ``unit``）；单位换算不了时拒绝，不按原数字硬算。"""
+
+        total = 0.0
+        for row in self.connection.execute(
+            "SELECT reservation_uuid, task_uuid, quantity, quantity_unit FROM material_content_reservation "
+            "WHERE substance_uuid=? AND status='active'", (substance_uuid,),
+        ).fetchall():
+            if row["reservation_uuid"] == exclude_reservation or (exclude_task is not None and row["task_uuid"] == exclude_task):
+                continue
+            converted = convert_quantity(
+                float(row["quantity"]), row["quantity_unit"], unit, inventory_type="content",
+                physical_state=physical.get("physical_state"), concentration_value=physical.get("concentration_value"),
+                density_g_per_ml=physical.get("density_g_per_ml"),
+            )
+            if converted is None:
+                raise MaterialConflictError(
+                    f"内容物 {substance_uuid} 的有效预留单位 {row['quantity_unit']} 无法换算为 {unit}", conflict="state",
+                )
+            total += converted[0]
+        return total
+
+    def _plan_content(self, requirement: InventoryRequirement, planned: dict[str, float], *,
+                      ignore_reservations: bool = False) -> Any:
+        """内容物需求：可用量 = 现量 − 其他预留 − 同一批已规划的量；返回分配或短缺说明。"""
+
+        try:
+            row = self._content_substance(requirement)
+        except (MaterialNotFoundError, MaterialValidationError) as error:
+            return {"key": requirement.key, "kind": "content", "message": str(error)}
+        physical = {key: row[key] for key in ("physical_state", "concentration_value", "density_g_per_ml")}
+        converted = convert_quantity(
+            float(requirement.quantity), requirement.unit, row["quantity_unit"], inventory_type="content", **physical,
+        )
+        if converted is None:
+            return {"key": requirement.key, "kind": "content",
+                    "message": f"库存需求 {requirement.key} 的单位 {requirement.unit} 无法换算为内容物单位 {row['quantity_unit']}"}
+        need = converted[0]
+        try:
+            reserved = 0.0 if ignore_reservations else self.content_reserved(
+                row["substance_uuid"], row["quantity_unit"], physical=physical)
+        except MaterialConflictError as error:
+            return {"key": requirement.key, "kind": "content", "message": str(error)}
+        available = float(row["quantity"]) - reserved - planned.get(row["substance_uuid"], 0.0)
+        if need > available + quantity_tolerance(available, need):
+            factor = need / float(requirement.quantity)
+            short = (need - max(available, 0.0)) / factor
+            return {
+                "key": requirement.key, "kind": "content", "material_uuid": requirement.material_uuid,
+                "substance_uuid": row["substance_uuid"], "required": float(requirement.quantity),
+                "available": max(available, 0.0) / factor, "shortage": short, "unit": requirement.unit,
+                "message": f"库存需求 {requirement.key} 缺少 {short:g} {requirement.unit}（容器 {row['name']} 的未预留余量不足）",
+            }
+        planned[row["substance_uuid"]] = planned.get(row["substance_uuid"], 0.0) + need
+        return InventoryAllocation(
+            key=requirement.key, kind="content", material_uuid=requirement.material_uuid,
+            template_uuid=row["template_uuid"], substance_uuid=row["substance_uuid"],
+            quantity=float(requirement.quantity), unit=requirement.unit,
+        )
+
+    def replace_substances(self, material_uuid: str, records: Sequence[MaterialSubstanceRecord]) -> None:
+        """整份替换容器内容物（API 写入与设备快照都经过这里）。
+
+        工作流作业持有有效预留的内容物不能被移除，单位也不能改成与预留无法换算的单位——否则那份
+        预留会悄悄失效、作业结算时对不上账；数量下降是设备上报的事实，不在这里拦。
+        """
+
+        rows = self.connection.execute(
+            "SELECT r.substance_uuid, r.quantity, r.quantity_unit, s.name, mc.concentration_value, mc.density_g_per_ml "
+            "FROM material_content_reservation r LEFT JOIN material_substance s USING(substance_uuid) "
+            "LEFT JOIN material_content mc USING(substance_uuid) "
+            "WHERE r.material_uuid=? AND r.status='active' AND r.job_uuid IS NOT NULL",
+            (material_uuid,),
+        ).fetchall()
+        if rows:
+            incoming = {record.substance_uuid: record for record in records}
+            for row in rows:
+                label = row["name"] or row["substance_uuid"]
+                record = incoming.get(row["substance_uuid"])
+                if record is None:
+                    raise MaterialConflictError(
+                        f"内容物 {label} 有工作流作业的有效预留，不能从容器移除", conflict="state",
+                    )
+                if convert_quantity(
+                    float(row["quantity"]), row["quantity_unit"], record.quantity_unit, inventory_type="content",
+                    physical_state=record.physical_state, concentration_value=row["concentration_value"],
+                    density_g_per_ml=row["density_g_per_ml"],
+                ) is None:
+                    raise MaterialConflictError(
+                        f"内容物 {label} 有工作流作业的有效预留（{row['quantity_unit']}），单位不能改成 {record.quantity_unit}",
+                        conflict="state",
+                    )
+        super().replace_substances(material_uuid, records)
+
+    def preview_inventory(self, requirements: Sequence[InventoryRequirement]) -> dict[str, Any]:
+        """只读库存快照，不创建预留、命令效果或流水。结果不是派发许可。"""
+        with self._write_lock:
+            nested = self.connection.in_transaction
+            if not nested:
+                self.connection.execute("BEGIN")
+            try:
+                timestamp = int(time.time() * 1000)
+                short_indexes: list[int] = []
+                allocations, shortages = self._plan_inventory(requirements, timestamp, short_indexes=short_indexes)
+                if shortages:
+                    # 区分「实物不够」与「实物够、只是被其他预留占着」：后者等别人释放即可，不是缺料
+                    physical: list[int] = []
+                    self._plan_inventory(requirements, timestamp, ignore_reservations=True, short_indexes=physical)
+                    for index, shortage in zip(short_indexes, shortages):
+                        shortage["cause"] = "insufficient" if index in physical else "reserved_by_other_tasks"
+                return {
+                    "available": not shortages,
+                    "allocations": [item.model_dump(mode="json") for item in allocations],
+                    "shortages": shortages,
+                }
+            finally:
+                if not nested:
+                    self.connection.rollback()
+
+    def material_sanity_facts(
+        self, material_uuids: Sequence[str], *, reservation_uuid: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """派发前物料健全性检查的一次只读事实（不写库、不判定），见 ``materials/sanity.py``。"""
+
+        from .sanity import material_sanity_facts
+
+        return material_sanity_facts(self, material_uuids, reservation_uuid=reservation_uuid)
+
     def _candidate_inventory_lots(
         self,
         requirement: InventoryRequirement,
         timestamp: int,
+        *,
+        include_reserved: bool = False,
     ) -> list[InventoryLotRecord]:
         if requirement.lot_uuid is not None:
             lot = self.get_lot(requirement.lot_uuid)
             if lot is None:
                 raise MaterialNotFoundError(
-                    f"inventory lot not found: {requirement.lot_uuid}"
+                    f"inventory lot not found: {requirement.lot_uuid}", subject="lot"
                 )
             candidates = [lot]
         else:
             candidates = self.list_lots(
                 template_uuid=requirement.template_uuid,
-                unit=requirement.unit,
-                available_only=True,
+                available_only=not include_reserved,
             )
         result: list[InventoryLotRecord] = []
         for lot in candidates:
-            if lot.quarantined or lot.quantity_available <= 1e-9:
+            held = lot.quantity_reserved if include_reserved else 0.0
+            if lot.quarantined or lot.quantity_available + held <= 0:
                 continue
             if requirement.template_uuid is not None and (
                 lot.template_uuid != requirement.template_uuid
             ):
                 continue
-            if lot.unit != requirement.unit:
+            if convert_quantity(1.0, lot.unit, requirement.unit) is None:
                 continue
             if lot.expiry_at_ms is not None and lot.expiry_at_ms <= timestamp:
                 continue
@@ -987,16 +1408,18 @@ class MaterialsService(MaterialsRepository):
         reserved_delta: float = 0,
         timestamp: int,
     ) -> InventoryLotRecord:
-        def normalized(value: float) -> float:
-            return 0.0 if abs(value) <= 1e-9 else value
+        def adjusted(value: float, delta: float) -> float:
+            result = value + delta
+            return 0.0 if abs(result) <= quantity_tolerance(value, delta) else result
 
-        total = normalized(current.quantity_total + total_delta)
-        available = normalized(current.quantity_available + available_delta)
-        reserved = normalized(current.quantity_reserved + reserved_delta)
-        if min(total, available, reserved) < 0 or available + reserved > total + 1e-9:
-            raise MaterialConflictError(
-                f"inventory lot invariant failed for {current.lot_uuid}"
-            )
+        total = adjusted(current.quantity_total, total_delta)
+        available = adjusted(current.quantity_available, available_delta)
+        reserved = adjusted(current.quantity_reserved, reserved_delta)
+        if min(total, available, reserved) < 0 or available + reserved > total + quantity_tolerance(total):
+            raise MaterialConflictError(f"inventory lot invariant failed for {current.lot_uuid}")
+        # SQLite 的约束不带容差；把纯舍入差异收敛到可用量。
+        if available + reserved > total:
+            available = max(0.0, total - reserved)
         return current.model_copy(
             update={
                 "quantity_total": total,
@@ -1028,7 +1451,7 @@ class MaterialsService(MaterialsRepository):
             current = self.get_reservation(value.reservation_uuid)
             if current is None:
                 raise MaterialNotFoundError(
-                    f"inventory reservation not found: {value.reservation_uuid}"
+                    f"inventory reservation not found: {value.reservation_uuid}", subject="reservation"
                 )
             if target_status in {"consumed", "released"} and current.status != "active":
                 raise MaterialConflictError(
@@ -1065,7 +1488,7 @@ class MaterialsService(MaterialsRepository):
                     lot = self.get_lot(lot_uuid)
                     if lot is None:
                         raise MaterialNotFoundError(
-                            f"inventory lot not found: {lot_uuid}"
+                            f"inventory lot not found: {lot_uuid}", subject="lot"
                         )
                     if target_status == "released":
                         updated_lot = self._advance_lot(
@@ -1092,10 +1515,16 @@ class MaterialsService(MaterialsRepository):
                         previous_version=lot.version,
                         aggregate_version=updated_lot.version,
                         state_hash=lot_hash,
+                        # 预留与作业身份、扣减前后总量随账本保存，供作业消费读模型还原（预留可能由不带
+                        # job_uuid 的命令结算）
                         delta={
                             "quantity": quantity,
                             "unit": lot.unit,
                             "reason": value.reason,
+                            "reservation_uuid": current.reservation_uuid,
+                            "job_uuid": current.job_uuid,
+                            "quantity_total_before": lot.quantity_total,
+                            "quantity_total_after": updated_lot.quantity_total,
                         },
                         timestamp=timestamp,
                     ))
@@ -1110,7 +1539,7 @@ class MaterialsService(MaterialsRepository):
                 material = MaterialsRepository.get_material(self, material_uuid)
                 if material is None:
                     raise MaterialNotFoundError(
-                        f"material not found: {material_uuid}"
+                        f"material not found: {material_uuid}", subject="material"
                     )
                 desired = {
                     "consumed": "in_use",
@@ -1158,6 +1587,26 @@ class MaterialsService(MaterialsRepository):
                     version=updated_material.version,
                     state_hash=material_hash,
                 ))
+
+            # 内容物与批次同一规则：动作开始（consumed）或结果不明（从 active 隔离）时按预留量扣减，
+            # 未开始即失败（released）只释放；已扣减后再隔离不退回。
+            content_items = [
+                item for item in allocations if item.kind == "content" and item.content_reservation_uuid
+            ]
+            if content_items and current.status == "active":
+                contents = self._content_contract()
+                aliquot = self.executions.aliquot_of(current.job_uuid)
+                for item in content_items:
+                    if aliquot and item.material_uuid == aliquot["source_material_uuid"] and target_status != "released":
+                        # 同一作业还在这只容器上分装：实际扣量以分装回执为准（V1 settled_quantity），
+                        # 物理结算时按实际取走的量结算这份预留；结算前预留保持有效，其他任务拿不走。
+                        # 现场核实放弃结算（released）时视为未取用。
+                        if aliquot["state"] == "released":
+                            contents.finish_content_reservation(item.content_reservation_uuid, "released")
+                        continue
+                    contents.finish_content_reservation(
+                        item.content_reservation_uuid, "released" if target_status == "released" else "consumed",
+                    )
 
             updated = current.model_copy(
                 update={
@@ -1310,7 +1759,7 @@ class MaterialsService(MaterialsRepository):
     def get_template(self, template_uuid: str) -> ResourceTemplateRead:
         record = MaterialsRepository.get_template(self, template_uuid)
         if record is None:
-            raise MaterialNotFoundError(f"template not found: {template_uuid}")
+            raise MaterialNotFoundError(f"template not found: {template_uuid}", subject="template")
         return self._template_read(record)
 
     def list_templates(
@@ -1340,7 +1789,7 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[ResourceTemplateRead]:
             current = MaterialsRepository.get_template(self, template_uuid)
             if current is None:
-                raise MaterialNotFoundError(f"template not found: {template_uuid}")
+                raise MaterialNotFoundError(f"template not found: {template_uuid}", subject="template")
             if self.count_active_materials_for_template(template_uuid):
                 raise MaterialConflictError("template still has active materials")
             updated = ResourceTemplateRecord.model_validate(
@@ -1559,7 +2008,7 @@ class MaterialsService(MaterialsRepository):
 
         material = MaterialsRepository.get_material(self, material_uuid)
         if material is None:
-            raise MaterialNotFoundError(f"material not found: {material_uuid}")
+            raise MaterialNotFoundError(f"material not found: {material_uuid}", subject="material")
         position_record = self.get_position(material_uuid)
         data_record = self.get_data(material_uuid)
         if position_record is None or data_record is None:
@@ -1583,11 +2032,11 @@ class MaterialsService(MaterialsRepository):
     def get_material_by_resource_id(self, resource_id: str) -> MaterialAggregateRead:
         record = MaterialsRepository.get_material_by_resource_id(self, resource_id)
         if record is None:
-            raise MaterialNotFoundError(f"material not found: {resource_id}")
+            raise MaterialNotFoundError(f"material not found: {resource_id}", subject="material")
         return self.get_material(record.material_uuid)
 
     def search_materials(self, name: str) -> list[MaterialAggregateRead]:
-        """按名称精确搜索；与 get 系不同，未命中返回空列表而不抛错。"""
+        """按人读标签 ``display_name`` 精确搜索；与 get 系不同，未命中返回空列表而不抛错。"""
         return self._with_chemicals(
             [
                 self._aggregate(record.material_uuid)
@@ -1600,7 +2049,7 @@ class MaterialsService(MaterialsRepository):
     ) -> MaterialTreeRead:
         records = self.tree_materials(root_material_uuid)
         if not records:
-            raise MaterialNotFoundError(f"material root not found: {root_material_uuid}")
+            raise MaterialNotFoundError(f"material root not found: {root_material_uuid}", subject="material")
         nodes = self._with_chemicals(
             [self._aggregate(item.material_uuid) for item in records]
         )
@@ -1736,7 +2185,7 @@ class MaterialsService(MaterialsRepository):
         with self.write():
             for endpoint in (source_material_uuid, target_material_uuid):
                 if MaterialsRepository.get_material(self, endpoint) is None:
-                    raise MaterialNotFoundError(f"material not found: {endpoint}")
+                    raise MaterialNotFoundError(f"material not found: {endpoint}", subject="material")
             _, record = self._apply_link(
                 source_material_uuid=source_material_uuid,
                 target_material_uuid=target_material_uuid,
@@ -1822,12 +2271,10 @@ class MaterialsService(MaterialsRepository):
                 f"template_name {identity.template_name!r} does not match "
                 f"registered template {template.name!r}"
             )
-        if identity.resource_type != template.resource_type:
-            raise MaterialValidationError(
-                f"resource_type {identity.resource_type!r} does not match "
-                f"template {template.name!r} resource_type "
-                f"{template.resource_type!r}"
-            )
+        # resource_type 不参与模板身份校验：它是 PLR ``category``，属于实例而不是类。
+        # 子节点按类名共用组件模板（如所有 ``Well`` 都是模板 ``Well``），同一个类的
+        # 实例可以是 well / tube 等不同类型；模板上的 resource_type 只是按模板新建
+        # 物料时的默认值，物料自己的 resource_type 才是它的类型（建树后不可变）。
         if template.class_name and identity.class_name != template.class_name:
             raise MaterialValidationError(
                 f"class_name {identity.class_name!r} does not match template "
@@ -1888,15 +2335,35 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[MaterialTreeRead]:
             client_map: dict[str, str] = {}
             for node in value.nodes:
-                if node.material_uuid is None:
+                # name 已是 UUID 就是身份：与显式 material_uuid 不一致即冲突；没有显式 uuid 时
+                # 采纳它（带条件的创建）。业务标签恰好是 UUID 时也会被当成身份，记一条日志。
+                try:
+                    named = check_name_identity(
+                        node.identity.name, node.material_uuid, label=node.identity.resource_id
+                    )
+                except MaterialNameConflict as exc:
+                    raise MaterialConflictError(str(exc), conflict="identity") from None
+                explicit = node.material_uuid or named
+                if explicit is None:
                     client_map[node.client_ref] = str(uuid4())
                     continue
-                # 显式 uuid（adopt）：带条件的创建——uuid 已被占用即冲突
-                if MaterialsRepository.get_material(self, node.material_uuid) is not None:
-                    raise MaterialConflictError(
-                        f"material uuid already exists: {node.material_uuid}"
+                if node.material_uuid is None:
+                    from unilabos.utils.log import logger
+
+                    logger.info(
+                        f"[Materials] 物料 {node.identity.resource_id} 的 name 是 UUID，按身份采纳: {explicit}"
                     )
-                client_map[node.client_ref] = node.material_uuid
+                if explicit in client_map.values():
+                    raise MaterialConflictError(
+                        f"material uuid is duplicated in the create tree: {explicit}",
+                        conflict="identity",
+                    )
+                # 显式 uuid（adopt）：带条件的创建——uuid 已被占用即冲突
+                if MaterialsRepository.get_material(self, explicit) is not None:
+                    raise MaterialConflictError(
+                        f"material uuid already exists: {explicit}", conflict="identity"
+                    )
+                client_map[node.client_ref] = explicit
             node_ordinals: dict[str, int] = {}
             used_ordinals: dict[str | None, set[int]] = {}
             next_ordinals: dict[str | None, int] = {}
@@ -1950,7 +2417,12 @@ class MaterialsService(MaterialsRepository):
                                 "source": "material_create",
                                 "resource_schema": node.identity.resource_schema,
                                 "model": node.identity.model,
-                                "config": node.identity.config,
+                                # PLR 键属于实例，不进模板定义
+                                "config": {
+                                    key: item
+                                    for key, item in node.identity.config.items()
+                                    if key != PLR_KEY_FIELD
+                                },
                             },
                         )
                         template = ResourceTemplateRecord(
@@ -2013,6 +2485,37 @@ class MaterialsService(MaterialsRepository):
                     ]
                 node_sites[node.client_ref] = explicit_sites
 
+            # 物料 name 等于 uuid：旧名迁到 display_name（为空时）与 PLR 键 config.name
+            # （缺失时）；新建根物料没有旧名时 PLR 键取全局唯一的 resource_id。
+            names: dict[str, tuple[str, dict[str, Any]]] = {}
+            for node in value.nodes:
+                material_uuid = client_map[node.client_ref]
+                names[node.client_ref] = migrated_name_fields(
+                    name=node.identity.name,
+                    display_name=node.identity.display_name,
+                    config=node.identity.config,
+                    resource_type=node.identity.resource_type,
+                    default_plr_key=(
+                        node.identity.resource_id
+                        if node.parent_client_ref is None
+                        else material_uuid
+                    ),
+                    default_label=node.identity.resource_id,
+                )
+            # 名字就是 ordering 标识的孔和管（Opentrons 的裸 "A1"）以 uuid 作 PLR 键
+            children_of: dict[str, list[MaterialNodeCreate]] = {}
+            for node in value.nodes:
+                if node.parent_client_ref is not None:
+                    children_of.setdefault(node.parent_client_ref, []).append(node)
+            for parent_ref, children in children_of.items():
+                rekey_bare_label_items(
+                    names[parent_ref][1],
+                    [
+                        (client_map[child.client_ref], child.identity.resource_type, names[child.client_ref][1])
+                        for child in children
+                    ],
+                )
+
             for node in value.nodes:
                 identity = node.identity
                 template = resolved_templates[node.client_ref]
@@ -2022,6 +2525,7 @@ class MaterialsService(MaterialsRepository):
                     if node.parent_client_ref is not None
                     else None
                 )
+                display_name, config = names[node.client_ref]
                 record = MaterialRecord(
                     material_uuid=material_uuid,
                     resource_id=identity.resource_id,
@@ -2029,8 +2533,8 @@ class MaterialsService(MaterialsRepository):
                     parent_material_uuid=parent_uuid,
                     ordinal=node_ordinals[node.client_ref],
                     lot_uuid=identity.lot_uuid,
-                    name=identity.name,
-                    display_name=identity.display_name or identity.name,
+                    name=material_uuid,
+                    display_name=display_name,
                     description=identity.description,
                     resource_type=identity.resource_type,
                     class_name=identity.class_name,
@@ -2041,7 +2545,7 @@ class MaterialsService(MaterialsRepository):
                     resource_schema_json=identity.resource_schema,
                     model_json=identity.model,
                     icon_uri=identity.icon_uri,
-                    config_json=identity.config,
+                    config_json=config,
                     extra_json=identity.extra,
                     meta_data_json=identity.meta_data,
                     lifecycle_status=identity.lifecycle_status,
@@ -2257,6 +2761,42 @@ class MaterialsService(MaterialsRepository):
 
     # -- Material aggregate updates --------------------------------------
 
+    def _validate_material_capacity(
+        self, material_uuid: str, substances: Optional[Sequence[MaterialSubstanceRecord]] = None,
+        *, config: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, float]:
+        from unilabos.server.services.materials.capacity import (
+            capacity_projection, normalize_capacity, validate_contents,
+        )
+
+        material = MaterialsRepository.get_material(self, material_uuid)
+        if material is None:
+            return {}
+        template = MaterialsRepository.get_template(self, material.template_uuid, include_deleted=True)
+        try:
+            config = material.config_json if config is None else config
+            definition = template.definition_json if template is not None else {}
+            capacity = capacity_projection(config, definition)
+            if not capacity:
+                return {}
+            if substances is None:
+                data = self.get_data(material_uuid)
+                substances = data.substances if data is not None else []
+            chemicals = chemical_summaries(self.connection, [item.chemical_uuid for item in substances if item.chemical_uuid])
+            # PLR 的旧体积规格不要求质量记录具备密度；显式体积合同仍完整校验。
+            allow_unquantified_volume = (
+                config.get("max_volume") is not None
+                and "max_volume_ul" not in normalize_capacity(config.get("capacity"))
+                and "max_volume_ul" not in normalize_capacity(definition.get("capacity"))
+            )
+            validate_contents(
+                capacity, substances, chemicals,
+                allow_unquantified_volume=allow_unquantified_volume,
+            )
+            return capacity
+        except ValueError as error:
+            raise MaterialValidationError(str(error)) from None
+
     def patch_material(
         self,
         mutation: InventoryMutation,
@@ -2269,8 +2809,10 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[MaterialAggregateRead]:
             current = MaterialsRepository.get_material(self, material_uuid)
             if current is None:
-                raise MaterialNotFoundError(f"material not found: {material_uuid}")
+                raise MaterialNotFoundError(f"material not found: {material_uuid}", subject="material")
             changes = value.model_dump(exclude_none=True)
+            if "config" in changes:
+                changes["config"] = _keep_plr_key(current.config_json, changes["config"])
             field_map = {
                 "config": "config_json",
                 "extra": "extra_json",
@@ -2326,7 +2868,7 @@ class MaterialsService(MaterialsRepository):
             material = MaterialsRepository.get_material(self, material_uuid)
             current = self.get_position(material_uuid)
             if material is None or current is None:
-                raise MaterialNotFoundError(f"material not found: {material_uuid}")
+                raise MaterialNotFoundError(f"material not found: {material_uuid}", subject="material")
             if self._position_read(current) == value:
                 raise MaterialNoChangeError("position is unchanged")
             values = value.model_dump(mode="json")
@@ -2389,7 +2931,7 @@ class MaterialsService(MaterialsRepository):
             material = MaterialsRepository.get_material(self, material_uuid)
             current = self.get_data(material_uuid)
             if material is None or current is None:
-                raise MaterialNotFoundError(f"material not found: {material_uuid}")
+                raise MaterialNotFoundError(f"material not found: {material_uuid}", subject="material")
             new_content_version = current.content_version + 1
             substances = self._new_substance_records(
                 material_uuid,
@@ -2464,6 +3006,195 @@ class MaterialsService(MaterialsRepository):
             mutation, value, MutationResult[MaterialAggregateRead], apply
         )
 
+    #: Site 位姿与 holder 位置比对的容差（两者都取自同一个 PLR ``holder.location``）
+    _SITE_HOLDER_POSITION_TOLERANCE = 1e-6
+
+    def _site_holder_uuids(
+        self, owner_uuid: str, *, exclude: Sequence[str] = ()
+    ) -> dict[str, str] | None:
+        """载架型物料的 ``{Site uuid: 承载它的 holder 物料 uuid}``；不是载架型时返回 None。
+
+        PLR ``Carrier``（含 ``ItemizedCarrier`` / ``WareHouse``）的直接子节点只能是槽位
+        holder（``ResourceHolder``），物料放在 holder 上、载架的 Site 记占用——
+        ``materials.create`` 本地整树建出来就是这个形态（``extract_plr_sites`` 以
+        ``holder.location`` 生成 Site 位姿）。权威里按同一结构识别，规则全部满足才算：
+
+        - 所属物料不是设备，至少有一个 Site；
+        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下，
+          旧版 transfer 的坏树也是这样）和 ``exclude``（正在移动的物料），剩下的与
+          Site 一一对应：数量相同，按顺序第 k 个子物料对应第 k 个 Site；
+        - 每个这样的子物料没有自己的 Site、最多一个子物料，且位置就是对应 Site 的位置。
+
+        台面型 Site（权威 ``ResourceSite``，没有 holder 子物料）不满足数量或位置规则，
+        物料照旧直接挂在 Site 所属物料下。
+        """
+
+        owner = MaterialsRepository.get_material(self, owner_uuid)
+        if owner is None or str(owner.resource_type or "").lower() == "device":
+            return None
+        sites = MaterialsRepository.list_sites(self, owner_uuid)
+        if not sites:
+            return None
+        occupants = {site.occupied_material_uuid for site in sites if site.occupied_material_uuid}
+        skipped = occupants | set(exclude)
+        rows = self.connection.execute(
+            """
+            SELECT material.material_uuid,
+                (SELECT COUNT(*) FROM material AS child
+                    WHERE child.parent_material_uuid = material.material_uuid
+                    AND child.deleted_at_ms IS NULL) AS child_count,
+                (SELECT COUNT(*) FROM site
+                    WHERE site.owner_material_uuid = material.material_uuid
+                    AND site.deleted_at_ms IS NULL) AS site_count,
+                material_position.position_x, material_position.position_y,
+                material_position.position_z
+            FROM material LEFT JOIN material_position
+                ON material_position.material_uuid = material.material_uuid
+            WHERE material.parent_material_uuid = ? AND material.deleted_at_ms IS NULL
+            ORDER BY material.ordinal, material.material_uuid
+            """,
+            (owner_uuid,),
+        ).fetchall()
+        holders = [row for row in rows if row[0] not in skipped]
+        if len(holders) != len(sites):
+            return None
+        mapping: dict[str, str] = {}
+        tolerance = self._SITE_HOLDER_POSITION_TOLERANCE
+        for site, (holder_uuid, child_count, site_count, x, y, z) in zip(sites, holders):
+            if site_count or child_count > 1:
+                return None
+            position = (site.pose or {}).get("position") or {}
+            try:
+                expected = [float(position.get(axis, 0.0) or 0.0) for axis in ("x", "y", "z")]
+            except (TypeError, ValueError):
+                return None
+            if any(value is None for value in (x, y, z)) or any(
+                abs(float(actual) - wanted) > tolerance
+                for actual, wanted in zip((x, y, z), expected)
+            ):
+                return None
+            mapping[site.site_uuid] = holder_uuid
+        return mapping
+
+    def site_parent_material_uuid(
+        self, site: SiteRecord | SiteRead, *, moving_material_uuid: str | None = None
+    ) -> str:
+        """物料放到 ``site`` 上时它在权威里的父物料。
+
+        载架型 Site（见 ``_site_holder_uuids``）是承载该 Site 的 holder，与本地整树
+        ``materials.create`` 的形态一致；其它 Site（台面等）是 Site 所属物料。
+        """
+
+        holders = self._site_holder_uuids(
+            site.owner_material_uuid,
+            exclude=(moving_material_uuid,) if moving_material_uuid else (),
+        )
+        if holders is not None and site.site_uuid in holders:
+            return holders[site.site_uuid]
+        return site.owner_material_uuid
+
+    def repair_site_occupant_parents(self) -> list[str]:
+        """一次性修复旧版 transfer 写下的坏树，返回改挂的物料 uuid。
+
+        旧版 move / transfer 把载架型 Site 的占用物料直接挂在载架下（应挂在该 Site 的
+        holder 下）：设备反序列化时载架拒收物料，快照也改不了占用物料的父节点。权威
+        打开时（``ServerServices.open``）把这样的物料原位改挂到 holder 下，Site 占用
+        不变，账本记一次 ``move``。没有坏树时只做一次查询，可重复调用。
+        """
+
+        from unilabos.utils.log import logger
+
+        rows = self.connection.execute(
+            """
+            SELECT site.site_uuid, site.occupied_material_uuid
+            FROM site JOIN material ON material.material_uuid = site.occupied_material_uuid
+            WHERE site.deleted_at_ms IS NULL AND material.deleted_at_ms IS NULL
+                AND material.parent_material_uuid = site.owner_material_uuid
+            ORDER BY site.owner_material_uuid, site.ordinal
+            """
+        ).fetchall()
+        repaired: list[str] = []
+        for site_uuid, material_uuid in rows:
+            site = self.get_site(site_uuid)
+            if site is None:
+                continue
+            parent_uuid = self.site_parent_material_uuid(site, moving_material_uuid=material_uuid)
+            if parent_uuid == site.owner_material_uuid:
+                continue
+            command_uuid = str(uuid4())
+            self.move_material(
+                InventoryMutation(
+                    command_uuid=command_uuid,
+                    effect_key=f"repair_site_occupant_parent:{command_uuid}",
+                    operation="move_material",
+                    actor_type=ACTOR_BACKEND,
+                    actor_uuid="materials-repair",
+                ),
+                MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid),
+            )
+            logger.warning(
+                f"[物料权威] 修复旧版 transfer 的坏树：物料 {material_uuid} 从载架 "
+                f"{site.owner_material_uuid} 改挂到 Site {site.label} 的 holder {parent_uuid}"
+            )
+            repaired.append(material_uuid)
+        return repaired
+
+    def assert_site_accepts(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
+        """一件该模板的物料能否放进空库位：模板白名单（``site_template``，6008）与活动入口预留。"""
+
+        self._assert_site_template_allowed(site, template_uuid=template_uuid, template_name=template_name)
+        self._assert_site_not_ingress_reserved(site)
+
+    @staticmethod
+    def site_accepts_template(site: SiteRecord, *, template_uuid: str, template_name: str) -> bool:
+        """库位白名单（``extra.allowed_resource_template_uuids``）按模板 UUID 或模板名匹配；空表示不限制。"""
+
+        keys = {item.casefold() for item in site_template_whitelist(site.extra_json)}
+        return not keys or template_uuid.casefold() in keys or template_name.casefold() in keys
+
+    def _assert_site_template_allowed(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
+        if not self.site_accepts_template(site, template_uuid=template_uuid, template_name=template_name):
+            allowed = site_template_whitelist(site.extra_json)
+            raise MaterialConflictError(
+                f"库位 {site.label}（{site.site_uuid}）只接受资源模板 {', '.join(allowed)}，"
+                f"不接受 {template_name}（{template_uuid}）",
+                conflict="site_template",
+            )
+
+    def _assert_no_parent_cycle(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
+        """新父物料不能是物料自己或它的后代（V1 6004）；库位所属物料是新父物料时同样适用。"""
+
+        cursor, seen = parent_uuid, set()
+        while cursor is not None and cursor not in seen:
+            if cursor == material_uuid:
+                raise MaterialConflictError(
+                    f"物料 {material_uuid} 不能挂到自己或自己的后代 {parent_uuid} 下", conflict="parent_cycle"
+                )
+            seen.add(cursor)
+            row = self.connection.execute(
+                "SELECT parent_material_uuid FROM material WHERE material_uuid=?", (cursor,)
+            ).fetchone()
+            cursor = row[0] if row is not None else None
+
+    def _assert_site_not_ingress_reserved(self, site: SiteRecord) -> None:
+        """活动入口预留（reserved 未过期 / in_transit）期间库位不接受任何放入。
+
+        载体本身也只能经预留的 receive 落位（receive 先把预留置为 received 再移动），
+        人工移动、工作流搬运预检与 transfer 都走这里，拿到 ``site_ingress_reserved`` 冲突。
+        """
+
+        row = self.connection.execute(
+            "SELECT reservation_uuid, carrier_material_uuid, state FROM station_ingress_reservation "
+            "WHERE site_uuid=? AND (state='in_transit' OR (state='reserved' AND expires_at_ms > ?)) LIMIT 1",
+            (site.site_uuid, self._now_ms()),
+        ).fetchone()
+        if row is not None:
+            raise MaterialConflictError(
+                f"库位 {site.label}（{site.site_uuid}）已被入口预留 {row['reservation_uuid']}"
+                f"（{row['state']}）留给载体 {row['carrier_material_uuid']}，接收或取消前不能放入物料",
+                conflict=SITE_INGRESS_RESERVED,
+            )
+
     def _apply_material_move(
         self,
         mutation: InventoryMutation,
@@ -2473,7 +3204,7 @@ class MaterialsService(MaterialsRepository):
         material = MaterialsRepository.get_material(self, value.material_uuid)
         if material is None:
             raise MaterialNotFoundError(
-                f"material not found: {value.material_uuid}"
+                f"material not found: {value.material_uuid}", subject="material"
             )
         source = self.occupied_site(value.material_uuid)
         destination = (
@@ -2483,24 +3214,51 @@ class MaterialsService(MaterialsRepository):
         )
         if value.destination_site_uuid is not None and destination is None:
             raise MaterialNotFoundError(
-                f"site not found: {value.destination_site_uuid}"
+                f"site not found: {value.destination_site_uuid}", subject="site"
             )
+        placing = destination is not None and destination.occupied_material_uuid != value.material_uuid
+        if placing and destination.owner_material_uuid == value.material_uuid:
+            raise MaterialConflictError(
+                f"物料 {value.material_uuid} 不能占用自己的库位 {destination.label}", conflict="site_cycle"
+            )
+        if placing:
+            self._assert_site_template_allowed(
+                destination, template_uuid=material.template_uuid, template_name=material.template_name
+            )
+        # 载架型 Site 的物料挂在该 Site 的 holder 下（与本地整树 create 同形）；
+        # 其它 Site 挂在 Site 所属物料下
         parent_uuid = (
-            destination.owner_material_uuid
+            self.site_parent_material_uuid(
+                destination, moving_material_uuid=value.material_uuid
+            )
             if destination is not None
             else value.parent_material_uuid
         )
+        if (
+            destination is None
+            and parent_uuid is not None
+            and self._site_holder_uuids(parent_uuid, exclude=(value.material_uuid,))
+            is not None
+        ):
+            # 直接挂到载架下（不占 Site）同样是设备反序列化不了的树
+            raise MaterialValidationError(
+                f"material {parent_uuid} only holds materials on its Sites; "
+                "give destination_site_uuid (or the Site's holder as parent)"
+            )
         if destination is not None and destination.occupied_material_uuid not in (
             None,
             value.material_uuid,
         ):
-            raise MaterialConflictError("destination site is occupied")
-        if (
+            raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
+        if placing:
+            self._assert_site_not_ingress_reserved(destination)
+        self._assert_no_parent_cycle(value.material_uuid, parent_uuid)
+        same_site = (
             source is not None
             and destination is not None
             and source.site_uuid == destination.site_uuid
-            and material.parent_material_uuid == parent_uuid
-        ):
+        )
+        if same_site and material.parent_material_uuid == parent_uuid:
             raise MaterialNoChangeError("material is already at destination")
         if (
             source is None
@@ -2557,11 +3315,13 @@ class MaterialsService(MaterialsRepository):
                 "version": material.version + 1,
             }
         )
+        if same_site:
+            # 原位换父（修复旧版坏树：物料从载架改挂到 Site 的 holder 下）。触发器要求
+            # 先解除占用再改父；同一事务内随后重新占用，Site 版本照常 +1。
+            self.clear_site_occupants([destination.site_uuid])
         self.update_material(updated_material)
 
-        if destination is not None and (
-            source is None or source.site_uuid != destination.site_uuid
-        ):
+        if destination is not None:
             updated_destination = SiteRecord.model_validate(
                 {
                     **destination.model_dump(mode="json"),
@@ -2677,14 +3437,22 @@ class MaterialsService(MaterialsRepository):
             value.destination_site_uuids,
         ):
             material = MaterialsRepository.get_material(self, material_uuid)
-            if material is None or material.parent_material_uuid != target_uuid:
-                raise MaterialConflictError(
-                    f"material transfer {material_uuid} was superseded"
-                )
             occupied_site = self.occupied_site(material_uuid)
             occupied_site_uuid = (
                 occupied_site.site_uuid if occupied_site is not None else None
             )
+            # 载架型 Site 的物料挂在 Site 的 holder 下，父物料不是转移目标本身
+            expected_parent = (
+                self.site_parent_material_uuid(
+                    occupied_site, moving_material_uuid=material_uuid
+                )
+                if occupied_site is not None and occupied_site_uuid == site_uuid
+                else target_uuid
+            )
+            if material is None or material.parent_material_uuid != expected_parent:
+                raise MaterialConflictError(
+                    f"material transfer {material_uuid} was superseded"
+                )
             if occupied_site_uuid != site_uuid:
                 raise MaterialConflictError(
                     f"material transfer {material_uuid} Site was superseded"
@@ -2752,7 +3520,7 @@ class MaterialsService(MaterialsRepository):
                         item.material_uuid,
                     ):
                         raise MaterialConflictError(
-                            f"destination Site {destination.site_uuid} is occupied"
+                            f"destination Site {destination.site_uuid} is occupied", conflict="site_occupied"
                         )
                 resolved.append((item, destination))
 
@@ -2833,6 +3601,184 @@ class MaterialsService(MaterialsRepository):
 
     # -- Delete / Snapshot ------------------------------------------------
 
+    def _release_sites(
+        self,
+        mutation: InventoryMutation,
+        sites: Mapping[str, SiteRecord],
+        *,
+        deleting: set[str],
+        timestamp: int,
+        affected: list[AggregateVersion],
+        sequences: list[int],
+    ) -> None:
+        """清空一组 Site 的占用；``deleting`` 中的 Site 随所属物料一起软删除。"""
+
+        self.clear_site_occupants(sorted(sites))
+        for site_uuid in sorted(sites):
+            current = sites[site_uuid]
+            removed = site_uuid in deleting
+            updated = SiteRecord.model_validate(
+                {
+                    **current.model_dump(mode="json"),
+                    "occupied_material_uuid": None,
+                    "changed_by_job_uuid": mutation.job_uuid,
+                    "changed_by_command_uuid": mutation.command_uuid,
+                    "changed_at_ms": timestamp,
+                    "updated_at_ms": timestamp,
+                    "deleted_at_ms": timestamp if removed else None,
+                    "version": current.version + 1,
+                }
+            )
+            self.update_site(updated)
+            state_hash = self._site_state_hash(updated)
+            affected.append(
+                AggregateVersion(
+                    aggregate_type="site",
+                    aggregate_uuid=site_uuid,
+                    version=updated.version,
+                    state_hash=state_hash,
+                )
+            )
+            sequences.append(
+                self._ledger(
+                    mutation,
+                    aggregate_type="site",
+                    aggregate_uuid=site_uuid,
+                    operation="delete" if removed else "vacate",
+                    previous_version=current.version,
+                    aggregate_version=updated.version,
+                    state_hash=state_hash,
+                    delta={
+                        "deleted": removed,
+                        "occupied_material_uuid": None,
+                    },
+                    timestamp=timestamp,
+                )
+            )
+
+    def _retire_material_record(
+        self,
+        mutation: InventoryMutation,
+        current: MaterialRecord,
+        *,
+        timestamp: int,
+        operation: str,
+        delta: dict[str, Any],
+        affected: list[AggregateVersion],
+        sequences: list[int],
+    ) -> None:
+        """物料退场：``lifecycle_status=retired`` 并软删除（保留记录、父节点与账本）。
+
+        显式 delete 与快照退役被丢弃的枪头共用这一种表示；退场后不再出现在
+        get/tree/list 读取里，单物料台账（``/materials/{uuid}/ledger``）仍可查。
+        """
+
+        updated = MaterialRecord.model_validate(
+            {
+                **current.model_dump(mode="json"),
+                "lifecycle_status": "retired",
+                "deleted_at_ms": timestamp,
+                "updated_at_ms": timestamp,
+                "version": current.version + 1,
+            }
+        )
+        self.update_material(updated)
+        position = self.get_position(current.material_uuid)
+        data = self.get_data(current.material_uuid)
+        if position is None or data is None:
+            raise MaterialValidationError("material aggregate is incomplete")
+        identity = self._identity_read(updated)
+        position_read = self._position_read(position)
+        data_read = self._data_read(data)
+        state_hash = self._material_state_hash(identity, position_read, data_read)
+        affected.append(
+            AggregateVersion(
+                aggregate_type="material",
+                aggregate_uuid=current.material_uuid,
+                version=updated.version,
+                state_hash=state_hash,
+            )
+        )
+        sequences.append(
+            self._ledger(
+                mutation,
+                aggregate_type="material",
+                aggregate_uuid=current.material_uuid,
+                operation=operation,
+                previous_version=current.version,
+                aggregate_version=updated.version,
+                state_hash=state_hash,
+                delta=delta,
+                timestamp=timestamp,
+            )
+        )
+
+    #: 快照可以退役的枪头当前状态：预留中（等待作业消费）、隔离、已消耗的枪头不由设备快照改写。
+    _SNAPSHOT_RETIRE_FROM = frozenset({"active", "in_use", "retired"})
+
+    @classmethod
+    def _snapshot_retirements(
+        cls,
+        root_material_uuid: str,
+        current_nodes: Mapping[str, MaterialAggregateRead],
+        desired_nodes: Mapping[str, MaterialAggregateRead],
+        changes_by_material: Mapping[str, Mapping[str, set[str]]],
+    ) -> set[str]:
+        """快照中要随本次快照退役的、被设备丢弃的枪头。
+
+        快照以 ``lifecycle_status="retired"`` + ``parent_material_uuid=None`` 表达“这支
+        枪头已从父节点的运行时结构中消失”。只有可由快照退役的类型（枪头）能这样写；
+        其他类型这样写等同借快照删除物料，拒绝。
+        """
+
+        retiring: set[str] = set()
+        for material_uuid, desired in desired_nodes.items():
+            current = current_nodes[material_uuid]
+            if (
+                material_uuid == root_material_uuid
+                or desired.material.lifecycle_status != "retired"
+                or desired.material.parent_material_uuid is not None
+                or current.material.parent_material_uuid is None
+            ):
+                continue
+            if not snapshot_retirable(current.material.resource_type):
+                raise MaterialValidationError(
+                    "snapshot cannot create or delete material/site aggregates; "
+                    f"only discarded tips can be retired (material {material_uuid} is "
+                    f"{current.material.resource_type!r})"
+                )
+            if current.material.lifecycle_status not in cls._SNAPSHOT_RETIRE_FROM:
+                raise MaterialConflictError(
+                    f"tip {material_uuid} is {current.material.lifecycle_status}, "
+                    "cannot be retired by a device snapshot",
+                    conflict="state",
+                )
+            sections = changes_by_material.get(material_uuid, {})
+            extra_fields = {
+                field
+                for section, fields in sections.items()
+                for field in (fields if section == "identity" else {section})
+            } - {"lifecycle_status", "parent_material_uuid"}
+            if extra_fields:
+                raise MaterialValidationError(
+                    f"retiring tip {material_uuid} cannot change {sorted(extra_fields)}"
+                )
+            if current.sites:
+                raise MaterialValidationError(
+                    f"retiring tip {material_uuid} cannot own sites"
+                )
+            retiring.add(material_uuid)
+        for material_uuid, desired in desired_nodes.items():
+            if (
+                material_uuid not in retiring
+                and desired.material.parent_material_uuid in retiring
+            ):
+                raise MaterialValidationError(
+                    f"material {material_uuid} is still a child of retiring tip "
+                    f"{desired.material.parent_material_uuid}"
+                )
+        return retiring
+
     def delete_material(
         self, mutation: InventoryMutation, value: MaterialDelete
     ) -> MutationResult[MaterialDeleteResult]:
@@ -2843,7 +3789,7 @@ class MaterialsService(MaterialsRepository):
             records = self.tree_materials(value.material_uuid)
             if not records:
                 raise MaterialNotFoundError(
-                    f"material not found: {value.material_uuid}"
+                    f"material not found: {value.material_uuid}", subject="material"
                 )
             if len(records) > 1 and not value.recursive:
                 raise MaterialConflictError(
@@ -2860,95 +3806,28 @@ class MaterialsService(MaterialsRepository):
                 for site in self.sites_occupied_by(material_uuids)
             }
             changed_sites = {**occupied_sites, **owned_sites}
-            self.clear_site_occupants(sorted(changed_sites))
             # 拓扑边随节点退场：边不是 ledger 聚合，事务内物理清理即可。
             self.delete_links_for_materials(material_uuids)
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
-            for site_uuid in sorted(changed_sites):
-                current = changed_sites[site_uuid]
-                deleting = site_uuid in owned_sites
-                updated = SiteRecord.model_validate(
-                    {
-                        **current.model_dump(mode="json"),
-                        "occupied_material_uuid": None,
-                        "changed_by_job_uuid": mutation.job_uuid,
-                        "changed_by_command_uuid": mutation.command_uuid,
-                        "changed_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "deleted_at_ms": timestamp if deleting else None,
-                        "version": current.version + 1,
-                    }
-                )
-                self.update_site(updated)
-                state_hash = self._site_state_hash(updated)
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="site",
-                        aggregate_uuid=site_uuid,
-                        version=updated.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="site",
-                        aggregate_uuid=site_uuid,
-                        operation="delete" if deleting else "vacate",
-                        previous_version=current.version,
-                        aggregate_version=updated.version,
-                        state_hash=state_hash,
-                        delta={
-                            "deleted": deleting,
-                            "occupied_material_uuid": None,
-                        },
-                        timestamp=timestamp,
-                    )
-                )
-
+            self._release_sites(
+                mutation,
+                changed_sites,
+                deleting=set(owned_sites),
+                timestamp=timestamp,
+                affected=affected,
+                sequences=sequences,
+            )
             for current in reversed(records):
-                updated = MaterialRecord.model_validate(
-                    {
-                        **current.model_dump(mode="json"),
-                        "lifecycle_status": "retired",
-                        "deleted_at_ms": timestamp,
-                        "updated_at_ms": timestamp,
-                        "version": current.version + 1,
-                    }
-                )
-                self.update_material(updated)
-                position = self.get_position(current.material_uuid)
-                data = self.get_data(current.material_uuid)
-                if position is None or data is None:
-                    raise MaterialValidationError("material aggregate is incomplete")
-                identity = self._identity_read(updated)
-                position_read = self._position_read(position)
-                data_read = self._data_read(data)
-                state_hash = self._material_state_hash(
-                    identity, position_read, data_read
-                )
-                affected.append(
-                    AggregateVersion(
-                        aggregate_type="material",
-                        aggregate_uuid=current.material_uuid,
-                        version=updated.version,
-                        state_hash=state_hash,
-                    )
-                )
-                sequences.append(
-                    self._ledger(
-                        mutation,
-                        aggregate_type="material",
-                        aggregate_uuid=current.material_uuid,
-                        operation="delete",
-                        previous_version=current.version,
-                        aggregate_version=updated.version,
-                        state_hash=state_hash,
-                        delta={"lifecycle_status": "retired", "deleted": True},
-                        timestamp=timestamp,
-                    )
+                self._retire_material_record(
+                    mutation,
+                    current,
+                    timestamp=timestamp,
+                    operation="delete",
+                    delta={"lifecycle_status": "retired", "deleted": True},
+                    affected=affected,
+                    sequences=sequences,
                 )
             return _Applied(
                 MaterialDeleteResult(
@@ -2978,6 +3857,11 @@ class MaterialsService(MaterialsRepository):
 
         快照只更新既有聚合。新增树走 ``create_tree``，删除走显式 delete；这样
         不会把一次设备状态上报误解释成库存创建或销毁。
+
+        唯一例外是被设备丢弃的枪头：快照节点写成 ``lifecycle_status="retired"`` +
+        ``parent_material_uuid=None`` 时（规则见 ``_snapshot_retirements``），该枪头在
+        同一事务内退役，表示与显式 delete 相同（retired + 软删除，保留记录与账本），
+        账本操作记为 ``retire``。
         """
 
         if mutation.operation != "apply_material_snapshot":
@@ -3010,12 +3894,16 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialValidationError("snapshot material set differs")
 
             changes_by_material: dict[str, set[str]] = {}
+            changed_fields: dict[str, dict[str, set[str]]] = {}
             changed_site_uuids: set[str] = set()
             for change in diff.changes:
                 if change.aggregate_type == "material":
                     changes_by_material.setdefault(change.aggregate_uuid, set()).add(
                         change.section
                     )
+                    changed_fields.setdefault(change.aggregate_uuid, {}).setdefault(
+                        change.section, set()
+                    ).update(change.changed_fields)
                 else:
                     changed_site_uuids.add(change.aggregate_uuid)
 
@@ -3032,6 +3920,7 @@ class MaterialsService(MaterialsRepository):
 
             immutable_identity = (
                 "material_uuid",
+                "name",
                 "resource_id",
                 "template_uuid",
                 "resource_type",
@@ -3065,12 +3954,28 @@ class MaterialsService(MaterialsRepository):
                         "snapshot cannot change Site owner_material_uuid"
                     )
 
+            retiring = self._snapshot_retirements(
+                value.root_material_uuid, current_nodes, desired_nodes, changed_fields
+            )
+            # 退役枪头占用的 Site：本树内的必须由快照自己清空；树外的随退役一起清空
+            outside_sites: dict[str, SiteRecord] = {}
+            for site in self.sites_occupied_by(sorted(retiring)):
+                if site.site_uuid in desired_sites:
+                    if desired_sites[site.site_uuid].occupied_material_uuid in retiring:
+                        raise MaterialValidationError(
+                            f"Site {site.site_uuid} is still occupied by a retiring tip"
+                        )
+                else:
+                    outside_sites[site.site_uuid] = site
+
             # 先清空将变化的占用关系，随后改 parent，最后恢复新的占用关系。
             # 整个过程在同一事务内，对读者不可见，Site 也只增长一个版本。
             self.clear_site_occupants(sorted(changed_site_uuids))
 
             changed_material_records: dict[str, tuple[MaterialRecord, MaterialRecord]] = {}
             for material_uuid, sections in changes_by_material.items():
+                if material_uuid in retiring:
+                    continue
                 desired_node = desired_nodes[material_uuid]
                 current_record = MaterialsRepository.get_material(self, material_uuid)
                 current_position = self.get_position(material_uuid)
@@ -3154,8 +4059,7 @@ class MaterialsService(MaterialsRepository):
                         **current_record.model_dump(mode="json"),
                         "parent_material_uuid": identity.parent_material_uuid,
                         "lot_uuid": identity.lot_uuid,
-                        "name": identity.name,
-                        "display_name": identity.display_name or identity.name,
+                        "display_name": identity.display_name or current_record.display_name,
                         "description": identity.description,
                         "machine_name": identity.machine_name,
                         "barcode": identity.barcode,
@@ -3163,7 +4067,7 @@ class MaterialsService(MaterialsRepository):
                         "resource_schema_json": identity.resource_schema,
                         "model_json": identity.model,
                         "icon_uri": identity.icon_uri,
-                        "config_json": identity.config,
+                        "config_json": _keep_plr_key(current_record.config_json, identity.config),
                         "extra_json": identity.extra,
                         "meta_data_json": identity.meta_data,
                         "lifecycle_status": identity.lifecycle_status,
@@ -3182,7 +4086,7 @@ class MaterialsService(MaterialsRepository):
                 current_record = self.get_site(site_uuid)
                 desired = desired_sites[site_uuid]
                 if current_record is None:
-                    raise MaterialNotFoundError(f"site not found: {site_uuid}")
+                    raise MaterialNotFoundError(f"site not found: {site_uuid}", subject="site")
                 updated_record = SiteRecord(
                     site_uuid=site_uuid,
                     schema_version=desired.schema_version,
@@ -3212,6 +4116,39 @@ class MaterialsService(MaterialsRepository):
 
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
+            if retiring:
+                # 被丢弃的枪头随同一快照退役：与显式 delete 同一种表示，账本记为 retire
+                self.delete_links_for_materials(sorted(retiring))
+                self._release_sites(
+                    mutation,
+                    outside_sites,
+                    deleting=set(),
+                    timestamp=timestamp,
+                    affected=affected,
+                    sequences=sequences,
+                )
+                for material_uuid in sorted(retiring):
+                    current_record = MaterialsRepository.get_material(self, material_uuid)
+                    if current_record is None:
+                        raise MaterialNotFoundError(
+                            f"material not found: {material_uuid}", subject="material"
+                        )
+                    self._retire_material_record(
+                        mutation,
+                        current_record,
+                        timestamp=timestamp,
+                        operation="retire",
+                        delta={
+                            "lifecycle_status": "retired",
+                            "deleted": True,
+                            "reason": "tip_discarded",
+                            "previous_lifecycle_status": current_record.lifecycle_status,
+                            "parent_material_uuid": current_record.parent_material_uuid,
+                            "observed_state_hash": diff.observed_state_hash,
+                        },
+                        affected=affected,
+                        sequences=sequences,
+                    )
             for material_uuid, (before, after) in changed_material_records.items():
                 aggregate = self._aggregate(material_uuid)
                 affected.append(
@@ -3285,7 +4222,7 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[MaterialDeltaResult]:
             root_uuid = value.root_material_uuid
             if MaterialsRepository.get_material(self, root_uuid) is None:
-                raise MaterialNotFoundError(f"material root not found: {root_uuid}")
+                raise MaterialNotFoundError(f"material root not found: {root_uuid}", subject="material")
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
             applied_materials: list[str] = []
@@ -3490,7 +4427,7 @@ class MaterialsService(MaterialsRepository):
         for delta in node.sites:
             record = self.get_site(delta.site_uuid)
             if record is None:
-                raise MaterialNotFoundError(f"site not found: {delta.site_uuid}")
+                raise MaterialNotFoundError(f"site not found: {delta.site_uuid}", subject="site")
             if record.owner_material_uuid != node.material_uuid:
                 raise MaterialValidationError(
                     f"site {delta.site_uuid} does not belong to material {node.material_uuid}"
@@ -3583,4 +4520,5 @@ __all__ = [
     "MaterialsService",
     "MaterialsServiceError",
     "RejectedMutationError",
+    "SITE_INGRESS_RESERVED",
 ]

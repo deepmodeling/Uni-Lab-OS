@@ -175,6 +175,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 外部设备包验证走 `unilab --check_mode --devices ./<package_name> --external_devices_only`，registry 会静态扫描 Python AST 构建设备 schema：
 
 - 只识别来自 `unilabos.registry.decorators` 的 `@device`、`@action`、`@topic_config`、`@not_action`、`@always_free`。
+- 包内模块之间可以用相对导入（`from .labware import Deck`、`from ..common import helper`）：扫描器按包结构（`__init__.py`）把它们解析成绝对模块路径，typed 合同动作同样适用；越过顶层包的相对导入会让该文件扫描失败。
 - `@device` 类会生成设备条目；`id/category/description/handles/model/hardware_interface` 来自装饰器。
 - `__init__` 参数、类型注解、默认值和 docstring 会进入 `init_param_schema.config`。
 - 带 `@action` 的方法会进入 `action_value_mappings`；未加 `@action` 的 public 方法会生成 `auto-<method_name>` 动作。
@@ -182,7 +183,7 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 - `@action(action_type=...)` 会优先从 ROS Action 类型补全 `goal/feedback/result/schema/goal_default`，再用装饰器里的 `goal/feedback/result/goal_default` 覆盖。
 - `@action()` / auto action 会从方法参数生成 `goal/schema/goal_default`，从返回值注解补 result schema。
 - 参数类型注解必须完整；`str/int/float/bool/list/dict`、`Optional`、`Union`、`List`、`Dict`、`Literal`、`TypedDict`、`ResourceSlot`、`DeviceSlot` 都有不同程度的自动 schema 支持。
-- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。
+- `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。旧驱动保留的 `config` 参数在 HostLink 上收到整份节点配置，同时声明的其他具名参数仍按名取值。
 
 ### 4. 生成 pyproject.toml
 
@@ -195,7 +196,7 @@ build-backend = "setuptools.build_meta"
 name = "<package_name>"
 version = "0.1.0"
 description = "<description>"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     # 用户指定的依赖
 ]
@@ -222,7 +223,7 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.12.13'
+          python-version: '3.14.10'
           channels: conda-forge,robostack-jazzy,uni-lab
           channel-priority: strict
           activate-environment: unilab
@@ -245,6 +246,9 @@ pip install -e .
 unilab --check_mode --devices ./<package_name> --external_devices_only
 ```
 
+check_mode 的退出码即结论：AST 扫描失败而被跳过的文件、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目都算）都会让它以退出码 1 结束并逐条列出；
+`supported_backends` 不含当前 backend 的设备（HostLink 环境里的 ROS 2 专用节点）导入失败只记为跳过。
+
 ## 关键规则
 
 - 包目录名以 `device_package_` 开头（已在主仓库 `.gitignore` 中排除）
@@ -257,4 +261,6 @@ unilab --check_mode --devices ./<package_name> --external_devices_only
 - 不应暴露的 public 辅助方法改成私有方法或加 `@not_action`
 - 运行时数据存储在 `self.data` 字典中
 - `post_init(self, ros_node)` 用于需要 ROS node 的初始化逻辑
-- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包
+- `--devices` 可以指向包里的子目录（如一个设备家族 `./<package_name>/devices/<family>`）：模块路径按顶层包推导（沿 `__init__.py` 上溯），包级 `registry/` 只取类路径在该子目录内的条目，便于单独校验一个家族
+- 模拟器 / 离线模式的驱动设 `self.run_in_test_mode = True`，`unilab --test_mode` 下才会真实执行；没设的驱动在测试模式下只返回模拟结果。这条规则同样作用于驱动之间的 `node.call_device_action[_async]`：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到的是模拟结果，不会驱动真实硬件
+- `--external_devices_only` 跳过内置设备扫描，仅加载外部设备包；核心 `container` 资源模板仍会加载，其它内置设备（如 `virtual_*`）不加载

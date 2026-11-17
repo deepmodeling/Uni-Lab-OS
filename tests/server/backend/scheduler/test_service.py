@@ -1,20 +1,73 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import Mock
+import pytest
 
 from unilabos.protocol.materials import InventoryAllocation
 from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState
 from unilabos.server.backend.scheduler.service import BackendScheduler, allocation_arguments
+from unilabos.server.services.runtime.workflow.store import WorkflowStore
+
+# 这些模块在顶层 ``from ...execution_claim import ExecutionClaims``，而 BackendScheduler 只在
+# 运行时才惰性导入它们。若首次导入发生在下方 autouse 夹具的 monkeypatch 生效期间，模块会把
+# Mock 工厂永久绑定为 ExecutionClaims，污染之后所有用真实调度器的测试（CI 按
+# tests/server 顺序运行时稳定复现）。在打补丁前先导入，确保它们绑定真实类。
+import unilabos.server.backend.scheduler.attempt_inventory  # noqa: E402,F401
+import unilabos.server.backend.scheduler.inventory_recovery  # noqa: E402,F401
+import unilabos.server.backend.scheduler.physical_recovery  # noqa: E402,F401
+
+
+@pytest.fixture(autouse=True)
+def isolated_claim_storage(monkeypatch):
+    # 本文件只测调度策略，Workflow 本身是桩；持久资源事务由集成测试覆盖。
+    monkeypatch.setattr(BackendScheduler, "_release_confirmed_custody_inventory", lambda self: None)
+    intervals = Mock()
+    intervals.admit.return_value = True
+    intervals.unadmitted_active_claims.return_value = []
+    intervals.snapshot.return_value = []
+    monkeypatch.setattr("unilabos.server.services.runtime.workflow.resource_intervals.ResourceIntervals", lambda _store: intervals)
+    claims = Mock()
+    claims.restore_requests.return_value = []
+    claims.unclaimed_active_jobs.return_value = []
+    # 与 ExecutionClaims 一致：reserve 之后同一 attempt 的 get 读回该 Claim，之前为 None。
+    reserved: dict[str, dict[str, Any]] = {}
+    claims.reserve.side_effect = lambda request, **_: reserved.setdefault(
+        request.owner_uuid,
+        {"claim_uuid": "unit-claim", "attempt_no": 1, "fences": {}, "request": request.model_dump(mode="json")},
+    )
+    claims.release_if_terminal.return_value = True
+    claims.get.side_effect = reserved.get
+    claims.activate_authority.return_value = "unit-epoch"
+    claims.seal_dispatch.return_value = {}
+    monkeypatch.setattr("unilabos.server.services.runtime.workflow.execution_claim.ExecutionClaims", lambda _store: claims)
 
 
 class _Workflow:
-    """WorkflowService 桩：节点运行/attempt 事实的最小实现（store 契约见 test_workflow_node_run_attempts）。"""
+    """WorkflowService 桩：节点运行/attempt 事实的最小实现（store 契约见 test_workflow_node_run_attempts）。
+
+    生产 WorkflowService 继承 WorkflowStore：库存/物理恢复经 ``write_lock``、
+    ``connection``、``transaction()`` 直接读 runtime.db。桩持有一个空的
+    内存 runtime.db（真实表结构），表示"没有遗留派发与待结算事实"。
+    """
 
     def __init__(self) -> None:
+        self._store = WorkflowStore(":memory:")
         self.running: list[str] = []
         self.terminal: list[tuple[str, str, dict[str, Any]]] = []
         self.runs: dict[str, dict[str, Any]] = {}
         self.jobs: dict[str, str] = {}  # job uuid -> run uuid
+
+    @property
+    def connection(self):
+        return self._store.connection
+
+    @property
+    def write_lock(self):
+        return self._store.write_lock
+
+    def transaction(self):
+        return self._store.transaction()
 
     def add_run(self, run_uuid: str, job_uuid: str) -> None:
         self.runs[run_uuid] = {
@@ -62,6 +115,20 @@ class _Workflow:
         run["status"] = "intervention_required"
         run["pending_decision"] = report.get("decision_id")
         return dict(run)
+
+
+class _Materials:
+    """库存权威桩：库存预留只能来自权威，带预留的派发须先在权威冻结物理执行记录。"""
+
+    def __init__(self) -> None:
+        self.prepared: list[Any] = []
+
+    def list_inventory_reservations(self, **_filters: Any) -> list[Any]:
+        return []
+
+    def prepare_material_execution(self, value: Any) -> dict[str, Any]:
+        self.prepared.append(value)
+        return {"job_uuid": value.job_uuid, "claim_uuid": value.claim_uuid, "plan_hash": "plan-of-" + value.job_uuid}
 
 
 class _Executor:
@@ -148,10 +215,98 @@ def test_one_scheduler_serializes_the_complete_action_and_material_set() -> None
     assert scheduler.resources.request_for_owner("run-2-a1").status == "held"
 
 
+def test_resource_request_locks_every_material_parameter_despite_removed_overrides(tmp_path) -> None:
+    """调度申请取注册表推导的物料锁：旧驱动的 materials_free 不再让任何物料入参漏锁。"""
+
+    from types import SimpleNamespace
+
+    from unilabos.registry.ast_registry_scanner import _parse_file
+    from unilabos.registry.registry import Registry
+    from unilabos.server.backend.execution import make_device_materials_need_lock_resolver
+
+    source = tmp_path / "legacy_lock_driver.py"
+    source.write_text(
+        '''
+from typing import List, Optional
+from unilabos.registry.decorators import action, device
+from unilabos.registry.placeholder_type import ResourceSlot
+
+@device(id="legacy_lock_device", category=["test"])
+class Driver:
+    @action(materials_free=["blank", "tips"])
+    def use(self, plate: ResourceSlot, blank: Optional[ResourceSlot] = None,
+            tips: List[ResourceSlot] = None, volume: float = 1.0) -> None:
+        pass
+''',
+        encoding="utf-8",
+    )
+    devices, _resources, _workflows = _parse_file(source, tmp_path)
+    mappings = Registry()._build_device_entry_from_ast("legacy_lock_device", devices[0])["class"]["action_value_mappings"]
+    host = SimpleNamespace(_action_value_mappings={"device-a": mappings}, devices_instances={})
+    workflow = _Workflow()
+    executor = _Executor()
+    scheduler = BackendScheduler(
+        workflow,  # type: ignore[arg-type]
+        executor,
+        materials_need_lock_resolver=make_device_materials_need_lock_resolver(lambda: host),
+    )
+    task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
+    node = DagNode(node_id="run-1", device_id="device-a", action="use")
+    _attach(scheduler, workflow, task, node)
+    scheduler._run_specs["run-1"]["base_param"] = {  # noqa: SLF001
+        "plate": {"uuid": "plate-1"},
+        "blank": {"uuid": "blank-1"},
+        "tips": [{"uuid": "tip-1"}, {"uuid": "tip-2"}],
+        "volume": 2.0,
+    }
+
+    scheduler._start_node(task, node)  # noqa: SLF001
+
+    identifiers = scheduler.resources.request_for_owner("run-1-a1").identifiers
+    assert sorted(item.material_uuid for item in identifiers if item.kind == "material") == [
+        "blank-1", "plate-1", "tip-1", "tip-2",
+    ]
+    assert executor.dispatched[0]["materials_need_lock"] == ["plate", "blank", "tips"]
+
+
+def test_name_only_mount_target_locks_the_resolved_material() -> None:
+    """挂载目标只给名字（物料入参一律加锁后不再豁免）：派发前按权威解析出 uuid 再加锁，执行面拿到同一 uuid。"""
+
+    from types import SimpleNamespace
+
+    class _NamedMaterials(_Materials):
+        def search_materials(self, name: str) -> list[Any]:
+            found = {"bench_deck": "deck-uuid"}.get(name)
+            return [SimpleNamespace(material=SimpleNamespace(material_uuid=found))] if found else []
+
+    workflow = _Workflow()
+    executor = _Executor()
+    scheduler = BackendScheduler(
+        workflow,  # type: ignore[arg-type]
+        executor,
+        materials_gateway=_NamedMaterials(),
+        materials_need_lock_resolver=lambda _device, _action: ["resource", "mount_resource"],
+    )
+    task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
+    node = DagNode(node_id="run-mount", device_id="host_node", action="apply_deduct_resource")
+    _attach(scheduler, workflow, task, node)
+    scheduler._run_specs["run-mount"]["base_param"] = {  # noqa: SLF001
+        "resource": {"uuid": "plate-uuid"},
+        "mount_resource": {"name": "bench_deck"},
+    }
+
+    scheduler._start_node(task, node)  # noqa: SLF001
+
+    identifiers = scheduler.resources.request_for_owner("run-mount-a1").identifiers
+    assert sorted(item.material_uuid for item in identifiers if item.kind == "material") == ["deck-uuid", "plate-uuid"]
+    assert executor.dispatched[0]["action_args"]["mount_resource"] == {"name": "bench_deck", "uuid": "deck-uuid"}
+
+
 def test_reserved_warehouse_material_is_part_of_the_same_resource_request() -> None:
     workflow = _Workflow()
     executor = _Executor()
-    scheduler = BackendScheduler(workflow, executor)  # type: ignore[arg-type]
+    materials = _Materials()
+    scheduler = BackendScheduler(workflow, executor, materials_gateway=materials)  # type: ignore[arg-type]
     task = {"uuid": "task-1", "workflow_uuid": "workflow-1"}
     node = DagNode(node_id="run-warehouse", device_id="device-a", action="use")
     _attach(scheduler, workflow, task, node)
@@ -169,6 +324,12 @@ def test_reserved_warehouse_material_is_part_of_the_same_resource_request() -> N
     assert [item.kind for item in identifiers] == ["action", "material"]
     assert identifiers[1].material_uuid == "allocated-material"
     assert executor.dispatched[0]["inventory_reservation_uuid"] == "reservation-1"
+    # 库存在开始时按预留扣减：派发前权威按 attempt/Claim 冻结执行记录，载荷携带其身份。
+    (prepared,) = materials.prepared
+    assert (prepared.job_uuid, prepared.task_uuid, prepared.inventory_reservation_uuid) == (
+        "run-warehouse-a1", "task-1", "reservation-1",
+    )
+    assert executor.dispatched[0]["material_execution"]["job_uuid"] == "run-warehouse-a1"
 
 
 def test_cancelled_attempt_settles_as_canceled_not_failed() -> None:
@@ -345,6 +506,18 @@ def test_start_node_injects_resolved_inventory_into_action_args() -> None:
         "target": "beaker",
         "water": {"key": "water", "kind": "lot", "template_uuid": "t", "unit": "ml", "quantity": 40.0, "lots": [{"lot_uuid": "lot-1", "quantity": 40.0}]},
     }
+
+
+def test_mixed_unit_lot_arguments_share_one_unit_without_changing_reservations() -> None:
+    items = [
+        InventoryAllocation(key="water", kind="lot", template_uuid="water", lot_uuid="a", quantity=500, unit="uL"),
+        InventoryAllocation(key="water", kind="lot", template_uuid="water", lot_uuid="b", quantity=0.5, unit="mL"),
+    ]
+    arguments = allocation_arguments(items)["water"]
+    assert arguments["unit"] == "uL"
+    assert arguments["quantity"] == 1000
+    assert arguments["lots"] == [{"lot_uuid": "a", "quantity": 500}, {"lot_uuid": "b", "quantity": 500}]
+    assert items[1].quantity == 0.5 and items[1].unit == "mL"
 
 
 def test_dispatch_waits_for_the_execution_adapter_and_resumes_on_host_ready() -> None:

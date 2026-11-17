@@ -85,6 +85,15 @@ def command(client, task, kind):
     })
 
 
+def accepted(response):
+    """V1：命令受理 HTTP 201，返回命令投影。"""
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["code"] == 0 and body["data"]["type"] == "cancel", body
+    return body["data"]
+
+
 def status(service, task):
     return service.get_workflow_task(task["uuid"])["status"]
 
@@ -94,11 +103,11 @@ def test_cancel_keeps_the_device_locked_until_the_running_action_returns(stack):
     first = create_task(client, devices=["shared-device"])
     wait_for(lambda: len(executor.dispatched) == 1)
     second = create_task(client, devices=["shared-device"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
-    response = command(client, first, "cancel")
-    assert response.status_code == 200, response.text
-    assert response.json()["data"]["status"] == "canceling"
+    cancel = accepted(command(client, first, "cancel"))
+    assert cancel["status"] == "succeeded" and cancel["result"]["status"] == "canceling"
+    assert status(service, first) == "canceling"
     first_job = executor.dispatched[0]["job_id"]
     wait_for(lambda: executor.cancel_requests == [first_job])
     assert service.get_workflow_node_job(first_job)["status"] == "cancel_requested"
@@ -121,11 +130,11 @@ def test_cancel_finishes_at_once_when_nothing_is_running(stack):
     holder = create_task(client, devices=["shared-device"])
     wait_for(lambda: len(executor.dispatched) == 1)
     queued = create_task(client, devices=["shared-device", "other-device"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
-    assert command(client, queued, "cancel").status_code == 200
+    accepted(command(client, queued, "cancel"))
     wait_for(lambda: status(service, queued) == "canceled")
-    assert not scheduler._waiting_resource_jobs
+    assert not scheduler._waiting_resource_jobs and not scheduler._waiting_interval_jobs
     assert executor.cancel_requests == []
     assert {run["status"] for run in service.list_workflow_node_runs(queued["uuid"])} == {"canceled"}
 
@@ -138,7 +147,7 @@ def test_cancel_finishes_at_once_when_nothing_is_running(stack):
 def test_cancel_a_paused_step_task(stack):
     service, executor, _, client = stack
     task = create_task(client, devices=["device-a", "device-b"], mode="step")
-    assert command(client, task, "cancel").status_code == 200
+    accepted(command(client, task, "cancel"))
     wait_for(lambda: status(service, task) == "canceled")
     time.sleep(0.05)
     assert executor.dispatched == []
@@ -150,7 +159,7 @@ def test_failure_drains_running_siblings_before_releasing_their_device(stack):
     wait_for(lambda: len(executor.dispatched) == 2)
     by_device = {payload["device_id"]: index for index, payload in enumerate(executor.dispatched)}
     waiting = create_task(client, devices=["device-b"])
-    wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+    wait_for(lambda: len(scheduler._waiting_resource_jobs) + len(scheduler._waiting_interval_jobs) == 1)
 
     executor.finish(by_device["device-a"], success=False)
     sibling = executor.dispatched[by_device["device-b"]]["job_id"]
@@ -172,9 +181,14 @@ def test_cancel_conflicts(stack):
     service, executor, _, client = stack
     task = create_task(client, devices=["device-a"])
     wait_for(lambda: len(executor.dispatched) == 1)
-    assert command(client, task, "cancel").status_code == 200
-    # 取消中再取消：冲突
-    assert command(client, task, "cancel").json()["code"] == 3003
+    accepted(command(client, task, "cancel"))
+    # 取消中再取消：幂等受理，不重复请求设备取消
+    again = accepted(command(client, task, "cancel"))
+    assert again["status"] == "succeeded" and again["result"]["status"] == "canceling"
+    time.sleep(0.05)
+    assert len(executor.cancel_requests) == 1
     executor.finish(0, cancelled=True)
     wait_for(lambda: status(service, task) == "canceled")
-    assert command(client, task, "cancel").json()["code"] == 3003
+    # 终态任务：业务拒绝（status=rejected），不是接口错误
+    final = accepted(command(client, task, "cancel"))
+    assert final["status"] == "rejected" and final["result"]["reason"] == "task_is_terminal"

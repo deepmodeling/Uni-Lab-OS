@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from unilabos.backend.runtime.async_utils import run_blocking
 from unilabos.resources.resource_tracker import ResourceTreeSet
+from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children
 from unilabos.resources.adapters.plr_materials import (
     CreatedPLRMaterials,
     MaterialGateway,
@@ -57,6 +58,12 @@ def _is_conflict_error(exc: BaseException) -> bool:
     return _is_service_error(exc, "conflict", "MaterialConflictError")
 
 
+def _is_not_found_error(exc: BaseException) -> bool:
+    """权威里没有这个物料（被并发删除）。"""
+
+    return _is_service_error(exc, "not_found", "MaterialNotFoundError")
+
+
 def _is_no_change_error(exc: BaseException) -> bool:
     """权威判定快照与其状态一致（本地基线已过期到"刚好一致"的竞态）。"""
 
@@ -64,16 +71,24 @@ def _is_no_change_error(exc: BaseException) -> bool:
 
 
 def _local_root_uuid(resource: Any) -> Optional[str]:
-    """PLR 实例沿 ``.parent`` 走到顶层持有根的 uuid。
+    """PLR 实例沿 ``.parent`` 找快照根：最高的、带权威 uuid 的祖先（含自身）。
 
-    设备持有的顶层根在权威里 parent 是设备物料，但设备不在 PLR 树里，所以 PLR
-    树的顶层就是快照根——无需向权威反查每个节点的归属。
+    设备持有的顶层根在权威里 parent 是设备物料，但设备不在 PLR 树里，所以带 uuid
+    的最高祖先就是快照根——无需向权威反查每个节点的归属。PLR 1.0 的液体处理器
+    把台面挂成自己的子资源，处理器本身不是物料（没有 uuid）：根停在台面，不能
+    走到处理器上（否则每次增量都因根缺 uuid 被丢弃）。
     """
 
-    top = resource
-    while getattr(top, "parent", None) is not None:
-        top = top.parent
-    return str(getattr(top, "unilabos_uuid", "") or "") or None
+    root_uuid: Optional[str] = None
+    current = resource
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        current_uuid = str(getattr(current, "unilabos_uuid", "") or "")
+        if current_uuid:
+            root_uuid = current_uuid
+        current = getattr(current, "parent", None)
+    return root_uuid
 
 
 class ResourceService(Protocol):
@@ -261,7 +276,7 @@ class MaterialSnapshotObserver:
     @staticmethod
     def _walk(resource: Any) -> list[Any]:
         result = [resource]
-        for child in list(getattr(resource, "children", None) or []):
+        for child in material_children(resource):
             result.extend(MaterialSnapshotObserver._walk(child))
         return result
 
@@ -317,7 +332,14 @@ class MaterialSnapshotObserver:
                     _root_key: int = root_key,
                     _node: Any = node,
                 ) -> None:
-                    self._queue(_root_key, node=_node)
+                    # legacy 通道取放不触发 Resource.children 的 assign 回调，
+                    # head_state 变化可能代表物料拓扑变化，必须冻结完整树。
+                    head_changed = has_legacy_tip_channels(_node) and (
+                        "head_state" in _state or "head96_state" in _state
+                    )
+                    if head_changed:
+                        self._observe_state_subtree(_root_key, _node)
+                    self._queue(_root_key, node=_node, structural=head_changed)
 
                 observed.state_callbacks[node_key] = (node, state_updated)
             register(state_updated)
@@ -400,11 +422,15 @@ class MaterialSnapshotObserver:
             logger.exception("物料 snapshot 无法进入 backend 执行队列")
 
     _FLUSH_CONFLICT_RETRIES = 5
+    #: 冻结整树撞上并发结构变更（撕裂读）时的重新冻结次数与间隔。
+    _FLUSH_TORN_RETRIES = 5
+    _FLUSH_TORN_BACKOFF_S = 0.02
 
     async def _flush(self, root_key: int) -> None:
         # 合并同一个同步 tick 内多个 child 的变化。
         await asyncio.sleep(0)
         conflict_attempts = 0
+        torn_attempts = 0
         force_full = False
         while True:
             with self._guard:
@@ -450,7 +476,18 @@ class MaterialSnapshotObserver:
                 else:
                     # 先在设备执行线程冻结整棵 PLR 树，避免后台 I/O 时继续读取
                     # 一半旧、一半新的 child state。
-                    runtime_tree = ResourceTreeSet.from_plr_resources([root])
+                    try:
+                        runtime_tree = ResourceTreeSet.from_plr_resources([root])
+                    except ValueError as exc:
+                        # 另一线程正在移除 / 转移物料：Site 占用与子节点读到了不同时刻（撕裂读）。
+                        # 变更结束后树是一致的，让出片刻重新冻结；连续多次仍不一致才按错误处理。
+                        torn_attempts += 1
+                        if torn_attempts >= self._FLUSH_TORN_RETRIES:
+                            raise
+                        logger.info("冻结物料根树时读到正在变更的结构，重新冻结（第 %s 次）：%s", torn_attempts, exc)
+                        await asyncio.sleep(self._FLUSH_TORN_BACKOFF_S)
+                        force_full = True
+                        continue
                     snapshot_method = getattr(
                         self._service, "snapshot_resource_tree", None
                     )
@@ -556,6 +593,8 @@ def _normalize_plr_resources(resources: Any) -> list[Any]:
 def _existing_tree_set(resources: Any) -> ResourceTreeSet:
     if isinstance(resources, ResourceTreeSet):
         tree_set = ResourceTreeSet.load(resources.dump())
+        # dump/load 只复制节点；运行时证据（设备仍持有哪些物料）随树集一起带上
+        tree_set.runtime_material_uuids = resources.runtime_material_uuids
     else:
         tree_set = ResourceTreeSet.from_plr_resources(
             _normalize_plr_resources(resources)
@@ -765,20 +804,29 @@ class AuthorityResourceService:
         return root_uuid
 
     @staticmethod
-    def _local_roots(resources: Any, runtime: ResourceTreeSet) -> dict[str, str]:
+    def _local_roots(
+        resources: Any, runtime: ResourceTreeSet, device_uuid: str = ""
+    ) -> dict[str, str]:
         """不问权威就能确定的 ``节点 uuid → 快照根 uuid``。
 
-        - 传入 PLR 实例：沿 ``.parent`` 到 PLR 顶层即根，其子树全部归它；
-        - 传入 ResourceTreeSet：``uuid_parent`` 为空的树根就是根（观察者冻结的整棵
-          持有树即此形态）。父在权威里但不在本地树里的子树（脚本传来的局部权威树）
-          留给 ``_root_material_uuid`` 反查。
+        - 传入 PLR 实例：沿 ``.parent`` 到最高的带 uuid 祖先即根（见 ``_local_root_uuid``），
+          其子树全部归它；
+        - 传入 ResourceTreeSet：``uuid_parent`` 为空、或就是本设备物料的树根就是根
+          （观察者冻结的整棵持有树；append_resource 挂到设备上、根 parent 投影为
+          设备的台面树）——与 ``_root_material_uuid`` 停在设备物料之下同一规则。
+          父在权威里但不在本地树里的子树（脚本传来的局部权威树）留给
+          ``_root_material_uuid`` 反查：那里每个节点至少一次权威往返，整棵台面
+          （带枪头时数百节点）逐个反查会把一次挂载拖到超时。
         """
 
         roots: dict[str, str] = {}
         if isinstance(resources, ResourceTreeSet):
             for tree in runtime.trees:
                 root = tree.root_node.res_content
-                if root.uuid_parent is None and root.uuid:
+                parent_uuid = root.uuid_parent
+                if root.uuid and (
+                    parent_uuid is None or (device_uuid and parent_uuid == device_uuid)
+                ):
                     for node in tree.get_all_nodes():
                         roots[node.res_content.uuid] = root.uuid
             return roots
@@ -792,7 +840,7 @@ class AuthorityResourceService:
                 node_uuid = str(getattr(current, "unilabos_uuid", "") or "")
                 if node_uuid:
                     roots[node_uuid] = root_uuid
-                stack.extend(getattr(current, "children", None) or [])
+                stack.extend(material_children(current))
         return roots
 
     @staticmethod
@@ -829,7 +877,9 @@ class AuthorityResourceService:
         runtime = _existing_tree_set(resources)
         gateway = self._gateway()
         aggregate_cache: dict[str, Any] = {}
-        root_cache: dict[str, str] = self._local_roots(resources, runtime)
+        root_cache: dict[str, str] = self._local_roots(
+            resources, runtime, str(device_uuid or "")
+        )
         by_root: dict[str, list[Any]] = defaultdict(list)
         seen_runtime_uuids: set[str] = set()
         for instance in runtime.all_nodes:
@@ -845,6 +895,11 @@ class AuthorityResourceService:
             )
             by_root[root_uuid].append(instance.res_content)
 
+        # 运行时证据：设备仍持有的物料（含上报树之外、同一 PLR 顶层祖先下的物料）
+        # 加上本次上报的全部节点——枪头若被上报到另一棵根树，就不是被丢弃。
+        held = runtime.runtime_material_uuids
+        if held is not None:
+            held = held | seen_runtime_uuids
         authoritative = ResourceTreeSet([])
         for root_uuid, changed_resources in by_root.items():
             current = self._push_root_snapshot(
@@ -855,6 +910,7 @@ class AuthorityResourceService:
                 changed_resources,
                 allow_partial=allow_partial,
                 conflict_retries=conflict_retries,
+                runtime_material_uuids=held,
             )
             authoritative.trees.extend(
                 material_tree_to_resource_tree(current).trees
@@ -873,6 +929,7 @@ class AuthorityResourceService:
         *,
         allow_partial: bool,
         conflict_retries: int | None = None,
+        runtime_material_uuids: frozenset[str] | None = None,
     ) -> Any:
         """把一组节点投影进单棵权威根树，带乐观锁冲突重试。
 
@@ -886,6 +943,9 @@ class AuthorityResourceService:
         观察者严格快照走该模式：``changed_resources`` 是排队时刻的冻结态，
         权威被并发 mutation 推进后旧冻结不可重放，必须由观察者重新冻结最新
         runtime 树再提交。
+
+        ``runtime_material_uuids`` 是设备运行时仍持有的物料；上报父节点下缺席、
+        又不在其中的枪头视为已丢弃，随同一快照退役（见 ``resource_tree_to_snapshot``）。
         """
 
         from unilabos.server.services.materials.snapshot import compare_material_snapshot
@@ -902,6 +962,7 @@ class AuthorityResourceService:
                     changed_resources,
                     base,
                     allow_partial=allow_partial,
+                    runtime_material_uuids=runtime_material_uuids,
                 )
             except SnapshotUuidMismatchError:
                 if refreshed_for_drift:
@@ -1001,7 +1062,9 @@ class AuthorityResourceService:
                 with self._baseline_lock:
                     known = self._versions.get(node_uuid)
                 if known is None:
-                    raise ValueError(f"物料 {node_uuid} 不在权威根树 {root_uuid} 里")
+                    # 重拉根树后仍没有：权威在这期间删掉或移走了它（排队中的状态上报晚于删除 / 转移）。
+                    # 这是结构漂移，不是错误：观察者放弃本次提交，结构变化本身会触发新的回调收敛。
+                    raise SnapshotUuidMismatchError(f"物料 {node_uuid} 不在权威根树 {root_uuid} 里")
                 serialized = (
                     ResourceTreeSet.from_plr_resources([node]).trees[0].root_node.res_content
                 )
@@ -1019,7 +1082,9 @@ class AuthorityResourceService:
             except Exception as exc:
                 if _is_no_change_error(exc):
                     return False
-                if not _is_conflict_error(exc):
+                # 版本冲突，或增量里的节点已被并发删除：作废版本表重拉一次；被删的节点重拉后不在根树里，
+                # 下一轮按结构漂移（SnapshotUuidMismatchError）交给观察者放弃本次提交
+                if not (_is_conflict_error(exc) or _is_not_found_error(exc)):
                     raise
                 conflicts += 1
                 self.invalidate_baselines(root_uuid)

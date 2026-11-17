@@ -49,10 +49,11 @@ default_tools_approval_mode = "writes"
 2. `system_health`：当前服务健康状态；Host 未就绪时不能把 API 在线当作设备在线。
 3. `system_hostlink_peers`、`runtime_v1_endpoints_list`：Host/Slave、在线路由、设备 ID 和动作能力。
 4. `registry_workflow_templates_list`：工作流模板与角色绑定；`registry_entries_get`：
-   所需驱动动作的参数、错误策略和 `materials_need_lock`。
+   所需驱动动作的参数、错误策略和 `materials_need_lock`（按签名推导的物料锁参数）。`registry_status` 说明 Host 是否已上报注册表、
+   有没有待确认的变化（跨机器部署时注册表变化要确认，经用户同意后用 `registry_pending_apply`）。
 5. `protocol_search`：用具体关键词缩小操作范围；`protocol_inspect`：调用前确认字段和必填项。
 
-当前有 131 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
+当前有 182 个公开业务工具和 6 个辅助工具。业务工具名由 protocol 操作 ID 的
 `.`、`-` 替换为 `_` 得到，客户端可能再显示 MCP server 前缀。
 
 | 需求 | 优先入口 |
@@ -62,6 +63,7 @@ default_tools_approval_mode = "writes"
 | 物料、内容物、位置、库存 | `materials_v1_instances_list`、`materials_v1_instances_tree`、`materials_v1_lots_list` |
 | 动作锁与物料锁 | `system_scheduler_resources`，再核对任务与设备审计结果 |
 | Host/Slave 日志 | `system_log_sources_list`、`system_logs_read` |
+| 进程树与工作区操作（V1 进程管理协议） | `process_management_snapshot`，写操作用 `process_management_operations_submit`（自带幂等 `operationId`，可带快照 `revision` 作 `expectedRevision`）后以 `process_management_operations_get` 轮询；组件日志尾部 `process_management_logs_tail` |
 | 注册表、图、包、进程、遥测、历史 | `protocol_search` 按业务域检索，写操作先确认授权 |
 
 辅助工具分别是 `protocol_guide`、`protocol_search`、`protocol_inspect`、
@@ -148,8 +150,9 @@ default_tools_approval_mode = "writes"
 Site 参数的导入行为遵循 [工作流模板参数绑定规范](edge_ui_api.md#工作流模板参数预填确认与-api-导入)：
 前端即使预填 `T1` 并唯一匹配，也必须由用户在绑定界面确认实际物料与 Site；MCP / CLI 等
 程序化 API 导入则应在明确目标物料后自动将标签解析为 UUID，不弹前端确认界面。
-`workflow_workflow_from_template` / `workflow_graph_save` 的 `body.site_binding_mode` 默认
-`resolve`：缺少目标或动作声明、标签不存在或存在歧义时返回绑定错误，不能选第一个同名 Site。
+`workflow_workflow_from_template` 的 `body.site_binding_mode` 默认 `resolve`；`workflow_graph_save` 按 V1 合同默认
+`preserve`，程序化导入必须显式传 `"site_binding_mode": "resolve"`：缺少目标或动作声明、标签不存在或存在歧义时返回
+绑定错误，不能选第一个同名 Site。
 只保存待校验草稿可显式传 `preserve`，不能将其当作已确认可执行的图。
 转换成功后仍应读回图，核对 `param` 的 UUID 与 `meta_data.site_bindings` 中的 owner。
 默认作用域为目标设备子树；可用节点 `meta_data.site_binding_owners[参数名]` 明确物料 UUID。
@@ -233,6 +236,18 @@ param 按该动作 schema 填写，不能认为每个动作都接受空对象。
 最终用 `workflow_task_node_runs` 和 `workflow_task_jobs` 核对返回实值、attempt_count、
 旧失败与新 attempt 的关联；通过 workflow_node_uuid 关联图中的节点名称。
 
+观察任务进展时读运行事件时间线，每次把上次返回的 `next_cursor` 作为 `after_sequence`，
+只拿新发生的任务状态迁移、作业派发与结果（两个 query 参数都是十进制字符串，limit 最大 500）：
+
+```json
+{
+  "name": "workflow_task_events",
+  "arguments": {"path": {"task_uuid": "<task_uuid>"}, "query": {"after_sequence": "0", "limit": "100"}}
+}
+```
+
+`has_more=true` 时用新的 `next_cursor` 继续读；没有新事件时 `items` 为空、`next_cursor` 不变。
+
 ## 6. 异常、人工确认与重试
 
 - 动作错误使用 `decisions_error_decisions_list` 发现，具体字段先 inspect
@@ -286,7 +301,7 @@ payload，不产生另一套数据模型。相同命令/效果的重传用相同
 
 ## 8. 并发与锁
 
-动作锁和 `materials_need_lock` 由调度处理，本指南不引入新的嵌套锁机制。
+动作锁和物料锁由调度处理（每个物料入参默认加锁，驱动不能按动作豁免），本指南不引入新的嵌套锁机制。
 需要验证竞争时先创建好同组流程，然后用 `protocol_batch` 同时提交；不要先等 A 完成才提交 B。
 
 ```json
@@ -313,7 +328,8 @@ payload，不产生另一套数据模型。相同命令/效果的重传用相同
 
 持续实时订阅沿用前端协议的 SSE 通知加 HTTP 拉取：`/api/v1/events`，
 物料为 `/api/v1/materials/events`。不把无限 SSE 流塞进一次 MCP 工具返回，
-也不为前端实现固定每秒轮询。MCP 的短时 task wait 不等于前端实时订阅。
+也不为前端实现固定每秒轮询。MCP 的短时 task wait 不等于前端实时订阅；
+单个任务的增量变化用 `workflow_task_events` 按游标读取。
 
 ## 10. 可直接改写的自然语言任务
 

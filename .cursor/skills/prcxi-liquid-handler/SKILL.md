@@ -8,7 +8,7 @@ description: Operate PRCXI 9300 liquid handler via REST API — create workflows
 ## 设备信息
 
 - **device_id**: `liquid_handler.prcxi`
-- **Python 源码**: `unilabos/devices/liquid_handling/prcxi/prcxi.py`
+- **Python 源码**: PRCXI 驱动包中的 `prcxi.py`（原 `unilabos/devices/liquid_handling/prcxi/prcxi.py`，已迁出主仓库）
 - **设备类**: `PRCXI9300Handler`
 - **Action 数量**: 24
 

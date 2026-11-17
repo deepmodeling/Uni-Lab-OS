@@ -52,6 +52,7 @@ class AdapterDriver:
     def __init__(self) -> None:
         self.calls = 0
         self.started = threading.Event()
+        self.release = threading.Event()
 
     def succeed(self, value: int) -> dict[str, int]:
         self.calls += 1
@@ -82,13 +83,22 @@ class AdapterDriver:
     def samples(self, sample_uuids: dict[str, str]) -> dict[str, Any]:
         return {"samples": sample_uuids}
 
+    def overruns(self) -> dict[str, bool]:
+        """同步驱动，超过硬超时仍在跑，由测试决定何时返回。"""
+        self.calls += 1
+        self.started.set()
+        self.release.wait(5)
+        return {"done": True}
+
 
 class RecordingBridge:
     def __init__(self) -> None:
         self.statuses: list[tuple[str, str, dict, dict | None]] = []
         self.decisions: list[dict[str, Any]] = []
+        self.late: list[dict[str, Any]] = []
         self.status_event = threading.Event()
         self.decision_event = threading.Event()
+        self.late_event = threading.Event()
 
     def publish_job_status(
         self,
@@ -106,6 +116,11 @@ class RecordingBridge:
         self.decision_event.set()
         return True
 
+    def publish_job_late_outcome(self, report: dict, _item: QueueItem | None = None) -> bool:
+        self.late.append(report)
+        self.late_event.set()
+        return True
+
 
 def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
     local = HostLinkLocalRuntime()
@@ -120,6 +135,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
             "wait_until_cancelled",
             "ignores_cancel",
             "samples",
+            "overruns",
         ),
         action_value_mappings={
             "succeed": {"type": "NativeAction"},
@@ -152,6 +168,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
             "wait_until_cancelled": {"type": "NativeAction"},
             "ignores_cancel": {"type": "NativeAction"},
             "samples": {"type": "UniLabJsonCommand"},
+            "overruns": {"type": "NativeAction", "timeout": 0.1},
         },
     )
     node = local.add_driver(spec)
@@ -531,3 +548,46 @@ def test_hostlink_injects_declared_system_sample_parameter(execution_stack) -> N
     assert bridge.statuses[-1][2]["return_value"] == {
         "samples": {"sample-1": "material-1"}
     }
+
+
+def test_sync_driver_outliving_its_hard_timeout_keeps_the_hold_until_it_returns(execution_stack) -> None:
+    """HostLink 本地运行时先报硬超时，同步线程仍在跑：attempt 照常结算但带 timeout_hold，
+    线程返回后真实结果作为迟到结果转交，而不是被丢弃（ADR 0008）。"""
+
+    _adapter, microbackend, driver, bridge = execution_stack
+    item = _item("overruns")
+    microbackend.dispatch(
+        {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "node_id": item.node_id,
+            "device_id": item.device_id,
+            "action": item.action_name,
+            "action_type": "NativeAction",
+            "action_args": {},
+        }
+    )
+    assert driver.started.wait(2)
+    assert bridge.decision_event.wait(2)
+    report = bridge.decisions[-1]
+    assert report["exception_type"] == "TimeoutException"
+    assert microbackend.handle_action_error_decision(
+        report["decision_id"],
+        item.job_id,
+        {"decision_id": report["decision_id"], "job_id": item.job_id, "device_id": item.device_id,
+         "action": "abort", "scheduler_updated": True},
+    )
+    assert bridge.status_event.wait(2)
+    _job, status, _data, return_info = [entry for entry in bridge.statuses if entry[0] == item.job_id][-1]
+    assert status == "failed"
+    assert return_info["timeout_hold"]["kind"] == "timeout"
+    assert return_info["error_info"]["driver_still_running"] is True
+    assert bridge.late == []
+
+    driver.release.set()
+    assert bridge.late_event.wait(3)
+    (late,) = bridge.late
+    assert late["job_id"] == item.job_id and late["status"] == "success"
+    assert late["return_info"]["return_value"] == {"done": True}
+    # 迟到结果不产生第二个终态
+    assert [entry[1] for entry in bridge.statuses if entry[0] == item.job_id and entry[1] != "running"] == ["failed"]

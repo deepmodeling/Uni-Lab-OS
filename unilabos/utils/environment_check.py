@@ -329,7 +329,7 @@ class EnvironmentChecker:
         # 与 wheel 安装共用依赖清单，不能在首次启动时换成另一个可变 PLR 分支。
         from packaging.requirements import Requirement
 
-        import_names = {"PyYAML": "yaml", "crcmod-plus": "crcmod", "pyserial": "serial"}
+        import_names = {"PyYAML": "yaml", "pyserial": "serial"}
         self.requirements = {}
         for line in Path(__file__).with_name("requirements.txt").read_text(encoding="utf-8").splitlines():
             if not line.strip() or line.lstrip().startswith("#"):

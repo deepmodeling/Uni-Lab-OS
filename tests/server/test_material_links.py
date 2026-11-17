@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+from tests.api_envelope import ok_data
+
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.protocol.materials import (
     MaterialDataWrite,
@@ -129,6 +131,40 @@ class TestEnsureLinks:
         )
         assert stats == {"created": 0, "updated": 0, "unchanged": 0, "skipped": 2}
         assert service.list_links() == []
+
+    @pytest.mark.parametrize("transport", ["local", "http"])
+    def test_materials_client_aligns_links_on_the_authority(self, service, monkeypatch, transport) -> None:
+        """Host 用同一个物料客户端对齐节点与连线：HTTP 客户端（默认拓扑的 Host 子进程）写的是权威的库。"""
+
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from tests.server.test_v1_inventory_api import _TestClientOpener
+        from unilabos.client.materials import HTTPMaterialsClient, LocalMaterialsClient
+        from unilabos.server.api.materials import install_materials_api
+
+        source = _create_root(service, "pump")
+        target = _create_root(service, "reactor")
+        links = [
+            {"source": "resource-pump", "target": "resource-reactor", "source_uuid": source, "target_uuid": target,
+             "type": "fluid", "sourceHandle": "out", "targetHandle": "in", "id": "edge-1"},
+            {"source": "resource-pump", "target": "off-graph", "source_uuid": source, "target_uuid": str(uuid4())},
+        ]
+        app = FastAPI()
+        install_materials_api(app, service)
+        with TestClient(app) as http:
+            if transport == "http":
+                monkeypatch.setattr("unilabos.client.materials.core.urlopen", _TestClientOpener(http))
+                client = HTTPMaterialsClient("http://testserver")
+            else:
+                client = LocalMaterialsClient(service)
+            assert client.ensure_links(links) == {"created": 1, "updated": 0, "unchanged": 0, "skipped": 1}
+            assert client.ensure_links(links) == {"created": 0, "updated": 0, "unchanged": 1, "skipped": 1}
+            relations = ok_data(http.get("/api/v1/inventory/relations"))
+        [stored] = relations["links"]
+        assert (stored["source_material_uuid"], stored["target_material_uuid"]) == (source, target)
+        assert (stored["link_type"], stored["source_handle"], stored["target_handle"]) == ("fluid", "out", "in")
+        assert stored["extra"] == {"id": "edge-1"}
 
     def test_material_uuid_filter_matches_both_sides(self, service) -> None:
         source = _create_root(service, "pump")

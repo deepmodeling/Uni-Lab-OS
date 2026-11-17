@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime import (
     create_runtime_router,
     install_runtime_api,
@@ -161,7 +162,7 @@ def test_http_client_exposes_runtime_state_machine_and_queries(tmp_path) -> None
                 "/api/v1/runtime/commands",
                 params={"after_sequence": 1},
             )
-            assert invalid_cursor.status_code == 422
+            error_of(invalid_cursor, 1000)
 
             job = client.create_execution_job(
                 ExecutionJobCreate(
@@ -373,13 +374,13 @@ def test_runtime_http_errors_and_router_do_not_expose_delete(tmp_path) -> None:
             )
             with pytest.raises(RuntimeHTTPError) as error:
                 client.get_execution_job("missing")
-            assert error.value.status_code == 404
+            # 信封业务码 4001 换算回 HTTP 语义 404，原码保留在 business_code
+            assert error.value.status_code == 404 and error.value.business_code == 4001
 
             mismatch = test_client.put(
                 "/api/v1/runtime/sessions/path-session",
                 json=_session().model_dump(mode="json"),
             )
-            assert mismatch.status_code == 422
-            assert mismatch.json()["detail"] == "session UUID path mismatch"
+            assert error_of(mismatch, 1000)["msg"] == "session UUID path mismatch"
     finally:
         service.close()

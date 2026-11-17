@@ -112,7 +112,7 @@ async def deduct_resource(
     出库产物两种来源（二选一）：
 
     - ``resource``：已带 uuid 的扣减产物（云端仓储扣减 / 前端
-      ``POST /materials/instantiate`` 出库端点的产物引用）——经
+      ``POST /api/v1/inventory/commands``（``instantiate_material``）出库命令的产物引用）——经
       ``materials.ensure`` 落权威：权威缺失时以原 uuid 显式创建（adopt），
       已存在则直接采用权威记录；
     - ``registry_class``（+ ``material_name``）：按 registry 资源类名现场
@@ -201,13 +201,15 @@ async def deduct_resource(
             materials.owner_device_of, mount
         )
     mount_name = getattr(mount, "name", None) or _edge_id(mount)
+    # 目标父物料按 uuid 指名；只有名字字符串时才退回 PLR 键
+    mount_ref = getattr(mount, "unilabos_uuid", None) or mount_name
     logger.info(
         f"[HostMaterials] 挂载物料 name={getattr(plr, 'name', '')} "
         f"-> device={target_id} mount_resource={mount_name}"
     )
     payload: Dict[str, Any] = {
         "resource_uuid": [getattr(plr, "unilabos_uuid")],
-        "bind_parent_id": str(mount_name),
+        "bind_parent_id": str(mount_ref),
         "bind_location": _normalize_point(bind_locations),
     }
     if slot_on_deck:

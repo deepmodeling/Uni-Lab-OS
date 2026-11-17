@@ -108,7 +108,8 @@ def _ok(response, status: int = 200) -> Any:
 
 
 def _create_workflow(client, name: str) -> dict:
-    return _ok(client.post("/api/v1/workflows", json={"name": name}), 201)
+    # V1：只有实验操作可以被其他工作流引用；本文件的流程都以实验操作创建
+    return _ok(client.post("/api/v1/workflows", json={"name": name, "workflow_type": "experiment_operation"}), 201)
 
 
 def _dose_node(node_uuid: str, *, volume: float = 1, device: str = "pump-1") -> dict:
@@ -160,12 +161,21 @@ def _publish(client, workflow_uuid: str, revision: int) -> dict:
     ), 201)
 
 
-def _insert(client, parent: dict, child_uuid: str, **extra) -> Any:
+def _contract_uuid(client, child_uuid: str) -> str:
+    """子工作流最新发布合同的 uuid；尚未发布时返回一个不存在的合同身份。"""
+
+    publications = client.get(f"/api/v1/workflows/{child_uuid}/publications").json()["data"]
+    return publications[-1]["uuid"] if publications else str(uuid4())
+
+
+def _insert(client, parent: dict, child_uuid: str, *, arguments: dict | None = None, **extra) -> Any:
+    """V1 组合调用：``contract_uuid`` + ``param``（dev 的 ``child_workflow_uuid`` / ``arguments`` 已移除）。"""
+
     revision = client.get(f"/api/v1/workflows/{parent['uuid']}").json()["data"]["revision"]
-    return client.post(
-        f"/api/v1/workflows/{parent['uuid']}/composite-invocations",
-        json={"revision": revision, "child_workflow_uuid": child_uuid, **extra},
-    )
+    body = {"revision": revision, "contract_uuid": _contract_uuid(client, child_uuid), **extra}
+    if arguments is not None:
+        body["param"] = arguments
+    return client.post(f"/api/v1/workflows/{parent['uuid']}/composite-invocations", json=body)
 
 
 def test_declare_publish_insert_and_run_child_inline(stack) -> None:
@@ -195,6 +205,12 @@ def test_declare_publish_insert_and_run_child_inline(stack) -> None:
 
     publication = _publish(client, child["uuid"], revision)
     assert publication["revision"] == revision
+    # V1 发布合同字段
+    assert publication["workflow_revision"] == revision and publication["version"] == 1
+    assert publication["revision_fingerprint"] == publication["source_hash"]
+    assert publication["input_contract"]["parameters"][0]["name"] == "volume"
+    assert publication["executor_requirements"] == []
+    assert _ok(client.get(f"/api/v1/workflows/{child['uuid']}"))["status"] == "published"
     assert publication["source_hash"].startswith("sha256:")
     assert publication["contract_digest"].startswith("sha256:")
     assert [item["name"] for item in publication["inputs"]] == ["volume"]
@@ -223,11 +239,14 @@ def test_declare_publish_insert_and_run_child_inline(stack) -> None:
     inserted = _ok(_insert(
         client, parent, child["uuid"],
         invocation_uuid=invocation_uuid, arguments={"volume": 5}, pose={"x": 10, "y": 20},
-    ), 201)
-    assert inserted["invocation_uuid"] == invocation_uuid
-    assert inserted["contract_pin"]["child_workflow_revision"] == revision
-    assert inserted["contract_pin"]["contract_digest"] == publication["contract_digest"]
-    graph = inserted["graph"]
+    ))
+    # V1：返回父图当前层（组合调用的私有子图隐藏）；完整图从服务读取
+    assert [node["uuid"] for node in inserted["nodes"]] == [invocation_uuid]
+    pin = inserted["nodes"][0]["meta_data"]["unilab"]["composite"]
+    assert pin["child_workflow_revision"] == revision
+    assert pin["contract_digest"] == publication["contract_digest"]
+    assert inserted["workflow"]["revision"] == parent["revision"] + 1
+    graph = service.get_graph(parent["uuid"])
     assert graph["workflow"]["revision"] == parent["revision"] + 1
     by_uuid = {node["uuid"]: node for node in graph["nodes"]}
     expanded = expanded_node_uuid(invocation_uuid, node_uuid)
@@ -335,7 +354,7 @@ def test_insert_rejects_unpublished_missing_argument_and_recursion(stack) -> Non
     assert "composite_recursive_reference" in itself["error"]["msg"]
 
     # parent 内含 child@n 并发布后，再把 parent 插回 child：子图包含父图，拒绝且不改动 child
-    _ok(_insert(client, parent, child["uuid"], arguments={"volume": 1}), 201)
+    _ok(_insert(client, parent, child["uuid"], arguments={"volume": 1}))
     parent_revision = client.get(f"/api/v1/workflows/{parent['uuid']}").json()["data"]["revision"]
     _publish(client, parent["uuid"], parent_revision)
     before = _ok(client.get(f"/api/v1/workflows/{child['uuid']}/graph"))
@@ -353,13 +372,14 @@ def test_nested_publication_expands_each_leaf_once(stack) -> None:
     middle = _create_workflow(client, "中间流程")
     inner_invocation = str(uuid4())
     _ok(_insert(client, middle, child["uuid"], invocation_uuid=inner_invocation,
-                arguments={"volume": 3}), 201)
+                arguments={"volume": 3}))
     middle_revision = client.get(f"/api/v1/workflows/{middle['uuid']}").json()["data"]["revision"]
     _publish(client, middle["uuid"], middle_revision)
 
     outer = _create_workflow(client, "外层流程")
     outer_invocation = str(uuid4())
-    graph = _ok(_insert(client, outer, middle["uuid"], invocation_uuid=outer_invocation), 201)["graph"]
+    _ok(_insert(client, outer, middle["uuid"], invocation_uuid=outer_invocation))
+    graph = service.get_graph(outer["uuid"])
     nested_invocation = expanded_node_uuid(outer_invocation, inner_invocation)
     leaf = expanded_node_uuid(nested_invocation, node_uuid)
     assert {node["uuid"] for node in graph["nodes"]} == {outer_invocation, nested_invocation, leaf}
@@ -404,10 +424,10 @@ def test_canvas_child_without_templates_keeps_depends_on_order(stack) -> None:
 
     parent = _create_workflow(client, "画布父流程")
     invocation = str(uuid4())
-    inserted = _ok(_insert(client, parent, child["uuid"], invocation_uuid=invocation), 201)["graph"]
+    inserted = _ok(_insert(client, parent, child["uuid"], invocation_uuid=invocation))
     inner_first = expanded_node_uuid(invocation, first)
     inner_second = expanded_node_uuid(invocation, second)
-    by_uuid = {node["uuid"]: node for node in inserted["nodes"]}
+    by_uuid = {node["uuid"]: node for node in service.get_graph(parent["uuid"])["nodes"]}
     # 子图内的 depends_on 换成展开后的身份
     assert by_uuid[inner_second]["execution_policy"]["depends_on"] == [inner_first]
 
@@ -454,7 +474,7 @@ def test_parents_pinned_to_different_revisions_keep_working(stack) -> None:
     child, node_uuid, io = _child_with_volume_input(client)
     first = _publish(client, child["uuid"], io["workflow"]["revision"])
     parent_a = _create_workflow(client, "父流程 A")
-    _ok(_insert(client, parent_a, child["uuid"], arguments={"volume": 2}), 201)
+    _ok(_insert(client, parent_a, child["uuid"], arguments={"volume": 2}))
 
     current = _ok(client.get(f"/api/v1/workflows/{child['uuid']}"))
     revised = _ok(client.put(
@@ -473,7 +493,7 @@ def test_parents_pinned_to_different_revisions_keep_working(stack) -> None:
     assert second["revision"] > first["revision"]
     assert second["node_template"]["uuid"] != first["node_template"]["uuid"]
     parent_b = _create_workflow(client, "父流程 B")
-    _ok(_insert(client, parent_b, child["uuid"], arguments={"volume": 3}), 201)
+    _ok(_insert(client, parent_b, child["uuid"], arguments={"volume": 3}))
 
     for parent in (parent_a, parent_b):
         response = client.post("/api/v1/workflow-tasks", json={"workflow_uuid": parent["uuid"]})

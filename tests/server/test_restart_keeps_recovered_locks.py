@@ -85,10 +85,22 @@ def test_recovered_attempt_keeps_the_device_until_it_is_reconciled(tmp_path) -> 
 
         with TestClient(create_workflow_app(service)) as client:
             second = create_task(client, "shared-device")
-            # 遗留 attempt 仍占着 shared-device：第二个任务排队，不派发
-            wait_for(lambda: len(scheduler._waiting_resource_jobs) == 1)
+            # 遗留 attempt 仍占着 shared-device：第二个任务排队，不派发。
+            # 跨任务的设备独占由持久资源区间准入先行裁决，排队发生在准入等待集合，
+            # 尚未进入内存锁队列。
+            wait_for(lambda: len(scheduler._waiting_interval_jobs) == 1)
             time.sleep(0.1)
             assert executor.dispatched == []
+            held = [item for item in scheduler.resource_snapshot().intervals
+                    if item["lock_key"] == "/devices/shared-device" and item["state"] == "held"]
+            assert [(item["task_uuid"], item["acquired_job_uuid"]) for item in held] == [
+                (first["uuid"], decision["job_id"])
+            ]
+            # 观测面：被区间准入拦下的申请在 /scheduler/resources 里是 waiting，阻塞者是遗留 attempt。
+            waiting = [item for item in scheduler.resource_snapshot().requests
+                       if item.task_uuid == second["uuid"] and item.status == "waiting"]
+            assert len(waiting) == 1 and waiting[0].blockers == [decision["job_id"]]
+            assert {identifier.kind for identifier in waiting[0].identifiers} <= {"action", "material"}
 
             assert scheduler.resolve_reconciliation_decision(decision["decision_id"], {"action": "abort"})
             wait_for(lambda: len(executor.dispatched) == 1)

@@ -108,19 +108,104 @@ async def run_blocking(func: Callable[..., Any], /, *args: Any, **kwargs: Any) -
     return await asyncio.to_thread(func, *args, **kwargs)
 
 
-def run_node_coroutine(node: Any, coroutine: Any, timeout: float = 30.0) -> Any:
+class CommitPoint:
+    """设备协程与跨线程等待方之间的提交点握手。
+
+    协程在产生不可回退的副作用（本地 PLR 挂载、权威 move）之前调用 :meth:`enter`；
+    等待方超时后调用 :meth:`abandon`。二者原子互斥：协程已进入提交点时等待方不能再
+    取消它，只能等它走完；等待方先放弃时协程进不了提交点，什么都不改。
+    """
+
+    _PENDING = "pending"
+    _COMMITTED = "committed"
+    _ABANDONED = "abandoned"
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._state = self._PENDING
+
+    def enter(self) -> bool:
+        """协程侧：进入提交点；等待方已放弃时返回 False（协程应直接退出、不做副作用）。"""
+
+        with self._lock:
+            if self._state == self._ABANDONED:
+                return False
+            self._state = self._COMMITTED
+            return True
+
+    def abandon(self) -> bool:
+        """等待方：放弃并允许取消；协程已过提交点时返回 False（必须继续等它完成）。"""
+
+        with self._lock:
+            if self._state == self._COMMITTED:
+                return False
+            self._state = self._ABANDONED
+            return True
+
+    @property
+    def committed(self) -> bool:
+        return self._state == self._COMMITTED
+
+
+def _node_logger(node: Any) -> Any:
+    lab_logger = getattr(node, "lab_logger", None)
+    if callable(lab_logger):
+        with contextlib.suppress(Exception):
+            return lab_logger()
+    import logging
+
+    return logging.getLogger(__name__)
+
+
+def run_node_coroutine(
+    node: Any,
+    coroutine: Any,
+    timeout: float = 30.0,
+    *,
+    commit_point: Optional[CommitPoint] = None,
+) -> Any:
     """在节点自己的执行器上运行协程并阻塞等待结果（供非执行器线程调用）。
 
     依赖 ``node.create_task`` 返回带 ``add_done_callback`` / ``result`` 的
     task/future（rclpy Task 与 concurrent.futures.Future 均满足）。
+
+    ``timeout`` 内没完成时取消协程并抛 ``TimeoutError``。给了 ``commit_point`` 时，
+    ``timeout`` 只约束提交点之前的阶段：协程已进入提交点就不再取消，继续等它走完
+    （副作用已部分落地，取消只会留下本地与权威不一致的半截状态）。每次取消、每次
+    越过超时继续等待都写日志。
     """
+
+    name = str(
+        getattr(coroutine, "__qualname__", "")
+        or getattr(coroutine, "__name__", "")
+        or type(coroutine).__name__
+    )
+    device_id = str(getattr(node, "device_id", "") or "")
     task = node.create_task(coroutine)
     done = threading.Event()
     task.add_done_callback(lambda _task: done.set())
     if not done.wait(timeout):
-        with contextlib.suppress(Exception):
-            task.cancel()
-        raise TimeoutError(f"设备协程执行超时({timeout}s)")
+        logger = _node_logger(node)
+        if commit_point is not None and not commit_point.abandon():
+            started = time.monotonic() - timeout
+            logger.warning(
+                f"设备 {device_id} 的 {name} 超过 {timeout}s 未完成，但已过提交点，"
+                "继续等待完成（不取消）"
+            )
+            interval = max(float(timeout), 1.0)
+            while not done.wait(interval):
+                logger.warning(
+                    f"设备 {device_id} 的 {name} 已过提交点，仍在执行，"
+                    f"已等待 {time.monotonic() - started:.0f}s"
+                )
+            logger.info(
+                f"设备 {device_id} 的 {name} 越过超时后完成，共 {time.monotonic() - started:.1f}s"
+            )
+        else:
+            with contextlib.suppress(Exception):
+                task.cancel()
+            logger.error(f"设备 {device_id} 的 {name} 执行超时（{timeout}s），已取消")
+            raise TimeoutError(f"设备协程执行超时({timeout}s)")
     return task.result()
 
 
@@ -182,6 +267,7 @@ def schedule_async_func(
 
 
 __all__ = [
+    "CommitPoint",
     "DeviceAsyncMutex",
     "run_blocking",
     "run_node_coroutine",

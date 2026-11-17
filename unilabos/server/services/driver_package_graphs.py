@@ -57,12 +57,14 @@ def _distribution_json_files(dist_name: str) -> List[Path]:
     return found
 
 
-def _source_json_files(package_dirs: List[str]) -> List[Path]:
-    """源码 / editable 安装：包目录的上一级就是仓库根，图在 ``graph/`` 等子目录。"""
+def _source_json_files(package_dirs: List[str], package_root: str = "") -> List[Path]:
+    """优先使用登记的源码根，兼容 src 布局；旧台账才由包目录推断根。"""
 
     found: List[Path] = []
-    for item in package_dirs:
-        root = Path(item).resolve().parent
+    roots = [Path(package_root).resolve()] if package_root else list(dict.fromkeys(
+        Path(item).resolve().parent for item in package_dirs
+    ))
+    for root in roots:
         for dirname in GRAPH_DIR_NAMES:
             directory = root / dirname
             if directory.is_dir():
@@ -110,14 +112,14 @@ def package_record(working_dir: str | Path, name: str) -> DriverPackageRecord:
 
 
 def list_bundled_graphs(working_dir: str | Path, name: str) -> List[Dict[str, Any]]:
-    """驱动包随包设备图；同名图以已安装分发的 data-files 为准。"""
+    """源码登记的包只使用该源码根的图；无源码身份的旧台账兼容分发文件。"""
 
     record = package_record(working_dir, name)
     entries: Dict[str, Dict[str, Any]] = {}
-    for source, paths in (
-        ("dist", _distribution_json_files(record.name)),
-        ("source", _source_json_files(record.package_dirs)),
-    ):
+    sources = [("source", _source_json_files(record.package_dirs, record.package_root))]
+    if not record.package_root and not record.source_kind:
+        sources.insert(0, ("dist", _distribution_json_files(record.name)))
+    for source, paths in sources:
         for path in paths:
             graph_name = path.stem
             if graph_name in entries:

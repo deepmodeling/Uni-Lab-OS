@@ -7,7 +7,9 @@ description: Guide for adding new devices to Uni-Lab-OS (接入新设备). Uses 
 
 本 Skill 是自包含的设备接入指南，不依赖外部文档。迁移给别人时，只复制 `.cursor/skills/add-device/SKILL.md` 即可获得核心规则、模板、验证方式和常见错误清单。
 
-开始实现前，仍应搜索 `unilabos/devices/` 获取同类别已有设备的接口、参数名、状态字符串和返回值风格作为参考。
+厂商设备驱动不在主仓库里：新设备写进独立的外部驱动包（用 `create-device-package` skill 基于 LabDeviceTemplate 创建，`unilab package install` 安装，开发时 `--devices <包目录>` 挂载）。主仓库 `unilabos/devices/` 只保留框架内置代码（`virtual/` 虚拟设备、`workstation/workstation_base.py`、`liquid_handling/liquid_handler_abstract.py` 等），不要往里加驱动。
+
+开始实现前，仍应参考同类别已有设备（`unilabos/devices/virtual/` 的虚拟设备、已安装的驱动包）的接口、参数名、状态字符串和返回值风格。
 
 ---
 
@@ -20,8 +22,8 @@ description: Guide for adding new devices to Uni-Lab-OS (接入新设备). Uses 
 - [ ] 1. 确定设备类别（物模型）和对外单位
 - [ ] 2. 确定通信协议
 - [ ] 3. 收集指令协议（SDK、厂商文档、寄存器表、HTTP API、用户口述）
-- [ ] 4. 对齐同类设备接口（搜索 unilabos/devices/）
-- [ ] 5. 创建驱动 unilabos/devices/<category>/<file>.py
+- [ ] 4. 对齐同类设备接口（虚拟设备 unilabos/devices/virtual/、已有驱动包）
+- [ ] 5. 在驱动包中创建驱动 <package_name>/<file>.py
 - [ ] 6. 验证可导入、注册表扫描、启动测试
 - [ ] 7. 如需要，配置实验图文件
 ```
@@ -80,7 +82,7 @@ description: Guide for adding new devices to Uni-Lab-OS (接入新设备). Uses 
 
 ## 对齐已有实现（强制）
 
-实现前必须搜索 `unilabos/devices/` 中同类别设备：
+实现前必须查找同类别设备（`unilabos/devices/virtual/` 的虚拟设备、已安装驱动包中的设备）：
 
 - 参数名必须与已有设备保持一致；动作方法参数名是接口契约，不要随意改成 `volume_ml`、`target_temp_c` 这类新名字。
 - `status` 字符串值要和同类设备一致，优先使用英文稳定值，例如 `Idle`、`Running`、`Error`。
@@ -412,7 +414,7 @@ class MyDevice:
 - `__init__` 保留 `device_id` 和 `**kwargs` 兼容运行时注入，但不要把 `**kwargs` 当成主要配置入口
 - `post_init` 用 `@not_action` 标记，参数类型标注为 `BaseROS2DeviceNode`
 - 运行时状态存储在 `self.data` 字典中
-- 设备文件放在 `unilabos/devices/<category>/` 目录下
+- 设备文件放在外部驱动包的 `<package_name>/` 目录下，不放进主仓库 `unilabos/devices/`
 
 ---
 
@@ -489,13 +491,13 @@ class MyDevice:
 
 ```bash
 # 1. 模块可导入
-python -c "from unilabos.devices.<category>.<file> import <ClassName>"
+python -c "from <package_name>.<file> import <ClassName>"
 
-# 2. 启动测试
-unilab -g <graph>.json
+# 2. 启动测试（挂载驱动包）
+unilab -g <graph>.json --devices <包目录>
 
-# 3. 仅检查注册表
-unilab --check_mode --skip_env_check
+# 3. 仅检查驱动包注册表
+unilab --check_mode --skip_env_check --devices <包目录> --external_devices_only
 ```
 
 仅在旧代码无 `@device`、需要覆盖特殊字段、或做 `--complete_registry` 旧设备补全时，才考虑 YAML。新设备默认不要手写 YAML。

@@ -9,8 +9,8 @@ Edge 只通过这里的会话对象接触 Backend。Backend（微后端 + 调度
 - **控制面**：同地址同端口的 runtime.v1 控制 WebSocket（``/api/v1/ws/schedule``：命令通知、
   心跳、ping / pong）。
 
-地址只有一条规则：``--address`` 给了用给的，没给就是本机自己的 Backend 端口
-（``HTTPConfig.backend_port``）。``describe_links()`` 把两条链路描述成可探测对象（目标、
+地址只有一条规则：``--address`` 给了用给的，没给就是本机调度权威的管理端口
+（``BasicConfig.port``，默认权威与 ``--role backend`` 共用，默认 8002）。``describe_links()`` 把两条链路描述成可探测对象（目标、
 可用性、ping），调用方（如 host_node 的 test_latency）不自己判断拓扑；ping / pong 的簿记
 也收在会话里。
 """
@@ -181,11 +181,11 @@ class BaseBackendClient(ABC):
 
     @staticmethod
     def default_backend_url() -> str:
-        """未显式配置时的 Backend 地址：本机自己的 Backend 端口。"""
+        """未显式配置时的 Backend 地址：本机调度权威的管理端口（``BasicConfig.port``）。"""
 
-        from unilabos.config.config import HTTPConfig
+        from unilabos.config.config import BasicConfig
 
-        port = int(getattr(HTTPConfig, "backend_port", 8081) or 8081)
+        port = int(getattr(BasicConfig, "port", 8002) or 8002)
         return f"http://127.0.0.1:{port}"
 
     @classmethod
@@ -227,8 +227,10 @@ class BaseBackendClient(ABC):
         base = self.http_base_url()
         url = f"{base}/api/v1/ping?client_timestamp={time.time()!r}"
         try:
+            from unilabos.client.utils.envelope import unwrap_envelope
+
             with urllib.request.urlopen(url, timeout=timeout_s) as response:  # noqa: S310 - 目标是配置的 Backend
-                payload = json.loads(response.read().decode("utf-8"))
+                payload = unwrap_envelope(json.loads(response.read().decode("utf-8")))
             return float(payload["server_timestamp"])
         except Exception as exc:  # noqa: BLE001 - 诊断失败不能影响主流程
             logger.debug("[BackendSession] HTTP ping 失败 %s: %s", url, exc)

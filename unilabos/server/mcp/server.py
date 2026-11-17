@@ -147,7 +147,7 @@ class ProtocolMCP:
                         "truncated": True, "characters": len(encoded), "expires_in_seconds": self.CACHE_TTL,
                         "preview": encoded[:1200],
                         "outline": self.outline(value),
-                        "next": "protocol_result_read，按 outline 选择 pointer（如 /body/0/device_routes），limit 最大 50"}, error=error)
+                        "next": "protocol_result_read，按 outline 选择 pointer（如 /body/data/0/device_routes），limit 最大 50"}, error=error)
 
     @classmethod
     def outline(cls, value: Any, depth: int = 3) -> Any:
@@ -216,10 +216,7 @@ class ProtocolMCP:
     async def request(self, operation: Operation, arguments: dict) -> tuple[dict, bool]:
         path = self._path(operation, arguments)
         query = {key: value for key, value in arguments.get("query", {}).items() if value is not None}
-        from unilabos.config.control_token import client_headers
-
-        # 进程内 ASGI 调用同样经过写操作的 token 检查：MCP 端点本身只接受本机、拒绝浏览器 Origin
-        kwargs: dict[str, Any] = {"params": query, "headers": {"accept": "application/json", **client_headers()}}
+        kwargs: dict[str, Any] = {"params": query, "headers": {"accept": "application/json"}}
         if "body" in arguments:
             kwargs["json"] = normalize_body(operation, arguments["body"])
         # ASGI 调用仍经过应用中间件、原来的参数验证、路由与调度/物料服务。
@@ -260,7 +257,7 @@ class ProtocolMCP:
             decisions, failed = await self.request(self.operations["decisions_error_decisions_list"], {})
             if not failed:
                 data = decisions["body"].get("data", decisions["body"])
-                pending = [item for item in data.get("items", []) if item.get("task_id") == task_uuid]
+                pending = [item for item in data.get("decisions", []) if item.get("task_id") == task_uuid]
                 if pending:
                     return self.pack({**response, "reason": "decision_required", "decisions": pending})
             confirmations, failed = await self.request(

@@ -10,7 +10,11 @@ from __future__ import annotations
 import uuid as uuid_module
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from unilabos.resources.objects.site import SiteDefinition, normalize_available_sites
+from unilabos.resources.objects.site import (
+    SiteDefinition,
+    normalize_available_sites,
+    site_definition_extra,
+)
 
 #: 画布网格布局：每行节点数与间距（毫米级坐标语义与 demo 图一致）。
 _GRID_COLUMNS = 4
@@ -44,7 +48,7 @@ def _site_snapshot(
         "parent_link": dumped["parent_link"],
         "description": dumped["description"],
         "meta_data": dumped["meta_data"],
-        "extra": {},
+        "extra": site_definition_extra(dumped),
     }
 
 

@@ -10,14 +10,17 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
 - 派生的 ``children`` id 列表；
 - PLR 平铺 Site 用占用物料 **name** 的 ``occupied_by`` 表达占用；
 - 旧 PLR ``serialize_state`` 液体字段（``liquid_history`` 名字列表、``["", null]``
-  空液体、``{"liquid_type", "liquid_volume"}`` 对象、``pending_liquids``）；
+  空液体、``{"liquid_type", "liquid_volume"}`` 对象、``pending_liquids``），以及 dev
+  时代容器的 ``data.liquid=[{"liquid_type", "liquid_volume"}]``；
 - 边只有 ``source_uuid`` / ``target_uuid`` 与下划线 ``source_handle`` /
-  ``target_handle``，顶层键叫 ``edges``。
+  ``target_handle``，顶层键叫 ``edges``；
+- 物料 ``name`` 是人读标签而不是 uuid（当前契约里 ``name`` 等于 uuid，标签在
+  ``display_name``，PLR 键在 ``config.name``）。
 
 这些形状只在**接收旧数据的边界**被识别并一次性转换：``-g`` 启动文件与
 ``unilab graph upload`` 的读取入口（:func:`upgrade_legacy_graph_payload`）、旧后端
-物料通知的拉取（:func:`normalize_legacy_material_nodes`）。graphio、Graph
-Authority、物料权威只接受当前契约，不认识这里列出的任何旧字段；剥离旧后端支持
+物料通知的拉取（:func:`normalize_legacy_material_nodes`）。Graph Authority
+（含其 ``load_graph_payload`` 运行时装配）、物料权威只接受当前契约，不认识这里列出的任何旧字段；剥离旧后端支持
 时删除本模块及其调用点即可。
 """
 
@@ -26,6 +29,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
+from unilabos.resources.objects.naming import legacy_label, migrated_name_fields
 from unilabos.utils.log import get_comm_logger
 
 logger = get_comm_logger()
@@ -60,6 +64,24 @@ def _is_legacy_liquid_entry(entry: Any) -> bool:
     return amount is None or (isinstance(name, str) and not name.strip())
 
 
+def _has_dev_era_liquid(node: Mapping[str, Any]) -> bool:
+    """节点是否只有 dev 时代的 ``data.liquid`` 内容物、还没有当前契约的内容物字段。"""
+
+    data = node.get("data")
+    if not isinstance(data, Mapping):
+        return False
+    entries = data.get("liquid")
+    if not isinstance(entries, list) or not any(
+        isinstance(entry, Mapping) and "liquid_type" in entry for entry in entries
+    ):
+        return False
+    return not any(
+        scope.get(key) is not None
+        for scope in (node, data)
+        for key in ("liquids", "substances")
+    )
+
+
 def _normalize_legacy_tracker_state(node: Dict[str, Any], label: Any) -> None:
     """旧 PLR ``serialize_state`` 输出的液体字段 → 当前 tracker 根字段形状。
 
@@ -67,13 +89,19 @@ def _normalize_legacy_tracker_state(node: Dict[str, Any], label: Any) -> None:
       ``(name, delta, unit)`` 三元组——旧值无法还原增量，直接丢弃；
     - ``liquids`` / ``substances``：``["", null]`` 表示空容器，过滤掉空名/空量
       条目；二元组补默认单位 ``ul``；
-    - ``pending_liquids``：旧 tracker 的暂存字段，当前模型无对应语义，丢弃。
+    - ``pending_liquids``：旧 tracker 的暂存字段，当前模型无对应语义，丢弃；
+    - ``data.liquid``：dev 时代容器的 ``[{"liquid_type", "liquid_volume"}]``。节点还没有
+      当前契约的内容物（``liquids`` / ``substances``）时转成 ``data.liquids``（随后按上面
+      的规则清洗、补单位，再由 ``ResourceDict`` 提升为 ``substances``）。``data.liquid``
+      本身原样保留：内置协议编译器仍从物理拓扑图的节点 data 读取它。
     """
 
     data = node.get("data")
     if not isinstance(data, dict):
         return
     data.pop("pending_liquids", None)
+    if _has_dev_era_liquid(node):
+        data["liquids"] = copy.deepcopy(data["liquid"])
     for scope in (node, data):
         history = scope.get("liquid_history")
         if isinstance(history, list) and any(
@@ -198,6 +226,30 @@ def legacy_graph_children_index(
     return index
 
 
+def _migrate_legacy_name(node: Dict[str, Any]) -> None:
+    """非 UUID 的旧 name 迁到 ``display_name``（为空时）与 PLR 键 ``config.name``（缺失时，
+    设备除外），然后删掉 name，由 Graph Authority 发号后写成 uuid。
+
+    UUID 形式的 name 原样保留：它就是身份，由 Graph Authority 复用（与节点 uuid 不一致时拒绝）。
+    """
+
+    label = legacy_label(node.get("name"))
+    if not label:
+        return
+    raw_config = node.get("config")
+    config = raw_config if isinstance(raw_config, dict) else {}
+    display_name, migrated = migrated_name_fields(
+        name=label,
+        display_name=node.get("display_name"),
+        config=config,
+        resource_type=node.get("type") or "device",
+    )
+    if migrated != config:
+        node["config"] = migrated
+    node["display_name"] = display_name
+    node.pop("name")
+
+
 def normalize_legacy_graph_node(
     node: Dict[str, Any],
     *,
@@ -211,7 +263,9 @@ def normalize_legacy_graph_node(
     - ``pose.position_3d`` → ``pose.position3d``；
     - 旧 PLR 液体字段 → 当前 tracker 根字段形状；
     - 平铺 Site 的 ``occupied_by`` → ``occupied_material_uuid``
-      （需传 ``children_by_parent``，见 :func:`legacy_graph_children_index`）。
+      （需传 ``children_by_parent``，见 :func:`legacy_graph_children_index`）；
+    - 非 UUID 的 name 迁到 ``display_name`` 与 PLR 键 ``config.name``（见
+      :func:`_migrate_legacy_name`）。
 
     绝不覆盖已有的新字段；对已是当前契约的节点是恒等变换。
     """
@@ -225,6 +279,7 @@ def normalize_legacy_graph_node(
     label = node.get("id", node.get("name"))
     _normalize_legacy_tracker_state(node, label)
     _normalize_legacy_sites(node, children_by_parent)
+    _migrate_legacy_name(node)
 
     root_position = node.pop("position", None)
     raw_pose = node.get("pose")
@@ -335,6 +390,8 @@ def legacy_graph_markers(payload: Mapping[str, Any]) -> Dict[str, int]:
             continue
         if node.get("class") and not str(node.get("template_name") or "").strip():
             hit("class 无 template_name")
+        if legacy_label(node.get("name")):
+            hit("name 不是 uuid")
         if "position" in node:
             hit("根级 position")
         # children 是派生字段，读取时本就丢弃；空列表不携带任何旧格式信息，
@@ -352,7 +409,9 @@ def legacy_graph_markers(payload: Mapping[str, Any]) -> Dict[str, int]:
             hit("Site occupied_by")
         data = node.get("data")
         scopes = [node, data] if isinstance(data, Mapping) else [node]
-        if isinstance(data, Mapping) and "pending_liquids" in data:
+        if isinstance(data, Mapping) and (
+            "pending_liquids" in data or _has_dev_era_liquid(node)
+        ):
             hit("旧液体字段")
         elif any(
             (

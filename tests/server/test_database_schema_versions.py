@@ -1,4 +1,7 @@
-"""各库结构指纹与 schema_version 绑定：改了 DDL / contract_version 就必须提升版本并写迁移。"""
+"""各库结构指纹与 schema_version 绑定：改了 DDL / contract_version 就必须提升版本并写迁移。
+
+0.13 发布线上四个库都以 v1 为基线（没有迁移）；发布前的结构变化直接并进 v1，发布后从 v2 起追加迁移。
+"""
 
 from __future__ import annotations
 
@@ -9,8 +12,8 @@ from unilabos.server.database import DATABASE_SPECS
 #: (schema_version, checksum)。DDL 或 contract_version 变化会改变 checksum：
 #: 把对应库的 schema_version +1，在其 migrations 里补上迁移，再更新这里。
 PINNED = {
-    "runtime": (4, "4157bc5364ff208e4be30c37a75b7b46987877e75a4d4c39c4c36eb42e09ed91"),
-    "materials": (4, "680f6597d0556e21db40cace4ddb772dc67335602250fd7db39df77b1950ebb0"),
+    "runtime": (1, "188e6daf8617eb453afb4686babedd63d62717fbd6a7f04271f9b11ac158fd6f"),
+    "materials": (1, "d4d087e28ca32d98ba7c8248da5f57b24523f1b7abd8682024ad3752e0450969"),
     "telemetry": (1, "a0e00118c131bbae1e4a693563977d7ffff49c17c482ebad0e5ad2b224b548af"),
     "history": (1, "5005469f86db3fe747ab1f30ea32d0c0c8f2f2779202a81bedb8d8254217f4cc"),
 }
@@ -32,8 +35,8 @@ def test_schema_changes_come_with_a_version_bump(key: str) -> None:
     assert (spec.schema_version, spec.checksum) == PINNED[key], f"{key} 已升级：请同步更新 PINNED"
 
 
-def test_development_policy_rebuilds_without_migration() -> None:
-    """开发期数据可丢：四个库都备份后重建。正式发布前把 runtime / materials 改为 refuse 并更新这里。"""
+def test_release_policy_refuses_runtime_and_materials_without_migration() -> None:
+    """工作流 / 注册表与物料是实验室的事实，没有迁移路径时拒绝启动；遥测与历史可丢，备份后重建。"""
     assert {key: spec.on_unmigratable for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": "rebuild", "materials": "rebuild", "telemetry": "rebuild", "history": "rebuild",
+        "runtime": "refuse", "materials": "refuse", "telemetry": "rebuild", "history": "rebuild",
     }

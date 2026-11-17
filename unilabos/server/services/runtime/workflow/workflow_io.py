@@ -286,7 +286,7 @@ def _output_contract(raw: Any) -> dict[str, Any]:
 
 def _descriptor(raw: Any, *, output: bool, path: str) -> dict[str, Any]:
     descriptor = _mapping(raw, path)
-    allowed = {"name", "schema", "title", "description"}
+    allowed = {"name", "schema", "title", "description", "unit"}
     allowed |= {"implicit"} if output else {"required", "default"}
     if set(descriptor) - allowed:
         raise WorkflowIOValidationError("workflow_io_invalid", path)
@@ -298,7 +298,7 @@ def _descriptor(raw: Any, *, output: bool, path: str) -> dict[str, Any]:
     except WorkflowValueSchemaError as error:
         raise WorkflowIOValidationError(error.code, error.path) from error
     result: dict[str, Any] = {"name": name, "schema": schema}
-    for field in ("title", "description"):
+    for field in ("title", "description", "unit"):
         value = descriptor.get(field)
         if value is not None:
             if not isinstance(value, str):

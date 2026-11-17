@@ -9,6 +9,7 @@ from pathlib import Path
 import platform
 import subprocess
 import sys
+import sysconfig
 import venv
 
 
@@ -38,8 +39,9 @@ def verify_bundle(bundle: Path) -> dict:
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("schema_version") != 1 or manifest.get("kind") != "offline-wheelhouse":
         raise RuntimeError("不是完整的 wheel 发行包；不能用依赖构建目录代替")
-    if manifest["python"] != "3.12" or sys.version_info[:2] != (3, 12):
-        raise RuntimeError("请使用 Python 3.12 执行安装入口")
+    if (manifest["python"] != "3.14" or sys.version_info[:2] != (3, 14)
+            or sysconfig.get_config_var("Py_GIL_DISABLED")):
+        raise RuntimeError("请使用普通 CPython 3.14（cp314，非 cp314t）执行安装入口")
     if manifest["platform"] != platform_id():
         raise RuntimeError(f"平台不匹配：此包用于 {manifest['platform']}，当前为 {platform_id()}")
     files = manifest["files"]

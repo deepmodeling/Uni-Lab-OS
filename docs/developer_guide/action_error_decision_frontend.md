@@ -149,7 +149,7 @@ option 列表。
 | 到期动作 | 协作式取消动作（`cancel_goal`；HostLink 本地运行时同时以 `asyncio.wait_for` 真正取消协程动作） | **不取消**，动作继续执行 |
 | 报告 | `exception_type=TimeoutException`，`category=timeout`，`severity=error`，`timeout_kind=timeout` | `exception_type=ExecutionTimeoutException`，`severity=warning`，`timeout_kind=execution_timeout`，`action_still_running=true` |
 | 选项 | 与普通失败相同（`error_policy` 按异常类名匹配；缺省 `retry` / `abort` / `operator_intervention`） | 额外前置一个 `wait`（继续等待，按同样秒数重新计时）；其余选项先取消动作再按失败放行 |
-| 设备迟到的结果 | 忽略（终态已由闸门决定） | 优先于待决策：决策被自动收回（`selected_action=superseded`），真实结果照常放行 |
+| 设备迟到的结果 | 不改变已结算的 attempt，记入 `control_data.late_outcome`，并释放该 attempt 仍持有的锁（见下文） | 优先于待决策：决策被自动收回（`selected_action=superseded`），真实结果照常放行 |
 
 `wait` 的收回在两种拓扑下都成立：本机调度时调度器把 attempt 与节点运行从
 `intervention_required` 收回 `running`（`control_data.resumed_decisions` 留痕）；Backend-controlled
@@ -159,3 +159,20 @@ option 列表。
 
 节点运行的 `error_info` 对超时失败记 `code=action_timeout`（附 `exception_type`、`message`、
 `timeout_seconds`），普通失败仍为 `action_failed`。
+
+### 超时后锁不放（ADR 0008）
+
+硬超时（以及软超时决策选了终态选项而动作仍在执行）结算 attempt 时，驱动线程可能还在跑。此时：
+
+- attempt 照常结算，工作流按所选决策继续；attempt 的 `control_data.timeout_hold` 记录
+  `{kind, timeout_seconds, timed_out_at, state: "held"}`，执行 Claim 为 `timed_out`。
+- 它的设备 / 物料锁、资源区间与设备托管都不释放。需要这些锁的后续作业（含该节点的重试）在
+  `GET /api/v1/scheduler/resources` 中为 `waiting`，`blockers` 是超时的 attempt；前端应提示
+  "等待超时动作的驱动返回"，而不是报错。
+- 驱动真实返回：`control_data.late_outcome` 记录真实结果（不改状态 / 结果），`timeout_hold.state`
+  变为 `released`，锁释放，等待的作业继续。
+- 设备确实已停止而驱动迟迟不返回：`GET /api/v1/workflow-tasks/{uuid}/execution-locks` 中该租约
+  `state=timed_out`、`can_release=true`，提交 `force-release`（`physical_settlement_confirmed=true`、
+  `expected_claim_uuid`、`expected_fencing_token`、`reason`）；任务不必已结束。`timeout_hold.state`
+  变为 `force_released`。
+- 决策等待期间取消任务：attempt 立即按取消结算，锁同样继续持有。

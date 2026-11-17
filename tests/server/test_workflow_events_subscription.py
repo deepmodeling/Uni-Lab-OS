@@ -16,6 +16,16 @@ from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.runtime.workflow.store import WorkflowStore
 
 NOW = "2026-11-04T00:00:00Z"
+#: 库里记 dev 的 workflow.task.changed，SSE 按 V1 合同发 workflow.runtime.changed + data.kind
+RUNTIME_EVENT = "workflow.runtime.changed"
+
+
+def _frame(text: str, sequence: int) -> dict:
+    """取出序号为 ``sequence`` 的事件帧，返回 ``{"event", "data"}``。"""
+
+    frame = next(item for item in text.split("\n\n") if item.startswith(f"id: {sequence}\nevent:"))
+    lines = dict(line.split(": ", 1) for line in frame.split("\n"))
+    return {"event": lines["event"], "data": json.loads(lines["data"])}
 
 
 def _append(service: WorkflowService, count: int) -> None:
@@ -76,12 +86,15 @@ def test_fresh_connection_starts_at_watermark_without_replaying_history(service)
 
     text = asyncio.run(_read(app, [], [
         (lambda body: "id: 3\n\n" in body, lambda: _append(service, 1)),
-        (lambda body: "id: 4\nevent: workflow.task.changed" in body, None),
+        (lambda body: f"id: 4\nevent: {RUNTIME_EVENT}" in body, None),
     ]))
 
     assert text.startswith("retry: 3000")
     for old in (1, 2, 3):
         assert f"id: {old}\nevent:" not in text
+    # dev 细粒度事件名不再出现在流里；种类与原载荷都在 data 里
+    assert "workflow.task.changed" not in text
+    assert _frame(text, 4) == {"event": RUNTIME_EVENT, "data": {"workflow_task_uuid": "t0", "kind": "task"}}
 
 
 def test_empty_database_watermark_is_zero(service) -> None:
@@ -96,7 +109,10 @@ def test_explicit_zero_replays_retained_history(service) -> None:
     text = asyncio.run(_read(app, [(b"last-event-id", b"0")], [
         (lambda body: "id: 3\nevent:" in body, None),
     ]))
-    assert "id: 1\nevent: workflow.task.changed" in text
+    assert f"id: 1\nevent: {RUNTIME_EVENT}" in text
+    assert [_frame(text, sequence)["data"] for sequence in (1, 2, 3)] == [
+        {"workflow_task_uuid": f"t{index}", "kind": "task"} for index in range(3)
+    ]
     assert "id: 0\n\n" not in text  # 显式游标不发水位帧
 
 
@@ -105,7 +121,7 @@ def test_cursor_ahead_resets_to_latest_and_keeps_streaming(service) -> None:
     app = create_workflow_app(service)
     text = asyncio.run(_read(app, [(b"last-event-id", b"99")], [
         (lambda body: "event: stream.reset" in body, lambda: _append(service, 1)),
-        (lambda body: "id: 4\nevent: workflow.task.changed" in body, None),
+        (lambda body: f"id: 4\nevent: {RUNTIME_EVENT}" in body, None),
     ]))
     reset = next(frame for frame in text.split("\n\n") if "event: stream.reset" in frame)
     assert reset.startswith("id: 3\n")
@@ -131,7 +147,7 @@ def test_cursor_behind_retention_window_resets_as_expired(service) -> None:
     app = create_workflow_app(service)
     text = asyncio.run(_read(app, [(b"last-event-id", b"1")], [
         (lambda body: "event: stream.reset" in body, lambda: _append(service, 1)),
-        (lambda body: "id: 6\nevent: workflow.task.changed" in body, None),
+        (lambda body: f"id: 6\nevent: {RUNTIME_EVENT}" in body, None),
     ]))
     reset = next(frame for frame in text.split("\n\n") if "event: stream.reset" in frame)
     assert reset.startswith("id: 5\n")

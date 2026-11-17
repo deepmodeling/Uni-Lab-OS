@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from unilabos.backend.runtime.workstation_protocol import (
     WorkstationNodeTempError,
     expand_resource_value,
+    physical_setup_graph,
     protocol_model,
     setup_protocol_names,
     update_protocol_resources,
@@ -82,9 +83,7 @@ class WorkstationNode:
                 continue
             kwargs[field] = await expand_resource_value(host, kwargs[field])
 
-        from unilabos.resources.graphio import physical_setup_graph
-
-        protocol_steps = list(generator(G=physical_setup_graph, **kwargs))
+        protocol_steps = list(generator(G=physical_setup_graph(), **kwargs))
         log.info(f"[Workstation] {protocol_name} 生成 {len(protocol_steps)} 步骤，开始执行")
 
         time_start = time.time()

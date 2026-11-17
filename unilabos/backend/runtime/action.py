@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Protocol
 
 FeedbackCallback = Callable[[str, Dict[str, Any]], None]
+# (action_id, 返回值, 异常)：硬超时之后驱动线程才真实返回时回调（ADR 0008）
+LateResultCallback = Callable[[str, Any, Optional[BaseException]], None]
 
 
 class DeviceActionRouter(Protocol):
@@ -42,6 +44,7 @@ class ActionContext:
 
     action_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     feedback_callback: Optional[FeedbackCallback] = None
+    late_result_callback: Optional[LateResultCallback] = None
     _cancelled: threading.Event = field(
         default_factory=threading.Event,
         init=False,
@@ -51,6 +54,12 @@ class ActionContext:
     def publish_feedback(self, data: Optional[Dict[str, Any]] = None) -> None:
         if self.feedback_callback is not None:
             self.feedback_callback(self.action_id, dict(data or {}))
+
+    def publish_late_result(self, value: Any = None, error: Optional[BaseException] = None) -> None:
+        """动作已按硬超时报失败、驱动线程之后才返回：把真实结果交给调用方（无回调则丢弃）。"""
+
+        if self.late_result_callback is not None:
+            self.late_result_callback(self.action_id, value, error)
 
     def request_cancel(self) -> None:
         self._cancelled.set()
@@ -69,4 +78,5 @@ __all__ = [
     "ActionContext",
     "DeviceActionRouter",
     "FeedbackCallback",
+    "LateResultCallback",
 ]

@@ -9,8 +9,9 @@ from typing import Any
 from fastapi import FastAPI
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import TransportSecuritySettings
-from starlette.responses import JSONResponse
 from starlette.routing import Route
+
+from unilabos.server.api.envelope import OPERATION_NOT_ALLOWED, SERVICE_UNAVAILABLE, error_response
 
 from .server import ProtocolMCP
 
@@ -29,11 +30,14 @@ class _LocalEndpoint:
         # 浏览器不能借 CORS 向本机设备发 MCP 写请求；原有前端 HTTP 协议完全不变。
         has_origin = any(key.lower() == b"origin" for key, _ in scope.get("headers", []))
         if not local or has_origin:
-            await JSONResponse({"error": "MCP 仅允许本机非浏览器客户端"}, status_code=403)(scope, receive, send)
+            # 拒绝正文与管理 API 同为信封（403 → 1001），保留 HTTP 状态码
+            await error_response(
+                OPERATION_NOT_ALLOWED, "MCP 仅允许本机非浏览器客户端", http_status=403
+            )(scope, receive, send)
             return
         manager = getattr(self.app.state, "mcp_manager", None)
         if manager is None:
-            await JSONResponse({"error": "MCP 尚未就绪"}, status_code=503)(scope, receive, send)
+            await error_response(SERVICE_UNAVAILABLE, "MCP 尚未就绪", http_status=503)(scope, receive, send)
             return
         await manager.handle_request(scope, receive, send)
 

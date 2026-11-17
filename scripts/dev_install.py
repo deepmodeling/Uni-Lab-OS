@@ -24,15 +24,29 @@ _SUPPORTED_PROBE = ("import sys, sysconfig; print(sys.implementation.name == 'cp
                     "and sys.version_info[:2] == (3, 14) and not sysconfig.get_config_var('Py_GIL_DISABLED'))")
 
 
+def uv_install_hint() -> str:
+    """当前系统安装 uv 的建议命令（官方安装脚本优先，pip 兜底）。"""
+    if sys.platform == "win32":
+        official = 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+    else:
+        official = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+    return (
+        "建议先安装 uv（更快，并会自动准备 CPython 3.14）：\n"
+        f"    {official}\n"
+        f"    或：{Path(sys.executable).name} -m pip install uv\n"
+        "  装好后重新打开终端再运行本脚本，即默认使用 uv。详见 https://docs.astral.sh/uv/"
+    )
+
+
 def resolve_installer(requested: str) -> str:
-    """auto：有 uv 用 uv，否则明确提示后回退 pip；显式 uv 但未安装时报错。"""
+    """auto：有 uv 用 uv，否则给出 uv 的安装命令后回退 pip；显式 uv 但未安装时报错并给出安装命令。"""
     if requested == "pip":
         return "pip"
     if shutil.which("uv"):
         return "uv"
     if requested == "uv":
-        raise RuntimeError("未找到 uv；请先安装 uv（https://docs.astral.sh/uv/），或改用 --installer pip")
-    print("[INFO] 未找到 uv，改用 pip 安装（较慢）；安装 uv 后重新运行即默认使用 uv。")
+        raise RuntimeError("未找到 uv；或改用 --installer pip。" + uv_install_hint())
+    print("[INFO] 未找到 uv，改用 pip 安装（较慢，且需要已有 CPython 3.14）。" + uv_install_hint())
     return "pip"
 
 

@@ -638,7 +638,8 @@ virtual_gas_source:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              type: boolean
           required:
           - goal
           title: is_closed参数
@@ -660,7 +661,8 @@ virtual_gas_source:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              type: boolean
           required:
           - goal
           title: is_open参数
@@ -2246,7 +2248,7 @@ virtual_solenoid_valve:
           - goal
           title: toggle参数
           type: object
-        type: UniLabJsonCommand
+        type: UniLabJsonCommandAsync
       close:
         error_policy: {}
         feedback: {}
@@ -3446,7 +3448,8 @@ virtual_vacuum_pump:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              type: boolean
           required:
           - goal
           title: is_closed参数
@@ -3468,7 +3471,8 @@ virtual_vacuum_pump:
               properties: {}
               required: []
               type: object
-            result: {}
+            result:
+              type: boolean
           required:
           - goal
           title: is_open参数

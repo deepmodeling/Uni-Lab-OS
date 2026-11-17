@@ -5,7 +5,6 @@
 
 import logging
 import time
-import types
 import uuid
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
@@ -31,6 +30,7 @@ class ResourceSummary(TypedDict):
     """回显资源的人类可读摘要。"""
 
     index: int
+    uuid: str
     name: str
     class_name: str
     liquids: List[Dict[str, Any]]
@@ -68,6 +68,7 @@ class TestResourceActionReturn(TypedDict):
     display_name="测试动作设备",
     category=["virtual"],
     description="用于测试动作调用、资源参数、设备参数、返回值和 workflow handle 链路的虚拟设备",
+    supported_backends=["hostlink", "ros2"],
 )
 class TestActionDevice:
     """集中放置测试用动作的虚拟设备。"""
@@ -105,43 +106,30 @@ class TestActionDevice:
         """设备当前状态。"""
         return self.data.get("status", "Idle")
 
-    def _get_resource_state(self, resource: ResourceSlot) -> Dict[str, Any]:
-        """读取资源 state，失败时返回空字典。"""
-        try:
-            state = resource.serialize_state()
-            return dict(state) if isinstance(state, dict) else {}
-        except Exception as exc:
-            self.logger.warning(f"读取资源状态失败: {resource!r}, error={exc}")
-            return {}
-
-    def _set_resource_state(self, resource: ResourceSlot, state: Dict[str, Any]) -> None:
-        """在当前资源实例上覆盖 serialize_state，用于测试动作输出更新后的资源树。"""
-        resource.unilabos_test_state = dict(state)
-
-        def serialize_state(current_resource):
-            return dict(getattr(current_resource, "unilabos_test_state", {}))
-
-        resource.serialize_state = types.MethodType(serialize_state, resource)
-
     def _get_liquids(self, resource: ResourceSlot) -> List[Dict[str, Any]]:
-        """从资源 state 中提取液体列表，兼容 liquid 和 liquid_type/liquid_volume 两种格式。"""
-        state = self._get_resource_state(resource)
-        liquids = state.get("liquid")
-        if isinstance(liquids, list):
-            return [item for item in liquids if isinstance(item, dict)]
+        """读取资源当前的内容物（PLR 体积跟踪器，物料权威的 substances 即由它装配）。
 
-        liquid_types = state.get("liquid_type", [])
-        liquid_volumes = state.get("liquid_volume", [])
-        if not isinstance(liquid_types, list):
-            liquid_types = [liquid_types]
-        if not isinstance(liquid_volumes, list):
-            liquid_volumes = [liquid_volumes]
+        不是容器（没有体积跟踪器）的资源没有内容物。
+        """
+        tracker = getattr(resource, "tracker", None)
+        if tracker is None:
+            return []
+        return [
+            {"name": str(name or ""), "volume": float(amount), "unit": str(unit)}
+            for name, amount, unit in tracker.get_liquids()
+        ]
 
-        normalized = []
-        for index, liquid_type in enumerate(liquid_types):
-            volume = liquid_volumes[index] if index < len(liquid_volumes) else 0.0
-            normalized.append({"name": str(liquid_type), "volume": float(volume)})
-        return normalized
+    def _write_liquid(self, resource: ResourceSlot, liquid_name: str, volume: float, mode: str) -> bool:
+        """经 PLR 体积跟踪器写入液体；输出资源树的 substances 随之更新。"""
+        tracker = getattr(resource, "tracker", None)
+        if tracker is None:
+            self.logger.warning(f"资源 {resource!r} 没有体积跟踪器，无法写入液体")
+            return False
+        if mode == "append":
+            tracker.add_liquid(liquid_name, float(volume))
+        else:
+            tracker.set_liquids([(liquid_name, float(volume), "ul")])
+        return True
 
     def _get_total_volume(self, resource: ResourceSlot) -> float:
         """统计资源中的液体总体积。"""
@@ -169,6 +157,8 @@ class TestActionDevice:
         liquids = self._get_liquids(resource)
         return {
             "index": index,
+            # 物料身份是 uuid；PLR 资源的 name 是 PLR 键（不是物料 name，也不一定是展示标签）
+            "uuid": str(getattr(resource, "unilabos_uuid", "") or ""),
             "name": str(getattr(resource, "name", "")),
             "class_name": resource.__class__.__name__,
             "liquids": liquids,
@@ -262,20 +252,15 @@ class TestActionDevice:
             self.data["last_message"] = "测试失败：未传入资源"
             raise ValueError("fail_when_empty=True，但 resources 为空")
 
-        liquid = {"name": liquid_name, "volume": float(volume), "concentration": float(concentration)}
-        for resource in selected_resources:
-            state = self._get_resource_state(resource)
-            current_liquids = self._get_liquids(resource)
-            next_liquids = current_liquids + [liquid] if mode == "append" else [liquid]
-            state["liquid"] = next_liquids
-            state["liquid_type"] = [item.get("name", "") for item in next_liquids]
-            state["liquid_volume"] = [float(item.get("volume", 0.0)) for item in next_liquids]
-            self._set_resource_state(resource, state)
+        written = [
+            self._write_liquid(resource, liquid_name, volume, mode)
+            for resource in selected_resources
+        ]
 
         checks = {
             "action_invoked": True,
             "resource_slot_received": resource_count > 0,
-            "liquid_written": all(self._get_liquids(resource) for resource in selected_resources),
+            "liquid_written": all(written),
             "handle_output_ready": True,
         }
 
@@ -289,7 +274,7 @@ class TestActionDevice:
             self._report_item(
                 "liquid_written",
                 checks["liquid_written"],
-                f"以 {mode} 模式写入液体 {liquid_name}, volume={volume}",
+                f"以 {mode} 模式写入液体 {liquid_name}, volume={volume}, concentration={concentration}",
             ),
             self._report_item("handle_output_ready", True, "已生成可供下游 handle 使用的输出资源"),
         ]

@@ -20,7 +20,8 @@ class VirtualSolidDispenser:
     
     def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
         self.device_id = device_id or "virtual_solid_dispenser"
-        self.config = config or {}
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        self.config = {**kwargs, **(config or {})}
         
         # 设备参数
         self.max_capacity = float(self.config.get('max_capacity', 100.0))  # 最大加样量 (g)

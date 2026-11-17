@@ -31,16 +31,12 @@ class VirtualTransferPump:
         """
         self.device_id = device_id or "virtual_transfer_pump"
 
-        # 从config或kwargs中获取参数，确保类型正确
-        if config:
-            self.max_volume = float(config.get("max_volume", 25.0))
-            self.port = config.get("port", "VIRTUAL")
-        else:
-            self.max_volume = float(kwargs.get("max_volume", 25.0))
-            self.port = kwargs.get("port", "VIRTUAL")
-
-        self._transfer_rate = float(kwargs.get("transfer_rate", 0))
-        self.mode = kwargs.get("mode", VirtualPumpMode.Normal)
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        settings = {**kwargs, **(config or {})}
+        self.max_volume = float(settings.get("max_volume", 25.0))
+        self.port = settings.get("port", "VIRTUAL")
+        self._transfer_rate = float(settings.get("transfer_rate", 0))
+        self.mode = settings.get("mode", VirtualPumpMode.Normal)
 
         # 状态变量 - 确保都是正确类型
         self._status = "Idle"

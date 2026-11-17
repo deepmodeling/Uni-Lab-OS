@@ -175,7 +175,7 @@ VIRTUAL_WORKBENCH_AVAILABLE_SITES: List[SiteDefinition] = [
     category=["virtual_device"],
     description="Virtual Workbench with 1 robotic arm and 3 heating stations for concurrent material processing",
     available_sites=VIRTUAL_WORKBENCH_AVAILABLE_SITES,
-    supported_backends=["ros2"],
+    supported_backends=["hostlink", "ros2"],
 )
 class VirtualWorkbench:
     """
@@ -219,7 +219,8 @@ class VirtualWorkbench:
             config = kwargs.pop("config")
 
         self.device_id = device_id or "virtual_workbench"
-        self.config = config or {}
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        self.config = {**kwargs, **(config or {})}
 
         self.logger = logging.getLogger(f"VirtualWorkbench.{self.device_id}")
         self.data: Dict[str, Any] = {}
@@ -345,6 +346,22 @@ class VirtualWorkbench:
         )
         if message:
             self.data["message"] = message
+
+    @staticmethod
+    def _lab_samples(sample_uuids: SampleUUIDsType) -> List[LabSample]:
+        """把运行时注入的样品映射回显为 unilabos_samples（物料实例取其序列化，uuid 字符串原样记录）。"""
+        return [
+            LabSample(
+                sample_uuid=sample_uuid,
+                oss_path="",
+                extra=(
+                    {"material_uuid": content}
+                    if isinstance(content, str)
+                    else (content.serialize() if content is not None else {})
+                ),
+            )
+            for sample_uuid, content in (sample_uuids or {}).items()
+        ]
 
     def _find_available_heating_station(self) -> Optional[int]:
         """查找空闲的加热台"""
@@ -735,18 +752,7 @@ class VirtualWorkbench:
             "material_4": materials[3] if len(materials) > 3 else 0,
             "material_5": materials[4] if len(materials) > 4 else 0,
             "message": f"已准备 {count} 个物料: A1-A{count}",
-            "unilabos_samples": [
-                LabSample(
-                    sample_uuid=sample_uuid,
-                    oss_path="",
-                    extra=(
-                        {"material_uuid": content}
-                        if isinstance(content, str)
-                        else (content.serialize() if content else {})
-                    ),
-                )
-                for sample_uuid, content in sample_uuids.items()
-            ],
+            "unilabos_samples": self._lab_samples(sample_uuids),
         }
 
     @action(
@@ -845,43 +851,15 @@ class VirtualWorkbench:
                 "material_id": material_id,
                 "material_number": material_number,
                 "message": f"{material_id}已成功移动到加热台{station_id}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
+                "unilabos_samples": self._lab_samples(sample_uuids),
             }
 
         except Exception as e:
             self.logger.error(f"[{material_id}] 移动失败: {str(e)}")
             if self._arm_lock.locked():
                 self._release_arm()
-            return {
-                "success": False,
-                "station_id": -1,
-                "material_id": material_id,
-                "material_number": material_number,
-                "message": f"移动失败: {str(e)}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
-            }
+            # 失败抛给运行时：JSON 指令返回 success=False 不会让作业失败
+            raise
 
     @action(
         auto_prefix=True,
@@ -935,70 +913,16 @@ class VirtualWorkbench:
         self.logger.info(f"[加热台{station_id}] 开始加热")
 
         if station_id not in self._heating_stations:
-            return {
-                "success": False,
-                "station_id": station_id,
-                "material_id": "",
-                "material_number": material_number,
-                "message": f"无效的加热台ID: {station_id}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
-            }
+            raise ValueError(f"无效的加热台ID: {station_id}")
 
         with self._stations_lock:
             station = self._heating_stations[station_id]
 
             if station.current_material is None:
-                return {
-                    "success": False,
-                    "station_id": station_id,
-                    "material_id": "",
-                    "material_number": material_number,
-                    "message": f"加热台{station_id}上没有物料",
-                    "unilabos_samples": [
-                        LabSample(
-                            sample_uuid=sample_uuid,
-                            oss_path="",
-                            extra=(
-                                {"material_uuid": content}
-                                if isinstance(content, str)
-                                else (content.serialize() if content else {})
-                            ),
-                        )
-                        for sample_uuid, content in sample_uuids.items()
-                    ],
-                }
+                raise RuntimeError(f"加热台{station_id}上没有物料")
 
             if station.state == HeatingStationState.HEATING:
-                return {
-                    "success": False,
-                    "station_id": station_id,
-                    "material_id": station.current_material,
-                    "material_number": material_number,
-                    "message": f"加热台{station_id}已经在加热中",
-                    "unilabos_samples": [
-                        LabSample(
-                            sample_uuid=sample_uuid,
-                            oss_path="",
-                            extra=(
-                                {"material_uuid": content}
-                                if isinstance(content, str)
-                                else (content.serialize() if content else {})
-                            ),
-                        )
-                        for sample_uuid, content in sample_uuids.items()
-                    ],
-                }
+                raise RuntimeError(f"加热台{station_id}已经在加热中")
 
             material_id = station.current_material
 
@@ -1062,18 +986,7 @@ class VirtualWorkbench:
             "material_id": material_id,
             "material_number": material_number,
             "message": f"加热台{station_id}加热完成",
-            "unilabos_samples": [
-                LabSample(
-                    sample_uuid=sample_uuid,
-                    oss_path="",
-                    extra=(
-                        {"material_uuid": content}
-                        if isinstance(content, str)
-                        else (content.serialize() if content else {})
-                    ),
-                )
-                for sample_uuid, content in sample_uuids.items()
-            ],
+            "unilabos_samples": self._lab_samples(sample_uuids),
         }
 
     @action(
@@ -1113,71 +1026,19 @@ class VirtualWorkbench:
         output_number = material_number
 
         if station_id not in self._heating_stations:
-            return {
-                "success": False,
-                "station_id": station_id,
-                "material_id": "",
-                "output_position": f"C{output_number}",
-                "message": f"无效的加热台ID: {station_id}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
-            }
+            raise ValueError(f"无效的加热台ID: {station_id}")
 
         with self._stations_lock:
             station = self._heating_stations[station_id]
             material_id = station.current_material
 
             if material_id is None:
-                return {
-                    "success": False,
-                    "station_id": station_id,
-                    "material_id": "",
-                    "output_position": f"C{output_number}",
-                    "message": f"加热台{station_id}上没有物料",
-                    "unilabos_samples": [
-                        LabSample(
-                            sample_uuid=sample_uuid,
-                            oss_path="",
-                            extra=(
-                                {"material_uuid": content}
-                                if isinstance(content, str)
-                                else (content.serialize() if content else {})
-                            ),
-                        )
-                        for sample_uuid, content in sample_uuids.items()
-                    ],
-                }
+                raise RuntimeError(f"加热台{station_id}上没有物料")
 
             if station.state != HeatingStationState.COMPLETED:
-                return {
-                    "success": False,
-                    "station_id": station_id,
-                    "material_id": material_id,
-                    "output_position": f"C{output_number}",
-                    "message": f"加热台{station_id}尚未完成加热 (当前状态: {station.state.value})",
-                    "unilabos_samples": [
-                        LabSample(
-                            sample_uuid=sample_uuid,
-                            oss_path="",
-                            extra=(
-                                {"material_uuid": content}
-                                if isinstance(content, str)
-                                else (content.serialize() if content else {})
-                            ),
-                        )
-                        for sample_uuid, content in sample_uuids.items()
-                    ],
-                }
+                raise RuntimeError(
+                    f"加热台{station_id}尚未完成加热 (当前状态: {station.state.value})"
+                )
 
         output_position = f"C{output_number}"
         task_desc = f"从加热台{station_id}移动{material_id}到{output_position}"
@@ -1224,43 +1085,14 @@ class VirtualWorkbench:
                 "material_id": material_id,
                 "output_position": output_position,
                 "message": f"{material_id}已成功移动到{output_position}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content is not None else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
+                "unilabos_samples": self._lab_samples(sample_uuids),
             }
 
         except Exception as e:
             self.logger.error(f"移动到输出位置失败: {str(e)}")
             if self._arm_lock.locked():
                 self._release_arm()
-            return {
-                "success": False,
-                "station_id": station_id,
-                "material_id": "",
-                "output_position": output_position,
-                "message": f"移动失败: {str(e)}",
-                "unilabos_samples": [
-                    LabSample(
-                        sample_uuid=sample_uuid,
-                        oss_path="",
-                        extra=(
-                            {"material_uuid": content}
-                            if isinstance(content, str)
-                            else (content.serialize() if content else {})
-                        ),
-                    )
-                    for sample_uuid, content in sample_uuids.items()
-                ],
-            }
+            raise
 
     # ============ 状态属性 ============
 

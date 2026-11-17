@@ -14,10 +14,9 @@ class VirtualSolenoidValve:
     _ros_node: "DeviceNode"
     
     def __init__(self, device_id: str = None, config: dict = None, **kwargs):
-        # 从配置中获取参数，提供默认值
-        if config is None:
-            config = {}
-        
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        config = {**kwargs, **(config or {})}
+
         self.device_id = device_id
         self.port = config.get("port", "VIRTUAL")
         self.voltage = config.get("voltage", 12.0)
@@ -132,12 +131,11 @@ class VirtualSolenoidValve:
         
         return await self.set_valve_position(command=command)
 
-    def toggle(self):
+    async def toggle(self):
         """切换阀门状态"""
         if self._is_open:
-            return self.close()
-        else:
-            return self.open()
+            return await self.close()
+        return await self.open()
 
     def is_closed(self) -> bool:
         """检查阀门是否关闭"""

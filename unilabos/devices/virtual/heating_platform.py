@@ -106,10 +106,11 @@ class VirtualHeatingPlatform:
         self,
         device_id: str = "virtual_heating_platform",
         config: dict[str, Any] | None = None,
-        **_: Any,
+        **kwargs: Any,
     ) -> None:
         self.device_id = device_id
-        self.config = dict(config or {})
+        # 两种 backend 的传参形状都接受：config 字典或平铺的构造参数（config 优先）
+        self.config = {**kwargs, **(config or {})}
         self.update_interval_s = max(
             0.05, float(self.config.get("update_interval_s", 0.25))
         )

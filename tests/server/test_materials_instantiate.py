@@ -176,3 +176,39 @@ def test_instantiate_unknown_registry_class_rejected(tmp_path) -> None:
             command_rejected(resp, 1000)
     finally:
         service.close()
+
+
+@pytest.mark.parametrize(
+    "module",
+    [
+        "unilabos_no_such_package.resources:tip_rack",  # 本进程没装这个包（如调度权威没装驱动包）
+        "pylabrobot.resources.opentrons.tip_racks:no_such_tip_rack",  # 模块里没有这个类
+        "pylabrobot.resources:Coordinate",  # 构造函数不接受 name
+    ],
+)
+def test_instantiate_a_class_this_process_cannot_build_is_rejected(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, module: str
+) -> None:
+    """注册表里有条目、但本进程导入不了或构造不了：同样是参数不合法的拒绝，而不是 500。"""
+
+    monkeypatch.setitem(
+        lab_registry.resource_type_registry,
+        "test_unbuildable_class",
+        {"class": {"module": module, "type": "pylabrobot"}},
+    )
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            resp = client.post(
+                "/api/v1/inventory/commands",
+                json=_mutation_body(
+                    "instantiate_material",
+                    {"registry_class": "test_unbuildable_class", "name": "x"},
+                ),
+            )
+            body = command_rejected(resp, 1000)
+            assert "无法实例化" in str(body)
+    finally:
+        service.close()

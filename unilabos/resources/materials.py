@@ -628,12 +628,13 @@ def resolve(
 def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
     """按 registry 资源类名实例化本地 PLR 草稿（无 uuid，发给权威创建前的载体）。
 
-    ``materials.create("类名", name=...)`` 与微后端库存命令 ``instantiate_material``
-    （``POST /api/v1/inventory/commands``）共用此入口；随后的权威登记同样走
-    create_tree，两条路径语义一致。需要 dict 形态时交给
+    ``materials.create("类名", name=...)``、微后端库存命令 ``instantiate_material``
+    （``POST /api/v1/inventory/commands``）与工作流人工装入（``material.io`` load）共用此入口；
+    随后的权威登记同样走 create_tree，几条路径语义一致。需要 dict 形态时交给
     ``ResourceTreeSet.from_plr_resources``。只有 ``class.type == "pylabrobot"`` 的
     registry 资源类可实例化。资源类目录在调度权威里是 Host 上报的生效条目，在 Host
     里是本地扫描（``registry/catalog.py``）；调度权威尚未收到上报时报「注册表尚未上报」。
+    不可实例化（没有条目、不是 PLR 类、本进程导入不了或构造失败）一律抛 ``ValueError``。
     """
 
     if not str(name or "").strip():
@@ -652,9 +653,14 @@ def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
     class_info = entry.get("class") if isinstance(entry, Mapping) else None
     if not isinstance(class_info, dict) or class_info.get("type") != "pylabrobot":
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
-    module_name, _, attribute = str(class_info.get("module") or "").partition(":")
-    resource_class = getattr(importlib.import_module(module_name), attribute)
-    draft = resource_class(name=str(name))
+    module = str(class_info.get("module") or "")
+    module_name, _, attribute = module.partition(":")
+    try:
+        resource_class = getattr(importlib.import_module(module_name), attribute)
+        draft = resource_class(name=str(name))
+    except (ImportError, AttributeError, TypeError) as exc:
+        # 本进程装不上这个类（调度权威没装驱动包、类名写错、构造函数还要别的参数）：与「不可实例化」同一类错误
+        raise ValueError(f"registry 资源类 {class_name!r} 无法实例化（{module}）：{exc}") from exc
     if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
     return draft

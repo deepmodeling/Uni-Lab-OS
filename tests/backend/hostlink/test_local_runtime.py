@@ -223,6 +223,45 @@ def test_nested_config_key_reaches_driver_config_like_ros2() -> None:
     assert flat.config == {"port": "COM3"} and flat.extras == {}
 
 
+class SampleDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+
+    def tag(self, sample_uuids, label: str) -> dict:
+        return {"label": label, "samples": dict(sample_uuids)}
+
+    def peer_tag(self, target_device: str) -> dict:
+        return self._node.call_device_action(target_device, "tag", {"label": "peer"})
+
+    def post_init(self, node) -> None:
+        self._node = node
+
+
+def test_missing_sample_uuids_is_injected_as_empty_mapping_like_ros2() -> None:
+    """作业没带样品映射（单动作、跨设备调用）时，必填的 ``sample_uuids`` 注入空映射。
+
+    ROS 2 一律注入 ``sample_uuids or {}``；HostLink 过去只在作业带样品时注入，
+    把它声明为必填参数的驱动（虚拟工作台的四个动作）直接因缺参失败。
+    """
+
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("caller", SampleDriver, {}))
+    runtime.add_driver(HostLinkDriverSpec("target", SampleDriver, {}))
+    runtime.start()
+    try:
+        assert runtime.call_action("target", "tag", label="direct") == {"label": "direct", "samples": {}}
+        assert runtime.call_action("caller", "peer_tag", target_device="target") == {
+            "label": "peer",
+            "samples": {},
+        }
+        # 作业带了样品映射时照常透传
+        assert runtime.call_action("target", "tag", label="x", sample_uuids={"s1": "m1"})["samples"] == {
+            "s1": "m1"
+        }
+    finally:
+        runtime.stop()
+
+
 def test_virtual_workbench_reads_nested_graph_config() -> None:
     from unilabos.devices.virtual.workbench import VirtualWorkbench
 

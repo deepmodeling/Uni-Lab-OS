@@ -964,6 +964,10 @@ class HostLinkDeviceNode(DeviceNode):
                     self._resolve_resource_slot(value) for value in values
                 ]
 
+        if PARAM_SAMPLE_UUIDS in signature.parameters:
+            # 与 ROS 2 一致：作业没带样品映射（单动作调用、跨设备调用）时注入空映射，
+            # 而不是让把 sample_uuids 声明为必填的驱动因缺参失败
+            resolved.setdefault(PARAM_SAMPLE_UUIDS, {})
         sample_uuids = resolved.get(PARAM_SAMPLE_UUIDS)
         if isinstance(sample_uuids, dict):
             resolved[PARAM_SAMPLE_UUIDS] = {

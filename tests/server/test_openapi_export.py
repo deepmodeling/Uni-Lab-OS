@@ -37,6 +37,8 @@ def test_export_contains_both_roles_and_annotates_every_operation() -> None:
     assert "GET /api/v1/materials/instances" not in operations
     assert "GET /api/v1/workflow-tasks/{task_uuid}/node-runs" in operations
     assert "GET /api/v1/events" in operations  # SSE 在 OpenAPI 里是 GET
+    # 实验室档案 / 分区 / 摆放 / 网格布局与 /lab/* 视图已删除（负责人 11-17 决定）
+    assert not any(path == "/api/v1/lab" or path.startswith("/api/v1/lab/") for path in document["paths"])
 
     roles = {key: operation["x-openlab-role"] for key, operation in operations.items()}
     assert set(roles.values()) <= {"host", "backend", "any"}

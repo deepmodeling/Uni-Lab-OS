@@ -59,7 +59,6 @@ EXPECTED_TABLES = {
         "registry_entry_state",
         "registry_report",
         "registry_remote_slave",
-        "lab_layout",
         # schema v12：V1 进程管理操作记录与快照修订号
         "process_management_operation",
         "process_management_state",
@@ -90,9 +89,6 @@ EXPECTED_TABLES = {
         "material_source_binding",
         "station_ingress_reservation",
         "inventory_processed_command",
-        "lab_meta",
-        "lab_zone",
-        "lab_placement",
     },
     "telemetry": {
         "schema_identity",
@@ -186,6 +182,11 @@ def test_aggregate_fields_and_material_storage_exceptions(tmp_path) -> None:
         "job_log",
         "error_snapshot",
         "decision_audit",
+        # 实验室档案 / 分区 / 摆放与网格布局（负责人 11-17 决定删除）
+        "lab_meta",
+        "lab_zone",
+        "lab_placement",
+        "lab_layout",
     }
     assert existing.isdisjoint(removed)
 
@@ -218,18 +219,17 @@ def test_total_table_count_stays_small() -> None:
     # workflow / registry 并入 runtime：调度产物与注册表条目版本同库单写者
     # （registry 为条目级版本三表：entry / entry_state / report，外加规则 B 的跨机器 Slave 记录）；
     # workflow 节点执行为两级：workflow_node_run（节点运行）+ workflow_node_job（attempt）；
-    # lab_layout：实验室布局（区域 / 围墙）单行文档；chemical：化学品定义；
+    # chemical：化学品定义；
     # workflow_publication：工作流发布的不可变修订快照（工作流即节点）。
     # materials：material_execution（物理动作冻结计划与结算回执）+ material_execution_hold
     # （未结算动作对物料 / 库位的唯一占用）；V1.0 库存概念（试剂 / 样品 / 当前内容物角色、
-    # 内容物历史、状态历史、内容物预留、来源绑定、工站入站预留、实验室档案 / 分区 / 摆放，
-    # V1 命令幂等结果）。
+    # 内容物历史、状态历史、内容物预留、来源绑定、工站入站预留，V1 命令幂等结果）。
     # runtime：V1 实验操作类别、结构化人工交互、工站错误处置（工站控制 / 控制命令 /
     # 处置会话 / 工站错误）与进程管理（工作区操作记录 / 快照修订号）。
     assert {key: len(spec.table_names) for key, spec in DATABASE_SPECS.items()} == {
-        "runtime": 51,
-        "materials": 26,
+        "runtime": 50,
+        "materials": 23,
         "telemetry": 4,
         "history": 3,
     }
-    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 84
+    assert sum(len(spec.table_names) for spec in DATABASE_SPECS.values()) == 80

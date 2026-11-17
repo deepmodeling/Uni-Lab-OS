@@ -12,7 +12,6 @@ from unilabos.server.services.materials.graph import GraphService
 from unilabos.server.services.history import HistoryService
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.runtime import RuntimeService
-from unilabos.server.services.runtime.lab import LabLayoutService
 from unilabos.server.services.telemetry import TelemetryService
 
 
@@ -27,8 +26,6 @@ class ServerServices:
     history: HistoryService
     graph: GraphService
     chemicals: ChemicalService
-    # 实验室布局与 runtime 共用 runtime.db 的连接和写锁
-    lab: LabLayoutService
 
     @classmethod
     def open(cls, paths: ServerDatabasePaths) -> "ServerServices":
@@ -51,7 +48,6 @@ class ServerServices:
             graph = GraphService(materials)
             # 化学品定义同样共用 materials.db 的连接和写锁
             chemicals = ChemicalService(materials)
-            lab = LabLayoutService(runtime)
         except BaseException:
             for opened_domain in reversed(opened):
                 opened_domain.close()  # type: ignore[attr-defined]
@@ -64,7 +60,6 @@ class ServerServices:
             history=history,
             graph=graph,
             chemicals=chemicals,
-            lab=lab,
         )
 
     def close(self) -> None:

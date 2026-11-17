@@ -9,7 +9,6 @@ from unilabos.server.api.runtime.diagnostics import (
     create_backend_app,
     create_backend_router,
 )
-from unilabos.server.api.runtime.lab import create_lab_router, install_lab_api
 from unilabos.server.api.runtime.registry import install_registry_api
 from unilabos.server.api.runtime.workflow import (
     create_workflow_app,
@@ -21,13 +20,11 @@ from unilabos.server.api.runtime.workflow import (
 __all__ = [
     "create_backend_app",
     "create_backend_router",
-    "create_lab_router",
     "create_runtime_router",
     "create_workflow_app",
     "create_workflow_router",
     "format_sse_event",
     "install_edge_control_api",
-    "install_lab_api",
     "install_registry_api",
     "install_runtime_api",
     "install_workflow_api",

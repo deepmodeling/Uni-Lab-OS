@@ -59,9 +59,11 @@ def test_all_public_operations_use_current_protocol(contract, application):
     # +23 V1 工作流作者 / 设备目录；-1 V1 任务生命周期合并重复路由；+6 V1 库存 / 工作区；
     # +12 V1 作业 / 库存接缝（消费事实、数量核对、结果未知处置、类型化实例命令）；
     # +4 V1 进程管理协议（快照、提交 / 查询操作、组件日志）；+1 任务运行事件时间线；
-    # +5 注册表接受（目录状态、批量接受 / 忽略、跨机器 Slave 列表 / 删除）
-    assert len(OPERATIONS) == 182
-    assert len(protocol.tools) == 188
+    # +5 注册表接受（目录状态、批量接受 / 忽略、跨机器 Slave 列表 / 删除）；
+    # -4 实验室档案 / 布局 / 仓储视图（lab-v1，负责人 11-17 决定删除）
+    assert len(OPERATIONS) == 178
+    assert len(protocol.tools) == 184
+    assert not any(op.path.startswith("/api/v1/lab/") for op in OPERATIONS)
     for tool in protocol.tools:
         assert len(tool.name) <= 64
         Draft202012Validator.check_schema(tool.inputSchema)
@@ -104,7 +106,7 @@ def test_real_initialize_tools_resources_and_write(application):
         initialized = rpc(client, "initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                                   "clientInfo": {"name": "contract-test", "version": "1"}})
         assert initialized["serverInfo"]["name"] == "unilabos"
-        assert len(rpc(client, "tools/list")["tools"]) == 188
+        assert len(rpc(client, "tools/list")["tools"]) == 184
         resources = rpc(client, "resources/list")["resources"]
         assert len(resources) == 2
         guide = rpc(client, "resources/read", {"uri": "unilab://protocol/guide"})

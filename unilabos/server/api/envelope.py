@@ -483,7 +483,6 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.runtime.data.RuntimeNotFoundError": _fixed(RESOURCE_NOT_FOUND),
     f"{_SERVICES}.runtime.data.RuntimeConflictError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.runtime.data.RuntimeValidationError": _fixed(INVALID_PARAMETER),
-    f"{_SERVICES}.runtime.lab.LabLayoutConflict": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.runtime.logs.LogSourceNotFound": _fixed(RESOURCE_NOT_FOUND),
     f"{_SERVICES}.runtime.devices.DeviceNotFound": _fixed(RESOURCE_NOT_FOUND),
     f"{_SERVICES}.runtime.logs.LogSourceUnavailable": _fixed(SERVICE_UNAVAILABLE),

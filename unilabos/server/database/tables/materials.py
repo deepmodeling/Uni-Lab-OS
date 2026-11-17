@@ -767,49 +767,6 @@ class InventoryProcessedCommandRecord(TableObject, table=True):
     processed_at_ms: UnixMilliseconds
 
 
-class LabMetaRecord(TableObject, table=True):
-    """实验室档案键值（名称、领域包、网格设置）。"""
-
-    __tablename__: ClassVar[str] = "lab_meta"
-    meta_key: NonEmptyStr = Field(primary_key=True)
-    meta_value: JsonValue = Field(default=None, sa_column=json_text_column("meta_value_json", default_json="null"))
-    updated_at_ms: UnixMilliseconds
-
-
-class LabZoneRecord(TableObject, table=True):
-    """实验室 2D 分区（实验台 / 仪器区 / 存储区 …）。"""
-
-    __tablename__: ClassVar[str] = "lab_zone"
-    zone_id: NonEmptyStr = Field(primary_key=True)
-    name: str = ""
-    kind: str = "bench"
-    x: float = 0
-    y: float = 0
-    w: float = 100
-    h: float = 100
-    meta: JsonObject = Field(default_factory=dict, sa_column=json_text_column("meta_json", default_json="{}"))
-    version: PositiveVersion = 1
-    updated_at_ms: UnixMilliseconds
-
-
-class LabPlacementRecord(TableObject, table=True):
-    """分区内的在台摆放（容器实例或设备）。"""
-
-    __tablename__: ClassVar[str] = "lab_placement"
-    subject_id: NonEmptyStr = Field(primary_key=True)
-    subject_kind: str = "container"
-    zone_id: str = ""
-    x: float = 0
-    y: float = 0
-    w: float = 40
-    h: float = 40
-    rotation: float = 0
-    label: str = ""
-    meta: JsonObject = Field(default_factory=dict, sa_column=json_text_column("meta_json", default_json="{}"))
-    version: PositiveVersion = 1
-    updated_at_ms: UnixMilliseconds
-
-
 MATERIALS_TABLE_MODELS = (
     ResourceTemplateRecord,
     InventoryLotRecord,
@@ -833,9 +790,6 @@ MATERIALS_TABLE_MODELS = (
     MaterialSourceBindingRecord,
     StationIngressReservationRecord,
     InventoryProcessedCommandRecord,
-    LabMetaRecord,
-    LabZoneRecord,
-    LabPlacementRecord,
 )
 
 
@@ -1543,7 +1497,7 @@ MATERIALS_TABLES += (
     )"""),
     # V1.0 库存概念并入 materials.db（单一库存权威，不另建 inventory.db）：试剂 / 样品 / 当前内容物
     # 是 material_substance 行上的角色扩展（数量仍以 material_substance 为唯一权威）；另有内容物与
-    # 状态历史、内容物预留、来源绑定、工站入站预留、V1 类型化库存命令的幂等结果与实验室布局。
+    # 状态历史、内容物预留、来源绑定、工站入站预留与 V1 类型化库存命令的幂等结果。
     TableSpec(
         "material_content",
         """
@@ -1766,59 +1720,6 @@ MATERIALS_TABLES += (
             CREATE INDEX IF NOT EXISTS idx_inventory_processed_command_time
             ON inventory_processed_command(processed_at_ms DESC, command_id)
             """,
-        ),
-    ),
-    TableSpec(
-        "lab_meta",
-        """
-        CREATE TABLE IF NOT EXISTS lab_meta (
-            meta_key TEXT PRIMARY KEY CHECK (TRIM(meta_key) <> ''),
-            meta_value_json TEXT NOT NULL DEFAULT 'null' CHECK (json_valid(meta_value_json)),
-            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
-        )
-        """,
-    ),
-    TableSpec(
-        "lab_zone",
-        """
-        CREATE TABLE IF NOT EXISTS lab_zone (
-            zone_id TEXT PRIMARY KEY CHECK (TRIM(zone_id) <> ''),
-            name TEXT NOT NULL DEFAULT '',
-            kind TEXT NOT NULL DEFAULT 'bench',
-            x REAL NOT NULL DEFAULT 0,
-            y REAL NOT NULL DEFAULT 0,
-            w REAL NOT NULL DEFAULT 100,
-            h REAL NOT NULL DEFAULT 100,
-            meta_json TEXT NOT NULL DEFAULT '{}' CHECK (
-                json_valid(meta_json) AND json_type(meta_json) = 'object'
-            ),
-            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
-            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
-        )
-        """,
-    ),
-    TableSpec(
-        "lab_placement",
-        """
-        CREATE TABLE IF NOT EXISTS lab_placement (
-            subject_id TEXT PRIMARY KEY CHECK (TRIM(subject_id) <> ''),
-            subject_kind TEXT NOT NULL DEFAULT 'container',
-            zone_id TEXT NOT NULL DEFAULT '',
-            x REAL NOT NULL DEFAULT 0,
-            y REAL NOT NULL DEFAULT 0,
-            w REAL NOT NULL DEFAULT 40,
-            h REAL NOT NULL DEFAULT 40,
-            rotation REAL NOT NULL DEFAULT 0,
-            label TEXT NOT NULL DEFAULT '',
-            meta_json TEXT NOT NULL DEFAULT '{}' CHECK (
-                json_valid(meta_json) AND json_type(meta_json) = 'object'
-            ),
-            version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
-            updated_at_ms INTEGER NOT NULL CHECK (updated_at_ms >= 0)
-        )
-        """,
-        (
-            "CREATE INDEX IF NOT EXISTS idx_lab_placement_zone ON lab_placement(zone_id)",
         ),
     ),
 )

@@ -207,10 +207,6 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("device-processes.start", "device-processes", "POST", "/api/v1/device-processes/{process_id}/start", "拉起子进程（已在运行 409）", "host"),
     Operation("device-processes.stop", "device-processes", "POST", "/api/v1/device-processes/{process_id}/stop", "结束子进程（不触发看护重启）", "host"),
     Operation("device-processes.restart", "device-processes", "POST", "/api/v1/device-processes/{process_id}/restart", "停止后重新拉起", "host"),
-    Operation("lab-v1.profile.get", "lab-v1", "GET", "/api/v1/lab/profile", "实验室档案：名称、领域包、分区类型与网格文档 grid", "any"),
-    Operation("lab-v1.profile.put", "lab-v1", "PUT", "/api/v1/lab/profile", "改名称 / 领域；grid 整份替换（revision 乐观锁，3003 = 过期），grid=null 重置", "any"),
-    Operation("lab-v1.layout.get", "lab-v1", "GET", "/api/v1/lab/layout", "2D 布局视图：分区 + 在台摆放 + 存储区派生汇总", "any"),
-    Operation("lab-v1.warehouse.get", "lab-v1", "GET", "/api/v1/lab/warehouse", "按品类聚合的仓储视图（批次 / 数量 / 库位）", "any"),
     Operation("debug.databases.list", "debug", "GET", "/api/v1/debug/databases", "四库文件状态与每张表行数", "any"),
     Operation("debug.databases.table", "debug", "GET", "/api/v1/debug/databases/{database}/tables/{table}", "单表分页浏览（列定义 + 行数据）", "any"),
 )

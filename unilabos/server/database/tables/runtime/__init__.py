@@ -6,7 +6,6 @@ runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
   execution_job / adapter outbox-inbox 等）；
 - ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
 - ``registry``：Edge 注册表快照（条目级版本模型三表 + 跨机器 Slave 记录）；
-- ``lab``：实验室布局（区域 / 围墙像素格，一份文档一行）；
 - ``process_management``：V1 进程管理协议的操作记录与快照修订号。
 
 对外导入只看表：一律 ``from unilabos.server.database.tables.runtime
@@ -14,11 +13,6 @@ import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在
 """
 
 from unilabos.server.database.schema import SCHEMA_IDENTITY_TABLE, DatabaseSpec
-from unilabos.server.database.tables.runtime.lab import (
-    LAB_TABLES,
-    LAB_TABLE_MODELS,
-    LabLayoutRecord,
-)
 from unilabos.server.database.tables.runtime.data import (
     DATA_TABLES,
     DATA_TABLE_MODELS,
@@ -88,7 +82,6 @@ RUNTIME_TABLE_MODELS = (
     *DATA_TABLE_MODELS,
     *WORKFLOW_TABLE_MODELS,
     *REGISTRY_TABLE_MODELS,
-    *LAB_TABLE_MODELS,
     *EXECUTION_CLAIM_MODELS,
     *RESOURCE_INTERVAL_MODELS,
     *RESOURCE_CUSTODY_MODELS,
@@ -113,7 +106,6 @@ RUNTIME_DATABASE = DatabaseSpec(
         *DATA_TABLES,
         *(spec for spec in WORKFLOW_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
         *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
-        *LAB_TABLES,
         *EXECUTION_CLAIM_TABLES,
         *RESOURCE_INTERVAL_TABLES,
         *RESOURCE_CUSTODY_TABLES,
@@ -175,6 +167,4 @@ __all__ = [
     "RegistryEntryStateRecord",
     "RegistryRemoteSlaveRecord",
     "RegistryReportRecord",
-    # lab（实验室布局）
-    "LabLayoutRecord",
 ]

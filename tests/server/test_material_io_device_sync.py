@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 
 from tests.backend.hostlink.test_downlink import _FakeNode
-from tests.server.test_material_io_inventory import _identity, container, deck
+from tests.server.test_material_io_inventory import TIP_RACK, container, deck, device_deck, registry_tip_rack
 from tests.server.test_material_io_scheduler import (
     _decide,
     _material_io_jobs,
@@ -31,15 +31,8 @@ from tests.server.test_scheduler_inventory_authority import _mutation
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from unilabos.backend.hostlink import downlink, main_hostlink_run
 from unilabos.config.config import BasicConfig
-from unilabos.protocol.materials import (
-    MaterialIdentityWrite,
-    MaterialMove,
-    MaterialNodeCreate,
-    MaterialTreeCreate,
-    SiteCreate,
-)
+from unilabos.protocol.materials import MaterialMove
 from unilabos.server.backend.scheduler.material_io import sync_material_io_device
-from unilabos.server.services.materials import MaterialsService
 
 DEVICE = "liquid_handler"
 
@@ -91,19 +84,10 @@ def device(monkeypatch) -> _DeckDevice:
     return node
 
 
-def device_deck(materials: MaterialsService, device_id: str = DEVICE) -> tuple[str, dict[str, str]]:
-    """设备物料下挂一块两库位台面（A1、B1）：台面的所属设备是 ``device_id``。"""
+def _tip_racks(stack) -> list:
+    """装到设备台面上的枪头盒（注册表模板实例化出的整棵树的根）。"""
 
-    tree = materials.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=[
-        MaterialNodeCreate(client_ref="device", identity=MaterialIdentityWrite(
-            resource_id=device_id, name=device_id, template_name="liquid_handler_device",
-            resource_type="device", class_name="LiquidHandler")),
-        MaterialNodeCreate(client_ref="deck", parent_client_ref="device", identity=_identity("deck", "deck"), sites=[
-            SiteCreate(template_name="slot", site_index=0, label="A1"),
-            SiteCreate(template_name="slot", site_index=1, label="B1")]),
-    ])).data
-    mount = tree.client_ref_map["deck"]
-    return mount, {site.label: site.site_uuid for site in materials.get_material(mount).sites}
+    return [item for item in stack.materials.list_materials() if item.material.template_name == TIP_RACK]
 
 
 def _outputs(stack, task) -> list[dict]:
@@ -111,17 +95,18 @@ def _outputs(stack, task) -> list[dict]:
         stack.workflow.list_workflow_node_runs(task["uuid"]), key=lambda run: run["topological_index"])]
 
 
-def test_load_projects_the_new_material_onto_the_owning_device(tmp_path, device) -> None:
+def test_load_projects_the_new_material_onto_the_owning_device(tmp_path, device, monkeypatch) -> None:
     stack, executor = _stack(tmp_path), Executor()
+    template = registry_tip_rack(stack.materials, monkeypatch)
     mount, sites = device_deck(stack.materials)
     scheduler = _scheduler(stack, executor)
     try:
-        task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="tip_box")')
+        task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="{template}")')
         confirmation = _pending(stack, task)
         assert device.syncs == []  # 确认前不改库存，也不碰台面
         _decide(stack, confirmation)
         wait_for(lambda: _status(stack, task) == "succeeded")
-        [box] = _tip_boxes(stack)
+        [box] = _tip_racks(stack)
         new = box.material.material_uuid
         [job] = _material_io_jobs(stack, task)
         # 设备从权威拉取新物料挂到同一库位；命令身份 = attempt，与库存命令同一个
@@ -189,8 +174,9 @@ def test_a_plain_shelf_has_no_device_and_is_skipped(tmp_path, device, caplog) ->
         stack.close()
 
 
-def test_a_failed_sync_keeps_the_inventory_and_reports_a_warning(tmp_path, device, caplog) -> None:
+def test_a_failed_sync_keeps_the_inventory_and_reports_a_warning(tmp_path, device, caplog, monkeypatch) -> None:
     stack, executor = _stack(tmp_path), Executor()
+    template = registry_tip_rack(stack.materials, monkeypatch)
     mount, sites = device_deck(stack.materials)
     bottle = container(stack.materials, mount, sites["B1"], water_ml=20)
     device.fail_sync = "设备台面上找不到挂载物料"
@@ -198,7 +184,7 @@ def test_a_failed_sync_keeps_the_inventory_and_reports_a_warning(tmp_path, devic
     scheduler = _scheduler(stack, executor)
     try:
         task = _task(stack, f'''
-            ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="tip_box")
+            ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="{template}")
             ctx.material_io(mode="refill", mount="{mount}", site="B1", material="{bottle}",
                             reagent={{"quantity": 5, "quantity_unit": "mL"}})
         ''')
@@ -208,7 +194,7 @@ def test_a_failed_sync_keeps_the_inventory_and_reports_a_warning(tmp_path, devic
             wait_for(lambda: _status(stack, task) == "succeeded")
         load, refill = _outputs(stack, task)
         # 库存是权威：同步失败不回滚，节点照样成功，输出带失败原因
-        [box] = _tip_boxes(stack)
+        [box] = _tip_racks(stack)
         assert stack.materials.occupied_site(box.material.material_uuid).site_uuid == sites["A1"]
         assert load["material_uuid"] == box.material.material_uuid
         assert load["device_sync"]["status"] == "failed" and load["device_sync"]["device_id"] == DEVICE
@@ -223,28 +209,30 @@ def test_a_failed_sync_keeps_the_inventory_and_reports_a_warning(tmp_path, devic
         stack.close()
 
 
-def test_an_unreachable_device_fails_the_sync_but_not_the_step(tmp_path, device) -> None:
+def test_an_unreachable_device_fails_the_sync_but_not_the_step(tmp_path, device, monkeypatch) -> None:
     stack, executor = _stack(tmp_path), Executor()
+    template = registry_tip_rack(stack.materials, monkeypatch)
     mount, _sites = device_deck(stack.materials, device_id="offline_handler")  # 不在本进程，也没有 HostLink
     scheduler = _scheduler(stack, executor)
     try:
-        task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="tip_box")')
+        task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="{template}")')
         _decide(stack, _pending(stack, task))
         wait_for(lambda: _status(stack, task) == "succeeded")
         [job] = _material_io_jobs(stack, task)
         result = job["return_info"]["return_value"]["device_sync"]
         assert (result["status"], result["device_id"]) == ("failed", "offline_handler")
-        assert "HostLink server 未启动" in result["reason"] and len(_tip_boxes(stack)) == 1
+        assert "HostLink server 未启动" in result["reason"] and len(_tip_racks(stack)) == 1
     finally:
         scheduler.stop()
         stack.close()
 
 
-def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, device) -> None:
+def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, device, monkeypatch) -> None:
     """写库与同步都完成、终态还没落库就崩溃：重启重放同一命令再送一次同一 ``transfer_uuid``，设备只应用一次；
     终态落库后同一决策再次送达不再重发。"""
 
     stack, executor = _stack(tmp_path), Executor()
+    template = registry_tip_rack(stack.materials, monkeypatch)
     mount, sites = device_deck(stack.materials)
     scheduler = _scheduler(stack, executor)
     real = stack.workflow.record_workflow_node_job_terminal
@@ -257,7 +245,7 @@ def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, de
         return real(job_uuid, **kwargs)
 
     stack.workflow.record_workflow_node_job_terminal = crash_before_terminal
-    task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="tip_box")')
+    task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="{template}")')
     confirmation = _pending(stack, task)
     stack.workflow.decide_workflow_manual_confirmation(confirmation["uuid"], action="approve", confirmed_by="op",
                                                        decision_idempotency_key="approve-once")
@@ -265,7 +253,7 @@ def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, de
     stack, executor, scheduler = _restart(stack, scheduler, tmp_path)
     try:
         wait_for(lambda: _status(stack, task) == "succeeded")
-        [box] = _tip_boxes(stack)  # 库存命令重放：只有一件
+        [box] = _tip_racks(stack)  # 库存命令重放：只有一件
         new = box.material.material_uuid
         first, replay = device.syncs
         assert first == replay and first["transfer_uuid"] == f"workflow.material_io:{lost[0]}"

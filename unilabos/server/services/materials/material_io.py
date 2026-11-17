@@ -3,8 +3,11 @@
 调度器在人工确认之后提交**一条**类型化库存命令 ``material.io``（``inventory_commands.py``），它在一个
 materials.db 事务里完成全部写入：
 
-- ``load``：按资源模板建新物料（展开模板库位），放到挂载物料的目标库位上，可选登记试剂；目标库位已有物料时
-  拒绝（``site_occupied``），不覆盖；
+- ``load``：按资源模板建新物料，放到挂载物料的目标库位上，可选登记试剂；目标库位已有物料时拒绝
+  （``site_occupied``），不覆盖。模板名就是注册表资源条目 id（注册表同步的模板）：能实例化时与库存命令
+  ``instantiate_material`` 同一条路（``instantiate_registry_resource`` → ``plr_resources_to_create``），建出带 PLR
+  ``config`` 与默认子物料（如吸头盒里的吸头）的整棵树，设备台面才能把它反序列化成 PLR 资源；不能实例化时只按模板
+  写身份（展开模板库位）。挂载物料属于某台设备时模板必须能实例化，否则计划阶段就拒绝（写库后台面无法同步）；
 - ``unload``：``detach`` 解除挂载、物料留在库存里，或 ``soft_delete`` 软删除（``material_with_contents`` 连同子物料
   与内容物）；物料被其他任务的预留、来源绑定或未结算的物理动作占着时拒绝（``active_claim``）；
 - ``refill``：给仍在原库位的容器的唯一试剂加量（单位可换算），位置不变、不新建物料。
@@ -60,6 +63,23 @@ def _load_name_prefix(template_name: str) -> str:
     return cleaned or "material"
 
 
+def _registry_tree(template: Any, name: str) -> tuple[Optional[MaterialTreeCreate], str]:
+    """按模板名对应的注册表资源类实例化 PLR 草稿并转成创建树（与 ``instantiate_material`` 同一条路）；
+    不能实例化时返回 ``(None, 原因)``。
+
+    注册表同步的模板以资源条目 id 为名（``registry_definition_to_template``），所以模板名就是
+    ``instantiate_registry_resource`` 的资源类名；资源类目录在调度权威里是 Host 上报的生效条目。
+    """
+
+    from unilabos.resources.adapters.plr_materials import plr_resources_to_create
+    from unilabos.resources.materials import instantiate_registry_resource
+
+    try:
+        return plr_resources_to_create([instantiate_registry_resource(template.name, name)]), ""
+    except ValueError as exc:
+        return None, str(exc)
+
+
 class MaterialIO:
     """``material_io`` 的身份解析、试运行与一次性写入；与 :class:`MaterialsService` 共用连接和写锁。"""
 
@@ -96,6 +116,8 @@ class MaterialIO:
         locks = {mount.material.material_uuid}
         if values["mode"] == "load":
             template = self._template(values["resource_template"])
+            # 挂到设备上的模板必须能实例化：计划阶段就拒绝，不等写库后台面同步失败
+            self._load_tree(mount.material.material_uuid, template, _load_name_prefix(template.name))
             plan.update(template_uuid=template.template_uuid, template_name=template.name)
             for key in ("material_name", "barcode", "reagent"):
                 if key in values:
@@ -152,6 +174,24 @@ class MaterialIO:
             if record is None:
                 raise MaterialNotFoundError(f"资源模板 {identity} 不存在", subject="template") from None
             return self.materials.get_template(record.template_uuid)
+
+    def _load_tree(self, mount_uuid: str, template: Any, name: str) -> Optional[MaterialTreeCreate]:
+        """装入物料按注册表资源类建出的创建树；模板不能实例化时返回 None（只写身份）。
+
+        挂载物料属于某台设备（``find_owner_device``）时，只有身份的物料设备反序列化不了、台面同步必然失败：
+        直接拒绝并说明原因。普通货架（没有所属设备）照旧只写身份。
+        """
+
+        from unilabos.resources.materials import find_owner_device
+
+        tree, reason = _registry_tree(template, name)
+        if tree is None:
+            device_id = find_owner_device(mount_uuid, gateway=self.materials)
+            if device_id is not None:
+                raise MaterialValidationError(
+                    f"挂载物料属于设备 {device_id}，装入的物料要同步到设备台面，必须能按资源模板 {template.name} "
+                    f"实例化成 PLR 资源；现在不能：{reason}", subject="template")
+        return tree
 
     # ── 试运行与写入 ─────────────────────────────────────────────
 
@@ -211,20 +251,26 @@ class MaterialIO:
         from unilabos.server.services.materials.resource_contract import ResourceContract
 
         material_uuid = str(uuid4())
-        tree = MaterialTreeCreate(nodes=[MaterialNodeCreate(
-            client_ref="material",
-            material_uuid=material_uuid,
-            identity=MaterialIdentityWrite(
-                resource_id=ResourceContract(self.materials)._resource_id(name),
-                name=name,
-                display_name=name,
-                resource_type=template.resource_type,
-                class_name=template.class_name or template.resource_type or "Resource",
-                barcode=barcode,
-                template_name=template.name,
-                meta_data={"material_io": {"task_uuid": plan["task_uuid"], "job_uuid": plan["job_uuid"]}},
-            ),
-        )])
+        meta_data = {"material_io": {"task_uuid": plan["task_uuid"], "job_uuid": plan["job_uuid"]}}
+        tree = self._load_tree(str(plan["mount_uuid"]), template, name)
+        if tree is None:
+            tree = MaterialTreeCreate(nodes=[MaterialNodeCreate(
+                client_ref="material",
+                material_uuid=material_uuid,
+                identity=MaterialIdentityWrite(
+                    resource_id=ResourceContract(self.materials)._resource_id(name),
+                    name=name,
+                    display_name=name,
+                    resource_type=template.resource_type,
+                    class_name=template.class_name or template.resource_type or "Resource",
+                    barcode=barcode,
+                    template_name=template.name,
+                    meta_data=meta_data,
+                ),
+            )])
+        else:
+            self._load_root(tree, material_uuid=material_uuid, name=name, barcode=barcode,
+                            template_name=template.name, meta_data=meta_data)
         self.materials.create_tree(self._mutation(plan, command_id, "create", "create_material_tree"), tree)
         self.materials.move_material(
             self._mutation(plan, command_id, "place", "move_material"),
@@ -243,6 +289,34 @@ class MaterialIO:
         if plan.get("reagent"):
             result["reagent"] = self._attach_reagent(material_uuid, dict(plan["reagent"]), command_id=command_id)
         return result
+
+    def _load_root(self, tree: MaterialTreeCreate, *, material_uuid: str, name: str, barcode: str,
+                   template_name: str, meta_data: dict[str, Any]) -> None:
+        """把注册表资源类建出的创建树的根节点换成装入步骤的身份（原地修改）。
+
+        根节点保留只写身份时的那些字段：物料 UUID、名字 / 展示名、条码、``meta_data.material_io`` 与模板身份
+        （注册表模板，而不是 PLR 型号名派生的模板）；``config`` / 类型 / 尺寸与子物料来自 PLR。子物料的
+        ``resource_id`` 是根的路径前缀，根换了不重名的 ID 时一起换。
+        """
+
+        from unilabos.server.services.materials.resource_contract import ResourceContract
+
+        root = next(node for node in tree.nodes if node.parent_client_ref is None)
+        drafted = root.identity.resource_id
+        resource_id = ResourceContract(self.materials)._resource_id(drafted)
+        if resource_id != drafted:
+            for node in tree.nodes:
+                if node.identity.resource_id.startswith(f"{drafted}/"):
+                    node.identity.resource_id = resource_id + node.identity.resource_id[len(drafted):]
+        root.material_uuid = material_uuid
+        root.identity = root.identity.model_copy(update={
+            "resource_id": resource_id,
+            "name": name,
+            "display_name": name,
+            "barcode": barcode,
+            "template_name": template_name,
+            "meta_data": {**root.identity.meta_data, **meta_data},
+        })
 
     def _allocate_name(self, template_name: str) -> str:
         """模板短名 + 本地时间到秒；同一秒已占用时再补毫秒和序号（V1 ``allocate_load_material_name``）。"""

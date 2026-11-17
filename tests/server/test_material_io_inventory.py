@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.plr_fixtures import TIP_RACK_MODULE, registry_entry
 from tests.server.test_scheduler_inventory_authority import _mutation, _template
 from unilabos.client.materials.core import LocalMaterialsClient
 from unilabos.protocol.materials import (
@@ -21,14 +22,23 @@ from unilabos.protocol.materials import (
     MaterialTreeCreate,
     SiteCreate,
 )
+from unilabos.registry.registry import lab_registry
+from unilabos.resources.adapters.registry_materials import register_resource_definitions
 from unilabos.resources.objects.site import SITE_TEMPLATE_WHITELIST_KEY
 from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials.contents import ContentContract
-from unilabos.server.services.materials.core import MaterialConflictError, MaterialNoChangeError, MaterialNotFoundError
+from unilabos.server.services.materials.core import (
+    MaterialConflictError,
+    MaterialNoChangeError,
+    MaterialNotFoundError,
+    MaterialValidationError,
+)
 from unilabos.server.services.materials.material_io import MaterialIO, material_io_command_id
 
 TASK = str(uuid4())
+#: 注册表里的 300 uL 枪头盒资源条目 id；注册表同步出的资源模板同名
+TIP_RACK = "test_tip_rack_300ul"
 
 
 def _identity(template: str, name: str) -> MaterialIdentityWrite:
@@ -55,6 +65,30 @@ def deck(materials: MaterialsService, *, whitelist: list[str] | None = None) -> 
     ])).data
     mount = tree.client_ref_map["deck"]
     return mount, {site.label: site.site_uuid for site in materials.get_material(mount).sites}
+
+
+def device_deck(materials: MaterialsService, device_id: str = "liquid_handler") -> tuple[str, dict[str, str]]:
+    """设备物料下挂一块两库位台面（A1、B1）：台面的所属设备是 ``device_id``。"""
+
+    _ensure_template(materials, "deck-template", "deck")
+    tree = materials.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=[
+        MaterialNodeCreate(client_ref="device", identity=MaterialIdentityWrite(
+            resource_id=device_id, name=device_id, template_name="liquid_handler_device",
+            resource_type="device", class_name="LiquidHandler")),
+        MaterialNodeCreate(client_ref="deck", parent_client_ref="device", identity=_identity("deck", "deck"), sites=[
+            SiteCreate(template_name="slot", site_index=0, label="A1"),
+            SiteCreate(template_name="slot", site_index=1, label="B1")]),
+    ])).data
+    mount = tree.client_ref_map["deck"]
+    return mount, {site.label: site.site_uuid for site in materials.get_material(mount).sites}
+
+
+def registry_tip_rack(materials: MaterialsService, monkeypatch) -> str:
+    """注册表里有一个枪头盒资源类，并同步成同名资源模板（与 Host 上报后的权威相同：模板名 = 资源条目 id）。"""
+
+    monkeypatch.setitem(lab_registry.resource_type_registry, TIP_RACK, registry_entry(TIP_RACK_MODULE))
+    register_resource_definitions([{"id": TIP_RACK, **registry_entry(TIP_RACK_MODULE)}], LocalMaterialsClient(materials))
+    return TIP_RACK
 
 
 def container(materials: MaterialsService, mount: str | None = None, site: str | None = None, *,
@@ -128,6 +162,94 @@ def test_load_without_name_allocates_one_from_the_template(materials) -> None:
                                       "task_uuid": TASK, "job_uuid": job})
     result = _command(gateway, plan, job)["result"]
     assert result["name"].startswith("tip_box-")
+
+
+def test_load_instantiates_the_registry_class_with_its_default_children(materials, monkeypatch) -> None:
+    """模板对应注册表资源类：与 ``instantiate_material`` 同一条路建出整棵 PLR 树（枪头盒 + 96 个孔位 + 96 支枪头），
+    根节点是装入步骤的身份；同一个命令身份重放不再建第二份。普通货架上也一样（能实例化就实例化）。"""
+
+    from unilabos.resources.adapters.plr_materials import material_tree_to_resource_tree
+
+    template = registry_tip_rack(materials, monkeypatch)
+    mount, sites = deck(materials)
+    gateway, job = LocalMaterialsClient(materials), str(uuid4())
+    plan = gateway.check_material_io({"param": _param(
+        "load", mount, site="A1", resource_template=template, material_name="新吸头盒", barcode="TR-1"),
+        "task_uuid": TASK, "job_uuid": job})
+    count = len(materials.list_materials())
+    first = _command(gateway, plan, job)
+    assert first["status"] == "completed", first
+    new = first["result"]["material_uuid"]
+    tree = materials.get_tree(new)
+    root = next(node.material for node in tree.nodes if node.material.material_uuid == new)
+    assert (root.name, root.display_name, root.barcode) == ("新吸头盒", "新吸头盒", "TR-1")
+    assert (root.template_name, root.template_uuid) == (template, plan["template_uuid"])
+    assert root.meta_data["material_io"] == {"task_uuid": TASK, "job_uuid": job}
+    assert root.config["type"] == root.class_name and root.resource_type == "tip_rack"
+    spots = [node.material for node in tree.nodes if node.material.parent_material_uuid == new]
+    tips = [node.material for node in tree.nodes if node.material.resource_type == "tip"]
+    assert (len(spots), len(tips), len(tree.nodes)) == (96, 96, 1 + 96 + 96)
+    assert {item.resource_type for item in spots} == {"tip_spot"}
+    assert all(not node.material.barcode for node in tree.nodes if node.material.material_uuid != new)
+    assert materials.occupied_site(new).site_uuid == sites["A1"]
+    # 设备台面拉到的就是这棵树：能反序列化成带枪头的 PLR 枪头盒
+    [rack] = material_tree_to_resource_tree(tree).to_plr_resources()
+    assert rack.name == "新吸头盒" and rack.unilabos_uuid == new
+    assert len(rack.children) == 96 and all(spot.has_tip() for spot in rack.children)
+
+    replay = _command(gateway, plan, job)
+    assert replay["replayed"] is True and replay["result"]["material_uuid"] == new
+    assert len(materials.list_materials()) == count + 1 + 96 + 96
+
+    # 名字没被根物料占用、但 resource_id 已被别的物料占用：根换一个不重名的 ID，子物料的路径前缀跟着换
+    materials.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
+        client_ref="other", identity=MaterialIdentityWrite(resource_id="第二盒", name="另一件", template_name="bottle",
+                                                            resource_type="container", class_name="Container"))]))
+    second = MaterialIO(materials).plan(_param("load", mount, site="B1", resource_template=template,
+                                               material_name="第二盒"), task_uuid=TASK, job_uuid="second")
+    result = _command(gateway, second, "second")["result"]
+    nodes = [node.material for node in materials.get_tree(result["material_uuid"]).nodes]
+    root_id = next(item.resource_id for item in nodes if item.material_uuid == result["material_uuid"])
+    assert root_id.startswith("第二盒-")
+    assert all(item.resource_id.startswith(f"{root_id}/") for item in nodes if item.material_uuid != result["material_uuid"])
+
+
+def test_load_onto_a_shelf_keeps_identity_only_for_a_template_without_a_registry_class(materials) -> None:
+    """普通货架（没有所属设备）+ 不能实例化的模板：照旧只按模板写一件物料的身份。"""
+
+    mount, sites = deck(materials)
+    gateway = LocalMaterialsClient(materials)
+    plan = MaterialIO(materials).plan(_param("load", mount, site="A1", resource_template="tip_box"),
+                                      task_uuid=TASK, job_uuid="shelf")
+    new = _command(gateway, plan, "shelf")["result"]["material_uuid"]
+    [node] = materials.get_tree(new).nodes
+    assert (node.material.template_name, node.material.class_name, node.material.config) == ("tip_box", "Container", {})
+    assert materials.occupied_site(new).site_uuid == sites["A1"]
+
+
+def test_a_device_mount_rejects_a_template_that_cannot_be_instantiated(materials, monkeypatch) -> None:
+    """挂载物料属于设备、模板不能实例化成 PLR 资源：计划 / 试运行就拒绝并说明原因（写库后台面同步必然失败）；
+    冻结计划之后才变得不能实例化的，写库时同样拒绝，什么都不写。"""
+
+    mount, _sites = device_deck(materials)
+    material_io = MaterialIO(materials)
+    sequence = materials.latest_ledger_sequence()
+    for call in (material_io.plan, material_io.check):
+        with pytest.raises(MaterialValidationError, match="属于设备 liquid_handler") as caught:
+            call(_param("load", mount, site="A1", resource_template="tip_box"), task_uuid=TASK, job_uuid="d1")
+        assert caught.value.subject == "template" and "registry 资源类不可实例化: 'tip_box'" in str(caught.value)
+        assert temporary_resource_condition(caught.value) is None  # 合同错误：节点失败，不排队
+    assert materials.latest_ledger_sequence() == sequence
+
+    template = registry_tip_rack(materials, monkeypatch)
+    plan = material_io.check(_param("load", mount, site="A1", resource_template=template), task_uuid=TASK, job_uuid="d2")
+    assert plan["template_name"] == template
+    monkeypatch.delitem(lab_registry.resource_type_registry, template)  # 确认期间注册表里没了这个资源类
+    sequence = materials.latest_ledger_sequence()
+    rejected = _command(LocalMaterialsClient(materials), plan, "d2")
+    assert (rejected["status"], rejected["error_code"]) == ("rejected", "invalid_material:template")
+    assert "属于设备 liquid_handler" in rejected["error"]
+    assert materials.latest_ledger_sequence() == sequence
 
 
 def test_load_never_overwrites_and_respects_the_site_whitelist(materials) -> None:
@@ -250,5 +372,12 @@ def test_http_gateway_checks_and_commits_through_the_inventory_routes(tmp_path, 
             # 经 HTTP 只剩业务码：6007 库位被占，调度器同样判为临时条件
             assert occupied.value.business_code == 6007
             assert temporary_resource_condition(occupied.value) == "site_occupied"
+            # 设备挂载点 + 不能实例化的模板：试运行路由按参数不合法拒绝，调度器判为失败而不是排队
+            device_mount, _device_sites = device_deck(service)
+            with pytest.raises(MaterialsHTTPError) as invalid:
+                gateway.check_material_io({"param": _param("load", device_mount, site="A1", resource_template="tip_box"),
+                                           "task_uuid": TASK, "job_uuid": "h3"})
+            assert invalid.value.business_code == 1000 and "属于设备 liquid_handler" in str(invalid.value)
+            assert temporary_resource_condition(invalid.value) is None
     finally:
         service.close()

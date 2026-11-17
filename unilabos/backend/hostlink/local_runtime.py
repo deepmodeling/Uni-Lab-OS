@@ -905,7 +905,10 @@ class HostLinkDeviceNode(DeviceNode):
         from unilabos.resources.materials import _looks_like_uuid
 
         service = self._require_resource_service()
+        # 物料 name 等于 uuid：只带 UUID 形式 name 的引用同样按 uuid 查
         slot_uuid = str(payload.get("uuid") or "").strip()
+        if not slot_uuid and _looks_like_uuid(str(payload.get("name") or "").strip() or "-"):
+            slot_uuid = str(payload["name"]).strip()
         if slot_uuid and _looks_like_uuid(slot_uuid):
             try:
                 return service.get_resources_sync([slot_uuid], with_children=True)

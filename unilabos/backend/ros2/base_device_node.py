@@ -1747,7 +1747,10 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
     async def _convert_resource_async(self, resource_data: "ResourceDictType"):
         """异步转换 ResourceDictType 为 PLR 实例，优先用 uuid 查询"""
-        unilabos_uuid = resource_data.get("uuid")
+        from unilabos.resources.objects.naming import canonical_uuid
+
+        # 物料 name 等于 uuid：只带 name 的引用同样按 uuid 查
+        unilabos_uuid = resource_data.get("uuid") or canonical_uuid(resource_data.get("name"))
 
         if unilabos_uuid:
             resource_tree = await self.get_resource([unilabos_uuid], with_children=True)

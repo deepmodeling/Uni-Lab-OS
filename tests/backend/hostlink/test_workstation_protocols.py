@@ -156,3 +156,53 @@ def test_workstation_shared_logic_is_single_source_across_backends() -> None:
     assert "unilabos.backend.runtime.workstation_protocol" in ros2_workstation_path.read_text(
         encoding="utf-8"
     )
+
+
+def test_expanded_protocol_vessel_uses_the_physical_graph_node_id(monkeypatch) -> None:
+    """协议的容器入参按权威展开后，``id`` 要是物理拓扑图里的节点名。
+
+    权威的 resource id 是带父级前缀的路径（``Station/flask``），协议编译器按 ``-g`` 图的节点
+    id 查容器；展开后原样带路径时编译器报「容器不存在于系统中」，示例协议站全都跑不起来。
+    """
+
+    import uuid
+
+    import networkx as nx
+
+    from unilabos.backend.runtime import workstation_protocol
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+
+    flask_uuid, station_uuid = str(uuid.uuid4()), str(uuid.uuid4())
+    graph = nx.Graph()
+    graph.add_node("Station", uuid=station_uuid, type="device")
+    graph.add_node("flask", uuid=flask_uuid, type="container")
+    monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", graph)
+    authority = ResourceTreeSet.from_raw_dict_list(
+        [
+            {
+                "id": "Station/flask", "uuid": flask_uuid, "name": flask_uuid, "type": "container",
+                "class": "RegularContainer", "template_name": "container",
+                "config": {"type": "RegularContainer", "name": "flask"}, "data": {}, "extra": {},
+            }
+        ]
+    )
+
+    class Node:
+        async def get_resource(self, uuids, with_children=True):
+            assert uuids == [flask_uuid]
+            return authority
+
+    single = asyncio.run(
+        workstation_protocol.expand_resource_value(Node(), {"id": "flask", "uuid": flask_uuid})
+    )
+    assert single["id"] == "flask" and single["uuid"] == flask_uuid
+    many = asyncio.run(
+        workstation_protocol.expand_resource_value(Node(), [{"id": "flask", "uuid": flask_uuid}])
+    )
+    assert many[0][0]["id"] == "flask"
+    # 物理拓扑图里没有这个物料（运行期新建的）时保留权威 id
+    monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", nx.Graph())
+    kept = asyncio.run(
+        workstation_protocol.expand_resource_value(Node(), {"uuid": flask_uuid})
+    )
+    assert kept["id"] == "Station/flask"

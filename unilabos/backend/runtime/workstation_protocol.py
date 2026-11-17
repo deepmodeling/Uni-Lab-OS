@@ -77,7 +77,26 @@ async def expand_resource_value(node: "DeviceNode", value: Any) -> Any:
     else:
         tree_set = await node.get_resource_by_id(resource_id, with_children=True)
     target = tree_set.dump()
+    for tree in target:
+        for resource in tree:
+            _use_physical_node_id(resource)
     return target if is_sequence else target[0][0]
+
+
+def _use_physical_node_id(resource: dict) -> None:
+    """把权威资源 dict 的 ``id`` 换成物理拓扑图里同一 uuid 的节点名。
+
+    权威的 resource id 是带父级前缀的路径（``Station/flask``），协议编译器却按 ``-g`` 图的节点
+    id（``flask``）在物理拓扑图里查容器、找连通的泵阀；不换就报「容器不存在于系统中」。
+    """
+    graph = physical_setup_graph()
+    resource_uuid = resource.get("uuid")
+    if graph is None or not resource_uuid:
+        return
+    for node_id, data in graph.nodes(data=True):
+        if data.get("uuid") == resource_uuid:
+            resource["id"] = node_id
+            return
 
 
 async def update_protocol_resources(node: "DeviceNode", values: List[Any]) -> None:

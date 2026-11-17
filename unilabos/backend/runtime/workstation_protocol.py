@@ -95,10 +95,15 @@ async def update_protocol_resources(node: "DeviceNode", values: List[Any]) -> No
         for res_data in resource_list:
             if not isinstance(res_data, dict):
                 continue
-            res_name = res_data.get("id") or res_data.get("name")
-            if not res_name:
-                continue
-            plr = node.resource_tracker.figure_resource({"name": res_name}, try_mode=False)
+            # 按 uuid 找本地实例；没有 uuid 时按 PLR 键（图节点 id）
+            if res_data.get("uuid"):
+                query = {"uuid": res_data["uuid"]}
+            else:
+                res_name = res_data.get("id") or (res_data.get("config") or {}).get("name") or res_data.get("name")
+                if not res_name:
+                    continue
+                query = {"name": res_name}
+            plr = node.resource_tracker.figure_resource(query, try_mode=False)
             res = node.resource_tracker.parent_resource(plr)
             if res is None:
                 res = plr

@@ -291,8 +291,8 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         assert ensured.trees[0].root_node.res_content.uuid == stock_uuid
         assert service.get_material(stock_uuid).material.version == stock_version
 
-        # 第二步：RESOURCE_APPEND 挂载（本地未命中 -> 从权威加载实例）
-        _append_via_hostlink(host, stock_uuid, bind_parent_id="Bench_Deck", slot="T3")
+        # 第二步：RESOURCE_APPEND 挂载（本地未命中 -> 从权威加载实例）；父物料按 uuid 指名
+        _append_via_hostlink(host, stock_uuid, bind_parent_id=deck_uuid, slot="T3")
         stock_inst = node.resource_tracker.uuid_to_resources[stock_uuid]
         assert stock_inst.parent is deck_inst
         assert len(node.driver.added_batches) == 2  # 新实例 -> resource_tree_add

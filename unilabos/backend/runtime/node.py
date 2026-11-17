@@ -884,6 +884,9 @@ class DeviceNode(ABC):
         payload: {"resource_uuid": [...], "bind_parent_id": str,
                   "bind_location": {x,y,z}, "other_calling_param": {site|slot, ...}}
 
+        ``bind_parent_id`` 是本设备 id（挂到设备自身）、父物料 uuid，或父物料的 PLR 键；
+        先按 uuid 找，找不到再按 PLR 键找。
+
         目标位参数（二选一）：``site`` 只承载权威 ResourceSite 的 uuid（机器路径，
         与 MATERIAL_MOVE 的 destination_site_uuid 同一标识，免反查直传权威）；
         ``slot`` 是字符串——优先按 Site label 匹配（如 "A1"），非 label 且为
@@ -923,11 +926,12 @@ class DeviceNode(ABC):
                 )
             # 2. assign：投影父 uuid 后走统一挂载（site/spot 探测在 transfer_to_new_resource 内）；
             #    bind_parent_id 为节点自身时仅登记 tracker，不做 assign
-            parent_uuid = (
-                self.resource_uuid
-                if bind_parent_id in (self.device_id, self._short_device_id())
-                else self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
-            )
+            if bind_parent_id in (self.device_id, self._short_device_id()):
+                parent_uuid = self.resource_uuid
+            elif bind_parent_id in self.resource_tracker.uuid_to_resources:
+                parent_uuid = bind_parent_id
+            else:
+                parent_uuid = self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
             drafts = tree_set.to_plr_resources()
             # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
             if commit_point is not None and not commit_point.enter():

@@ -777,7 +777,7 @@ def assign(
     执行并阻塞等待完成。
 
     - ``resources``：PLR 实例（带权威 uuid）或 uuid 字符串，单个或列表；
-    - ``parent``：目标父物料（实例或名字）；None 表示挂到设备自身
+    - ``parent``：目标父物料（实例、uuid 或 PLR 键）；None 表示挂到设备自身
       （只登记进 tracker，不做 assign）；
     - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
     - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
@@ -794,7 +794,9 @@ def assign(
     if parent is None:
         bind_parent_id = str(node.device_id)
     else:
-        bind_parent_id = str(getattr(parent, "name", parent))
+        bind_parent_id = str(
+            getattr(parent, "unilabos_uuid", None) or getattr(parent, "name", parent)
+        )
     other: Dict[str, Any] = {}
     if slot is not None and str(slot).strip() != "":
         other["slot"] = str(slot)

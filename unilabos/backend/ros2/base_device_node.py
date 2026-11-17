@@ -1236,9 +1236,10 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
                             # 通过资源跟踪器获取本地实例
                             final_resources = queried_resources if is_sequence else queried_resources[0]
+                            # 按权威 uuid 找本地实例（PLR 名在台面上可能重名，如多块板的孔）
                             if not is_sequence:
                                 plr = self.resource_tracker.figure_resource(
-                                    {"name": final_resources.name}, try_mode=False
+                                    {"uuid": final_resources.unilabos_uuid}, try_mode=False
                                 )
                                 # 保留unilabos_extra
                                 if hasattr(final_resources, "unilabos_extra") and hasattr(plr, "unilabos_extra"):
@@ -1247,7 +1248,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                             else:
                                 new_resources = []
                                 for res in queried_resources:
-                                    plr = self.resource_tracker.figure_resource({"name": res.name}, try_mode=False)
+                                    plr = self.resource_tracker.figure_resource(
+                                        {"uuid": res.unilabos_uuid}, try_mode=False
+                                    )
                                     if hasattr(res, "unilabos_extra") and hasattr(plr, "unilabos_extra"):
                                         plr.unilabos_extra = getattr(res, "unilabos_extra", {}).copy()
                                     new_resources.append(plr)

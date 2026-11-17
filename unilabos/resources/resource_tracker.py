@@ -66,24 +66,6 @@ def iter_serialized_plr_children(
         yield by_name[name], child_data
 
 
-def iter_serialized_plr_children(
-    resource: "PLRResource", serialized: Mapping[str, Any]
-) -> Iterator[Tuple["PLRResource", dict]]:
-    """按规范结构匹配实例；已提升的内嵌枪头也参与 UUID 映射。"""
-    by_name = {}
-    for child in material_children(resource):
-        if child.name in by_name:
-            raise ValueError(f"PLR 资源 {resource.name} 的孩子重名: {child.name}")
-        by_name[child.name] = child
-    seen = set()
-    for child_data in serialized.get("children", []):
-        name = child_data["name"]
-        if name in seen or name not in by_name:
-            raise ValueError(f"PLR 资源 {resource.name} 的序列化孩子无法唯一匹配: {name}")
-        seen.add(name)
-        yield by_name[name], child_data
-
-
 def require_plr_config_type(config: Mapping[str, Any], *, uuid: str, template_name: str) -> str:
     """PLR 实现类型只接受 config.type，禁止从业务字段推断。"""
     class_name = config.get("type")
@@ -1255,9 +1237,10 @@ class ResourceTreeSet(object):
             name_to_extra: dict,
             name_to_sites: dict,
         ):
-            """一次遍历收集 UUID、state、extra、Site 与模板名称。"""
-            name_to_uuid[node.res_content.name] = node.res_content.uuid
-            all_states[node.res_content.name] = assemble_tracker_state(node.res_content)
+            """一次遍历收集 UUID、state、extra、Site 与模板名称（均以 PLR 键为键）。"""
+            plr_name = node.res_content.plr_name
+            name_to_uuid[plr_name] = node.res_content.uuid
+            all_states[plr_name] = assemble_tracker_state(node.res_content)
             plr_extra = copy.deepcopy(node.res_content.extra)
             if "capacity" in node.res_content.config:
                 plr_extra[EXTRA_RESOURCE_CAPACITY] = copy.deepcopy(node.res_content.config["capacity"])
@@ -1273,9 +1256,9 @@ class ResourceTreeSet(object):
             )
             plr_extra[FRONTEND_POSE_EXTRA] = node.res_content.pose.extra
             plr_extra[EXTRA_RESOURCE_CLASS] = node.res_content.template_name
-            name_to_extra[node.res_content.name] = plr_extra
+            name_to_extra[plr_name] = plr_extra
             if node.res_content.sites is not None:
-                name_to_sites[node.res_content.name] = [
+                name_to_sites[plr_name] = [
                     site.model_dump() for site in node.res_content.sites
                 ]
             for child in node.children:
@@ -1310,7 +1293,7 @@ class ResourceTreeSet(object):
                 }
             d = {
                 **config,
-                "name": res.name,
+                "name": res.plr_name,
                 "type": plr_type,
                 "size_x": res.pose.size.width,
                 "size_y": res.pose.size.height,

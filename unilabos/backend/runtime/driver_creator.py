@@ -122,12 +122,13 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
             states = {}
         if isinstance(data, dict):
             if "_resource_child_name" in data:
+                # 图里按 PLR 键引用孩子（物料 name 是 uuid，不是标签）
                 child_name = str(data["_resource_child_name"])
                 resource = next(
                     (
                         child
                         for child in self.children
-                        if child.res_content.name == child_name
+                        if child.res_content.plr_name == child_name
                     ),
                     None,
                 )
@@ -220,7 +221,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
             result: Dict[str, str],
         ) -> None:
             for child in children:
-                result[child.res_content.name] = child.res_content.uuid
+                result[child.res_content.plr_name] = child.res_content.uuid
                 collect_name_to_uuid(child.children, result)
 
         name_to_uuid: Dict[str, str] = {}
@@ -267,7 +268,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
             self.children = [
                 child
                 for child in self.children
-                if child.res_content.name not in used_children
+                if child.res_content.plr_name not in used_children
             ]
             return super().create_instance(processed_data)
         except Exception as exc:  # noqa: BLE001 - include both creation attempts

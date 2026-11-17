@@ -201,13 +201,15 @@ async def deduct_resource(
             materials.owner_device_of, mount
         )
     mount_name = getattr(mount, "name", None) or _edge_id(mount)
+    # 目标父物料按 uuid 指名；只有名字字符串时才退回 PLR 键
+    mount_ref = getattr(mount, "unilabos_uuid", None) or mount_name
     logger.info(
         f"[HostMaterials] 挂载物料 name={getattr(plr, 'name', '')} "
         f"-> device={target_id} mount_resource={mount_name}"
     )
     payload: Dict[str, Any] = {
         "resource_uuid": [getattr(plr, "unilabos_uuid")],
-        "bind_parent_id": str(mount_name),
+        "bind_parent_id": str(mount_ref),
         "bind_location": _normalize_point(bind_locations),
     }
     if slot_on_deck:

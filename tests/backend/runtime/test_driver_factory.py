@@ -289,6 +289,37 @@ def test_workstation_creator_registers_the_graph_deck_once() -> None:
     assert [item.name for item in tracker.resources if item.name == "spare"] == ["spare"]
 
 
+def test_graph_child_references_resolve_by_plr_key() -> None:
+    """``_resource_child_name`` 引用的是 PLR 键（``config.name``）：物料 name 是 uuid 时照样解析。"""
+
+    from pylabrobot.resources import Deck
+
+    from unilabos.server.services.materials.graph import graph_resource_tree
+
+    deck_uuid = "00000000-0000-4000-8000-0000000000b2"
+    tree = graph_resource_tree(
+        [
+            {"id": "station", "uuid": "00000000-0000-4000-8000-0000000000b1", "type": "device",
+             "class": "station", "template_name": "station", "parent": None, "config": {}},
+            {"id": "deck", "uuid": deck_uuid, "name": deck_uuid, "display_name": "主台面", "type": "deck",
+             "class": "Deck", "template_name": "Deck", "parent": "station",
+             "config": {"name": "deck", "type": "Deck", "size_x": 100.0, "size_y": 100.0, "size_z": 10.0}},
+        ]
+    )
+    station_node = tree.trees[0].root_node
+    tracker = DeviceNodeResourceTracker()
+    creator = select_driver_creator(
+        _DeckStation, children=list(station_node.children), resource_tracker=tracker
+    ).creator
+
+    driver = creator.create_instance(
+        {"deck": {"data": {"_resource_child_name": "deck", "_resource_type": "pylabrobot.resources:Deck"}}}
+    )
+
+    assert isinstance(driver.deck, Deck) and driver.deck.name == "deck"
+    assert tracker.uuid_to_resources[deck_uuid] is driver.deck
+
+
 class _ConfigAndFlatDriver:
     def __init__(self, config=None, debug_mode=False, address="10.0.0.1", deck=None, device_id=None):
         self.config = config

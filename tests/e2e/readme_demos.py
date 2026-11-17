@@ -216,7 +216,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="d1e8192e59ca8b2180238307b2c914d596f7040b",
+        ref="d71c81a8b7f969b4fec67219379c89b98873b5e6",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",
@@ -232,7 +232,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLockDemo",
         url="https://github.com/Xuwznln/LabDeviceLockDemo",
-        ref="a12d8e0e48094ec7154c3b252f575cfa9c5acdfb",
+        ref="ec6666614ad0f67f9fe3c2ca1980c4c07d1b29b9",
         package="lock_demo",
         host_graph="graph/lock_demo.json",
         # 无设备自跑闭环：锁语义只能在"多个任务同时申请资源"时观察，靠并发组制造竞争。

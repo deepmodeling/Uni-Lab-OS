@@ -229,7 +229,7 @@ HostLink 的 `7302/TCP`。
 Host 缺省也连本机这个端口。用 `--address` 接入权威的顶层 Host 自己同样监听 `--port`（默认也是 `8002`），
 与 `--role backend` 在同一台机器上时给其中一个换端口。原来 `--role backend` 专用的
 `HTTPConfig.backend_port`（默认 `8081`）已删除：旧配置文件或环境变量 `UNILABOS_HTTPCONFIG_BACKEND_PORT`
-里还写着时静默忽略，需要别的端口时改用 `--port` 或 `BasicConfig.port`。
+里还写着时，值被忽略，启动时打印一条警告（两处都写了也只打一次）；需要别的端口时改用 `--port` 或 `BasicConfig.port`。
 
 ### 命令行覆盖使用示例
 

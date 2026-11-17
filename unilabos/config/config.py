@@ -10,12 +10,20 @@ from unilabos.utils import logger
 HOST_NODE_REGISTRY_NAME = "host_node"
 DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
 _ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# 已删除的配置字段：旧配置文件 / 环境变量里还写着时静默忽略（control_token / station_api_key：控制面 token 与
+# 已删除的配置字段：旧配置文件 / 环境变量里还写着时忽略（control_token / station_api_key：控制面 token 与
 # V1 工站密钥已取消，管理 API 不鉴权；HTTPConfig.backend_port：--role backend 与默认权威统一用 BasicConfig.port）。
 _REMOVED_CONFIG_FIELDS = {
     "BasicConfig": frozenset({"app_bridges", "communication_protocol", "control_token", "station_api_key"}),
     "HTTPConfig": frozenset({"backend_port"}),
 }
+# 其中仍有替代项、值被忽略会改变行为的字段：启动时提示一次替代项（其余已删除字段静默忽略）。
+_REMOVED_CONFIG_REPLACEMENTS = {
+    ("HTTPConfig", "backend_port"): (
+        "--role backend 与默认权威共用一个管理端口，请改用 --port（或配置文件的 BasicConfig.port），默认 8002"
+    ),
+}
+# 本进程已提示过的已删除字段：配置文件与环境变量都写了时也只提示一次
+_warned_removed_fields: set[tuple[str, str]] = set()
 # 与配置覆盖共用 UNILABOS_ 前缀、但由进程编排 / 可观测性模块自行读取的环境变量，
 # 不是 ``UNILABOS_<Config类>_<字段>`` 覆盖，解析时直接跳过（不告警）。
 _NON_CONFIG_ENV_KEYS = frozenset(
@@ -203,6 +211,17 @@ class ROSConfig:
     ]
 
 
+def _ignore_removed_field(class_name: str, field: str, source: str) -> None:
+    """已删除的字段一律忽略；有替代项的在本进程第一次遇到时打一条警告。"""
+
+    key = (class_name, field)
+    replacement = _REMOVED_CONFIG_REPLACEMENTS.get(key)
+    if replacement is None or key in _warned_removed_fields:
+        return
+    _warned_removed_fields.add(key)
+    logger.warning(f"[ENV] 配置项 {class_name}.{field} 已删除，{source}里的值被忽略：{replacement}")
+
+
 def _update_config_from_module(module):
     for name, obj in globals().items():
         if isinstance(obj, type) and name.endswith("Config"):
@@ -210,6 +229,7 @@ def _update_config_from_module(module):
                 for attr in dir(getattr(module, name)):
                     if not attr.startswith("_"):
                         if attr in _REMOVED_CONFIG_FIELDS.get(name, ()):
+                            _ignore_removed_field(name, attr, "配置文件")
                             continue
                         setattr(obj, attr, getattr(getattr(module, name), attr))
 
@@ -238,6 +258,7 @@ def _update_config_from_env():
                 logger.warning(f"[ENV] 未找到类：{class_key}")
                 continue
             if field_key.lower() in _REMOVED_CONFIG_FIELDS.get(matched_cls.__name__, ()):
+                _ignore_removed_field(matched_cls.__name__, field_key.lower(), f"环境变量 {env_key} ")
                 continue
 
             # 查找类属性（不区分大小写）

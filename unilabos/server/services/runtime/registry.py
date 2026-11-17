@@ -66,7 +66,9 @@ REGISTRY_TEMPLATE_NAMESPACE = uuid_module.uuid5(
 #: ``workflow``：设备包 ``@workflow`` 声明的工作流模板，与设备 / 资源同一套条目版本化。
 _VALID_REGISTRY_TYPES = frozenset({"device", "resource", "workflow"})
 #: ``loop``：循环容器（``with ctx.loop_for / ctx.loop_while``），循环体节点以 ``parent`` 指向它。
-_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop", "condition"})
+#: ``build_workflow_template_payload`` 产出的全部节点种类：group 来自 ``ctx.parallel`` / ``ctx.group``，
+#: material_io 来自 ``ctx.material_io``（与 action / loop / condition 一样，实例化时由 ``materialize_workflow_template`` 展开）
+_WORKFLOW_TEMPLATE_NODE_KINDS = frozenset({"action", "slot", "template", "loop", "condition", "group", "material_io"})
 
 #: 规则 B 不成立的原因（``RegistryPendingReason``）。
 REASON_REMOTE_REPORTER = "cross-machine-reporter"
@@ -1451,7 +1453,7 @@ def _workflow_template_issue(entry: Mapping[str, Any]) -> str:
             return "invalid-loop-node"
         if "description" in node and not isinstance(node["description"], str):
             return "invalid-node-description"
-    # 循环体成员的 parent 必须指向本模板里的 loop 节点
+    # 循环体 / 分组成员的 parent 必须指向本模板里的 loop / group 节点
     kinds_by_key = {str(node.get("key")): str(node.get("kind") or "") for node in nodes}
     if any(node.get("kind") == "condition" or node.get("condition_guards") for node in nodes):
         from unilabos.protocol.runtime.condition import remap_expression, validate_condition_graph
@@ -1483,7 +1485,8 @@ def _workflow_template_issue(entry: Mapping[str, Any]) -> str:
         parent = node.get("parent")
         if parent is None:
             continue
-        if kinds_by_key.get(str(parent)) != "loop" or str(parent) == str(node.get("key")):
+        # 容器只有循环与分组（ctx.parallel / ctx.group）
+        if kinds_by_key.get(str(parent)) not in {"loop", "group"} or str(parent) == str(node.get("key")):
             return "invalid-node-parent"
     if entry.get("guide") is not None and not _valid_workflow_guide(entry["guide"]):
         return "invalid-guide"

@@ -42,8 +42,29 @@ def _compiler() -> WorkflowAuthoringCompiler:
     return WorkflowAuthoringCompiler(catalog_provider=lambda: catalog, registry_fingerprint=lambda: "r1")
 
 
+def _report_pump_registry() -> None:
+    """模拟 Host 上报一次注册表：调度权威不扫描注册表，没有上报时含设备动作的源码编译不出候选。"""
+
+    from unilabos.protocol.base import canonical_hash
+    from unilabos.server.services.runtime.registry import get_registry_service
+
+    pump = {
+        "id": "pump",
+        "registry_type": "device",
+        "display_name": "泵",
+        "class": {
+            "module": "lab.pump:Pump",
+            "type": "python",
+            "action_value_mappings": {"dose": {"type": "UniLabJsonCommand", "goal": {}}},
+        },
+        "handles": [],
+    }
+    get_registry_service().report_entries([{"id": "pump", "content_sha256": canonical_hash(pump), "payload": pump}])
+
+
 def _start_authority(paths: ServerDatabasePaths) -> Any:
     setup_local_scheduler(backend=setup_execution_backend(database_paths=paths))
+    _report_pump_registry()
     service = get_workflow_service()
     # 测试目录里没有真实设备：换上带 pump-1 的编译目录，候选才能签发
     service.compiler = _compiler()

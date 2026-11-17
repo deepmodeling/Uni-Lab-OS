@@ -28,8 +28,12 @@ def stack(monkeypatch):
 
     definition = next(item for item in get_registered_workflows().values() if item.source_path.endswith("flow"))
     template = build_workflow_template_payload(definition)
+    # 调度权威的设备目录只读 Registry Authority 的生效条目；这里的 demo.reactor 没有上报过
     registry = SimpleNamespace(get_workflow_template=lambda identity: template if identity == template["uuid"] else None,
-                               list_workflow_templates=lambda: [template])
+                               list_workflow_templates=lambda: [template],
+                               has_report=lambda: True,
+                               active_payloads=lambda registry_type="": [],
+                               active_payload=lambda name, registry_type="": None)
     monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: registry)
     materials = SimpleNamespace(list_materials=lambda **kwargs: [SimpleNamespace(
         resource_type="device", resource_id="lab/second-reactor", template_name="demo.reactor", material_uuid=str(uuid4()))])

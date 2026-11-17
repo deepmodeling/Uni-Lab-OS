@@ -304,3 +304,96 @@ def test_legacy_graph_boundary_moves_names_out_of_the_way() -> None:
     # UUID 形式的 name 是身份，原样交给 Graph Authority 复用
     assert plate["name"] == identity
     assert legacy_graph_markers(upgraded) == {}
+
+
+# ── 第 3 期：裸标签孔和管以 uuid 作 PLR 键 ───────────────────────────────
+
+
+def test_two_opentrons_plates_and_two_tube_racks_share_one_deck(service) -> None:
+    """Opentrons 板 / 管架的孔和管直接叫 "A1"：同一台面放两块时改键前在 PLR 树里撞名。"""
+
+    from pylabrobot.resources.opentrons.deck import OTDeck
+    from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat
+    from pylabrobot.resources.opentrons.tube_racks import opentrons_24_tuberack_nest_1point5ml_screwcap
+
+    from unilabos.protocol.materials import MaterialMove
+    from unilabos.resources.adapters.plr_materials import material_tree_to_plr_resources
+
+    gateway = LocalMaterialsClient(service)
+    deck = materials.create(OTDeck(name="ot_deck", with_trash=False), gateway=gateway)
+    labware = [
+        materials.create(factory(name), gateway=gateway)
+        for factory, name in (
+            (corning_96_wellplate_360ul_flat, "plate_1"),
+            (corning_96_wellplate_360ul_flat, "plate_2"),
+            (opentrons_24_tuberack_nest_1point5ml_screwcap, "rack_1"),
+            (opentrons_24_tuberack_nest_1point5ml_screwcap, "rack_2"),
+        )
+    ]
+    first_items = []
+    for item in labware:
+        first = item.get_item("A1")
+        first_items.append(first.unilabos_uuid)
+        # PLR 键是 uuid，ordering 标识与人读标签仍是 "A1"
+        assert first.name == first.unilabos_uuid and item["A1"][0] is first
+        stored = service.get_material(first.unilabos_uuid).material
+        assert stored.display_name == "A1" and stored.config["name"] == first.unilabos_uuid
+        assert service.get_material(item.unilabos_uuid).material.config["ordering"]["A1"] == first.unilabos_uuid
+
+    for slot, item in enumerate(labware, start=1):
+        deck.assign_child_at_slot(item, slot)
+
+    holders = {child.name: child.unilabos_uuid for child in deck.children}
+    for slot, item in enumerate(labware, start=1):
+        service.move_material(
+            _mutation("move_material"),
+            MaterialMove(material_uuid=item.unilabos_uuid, parent_material_uuid=holders[f"ot_deck_slot_{slot}"]),
+        )
+    snapshot = resource_tree_to_snapshot(
+        ResourceTreeSet.from_plr_resources([deck]), service.get_tree(deck.unilabos_uuid)
+    )
+    service.apply_snapshot(_mutation("apply_material_snapshot"), snapshot)
+
+    restored = material_tree_to_plr_resources(service.get_tree(deck.unilabos_uuid))[0]
+    placed = restored.slots[:4]
+    assert [item.unilabos_uuid for item in placed] == [item.unilabos_uuid for item in labware]
+    assert [item.get_item("A1").unilabos_uuid for item in placed] == first_items
+
+
+def test_graph_keys_bare_wells_by_uuid_and_leaves_prefixed_children(tmp_path) -> None:
+    from unilabos.server.services.materials.graph import GraphService
+
+    nodes: list[dict] = []
+    expected: dict[str, dict[str, str]] = {}
+    for plate in ("plate_1", "plate_2"):
+        plate_uuid = str(uuid4())
+        nodes.append({"id": plate, "uuid": plate_uuid, "name": plate, "type": "plate", "template_name": "Plate",
+                      "config": {"type": "Plate", "ordering": {"A1": "A1", "B1": "B1"}}})
+        expected[plate] = {}
+        for well in ("A1", "B1"):
+            well_uuid = str(uuid4())
+            expected[plate][well] = well_uuid
+            nodes.append({"id": well, "uuid": well_uuid, "name": well, "type": "well", "template_name": "Well",
+                          "parent": plate, "parent_uuid": plate_uuid, "config": {"type": "Well"}})
+    nodes.append({"id": "tips", "name": "tips", "type": "tip_rack", "template_name": "TipRack",
+                  "config": {"type": "TipRack", "ordering": {"A1": "tips_A1"}}})
+    nodes.append({"id": "tips_A1", "name": "tips_A1", "type": "tip_spot", "template_name": "TipSpot",
+                  "parent": "tips", "config": {"type": "TipSpot"}})
+
+    graphs = GraphService(tmp_path / "materials.db")
+    try:
+        stored = graphs.upsert_graph(name="ot", payload={"nodes": nodes, "links": []}, device_site_templates={})
+        by_uuid = {node["uuid"]: node for node in stored["payload"]["nodes"]}
+        by_id = {node["id"]: node for node in stored["payload"]["nodes"] if node["type"] != "well"}
+        for plate, wells in expected.items():
+            assert by_id[plate]["config"]["ordering"] == {label: uuid for label, uuid in wells.items()}
+            for label, well_uuid in wells.items():
+                well = by_uuid[well_uuid]
+                assert well["config"]["name"] == well_uuid and well["display_name"] == label
+        # 不是「名字等于 ordering 标识」的孩子不改键
+        assert by_id["tips_A1"]["config"]["name"] == "tips_A1"
+        assert by_id["tips"]["config"]["ordering"] == {"A1": "tips_A1"}
+        again = graphs.upsert_graph(name="ot", payload={"nodes": nodes, "links": []}, device_site_templates={})
+        assert again["revision"] == stored["revision"]
+    finally:
+        graphs.close()

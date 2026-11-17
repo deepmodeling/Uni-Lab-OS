@@ -54,6 +54,7 @@ from unilabos.protocol.materials import (
     MaterialDeviceSync,
     MaterialIdentityRead,
     MaterialMove,
+    MaterialNodeCreate,
     MaterialPatch,
     MaterialDelta,
     MaterialDeltaResult,
@@ -77,6 +78,7 @@ from unilabos.resources.objects.naming import (
     check_name_identity,
     migrated_name_fields,
     plr_key,
+    rekey_bare_label_items,
 )
 from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
@@ -2499,6 +2501,19 @@ class MaterialsService(MaterialsRepository):
                         else material_uuid
                     ),
                     default_label=node.identity.resource_id,
+                )
+            # 名字就是 ordering 标识的孔和管（Opentrons 的裸 "A1"）以 uuid 作 PLR 键
+            children_of: dict[str, list[MaterialNodeCreate]] = {}
+            for node in value.nodes:
+                if node.parent_client_ref is not None:
+                    children_of.setdefault(node.parent_client_ref, []).append(node)
+            for parent_ref, children in children_of.items():
+                rekey_bare_label_items(
+                    names[parent_ref][1],
+                    [
+                        (client_map[child.client_ref], child.identity.resource_type, names[child.client_ref][1])
+                        for child in children
+                    ],
                 )
 
             for node in value.nodes:

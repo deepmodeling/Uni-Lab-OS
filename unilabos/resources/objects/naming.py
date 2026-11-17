@@ -15,11 +15,13 @@ PLR 导入 ``from_plr_resources``。
 from __future__ import annotations
 
 import copy
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, MutableMapping, Optional
 from uuid import UUID
 
 #: ``config`` 里 PLR 键的字段名。
 PLR_KEY_FIELD = "name"
+#: 名字可能就是 ordering 标识的孩子类型（PLR category）：孔和管。
+BARE_LABEL_TYPES = frozenset({"well", "tube"})
 
 
 class MaterialNameConflict(ValueError):
@@ -107,7 +109,39 @@ def migrated_name_fields(
     return display, migrated
 
 
+def rekey_bare_label_items(
+    parent_config: MutableMapping[str, Any],
+    children: Iterable[tuple[str, Any, MutableMapping[str, Any]]],
+) -> int:
+    """「名字等于 ordering 标识」的孔和管改用 uuid 作 PLR 键，同步父节点 ordering；返回改键数。
+
+    ``children`` 是 ``(孩子 uuid, 孩子 resource_type, 孩子 config)``，原地修改。Opentrons 的板、
+    储液槽和部分管架把孔 / 管直接命名为 ``"A1"``，同一台面放两块就在 PLR 树里撞名；改键后
+    ordering 标识不变（``{"A1": <uuid>}``），``plate["A1"]`` / ``get_item("A1")`` 照常可用，
+    人读标签仍是 ``display_name="A1"``。构造函数生成的结构名（台面槽位、``trash``、Carrier
+    位点、枪头 ``#n``）不是孔或管，或者名字不等于 ordering 标识，不受影响。
+    """
+
+    ordering = parent_config.get("ordering")
+    if not isinstance(ordering, MutableMapping):
+        return 0
+    rekeyed = 0
+    for child_uuid, resource_type, child_config in children:
+        key = plr_key(child_config)
+        if (
+            str(resource_type or "") in BARE_LABEL_TYPES
+            and key
+            and key != child_uuid
+            and ordering.get(key) == key
+        ):
+            child_config[PLR_KEY_FIELD] = child_uuid
+            ordering[key] = child_uuid
+            rekeyed += 1
+    return rekeyed
+
+
 __all__ = [
+    "BARE_LABEL_TYPES",
     "MaterialNameConflict",
     "PLR_KEY_FIELD",
     "canonical_uuid",
@@ -115,4 +149,5 @@ __all__ = [
     "legacy_label",
     "migrated_name_fields",
     "plr_key",
+    "rekey_bare_label_items",
 ]

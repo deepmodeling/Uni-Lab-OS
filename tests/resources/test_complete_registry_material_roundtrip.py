@@ -188,6 +188,37 @@ def test_complete_registry_resources_can_be_created_and_roundtripped():
     assert not failures, "\n\n".join(failures)
 
 
+def _bare_label_keys(resource: Resource) -> dict[str, str]:
+    """权威给裸标签孔 / 管（Opentrons 的 "A1"）换成的 uuid PLR 键 → 原来的 ordering 标识。"""
+
+    keys: dict[str, str] = {}
+    stack = [resource]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        ordering = getattr(node, "_ordering", None)
+        if not isinstance(ordering, Mapping):
+            continue
+        children = {child.name: child for child in node.children}
+        for label, child_name in ordering.items():
+            child = children.get(child_name)
+            if child is not None and child_name != label and child_name == getattr(child, "unilabos_uuid", None):
+                keys[child_name] = label
+    return keys
+
+
+def _with_labels(value: Any, keys: Mapping[str, str]) -> Any:
+    """把序列化结果里的 uuid PLR 键换回 ordering 标识，与创建前的草稿逐项比较。"""
+
+    if isinstance(value, Mapping):
+        return {keys.get(key, key): _with_labels(item, keys) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_with_labels(item, keys) for item in value]
+    if isinstance(value, str):
+        return keys.get(value, value)
+    return value
+
+
 def test_complete_registry_resources_can_be_created_by_materials_authority(
     tmp_path,
 ):
@@ -222,13 +253,15 @@ def test_complete_registry_resources_can_be_created_by_materials_authority(
                 authoritative = created.resources[0]
                 if not getattr(authoritative, "unilabos_uuid", ""):
                     raise AssertionError("微后端回执根物料缺少权威 UUID")
+                # 名字等于 ordering 标识的孔和管由权威改用 uuid 作 PLR 键，其余结构名不变
+                keys = _bare_label_keys(authoritative)
                 difference = _first_difference(
-                    serialized, authoritative.serialize()
+                    serialized, _with_labels(authoritative.serialize(), keys)
                 )
                 if difference:
                     raise AssertionError(difference)
                 state_difference = _first_difference(
-                    serialized_state, authoritative.serialize_all_state()
+                    serialized_state, _with_labels(authoritative.serialize_all_state(), keys)
                 )
                 if state_difference:
                     raise AssertionError(f"state: {state_difference}")

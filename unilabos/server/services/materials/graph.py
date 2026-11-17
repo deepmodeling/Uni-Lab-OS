@@ -32,6 +32,7 @@ from unilabos.resources.objects.naming import (
     legacy_label,
     migrated_name_fields,
     plr_key,
+    rekey_bare_label_items,
 )
 from unilabos.resources.objects.site import SITE_TEMPLATE_WHITELIST_KEY, normalize_available_sites
 from unilabos.server.services.materials.store import MaterialsRepository
@@ -215,7 +216,8 @@ def reconcile_graph_payload(
     - payload 与既有快照同 id 节点 uuid 不一致、UUID 形式的 name 与节点 uuid 不一致
       → ``identity_conflict`` 拒绝；
     - 发号后 ``name = uuid``：非 UUID 的旧 name 迁到 ``display_name``（为空时）与 PLR 键
-      ``config.name``（缺失时，设备除外），缺 ``id`` 的节点补上人可读的 id
+      ``config.name``（缺失时，设备除外），缺 ``id`` 的节点补上人可读的 id；名字就是
+      ordering 标识的孔和管改用 uuid 作 PLR 键并同步父节点 ordering
       （规则见 :mod:`unilabos.resources.objects.naming`）；
     - 层级只认 ``parent``/``parent_uuid``；派生的 ``children`` 列表剥离不入库；
     - 只接受当前 node-link 契约：根级 ``position``、Site ``occupied_by`` 等旧字段
@@ -384,6 +386,26 @@ def reconcile_graph_payload(
             node["sites_initialized"] = True
             if not str(node.get("template_name") or "").strip():
                 node["template_name"] = template_name
+
+    # ── 名字就是 ordering 标识的孔和管（Opentrons 的裸 "A1"）以 uuid 作 PLR 键 ──
+    by_uuid = {str(node["uuid"]): node for node in nodes}
+    by_unique_id = {
+        _node_id(node): node for node in nodes if id_counts.get(_node_id(node), 0) == 1
+    }
+    children_of: dict[str, list[dict[str, Any]]] = {}
+    for node in nodes:
+        parent = by_uuid.get(str(node.get("parent_uuid") or "")) or by_unique_id.get(
+            str(node.get("parent") or "")
+        )
+        if parent is not None and isinstance(node.get("config"), dict):
+            children_of.setdefault(str(parent["uuid"]), []).append(node)
+    for parent_uuid, children in children_of.items():
+        parent_config = by_uuid[parent_uuid].get("config")
+        if isinstance(parent_config, dict):
+            rekey_bare_label_items(
+                parent_config,
+                [(str(child["uuid"]), child.get("type"), child["config"]) for child in children],
+            )
 
     # ── 占用关系对账：子物料按 parent + 位置匹配写入 Site 占用。──
     # 权威快照必须自带占用（树重建/deserialize 时 child 尚未注入 uuid，

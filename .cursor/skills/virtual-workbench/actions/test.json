@@ -1,0 +1,92 @@
+{
+  "type": "UniLabJsonCommandAsync",
+  "goal": {
+    "resource": "resource",
+    "mount_resource": "mount_resource",
+    "collector_mass": "collector_mass",
+    "active_material": "active_material",
+    "capacity": "capacity",
+    "battery_system": "battery_system"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "resource": {
+        "items": {
+          "type": "object",
+          "title": "resource",
+          "description": "materials.v1 resource reference"
+        },
+        "type": "array",
+        "title": "待测试资源",
+        "description": "需要进行扣电测试的资源列表。"
+      },
+      "mount_resource": {
+        "items": {
+          "type": "object",
+          "title": "mount_resource",
+          "description": "materials.v1 resource reference"
+        },
+        "type": "array",
+        "title": "测试孔位",
+        "description": "扣电测试使用的目标孔位列表。"
+      },
+      "collector_mass": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "title": "极流体质量",
+        "description": "每个样品对应的极流体质量。"
+      },
+      "active_material": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "title": "活性物质含量",
+        "description": "每个样品对应的活性物质含量。"
+      },
+      "capacity": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "title": "克容量",
+        "description": "每个样品对应的克容量，单位 mAh/g。"
+      },
+      "battery_system": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "电池体系",
+        "description": "每个样品对应的电池体系名称。"
+      }
+    },
+    "required": [
+      "resource",
+      "mount_resource",
+      "collector_mass",
+      "active_material",
+      "capacity",
+      "battery_system"
+    ]
+  },
+  "goal_default": {
+    "resource": [],
+    "mount_resource": [],
+    "collector_mass": [],
+    "active_material": [],
+    "capacity": [],
+    "battery_system": []
+  },
+  "placeholder_keys": {
+    "resource": "unilabos_resources",
+    "mount_resource": "unilabos_resources"
+  },
+  "materials_need_lock": [
+    "resource",
+    "mount_resource"
+  ]
+}

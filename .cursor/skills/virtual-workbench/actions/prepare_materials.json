@@ -8,7 +8,9 @@
     "properties": {
       "count": {
         "type": "integer",
-        "default": 5
+        "default": 5,
+        "title": "物料数量",
+        "description": "要生成的物料数量，默认生成 5 个。"
       }
     },
     "required": []

@@ -14,14 +14,16 @@ def find_filter_device(G: nx.DiGraph) -> str:
     """查找过滤器设备"""
     debug_print("🔍 查找过滤器设备... 🌊")
     
-    # 查找过滤器设备
-    for node in G.nodes():
-        node_data = G.nodes[node]
-        node_class = node_data.get('class', '') or ''
-        
-        if 'filter' in node_class.lower() or 'filter' in node.lower():
-            debug_print(f"🎉 找到过滤器设备: {node} ✨")
-            return node
+    # 查找过滤器设备：先按设备类匹配，再按名称兜底（工作站、容器的 id 也可能含 filter）
+    devices = [node for node in G.nodes() if G.nodes[node].get('type') == 'device']
+    by_class = [node for node in devices if 'filter' in (G.nodes[node].get('class') or '').lower()]
+    by_name = [
+        node for node in devices
+        if 'filter' in node.lower() and 'workstation' not in (G.nodes[node].get('class') or '').lower()
+    ]
+    for node in by_class + by_name:
+        debug_print(f"🎉 找到过滤器设备: {node} ✨")
+        return node
     
     # 如果没找到，寻找可能的过滤器名称
     debug_print("🔎 在预定义名称中搜索过滤器... 📋")

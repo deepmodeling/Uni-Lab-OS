@@ -3,6 +3,7 @@ import networkx as nx
 import logging
 import re
 
+from .utils.vessel_parser import get_vessel
 from .utils.unit_parser import parse_time_input
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,8 @@ def extract_vessel_id(vessel: Union[str, dict]) -> str:
         str: vessel_id
     """
     if isinstance(vessel, dict):
-        vessel_id = list(vessel.values())[0].get("id", "")
+        # 平铺的 {"id": ...} 与外包一层的 {"vessel": {"id": ...}} 都由 get_vessel 处理
+        vessel_id, _ = get_vessel(vessel)
         debug_print(f"🔧 从vessel字典提取ID: {vessel_id}")
         return vessel_id
     elif isinstance(vessel, str):

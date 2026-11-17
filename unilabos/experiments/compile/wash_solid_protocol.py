@@ -3,7 +3,8 @@ import networkx as nx
 import logging
 import re
 
-from .utils.unit_parser import parse_time_input, parse_volume_input
+from .utils.vessel_parser import get_vessel
+from .utils.unit_parser import parse_mass_input, parse_time_input, parse_volume_input
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,8 @@ def extract_vessel_id(vessel: Union[str, dict]) -> str:
         str: vessel_id
     """
     if isinstance(vessel, dict):
-        vessel_id = list(vessel.values())[0].get("id", "")
+        # 平铺的 {"id": ...} 与外包一层的 {"vessel": {"id": ...}} 都由 get_vessel 处理
+        vessel_id, _ = get_vessel(vessel)
         debug_print(f"🔧 从vessel字典提取ID: {vessel_id}")
         return vessel_id
     elif isinstance(vessel, str):
@@ -191,6 +193,23 @@ def update_vessel_volume(vessel: dict, G: nx.DiGraph, new_volume: float, descrip
     
     debug_print(f"📊 容器 '{vessel_id}' 体积已更新为: {new_volume:.2f}mL")
 
+def _wash_volume(volume: Union[float, str], volume_spec: str = "", mass: str = "") -> float:
+    """洗涤体积：规格（small/medium/large…）> 质量（按 1 g ≈ 1 mL）> 体积，与原实现的优先级一致。"""
+    if volume_spec:
+        spec_map = {
+            'small': 20.0, 'medium': 50.0, 'large': 100.0,
+            'minimal': 10.0, 'normal': 50.0, 'generous': 150.0,
+        }
+        for key, value in spec_map.items():
+            if key in volume_spec.lower():
+                return value
+    if mass:
+        grams = parse_mass_input(mass)
+        if grams > 0:
+            return grams
+    return parse_volume_input(volume)
+
+
 def generate_wash_solid_protocol(
     G: nx.DiGraph,
     vessel: Union[str, dict],  # 🔧 修改：支持vessel字典
@@ -272,7 +291,7 @@ def generate_wash_solid_protocol(
     
     # 🔄 参数解析
     debug_print("📍 步骤1: 参数解析... ⚡")
-    final_volume = parse_volume_input(volume, volume_spec, mass)
+    final_volume = _wash_volume(volume, volume_spec, mass)
     final_time = parse_time_input(time)
     
     # 重复次数处理（简化）

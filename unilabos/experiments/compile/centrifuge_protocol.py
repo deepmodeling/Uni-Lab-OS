@@ -1,6 +1,7 @@
 from typing import List, Dict, Any
 import networkx as nx
 from .pump_protocol import generate_pump_protocol
+from .utils.vessel_parser import get_vessel
 
 
 def get_vessel_liquid_volume(G: nx.DiGraph, vessel: str) -> float:
@@ -57,7 +58,7 @@ def find_centrifuge_vessel(G: nx.DiGraph) -> str:
 
 def generate_centrifuge_protocol(
     G: nx.DiGraph,
-    vessel: str,
+    vessel: dict | str,
     speed: float,
     time: float,
     temp: float = 25.0
@@ -88,7 +89,9 @@ def generate_centrifuge_protocol(
         centrifuge_actions = generate_centrifuge_protocol(G, "reaction_mixture", 5000, 600, 4.0)
     """
     action_sequence = []
-    
+    # 协议模型的 vessel 是 {"id": ...} 字典（也兼容直接给容器 id）
+    vessel, _ = get_vessel(vessel)
+
     print(f"CENTRIFUGE: 开始生成离心协议")
     print(f"  - 源容器: {vessel}")
     print(f"  - 离心速度: {speed} rpm")
@@ -133,8 +136,8 @@ def generate_centrifuge_protocol(
         # 使用成熟的 pump_protocol 算法进行液体转移
         transfer_to_centrifuge_actions = generate_pump_protocol(
             G=G,
-            from_vessel=vessel,
-            to_vessel=centrifuge_vessel,
+            from_vessel_id=vessel,
+            to_vessel_id=centrifuge_vessel,
             volume=transfer_volume,
             flowrate=1.0,  # 离心转移用慢速，避免气泡
             transfer_flowrate=1.0
@@ -180,8 +183,8 @@ def generate_centrifuge_protocol(
         
         transfer_back_actions = generate_pump_protocol(
             G=G,
-            from_vessel=centrifuge_vessel,
-            to_vessel=vessel,
+            from_vessel_id=centrifuge_vessel,
+            to_vessel_id=vessel,
             volume=supernatant_volume,
             flowrate=0.5,  # 上清液转移更慢，避免扰动沉淀
             transfer_flowrate=0.5
@@ -208,8 +211,8 @@ def generate_centrifuge_protocol(
             # 清洗溶剂加入
             cleaning_actions = generate_pump_protocol(
                 G=G,
-                from_vessel=cleaning_solvent,
-                to_vessel=centrifuge_vessel,
+                from_vessel_id=cleaning_solvent,
+                to_vessel_id=centrifuge_vessel,
                 volume=cleaning_volume,
                 flowrate=2.0,
                 transfer_flowrate=2.0
@@ -220,8 +223,8 @@ def generate_centrifuge_protocol(
             if "waste_workup" in G.nodes():
                 waste_actions = generate_pump_protocol(
                     G=G,
-                    from_vessel=centrifuge_vessel,
-                    to_vessel="waste_workup",
+                    from_vessel_id=centrifuge_vessel,
+                    to_vessel_id="waste_workup",
                     volume=cleaning_volume,
                     flowrate=2.0,
                     transfer_flowrate=2.0

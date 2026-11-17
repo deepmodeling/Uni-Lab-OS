@@ -185,8 +185,9 @@ def test_install_server_apis_can_skip_host_data_routes(tmp_path) -> None:
         assert not any(path.startswith("/api/v1/runtime") for path in paths)
         assert not any(path.startswith("/api/v1/telemetry") for path in paths)
         assert not any(path.startswith("/api/v1/edge/history") for path in paths)
-        # Graph Authority 留在权威：老数据都在权威的库里
+        # Graph Authority 与实验室视图（读 materials.db）留在权威：老数据都在权威的库里
         assert any(path.startswith("/api/v1/graphs") for path in paths)
+        assert any(path.startswith("/api/v1/lab") for path in paths)
         assert any(path.startswith("/api/v1/materials") for path in paths)
         assert any(path.startswith("/api/v1/debug") for path in paths)
     finally:

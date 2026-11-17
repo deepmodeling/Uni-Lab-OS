@@ -82,7 +82,8 @@ graph_nodes 一旦提供优先于 devices，用于保存完整节点和 UUID；�
 
 ## 注册表与设备图
 
-注册表负责能力版本，图记录拓扑，二者不可相互替代。实验室布局（`/api/v1/lab/*`）已按负责人 2026-11-17 决定删除。
+注册表负责能力版本，图记录拓扑，二者不可相互替代。实验室档案 / 布局（`/lab/profile`、`/lab/layout`、`/lab/zones`、`/lab/placements`）已按负责人 2026-11-17 决定删除；
+仓储与组合树视图（`/lab/warehouse`、`/lab/assembly/{id}`）见 [Edge UI API](../edge_ui_api.md)。
 源码：[注册表 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/registry.py)、
 [设备图 API](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/materials/graph.py)。
 

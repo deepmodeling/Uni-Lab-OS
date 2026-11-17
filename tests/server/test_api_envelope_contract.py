@@ -368,8 +368,9 @@ def test_full_app_answers_errors_with_the_envelope(tmp_path, monkeypatch) -> Non
             error_of(client.get("/api/v1/scheduler/drain"), 5001)
             error_of(client.post("/api/v1/workflows", json={}), 1000)
             error_of(client.post("/api/v1/workflows", content=b"[", headers={"content-type": "application/json"}), 1000)
-            # 实验室档案 / 布局路由已删除（负责人 11-17 决定）
+            # 实验室档案 / 布局路由已删除（负责人 11-17 决定）；仓储视图保留
             assert client.get("/api/v1/lab/profile").status_code == 404
+            assert ok_data(client.get("/api/v1/lab/warehouse"))["categories"] == []
             assert ok_data(client.get("/api/v1/health"))["status"] == "ok"
             # 进程管理与内部通道同样是信封：V1 符号码在 error.code
             assert error_of(client.get("/v1/operations/never-submitted"), 4001)["code"] == "operation_not_found"

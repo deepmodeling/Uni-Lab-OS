@@ -119,9 +119,11 @@ MUST / SHOULD），`@openlab/protocol` 是它的类型化实现。给微后端�
   "Edge 上报"，取值表见 `examples/materials_operations_guide.md §2.2.1`）；
 - `/api/v1/telemetry`：设备最新状态和事件；
 - `/api/v1/edge/history`：payload 与统一历史事件（`/api/v1/history` 归 V1 运行历史）；
-- 实验室布局 `/api/v1/lab/*`（档案、网格布局、分区、摆放、仓储视图、组合树、演示种子）按负责人 2026-11-17 决定
-  整组删除，对应的 materials.db `lab_meta` / `lab_zone` / `lab_placement` 与 runtime.db `lab_layout` 一并删除；
-  物料树用 `GET /api/v1/materials/instances/{uuid}/tree`，批次 / 模板 / 实例用 `/api/v1/inventory/*`；
+- `/api/v1/lab/*`（权威回答，只读写 materials.db）：`GET /lab/warehouse` 按品类（模板）聚合批次 / 数量 / 在库实例 /
+  `warehouse_zone_id` 分布；`GET /lab/assembly/{id}` 是根物料 + 递归子件的组合树（`placement` 恒为 null）；
+  `POST /lab/demo` 幂等写入演示模板与批次。实验室档案、网格布局、分区与摆放（`/lab/profile`、`/lab/layout`、
+  `/lab/zones`、`/lab/placements`，materials.db `lab_meta` / `lab_zone` / `lab_placement` 与 runtime.db `lab_layout`）
+  按负责人 2026-11-17 决定删除；
 - `/api/v1/health`、`/api/v1/hostlink/peers`：轻量诊断；
 - `/api/v1/ping?client_timestamp=`：HTTP ping-pong，回显客户端时间戳并附服务端时钟。
   Host 到 Backend 的链路由 Backend 会话（`legacy_adaptor/session.py` 的

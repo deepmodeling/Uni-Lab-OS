@@ -23,8 +23,8 @@ from unilabos.protocol.runtime.control import EdgeHttpResponse
 logger = logging.getLogger(__name__)
 
 #: ``/api/v1/<首段>`` 命中即交给 Host 执行。其余域由权威进程自己回答：workflow /
-#: registry / materials / inventory / graphs（Graph Authority 在 materials.db）/ scheduler / restart / health /
-#: ping / error-decisions。
+#: registry / materials / inventory / graphs（Graph Authority 在 materials.db）/ lab（仓储 / 组合树视图，
+#: 读 materials.db）/ scheduler / restart / health / ping / error-decisions。
 EDGE_ROUTE_PREFIXES = (
     "runtime",
     "telemetry",

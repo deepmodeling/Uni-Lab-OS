@@ -292,7 +292,8 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 | `chemical` | 化学品定义（CAS / InChIKey 可空唯一） |
 
 实验室档案 / 分区 / 摆放（`lab_meta` / `lab_zone` / `lab_placement`）与 runtime.db 的网格布局（`lab_layout`）
-按负责人 2026-11-17 的决定已删除，连同 `/api/v1/lab/*` 路由。
+按负责人 2026-11-17 的决定已删除，连同 `/lab/profile`、`/lab/layout`、`/lab/zones`、`/lab/placements` 路由；
+不用这些表的 `/lab/warehouse`（按品类聚合批次）与 `/lab/assembly/{id}`（物料组合树）保留。
 
 ### 6.3 telemetry.db（`tables/telemetry.py`）
 

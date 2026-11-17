@@ -82,21 +82,22 @@ Slave 时全部自动接受。现在：
 
 ### 删除实验室档案 / 分区 / 摆放与网格布局（负责人 2026-11-17 决定）
 
-负责人决定实验室布局那几张表不保留、全部删除。0.13 未发布，结构变化直接并进 v1 基线（不写迁移），旧开发库按 D05 处理。
+负责人决定实验室布局那几张表不保留、全部删除；只删这几张表和只建在它们上面的东西。0.13 未发布，结构变化直接并进 v1 基线（不写迁移），旧开发库按 D05 处理。
 
 | 删除的 | 原来是什么 |
 | --- | --- |
 | materials.db `lab_meta` / `lab_zone` / `lab_placement` | 从 V1 inventory.db 移植的实验室档案（名称、领域包）、二维矩形分区、分区里的在台摆放 |
 | runtime.db `lab_layout` | dev 的网格布局文档（区域 / 围墙像素格，revision 乐观锁），之前并入 `/lab/profile` 的 `grid` |
-| `server/services/materials/lab.py`、`server/services/runtime/lab.py`、`protocol/runtime/lab.py`、`server/api/materials/lab.py`（及 `server/api/runtime/lab.py` 旧导入位置） | 档案 / 分区 / 摆放 / 仓储视图 / 组合树 / 演示种子的服务、网格文档服务、协议对象、路由 |
-| `/api/v1/lab/*` 全部 10 条路由 | `profile`（GET / PUT）、`layout`、`zones`（POST / DELETE）、`placements`（POST / DELETE）、`warehouse`、`assembly/{id}`、`demo` |
-| MCP `lab-v1.*` 4 个操作 | 档案读写、布局视图、仓储视图 |
+| `server/services/runtime/lab.py`、`protocol/runtime/lab.py`、`server/api/runtime/lab.py`（旧导入位置）；`server/services/materials/lab.py` 里的领域包、档案、分区、摆放、布局视图与 `zone_storage_summary` | 网格文档服务、协议对象、档案 / 分区 / 摆放的读写 |
+| 7 条路由 | `/lab/profile`（GET / PUT）、`/lab/layout`、`/lab/zones`（POST / DELETE）、`/lab/placements`（POST / DELETE） |
+| MCP 3 个操作 | `lab-v1.profile.get` / `lab-v1.profile.put` / `lab-v1.layout.get` |
 
 保留不动：`lab_graph`（命名设备图快照，`-g` 启动与节点身份对账依赖它）、`material_link`（拓扑边）、`site`（库位）、
-批次上的 `warehouse_zone_id`。原 `/lab/assembly/{id}` 包的物料树仍是 `GET /api/v1/materials/instances/{uuid}/tree`，
-批次 / 模板 / 实例仍在 `/api/v1/inventory/*`。证据：`tests/server/test_database_schema.py`（表清单与已删除表）、
-`test_openapi_export.py`、`test_mcp.py`（导出契约与 MCP 目录里没有 `/api/v1/lab/*`）。
-外部影响：OpenLab 的实验室地图（`LabMapView`、`src/features/lab-layout.ts`、`@openlab/protocol` 的 `lab-v1` 域）读写的就是这些路由，
+批次上的 `warehouse_zone_id`；不用这几张表的视图也保留在原地址：`GET /lab/warehouse`（按品类聚合批次，MCP
+`lab-v1.warehouse.get`）、`GET /lab/assembly/{id}`（物料组合树；V1 的 `placement` 键保留、恒为 null）、`POST /lab/demo`
+（只写演示模板与批次，`zones` / `placements` 计数恒为 0）。证据：`tests/server/test_database_schema.py`（表清单与已删除表）、
+`test_v1_lab_workspace.py`（删除的路由 404、保留的视图）、`test_openapi_export.py`、`test_mcp.py`（导出契约与 MCP 目录）。
+外部影响：OpenLab 的实验室地图（`LabMapView`、`src/features/lab-layout.ts`、`@openlab/protocol` 的 `lab-v1` 域）读写的就是删除的路由，
 需要在前端下线或改为不依赖它们。
 
 ### U01 缺口补齐：工作流（2026-11-16）

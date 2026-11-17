@@ -18,6 +18,7 @@ from unilabos.server.api.materials import (
     install_graph_api,
     install_materials_api,
 )
+from unilabos.server.api.materials.lab import create_lab_router, install_lab_api
 from unilabos.server.api.runtime import (
     create_runtime_router,
     install_runtime_api,
@@ -43,11 +44,13 @@ def install_server_apis(
 
     ``include_host_data=False``：调度权威进程带 Host 子进程时，runtime / telemetry /
     history 这些 Host 数据面路由由 ``edge_proxy`` 转发到子进程，本进程不再用自己的库
-    回答，避免浏览器看到两套数据；graphs（Graph Authority）留在权威。
+    回答，避免浏览器看到两套数据；graphs（Graph Authority）与 lab（仓储 / 组合树视图）留在权威。
     """
 
     if include_host_data:
         install_runtime_api(app, services.runtime)
+    # V1 实验室视图：仓储 / 组合树 / 演示种子，只读写 materials.db
+    install_lab_api(app, services.materials)
     if include_materials:
         install_materials_api(app, services.materials)
         install_chemical_api(app, services.chemicals)
@@ -62,12 +65,14 @@ __all__ = [
     "create_debug_router",
     "create_graph_router",
     "create_history_router",
+    "create_lab_router",
     "create_materials_router",
     "create_runtime_router",
     "create_telemetry_router",
     "install_debug_api",
     "install_graph_api",
     "install_history_api",
+    "install_lab_api",
     "install_materials_api",
     "install_runtime_api",
     "install_server_apis",

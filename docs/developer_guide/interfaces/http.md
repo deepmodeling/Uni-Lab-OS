@@ -161,7 +161,7 @@ execution_timeout、materials_need_lock（按签名推导的物料锁参数，�
 设备图用 `/graphs`，工作流图用 `/workflows/{uuid}/graph`，不能混用。
 设备图上传支持 `on_existing=replace/adopt`：前端/CLI 编辑通常 replace；启动登记 adopt，
 以已有权威物料为准补新增。`GET /graphs/live/payload` 从当前物料及拓扑边生成实时图，
-不等同于原始上传快照。实验室布局（`/lab/*`）已按负责人 2026-11-17 决定删除。
+不等同于原始上传快照。实验室档案 / 布局（`/lab/profile`、`/lab/layout`、`/lab/zones`、`/lab/placements`）已按负责人 2026-11-17 决定删除。
 
 Graph 业务失败按资源口径：not_found=4001，invalid_input / invalid_payload=1000，
 identity_conflict=4002，unsupported=5001，error 为 `{"msg": ...}`。

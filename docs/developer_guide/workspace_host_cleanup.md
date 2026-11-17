@@ -62,7 +62,7 @@ Dev 基线没有这三个同名接口。本地本轮已复用 `BackendScheduler`
 
 `material_layout.py` 定义了 `unilab-material-layout-change/v1`、`...-preview/v1`、`...-apply/v1`。它对工作区图文件做预览，使用文件摘要作为 revision，apply 时再次检查源版本、候选摘要和阻塞诊断，最后原子替换图文件。模板 worker 输出 `unilab-material-template-validation/v1`，包括 valid/invalid、catalogDigest、统计和 diagnostics。
 
-保留这些能力时，应接入 Dev 的 Graph/Materials Authority，明确源文件编辑与运行数据的关系。Dev 原来的 `/api/v1/lab/layout` 是网格、区域和墙体数据（已按负责人 2026-11-17 决定连同 `/api/v1/lab/*` 删除），不是设备节点坐标/资产预览的替代接口；物料布局协议接在物料权威上（`server/services/materials/workspace_layout.py`），不能新建第二份运行物料权威。
+保留这些能力时，应接入 Dev 的 Graph/Materials Authority，明确源文件编辑与运行数据的关系。Dev 原来的 `/api/v1/lab/layout` 是网格、区域和墙体数据（已按负责人 2026-11-17 决定连同档案 / 分区 / 摆放一并删除），不是设备节点坐标/资产预览的替代接口；物料布局协议接在物料权威上（`server/services/materials/workspace_layout.py`），不能新建第二份运行物料权威。
 
 ### 4. 旧发布协议与真正的执行协议
 

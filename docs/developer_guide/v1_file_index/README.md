@@ -44,11 +44,11 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
 9. 与 V1 的已知有意差异（不算缺口）：发布后被编辑的工作流按发布指纹调用工站时拒绝（3003）且 dev 运行当前图；`resolve-uncertain` 后作业为
    `failed`；`mark_used` 存为 `retired`；原按 V1 返回裸 JSON 的路由（探针、`/v1/*`、库存命令）11-17 起也是统一信封；`/error-decisions` 加可选 `Idempotency-Key`；消耗列表多 `inventory_type:"lot"`；
    管理 API 不鉴权（控制面 token 与 V1 工站密钥 11-17 都已取消）；Host 启动期返回 200 + 5001 + `Retry-After`。
-10. **实验室档案 / 布局删除**（负责人 2026-11-17 决定）：从 V1 `app/scheduler/inventory/domains.py`、`layout.py`、`warehouse.py`
-   移植来的档案（名称 / 领域包）、二维分区、在台摆放、仓储视图、组合树与演示种子，连同 dev 的网格布局，整组删除：
-   materials.db `lab_meta` / `lab_zone` / `lab_placement`、runtime.db `lab_layout` 和全部 `/api/v1/lab/*` 路由都不再存在。
-   物料树用 `GET /api/v1/materials/instances/{uuid}/tree`，批次 / 模板 / 实例用 `/api/v1/inventory/*`；`lab_graph`、`material_link`、
-   `site` 与批次的 `warehouse_zone_id` 不受影响。逐文件表里这三行的结论仍是 #361 时的核验结果。
+10. **实验室档案 / 布局删除**（负责人 2026-11-17 决定）：从 V1 `app/scheduler/inventory/domains.py`、`layout.py` 移植来的
+   档案（名称 / 领域包）、二维分区、在台摆放与布局视图，连同 dev 的网格布局删除：materials.db `lab_meta` / `lab_zone` /
+   `lab_placement`、runtime.db `lab_layout` 与 `/lab/profile`、`/lab/layout`、`/lab/zones`、`/lab/placements` 都不再存在。
+   不用这些表的 `/lab/warehouse`（`warehouse.py`）、`/lab/assembly/{id}` 与 `/lab/demo`（只写模板与批次）保留；`lab_graph`、
+   `material_link`、`site` 与批次的 `warehouse_zone_id` 不受影响。逐文件表里这两行的结论仍是 #361 时的核验结果。
 
 ## 缺口处理
 

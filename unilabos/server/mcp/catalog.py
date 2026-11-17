@@ -207,6 +207,7 @@ OPERATIONS: tuple[Operation, ...] = (
     Operation("device-processes.start", "device-processes", "POST", "/api/v1/device-processes/{process_id}/start", "拉起子进程（已在运行 409）", "host"),
     Operation("device-processes.stop", "device-processes", "POST", "/api/v1/device-processes/{process_id}/stop", "结束子进程（不触发看护重启）", "host"),
     Operation("device-processes.restart", "device-processes", "POST", "/api/v1/device-processes/{process_id}/restart", "停止后重新拉起", "host"),
+    Operation("lab-v1.warehouse.get", "lab-v1", "GET", "/api/v1/lab/warehouse", "按品类聚合的仓储视图（批次 / 数量 / 库位）", "any"),
     Operation("debug.databases.list", "debug", "GET", "/api/v1/debug/databases", "四库文件状态与每张表行数", "any"),
     Operation("debug.databases.table", "debug", "GET", "/api/v1/debug/databases/{database}/tables/{table}", "单表分页浏览（列定义 + 行数据）", "any"),
 )

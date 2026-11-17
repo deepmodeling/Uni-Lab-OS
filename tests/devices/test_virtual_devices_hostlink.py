@@ -160,6 +160,9 @@ def test_fluidic_devices_run_their_actions(registry) -> None:
         result = call("pump", "set_position", position=3.0)
         assert result["success"] is True and pump.position == pytest.approx(3.0)
         call("pump", "transfer", volume=2.0)
+        # 泵阀一体：协议编译器在泵直连容器时按连线端口名切换泵头通道
+        assert "outlet" in call("pump", "set_valve_position", command="outlet")
+        assert pump.valve_position == "outlet"
         call("pump", "auto-stop_operation")
         assert call("pump", "auto-cleanup") is True
 
@@ -540,9 +543,9 @@ EXAMPLE_PROTOCOLS: dict[str, tuple[str, dict[str, Any]]] = {
 
 @pytest.mark.parametrize("graph_name", sorted(EXAMPLE_PROTOCOLS))
 def test_example_station_protocol_compiles_to_registered_device_steps(
-    graph_name: str, tmp_path, monkeypatch
+    graph_name: str, tmp_path, monkeypatch, registry
 ) -> None:
-    """示例协议站的代表协议能按图编译，每一步都落到图里的虚拟设备上（不回调工作站自身）。"""
+    """示例协议站的代表协议能按图编译，每一步都是图里某台虚拟设备注册过的动作（不回调工作站自身）。"""
 
     import shutil
 
@@ -575,3 +578,5 @@ def test_example_station_protocol_compiles_to_registered_device_steps(
         if step["action_name"] in ("wait", "log_message"):
             continue
         assert step["device_id"] in devices, step
+        template = graph.nodes[step["device_id"]]["template_name"]
+        assert step["action_name"] in registry[template]["class"]["action_value_mappings"], (template, step)

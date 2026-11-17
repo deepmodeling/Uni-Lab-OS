@@ -990,6 +990,8 @@ class NewareBatteryTestSystem:
             'ZQXNLRMO': 'xml_ZQXNLRMO',
             'HC_LFP': 'xml_HC_LFP',
             'HC_GR': 'xml_HC_Gr',
+            'SLG_NCM811': 'xml_SLG_NCM811',
+            'WFJ_NCM811': 'xml_model_ncm811',
         }
         if key not in fmap:
             raise ValueError(f"未定义电池体系映射: {key}，可选体系: {sorted(fmap.keys())}")

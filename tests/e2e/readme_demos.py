@@ -126,7 +126,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLanDemo",
         url="https://github.com/Xuwznln/LabDeviceLanDemo",
-        ref="030bd0cfd86f3485a9db97a5eeb303bfeaefd60e",
+        ref="6f588d1a8852a0cbe89701baaba0f35b70e00453",
         package="lan_demo",
         host_graph="examples/host.json",
         slave_graph="examples/slave.json",
@@ -142,7 +142,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         repo="LabDeviceWorkstationDemo",
         url="https://github.com/Xuwznln/LabDeviceWorkstationDemo",
         # b9da1ae6：设备不自跑 proof，inspect_endpoints 成为第四步。
-        ref="4d4c0fae7cd4c6a3df8fa123ee3b67dad805ec1d",
+        ref="b9a172536022d9d1a1b69c282a2a2328149bcd77",
         package="workstation_demo",
         host_graph="graph/workstation_demo.json",
         # 设备不自跑闭环：串口回环 / 双传感器探测 / 共享端点计数全部由 @workflow 经 API 触发
@@ -151,7 +151,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceExceptionDemo",
         url="https://github.com/Xuwznln/LabDeviceExceptionDemo",
-        ref="8d709d6b7b51c67ba56df50c2de0875c2155fb2b",
+        ref="9ca974aefb3cae1037ea8adb8744d6c874c854e2",
         package="exception_demo",
         host_graph="graph/exception_demo.json",
         # 该 demo 设备内不自跑闭环：全部路径都是网页式工作流提交 + 决策链。
@@ -184,7 +184,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceComplexWorkflowDemo",
         url="https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo",
-        ref="6111bee4814cfc43be08744db72fb4274ec77c54",
+        ref="afe6a5a2c1a9582f2dff344749eb95ed999c39e6",
         package="complex_workflow_demo",
         host_graph="graph/complex_workflow_demo.json",
         # 循环容器：循环体节点每轮一个 attempt（trigger=loop_iteration），循环节点自身 1 个 attempt；
@@ -216,7 +216,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="00a2e1e4bfe05fc5d7481a8a5edfdeb1b2744809",
+        ref="c955a701bd119e4828d2117a3a8b7fe02a8157e4",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",
@@ -232,7 +232,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLockDemo",
         url="https://github.com/Xuwznln/LabDeviceLockDemo",
-        ref="d018bd51c26a4cca92648b4fd11621f4340ed7bf",
+        ref="17a70dee07004ff5546aa0432ded5f2002f9ae7b",
         package="lock_demo",
         host_graph="graph/lock_demo.json",
         # 无设备自跑闭环：锁语义只能在"多个任务同时申请资源"时观察，靠并发组制造竞争。
@@ -257,7 +257,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         repo="LabDeviceInventoryDemo",
         url="https://github.com/Xuwznln/LabDeviceInventoryDemo",
         # b142910b：库存需求 kind reagent -> lot（与本仓库 InventoryRequirement 的 Literal 同步）。
-        ref="7b2a9beab3e164421f56541de1ee24dc38a46c40",
+        ref="1167ed94be970c92b89f6aa0778d9772c56e1af5",
         package="inventory_demo",
         host_graph="graph/inventory_demo.json",
         # 每次 e2e 都是全新数据库：入库 100 → 出库 40 → 500 被拒 → 盘点 60/60/0

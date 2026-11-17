@@ -865,6 +865,36 @@ class TestRegistryApi:
         else:
             assert service.get_workflow_template(template["uuid"])["nodes"] == template["nodes"]
 
+    def test_templates_with_parallel_groups_and_material_io_steps_are_usable(self, client, service) -> None:
+        """@workflow 生成的模板里有 group（ctx.parallel / ctx.group）与 material_io 节点：上报后照样进模板列表。"""
+
+        from uuid import uuid4
+
+        from unilabos.registry.workflow_ast import compile_workflow_source
+        from unilabos.registry.workflows import build_workflow_template_payload
+
+        source = (
+            "def flow(ctx):\n"
+            "    loaded = ctx.material_io(mode=\"load\", mount=\"deck\", site=\"A1\", resource_template=\"tip_box\")\n"
+            "    with ctx.parallel():\n"
+            "        ctx.run(\"robot/pick\", {\"box\": loaded.material})\n"
+            "        ctx.run(\"camera/scan\", {})\n"
+        )
+        ctx = compile_workflow_source(source, function_name="flow").ctx
+        definition = type("Definition", (), {
+            "collect": lambda self: ctx, "source_path": "demo.workflows:load_and_check", "uuid": str(uuid4()),
+            "display_name": "装盒并检查", "description": "", "tags": [], "guide": None,
+        })()
+        template = {"registry_type": "workflow", **build_workflow_template_payload(definition)}
+        assert {"group", "material_io"} <= {node["kind"] for node in template["nodes"]}
+        response = client.post(
+            "/api/v1/registry/reports",
+            json={"resources": [], "workflow_templates": [template], "machine_id": AUTHORITY_MACHINE},
+        )
+        assert response.status_code == 200
+        assert not service.entry_detail(template["id"]).get("unusable_reason")
+        assert service.get_workflow_template(template["uuid"])["nodes"] == template["nodes"]
+
     def test_workflow_templates_ride_the_snapshot_report(self, client, service) -> None:
         """包里的 @workflow 模板随同一份快照上报（独立键，旧权威忽略），与设备条目同一套
         版本化：内容变了升版本、从快照里消失即软移除、再出现即复活。"""

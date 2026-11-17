@@ -64,10 +64,9 @@ class _Session(BaseBackendClient):
 
 @pytest.fixture
 def default_address(monkeypatch):
-    """没给 --address：Backend 就是本机自己的 Backend 端口。"""
+    """没给 --address：Backend 就是本机调度权威的管理端口（BasicConfig.port，与 --role backend 同一设置）。"""
 
     monkeypatch.setattr(HTTPConfig, "remote_addr", "")
-    monkeypatch.setattr(HTTPConfig, "backend_port", 18081)
     monkeypatch.setattr(BasicConfig, "port", 18002)
 
 
@@ -94,15 +93,15 @@ def _no_leftovers(session: BaseBackendClient) -> None:
 
 
 def test_default_address_is_own_backend_port_for_both_links(default_address) -> None:
-    """没给 --address：HTTP 与控制 WS 都指向本机 Backend 端口，而不是 Host 自己的管理端口。"""
+    """没给 --address：HTTP 与控制 WS 都指向本机调度权威的管理端口。"""
 
     session = _Session(connected=False, url="")
     assert session.address_source() == "default"
-    assert session.backend_url() == "http://127.0.0.1:18081"
+    assert session.backend_url() == "http://127.0.0.1:18002"
     links = {link.name: link for link in session.describe_links()}
-    assert links["http"].target == "http://127.0.0.1:18081/api/v1/ping" and links["http"].available
+    assert links["http"].target == "http://127.0.0.1:18002/api/v1/ping" and links["http"].available
     assert links["control"].transport == "websocket"
-    assert links["control"].target == "ws://127.0.0.1:18081/api/v1/ws/schedule"
+    assert links["control"].target == "ws://127.0.0.1:18002/api/v1/ws/schedule"
     assert not links["control"].available and links["control"].reason == "not_connected"
     assert {link.transport for link in session.describe_links()} == {"http", "websocket"}
 
@@ -188,7 +187,7 @@ def test_default_address_latency_targets_own_backend_port(monkeypatch, default_a
     session = _Session(connected=False, url="")
     host = _adapter(monkeypatch, session)
     result = host.test_latency()
-    assert result["address_source"] == "default" and result["backend_url"] == "http://127.0.0.1:18081"
+    assert result["address_source"] == "default" and result["backend_url"] == "http://127.0.0.1:18002"
     assert result["status"] == "success" and result["test_count"] == 5
     assert session.http_calls == 5 and session.pings == []
     assert result["links"]["http"]["status"] == "success"
@@ -261,5 +260,5 @@ def test_http_ping_hits_the_ping_endpoint(monkeypatch, default_address) -> None:
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     session = _Session()
     assert BaseBackendClient.http_ping(session) == 42.0
-    # 目标是 Backend 端口（缺省地址），不是 Host 自己的管理端口 18002
-    assert len(seen) == 1 and seen[0].startswith("http://127.0.0.1:18081/api/v1/ping?client_timestamp=")
+    # 目标是本机调度权威的管理端口（缺省地址，BasicConfig.port）
+    assert len(seen) == 1 and seen[0].startswith("http://127.0.0.1:18002/api/v1/ping?client_timestamp=")

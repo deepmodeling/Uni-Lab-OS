@@ -29,7 +29,7 @@ import socket
 import sys
 from typing import Any, Dict, Optional
 
-from unilabos.config.config import BasicConfig, HTTPConfig
+from unilabos.config.config import BasicConfig
 from unilabos.utils.banner_print import print_status
 
 
@@ -72,6 +72,12 @@ def _install_stop_signals() -> None:
     sigbreak = getattr(signal, "SIGBREAK", None)
     if sigbreak is not None:
         signal.signal(sigbreak, signal.default_int_handler)
+
+
+def authority_port(args_dict: Dict[str, Any]) -> int:
+    """调度权威的管理端口：``--port``，否则 ``BasicConfig.port``；默认权威与 ``--role backend`` 相同。"""
+
+    return int(args_dict.get("port_management") or BasicConfig.port)
 
 
 def run_backend_process(
@@ -121,11 +127,12 @@ def run_backend_process(
     base_root = os.path.expanduser(
         configured_database_root(args_dict, working_dir=working_dir)
     )
+    # 默认权威与 --role backend 用同一个管理端口设置（--port / BasicConfig.port，默认 8002）
+    port = authority_port(args_dict)
     if launch_host:
         # 默认拓扑：权威沿用原来的库位置（老数据不搬家），Host 子进程用 <root>/edge。
         authority_root = base_root
         edge_root = os.path.join(base_root, "edge")
-        port = int(args_dict.get("port_management") or BasicConfig.port)
         try:
             ensure_port_available("0.0.0.0", port)
         except ManagementPortInUseError as exc:
@@ -134,7 +141,6 @@ def run_backend_process(
     else:
         authority_root = os.path.join(base_root, BACKEND_DATABASE_DIRNAME)
         edge_root = ""
-        port = int(args_dict.get("port_management") or HTTPConfig.backend_port)
     args_dict["server_database_root"] = authority_root
     paths = resolve_database_paths(args_dict, working_dir=working_dir)
     # 先独占权威自己的根目录再开库（启动入口已取过时是同一把锁）。<根目录>/edge 归 Host 子进程，
@@ -261,7 +267,8 @@ def run_backend_process(
         else:
             print_status(
                 f"Backend 进程已启动: 管理 API/WS 0.0.0.0:{port}；"
-                f"Edge 侧配置 --address http://127.0.0.1:{port} 接入（Edge 只需出向连接）",
+                f"Edge 侧配置 --address http://127.0.0.1:{port} 接入（Edge 只需出向连接）；"
+                f"同机启动的 Edge 自己也监听 --port（默认 8002），要给一个不同于 {port} 的端口",
                 "info",
             )
         from unilabos.server.services.process_management import configure_process_management

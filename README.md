@@ -142,13 +142,18 @@ For a split deployment, start the scheduler/workflow authority separately and
 point one or more Edge processes at it:
 
 ```bash
-# Terminal 1: Backend authority (no device graph or device executor)
-unilab --role backend --port 8081
+# Terminal 1: Backend authority (no device graph or device executor), port 8002
+unilab --role backend
 
-# Terminal 2: Edge execution process
+# Terminal 2: Edge execution process; on the same machine it needs its own --port
 unilab -g path/to/graph.json --backend hostlink \
-  --address http://127.0.0.1:8081 --port 8002
+  --address http://127.0.0.1:8002 --port 8003
 ```
+
+`--role backend` listens on `--port` (default `8002`, the same setting as the
+default `unilab`). An Edge started with `--address` also serves its own
+management port (`--port`, default `8002`), so give the two processes different
+ports when they share a machine; on separate machines both keep the default.
 
 The Edge can also start with an empty graph (omit `-g`) when devices will be
 added through the driver-package or managed-device APIs. A Slave still needs
@@ -210,7 +215,7 @@ separately; its adaptation to the unified backend is tracked in
 | Deployment | Backend / API base URL |
 |------------|------------------------|
 | Default `unilab` (authority + Host child) | `http://<host>:8002` (`--port`) |
-| `--role backend` authority | its port (default `8081`) |
+| `--role backend` authority | `http://<host>:8002` (`--port`) |
 | Edge connected to a remote Backend | the address passed to `--address` |
 
 Never enter the HostLink port (`7302`).

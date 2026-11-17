@@ -113,7 +113,7 @@ class TestLatencyReturn(TypedDict):
     status: str
     #: Edge 连接的 Backend 地址（HTTP 与控制 WS 同地址）
     backend_url: str
-    #: configured（--address 指定）| default（本机 Backend 端口 HTTPConfig.backend_port）
+    #: configured（--address 指定）| default（本机调度权威的管理端口 BasicConfig.port）
     address_source: str
     #: 会话描述的每条链路：{"http": {transport, target, status, avg_rtt_ms, …},
     #: "control": {transport: websocket, status: success | all_timeout | not_connected, …}}

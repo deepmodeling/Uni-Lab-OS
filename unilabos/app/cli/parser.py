@@ -97,7 +97,8 @@ def _register_runtime_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "进程角色：auto（默认）启动调度权威进程并把 Host 作为子进程拉起（同机、"
             "同一管理端口）；backend 只启动调度权威（scheduler + workflow + runtime.v1 "
-            "控制面服务端，无设备/无 ROS），Edge 进程配置 --address 指向它后可独立重启。"
+            "控制面服务端，无设备/无 ROS，与默认权威同用 --port，默认 8002），Edge 进程配置 "
+            "--address 指向它后可独立重启。"
         ),
     )
     _add(

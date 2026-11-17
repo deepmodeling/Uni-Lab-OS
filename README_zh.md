@@ -132,13 +132,17 @@ unilab --check-mode --complete-registry --skip-env-check
 进程连接它：
 
 ```bash
-# 终端 1：Backend 权威（不加载设备图，也不执行设备）
-unilab --role backend --port 8081
+# 终端 1：Backend 权威（不加载设备图，也不执行设备），端口 8002
+unilab --role backend
 
-# 终端 2：Edge 执行进程
+# 终端 2：Edge 执行进程；同一台机器上要另给 --port
 unilab -g path/to/graph.json --backend hostlink \
-  --address http://127.0.0.1:8081 --port 8002
+  --address http://127.0.0.1:8002 --port 8003
 ```
+
+`--role backend` 监听 `--port`（默认 `8002`，与默认 `unilab` 是同一个设置）。用 `--address`
+启动的 Edge 自己也监听管理端口（`--port`，默认同样是 `8002`），两者在同一台机器上时要给不同端口；
+分在两台机器上都用默认即可。
 
 省略 `-g` 时 Edge 可以以空图启动，之后通过驱动包或受管设备 API 添加设备。
 Slave 仍需要自己的设备图，并使用 `--is-slave --host-node-ip <host>` 连接 Host。
@@ -192,7 +196,7 @@ HTTPS 站点连不上本机 HTTP 后端时，按 OpenLab 仓库的说明在本�
 | 部署方式 | 后端 / API 根地址 |
 |----------|------------------|
 | 默认 `unilab`（权威 + Host 子进程） | `http://<主机>:8002`（`--port`） |
-| `--role backend` 权威 | 它的端口（默认 `8081`） |
+| `--role backend` 权威 | `http://<主机>:8002`（`--port`） |
 | 连接远端 Backend 的 Edge | 启动参数 `--address` 指定的地址 |
 
 不要填 HostLink 端口（`7302`）。

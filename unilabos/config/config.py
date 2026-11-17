@@ -11,9 +11,10 @@ HOST_NODE_REGISTRY_NAME = "host_node"
 DEFAULT_HOST_NODE_NAME = HOST_NODE_REGISTRY_NAME
 _ROS_NODE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # 已删除的配置字段：旧配置文件 / 环境变量里还写着时静默忽略（control_token / station_api_key：控制面 token 与
-# V1 工站密钥已取消，管理 API 不鉴权）。
+# V1 工站密钥已取消，管理 API 不鉴权；HTTPConfig.backend_port：--role backend 与默认权威统一用 BasicConfig.port）。
 _REMOVED_CONFIG_FIELDS = {
     "BasicConfig": frozenset({"app_bridges", "communication_protocol", "control_token", "station_api_key"}),
+    "HTTPConfig": frozenset({"backend_port"}),
 }
 # 与配置覆盖共用 UNILABOS_ 前缀、但由进程编排 / 可观测性模块自行读取的环境变量，
 # 不是 ``UNILABOS_<Config类>_<字段>`` 覆盖，解析时直接跳过（不告警）。
@@ -121,8 +122,8 @@ class WSConfig:
 # HTTP配置
 class HTTPConfig:
     # Host 连接的 Backend（调度权威）地址：config 文件或 --address 给了用给的，为空表示
-    # 本机自己的 Backend 端口（backend_port）。HTTP 数据面与 runtime.v1 控制 WebSocket
-    # 都走这一个地址。不内置任何云端地址；环境快捷选项仅保留在 UniLabOS-Launcher。
+    # 本机调度权威的管理端口（BasicConfig.port，默认权威与 --role backend 共用）。HTTP 数据面与
+    # runtime.v1 控制 WebSocket 都走这一个地址。不内置任何云端地址；环境快捷选项仅保留在 UniLabOS-Launcher。
     remote_addr = ""
     # 控制 WebSocket 的低层覆盖；CLI 只暴露统一 --address。为空时从 Backend 地址派生：
     # runtime.v1 的 WS 控制面与 HTTP API 同 host 同端口。
@@ -134,11 +135,9 @@ class HTTPConfig:
     # Host 访问的物料权威地址；为空时与 Backend 地址相同。
     material_microbackend_addr = ""
     material_query_timeout = 10
-    # Backend（--role backend）管理 API / 控制 WebSocket 的监听端口（Host 缺省连接的就是它）。
-    # Backend 不再主动连 Host：Host 不监听端口，Backend 需要的 Host 数据经控制 WS 的
-    # backend_http 请求由 Host 在进程内执行并回送。edge_data_addr 仅为兼容旧配置保留、不再使用。
+    # Backend 不再主动连 Host：Backend 需要的 Host 数据经控制 WS 的 backend_http 请求由 Host
+    # 在进程内执行并回送。edge_data_addr 仅为兼容旧配置保留、不再使用。
     edge_data_addr = ""
-    backend_port = 8081
     # 驱动包索引镜像（JSON，结构同 https://github.com/Xuwznln/awesome-lab-devices 的 index.json）。
     # 官方索引默认由 OpenLab 前端在浏览器里直接读取；只有浏览器出不了网、需要 Edge 侧
     # 内网镜像时才配这里。为空时 /driver-packages/catalog 只并入本地

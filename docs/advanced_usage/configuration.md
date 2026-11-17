@@ -225,6 +225,12 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 端口；即使设置 `--disable-browser`，该端口仍会监听。浏览器参数不影响
 HostLink 的 `7302/TCP`。
 
+默认 `unilab` 的调度权威与 `--role backend` 用的都是这一个设置（默认 `8002`）；没给 `--address` 的
+Host 缺省也连本机这个端口。用 `--address` 接入权威的顶层 Host 自己同样监听 `--port`（默认也是 `8002`），
+与 `--role backend` 在同一台机器上时给其中一个换端口。原来 `--role backend` 专用的
+`HTTPConfig.backend_port`（默认 `8081`）已删除：旧配置文件或环境变量 `UNILABOS_HTTPCONFIG_BACKEND_PORT`
+里还写着时静默忽略，需要别的端口时改用 `--port` 或 `BasicConfig.port`。
+
 ### 命令行覆盖使用示例
 
 ```bash

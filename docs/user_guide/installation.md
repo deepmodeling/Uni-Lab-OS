@@ -176,9 +176,12 @@ unilab -g host.json --machine_name lab-host --port 8002 --hostlink_port 7302
 # 另一台机器（或同机另一个进程）
 unilab --is_slave -g slave.json --machine_name lab-slave --host_node_ip 192.168.1.10 --hostlink_port 7302
 
-# 单独的调度/物料权威，不启动设备
-unilab --role backend --port 8081
+# 单独的调度/物料权威，不启动设备（端口默认 8002，与默认启动同一个 --port 设置）
+unilab --role backend
 ```
+
+`--role backend` 与用 `--address` 接入它的 Edge 都会监听自己的 `--port`（默认都是 `8002`），
+在同一台机器上运行时给 Edge 换一个端口，例如 `--address http://127.0.0.1:8002 --port 8003`。
 
 默认启动会分为微后端权威和 Host 子进程；前端只连接管理端 HTTP 端口，
 Slave 连接 HostLink TCP 端口。同机时 Host IP 可用 `127.0.0.1`。

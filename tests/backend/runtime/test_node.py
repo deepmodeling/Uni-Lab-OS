@@ -133,7 +133,7 @@ def test_device_node_automatically_snapshots_the_complete_tracked_root() -> None
             sibling.unilabos_uuid,
         }
         by_name = {
-            item.res_content.name: item.res_content
+            item.res_content.plr_name: item.res_content
             for item in snapshot.all_nodes
         }
         assert by_name["child"].substances == [("solid", 3.0, "ug")]

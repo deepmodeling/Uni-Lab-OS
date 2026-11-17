@@ -87,7 +87,8 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
                 for node in tree["nodes"]
                 if node["material"]["material_uuid"] == root_uuid
             )
-            assert root["material"]["name"] == "tips_outbound_1"
+            assert root["material"]["display_name"] == "tips_outbound_1"
+            assert root["material"]["name"] == root_uuid
             # tip rack 带 96 个 tip spot 子节点，每个孔位下一支已命名的 Tip：
             # 维护版 PLR 起枪头是孔位的结构孩子，与孔位一样整棵树权威登记（1 + 96 + 96）
             materials = {
@@ -112,7 +113,7 @@ def test_instantiate_creates_authoritative_tree(tmp_path, registry_entry) -> Non
 
             fetched = client.get(f"/api/v1/inventory/instances/{root_uuid}")
             assert fetched.status_code == 200
-            assert ok_data(fetched)["material"]["name"] == "tips_outbound_1"
+            assert ok_data(fetched)["material"]["display_name"] == "tips_outbound_1"
     finally:
         service.close()
 

@@ -94,7 +94,7 @@ def deck(tmp_path):
                 ]
             ),
         )
-        nodes = {node.material.name: node for node in created.data.nodes}
+        nodes = {node.material.config["name"]: node for node in created.data.nodes}
         yield service, nodes, plate.data.nodes[0]
     finally:
         service.close()

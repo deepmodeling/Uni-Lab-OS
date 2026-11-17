@@ -204,7 +204,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         assert created_plate is not syncer_draft
         syncer_uuid = created_plate.unilabos_uuid
         assert syncer_uuid
-        assert service.get_material(syncer_uuid).material.name == "syncer_plate"
+        assert service.get_material(syncer_uuid).material.display_name == "syncer_plate"
         a1_uuid = created_plate.get_well("A1").unilabos_uuid
         assert _substances_of(service, syncer_uuid, a1_uuid) == [("Water", 40.0, "ul")]
 
@@ -317,7 +317,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         ensured_b = materials.ensure(deducted_draft, gateway=gateway)
         # adopt 语义：权威中的 uuid 与扣减单完全一致
         assert ensured_b.trees[0].root_node.res_content.uuid == deducted_uuid
-        assert service.get_material(deducted_uuid).material.name == "deducted_tips"
+        assert service.get_material(deducted_uuid).material.display_name == "deducted_tips"
 
         # 挂载门面接受裸 uuid 字符串，并在本地未命中时从权威加载实例。
         materials.assign(
@@ -436,9 +436,9 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
 
         assert service.get_material(deck_uuid).material.parent_material_uuid == device_uuid
         device_tree = service.get_tree(device_uuid)
-        assert [n.material.name for n in device_tree.nodes] == ["物料工作台", "Bench_Deck"]
+        assert [n.material.display_name for n in device_tree.nodes] == ["物料工作台", "Bench_Deck"]
         assert [s.label for n in device_tree.nodes for s in n.sites] == ["T1", "T2", "T3", "T4"]
-        assert [m.material.name for m in service.list_materials(roots_only=True)] == ["物料工作台"]
+        assert [m.material.display_name for m in service.list_materials(roots_only=True)] == ["物料工作台"]
 
         # 幂等：再挂一次不报错、父不变
         materials.assign(node, deck_uuid)

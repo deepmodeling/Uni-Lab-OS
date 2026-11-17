@@ -287,8 +287,11 @@ class MaterialIdentityWrite(ServerObject):
     resource_id: NonEmptyStr
     parent_material_uuid: Optional[NonEmptyStr] = None
     lot_uuid: Optional[NonEmptyStr] = None
-    name: NonEmptyStr
-    # 展示名；空值由权威落库时回退 name（与 device 的 id/display_name 约定一致）。
+    # 物料 name 恒等于 material_uuid，由权威写入。写入请求可以不给；给了 UUID 形式即身份
+    # （须与 material_uuid 一致，没有 material_uuid 时被采纳），给了旧式标签则迁到
+    # display_name（为空时）与 PLR 键 config.name（缺失时）。
+    name: str = ""
+    # 人读标签；为空时权威依次回退旧名、PLR 键、resource_id。
     display_name: str = ""
     description: str = ""
     resource_type: NonEmptyStr = "resource"
@@ -309,6 +312,7 @@ class MaterialIdentityWrite(ServerObject):
 
 
 class MaterialIdentityRead(MaterialIdentityWrite):
+    name: NonEmptyStr
     template_uuid: NonEmptyStr
     material_uuid: NonEmptyStr
     ordinal: int = Field(default=0, ge=0)
@@ -469,7 +473,7 @@ class MaterialTreeRead(ServerObject):
 
 
 class MaterialPatch(ServerObject):
-    name: Optional[NonEmptyStr] = None
+    # 物料 name 等于 uuid，不可修改；改人读标签用 display_name。
     display_name: Optional[NonEmptyStr] = None
     description: Optional[str] = None
     machine_name: Optional[str] = None

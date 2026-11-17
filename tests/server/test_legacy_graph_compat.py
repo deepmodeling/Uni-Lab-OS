@@ -321,7 +321,9 @@ def test_material_nodes_batch_resolves_occupied_by_and_fills_defaults():
     ]
     deck, plate = normalize_legacy_material_nodes(raw)
     assert deck["sites"][0]["occupied_material_uuid"] == plate_uuid
-    assert deck["config"] == {} and deck["extra"] == {} and plate["data"] == {}
+    # 旧 name 迁到 PLR 键 config.name 与 display_name
+    assert deck["config"] == {"name": "host_node"} and deck["extra"] == {} and plate["data"] == {}
+    assert "name" not in deck and deck["display_name"] == "host_node"
     assert "model" not in deck and deck["parent_uuid"] is None
     assert plate["parent_uuid"] == deck_uuid and plate["template_name"] == "host_node"
 

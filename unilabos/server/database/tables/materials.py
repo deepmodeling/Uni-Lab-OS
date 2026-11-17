@@ -157,6 +157,7 @@ class MaterialRecord(TableObject, table=True):
     parent_material_uuid: Optional[NonEmptyStr] = None
     ordinal: int = Field(default=0, ge=0)
     lot_uuid: Optional[NonEmptyStr] = None
+    #: 物料 name 恒等于 material_uuid；人读标签是 display_name，PLR 键在 config_json.name
     name: NonEmptyStr
     display_name: NonEmptyStr
     description: str = ""
@@ -197,6 +198,8 @@ class MaterialRecord(TableObject, table=True):
 
     @model_validator(mode="after")
     def _validate_material(self) -> "MaterialRecord":
+        if self.name != self.material_uuid:
+            raise ValueError("material name must equal material_uuid")
         if self.parent_material_uuid == self.material_uuid:
             raise ValueError("material cannot be its own parent")
         if self.updated_at_ms < self.created_at_ms:
@@ -887,7 +890,7 @@ MATERIALS_TABLES = (
             parent_material_uuid TEXT,
             ordinal INTEGER NOT NULL DEFAULT 0 CHECK (ordinal >= 0),
             lot_uuid TEXT,
-            name TEXT NOT NULL CHECK (TRIM(name) <> ''),
+            name TEXT NOT NULL CHECK (name = material_uuid),
             display_name TEXT NOT NULL CHECK (TRIM(display_name) <> ''),
             description TEXT NOT NULL DEFAULT '',
             resource_type TEXT NOT NULL CHECK (TRIM(resource_type) <> ''),
@@ -930,11 +933,6 @@ MATERIALS_TABLES = (
         )
         """,
         (
-            """
-            CREATE UNIQUE INDEX IF NOT EXISTS ux_material_root_name_active
-            ON material(LOWER(name))
-            WHERE parent_material_uuid IS NULL AND deleted_at_ms IS NULL
-            """,
             """
             CREATE UNIQUE INDEX IF NOT EXISTS ux_material_resource_id_active
             ON material(resource_id)

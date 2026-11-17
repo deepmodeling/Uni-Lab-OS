@@ -153,7 +153,7 @@ def test_snapshot_observer_diffs_the_complete_root_with_all_descendants(
 
         stored = materials.get_tree(root.unilabos_uuid)
         assert len(stored.nodes) == 4
-        by_name = {node.material.name: node for node in stored.nodes}
+        by_name = {node.material.config["name"]: node for node in stored.nodes}
         assert [
             (item.name, item.quantity, item.quantity_unit)
             for item in by_name["deep"].data.substances
@@ -173,7 +173,7 @@ def test_snapshot_observer_diffs_the_complete_root_with_all_descendants(
         await observer.wait_idle()
         rotated = materials.get_tree(root.unilabos_uuid)
         rotated_deep = next(
-            node for node in rotated.nodes if node.material.name == "deep"
+            node for node in rotated.nodes if node.material.config["name"] == "deep"
         )
         assert rotated_deep.position.rotation_z == 15.0
         assert "rotation" not in rotated_deep.data.data
@@ -340,7 +340,7 @@ def test_stale_baseline_is_refetched_on_conflict_and_after_authority_moves(tmp_p
             )
         )
         assert gateway.calls["apply_snapshot"] == 2 and gateway.calls["get_tree"] == 1
-        stored = {n.material.name: n for n in materials.get_tree(root.unilabos_uuid).nodes}
+        stored = {n.material.config["name"]: n for n in materials.get_tree(root.unilabos_uuid).nodes}
         assert stored["w1"].data.substances[0].name == "base"
         # 设备持有的实例是这棵树的工作真相：绕过设备直写权威的 w3 被设备的整树快照
         # 覆盖回设备所见（外部改动应经下行投影到设备实例，而不是直写权威）
@@ -355,7 +355,7 @@ def test_stale_baseline_is_refetched_on_conflict_and_after_authority_moves(tmp_p
         root.unassign_child_resource(moved)
         asyncio.run(service.snapshot_resource_tree("device-1", "device-uuid", root))
         assert gateway.calls.get("get_tree") == 1
-        assert {n.material.name for n in materials.get_tree(root.unilabos_uuid).nodes} == {
+        assert {n.material.config["name"] for n in materials.get_tree(root.unilabos_uuid).nodes} == {
             "deck", "w1", "w2",
         }
     finally:

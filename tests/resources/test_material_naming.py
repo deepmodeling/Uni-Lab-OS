@@ -88,3 +88,219 @@ def test_search_and_root_order_use_the_display_name(service) -> None:
     assert [item.material.material_uuid for item in service.search_materials("alpha")] == [first]
     roots = [item.material.material_uuid for item in service.list_materials(roots_only=True)]
     assert roots == [first, second]
+
+
+# ── 第 2 期：物料 name = uuid，PLR 键在 config.name ─────────────────────────
+
+
+def _node(ref: str, *, name: str = "", display_name: str = "", parent: str | None = None,
+          material_uuid: str | None = None, resource_type: str = "container",
+          config: dict | None = None) -> MaterialNodeCreate:
+    return MaterialNodeCreate(
+        client_ref=ref,
+        parent_client_ref=parent,
+        material_uuid=material_uuid,
+        identity=MaterialIdentityWrite(
+            resource_id=f"{parent}/{ref}" if parent else ref,
+            name=name,
+            display_name=display_name,
+            resource_type=resource_type,
+            class_name="Container",
+            template_name="bottle" if resource_type != "device" else "station",
+            config=config or {},
+        ),
+    )
+
+
+def _created(service, *nodes: MaterialNodeCreate):
+    tree = service.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=list(nodes))).data
+    return {ref: service.get_material(uuid).material for ref, uuid in tree.client_ref_map.items()}
+
+
+def test_create_tree_writes_the_uuid_as_name_and_migrates_old_labels(service) -> None:
+    created = _created(
+        service,
+        _node("rack", name="rack-1"),
+        _node("tube", name="tube-a", display_name="一号管", parent="rack"),
+        _node("child", parent="rack"),
+    )
+    rack, tube, child = created["rack"], created["tube"], created["child"]
+    for material in created.values():
+        assert material.name == material.material_uuid
+    # 旧名迁到 display_name（为空时）与 PLR 键 config.name（缺失时）
+    assert (rack.display_name, rack.config["name"]) == ("rack-1", "rack-1")
+    assert (tube.display_name, tube.config["name"]) == ("一号管", "tube-a")
+    # 没有旧名的孩子：PLR 键取 uuid，展示名回退业务 id
+    assert child.config["name"] == child.material_uuid and child.display_name == "rack/child"
+
+
+def test_new_root_without_an_old_name_uses_its_resource_id_as_plr_key(service) -> None:
+    first = _created(service, _node("bottle-1", display_name="试剂瓶"))["bottle-1"]
+    second = _created(service, _node("bottle-2", display_name="试剂瓶"))["bottle-2"]
+    assert first.config["name"] == "bottle-1" and second.config["name"] == "bottle-2"
+    # 根物料的人读标签可以重名（不再有根物料名唯一索引）
+    assert first.display_name == second.display_name == "试剂瓶"
+
+
+def test_a_uuid_name_is_reused_as_the_identity(service) -> None:
+    identity = str(uuid4())
+    created = _created(service, _node("bottle", name=identity.upper()))["bottle"]
+    assert created.material_uuid == created.name == identity
+    assert created.display_name == "bottle"
+
+
+def test_a_uuid_name_that_disagrees_with_the_identity_is_rejected(service) -> None:
+    from unilabos.server.services.materials import MaterialConflictError
+
+    with pytest.raises(MaterialConflictError) as mismatch:
+        _created(service, _node("bottle", name=str(uuid4()), material_uuid=str(uuid4())))
+    assert mismatch.value.conflict == "identity"
+    existing = _created(service, _node("first"))["first"]
+    with pytest.raises(MaterialConflictError, match="already exists"):
+        _created(service, _node("second", name=existing.material_uuid))
+
+
+def test_devices_keep_their_config_and_get_a_display_name(service) -> None:
+    station = _created(service, _node("station", name="工作站", resource_type="device", config={"port": "COM3"}))
+    device = station["station"]
+    assert device.name == device.material_uuid
+    assert device.config == {"port": "COM3"}
+    assert device.display_name == "工作站"
+
+
+def test_the_database_refuses_a_name_other_than_the_uuid(service) -> None:
+    import sqlite3
+
+    material = _created(service, _node("bottle"))["bottle"]
+    with pytest.raises(sqlite3.IntegrityError):
+        with service.write() as connection:
+            connection.execute("UPDATE material SET name='bottle' WHERE material_uuid=?", (material.material_uuid,))
+
+
+def test_the_plr_key_is_immutable_and_name_is_not_patchable(service) -> None:
+    from unilabos.server.services.materials import MaterialValidationError
+
+    material = _created(service, _node("bottle", name="bottle-1", config={"max_volume": 5}))["bottle"]
+    kept = service.patch_material(
+        _mutation("patch_material"), material.material_uuid, MaterialPatch(config={"max_volume": 9})
+    ).data.material
+    assert kept.config == {"max_volume": 9, "name": "bottle-1"}
+    with pytest.raises(MaterialValidationError, match="config.name"):
+        service.patch_material(
+            _mutation("patch_material"), material.material_uuid, MaterialPatch(config={"name": "other"})
+        )
+    with pytest.raises(ValueError):
+        MaterialPatch.model_validate({"name": "改名"})
+
+
+def test_plr_import_and_snapshot_keep_name_as_uuid(service) -> None:
+    root = materials.create(plate("p1"), gateway=LocalMaterialsClient(service))
+    authority = service.get_material(root.unilabos_uuid).material
+    assert authority.name == authority.material_uuid
+    assert authority.config["name"] == "p1" and authority.display_name == "p1"
+
+    tree = ResourceTreeSet.from_plr_resources([root])
+    node = tree.root_nodes[0].res_content
+    assert node.name == node.uuid and node.plr_name == "p1"
+    # 往返 PLR：名字仍是 PLR 键，不是 uuid
+    restored = tree.to_plr_resources()[0]
+    assert restored.name == "p1" and restored.children[0].name == "p1_well_A1"
+
+    # 快照不回写 name；运行时 config 缺 PLR 键时沿用权威值
+    node.config.pop("name")
+    snapshot = resource_tree_to_snapshot(tree, service.get_tree(root.unilabos_uuid))
+    written = next(item.material for item in snapshot.nodes if item.material.material_uuid == root.unilabos_uuid)
+    assert written.name == root.unilabos_uuid and written.config["name"] == "p1"
+
+
+def test_a_snapshot_cannot_rename_a_material(service) -> None:
+    from unilabos.protocol.materials import MaterialSnapshot
+    from unilabos.server.services.materials import MaterialValidationError
+
+    material = _created(service, _node("bottle"))["bottle"]
+    tree = service.get_tree(material.material_uuid)
+    node = tree.nodes[0].model_copy(deep=True)
+    node.material = node.material.model_copy(update={"name": "bottle", "description": "x"})
+    snapshot = MaterialSnapshot(root_material_uuid=material.material_uuid, nodes=[node])
+    with pytest.raises(MaterialValidationError, match="name"):
+        service.apply_snapshot(_mutation("apply_material_snapshot"), snapshot)
+
+
+def test_graph_upload_writes_uuid_names_and_migrates_labels(tmp_path) -> None:
+    from unilabos.server.services.materials.graph import GraphService
+
+    payload = {
+        "nodes": [
+            {"id": "station", "name": "工作站", "type": "device", "template_name": "station", "config": {"port": "COM3"}},
+            {"id": "deck", "name": "deck_main", "type": "deck", "template_name": "Deck", "parent": "station",
+             "config": {"type": "Deck"}},
+            {"id": "plate", "name": "p1", "display_name": "样品板", "type": "plate", "template_name": "Plate",
+             "parent": "deck", "config": {"type": "Plate"}},
+        ],
+        "links": [],
+    }
+    graphs = GraphService(tmp_path / "materials.db")
+    try:
+        first = graphs.upsert_graph(name="lab", payload=payload, device_site_templates={})
+        nodes = {node["id"]: node for node in first["payload"]["nodes"]}
+        for node in nodes.values():
+            assert node["name"] == node["uuid"]
+        assert nodes["station"]["display_name"] == "工作站" and nodes["station"]["config"] == {"port": "COM3"}
+        assert nodes["deck"]["display_name"] == "deck_main" and nodes["deck"]["config"]["name"] == "deck_main"
+        assert nodes["plate"]["display_name"] == "样品板" and nodes["plate"]["config"]["name"] == "p1"
+
+        # 重新上传同一份旧名图、或导出的新图：幂等
+        again = graphs.upsert_graph(name="lab", payload=payload, device_site_templates={})
+        assert again["revision"] == first["revision"]
+        exported = graphs.upsert_graph(name="lab", payload=first["payload"], device_site_templates={})
+        assert exported["revision"] == first["revision"]
+    finally:
+        graphs.close()
+
+
+def test_graph_upload_reuses_uuid_names_and_rejects_conflicts(tmp_path) -> None:
+    from unilabos.server.services.materials.graph import GraphError, GraphService
+
+    identity = str(uuid4())
+    graphs = GraphService(tmp_path / "materials.db")
+    try:
+        stored = graphs.upsert_graph(
+            name="lab", payload={"nodes": [{"id": "pump", "name": identity.upper(), "type": "device"}]}
+        )
+        node = stored["payload"]["nodes"][0]
+        assert node["uuid"] == node["name"] == identity and node["display_name"] == "pump"
+        with pytest.raises(GraphError) as conflict:
+            graphs.upsert_graph(
+                name="other",
+                payload={"nodes": [{"id": "pump", "uuid": str(uuid4()), "name": str(uuid4()), "type": "device"}]},
+            )
+        assert conflict.value.code == "identity_conflict"
+    finally:
+        graphs.close()
+
+
+def test_legacy_graph_boundary_moves_names_out_of_the_way() -> None:
+    from unilabos.server.backend.legacy_adaptor.legacy.graph import (
+        legacy_graph_markers,
+        upgrade_legacy_graph_payload,
+    )
+
+    identity = str(uuid4())
+    payload = {
+        "nodes": [
+            {"id": "station", "name": "工作站", "type": "device", "config": {}},
+            {"id": "deck", "name": "deck_main", "type": "deck", "parent": "station", "config": {"type": "Deck"}},
+            {"id": "plate", "name": identity, "type": "plate", "parent": "deck", "config": {}},
+        ],
+        "links": [],
+    }
+    assert legacy_graph_markers(payload) == {"name 不是 uuid": 2}
+    reports: list[str] = []
+    upgraded = upgrade_legacy_graph_payload(payload, source="lab.json", report=reports.append)
+    station, deck, plate = upgraded["nodes"]
+    assert "name 不是 uuid ×2" in reports[0]
+    assert "name" not in station and station["display_name"] == "工作站" and station["config"] == {}
+    assert "name" not in deck and deck["config"] == {"type": "Deck", "name": "deck_main"}
+    # UUID 形式的 name 是身份，原样交给 Graph Authority 复用
+    assert plate["name"] == identity
+    assert legacy_graph_markers(upgraded) == {}

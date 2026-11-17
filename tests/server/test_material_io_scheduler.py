@@ -106,7 +106,7 @@ def test_load_waits_for_confirmation_then_places_the_material_and_feeds_the_next
         wait_for(lambda: len(executor.dispatched) == 1)
         [box] = _tip_boxes(stack)
         new = box.material.material_uuid
-        assert box.material.name == "新吸头盒" and stack.materials.occupied_site(new).site_uuid == sites["A1"]
+        assert box.material.display_name == "新吸头盒" and stack.materials.occupied_site(new).site_uuid == sites["A1"]
         # 节点输出 material，后面的动作像引用动作结果一样拿到它
         assert executor.dispatched[0]["action"] == "pick" and executor.dispatched[0]["action_args"]["box"] == {"uuid": new}
         run = next(item for item in stack.workflow.list_workflow_node_runs(task["uuid"])

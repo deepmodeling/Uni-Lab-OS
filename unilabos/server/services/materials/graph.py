@@ -26,6 +26,13 @@ from typing import TYPE_CHECKING, Any, Mapping, NamedTuple, Optional, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from unilabos.protocol.base import canonical_hash
+from unilabos.resources.objects.naming import (
+    MaterialNameConflict,
+    check_name_identity,
+    legacy_label,
+    migrated_name_fields,
+    plr_key,
+)
 from unilabos.resources.objects.site import SITE_TEMPLATE_WHITELIST_KEY, normalize_available_sites
 from unilabos.server.services.materials.store import MaterialsRepository
 from unilabos.server.database.tables.materials import (
@@ -181,6 +188,20 @@ def _canonicalize_site(
     return canonical
 
 
+def _node_id(node: Mapping[str, Any]) -> str:
+    """节点业务 id：``id``；缺省时优先取人可读的标签（PLR 键、旧式 name、display_name），
+    都没有才退回 name 本身。"""
+
+    return str(
+        node.get("id")
+        or plr_key(node.get("config"))
+        or legacy_label(node.get("name"))
+        or node.get("display_name")
+        or node.get("name")
+        or ""
+    ).strip()
+
+
 def reconcile_graph_payload(
     payload: Mapping[str, Any],
     previous_payload: Optional[Mapping[str, Any]],
@@ -189,9 +210,13 @@ def reconcile_graph_payload(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """节点身份对账：草稿发号、既有身份复用、冲突拒绝，并产出 diff 摘要。
 
-    - 节点 uuid：payload 携带 > 既有快照同 id 节点 > ``uuid5(图 uuid, "node:<id>")``
-      稳定派生（同一草稿反复导入结果一致）；
-    - payload 与既有快照同 id 节点 uuid 不一致 → ``identity_conflict`` 拒绝；
+    - 节点 uuid：payload 携带 > UUID 形式的 name > 既有快照同 id 节点 >
+      ``uuid5(图 uuid, "node:<id>")`` 稳定派生（同一草稿反复导入结果一致）；
+    - payload 与既有快照同 id 节点 uuid 不一致、UUID 形式的 name 与节点 uuid 不一致
+      → ``identity_conflict`` 拒绝；
+    - 发号后 ``name = uuid``：非 UUID 的旧 name 迁到 ``display_name``（为空时）与 PLR 键
+      ``config.name``（缺失时，设备除外），缺 ``id`` 的节点补上人可读的 id
+      （规则见 :mod:`unilabos.resources.objects.naming`）；
     - 层级只认 ``parent``/``parent_uuid``；派生的 ``children`` 列表剥离不入库；
     - 只接受当前 node-link 契约：根级 ``position``、Site ``occupied_by`` 等旧字段
       直接拒绝（旧后端导出图请先经 legacy 适配层转换）；
@@ -219,9 +244,19 @@ def reconcile_graph_payload(
     for node in nodes:
         if not isinstance(node, dict):
             raise GraphError("invalid_payload", "graph 节点必须是对象")
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         if not node_id:
             raise GraphError("invalid_payload", "graph 节点缺少 id")
+        # UUID 形式的 name 就是身份：节点没带 uuid 时采纳，带了且不一致即冲突
+        try:
+            named = check_name_identity(node.get("name"), node.get("uuid"), label=node_id)
+        except MaterialNameConflict as exc:
+            raise GraphError("identity_conflict", str(exc)) from None
+        if named and not str(node.get("uuid") or "").strip():
+            from unilabos.utils.log import logger
+
+            logger.info(f"[Graph] 节点 {node_id} 的 name 是 UUID，按身份采纳: {named}")
+            node["uuid"] = named
         if "position" in node:
             raise GraphError(
                 "invalid_payload",
@@ -231,11 +266,11 @@ def reconcile_graph_payload(
     # uuid 为身份；id 唯一的节点仍按 id 与既有快照对账。
     id_counts: dict[str, int] = {}
     for node in nodes:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         id_counts[node_id] = id_counts.get(node_id, 0) + 1
 
     def previous_for(node: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         node_uuid = str(node.get("uuid") or "").strip()
         if id_counts.get(node_id, 0) > 1:
             return previous_by_uuid.get(node_uuid) if node_uuid else None
@@ -248,7 +283,7 @@ def reconcile_graph_payload(
     unchanged: list[str] = []
 
     for node in nodes:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         incoming_uuid = str(node.get("uuid") or "").strip()
         if id_counts[node_id] > 1 and not incoming_uuid:
             raise GraphError("invalid_payload", f"graph 节点 id 重复: {node_id}")
@@ -271,12 +306,28 @@ def reconcile_graph_payload(
         node["uuid"] = node_uuid
 
     for node in nodes:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         node_uuid = str(node["uuid"])
         previous = previous_for(node)
 
         # 父子关系只由 parent/parent_uuid 表达；children 是派生列表，不入库。
         node.pop("children", None)
+
+        # ── 物料 name = uuid：旧名迁到 display_name 与 PLR 键 config.name ──
+        raw_config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        display_name, migrated_config = migrated_name_fields(
+            name=node.get("name"),
+            display_name=node.get("display_name"),
+            config=raw_config,
+            resource_type=node.get("type") or "device",
+            default_plr_key=node_id,
+            default_label=node_id,
+        )
+        if migrated_config != raw_config:
+            node["config"] = migrated_config
+        node["display_name"] = display_name
+        node["name"] = node_uuid
+        node.setdefault("id", node_id)
 
         # ── Site 身份补齐（config.sites 平铺图纸 → 根级 canonical） ──
         config = node.get("config") if isinstance(node.get("config"), dict) else {}
@@ -341,7 +392,7 @@ def reconcile_graph_payload(
         sites = node.get("sites")
         if not isinstance(sites, list) or not sites:
             continue
-        node_id = str(node.get("id") or node.get("name") or "")
+        node_id = _node_id(node)
         node_uuid = str(node["uuid"])
         for child in nodes:
             child_parent_uuid = str(child.get("parent_uuid") or "")
@@ -368,7 +419,7 @@ def reconcile_graph_payload(
     # ── diff 分类（发号与占用全部就绪后计算）──
     matched_previous_uuids: set[str] = set()
     for node in nodes:
-        node_id = str(node.get("id") or node.get("name") or "")
+        node_id = _node_id(node)
         previous = previous_for(node)
         if previous is None:
             created.append(node_id)
@@ -423,7 +474,7 @@ def adopt_graph_payload(
     previous_by_id: dict[str, list[Mapping[str, Any]]] = {}
     previous_by_uuid: dict[str, Mapping[str, Any]] = {}
     for node in previous_nodes:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         node_uuid = str(node.get("uuid") or "").strip()
         if node_id:
             previous_by_id.setdefault(node_id, []).append(node)
@@ -435,7 +486,7 @@ def adopt_graph_payload(
     added_nodes: list[dict[str, Any]] = []
     matched_previous: set[str] = set()
     for node in local_nodes:
-        node_id = str(node.get("id") or node.get("name") or "").strip()
+        node_id = _node_id(node)
         if not node_id:
             raise GraphError("invalid_payload", "graph 节点缺少 id")
         node_uuid = str(node.get("uuid") or "").strip()
@@ -443,7 +494,7 @@ def adopt_graph_payload(
         match: Optional[Mapping[str, Any]] = None
         if node_uuid and node_uuid in previous_by_uuid:
             match = previous_by_uuid[node_uuid]
-            if str(match.get("id") or match.get("name") or "").strip() != node_id:
+            if _node_id(match) != node_id:
                 raise GraphError(
                     "identity_conflict",
                     f"节点 {node_id} 的 uuid ({node_uuid}) 已属于权威节点 "
@@ -470,7 +521,7 @@ def adopt_graph_payload(
             added_nodes.append(copy.deepcopy(dict(node)))
 
     kept = [
-        str(node.get("id") or node.get("name") or "")
+        _node_id(node)
         for node in previous_nodes
         if str(node.get("uuid") or "") not in matched_previous
     ]
@@ -494,7 +545,7 @@ def adopt_graph_payload(
     return merged, {
         "adopted": adopted,
         "kept": kept,
-        "added": [str(node.get("id") or node.get("name") or "") for node in added_nodes],
+        "added": [_node_id(node) for node in added_nodes],
     }
 
 
@@ -781,7 +832,9 @@ def _graph_resource_node(node: dict[str, Any]) -> dict[str, Any]:
     """把 payload 节点就地整理成 ``ResourceDict`` 输入并返回。
 
     - 必须带 uuid（或 ``data.unilabos_uuid``）；``children`` 是派生字段，丢弃；
-    - 缺 ``type`` 视为设备，缺 ``name`` 取 ``id``；
+    - 缺 ``type`` 视为设备；物料 name 写成 uuid，旧名按 Graph Authority 同一规则迁到
+      ``display_name`` 与 PLR 键 ``config.name``（缺省取 ``id``）。权威 payload 已是这个形态，
+      这里只让直接装配的草稿与它一致；
     - 根级 ``position`` 不属于当前契约；根级 ``x/y/z`` 折叠进 ``pose.position``；
     - ``sample_id`` 不受支持，丢弃；其余非 ``ResourceDict`` 根字段收进 ``config``。
     """
@@ -803,9 +856,21 @@ def _graph_resource_node(node: dict[str, Any]) -> dict[str, Any]:
     if not node.get("type"):
         node["type"] = "device"
         print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'type', defaulting to 'device'", "warning")
-    if node.get("name", None) is None:
-        node["name"] = node.get("id")
-        print_status(f"Warning: Node {node.get('id', 'unknown')} missing 'name', defaulting to {node['name']}", "warning")
+    try:
+        check_name_identity(node.get("name"), node["uuid"], label=label)
+    except MaterialNameConflict as exc:
+        raise ValueError(str(exc)) from None
+    display_name, migrated_config = migrated_name_fields(
+        name=node.get("name"),
+        display_name=node.get("display_name"),
+        config=node["config"],
+        resource_type=node["type"],
+        default_plr_key=str(node.get("id") or ""),
+        default_label=str(node.get("id") or ""),
+    )
+    node["config"] = migrated_config
+    node["display_name"] = display_name
+    node["name"] = node["uuid"]
     if "position" in node:
         raise ValueError(f"资源 {label} 的根字段 position 不受支持，请使用 pose.position")
     legacy_position = {axis: node.pop(axis) for axis in ("x", "y", "z") if node.get(axis) is not None}

@@ -65,15 +65,15 @@ def _warehouse(gateway, name: str = "wh"):
 
 
 def _shape(service: MaterialsService, warehouse_uuid: str) -> dict[str, tuple[str, str]]:
-    """{Site label: (占用物料名, 占用物料的父物料名)}。"""
+    """{Site label: (占用物料 PLR 名, 占用物料的父物料 PLR 名)}。"""
 
     tree = service.get_tree(warehouse_uuid)
     by_uuid = {node.material.material_uuid: node.material for node in tree.nodes}
     (owner,) = [node for node in tree.nodes if node.material.material_uuid == warehouse_uuid]
     return {
         site.label: (
-            by_uuid[site.occupied_material_uuid].name,
-            by_uuid[by_uuid[site.occupied_material_uuid].parent_material_uuid].name,
+            by_uuid[site.occupied_material_uuid].config["name"],
+            by_uuid[by_uuid[site.occupied_material_uuid].parent_material_uuid].config["name"],
         )
         for site in owner.sites
         if site.occupied_material_uuid

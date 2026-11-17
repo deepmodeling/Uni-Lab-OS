@@ -236,8 +236,8 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     # MCP 回包 body 是统一信封 {code, data}：比对的是 data 里的物料 / 批次
     rollback_reads = [_body_data(_result(call).get("body", {})) for call in calls[failed_seen[0] + 1:topped_up]]
     plates = [body["material"] for body in rollback_reads if isinstance(body, dict)
-              and body.get("material", {}).get("name") in {"flow_plate_01", "flow_plate_02"}]
-    assert {plate["name"] for plate in plates} == {"flow_plate_01", "flow_plate_02"}
+              and body.get("material", {}).get("display_name") in {"flow_plate_01", "flow_plate_02"}]
+    assert {plate["display_name"] for plate in plates} == {"flow_plate_01", "flow_plate_02"}
     assert all(plate["lifecycle_status"] == "active" and plate["parent_material_uuid"] is None for plate in plates)
     assert any(isinstance(body, dict) and body.get("lot_uuid") == lot_uuid
                and (body["quantity_total"], body["quantity_available"], body["quantity_reserved"]) == (500, 500, 0)
@@ -245,9 +245,10 @@ def assert_material_stage_three(evidence: dict, observations: list, port: int | 
     root = next(node for node in selected["nodes"] if node["material"]["material_uuid"] == selected_uuid)
     assert root["material"]["lifecycle_status"] == "in_use"
     assert root["material"]["parent_material_uuid"] == deck["material"]["material_uuid"]
-    assert root["material"]["name"] == fill["plate_name"]
-    well_name = root["material"]["config"]["ordering"]["A1"]
-    well = next(node for node in selected["nodes"] if node["material"]["name"] == well_name)
+    # 物料 name 是 uuid；PLR 名（驱动看到的 plate.name）是 config.name，ordering 的值是孔的 PLR 键
+    assert root["material"]["config"]["name"] == fill["plate_name"]
+    well_key = root["material"]["config"]["ordering"]["A1"]
+    well = next(node for node in selected["nodes"] if node["material"]["config"].get("name") == well_key)
     assert well["material"]["parent_material_uuid"] == selected_uuid
     assert well["data"]["data"]["volume"] == 1200
     substances = well["data"]["substances"]

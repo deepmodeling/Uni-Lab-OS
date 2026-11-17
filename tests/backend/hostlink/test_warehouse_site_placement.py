@@ -70,15 +70,15 @@ def stocker(tmp_path, monkeypatch):
 
 
 def _authority_placement(service: MaterialsService, warehouse) -> dict[str, tuple[str, str]]:
-    """权威里仓库各 Site 的 {label: (占用物料名, 占用物料父节点名)}。"""
+    """权威里仓库各 Site 的 {label: (占用物料 PLR 名, 占用物料父节点 PLR 名)}。"""
 
     tree = service.get_tree(warehouse.unilabos_uuid)
     by_uuid = {node.material.material_uuid: node.material for node in tree.nodes}
     owner = next(node for node in tree.nodes if node.material.material_uuid == warehouse.unilabos_uuid)
     return {
         site.label: (
-            by_uuid[site.occupied_material_uuid].name,
-            by_uuid[by_uuid[site.occupied_material_uuid].parent_material_uuid].name,
+            by_uuid[site.occupied_material_uuid].config["name"],
+            by_uuid[by_uuid[site.occupied_material_uuid].parent_material_uuid].config["name"],
         )
         for site in owner.sites
         if site.occupied_material_uuid

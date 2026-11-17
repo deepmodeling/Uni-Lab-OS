@@ -83,7 +83,7 @@ def test_authority_roundtrip_preserves_well_identity(tmp_path) -> None:
             if node.material.material_uuid
             == created.get_well("A2").unilabos_uuid
         )
-        assert a2_node.material.name == "probe_plate_well_A2"
+        assert a2_node.material.config["name"] == "probe_plate_well_A2"
         assert [
             (entry.name, entry.quantity) for entry in a2_node.data.substances
         ] == [("Water", 40.0)]

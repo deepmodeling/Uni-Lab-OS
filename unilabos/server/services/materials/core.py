@@ -71,6 +71,13 @@ from unilabos.protocol.materials import (
     SiteRead,
     snapshot_retirable,
 )
+from unilabos.resources.objects.naming import (
+    PLR_KEY_FIELD,
+    MaterialNameConflict,
+    check_name_identity,
+    migrated_name_fields,
+    plr_key,
+)
 from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
@@ -145,6 +152,23 @@ ResourceSyncDispatcher = Callable[[MaterialDeviceSync], Any]
 
 #: 拓扑边身份命名空间：同两端/同 handle/同类型的边跨启动稳定同 uuid。
 MATERIAL_LINK_NAMESPACE = uuid5(NAMESPACE_URL, "unilabos://material-links")
+
+
+def _keep_plr_key(current: Mapping[str, Any], desired: Mapping[str, Any]) -> dict[str, Any]:
+    """PLR 键创建后不可改：新 config 缺 ``name`` 时沿用现值，给了不同的值即拒绝。"""
+
+    result = dict(desired)
+    current_key = plr_key(current)
+    if not current_key:
+        return result
+    desired_key = plr_key(result)
+    if not desired_key:
+        result[PLR_KEY_FIELD] = current_key
+    elif desired_key != current_key:
+        raise MaterialValidationError(
+            f"PLR 键 config.name 创建后不可修改: {current_key!r} -> {desired_key!r}"
+        )
+    return result
 
 
 def material_link_uuid(
@@ -2309,15 +2333,35 @@ class MaterialsService(MaterialsRepository):
         def apply(timestamp: int) -> _Applied[MaterialTreeRead]:
             client_map: dict[str, str] = {}
             for node in value.nodes:
-                if node.material_uuid is None:
+                # name 已是 UUID 就是身份：与显式 material_uuid 不一致即冲突；没有显式 uuid 时
+                # 采纳它（带条件的创建）。业务标签恰好是 UUID 时也会被当成身份，记一条日志。
+                try:
+                    named = check_name_identity(
+                        node.identity.name, node.material_uuid, label=node.identity.resource_id
+                    )
+                except MaterialNameConflict as exc:
+                    raise MaterialConflictError(str(exc), conflict="identity") from None
+                explicit = node.material_uuid or named
+                if explicit is None:
                     client_map[node.client_ref] = str(uuid4())
                     continue
-                # 显式 uuid（adopt）：带条件的创建——uuid 已被占用即冲突
-                if MaterialsRepository.get_material(self, node.material_uuid) is not None:
-                    raise MaterialConflictError(
-                        f"material uuid already exists: {node.material_uuid}", conflict="identity"
+                if node.material_uuid is None:
+                    from unilabos.utils.log import logger
+
+                    logger.info(
+                        f"[Materials] 物料 {node.identity.resource_id} 的 name 是 UUID，按身份采纳: {explicit}"
                     )
-                client_map[node.client_ref] = node.material_uuid
+                if explicit in client_map.values():
+                    raise MaterialConflictError(
+                        f"material uuid is duplicated in the create tree: {explicit}",
+                        conflict="identity",
+                    )
+                # 显式 uuid（adopt）：带条件的创建——uuid 已被占用即冲突
+                if MaterialsRepository.get_material(self, explicit) is not None:
+                    raise MaterialConflictError(
+                        f"material uuid already exists: {explicit}", conflict="identity"
+                    )
+                client_map[node.client_ref] = explicit
             node_ordinals: dict[str, int] = {}
             used_ordinals: dict[str | None, set[int]] = {}
             next_ordinals: dict[str | None, int] = {}
@@ -2371,7 +2415,12 @@ class MaterialsService(MaterialsRepository):
                                 "source": "material_create",
                                 "resource_schema": node.identity.resource_schema,
                                 "model": node.identity.model,
-                                "config": node.identity.config,
+                                # PLR 键属于实例，不进模板定义
+                                "config": {
+                                    key: item
+                                    for key, item in node.identity.config.items()
+                                    if key != PLR_KEY_FIELD
+                                },
                             },
                         )
                         template = ResourceTemplateRecord(
@@ -2434,6 +2483,24 @@ class MaterialsService(MaterialsRepository):
                     ]
                 node_sites[node.client_ref] = explicit_sites
 
+            # 物料 name 等于 uuid：旧名迁到 display_name（为空时）与 PLR 键 config.name
+            # （缺失时）；新建根物料没有旧名时 PLR 键取全局唯一的 resource_id。
+            names: dict[str, tuple[str, dict[str, Any]]] = {}
+            for node in value.nodes:
+                material_uuid = client_map[node.client_ref]
+                names[node.client_ref] = migrated_name_fields(
+                    name=node.identity.name,
+                    display_name=node.identity.display_name,
+                    config=node.identity.config,
+                    resource_type=node.identity.resource_type,
+                    default_plr_key=(
+                        node.identity.resource_id
+                        if node.parent_client_ref is None
+                        else material_uuid
+                    ),
+                    default_label=node.identity.resource_id,
+                )
+
             for node in value.nodes:
                 identity = node.identity
                 template = resolved_templates[node.client_ref]
@@ -2443,6 +2510,7 @@ class MaterialsService(MaterialsRepository):
                     if node.parent_client_ref is not None
                     else None
                 )
+                display_name, config = names[node.client_ref]
                 record = MaterialRecord(
                     material_uuid=material_uuid,
                     resource_id=identity.resource_id,
@@ -2450,8 +2518,8 @@ class MaterialsService(MaterialsRepository):
                     parent_material_uuid=parent_uuid,
                     ordinal=node_ordinals[node.client_ref],
                     lot_uuid=identity.lot_uuid,
-                    name=identity.name,
-                    display_name=identity.display_name or identity.name,
+                    name=material_uuid,
+                    display_name=display_name,
                     description=identity.description,
                     resource_type=identity.resource_type,
                     class_name=identity.class_name,
@@ -2462,7 +2530,7 @@ class MaterialsService(MaterialsRepository):
                     resource_schema_json=identity.resource_schema,
                     model_json=identity.model,
                     icon_uri=identity.icon_uri,
-                    config_json=identity.config,
+                    config_json=config,
                     extra_json=identity.extra,
                     meta_data_json=identity.meta_data,
                     lifecycle_status=identity.lifecycle_status,
@@ -2728,6 +2796,8 @@ class MaterialsService(MaterialsRepository):
             if current is None:
                 raise MaterialNotFoundError(f"material not found: {material_uuid}", subject="material")
             changes = value.model_dump(exclude_none=True)
+            if "config" in changes:
+                changes["config"] = _keep_plr_key(current.config_json, changes["config"])
             field_map = {
                 "config": "config_json",
                 "extra": "extra_json",
@@ -3835,6 +3905,7 @@ class MaterialsService(MaterialsRepository):
 
             immutable_identity = (
                 "material_uuid",
+                "name",
                 "resource_id",
                 "template_uuid",
                 "resource_type",
@@ -3973,8 +4044,7 @@ class MaterialsService(MaterialsRepository):
                         **current_record.model_dump(mode="json"),
                         "parent_material_uuid": identity.parent_material_uuid,
                         "lot_uuid": identity.lot_uuid,
-                        "name": identity.name,
-                        "display_name": identity.display_name or identity.name,
+                        "display_name": identity.display_name or current_record.display_name,
                         "description": identity.description,
                         "machine_name": identity.machine_name,
                         "barcode": identity.barcode,
@@ -3982,7 +4052,7 @@ class MaterialsService(MaterialsRepository):
                         "resource_schema_json": identity.resource_schema,
                         "model_json": identity.model,
                         "icon_uri": identity.icon_uri,
-                        "config_json": identity.config,
+                        "config_json": _keep_plr_key(current_record.config_json, identity.config),
                         "extra_json": identity.extra,
                         "meta_data_json": identity.meta_data,
                         "lifecycle_status": identity.lifecycle_status,

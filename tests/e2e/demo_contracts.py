@@ -138,7 +138,8 @@ class DemoContracts:
         final = {
             "site_occupancy": {
                 site["label"]: (
-                    nodes[site["occupied_material_uuid"]]["material"]["name"]
+                    # 物料 name 是 uuid，人读标签在 display_name
+                    nodes[site["occupied_material_uuid"]]["material"]["display_name"]
                     if site.get("occupied_material_uuid")
                     else ""
                 )
@@ -146,7 +147,7 @@ class DemoContracts:
             },
             "class_names": sorted({node["material"]["config"]["type"] for node in tree["nodes"]}),
             "root_children": sorted(
-                node["material"]["name"]
+                node["material"]["display_name"]
                 for node in tree["nodes"]
                 if node["material"]["parent_material_uuid"] == smoke.DECK_UUID
             ),
@@ -162,8 +163,9 @@ class DemoContracts:
         selected_uuid = succeeded["plates"][fill["plate_name"]]["material_uuid"]
         selected = api_request(self.port, f"/materials/instances/{selected_uuid}/tree")
         root = next(n for n in selected["nodes"] if n["material"]["material_uuid"] == selected_uuid)
-        well_name = root["material"]["config"]["ordering"]["A1"]
-        well = next(n for n in selected["nodes"] if n["material"]["name"] == well_name)
+        # ordering 的值是孔的 PLR 键（config.name）
+        well_key = root["material"]["config"]["ordering"]["A1"]
+        well = next(n for n in selected["nodes"] if n["material"]["config"].get("name") == well_key)
         assert well["material"]["parent_material_uuid"] == selected_uuid
         assert well["data"]["data"]["volume"] == 1200
         substances = well["data"]["substances"]

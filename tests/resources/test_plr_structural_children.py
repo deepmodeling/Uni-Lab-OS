@@ -23,7 +23,7 @@ def test_structural_children_match_by_name_not_runtime_order(monkeypatch):
     monkeypatch.setattr(root, "serialize", lambda: payload)
     tree = ResourceTreeSet.from_plr_resources([root])
     restored_children = tree.root_nodes[0].children
-    assert [node.res_content.name for node in restored_children] == ["b", "a"]
+    assert [node.res_content.plr_name for node in restored_children] == ["b", "a"]
     assert [node.res_content.uuid for node in restored_children] == [
         children[2].unilabos_uuid,
         children[1].unilabos_uuid,

@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Collection, Mapping, Optional, Protocol, Sequence
 
+from unilabos.resources.objects.naming import PLR_KEY_FIELD, canonical_uuid, plr_key
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children, material_serialization
@@ -211,6 +212,9 @@ def resource_tree_to_create(
     默认不携带实例 UUID（由权威分配）；``adopt_uuid=True`` 时把草稿节点的
     uuid 作为显式 material_uuid 提交（带条件的创建），供开机图对齐、
     出库扣减产物落库等要求「uuid 与外部一致」的场景使用。
+
+    物料 name 由权威写成 uuid：草稿 name 已是 UUID（草稿 uuid）时不提交，免得被当成
+    身份采纳；仍是旧式标签时原样提交，由权威迁到 display_name 与 PLR 键。
     """
 
     if len(value.trees) != 1:
@@ -244,7 +248,11 @@ def resource_tree_to_create(
                 material_uuid=resource.uuid if adopt_uuid else None,
                 identity=MaterialIdentityWrite(
                     resource_id=resource_ids[resource.uuid],
-                    name=resource.name,
+                    name=(
+                        resource.name
+                        if canonical_uuid(resource.name) is None or adopt_uuid
+                        else ""
+                    ),
                     display_name=resource.display_name,
                     description=resource.description,
                     resource_type=resource.type,
@@ -510,12 +518,16 @@ def resource_tree_to_snapshot(
         if parent_material_uuid not in authoritative_uuids:
             # 设备/Deck 挂载关系不属于 materials.db 的物料父子关系。
             parent_material_uuid = node.material.parent_material_uuid
+        # PLR 键创建后不可改：运行时 config 没带 name（手写的字典树）时沿用权威值
+        config = dict(resource.config)
+        if not plr_key(config) and plr_key(node.material.config):
+            config[PLR_KEY_FIELD] = plr_key(node.material.config)
         identity = MaterialIdentityRead.model_validate(
             {
                 **node.material.model_dump(mode="json"),
-                "name": resource.name,
-                # 展示名只以权威为准：PLR 运行时不承载 display_name，序列化出的
-                # 标签（PLR 名 / ordering 标识）不能覆盖用户编辑过的展示名。
+                # 物料 name 是 uuid、展示名只以权威为准：快照都不回写。PLR 运行时
+                # 不承载 display_name，序列化出的标签不能覆盖用户编辑过的展示名。
+                "name": node.material.name,
                 "display_name": node.material.display_name,
                 "description": resource.description,
                 "machine_name": resource.machine_name,
@@ -524,7 +536,7 @@ def resource_tree_to_snapshot(
                 "resource_schema": resource.resource_schema,
                 "model": resource.model,
                 "icon_uri": resource.icon,
-                "config": resource.config,
+                "config": config,
                 "extra": {
                     key: item
                     for key, item in resource.extra.items()

@@ -122,7 +122,9 @@ def test_registry_classes_and_instantiation_follow_the_reported_catalog(authorit
                 {"registry_class": "tip_rack_300", "display_name": "300ul 枪头盒"}
             ]
             tree = instantiate_tree(MaterialInstantiate(registry_class="tip_rack_300", name="tips"))
-            assert tree.nodes[0].identity.name == "tips"
+            # 实例名是 PLR 根名（PLR 键）与人读标签；物料 name 由权威写成 uuid
+            assert tree.nodes[0].identity.config["name"] == "tips"
+            assert tree.nodes[0].identity.display_name == "tips"
             # 已上报但没有这个资源类：照旧是「不可实例化」，不是「尚未上报」
             with pytest.raises(MaterialValidationError, match="不可实例化"):
                 instantiate_tree(MaterialInstantiate(registry_class="scanned_only", name="plate"))

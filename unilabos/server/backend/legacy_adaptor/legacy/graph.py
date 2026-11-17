@@ -13,7 +13,9 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
   空液体、``{"liquid_type", "liquid_volume"}`` 对象、``pending_liquids``），以及 dev
   时代容器的 ``data.liquid=[{"liquid_type", "liquid_volume"}]``；
 - 边只有 ``source_uuid`` / ``target_uuid`` 与下划线 ``source_handle`` /
-  ``target_handle``，顶层键叫 ``edges``。
+  ``target_handle``，顶层键叫 ``edges``；
+- 物料 ``name`` 是人读标签而不是 uuid（当前契约里 ``name`` 等于 uuid，标签在
+  ``display_name``，PLR 键在 ``config.name``）。
 
 这些形状只在**接收旧数据的边界**被识别并一次性转换：``-g`` 启动文件与
 ``unilab graph upload`` 的读取入口（:func:`upgrade_legacy_graph_payload`）、旧后端
@@ -27,6 +29,7 @@ from __future__ import annotations
 import copy
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
+from unilabos.resources.objects.naming import legacy_label, migrated_name_fields
 from unilabos.utils.log import get_comm_logger
 
 logger = get_comm_logger()
@@ -223,6 +226,30 @@ def legacy_graph_children_index(
     return index
 
 
+def _migrate_legacy_name(node: Dict[str, Any]) -> None:
+    """非 UUID 的旧 name 迁到 ``display_name``（为空时）与 PLR 键 ``config.name``（缺失时，
+    设备除外），然后删掉 name，由 Graph Authority 发号后写成 uuid。
+
+    UUID 形式的 name 原样保留：它就是身份，由 Graph Authority 复用（与节点 uuid 不一致时拒绝）。
+    """
+
+    label = legacy_label(node.get("name"))
+    if not label:
+        return
+    raw_config = node.get("config")
+    config = raw_config if isinstance(raw_config, dict) else {}
+    display_name, migrated = migrated_name_fields(
+        name=label,
+        display_name=node.get("display_name"),
+        config=config,
+        resource_type=node.get("type") or "device",
+    )
+    if migrated != config:
+        node["config"] = migrated
+    node["display_name"] = display_name
+    node.pop("name")
+
+
 def normalize_legacy_graph_node(
     node: Dict[str, Any],
     *,
@@ -236,7 +263,9 @@ def normalize_legacy_graph_node(
     - ``pose.position_3d`` → ``pose.position3d``；
     - 旧 PLR 液体字段 → 当前 tracker 根字段形状；
     - 平铺 Site 的 ``occupied_by`` → ``occupied_material_uuid``
-      （需传 ``children_by_parent``，见 :func:`legacy_graph_children_index`）。
+      （需传 ``children_by_parent``，见 :func:`legacy_graph_children_index`）；
+    - 非 UUID 的 name 迁到 ``display_name`` 与 PLR 键 ``config.name``（见
+      :func:`_migrate_legacy_name`）。
 
     绝不覆盖已有的新字段；对已是当前契约的节点是恒等变换。
     """
@@ -250,6 +279,7 @@ def normalize_legacy_graph_node(
     label = node.get("id", node.get("name"))
     _normalize_legacy_tracker_state(node, label)
     _normalize_legacy_sites(node, children_by_parent)
+    _migrate_legacy_name(node)
 
     root_position = node.pop("position", None)
     raw_pose = node.get("pose")
@@ -360,6 +390,8 @@ def legacy_graph_markers(payload: Mapping[str, Any]) -> Dict[str, int]:
             continue
         if node.get("class") and not str(node.get("template_name") or "").strip():
             hit("class 无 template_name")
+        if legacy_label(node.get("name")):
+            hit("name 不是 uuid")
         if "position" in node:
             hit("根级 position")
         # children 是派生字段，读取时本就丢弃；空列表不携带任何旧格式信息，

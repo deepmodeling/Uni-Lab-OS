@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 import requests
 
+from unilabos.resources.objects.naming import legacy_label
 from unilabos.utils.tracing import inject_trace_context, span
 
 
@@ -274,7 +275,11 @@ def _graph_node(raw_node: Any) -> Dict[str, Any]:
     parent = raw_node.get("parent")
     return {
         "id": local_id,
-        "name": str(raw_node.get("name") or local_id).strip(),
+        # V1 后端把 name 当显示名：当前图节点的人读标签在 display_name（name 是 uuid），
+        # 旧图的标签仍在 name
+        "name": str(
+            raw_node.get("display_name") or legacy_label(raw_node.get("name")) or local_id
+        ).strip(),
         "type": resource_type,
         "template_name": template_name,
         "barcode": barcode,

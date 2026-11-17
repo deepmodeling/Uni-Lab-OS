@@ -15,6 +15,7 @@ from unilabos.resources.objects.resource import (
     ResourceDictType,
     assemble_tracker_state,
 )
+from unilabos.resources.objects.naming import PLR_KEY_FIELD, plr_key
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
 from unilabos.resources.plr_additional_res_reg import register
@@ -656,7 +657,13 @@ class ResourceDictInstance(object):
         content = copy.deepcopy(content)
         content.pop("children", None)
         if "id" not in content:
-            content["id"] = content["name"]
+            # 业务 id 保持人可读：取 PLR 键 / 人读标签，物料 name（uuid）只是最后的回退
+            content["id"] = (
+                plr_key(content.get("config"))
+                or content.get("display_name")
+                or content.get("name")
+                or content.get("uuid")
+            )
         if not content.get("uuid"):
             transport_uuid = (content.get("data") or {}).get("unilabos_uuid")
             if not transport_uuid:
@@ -1108,11 +1115,12 @@ class ResourceTreeSet(object):
                         )
                 static_pose["position"] = raw_pos
 
-            # 先构建当前节点的字典（不包含children）
+            # 先构建当前节点的字典（不包含children）。物料 name 等于 uuid，PLR 名作为
+            # PLR 键存进 config.name（不改 PLR 对象本身），人读标签进 display_name。
             r_dict = {
                 "id": d["name"],
                 "uuid": current_uuid,
-                "name": d["name"],
+                "name": current_uuid,
                 "display_name": label,
                 "parent": parent_resource,  # 直接传入 ResourceDict 对象
                 "parent_uuid": parent_uuid,  # 使用 parent_uuid 而不是 parent 对象
@@ -1155,6 +1163,7 @@ class ResourceTreeSet(object):
                 "sites": extract_plr_sites(plr_resource, d),
                 "sites_initialized": True,
             }
+            r_dict["config"][PLR_KEY_FIELD] = d["name"]
             capacity = extra.pop(EXTRA_RESOURCE_CAPACITY, missing)
             if capacity is not missing:
                 r_dict["config"]["capacity"] = copy.deepcopy(capacity)
@@ -1597,6 +1606,9 @@ class ResourceTreeSet(object):
         candidate_payload = self.dump()
         for tree_payload in candidate_payload:
             for resource in tree_payload:
+                # 物料 name 等于 uuid，随身份一起替换
+                if resource.get("name") == resource["uuid"]:
+                    resource["name"] = replacements.get(resource["uuid"], resource["uuid"])
                 resource["uuid"] = replacements.get(resource["uuid"], resource["uuid"])
                 parent_uuid = resource.get("parent_uuid")
                 if parent_uuid:
@@ -1806,9 +1818,11 @@ def walk_resources(resource: Any):
 
 
 def set_resource_uuid(resource: Any, new_uuid: str) -> None:
-    """设置资源 uuid；dict 形态同时同步 ``data.unilabos_uuid``（若存在）。"""
+    """设置资源 uuid；dict 形态同时同步 ``data.unilabos_uuid``（若存在）与等于旧 uuid 的 name。"""
 
     if isinstance(resource, dict):
+        if resource.get("name") and resource.get("name") == resource.get("uuid"):
+            resource["name"] = new_uuid
         resource["uuid"] = new_uuid
         data = resource.get("data")
         if isinstance(data, dict) and "unilabos_uuid" in data:

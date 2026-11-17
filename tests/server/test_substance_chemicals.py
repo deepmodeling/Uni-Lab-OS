@@ -297,14 +297,14 @@ def test_tree_read_attaches_summaries_in_one_lookup(stack, monkeypatch) -> None:
 
     assert calls == [{water["chemical_uuid"], ethanol["chemical_uuid"]}]
     names = {
-        node.material.name: [item.chemical.name if item.chemical else None for item in node.data.substances]
+        node.material.display_name: [item.chemical.name if item.chemical else None for item in node.data.substances]
         for node in read.nodes
     }
     assert names == {"rack": [], "tube-a": ["水", "乙醇"], "tube-b": ["水"]}
 
     app = FastAPI()
     install_materials_api(app, service)
-    tube_b = next(node for node in read.nodes if node.material.name == "tube-b")
+    tube_b = next(node for node in read.nodes if node.material.display_name == "tube-b")
     with TestClient(app) as client:
         body = ok_data(client.get(f"/api/v1/inventory/instances/{tube_b.material.material_uuid}"))
     substance = body["data"]["substances"][0]
@@ -360,7 +360,9 @@ def test_resolution_does_not_mutate_the_request(stack) -> None:
 FIXED_MATERIAL_UUID = "11111111-1111-4111-8111-111111111111"
 #: 引入化学品引用之前的代码（17d380a9）对下面固定场景算出的值。未关联的内容物升级后必须逐字不变：
 #: 旧行存的 data state_hash 仍能判无变化，设备缓存的 expected_state_hash 照常有效，旧请求可重放。
-PRE_LINK_AGGREGATE_STATE_HASH = "d08cf5f11b4b5e877e861de467c2b8dbd8e2eada5b57a0b5af99725e948e2c73"
+#: 聚合哈希还包含物料身份：物料 name 改为 uuid、PLR 键进 config.name 之后（v1 基线原地修改，旧开发库
+#: 拒绝启动）按新身份重新固定；内容物的 data 哈希与请求哈希不受影响。
+PRE_LINK_AGGREGATE_STATE_HASH = "67174d312544bcd4c4f77fc32fed3284329fea3ad19979c2cffd41f54a86a121"
 PRE_LINK_DATA_STATE_HASH = "54a1dc910f70a8df7581b0563badbe670f969aaaaee9fcf3f3fccddf7f9d42b9"
 PRE_LINK_PUT_REQUEST_HASH = "db026bd2f201aa01f91db0d1d01624f51c5a1d09848253966fdd063e2d420bc5"
 

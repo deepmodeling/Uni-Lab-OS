@@ -231,7 +231,7 @@ def test_host_services_material_actions(tmp_path, monkeypatch) -> None:
         assert register_only["created_resource_tree"]
         assert register_only["substance_resource_tree"] == []
         assert register_only["mount_resource"] == []
-        assert service.get_material(tips_uuid).material.name == "tips_out"
+        assert service.get_material(tips_uuid).material.display_name == "tips_out"
 
         # ---- apply_deduct_resource：扣减 + 挂载到 devA 的 deckA T1 ----
         mounted = host.call_action(

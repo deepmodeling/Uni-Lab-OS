@@ -79,7 +79,7 @@ def test_command_entry_runs_materials_v1_mutations_idempotently(stack) -> None:
     assert replay["replayed"] is True and replay["result"]["data"]["material"]["barcode"] == "BC-9"
     # 拒绝：HTTP 200 + 失败信封，拒绝码在 error.code，command_id / replayed 在 error.details
     wire = client.post("/api/v1/inventory/commands", json=_command(
-        "patch_material", MaterialPatch(name="x"), target_uuid="no-such-material"))
+        "patch_material", MaterialPatch(display_name="x"), target_uuid="no-such-material"))
     assert wire.status_code == 200 and set(wire.json()) == {"code", "error"} and wire.json()["code"] == 6000
     assert set(wire.json()["error"]) == {"msg", "code", "details"}
     assert set(wire.json()["error"]["details"]) == {"command_id", "replayed"}
@@ -366,7 +366,7 @@ def test_http_materials_gateway_round_trips_through_v1_paths(stack, monkeypatch)
     tree = gateway.create_tree(_mutation("create_material_tree"), _tree("管-1", "tube")).data
     material_uuid = tree.root_material_uuid
     assert gateway.get_material(material_uuid) == local.get_material(material_uuid)
-    assert [item.material.name for item in gateway.search_materials("管-1")] == ["管-1"]
+    assert [item.material.display_name for item in gateway.search_materials("管-1")] == ["管-1"]
     assert len(gateway.list_materials(roots_only=True)) == 1
     data = MaterialDataWrite(substances=[MaterialSubstance(name="水", quantity=1, quantity_unit="ml")])
     gateway.put_data(_mutation("put_data"), material_uuid, data)

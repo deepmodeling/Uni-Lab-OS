@@ -24,6 +24,7 @@ from unilabos.resources.objects.joint_state import (
     ResourceJointState,
     ResourceJointStateType,
 )
+from unilabos.resources.objects.naming import plr_key
 from unilabos.resources.objects.site import ResourceSite, ResourceSiteType
 from unilabos.resources.objects.state import (
     LiquidHistoryEntry,
@@ -83,9 +84,11 @@ class ResourceDict(BaseModel):
 
     id: str = Field(description="Resource ID")
     uuid: str = Field(description="Resource UUID")
-    name: str = Field(description="Resource name")
+    name: str = Field(
+        description="Material name; equals the uuid once the authority has written it"
+    )
     display_name: str = Field(
-        description="Display name; authority falls back to name when empty",
+        description="Human-readable label; the authority fills it when empty",
         default="",
     )
     description: str = Field(description="Resource description", default="")
@@ -206,6 +209,9 @@ class ResourceDict(BaseModel):
                 "资源缺少 UUID；请先通过微后端 runtime create 或 strict import"
             )
         content["uuid"] = resolved_uuid
+        # 物料 name 等于 uuid；没给 name 的节点按此补齐（旧式标签由写入入口迁移）。
+        if not content.get("name"):
+            content["name"] = resolved_uuid
 
         # display_name=None 归一化为空字符串，不在此处回退到 name；权威写入层
         # 负责默认值，避免快照上传覆盖用户自定义展示名。
@@ -568,11 +574,11 @@ class ResourceDict(BaseModel):
         """PLR 树里的名字（PLR 键）：``config.name``，没有时沿用 ``name``。
 
         PLR 名在整棵 PLR 树内唯一、创建后不可改，驱动和 PLR 自身都按它查找；
-        物料层的人读标签是 ``display_name``，身份是 ``uuid``。
+        物料层的人读标签是 ``display_name``，身份是 ``uuid``（物料 ``name`` 与它相同）。
+        规则见 :mod:`unilabos.resources.objects.naming`。
         """
 
-        key = self.config.get("name") if isinstance(self.config, dict) else None
-        return key if isinstance(key, str) and key.strip() else self.name
+        return plr_key(self.config) or self.name
 
     @property
     def parent_instance_name(self) -> Optional[str]:

@@ -697,7 +697,8 @@ def test_device_children_are_seeded_from_authority_not_graph(authority):
     held = {child.res_content.uuid: child for child in booted.children}
     assert set(held) == {plate_uuid, bench_uuid}
     assert all(child.res_content.parent is booted.res_content for child in booted.children)
-    assert held[plate_uuid].res_content.name == "plate-1"
+    # 物料 name 是 uuid；旧名迁到人读标签与 PLR 键
+    assert held[plate_uuid].res_content.display_name == held[plate_uuid].res_content.plr_name == "plate-1"
     assert booted.res_content.sites[0].occupied_material_uuid == plate_uuid
     # 权威树里的形态与运行期 append_resource 装载的一致（materials.get 同源）
     assert materials.get(plate_uuid, gateway=authority).trees[0].root_node.res_content.uuid_parent == owner_uuid
@@ -748,7 +749,7 @@ def test_device_created_with_children_adopts_them_back(authority):
     )
     assert [child.res_content.uuid for child in device_config.children] == [deck_uuid]
     assert device_config.children[0].res_content.id == "device-1/deck-1"
-    assert device_config.children[0].res_content.name == "deck-1"
+    assert device_config.children[0].res_content.plr_name == "deck-1"
     assert authority.get_material(deck_uuid).material.parent_material_uuid == owner_uuid
 
 

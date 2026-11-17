@@ -175,7 +175,9 @@ def test_material_display_name_defaults_and_patch(tmp_path) -> None:
         result = service.create_tree(_mutation("create_material_tree"), request)
 
         root_node, child_node = result.data.nodes
-        assert root_node.material.display_name == root_node.material.name == "root"
+        # 物料 name 等于 uuid；未给 display_name 时旧名迁为展示名与 PLR 键
+        assert root_node.material.name == root_node.material.material_uuid
+        assert root_node.material.display_name == root_node.material.config["name"] == "root"
         assert child_node.material.display_name == "试管 A"
 
         patched = service.patch_material(
@@ -184,7 +186,7 @@ def test_material_display_name_defaults_and_patch(tmp_path) -> None:
             MaterialPatch(display_name="主甲板"),
         )
         assert patched.data.material.display_name == "主甲板"
-        assert patched.data.material.name == "root"
+        assert patched.data.material.name == root_node.material.material_uuid
     finally:
         service.close()
 
@@ -447,7 +449,7 @@ def test_recursive_delete_and_change_feed_are_aggregate_based(tmp_path) -> None:
         assert service.get_material_by_resource_id("resource-deck").material.material_uuid == (
             recreated.data.root_material_uuid
         )
-        assert [m.material.name for m in service.list_materials(roots_only=True)] == ["deck"]
+        assert [m.material.display_name for m in service.list_materials(roots_only=True)] == ["deck"]
     finally:
         service.close()
 
@@ -581,10 +583,9 @@ def test_snapshot_moves_between_sites_in_one_transaction(tmp_path) -> None:
 
 
 def test_search_materials_by_name_returns_list(tmp_path) -> None:
-    """search 按 name 精确匹配返回列表；未命中返回 [] 而不是抛错。
+    """search 按人读标签精确匹配返回列表；未命中返回 [] 而不是抛错。
 
-    根物料 name 有唯一索引（ux_material_root_name_active），但子物料可以与
-    其他根同名，search 需要把根与子节点的命中都返回。
+    标签可以重名（根物料之间、根与子物料之间），search 需要把根与子节点的命中都返回。
     """
     service = MaterialsService(tmp_path / "materials.db")
     try:
@@ -613,7 +614,7 @@ def test_search_materials_by_name_returns_list(tmp_path) -> None:
         )
 
         hits = service.search_materials("shared-name")
-        assert [item.material.name for item in hits] == ["shared-name", "shared-name"]
+        assert [item.material.display_name for item in hits] == ["shared-name", "shared-name"]
         assert {item.material.resource_id for item in hits} == {
             "resource-tube-a",
             "resource-tube-b",

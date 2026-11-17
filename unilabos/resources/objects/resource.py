@@ -628,6 +628,11 @@ def assemble_tracker_state(resource: ResourceDict) -> Dict[str, Any]:
         root_value = getattr(resource, state_key)
         if root_value is not None:
             state[state_key] = copy.deepcopy(root_value)
+    if resource.liquid_history is None:
+        # 物料权威只保存内容物（substances），不保存 PLR 体积跟踪器的历史；data 里随快照
+        # 留下的历史提交点指向一段不存在的历史，load_state 会拒绝（提交点超出由内容物
+        # 重建的历史长度）。没有历史时内容物即全部已提交，交给 PLR 按重建结果取提交点。
+        state.pop("history_checkpoint", None)
     return state
 
 

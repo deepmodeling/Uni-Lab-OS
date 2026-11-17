@@ -267,3 +267,38 @@ class TestSlaveAnnouncer:
             assert delivered.wait(2)
         finally:
             announcer.stop()
+
+
+def test_http_slave_sender_posts_without_a_token_and_reads_the_envelope(monkeypatch) -> None:
+    """控制面 token 已去掉：补报不带令牌头；权威回失败信封（HTTP 200 + 业务码）时要报错，不能当成功。"""
+
+    import requests
+
+    from unilabos.server.backend.legacy_adaptor.sync.slaves import http_slave_sender
+
+    calls: list[dict[str, Any]] = []
+    replies = iter([{"code": 0, "data": {"recorded": 1}}, {"code": 1001, "error": {"msg": "参数不合法"}}])
+
+    class Reply:
+        status_code = 200
+
+        def __init__(self, body: dict[str, Any]) -> None:
+            self._body = body
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return self._body
+
+    def post(url: str, **kwargs: Any) -> Reply:
+        calls.append({"url": url, **kwargs})
+        return Reply(next(replies))
+
+    monkeypatch.setattr(requests, "post", post)
+    send = http_slave_sender("http://127.0.0.1:8002", edge_uuid="edge-1")
+    send([{"machine_name": "slave-a", "machine_id": "m-a"}])
+    assert calls[0]["url"] == "http://127.0.0.1:8002/api/v1/registry/slaves"
+    assert "headers" not in calls[0]
+    with pytest.raises(RuntimeError, match="拒绝"):
+        send([{"machine_name": "slave-a", "machine_id": "m-a"}])

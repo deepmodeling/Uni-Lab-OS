@@ -95,11 +95,10 @@ def _key(slaves: SlaveList) -> FrozenSet[Tuple[str, str]]:
 
 
 def http_slave_sender(backend_address: str, *, edge_uuid: str, timeout: float = 10.0) -> Callable[[SlaveList], None]:
-    """经 ``POST /api/v1/registry/slaves`` 补报（带控制面 token）。"""
+    """经 ``POST /api/v1/registry/slaves`` 补报；响应是 V1 信封，业务码非 0 视为失败（失败由补报者记录，下次接入或上报再带上）。"""
 
     import requests
 
-    from unilabos.config.control_token import client_headers
     from unilabos.server.backend.legacy_adaptor.sync.templates import _api_base
     from unilabos.utils.machine_identity import machine_id
 
@@ -109,7 +108,6 @@ def http_slave_sender(backend_address: str, *, edge_uuid: str, timeout: float = 
         response = requests.post(
             url,
             json={"edge_uuid": edge_uuid, "machine_id": machine_id(), "slaves": slaves},
-            headers=client_headers(),
             timeout=timeout,
         )
         if response.status_code == 404:
@@ -117,6 +115,12 @@ def http_slave_sender(backend_address: str, *, edge_uuid: str, timeout: float = 
             logger.info("[Registry Sync] 调度权威不接收 Slave 补报（旧版本），跳过")
             return
         response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and int(payload.get("code") or 0) != 0:
+            raise RuntimeError(f"Slave 补报被调度权威拒绝：{payload.get('error') or payload}")
 
     return send
 

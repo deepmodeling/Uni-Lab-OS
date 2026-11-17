@@ -200,8 +200,15 @@ HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creat
 
 - 图节点的 `config` 按 `__init__` 参数名平铺传入。构造函数声明了名为 `config` 的参数时，它收到
   整份节点配置（旧驱动从 `config` 里读参数的写法照旧），同时声明的其他具名参数（如 `debug_mode`、
-  `address`、`deck`）仍按名取节点配置里的同名键，不会静默退回默认值。新驱动仍应按基础类型
-  拆开参数，不要只用一个 `config: dict`。
+  `address`、`deck`）仍按名取节点配置里的同名键，不会静默退回默认值。节点配置按构造签名写成
+  `{"config": {...}}`（注册表 `init_param_schema` 的形状）时，驱动的 `config` 只收内层字典，其余键
+  照常按名（或经 `**kwargs`）传入，与 ROS 2 平铺传参一致。新驱动仍应按基础类型拆开参数，不要只用
+  一个 `config: dict`。
+- 动作声明了 `sample_uuids` 参数而作业没带样品映射（单动作调用、跨设备调用）时，两种 backend 都注入
+  空映射 `{}`。
+- `UniLabJsonCommand` 动作的返回值是数据：返回 `False` 或 `{"success": False}` 不会让作业失败，
+  业务失败要抛异常（作业进入失败决策）；原生动作类型（`Centrifuge`、`SendCmd` 等）返回 `False` /
+  `success=False` 仍视为失败。
 - 工作站构造器按 `deck` 引用实例化的台面就是驱动手里的 `self.deck`，也是设备 `resource_tracker`
   里该 uuid 唯一的实例；其余非设备子节点各登记一次。驱动不需要自己去 tracker 里去重。
 - 启动顺序是 `post_init` → `setup` → `initialize` → 状态定时发布。PyLabRobot 液体处理器

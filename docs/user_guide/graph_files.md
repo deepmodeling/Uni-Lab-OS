@@ -69,7 +69,7 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
 | `name` | 物料名，恒等于 `uuid`（见下文「物料命名」）。可以省略 |
 | `display_name` | 面向界面的人读标签，可重名、可编辑 |
 | `type` | 节点类型；图导入缺省值为 `device` |
-| `class` | Registry 中的设备或资源类名 |
+| `class` | 设备填 Registry 设备名；物料填 PLR 类名（如 `RegularContainer`），须与模板的类名一致 |
 | `parent` | 父节点的 `id` |
 | `parent_uuid` | 父节点 UUID；同时提供时优先按 UUID 建立关系 |
 | `config` | 驱动构造参数和设备配置；非设备物料的 `config.name` 是 PLR 键 |
@@ -80,7 +80,7 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
 | `model` | 资源模型信息 |
 | `icon` | 资源图标 |
 | `meta_data` | 规范化业务元数据 |
-| `template_name` | 资源模板名称 |
+| `template_name` | 资源模板名称（Registry 资源名，如 `container`）；设备缺省取 `class` |
 | `resource_template_uuid` | 微后端资源模板 UUID |
 | `sites` | 载架 Site 实例 |
 
@@ -106,6 +106,29 @@ Opentrons 板 / 管架里「名字就是 ordering 标识」的孔和管（裸 `"
 父节点 `config.ordering` 同步改成 `{"A1": <uuid>}`；`plate["A1"]`、`get_item("A1")` 照常
 可用，同一台面上两块这样的板不再撞名。驱动若用 `get_resource("A1")` 按名找孔需要改用
 ordering 标识。
+
+### 物料节点的类与模板
+
+物料节点（`type` 不是 `device`）要同时写清三处：`template_name` 是 Registry 资源名，`class` 与
+`config.type` 是该模板实例化出的 PLR 类名。开机时 Host 把图中物料对齐到物料权威，权威按模板校验
+`class`，PLR 按 `config.type` 反序列化；`config` 里只能放 PLR 构造参数，其他业务字段放 `data`。
+最常见的通用容器写法（与 `/api/v1/graphs/live/payload` 导出的形状一致）：
+
+```json
+{
+  "id": "flask_DMF",
+  "type": "container",
+  "class": "RegularContainer",
+  "template_name": "container",
+  "parent": "workstation_1",
+  "config": {"type": "RegularContainer", "max_volume": 1000.0},
+  "data": {}
+}
+```
+
+旧图里容器常写成 `"class": null` 或 `"class": "container"`、没有 `config.type`：这样的节点在两种 backend
+下都会在开机对齐物料时被权威拒绝（`class_name ... does not match template 'container' class_name
+'RegularContainer'`），Host 起不来，需要按上面的形状改写。
 
 `children` 是资源树的递归容器，不属于 `ResourceDict` 领域字段。平铺 JSON 图应在
 子节点上使用 `parent_uuid`，必要时同时提供便于阅读的 `parent`。
@@ -211,7 +234,12 @@ Authority 存储的形态）；旧格式图请先经 `unilab graph upload` 或 `
 ## 示例与排查
 
 设备图示例位于 `unilabos/test/experiments/`。修改示例时应保留已有 UUID；
-需要创建新实例时，应先通过微后端创建或严格导入流程分配 UUID。
+需要创建新实例时，应先通过微后端创建或严格导入流程分配 UUID。使用内置虚拟设备的示例图
+（协议测试站、`mock_devices/`、`mock_protocol/`、`mock_reactor.json`、`virtual_bench.json`、
+`virtual_heating_platform_demo.json`、`lctest.json` 等）都能在默认的 HostLink backend 下直接启动并
+真实执行（不需要 `--test_mode`）；`tests/devices/test_virtual_devices_hostlink.py` 逐张检查这些图的
+物料能按模板建出来。`comprehensive_protocol/comprehensive_slim.json` 例外：它的根节点模板
+`workstation.example` 不在 Registry 中，台面数据也是旧版 PLR 的序列化，仅作历史参考。
 
 可使用完整 Registry 检查设备类和动作定义：
 

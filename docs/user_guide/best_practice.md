@@ -268,7 +268,7 @@ Uni-Lab-OS 在安装时已经包含了大量真实的设备图文件，位于 `u
 | `empty_devices.json`                             | 空设备配置           | 最小化配置，快速启动 |
 | `mock_reactor.json`                              | 虚拟有机合成反应器   | 抽真空/充气协议      |
 | `Protocol_Test_Station/*.json`                   | 协议测试工作站       | 各类实验协议调试     |
-| `virtual_bench.json`                             | 虚拟工作台           | 机械臂/加热台流程演示 |
+| `virtual_bench.json`                             | 虚拟工作台 + 搅拌器  | 机械臂/加热台流程、跨设备调用演示 |
 | `plr_test.json`                                  | PyLabRobot 测试      | PyLabRobot 集成测试  |
 
 **使用方法：**
@@ -281,7 +281,7 @@ unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_
 unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 ```
 
-**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。
+**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。使用内置虚拟设备的组态图在默认的 HostLink backend 下即可启动并真实执行动作，不需要安装 ROS 2，也不需要 `--test_mode`。
 
 > 关于设备图文件的结构、字段定义、格式兼容性等完整指南，请参考 [设备图文件说明](graph_files.md)。
 

@@ -195,9 +195,9 @@ def test_run_async_func_propagates_error_to_future_and_trace_callback() -> None:
 def test_virtual_drivers_import_without_ros() -> None:
     code = (
         "import sys; "
-        "import unilabos.devices.virtual.virtual_centrifuge; "
-        "import unilabos.devices.virtual.workbench; "
-        "import unilabos.devices.virtual.heating_platform; "
+        "import pathlib, importlib, unilabos.devices.virtual as virtual; "
+        "[importlib.import_module('unilabos.devices.virtual.' + path.stem) "
+        "for path in pathlib.Path(virtual.__file__).parent.glob('*.py') if path.stem != '__init__']; "
         "import unilabos.devices.workstation.workstation_base; "
         "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
     )

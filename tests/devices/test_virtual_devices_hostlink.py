@@ -227,11 +227,8 @@ def test_gas_devices_report_open_and_closed_as_bool(registry, monkeypatch) -> No
             assert call(device_id, "auto-cleanup") is True
 
 
-def test_solid_dispenser_and_sample_demo_run_their_actions(registry) -> None:
-    with _running(
-        _yaml_spec(registry, "dispenser", "virtual_solid_dispenser", {"max_capacity": 50.0}),
-        _yaml_spec(registry, "samples", "virtual_sample_demo"),
-    ) as runtime:
+def test_solid_dispenser_runs_its_actions(registry) -> None:
+    with _running(_yaml_spec(registry, "dispenser", "virtual_solid_dispenser", {"max_capacity": 50.0})) as runtime:
         call = runtime.call_action
         assert _driver(runtime, "dispenser").max_capacity == 50.0
         assert call("dispenser", "auto-initialize") is True
@@ -241,130 +238,6 @@ def test_solid_dispenser_and_sample_demo_run_their_actions(registry) -> None:
         added = call("dispenser", "add_solid", vessel="reactor", reagent="sodium_chloride", mass="1 g")
         assert added["success"] is True and added["dispensed_amount"] == pytest.approx(1.0)
         assert call("dispenser", "auto-cleanup") is True
-
-        measured = call("samples", "measure_samples", concentrations=[1.0, 2.0])
-        assert len(measured["absorbance"]) == 2
-        split = call("samples", "split_and_measure", volumes=[3.0, 6.0], split_count=2)
-        assert split["unilabos_samples"] == [0, 0, 1, 1]
-        analyzed = call("samples", "analyze_readings", readings=[0.5, 0.2], samples=[0, 1])
-        assert analyzed["passed"] == [True, False]
-
-
-def _workbench_spec(device_id: str, config: dict[str, Any]) -> HostLinkDriverSpec:
-    from unilabos.devices.virtual.workbench import VirtualWorkbench
-
-    return HostLinkDriverSpec(
-        device_id=device_id,
-        driver_class=VirtualWorkbench,
-        config=config,
-        registry_name="virtual_workbench",
-        action_names=(
-            "auto-prepare_materials",
-            "auto-move_to_heating_station",
-            "auto-start_heating",
-            "auto-move_to_output",
-            "call_peer",
-        ),
-    )
-
-
-def test_workbench_runs_its_flow_from_the_example_graph_config(registry) -> None:
-    """virtual_bench.json 的嵌套 config 到达驱动；四步流程不带样品也能跑；失败要抛出。"""
-
-    bench = json.loads((EXPERIMENTS / "virtual_bench.json").read_text(encoding="utf-8"))
-    node_config = next(node for node in bench["nodes"] if node["id"] == "workbench_1")["config"]
-    # 示例图的耗时配置原样到达驱动，再缩短以便测试
-    with _running(_workbench_spec("probe", node_config)) as runtime:
-        assert _driver(runtime, "probe").HEATING_TIME == 10.0
-        assert _driver(runtime, "probe").ARM_OPERATION_TIME == 3.0
-
-    fast = {"config": {"arm_operation_time": 0.0, "heating_time": 0.05, "num_heating_stations": 2}}
-    with _running(_workbench_spec("workbench_1", fast), _yaml_spec(registry, "stirrer_1", "virtual_stirrer")) as runtime:
-        call = runtime.call_action
-        prepared = call("workbench_1", "auto-prepare_materials", count=2)
-        assert (prepared["material_1"], prepared["material_2"], prepared["unilabos_samples"]) == (1, 2, [])
-        moved = call("workbench_1", "auto-move_to_heating_station", material_number=1)
-        assert moved["station_id"] == 1
-        heated = call("workbench_1", "auto-start_heating", station_id=1, material_number=1)
-        assert heated["message"] == "加热台1加热完成"
-        done = call("workbench_1", "auto-move_to_output", station_id=1, material_number=1)
-        assert done["output_position"] == "C1"
-
-        with pytest.raises(RuntimeError, match="没有物料"):
-            call("workbench_1", "auto-move_to_output", station_id=2, material_number=2)
-        with pytest.raises(ValueError, match="无效的加热台ID"):
-            call("workbench_1", "auto-start_heating", station_id=9, material_number=1)
-
-        # 跨设备调用：调另一台设备成功，回调自己被拒绝
-        peer = call(
-            "workbench_1",
-            "call_peer",
-            target_device="stirrer_1",
-            function_name="stir",
-            function_args=json.dumps({"stir_time": 1, "stir_speed": 200, "settling_time": 0}),
-        )
-        assert peer == {"success": True, "target_device": "stirrer_1", "function_name": "stir", "return_value": True}
-        with pytest.raises(ValueError, match="不能回调当前设备自身"):
-            call("workbench_1", "call_peer", target_device="workbench_1", function_name="auto-prepare_materials")
-
-
-def _container(node_id: str, parent_uuid: str, substances: list[list[Any]]) -> dict[str, Any]:
-    node_uuid = str(uuid.uuid4())
-    return {
-        "id": node_id, "uuid": node_uuid, "name": node_uuid, "display_name": node_id,
-        "type": "container", "class": "RegularContainer", "template_name": "container",
-        "parent_uuid": parent_uuid,
-        "config": {"type": "RegularContainer", "max_volume": 100.0, "name": node_id},
-        "data": {}, "extra": {}, "substances": substances, "pose": {"position": {"x": 0, "y": 0, "z": 0}},
-    }
-
-
-def test_test_action_writes_contents_through_the_volume_tracker() -> None:
-    from unilabos.devices.virtual.lctest_action import TestActionDevice
-    from unilabos.registry.decorators import get_device_meta
-    from unilabos.resources.resource_tracker import ResourceTreeSet
-
-    assert get_device_meta(TestActionDevice, "test_action")["supported_backends"] == ["hostlink", "ros2"]
-    device_uuid = str(uuid.uuid4())
-    first = _container("echo_sample_1", device_uuid, [["echo_liquid_1", 10.0, "ul"]])
-    second = _container("echo_sample_2", device_uuid, [["echo_liquid_2", 20.0, "ul"]])
-    tree = ResourceTreeSet.from_raw_dict_list(
-        [
-            {"id": "test_action", "uuid": device_uuid, "name": device_uuid, "type": "device",
-             "class": "test_action", "template_name": "test_action", "config": {}, "data": {}, "extra": {}},
-            first,
-            second,
-        ]
-    )
-    spec = HostLinkDriverSpec(
-        device_id="test_action",
-        driver_class=TestActionDevice,
-        config={},
-        registry_name="test_action",
-        action_names=("test_liquid", "test_check"),
-        device_config=tree.trees[0].root_node,
-    )
-    with _running(spec) as runtime:
-        call = runtime.call_action
-        replaced = call("test_action", "test_liquid", resources=[{"uuid": first["uuid"]}],
-                        liquid_name="water", volume=5.0)
-        assert replaced["success"] is True
-        assert replaced["resource_summary"][0]["uuid"] == first["uuid"]
-        assert replaced["resource_summary"][0]["liquids"] == [{"name": "water", "volume": 5.0, "unit": "ul"}]
-        # 输出给下游 handle 的资源树带新的内容物
-        (output_root, *_rest) = replaced["resource_tree"][0]
-        assert [tuple(item) for item in output_root["substances"]] == [("water", 5.0, "ul")]
-
-        appended = call("test_action", "test_liquid", resources=[{"uuid": second["uuid"]}],
-                        liquid_name="ethanol", volume=2.0, mode="append")
-        assert appended["total_volume"] == 22.0
-
-        checked = call("test_action", "test_check", expected_resource_count=2, fail_on_check_failed=True,
-                       resources=[{"uuid": first["uuid"]}, {"uuid": second["uuid"]}], devices=["stirrer_1"])
-        assert checked["success"] is True and checked["total_volume"] == 27.0
-        with pytest.raises(ValueError, match="资源检查失败"):
-            call("test_action", "test_check", expected_resource_count=3, fail_on_check_failed=True,
-                 resources=[{"uuid": first["uuid"]}])
 
 
 def _virtual_graphs() -> list[Path]:
@@ -377,8 +250,7 @@ def _virtual_graphs() -> list[Path]:
         # comprehensive_slim 的根节点模板 workstation.example 不在注册表里，与 backend 无关，单独说明
         if path.name == "comprehensive_slim.json":
             continue
-        if any("virtual" in str(node.get("class") or node.get("template_name") or "") or
-               str(node.get("class") or "") == "test_action" for node in nodes):
+        if any("virtual" in str(node.get("class") or node.get("template_name") or "") for node in nodes):
             graphs.append(path)
     return graphs
 
@@ -415,65 +287,6 @@ def test_example_graph_materials_build_as_their_template_class(graph: Path, tmp_
         assert node.res_content.klass == type(resource).__name__, node.res_content.id
         if node.res_content.type == "container":
             assert node.res_content.template_name == "container", node.res_content.id
-
-
-@pytest.mark.slow
-def test_virtual_bench_example_runs_on_a_real_hostlink_backend(tmp_path: Path) -> None:
-    """起真实 ``unilab``（HostLink，非 test_mode），按示例图跑工作台流程与跨设备调用。"""
-
-    from tests.app.test_process_lifetime import _Unilab
-
-    unilab = _Unilab(
-        tmp_path,
-        "bench",
-        ["-g", str(EXPERIMENTS / "virtual_bench.json")],
-        root=tmp_path / "db",
-        builtin_devices=True,
-    )
-
-    def request(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
-        import urllib.request
-
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{unilab.port}/api/v1{path}",
-            method=method,
-            data=None if body is None else json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"} if body is not None else {},
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            payload = json.load(response)
-        assert payload["code"] == 0, payload
-        return payload["data"]
-
-    def run(device_id: str, action: str, action_type: str, args: dict[str, Any]) -> dict[str, Any]:
-        job = request("POST", "/job/add", {"device_id": device_id, "action": action,
-                                           "action_type": action_type, "action_args": args})["jobId"]
-
-        def finished() -> dict[str, Any] | None:
-            status = request("GET", f"/job/{job}/status")
-            return status if status["status"] in (4, 5, 6) else None
-
-        status = unilab.wait_for(finished, f"{device_id}/{action} 结束", timeout=60)
-        assert status["status"] == 4, (status, unilab.text()[-4000:])
-        return status["result"]["return_value"]
-
-    try:
-        unilab.wait_for(lambda: "Host 已完全就绪" in unilab.text(), "Host 就绪")
-        # 图里嵌套的 config 到达驱动
-        assert "机械臂操作时间: 3.0s | 加热时间: 10.0s | 加热台数量: 3" in unilab.text()
-        command = "UniLabJsonCommand"
-        prepared = run("workbench_1", "auto-prepare_materials", command, {"count": 1})
-        assert prepared["material_1"] == 1
-        moved = run("workbench_1", "auto-move_to_heating_station", command, {"material_number": 1})
-        assert moved["station_id"] == 1
-        peer = run("workbench_1", "call_peer", command, {
-            "target_device": "stirrer_1",
-            "function_name": "stir",
-            "function_args": json.dumps({"stir_time": 1, "stir_speed": 200, "settling_time": 0}),
-        })
-        assert peer["return_value"] is True
-    finally:
-        unilab.close()
 
 
 def _vessel(node_id: str) -> dict[str, str]:

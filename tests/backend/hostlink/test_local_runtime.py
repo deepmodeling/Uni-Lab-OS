@@ -262,21 +262,6 @@ def test_missing_sample_uuids_is_injected_as_empty_mapping_like_ros2() -> None:
         runtime.stop()
 
 
-def test_virtual_workbench_reads_nested_graph_config() -> None:
-    from unilabos.devices.virtual.workbench import VirtualWorkbench
-
-    workbench = instantiate_driver(
-        VirtualWorkbench,
-        "workbench_1",
-        {"config": {"arm_operation_time": 3.0, "heating_time": 10.0, "num_heating_stations": 2}},
-    )
-
-    assert workbench.ARM_OPERATION_TIME == 3.0
-    assert workbench.HEATING_TIME == 10.0
-    assert workbench.NUM_HEATING_STATIONS == 2
-    assert sorted(workbench._heating_stations) == [1, 2]
-
-
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:
     yaml_registry = yaml.safe_load(
         Path("unilabos/registry/devices/liquid_handler.yaml").read_text(

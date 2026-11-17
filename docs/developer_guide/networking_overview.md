@@ -219,7 +219,7 @@ HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creat
   `async def` getter 仍在设备事件循环上 await，不应在其中做阻塞 IO。启动时扫描 `@subscribe`
   回调不求值 property。
 
-`--test_mode` 下只有声明 `run_in_test_mode = True` 的驱动真实执行，其余动作返回按注册表 handles 构造的
+`--test_mode` 下只有声明 `run_in_test_mode = True` 的驱动（内置虚拟设备都声明了）真实执行，其余动作返回按注册表 handles 构造的
 模拟结果。这条规则既作用于 Host 派发的作业，也作用于驱动之间的跨设备调用
 （`node.call_device_action[_async]`）：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到
 模拟结果，不会驱动真实硬件。目标设备在别的进程（Host ↔ Slave）时，调用方把测试模式随 `device.call`

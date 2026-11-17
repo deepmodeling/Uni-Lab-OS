@@ -169,7 +169,7 @@ unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/plr_test.json
 unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/empty_devices.json
 ```
 
-**更多可用示例**：主仓库只预置使用虚拟设备和内置设备的组态图（协议测试站、虚拟工作台、虚拟加热台等），完整列表请查看 `unilabos/test/experiments/` 目录。PRCXI、Bioyond、HPLC 等真实设备的组态图随各自的外部驱动包发布。
+**更多可用示例**：主仓库只预置使用虚拟设备和内置设备的组态图（协议测试站、虚拟反应器、三工位虚拟加热平台等），完整列表请查看 `unilabos/test/experiments/` 目录。PRCXI、Bioyond、HPLC 等真实设备的组态图随各自的外部驱动包发布。
 
 **方案 2：创建一个空的组态图**
 
@@ -268,7 +268,7 @@ Uni-Lab-OS 在安装时已经包含了大量真实的设备图文件，位于 `u
 | `empty_devices.json`                             | 空设备配置           | 最小化配置，快速启动 |
 | `mock_reactor.json`                              | 虚拟有机合成反应器   | 抽真空/充气协议      |
 | `Protocol_Test_Station/*.json`                   | 协议测试工作站       | 各类实验协议调试     |
-| `virtual_bench.json`                             | 虚拟工作台 + 搅拌器  | 机械臂/加热台流程、跨设备调用演示 |
+| `virtual_heating_platform_demo.json`             | 三工位虚拟加热平台   | 工位物料、按工位遥测 |
 | `plr_test.json`                                  | PyLabRobot 测试      | PyLabRobot 集成测试  |
 
 **使用方法：**
@@ -281,7 +281,7 @@ unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_
 unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 ```
 
-**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。使用内置虚拟设备的组态图在默认的 HostLink backend 下即可启动并真实执行动作，不需要安装 ROS 2，也不需要 `--test_mode`。
+**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。使用内置虚拟设备的组态图在默认的 HostLink backend 下即可启动并真实执行动作，不需要安装 ROS 2，也不需要 `--test_mode`；虚拟设备的模拟耗时按时间倍率缩放（默认很快），见 [内置虚拟设备](virtual_devices.md)。
 
 > 关于设备图文件的结构、字段定义、格式兼容性等完整指南，请参考 [设备图文件说明](graph_files.md)。
 

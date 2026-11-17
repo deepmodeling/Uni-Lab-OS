@@ -255,10 +255,11 @@ Authority 存储的形态）；旧格式图请先经 `unilab graph upload` 或 `
 
 设备图示例位于 `unilabos/test/experiments/`。修改示例时应保留已有 UUID；
 需要创建新实例时，应先通过微后端创建或严格导入流程分配 UUID。使用内置虚拟设备的示例图
-（协议测试站、`mock_devices/`、`mock_protocol/`、`mock_reactor.json`、`virtual_bench.json`、
-`virtual_heating_platform_demo.json`、`lctest.json` 等）都能在默认的 HostLink backend 下直接启动并
-真实执行（不需要 `--test_mode`）；`tests/devices/test_virtual_devices_hostlink.py` 逐张检查这些图的
-物料能按模板建出来。`comprehensive_protocol/comprehensive_slim.json` 例外：它的根节点模板
+（协议测试站、`mock_devices/`、`mock_protocol/`、`mock_reactor.json`、
+`virtual_heating_platform_demo.json` 等）都能在默认的 HostLink backend 下直接启动并
+真实执行（不需要 `--test_mode`，默认的模拟时间倍率下秒级完成，见 {doc}`virtual_devices`）；
+`tests/devices/test_virtual_devices_hostlink.py` 逐张检查这些图的物料能按模板建出来，并在图里的
+设备上执行各协议测试站的代表协议。`comprehensive_protocol/comprehensive_slim.json` 例外：它的根节点模板
 `workstation.example` 不在 Registry 中，台面数据也是旧版 PLR 的序列化，仅作历史参考；`-g` 读它时
 在读图边界就拒绝启动，错误写明是哪个节点、哪个模板（枪头盒的 `config.type` 与注册表模板的类不一致）。
 

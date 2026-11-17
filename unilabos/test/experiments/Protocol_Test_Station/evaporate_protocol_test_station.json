@@ -172,13 +172,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 450,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -196,13 +198,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 450,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -215,13 +219,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 350,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -234,13 +240,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 450,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -253,13 +261,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 50,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -277,13 +287,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 150,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -301,13 +313,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 250,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -325,13 +339,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 350,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -344,13 +360,15 @@
             "children": [],
             "parent": "EvaporateProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 3000.0
             },
             "data": {

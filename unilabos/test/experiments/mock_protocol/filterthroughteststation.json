@@ -94,13 +94,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -119,13 +121,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 250,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -144,13 +148,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 400,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -169,13 +175,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 698.1111111111111,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -194,13 +202,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 850,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -213,13 +223,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 1000,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -232,13 +244,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 550,
                 "y": 300,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -257,13 +271,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 150,
                 "y": 300,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -282,13 +298,15 @@
             "children": [],
             "parent": "FilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 300,
                 "y": 300,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {

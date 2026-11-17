@@ -26,6 +26,27 @@
                 }
             },
             "template_name": "virtual_workbench"
+        },
+        {
+            "id": "stirrer_1",
+            "name": "搅拌器",
+            "parent": null,
+            "type": "device",
+            "class": "virtual_stirrer",
+            "config": {
+                "max_speed": 1500.0
+            },
+            "data": {
+                "status": "Idle"
+            },
+            "pose": {
+                "position": {
+                    "x": 700,
+                    "y": 300,
+                    "z": 0
+                }
+            },
+            "template_name": "virtual_stirrer"
         }
     ],
     "links": []

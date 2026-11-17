@@ -26,13 +26,15 @@
             "children": [],
             "parent": "test_action",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 180,
                 "y": 360,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 100.0
             },
             "data": {
@@ -51,13 +53,15 @@
             "children": [],
             "parent": "test_action",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 420,
                 "y": 360,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 100.0
             },
             "data": {

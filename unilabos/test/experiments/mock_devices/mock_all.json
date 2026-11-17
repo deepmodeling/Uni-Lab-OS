@@ -29,6 +29,11 @@
         },
         {
             "id": "MockContainerForChiller1",
+            "config": {
+                "type": "RegularContainer"
+            },
+            "template_name": "container",
+            "class": "RegularContainer",
             "name": "模拟容器",
             "type": "container",
             "parent": "MockChiller1",

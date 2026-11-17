@@ -30,13 +30,15 @@
             "children": [],
             "parent": "ReactorX",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 698.1111111111111,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 5000.0,
                 "size_x": 200.0,
                 "size_y": 200.0,

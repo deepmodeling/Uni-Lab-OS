@@ -521,7 +521,7 @@ def owner_device_of(
     device_id, root = _walk_owner_device(gw, uuid_)
     if device_id is None:
         raise ValueError(
-            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.name}）未登记所属设备；"
+            f"物料 {uuid_} 所在根树 {root.material_uuid}（{root.display_name}）未登记所属设备；"
             "根树须经 materials.create(node=) 或挂载到设备（append_resource）后才可推断"
         )
     return device_id

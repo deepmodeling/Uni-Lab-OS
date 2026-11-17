@@ -364,7 +364,7 @@ class VirtualHeatingPlatform:
                 state["material_uuid"] = site.occupied_material_uuid or ""
                 if site.occupied_material_uuid:
                     material = gateway.get_material(site.occupied_material_uuid)
-                    state["material_name"] = material.material.name
+                    state["material_name"] = material.material.display_name
                     state["temperature_c"] = float(
                         material.data.data.get("temperature_c", AMBIENT_TEMPERATURE_C)
                     )

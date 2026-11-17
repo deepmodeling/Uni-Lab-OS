@@ -785,6 +785,7 @@ class StationHandling:
         for aggregate in materials.list_materials():
             identity = aggregate.material
             instances.append({"edge_uuid": identity.material_uuid, "name": identity.name,
+                              "display_name": identity.display_name,
                               "parent_uuid": getattr(identity, "parent_material_uuid", None) or "",
                               "version": aggregate.position_version})
             for site in aggregate.sites:

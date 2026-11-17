@@ -69,6 +69,16 @@ def test_target_mount_resource_not_source_resource(materials):
         resolve([draft], materials)
 
 
+def test_mount_resource_named_by_display_name(materials):
+    """名字引用按物料的人读标签匹配：物料 name 是 uuid、标签在 display_name 时同样命中。"""
+    labelled = aggregate("other2", "other2", device=True, site="s4")
+    labelled["material"].update(name="other2", resource_id="dev-7", display_name="二号工位")
+    materials.append(labelled)
+    draft = node()
+    draft["param"].update(mount_resource={"name": "二号工位"})
+    assert resolve([draft], materials)[0]["param"]["site"] == "s4"
+
+
 @pytest.mark.parametrize("value", ["missing", "s2", str(uuid4()), 12])
 def test_missing_wrong_owner_and_invalid_type_fail(materials, value):
     with pytest.raises(SiteBindingError, match="节点 '装载' 参数 'site'"):

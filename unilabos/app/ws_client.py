@@ -8,6 +8,7 @@ WebSocket通信客户端重构版本 v2
 2. 队列处理线程 - 定时给发送队列推送消息，管理任务状态
 """
 
+import copy
 import json
 import logging
 import time
@@ -19,7 +20,7 @@ import websockets
 import ssl as ssl_module
 from queue import Queue, Empty
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from urllib.parse import urlparse
 from enum import Enum
 
@@ -101,6 +102,17 @@ class WebSocketMessage:
     action: str
     data: Dict[str, Any]
     timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class JobStartCacheEntry:
+    """job_start幂等缓存项"""
+
+    request_data: Dict[str, Any]
+    response_message: Optional[Dict[str, Any]] = None
+    response_status: str = ""
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
 
 
 class WSResourceChatData(TypedDict):
@@ -861,6 +873,22 @@ class MessageProcessor:
             logger.error("[MessageProcessor] Missing required fields in query_action_state")
             return
 
+        # 同一 (task_id, job_id) 已 job_start 过（常见于断线重连后服务端重新下发）：
+        # 不再入队，直接回复可开始，随后的 job_start 会回放缓存结果。
+        if self.websocket_client and self.websocket_client.is_job_cached(job_id, task_id):
+            self.websocket_client.log_cached_job(job_id, task_id, source="query_action_state")
+            await self._send_action_state_response(
+                device_id,
+                action_name,
+                task_id,
+                job_id,
+                "query_action_status",
+                True,
+                0,
+                notebook_id=notebook_id,
+            )
+            return
+
         device_action_key = f"/devices/{device_id}/{action_name}"
 
         # 检查action是否为always_free
@@ -922,6 +950,24 @@ class MessageProcessor:
             req = JobAddReq(**data)
 
             job_log = format_job_log(req.job_id, req.task_id, req.device_id, req.action)
+
+            if self.websocket_client:
+                # 幂等缓存：首次 job_start 登记缓存并真正执行；
+                # 重复的 (task_id, job_id) 则假装执行——直接回放之前缓存的结果，不再下发设备动作。
+                is_new_request = self.websocket_client.register_job_start_request(data)
+                if not is_new_request:
+                    self.websocket_client.log_cached_job(req.job_id, req.task_id, source="job_start")
+                    replayed = self.websocket_client.replay_cached_job_start_response(req.job_id, req.task_id)
+                    if replayed:
+                        logger.info(
+                            f"[MessageProcessor] [缓存复用] job_start {job_log} 命中缓存，假装执行并回放缓存结果"
+                        )
+                    else:
+                        logger.info(
+                            f"[MessageProcessor] [缓存复用] job_start {job_log} 命中缓存但暂无结果"
+                            f"(原任务仍在执行)，跳过重复执行"
+                        )
+                    return
 
             # 服务端对always_free动作可能跳过query_action_state直接发job_start，
             # 此时job尚未注册，需要自动补注册
@@ -1636,6 +1682,12 @@ class WebSocketClient(BaseCommunicationClient):
         self._job_running_last_sent: Dict[str, tuple] = {}
         self._job_running_debounce_interval: float = 10.0  # 秒
 
+        # job_start幂等缓存: {(task_id, job_id): JobStartCacheEntry}
+        self._job_start_cache: Dict[Tuple[str, str], JobStartCacheEntry] = {}
+        self._job_start_cache_lock = threading.RLock()
+        self._job_start_cache_ttl_seconds: float = 24 * 60 * 60
+        self._job_start_cache_max_entries: int = 1024
+
         # 设置相互引用
         self.message_processor.set_queue_processor(self.queue_processor)
         self.message_processor.set_websocket_client(self)
@@ -1661,6 +1713,143 @@ class WebSocketClient(BaseCommunicationClient):
             url = f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
 
         return url
+
+    @staticmethod
+    def _job_start_cache_key(job_id: str, task_id: str) -> Optional[Tuple[str, str]]:
+        if not job_id or not task_id:
+            return None
+        return task_id, job_id
+
+    def _prune_job_start_cache_locked(self) -> None:
+        now = time.time()
+        expired_keys = [
+            key
+            for key, entry in self._job_start_cache.items()
+            if now - entry.updated_at > self._job_start_cache_ttl_seconds
+        ]
+        for key in expired_keys:
+            self._job_start_cache.pop(key, None)
+
+        overflow = len(self._job_start_cache) - self._job_start_cache_max_entries
+        if overflow <= 0:
+            return
+
+        oldest_keys = sorted(self._job_start_cache, key=lambda key: self._job_start_cache[key].updated_at)[:overflow]
+        for key in oldest_keys:
+            self._job_start_cache.pop(key, None)
+
+    def register_job_start_request(self, request_data: Dict[str, Any]) -> bool:
+        """登记job_start请求；返回False表示同一(task_id, job_id)已处理过。"""
+        key = self._job_start_cache_key(request_data.get("job_id", ""), request_data.get("task_id", ""))
+        if key is None:
+            return True
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is not None:
+                cached.updated_at = time.time()
+                if cached.request_data != request_data:
+                    logger.warning(
+                        "[WebSocketClient] Duplicate job_start has different payload for "
+                        f"job={key[1][:8]}, task={key[0][:8]}"
+                    )
+                return False
+
+            self._job_start_cache[key] = JobStartCacheEntry(request_data=copy.deepcopy(request_data))
+            self._prune_job_start_cache_locked()
+            return True
+
+    def is_job_cached(self, job_id: str, task_id: str) -> bool:
+        """判断同一 (task_id, job_id) 是否已 job_start 过（已登记进幂等缓存）。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return False
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return False
+            cached.updated_at = time.time()
+            return True
+
+    def log_cached_job(self, job_id: str, task_id: str, source: str = "") -> None:
+        """打印命中缓存的 job 概要，便于核对复用的数据。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return
+            response_status = cached.response_status
+            action = cached.request_data.get("action", "")
+
+        logger.info(
+            f"[WebSocketClient] [缓存复用] 命中缓存 source={source} job={job_id[:8]} task={task_id[:8]} "
+            f"action={action} status={response_status or 'none'}"
+        )
+
+    def get_cached_job_start_response_status(self, job_id: str, task_id: str) -> str:
+        """获取同一job_start已缓存的回复状态。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return ""
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return ""
+            cached.updated_at = time.time()
+            return cached.response_status
+
+    def cache_job_start_response(self, item: QueueItem, message: Dict[str, Any], status: str) -> None:
+        """缓存同一 (task_id, job_id) 的 job 结果(最新 job_status)，供重复请求复用回放。"""
+        key = self._job_start_cache_key(item.job_id, item.task_id)
+        if key is None:
+            return
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                cached = JobStartCacheEntry(request_data={})
+                self._job_start_cache[key] = cached
+
+            cached.response_message = copy.deepcopy(message)
+            cached.response_status = status
+            cached.updated_at = time.time()
+            self._prune_job_start_cache_locked()
+
+    def replay_cached_job_start_response(self, job_id: str, task_id: str) -> bool:
+        """回放同一 (task_id, job_id) 已缓存的最终结果。
+
+        仅当已缓存到 success/failed 的终态结果时才回放；若原任务仍在执行
+        (只缓存了 running 中间态)，返回 False，由调用方决定如何处理。
+        """
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return False
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None or cached.response_message is None:
+                return False
+            if cached.response_status not in ("success", "failed"):
+                return False
+            message = copy.deepcopy(cached.response_message)
+            status = cached.response_status
+            cached.updated_at = time.time()
+
+        message["data"]["timestamp"] = time.time()
+        sent = self.message_processor.send_message(message)
+        if sent:
+            logger.info(
+                f"[WebSocketClient] [缓存复用] 回放缓存结果 job={job_id[:8]} task={task_id[:8]} status={status}"
+            )
+        return sent
 
     def start(self) -> None:
         """启动WebSocket客户端"""
@@ -1731,10 +1920,6 @@ class WebSocketClient(BaseCommunicationClient):
         self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None
     ) -> None:
         """发布作业状态，拦截最终结果（给HostNode调用的接口）"""
-        if not self.is_connected():
-            logger.debug(f"[WebSocketClient] Not connected, cannot publish job status for job_id: {item.job_id}")
-            return
-
         job_log = format_job_log(item.job_id, item.task_id, item.device_id, item.action_name)
 
         # 拦截最终结果状态，与原版本逻辑一致
@@ -1749,6 +1934,16 @@ class WebSocketClient(BaseCommunicationClient):
                     logger.warning(f"[WebSocketClient] Failed to remove job {item.job_id} from HostNode status")
 
             self.queue_processor.handle_job_completed(item.job_id, status)
+
+            cached_status = self.get_cached_job_start_response_status(item.job_id, item.task_id)
+            if cached_status in ["success", "failed"]:
+                # 已有终态时不允许重复终态覆盖缓存或再次发送，success 也不允许被 failed 降级。
+                if cached_status == "success" or cached_status == status:
+                    logger.warning(
+                        f"[WebSocketClient] Skipped duplicate terminal job status for {job_log}: "
+                        f"cached={cached_status}, incoming={status}"
+                    )
+                    return
 
         # running状态按job_id做debounce，内容变化时仍然上报
         if status == "running":
@@ -1775,6 +1970,12 @@ class WebSocketClient(BaseCommunicationClient):
                 "timestamp": time.time(),
             },
         }
+        self.cache_job_start_response(item, message, status)
+
+        if not self.is_connected():
+            logger.debug(f"[WebSocketClient] Not connected, cached job status for job {job_log} - {status}")
+            return
+
         self.message_processor.send_message(message)
 
         logger.trace(f"[WebSocketClient] Job status published: {job_log} - {status}")

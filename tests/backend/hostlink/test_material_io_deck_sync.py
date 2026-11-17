@@ -16,7 +16,7 @@ import pytest
 
 from tests.backend.hostlink.test_warehouse_site_placement import DEVICE_ID, _bottle, stocker  # noqa: F401 - fixture
 from tests.plr_fixtures import site_deck
-from tests.server.test_material_io_inventory import TIP_RACK, registry_tip_rack
+from tests.server.test_material_io_inventory import TIP_RACK, registry_template
 from unilabos.backend.hostlink import downlink, main_hostlink_run
 from unilabos.backend.hostlink.backend import HostLinkBackend
 from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
@@ -121,7 +121,7 @@ def test_refill_and_unload_reach_a_real_device_deck(stocker, monkeypatch) -> Non
 
 def test_load_puts_a_tip_rack_with_its_tips_on_a_real_device_deck(handler, monkeypatch) -> None:
     service, gateway, node, deck = handler
-    template = registry_tip_rack(service, monkeypatch)
+    template = registry_template(service, monkeypatch)
     param = {"mode": "load", "mount": {"uuid": deck.unilabos_uuid}, "site": "T2", "resource_template": template,
              "material_name": "新吸头盒", "assignee_user_ids": []}
     plan = MaterialIO(service).plan(param, task_uuid="task", job_uuid="job-load")

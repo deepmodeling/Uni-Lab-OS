@@ -15,7 +15,14 @@ from uuid import uuid4
 import pytest
 
 from tests.backend.hostlink.test_downlink import _FakeNode
-from tests.server.test_material_io_inventory import TIP_RACK, container, deck, device_deck, registry_tip_rack
+from tests.server.test_material_io_inventory import (
+    RESERVOIR,
+    RESERVOIR_MODULE,
+    container,
+    deck,
+    device_deck,
+    registry_template,
+)
 from tests.server.test_material_io_scheduler import (
     _decide,
     _material_io_jobs,
@@ -84,10 +91,10 @@ def device(monkeypatch) -> _DeckDevice:
     return node
 
 
-def _tip_racks(stack) -> list:
-    """装到设备台面上的枪头盒（注册表模板实例化出的整棵树的根）。"""
+def _loaded(stack) -> list:
+    """装到设备台面上的物料（注册表模板实例化出的整棵树的根）。"""
 
-    return [item for item in stack.materials.list_materials() if item.material.template_name == TIP_RACK]
+    return [item for item in stack.materials.list_materials() if item.material.template_name == RESERVOIR]
 
 
 def _outputs(stack, task) -> list[dict]:
@@ -97,7 +104,7 @@ def _outputs(stack, task) -> list[dict]:
 
 def test_load_projects_the_new_material_onto_the_owning_device(tmp_path, device, monkeypatch) -> None:
     stack, executor = _stack(tmp_path), Executor()
-    template = registry_tip_rack(stack.materials, monkeypatch)
+    template = registry_template(stack.materials, monkeypatch, RESERVOIR, RESERVOIR_MODULE)
     mount, sites = device_deck(stack.materials)
     scheduler = _scheduler(stack, executor)
     try:
@@ -106,7 +113,7 @@ def test_load_projects_the_new_material_onto_the_owning_device(tmp_path, device,
         assert device.syncs == []  # 确认前不改库存，也不碰台面
         _decide(stack, confirmation)
         wait_for(lambda: _status(stack, task) == "succeeded")
-        [box] = _tip_racks(stack)
+        [box] = _loaded(stack)
         new = box.material.material_uuid
         [job] = _material_io_jobs(stack, task)
         # 设备从权威拉取新物料挂到同一库位；命令身份 = attempt，与库存命令同一个
@@ -180,7 +187,7 @@ def test_a_failed_sync_keeps_the_inventory_and_retries_the_same_command_until_th
     按同一命令身份重提（库存只重放、不建第二份 / 不再加一次量），同步沿同一 ``transfer_uuid`` 重发直到设备确认。"""
 
     stack, executor = _stack(tmp_path), Executor()
-    template = registry_tip_rack(stack.materials, monkeypatch)
+    template = registry_template(stack.materials, monkeypatch, RESERVOIR, RESERVOIR_MODULE)
     mount, sites = device_deck(stack.materials)
     bottle = container(stack.materials, mount, sites["B1"], water_ml=20)
     device.fail_sync = "设备台面上找不到挂载物料"
@@ -196,13 +203,13 @@ def test_a_failed_sync_keeps_the_inventory_and_retries_the_same_command_until_th
             _decide(stack, _pending(stack, task))
         load_job = _material_io_jobs(stack, task)[0]
         # 库存已写入且不回滚；设备没确认，这一步还没完成，等着按同一命令重提
-        [box] = _tip_racks(stack)
+        [box] = _loaded(stack)
         new = box.material.material_uuid
         assert stack.materials.occupied_site(new).site_uuid == sites["A1"]
         assert _status(stack, task) == "running" and load_job["uuid"] in scheduler._material_io_retry  # noqa: SLF001
         assert "台面同步（load）失败" in caplog.text and "库存不回滚" in caplog.text
         scheduler.resume_pending_dispatches()  # 等价于 5 秒兜底重算：设备仍失败，继续等
-        assert len(device.syncs) == 2 and _status(stack, task) == "running" and len(_tip_racks(stack)) == 1
+        assert len(device.syncs) == 2 and _status(stack, task) == "running" and len(_loaded(stack)) == 1
         device.fail_sync = ""
         scheduler.resume_pending_dispatches()
         refill_confirmation = _pending(stack, task, 1)
@@ -221,7 +228,7 @@ def test_a_failed_sync_keeps_the_inventory_and_retries_the_same_command_until_th
         # 重提只重放首次结果：量只加了一次
         assert [(item.quantity, item.quantity_unit) for item in stack.materials.get_material(bottle).data.substances] == [
             (25, "mL")]
-        assert refill["quantity"] == 25 and len(_tip_racks(stack)) == 1
+        assert refill["quantity"] == 25 and len(_loaded(stack)) == 1
     finally:
         scheduler.stop()
         stack.close()
@@ -231,14 +238,14 @@ def test_an_unreachable_device_holds_the_step_until_the_task_is_canceled(tmp_pat
     """设备一直不可达：这一步一直等设备确认；取消任务即以取消收口，库存保持已写入，不再重发。"""
 
     stack, executor = _stack(tmp_path), Executor()
-    template = registry_tip_rack(stack.materials, monkeypatch)
+    template = registry_template(stack.materials, monkeypatch, RESERVOIR, RESERVOIR_MODULE)
     mount, sites = device_deck(stack.materials, device_id="offline_handler")  # 不在本进程，也没有 HostLink
     scheduler = _scheduler(stack, executor)
     try:
         task = _task(stack, f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="{template}")')
         _decide(stack, _pending(stack, task))
         scheduler.resume_pending_dispatches()
-        assert _status(stack, task) == "running" and len(_tip_racks(stack)) == 1
+        assert _status(stack, task) == "running" and len(_loaded(stack)) == 1
         stack.workflow.command_workflow_task(task["uuid"], command_type="cancel", idempotency_key=str(uuid4()))
         scheduler.resume_pending_dispatches()
         wait_for(lambda: _status(stack, task) == "canceled")
@@ -248,7 +255,7 @@ def test_an_unreachable_device_holds_the_step_until_the_task_is_canceled(tmp_pat
         assert error["code"] == "material_io_device_sync_failed" and "HostLink server 未启动" in error["message"]
         output = job["return_info"]["return_value"]
         assert (output["device_sync"]["status"], output["device_sync"]["device_id"]) == ("failed", "offline_handler")
-        [box] = _tip_racks(stack)  # 库存是权威：已写入的不回滚
+        [box] = _loaded(stack)  # 库存是权威：已写入的不回滚
         assert output["material_uuid"] == box.material.material_uuid
         assert stack.materials.occupied_site(box.material.material_uuid).site_uuid == sites["A1"]
         assert job["uuid"] not in scheduler._material_io_retry  # noqa: SLF001
@@ -262,7 +269,7 @@ def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, de
     终态落库后同一决策再次送达不再重发。"""
 
     stack, executor = _stack(tmp_path), Executor()
-    template = registry_tip_rack(stack.materials, monkeypatch)
+    template = registry_template(stack.materials, monkeypatch, RESERVOIR, RESERVOIR_MODULE)
     mount, sites = device_deck(stack.materials)
     scheduler = _scheduler(stack, executor)
     real = stack.workflow.record_workflow_node_job_terminal
@@ -283,7 +290,7 @@ def test_replay_after_a_crash_resends_the_same_idempotent_sync_once(tmp_path, de
     stack, executor, scheduler = _restart(stack, scheduler, tmp_path)
     try:
         wait_for(lambda: _status(stack, task) == "succeeded")
-        [box] = _tip_racks(stack)  # 库存命令重放：只有一件
+        [box] = _loaded(stack)  # 库存命令重放：只有一件
         new = box.material.material_uuid
         first, replay = device.syncs
         assert first == replay and first["transfer_uuid"] == f"workflow.material_io:{lost[0]}"

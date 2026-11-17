@@ -39,6 +39,9 @@ from unilabos.server.services.materials.material_io import MaterialIO, material_
 TASK = str(uuid4())
 #: 注册表里的 300 uL 枪头盒资源条目 id；注册表同步出的资源模板同名
 TIP_RACK = "test_tip_rack_300ul"
+#: 注册表里的单槽储液槽（只有一个孔，建树快）：调度器闭环测试只需要一个能实例化的模板
+RESERVOIR = "test_reservoir_290ml"
+RESERVOIR_MODULE = "pylabrobot.resources.opentrons.reservoirs:agilent_1_reservoir_290ml"
 
 
 def _identity(template: str, name: str) -> MaterialIdentityWrite:
@@ -83,12 +86,13 @@ def device_deck(materials: MaterialsService, device_id: str = "liquid_handler") 
     return mount, {site.label: site.site_uuid for site in materials.get_material(mount).sites}
 
 
-def registry_tip_rack(materials: MaterialsService, monkeypatch) -> str:
-    """注册表里有一个枪头盒资源类，并同步成同名资源模板（与 Host 上报后的权威相同：模板名 = 资源条目 id）。"""
+def registry_template(materials: MaterialsService, monkeypatch, entry_id: str = TIP_RACK,
+                      module: str = TIP_RACK_MODULE) -> str:
+    """注册表里有这个资源类，并同步成同名资源模板（与 Host 上报后的权威相同：模板名 = 资源条目 id）；返回模板名。"""
 
-    monkeypatch.setitem(lab_registry.resource_type_registry, TIP_RACK, registry_entry(TIP_RACK_MODULE))
-    register_resource_definitions([{"id": TIP_RACK, **registry_entry(TIP_RACK_MODULE)}], LocalMaterialsClient(materials))
-    return TIP_RACK
+    monkeypatch.setitem(lab_registry.resource_type_registry, entry_id, registry_entry(module))
+    register_resource_definitions([{"id": entry_id, **registry_entry(module)}], LocalMaterialsClient(materials))
+    return entry_id
 
 
 def container(materials: MaterialsService, mount: str | None = None, site: str | None = None, *,
@@ -170,7 +174,7 @@ def test_load_instantiates_the_registry_class_with_its_default_children(material
 
     from unilabos.resources.adapters.plr_materials import material_tree_to_resource_tree
 
-    template = registry_tip_rack(materials, monkeypatch)
+    template = registry_template(materials, monkeypatch)
     mount, sites = deck(materials)
     gateway, job = LocalMaterialsClient(materials), str(uuid4())
     plan = gateway.check_material_io({"param": _param(
@@ -241,7 +245,7 @@ def test_a_device_mount_rejects_a_template_that_cannot_be_instantiated(materials
         assert temporary_resource_condition(caught.value) is None  # 合同错误：节点失败，不排队
     assert materials.latest_ledger_sequence() == sequence
 
-    template = registry_tip_rack(materials, monkeypatch)
+    template = registry_template(materials, monkeypatch)
     plan = material_io.check(_param("load", mount, site="A1", resource_template=template), task_uuid=TASK, job_uuid="d2")
     assert plan["template_name"] == template
     monkeypatch.delitem(lab_registry.resource_type_registry, template)  # 确认期间注册表里没了这个资源类

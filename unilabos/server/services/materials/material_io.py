@@ -63,21 +63,26 @@ def _load_name_prefix(template_name: str) -> str:
     return cleaned or "material"
 
 
-def _registry_tree(template: Any, name: str) -> tuple[Optional[MaterialTreeCreate], str]:
-    """按模板名对应的注册表资源类实例化 PLR 草稿并转成创建树（与 ``instantiate_material`` 同一条路）；
-    不能实例化时返回 ``(None, 原因)``。
+def _registry_draft(template: Any, name: str) -> tuple[Any, str]:
+    """按模板名对应的注册表资源类实例化 PLR 草稿（与 ``instantiate_material`` 同一入口）；不能实例化时返回
+    ``(None, 原因)``。
 
     注册表同步的模板以资源条目 id 为名（``registry_definition_to_template``），所以模板名就是
     ``instantiate_registry_resource`` 的资源类名；资源类目录在调度权威里是 Host 上报的生效条目。
     """
 
-    from unilabos.resources.adapters.plr_materials import plr_resources_to_create
     from unilabos.resources.materials import instantiate_registry_resource
 
     try:
-        return plr_resources_to_create([instantiate_registry_resource(template.name, name)]), ""
+        return instantiate_registry_resource(template.name, name), ""
     except ValueError as exc:
         return None, str(exc)
+
+
+def _not_deck_template(device_id: str, template: Any, reason: str) -> MaterialValidationError:
+    return MaterialValidationError(
+        f"挂载物料属于设备 {device_id}，装入的物料要同步到设备台面，必须能按资源模板 {template.name} "
+        f"实例化成 PLR 资源；现在不能：{reason}", subject="template")
 
 
 class MaterialIO:
@@ -116,8 +121,7 @@ class MaterialIO:
         locks = {mount.material.material_uuid}
         if values["mode"] == "load":
             template = self._template(values["resource_template"])
-            # 挂到设备上的模板必须能实例化：计划阶段就拒绝，不等写库后台面同步失败
-            self._load_tree(mount.material.material_uuid, template, _load_name_prefix(template.name))
+            self._check_deck_template(mount.material.material_uuid, template)
             plan.update(template_uuid=template.template_uuid, template_name=template.name)
             for key in ("material_name", "barcode", "reagent"):
                 if key in values:
@@ -175,23 +179,38 @@ class MaterialIO:
                 raise MaterialNotFoundError(f"资源模板 {identity} 不存在", subject="template") from None
             return self.materials.get_template(record.template_uuid)
 
+    def _check_deck_template(self, mount_uuid: str, template: Any) -> None:
+        """计划阶段：挂到设备上的模板必须能实例化成 PLR 资源，不等写库后台面同步失败（只实例化，建树留给写入）。"""
+
+        from unilabos.resources.materials import find_owner_device
+
+        device_id = find_owner_device(mount_uuid, gateway=self.materials)
+        if device_id is not None:
+            draft, reason = _registry_draft(template, _load_name_prefix(template.name))
+            if draft is None:
+                raise _not_deck_template(device_id, template, reason)
+
     def _load_tree(self, mount_uuid: str, template: Any, name: str) -> Optional[MaterialTreeCreate]:
-        """装入物料按注册表资源类建出的创建树；模板不能实例化时返回 None（只写身份）。
+        """装入物料按注册表资源类建出的创建树（``plr_resources_to_create``，带默认子物料）；模板不能实例化时
+        返回 None（只写身份）。
 
         挂载物料属于某台设备（``find_owner_device``）时，只有身份的物料设备反序列化不了、台面同步必然失败：
         直接拒绝并说明原因。普通货架（没有所属设备）照旧只写身份。
         """
 
+        from unilabos.resources.adapters.plr_materials import plr_resources_to_create
         from unilabos.resources.materials import find_owner_device
 
-        tree, reason = _registry_tree(template, name)
-        if tree is None:
-            device_id = find_owner_device(mount_uuid, gateway=self.materials)
-            if device_id is not None:
-                raise MaterialValidationError(
-                    f"挂载物料属于设备 {device_id}，装入的物料要同步到设备台面，必须能按资源模板 {template.name} "
-                    f"实例化成 PLR 资源；现在不能：{reason}", subject="template")
-        return tree
+        draft, reason = _registry_draft(template, name)
+        if draft is not None:
+            try:
+                return plr_resources_to_create([draft])
+            except ValueError as exc:
+                reason = str(exc)
+        device_id = find_owner_device(mount_uuid, gateway=self.materials)
+        if device_id is not None:
+            raise _not_deck_template(device_id, template, reason)
+        return None
 
     # ── 试运行与写入 ─────────────────────────────────────────────
 

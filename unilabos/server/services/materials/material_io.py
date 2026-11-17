@@ -114,7 +114,7 @@ class MaterialIO:
             "task_uuid": str(task_uuid),
             "job_uuid": str(job_uuid),
             "mount_uuid": mount.material.material_uuid,
-            "mount_name": mount.material.name,
+            "mount_name": mount.material.display_name,
             "site_uuid": site.site_uuid,
             "site_label": site.label,
         }
@@ -129,7 +129,7 @@ class MaterialIO:
         else:
             material = self._material(values["material"], "物料")
             plan.update(material_uuid=material.material.material_uuid,
-                        material_display_name=material.material.name)
+                        material_display_name=material.material.display_name)
             locks.add(material.material.material_uuid)
             if values["mode"] == "unload":
                 plan.update(disposition=values["disposition"], scope=values["scope"])
@@ -163,9 +163,10 @@ class MaterialIO:
         if not matches:
             matches = [site for site in mount.sites if str(site.site_index) == wanted]
         if not matches:
-            raise MaterialNotFoundError(f"挂载物料 {mount.material.name} 上没有库位 {wanted}", subject="site")
+            raise MaterialNotFoundError(f"挂载物料 {mount.material.display_name} 上没有库位 {wanted}", subject="site")
         if len(matches) > 1:
-            raise MaterialValidationError(f"挂载物料 {mount.material.name} 上的库位 {wanted} 不唯一，请改用库位 UUID")
+            raise MaterialValidationError(
+                f"挂载物料 {mount.material.display_name} 上的库位 {wanted} 不唯一，请改用库位 UUID")
         if not matches[0].visible:
             raise MaterialValidationError(f"库位 {wanted} 不可见，不能人工装入 / 取走")
         return matches[0]
@@ -237,7 +238,7 @@ class MaterialIO:
             mount = self.materials.get_material(str(plan.get("mount_uuid") or ""))
             site = next((item for item in mount.sites if item.site_uuid == plan.get("site_uuid")), None)
             if site is None:
-                raise MaterialNotFoundError(f"挂载物料 {mount.material.name} 上已没有库位 {plan.get('site_label')}",
+                raise MaterialNotFoundError(f"挂载物料 {mount.material.display_name} 上已没有库位 {plan.get('site_label')}",
                                             subject="site")
             if mode == "load":
                 return self._load(plan, site, command_id=command_id)
@@ -300,6 +301,7 @@ class MaterialIO:
             "material": {"uuid": material_uuid},
             "material_uuid": material_uuid,
             "name": name,
+            "display_name": name,
             "template_uuid": template.template_uuid,
             "mount_uuid": plan["mount_uuid"],
             "site_uuid": site.site_uuid,
@@ -345,7 +347,8 @@ class MaterialIO:
 
         def taken(candidate: str) -> bool:
             return self.connection.execute(
-                "SELECT 1 FROM material WHERE deleted_at_ms IS NULL AND LOWER(name)=LOWER(?) LIMIT 1", (candidate,),
+                "SELECT 1 FROM material WHERE deleted_at_ms IS NULL "
+                "AND (LOWER(display_name)=LOWER(?) OR LOWER(name)=LOWER(?)) LIMIT 1", (candidate, candidate),
             ).fetchone() is not None
 
         if not taken(base):
@@ -423,7 +426,7 @@ class MaterialIO:
             current = self.materials.occupied_site(material.material.material_uuid)
             where = f"库位 {current.label}" if current is not None else "任何库位上"
             raise MaterialConflictError(
-                f"物料 {material.material.name} 不在库位 {site.label} 上（现在在{where}）", conflict="state")
+                f"物料 {material.material.display_name} 不在库位 {site.label} 上（现在在{where}）", conflict="state")
         return material
 
     def _unload(self, plan: Mapping[str, Any], site: Any, *, command_id: str) -> dict[str, Any]:
@@ -435,13 +438,13 @@ class MaterialIO:
                 "SELECT 1 FROM material_substance WHERE material_uuid=? LIMIT 1", (material_uuid,)).fetchone()
             if len(tree) > 1 or content is not None or any(item.occupied_material_uuid for item in material.sites):
                 raise MaterialConflictError(
-                    f"material_only 要求物料 {material.material.name} 没有子物料和内容物；"
+                    f"material_only 要求物料 {material.material.display_name} 没有子物料和内容物；"
                     "连内容物一起处理请用 soft_delete + material_with_contents", conflict="state")
             tree = [material_uuid]
         claims = self._foreign_claims(tree, str(plan["task_uuid"]))
         if claims:
             raise MaterialConflictError(
-                f"物料 {material.material.name} 正被占用：{'；'.join(claims)}", conflict="active_claim")
+                f"物料 {material.material.display_name} 正被占用：{'；'.join(claims)}", conflict="active_claim")
         if plan["disposition"] == "detach":
             if self.connection.execute(
                     "SELECT 1 FROM material WHERE parent_material_uuid IS NULL AND deleted_at_ms IS NULL "
@@ -474,7 +477,7 @@ class MaterialIO:
         material_uuid = material.material.material_uuid
         content = self.contents._content_of_material(material_uuid, "reagent")
         if content is None:
-            raise MaterialNotFoundError(f"物料 {material.material.name} 没有可补量的试剂", subject="reagent")
+            raise MaterialNotFoundError(f"物料 {material.material.display_name} 没有可补量的试剂", subject="reagent")
         substance_uuid = content["substance_uuid"]
         _aggregate, substances = self.contents._substances(material_uuid)
         target = next(item for item in substances if item.substance_uuid == substance_uuid)

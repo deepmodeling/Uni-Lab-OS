@@ -159,6 +159,39 @@ def test_instantiate_with_barcode_writes_root_barcode(
         service.close()
 
 
+def test_instantiate_accepts_a_display_name(tmp_path, registry_entry) -> None:
+    """出库可给人读标签：落到根节点 display_name；只给 display_name 时它也作实例名。"""
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app) as client:
+            for payload, label in (
+                ({"name": "tips_labelled", "display_name": "我的枪头盒"}, "我的枪头盒"),
+                ({"display_name": "第二盒"}, "第二盒"),
+            ):
+                resp = client.post(
+                    "/api/v1/inventory/commands",
+                    json=_mutation_body("instantiate_material", {"registry_class": REGISTRY_CLASS, **payload}),
+                )
+                tree = command_result(resp)["data"]
+                root = next(
+                    node["material"]
+                    for node in tree["nodes"]
+                    if node["material"]["material_uuid"] == tree["root_material_uuid"]
+                )
+                assert root["display_name"] == label
+            command_rejected(
+                client.post(
+                    "/api/v1/inventory/commands",
+                    json=_mutation_body("instantiate_material", {"registry_class": REGISTRY_CLASS}),
+                ),
+                1000,
+            )
+    finally:
+        service.close()
+
+
 def test_instantiate_unknown_registry_class_rejected(tmp_path) -> None:
     service = MaterialsService(tmp_path / "materials.db")
     app = FastAPI()

@@ -431,13 +431,24 @@ class MaterialInstantiate(ServerObject):
     registry_class: NonEmptyStr = Field(
         description="registry 资源类 id（resource_type_registry 的键）"
     )
-    name: NonEmptyStr = Field(
-        description="实例名（权威库展示名，同时作为 ResourceSlot 引用的 id）"
+    name: Optional[NonEmptyStr] = Field(
+        default=None,
+        description="实例名：PLR 根名，同时作为 ResourceSlot 引用的 id；缺省取 display_name",
+    )
+    display_name: Optional[NonEmptyStr] = Field(
+        default=None,
+        description="人读标签；缺省取 name",
     )
     barcode: Optional[str] = Field(
         default=None,
         description="可选条码；提供时写入实例化产物根节点的 barcode 字段",
     )
+
+    @model_validator(mode="after")
+    def _require_a_name(self) -> "MaterialInstantiate":
+        if not self.name and not self.display_name:
+            raise ValueError("instantiate requires name or display_name")
+        return self
 
 
 class MaterialAggregateRead(ServerObject):

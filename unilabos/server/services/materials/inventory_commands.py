@@ -80,16 +80,16 @@ def instantiate_tree(value: MaterialInstantiate) -> MaterialTreeCreate:
     from unilabos.resources.materials import instantiate_registry_resource
 
     try:
-        draft = instantiate_registry_resource(value.registry_class, value.name)
+        draft = instantiate_registry_resource(value.registry_class, value.name or value.display_name or "")
     except ValueError as exc:
         raise MaterialValidationError(str(exc)) from exc
     tree = plr_resources_to_create([draft])
+    # 显示名与条码只落在出库产物的根节点（子节点如 tip spot 各有自己的标签、不带条码）
+    root = next(node for node in tree.nodes if node.parent_client_ref is None)
+    if value.display_name:
+        root.identity.display_name = value.display_name
     if value.barcode:
-        # 条码只落在出库产物的根节点（子节点如 tip spot 不带条码）
-        for node in tree.nodes:
-            if node.parent_client_ref is None:
-                node.identity.barcode = value.barcode
-                break
+        root.identity.barcode = value.barcode
     return tree
 
 

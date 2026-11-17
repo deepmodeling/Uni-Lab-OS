@@ -19,6 +19,7 @@ from unilabos.protocol.materials import (
     MaterialIdentityWrite,
     MaterialMove,
     MaterialNodeCreate,
+    MaterialPatch,
     MaterialTreeCreate,
     SiteCreate,
 )
@@ -157,6 +158,20 @@ def test_load_places_a_new_material_with_reagent_once(materials) -> None:
     replay = _command(gateway, plan, job)
     assert replay["replayed"] is True and replay["result"]["material_uuid"] == new
     assert len([item for item in materials.list_materials() if item.material.template_name == "tip_box"]) == 1
+
+
+def test_plan_and_load_use_display_names(materials) -> None:
+    """计划里给人看的挂载物料名取 display_name；装入的 material_name 落到 display_name。"""
+
+    mount, _sites = deck(materials)
+    materials.patch_material(_mutation("patch_material"), mount, MaterialPatch(display_name="主台面"))
+    gateway, job = LocalMaterialsClient(materials), str(uuid4())
+    plan = gateway.check_material_io({"param": _param(
+        "load", mount, site="A1", resource_template="tip_box", material_name="新盒"), "task_uuid": TASK, "job_uuid": job})
+    assert plan["mount_name"] == "主台面"
+    result = _command(gateway, plan, job)["result"]
+    assert result["display_name"] == "新盒"
+    assert materials.get_material(result["material_uuid"]).material.display_name == "新盒"
 
 
 def test_load_without_name_allocates_one_from_the_template(materials) -> None:

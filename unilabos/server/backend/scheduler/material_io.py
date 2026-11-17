@@ -10,7 +10,9 @@
 3. 批准后提交一条 ``material.io`` 库存命令（命令身份 = attempt），完成即节点成功、输出新物料 / 物料；
    被拒（例如确认期间库位被人工占了）节点失败并带物料错误码；人工拒绝 / 超时节点失败、库存不变；取消即取消；
 4. 写库完成后把变化投影到挂载物料所属设备的台面（:func:`sync_material_io_device`），结果记在节点输出的
-   ``device_sync``；同步失败不回滚库存、节点照样成功。
+   ``device_sync``。与 transfer 一致，同步失败不回滚库存，但设备没确认就不算完成：attempt 留在 pending，兜底重算时
+   按同一命令身份重提（库存命令只重放结果，同步沿同一 ``transfer_uuid`` 重发），设备确认后节点成功；任务取消时
+   以取消收口，库存保持已写入。
 
 冻结的计划让重启后的接管与第一次完全一致：同一锁定集合、同一张确认单、同一条库存命令（已写过就只重放结果）。
 """
@@ -117,8 +119,8 @@ def sync_material_io_device(
     - refill → 资源树 ``update``（与 ``notify-device`` 相同）：设备按权威当前状态重载这只容器的内容物。
 
     下行走 ``downlink``：调度权威经 Host 中继，Host 本进程直调，托管 Slave 上的设备经 HostLink。与 transfer 一样
-    库存是权威，同步失败不回滚写入：记一条中文告警，返回 ``failed`` 与原因；挂载物料不属于任何设备（普通货架）时
-    ``skipped``，不告警。
+    库存是权威，同步失败不回滚写入：记一条中文告警，返回 ``failed`` 与原因（调度器据此按同一命令身份稍后重发，
+    设备确认前这一步不算完成）；挂载物料不属于任何设备（普通货架）时 ``skipped``，不告警。
 
     重放：三种投影都是「对齐权威现状」，可以安全重发——load 先丢掉台面上同 UUID 的副本再挂、unload 只移除还在的、
     update 载入权威的绝对数量而不是增量；命令身份同时作 ``transfer_uuid``，同一设备进程已应用过的直接回
@@ -159,8 +161,8 @@ def sync_material_io_device(
                 material_uuids=[material_uuid],
                 destination_site_uuids=[str(plan["site_uuid"])] if mode == "load" else [],
             ))
-    except Exception as error:  # noqa: BLE001 - 库存已提交，台面同步失败只告警
-        logger.warning("人工物料步骤 %s 已写入库存，但设备 %s 台面同步（%s）失败，库存不回滚：%s",
+    except Exception as error:  # noqa: BLE001 - 库存已提交，台面同步失败不回滚，由调用方重发
+        logger.warning("人工物料步骤 %s 已写入库存，但设备 %s 台面同步（%s）失败，库存不回滚，稍后按同一命令重发：%s",
                        plan.get("job_uuid"), outcome.get("device_id") or "?", outcome["action"], error)
         return {"status": "failed", **outcome, "reason": str(error)}
     return {"status": "ok", **outcome}

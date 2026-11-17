@@ -2017,6 +2017,19 @@ class BackendScheduler:
                         job_status = "succeeded"
                         value = {**dict(response.get("result") or {}), **value}
                         value["device_sync"] = self._sync_material_io_device(job_uuid, frozen["plan"], value)
+                        if value["device_sync"]["status"] == "failed":
+                            # 与 transfer 一致：库存已提交、不回滚，设备没确认台面同步就不算完成。attempt 留在
+                            # pending，兜底重算时按同一命令身份重提：库存命令只重放首次结果，同步沿同一
+                            # transfer_uuid 重发。任务要取消时不再等设备，以取消收口（库存保持已写入）。
+                            with self._guard:
+                                task_uuid = str(self._run_to_task.get(run_uuid) or "")
+                            if not self._task_cancel_requested(task_uuid):
+                                with self._guard:
+                                    self._material_io_retry.add(job_uuid)
+                                return
+                            job_status = "canceled"
+                            errors = [{"code": "material_io_device_sync_failed",
+                                       "message": str(value["device_sync"].get("reason") or "设备台面同步失败")}]
                     else:
                         job_status = "failed"
                         errors = [rejection_error(response)]
@@ -2055,8 +2068,8 @@ class BackendScheduler:
     ) -> Dict[str, Any]:
         """库存命令已完成：把变化投影到所属设备的台面（见 ``material_io.sync_material_io_device``）。
 
-        只在 attempt 仍 ``pending``（首次收敛，或写库后、记终态前崩溃的重放）时发送；终态已落库后同一决策
-        再次送达（例如批准请求按同一幂等键重发）不再重发同步，节点输出里已经有首次的 ``device_sync``。
+        只在 attempt 仍 ``pending``（首次收敛、同步失败后的重提，或写库后、记终态前崩溃的重放）时发送；终态已落库后
+        同一决策再次送达（例如批准请求按同一幂等键重发）不再重发同步，节点输出里已经有首次的 ``device_sync``。
         """
         from unilabos.server.services.materials.material_io import material_io_command_id
         from .material_io import sync_material_io_device
@@ -2071,7 +2084,7 @@ class BackendScheduler:
             self.materials_gateway, plan, result, command_id=material_io_command_id(job_uuid))
 
     def _retry_material_io_settlements(self) -> None:
-        """已批准、库存写入暂时失败的人工物料步骤按同一命令身份重提（兜底重算时）。"""
+        """已批准、库存写入暂时失败或台面同步还没被设备确认的人工物料步骤按同一命令身份重提（兜底重算时）。"""
 
         with self._guard:
             if self._material_io_retrying or not self._material_io_retry:

@@ -1,245 +1,259 @@
-import asyncio
-import logging
-import time as time_module
-from typing import Dict, Any, Optional, TYPE_CHECKING
+"""虚拟过滤器：把容器里的液体过滤到滤液容器，可加热、搅拌。
 
-from unilabos.experiments.compile.utils.vessel_parser import get_vessel
-if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+过滤时长按体积估算（5 mL/s，搅拌 ×0.8、50°C 以上 ×0.7，至少 10 秒模拟时间）；容器在本设备
+可见时把滤过的液体从源容器转到滤液容器（PLR 体积跟踪器）。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    UL_PER_ML,
+    VesselRef,
+    VirtualDevice,
+    nested_settings,
+)
+from unilabos.registry.decorators import (
+    DataSource,
+    InputHandle,
+    OutputHandle,
+    Side,
+    action,
+    device,
+    topic_config,
+)
+
+#: 过滤器能工作的最低温度（°C）；0 表示「未指定」按室温处理
+MIN_TEMP = 4.0
+AMBIENT_TEMPERATURE = 25.0
+#: 未给体积时按此体积估算时长（mL）
+DEFAULT_FILTER_VOLUME = 50.0
+FILTER_RATE = 5.0
+MIN_FILTER_SECONDS = 10.0
 
 
-class VirtualFilter:
-    """Virtual filter device - 完全按照 Filter.action 规范 🌊"""
+@device(
+    id="virtual_filter",
+    display_name="虚拟过滤器",
+    category=["virtual_device"],
+    description="可加热、搅拌的虚拟过滤器，供过滤、洗涤固体等协议与示例图使用",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        InputHandle(
+            key="filterin",
+            data_type="transport",
+            label="filter_in",
+            side=Side.NORTH,
+            data_key="vessel_in",
+            data_source=DataSource.HANDLE,
+            description="需要过滤的样品容器",
+        ),
+        OutputHandle(
+            key="filtrateout",
+            data_type="transport",
+            label="filtrate_out",
+            side=Side.SOUTH,
+            data_key="filtrate_out",
+            data_source=DataSource.HANDLE,
+            description="滤液出口",
+        ),
+        OutputHandle(
+            key="retentateout",
+            data_type="transport",
+            label="retentate_out",
+            side=Side.EAST,
+            data_key="retentate_out",
+            data_source=DataSource.HANDLE,
+            description="滤渣/固体出口",
+        ),
+    ],
+)
+class VirtualFilter(VirtualDevice):
+    """温度 4 ~ max_temp（°C），搅拌 ≤ max_stir_speed（RPM），单次 ≤ max_volume（mL）。"""
 
-    _node: "DeviceNode"
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_temp: float = 100.0,
+        max_stir_speed: float = 1000.0,
+        max_volume: float = 500.0,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟过滤器。
 
-    def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
-        if device_id is None and "id" in kwargs:
-            device_id = kwargs.pop("id")
-        if config is None and "config" in kwargs:
-            config = kwargs.pop("config")
-
-        self.device_id = device_id or "unknown_filter"
-        self.config = config or {}
-        self.logger = logging.getLogger(f"VirtualFilter.{self.device_id}")
-        self.data = {}
-
-        # 从config或kwargs中获取配置参数
-        self.port = self.config.get("port") or kwargs.get("port", "VIRTUAL")
-        self._max_temp = self.config.get("max_temp") or kwargs.get("max_temp", 100.0)
-        self._max_stir_speed = self.config.get("max_stir_speed") or kwargs.get("max_stir_speed", 1000.0)
-        self._max_volume = self.config.get("max_volume") or kwargs.get("max_volume", 500.0)
-
-        # 处理其他kwargs参数
-        skip_keys = {"port", "max_temp", "max_stir_speed", "max_volume"}
-        for key, value in kwargs.items():
-            if key not in skip_keys and not hasattr(self, key):
-                setattr(self, key, value)
-
-    def post_init(self, node: "DeviceNode"):
-        self._node = node
-
-    async def initialize(self) -> bool:
-        """Initialize virtual filter 🚀"""
-        self.logger.info(f"🔧 初始化虚拟过滤器 {self.device_id} ✨")
-
-        # 按照 Filter.action 的 feedback 字段初始化
-        self.data.update(
-            {
-                "status": "Idle",
-                "progress": 0.0,  # Filter.action feedback
-                "current_temp": 25.0,  # Filter.action feedback
-                "filtered_volume": 0.0,  # Filter.action feedback
-                "message": "Ready for filtration",
-            }
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_temp[最高温度]: 最高温度（°C）。
+            max_stir_speed[最高搅拌速度]: 最高搅拌速度（RPM）。
+            max_volume[最大体积]: 单次最大过滤体积（mL）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+        """
+        settings = nested_settings(
+            kwargs,
+            max_temp=max_temp,
+            max_stir_speed=max_stir_speed,
+            max_volume=max_volume,
+            port=port,
+            time_scale=time_scale,
         )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_filter", settings["time_scale"])
+        self._max_temp = float(settings["max_temp"])
+        self._max_stir_speed = float(settings["max_stir_speed"])
+        self._max_volume = float(settings["max_volume"])
+        self.port = str(settings["port"])
+        self._current_temp = AMBIENT_TEMPERATURE
+        self._filtered_volume = 0.0
 
-        self.logger.info(f"✅ 过滤器 {self.device_id} 初始化完成 🌊")
+    # ============ 状态 ============
+
+    @property
+    @topic_config(period=1.0)
+    def status(self) -> str:
+        """Idle / Running / Error。"""
+        return self._status
+
+    @property
+    @topic_config(period=1.0)
+    def current_status(self) -> str:
+        """最近一次操作的说明。"""
+        return self._message
+
+    @property
+    @topic_config(period=1.0)
+    def message(self) -> str:
+        """最近一次操作的说明。"""
+        return self._message
+
+    @property
+    @topic_config(period=1.0)
+    def progress(self) -> float:
+        """当前过滤进度（%）。"""
+        return self._progress
+
+    @property
+    @topic_config(period=1.0)
+    def current_temp(self) -> float:
+        """当前温度（°C）。"""
+        return self._current_temp
+
+    @property
+    @topic_config(period=1.0)
+    def filtered_volume(self) -> float:
+        """已过滤体积（mL）。"""
+        return round(self._filtered_volume, 6)
+
+    @property
+    @topic_config(period=5.0)
+    def max_temp(self) -> float:
+        """最高温度（°C）。"""
+        return self._max_temp
+
+    @property
+    @topic_config(period=5.0)
+    def max_stir_speed(self) -> float:
+        """最高搅拌速度（RPM）。"""
+        return self._max_stir_speed
+
+    @property
+    @topic_config(period=5.0)
+    def max_volume(self) -> float:
+        """单次最大过滤体积（mL）。"""
+        return self._max_volume
+
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="回到室温待机")
+    async def initialize(self) -> bool:
+        """初始化：回到室温待机。"""
+        self._reset()
         return True
 
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的过滤")
     async def cleanup(self) -> bool:
-        """Cleanup virtual filter 🧹"""
-        self.logger.info(f"🧹 清理虚拟过滤器 {self.device_id} 🔚")
-
-        self.data.update({"status": "Offline"})
-
-        self.logger.info(f"✅ 过滤器 {self.device_id} 清理完成 💤")
+        """清理：请求停止当前过滤。"""
+        self._request_stop()
+        self._reset()
         return True
 
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:Filter",
+        display_name="过滤",
+        description="把容器里的液体过滤到滤液容器（volume 为 0 时过滤全部），可加热、搅拌",
+        feedback_interval=0.5,
+    )
     async def filter(
         self,
-        vessel: dict,
-        filtrate_vessel: dict = {},
+        vessel: VesselRef,
+        filtrate_vessel: VesselRef = "",
         stir: bool = False,
         stir_speed: float = 300.0,
         temp: float = 25.0,
         continue_heatchill: bool = False,
         volume: float = 0.0,
-    ) -> bool:
-        """Execute filter action - 完全按照 Filter.action 参数 🌊"""
-        vessel_id, _ = get_vessel(vessel)
-        filtrate_vessel_id, _ = get_vessel(filtrate_vessel) if filtrate_vessel else (f"{vessel_id}_filtrate", {})
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """过滤。
 
-        # 将温度限制到虚拟设备支持的最低值。
-        original_temp = temp
-        if temp == 0.0:
-            temp = 25.0  # 0度自动设置为室温
-            self.logger.info(f"🌡️ 温度自动调整: {original_temp}°C → {temp}°C (室温) 🏠")
-        elif temp < 4.0:
-            temp = 4.0  # 小于4度自动设置为4度
-            self.logger.info(f"🌡️ 温度自动调整: {original_temp}°C → {temp}°C (最低温度) ❄️")
+        Args:
+            vessel[待过滤容器]: 待过滤的容器（协议编译器传过滤器本身时只模拟过程）。
+            filtrate_vessel[滤液容器]: 接收滤液的容器，可不填。
+            stir[搅拌]: 过滤时是否搅拌。
+            stir_speed[搅拌速度]: 搅拌速度（RPM），stir 为真时校验。
+            temp[温度]: 过滤温度（°C）；0 表示室温，低于 4°C 按 4°C。
+            continue_heatchill[保持控温]: 过滤后是否保持温度。
+            volume[体积]: 过滤体积（mL），0 表示全部。
+        """
+        temperature = AMBIENT_TEMPERATURE if float(temp) == 0.0 else max(float(temp), MIN_TEMP)
+        if temperature > self._max_temp:
+            self._reject(f"温度 {temperature:g}°C 超出范围 {MIN_TEMP:g} ~ {self._max_temp:g}°C")
+        if stir and not 0 <= float(stir_speed) <= self._max_stir_speed:
+            self._reject(f"搅拌速度 {float(stir_speed):g} RPM 超出范围 0 ~ {self._max_stir_speed:g} RPM")
+        requested = float(volume)
+        if requested < 0 or requested > self._max_volume:
+            self._reject(f"过滤体积 {requested:g} mL 超出范围 0 ~ {self._max_volume:g} mL")
+        source, filtrate = self._vessel_label(vessel), self._vessel_label(filtrate_vessel)
+        estimate = requested if requested > 0 else DEFAULT_FILTER_VOLUME
+        duration = estimate / FILTER_RATE * (0.8 if stir else 1.0) * (0.7 if temperature > 50.0 else 1.0)
+        duration = max(duration, MIN_FILTER_SECONDS)
 
-        self.logger.info(f"🌊 开始过滤操作: {vessel_id} → {filtrate_vessel_id} 🚰")
-        self.logger.info(f"  🌪️ 搅拌: {stir} ({stir_speed} RPM)")
-        self.logger.info(f"  🌡️ 温度: {temp}°C")
-        self.logger.info(f"  💧 体积: {volume}mL")
-        self.logger.info(f"  🔥 保持加热: {continue_heatchill}")
+        def step(fraction: float) -> None:
+            self._filtered_volume = estimate * fraction
 
-        # 验证参数
-        if temp > self._max_temp or temp < 4.0:
-            error_msg = f"🌡️ 温度 {temp}°C 超出范围 (4-{self._max_temp}°C) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({"status": f"Error: 温度超出范围 ⚠️", "message": error_msg})
-            return False
-
-        if stir and stir_speed > self._max_stir_speed:
-            error_msg = f"🌪️ 搅拌速度 {stir_speed} RPM 超出范围 (0-{self._max_stir_speed} RPM) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({"status": f"Error: 搅拌速度超出范围 ⚠️", "message": error_msg})
-            return False
-
-        if volume > self._max_volume:
-            error_msg = f"💧 过滤体积 {volume} mL 超出范围 (0-{self._max_volume} mL) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({"status": f"Error", "message": error_msg})
-            return False
-
-        # 开始过滤
-        filter_volume = volume if volume > 0 else 50.0
-        self.logger.info(f"🚀 开始过滤 {filter_volume}mL 液体 💧")
-
-        self.data.update(
-            {
-                "status": f"Running",
-                "current_temp": temp,
-                "filtered_volume": 0.0,
-                "progress": 0.0,
-                "message": f"🚀 Starting filtration: {vessel_id} → {filtrate_vessel_id}",
-            }
-        )
-
-        try:
-            # 过滤过程 - 实时更新进度
-            start_time = time_module.time()
-
-            # 根据体积和搅拌估算过滤时间
-            base_time = filter_volume / 5.0  # 5mL/s 基础速度
-            if stir:
-                base_time *= 0.8  # 搅拌加速过滤
-                self.logger.info(f"🌪️ 搅拌加速过滤，预计时间减少20% ⚡")
-            if temp > 50.0:
-                base_time *= 0.7  # 高温加速过滤
-                self.logger.info(f"🔥 高温加速过滤，预计时间减少30% ⚡")
-
-            filter_time = max(base_time, 10.0)  # 最少10秒
-            self.logger.info(f"⏱️ 预计过滤时间: {filter_time:.1f}秒 ⌛")
-
-            while True:
-                current_time = time_module.time()
-                elapsed = current_time - start_time
-                remaining = max(0, filter_time - elapsed)
-                progress = min(100.0, (elapsed / filter_time) * 100)
-                current_filtered = (progress / 100.0) * filter_volume
-
-                # 更新状态 - 按照 Filter.action feedback 字段
-                status_msg = f"🌊 过滤中: {vessel}"
-                if stir:
-                    status_msg += f" | 🌪️ 搅拌: {stir_speed} RPM"
-                status_msg += f" | 🌡️ {temp}°C | 📊 {progress:.1f}% | 💧 已过滤: {current_filtered:.1f}mL"
-
-                self.data.update(
-                    {
-                        "progress": progress,  # Filter.action feedback
-                        "current_temp": temp,  # Filter.action feedback
-                        "filtered_volume": current_filtered,  # Filter.action feedback
-                        "status": "Running",
-                        "message": f"🌊 Filtering: {progress:.1f}% complete, {current_filtered:.1f}mL filtered",
-                    }
-                )
-
-                # 进度日志（每25%打印一次）
-                if progress >= 25 and progress % 25 < 1:
-                    self.logger.info(f"📊 过滤进度: {progress:.0f}% | 💧 {current_filtered:.1f}mL 完成 ✨")
-
-                if remaining <= 0:
-                    break
-
-                await self._node.sleep(1.0)
-
-            # 过滤完成
-            final_temp = temp if continue_heatchill else 25.0
-            final_status = f"✅ 过滤完成: {vessel} | 💧 {filter_volume}mL → {filtrate_vessel}"
-            if continue_heatchill:
-                final_status += " | 🔥 继续加热搅拌"
-                self.logger.info(f"🔥 继续保持加热搅拌状态 🌪️")
-
-            self.data.update(
-                {
-                    "status": final_status,
-                    "progress": 100.0,  # Filter.action feedback
-                    "current_temp": final_temp,  # Filter.action feedback
-                    "filtered_volume": filter_volume,  # Filter.action feedback
-                    "message": f"✅ Filtration completed: {filter_volume}mL filtered from {vessel_id}",
-                }
+        with self._operation("Running", f"过滤 {source or '?'} → {filtrate or '滤液'}，{temperature:g}°C", action_context):
+            self._current_temp = temperature
+            self._filtered_volume = 0.0
+            await self._simulate(duration, action_context, on_step=step, feedback={"current_temp": temperature})
+            taken = self._transfer_liquid(
+                vessel, filtrate_vessel, requested * UL_PER_ML if requested > 0 else float("inf")
             )
+            if taken:
+                self._filtered_volume = sum(item[1] for item in taken) / UL_PER_ML
+            if not continue_heatchill:
+                self._current_temp = AMBIENT_TEMPERATURE
+        self._message = f"过滤完成：{source or '?'} → {filtrate or '滤液'}，{self._filtered_volume:.3f} mL"
+        return {
+            "success": True,
+            "vessel": source,
+            "filtrate_vessel": filtrate,
+            "filtered_volume": round(self._filtered_volume, 6),
+            "temp": temperature,
+        }
 
-            self.logger.info(f"🎉 过滤完成! 💧 {filter_volume}mL 从 {vessel_id} 过滤到 {filtrate_vessel_id} ✨")
-            self.logger.info(f"📊 最终状态: 温度 {final_temp}°C | 进度 100% | 体积 {filter_volume}mL 🏁")
-            return True
+    # ============ 内部 ============
 
-        except Exception as e:
-            error_msg = f"过滤过程中发生错误: {str(e)} 💥"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({"status": f"Error", "message": f"❌ Filtration failed: {str(e)}"})
-            return False
+    def _reset(self) -> None:
+        with self._lock:
+            self._status = "Idle"
+            self._current_temp = AMBIENT_TEMPERATURE
+            self._filtered_volume = 0.0
+            self._remaining_time = 0.0
 
-    # === 核心状态属性 - 按照 Filter.action feedback 字段 ===
-    @property
-    def status(self) -> str:
-        return self.data.get("status", "❓ Unknown")
-
-    @property
-    def progress(self) -> float:
-        """Filter.action feedback 字段 📊"""
-        return self.data.get("progress", 0.0)
-
-    @property
-    def current_temp(self) -> float:
-        """Filter.action feedback 字段 🌡️"""
-        return self.data.get("current_temp", 25.0)
-
-    @property
-    def current_status(self) -> str:
-        """Filter.action feedback 字段 📋"""
-        return self.data.get("current_status", "")
-
-    @property
-    def filtered_volume(self) -> float:
-        """Filter.action feedback 字段 💧"""
-        return self.data.get("filtered_volume", 0.0)
-
-    @property
-    def message(self) -> str:
-        return self.data.get("message", "")
-
-    @property
-    def max_temp(self) -> float:
-        return self._max_temp
-
-    @property
-    def max_stir_speed(self) -> float:
-        return self._max_stir_speed
-
-    @property
-    def max_volume(self) -> float:
-        return self._max_volume
+    def __repr__(self) -> str:
+        return f"VirtualFilter({self.device_id}: {self._status}, {self._filtered_volume:.1f} mL)"

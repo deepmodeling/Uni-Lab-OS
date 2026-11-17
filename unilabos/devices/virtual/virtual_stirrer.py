@@ -1,337 +1,284 @@
-import asyncio
-import logging
-import time as time_module
-from typing import Dict, Any, TYPE_CHECKING
+"""虚拟搅拌器：定时搅拌 + 沉降（``stir``），或持续搅拌（``start_stir`` / ``stop_stir``）。"""
 
-from unilabos.registry.decorators import topic_config
-if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+from __future__ import annotations
 
-class VirtualStirrer:
-    """Virtual stirrer device for StirProtocol testing - 功能完整版 🌪️"""
-    
-    _node: "DeviceNode"
-    
-    def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
-        # 处理可能的不同调用方式
-        if device_id is None and 'id' in kwargs:
-            device_id = kwargs.pop('id')
-        if config is None and 'config' in kwargs:
-            config = kwargs.pop('config')
-        
-        # 设置默认值
-        self.device_id = device_id or "unknown_stirrer"
-        self.config = config or {}
-        
-        self.logger = logging.getLogger(f"VirtualStirrer.{self.device_id}")
-        self.data = {}
-        
-        # 从config或kwargs中获取配置参数
-        self.port = self.config.get('port') or kwargs.get('port', 'VIRTUAL')
-        self._max_speed = self.config.get('max_speed') or kwargs.get('max_speed', 1500.0)
-        self._min_speed = self.config.get('min_speed') or kwargs.get('min_speed', 50.0)
-        
-        # 处理其他kwargs参数
-        skip_keys = {'port', 'max_speed', 'min_speed'}
-        for key, value in kwargs.items():
-            if key not in skip_keys and not hasattr(self, key):
-                setattr(self, key, value)
-        
-        print(f"🌪️ === 虚拟搅拌器 {self.device_id} 已创建 === ✨")
-        print(f"🔧 速度范围: {self._min_speed} ~ {self._max_speed} RPM | 📱 端口: {self.port}")
-    
-    def post_init(self, node: "DeviceNode"):
-        self._node = node
-    
-    async def initialize(self) -> bool:
-        """Initialize virtual stirrer 🚀"""
-        self.logger.info(f"🔧 初始化虚拟搅拌器 {self.device_id} ✨")
-        
-        # 初始化状态信息
-        self.data.update({
-            "status": "🏠 待机中",
-            "operation_mode": "Idle",          # 操作模式: Idle, Stirring, Settling, Completed, Error
-            "current_vessel": "",              # 当前搅拌的容器
-            "current_speed": 0.0,              # 当前搅拌速度
-            "is_stirring": False,              # 是否正在搅拌
-            "remaining_time": 0.0,             # 剩余时间
-        })
-        
-        self.logger.info(f"✅ 搅拌器 {self.device_id} 初始化完成 🌪️")
-        self.logger.info(f"📊 设备规格: 速度范围 {self._min_speed} ~ {self._max_speed} RPM")
-        return True
-    
-    async def cleanup(self) -> bool:
-        """Cleanup virtual stirrer 🧹"""
-        self.logger.info(f"🧹 清理虚拟搅拌器 {self.device_id} 🔚")
-        
-        self.data.update({
-            "status": "💤 离线",
-            "operation_mode": "Offline",
-            "current_vessel": "",
-            "current_speed": 0.0,
-            "is_stirring": False,
-            "remaining_time": 0.0,
-        })
-        
-        self.logger.info(f"✅ 搅拌器 {self.device_id} 清理完成 💤")
-        return True
-    
-    async def stir(self, stir_time: float, stir_speed: float, settling_time: float, **kwargs) -> bool:
-        """Execute stir action - 定时搅拌 + 沉降 🌪️"""
-        
-        # 统一数值参数类型。
-        try:
-            stir_time = float(stir_time)
-            stir_speed = float(stir_speed)
-            settling_time = float(settling_time)
-        except (ValueError, TypeError) as e:
-            error_msg = f"参数类型转换失败: stir_time={stir_time}, stir_speed={stir_speed}, settling_time={settling_time}, error={e}"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: {error_msg}",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        self.logger.info(f"🌪️ 开始搅拌操作: 速度 {stir_speed} RPM | 时间 {stir_time}s | 沉降 {settling_time}s")
-        
-        # 验证参数
-        if stir_speed > self._max_speed or stir_speed < self._min_speed:
-            error_msg = f"🌪️ 搅拌速度 {stir_speed} RPM 超出范围 ({self._min_speed} - {self._max_speed} RPM) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 速度超出范围",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        # === 第一阶段：搅拌 ===
-        start_time = time_module.time()
-        total_stir_time = stir_time
-        
-        self.logger.info(f"🚀 开始搅拌阶段: {stir_speed} RPM × {total_stir_time}s ⏱️")
-        
-        self.data.update({
-            "status": f"🌪️ 搅拌中: {stir_speed} RPM | ⏰ 剩余: {total_stir_time:.0f}s",
-            "operation_mode": "Stirring",
-            "current_speed": stir_speed,
-            "is_stirring": True,
-            "remaining_time": total_stir_time,
-        })
-        
-        # 搅拌过程 - 实时更新剩余时间
-        last_logged_time = 0
-        while True:
-            current_time = time_module.time()
-            elapsed = current_time - start_time
-            remaining = max(0, total_stir_time - elapsed)
-            progress = (elapsed / total_stir_time) * 100 if total_stir_time > 0 else 100
-            
-            # 更新状态
-            self.data.update({
-                "remaining_time": remaining,
-                "status": f"🌪️ 搅拌中: {stir_speed} RPM | ⏰ 剩余: {remaining:.0f}s"
-            })
-            
-            # 进度日志（每25%打印一次）
-            if progress >= 25 and int(progress) % 25 == 0 and int(progress) != last_logged_time:
-                self.logger.info(f"📊 搅拌进度: {progress:.0f}% | 🌪️ {stir_speed} RPM | ⏰ 剩余: {remaining:.0f}s ✨")
-                last_logged_time = int(progress)
-            
-            # 搅拌时间到了
-            if remaining <= 0:
-                break
-            
-            await self._node.sleep(1.0)
-        
-        self.logger.info(f"✅ 搅拌阶段完成! 🌪️ {stir_speed} RPM × {stir_time}s")
-        
-        # === 第二阶段：沉降（如果需要）===
-        if settling_time > 0:
-            start_settling_time = time_module.time()
-            total_settling_time = settling_time
-            
-            self.logger.info(f"🛑 开始沉降阶段: 停止搅拌 × {total_settling_time}s ⏱️")
-            
-            self.data.update({
-                "status": f"🛑 沉降中: 停止搅拌 | ⏰ 剩余: {total_settling_time:.0f}s",
-                "operation_mode": "Settling",
-                "current_speed": 0.0,
-                "is_stirring": False,
-                "remaining_time": total_settling_time,
-            })
-            
-            # 沉降过程 - 实时更新剩余时间
-            last_logged_settling = 0
-            while True:
-                current_time = time_module.time()
-                elapsed = current_time - start_settling_time
-                remaining = max(0, total_settling_time - elapsed)
-                progress = (elapsed / total_settling_time) * 100 if total_settling_time > 0 else 100
-                
-                # 更新状态
-                self.data.update({
-                    "remaining_time": remaining,
-                    "status": f"🛑 沉降中: 停止搅拌 | ⏰ 剩余: {remaining:.0f}s"
-                })
-                
-                # 进度日志（每25%打印一次）
-                if progress >= 25 and int(progress) % 25 == 0 and int(progress) != last_logged_settling:
-                    self.logger.info(f"📊 沉降进度: {progress:.0f}% | 🛑 静置中 | ⏰ 剩余: {remaining:.0f}s ✨")
-                    last_logged_settling = int(progress)
-                
-                # 沉降时间到了
-                if remaining <= 0:
-                    break
-                
-                await self._node.sleep(1.0)
-            
-            self.logger.info(f"✅ 沉降阶段完成! 🛑 静置 {settling_time}s")
-        
-        # === 操作完成 ===
-        settling_info = f" | 🛑 沉降: {settling_time:.0f}s" if settling_time > 0 else ""
-        
-        self.data.update({
-            "status": f"✅ 完成: 🌪️ 搅拌 {stir_speed} RPM × {stir_time:.0f}s{settling_info}",
-            "operation_mode": "Completed",
-            "current_speed": 0.0,
-            "is_stirring": False,
-            "remaining_time": 0.0,
-        })
-        
-        self.logger.info(f"🎉 搅拌操作完成! ✨")
-        self.logger.info(f"📊 操作总结:")
-        self.logger.info(f"  🌪️ 搅拌: {stir_speed} RPM × {stir_time}s")
-        if settling_time > 0:
-            self.logger.info(f"  🛑 沉降: {settling_time}s")
-        self.logger.info(f"  ⏱️ 总用时: {(stir_time + settling_time):.0f}s 🏁")
-        
-        return True
-    
-    async def start_stir(self, vessel: str, stir_speed: float, purpose: str = "") -> bool:
-        """Start stir action - 开始持续搅拌 🔄"""
-        
-        # 统一数值参数类型。
-        try:
-            stir_speed = float(stir_speed)
-            vessel = str(vessel)
-            purpose = str(purpose)
-        except (ValueError, TypeError) as e:
-            error_msg = f"参数类型转换错误: {str(e)}"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: {error_msg}",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        self.logger.info(f"🔄 启动持续搅拌: {vessel} | 🌪️ {stir_speed} RPM")
-        if purpose:
-            self.logger.info(f"📝 搅拌目的: {purpose}")
-        
-        # 验证参数
-        if stir_speed > self._max_speed or stir_speed < self._min_speed:
-            error_msg = f"🌪️ 搅拌速度 {stir_speed} RPM 超出范围 ({self._min_speed} - {self._max_speed} RPM) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 速度超出范围",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        purpose_info = f" | 📝 {purpose}" if purpose else ""
-        
-        self.data.update({
-            "status": f"🔄 启动: 持续搅拌 {vessel} | 🌪️ {stir_speed} RPM{purpose_info}",
-            "operation_mode": "Stirring",
-            "current_vessel": vessel,
-            "current_speed": stir_speed,
-            "is_stirring": True,
-            "remaining_time": -1.0,  # -1 表示持续运行
-        })
-        
-        self.logger.info(f"✅ 持续搅拌已启动! 🌪️ {stir_speed} RPM × ♾️ 🚀")
-        return True
-    
-    async def stop_stir(self, vessel: str) -> bool:
-        """Stop stir action - 停止搅拌 🛑"""
-        
-        # 统一数值参数类型。
-        try:
-            vessel = str(vessel)
-        except (ValueError, TypeError) as e:
-            error_msg = f"参数类型转换错误: {str(e)}"
-            self.logger.error(f"❌ {error_msg}")
-            return False
-        
-        current_speed = self.data.get("current_speed", 0.0)
-        
-        self.logger.info(f"🛑 停止搅拌: {vessel}")
-        if current_speed > 0:
-            self.logger.info(f"🌪️ 之前搅拌速度: {current_speed} RPM")
-        
-        self.data.update({
-            "status": f"🛑 已停止: {vessel} 搅拌停止 | 之前速度: {current_speed} RPM",
-            "operation_mode": "Stopped",
-            "current_vessel": "",
-            "current_speed": 0.0,
-            "is_stirring": False,
-            "remaining_time": 0.0,
-        })
-        
-        self.logger.info(f"✅ 搅拌器已停止 {vessel} 的搅拌操作 🏁")
-        return True
-    
-    # 状态属性
+from typing import Any, Dict, Optional, Union
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    VesselRef,
+    VirtualDevice,
+    nested_settings,
+    parse_duration,
+)
+from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+
+
+@device(
+    id="virtual_stirrer",
+    display_name="虚拟搅拌器",
+    category=["virtual_device"],
+    description="定时搅拌 / 持续搅拌的虚拟搅拌器，供搅拌、加料、溶解等协议与示例图使用",
+    icon="Stirrer.webp",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        OutputHandle(
+            key="stirrer",
+            data_type="mechanical",
+            label="stirrer",
+            side=Side.NORTH,
+            data_key="vessel",
+            data_source=DataSource.HANDLE,
+            description="搅拌器的机械连接口",
+        ),
+    ],
+)
+class VirtualStirrer(VirtualDevice):
+    """转速范围 min_speed ~ max_speed（RPM）。"""
+
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_speed: float = 1500.0,
+        min_speed: float = 50.0,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟搅拌器。
+
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_speed[最高转速]: 最高转速（RPM）。
+            min_speed[最低转速]: 最低转速（RPM）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+        """
+        settings = nested_settings(
+            kwargs, max_speed=max_speed, min_speed=min_speed, port=port, time_scale=time_scale
+        )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_stirrer", settings["time_scale"])
+        self._max_speed = float(settings["max_speed"])
+        self._min_speed = float(settings["min_speed"])
+        if self._min_speed > self._max_speed:
+            raise ValueError(f"min_speed {self._min_speed} 不能大于 max_speed {self._max_speed}")
+        self.port = str(settings["port"])
+        self._operation_mode = "Idle"
+        self._current_vessel = ""
+        self._current_speed = 0.0
+
+    # ============ 状态 ============
+
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
-        return self.data.get("status", "🏠 待机中")
-    
+        """Idle / Stirring / Settling / Error。"""
+        return self._status
+
     @property
+    @topic_config(period=1.0)
     def operation_mode(self) -> str:
-        return self.data.get("operation_mode", "Idle")
-    
+        """Idle / Stirring / Settling / Completed / Stopped / Error。"""
+        return self._operation_mode
+
     @property
+    @topic_config(period=1.0)
     def current_vessel(self) -> str:
-        return self.data.get("current_vessel", "")
-    
+        """正在搅拌的容器（显示名）。"""
+        return self._current_vessel
+
     @property
+    @topic_config(period=1.0)
     def current_speed(self) -> float:
-        return self.data.get("current_speed", 0.0)
-    
+        """当前转速（RPM）。"""
+        return self._current_speed
+
     @property
+    @topic_config(period=1.0)
     def is_stirring(self) -> bool:
-        return self.data.get("is_stirring", False)
-    
+        """是否正在搅拌。"""
+        return self._current_speed > 0
+
     @property
+    @topic_config(period=1.0)
     def remaining_time(self) -> float:
-        return self.data.get("remaining_time", 0.0)
-    
+        """剩余模拟时间（s）；持续搅拌时为 -1。"""
+        if self._operation_mode == "Stirring" and self._status == "Idle" and self._current_speed > 0:
+            return -1.0
+        return self._remaining_time
+
     @property
+    @topic_config(period=5.0)
     def max_speed(self) -> float:
+        """最高转速（RPM）。"""
         return self._max_speed
-    
+
     @property
+    @topic_config(period=5.0)
     def min_speed(self) -> float:
+        """最低转速（RPM）。"""
         return self._min_speed
-    
+
     @property
-    @topic_config()
+    @topic_config(period=5.0)
     def device_info(self) -> Dict[str, Any]:
-        """设备状态快照信息 📊"""
+        """状态快照。"""
         return {
             "device_id": self.device_id,
-            "status": self.status,
-            "operation_mode": self.operation_mode,
-            "current_vessel": self.current_vessel,
-            "current_speed": self.current_speed,
+            "status": self._status,
+            "operation_mode": self._operation_mode,
+            "current_vessel": self._current_vessel,
+            "current_speed": self._current_speed,
             "is_stirring": self.is_stirring,
             "remaining_time": self.remaining_time,
             "max_speed": self._max_speed,
             "min_speed": self._min_speed,
+            "message": self._message,
         }
 
-    def __str__(self):
-        status_emoji = "✅" if self.operation_mode == "Idle" else "🌪️" if self.operation_mode == "Stirring" else "🛑" if self.operation_mode == "Settling" else "❌"
-        return f"🌪️ VirtualStirrer({status_emoji} {self.device_id}: {self.operation_mode}, {self.current_speed} RPM)"
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="停止搅拌并回到待机")
+    async def initialize(self) -> bool:
+        """初始化：停止搅拌。"""
+        self._set_idle("Idle")
+        return True
+
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的搅拌并离线")
+    async def cleanup(self) -> bool:
+        """清理：请求停止当前搅拌。"""
+        self._request_stop()
+        self._set_idle("Offline")
+        return True
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:Stir",
+        display_name="定时搅拌",
+        description="按转速搅拌 stir_time 秒，再停止搅拌沉降 settling_time 秒",
+        feedback_interval=0.5,
+    )
+    async def stir(
+        self,
+        stir_time: float,
+        stir_speed: float,
+        settling_time: Union[float, str],
+        vessel: VesselRef = "",
+        time: str = "",
+        time_spec: str = "",
+        event: str = "",
+        purpose: str = "",
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """定时搅拌后沉降。
+
+        Args:
+            stir_time[搅拌时间]: 搅拌时长（s）；为 0 时取 time。
+            stir_speed[转速]: 搅拌转速（RPM）。
+            settling_time[沉降时间]: 停止搅拌后的沉降时长，数字按秒，也可写 "5 min"。
+            vessel[容器]: 被搅拌的容器，可不填。
+            time[时间描述]: 带单位的时长（如 "5 min"），stir_time 为 0 时使用。
+            time_spec[时间规格]: 协议里的时间规格，仅记录。
+            event[事件]: 协议事件，仅记录。
+            purpose[目的]: 操作目的，仅记录。
+        """
+        stir_seconds = float(stir_time) or parse_duration(time)
+        settle_seconds = parse_duration(settling_time)
+        if stir_seconds < 0 or settle_seconds < 0:
+            self._reject(f"搅拌 / 沉降时间不能为负：stir_time={stir_seconds}, settling_time={settle_seconds}")
+        speed = self._checked_speed(stir_speed)
+        label = self._vessel_label(vessel)
+        total = stir_seconds + settle_seconds
+        stir_share = 100.0 * stir_seconds / total if total > 0 else 100.0
+        with self._operation("Stirring", f"搅拌 {label or '容器'} {speed:g} RPM × {stir_seconds:g}s", action_context):
+            self._current_vessel = label
+            self._operation_mode = "Stirring"
+            self._current_speed = speed
+            completed = False
+            try:
+                await self._simulate(
+                    stir_seconds,
+                    action_context,
+                    progress_span=(0.0, stir_share),
+                    remaining_after=settle_seconds,
+                    feedback={"stir_speed": speed},
+                )
+                self._current_speed = 0.0
+                if settle_seconds > 0:
+                    self._status = "Settling"
+                    self._operation_mode = "Settling"
+                    await self._simulate(settle_seconds, action_context, progress_span=(stir_share, 100.0))
+                completed = True
+            finally:
+                self._current_speed = 0.0
+                self._operation_mode = "Completed" if completed else "Stopped"
+        self._message = f"搅拌完成：{speed:g} RPM × {stir_seconds:g}s，沉降 {settle_seconds:g}s"
+        return {
+            "success": True,
+            "vessel": label,
+            "stir_speed": speed,
+            "stir_time": stir_seconds,
+            "settling_time": settle_seconds,
+        }
+
+    @action(
+        action_type="unilabos_msgs.action:StartStir",
+        display_name="开始搅拌",
+        description="按转速持续搅拌，直到 stop_stir",
+    )
+    async def start_stir(self, vessel: VesselRef, stir_speed: float, purpose: str = "") -> Dict[str, Any]:
+        """开始持续搅拌。
+
+        Args:
+            vessel[容器]: 被搅拌的容器。
+            stir_speed[转速]: 搅拌转速（RPM）。
+            purpose[目的]: 操作目的，仅记录。
+        """
+        speed = self._checked_speed(stir_speed)
+        label = self._vessel_label(vessel)
+        with self._lock:
+            self._status = "Idle"
+            self._operation_mode = "Stirring"
+            self._current_vessel = label
+            self._current_speed = speed
+            self._remaining_time = 0.0
+            self._message = f"持续搅拌 {label or '容器'} {speed:g} RPM" + (f"（{purpose}）" if purpose else "")
+        return {"success": True, "vessel": label, "stir_speed": speed}
+
+    @action(
+        action_type="unilabos_msgs.action:StopStir",
+        display_name="停止搅拌",
+        description="停止持续搅拌",
+    )
+    async def stop_stir(self, vessel: VesselRef, purpose: str = "") -> Dict[str, Any]:
+        """停止搅拌。
+
+        Args:
+            vessel[容器]: 被搅拌的容器。
+            purpose[目的]: 操作目的，仅记录。
+        """
+        label = self._vessel_label(vessel) or self._current_vessel
+        previous = self._current_speed
+        self._set_idle("Stopped")
+        self._message = f"已停止搅拌 {label or '容器'}（之前 {previous:g} RPM）"
+        return {"success": True, "vessel": label, "previous_speed": previous}
+
+    # ============ 内部 ============
+
+    def _checked_speed(self, stir_speed: Any) -> float:
+        speed = float(stir_speed)
+        if not self._min_speed <= speed <= self._max_speed:
+            self._reject(f"搅拌速度 {speed:g} RPM 超出范围 {self._min_speed:g} ~ {self._max_speed:g} RPM")
+        return speed
+
+    def _set_idle(self, mode: str) -> None:
+        with self._lock:
+            self._status = "Idle"
+            self._operation_mode = mode
+            self._current_vessel = ""
+            self._current_speed = 0.0
+            self._remaining_time = 0.0
+
+    def __repr__(self) -> str:
+        return f"VirtualStirrer({self.device_id}: {self._operation_mode}, {self._current_speed:g} RPM)"

@@ -1265,6 +1265,23 @@ class Registry:
                     goal_default = ROS2MessageInstance(action_type_obj.Goal()).get_python_dict()
                 except Exception:
                     pass
+            elif not action_args.get("parent"):
+                # 没有 ROS 消息类可解析（HostLink 不装 unilabos_msgs）：goal schema 与默认值按驱动
+                # 方法签名生成，与 JSON 动作同一口径；ROS 2 下仍以消息类为准。
+                real_params = [p for p in method_params if p["name"] not in ("self", "cls")]
+                goal_schema = self._generate_schema_from_ast_params(
+                    real_params, method_name, method_info.get("docstring"), imap
+                )
+                goal_schema["title"] = f"{action_type.split(':')[-1]}_Goal"
+                schema = wrap_action_schema(
+                    goal_schema,
+                    action_name,
+                    description=action_args.get("description") or "",
+                )
+                goal_default = JSONSchemaMessageInstance.generate_default_from_schema(goal_schema)
+                for param in real_params:
+                    if param.get("default") is not None:
+                        goal_default[param["name"]] = param["default"]
 
             # 如果 ROS2 action type 未提供 result schema, 用方法返回值类型生成 fallback
             if not schema.get("properties", {}).get("result"):

@@ -262,19 +262,24 @@ def test_missing_sample_uuids_is_injected_as_empty_mapping_like_ros2() -> None:
         runtime.stop()
 
 
-def test_virtual_workbench_reads_nested_graph_config() -> None:
-    from unilabos.devices.virtual.workbench import VirtualWorkbench
+def test_virtual_device_reads_flat_and_nested_graph_config() -> None:
+    """内置虚拟设备按类型拆开构造参数：平铺的节点配置按名传入，旧注册表形状
+    ``{"config": {...}}``（编辑器按它生成）的内层同样生效。"""
 
-    workbench = instantiate_driver(
-        VirtualWorkbench,
-        "workbench_1",
-        {"config": {"arm_operation_time": 3.0, "heating_time": 10.0, "num_heating_stations": 2}},
+    from unilabos.devices.virtual.virtual_heatchill import VirtualHeatChill
+
+    flat = instantiate_driver(VirtualHeatChill, "heatchill_1", {"max_temp": 150.0, "port": "COM3"})
+    nested = instantiate_driver(
+        VirtualHeatChill, "heatchill_2", {"config": {"max_temp": 120.0, "min_temp": 0.0, "time_scale": 0.5}}
     )
 
-    assert workbench.ARM_OPERATION_TIME == 3.0
-    assert workbench.HEATING_TIME == 10.0
-    assert workbench.NUM_HEATING_STATIONS == 2
-    assert sorted(workbench._heating_stations) == [1, 2]
+    assert (flat.device_id, flat.max_temp, flat.port) == ("heatchill_1", 150.0, "COM3")
+    assert (nested.device_id, nested.max_temp, nested.min_temp, nested.time_scale) == (
+        "heatchill_2",
+        120.0,
+        0.0,
+        0.5,
+    )
 
 
 def test_liquid_handlers_declare_public_backends_and_action_metadata() -> None:

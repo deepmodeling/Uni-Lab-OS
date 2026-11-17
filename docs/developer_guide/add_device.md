@@ -161,7 +161,7 @@ my_device: # 设备唯一标识符
 
 - 驱动包内：`<包根>/registry/devices`（随 `unilab package install` 或 `--devices <包目录>` 自动加载）
 - 自定义路径：启动时使用 `--registry_path` 参数指定
-- `unilabos/registry/devices` 只放内置设备（虚拟设备、工作站、抽象液体处理器等）的注册表
+- `unilabos/registry/devices` 只放内置的工作站、抽象液体处理器等 YAML 注册表；内置虚拟设备与驱动包一样用装饰器注册（见 {doc}`../user_guide/virtual_devices`）
 - 可将多个设备写在同一个 YAML 文件中
 
 **系统自动生成的内容：**

@@ -84,7 +84,8 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
         HostLinkDriverSpec(
             device_id="virtual-heater",
             driver_class=VirtualHeatingPlatform,
-            config={"update_interval_s": 0.05},
+            # 按真实时长加热：遥测里要留下升温过程的多个点
+            config={"update_interval_s": 0.05, "time_scale": 1.0},
             registry_name="virtual_heating_platform",
             action_names=("heat_site",),
             status_names=(

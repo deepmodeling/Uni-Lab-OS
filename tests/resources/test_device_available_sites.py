@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.registry.ast_registry_scanner import _parse_file, scan_directory
 from unilabos.registry.decorators import device, get_device_meta
-from unilabos.devices.virtual.workbench import VirtualWorkbench
+from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
 from unilabos.resources.adapters.device_site import (
     apply_device_authority_state,
     prepare_devices_for_report,
@@ -129,18 +129,18 @@ def test_site_pose_rejects_unknown_geometry_fields():
         )
 
 
-def test_virtual_workbench_available_sites_validate_backend_instance_sites():
-    from unilabos.devices.virtual.workbench import VIRTUAL_WORKBENCH_AVAILABLE_SITES
+def test_virtual_heating_platform_available_sites_validate_backend_instance_sites():
+    from unilabos.devices.virtual.heating_platform import VIRTUAL_HEATING_PLATFORM_SITES
 
     assert all(
-        isinstance(site, SiteDefinition) for site in VIRTUAL_WORKBENCH_AVAILABLE_SITES
+        isinstance(site, SiteDefinition) for site in VIRTUAL_HEATING_PLATFORM_SITES
     )
-    meta = get_device_meta(VirtualWorkbench, "virtual_workbench")
+    meta = get_device_meta(VirtualHeatingPlatform, "virtual_heating_platform")
     assert meta is not None
     assert [site["label"] for site in meta["available_sites"]] == [
-        "heating_station_1",
-        "heating_station_2",
-        "heating_station_3",
+        "site_1",
+        "site_2",
+        "site_3",
     ]
     assert all(
         {"uuid", "material_uuid", "occupied_material_uuid", "template_name"}.isdisjoint(
@@ -152,24 +152,24 @@ def test_virtual_workbench_available_sites_validate_backend_instance_sites():
     owner_uuid = str(uuid4())
     device_config = _device_resource(
         **{
-            "class": "virtual_workbench",
+            "class": "virtual_heating_platform",
             "uuid": owner_uuid,
-            "template_name": "virtual_workbench",
+            "template_name": "virtual_heating_platform",
             "sites": _instantiated_sites(
                 owner_uuid,
-                "virtual_workbench",
-                VIRTUAL_WORKBENCH_AVAILABLE_SITES,
+                "virtual_heating_platform",
+                VIRTUAL_HEATING_PLATFORM_SITES,
             ),
         }
     )
-    apply_device_authority_state(device_config, meta, "virtual_workbench")
+    apply_device_authority_state(device_config, meta, "virtual_heating_platform")
 
     sites = device_config.res_content.sites
     assert sites is not None
     assert [site.label for site in sites] == [
-        "heating_station_1",
-        "heating_station_2",
-        "heating_station_3",
+        "site_1",
+        "site_2",
+        "site_3",
     ]
     assert all(site.material_uuid == device_config.res_content.uuid for site in sites)
     assert "available_sites" not in device_config.res_content.model_dump()
@@ -247,20 +247,20 @@ def test_ast_scanner_parses_typed_site_definition_constant(tmp_path):
     assert site["pose"]["size"] == {"width": 7.0, "height": 8.0, "depth": 9.0}
 
 
-def test_ast_scanner_parses_real_workbench_typed_pose_models():
-    source = Path(inspect.getfile(VirtualWorkbench)).resolve()
+def test_ast_scanner_parses_real_heating_platform_typed_pose_models():
+    source = Path(inspect.getfile(VirtualHeatingPlatform)).resolve()
     repository_root = Path(__file__).resolve().parents[2]
     expected_sites = [
         {
-            "label": f"heating_station_{station_id}",
+            "label": f"site_{site_id}",
             "position3d": {"x": x, "y": 100.0, "z": 0.0},
-            "parent_link": f"heating_station_{station_id}",
-            "meta_data": {"station_id": station_id, "role": "heating"},
+            "parent_link": f"site_{site_id}",
+            "meta_data": {"site_id": site_id, "role": "heating"},
         }
-        for station_id, x in enumerate((100.0, 250.0, 400.0), start=1)
+        for site_id, x in enumerate((130.0, 260.0, 390.0), start=1)
     ]
 
-    def assert_workbench_metadata(metadata):
+    def assert_platform_metadata(metadata):
         assert metadata["supported_backends"] == ["hostlink", "ros2"]
         assert [
             {
@@ -274,12 +274,12 @@ def test_ast_scanner_parses_real_workbench_typed_pose_models():
 
     devices, _, _ = _parse_file(source, repository_root)
     metadata = next(
-        device for device in devices if device["device_id"] == "virtual_workbench"
+        device for device in devices if device["device_id"] == "virtual_heating_platform"
     )
 
-    assert_workbench_metadata(metadata)
+    assert_platform_metadata(metadata)
     assert metadata["available_sites"][0]["pose"]["position"] == {
-        "x": 100.0,
+        "x": 130.0,
         "y": 100.0,
         "z": 0.0,
     }
@@ -296,8 +296,8 @@ def test_ast_scanner_parses_real_workbench_typed_pose_models():
             executor=executor,
         )
 
-    scanned = result["devices"]["virtual_workbench"]
-    assert_workbench_metadata(scanned)
+    scanned = result["devices"]["virtual_heating_platform"]
+    assert_platform_metadata(scanned)
 
 
 def test_device_site_adapter_only_validates_identity_and_preserves_occupancy():

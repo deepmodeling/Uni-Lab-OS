@@ -1,273 +1,359 @@
-import time
-import logging
-from typing import Union, Dict, Optional
+"""虚拟多通阀：0 号位接注射泵，1 ~ N 号位接容器或其他设备。
 
-from unilabos.registry.decorators import topic_config
+协议编译器发 ``set_valve_position``，命令是图里连线在阀一侧的端口名——通常是 "1" ~ "8"，
+接泵的端口叫 ``transferpump``（等同 0 号位）。切换的模拟时长按转过的位置数计算。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Union
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import VirtualDevice, nested_settings
+from unilabos.registry.decorators import (
+    DataSource,
+    InputHandle,
+    OutputHandle,
+    Side,
+    action,
+    device,
+    topic_config,
+)
+
+#: 命令里表示 0 号位（接注射泵）的写法
+_PUMP_ALIASES = frozenset({"0", "default", "pump", "transfer_pump", "transferpump", "home", "open"})
+_CLOSE_ALIASES = frozenset({"close", "closed"})
 
 
-class VirtualMultiwayValve:
-    """
-    虚拟九通阀门 - 0号位连接transfer pump，1-8号位连接其他设备 🔄
-    """
-    def __init__(self, port: str = "VIRTUAL", positions: int = 8, **kwargs):
-        self.port = port
-        self.max_positions = positions  # 1-8号位
-        self.total_positions = positions + 1  # 0-8号位，共9个位置
-        
-        # 添加日志记录器
-        self.logger = logging.getLogger(f"VirtualMultiwayValve.{port}")
-        
-        # 状态属性
-        self._status = "Idle"
+@device(
+    id="virtual_multiway_valve",
+    display_name="虚拟八通阀",
+    category=["virtual_device"],
+    description="0 号位接注射泵、1 ~ 8 号位接容器的虚拟多通阀，供泵送类协议与示例图使用",
+    icon="EightPipeline.webp",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        InputHandle(
+            key="transferpump",
+            data_type="fluid",
+            label="transferpump",
+            side=Side.NORTH,
+            data_key="fluid_in",
+            data_source=DataSource.HANDLE,
+            description="八通阀门进液口",
+        ),
+        OutputHandle(
+            key="1",
+            data_type="fluid",
+            label="1",
+            side=Side.NORTH,
+            data_key="fluid_port_1",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口1",
+        ),
+        OutputHandle(
+            key="2",
+            data_type="fluid",
+            label="2",
+            side=Side.EAST,
+            data_key="fluid_port_2",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口2",
+        ),
+        OutputHandle(
+            key="3",
+            data_type="fluid",
+            label="3",
+            side=Side.EAST,
+            data_key="fluid_port_3",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口3",
+        ),
+        OutputHandle(
+            key="4",
+            data_type="fluid",
+            label="4",
+            side=Side.SOUTH,
+            data_key="fluid_port_4",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口4",
+        ),
+        OutputHandle(
+            key="5",
+            data_type="fluid",
+            label="5",
+            side=Side.SOUTH,
+            data_key="fluid_port_5",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口5",
+        ),
+        OutputHandle(
+            key="6",
+            data_type="fluid",
+            label="6",
+            side=Side.WEST,
+            data_key="fluid_port_6",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口6",
+        ),
+        OutputHandle(
+            key="7",
+            data_type="fluid",
+            label="7",
+            side=Side.WEST,
+            data_key="fluid_port_7",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口7",
+        ),
+        InputHandle(
+            key="8",
+            data_type="fluid",
+            label="8",
+            side=Side.WEST,
+            data_key="fluid_port_8",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口8-特殊输入",
+        ),
+        OutputHandle(
+            key="8",
+            data_type="fluid",
+            label="8",
+            side=Side.NORTH,
+            data_key="fluid_port_8",
+            data_source=DataSource.EXECUTOR,
+            description="八通阀门端口8",
+        ),
+    ],
+)
+class VirtualMultiwayValve(VirtualDevice):
+    """阀位 0 ~ positions：0 接注射泵，其余接端口。"""
+
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        positions: int = 8,
+        switch_time: float = 0.5,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟多通阀。
+
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            positions[端口数]: 端口数量（不含 0 号泵位），默认 8。
+            switch_time[切换时间]: 每转过一个位置的模拟时间（s）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+        """
+        settings = nested_settings(
+            kwargs, positions=positions, switch_time=switch_time, port=port, time_scale=time_scale
+        )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_multiway_valve", settings["time_scale"])
+        self.max_positions = int(settings["positions"])
+        if self.max_positions < 1:
+            raise ValueError(f"positions 必须至少为 1，收到 {self.max_positions}")
+        self.switch_time = max(0.0, float(settings["switch_time"]))
+        self.port = str(settings["port"])
         self._valve_state = "Ready"
-        self._current_position = 0  # 默认在0号位（transfer pump位置）
+        self._current_position = 0
         self._target_position = 0
-        
-        print(f"🔄 === 虚拟多通阀门已创建 === ✨")
-        print(f"🎯 端口: {port} | 📊 位置范围: 0-{self.max_positions} | 🏠 初始位置: 0 (transfer_pump)")
-        self.logger.info(f"🔧 多通阀门初始化: 端口={port}, 最大位置={self.max_positions}")
+
+    # ============ 状态 ============
 
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
+        """Idle / Busy / Error。"""
         return self._status
 
     @property
+    @topic_config(period=1.0)
     def valve_state(self) -> str:
+        """Ready / Moving / Closed / Error。"""
         return self._valve_state
 
     @property
+    @topic_config(period=1.0)
     def current_position(self) -> int:
+        """当前阀位（0 为泵位）。"""
         return self._current_position
 
     @property
+    @topic_config(period=1.0)
     def target_position(self) -> int:
+        """正在切往的阀位。"""
         return self._target_position
 
     @property
-    @topic_config()
-    def current_port(self) -> str:
-        """当前连接的端口名称 🔌"""
-        return self.port
-
-    def set_position(self, command: Union[int, str]):
-        """
-        设置阀门位置 - 支持0-8位置 🎯
-        
-        Args:
-            command: 目标位置 (0-8) 或位置字符串
-                    0: transfer pump位置
-                    1-8: 其他设备位置
-                    'default': 默认位置（0号位）
-        """
-        try:
-            # 解析字符串形式的阀位命令。
-            if isinstance(command, str):
-                command_lower = command.lower().strip()
-                
-                # 处理特殊命令
-                if command_lower in ['default', 'pump', 'transfer_pump', 'home']:
-                    pos = 0  # 默认位置为0号位（transfer pump）
-                    self.logger.info(f"🔧 特殊命令 '{command}' 映射到位置 {pos}")
-                elif command_lower in ['open']:
-                    pos = 0  # open命令也映射到0号位
-                    self.logger.info(f"🔧 OPEN命令映射到位置 {pos}")
-                elif command_lower in ['close', 'closed']:
-                    # 关闭命令保持当前位置
-                    pos = self._current_position
-                    self.logger.info(f"🔧 CLOSE命令保持当前位置 {pos}")
-                else:
-                    # 尝试转换为数字
-                    try:
-                        pos = int(command)
-                    except ValueError:
-                        error_msg = f"无法识别的命令: '{command}'"
-                        self.logger.error(f"❌ {error_msg}")
-                        raise ValueError(error_msg)
-            else:
-                pos = int(command)
-                
-            if pos < 0 or pos > self.max_positions:
-                error_msg = f"位置必须在 0-{self.max_positions} 范围内"
-                self.logger.error(f"❌ {error_msg}: 请求位置={pos}")
-                raise ValueError(error_msg)
-            
-            # 获取位置描述emoji
-            if pos == 0:
-                pos_emoji = "🚰"
-                pos_desc = "泵位置"
-            else:
-                pos_emoji = "🔌"
-                pos_desc = f"端口{pos}"
-            
-            old_position = self._current_position
-
-            self.logger.info(f"🔄 阀门切换: {old_position}({self.current_port}) → {pos} {pos_emoji}")
-            
-            self._status = "Busy"
-            self._valve_state = "Moving"
-            self._target_position = pos
-            
-            # 模拟阀门切换时间
-            switch_time = abs(self._current_position - pos) * 0.5  # 每个位置0.5秒
-
-            if switch_time > 0:
-                self.logger.info(f"⏱️ 阀门移动中... 预计用时: {switch_time:.1f}秒 🔄")
-                time.sleep(switch_time)
-            
-            self._current_position = pos
-            self._status = "Idle"
-            self._valve_state = "Ready"
-            
-            success_msg = f"✅ 阀门已切换到位置 {pos} ({self.current_port}) {pos_emoji}"
-            
-            self.logger.info(success_msg)
-            return success_msg
-            
-        except ValueError as e:
-            # 失败要抛给运行时：返回错误字符串会被当成动作成功
-            self._status = "Error"
-            self._valve_state = "Error"
-            self.logger.error(f"❌ 阀门切换失败: {str(e)}")
-            raise
-
-    def set_to_pump_position(self):
-        """切换到transfer pump位置（0号位）🚰"""
-        self.logger.info(f"🚰 切换到泵位置...")
-        return self.set_position(0)
-
-    def set_to_port(self, port_number: int):
-        """
-        切换到指定端口位置 🔌
-        
-        Args:
-            port_number: 端口号 (1-8)
-        """
-        if port_number < 1 or port_number > self.max_positions:
-            error_msg = f"端口号必须在 1-{self.max_positions} 范围内"
-            self.logger.error(f"❌ {error_msg}: 请求端口={port_number}")
-            raise ValueError(error_msg)
-        
-        self.logger.info(f"🔌 切换到端口 {port_number}...")
-        return self.set_position(port_number)
-
-    def open(self):
-        """打开阀门 - 设置到transfer pump位置（0号位）🔓"""
-        self.logger.info(f"🔓 打开阀门，设置到泵位置...")
-        return self.set_to_pump_position()
-
-    def close(self):
-        """关闭阀门 - 对于多通阀门，设置到一个"关闭"状态 🔒"""
-        self.logger.info(f"🔒 关闭阀门...")
-        
-        self._status = "Busy"
-        self._valve_state = "Closing"
-        time.sleep(0.5)
-
-        # 可以选择保持当前位置或设置特殊关闭状态
-        self._status = "Idle"
-        self._valve_state = "Closed"
-        
-        close_msg = f"🔒 阀门已关闭，保持在位置 {self._current_position} ({self.port})"
-        self.logger.info(close_msg)
-        return close_msg
-
-    @property
-    @topic_config()
+    @topic_config(period=1.0)
     def valve_position(self) -> int:
-        """阀门位置 📍"""
+        """当前阀位，与 current_position 相同。"""
         return self._current_position
 
-    def set_valve_position(self, command: Union[int, str]):
-        """
-        设置阀门位置 - 兼容pump_protocol调用 🎯
-        这是set_position的别名方法，用于兼容pump_protocol.py
-
-        Args:
-            command: 目标位置 (0-8) 或位置字符串
-        """
-        return self.set_position(command)
-
-    def is_at_position(self, position: int) -> bool:
-        """检查是否在指定位置 🎯"""
-        result = self._current_position == position
-        return result
-
-    def is_at_pump_position(self) -> bool:
-        """检查是否在transfer pump位置 🚰"""
-        result = self._current_position == 0
-        # 删除debug日志：pump_status = "是" if result else "否"
-        # 删除debug日志：self.logger.debug(f"🚰 泵位置检查: {pump_status} (当前位置: {self._current_position})")
-        return result
-
-    def is_at_port(self, port_number: int) -> bool:
-        """检查是否在指定端口位置 🔌"""
-        result = self._current_position == port_number
-        # 删除debug日志：port_status = "是" if result else "否"
-        # 删除debug日志：self.logger.debug(f"🔌 端口{port_number}检查: {port_status} (当前位置: {self._current_position})")
-        return result
-
-    def reset(self):
-        """重置阀门到transfer pump位置（0号位）🔄"""
-        self.logger.info(f"🔄 重置阀门到泵位置...")
-        return self.set_position(0)
-
-    def switch_between_pump_and_port(self, port_number: int):
-        """
-        在transfer pump位置和指定端口之间切换 🔄
-        
-        Args:
-            port_number: 目标端口号 (1-8)
-        """
-        if self._current_position == 0:
-            # 当前在pump位置，切换到指定端口
-            self.logger.info(f"🔄 从泵位置切换到端口 {port_number}...")
-            return self.set_to_port(port_number)
-        else:
-            # 当前在某个端口，切换到pump位置
-            self.logger.info(f"🔄 从端口 {self._current_position} 切换到泵位置...")
-            return self.set_to_pump_position()
+    @property
+    @topic_config(period=5.0)
+    def current_port(self) -> str:
+        """模拟的通信端口名。"""
+        return self.port
 
     @property
-    @topic_config()
+    @topic_config(period=1.0)
     def flow_path(self) -> str:
-        """当前流路路径描述 🌊"""
+        """当前流路说明。"""
+        if self._valve_state == "Closed":
+            return f"阀门关闭（停在位置 {self._current_position}）"
         if self._current_position == 0:
-            return f"🚰 转移泵已连接 (位置 {self._current_position})"
-        return f"🔌 端口 {self._current_position} 已连接 ({self.current_port})"
+            return "泵位：注射泵已连通"
+        return f"端口 {self._current_position} 已连通"
 
-    def __str__(self):
-        current_port = self.current_port
-        status_emoji = "✅" if self._status == "Idle" else "🔄" if self._status == "Busy" else "❌"
-        
-        return f"🔄 VirtualMultiwayValve({status_emoji} 位置: {self._current_position}/{self.max_positions}, 端口: {current_port}, 状态: {self._status})"
+    # ============ 协议编译器使用的动作 ============
 
+    @action(
+        action_type="unilabos_msgs.action:SendCmd",
+        display_name="切换阀位",
+        description="切换到 0 ~ N 号位；也接受 transferpump / pump / default（0 号位）与 close",
+    )
+    def set_position(
+        self, command: Union[int, str], action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """切换阀位。
 
-# 使用示例
-if __name__ == "__main__":
-    valve = VirtualMultiwayValve()
-    
-    print("🔄 === 虚拟九通阀门测试 === ✨")
-    print(f"🏠 初始状态: {valve}")
-    print(f"🌊 当前流路: {valve.flow_path}")
-    
-    # 切换到试剂瓶1（1号位）
-    print(f"\n🔌 切换到1号位: {valve.set_position(1)}")
-    print(f"📍 当前状态: {valve}")
-    
-    # 切换到transfer pump位置（0号位）
-    print(f"\n🚰 切换到pump位置: {valve.set_to_pump_position()}")
-    print(f"📍 当前状态: {valve}")
-    
-    # 切换到试剂瓶2（2号位）
-    print(f"\n🔌 切换到2号位: {valve.set_to_port(2)}")
-    print(f"📍 当前状态: {valve}")
-    
-    # 测试切换功能
-    print(f"\n🔄 智能切换测试:")
-    print(f"当前位置: {valve._current_position}")
-    print(f"切换结果: {valve.switch_between_pump_and_port(3)}")
-    print(f"新位置: {valve._current_position}")
-    
-    # 重置测试
-    print(f"\n🔄 重置测试: {valve.reset()}")
-    print(f"📍 重置后状态: {valve}")
+        Args:
+            command[目标位置]: 0 ~ N 的位置号或端口名；transferpump / pump / default 表示 0 号泵位，close 关闭阀门。
+        """
+        if isinstance(command, str) and command.strip().lower() in _CLOSE_ALIASES:
+            return self.close(action_context=action_context)
+        position = self._parse_position(command)
+        self._switch(position, action_context)
+        return {
+            "success": True,
+            "position": self._current_position,
+            "flow_path": self.flow_path,
+        }
+
+    @action(
+        action_type="unilabos_msgs.action:SendCmd",
+        display_name="切换阀位（协议）",
+        description="与 set_position 相同；泵送协议按连线端口名调用",
+    )
+    def set_valve_position(
+        self, command: Union[int, str], action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """切换阀位（泵送协议调用的名字）。
+
+        Args:
+            command[目标位置]: 0 ~ N 的位置号或端口名；transferpump / pump / default 表示 0 号泵位。
+        """
+        return self.set_position(command, action_context=action_context)
+
+    # ============ 其他操作 ============
+
+    @action(auto_prefix=True, display_name="切到泵位")
+    def set_to_pump_position(self, action_context: Optional[ActionContext] = None) -> Dict[str, Any]:
+        """切换到 0 号泵位。"""
+        return self.set_position(0, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="切到端口")
+    def set_to_port(self, port_number: int, action_context: Optional[ActionContext] = None) -> Dict[str, Any]:
+        """切换到指定端口。
+
+        Args:
+            port_number[端口号]: 端口号（1 ~ N）。
+        """
+        if not 1 <= int(port_number) <= self.max_positions:
+            self._reject(f"端口号必须在 1 ~ {self.max_positions} 之间，收到 {port_number}")
+        return self.set_position(int(port_number), action_context=action_context)
+
+    @action(auto_prefix=True, display_name="泵位 / 端口互切")
+    def switch_between_pump_and_port(
+        self, port_number: int, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """在泵位时切到指定端口，否则切回泵位。
+
+        Args:
+            port_number[端口号]: 目标端口号（1 ~ N）。
+        """
+        if self._current_position == 0:
+            return self.set_to_port(port_number, action_context=action_context)
+        return self.set_to_pump_position(action_context=action_context)
+
+    @action(auto_prefix=True, display_name="打开（泵位）")
+    def open(self, action_context: Optional[ActionContext] = None) -> Dict[str, Any]:
+        """打开阀门并切到 0 号泵位。"""
+        return self.set_position(0, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="关闭")
+    def close(self, action_context: Optional[ActionContext] = None) -> Dict[str, Any]:
+        """关闭阀门，阀位保持不变。"""
+        with self._operation("Busy", "关闭阀门", action_context):
+            self._valve_state = "Closing"
+            self._simulate_blocking(self.switch_time, action_context)
+            self._valve_state = "Closed"
+        self._message = f"阀门已关闭，停在位置 {self._current_position}"
+        return {"success": True, "position": self._current_position, "valve_state": self._valve_state}
+
+    @action(auto_prefix=True, display_name="复位")
+    def reset(self, action_context: Optional[ActionContext] = None) -> Dict[str, Any]:
+        """复位到 0 号泵位。"""
+        return self.set_position(0, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="是否在该位置", always_free=True)
+    def is_at_position(self, position: int) -> bool:
+        """当前是否在指定阀位。
+
+        Args:
+            position[位置]: 阀位号（0 ~ N）。
+        """
+        return self._current_position == int(position)
+
+    @action(auto_prefix=True, display_name="是否在泵位", always_free=True)
+    def is_at_pump_position(self) -> bool:
+        """当前是否在 0 号泵位。"""
+        return self._current_position == 0
+
+    @action(auto_prefix=True, display_name="是否在该端口", always_free=True)
+    def is_at_port(self, port_number: int) -> bool:
+        """当前是否在指定端口。
+
+        Args:
+            port_number[端口号]: 端口号（1 ~ N）。
+        """
+        return self._current_position == int(port_number)
+
+    # ============ 内部 ============
+
+    def _parse_position(self, command: Union[int, str]) -> int:
+        if isinstance(command, bool):
+            self._reject(f"无法识别的阀位命令：{command!r}")
+        if isinstance(command, (int, float)):
+            position = int(command)
+        else:
+            text = str(command).strip().lower()
+            if text in _PUMP_ALIASES:
+                position = 0
+            else:
+                try:
+                    position = int(float(text))
+                except ValueError:
+                    self._reject(f"无法识别的阀位命令：{command!r}")
+        if not 0 <= position <= self.max_positions:
+            self._reject(f"阀位必须在 0 ~ {self.max_positions} 之间，收到 {command!r}")
+        return position
+
+    def _switch(self, position: int, action_context: Optional[ActionContext]) -> None:
+        start = self._current_position
+        self._target_position = position
+        with self._operation("Busy", f"阀位 {start} → {position}", action_context):
+            self._valve_state = "Moving"
+            try:
+                self._simulate_blocking(abs(position - start) * self.switch_time, action_context)
+            finally:
+                # 取消时阀芯停在原位
+                self._valve_state = "Ready"
+            self._current_position = position
+            self._valve_state = "Ready"
+        self._message = f"阀位 {position}（{self.flow_path}）"
+
+    def __repr__(self) -> str:
+        return f"VirtualMultiwayValve({self.device_id}: 位置 {self._current_position}/{self.max_positions}, {self._status})"

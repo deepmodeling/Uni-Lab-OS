@@ -778,7 +778,7 @@ class InventoryCommands:
             client_ref="material",
             material_uuid=material_uuid,
             identity=MaterialIdentityWrite(
-                resource_id=ResourceContract(self.materials)._resource_id(name), name=name, display_name=name,
+                resource_id=ResourceContract(self.materials)._resource_id(name), display_name=name,
                 lot_uuid=lot_uuid, resource_type=template.resource_type,
                 class_name=template.class_name or template.resource_type or "Resource",
                 barcode=barcode, template_name=template.name,

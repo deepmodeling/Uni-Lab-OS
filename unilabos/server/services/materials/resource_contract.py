@@ -558,8 +558,8 @@ class ResourceContract:
             client_ref="material",
             material_uuid=material_uuid,
             identity=MaterialIdentityWrite(
+                # 物料 name 由权威写成 uuid；PLR 键取全局唯一的 resource_id
                 resource_id=self._resource_id(name),
-                name=name,
                 display_name=display_name,
                 description=str(values.get("description") or ""),
                 resource_type=template.resource_type,

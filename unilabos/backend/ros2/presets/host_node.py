@@ -94,8 +94,8 @@ def ensure_host_node_resource(
                 f"[Host Node] 图中 host node id '{content.id}' 与配置实例名 "
                 f"'{device_id}' 不一致，以配置为准"
             )
-            if content.name == content.id:
-                content.name = device_id
+            if content.display_name in ("", content.id):
+                content.display_name = device_id
             content.id = device_id
         content.type = "device"
         # 设备实例的 template_name 必须与注册表名一致（缺省会回退到
@@ -113,7 +113,8 @@ def ensure_host_node_resource(
         "id": device_id,
         "uuid": str(uuid.uuid4()),
         "parent_uuid": "",
-        "name": device_id,
+        # 物料 name 等于 uuid（ResourceDict 缺省补齐），人读标签是 display_name
+        "display_name": device_id,
         "type": "device",
         "class": HOST_NODE_REGISTRY_NAME,
         "template_name": HOST_NODE_REGISTRY_NAME,

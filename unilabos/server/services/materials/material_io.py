@@ -263,11 +263,8 @@ class MaterialIO:
         if barcode and self.connection.execute(
                 "SELECT 1 FROM material WHERE barcode=? AND deleted_at_ms IS NULL", (barcode,)).fetchone():
             raise MaterialConflictError(f"条码 {barcode} 已被其他物料使用", conflict="identity")
+        # material_name 是人读标签（display_name，可重名）；业务 id 由它派生并保证唯一
         name = str(plan.get("material_name") or "") or self._allocate_name(template.name)
-        if self.connection.execute(
-                "SELECT 1 FROM material WHERE parent_material_uuid IS NULL AND deleted_at_ms IS NULL "
-                "AND LOWER(name)=LOWER(?)", (name,)).fetchone():
-            raise MaterialConflictError(f"物料名 {name} 已被另一件根物料使用", conflict="identity")
         from unilabos.server.services.materials.resource_contract import ResourceContract
 
         material_uuid = str(uuid4())
@@ -279,7 +276,6 @@ class MaterialIO:
                 material_uuid=material_uuid,
                 identity=MaterialIdentityWrite(
                     resource_id=ResourceContract(self.materials)._resource_id(name),
-                    name=name,
                     display_name=name,
                     resource_type=template.resource_type,
                     class_name=template.class_name or template.resource_type or "Resource",
@@ -315,7 +311,7 @@ class MaterialIO:
                    template_name: str, meta_data: dict[str, Any]) -> None:
         """把注册表资源类建出的创建树的根节点换成装入步骤的身份（原地修改）。
 
-        根节点保留只写身份时的那些字段：物料 UUID、名字 / 展示名、条码、``meta_data.material_io`` 与模板身份
+        根节点保留只写身份时的那些字段：物料 UUID、展示名、条码、``meta_data.material_io`` 与模板身份
         （注册表模板，而不是 PLR 型号名派生的模板）；``config`` / 类型 / 尺寸与子物料来自 PLR。子物料的
         ``resource_id`` 是根的路径前缀，根换了不重名的 ID 时一起换。
         """
@@ -332,7 +328,7 @@ class MaterialIO:
         root.material_uuid = material_uuid
         root.identity = root.identity.model_copy(update={
             "resource_id": resource_id,
-            "name": name,
+            # name 由权威写成物料 UUID（新物料只给显示名）；PLR 键是 config.name，即按 name 实例化出的 PLR 名
             "display_name": name,
             "barcode": barcode,
             "template_name": template_name,
@@ -348,7 +344,7 @@ class MaterialIO:
         def taken(candidate: str) -> bool:
             return self.connection.execute(
                 "SELECT 1 FROM material WHERE deleted_at_ms IS NULL "
-                "AND (LOWER(display_name)=LOWER(?) OR LOWER(name)=LOWER(?)) LIMIT 1", (candidate, candidate),
+                "AND (LOWER(display_name)=LOWER(?) OR LOWER(resource_id)=LOWER(?)) LIMIT 1", (candidate, candidate),
             ).fetchone() is not None
 
         if not taken(base):
@@ -446,11 +442,6 @@ class MaterialIO:
             raise MaterialConflictError(
                 f"物料 {material.material.display_name} 正被占用：{'；'.join(claims)}", conflict="active_claim")
         if plan["disposition"] == "detach":
-            if self.connection.execute(
-                    "SELECT 1 FROM material WHERE parent_material_uuid IS NULL AND deleted_at_ms IS NULL "
-                    "AND LOWER(name)=LOWER(?) AND material_uuid<>?", (material.material.name, material_uuid)).fetchone():
-                raise MaterialConflictError(
-                    f"取走后物料 {material.material.name} 成为根物料，与已有根物料重名", conflict="identity")
             self.materials.move_material(self._mutation(plan, command_id, "detach", "move_material"),
                                          MaterialMove(material_uuid=material_uuid))
             affected = [material_uuid]

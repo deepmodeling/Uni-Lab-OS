@@ -36,7 +36,11 @@ from unilabos.registry.action_schema import (
     build_action_schema_draft,
     reject_removed_annotations,
 )
-from unilabos.registry.material_roles import material_contract, material_roles_from_ast
+from unilabos.registry.material_roles import (
+    material_contract,
+    material_roles_from_ast,
+    material_site_selectors,
+)
 from unilabos.registry.placeholder_keys import (
     check_placeholder_keys,
     placeholder_constants,
@@ -54,7 +58,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 24      # 24：@action(placeholder_keys=...) 恢复（与类型推出的取并集，手写优先）
+_CACHE_VERSION = 24      # 24：@action(placeholder_keys=...) 恢复（与类型推出的取并集）；库位关系改为 Material.site
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1072,7 +1076,7 @@ def _extract_class_body(
                 action_args.pop(name, None)
             json_action = not action_args.get("action_type")
             # 已删除的写法（contract= / resource_contract= / JSON 动作的 goal= 与 result=，以及注解里的
-            # Placeholder）与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
+            # Placeholder / SiteSelector）与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
             check_action_options(action_args, json_action=json_action, definition=definition)
             # 手写的前端选择器：键必须是参数名，未知种类告警一次；注册表与类型推出的取并集（手写优先）
             action_args["placeholder_keys"] = check_placeholder_keys(
@@ -1083,11 +1087,14 @@ def _extract_class_body(
             canonical_schema = None
             draft: Dict[str, Any] = {}
             resource_contract: Dict[str, Any] = {}
+            site_selectors: Dict[str, Any] = {}
             material_value = action_args.pop("material", None)
             if material_value is not None:
                 if not json_action:
                     raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
-                resource_contract = material_contract(material_roles_from_ast(material_value))
+                roles = material_roles_from_ast(material_value)
+                resource_contract = material_contract(roles)
+                site_selectors = material_site_selectors(roles)
             if json_action:
                 draft = build_action_schema_draft(
                     item,
@@ -1095,6 +1102,7 @@ def _extract_class_body(
                     action_name=method_name,
                     description=str(action_args.get("description") or ""),
                     definition=definition,
+                    site_selectors=site_selectors,
                 )
                 canonical_schema = draft["schema"]
                 if resource_contract:

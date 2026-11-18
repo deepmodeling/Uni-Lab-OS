@@ -1,243 +1,224 @@
-"""库位选择器（SiteSelector）静态动作合同的公共行为测试。"""
+"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material=Material.site(...))``。
+
+``SiteSelector`` 已与 ``SiteSlot`` 合一：库位参数只有一个类型 ``SiteSlot``，库位属于哪个物料参数、放进去的是
+哪个物料参数、已占用库位的显示 / 可选策略写在 ``Material.site``。生成的 ``x-unilabos-site-selector`` 扩展与
+原 ``SiteSelector`` 相同，连接点投影、运行预检与派发前的库位门禁照旧按它工作。
+"""
 
 from __future__ import annotations
 
-import ast
 import textwrap
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from unilabos.registry.action_contract_schema import (
-    ActionContractError,
-    parse_action_contract,
-)
+from unilabos.registry.action_schema import ActionSchemaError
 from unilabos.registry.action_template_projection import (
     ActionTemplateProjectionError,
     compile_action_template_handles,
 )
-from unilabos.registry.annotations import SiteSelector
+from unilabos.registry.ast_registry_scanner import _parse_file
+from unilabos.registry.decorators import Material, action
+from unilabos.registry.material_roles import MaterialRoleError, material_contract, material_site_selectors
+from unilabos.registry.registry import Registry
 
-_MODULE_NAME = "lab.devices.site_selector"
-
-
-def _parse_action(source: str) -> Any:
-    """通过公开 AST 接缝解析一份动作合同。
-
-    参数说明：``source`` 是不执行、不导入的设备包 Python 源码。返回：规范动作
-    合同（Action Contract）；源码非法时保留公共解析器的稳定异常。
-    """
-
-    # ``module`` 是待静态分析的设备包语法树，不具有运行时驱动副作用。
-    module = ast.parse(textwrap.dedent(source))
-    # ``action`` 是本测试唯一的动作定义，也是库位关系的声明边界。
-    action = next(
-        node
-        for node in ast.walk(module)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "action"
-    )
-    return parse_action_contract(module, action, module_name=_MODULE_NAME)
+#: 原 ``Annotated[str | None, SiteSelector(owner="warehouse", occupant="resource")] = None`` 生成的字段扩展。
+_SITE_SELECTOR_FIELD = {
+    "type": ["string", "null"],
+    "default": None,
+    "format": "uuid",
+    "x-unilabos-editor-control": "site_selector",
+    "x-unilabos-site-selector": {
+        "version": 1,
+        "owner": "warehouse",
+        "occupant": "resource",
+        "show_occupied": True,
+        "allow_occupied": False,
+    },
+}
 
 
-def test_site_selector_annotation_is_public_and_validates_direct_use() -> None:
-    """设备包必须能公开导入库位选择器（SiteSelector）并获得不可变元数据。
+def _source(material: str, signature: str, *, header: str = "") -> str:
+    return textwrap.dedent(
+        f'''
+        from typing import Optional
+        from unilabos.registry.decorators import Material, action, device
+        from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
+        {header}
 
-    参数：无。返回：无；断言编辑器/类型检查器直接构造时保留完整字段关系和策略，
-    而真正合同权威仍由后续静态 AST 编译产生。
-    """
-
-    # ``selector`` 是只服务源码工具的注解值，不查询库位（Site）或库存权威。
-    selector = SiteSelector(
-        owner="warehouse",
-        occupant="resource",
-        show_occupied=True,
-        allow_occupied=False,
+        @device(id="site_driver", category=["test"])
+        class Driver:
+            @action(material={material})
+            def action(self, {signature}) -> None:
+                pass
+        '''
     )
 
-    assert selector.owner == "warehouse"
-    assert selector.occupant == "resource"
-    assert selector.show_occupied is True
-    assert selector.allow_occupied is False
+
+def _scan(tmp_path: Path, material: str, signature: str, *, header: str = "") -> dict[str, Any]:
+    """真实 AST 扫描（不导入作者模块）并按注册表规则生成动作条目。"""
+
+    path = tmp_path / "site_driver.py"
+    path.write_text(_source(material, signature, header=header), encoding="utf-8")
+    devices, _resources, _workflows = _parse_file(path, tmp_path)
+    entry = Registry()._build_device_entry_from_ast("site_driver", devices[0])
+    return entry["class"]["action_value_mappings"]["action"]
 
 
-def test_action_site_selector_compiles_complete_relation_metadata() -> None:
-    """动作库位参数必须生成完整、可供前端和调度门禁消费的关系元数据。
+_FULL = 'Material.site("site", owner="warehouse", occupant="resource", show_occupied=True, allow_occupied=False)'
+_FULL_SIGNATURE = "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot = None"
 
-    参数：无。返回：无；断言 owner/occupant 均保持显式物料占位符
-    （ResourceSlot）字段身份，且已占用库位（Site）的展示和选择策略不漂移。
-    """
 
-    contract = _parse_action(
-        """
-        from typing import Annotated
-        from unilabos.registry.annotations import SiteSelector
-        from unilabos.registry.placeholder_type import ResourceSlot
+def _without_description(field: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in field.items() if key != "description"}
 
-        def action(
-            warehouse: ResourceSlot,
-            resource: ResourceSlot,
-            site: Annotated[
-                str | None,
-                SiteSelector(
-                    owner="warehouse",
-                    occupant="resource",
-                    show_occupied=True,
-                    allow_occupied=False,
-                ),
-            ] = None,
-        ) -> None:
-            pass
-        """
-    )
 
-    # ``site_schema`` 是动作输入的规范库位选择器（SiteSelector）wire 合同。
-    site_schema = contract.to_action_schema(action_name="action")["properties"]["goal"][
-        "properties"
-    ]["site"]
-    assert site_schema == {
-        "type": ["string", "null"],
-        "default": None,
-        "format": "uuid",
-        "x-unilabos-editor-control": "site_selector",
-        "x-unilabos-site-selector": {
-            "version": 1,
-            "owner": "warehouse",
-            "occupant": "resource",
-            "show_occupied": True,
-            "allow_occupied": False,
-        },
+def test_material_site_builds_the_same_extension_as_the_removed_site_selector() -> None:
+    role = Material.site("site", owner="warehouse", occupant="resource", show_occupied=True, allow_occupied=False)
+    assert material_site_selectors(role) == {"site": _SITE_SELECTOR_FIELD["x-unilabos-site-selector"]}
+    # 库位关系不进资源合同：只写库位关系的动作没有资源合同，与其他语义写在一起时互不影响
+    assert material_contract(role) == {}
+    assert material_contract([Material.in_place("resource"), role]) == {
+        "version": 2,
+        "operate_in_place": {"material_param": "resource"},
     }
+    with pytest.raises(MaterialRoleError):
+        Material.site("site", owner="warehouse", show_occupied="yes")
+    with pytest.raises(MaterialRoleError, match="自身"):
+        Material.site("site", owner="site")
+    with pytest.raises(MaterialRoleError, match="多条"):
+        material_site_selectors([Material.site("site", owner="a"), Material.site("site", owner="b")])
+
+
+def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Path) -> None:
+    action_entry = _scan(tmp_path, _FULL, _FULL_SIGNATURE)
+    site = action_entry["schema"]["properties"]["goal"]["properties"]["site"]
+    assert _without_description(site) == _SITE_SELECTOR_FIELD
+    assert action_entry["placeholder_keys"]["site"] == "unilabos_sites"
+    assert action_entry["materials_need_lock"] == ["warehouse", "resource"]
+    assert "resource_contract" not in action_entry["schema"]["x-unilabos-action-contract"]
+
+
+def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
+    from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
+
+    @action(material=Material.site("site", owner="warehouse"))
+    def place(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
+        pass
+
+    assert place._action_registry_meta["site_selectors"] == {
+        "site": {"version": 1, "owner": "warehouse", "occupant": None, "show_occupied": True, "allow_occupied": False}
+    }
+    with pytest.raises(MaterialRoleError, match="missing"):
+
+        @action(material=Material.site("site", owner="missing"))
+        def bad(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
+            pass
 
 
 @pytest.mark.parametrize(
-    ("owner_annotation", "occupant_annotation", "owner", "occupant"),
+    ("signature", "material", "message"),
     [
         pytest.param(
-            "ResourceSlot", "ResourceSlot", "missing", "resource", id="missing-owner"
+            "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot",
+            'Material.site("site", owner="missing", occupant="resource")',
+            "owner='missing'",
+            id="missing-owner",
         ),
-        pytest.param("str", "ResourceSlot", "warehouse", "resource", id="scalar-owner"),
         pytest.param(
-            "ResourceSlot", "str", "warehouse", "resource", id="scalar-occupant"
+            "warehouse: str, resource: ResourceSlot, site: SiteSlot",
+            'Material.site("site", owner="warehouse", occupant="resource")',
+            "owner='warehouse'",
+            id="scalar-owner",
+        ),
+        pytest.param(
+            "warehouse: ResourceSlot, resource: str, site: SiteSlot",
+            'Material.site("site", owner="warehouse", occupant="resource")',
+            "occupant='resource'",
+            id="scalar-occupant",
+        ),
+        pytest.param(
+            "warehouse: list[ResourceSlot], site: SiteSlot",
+            'Material.site("site", owner="warehouse")',
+            "单个 ResourceSlot",
+            id="list-owner",
+        ),
+        pytest.param(
+            "warehouse: ResourceSlot, site: str",
+            'Material.site("site", owner="warehouse")',
+            "必须注解为 SiteSlot",
+            id="plain-string-site",
+        ),
+        pytest.param(
+            "warehouse: ResourceSlot, site: list[SiteSlot]",
+            'Material.site("site", owner="warehouse")',
+            "必须注解为 SiteSlot",
+            id="site-list",
+        ),
+        pytest.param(
+            "warehouse: ResourceSlot",
+            'Material.site("site", owner="warehouse")',
+            "签名里没有",
+            id="missing-site",
         ),
     ],
 )
-def test_action_site_selector_rejects_unknown_or_non_material_relations(
-    owner_annotation: str,
-    occupant_annotation: str,
-    owner: str,
-    occupant: str,
+def test_material_site_rejects_unknown_or_non_material_relations(
+    tmp_path: Path, signature: str, material: str, message: str
 ) -> None:
-    """owner/occupant 必须显式指向单个物料占位符（ResourceSlot）输入。
+    """库位参数必须是 SiteSlot，owner / occupant 必须显式指向单个 ResourceSlot 参数，不按名字猜。"""
 
-    参数说明：两个 annotation 参数构造字段类型反例；``owner`` 与 ``occupant``
-    构造关系反例。返回：无；断言静态编译关闭式失败，不按字段名猜测物料关系。
-    """
-
-    source = f"""
-        from typing import Annotated
-        from unilabos.registry.annotations import SiteSelector
-        from unilabos.registry.placeholder_type import ResourceSlot
-
-        def action(
-            warehouse: {owner_annotation},
-            resource: {occupant_annotation},
-            site: Annotated[
-                str,
-                SiteSelector(
-                    owner={owner!r},
-                    occupant={occupant!r},
-                    show_occupied=True,
-                    allow_occupied=False,
-                ),
-            ],
-        ) -> None:
-            pass
-    """
-    with pytest.raises(ActionContractError) as caught:
-        _parse_action(source)
-    assert caught.value.code == "invalid_annotation"
-    assert "site_selector" in caught.value.path
+    with pytest.raises(ActionSchemaError, match=message):
+        _scan(tmp_path, material, signature)
 
 
-@pytest.mark.parametrize(
-    ("site_import", "site_annotation"),
-    [
-        pytest.param(
-            "from unilabos.registry.annotations import SiteSelector",
-            "Annotated[int, SiteSelector(owner='warehouse')]",
-            id="non-string-site",
+def test_material_site_rejects_forged_material_import(tmp_path: Path) -> None:
+    path = tmp_path / "site_driver.py"
+    path.write_text(
+        _source(_FULL, _FULL_SIGNATURE).replace(
+            "from unilabos.registry.decorators import Material, action, device",
+            "from unilabos.registry.decorators import action, device\nfrom malicious.roles import Material",
         ),
-        pytest.param(
-            "from unilabos.registry.annotations import SiteSelector",
-            "Annotated[str, SiteSelector('warehouse')]",
-            id="positional-relation",
-        ),
-        pytest.param(
-            "from unilabos.registry.annotations import SiteSelector",
-            "Annotated[str, SiteSelector(owner=OWNER)]",
-            id="dynamic-relation",
-        ),
-        pytest.param(
-            "from malicious.annotations import SiteSelector",
-            "Annotated[str, SiteSelector(owner='warehouse')]",
-            id="forged-import",
-        ),
-    ],
-)
-def test_action_site_selector_rejects_unsafe_annotation_shapes(
-    site_import: str,
-    site_annotation: str,
-) -> None:
-    """库位选择器（SiteSelector）必须只接受真实导入和静态命名参数。
-
-    参数说明：``site_import`` 构造真实或伪造导入；``site_annotation`` 构造类型、
-    位置参数或动态表达式反例。返回：无；断言编译关闭式失败且不执行作者代码。
-    """
-
-    source = f"""
-        from typing import Annotated
-        {site_import}
-        from unilabos.registry.placeholder_type import ResourceSlot
-
-        OWNER = "warehouse"
-
-        def action(
-            warehouse: ResourceSlot,
-            site: {site_annotation},
-        ) -> None:
-            pass
-    """
-    with pytest.raises(ActionContractError) as caught:
-        _parse_action(source)
-    assert caught.value.code == "invalid_annotation"
-
-
-def test_action_site_selector_allows_omitting_optional_occupant_relation() -> None:
-    """只依赖 owner 的库位选择器（SiteSelector）应规范化 occupant 为 null。
-
-    参数：无。返回：无；断言移除/检查等动作不需伪造待放入物料字段，仍明确拥有者
-    和默认已占用库位（Site）策略。
-    """
-
-    contract = _parse_action(
-        """
-        from typing import Annotated
-        from unilabos.registry.annotations import SiteSelector
-        from unilabos.registry.placeholder_type import ResourceSlot
-
-        def action(
-            warehouse: ResourceSlot,
-            site: Annotated[str, SiteSelector(owner="warehouse")],
-        ) -> None:
-            pass
-        """
+        encoding="utf-8",
     )
-    # ``selector`` 是缺省 occupant 后仍完整的规范库位关系扩展。
-    selector = contract.to_action_schema(action_name="action")["properties"]["goal"][
-        "properties"
-    ]["site"]["x-unilabos-site-selector"]
-    assert selector == {
+    with pytest.raises(MaterialRoleError):
+        _parse_file(path, tmp_path)
+
+
+def test_removed_site_selector_points_to_material_site(tmp_path: Path) -> None:
+    with pytest.raises(ImportError, match=r"Material\.site"):
+        from unilabos.registry.annotations import SiteSelector  # noqa: F401
+    path = tmp_path / "old_site_driver.py"
+    path.write_text(
+        textwrap.dedent(
+            '''
+            from typing import Annotated
+            from unilabos.registry.annotations import SiteSelector
+            from unilabos.registry.decorators import action, device
+            from unilabos.registry.placeholder_type import ResourceSlot
+
+            @device(id="old_site_driver", category=["test"])
+            class Driver:
+                @action()
+                def place(self, warehouse: ResourceSlot, site: Annotated[str, SiteSelector(owner="warehouse")]) -> None:
+                    pass
+            '''
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ActionSchemaError, match=r"SiteSelector 已删除.*SiteSlot.*Material\.site"):
+        _parse_file(path, tmp_path)
+
+
+def test_material_site_allows_omitting_the_optional_occupant(tmp_path: Path) -> None:
+    action_entry = _scan(
+        tmp_path, 'Material.site("site", owner="warehouse")', "warehouse: ResourceSlot, site: SiteSlot"
+    )
+    site = action_entry["schema"]["properties"]["goal"]["properties"]["site"]
+    assert site["type"] == "string"
+    assert site["x-unilabos-site-selector"] == {
         "version": 1,
         "owner": "warehouse",
         "occupant": None,
@@ -246,145 +227,107 @@ def test_action_site_selector_allows_omitting_optional_occupant_relation() -> No
     }
 
 
-def test_action_template_handle_projects_complete_site_selector_metadata() -> None:
-    """库位输入连接点必须直接投影完整库位选择器（SiteSelector）合同。
+def test_action_template_handle_projects_complete_site_selector_metadata(tmp_path: Path) -> None:
+    """库位输入连接点直接投影完整库位关系；连接点值模式保留相同扩展。"""
 
-    参数：无。返回：无；断言前端无需重新解释动作根 Schema，也不依赖参数名猜测
-    owner/occupant 关系；连接点值模式仍保留相同扩展作为行为权威。
-    """
-
-    contract = _parse_action(
-        """
-        from typing import Annotated
-        from unilabos.registry.annotations import SiteSelector
-        from unilabos.registry.placeholder_type import ResourceSlot
-
-        def action(
-            warehouse: ResourceSlot,
-            resource: ResourceSlot,
-            site: Annotated[
-                str,
-                SiteSelector(
-                    owner="warehouse",
-                    occupant="resource",
-                    show_occupied=True,
-                    allow_occupied=False,
-                ),
-            ],
-        ) -> None:
-            pass
-        """
-    )
-    # ``handles`` 是前端查询使用的动作模板连接点全集，UUID 由持久投影稍后分配。
+    schema = _scan(
+        tmp_path, _FULL, "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot"
+    )["schema"]
     handles = compile_action_template_handles(
-        contract.to_action_schema(action_name="action"),
+        schema,
         node_business_key=("owner-template", "action"),
         resource_template_identity_resolver=None,
     )
-    # ``site_handle`` 是本测试唯一库位（Site）输入连接点。
     site_handle = next(
-        handle
-        for handle in handles
-        if handle["io_type"] == "target" and handle["handle_key"] == "site"
+        handle for handle in handles if handle["io_type"] == "target" and handle["handle_key"] == "site"
     )
-    assert site_handle["meta_data"]["unilab"]["site_selector"] == {
-        "version": 1,
-        "owner": "warehouse",
-        "occupant": "resource",
-        "show_occupied": True,
-        "allow_occupied": False,
-    }
+    assert site_handle["meta_data"]["unilab"]["site_selector"] == _SITE_SELECTOR_FIELD["x-unilabos-site-selector"]
     assert (
         site_handle["meta_data"]["unilab"]["value_schema"]["x-unilabos-site-selector"]
         == site_handle["meta_data"]["unilab"]["site_selector"]
     )
 
 
+_RELATION = {"version": 1, "owner": "warehouse", "occupant": None, "show_occupied": True, "allow_occupied": False}
+
+
 @pytest.mark.parametrize(
     ("field_name", "schema_change", "message"),
     [
+        pytest.param("site", {"x-unilabos-site-selector": None}, "库位选择控件缺少完整库位选择合同", id="missing-contract"),
         pytest.param(
-            "site",
-            {"x-unilabos-site-selector": None},
-            "库位选择控件缺少完整库位选择合同",
-            id="missing-site-selector-contract",
+            "site", {"x-unilabos-site-selector": "warehouse"}, "库位选择控件缺少完整库位选择合同", id="non-object-contract"
         ),
         pytest.param(
             "site",
-            {"x-unilabos-site-selector": "warehouse"},
-            "库位选择控件缺少完整库位选择合同",
-            id="non-object-site-selector-contract",
-        ),
-        pytest.param(
-            "site",
-            {
-                "x-unilabos-editor-control": "variable_selector",
-                "x-unilabos-site-selector": {
-                    "version": 1,
-                    "owner": "warehouse",
-                    "occupant": None,
-                    "show_occupied": True,
-                    "allow_occupied": False,
-                },
-            },
+            {"x-unilabos-editor-control": "variable_selector", "x-unilabos-site-selector": _RELATION},
             "非库位选择控件不能携带库位选择合同",
             id="extension-on-non-site-control",
         ),
         pytest.param(
             "warehouse",
-            {
-                "x-unilabos-editor-control": "site_selector",
-                "x-unilabos-site-selector": {
-                    "version": 1,
-                    "owner": "warehouse",
-                    "occupant": None,
-                    "show_occupied": True,
-                    "allow_occupied": False,
-                },
-            },
+            {"x-unilabos-editor-control": "site_selector", "x-unilabos-site-selector": _RELATION},
             "非库位选择控件不能携带库位选择合同",
             id="extension-on-material-port",
         ),
     ],
 )
 def test_action_template_projection_rejects_invalid_site_selector_extensions(
-    field_name: str,
-    schema_change: dict[str, object],
-    message: str,
+    tmp_path: Path, field_name: str, schema_change: dict[str, object], message: str
 ) -> None:
-    """连接点投影必须对不完整或错位的库位选择合同失败关闭。
-
-    参数说明：``field_name`` 选择待篡改字段；``schema_change`` 构造库位选择
-    （Site Selection）扩展反例；``message`` 是稳定中文合同错误。返回：无；断言
-    投影器不降级或猜测。
-    """
-
-    contract = _parse_action(
-        """
-        from typing import Annotated
-        from unilabos.registry.annotations import SiteSelector
-        from unilabos.registry.placeholder_type import ResourceSlot
-
-        def action(
-            warehouse: ResourceSlot,
-            site: Annotated[str, SiteSelector(owner="warehouse")],
-        ) -> None:
-            pass
-        """
-    )
-    # ``action_schema`` 是待投影的规范动作合同副本。
-    action_schema = contract.to_action_schema(action_name="action")
-    # ``field_schema`` 是本轮待篡改的库位或物料字段模式。
-    field_schema = action_schema["properties"]["goal"]["properties"][field_name]
+    schema = _scan(tmp_path, 'Material.site("site", owner="warehouse")', "warehouse: ResourceSlot, site: SiteSlot")[
+        "schema"
+    ]
+    field_schema = schema["properties"]["goal"]["properties"][field_name]
     for key, value in schema_change.items():
         if value is None:
             field_schema.pop(key, None)
         else:
             field_schema[key] = value
-
     with pytest.raises(ActionTemplateProjectionError, match=message):
         compile_action_template_handles(
-            action_schema,
+            schema,
             node_business_key=("owner-template", "action"),
             resource_template_identity_resolver=None,
         )
+
+
+class _Materials:
+    """物料权威替身：一块板（warehouse）有 A / B 两个库位，A 上已有别的物料。"""
+
+    def __init__(self) -> None:
+        self.sites = [
+            SimpleNamespace(site_uuid="site-a", occupied_material_uuid="blocker"),
+            SimpleNamespace(site_uuid="site-b", occupied_material_uuid=None),
+        ]
+
+    def get_material(self, identity: str) -> Any:
+        material = SimpleNamespace(lifecycle_status="active", template_uuid="", resource_type="container")
+        return SimpleNamespace(material=material, sites=self.sites if identity == "plate" else [])
+
+
+@pytest.mark.parametrize("allow_occupied", [False, True])
+def test_preflight_and_dispatch_gate_follow_the_material_site_relation(tmp_path: Path, allow_occupied: bool) -> None:
+    """运行预检与派发前共用的库位门禁按 Material.site 生成的扩展核对归属与占用，行为与原 SiteSelector 相同。"""
+
+    from unilabos.server.services.runtime.workflow.run_preflight import (
+        ResourceUnavailableError,
+        validate_resource_values,
+    )
+
+    material = (
+        f'Material.site("site", owner="warehouse", occupant="resource", allow_occupied={allow_occupied})'
+    )
+    schema = _scan(tmp_path, material, "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot")["schema"]
+    materials = _Materials()
+    values = {"warehouse": {"uuid": "plate"}, "resource": {"uuid": "sample"}}
+    validate_resource_values(schema, {**values, "site": "site-b"}, materials)
+    with pytest.raises(ValueError, match="不属于所选容器"):
+        validate_resource_values(schema, {**values, "site": "elsewhere"}, materials)
+    if allow_occupied:
+        validate_resource_values(schema, {**values, "site": "site-a"}, materials)
+    else:
+        with pytest.raises(ResourceUnavailableError, match="已被其他物料占用"):
+            validate_resource_values(schema, {**values, "site": "site-a"}, materials)
+    # 占着库位的正是要放进去的物料：不算被别的物料占用
+    validate_resource_values(schema, {"warehouse": {"uuid": "plate"}, "resource": {"uuid": "blocker"}, "site": "site-a"}, materials)

@@ -22,11 +22,6 @@ from unilabos.registry.module_scope import (
     ModuleScopeError,
     resolve_module_scope,
 )
-from unilabos.registry.site_selector_schema import (
-    ParsedSiteSelector,
-    SiteSelectorSchemaError,
-    validate_site_selector_relations,
-)
 from unilabos.registry.utils.tools import parse_docstring
 from unilabos.protocol.utils.json_codec import strict_json_equal
 from unilabos.registry.contract_value_schema import (
@@ -76,7 +71,6 @@ class ParsedActionContract:
         ...,
     ]
     input_material_lock_free: tuple[str, ...]
-    input_site_selectors: tuple[tuple[str, ParsedSiteSelector], ...]
     output_resource_templates: tuple[
         tuple[str, tuple[ResourceTemplateSymbol, ...]],
         ...,
@@ -99,7 +93,6 @@ class ParsedActionContract:
             ...,
         ],
         input_material_lock_free: tuple[str, ...],
-        input_site_selectors: tuple[tuple[str, ParsedSiteSelector], ...],
         *,
         token: object,
     ) -> Self:
@@ -107,9 +100,8 @@ class ParsedActionContract:
 
         参数说明：输入/输出合同保存工作流值；两组资源模板符号保存静态兼容约束；
         ``input_material_lock_free`` 保存写了已废弃 ``MaterialLock(free=True)`` 的输入（只用于告警，
-        不再免锁）；``input_site_selectors`` 保存
-        已完成跨字段验证的库位选择器（SiteSelector）关系；``token`` 防止外部构造
-        未验证对象。返回：不可变动作合同。异常：令牌不匹配时抛出 ``TypeError``。
+        不再免锁）；``token`` 防止外部构造未验证对象。返回：不可变动作合同。异常：令牌不匹配时抛出
+        ``TypeError``。
         """
 
         if token is not _PARSED_ACTION_CONTRACT_TOKEN:
@@ -132,7 +124,6 @@ class ParsedActionContract:
             "input_material_lock_free",
             input_material_lock_free,
         )
-        object.__setattr__(contract, "input_site_selectors", input_site_selectors)
         return contract
 
     def to_dict(self) -> dict[str, Any]:
@@ -161,7 +152,6 @@ class ParsedActionContract:
         outputs = descriptor["output_contract"]["outputs"]
         goal_properties: dict[str, Any] = {}
         required_inputs: list[str] = []
-        site_selectors = dict(self.input_site_selectors)
         for parameter in inputs:
             name = parameter["name"]
             # 物料入参一律加共享资源锁；已废弃的 MaterialLock(free=True) 只保留在
@@ -171,11 +161,6 @@ class ParsedActionContract:
                 parameter["schema"],
                 material_lock=material_lock,
             )
-            site_selector = site_selectors.get(name)
-            if site_selector is not None:
-                field["format"] = "uuid"
-                field["x-unilabos-editor-control"] = "site_selector"
-                field["x-unilabos-site-selector"] = site_selector.to_extension()
             if "default" in parameter:
                 field["default"] = parameter["default"]
             for key in ("title", "description"):
@@ -669,14 +654,12 @@ def _parse_parameters(
     WorkflowInputContract,
     tuple[tuple[str, tuple[ResourceTemplateSymbol, ...]], ...],
     tuple[str, ...],
-    tuple[tuple[str, ParsedSiteSelector], ...],
 ]:
-    """解析动作全部输入并完成跨字段关系验证。
+    """解析动作全部输入。
 
     参数说明：``action`` 是真实定义模块中的动作函数；``is_method`` 决定是否忽略
-    receiver；``imports`` 是静态导入身份表。返回：规范输入合同、资源模板符号、
-    免物料锁字段及库位选择器（SiteSelector）关系。异常：字段注解、默认值或
-    owner/occupant 关系非法时抛出 ``ActionContractError``。
+    receiver；``imports`` 是静态导入身份表。返回：规范输入合同、资源模板符号及
+    免物料锁字段。异常：字段注解或默认值非法时抛出 ``ActionContractError``。
     """
 
     arguments = getattr(action, "args", None)
@@ -731,7 +714,6 @@ def _parse_parameters(
     descriptors: list[dict[str, Any]] = []
     resource_templates: list[tuple[str, tuple[ResourceTemplateSymbol, ...]]] = []
     material_lock_free: list[str] = []
-    site_selectors: list[tuple[str, ParsedSiteSelector]] = []
     seen_names: set[str] = set()
     first_positional = all_positional[0] if all_positional else None
     for argument, default in scheduled:
@@ -777,13 +759,6 @@ def _parse_parameters(
         resource_templates.append((name, parsed.resource_templates))
         if parsed.material_lock_free:
             material_lock_free.append(name)
-        if parsed.site_selector is not None:
-            site_selectors.append((name, parsed.site_selector))
-
-    try:
-        validate_site_selector_relations(descriptors, site_selectors)
-    except SiteSelectorSchemaError as error:
-        _fail(error.path, code="invalid_annotation", message=error.message)
 
     try:
         contract = parse_input_contract({"version": 1, "parameters": descriptors})
@@ -797,7 +772,6 @@ def _parse_parameters(
         contract,
         tuple(resource_templates),
         tuple(material_lock_free),
-        tuple(site_selectors),
     )
 
 
@@ -907,7 +881,7 @@ def parse_action_contract(
     参数说明：``module`` 是不执行作者代码的完整 Python 语法树；``action`` 是该
     语法树中的动作函数；``module_name`` 是解析可信导入绑定所需的模块身份，``is_package``
     表示该模块是包的 ``__init__.py``（决定相对导入的基准包）。返回：
-    包含输入、输出、物料锁、库位选择（Site Selection）和展示信息的不可变合同。
+    包含输入、输出、物料锁和展示信息的不可变合同。
 
     异常说明：动作形状、注解、导入绑定、文档注释或合同不变量非法时抛出
     ``ActionContractError``；递归源码结构也按稳定合同错误失败关闭。
@@ -928,7 +902,6 @@ def parse_action_contract(
         input_contract,
         input_templates,
         input_material_lock_free,
-        input_site_selectors,
     ) = _parse_parameters(
         action,
         is_method=is_method,
@@ -945,7 +918,6 @@ def parse_action_contract(
         input_templates,
         output_templates,
         input_material_lock_free,
-        input_site_selectors,
         token=_PARSED_ACTION_CONTRACT_TOKEN,
     )
 

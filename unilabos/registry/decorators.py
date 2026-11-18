@@ -451,8 +451,9 @@ def action(
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
         material: 动作的资源语义：``Material.load / unload / in_place / pick / place / transfer /
-                  aliquot / uses / order_sensitive`` 的一条，或多条组成的列表（见
+                  aliquot / uses / order_sensitive / site`` 的一条，或多条组成的列表（见
                   ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查。
+                  ``Material.site`` 声明 ``SiteSlot`` 库位参数属于哪个物料参数、放进去的是哪个物料参数。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
@@ -492,12 +493,14 @@ def action(
             {**removed_options, "goal": goal, "result": result}, json_action=json_action, definition=definition
         )
         resource_contract: Dict[str, Any] = {}
+        site_selectors: Dict[str, Any] = {}
         if material is not None:
-            from unilabos.registry.material_roles import material_contract
+            from unilabos.registry.material_roles import material_contract, material_site_selectors
 
             if not json_action:
                 raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
             resource_contract = material_contract(material)
+            site_selectors = material_site_selectors(material)
 
         if _inspect.iscoroutinefunction(func):
             @wraps(func)
@@ -527,15 +530,26 @@ def action(
             "parent": parent,
         }
         signature_parameters = _inspect.signature(func).parameters
-        if resource_contract:
-            from unilabos.registry.material_roles import MaterialRoleError, contract_parameter_names
+        if resource_contract or site_selectors:
+            from unilabos.registry.material_roles import (
+                MaterialRoleError,
+                contract_parameter_names,
+                site_selector_parameter_names,
+            )
 
-            unknown = [name for name in contract_parameter_names(resource_contract) if name not in signature_parameters]
+            referenced = [
+                *contract_parameter_names(resource_contract),
+                *site_selector_parameter_names(site_selectors),
+            ]
+            unknown = [name for name in dict.fromkeys(referenced) if name not in signature_parameters]
             if unknown:
                 raise MaterialRoleError(
                     f"{func.__qualname__} 的 material= 引用了签名里没有的参数：{'、'.join(unknown)}"
                 )
-            meta["resource_contract"] = resource_contract
+            if resource_contract:
+                meta["resource_contract"] = resource_contract
+            if site_selectors:
+                meta["site_selectors"] = site_selectors
         from unilabos.registry.placeholder_keys import check_placeholder_keys, placeholder_parameter_names
 
         meta["placeholder_keys"] = check_placeholder_keys(

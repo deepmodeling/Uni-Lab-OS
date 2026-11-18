@@ -6,7 +6,9 @@
 - ``resource_contract={...}``：资源语义改用 ``material=Material.xxx(...)``；
 - JSON 动作的 ``goal=`` / ``result=`` 重命名：字段名就是参数名 / 返回 TypedDict 的字段名
   （ROS 动作类型的 ``goal`` / ``result`` 字段映射照旧）；
-- 参数注解里的 ``Placeholder(...)``：前端选择器写在 ``@action(placeholder_keys={...})``。
+- 参数注解里的 ``Placeholder(...)``：前端选择器写在 ``@action(placeholder_keys={...})``；
+- 参数注解里的 ``SiteSelector(...)``：库位参数注解为 ``SiteSlot``，库位关系写成
+  ``material=Material.site(...)``。
 
 本模块只依赖标准库：AST 扫描在线程池里逐文件调用它。
 """
@@ -35,6 +37,10 @@ REMOVED_ANNOTATIONS: Dict[str, str] = {
         "前端选择器写在 @action(placeholder_keys={\"参数名\": PLACEHOLDER_...})：注册表按类型推出的"
         "（ResourceSlot / DeviceSlot / SiteSlot）与手写的取并集，同一参数以手写的为准；"
         "参数类型照常写，去掉 Annotated[..., Placeholder(...)] 外壳"
+    ),
+    "SiteSelector": (
+        "库位参数注解为 SiteSlot，库位关系写成 @action(material=Material.site(\"库位参数\", "
+        "owner=\"拥有库位的物料参数\", occupant=\"放进去的物料参数\", show_occupied=True, allow_occupied=False))"
     ),
 }
 #: 已删除注解的导入身份（``模块:名字``）→ 名字。

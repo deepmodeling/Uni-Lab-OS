@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import logging
 import sys
@@ -12,6 +13,7 @@ import pytest
 
 from unilabos.registry import placeholder_keys as placeholder_keys_module
 from unilabos.registry.action_schema import ActionSchemaError
+from unilabos.registry.annotation_schema import NO_DEFAULT, AnnotationSchemaError, parse_parameter_annotation
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.placeholder_keys import PlaceholderKeysError, check_placeholder_keys
 from unilabos.registry.registry import Registry
@@ -173,6 +175,15 @@ def test_removed_placeholder_annotation_points_to_placeholder_keys(tmp_path: Pat
         _parse_file(path, tmp_path)
     with pytest.raises(ImportError, match=r"placeholder_keys"):
         _import(path)
+    # 工作流 / 合同共用的注解解析器同样给出新写法
+    annotation = ast.parse("Annotated[str, Placeholder(PLACEHOLDER_NODES)]", mode="eval").body
+    with pytest.raises(AnnotationSchemaError, match="placeholder_keys"):
+        parse_parameter_annotation(
+            "target",
+            annotation,
+            default=NO_DEFAULT,
+            imports={"Annotated": "typing:Annotated", "Placeholder": "unilabos.registry.annotations:Placeholder"},
+        )
 
 
 def test_yaml_selectors_count_as_handwritten_when_completing_the_registry() -> None:

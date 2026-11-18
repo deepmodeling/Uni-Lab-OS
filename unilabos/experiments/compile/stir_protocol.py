@@ -3,7 +3,7 @@ import networkx as nx
 import logging
 import re
 
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.unit_parser import parse_time_input
 
 logger = logging.getLogger(__name__)
@@ -236,7 +236,7 @@ def generate_stir_protocol(
         "action_name": "stir",
         "action_kwargs": {
             # 🔧 关键修复：传递vessel_id字符串，而不是完整的Resource对象
-            "vessel": {"id": vessel_id},  # 传递字符串ID，不是Resource对象
+            "vessel": vessel_ref(G, vessel_id),
             "time": str(time),
             "event": event,
             "time_spec": time_spec,
@@ -325,7 +325,7 @@ def generate_start_stir_protocol(
         "action_name": "start_stir",
         "action_kwargs": {
             # 🔧 关键修复：传递vessel_id字符串，而不是完整的Resource对象
-            "vessel": {"id": vessel_id},  # 传递字符串ID，不是Resource对象
+            "vessel": vessel_ref(G, vessel_id),
             "stir_speed": stir_speed,
             "purpose": purpose or f"启动搅拌 {stir_speed} RPM"
         }
@@ -385,7 +385,7 @@ def generate_stop_stir_protocol(
         "action_name": "stop_stir",
         "action_kwargs": {
             # 🔧 关键修复：传递vessel_id字符串，而不是完整的Resource对象
-            "vessel": {"id": vessel_id},  # 传递字符串ID，不是Resource对象
+            "vessel": vessel_ref(G, vessel_id),
         }
     }]
     

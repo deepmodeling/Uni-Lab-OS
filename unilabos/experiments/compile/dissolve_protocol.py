@@ -5,7 +5,7 @@ import re
 import logging
 from typing import List, Dict, Any, Union
 
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.logger_util import action_log
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
@@ -562,7 +562,7 @@ def generate_dissolve_protocol(
                     "device_id": heatchill_id,
                     "action_name": "heat_chill_start",
                     "action_kwargs": {
-                        "vessel": {"id": vessel_id},
+                        "vessel": vessel_ref(G, vessel_id),
                         "temp": final_temp,
                         "purpose": f"溶解准备 - {event}" if event else "溶解准备"
                     }
@@ -586,7 +586,7 @@ def generate_dissolve_protocol(
                     "device_id": stirrer_id,
                     "action_name": "start_stir",
                     "action_kwargs": {
-                        "vessel": {"id": vessel_id},
+                        "vessel": vessel_ref(G, vessel_id),
                         "stir_speed": stir_speed,
                         "purpose": f"溶解搅拌 - {event}" if event else "溶解搅拌"
                     }
@@ -611,7 +611,7 @@ def generate_dissolve_protocol(
                 
                 # 固体加样
                 add_kwargs = {
-                    "vessel": {"id": vessel_id},
+                    "vessel": vessel_ref(G, vessel_id),
                     "reagent": reagent or amount or "solid reagent",
                     "purpose": f"溶解固体试剂 - {event}" if event else "溶解固体试剂",
                     "event": event
@@ -757,7 +757,7 @@ def generate_dissolve_protocol(
                     "device_id": heatchill_id,
                     "action_name": "heat_chill",
                     "action_kwargs": {
-                        "vessel": {"id": vessel_id},
+                        "vessel": vessel_ref(G, vessel_id),
                         "temp": final_temp,
                         "time": final_time,
                         "stir": True,
@@ -775,7 +775,7 @@ def generate_dissolve_protocol(
                     "device_id": stirrer_id,
                     "action_name": "stir",
                     "action_kwargs": {
-                        "vessel": {"id": vessel_id},
+                        "vessel": vessel_ref(G, vessel_id),
                         "stir_time": final_time,
                         "stir_speed": stir_speed,
                         "settling_time": 0,
@@ -801,7 +801,7 @@ def generate_dissolve_protocol(
                 "device_id": heatchill_id,
                 "action_name": "heat_chill_stop",
                 "action_kwargs": {
-                    "vessel": {"id": vessel_id},
+                    "vessel": vessel_ref(G, vessel_id),
                 }
             }
             action_sequence.append(stop_action)

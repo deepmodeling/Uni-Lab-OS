@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Union
 import networkx as nx
 import logging
 import re
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.unit_parser import parse_time_input
 
 logger = logging.getLogger(__name__)
@@ -220,7 +220,7 @@ def generate_heat_chill_protocol(
         "device_id": heatchill_id,
         "action_name": "heat_chill",
         "action_kwargs": {
-            "vessel": {"id": vessel},
+            "vessel": vessel_ref(G, vessel_id),
             "temp": float(final_temp),
             "time": float(final_time),
             "stir": bool(stir),
@@ -288,7 +288,7 @@ def generate_heat_chill_start_protocol(
         "action_kwargs": {
             "temp": temp,
             "purpose": purpose or f"开始加热到 {temp}°C",
-            "vessel": {"id": vessel_id},
+            "vessel": vessel_ref(G, vessel_id),
         }
     }]
     

@@ -5,7 +5,7 @@ import re
 import logging
 import sys
 from typing import List, Dict, Any, Union
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.logger_util import action_log
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
@@ -265,7 +265,7 @@ def generate_separate_protocol(
                     "device_id": stirrer_device,
                     "action_name": "start_stir",
                     "action_kwargs": {
-                        "vessel": {"id": final_vessel_id},  # 🔧 使用 final_vessel_id
+                        "vessel": vessel_ref(G, final_vessel_id),
                         "stir_speed": stir_speed,
                         "purpose": f"分离混合 - {purpose}"
                     }
@@ -284,7 +284,7 @@ def generate_separate_protocol(
                 action_sequence.append({
                     "device_id": stirrer_device,
                     "action_name": "stop_stir",
-                    "action_kwargs": {"vessel": final_vessel_id}  # 🔧 使用 final_vessel_id
+                    "action_kwargs": {"vessel": vessel_ref(G, final_vessel_id)}
                 })
 
             else:

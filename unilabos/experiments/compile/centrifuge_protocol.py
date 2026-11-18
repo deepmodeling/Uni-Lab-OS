@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 import networkx as nx
 from .pump_protocol import generate_pump_protocol
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 
 
 def get_vessel_liquid_volume(G: nx.DiGraph, vessel: str) -> float:
@@ -159,7 +159,7 @@ def generate_centrifuge_protocol(
         "device_id": centrifuge_id,
         "action_name": "centrifuge",
         "action_kwargs": {
-            "vessel": {"id": centrifuge_vessel},
+            "vessel": vessel_ref(G, centrifuge_vessel),
             "speed": speed,
             "time": time,
             "temp": temp

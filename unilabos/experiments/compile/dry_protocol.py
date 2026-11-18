@@ -1,7 +1,7 @@
 import networkx as nx
 from typing import List, Dict, Any
 
-from unilabos.experiments.compile.utils.vessel_parser import get_vessel
+from unilabos.experiments.compile.utils.vessel_parser import get_vessel, vessel_ref
 
 
 def find_connected_heater(G: nx.DiGraph, vessel: str) -> str:
@@ -167,7 +167,7 @@ def generate_dry_protocol(
         "device_id": heater_id,
         "action_name": "heat_chill_start",
         "action_kwargs": {
-            "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+            "vessel": vessel_ref(G, vessel_id),
             "temp": dry_temp,
             "purpose": f"干燥 {compound or '化合物'}"
         }
@@ -191,7 +191,7 @@ def generate_dry_protocol(
         "device_id": heater_id,
         "action_name": "heat_chill",
         "action_kwargs": {
-            "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+            "vessel": vessel_ref(G, vessel_id),
             "temp": dry_temp,
             "time": simulation_time,
             "purpose": f"干燥 {compound or '化合物'}，保持温度 {dry_temp}°C"
@@ -251,7 +251,7 @@ def generate_dry_protocol(
         "device_id": heater_id,
         "action_name": "heat_chill_stop",
         "action_kwargs": {
-            "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+            "vessel": vessel_ref(G, vessel_id),
             "purpose": f"干燥完成，停止加热"
         }
     })

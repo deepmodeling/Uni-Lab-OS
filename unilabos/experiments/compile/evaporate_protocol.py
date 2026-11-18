@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional, Union
 import networkx as nx
 import logging
 import re
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.unit_parser import parse_time_input
 
 logger = logging.getLogger(__name__)
@@ -333,7 +333,7 @@ def generate_evaporate_protocol(
         "device_id": rotavap_device,
         "action_name": "evaporate",
         "action_kwargs": {
-            "vessel": {"id": target_vessel},
+            "vessel": vessel_ref(G, target_vessel),
             "pressure": float(pressure),
             "temp": float(temp),
             "time": float(final_time),  # 🔧 强制转换为float类型

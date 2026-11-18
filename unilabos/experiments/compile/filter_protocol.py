@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 import networkx as nx
 import logging
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
 logger = logging.getLogger(__name__)
@@ -214,8 +214,8 @@ def generate_filter_protocol(
     # 构建过滤动作参数
     debug_print("  ⚙️ 构建过滤参数...")
     filter_kwargs = {
-        "vessel": {"id": filter_device},  # 过滤器设备
-        "filtrate_vessel": {"id": filtrate_vessel_id},  # 滤液容器（可能为空）
+        "vessel": vessel_ref(G, filter_device),  # 过滤器本身是设备：容器参数留空
+        "filtrate_vessel": vessel_ref(G, filtrate_vessel_id),  # 滤液容器（可能为空）
         "stir": kwargs.get("stir", False),
         "stir_speed": kwargs.get("stir_speed", 0.0),
         "temp": kwargs.get("temp", 25.0),

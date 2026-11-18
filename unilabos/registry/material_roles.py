@@ -14,6 +14,10 @@
 字符串都是动作的参数名，注册时对照签名检查。内部规范化成第 2 版资源合同
 （``x-unilabos-action-contract.resource_contract``），调度器照旧按合同执行。
 
+``Material.site(...)`` 声明一个 ``SiteSlot`` 库位参数与物料参数的关系（库位属于哪个物料、放进去的是哪个
+物料、已占用库位的显示 / 可选策略）。它不进资源合同，而是写进该库位参数 schema 的
+``x-unilabos-site-selector`` 扩展，供前端库位选择器、运行预检与派发前的库位门禁使用。
+
 本模块只依赖标准库与纯声明的合同规范化：装饰器（导入期）与 AST 扫描（不导入作者模块）共用。
 """
 
@@ -39,6 +43,8 @@ _SINGLE_FIELDS = {
     "aliquot": "aliquot",
     "order_sensitive": "order_sensitive",
 }
+#: 不进资源合同、写进参数 schema 扩展的语义。
+_SCHEMA_KINDS = frozenset({"site"})
 #: AST 扫描认可的 ``Material`` 来源模块（``module:Material.method``）。
 _MATERIAL_MODULES = ("unilabos.registry.decorators", "unilabos.registry.material_roles")
 
@@ -121,6 +127,20 @@ class MaterialRole:
         if self.kind == "uses":
             return {"resource_params": [{"param": name, "role": role} for role, name in values["params"]]}
         raise MaterialRoleError(f"未知的资源语义 {self.kind}")
+
+    def site_selector(self) -> Tuple[str, Dict[str, Any]]:
+        """``Material.site(...)`` → ``(库位参数名, x-unilabos-site-selector 扩展)``。"""
+
+        if self.kind != "site":
+            raise MaterialRoleError(f"Material.{self.kind} 不是库位关系")
+        values = dict(self.fields)
+        return values["site"], {
+            "version": 1,
+            "owner": values["owner"],
+            "occupant": values.get("occupant"),
+            "show_occupied": values["show_occupied"],
+            "allow_occupied": values["allow_occupied"],
+        }
 
 
 class Material:
@@ -226,6 +246,36 @@ class Material:
         )
 
     @staticmethod
+    def site(
+        site: str,
+        *,
+        owner: str,
+        occupant: Optional[str] = None,
+        show_occupied: bool = True,
+        allow_occupied: bool = False,
+    ) -> MaterialRole:
+        """库位参数 ``site``（注解为 ``SiteSlot``）的库位属于物料参数 ``owner``。
+
+        ``occupant`` 是要放进这个库位的物料参数（可省略）；``show_occupied`` 决定前端是否列出已占用的库位，
+        ``allow_occupied`` 决定已占用的库位能否选（运行预检与派发前按它核对）。``owner`` / ``occupant``
+        必须是单个 ``ResourceSlot`` 参数。
+        """
+
+        fields: List[Tuple[str, Any]] = [
+            ("site", _name(site, "Material.site 的库位参数")),
+            ("owner", _name(owner, "owner")),
+        ]
+        if occupant is not None:
+            fields.append(("occupant", _name(occupant, "occupant")))
+        for key, value in (("show_occupied", show_occupied), ("allow_occupied", allow_occupied)):
+            if type(value) is not bool:
+                raise MaterialRoleError(f"Material.site 的 {key} 必须是 True / False")
+            fields.append((key, value))
+        if site in {owner, occupant}:
+            raise MaterialRoleError("Material.site 不能把库位参数自身作为 owner / occupant")
+        return MaterialRole("site", tuple(fields))
+
+    @staticmethod
     def order_sensitive() -> MaterialRole:
         """同一资源上的兄弟动作必须显式排序（只约束计划）。"""
 
@@ -250,17 +300,26 @@ class Material:
         return MaterialRole("uses", (("params", tuple(params)),))
 
 
-def material_contract(value: Any) -> Dict[str, Any]:
-    """``material=`` 的值（一条语义或列表）→ 规范化的第 2 版资源合同；``None`` 返回空字典。"""
-
-    if value is None:
-        return {}
-    roles: Iterable[Any] = value if isinstance(value, (list, tuple)) else [value]
-    raw: Dict[str, Any] = {"version": 2}
-    seen: Dict[str, str] = {}
+def _roles(value: Any) -> List[MaterialRole]:
+    roles = list(value) if isinstance(value, (list, tuple)) else [value]
     for role in roles:
         if not isinstance(role, MaterialRole):
             raise MaterialRoleError("material= 只接受 Material.xxx(...) 或它们组成的列表")
+    if not roles:
+        raise MaterialRoleError("material= 至少写一条 Material.xxx(...)")
+    return roles
+
+
+def material_contract(value: Any) -> Dict[str, Any]:
+    """``material=`` 的值（一条语义或列表）→ 规范化的第 2 版资源合同；``None`` 或只有 ``Material.site`` 时返回空字典。"""
+
+    if value is None:
+        return {}
+    raw: Dict[str, Any] = {"version": 2}
+    seen: Dict[str, str] = {}
+    for role in _roles(value):
+        if role.kind in _SCHEMA_KINDS:
+            continue
         part = role.contract_part()
         for key, item in part.items():
             if key == "resource_params":
@@ -271,11 +330,38 @@ def material_contract(value: Any) -> Dict[str, Any]:
             raw[key] = item
             seen[key] = role.kind
     if len(raw) == 1:
-        raise MaterialRoleError("material= 至少写一条 Material.xxx(...)")
+        return {}
     try:
         return normalize_action_resource_contract(raw)
     except ActionResourceContractError as error:
         raise MaterialRoleError(f"material= 写法无效：{error.message}") from None
+
+
+def material_site_selectors(value: Any) -> Dict[str, Dict[str, Any]]:
+    """``material=`` 里的 ``Material.site(...)`` → ``{库位参数名: x-unilabos-site-selector 扩展}``。"""
+
+    if value is None:
+        return {}
+    selectors: Dict[str, Dict[str, Any]] = {}
+    for role in _roles(value):
+        if role.kind != "site":
+            continue
+        site, extension = role.site_selector()
+        if site in selectors:
+            raise MaterialRoleError(f"库位参数 {site} 写了多条 Material.site")
+        selectors[site] = extension
+    return selectors
+
+
+def site_selector_parameter_names(selectors: Mapping[str, Mapping[str, Any]]) -> List[str]:
+    """库位关系引用的全部动作参数名（库位参数、owner、occupant），用于对照签名。"""
+
+    names: List[str] = []
+    for site, extension in selectors.items():
+        for name in (site, extension.get("owner"), extension.get("occupant")):
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+    return names
 
 
 def contract_parameter_names(contract: Mapping[str, Any]) -> List[str]:
@@ -352,4 +438,6 @@ __all__ = [
     "contract_parameter_names",
     "material_contract",
     "material_roles_from_ast",
+    "material_site_selectors",
+    "site_selector_parameter_names",
 ]

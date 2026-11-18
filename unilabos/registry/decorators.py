@@ -395,6 +395,7 @@ def action(
     result: Optional[Dict[str, str]] = None,
     handles: Optional[List[_ActionHandleBase]] = None,
     goal_default: Optional[Dict[str, Any]] = None,
+    placeholder_keys: Optional[Dict[str, str]] = None,
     always_free: bool = False,
     is_protocol: bool = False,
     description: str = "",
@@ -437,6 +438,10 @@ def action(
         result: ROS 动作的 Result 字段映射；JSON 动作不接受（结果字段就是返回 TypedDict 的字段名）
         handles: 动作端口列表 (ActionInputHandle / ActionOutputHandle)；不写时按 schema 生成
         goal_default: 编辑器里的初始参数值 (字段名 -> 默认值)，叠加在签名默认值上；不改变参数是否必填
+        placeholder_keys: 前端选择器 (参数名 -> ``placeholder_type`` 的 ``PLACEHOLDER_*``)。注册表按类型推出的
+                          （ResourceSlot / DeviceSlot / SiteSlot）与它取并集，同一参数以这里写的为准；只改前端
+                          显示，不改参数类型与校验（兼容规则：标成 ``unilabos_resources`` 的参数也加物料锁）。
+                          键必须是参数名；值不是已知种类时告警一次（见 ``unilabos.registry.placeholder_keys``）
         always_free: 是否为永久闲置动作 (不受排队限制)
         is_protocol: 是否为工作站协议 (protocol)。True 时运行时走 protocol generator 路径。
         description: 动作描述
@@ -446,8 +451,9 @@ def action(
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
         material: 动作的资源语义：``Material.load / unload / in_place / pick / place / transfer /
-                  aliquot / uses / order_sensitive`` 的一条，或多条组成的列表（见
+                  aliquot / uses / order_sensitive / site`` 的一条，或多条组成的列表（见
                   ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查。
+                  ``Material.site`` 声明 ``SiteSlot`` 库位参数属于哪个物料参数、放进去的是哪个物料参数。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
@@ -463,10 +469,11 @@ def action(
                                    同一语法（"cycles * 2"，也认 V1 的 "{cycles} * 2"）；派发时
                                    按真实 action_args 求值，失败时退回兜底。
                                    详见 unilabos.registry.action_duration。
-        removed_options: 已删除的 ``contract`` / ``resource_contract`` / ``placeholder_keys`` 直接报错并指出
-                         新写法（``unilabos.registry.action_options``）。已移除的 ``materials_need_lock`` /
+        removed_options: 已删除的 ``contract`` / ``resource_contract`` 直接报错并指出新写法
+                         （``unilabos.registry.action_options``）。已移除的 ``materials_need_lock`` /
                          ``materials_free`` 照常加载：值被忽略，按定义告警一次。物料锁不再按动作改写：
-                         每个物料入参（ResourceSlot / List[ResourceSlot]）都默认加共享资源锁，见
+                         每个物料入参（ResourceSlot / List[ResourceSlot]，或 placeholder_keys 标为
+                         unilabos_resources 的入参）都默认加共享资源锁，见
                          unilabos.registry.material_locks。参数值为空（None / 未传）时不加锁，
                          非空时必须能解析出由物料权威分配的 UUID。
     """
@@ -486,12 +493,14 @@ def action(
             {**removed_options, "goal": goal, "result": result}, json_action=json_action, definition=definition
         )
         resource_contract: Dict[str, Any] = {}
+        site_selectors: Dict[str, Any] = {}
         if material is not None:
-            from unilabos.registry.material_roles import material_contract
+            from unilabos.registry.material_roles import material_contract, material_site_selectors
 
             if not json_action:
                 raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
             resource_contract = material_contract(material)
+            site_selectors = material_site_selectors(material)
 
         if _inspect.iscoroutinefunction(func):
             @wraps(func)
@@ -512,6 +521,7 @@ def action(
             "result": result or {},
             "handles": _action_handles_to_dict(handles),
             "goal_default": goal_default or {},
+            "placeholder_keys": {},
             "always_free": always_free,
             "is_protocol": is_protocol,
             "description": description,
@@ -520,15 +530,44 @@ def action(
             "parent": parent,
         }
         signature_parameters = _inspect.signature(func).parameters
-        if resource_contract:
-            from unilabos.registry.material_roles import MaterialRoleError, contract_parameter_names
+        if resource_contract or site_selectors:
+            from unilabos.registry.material_roles import (
+                MaterialRoleError,
+                contract_parameter_names,
+                site_selector_parameter_names,
+            )
 
-            unknown = [name for name in contract_parameter_names(resource_contract) if name not in signature_parameters]
+            referenced = [
+                *contract_parameter_names(resource_contract),
+                *site_selector_parameter_names(site_selectors),
+            ]
+            unknown = [name for name in dict.fromkeys(referenced) if name not in signature_parameters]
             if unknown:
                 raise MaterialRoleError(
                     f"{func.__qualname__} 的 material= 引用了签名里没有的参数：{'、'.join(unknown)}"
                 )
-            meta["resource_contract"] = resource_contract
+            if resource_contract:
+                meta["resource_contract"] = resource_contract
+            if site_selectors:
+                meta["site_selectors"] = site_selectors
+        from unilabos.registry.placeholder_keys import check_placeholder_keys, placeholder_parameter_names
+
+        meta["placeholder_keys"] = check_placeholder_keys(
+            placeholder_keys,
+            parameter_names=placeholder_parameter_names(
+                [
+                    name
+                    for name, parameter in signature_parameters.items()
+                    if name not in {"self", "cls"}
+                    and parameter.kind not in (_inspect.Parameter.VAR_POSITIONAL, _inspect.Parameter.VAR_KEYWORD)
+                ],
+                goal=goal,
+                ros_action=not json_action,
+                parent=parent,
+                is_protocol=is_protocol,
+            ),
+            definition=definition,
+        )
         if feedback_interval is not None:
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:

@@ -4,10 +4,11 @@
 
 - ``contract=``：所有 JSON 动作统一按签名生成并校验 schema，没有 opt-in 开关；
 - ``resource_contract={...}``：资源语义改用 ``material=Material.xxx(...)``；
-- ``placeholder_keys={...}``：物料 / 设备 / 库位参数用 ``ResourceSlot`` / ``DeviceSlot`` / ``SiteSlot`` 注解，
-  其他前端选择器写成 ``Annotated[T, Placeholder(PLACEHOLDER_...)]``；
 - JSON 动作的 ``goal=`` / ``result=`` 重命名：字段名就是参数名 / 返回 TypedDict 的字段名
-  （ROS 动作类型的 ``goal`` / ``result`` 字段映射照旧）。
+  （ROS 动作类型的 ``goal`` / ``result`` 字段映射照旧）；
+- 参数注解里的 ``Placeholder(...)``：前端选择器写在 ``@action(placeholder_keys={...})``；
+- 参数注解里的 ``SiteSelector(...)``：库位参数注解为 ``SiteSlot``，库位关系写成
+  ``material=Material.site(...)``。
 
 本模块只依赖标准库：AST 扫描在线程池里逐文件调用它。
 """
@@ -24,20 +25,38 @@ REMOVED_ACTION_OPTIONS: Dict[str, str] = {
         "资源语义改用 material=Material.xxx(...)，例如 material=Material.load(\"sample\", device=\"vessel\")、"
         "material=Material.in_place(\"sample\")、material=[Material.in_place(\"sample\"), Material.order_sensitive()]"
     ),
-    "placeholder_keys": (
-        "物料 / 设备 / 库位参数用 ResourceSlot / DeviceSlot / SiteSlot 注解；其他前端选择器写成 "
-        "Annotated[类型, Placeholder(PLACEHOLDER_...)]（unilabos.registry.annotations.Placeholder）"
-    ),
 }
 #: 只对 JSON 动作（没写 action_type）删除的选项 → 新写法。
 REMOVED_JSON_ACTION_OPTIONS: Dict[str, str] = {
     "goal": "JSON 动作的字段名就是参数名，去掉 goal=（要改名就改参数名）",
     "result": "JSON 动作的结果字段就是返回 TypedDict 的字段名，去掉 result=（要改名就改字段名）",
 }
+#: ``unilabos.registry.annotations`` 里已删除的注解 → 新写法（导入、装饰器与 AST 扫描同一句话）。
+REMOVED_ANNOTATIONS: Dict[str, str] = {
+    "Placeholder": (
+        "前端选择器写在 @action(placeholder_keys={\"参数名\": PLACEHOLDER_...})：注册表按类型推出的"
+        "（ResourceSlot / DeviceSlot / SiteSlot）与手写的取并集，同一参数以手写的为准；"
+        "参数类型照常写，去掉 Annotated[..., Placeholder(...)] 外壳"
+    ),
+    "SiteSelector": (
+        "库位参数注解为 SiteSlot，库位关系写成 @action(material=Material.site(\"库位参数\", "
+        "owner=\"拥有库位的物料参数\", occupant=\"放进去的物料参数\", show_occupied=True, allow_occupied=False))"
+    ),
+}
+#: 已删除注解的导入身份（``模块:名字``）→ 名字。
+REMOVED_ANNOTATION_IDENTITIES: Dict[str, str] = {
+    f"unilabos.registry.annotations:{name}": name for name in REMOVED_ANNOTATIONS
+}
 
 
 class RemovedActionOptionError(TypeError):
     """``@action`` 写了已删除的选项。"""
+
+
+def removed_annotation_message(name: str) -> str:
+    """已删除注解的报错信息（含新写法）。"""
+
+    return f"{name} 已删除：{REMOVED_ANNOTATIONS[name]}"
 
 
 def check_action_options(options: Mapping[str, Any], *, json_action: bool, definition: str) -> None:
@@ -54,7 +73,10 @@ def check_action_options(options: Mapping[str, Any], *, json_action: bool, defin
 
 __all__ = [
     "REMOVED_ACTION_OPTIONS",
+    "REMOVED_ANNOTATIONS",
+    "REMOVED_ANNOTATION_IDENTITIES",
     "REMOVED_JSON_ACTION_OPTIONS",
     "RemovedActionOptionError",
     "check_action_options",
+    "removed_annotation_message",
 ]

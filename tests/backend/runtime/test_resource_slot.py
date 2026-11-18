@@ -27,8 +27,8 @@ from unilabos.registry.placeholder_type import ResourceSlot
         ("str", None),
         (list[str], None),
         (dict, None),
-        ("Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]", "single"),
-        ("Annotated[list[ResourceSlot], Placeholder(PLACEHOLDER_NODES)]", "list"),
+        ("Annotated[ResourceSlot, AllowedResourceTemplates(Plate)]", "single"),
+        ("Annotated[list[ResourceSlot], Field(min_length=1)]", "list"),
     ],
 )
 def test_resource_slot_shape(annotation, shape):

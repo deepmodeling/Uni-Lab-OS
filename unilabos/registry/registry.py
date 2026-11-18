@@ -32,10 +32,12 @@ from unilabos.registry.action_timeout import (
     normalize_execution_timeout,
 )
 from unilabos.registry.material_locks import (
+    PLACEHOLDER_RESOURCES,
     REMOVED_MATERIAL_LOCK_OPTIONS,
     default_material_lock_parameters,
     warn_ignored_material_lock_override,
 )
+from unilabos.registry.placeholder_keys import merge_placeholder_keys
 from unilabos.registry.decorators import (
     get_device_meta,
     get_action_meta,
@@ -1339,6 +1341,10 @@ class Registry:
             result.update(result_override)
             goal_default.update(goal_default_override)
 
+            # 前端选择器：按类型推出的 ∪ 手写的，同一参数以手写的为准
+            placeholder_keys = merge_placeholder_keys(
+                detect_placeholder_keys(method_params), action_args.get("placeholder_keys") or {}
+            )
             action_entry = {
                 "type": action_type.split(":")[-1],
                 "goal": goal,
@@ -1347,10 +1353,7 @@ class Registry:
                 "schema": schema,
                 "goal_default": goal_default,
                 "handles": handles,
-                "placeholder_keys": {
-                    **detect_placeholder_keys(method_params),
-                    **(method_info.get("placeholders") or {}),
-                },
+                "placeholder_keys": placeholder_keys,
                 "display_name": action_args.get("display_name") or "",
             }
             if action_args.get("always_free") or method_info.get("always_free"):
@@ -1358,7 +1361,10 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
-            action_entry["materials_need_lock"] = default_material_lock_parameters(params=method_params)
+            # 物料参数（ResourceSlot，及兼容规则：选择器标成 unilabos_resources 的参数）加共享锁
+            action_entry["materials_need_lock"] = default_material_lock_parameters(
+                params=method_params, placeholder_keys=placeholder_keys
+            )
             _apply_action_timeouts(
                 action_entry,
                 action_args,
@@ -1628,6 +1634,10 @@ class Registry:
         """JSON 动作条目的 schema 相关字段：schema、goal、goal_default、handles、placeholder_keys、物料锁。
 
         ``previous`` 是 YAML 里已有的条目（补全注册表时保留手写的说明、端口与前端选择器）。
+
+        ``placeholder_keys`` = 按类型推出的（``ResourceSlot`` / ``DeviceSlot`` / ``SiteSlot``）∪ 手写的
+        （``@action(placeholder_keys=...)``；YAML 条目里已有的同样算手写），同一参数以手写的为准。
+        物料锁按类型（schema 里的物料参数）推导，另按兼容规则加上选择器为 ``unilabos_resources`` 的参数。
         """
 
         from unilabos.registry.action_template_projection import compile_backend_action_handles
@@ -1663,15 +1673,21 @@ class Registry:
                 return False
             return "x-unilabos-material-lock" in field or resource_field(field.get("items"))
 
-        placeholder_keys: Dict[str, str] = dict(previous.get("placeholder_keys") or {})
-        placeholder_keys.update(detect_placeholder_keys(method_info.get("params", []) or []))
-        placeholder_keys.update(
-            {name: "unilabos_resources" for name, field in properties.items() if resource_field(field)}
-        )
-        placeholder_keys.update(
+        derived: Dict[str, str] = detect_placeholder_keys(method_info.get("params", []) or [])
+        derived.update({name: PLACEHOLDER_RESOURCES for name, field in properties.items() if resource_field(field)})
+        derived.update(
             {name: "unilabos_sites" for name, field in properties.items() if "x-unilabos-site-selector" in field}
         )
-        placeholder_keys.update(method_info.get("placeholders") or {})
+        previous_keys = previous.get("placeholder_keys")
+        declared: Dict[str, str] = {
+            str(name): str(kind)
+            for name, kind in (previous_keys.items() if isinstance(previous_keys, dict) else ())
+            if name in properties and isinstance(kind, str)
+        }
+        declared.update(action_args.get("placeholder_keys") or {})
+        placeholder_keys = merge_placeholder_keys(derived, declared)
+        locked = set(material_lock_parameters(schema))
+        locked.update(name for name, kind in placeholder_keys.items() if kind == PLACEHOLDER_RESOURCES)
         return {
             "goal": {name: name for name in properties},
             "feedback": action_args.get("feedback") or {},
@@ -1681,7 +1697,7 @@ class Registry:
             "handles": handles,
             "placeholder_keys": placeholder_keys,
             "display_name": action_args.get("display_name") or previous.get("display_name") or "",
-            "materials_need_lock": material_lock_parameters(schema),
+            "materials_need_lock": [name for name in properties if name in locked],
         }
 
     def _generate_schema_from_ast_params(
@@ -2767,8 +2783,10 @@ class Registry:
                         else:
                             entry_type = "UniLabJsonCommandAsync" if v["is_async"] else "UniLabJsonCommand"
 
-                        merged_pk = dict(old_cfg.get("placeholder_keys", {}))
-                        merged_pk.update(detect_placeholder_keys(v["args"]))
+                        # 按类型推出的 ∪ YAML 里手写的，同一参数以手写的为准
+                        merged_pk = merge_placeholder_keys(
+                            detect_placeholder_keys(v["args"]), old_cfg.get("placeholder_keys") or {}
+                        )
                         goal_schema_for_docs = (
                             entry_schema.get("properties", {}).get("goal", {})
                             if isinstance(entry_schema, dict)

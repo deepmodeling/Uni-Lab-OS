@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from unilabos.registry.action_schema import ActionSchemaError
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.registry import Registry
 from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
@@ -16,9 +15,8 @@ SOURCE = '''
 from __future__ import annotations
 
 import enum
-from typing import Any, Callable, Dict, List, Optional, TypedDict, Union, Annotated
+from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
-from unilabos.registry.annotations import Placeholder
 from unilabos.registry.decorators import action, device
 from unilabos.registry.placeholder_type import PLACEHOLDER_NODES, DeviceSlot, ResourceSlot
 
@@ -68,8 +66,8 @@ class Driver:
     def returns_bytes(self) -> bytes:
         return b""
 
-    @action()
-    def selector(self, target: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]) -> dict:
+    @action(placeholder_keys={"target": PLACEHOLDER_NODES})
+    def selector(self, target: ResourceSlot) -> dict:
         return {}
 
     def auto_method(self, count: int, note: str = "") -> int:
@@ -199,28 +197,9 @@ def test_return_annotations_are_validated(actions) -> None:
     validate_action_values(returns_bool, {"test_mode": True, "action_name": "returns_bool"}, section="result")
 
 
-def test_placeholder_annotation_sets_the_frontend_selector_only(actions) -> None:
+def test_handwritten_placeholder_changes_only_the_frontend_selector(actions) -> None:
     action = actions["selector"]
+    # 类型推出 unilabos_resources，手写 unilabos_nodes：同一参数以手写为准，但仍是物料参数、照常加锁与校验
     assert action["placeholder_keys"] == {"target": "unilabos_nodes"}
     assert action["materials_need_lock"] == ["target"]
     assert _goal(action)["properties"]["target"]["x-unilabos-material-lock"] is True
-
-
-def test_placeholder_for_typed_kinds_points_to_the_annotation(tmp_path: Path) -> None:
-    path = tmp_path / "bad_placeholder.py"
-    path.write_text(
-        '''
-from typing import Annotated
-from unilabos.registry.annotations import Placeholder
-from unilabos.registry.decorators import action, device
-
-@device(id="bad_placeholder", category=["test"])
-class Driver:
-    @action()
-    def run(self, plate: Annotated[dict, Placeholder("unilabos_resources")]) -> None:
-        pass
-''',
-        encoding="utf-8",
-    )
-    with pytest.raises(ActionSchemaError, match="ResourceSlot"):
-        _parse_file(path, tmp_path)

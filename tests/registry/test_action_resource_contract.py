@@ -190,7 +190,6 @@ def test_tenancy_device_parameter_accepts_readable_id_but_material_stays_resourc
     [
         ('contract="typed"', "去掉 contract="),
         ('resource_contract={"version": 2, "operate_in_place": {"material_param": "x"}}', "Material.in_place"),
-        ('placeholder_keys={"x": "unilabos_resources"}', "ResourceSlot"),
         ('goal={"y": "x"}', "字段名就是参数名"),
         ('result={"y": "x"}', "返回 TypedDict"),
     ],

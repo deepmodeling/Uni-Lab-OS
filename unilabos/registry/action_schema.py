@@ -4,8 +4,9 @@
 
 - 严格解析器认识的注解（``str`` / ``int`` / ``float`` / ``bool``、``Literal``、``Optional`` 与
   ``X | None``、``ResourceSlot`` / ``list[ResourceSlot]``、``list[X]``、``dict[str, JSONValue]``，以及
-  ``Annotated[..., Field(...)]`` / ``AllowedResourceTemplates`` / ``SiteSelector``）：严格 schema；
-- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；
+  ``Annotated[..., Field(...)]`` / ``AllowedResourceTemplates``）：严格 schema；
+- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material=Material.site(...))`` 声明的
+  库位关系写进该 ``SiteSlot`` 参数的 ``x-unilabos-site-selector`` 扩展（前端库位选择器、预检与派发门禁用）；
 - 没写注解、``Any``、``object``：接受任意 JSON 值（``{}``）；
 - 默认值是 ``None`` 的参数按可空处理（``x: str = None`` 与 ``x: Optional[str] = None`` 相同）；
 - 严格解析器不认识的注解：该参数退回注册表原来的签名类型推断。本模块只放一个
@@ -16,6 +17,9 @@
   同模块的 ``TypedDict`` / frozen ``dataclass``：具名输出（每个字段一个输出端口，逐字段严格解析，
   不认识的字段退回推断）；其他注解整体退回推断。
 
+参数注解里已删除的 ``Placeholder(...)`` / ``SiteSelector(...)`` 是注册错误，报错信息给出新写法
+（前端选择器写 ``@action(placeholder_keys=...)``，库位关系写 ``Material.site(...)``）。
+
 ROS 动作类型（``@action(action_type=...)``）不经过这里，照旧按 ROS 消息生成 schema。
 """
 
@@ -25,11 +29,10 @@ import ast
 import logging
 import threading
 from collections.abc import Mapping
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from unilabos.registry.action_contract_schema import _action_value_schema, _has_resource_slot
+from unilabos.registry.action_options import REMOVED_ANNOTATION_IDENTITIES, removed_annotation_message
 from unilabos.registry.action_result_schema import (
     ActionResultSchemaError,
     parse_action_result_declaration,
@@ -65,17 +68,11 @@ _DICTS = frozenset({"typing:Dict", "typing:Mapping", "collections.abc:Mapping", 
 _TYPED_DICT = frozenset({"typing:TypedDict", "typing_extensions:TypedDict"})
 _NOT_REQUIRED = frozenset({"typing:NotRequired", "typing_extensions:NotRequired"})
 _DATACLASS = "dataclasses:dataclass"
-_PLACEHOLDER = "unilabos.registry.annotations:Placeholder"
 _PLACEHOLDER_MODULE = "unilabos.registry.placeholder_type"
+_SITE_SLOT = f"{_PLACEHOLDER_MODULE}:SiteSlot"
 _STRING_SLOTS = {
     f"{_PLACEHOLDER_MODULE}:DeviceSlot": "device reference",
-    f"{_PLACEHOLDER_MODULE}:SiteSlot": "site reference (ResourceSite uuid)",
-}
-#: ``Placeholder(...)`` 只表达前端选择器；物料 / 设备 / 库位由注解类型本身表达。
-_PLACEHOLDER_BY_TYPE = {
-    "unilabos_resources": "物料参数用 ResourceSlot 注解",
-    "unilabos_devices": "设备参数用 DeviceSlot 注解",
-    "unilabos_sites": "库位参数用 SiteSlot 或 Annotated[str, SiteSelector(...)] 注解",
+    _SITE_SLOT: "site reference (ResourceSite uuid)",
 }
 
 _warned: set[str] = set()
@@ -84,24 +81,6 @@ _warned_lock = threading.Lock()
 
 class ActionSchemaError(ValueError):
     """动作声明本身写错（不是解析器不认识的注解）：注册失败并指出写法。"""
-
-
-@lru_cache(maxsize=1)
-def placeholder_constants() -> Dict[str, str]:
-    """静态读取 ``placeholder_type.py`` 顶层 ``NAME = "str"`` 常量（不导入该模块）。"""
-
-    constants: Dict[str, str] = {}
-    try:
-        path = Path(__file__).with_name("placeholder_type.py")
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, ValueError):
-        return constants
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    constants[target.id] = node.value.value
-    return constants
 
 
 def warn_once(definition: str, message: str) -> bool:
@@ -244,56 +223,53 @@ def _nullable(node: ast.expr, bindings: ModuleBindings) -> ast.expr:
     return ast.BinOp(left=node, op=ast.BitOr(), right=ast.Constant(value=None))
 
 
-def _placeholder_kind(call: ast.Call, bindings: ModuleBindings, definition: str, name: str) -> str:
-    if call.keywords or len(call.args) != 1:
-        raise ActionSchemaError(f"动作 {definition} 参数 {name}：Placeholder 只接受一个选择器常量")
-    argument = call.args[0]
-    if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
-        kind = argument.value
-    else:
-        identity = bindings.identity(argument)
-        module, _, attribute = identity.partition(":")
-        kind = placeholder_constants().get(attribute, "") if module == _PLACEHOLDER_MODULE else ""
-    if not kind:
-        raise ActionSchemaError(
-            f"动作 {definition} 参数 {name}：Placeholder 的参数必须是 placeholder_type 里的常量或字符串"
-        )
-    if kind in _PLACEHOLDER_BY_TYPE:
-        raise ActionSchemaError(
-            f"动作 {definition} 参数 {name}：Placeholder({kind!r}) 不需要写，{_PLACEHOLDER_BY_TYPE[kind]}"
-        )
-    return kind
-
-
-def strip_placeholder(
-    node: ast.expr,
+def reject_removed_annotations(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
     bindings: ModuleBindings,
     *,
-    definition: str = "",
-    name: str = "",
-) -> Tuple[ast.expr, str]:
-    """从 ``Annotated[T, Placeholder(kind), ...]`` 取出前端选择器，返回去掉它的注解。"""
+    definition: str,
+) -> None:
+    """参数或返回注解里写了已删除的 ``Placeholder(...)`` / ``SiteSelector(...)``：报错并给出新写法。"""
 
-    if not isinstance(node, ast.Subscript) or bindings.identity(node.value) not in _ANNOTATED:
-        return node, ""
-    members = _subscript_members(node)
-    if len(members) < 2:
-        return node, ""
-    kept: List[ast.expr] = []
-    kind = ""
-    for item in members[1:]:
-        if isinstance(item, ast.Call) and bindings.identity(item.func) == _PLACEHOLDER:
-            if kind:
-                raise ActionSchemaError(f"动作 {definition} 参数 {name}：Placeholder 只能写一个")
-            kind = _placeholder_kind(item, bindings, definition, name)
-        else:
-            kept.append(item)
-    if not kind:
-        return node, ""
-    if not kept:
-        return members[0], kind
-    rebuilt = ast.Subscript(value=node.value, slice=ast.Tuple(elts=[members[0], *kept], ctx=ast.Load()), ctx=ast.Load())
-    return ast.copy_location(rebuilt, node), kind
+    arguments = function.args
+    annotated = [
+        (argument.arg, argument.annotation)
+        for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
+        if argument.annotation is not None
+    ]
+    if getattr(function, "returns", None) is not None:
+        annotated.append(("<return>", function.returns))
+    for name, annotation in annotated:
+        for node in ast.walk(annotation):
+            if not isinstance(node, ast.Call):
+                continue
+            removed = REMOVED_ANNOTATION_IDENTITIES.get(bindings.identity(node.func))
+            if removed is not None:
+                label = "返回注解" if name == "<return>" else f"参数 {name}"
+                raise ActionSchemaError(f"动作 {definition} {label}：{removed_annotation_message(removed)}")
+
+
+def _is_site_slot(node: ast.AST, bindings: ModuleBindings) -> bool:
+    """单个 ``SiteSlot``（可带 ``Optional`` / ``| None`` / ``Annotated``）：``Material.site`` 的库位参数只能是它。"""
+
+    if bindings.identity(node) == _SITE_SLOT:
+        return True
+    if isinstance(node, ast.Subscript):
+        origin = bindings.identity(node.value)
+        members = _subscript_members(node)
+        if origin in _ANNOTATED and members:
+            return _is_site_slot(members[0], bindings)
+        if origin in _OPTIONAL and len(members) == 1:
+            return _is_site_slot(members[0], bindings)
+        if origin in _UNION:
+            rest = [member for member in members if not _is_none(member)]
+            return len(rest) == 1 and len(members) == 2 and _is_site_slot(rest[0], bindings)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        if _is_none(node.right):
+            return _is_site_slot(node.left, bindings)
+        if _is_none(node.left):
+            return _is_site_slot(node.right, bindings)
+    return False
 
 
 def _string_slot(node: ast.AST, bindings: ModuleBindings) -> Optional[Dict[str, Any]]:
@@ -398,7 +374,7 @@ def _strict_field(
     *,
     title: Optional[str],
     description: Optional[str],
-) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], Tuple[str, ...], Any]]:
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], Tuple[str, ...]]]:
     """严格解析一个参数注解；解析器不认识时返回 None。"""
 
     try:
@@ -418,17 +394,13 @@ def _strict_field(
         descriptor["schema"],
         material_lock=True if _has_resource_slot(descriptor["schema"]) else None,
     )
-    if parsed.site_selector is not None:
-        field["format"] = "uuid"
-        field["x-unilabos-editor-control"] = "site_selector"
-        field["x-unilabos-site-selector"] = parsed.site_selector.to_extension()
     if "default" in descriptor:
         field["default"] = descriptor["default"]
     for key in ("title", "description"):
         if key in descriptor:
             field[key] = descriptor[key]
     symbols = tuple(symbol.qualified_name for symbol in parsed.resource_templates)
-    return field, descriptor, symbols, parsed.site_selector
+    return field, descriptor, symbols
 
 
 def _parameters(function: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool):
@@ -453,26 +425,31 @@ def build_action_schema_draft(
     description: str = "",
     definition: str = "",
     is_method: bool = True,
+    site_selectors: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """按签名生成一个 JSON 动作的统一 schema 草稿。
 
-    返回 ``{"schema", "inferred", "result_inferred", "placeholders", "skipped"}``：``schema`` 是完整动作
+    返回 ``{"schema", "inferred", "result_inferred", "skipped"}``：``schema`` 是完整动作
     schema（``x-unilabos-action-contract`` 第 2 版信封），退回推断的字段带 ``x-unilabos-infer`` 占位，
     由注册表 ``finalize_action_schema`` 补全；``inferred`` / ``result_inferred`` 列出退回推断的参数与
-    返回字段；``placeholders`` 是 ``Placeholder(...)`` 声明的前端选择器；``skipped`` 是无法表示、
-    被忽略的参数写法。动作声明写错（如 ``Placeholder`` 用法不对）抛 :class:`ActionSchemaError`。
+    返回字段；``skipped`` 是无法表示、被忽略的参数写法。
+
+    ``site_selectors`` 是 ``Material.site(...)`` 给出的 ``{库位参数名: x-unilabos-site-selector 扩展}``：
+    库位参数必须注解为 ``SiteSlot``，owner / occupant 必须是单个 ``ResourceSlot`` 参数，扩展写进该参数的
+    schema。动作声明写错（库位关系不对、注解里写了已删除的 ``Placeholder`` / ``SiteSelector``）抛
+    :class:`ActionSchemaError`。
     """
 
     definition = definition or action_name
+    reject_removed_annotations(function, bindings, definition=definition)
     titles, descriptions, doc_description = _docstring(function)
     goal: Dict[str, Any] = {}
     required: List[str] = []
     input_order: List[str] = []
     goal_symbols: Dict[str, List[str]] = {}
     strict_descriptors: List[Dict[str, Any]] = []
-    selectors: List[Tuple[str, Any]] = []
+    site_slots: set[str] = set()
     inferred: List[str] = []
-    placeholders: Dict[str, str] = {}
     skipped: List[str] = []
 
     for argument, default_node in _parameters(function, is_method):
@@ -486,10 +463,8 @@ def build_action_schema_draft(
         title, doc = titles.get(name), descriptions.get(name)
         annotation = argument.annotation
         field: Optional[Dict[str, Any]] = None
-        if annotation is not None:
-            annotation, kind = strip_placeholder(annotation, bindings, definition=definition, name=name)
-            if kind:
-                placeholders[name] = kind
+        if annotation is not None and _is_site_slot(annotation, bindings):
+            site_slots.add(name)
         if annotation is None or _is_any(annotation, bindings):
             field = {}
             if default_known:
@@ -521,12 +496,10 @@ def build_action_schema_draft(
                     description=doc,
                 )
                 if strict is not None:
-                    field, descriptor, symbols, selector = strict
+                    field, descriptor, symbols = strict
                     strict_descriptors.append(descriptor)
                     if symbols:
                         goal_symbols[name] = list(symbols)
-                    if selector is not None:
-                        selectors.append((name, selector))
                     break
             if field is None:
                 inferred.append(name)
@@ -550,14 +523,19 @@ def build_action_schema_draft(
         warn_once(definition, f"*{arguments.vararg.arg} 无法表示为具名参数，已忽略")
     allow_extra = arguments.kwarg is not None
 
-    for name, selector in selectors:
+    for name, extension in (site_selectors or {}).items():
+        if name not in goal:
+            raise ActionSchemaError(f"动作 {definition}：Material.site 引用了签名里没有的参数 {name}")
+        if name not in site_slots:
+            raise ActionSchemaError(f"动作 {definition}：Material.site 的库位参数 {name} 必须注解为 SiteSlot")
         try:
-            validate_site_selector_relations(strict_descriptors, [(name, selector)])
+            validate_site_selector_relations(strict_descriptors, [(name, extension)])
         except SiteSelectorSchemaError as error:
-            field = goal[name]
-            for key in ("format", "x-unilabos-editor-control", "x-unilabos-site-selector"):
-                field.pop(key, None)
-            warn_once(definition, f"参数 {name} 的 SiteSelector 关系无效（{error.message}），按普通字符串处理")
+            raise ActionSchemaError(f"动作 {definition} 参数 {name}：{error.message}") from None
+        field = goal[name]
+        field["format"] = "uuid"
+        field["x-unilabos-editor-control"] = "site_selector"
+        field["x-unilabos-site-selector"] = dict(extension)
 
     result, output_order, result_symbols, result_inferred = _result_schema(function, bindings)
     display = action_name.removeprefix("auto-")
@@ -587,7 +565,6 @@ def build_action_schema_draft(
         "schema": schema,
         "inferred": inferred,
         "result_inferred": result_inferred,
-        "placeholders": placeholders,
         "skipped": skipped,
     }
 
@@ -805,7 +782,6 @@ __all__ = [
     "ModuleBindings",
     "build_action_schema_draft",
     "finalize_action_schema",
-    "placeholder_constants",
-    "strip_placeholder",
+    "reject_removed_annotations",
     "warn_once",
 ]

@@ -214,7 +214,7 @@ def validate_resource_values(
     schema: Mapping[str, Any], values: Mapping[str, Any], materials: Any,
     *, deferred: Sequence[str] = (),
 ) -> None:
-    """校验已知物料身份及 SiteSelector 的归属／占用；预检与派发共用。"""
+    """校验已知物料身份及库位参数（Material.site 声明的库位关系）的归属／占用；预检与派发共用。"""
     fields = schema.get("properties", {}).get("goal", {}).get("properties", {})
 
     def material(identity: str | None, name: str) -> Any:

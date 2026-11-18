@@ -9,12 +9,8 @@ from dataclasses import dataclass
 from itertools import pairwise
 from typing import Any, Never, Self
 
+from unilabos.registry.action_options import REMOVED_ANNOTATION_IDENTITIES, removed_annotation_message
 from unilabos.registry.annotation_rendering import render_parameter_descriptor
-from unilabos.registry.site_selector_schema import (
-    ParsedSiteSelector,
-    SiteSelectorSchemaError,
-    parse_site_selector_call,
-)
 from unilabos.registry.contract_value_schema import (
     WorkflowInputContract,
     WorkflowOutputContract,
@@ -37,7 +33,6 @@ _MATERIAL_LOCK = "unilabos.registry.annotations:MaterialLock"
 _OPTIONAL = "typing:Optional"
 _RESOURCE_SLOT = "unilabos.registry.placeholder_type:ResourceSlot"
 _RESOURCE_TEMPLATES = "unilabos.registry.annotations:AllowedResourceTemplates"
-_SITE_SELECTOR = "unilabos.registry.annotations:SiteSelector"
 _ERROR_MESSAGE = "参数注解不符合 Workflow 版本 1 合同"
 _AUTHORING_INTEGER_DIGITS = 4096
 _AUTHORING_INTEGER_LIMIT = 10**_AUTHORING_INTEGER_DIGITS
@@ -68,7 +63,6 @@ class ParsedParameter:
     _contract: WorkflowInputContract
     resource_templates: tuple[ResourceTemplateSymbol, ...]
     material_lock_free: bool
-    site_selector: ParsedSiteSelector | None
 
     def __new__(cls, *_args: Any, **_kwargs: Any) -> Never:
         raise TypeError("请通过 parse_parameter_annotation 创建 ParsedParameter")
@@ -79,7 +73,6 @@ class ParsedParameter:
         contract: WorkflowInputContract,
         resource_templates: tuple[ResourceTemplateSymbol, ...],
         material_lock_free: bool,
-        site_selector: ParsedSiteSelector | None,
         *,
         token: object,
     ) -> Self:
@@ -87,8 +80,7 @@ class ParsedParameter:
 
         参数说明：``contract`` 是已校验工作流输入合同；``resource_templates``
         保存资源模板源码符号；``material_lock_free`` 记录源码里写了已废弃的
-        ``MaterialLock(free=True)``（只用于回写源码与告警，不再免锁）；
-        ``site_selector`` 保存可选库位选择器（SiteSelector）关系；``token`` 防止
+        ``MaterialLock(free=True)``（只用于回写源码与告警，不再免锁）；``token`` 防止
         外部绕过解析边界。返回：不可变解析参数。异常：令牌不匹配时抛出
         ``TypeError``。
         """
@@ -103,7 +95,6 @@ class ParsedParameter:
             resource_templates,
         )
         object.__setattr__(parameter, "material_lock_free", material_lock_free)
-        object.__setattr__(parameter, "site_selector", site_selector)
         return parameter
 
     def to_dict(self) -> dict[str, Any]:
@@ -525,15 +516,14 @@ def _parse_annotation(
     str | None,
     tuple[ResourceTemplateSymbol, ...],
     bool,
-    ParsedSiteSelector | None,
 ]:
     """解析一个参数或结果注解及其有限元数据。
 
     参数说明：``annotation`` 是未执行的注解 AST；``imports`` 证明每个名称的
-    静态导入身份；``allow_material_lock`` 同时控制仅动作输入可用的物料锁和
-    库位选择器（SiteSelector）元数据。返回：规范值模式、标题、说明、单位、资源
-    模板符号、免锁标记及可选库位关系；非法或重复元数据抛出
-    ``AnnotationSchemaError``。
+    静态导入身份；``allow_material_lock`` 控制仅动作输入可用的物料锁元数据。
+    返回：规范值模式、标题、说明、单位、资源模板符号及免锁标记；非法或重复
+    元数据抛出 ``AnnotationSchemaError``（已删除的 ``Placeholder`` / ``SiteSelector``
+    给出新写法）。
     """
 
     metadata: list[ast.expr] = []
@@ -559,12 +549,17 @@ def _parse_annotation(
     material_lock_seen = False
     templates_seen = False
     material_lock_free = False
-    site_selector_seen = False
-    site_selector = None
     for index, item in enumerate(metadata):
         path = f"/annotation/metadata/{index}"
         if not isinstance(item, ast.Call):
             _fail(path)
+        removed = (
+            REMOVED_ANNOTATION_IDENTITIES.get(imports.get(item.func.id, ""))
+            if isinstance(item.func, ast.Name)
+            else None
+        )
+        if removed is not None:
+            _fail(path, message=removed_annotation_message(removed))
         if _is_import(item.func, _FIELD, imports):
             if field_seen:
                 _fail(path)
@@ -585,17 +580,9 @@ def _parse_annotation(
                 _fail(path)
             material_lock_seen = True
             material_lock_free = _parse_material_lock(item, schema, path=path)
-        elif allow_material_lock and _is_import(item.func, _SITE_SELECTOR, imports):
-            if site_selector_seen:
-                _fail(path)
-            site_selector_seen = True
-            try:
-                site_selector = parse_site_selector_call(item, schema, path=path)
-            except SiteSelectorSchemaError as error:
-                _fail(error.path, message=error.message)
         else:
             _fail(path)
-    return schema, title, description, unit, templates, material_lock_free, site_selector
+    return schema, title, description, unit, templates, material_lock_free
 
 
 def _optional_presentation(value: str | None, *, path: str) -> str | None:
@@ -626,7 +613,7 @@ def parse_parameter_annotation(
     参数说明：``name`` 是参数名；``annotation`` 是不执行的类型注解 AST；
     ``default`` 是默认值 AST 或 ``NO_DEFAULT``；``imports`` 是可信导入绑定；
     ``doc_title``/``doc_description`` 是文档注释展示信息；
-    ``allow_material_lock`` 决定是否允许输入侧物料锁与库位选择元数据；注解中的
+    ``allow_material_lock`` 决定是否允许输入侧物料锁元数据；注解中的
     ``Field(unit=...)`` 会作为可选单位写入合同。返回：解析器签发的不可变参数合同。
 
     异常说明：注解、默认值、导入、展示文本或规范输入合同非法时抛出
@@ -645,7 +632,6 @@ def parse_parameter_annotation(
         field_unit,
         templates,
         material_lock_free,
-        site_selector,
     ) = _parse_annotation(
         annotation,
         imports,
@@ -684,7 +670,6 @@ def parse_parameter_annotation(
         contract,
         templates,
         material_lock_free,
-        site_selector,
         token=_PARSED_PARAMETER_TOKEN,
     )
 
@@ -699,8 +684,7 @@ def parse_result_annotation(
 
     参数说明：``name`` 是输出字段名；``annotation`` 是不执行的类型注解 AST；
     ``imports`` 是可信导入绑定；注解中的 ``Field(unit=...)`` 会作为可选单位写入
-    合同。返回：解析器签发的不可变输出合同；输出侧不接受物料锁或库位选择
-    （Site Selection）元数据。
+    合同。返回：解析器签发的不可变输出合同；输出侧不接受物料锁元数据。
 
     异常说明：注解、导入或规范输出合同非法时抛出
     ``AnnotationSchemaError``，且不执行任何作者代码。
@@ -711,7 +695,7 @@ def parse_result_annotation(
     if not isinstance(imports, Mapping):
         _fail("/imports")
 
-    schema, title, description, unit, templates, _material_lock_free, _site_selector = (
+    schema, title, description, unit, templates, _material_lock_free = (
         _parse_annotation(
             annotation,
             imports,
@@ -745,8 +729,8 @@ def render_parameter_annotation(parameter: ParsedParameter) -> ast.expr:
     """只从规范参数事实生成确定性的 annotation expression。
 
     参数说明：``parameter`` 是唯一解析器创建的不可变参数合同。返回：包含资源
-    模板、免物料锁、库位选择器（SiteSelector）和 ``Field`` 展示约束的 Python
-    AST；类型非法时抛出 ``AnnotationSchemaError``。
+    模板、免物料锁和 ``Field`` 展示约束的 Python AST；类型非法时抛出
+    ``AnnotationSchemaError``。
     """
 
     if not isinstance(parameter, ParsedParameter):
@@ -757,5 +741,4 @@ def render_parameter_annotation(parameter: ParsedParameter) -> ast.expr:
             symbol.local_name for symbol in parameter.resource_templates
         ),
         material_lock_free=parameter.material_lock_free,
-        site_selector=parameter.site_selector,
     )

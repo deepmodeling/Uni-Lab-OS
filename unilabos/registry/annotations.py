@@ -34,53 +34,14 @@ class MaterialLock:
             raise ValueError("MaterialLock 只接受显式 free=True")
 
 
-@dataclass(frozen=True, slots=True)
-class Placeholder:
-    """声明参数在前端用哪种选择器填写（``placeholder_type`` 里的 ``PLACEHOLDER_*`` 常量）。
+def __getattr__(name: str):
+    """已删除的 ``Placeholder`` / ``SiteSelector``：导入时直接报错并给出新写法。
 
-    写在 ``Annotated`` 里，例如 ``Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]``、
-    ``Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)]``。它只影响前端选择器，不改变参数的
-    类型与校验；物料、设备、库位不需要它，分别用 ``ResourceSlot``、``DeviceSlot``、``SiteSlot`` 注解。
-    注册表扫描时取出它，写进动作条目的 ``placeholder_keys``。
+    抛 ``ImportError``（不是 ``AttributeError``），``from ... import Placeholder`` 才会带着这句话失败。
     """
 
-    kind: str
+    from unilabos.registry.action_options import REMOVED_ANNOTATIONS, removed_annotation_message
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.kind, str) or not self.kind or self.kind != self.kind.strip():
-            raise ValueError("Placeholder 需要一个非空的选择器常量")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
-class SiteSelector:
-    """声明字符串参数由库位选择器（SiteSelector）提供。
-
-    参数说明：``owner`` 指向拥有候选库位（Site）的物料占位符
-    （ResourceSlot）输入；``occupant`` 可选指向待放入物料；
-    ``show_occupied`` 决定是否展示已占用库位；``allow_occupied`` 决定这些库位
-    是否可选。该对象服务编辑器、静态合同和 Backend 调度门禁；自身不查询库存
-    权威，实际库位占用仍由 Backend 数据库事务判定。
-    """
-
-    owner: str
-    occupant: str | None = None
-    show_occupied: bool = True
-    allow_occupied: bool = False
-
-    def __post_init__(self) -> None:
-        """校验作者直接导入时的注解参数形状。
-
-        参数：无。返回：无。异常：字段名为空、含首尾空白或策略不是布尔值时
-        抛出 ``ValueError``；静态 AST 编译器会独立重复同一关闭式校验。
-        """
-
-        for label, value in (("owner", self.owner), ("occupant", self.occupant)):
-            if value is not None and (
-                not isinstance(value, str) or not value or value != value.strip()
-            ):
-                raise ValueError(f"SiteSelector {label} 必须是非空字段名")
-        if (
-            type(self.show_occupied) is not bool
-            or type(self.allow_occupied) is not bool
-        ):
-            raise ValueError("SiteSelector 占用策略必须是布尔值")
+    if name in REMOVED_ANNOTATIONS:
+        raise ImportError(removed_annotation_message(name), name=name, path=__file__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

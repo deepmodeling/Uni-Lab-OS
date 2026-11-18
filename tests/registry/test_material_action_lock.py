@@ -23,7 +23,7 @@ def _registry():
 
 def test_removed_lock_list_no_longer_locks_plain_parameters(tmp_path) -> None:
     """旧的 materials_need_lock 能把非物料类型的入参（如 dict）列进锁集合；移除后物料入参要写成
-    ResourceSlot 注解，锁才会加上（placeholder_keys 也已删除）。"""
+    ResourceSlot 注解，或（兼容规则）用 placeholder_keys 把它的选择器标成 unilabos_resources，锁才会加上。"""
 
     source = tmp_path / "material_lock_driver.py"
     source.write_text(
@@ -39,6 +39,10 @@ class Driver:
 
     @action()
     def process(self, plate: ResourceSlot, tag: str = "") -> None:
+        pass
+
+    @action(placeholder_keys={"plate": "unilabos_resources"})
+    def process_marked(self, plate: dict, tag: str = "") -> None:
         pass
 ''',
         encoding="utf-8",
@@ -59,3 +63,8 @@ class Driver:
     )["class"]["action_value_mappings"]
     assert mappings["transfer"]["materials_need_lock"] == []
     assert mappings["process"]["materials_need_lock"] == ["plate"]
+    # 手写选择器标成物料的 dict 入参：按兼容规则加锁，但参数类型与校验不变（不是物料引用 schema）
+    marked = mappings["process_marked"]
+    assert marked["materials_need_lock"] == ["plate"]
+    assert marked["placeholder_keys"] == {"plate": "unilabos_resources"}
+    assert "x-unilabos-material-lock" not in marked["schema"]["properties"]["goal"]["properties"]["plate"]

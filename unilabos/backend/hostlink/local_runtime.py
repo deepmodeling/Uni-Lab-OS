@@ -33,6 +33,7 @@ from unilabos.backend.runtime.driver_creator import (
 )
 from unilabos.backend.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.backend.runtime.resource import ResourceService
+from unilabos.backend.runtime.resource_slot import is_unset_resource_slot
 from unilabos.backend.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
 from unilabos.backend.hostlink.service import (
     DeviceService,
@@ -950,9 +951,9 @@ class HostLinkDeviceNode(DeviceNode):
             shape = _resource_slot_shape(parameter.annotation)
             if shape == "single":
                 value = resolved[name]
-                # 可选 ResourceSlot 的空值（None/""）语义是「未指定」，归一化为
-                # None 交给动作实现（与 ROS2 goal 缺省字段行为一致），不强行解析
-                if value is None or (isinstance(value, str) and not value.strip()):
+                # 可选 ResourceSlot 的空值（None / "" / {}，goal 默认值是 {}）语义是「未指定」，
+                # 归一化为 None 交给动作实现（与调度器不加锁的口径一致），不强行解析
+                if is_unset_resource_slot(value):
                     resolved[name] = None
                 else:
                     resolved[name] = self._resolve_resource_slot(value)

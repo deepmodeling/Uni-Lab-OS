@@ -34,23 +34,6 @@ class MaterialLock:
             raise ValueError("MaterialLock 只接受显式 free=True")
 
 
-@dataclass(frozen=True, slots=True)
-class Placeholder:
-    """声明参数在前端用哪种选择器填写（``placeholder_type`` 里的 ``PLACEHOLDER_*`` 常量）。
-
-    写在 ``Annotated`` 里，例如 ``Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]``、
-    ``Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)]``。它只影响前端选择器，不改变参数的
-    类型与校验；物料、设备、库位不需要它，分别用 ``ResourceSlot``、``DeviceSlot``、``SiteSlot`` 注解。
-    注册表扫描时取出它，写进动作条目的 ``placeholder_keys``。
-    """
-
-    kind: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.kind, str) or not self.kind or self.kind != self.kind.strip():
-            raise ValueError("Placeholder 需要一个非空的选择器常量")
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SiteSelector:
     """声明字符串参数由库位选择器（SiteSelector）提供。
@@ -84,3 +67,16 @@ class SiteSelector:
             or type(self.allow_occupied) is not bool
         ):
             raise ValueError("SiteSelector 占用策略必须是布尔值")
+
+
+def __getattr__(name: str):
+    """已删除的 ``Placeholder``：导入时直接报错并给出新写法。
+
+    抛 ``ImportError``（不是 ``AttributeError``），``from ... import Placeholder`` 才会带着这句话失败。
+    """
+
+    from unilabos.registry.action_options import REMOVED_ANNOTATIONS, removed_annotation_message
+
+    if name in REMOVED_ANNOTATIONS:
+        raise ImportError(removed_annotation_message(name), name=name, path=__file__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

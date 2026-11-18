@@ -16,8 +16,8 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `x: X = None`（默认值是 `None`） | 同 `Optional[X]` | 严格 |
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
 | `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`，加物料锁 | 严格；Host 解析成物料实例 |
-| `Annotated[str, SiteSelector(owner=...)]` | 库位选择器 | 严格；预检核对库位 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串 | 严格 |
+| `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID，带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -77,34 +77,76 @@ def stir(self, sample: ResourceSlot) -> None: ...
 | `Material.aliquot(source="source", targets=["target"])` | 按实测量从来源分装到全部目标 | `aliquot` |
 | `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 动作还占用这些资源参数 | `resource_params`（取代 `required_device_params`） |
 | `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序（只约束计划） | `order_sensitive` |
+| `Material.site("site", owner="carrier", occupant="sample", show_occupied=True, allow_occupied=False)` | 库位参数 `site` 属于物料参数 `carrier`，放进去的是 `sample`；已占用的库位是否列出 / 能否选 | 不进资源合同：写进 `site` 参数 schema 的 `x-unilabos-site-selector` |
 
 同一个合同字段只能出现一次（例如 `load` 与 `unload` 不能写在同一个动作上，设备间转移用 `from_device=`）；
 `uses` 可以和其他语义同时写。内部仍规范化成第 2 版资源合同，调度器按它执行托管、搬运与分装结算。
 
-## 前端选择器：`Placeholder`
+### 库位参数：`SiteSlot` 与 `Material.site`
 
-物料、设备、库位由注解类型表达（`ResourceSlot`、`DeviceSlot`、`SiteSlot` / `SiteSelector`），注册表自动生成条目的
-`placeholder_keys`。其他前端选择器写在注解里，只影响前端，不改变类型与校验：
+库位参数只有一个类型 `SiteSlot`（值是库位 UUID，前端用库位选择器填写）。库位属于哪个物料、放进去的是哪个物料、
+已占用的库位怎么处理，属于资源语义，写在 `material=` 里：
 
 ```python
-from typing import Annotated
-from unilabos.registry.annotations import Placeholder
-from unilabos.registry.placeholder_type import PLACEHOLDER_MANUAL_CONFIRM, PLACEHOLDER_NODES
+from unilabos.registry.decorators import Material, action
+from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
-def transfer(self, target: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)] = None): ...
-def confirm(self, assignee_user_ids: Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)]): ...
+@action(
+    display_name="放到库位",
+    material=Material.site("site", owner="carrier", occupant="sample", allow_occupied=False),
+)
+def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = None) -> None: ...
 ```
+
+- `site` 必须注解为 `SiteSlot`（可空写法 `SiteSlot = None` / `Optional[SiteSlot]` 也行）；`owner` 必填，`occupant` 可省略；
+  `owner` / `occupant` 必须是单个 `ResourceSlot` 参数。写错在注册时报错。
+- `show_occupied`（默认 `True`）决定前端是否列出已占用的库位，`allow_occupied`（默认 `False`）决定已占用的库位能否选；
+  运行预检与派发前核对所选库位属于 `owner`，且（不允许占用时）没有被 `occupant` 以外的物料占着。
+- 只写 `SiteSlot`、不写 `Material.site` 的参数照旧是库位选择器，只是没有这层关系的核对。
+
+## 前端选择器：`placeholder_keys`
+
+`placeholder_keys` 只决定前端用哪种选择器填写一个参数（`unilabos.registry.placeholder_type` 的 `PLACEHOLDER_*`）。
+注册表按类型推出一份，`@action(placeholder_keys={...})` 手写一份，最终给前端的（注册表条目的 `placeholder_keys`、
+schema 里的 `_unilabos_placeholder_info`）是**两者的并集，同一参数两边不同时以手写的为准**：
+
+| 类型 | 推出的选择器 |
+| --- | --- |
+| `ResourceSlot` / `list[ResourceSlot]` | `unilabos_resources` |
+| `DeviceSlot` / `list[DeviceSlot]` | `unilabos_devices` |
+| `SiteSlot` | `unilabos_sites` |
+
+```python
+from unilabos.registry.decorators import action
+from unilabos.registry.placeholder_type import PLACEHOLDER_MANUAL_CONFIRM, PLACEHOLDER_NODES, ResourceSlot
+
+# 传进去的是物料（ResourceSlot：解析成物料实例、加锁、按物料引用校验），网页上显示节点选择器
+@action(placeholder_keys={"mount_resource": PLACEHOLDER_NODES})
+def transfer(self, resource: ResourceSlot, mount_resource: ResourceSlot = None): ...
+
+# 没有专门类型的选择器（节点、人工确认指派人、出库 / 试剂扣减……）一律手写
+@action(placeholder_keys={"assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM})
+def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
+```
+
+- 手写的只改显示：参数是什么（是不是物料、要不要解析成物料实例、加不加物料锁、怎么校验）仍由类型决定。
+  兼容此前的规则，唯一的例外：手写成 `unilabos_resources` 的参数也算物料参数、加共享资源锁（类型与校验不变）。
+- 键必须是动作的参数名（ROS 动作类型还可以是 `goal=` 映射的字段名），否则注册时报错；`parent=True` 与协议动作的签名
+  在注册时看不到，不核对。值不是已知种类时按定义告警一次、照常写入（前端以后可能加新的种类）。
+- 手写 YAML 注册表里已有的 `placeholder_keys` 同样算手写：`--complete_registry` 补全时与类型推出的取并集，手写优先，
+  不是参数的键丢弃。
 
 ## 不兼容变更
 
-以下写法已删除，装饰器（导入时）和注册表 AST 扫描（`--check_mode`、启动扫描）都直接报错，错误信息给出新写法；
+以下写法已删除，导入、装饰器（导入时）和注册表 AST 扫描（`--check_mode`、启动扫描）都直接报错，错误信息给出新写法；
 不做转换，也不只是告警。
 
 | 删除的写法 | 新写法 |
 | --- | --- |
 | `@action(contract="typed")` / `contract="legacy"` | 去掉：所有 JSON 动作同一标准 |
 | `@action(resource_contract={...})` | `@action(material=Material.xxx(...))`，对照表见上 |
-| `@action(placeholder_keys={...})` | 物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot` / `SiteSelector` 注解；其他选择器 `Annotated[..., Placeholder(...)]` |
+| `Annotated[T, Placeholder(PLACEHOLDER_...)]`（`unilabos.registry.annotations.Placeholder`） | `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，参数照常注解为 `T` |
+| `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material=Material.site("参数名", owner=..., occupant=..., show_occupied=..., allow_occupied=...))`；生成的 schema 扩展与以前相同 |
 | JSON 动作的 `@action(goal={...})` / `result={...}` 重命名 | 去掉：字段名就是参数名 / 返回 TypedDict 的字段名（要改名就改参数名） |
 
 行为上的变化：

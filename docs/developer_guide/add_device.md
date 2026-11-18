@@ -739,9 +739,11 @@ my_device:
 - `unilabos_resources`: 渲染为资源选择下拉框
 - `unilabos_devices`: 渲染为设备选择下拉框
 
-`placeholder_keys` 是注册表按注解生成的结果，不能在 `@action` 里手写（`@action(placeholder_keys=...)` 已删除）。
-其他前端选择器（节点、人工确认指派人、出库扣减等）写在注解里：
-`Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]`（`unilabos.registry.annotations.Placeholder`）。
+按类型推出的选择器之外，其他前端选择器（节点、人工确认指派人、出库扣减等）或想把某个参数换一种显示时，在
+`@action(placeholder_keys={"参数名": PLACEHOLDER_...})` 里手写。最终的 `placeholder_keys` 是按类型推出的与手写的并集，
+同一参数以手写的为准；手写的只改前端显示，参数类型与校验不变。例如
+`@action(placeholder_keys={"mount_resource": PLACEHOLDER_NODES})` 让 `mount_resource: ResourceSlot` 显示节点选择器，
+它仍是物料参数（加锁、解析成物料实例）。规则见 `action_standard.md`。
 
 #### 4. 运行时解析
 

@@ -117,11 +117,13 @@ class <ClassName>:
 - `always_free=True`：动作不占用设备 busy 队列，适合 `get_status`、`query_*`、`ping`、连接测试等轻量查询动作；会在 `action_value_mappings.<action>.always_free` 中写入 `true`。
 - `feedback_interval`：动作反馈发布间隔，单位秒；AST 扫描默认补 `1.0`，长任务可调大，例如 `5.0`、`30.0`。
 - `goal_default`：编辑器里的初始参数值，叠加在签名默认值上；它不让参数变成可选，没有签名默认值的参数仍然必填。
-- `material`：资源语义（装载托管、原位处理、搬运、分装、顺序敏感），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
+- `material`：资源语义（装载托管、原位处理、搬运、分装、顺序敏感、库位关系），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
+- `placeholder_keys`：前端选择器 `{参数名: PLACEHOLDER_...}`。物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot` 由类型自动推出；
+  节点、人工确认指派人、扣减等没有专门类型的选择器，或想把某个参数换一种显示，就在这里手写。两者取并集，同一参数以手写为准；
+  只改前端显示，参数类型与校验不变（兼容规则：手写成 `unilabos_resources` 的参数也加物料锁）。键必须是参数名。
 - `handles`：动作级输入/输出端口，使用 `ActionInputHandle`、`ActionOutputHandle`；不写时按 schema 生成。
-- 已删除、写了会报错的参数：`contract=`、`resource_contract=`、`placeholder_keys=`，以及 JSON 动作的 `goal=` / `result=`
-  重命名（参数名就是字段名）。前端选择器：物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot`，其他写
-  `Annotated[类型, Placeholder(PLACEHOLDER_...)]`。
+- 已删除、写了会报错的写法：`contract=`、`resource_contract=`、JSON 动作的 `goal=` / `result=` 重命名（参数名就是字段名），
+  以及注解里的 `Placeholder(...)`（改成 `placeholder_keys=`）与 `SiteSelector(...)`（改成 `SiteSlot` + `Material.site(...)`）。
 
 参数与返回值只有一个标准，注册表按签名生成 schema，调度端与 Host 调用前校验参数，调用后按返回注解校验返回值：
 
@@ -164,8 +166,10 @@ def stir(self, sample: ResourceSlot, rpm: int = 300) -> None: ...
 | `Material.aliquot(source=, targets=[...])` | 按实测量分装 |
 | `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 额外占用的资源参数 |
 | `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序 |
+| `Material.site("site", owner="carrier", occupant="sample", show_occupied=True, allow_occupied=False)` | 库位参数 `site`（`SiteSlot`）属于 `carrier`，放进去的是 `sample`；已占用库位是否列出 / 能否选 |
 
-字符串都是参数名，注册时对照签名检查；物料参数必须是 `ResourceSlot`，设备参数可以是 `ResourceSlot` 或设备 ID 字符串。
+字符串都是参数名，注册时对照签名检查；物料参数必须是 `ResourceSlot`，设备参数可以是 `ResourceSlot` 或设备 ID 字符串；
+`Material.site` 的库位参数必须是 `SiteSlot`，`owner` / `occupant` 必须是单个 `ResourceSlot`。
 
 ### 3.2 `@topic_config` 规则
 

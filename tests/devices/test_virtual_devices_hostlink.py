@@ -1,8 +1,8 @@
 """内置虚拟设备：注册合同、HostLink 真实执行（不走 ``--test_mode`` 占位）、示例图与代表协议。
 
 驱动按装饰器注册表条目（AST 扫描，与运行时同一份）由 HostLink 本地运行时实例化、启动，
-动作走运行时的同一条调用链（goal 映射、样品映射与 ActionContext 注入）。模拟时间倍率设为 0：
-逻辑与状态变化照常发生，只是不等待；时间倍率、进度与取消另有专门的用例。
+动作走运行时的同一条调用链（goal 映射、样品映射与 ActionContext 注入）。设备类的默认时间倍率在用例里
+设为 0：逻辑与状态变化照常发生，只是不等待；时间倍率、进度与取消另有专门的用例。
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLink
 from unilabos.backend.runtime import workstation_protocol
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
 from unilabos.config.config import BasicConfig
+from unilabos.devices.virtual.simulation import DEFAULT_TIME_SCALE, VirtualDevice
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.registry import Registry
@@ -95,7 +96,7 @@ def registry() -> dict[str, Any]:
 @pytest.fixture(autouse=True)
 def _instant_real_execution(monkeypatch):
     monkeypatch.setattr(BasicConfig, "test_mode", False)
-    monkeypatch.setattr(BasicConfig, "virtual_time_scale", 0.0)
+    monkeypatch.setattr(VirtualDevice, "default_time_scale", 0.0)
 
 
 def _spec(
@@ -409,21 +410,28 @@ def test_solid_dispenser_runs_its_actions(registry) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_time_scale_comes_from_the_device_config_or_the_global_setting(registry, monkeypatch) -> None:
+def test_time_scale_comes_from_the_device_config_or_the_class_default(registry, monkeypatch) -> None:
+    from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
     from unilabos.devices.virtual.virtual_stirrer import VirtualStirrer
 
-    monkeypatch.setattr(BasicConfig, "virtual_time_scale", 0.002)
-    assert VirtualStirrer().time_scale == 0.002
+    # 没有全局设置：倍率只按设备配，缺省是设备类自带的短倍率
+    assert not hasattr(BasicConfig, "virtual_time_scale")
+    monkeypatch.undo()
+    assert VirtualStirrer().time_scale == DEFAULT_TIME_SCALE == 0.001
+    assert VirtualHeatingPlatform().time_scale == DEFAULT_TIME_SCALE
     assert VirtualStirrer(time_scale=1).time_scale == 1.0
+    assert VirtualStirrer(time_scale=0).time_scale == 0.0
     # 图节点写成 {"config": {...}}（旧注册表的形状）时内层同样生效
-    assert VirtualStirrer(config={"time_scale": 0.5, "max_speed": 800}).max_speed == 800.0
+    nested = VirtualStirrer(config={"time_scale": 0.5, "max_speed": 800})
+    assert (nested.time_scale, nested.max_speed) == (0.5, 800.0)
     with pytest.raises(ValueError, match="time_scale"):
         VirtualStirrer(time_scale=-1)
 
     # 2 分钟的模拟搅拌按 0.002 倍约 0.24 秒跑完，并分步发布进度反馈
+    monkeypatch.setattr(BasicConfig, "test_mode", False)
     feedback: list[dict[str, Any]] = []
     context = ActionContext(feedback_callback=lambda _id, data: feedback.append(data))
-    with _running(_spec(registry, "stirrer", "virtual_stirrer")) as runtime:
+    with _running(_spec(registry, "stirrer", "virtual_stirrer", {"time_scale": 0.002})) as runtime:
         started = time.monotonic()
         runtime.call_action("stirrer", "stir", stir_time=60.0, stir_speed=300.0, settling_time=60.0,
                             action_context=context)

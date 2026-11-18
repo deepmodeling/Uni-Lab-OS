@@ -91,7 +91,7 @@ class VirtualSeparator(VirtualDevice):
             volume[容积]: 分液器容积（mL）。
             has_phases[可分层]: 液体是否能分出两相。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(kwargs, volume=volume, has_phases=has_phases, port=port, time_scale=time_scale)
         super().__init__(device_id or kwargs.pop("id", None), "virtual_separator", settings["time_scale"])

@@ -8,7 +8,7 @@
 * 物料身份、工位占用与最新温度投影都通过 ``materials.v1`` 写入物料权威，没有私有的演示存储。
 
 加热时长是模拟时间：真实等待 = ``duration_seconds`` × 时间倍率（图节点 ``config.time_scale``，
-没配时取 ``BasicConfig.virtual_time_scale``，默认很快）；示例图把倍率设为 1，按真实时长画出升温曲线。
+没配时取设备类自带的默认值 0.001，很快）；示例图把倍率设为 1，按真实时长画出升温曲线。
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.backend.hostlink.protocol import LinkError
-from unilabos.devices.virtual.simulation import resolve_time_scale
+from unilabos.devices.virtual.simulation import DEFAULT_TIME_SCALE, resolve_time_scale
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.resources.objects.pose import (
     ResourceDictPosition,
@@ -104,6 +104,8 @@ class VirtualHeatingPlatform:
     # Opt-in is intentionally explicit. HostLink still short-circuits every
     # physical driver while ``--test_mode`` is enabled.
     run_in_test_mode = True
+    #: 图节点没配 time_scale 时的时间倍率（设备类自带）
+    default_time_scale: float = DEFAULT_TIME_SCALE
 
     def __init__(
         self,
@@ -118,7 +120,7 @@ class VirtualHeatingPlatform:
             0.05, float(self.config.get("update_interval_s", 0.25))
         )
         # 模拟时间倍率：真实等待 = duration_seconds × time_scale
-        self.time_scale = resolve_time_scale(self.config.get("time_scale"))
+        self.time_scale = resolve_time_scale(self.config.get("time_scale"), self.default_time_scale)
         self._lock = RLock()
         self._provision_lock = RLock()
         self._platform_uuid = ""

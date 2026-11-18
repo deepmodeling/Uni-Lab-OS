@@ -65,7 +65,7 @@ class VirtualTransferPump(VirtualDevice):
             transfer_rate[转移速率]: 默认柱塞速度（mL/s）；不填时用 max_velocity。
             max_velocity[最大速度]: 柱塞最大速度（mL/s），默认 5。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,

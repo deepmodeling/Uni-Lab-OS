@@ -79,7 +79,7 @@ class VirtualSolidDispenser(VirtualDevice):
             max_capacity[最大加样量]: 单次最大加样量（g）。
             precision[精度]: 加样精度（g），加样量按它取整。
             molar_mass[摩尔质量]: 按物质的量加样时换算用的摩尔质量（g/mol）。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs, max_capacity=max_capacity, precision=precision, molar_mass=molar_mass, time_scale=time_scale

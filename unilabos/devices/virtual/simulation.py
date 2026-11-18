@@ -1,8 +1,8 @@
 """内置虚拟设备共用的模拟工具。
 
-- **模拟时间**：动作按「模拟时长 × 时间倍率」真实等待。倍率取设备图节点配置 ``time_scale``，
-  没配时取 ``BasicConfig.virtual_time_scale``（默认 0.001：一小时的模拟操作约 3.6 秒跑完；
-  1.0 按真实时长，0 不等待）。环境变量 ``UNILABOS_BASICCONFIG_VIRTUAL_TIME_SCALE`` 同样生效。
+- **模拟时间**：动作按「模拟时长 × 时间倍率」真实等待。倍率只按设备配：图节点配置 ``time_scale``，
+  没配时取设备类自带的默认值 ``default_time_scale``（0.001：一小时的模拟操作约 3.6 秒跑完）；
+  1.0 按真实时长，0 不等待。
 - **长动作**：分步推进，每步检查取消（``ActionContext``，ROS 2 不注入时只是不支持取消）、
   更新进度与剩余时间，并通过动作反馈发布。
 - **容器引用**：协议编译器按 ``{"id": <设备图节点 id>}`` 传容器，前端 / 脚本也可能传 uuid、
@@ -23,12 +23,13 @@ import time
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
 
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
-from unilabos.config.config import BasicConfig
 from unilabos.registry.decorators import not_action
 
 #: 容器引用的线上形态：图节点 id / uuid 字符串，或 ``{"id": ..., "uuid": ...}``。
 VesselRef = Union[str, Dict[str, Any]]
 
+#: 设备类自带的默认时间倍率：一小时的模拟操作约 3.6 秒跑完。
+DEFAULT_TIME_SCALE = 0.001
 #: 每步最长真实等待（秒）与最多步数：决定进度反馈的粒度。
 STEP_WALL_SECONDS = 0.1
 MAX_STEPS = 200
@@ -54,10 +55,10 @@ _AMOUNT_UNITS = {"mol": 1.0, "mmol": 1e-3, "umol": 1e-6, "µmol": 1e-6, "μmol":
 _QUANTITY = re.compile(r"^\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*([a-zA-Zµμ]*)\s*$")
 
 
-def resolve_time_scale(value: Any = None) -> float:
-    """时间倍率：设备配置优先，其次全局 ``BasicConfig.virtual_time_scale``。"""
+def resolve_time_scale(value: Any = None, default: float = DEFAULT_TIME_SCALE) -> float:
+    """时间倍率：设备图节点配置的 ``time_scale``，没配时取设备类的默认值。"""
 
-    raw = BasicConfig.virtual_time_scale if value is None or value == "" else value
+    raw = default if value is None or value == "" else value
     try:
         scale = float(raw)
     except (TypeError, ValueError) as exc:
@@ -183,10 +184,12 @@ class VirtualDevice:
 
     # 虚拟设备本身就是模拟器：--test_mode 下同样真实执行（只是快）
     run_in_test_mode = True
+    #: 图节点没配 time_scale 时的时间倍率（设备类自带，子类可改）
+    default_time_scale: float = DEFAULT_TIME_SCALE
 
     def __init__(self, device_id: Optional[str], default_id: str, time_scale: Any = None) -> None:
         self.device_id = str(device_id or default_id)
-        self.time_scale = resolve_time_scale(time_scale)
+        self.time_scale = resolve_time_scale(time_scale, self.default_time_scale)
         self.logger = logging.getLogger(f"unilabos.devices.virtual.{self.device_id}")
         self._node: Any = None
         self._lock = threading.RLock()
@@ -502,6 +505,7 @@ class VirtualDevice:
 
 __all__ = [
     "CANCEL_CHECK_SECONDS",
+    "DEFAULT_TIME_SCALE",
     "MAX_STEPS",
     "STEP_WALL_SECONDS",
     "UG_PER_G",

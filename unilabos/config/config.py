@@ -91,10 +91,6 @@ class BasicConfig:
     frontend_event_cleanup_batch_size = 1_000
     check_mode = False  # CI 检查模式，用于验证 registry 导入和文件一致性
     test_mode = False  # 测试模式，所有动作不实际执行，返回模拟结果
-    # 内置虚拟设备（unilabos/devices/virtual）的模拟时间倍率：真实等待 = 模拟时长 × 倍率。
-    # 默认 0.001（1 小时的模拟操作约 3.6 秒跑完）；1.0 按真实时长；0 不等待。
-    # 设备图节点的 config.time_scale 优先。
-    virtual_time_scale = 0.001
     extra_resource = False  # 是否加载lab_开头的额外资源
     # 'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
     log_level: Literal["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "DEBUG"

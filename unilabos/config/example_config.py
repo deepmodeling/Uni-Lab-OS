@@ -6,7 +6,6 @@ class BasicConfig:
     port = 8002  # 管理端 HTTP/Web API 与主微前端端口
     disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
     # server_database_root = ""  # 四个数据库所在目录；留空为工作目录下的 database/，命令行 --server_database_root 优先
-    # virtual_time_scale = 0.001  # 内置虚拟设备的模拟时间倍率（真实等待 = 模拟时长 × 倍率）；1.0 按真实时长，0 不等待
 
 
 # WebSocket配置，一般无需调整

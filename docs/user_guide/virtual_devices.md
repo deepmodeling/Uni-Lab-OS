@@ -46,9 +46,10 @@
 真实等待 = 模拟时长 × time_scale
 ```
 
-- 全局：`BasicConfig.virtual_time_scale`，默认 `0.001`（1 小时的模拟操作约 3.6 秒跑完）；也可用环境变量
-  `UNILABOS_BASICCONFIG_VIRTUAL_TIME_SCALE` 覆盖。
-- 单台设备：图节点 `config.time_scale` 优先，例如 `{"time_scale": 1.0}` 按真实时长运行，`0` 不等待。
+倍率只按设备配，没有全局设置：
+
+- 图节点 `config.time_scale`，例如 `{"time_scale": 1.0}` 按真实时长运行，`0` 不等待；
+- 没配时用设备类自带的默认值 `0.001`（`VirtualDevice.default_time_scale`，1 小时的模拟操作约 3.6 秒跑完）。
 - `virtual_heating_platform_demo.json` 把倍率设为 1，按真实时长画出升温曲线。
 
 协议编译器生成的 `wait` 步骤由工作站按真实时长等待，不受这个倍率影响（例如抽真空充气协议的

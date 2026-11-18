@@ -62,7 +62,7 @@ class VirtualHeatChill(VirtualDevice):
             max_stir_speed[最高搅拌速度]: 最高搅拌速度（RPM）。
             ramp_rate[升降温速率]: 定时控温时的升 / 降温速率（°C/s）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,

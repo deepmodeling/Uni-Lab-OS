@@ -48,7 +48,7 @@ class VirtualVacuumPump(VirtualDevice):
             device_id[设备ID]: 设备实例 ID。
             switch_time[切换时间]: 开 / 关一次的模拟时间（s）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs, switch_time=switch_time, port=port, time_scale=time_scale

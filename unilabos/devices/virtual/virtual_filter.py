@@ -91,7 +91,7 @@ class VirtualFilter(VirtualDevice):
             max_stir_speed[最高搅拌速度]: 最高搅拌速度（RPM）。
             max_volume[最大体积]: 单次最大过滤体积（mL）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,

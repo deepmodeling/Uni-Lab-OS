@@ -92,7 +92,7 @@ class VirtualRotavap(VirtualDevice):
             max_temp[最高温度]: 水浴最高温度（°C）。
             max_rotation_speed[最高转速]: 最高旋转速度（RPM）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs, max_temp=max_temp, max_rotation_speed=max_rotation_speed, port=port, time_scale=time_scale

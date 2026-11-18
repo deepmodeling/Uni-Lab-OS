@@ -3661,6 +3661,9 @@ class BackendScheduler:
             "severity": "warning",
             "error_info": deepcopy(error_info),
         }
+        # 先落库再登记：决策一进清单就可能被 API 线程立即处置，重试把 attempt 改回 pending。
+        # 先登记后落库时，迟到的落库会把已经重试的 attempt 又改回 intervention_required，重试被静默吞掉。
+        self.workflow.mark_workflow_node_job_decision_pending(job_uuid, report)
         with self._guard:
             self._run_context[node.node_id] = (task, node)
             self._job_runs[job_uuid] = node.node_id
@@ -3668,7 +3671,6 @@ class BackendScheduler:
                 "report": report, "job_uuid": job_uuid, "run_uuid": node.node_id, "task_uuid": task_uuid,
                 "error_info": deepcopy(error_info),
             }
-        self.workflow.mark_workflow_node_job_decision_pending(job_uuid, report)
         logger.info("workflow node %s preflight failed, awaiting decision %s: %s",
                     spec["workflow_node_uuid"], decision_id, message)
 

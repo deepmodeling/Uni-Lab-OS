@@ -1,6 +1,7 @@
 """条件选料、缺料的预检报错（任务级直接失败、动作级挂起待补料重试）及双库恢复走实际工作流计划和库存事务。"""
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
@@ -250,6 +251,45 @@ def test_pending_action_preflight_decision_after_restart_does_not_pause_dispatch
         executor.finish(1, {})
         wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
     finally:
+        resumed.stop()
+        reopened.close()
+
+
+def test_action_preflight_decision_is_persisted_before_it_can_be_resolved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """重新挂出的预检决策要先落库再进待决策清单。
+
+    先进清单时，API 线程可以在落库之前处置它：重试把 attempt 改回 pending，迟到的落库又把它改回
+    intervention_required，重试被静默吞掉。这里让落库停住，在这个窗口里试着处置。
+    """
+    executor = Executor()
+    reopened, task, before = _restart_with_preflight_decision(tmp_path, executor)
+    persisting, persist = threading.Event(), threading.Event()
+    mark_pending = reopened.workflow.mark_workflow_node_job_decision_pending
+
+    def held_mark_pending(job_uuid: str, report: dict[str, Any]) -> dict[str, Any]:
+        persisting.set()
+        persist.wait(5)
+        return mark_pending(job_uuid, report)
+
+    monkeypatch.setattr(reopened.workflow, "mark_workflow_node_job_decision_pending", held_mark_pending)
+    resumed = BackendScheduler(reopened.workflow, executor, materials_gateway=reopened.client)
+    retry = {"action": "retry", "reason": "已补料"}
+    try:
+        resumed.submit(task["uuid"])
+        wait_for(persisting.is_set)
+        _inbound(reopened.materials, lot_uuid="lot-a", quantity=4)
+        resolved_early = resumed.resolve_reconciliation_decision(before["decision_id"], dict(retry))
+        persist.set()
+        assert not resolved_early
+        wait_for(lambda: _preflight_decision(resumed, task["uuid"]) is not None)
+        assert resumed.resolve_reconciliation_decision(before["decision_id"], dict(retry))
+        wait_for(lambda: len(executor.dispatched) == 1)
+        executor.finish(0, {})
+        wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    finally:
+        persist.set()
         resumed.stop()
         reopened.close()
 

@@ -215,13 +215,20 @@ class ExecutionClaims:
         return bool(row and row["state"] == "timed_out")
 
     def unclaimed_active_jobs(self) -> list[str]:
-        """旧库在飞尝试没有冻结的资源集合，升级后必须先核实再开放新派发。"""
+        """旧库在飞尝试没有冻结的资源集合，升级后必须先核实再开放新派发。
+
+        动作执行前预检挂起的 attempt（``pending_decision.category == "preflight"``）从未派发、
+        按设计不申请也不保留任何资源，没有 Claim 是常态而不是旧库遗留；把它算进来会让重启后
+        一个待处置的预检决策暂停所有任务的派发。
+        """
         with self.store.write_lock:
             rows = self.store.connection.execute(
                 "SELECT j.uuid FROM workflow_node_job j JOIN workflow_node_run r ON r.current_job_uuid=j.uuid "
                 "WHERE j.deleted_at IS NULL AND r.deleted_at IS NULL "
                 "AND j.status IN ('dispatched','running','cancel_requested','execution_unknown','intervention_required') "
                 "AND r.executor_kind NOT IN ('loop','condition') "
+                "AND NOT (j.status='intervention_required' "
+                "AND json_extract(j.control_data,'$.pending_decision.category') IS 'preflight') "
                 "AND NOT EXISTS (SELECT 1 FROM workflow_execution_claim c WHERE c.job_uuid=j.uuid) "
                 "AND NOT EXISTS (SELECT 1 FROM workflow_manual_confirmation m WHERE m.workflow_node_job_uuid=j.uuid)"
             ).fetchall()

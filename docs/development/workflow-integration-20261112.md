@@ -5,7 +5,7 @@
 ## 显式资源作用域
 
 ```python
-@workflow(compiler="ast")
+@workflow(display_name="反应")
 def experiment(ctx):
     with ctx.resource_scope("reactor", name="reaction"):
         ctx.run("reactor/load", {})
@@ -125,7 +125,5 @@ return {
 - 前端 core：556 项通过；developer-web：858 项通过；类型检查及发布构建通过。
 - 浏览器接入真实独立后端，确认缺料、跨循环设备所有权、夹爪托管同时可见；核实说明和勾选前禁止提交，确认后对账请求返回 HTTP 200，无页面脚本错误。
 - 实际结算结果：两轮每轮计划 10 ul、实测 8 ul，来源 100 → 84 ul，目标 0 → 16 ul，库存 7 + 补料 20 − 实测 16 = 11 ul；未选分支没有预留，最终无活动物理占用或托管。
-
-本地预览：`http://localhost:5193/operations`，后端端口 18034，数据根 `/home/wz/unilab-joint-preview-20261112`。原 Windows dev 工作区的未提交修改未被覆盖。全部为本地集成分支提交，未推送或合并远端。
 
 Linux 重启补充修正：HTTP 端口预检查采用与 Uvicorn 相同的 TIME_WAIT 复用语义，仍拒绝活动监听者；Windows 不启用共享端口。真实 TCP 连接关闭后的重绑及启动配置回归 27 项通过、1 项平台条件跳过。

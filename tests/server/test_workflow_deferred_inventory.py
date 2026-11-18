@@ -16,7 +16,7 @@ def create(stack, executor, flow, *, submit=True):
     catalog = DeviceCatalog()
     catalog.add("reactor", "unknown", str(uuid4()))
     definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:inventory",
-        display_name="分支选料", description="", tags=[], compiler="ast")
+        display_name="分支选料", description="", tags=[])
     payload = materialize_workflow_template(build_workflow_template_payload(definition), catalog)
     record = upsert_workflow(stack.workflow, payload)
     scheduler = BackendScheduler(stack.workflow, executor, materials_gateway=stack.client)

@@ -25,7 +25,7 @@
   ``loaded.material`` 引用新物料（见 ``protocol/runtime/material_io.py``）。
 - 工作流函数只按源码静态编译（``registry/workflow_ast.py``）：不执行函数体，支持动作结果的
   原生 if/elif/else；辅助函数（第一个实参是 ctx 的步骤函数、只有一句 return 的值函数）在编译前
-  按源码展开（``registry/workflow_helpers.py``）。``compiler`` 参数只为兼容保留，只接受 ``"ast"``。
+  按源码展开（``registry/workflow_helpers.py``）。
 - ``with ctx.loop_for(3):`` / ``with ctx.loop_while(condition):``：块内的步骤是循环体，
   运行时由调度器逐轮执行（不是配置时展开）。``for`` 固定轮数；``while`` 每轮前判定条件——
   ``ctx.device_state("heater", "temperature_c", "<", 80)`` 看设备状态字段，
@@ -73,6 +73,11 @@ from typing import Any, Callable, ContextManager, Dict, Iterator, List, Mapping,
 
 from unilabos.protocol.materials import InventoryRequirement
 from unilabos.protocol.runtime.loop import LOOP_NODE_TYPE, parse_loop_spec
+from unilabos.registry.workflow_options import (
+    REMOVED_WORKFLOW_OPTIONS,
+    ignored_workflow_options,
+    warn_ignored_workflow_options,
+)
 from unilabos.utils.log import logger
 
 #: 模板里 node_output 条件引用的是步骤 key（``step-N``），实例化时换成节点 uuid；
@@ -94,10 +99,6 @@ def workflow_uuid_for(source_path: str) -> str:
     """按函数相对路径（``module:qualname``）派生稳定 workflow uuid。"""
 
     return str(uuid_module.uuid5(WORKFLOW_NAMESPACE, source_path))
-
-
-#: 旧的 builder 模式（注册时执行一次作者函数）已移除，所有工作流都按源码静态编译。
-_BUILDER_REMOVED = "builder 模式已移除：@workflow 只按源码静态编译（AST），去掉 compiler 参数即可"
 
 
 @dataclass(frozen=True)
@@ -204,12 +205,6 @@ class WorkflowDefinition:
     tags: List[str]
     fn: Callable[["WorkflowBuildContext"], Any]
     guide: Optional[WorkflowGuide] = None
-    #: 只为兼容保留：只接受 ``"ast"``
-    compiler: str = "ast"
-
-    def __post_init__(self) -> None:
-        if self.compiler != "ast":
-            raise ValueError(_BUILDER_REMOVED)
 
     def collect(self) -> "WorkflowBuildContext":
         """按源码静态编译出步骤及输入输出声明，不调用作者函数。"""
@@ -619,9 +614,12 @@ def workflow(
     description: str = "",
     tags: Optional[Sequence[str]] = None,
     guide: Optional[Any] = None,
-    compiler: str = "ast",
+    **removed_options: Any,
 ):
     """把模块级函数注册为设备包自带的工作流模板。
+
+    工作流一律按源码静态编译（``registry/workflow_ast.py``）：不执行作者函数，支持动作结果驱动的
+    if/elif/else，辅助函数在编译前按源码展开。
 
     Args:
         display_name: 模板显示名（必填）。
@@ -630,14 +628,16 @@ def workflow(
         guide: 操作指引（``WorkflowGuide`` 或同形 dict）：``preparation`` 运行前要在前端做的
             准备（出库、挂到哪台设备哪个位点、确认设备在线……）、``expected`` 预期效果、
             ``notes`` 注意事项。配合每步的 ``description`` 组成前端的"全流程"说明。
-        compiler: 只为兼容保留，只接受 ``"ast"``：工作流一律按源码静态编译，支持动作结果驱动的
-            if/elif/else，辅助函数在编译前按源码展开；不执行作者函数。
+        removed_options: 只接受已移除的 ``compiler``，让旧驱动包照常加载：``compiler="ast"`` 的值被忽略，
+            按定义告警一次；其他取值报错并提示去掉参数（规则见 ``registry/workflow_options.py``）。
     """
 
+    unexpected = sorted(set(removed_options) - set(REMOVED_WORKFLOW_OPTIONS))
+    if unexpected:
+        raise TypeError(f"workflow() got an unexpected keyword argument {unexpected[0]!r}")
     if not str(display_name).strip():
         raise ValueError("@workflow 必须提供非空 display_name")
-    if compiler != "ast":
-        raise ValueError(_BUILDER_REMOVED)
+    ignored_options = ignored_workflow_options(removed_options)
     normalized_guide = _normalize_guide(guide)
 
     def decorator(fn: Callable[[WorkflowBuildContext], Any]):
@@ -650,8 +650,10 @@ def workflow(
             tags=[str(tag) for tag in (tags or [])],
             fn=fn,
             guide=normalized_guide,
-            compiler=compiler,
         )
+        if ignored_options:
+            # 与 AST 扫描同一身份（模块:函数）：同一定义在一个进程里只告警一次
+            warn_ignored_workflow_options(source_path, ignored_options)
         existing = _registered_workflows.get(definition.uuid)
         if existing is not None and existing.fn is not fn:
             logger.warning(

@@ -16,14 +16,16 @@
 
 两种动作调用形式都容易解析。影响可靠性的是能否在执行动作之前静态看到全部分支、
 依赖和作用域。因此本轮采用 v1 的静态编译思路，但不替换 dev 调度器，也不复制 v1 的
-完整作者 API。工作流一律按源码静态编译（与 V1 相同，只认 `if` / `with` 结构），不执行作者函数；
-原 dev 的 builder 模式（注册时执行一次函数收集步骤）已移除，`compiler="builder"` 会报错并提示去掉该参数，
-`compiler="ast"` 只为兼容保留。7 个 demo 仓库与示例驱动包的 31 个模板全部按 AST 编译，
-原来走 builder 的 27 个在两种模式下收集出的步骤逐项一致。
+完整作者 API。工作流按源码静态编译（与 V1 相同，只认 `if` / `with` 结构），不执行作者函数，
+`@workflow` 没有选择编译方式的参数。原 dev 的 builder 模式（注册时执行一次函数收集步骤）已移除，
+`compiler` 参数随之删除：旧驱动包里写的 `compiler="ast"` 照常加载，值被忽略，每个定义告警一次；
+`compiler="builder"` 或其他取值报错并提示去掉该参数（装饰器与注册表 AST 扫描同一规则）。
+7 个 demo 仓库与示例驱动包的 31 个模板全部按源码静态编译，原来走 builder 的 27 个与 builder
+收集出的步骤逐项一致。
 
 ### 辅助函数
 
-AST 模式在编译前把辅助函数调用替换成它的源码（`registry/workflow_helpers.py`），不执行作者代码：
+编译前把辅助函数调用替换成它的源码（`registry/workflow_helpers.py`），不执行作者代码：
 
 - 步骤辅助函数：第一个实参（或任一实参）是 `ctx` 的调用，例如 `_reset(ctx)`，替换成函数体里的步骤语句；
   `m = _measure(ctx)` 取函数末尾 `return` 的步骤，之后可以照常写 `m.purity`、`if m.ok:`。
@@ -54,7 +56,7 @@ Python 模板只定义默认设备 ID、默认动作参数和过程（顺序、�
 ```python
 from unilabos.registry.workflows import workflow
 
-@workflow(display_name="三轮质量检查", compiler="ast")
+@workflow(display_name="三轮质量检查")
 def check_quality(ctx):
     ctx.run("reactor/reset", {}, name="复位")
     with ctx.loop_for(3, name="检测 ×3"):
@@ -317,7 +319,7 @@ node-runs 查询验证完整链路，同时运行原来的定次加样、等待�
 ## 并行分组与动态结果（迁移阶段 W1）
 
 ```python
-@workflow(display_name="两路检测", compiler="ast")
+@workflow(display_name="两路检测")
 def parallel_check(ctx):
     with ctx.parallel("并行检测"):
         with ctx.group("左路检测并记录"):

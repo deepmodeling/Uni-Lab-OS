@@ -2,7 +2,7 @@
 
 目标：将 v1.0（690491a3）的七类剩余工作流能力迁入 dev 既有分层，保持 dev 进程、Host/slave、驱动包和调度权威。Python 定义默认设备 ID、默认参数和过程；设备换绑由前端实例配置承担。不得以目录复制、解析成功或 mock 测试替代实际运行验收。
 
-当前代码：/home/wz/unilab-v1-diff-review；前端 /home/wz/uni-lab-fe-api-review。已实现的条件流程与运行界面证据见 workflow_static_conditions.md 及 2026-11-11 运行交付目录。下表是后续完整目标，未标完成的条目仍需继续。
+已实现的条件流程见 workflow_static_conditions.md。下表是后续完整目标，未标完成的条目仍需继续。
 
 | 编号 | 范围 | 必须通过的验收 | 状态 |
 | --- | --- | --- | --- |
@@ -38,8 +38,6 @@ W1 已补 parallel/group、结构化动态结果参数、当前循环 attempt �
 
 
 ## 2026-11-11 输入输出阶段与差距复核
-
-当前进度以 WSL 迁移工作区为准，尚未全部合入 Windows 的 dev 工作目录。
 
 作者层已增加关键字输入、默认值、类型及范围约束、单位、TypedDict 输出、嵌套输入引用，
 以及 ResourceSlot 输入的隐式输出。图与输入输出合同在同一事务中保存；运行输入在派发前校验，
@@ -118,9 +116,6 @@ workflow-start-hostlink-proof.json；这些数量不能折算成迁移完成百�
 - F1：已有实例二次编辑、完整异常重试/人工核实、资源和库存操作界面。
 - E1：主 Host + 多 slave、ROS2、故障注入、数据库升级和最终集成交付。
 
-迁移实现仍在 WSL 独立工作区；累计补丁未合入 Windows 主 dev。现有预览没有重启，
-因此不能用正在运行的预览判断最新许可功能已经上线。
-
 
 ## 2026-11-11 恢复前置核实与资源区间规则阶段
 
@@ -194,7 +189,6 @@ v6→v7 保留数据升级和 HostLink 三轮动作。五条 demo 的提纯/质�
 
 完整迁移目标仍保持：R1 的借还/托管/跨循环合同，I1 数量和实际结算，
 D1 slave 开始校验与跨库恢复，W1/S1/C1/F1 剩余业务，以及 E1 完整联调。
-实现仍在 WSL 迁移工作区；现有预览服务未重启，Windows 主 dev 未合入。
 
 
 本阶段最终验证：相关工作流/调度/数据库回归 479 passed / 2 skipped；
@@ -215,11 +209,7 @@ D1 slave 开始校验与跨库恢复，W1/S1/C1/F1 剩余业务，以及 E1 完�
 
 v1.0 tag 中未找到独立空闲借还模块，修正此前把借还列为现成功能迁移的表述。
 设备托管则沿用 v1 的 task_while_loaded 语义。接口、运行规则和边界详见
-[workflow_resource_custody.md](workflow_resource_custody.md)。最终验证数量记录在交付目录。
-
-本轮独立工作区：`/home/wz/unilab-custody-review-20261111`；新 demo：
-`/home/wz/LabDeviceCustodyDemo-review-20261111`。原 review 中存在同功能草稿并发改动，
-因此在独立 worktree 继续验证；Windows 主 dev 与现有预览未改动。
+[workflow_resource_custody.md](workflow_resource_custody.md)。
 
 本阶段最终验证：相关回归 507 passed / 2 skipped；双进程 HostLink 虚拟设备 smoke
 9 个任务成功，46 次设备尝试/准入，13 个区间均已释放，1 次借用已归还、1 条托管已释放，
@@ -234,7 +224,6 @@ v1.0 tag 中未找到独立空闲借还模块，修正此前把借还列为现�
 继续保留，绝不据此重跑动作。故障或身份冲突会暂停新派发并显示诊断，连接恢复后自动重试。
 具体规则和证据范围见 workflow_inventory_recovery.md。
 
-本阶段在 /home/wz/unilab-inventory-recovery 独立 worktree 中基于已验证的区间阶段实现；
-累计补丁不包含另一个工作区尚未完成的借还/托管代码。恢复逻辑兼容托管表存在时的保留规则。
+恢复逻辑兼容托管表存在时的保留规则。
 D1 中跨库库存恢复已接入，slave 开始校验、完整物理搬运/部分实际用量结算、前端库存操作面板
-与多机硬件验收仍需继续推进。Windows 主 dev 未合入，现有预览未重启。
+与多机硬件验收仍需继续推进。

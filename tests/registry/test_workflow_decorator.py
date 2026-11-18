@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
 
+from unilabos.registry import workflow_options
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.workflows import (
     DeviceCatalog,
@@ -220,7 +223,7 @@ def test_device_id_rebinding_updates_actions_and_state_without_mutating_template
 
 
 def test_state_only_device_is_a_bindable_id_role() -> None:
-    @workflow(display_name="仅等待状态", compiler="ast")
+    @workflow(display_name="仅等待状态")
     def flow(ctx):
         with ctx.loop_while(ctx.device_state("sensor", "ready", "==", False), interval_seconds=0.5):
             pass
@@ -302,21 +305,93 @@ def test_step_target_must_contain_action() -> None:
         ctx.run_template("only_class", {})
 
 
-def test_builder_mode_is_gone() -> None:
-    """工作流一律按源码静态编译；``compiler="ast"`` 只为兼容保留，``builder`` 给出改法。"""
+def _ignored_compiler_warnings(caplog) -> list[str]:
+    return [record.getMessage() for record in caplog.records if 'compiler="ast"' in record.getMessage()]
 
-    with pytest.raises(ValueError, match="builder 模式已移除.*去掉 compiler 参数"):
-        workflow(display_name="旧写法", compiler="builder")
-    with pytest.raises(ValueError, match="builder 模式已移除"):
-        WorkflowDefinition(uuid=str(uuid.uuid4()), source_path="test:old", display_name="旧写法", description="",
-                           tags=[], fn=lambda ctx: None, compiler="builder")
 
-    @workflow(display_name="兼容写法", compiler="ast")
+def test_workflow_compiles_from_source_without_a_compiler_argument() -> None:
+    """工作流一律按源码静态编译：不写 compiler 也支持动作结果驱动的 if，不执行作者函数。"""
+
+    @workflow(display_name="默认写法")
+    def plain(ctx):
+        result = ctx.run("reactor/measure", {})
+        if result.ok:
+            ctx.run("reactor/report", {})
+
+    [definition] = get_registered_workflows().values()
+    steps = definition.collect().steps
+    assert [(step.kind, step.action) for step in steps] == [("run", "measure"), ("condition", ""), ("run", "report")]
+    assert "compiler" not in {item.name for item in fields(WorkflowDefinition)}
+    assert "compiler" not in build_workflow_template_payload(definition)
+
+
+def test_removed_compiler_ast_is_ignored_and_warns_once_per_definition(monkeypatch, caplog) -> None:
+    """旧驱动包里的 ``compiler="ast"`` 照常加载：值被忽略，同一定义只告警一次。"""
+
+    monkeypatch.setattr(workflow_options, "_warned_definitions", set())
+    caplog.set_level(logging.WARNING)
+
     def explicit(ctx):
         ctx.run("reactor/measure", {})
 
+    workflow(display_name="旧写法", compiler="ast")(explicit)
+    workflow(display_name="旧写法", compiler="ast")(explicit)  # 同一定义重复导入
+
     [definition] = get_registered_workflows().values()
     assert [step.action for step in definition.collect().steps] == ["measure"]
+    messages = _ignored_compiler_warnings(caplog)
+    assert len(messages) == 1
+    assert definition.source_path in messages[0] and "已废弃并被忽略" in messages[0]
+    # 装饰器与 AST 扫描共用 模块:函数 这一身份
+    assert not workflow_options.warn_ignored_workflow_options(definition.source_path, ['compiler="ast"'])
+
+
+def test_compiler_builder_and_other_values_are_rejected() -> None:
+    with pytest.raises(ValueError, match="builder 模式已移除.*去掉 compiler 参数"):
+        workflow(display_name="旧写法", compiler="builder")
+    with pytest.raises(ValueError, match="'static'.*去掉 compiler 参数"):
+        workflow(display_name="旧写法", compiler="static")
+    with pytest.raises(TypeError, match="unexpected keyword argument 'compile'"):
+        workflow(display_name="拼错", compile="ast")  # type: ignore[call-arg]
+    with pytest.raises(TypeError):
+        WorkflowDefinition(uuid=str(uuid.uuid4()), source_path="test:old", display_name="旧写法", description="",
+                           tags=[], fn=lambda ctx: None, compiler="ast")  # type: ignore[call-arg]
+    assert get_registered_workflows() == {}
+
+
+def test_ast_scanner_accepts_and_ignores_compiler_ast(tmp_path: Path, monkeypatch, caplog) -> None:
+    monkeypatch.setattr(workflow_options, "_warned_definitions", set())
+    caplog.set_level(logging.WARNING)
+    module_path = tmp_path / "legacy_wf_module.py"
+    module_path.write_text(
+        "\n".join(
+            [
+                "from unilabos.registry.workflows import workflow",
+                "",
+                "@workflow(display_name='旧扫描流', compiler='ast')",
+                "def legacy_flow(ctx):",
+                "    ctx.run('dev/act', {})",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    _devices, _resources, flows = _parse_file(module_path, tmp_path)
+    _parse_file(module_path, tmp_path)
+    assert flows == [{
+        "module": "legacy_wf_module", "function": "legacy_flow", "display_name": "旧扫描流",
+        "description": "", "tags": [], "file_path": str(module_path).replace("\\", "/"),
+    }]
+    messages = _ignored_compiler_warnings(caplog)
+    assert len(messages) == 1 and "legacy_wf_module:legacy_flow" in messages[0]
+
+    module_path.write_text(
+        "from unilabos.registry.workflows import workflow\n\n"
+        "@workflow(display_name='旧扫描流', compiler='builder')\n"
+        "def legacy_flow(ctx):\n    pass\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="builder 模式已移除.*去掉 compiler 参数"):
+        _parse_file(module_path, tmp_path)
 
 
 def test_references_are_stored_as_plain_json() -> None:

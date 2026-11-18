@@ -1,8 +1,7 @@
 # 资源借还与设备托管（dev）
 
 本阶段使用 dev 的 Scheduler → 持久准入 → 开始许可 → Host 执行链路。
-实现位于 WSL `/home/wz/unilab-custody-review-20261111`，演示位于
-`/home/wz/LabDeviceCustodyDemo-review-20261111`。Windows 主目录和已有预览未合入或重启。
+回归见 `tests/server/test_workflow_resource_custody.py`。
 
 ## 设备托管
 
@@ -70,7 +69,8 @@ v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管
 
 ## 管理接口
 
-这些请求发给调度权威的同一管理地址，沿用现有控制面认证。
+这些请求发给调度权威的同一管理地址，与其他管理 API 一样不需要任何凭据（管理 API 不鉴权，
+原来的控制面 token 已取消，见 [HTTP 接入](interfaces/http.md)）。
 
 | 接口 | 用途 |
 | --- | --- |
@@ -97,9 +97,9 @@ runtime.db 记录借还与托管的四张表：`workflow_resource_loan`、`workf
 该升级测试已随迁移链压平删除）。
 相关回归 507 passed / 2 skipped（包含本文件对应的 23 项资源借还/托管测试）。
 双进程 smoke 的 9 个任务成功，46 次设备尝试和准入、13 个已释放区间、1 次已归还借用、
-1 条已释放设备托管，实际使用残留为 0。证据文件见交付目录 validation.json。
+1 条已释放设备托管，实际使用残留为 0。
 
-外部 demo 新增两个 AST `@workflow`：`资源演示：样品托管` 和 `资源演示：空闲借还`。
+外部 demo 新增两个 `@workflow` 模板：`资源演示：样品托管` 和 `资源演示：空闲借还`。
 smoke 经 HTTP 实例化、单步、暂停、借出、恢复，在默认 authority + Host 双进程中执行；
 检查两库开始记录、借还和托管终态，结束后无活动实际使用。
 

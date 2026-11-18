@@ -151,7 +151,7 @@ def stack():
 
 
 def test_static_condition_uses_action_result_and_joins_after_skipped_branch(stack: _Stack) -> None:
-    @workflow(display_name="返回值分支", compiler="ast")
+    @workflow(display_name="返回值分支")
     def flow(ctx):
         result = ctx.run("loop-device/record", {"value": "probe"}, name="测量")
         if result["count"] >= 1 and not result["value"] == "bad":
@@ -170,7 +170,7 @@ def test_static_condition_uses_action_result_and_joins_after_skipped_branch(stac
 
 
 def test_static_condition_rechecks_current_attempt_inside_loop(stack: _Stack) -> None:
-    @workflow(display_name="逐轮条件", compiler="ast")
+    @workflow(display_name="逐轮条件")
     def flow(ctx):
         with ctx.loop_for(4, name="四轮"):
             result = ctx.run("loop-device/probe", {}, name="检测")
@@ -190,7 +190,7 @@ def test_static_condition_rechecks_current_attempt_inside_loop(stack: _Stack) ->
 
 
 def test_static_condition_skips_nested_condition_and_loop_body(stack: _Stack) -> None:
-    @workflow(display_name="嵌套跳过", compiler="ast")
+    @workflow(display_name="嵌套跳过")
     def flow(ctx):
         result = ctx.run("loop-device/probe", {}, name="检测")
         if result.ready:
@@ -214,7 +214,7 @@ def test_static_condition_skips_nested_condition_and_loop_body(stack: _Stack) ->
 
 @pytest.mark.parametrize("bad_field", ["missing", "count"])
 def test_static_condition_rejects_missing_or_non_boolean_result(stack: _Stack, bad_field: str) -> None:
-    @workflow(display_name="非法条件", compiler="ast")
+    @workflow(display_name="非法条件")
     def flow(ctx):
         result = ctx.run("loop-device/probe", {}, name="检测")
         if result["missing"]:
@@ -242,7 +242,7 @@ def test_static_condition_rejects_missing_or_non_boolean_result(stack: _Stack, b
 def test_static_compiler_never_executes_unsupported_author_code() -> None:
     effects = []
 
-    @workflow(display_name="拒绝执行作者代码", compiler="ast")
+    @workflow(display_name="拒绝执行作者代码")
     def flow(ctx):
         effects.append("executed")
         ctx.run("loop-device/probe", {})
@@ -254,7 +254,7 @@ def test_static_compiler_never_executes_unsupported_author_code() -> None:
 
 
 def test_static_compiler_rejects_branch_result_leaking_to_join() -> None:
-    @workflow(display_name="拒绝跨分支引用", compiler="ast")
+    @workflow(display_name="拒绝跨分支引用")
     def flow(ctx):
         if True:
             selected = ctx.run("loop-device/probe", {})
@@ -267,7 +267,7 @@ def test_static_compiler_rejects_branch_result_leaking_to_join() -> None:
 
 
 def test_condition_and_skipped_branch_do_not_consume_device_step(stack: _Stack) -> None:
-    @workflow(display_name="条件单步", compiler="ast")
+    @workflow(display_name="条件单步")
     def flow(ctx):
         if False:
             ctx.run("loop-device/record", {"value": "wrong"}, name="跳过")
@@ -295,7 +295,7 @@ def test_condition_and_skipped_branch_do_not_consume_device_step(stack: _Stack) 
 
 @pytest.mark.parametrize("settled", [False, True])
 def test_condition_recovers_from_persisted_plan_and_result(tmp_path, settled: bool) -> None:
-    @workflow(display_name="条件恢复", compiler="ast")
+    @workflow(display_name="条件恢复")
     def flow(ctx):
         if True:
             ctx.run("loop-device/record", {}, name="动作")
@@ -745,7 +745,7 @@ def test_graph_validation_rejects_bad_loops() -> None:
 
 
 def test_dynamic_result_params_read_this_loop_attempt(stack: _Stack) -> None:
-    @workflow(display_name="逐轮传参", compiler="ast")
+    @workflow(display_name="逐轮传参")
     def flow(ctx):
         with ctx.loop_for(3):
             produced = ctx.run("loop-device/record", {"value": "{{loop.index}}"}, name="生产")
@@ -761,7 +761,7 @@ def test_dynamic_result_params_read_this_loop_attempt(stack: _Stack) -> None:
 
 
 def test_dynamic_result_missing_field_fails_before_device_dispatch(stack: _Stack) -> None:
-    @workflow(display_name="拒绝缺失值", compiler="ast")
+    @workflow(display_name="拒绝缺失值")
     def flow(ctx):
         produced = ctx.run("loop-device/record", {"value": 12}, name="生产")
         ctx.run("loop-device/record", {"value": produced.missing}, name="不能执行")
@@ -771,7 +771,7 @@ def test_dynamic_result_missing_field_fails_before_device_dispatch(stack: _Stack
 
 
 def test_dynamic_result_array_path_and_escaped_field(stack: _Stack) -> None:
-    @workflow(display_name="嵌套结果路径", compiler="ast")
+    @workflow(display_name="嵌套结果路径")
     def flow(ctx):
         produced = ctx.run("loop-device/record", {"value": [{"a.b": 42}]})
         ctx.run("loop-device/record", {"value": produced.value[0]["a.b"]})
@@ -790,7 +790,7 @@ def test_parallel_ast_rejects_sibling_value_before_join() -> None:
 
 
 def test_group_inside_loop_keeps_current_iteration(stack: _Stack) -> None:
-    @workflow(display_name="循环内分组", compiler="ast")
+    @workflow(display_name="循环内分组")
     def flow(ctx):
         with ctx.loop_for(2):
             with ctx.group("读取和传参"):

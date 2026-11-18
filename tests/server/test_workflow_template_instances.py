@@ -16,7 +16,7 @@ def stack(monkeypatch):
     from unilabos.registry.workflows import _registered_workflows
     snapshot = dict(_registered_workflows)
 
-    @workflow(display_name="条件流程", compiler="ast")
+    @workflow(display_name="条件流程")
     def flow(ctx):
         quality = ctx.run("reactor/check_quality", {"threshold": 0.85})
         if quality.ready:

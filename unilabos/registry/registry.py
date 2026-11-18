@@ -198,6 +198,17 @@ def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
     return {}
 
 
+def _is_import_deadlock(error: BaseException) -> bool:
+    """并行导入时 importlib 检测到的模块锁死锁（``_DeadlockError``，可能包在导入失败异常里）。"""
+
+    current: Optional[BaseException] = error
+    while current is not None:
+        if type(current).__name__ == "_DeadlockError" or "deadlock detected by _ModuleLock" in str(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 def _material_reference_schema() -> Dict[str, Any]:
     """物料引用字段：与严格解析器的 ResourceSlot 同一形状（带物料锁标记）。"""
 
@@ -2022,7 +2033,9 @@ class Registry:
 
         lock = threading.Lock()
 
-        def _verify_device(device_id: str, entry: dict):
+        deadlocked: List[Tuple[str, dict]] = []
+
+        def _verify_device(device_id: str, entry: dict, serial: bool = False):
             nonlocal import_success_count, resolved_count
             module_str = entry.get("class", {}).get("module", "")
             if not module_str or ":" not in module_str:
@@ -2044,6 +2057,11 @@ class Registry:
 
                 return None
             except Exception as e:
+                if _is_import_deadlock(e) and not serial:
+                    # 并行导入撞上包之间的循环导入：线程池结束后在本线程重试，不算失败
+                    with lock:
+                        deadlocked.append((device_id, entry))
+                    return None
                 supported = entry.get("class", {}).get("supported_backends") or []
                 if supported and active_backend not in supported:
                     logger.warning(
@@ -2079,6 +2097,11 @@ class Registry:
                 )
                 return f"resource:{resource_id}: {e}"
 
+        # 设备模块几乎都依赖运行时内核：先在本线程导入，减少并行导入时包之间互相等待
+        try:
+            importlib.import_module("unilabos.backend.runtime")
+        except Exception as e:  # noqa: BLE001 - 只是预热，失败照常逐个校验
+            logger.debug(f"[Uni-Lab-OS Registry/Verify] 预先导入运行时内核失败: {e}")
         executor = self._startup_executor or ThreadPoolExecutor(max_workers=8)
         try:
             device_futures = {}
@@ -2104,6 +2127,10 @@ class Registry:
         finally:
             if self._startup_executor is None:
                 executor.shutdown(wait=True)
+        for device_id, entry in deadlocked:
+            result = _verify_device(device_id, entry, serial=True)
+            if result:
+                errors.append(result)
 
         errors.sort()
         skipped.sort()

@@ -1,4 +1,4 @@
-"""驱动包里的相对导入：AST 扫描、typed 合同的模块作用域与工作流合同都按真实包结构解析。"""
+"""驱动包里的相对导入：AST 扫描、动作 schema 的模块作用域与工作流合同都按真实包结构解析。"""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def relative_pkg(tmp_path: Path) -> Path:
             def __init__(self, deck: ExampleDeck | None = None):
                 self.deck = deck
 
-            @action(contract="typed", description="read")
+            @action(description="read")
             def read(self, wavelength_nm: Annotated[float, Field(ge=190, le=1100)] = 600.0) -> Reading:
                 return Reading(absorbance=wavelength_nm * scale * helpers.SCALE)
         ''',
@@ -59,7 +59,7 @@ def relative_pkg(tmp_path: Path) -> Path:
     return pkg
 
 
-def test_scan_resolves_relative_imports_and_keeps_typed_actions(relative_pkg: Path, caplog) -> None:
+def test_scan_resolves_relative_imports_and_keeps_strict_annotations(relative_pkg: Path, caplog) -> None:
     with ThreadPoolExecutor(max_workers=2) as executor:
         result = scan_directory(relative_pkg, python_path=relative_pkg.parent, executor=executor)
 

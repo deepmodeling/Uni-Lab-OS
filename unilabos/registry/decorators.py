@@ -5,7 +5,7 @@
 
 Usage:
     from unilabos.registry.decorators import (
-        device, action, resource,
+        device, action, resource, Material,
         InputHandle, OutputHandle,
         ActionInputHandle, ActionOutputHandle,
         HardwareInterface, Side, DataSource, NodeType,
@@ -40,6 +40,11 @@ Usage:
         def set_valve_position(self, position):
             ...
 
+        # 资源语义：一个字段，Material 的一条或多条
+        @action(material=Material.in_place("vessel"))
+        def flush(self, vessel: ResourceSlot) -> None:
+            ...
+
         # 无 @action 装饰器 => auto- 前缀动作
         def is_open(self):
             ...
@@ -56,6 +61,7 @@ from unilabos.registry.material_locks import (
     REMOVED_MATERIAL_LOCK_OPTIONS,
     warn_ignored_material_lock_override,
 )
+from unilabos.registry.material_roles import Material
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
 from unilabos.resources.objects.site import (
     SiteDefinitionInput,
@@ -389,7 +395,6 @@ def action(
     result: Optional[Dict[str, str]] = None,
     handles: Optional[List[_ActionHandleBase]] = None,
     goal_default: Optional[Dict[str, Any]] = None,
-    placeholder_keys: Optional[Dict[str, str]] = None,
     always_free: bool = False,
     is_protocol: bool = False,
     description: str = "",
@@ -403,8 +408,7 @@ def action(
     execution_timeout: Optional[Union[float, str]] = None,
     estimate_duration_fixed: Any = _ESTIMATE_UNSET,
     estimate_duration_express: str = "",
-    contract: str = "legacy",
-    resource_contract: Optional[Dict[str, Any]] = None,
+    material: Any = None,
     **removed_options: Any,
 ):
     """
@@ -421,16 +425,18 @@ def action(
       标记该动作为高级协议 (protocol)，运行时通过 ROS Action 路由到
       protocol generator 执行。action_type 指向 unilabos_msgs 的 Action 类型。
 
+    JSON 动作（不传 action_type）的参数与返回值只有一个标准：注册表按签名生成 schema，调度端与
+    Host 调用前按它校验参数，调用后按返回注解校验返回值（规则见 ``unilabos.registry.action_schema``）。
+
     Args:
         action_type: ROS Action 消息类型 (如 EmptyIn, SendCmd, HeatChill).
                      不传/默认 = UniLabJsonCommand (非 auto).
-        goal: Goal 字段映射 (ROS字段名 -> 设备参数名).
+        goal: ROS 动作的 Goal 字段映射 (ROS字段名 -> 设备参数名)；JSON 动作不接受（字段名就是参数名）.
               protocol 模式下可留空，系统自动生成 identity 映射.
         feedback: Feedback 字段映射
-        result: Result 字段映射
-        handles: 动作端口列表 (ActionInputHandle / ActionOutputHandle)
-        goal_default: Goal 字段默认值映射 (字段名 -> 默认值), 与自动生成的 goal_default 合并
-        placeholder_keys: 参数占位符配置
+        result: ROS 动作的 Result 字段映射；JSON 动作不接受（结果字段就是返回 TypedDict 的字段名）
+        handles: 动作端口列表 (ActionInputHandle / ActionOutputHandle)；不写时按 schema 生成
+        goal_default: 编辑器里的初始参数值 (字段名 -> 默认值)，叠加在签名默认值上；不改变参数是否必填
         always_free: 是否为永久闲置动作 (不受排队限制)
         is_protocol: 是否为工作站协议 (protocol)。True 时运行时走 protocol generator 路径。
         description: 动作描述
@@ -439,8 +445,9 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
-        contract: legacy 保留既有签名推断；typed 用 AST 编译严格参数和具名返回合同。
-        resource_contract: typed 动作的资源角色声明；未接通的物理结算或长期托管语义在运行前拒绝。
+        material: 动作的资源语义：``Material.load / unload / in_place / pick / place / transfer /
+                  aliquot / uses / order_sensitive`` 的一条，或多条组成的列表（见
+                  ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
@@ -456,26 +463,35 @@ def action(
                                    同一语法（"cycles * 2"，也认 V1 的 "{cycles} * 2"）；派发时
                                    按真实 action_args 求值，失败时退回兜底。
                                    详见 unilabos.registry.action_duration。
-        removed_options: 只接受已移除的 ``materials_need_lock`` / ``materials_free``，让旧驱动照常
-                         加载：值被忽略，按定义告警一次。物料锁不再按动作改写：每个物料入参
-                         （ResourceSlot / List[ResourceSlot]，或 placeholder_keys 标为
-                         unilabos_resources 的入参）都默认加共享资源锁，见
+        removed_options: 已删除的 ``contract`` / ``resource_contract`` / ``placeholder_keys`` 直接报错并指出
+                         新写法（``unilabos.registry.action_options``）。已移除的 ``materials_need_lock`` /
+                         ``materials_free`` 照常加载：值被忽略，按定义告警一次。物料锁不再按动作改写：
+                         每个物料入参（ResourceSlot / List[ResourceSlot]）都默认加共享资源锁，见
                          unilabos.registry.material_locks。参数值为空（None / 未传）时不加锁，
                          非空时必须能解析出由物料权威分配的 UUID。
     """
 
-    unexpected = sorted(set(removed_options) - set(REMOVED_MATERIAL_LOCK_OPTIONS))
+    from unilabos.registry.action_options import REMOVED_ACTION_OPTIONS, check_action_options
+
+    json_action = action_type in (_ACTION_TYPE_UNSET, None)
+    unexpected = sorted(set(removed_options) - set(REMOVED_MATERIAL_LOCK_OPTIONS) - set(REMOVED_ACTION_OPTIONS))
     if unexpected:
         raise TypeError(f"action() got an unexpected keyword argument {unexpected[0]!r}")
-    if contract not in {"legacy", "typed"}:
-        raise ValueError("contract 仅支持 legacy 或 typed")
-    if contract == "typed" and action_type not in (_ACTION_TYPE_UNSET, None):
-        raise ValueError("typed 合同仅支持 JSON 动作")
-    if resource_contract is not None and contract != "typed":
-        raise ValueError("资源合同必须绑定 typed 动作")
 
     def decorator(func: F) -> F:
         import inspect as _inspect
+
+        definition = f"{func.__module__}.{func.__qualname__}"
+        check_action_options(
+            {**removed_options, "goal": goal, "result": result}, json_action=json_action, definition=definition
+        )
+        resource_contract: Dict[str, Any] = {}
+        if material is not None:
+            from unilabos.registry.material_roles import material_contract
+
+            if not json_action:
+                raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
+            resource_contract = material_contract(material)
 
         if _inspect.iscoroutinefunction(func):
             @wraps(func)
@@ -496,7 +512,6 @@ def action(
             "result": result or {},
             "handles": _action_handles_to_dict(handles),
             "goal_default": goal_default or {},
-            "placeholder_keys": placeholder_keys or {},
             "always_free": always_free,
             "is_protocol": is_protocol,
             "description": description,
@@ -504,11 +519,16 @@ def action(
             "auto_prefix": auto_prefix,
             "parent": parent,
         }
-        if contract == "typed":
-            from unilabos.registry.action_resource_contract import normalize_action_resource_contract
+        signature_parameters = _inspect.signature(func).parameters
+        if resource_contract:
+            from unilabos.registry.material_roles import MaterialRoleError, contract_parameter_names
 
-            meta["contract_kind"] = "typed"
-            meta["resource_contract"] = normalize_action_resource_contract(resource_contract)
+            unknown = [name for name in contract_parameter_names(resource_contract) if name not in signature_parameters]
+            if unknown:
+                raise MaterialRoleError(
+                    f"{func.__qualname__} 的 material= 引用了签名里没有的参数：{'、'.join(unknown)}"
+                )
+            meta["resource_contract"] = resource_contract
         if feedback_interval is not None:
             meta["feedback_interval"] = feedback_interval
         if node_type is not None:
@@ -521,12 +541,8 @@ def action(
         meta["error_policy"] = normalized_error_policy
         if removed_options:
             # 与 AST 扫描同一身份（模块.类.方法）：同一定义在一个进程里只告警一次
-            warn_ignored_material_lock_override(
-                f"{func.__module__}.{func.__qualname__}",
-                (f"{name}=" for name in sorted(removed_options)),
-            )
+            warn_ignored_material_lock_override(definition, (f"{name}=" for name in sorted(removed_options)))
 
-        signature_parameters = _inspect.signature(func).parameters
         from unilabos.registry.action_timeout import (
             normalize_action_timeout,
             normalize_execution_timeout,

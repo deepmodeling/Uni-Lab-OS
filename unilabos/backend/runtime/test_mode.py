@@ -41,4 +41,10 @@ def build_test_mode_return(
     return mock_return
 
 
-__all__ = ["build_test_mode_return", "driver_runs_in_test_mode"]
+def is_simulated_return(value: Any) -> bool:
+    """返回值是 :func:`build_test_mode_return` 构造的模拟结果（不来自驱动，不按返回注解校验）。"""
+
+    return isinstance(value, Mapping) and value.get("test_mode") is True and isinstance(value.get("action_name"), str)
+
+
+__all__ = ["build_test_mode_return", "driver_runs_in_test_mode", "is_simulated_return"]

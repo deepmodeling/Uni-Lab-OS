@@ -78,7 +78,7 @@ def _ready_handle(io_type: str) -> Dict[str, Any]:
 
 
 def _schema_handles(schema: Mapping[str, Any]) -> List[Dict[str, Any]]:
-    """旧式动作（无第 2 版合同）：goal 属性 → target 连接点，result 属性 → source 连接点。"""
+    """没有统一动作 schema 的动作（ROS 动作类型、未补全的手写 YAML）：goal 属性 → target 连接点，result 属性 → source 连接点。"""
 
     from unilabos.server.services.runtime.workflow.handle_projection import workflow_handle_type
 
@@ -339,7 +339,6 @@ def project_registry_templates(
                 continue
             seen_names.add(action_name.lower())
             unilab: Dict[str, Any] = {
-                "contract_kind": "typed" if contract.get("version") == 2 else "legacy",
                 "parameter_schema": parameter_schema,
                 "resource_template": resource_summary,
             }

@@ -231,7 +231,11 @@ def validate_resource_values(
         if value is None:
             return []
         if "x-unilabos-material-lock" in field:
-            return [value["uuid"]]
+            # 物料引用的各种线上形态（{uuid} 引用、上游端口的扁平资源树、uuid 字符串）都取权威 uuid；
+            # 只给名字的引用在派发前才解析，这里没有 uuid 可查，跳过
+            from unilabos.server.backend.scheduler.materials import extract_material_uuids
+
+            return sorted(extract_material_uuids(value))
         if isinstance(value, list):
             return [uuid for item in value for uuid in resources(field.get("items", {}), item)]
         return []

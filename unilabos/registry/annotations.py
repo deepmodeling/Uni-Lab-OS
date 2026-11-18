@@ -34,6 +34,23 @@ class MaterialLock:
             raise ValueError("MaterialLock 只接受显式 free=True")
 
 
+@dataclass(frozen=True, slots=True)
+class Placeholder:
+    """声明参数在前端用哪种选择器填写（``placeholder_type`` 里的 ``PLACEHOLDER_*`` 常量）。
+
+    写在 ``Annotated`` 里，例如 ``Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]``、
+    ``Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)]``。它只影响前端选择器，不改变参数的
+    类型与校验；物料、设备、库位不需要它，分别用 ``ResourceSlot``、``DeviceSlot``、``SiteSlot`` 注解。
+    注册表扫描时取出它，写进动作条目的 ``placeholder_keys``。
+    """
+
+    kind: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, str) or not self.kind or self.kind != self.kind.strip():
+            raise ValueError("Placeholder 需要一个非空的选择器常量")
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SiteSelector:
     """声明字符串参数由库位选择器（SiteSelector）提供。

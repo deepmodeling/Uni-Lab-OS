@@ -1,4 +1,4 @@
-"""严格合同显式接入 dev，旧驱动兼容且合同约束进入真正执行路径。"""
+"""每个 JSON 动作按注册表的统一 schema 校验：参数与返回值约束进入真正执行路径。"""
 import logging
 from pathlib import Path
 from uuid import uuid4
@@ -26,7 +26,7 @@ class Result(TypedDict):
 
 @device(id="typed_test")
 class Driver:
-    @action(contract="typed")
+    @action()
     def dispense(self, source: ResourceSlot, reference: Annotated[ResourceSlot, MaterialLock(free=True)],
                  volume: Annotated[float, Field(ge=0)] = 1.0) -> Result:
         raise NotImplementedError
@@ -54,7 +54,14 @@ def test_registry_keeps_required_fields_defaults_named_results_and_material_lock
     assert typed["goal_default"] == {"volume": 1.0}
     assert set(typed["schema"]["properties"]["goal"]["required"]) == {"source", "reference"}
     assert typed["placeholder_keys"] == {"source": "unilabos_resources", "reference": "unilabos_resources"}
-    assert "x-unilabos-action-contract" not in actions["legacy"]["schema"]
+    # 没写注解的参数接受任意 JSON 值，但同样有 schema、同样必填
+    legacy = actions["legacy"]["schema"]
+    assert legacy["x-unilabos-action-contract"]["version"] == 2
+    assert legacy["properties"]["goal"]["properties"]["anything"] == {}
+    assert legacy["properties"]["goal"]["required"] == ["anything"]
+    assert validate_action_values(legacy, {"anything": [1, {"a": None}]}) == {"anything": [1, {"a": None}]}
+    with pytest.raises(TypedActionValueError, match="缺少必填字段：anything"):
+        validate_action_values(legacy, {})
     source = {"uuid": str(uuid4())}
     assert validate_action_values(typed["schema"], {"source": source, "reference": source})["volume"] == 1
     for values in ({"source": source}, {"source": source, "reference": source, "volume": -1}):
@@ -85,10 +92,10 @@ def test_actual_plan_rejects_static_invalid_values_but_defers_upstream_values(tm
 
 
 def test_plan_decodes_template_schema_stored_as_json_text(tmp_path):
-    """节点模板行里的 schema 是 JSON 文本（注册表投影的旧合同动作都是这样）。
+    """节点模板行里的 schema 可能是 JSON 文本。
 
-    执行计划原样带文本时，调度器派发前的物料核对对它调 ``.get`` 直接失败，旧合同设备
-    （内置虚拟设备的全部动作）一进工作流就跑不了；计划里要是字典。
+    执行计划原样带文本时，调度器派发前的物料核对对它调 ``.get`` 直接失败，设备一进工作流
+    就跑不了；计划里要是字典。
     """
 
     import json

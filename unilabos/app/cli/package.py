@@ -291,14 +291,42 @@ def _json_schema_type(py_type: str) -> str:
     return _PY_TO_JSON_SCHEMA_TYPE.get(base, "string")
 
 
-def build_action_value_mappings(actions: Dict[str, Any]) -> Dict[str, Any]:
-    """把 AST 扫描的原始 action（params/return_type）转换成前后端期望的
+def build_action_value_mappings(
+    actions: Dict[str, Any], import_map: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """把 AST 扫描的 action 转换成包清单里的动作能力。
+
+    JSON 动作与注册表同一标准：goal / result 取注册表按签名生成的统一 schema（扫描草稿补全推断字段），
+    物料锁与默认值也来自它；ROS 动作类型只记参数名与类型名。
     """
+    from unilabos.registry.registry import Registry
+
+    registry = Registry()
     result: Dict[str, Any] = {}
     for name, meta in actions.items():
         if not isinstance(meta, dict):
             continue
         params = meta.get("params") if isinstance(meta.get("params"), list) else []
+        action_args = meta.get("action_args") if isinstance(meta.get("action_args"), dict) else {}
+        action_type_raw = action_args.get("action_type")
+        action_type = "UniLabJsonCommand"
+        if isinstance(action_type_raw, str) and action_type_raw.strip():
+            action_type = action_type_raw.strip().split(":")[-1].split(".")[-1]
+        entry: Dict[str, Any] = {
+            "type": action_type,
+            "feedback": {"type": "object", "properties": {}},
+            "description": str(meta.get("docstring") or action_args.get("description") or ""),
+        }
+        if meta.get("canonical_schema"):
+            json_entry = registry._json_action_entry(meta, action_args, action_name=name, import_map=import_map)
+            properties = json_entry["schema"]["properties"]
+            entry["goal"] = properties["goal"]
+            entry["result"] = properties["result"]
+            if json_entry["goal_default"]:
+                entry["goal_default"] = json_entry["goal_default"]
+            entry["materials_need_lock"] = json_entry["materials_need_lock"]
+            result[name] = entry
+            continue
         goal_props: Dict[str, Any] = {}
         required: List[str] = []
         goal_default: Dict[str, Any] = {}
@@ -316,25 +344,13 @@ def build_action_value_mappings(actions: Dict[str, Any]) -> Dict[str, Any]:
         goal_schema: Dict[str, Any] = {"type": "object", "properties": goal_props}
         if required:
             goal_schema["required"] = required
-        action_args = meta.get("action_args") if isinstance(meta.get("action_args"), dict) else {}
-        action_type_raw = action_args.get("action_type")
-        action_type = "UniLabJsonCommand"
-        if isinstance(action_type_raw, str) and action_type_raw.strip():
-            action_type = action_type_raw.strip().split(":")[-1].split(".")[-1]
-        entry: Dict[str, Any] = {
-            "type": action_type,
-            "goal": goal_schema,
-            "result": {"type": "object", "properties": {}},
-            "feedback": {"type": "object", "properties": {}},
-            "description": str(meta.get("docstring") or action_args.get("description") or ""),
-        }
+        entry["goal"] = goal_schema
+        entry["result"] = {"type": "object", "properties": {}}
         if goal_default:
             entry["goal_default"] = goal_default
-        # 与注册表同一规则：每个物料入参默认加锁（AST 扫描结果不再携带推导值）
-        placeholder_keys = action_args.get("placeholder_keys")
+        # 与注册表同一规则：每个物料入参默认加锁
         entry["materials_need_lock"] = default_material_lock_parameters(
-            params=[param for param in params if isinstance(param, dict)],
-            placeholder_keys=placeholder_keys if isinstance(placeholder_keys, dict) else None,
+            params=[param for param in params if isinstance(param, dict)]
         )
         result[name] = entry
     return result
@@ -345,7 +361,7 @@ def build_resources(devices: Dict[str, Dict[str, Any]], package_info: Dict[str, 
     resources: List[Dict[str, Any]] = []
     for device_id, meta in devices.items():
         actions = meta.get("actions") if isinstance(meta.get("actions"), dict) else {}
-        action_value_mappings = build_action_value_mappings(actions)
+        action_value_mappings = build_action_value_mappings(actions, meta.get("import_map"))
         status_props = meta.get("status_properties") if isinstance(meta.get("status_properties"), dict) else {}
         handles = meta.get("handles") if isinstance(meta.get("handles"), list) else []
 

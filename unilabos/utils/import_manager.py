@@ -240,7 +240,17 @@ class ImportManager:
             logger.warning(f"[ImportManager] 在文件 {file_path} 中找不到类 {class_name}")
             return result
 
-        body = _extract_class_body(target_class, import_map)
+        try:
+            body = _extract_class_body(
+                target_class,
+                import_map,
+                module=tree,
+                module_name=module_name,
+                is_package=os.path.basename(file_path) == "__init__.py",
+            )
+        except Exception as e:  # noqa: BLE001 - 与 AST 扫描同一套声明错误，这里只记录并放弃补全
+            logger.warning(f"[ImportManager] 分析类 {module_path} 失败: {e}")
+            return result
 
         # 映射到统一字段名（与 registry.py complete_registry 消费端一致）
         result["init_params"] = body.get("init_params", [])
@@ -253,6 +263,11 @@ class ImportManager:
                 "is_async": v.get("is_async", False),
                 "always_free": v.get("always_free", False),
                 "docstring": v.get("docstring"),
+                **{
+                    key: v[key]
+                    for key in ("canonical_schema", "schema_inferred", "result_inferred", "placeholders")
+                    if key in v
+                },
             }
             for k, v in body.get("auto_methods", {}).items()
         }

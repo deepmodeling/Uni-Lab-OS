@@ -15,7 +15,7 @@ def _write(path: Path, source: str) -> None:
     path.write_text(textwrap.dedent(source), encoding="utf-8")
 
 
-def test_verify_keeps_typed_and_legacy_action_schemas(tmp_path: Path, monkeypatch) -> None:
+def test_verify_keeps_the_ast_built_action_schemas(tmp_path: Path, monkeypatch) -> None:
     pkg = tmp_path / "parity_pkg"
     _write(pkg / "__init__.py", "")
     _write(
@@ -40,7 +40,7 @@ def test_verify_keeps_typed_and_legacy_action_schemas(tmp_path: Path, monkeypatc
             def __init__(self, **kwargs):
                 pass
 
-            @action(contract="typed", description="read")
+            @action(description="read")
             def read_absorbance(
                 self, wavelength_nm: Annotated[float, Field(ge=190, le=1100)] = 600.0
             ) -> Reading:
@@ -66,12 +66,13 @@ def test_verify_keeps_typed_and_legacy_action_schemas(tmp_path: Path, monkeypatc
     assert registry.verify_and_resolve_registry() == []
 
     after = registry.device_type_registry["parity_photometer"]["class"]["action_value_mappings"]
-    assert after["read_absorbance"]["contract_kind"] == "typed"
-    typed = after["read_absorbance"]["schema"]
-    assert typed == before["read_absorbance"]
-    assert typed["x-unilabos-action-contract"]["version"] == 2
-    wavelength = typed["properties"]["goal"]["properties"]["wavelength_nm"]
+    read = after["read_absorbance"]["schema"]
+    assert read == before["read_absorbance"]
+    assert read["x-unilabos-action-contract"]["version"] == 2
+    wavelength = read["properties"]["goal"]["properties"]["wavelength_nm"]
     assert (wavelength["type"], wavelength["minimum"], wavelength["maximum"]) == ("number", 190, 1100)
-    # 普通 JSON 命令同样保持 AST 构建的 goal/result 包装
-    assert after["warm_up"]["schema"] == before["warm_up"]
-    assert set(after["warm_up"]["schema"]["properties"]) >= {"goal"}
+    # 每个 JSON 动作同一标准：warm_up 也是 AST 构建的统一 schema，校验不改写它
+    warm_up = after["warm_up"]["schema"]
+    assert warm_up == before["warm_up"]
+    assert warm_up["x-unilabos-action-contract"]["version"] == 2
+    assert warm_up["properties"]["goal"]["properties"]["label"]["type"] == ["string", "null"]

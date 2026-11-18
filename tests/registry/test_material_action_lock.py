@@ -22,13 +22,14 @@ def _registry():
 
 
 def test_removed_lock_list_no_longer_locks_plain_parameters(tmp_path) -> None:
-    """旧的 materials_need_lock 能把非物料类型的入参（如 dict）列进锁集合；移除后要用物料类型或
-    placeholder_keys 把它标成物料入参，锁才会加上。"""
+    """旧的 materials_need_lock 能把非物料类型的入参（如 dict）列进锁集合；移除后物料入参要写成
+    ResourceSlot 注解，锁才会加上（placeholder_keys 也已删除）。"""
 
     source = tmp_path / "material_lock_driver.py"
     source.write_text(
         '''
 from unilabos.registry.decorators import action, device
+from unilabos.registry.placeholder_type import ResourceSlot
 
 @device(id="material_lock_test", category=["test"])
 class Driver:
@@ -36,8 +37,8 @@ class Driver:
     def transfer(self, source: dict, target: dict) -> None:
         pass
 
-    @action(placeholder_keys={"plate": "unilabos_resources"})
-    def process(self, plate: dict, tag: str = "") -> None:
+    @action()
+    def process(self, plate: ResourceSlot, tag: str = "") -> None:
         pass
 ''',
         encoding="utf-8",

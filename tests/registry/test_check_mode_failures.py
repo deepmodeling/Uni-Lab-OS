@@ -41,7 +41,7 @@ def _good_device(pkg: Path) -> None:
 
 
 def _broken_scan_device(pkg: Path) -> None:
-    # typed 合同不接受 action_type：AST 扫描对这个文件抛错
+    # 已删除的 @action(contract=...)：AST 扫描对这个文件抛错，错误信息指出新写法
     _write(
         pkg / "broken_scan.py",
         """
@@ -50,7 +50,7 @@ def _broken_scan_device(pkg: Path) -> None:
 
         @device(id="check_broken_scan", category=["check"])
         class BrokenScan:
-            @action(contract="typed", action_type="SendCmd")
+            @action(contract="typed")
             def run(self) -> None:
                 return None
         """,
@@ -132,7 +132,7 @@ def test_scan_reports_failed_files_and_repeats_them_on_cache_hits(tmp_path: Path
         assert set(result["devices"]) == {"check_good"}
         errors = result["_scan_errors"]
         assert [Path(item["file"]).name for item in errors] == ["broken_scan.py"]
-        assert "typed" in errors[0]["error"]
+        assert "不再接受 contract=" in errors[0]["error"]
     # 第二次全部命中缓存，失败的文件不会因为缓存而“消失”
     assert second["_cache_stats"]["hits"] == second["_cache_stats"]["total"]
 

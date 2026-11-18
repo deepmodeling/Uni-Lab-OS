@@ -260,6 +260,9 @@ def _action_value_schema(
             kind = rendered.get("type")
             if isinstance(kind, str):
                 rendered["type"] = [kind, "null"]
+                if isinstance(rendered.get("enum"), list) and None not in rendered["enum"]:
+                    # 可空的枚举：null 也要在枚举里，否则 null 通不过 enum 校验
+                    rendered["enum"] = [*rendered["enum"], None]
                 return rendered
 
     rendered = {key: _copy_json(item) for key, item in value.items()}

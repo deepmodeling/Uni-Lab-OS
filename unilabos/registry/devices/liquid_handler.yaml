@@ -303,16 +303,54 @@ liquid_handler:
       auto-create_protocol:
         error_policy: {}
         feedback: {}
-        goal: {}
+        goal:
+          none_keys: none_keys
+          protocol_author: protocol_author
+          protocol_date: protocol_date
+          protocol_description: protocol_description
+          protocol_name: protocol_name
+          protocol_type: protocol_type
+          protocol_version: protocol_version
         goal_default:
           none_keys: []
-          protocol_author: null
-          protocol_date: null
-          protocol_description: null
-          protocol_name: null
-          protocol_type: null
-          protocol_version: null
-        handles: {}
+        handles:
+          input:
+          - data_key: protocol_name
+            data_source: goal
+            data_type: string
+            handler_key: protocol_name
+            label: protocol_name
+          - data_key: protocol_description
+            data_source: goal
+            data_type: string
+            handler_key: protocol_description
+            label: protocol_description
+          - data_key: protocol_version
+            data_source: goal
+            data_type: string
+            handler_key: protocol_version
+            label: protocol_version
+          - data_key: protocol_author
+            data_source: goal
+            data_type: string
+            handler_key: protocol_author
+            label: protocol_author
+          - data_key: protocol_date
+            data_source: goal
+            data_type: string
+            handler_key: protocol_date
+            label: protocol_date
+          - data_key: protocol_type
+            data_source: goal
+            data_type: string
+            handler_key: protocol_type
+            label: protocol_type
+          - data_key: none_keys
+            data_source: goal
+            data_type: array
+            handler_key: none_keys
+            label: none_keys
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -320,6 +358,7 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 none_keys:
                   default: []
@@ -351,15 +390,43 @@ liquid_handler:
           - goal
           title: create_protocol参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - protocol_name
+            - protocol_description
+            - protocol_version
+            - protocol_author
+            - protocol_date
+            - protocol_type
+            - none_keys
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommandAsync
       auto-custom_delay:
         error_policy: {}
         feedback: {}
-        goal: {}
+        goal:
+          msg: msg
+          seconds: seconds
         goal_default:
           msg: null
           seconds: 0
-        handles: {}
+        handles:
+          input:
+          - data_key: seconds
+            data_source: goal
+            data_type: any
+            handler_key: seconds
+            label: seconds
+          - data_key: msg
+            data_source: goal
+            data_type: any
+            handler_key: msg
+            label: msg
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -367,14 +434,14 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 msg:
+                  default: null
                   description: information to be printed
-                  type: string
                 seconds:
                   default: 0
                   description: seconds to wait
-                  type: string
               required: []
               type: object
             result: {}
@@ -382,14 +449,30 @@ liquid_handler:
           - goal
           title: custom_delay参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - seconds
+            - msg
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommandAsync
       auto-iter_tips:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          tip_racks: null
-        handles: {}
+        goal:
+          tip_racks: tip_racks
+        goal_default: {}
+        handles:
+          input:
+          - data_key: tip_racks
+            data_source: goal
+            data_type: array
+            handler_key: tip_racks
+            label: tip_racks
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -397,6 +480,7 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 tip_racks:
                   items:
@@ -405,29 +489,54 @@ liquid_handler:
               required:
               - tip_racks
               type: object
-            result:
-              type: string
+            result: {}
           required:
           - goal
           title: iter_tips参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - tip_racks
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-set_group:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          group_name: null
-          volumes: null
-          wells: null
-        handles: {}
+        goal:
+          group_name: group_name
+          volumes: volumes
+          wells: wells
+        goal_default: {}
+        handles:
+          input:
+          - data_key: group_name
+            data_source: goal
+            data_type: string
+            handler_key: group_name
+            label: group_name
+          - data_key: wells
+            data_source: goal
+            data_type: array
+            handler_key: wells
+            label: wells
+          - data_key: volumes
+            data_source: goal
+            data_type: array
+            handler_key: volumes
+            label: volumes
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: set_group的参数schema
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 group_name:
                   type: string
@@ -449,16 +558,53 @@ liquid_handler:
           - goal
           title: set_group参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - group_name
+            - wells
+            - volumes
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-set_liquid:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          liquid_names: null
-          volumes: null
-          wells: null
-        handles: {}
+        goal:
+          liquid_names: liquid_names
+          volumes: volumes
+          wells: wells
+        goal_default: {}
+        handles:
+          input:
+          - data_key: wells
+            data_source: goal
+            data_type: array
+            handler_key: wells
+            label: wells
+          - data_key: liquid_names
+            data_source: goal
+            data_type: array
+            handler_key: liquid_names
+            label: liquid_names
+          - data_key: volumes
+            data_source: goal
+            data_type: array
+            handler_key: volumes
+            label: volumes
+          output:
+          - data_key: wells
+            data_source: executor
+            data_type: array
+            handler_key: wells
+            label: Wells
+          - data_key: volumes
+            data_source: executor
+            data_type: array
+            handler_key: volumes
+            label: Volumes
         placeholder_keys: {}
         result: {}
         schema:
@@ -466,6 +612,7 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 liquid_names:
                   items:
@@ -485,422 +632,7 @@ liquid_handler:
               - volumes
               type: object
             result:
-              $defs:
-                JsonValue: {}
-                ResourceDict:
-                  description: 资源实例的唯一规范快照；运行时树行为留在 ``resource_tracker``。
-                  properties:
-                    barcode:
-                      default: ''
-                      description: Material barcode
-                      title: Barcode
-                      type: string
-                    barcode_symbology:
-                      default: ''
-                      description: Barcode symbology / 码制
-                      title: Barcode Symbology
-                      type: string
-                    class:
-                      description: Resource class name
-                      title: Class
-                      type: string
-                    config:
-                      additionalProperties: true
-                      description: Resource configuration
-                      title: Config
-                      type: object
-                    data:
-                      additionalProperties: true
-                      description: 'Resource data, eg: container data without liquids,
-                        since liquids are tracked separately'
-                      title: Data
-                      type: object
-                    description:
-                      default: ''
-                      description: Resource description
-                      title: Description
-                      type: string
-                    display_name:
-                      default: ''
-                      description: Human-readable label; the authority fills it when
-                        empty
-                      title: Display Name
-                      type: string
-                    extra:
-                      additionalProperties: true
-                      description: Uni-Lab-OS communication and conversion metadata
-                      title: Extra
-                      type: object
-                    icon:
-                      default: ''
-                      description: Resource icon
-                      title: Icon
-                      type: string
-                    id:
-                      description: Resource ID
-                      title: Id
-                      type: string
-                    joint_state:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceJointState'
-                      - type: 'null'
-                      default: null
-                      description: Frequently changing device joint state; independent
-                        from pose
-                    liquid_history:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - anyOf:
-                            - type: string
-                            - type: 'null'
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: VolumeTracker (liquid_name, delta, unit) event
-                        history
-                      title: Liquid History
-                    machine_name:
-                      default: ''
-                      description: Machine this resource belongs to
-                      title: Machine Name
-                      type: string
-                    meta_data:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      description: Canonical resource metadata
-                      title: Meta Data
-                      type: object
-                    model:
-                      additionalProperties: true
-                      description: Resource model
-                      title: Model
-                      type: object
-                    name:
-                      description: Material name; equals the uuid once the authority
-                        has written it
-                      title: Name
-                      type: string
-                    parent:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceDict'
-                      - type: 'null'
-                      default: null
-                      description: Parent resource object
-                    parent_uuid:
-                      anyOf:
-                      - type: string
-                      - type: 'null'
-                      default: null
-                      description: Parent resource uuid
-                      title: Parent Uuid
-                    pose:
-                      $ref: '#/$defs/ResourceDictPosition'
-                      description: Resource pose relative to its parent, plus geometry/layout
-                        metadata
-                    resource_template_uuid:
-                      default: ''
-                      description: Micro-backend ResourceTemplate UUID
-                      title: Resource Template Uuid
-                      type: string
-                    schema:
-                      additionalProperties: true
-                      description: Resource schema
-                      title: Schema
-                      type: object
-                    sites:
-                      anyOf:
-                      - items:
-                          $ref: '#/$defs/ResourceSite'
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Carrier site definitions / 载架位点
-                      title: Sites
-                    sites_initialized:
-                      default: false
-                      description: Whether site preparation has run for this resource
-                        instance
-                      title: Sites Initialized
-                      type: boolean
-                    substances:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - type: string
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Current (substance_name, quantity, unit) entries
-                      title: Substances
-                    template_name:
-                      default: ''
-                      description: Edge resource template name
-                      title: Template Name
-                      type: string
-                    type:
-                      anyOf:
-                      - const: device
-                        type: string
-                      - type: string
-                      description: Resource type
-                      title: Type
-                    unknown_counter:
-                      anyOf:
-                      - minimum: 0
-                        type: integer
-                      - type: 'null'
-                      default: null
-                      description: Unnamed liquid counter
-                      title: Unknown Counter
-                    uuid:
-                      description: Resource UUID
-                      title: Uuid
-                      type: string
-                  required:
-                  - id
-                  - uuid
-                  - name
-                  - type
-                  - class
-                  - config
-                  - data
-                  - extra
-                  title: ResourceDict
-                  type: object
-                ResourceDictPosition:
-                  additionalProperties: false
-                  properties:
-                    cross_section_type:
-                      default: rectangle
-                      description: Cross section type
-                      enum:
-                      - rectangle
-                      - circle
-                      - rounded_rectangle
-                      title: Cross Section Type
-                      type: string
-                    extra:
-                      anyOf:
-                      - additionalProperties: true
-                        type: object
-                      - type: 'null'
-                      default: null
-                      description: Extra data
-                      title: Extra
-                    layout:
-                      default: x-y
-                      description: Resource layout
-                      enum:
-                      - 2d
-                      - x-y
-                      - z-y
-                      - x-z
-                      title: Layout
-                      type: string
-                    position:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceDictPositionObject'
-                      - type: 'null'
-                      default: null
-                      description: Actual position relative to the parent resource
-                    position3d:
-                      $ref: '#/$defs/ResourceDictPositionObject'
-                      description: 3D layout/visualization position; not a second
-                        runtime position
-                    rotation:
-                      $ref: '#/$defs/ResourceDictPositionObject'
-                      description: Resource rotation
-                    scale:
-                      $ref: '#/$defs/ResourceDictPositionScale'
-                      description: Resource scale
-                    size:
-                      $ref: '#/$defs/ResourceDictPositionSize'
-                      description: Resource size
-                  title: ResourceDictPosition
-                  type: object
-                ResourceDictPositionObject:
-                  additionalProperties: false
-                  properties:
-                    x:
-                      description: X coordinate
-                      title: X
-                      type: number
-                    y:
-                      description: Y coordinate
-                      title: Y
-                      type: number
-                    z:
-                      description: Z coordinate
-                      title: Z
-                      type: number
-                  required:
-                  - x
-                  - y
-                  - z
-                  title: ResourceDictPositionObject
-                  type: object
-                ResourceDictPositionScale:
-                  additionalProperties: false
-                  properties:
-                    x:
-                      description: x scale
-                      title: X
-                      type: number
-                    y:
-                      description: y scale
-                      title: Y
-                      type: number
-                    z:
-                      description: z scale
-                      title: Z
-                      type: number
-                  required:
-                  - x
-                  - y
-                  - z
-                  title: ResourceDictPositionScale
-                  type: object
-                ResourceDictPositionSize:
-                  additionalProperties: false
-                  properties:
-                    depth:
-                      description: Depth
-                      minimum: 0.0
-                      title: Depth
-                      type: number
-                    height:
-                      description: Height
-                      minimum: 0.0
-                      title: Height
-                      type: number
-                    width:
-                      description: Width
-                      minimum: 0.0
-                      title: Width
-                      type: number
-                  required:
-                  - depth
-                  - width
-                  - height
-                  title: ResourceDictPositionSize
-                  type: object
-                ResourceJointState:
-                  additionalProperties: false
-                  description: 设备关节的瞬时状态；不属于资源在父坐标系中的 ``pose``。
-                  properties:
-                    effort:
-                      description: Joint efforts; empty when unavailable
-                      items:
-                        type: number
-                      title: Effort
-                      type: array
-                    name:
-                      description: Joint names
-                      items:
-                        type: string
-                      title: Name
-                      type: array
-                    position:
-                      description: Joint positions in the joint-defined unit
-                      items:
-                        type: number
-                      title: Position
-                      type: array
-                    velocity:
-                      description: Joint velocities; empty when unavailable
-                      items:
-                        type: number
-                      title: Velocity
-                      type: array
-                  title: ResourceJointState
-                  type: object
-                ResourceSite:
-                  additionalProperties: false
-                  description: 'Edge、微后端和 PLR Adapter 共用的唯一 Site 实例模型。
-
-
-                    PLR 特有但需要往返保留的字段进入显式 ``extra``；canonical v1 仍拒绝
-
-                    未声明的顶层字段，避免 Adapter 形状反向污染微后端协议。'
-                  properties:
-                    allowed_resource_categories:
-                      description: ResourceTemplate category hints for frontend canvas
-                        filtering only; not an Edge/backend mount constraint
-                      items:
-                        type: string
-                      title: Allowed Resource Categories
-                      type: array
-                    description:
-                      default: ''
-                      title: Description
-                      type: string
-                    extra:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      title: Extra
-                      type: object
-                    index:
-                      anyOf:
-                      - type: integer
-                      - type: string
-                      title: Index
-                    label:
-                      title: Label
-                      type: string
-                    material_uuid:
-                      title: Material Uuid
-                      type: string
-                    meta_data:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      title: Meta Data
-                      type: object
-                    occupied_material_uuid:
-                      anyOf:
-                      - type: string
-                      - type: 'null'
-                      default: null
-                      title: Occupied Material Uuid
-                    parent_link:
-                      default: ''
-                      title: Parent Link
-                      type: string
-                    pose:
-                      $ref: '#/$defs/ResourceDictPosition'
-                    schema_version:
-                      const: 1
-                      default: 1
-                      title: Schema Version
-                      type: integer
-                    template_name:
-                      title: Template Name
-                      type: string
-                    uuid:
-                      title: Uuid
-                      type: string
-                    visible:
-                      default: true
-                      title: Visible
-                      type: boolean
-                  required:
-                  - uuid
-                  - template_name
-                  - material_uuid
-                  - index
-                  - label
-                  title: ResourceSite
-                  type: object
+              additionalProperties: false
               properties:
                 volumes:
                   items:
@@ -910,7 +642,7 @@ liquid_handler:
                 wells:
                   items:
                     items:
-                      $ref: '#/$defs/ResourceDict'
+                      type: object
                     type: array
                   title: Wells
                   type: array
@@ -923,34 +655,93 @@ liquid_handler:
           - goal
           title: set_liquid参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - wells
+            - liquid_names
+            - volumes
+            output_order:
+            - wells
+            - volumes
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-set_liquid_from_plate:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          liquid_names: null
-          plate: null
-          volumes: null
-          well_names: null
-        handles: {}
+        goal:
+          liquid_names: liquid_names
+          plate: plate
+          volumes: volumes
+          well_names: well_names
+        goal_default: {}
+        handles:
+          input:
+          - data_key: plate
+            data_source: goal
+            data_type: ResourceSlot
+            handler_key: plate
+            label: plate
+          - data_key: well_names
+            data_source: goal
+            data_type: array
+            handler_key: well_names
+            label: well_names
+          - data_key: liquid_names
+            data_source: goal
+            data_type: array
+            handler_key: liquid_names
+            label: liquid_names
+          - data_key: volumes
+            data_source: goal
+            data_type: array
+            handler_key: volumes
+            label: volumes
+          output:
+          - data_key: plate
+            data_source: executor
+            data_type: array
+            handler_key: plate
+            label: Plate
+          - data_key: wells
+            data_source: executor
+            data_type: array
+            handler_key: wells
+            label: Wells
+          - data_key: volumes
+            data_source: executor
+            data_type: array
+            handler_key: volumes
+            label: Volumes
         placeholder_keys:
           plate: unilabos_resources
         result: {}
         schema:
-          description: ''
+          description: Set the liquid in wells of a plate by well names (e.g., A1,
+            A2, B3).
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 liquid_names:
                   items:
                     type: string
                   type: array
                 plate:
+                  additionalProperties: false
                   description: materials.v1 resource reference
+                  properties:
+                    uuid:
+                      format: uuid
+                      type: string
+                  required:
+                  - uuid
                   title: plate
                   type: object
+                  x-unilabos-material-lock: true
                 volumes:
                   items:
                     type: number
@@ -966,427 +757,12 @@ liquid_handler:
               - volumes
               type: object
             result:
-              $defs:
-                JsonValue: {}
-                ResourceDict:
-                  description: 资源实例的唯一规范快照；运行时树行为留在 ``resource_tracker``。
-                  properties:
-                    barcode:
-                      default: ''
-                      description: Material barcode
-                      title: Barcode
-                      type: string
-                    barcode_symbology:
-                      default: ''
-                      description: Barcode symbology / 码制
-                      title: Barcode Symbology
-                      type: string
-                    class:
-                      description: Resource class name
-                      title: Class
-                      type: string
-                    config:
-                      additionalProperties: true
-                      description: Resource configuration
-                      title: Config
-                      type: object
-                    data:
-                      additionalProperties: true
-                      description: 'Resource data, eg: container data without liquids,
-                        since liquids are tracked separately'
-                      title: Data
-                      type: object
-                    description:
-                      default: ''
-                      description: Resource description
-                      title: Description
-                      type: string
-                    display_name:
-                      default: ''
-                      description: Human-readable label; the authority fills it when
-                        empty
-                      title: Display Name
-                      type: string
-                    extra:
-                      additionalProperties: true
-                      description: Uni-Lab-OS communication and conversion metadata
-                      title: Extra
-                      type: object
-                    icon:
-                      default: ''
-                      description: Resource icon
-                      title: Icon
-                      type: string
-                    id:
-                      description: Resource ID
-                      title: Id
-                      type: string
-                    joint_state:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceJointState'
-                      - type: 'null'
-                      default: null
-                      description: Frequently changing device joint state; independent
-                        from pose
-                    liquid_history:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - anyOf:
-                            - type: string
-                            - type: 'null'
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: VolumeTracker (liquid_name, delta, unit) event
-                        history
-                      title: Liquid History
-                    machine_name:
-                      default: ''
-                      description: Machine this resource belongs to
-                      title: Machine Name
-                      type: string
-                    meta_data:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      description: Canonical resource metadata
-                      title: Meta Data
-                      type: object
-                    model:
-                      additionalProperties: true
-                      description: Resource model
-                      title: Model
-                      type: object
-                    name:
-                      description: Material name; equals the uuid once the authority
-                        has written it
-                      title: Name
-                      type: string
-                    parent:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceDict'
-                      - type: 'null'
-                      default: null
-                      description: Parent resource object
-                    parent_uuid:
-                      anyOf:
-                      - type: string
-                      - type: 'null'
-                      default: null
-                      description: Parent resource uuid
-                      title: Parent Uuid
-                    pose:
-                      $ref: '#/$defs/ResourceDictPosition'
-                      description: Resource pose relative to its parent, plus geometry/layout
-                        metadata
-                    resource_template_uuid:
-                      default: ''
-                      description: Micro-backend ResourceTemplate UUID
-                      title: Resource Template Uuid
-                      type: string
-                    schema:
-                      additionalProperties: true
-                      description: Resource schema
-                      title: Schema
-                      type: object
-                    sites:
-                      anyOf:
-                      - items:
-                          $ref: '#/$defs/ResourceSite'
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Carrier site definitions / 载架位点
-                      title: Sites
-                    sites_initialized:
-                      default: false
-                      description: Whether site preparation has run for this resource
-                        instance
-                      title: Sites Initialized
-                      type: boolean
-                    substances:
-                      anyOf:
-                      - items:
-                          maxItems: 3
-                          minItems: 3
-                          prefixItems:
-                          - type: string
-                          - type: number
-                          - type: string
-                          type: array
-                        type: array
-                      - type: 'null'
-                      default: null
-                      description: Current (substance_name, quantity, unit) entries
-                      title: Substances
-                    template_name:
-                      default: ''
-                      description: Edge resource template name
-                      title: Template Name
-                      type: string
-                    type:
-                      anyOf:
-                      - const: device
-                        type: string
-                      - type: string
-                      description: Resource type
-                      title: Type
-                    unknown_counter:
-                      anyOf:
-                      - minimum: 0
-                        type: integer
-                      - type: 'null'
-                      default: null
-                      description: Unnamed liquid counter
-                      title: Unknown Counter
-                    uuid:
-                      description: Resource UUID
-                      title: Uuid
-                      type: string
-                  required:
-                  - id
-                  - uuid
-                  - name
-                  - type
-                  - class
-                  - config
-                  - data
-                  - extra
-                  title: ResourceDict
-                  type: object
-                ResourceDictPosition:
-                  additionalProperties: false
-                  properties:
-                    cross_section_type:
-                      default: rectangle
-                      description: Cross section type
-                      enum:
-                      - rectangle
-                      - circle
-                      - rounded_rectangle
-                      title: Cross Section Type
-                      type: string
-                    extra:
-                      anyOf:
-                      - additionalProperties: true
-                        type: object
-                      - type: 'null'
-                      default: null
-                      description: Extra data
-                      title: Extra
-                    layout:
-                      default: x-y
-                      description: Resource layout
-                      enum:
-                      - 2d
-                      - x-y
-                      - z-y
-                      - x-z
-                      title: Layout
-                      type: string
-                    position:
-                      anyOf:
-                      - $ref: '#/$defs/ResourceDictPositionObject'
-                      - type: 'null'
-                      default: null
-                      description: Actual position relative to the parent resource
-                    position3d:
-                      $ref: '#/$defs/ResourceDictPositionObject'
-                      description: 3D layout/visualization position; not a second
-                        runtime position
-                    rotation:
-                      $ref: '#/$defs/ResourceDictPositionObject'
-                      description: Resource rotation
-                    scale:
-                      $ref: '#/$defs/ResourceDictPositionScale'
-                      description: Resource scale
-                    size:
-                      $ref: '#/$defs/ResourceDictPositionSize'
-                      description: Resource size
-                  title: ResourceDictPosition
-                  type: object
-                ResourceDictPositionObject:
-                  additionalProperties: false
-                  properties:
-                    x:
-                      description: X coordinate
-                      title: X
-                      type: number
-                    y:
-                      description: Y coordinate
-                      title: Y
-                      type: number
-                    z:
-                      description: Z coordinate
-                      title: Z
-                      type: number
-                  required:
-                  - x
-                  - y
-                  - z
-                  title: ResourceDictPositionObject
-                  type: object
-                ResourceDictPositionScale:
-                  additionalProperties: false
-                  properties:
-                    x:
-                      description: x scale
-                      title: X
-                      type: number
-                    y:
-                      description: y scale
-                      title: Y
-                      type: number
-                    z:
-                      description: z scale
-                      title: Z
-                      type: number
-                  required:
-                  - x
-                  - y
-                  - z
-                  title: ResourceDictPositionScale
-                  type: object
-                ResourceDictPositionSize:
-                  additionalProperties: false
-                  properties:
-                    depth:
-                      description: Depth
-                      minimum: 0.0
-                      title: Depth
-                      type: number
-                    height:
-                      description: Height
-                      minimum: 0.0
-                      title: Height
-                      type: number
-                    width:
-                      description: Width
-                      minimum: 0.0
-                      title: Width
-                      type: number
-                  required:
-                  - depth
-                  - width
-                  - height
-                  title: ResourceDictPositionSize
-                  type: object
-                ResourceJointState:
-                  additionalProperties: false
-                  description: 设备关节的瞬时状态；不属于资源在父坐标系中的 ``pose``。
-                  properties:
-                    effort:
-                      description: Joint efforts; empty when unavailable
-                      items:
-                        type: number
-                      title: Effort
-                      type: array
-                    name:
-                      description: Joint names
-                      items:
-                        type: string
-                      title: Name
-                      type: array
-                    position:
-                      description: Joint positions in the joint-defined unit
-                      items:
-                        type: number
-                      title: Position
-                      type: array
-                    velocity:
-                      description: Joint velocities; empty when unavailable
-                      items:
-                        type: number
-                      title: Velocity
-                      type: array
-                  title: ResourceJointState
-                  type: object
-                ResourceSite:
-                  additionalProperties: false
-                  description: 'Edge、微后端和 PLR Adapter 共用的唯一 Site 实例模型。
-
-
-                    PLR 特有但需要往返保留的字段进入显式 ``extra``；canonical v1 仍拒绝
-
-                    未声明的顶层字段，避免 Adapter 形状反向污染微后端协议。'
-                  properties:
-                    allowed_resource_categories:
-                      description: ResourceTemplate category hints for frontend canvas
-                        filtering only; not an Edge/backend mount constraint
-                      items:
-                        type: string
-                      title: Allowed Resource Categories
-                      type: array
-                    description:
-                      default: ''
-                      title: Description
-                      type: string
-                    extra:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      title: Extra
-                      type: object
-                    index:
-                      anyOf:
-                      - type: integer
-                      - type: string
-                      title: Index
-                    label:
-                      title: Label
-                      type: string
-                    material_uuid:
-                      title: Material Uuid
-                      type: string
-                    meta_data:
-                      additionalProperties:
-                        $ref: '#/$defs/JsonValue'
-                      title: Meta Data
-                      type: object
-                    occupied_material_uuid:
-                      anyOf:
-                      - type: string
-                      - type: 'null'
-                      default: null
-                      title: Occupied Material Uuid
-                    parent_link:
-                      default: ''
-                      title: Parent Link
-                      type: string
-                    pose:
-                      $ref: '#/$defs/ResourceDictPosition'
-                    schema_version:
-                      const: 1
-                      default: 1
-                      title: Schema Version
-                      type: integer
-                    template_name:
-                      title: Template Name
-                      type: string
-                    uuid:
-                      title: Uuid
-                      type: string
-                    visible:
-                      default: true
-                      title: Visible
-                      type: boolean
-                  required:
-                  - uuid
-                  - template_name
-                  - material_uuid
-                  - index
-                  - label
-                  title: ResourceSite
-                  type: object
+              additionalProperties: false
               properties:
                 plate:
                   items:
                     items:
-                      $ref: '#/$defs/ResourceDict'
+                      type: object
                     type: array
                   title: Plate
                   type: array
@@ -1398,7 +774,7 @@ liquid_handler:
                 wells:
                   items:
                     items:
-                      $ref: '#/$defs/ResourceDict'
+                      type: object
                     type: array
                   title: Wells
                   type: array
@@ -1412,14 +788,35 @@ liquid_handler:
           - goal
           title: set_liquid_from_plate参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - plate
+            - well_names
+            - liquid_names
+            - volumes
+            output_order:
+            - plate
+            - wells
+            - volumes
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-set_tiprack:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          tip_racks: null
-        handles: {}
+        goal:
+          tip_racks: tip_racks
+        goal_default: {}
+        handles:
+          input:
+          - data_key: tip_racks
+            data_source: goal
+            data_type: array
+            handler_key: tip_racks
+            label: tip_racks
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1427,6 +824,7 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 tip_racks:
                   items:
@@ -1440,14 +838,29 @@ liquid_handler:
           - goal
           title: set_tiprack参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - tip_racks
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-touch_tip:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          targets: null
-        handles: {}
+        goal:
+          targets: targets
+        goal_default: {}
+        handles:
+          input:
+          - data_key: targets
+            data_source: goal
+            data_type: array
+            handler_key: targets
+            label: targets
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -1455,6 +868,7 @@ liquid_handler:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 targets:
                   items:
@@ -1468,23 +882,49 @@ liquid_handler:
           - goal
           title: touch_tip参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - targets
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommandAsync
       auto-transfer_group:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          source_group_name: null
-          target_group_name: null
-          unit_volume: null
-        handles: {}
+        goal:
+          source_group_name: source_group_name
+          target_group_name: target_group_name
+          unit_volume: unit_volume
+        goal_default: {}
+        handles:
+          input:
+          - data_key: source_group_name
+            data_source: goal
+            data_type: string
+            handler_key: source_group_name
+            label: source_group_name
+          - data_key: target_group_name
+            data_source: goal
+            data_type: string
+            handler_key: target_group_name
+            label: target_group_name
+          - data_key: unit_volume
+            data_source: goal
+            data_type: number
+            handler_key: unit_volume
+            label: unit_volume
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: transfer_group的参数schema
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 source_group_name:
                   type: string
@@ -1502,6 +942,16 @@ liquid_handler:
           - goal
           title: transfer_group参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - source_group_name
+            - target_group_name
+            - unit_volume
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommandAsync
       discard_tips:
         error_policy: {}

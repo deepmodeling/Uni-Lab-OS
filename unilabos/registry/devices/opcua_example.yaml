@@ -9,14 +9,17 @@ opcua_example:
         feedback: {}
         goal: {}
         goal_default: {}
-        handles: {}
+        handles:
+          input: []
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: disconnect的参数schema
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties: {}
               required: []
               type: object
@@ -25,46 +28,73 @@ opcua_example:
           - goal
           title: disconnect参数
           type: object
+          x-unilabos-action-contract:
+            input_order: []
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-load_config:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          config_path: null
-        handles: {}
+        goal:
+          config_path: config_path
+        goal_default: {}
+        handles:
+          input:
+          - data_key: config_path
+            data_source: goal
+            data_type: string
+            handler_key: config_path
+            label: config_path
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 从JSON配置文件加载并注册工作流
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 config_path:
                   type: string
               required:
               - config_path
               type: object
-            result: {}
+            result:
+              type: 'null'
           required:
           - goal
           title: load_config参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - config_path
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-refresh_node_values:
         error_policy: {}
         feedback: {}
         goal: {}
         goal_default: {}
-        handles: {}
+        handles:
+          input: []
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 刷新所有节点的值到缓存
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties: {}
               required: []
               type: object
@@ -73,27 +103,45 @@ opcua_example:
           - goal
           title: refresh_node_values参数
           type: object
+          x-unilabos-action-contract:
+            input_order: []
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-set_node_value:
         error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          name: null
-          value: null
-        handles: {}
+        goal:
+          name: name
+          value: value
+        goal_default: {}
+        handles:
+          input:
+          - data_key: name
+            data_source: goal
+            data_type: any
+            handler_key: name
+            label: name
+          - data_key: value
+            data_source: goal
+            data_type: any
+            handler_key: value
+            label: value
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 设置节点值，支持中文名和英文名
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
-                name:
-                  type: string
-                value:
-                  type: string
+                name: {}
+                value: {}
               required:
               - name
               - value
@@ -103,20 +151,32 @@ opcua_example:
           - goal
           title: set_node_value参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - name
+            - value
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-start_node_refresh:
         error_policy: {}
         feedback: {}
         goal: {}
         goal_default: {}
-        handles: {}
+        handles:
+          input: []
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 启动节点值刷新线程
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties: {}
               required: []
               type: object
@@ -125,20 +185,30 @@ opcua_example:
           - goal
           title: start_node_refresh参数
           type: object
+          x-unilabos-action-contract:
+            input_order: []
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-stop_node_refresh:
         error_policy: {}
         feedback: {}
         goal: {}
         goal_default: {}
-        handles: {}
+        handles:
+          input: []
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
-          description: ''
+          description: 停止节点值刷新线程
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties: {}
               required: []
               type: object
@@ -147,6 +217,13 @@ opcua_example:
           - goal
           title: stop_node_refresh参数
           type: object
+          x-unilabos-action-contract:
+            input_order: []
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
     module: unilabos.device_comms.opcua_client.client:OpcUaClient
     status_policies: {}

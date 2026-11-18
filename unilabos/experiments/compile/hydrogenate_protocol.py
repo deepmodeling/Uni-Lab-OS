@@ -1,6 +1,6 @@
 import networkx as nx
 from typing import List, Dict, Any, Optional
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 
 
 def parse_temperature(temp_str: str) -> float:
@@ -223,7 +223,7 @@ def generate_hydrogenate_protocol(
             "device_id": stirrer_id,
             "action_name": "start_stir",
             "action_kwargs": {
-                "vessel": vessel_id,  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "stir_speed": 300.0,
                 "purpose": "氢化反应: 开始搅拌"
             }
@@ -278,7 +278,7 @@ def generate_hydrogenate_protocol(
             "device_id": heater_id,
             "action_name": "heat_chill_start",
             "action_kwargs": {
-                "vessel": vessel_id,  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "temp": temperature,
                 "purpose": f"氢化反应: 加热到 {temperature}°C"
             }
@@ -310,7 +310,7 @@ def generate_hydrogenate_protocol(
             "device_id": heater_id,
             "action_name": "heat_chill",
             "action_kwargs": {
-                "vessel": vessel_id,  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "temp": temperature,
                 "time": reaction_time,
                 "purpose": f"氢化反应: 保持 {temperature}°C，反应 {reaction_time/60:.1f}分钟" + (f" (模拟时间)" if original_reaction_time != reaction_time else "")
@@ -360,7 +360,7 @@ def generate_hydrogenate_protocol(
             "device_id": heater_id,
             "action_name": "heat_chill_stop",
             "action_kwargs": {
-                "vessel": vessel_id,  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "purpose": "氢化反应完成，停止加热"
             }
         })
@@ -409,7 +409,7 @@ def generate_hydrogenate_protocol(
             "device_id": stirrer_id,
             "action_name": "stop_stir",
             "action_kwargs": {
-                "vessel": vessel_id,  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "purpose": "氢化反应完成，停止搅拌"
             }
         })

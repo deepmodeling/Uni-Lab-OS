@@ -1,7 +1,7 @@
 import networkx as nx
 import logging
 from typing import List, Dict, Any, Union
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
 logger = logging.getLogger(__name__)
@@ -325,7 +325,7 @@ def generate_adjust_ph_protocol(
                     "device_id": stirrer_id,
                     "action_name": "start_stir",
                     "action_kwargs": {
-                        "vessel": {"id": vessel_id},
+                        "vessel": vessel_ref(G, vessel_id),
                         "stir_speed": stir_speed,
                         "purpose": f"pH调节: 启动搅拌，准备添加 {reagent}"
                     }

@@ -6,12 +6,12 @@ from typing import Any, Dict, Optional, Union
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
-    VesselRef,
     VirtualDevice,
     nested_settings,
     parse_duration,
 )
 from unilabos.registry.decorators import DataSource, InputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 离心机能稳定运行的最低转速（RPM）
 MIN_SPEED = 100.0
@@ -57,7 +57,7 @@ class VirtualCentrifuge(VirtualDevice):
             max_temp[最高温度]: 最高温度（°C）。
             min_temp[最低温度]: 最低温度（°C）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs, max_speed=max_speed, max_temp=max_temp, min_temp=min_temp, port=port, time_scale=time_scale
@@ -172,7 +172,7 @@ class VirtualCentrifuge(VirtualDevice):
     )
     async def centrifuge(
         self,
-        vessel: VesselRef,
+        vessel: ResourceSlot,
         speed: float,
         time: Union[float, str],
         temp: float = 25.0,

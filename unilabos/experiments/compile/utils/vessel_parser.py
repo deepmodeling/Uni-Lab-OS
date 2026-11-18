@@ -1,3 +1,5 @@
+from typing import Any, Dict, Optional
+
 import networkx as nx
 
 from .logger_util import debug_print
@@ -23,6 +25,47 @@ def get_vessel(vessel):
         vessel_id = str(vessel)
         vessel_data = {}
     return vessel_id, vessel_data
+
+
+def vessel_ref(G: nx.Graph, vessel: Any) -> Optional[Dict[str, str]]:
+    """设备动作容器参数（``ResourceSlot``）的引用：``{"id": 图节点 id, "uuid": 物料 uuid}``。
+
+    协议编译器给虚拟设备动作传容器时统一走这里，不在各编译器里各拼一遍。框架按 uuid 把引用解析成
+    设备可见的 PLR 实例，派发时按 uuid 加物料锁；``id`` 只为日志好读。
+
+    Args:
+        G: 物理拓扑图（``physical_setup_graph``，节点数据带 Graph Authority 分配的 ``uuid``）。
+        vessel: 图节点 id，或协议参数里的容器字典（``{"id": ...}``，可带 ``uuid``）。
+
+    Returns:
+        - 空值返回 None：容器参数留空，框架不解析、不加锁；
+        - 设备节点（编译器把过滤器、旋蒸本身当「容器」时）返回 None：设备不是物料；
+        - 图里的物料节点：``{"id", "uuid"}``（图节点没有 uuid 时只有 ``id``）；
+        - 不在图里的名字：原样带上（字典自带的 uuid 保留），由框架解析，解析不到时动作失败。
+    """
+
+    if isinstance(vessel, dict) and "id" not in vessel and len(vessel) == 1:
+        # 外包一层的旧形态 {"vessel": {"id": ...}}
+        inner = next(iter(vessel.values()))
+        if isinstance(inner, dict):
+            vessel = inner
+    if isinstance(vessel, dict):
+        vessel_id = vessel.get("id") or ""
+        given_uuid = str(vessel.get("uuid") or "").strip()
+    else:
+        vessel_id = "" if vessel is None else vessel
+        given_uuid = ""
+    vessel_id = str(vessel_id).strip()
+    if not vessel_id:
+        return {"uuid": given_uuid} if given_uuid else None
+    if G is not None and vessel_id in G.nodes:
+        data = G.nodes[vessel_id]
+        if data.get("type") == "device":
+            return None
+        node_uuid = str(data.get("uuid") or given_uuid or "").strip()
+    else:
+        node_uuid = given_uuid
+    return {"id": vessel_id, "uuid": node_uuid} if node_uuid else {"id": vessel_id}
 
 
 def find_reagent_vessel(G: nx.DiGraph, reagent: str) -> str:

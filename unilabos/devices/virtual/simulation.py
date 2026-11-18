@@ -1,14 +1,14 @@
 """内置虚拟设备共用的模拟工具。
 
-- **模拟时间**：动作按「模拟时长 × 时间倍率」真实等待。倍率取设备图节点配置 ``time_scale``，
-  没配时取 ``BasicConfig.virtual_time_scale``（默认 0.001：一小时的模拟操作约 3.6 秒跑完；
-  1.0 按真实时长，0 不等待）。环境变量 ``UNILABOS_BASICCONFIG_VIRTUAL_TIME_SCALE`` 同样生效。
+- **模拟时间**：动作按「模拟时长 × 时间倍率」真实等待。倍率只按设备配：图节点配置 ``time_scale``，
+  没配时取设备类自带的默认值 ``default_time_scale``（0.001：一小时的模拟操作约 3.6 秒跑完）；
+  1.0 按真实时长，0 不等待。
 - **长动作**：分步推进，每步检查取消（``ActionContext``，ROS 2 不注入时只是不支持取消）、
   更新进度与剩余时间，并通过动作反馈发布。
-- **容器引用**：协议编译器按 ``{"id": <设备图节点 id>}`` 传容器，前端 / 脚本也可能传 uuid、
-  字符串，ROS 2 原生动作里 ``Resource`` 字段到达时已是 PLR 实例。统一解析成本地物料实例
-  （内容物读写走 PLR 体积跟踪器，提交后由快照观察者上报物料权威）与人读标签（``display_name``）。
-  容器不在本设备可见范围内（Slave 进程、没挂在图上的名字）时只记账失败，不让动作失败。
+- **容器**：动作的容器参数是 ``ResourceSlot``，由框架把引用（协议编译器经
+  ``experiments.compile.utils.vessel_parser.vessel_ref`` 传 ``{"id", "uuid"}``）解析成本设备可见的
+  PLR 实例，空值为 None；作为作业派发时调度器按 uuid 默认加共享物料锁。设备不自己查物料：
+  人读标签取物料的 ``display_name``，内容物读写走 PLR 体积跟踪器（提交后由快照观察者上报物料权威）。
 """
 
 from __future__ import annotations
@@ -20,15 +20,15 @@ import math
 import re
 import threading
 import time
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
+
+from pylabrobot.resources import Resource as PLRResource
 
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
-from unilabos.config.config import BasicConfig
 from unilabos.registry.decorators import not_action
 
-#: 容器引用的线上形态：图节点 id / uuid 字符串，或 ``{"id": ..., "uuid": ...}``。
-VesselRef = Union[str, Dict[str, Any]]
-
+#: 设备类自带的默认时间倍率：一小时的模拟操作约 3.6 秒跑完。
+DEFAULT_TIME_SCALE = 0.001
 #: 每步最长真实等待（秒）与最多步数：决定进度反馈的粒度。
 STEP_WALL_SECONDS = 0.1
 MAX_STEPS = 200
@@ -54,10 +54,10 @@ _AMOUNT_UNITS = {"mol": 1.0, "mmol": 1e-3, "umol": 1e-6, "µmol": 1e-6, "μmol":
 _QUANTITY = re.compile(r"^\s*([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)\s*([a-zA-Zµμ]*)\s*$")
 
 
-def resolve_time_scale(value: Any = None) -> float:
-    """时间倍率：设备配置优先，其次全局 ``BasicConfig.virtual_time_scale``。"""
+def resolve_time_scale(value: Any = None, default: float = DEFAULT_TIME_SCALE) -> float:
+    """时间倍率：设备图节点配置的 ``time_scale``，没配时取设备类的默认值。"""
 
-    raw = BasicConfig.virtual_time_scale if value is None or value == "" else value
+    raw = default if value is None or value == "" else value
     try:
         scale = float(raw)
     except (TypeError, ValueError) as exc:
@@ -113,65 +113,12 @@ def nested_settings(kwargs: Dict[str, Any], **explicit: Any) -> Dict[str, Any]:
     return explicit
 
 
-def is_empty_ref(ref: Any) -> bool:
-    """容器引用为空（None、空串、空字典）——表示「未指定」。"""
-
-    if ref is None:
-        return True
-    if isinstance(ref, str):
-        return not ref.strip()
-    if isinstance(ref, Mapping):
-        return not ref
-    return False
-
-
-def vessel_identity(ref: Any) -> Tuple[str, str]:
-    """容器引用的 (图节点 id, uuid)，缺的一项为空串。"""
-
-    if ref is None:
-        return "", ""
-    if isinstance(ref, Mapping):
-        if not any(key in ref for key in ("id", "uuid", "name")) and len(ref) == 1:
-            # {"<名字>": {...}} 形态（旧协议参数）
-            inner = next(iter(ref.values()))
-            if isinstance(inner, Mapping):
-                return vessel_identity(inner)
-        node_uuid = str(ref.get("uuid") or (ref.get("data") or {}).get("unilabos_uuid") or "")
-        if isinstance(ref.get("id"), Mapping):
-            # 控温协议把容器参数再包一层：{"id": {"id": "flask"}}
-            inner_id, inner_uuid = vessel_identity(ref["id"])
-            return inner_id, inner_uuid or node_uuid
-        node_id = str(ref.get("id") or "")
-        if not node_id and not node_uuid:
-            node_id = str(ref.get("name") or "")
-        return node_id, node_uuid
-    resource_uuid = getattr(ref, "unilabos_uuid", None)
-    if resource_uuid is not None or hasattr(ref, "get_absolute_location"):
-        return str(getattr(ref, "name", "") or ""), str(resource_uuid or "")
-    return str(ref).strip(), ""
-
-
 def physical_graph() -> Any:
     """协议编译器用的物理拓扑图（Host 进程装配了设备图时才有，否则 None）。"""
 
     from unilabos.backend.runtime.workstation_protocol import physical_setup_graph
 
     return physical_setup_graph()
-
-
-def _graph_node(node_id: str, node_uuid: str) -> Tuple[str, Dict[str, Any]]:
-    """在协议编译器用的物理拓扑图里找容器节点（Host 进程装配了设备图时才有）。"""
-
-    graph = physical_graph()
-    if graph is None:
-        return "", {}
-    if node_id and node_id in graph.nodes:
-        return node_id, dict(graph.nodes[node_id])
-    if node_uuid:
-        for candidate, data in graph.nodes(data=True):
-            if data.get("uuid") == node_uuid:
-                return candidate, dict(data)
-    return "", {}
 
 
 class VirtualDevice:
@@ -183,10 +130,12 @@ class VirtualDevice:
 
     # 虚拟设备本身就是模拟器：--test_mode 下同样真实执行（只是快）
     run_in_test_mode = True
+    #: 图节点没配 time_scale 时的时间倍率（设备类自带，子类可改）
+    default_time_scale: float = DEFAULT_TIME_SCALE
 
     def __init__(self, device_id: Optional[str], default_id: str, time_scale: Any = None) -> None:
         self.device_id = str(device_id or default_id)
-        self.time_scale = resolve_time_scale(time_scale)
+        self.time_scale = resolve_time_scale(time_scale, self.default_time_scale)
         self.logger = logging.getLogger(f"unilabos.devices.virtual.{self.device_id}")
         self._node: Any = None
         self._lock = threading.RLock()
@@ -383,49 +332,36 @@ class VirtualDevice:
         raise ValueError(message)
 
     # ------------------------------------------------------------------
-    # 容器：标签与内容物
+    # 容器：框架解析好的 PLR 实例（ResourceSlot），设备只读标签、改内容物
     # ------------------------------------------------------------------
 
-    def _vessel_label(self, ref: Any) -> str:
-        """容器的人读标签：引用自带的 display_name → 设备图里的 display_name → 图节点 id / uuid。"""
+    def _vessel_label(self, vessel: Any) -> str:
+        """容器的人读标签：物料的 ``display_name``，取不到时用 PLR 名。
 
-        if is_empty_ref(ref):
+        PLR 实例本身不带 ``display_name``：按它的 uuid 在物理拓扑图（Host 装配的设备图）里取；
+        没有设备图的进程（Slave）退回 PLR 名。ROS 2 ``Transfer`` 动作的 from_vessel / to_vessel 是
+        string 字段，到达时就是字符串，原样作标签。
+        """
+
+        if vessel is None:
             return ""
-        if isinstance(ref, Mapping) and ref.get("display_name"):
-            return str(ref["display_name"])
-        node_id, node_uuid = vessel_identity(ref)
-        resolved_id, data = _graph_node(node_id, node_uuid)
-        return str(data.get("display_name") or resolved_id or node_id or node_uuid)
+        if not isinstance(vessel, PLRResource):
+            return str(vessel).strip()
+        material_uuid = str(getattr(vessel, "unilabos_uuid", "") or "")
+        graph = physical_graph()
+        if graph is not None and material_uuid:
+            for node_id, data in graph.nodes(data=True):
+                if data.get("uuid") == material_uuid:
+                    return str(data.get("display_name") or node_id)
+        return str(vessel.name)
 
-    def _vessel_resource(self, ref: Any) -> Any:
-        """本设备可见的 PLR 物料实例（找不到返回 None）。"""
+    def _vessel_tracker(self, vessel: Any) -> Any:
+        """容器的 PLR 体积跟踪器；不是 PLR 实例、没有跟踪器或跟踪器停用时为 None（不记内容物）。"""
 
-        if is_empty_ref(ref):
-            return None
-        if hasattr(ref, "unilabos_uuid") and hasattr(ref, "get_absolute_location"):
-            return ref
-        tracker = getattr(self._node, "resource_tracker", None)
-        if tracker is None:
-            return None
-        node_id, node_uuid = vessel_identity(ref)
-        if not node_uuid:
-            _resolved, data = _graph_node(node_id, "")
-            node_uuid = str(data.get("uuid") or "")
-        if node_uuid:
-            found = tracker.uuid_to_resources.get(node_uuid)
-            if found is not None:
-                return found
-            matches = tracker.figure_resource({"uuid": node_uuid}, try_mode=True)
-            if len(matches) == 1:
-                return matches[0]
-        return None
-
-    def _vessel_tracker(self, ref: Any) -> Any:
-        resource = self._vessel_resource(ref)
-        tracker = getattr(resource, "tracker", None)
+        tracker = getattr(vessel, "tracker", None) if isinstance(vessel, PLRResource) else None
         if tracker is None or getattr(tracker, "is_disabled", False):
-            if not is_empty_ref(ref):
-                self.logger.debug("[%s] 容器 %s 不可见或没有体积跟踪器，不记内容物", self.device_id, ref)
+            if vessel is not None:
+                self.logger.debug("[%s] 容器 %s 没有可用的体积跟踪器，不记内容物", self.device_id, vessel)
             return None
         return tracker
 
@@ -434,19 +370,10 @@ class VirtualDevice:
         # 提交后快照观察者把内容物上报物料权威
         tracker.commit()
 
-    def _vessel_contents(self, ref: Any) -> List[Dict[str, Any]]:
-        """容器当前内容物（液体与固体）；不可见时为空列表。"""
-
-        tracker = self._vessel_tracker(ref)
-        if tracker is None:
-            return []
-        entries = list(tracker.get_liquids()) + list(tracker.get_solids())
-        return [{"name": str(name or ""), "amount": round(float(amount), 6), "unit": str(unit)} for name, amount, unit in entries]
-
-    def _add_to_vessel(self, ref: Any, name: str, amount: float, unit: str) -> float:
+    def _add_to_vessel(self, vessel: Any, name: str, amount: float, unit: str) -> float:
         """向容器加入内容物（液体按剩余容积截断，固体不占容积）；返回实际加入量。"""
 
-        tracker = self._vessel_tracker(ref)
+        tracker = self._vessel_tracker(vessel)
         if tracker is None or amount <= 0:
             return 0.0
         if unit == "ul":
@@ -460,14 +387,14 @@ class VirtualDevice:
     def _transfer_liquid(self, source: Any, target: Any, volume_ul: float) -> List[Tuple[str, float, str]]:
         """从 ``source`` 按比例取液体放进 ``target``；返回转移的 (名称, 体积 µL, 单位)。
 
-        转移量不超过源容器现有量，目标容器可见时也不超过它的剩余容积（放不下的留在源容器）；
-        目标未指定或不可见时取出的液体离开记账范围（如滤液、废液）。源容器不可见时不记账。
+        转移量不超过源容器现有量，目标容器有跟踪器时也不超过它的剩余容积（放不下的留在源容器）；
+        目标未指定时取出的液体离开记账范围（如滤液、废液）。源容器没有跟踪器时不记账。
         """
 
         source_tracker = self._vessel_tracker(source)
         if source_tracker is None or volume_ul <= 0:
             return []
-        target_tracker = None if is_empty_ref(target) else self._vessel_tracker(target)
+        target_tracker = self._vessel_tracker(target)
         if target_tracker is source_tracker:
             return []
         volume = min(float(volume_ul), float(source_tracker.get_used_volume()))
@@ -483,10 +410,10 @@ class VirtualDevice:
             self._commit(target_tracker)
         return removed
 
-    def _drop_from_vessel(self, ref: Any, names: List[str]) -> float:
+    def _drop_from_vessel(self, vessel: Any, names: List[str]) -> float:
         """从容器里去掉指定名称的液体（蒸发溶剂）；``names`` 为空时去掉全部液体。返回去掉的体积。"""
 
-        tracker = self._vessel_tracker(ref)
+        tracker = self._vessel_tracker(vessel)
         if tracker is None:
             return 0.0
         wanted = {name.strip().lower() for name in names if name and name.strip()}
@@ -502,18 +429,16 @@ class VirtualDevice:
 
 __all__ = [
     "CANCEL_CHECK_SECONDS",
+    "DEFAULT_TIME_SCALE",
     "MAX_STEPS",
     "STEP_WALL_SECONDS",
     "UG_PER_G",
     "UL_PER_ML",
-    "VesselRef",
     "VirtualDevice",
-    "is_empty_ref",
     "nested_settings",
     "parse_amount",
     "parse_duration",
     "parse_mass",
     "physical_graph",
     "resolve_time_scale",
-    "vessel_identity",
 ]

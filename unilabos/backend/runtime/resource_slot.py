@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import types
+from collections.abc import Mapping
 from typing import Any, Optional, Union, get_args, get_origin
 
 
@@ -42,6 +43,22 @@ def resource_slot_shape(annotation: Any) -> Optional[str]:
     name = str(getattr(annotation, "__qualname__", "") or "")
     module = str(getattr(annotation, "__module__", "") or "")
     return "single" if name == "ResourceSlot" and module else None
+
+
+def is_unset_resource_slot(value: Any) -> bool:
+    """单个 ResourceSlot 的值是「未指定」：None、空白字符串、空对象或空列表。
+
+    与调度器判定「没有物料、不加锁」的口径一致（``scheduler.materials`` 的空值规则）：
+    可选容器参数留空、或按 goal 默认值填了 ``{}`` 时不解析、不加锁，驱动拿到 None。
+    """
+
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (Mapping, list, tuple)):
+        return len(value) == 0
+    return False
 
 
 def resource_slot_shapes(function: Any) -> dict[str, str]:

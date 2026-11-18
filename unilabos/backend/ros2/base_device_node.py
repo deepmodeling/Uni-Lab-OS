@@ -31,7 +31,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import StrSingleInput
 from unilabos.backend.runtime.node import DeviceNode
-from unilabos.backend.runtime.resource_slot import resource_slot_shapes
+from unilabos.backend.runtime.resource_slot import is_unset_resource_slot, resource_slot_shapes
 from unilabos.backend.runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.action_policy import (
@@ -1633,9 +1633,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
     def _resolve_slot_value_sync(self, value: Any) -> Any:
         """同步剥离并解析单个 ResourceSlot 的 wire 输入（str/dict/list/PLR 实例）。
 
-        可选 ResourceSlot 的空值（None/""）语义是「未指定」，归一化为 None。
+        可选 ResourceSlot 的空值（None / "" / {}）语义是「未指定」，归一化为 None。
         """
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if is_unset_resource_slot(value):
             return None
         kind, payload = parse_resource_slot(value)
         if kind == SLOT_KIND_PLR:
@@ -1650,9 +1650,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
     async def _resolve_slot_value_async(self, value: Any) -> Any:
         """异步剥离并解析单个 ResourceSlot 的 wire 输入（str/dict/list/PLR 实例）。
 
-        可选 ResourceSlot 的空值（None/""）语义是「未指定」，归一化为 None。
+        可选 ResourceSlot 的空值（None / "" / {}）语义是「未指定」，归一化为 None。
         """
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if is_unset_resource_slot(value):
             return None
         kind, payload = parse_resource_slot(value)
         if kind == SLOT_KIND_PLR:

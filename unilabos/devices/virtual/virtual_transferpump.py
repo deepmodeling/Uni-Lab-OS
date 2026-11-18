@@ -3,7 +3,7 @@
 协议编译器把 ``virtual_transfer_pump`` 当作带分配阀的注射泵：先 ``set_valve_position``
 切到连线端口，再 ``set_position`` 把柱塞移到绝对体积（吸液 / 排液）。柱塞移动的模拟时长
 = 移动体积 ÷ 速度，按时间倍率缩放后真实等待。``transfer`` 在两个容器之间按注射器容量分次
-转移，容器在本设备可见时同步改写两边的内容物（PLR 体积跟踪器）。
+转移，容器有体积跟踪器时同步改写两边的内容物（PLR 体积跟踪器）。
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ from typing import Any, Dict, Optional, Union
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
     UL_PER_ML,
-    VesselRef,
     VirtualDevice,
     nested_settings,
 )
 from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 体积比较的容差（mL）
 _EPSILON = 1e-6
@@ -65,7 +65,7 @@ class VirtualTransferPump(VirtualDevice):
             transfer_rate[转移速率]: 默认柱塞速度（mL/s）；不填时用 max_velocity。
             max_velocity[最大速度]: 柱塞最大速度（mL/s），默认 5。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,
@@ -204,14 +204,14 @@ class VirtualTransferPump(VirtualDevice):
     @action(
         action_type="unilabos_msgs.action:Transfer",
         display_name="容器间转移",
-        description="从源容器吸液、排到目标容器；超过注射器容量时分次转移，可见的容器同步改写内容物",
+        description="从源容器吸液、排到目标容器；超过注射器容量时分次转移，同步改写两边容器的内容物",
         feedback_interval=0.5,
     )
     async def transfer(
         self,
         volume: float,
-        from_vessel: VesselRef = "",
-        to_vessel: VesselRef = "",
+        from_vessel: Optional[ResourceSlot] = None,
+        to_vessel: Optional[ResourceSlot] = None,
         aspirate_velocity: Optional[float] = None,
         dispense_velocity: Optional[float] = None,
         amount: str = "",
@@ -227,7 +227,7 @@ class VirtualTransferPump(VirtualDevice):
 
         Args:
             volume[体积]: 转移体积（mL）。
-            from_vessel[源容器]: 源容器（图节点 id、uuid 或 {"id": ...}），可不填。
+            from_vessel[源容器]: 源容器，可不填。
             to_vessel[目标容器]: 目标容器，可不填。
             aspirate_velocity[吸液速度]: 吸液速度（mL/s），不填用当前最大速度。
             dispense_velocity[排液速度]: 排液速度（mL/s），不填用当前最大速度。

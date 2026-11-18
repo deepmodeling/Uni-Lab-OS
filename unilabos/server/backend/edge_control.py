@@ -351,7 +351,13 @@ class EdgeControlService:
 
     @staticmethod
     def _device_class(device_id: str) -> str:
-        """调度器给的是设备实例（物料 uuid / resource_id）；注册表按设备类记条目。"""
+        """调度器给的是设备实例（物料 uuid / resource_id / 运行时设备 ID）；注册表按设备类记条目。
+
+        工作站下的子设备（工作站图里的虚拟泵、搅拌器等）在物料权威里的 resource_id 带父级前缀
+        （``Station/stirrer_1``），单动作作业给的却是运行时设备 ID（``stirrer_1``）：按最后一段找到
+        唯一的设备物料，才能读到它的注册表声明（物料锁参数、动作合同、超时等），否则这些设备的
+        ResourceSlot 参数不加物料锁。
+        """
 
         from unilabos.server.backend.composition import get_materials_service
 
@@ -362,6 +368,14 @@ class EdgeControlService:
                     return str(lookup(str(device_id)).material.template_name)
                 except Exception:  # noqa: BLE001 - 不是该形态的标识就换下一种
                     continue
+            find_devices = getattr(service, "find_devices_by_runtime_id", None)
+            if callable(find_devices):
+                try:
+                    matches = find_devices(str(device_id))
+                except Exception:  # noqa: BLE001 - 查询失败按未登记处理
+                    matches = []
+                if len(matches) == 1:
+                    return str(matches[0].template_name)
         return str(device_id)
 
     def _action_definition(self, device_id: str, action_name: str) -> Optional[Mapping[str, Any]]:

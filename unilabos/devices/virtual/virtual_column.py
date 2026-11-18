@@ -1,6 +1,6 @@
 """虚拟柱层析装置：样品从源容器上柱、洗脱，收集到目标容器。
 
-分离时长按柱长与最大流速估算（至少 20 秒模拟时间）；源 / 目标容器在本设备可见时，
+分离时长按柱长与最大流速估算（至少 20 秒模拟时间）；源 / 目标容器有体积跟踪器时，
 把源容器里的液体整体转到目标容器（PLR 体积跟踪器）。
 """
 
@@ -10,7 +10,7 @@ import math
 from typing import Any, Dict, Optional
 
 from unilabos.backend.runtime.action import ActionContext
-from unilabos.devices.virtual.simulation import UL_PER_ML, VesselRef, VirtualDevice, nested_settings
+from unilabos.devices.virtual.simulation import UL_PER_ML, VirtualDevice, nested_settings
 from unilabos.registry.decorators import (
     DataSource,
     InputHandle,
@@ -20,6 +20,7 @@ from unilabos.registry.decorators import (
     device,
     topic_config,
 )
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 最短分离时间（模拟秒）
 MIN_SEPARATION_SECONDS = 20.0
@@ -74,7 +75,7 @@ class VirtualColumn(VirtualDevice):
             column_length[柱长]: 柱长（cm）。
             column_diameter[柱径]: 柱内径（cm）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,
@@ -190,8 +191,8 @@ class VirtualColumn(VirtualDevice):
     )
     async def run_column(
         self,
-        from_vessel: VesselRef,
-        to_vessel: VesselRef,
+        from_vessel: ResourceSlot,
+        to_vessel: ResourceSlot,
         column: str,
         rf: str = "",
         pct1: str = "",

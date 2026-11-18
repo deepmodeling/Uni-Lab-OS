@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Union
 import networkx as nx
 import logging
 import re
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
 logger = logging.getLogger(__name__)
@@ -627,8 +627,8 @@ def generate_run_column_protocol(
                 "device_id": column_device_id,
                 "action_name": "run_column",
                 "action_kwargs": {
-                    "from_vessel": from_vessel_id,  # 🔧 使用 from_vessel_id
-                    "to_vessel": to_vessel_id,      # 🔧 使用 to_vessel_id
+                    "from_vessel": vessel_ref(G, from_vessel_id),
+                    "to_vessel": vessel_ref(G, to_vessel_id),
                     "column": column,
                     "rf": rf,
                     "pct1": pct1,

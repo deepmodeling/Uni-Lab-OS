@@ -6,12 +6,12 @@ from typing import Any, Dict, Optional, Union
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
-    VesselRef,
     VirtualDevice,
     nested_settings,
     parse_duration,
 )
 from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 
 
 @device(
@@ -52,7 +52,7 @@ class VirtualStirrer(VirtualDevice):
             max_speed[最高转速]: 最高转速（RPM）。
             min_speed[最低转速]: 最低转速（RPM）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs, max_speed=max_speed, min_speed=min_speed, port=port, time_scale=time_scale
@@ -164,7 +164,7 @@ class VirtualStirrer(VirtualDevice):
         stir_time: float,
         stir_speed: float,
         settling_time: Union[float, str],
-        vessel: VesselRef = "",
+        vessel: Optional[ResourceSlot] = None,
         time: str = "",
         time_spec: str = "",
         event: str = "",
@@ -227,7 +227,7 @@ class VirtualStirrer(VirtualDevice):
         display_name="开始搅拌",
         description="按转速持续搅拌，直到 stop_stir",
     )
-    async def start_stir(self, vessel: VesselRef, stir_speed: float, purpose: str = "") -> Dict[str, Any]:
+    async def start_stir(self, vessel: ResourceSlot, stir_speed: float, purpose: str = "") -> Dict[str, Any]:
         """开始持续搅拌。
 
         Args:
@@ -251,7 +251,7 @@ class VirtualStirrer(VirtualDevice):
         display_name="停止搅拌",
         description="停止持续搅拌",
     )
-    async def stop_stir(self, vessel: VesselRef, purpose: str = "") -> Dict[str, Any]:
+    async def stop_stir(self, vessel: ResourceSlot, purpose: str = "") -> Dict[str, Any]:
         """停止搅拌。
 
         Args:

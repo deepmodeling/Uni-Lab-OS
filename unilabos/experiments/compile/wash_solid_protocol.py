@@ -3,7 +3,7 @@ import networkx as nx
 import logging
 import re
 
-from .utils.vessel_parser import get_vessel
+from .utils.vessel_parser import get_vessel, vessel_ref
 from .utils.unit_parser import parse_mass_input, parse_time_input, parse_volume_input
 
 logger = logging.getLogger(__name__)
@@ -380,7 +380,7 @@ def generate_wash_solid_protocol(
                 "device_id": "stirrer_1",
                 "action_name": "stir",
                 "action_kwargs": {
-                    "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                    "vessel": vessel_ref(G, vessel_id),
                     "time": str(time),
                     "stir_time": final_time,
                     "stir_speed": stir_speed,
@@ -396,8 +396,8 @@ def generate_wash_solid_protocol(
             "device_id": "filter_1",
             "action_name": "filter",
             "action_kwargs": {
-                "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
-                "filtrate_vessel": actual_filtrate_vessel,
+                "vessel": vessel_ref(G, vessel_id),
+                "filtrate_vessel": vessel_ref(G, actual_filtrate_vessel),
                 "temp": temp,
                 "volume": final_volume
             }

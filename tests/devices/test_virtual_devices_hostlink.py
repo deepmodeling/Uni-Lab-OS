@@ -1,8 +1,8 @@
 """内置虚拟设备：注册合同、HostLink 真实执行（不走 ``--test_mode`` 占位）、示例图与代表协议。
 
 驱动按装饰器注册表条目（AST 扫描，与运行时同一份）由 HostLink 本地运行时实例化、启动，
-动作走运行时的同一条调用链（goal 映射、样品映射与 ActionContext 注入）。模拟时间倍率设为 0：
-逻辑与状态变化照常发生，只是不等待；时间倍率、进度与取消另有专门的用例。
+动作走运行时的同一条调用链（goal 映射、样品映射与 ActionContext 注入）。设备类的默认时间倍率在用例里
+设为 0：逻辑与状态变化照常发生，只是不等待；时间倍率、进度与取消另有专门的用例。
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLink
 from unilabos.backend.runtime import workstation_protocol
 from unilabos.backend.runtime.action import ActionCancelled, ActionContext
 from unilabos.config.config import BasicConfig
+from unilabos.devices.virtual.simulation import DEFAULT_TIME_SCALE, VirtualDevice
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.registry import Registry
@@ -95,7 +96,7 @@ def registry() -> dict[str, Any]:
 @pytest.fixture(autouse=True)
 def _instant_real_execution(monkeypatch):
     monkeypatch.setattr(BasicConfig, "test_mode", False)
-    monkeypatch.setattr(BasicConfig, "virtual_time_scale", 0.0)
+    monkeypatch.setattr(VirtualDevice, "default_time_scale", 0.0)
 
 
 def _spec(
@@ -133,6 +134,43 @@ def _running(*specs: HostLinkDriverSpec) -> Iterator[HostLinkLocalRuntime]:
 
 def _driver(runtime: HostLinkLocalRuntime, device_id: str) -> Any:
     return runtime.devices[device_id].driver
+
+
+class _Station(WorkstationBase):
+    """只承载容器的工作站：子设备共用它的资源跟踪器。"""
+
+    def __init__(self, **_kwargs: Any) -> None:
+        super().__init__(deck=None)
+
+
+def _container(node_id: str, parent_uuid: str, substances: list[list[Any]], max_volume: float = 50000.0):
+    node_uuid = str(uuid.uuid4())
+    return {
+        "id": node_id, "uuid": node_uuid, "name": node_uuid, "display_name": f"{node_id} 瓶",
+        "type": "container", "class": "RegularContainer", "template_name": "container",
+        "parent_uuid": parent_uuid,
+        "config": {"type": "RegularContainer", "max_volume": max_volume, "name": node_id},
+        "data": {}, "extra": {}, "substances": substances, "pose": {"position": {"x": 0, "y": 0, "z": 0}},
+    }
+
+
+def _station(*names: str) -> tuple[HostLinkDriverSpec, dict[str, dict[str, str]]]:
+    """承载空容器的工作站（子设备挂 ``parent_device_id="station"`` 共用它的资源跟踪器）与各容器的
+    ResourceSlot 引用 ``{"id", "uuid"}``——与协议编译器 ``vessel_ref`` 传的形态一致。"""
+
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+
+    station_uuid = str(uuid.uuid4())
+    containers = [_container(name, station_uuid, []) for name in names]
+    tree = ResourceTreeSet.from_raw_dict_list(
+        [
+            {"id": "station", "uuid": station_uuid, "name": station_uuid, "type": "device",
+             "class": "workstation", "template_name": "workstation", "config": {}, "data": {}, "extra": {}},
+            *containers,
+        ]
+    )
+    spec = HostLinkDriverSpec(device_id="station", driver_class=_Station, config={}, device_config=tree.trees[0].root_node)
+    return spec, {node["id"]: {"id": node["id"], "uuid": node["uuid"]} for node in containers}
 
 
 def _ros_goal_fields(type_name: str) -> list[str]:
@@ -190,14 +228,20 @@ def test_compiler_actions_keep_their_ros_types_and_goal_fields(registry, device,
 
 
 def test_process_devices_run_their_actions(registry) -> None:
+    station, ref = _station("reactor", "a", "b", "filter", "flask", "separator")
+
+    def spec(device_id: str, name: str, config: dict[str, Any] | None = None) -> HostLinkDriverSpec:
+        return _spec(registry, device_id, name, config, parent_device_id="station")
+
     with _running(
-        _spec(registry, "centrifuge", "virtual_centrifuge", {"max_speed": 12000.0}),
-        _spec(registry, "column", "virtual_column"),
-        _spec(registry, "filter", "virtual_filter"),
-        _spec(registry, "heatchill", "virtual_heatchill"),
-        _spec(registry, "rotavap", "virtual_rotavap"),
-        _spec(registry, "separator", "virtual_separator"),
-        _spec(registry, "stirrer", "virtual_stirrer"),
+        station,
+        spec("centrifuge", "virtual_centrifuge", {"max_speed": 12000.0}),
+        spec("column", "virtual_column"),
+        spec("filter", "virtual_filter"),
+        spec("heatchill", "virtual_heatchill"),
+        spec("rotavap", "virtual_rotavap"),
+        spec("separator", "virtual_separator"),
+        spec("stirrer", "virtual_stirrer"),
     ) as runtime:
         call = runtime.call_action
         for device_id in ("centrifuge", "column", "filter", "heatchill", "rotavap", "separator", "stirrer"):
@@ -205,51 +249,52 @@ def test_process_devices_run_their_actions(registry) -> None:
 
         centrifuge = _driver(runtime, "centrifuge")
         assert centrifuge.max_speed == 12000.0
-        spun = call("centrifuge", "centrifuge", vessel={"id": "reactor"}, speed=3000.0, time="2 min", temp=25.0)
+        spun = call("centrifuge", "centrifuge", vessel=ref["reactor"], speed=3000.0, time="2 min", temp=25.0)
         assert spun == {"success": True, "vessel": "reactor", "speed": 3000.0, "time": 120.0, "temp": 25.0}
         assert (centrifuge.centrifuge_state, centrifuge.progress, centrifuge.current_speed) == ("Completed", 100.0, 0.0)
         with pytest.raises(ValueError, match="离心速度"):
-            call("centrifuge", "centrifuge", vessel="reactor", speed=99999.0, time=1.0)
+            call("centrifuge", "centrifuge", vessel=ref["reactor"], speed=99999.0, time=1.0)
         with pytest.raises(ValueError, match="温度"):
-            call("centrifuge", "centrifuge", vessel="reactor", speed=3000.0, time=1.0, temp=80.0)
+            call("centrifuge", "centrifuge", vessel=ref["reactor"], speed=3000.0, time=1.0, temp=80.0)
 
-        ran = call("column", "run_column", from_vessel="a", to_vessel="b", column="silica", rf="0.3")
+        ran = call("column", "run_column", from_vessel=ref["a"], to_vessel=ref["b"], column="silica", rf="0.3")
         assert ran["success"] is True and ran["column"] == "silica"
         assert _driver(runtime, "column").column_state == "Completed"
 
-        filtered = call("filter", "filter", vessel={"id": "filter"}, filtrate_vessel={"id": "flask"}, volume=10.0)
+        filtered = call("filter", "filter", vessel=ref["filter"], filtrate_vessel=ref["flask"], volume=10.0)
         assert filtered["filtered_volume"] == pytest.approx(10.0)
         with pytest.raises(ValueError, match="过滤体积"):
-            call("filter", "filter", vessel="reactor", volume=9999.0)
+            call("filter", "filter", vessel=ref["reactor"], volume=9999.0)
 
         heatchill = _driver(runtime, "heatchill")
-        heated = call("heatchill", "heat_chill", vessel={"id": "reactor"}, temp=60.0, time="2 min",
+        heated = call("heatchill", "heat_chill", vessel=ref["reactor"], temp=60.0, time="2 min",
                       stir=True, stir_speed=300.0, purpose="test")
         assert heated["current_temp"] == 60.0 and heatchill.operation_mode == "Completed"
         # 干燥 / 氢化协议不带 stir 参数
-        assert call("heatchill", "heat_chill", vessel={"id": "reactor"}, temp=40.0, time=30.0, purpose="dry")["success"]
-        assert call("heatchill", "heat_chill_start", vessel={"id": "reactor"}, temp=50.0, purpose="test")["temp"] == 50.0
+        assert call("heatchill", "heat_chill", vessel=ref["reactor"], temp=40.0, time=30.0, purpose="dry")["success"]
+        assert call("heatchill", "heat_chill_start", vessel=ref["reactor"], temp=50.0, purpose="test")["temp"] == 50.0
         assert (heatchill.operation_mode, heatchill.remaining_time, heatchill.target_temp) == ("Heating", -1.0, 50.0)
-        assert call("heatchill", "heat_chill_stop", vessel={"id": "reactor"})["previous_target_temp"] == 50.0
+        assert call("heatchill", "heat_chill_stop", vessel=ref["reactor"])["previous_target_temp"] == 50.0
         assert heatchill.operation_mode == "Stopped" and heatchill.current_temp == 25.0
         with pytest.raises(ValueError, match="温度"):
             call("heatchill", "heat_chill", temp=900.0, time=10.0)
         with pytest.raises(ValueError, match="时长"):
             call("heatchill", "heat_chill", temp=60.0, time=0)
 
-        evaporated = call("rotavap", "evaporate", vessel="reactor", pressure=0.1, temp=60.0, time="3 min",
+        evaporated = call("rotavap", "evaporate", vessel=ref["reactor"], pressure=0.1, temp=60.0, time="3 min",
                           stir_speed=100.0, solvent="ethanol")
         # 易挥发溶剂自动降温降压
         assert (evaporated["temp"], evaporated["pressure"], evaporated["time"]) == (50.0, 0.05, 180.0)
         with pytest.raises(ValueError, match="旋转速度"):
-            call("rotavap", "evaporate", vessel="reactor", stir_speed=1.0)
+            call("rotavap", "evaporate", vessel=ref["reactor"], stir_speed=1.0)
 
-        separated = call("separator", "separate", purpose="wash", product_phase="top", from_vessel="a",
-                         separation_vessel="separator", to_vessel="b", repeats=2, stir_time=1.0, settling_time=1.0)
+        separated = call("separator", "separate", purpose="wash", product_phase="top", from_vessel=ref["a"],
+                         separation_vessel=ref["separator"], to_vessel=ref["b"], repeats=2, stir_time=1.0,
+                         settling_time=1.0)
         assert separated["repeats"] == 2 and separated["phase_separation"] is True
         with pytest.raises(ValueError, match="产物相"):
-            call("separator", "separate", purpose="wash", product_phase="middle", from_vessel="a",
-                 separation_vessel="separator", to_vessel="b")
+            call("separator", "separate", purpose="wash", product_phase="middle", from_vessel=ref["a"],
+                 separation_vessel=ref["separator"], to_vessel=ref["b"])
         # 分液协议的底阀放液
         assert call("separator", "valve_open", command="time > 60")["drain_time"] == 60.0
         assert call("separator", "valve_open", command="delta > 0.05")["success"] is True
@@ -260,14 +305,14 @@ def test_process_devices_run_their_actions(registry) -> None:
         stirred = call("stirrer", "stir", stir_time=60.0, stir_speed=300.0, settling_time="1 min")
         assert stirred["settling_time"] == 60.0 and stirrer.operation_mode == "Completed"
         # 搅拌协议给的是带单位的 time、stir_time 为 0
-        assert call("stirrer", "stir", vessel={"id": "reactor"}, time="5 min", stir_time=0, stir_speed=300.0,
+        assert call("stirrer", "stir", vessel=ref["reactor"], time="5 min", stir_time=0, stir_speed=300.0,
                     settling_time=0)["stir_time"] == 300.0
-        assert call("stirrer", "start_stir", vessel={"id": "reactor"}, stir_speed=300.0, purpose="test")["success"]
+        assert call("stirrer", "start_stir", vessel=ref["reactor"], stir_speed=300.0, purpose="test")["success"]
         assert stirrer.is_stirring is True and stirrer.current_vessel == "reactor"
-        call("stirrer", "stop_stir", vessel={"id": "reactor"})
+        call("stirrer", "stop_stir", vessel=ref["reactor"])
         assert stirrer.is_stirring is False and stirrer.operation_mode == "Stopped"
         with pytest.raises(ValueError, match="搅拌速度"):
-            call("stirrer", "start_stir", vessel="reactor", stir_speed=5000.0)
+            call("stirrer", "start_stir", vessel=ref["reactor"], stir_speed=5000.0)
 
         for device_id in ("centrifuge", "column", "filter", "heatchill", "rotavap", "separator", "stirrer"):
             assert call(device_id, "auto-cleanup") is True
@@ -381,7 +426,11 @@ def test_gas_devices_switch_on_and_off(registry) -> None:
 
 
 def test_solid_dispenser_runs_its_actions(registry) -> None:
-    with _running(_spec(registry, "dispenser", "virtual_solid_dispenser", {"max_capacity": 50.0})) as runtime:
+    station, ref = _station("reactor")
+    dispenser_spec = _spec(
+        registry, "dispenser", "virtual_solid_dispenser", {"max_capacity": 50.0}, parent_device_id="station"
+    )
+    with _running(station, dispenser_spec) as runtime:
         call = runtime.call_action
         dispenser = _driver(runtime, "dispenser")
         assert dispenser.max_capacity == 50.0
@@ -392,13 +441,13 @@ def test_solid_dispenser_runs_its_actions(registry) -> None:
         with pytest.raises(ValueError, match="无法解析"):
             call("dispenser", "auto-parse_mass_string", mass_str="a lot")
         assert call("dispenser", "auto-find_solid_reagent_bottle", reagent_name="NaCl") == "solid_bottle_NaCl"
-        added = call("dispenser", "add_solid", vessel={"id": "reactor"}, reagent="sodium_chloride", mass="1 g")
+        added = call("dispenser", "add_solid", vessel=ref["reactor"], reagent="sodium_chloride", mass="1 g")
         assert (added["dispensed_amount"], added["basis"]) == (1.0, "mass")
-        by_mol = call("dispenser", "add_solid", vessel="reactor", reagent="x", mol="0.1 mol")
+        by_mol = call("dispenser", "add_solid", vessel=ref["reactor"], reagent="x", mol="0.1 mol")
         assert (by_mol["dispensed_amount"], by_mol["basis"]) == (pytest.approx(10.0), "mol")
         assert dispenser.total_operations == 2 and dispenser.current_reagent == "x"
         with pytest.raises(ValueError, match="单次最大加样量"):
-            call("dispenser", "add_solid", vessel="reactor", reagent="x", mass="80 g")
+            call("dispenser", "add_solid", vessel=ref["reactor"], reagent="x", mass="80 g")
         with pytest.raises(ValueError, match="目标容器"):
             call("dispenser", "add_solid", vessel="", reagent="x", mass="1 g")
         assert call("dispenser", "auto-cleanup") is True
@@ -409,21 +458,28 @@ def test_solid_dispenser_runs_its_actions(registry) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_time_scale_comes_from_the_device_config_or_the_global_setting(registry, monkeypatch) -> None:
+def test_time_scale_comes_from_the_device_config_or_the_class_default(registry, monkeypatch) -> None:
+    from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
     from unilabos.devices.virtual.virtual_stirrer import VirtualStirrer
 
-    monkeypatch.setattr(BasicConfig, "virtual_time_scale", 0.002)
-    assert VirtualStirrer().time_scale == 0.002
+    # 没有全局设置：倍率只按设备配，缺省是设备类自带的短倍率
+    assert not hasattr(BasicConfig, "virtual_time_scale")
+    monkeypatch.undo()
+    assert VirtualStirrer().time_scale == DEFAULT_TIME_SCALE == 0.001
+    assert VirtualHeatingPlatform().time_scale == DEFAULT_TIME_SCALE
     assert VirtualStirrer(time_scale=1).time_scale == 1.0
+    assert VirtualStirrer(time_scale=0).time_scale == 0.0
     # 图节点写成 {"config": {...}}（旧注册表的形状）时内层同样生效
-    assert VirtualStirrer(config={"time_scale": 0.5, "max_speed": 800}).max_speed == 800.0
+    nested = VirtualStirrer(config={"time_scale": 0.5, "max_speed": 800})
+    assert (nested.time_scale, nested.max_speed) == (0.5, 800.0)
     with pytest.raises(ValueError, match="time_scale"):
         VirtualStirrer(time_scale=-1)
 
     # 2 分钟的模拟搅拌按 0.002 倍约 0.24 秒跑完，并分步发布进度反馈
+    monkeypatch.setattr(BasicConfig, "test_mode", False)
     feedback: list[dict[str, Any]] = []
     context = ActionContext(feedback_callback=lambda _id, data: feedback.append(data))
-    with _running(_spec(registry, "stirrer", "virtual_stirrer")) as runtime:
+    with _running(_spec(registry, "stirrer", "virtual_stirrer", {"time_scale": 0.002})) as runtime:
         started = time.monotonic()
         runtime.call_action("stirrer", "stir", stir_time=60.0, stir_speed=300.0, settling_time=60.0,
                             action_context=context)
@@ -511,26 +567,51 @@ def test_long_actions_can_be_cancelled(registry) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 容器：标签读 display_name，内容物走 PLR 体积跟踪器
+# 容器：ResourceSlot 由框架解析成 PLR 实例；标签读 display_name，内容物走 PLR 体积跟踪器
 # ---------------------------------------------------------------------------
 
 
-class _Station(WorkstationBase):
-    """只承载容器的工作站：子设备共用它的资源跟踪器。"""
+def test_vessel_parameters_are_resource_slots_resolved_by_the_framework(registry) -> None:
+    """容器参数声明为 ResourceSlot：注册表据此给 goal 字段标资源、默认加物料锁；HostLink 运行时
+    在调用驱动前把 ``{"id", "uuid"}`` 引用解析成本设备可见的 PLR 实例，空值为 None。"""
 
-    def __init__(self, **_kwargs: Any) -> None:
-        super().__init__(deck=None)
+    import inspect
 
+    from unilabos.backend.runtime.resource_slot import resource_slot_shape
 
-def _container(node_id: str, parent_uuid: str, substances: list[list[Any]], max_volume: float = 50000.0):
-    node_uuid = str(uuid.uuid4())
-    return {
-        "id": node_id, "uuid": node_uuid, "name": node_uuid, "display_name": f"{node_id} 瓶",
-        "type": "container", "class": "RegularContainer", "template_name": "container",
-        "parent_uuid": parent_uuid,
-        "config": {"type": "RegularContainer", "max_volume": max_volume, "name": node_id},
-        "data": {}, "extra": {}, "substances": substances, "pose": {"position": {"x": 0, "y": 0, "z": 0}},
-    }
+    vessel_fields = {"vessel", "from_vessel", "to_vessel", "filtrate_vessel", "separation_vessel",
+                     "waste_phase_to_vessel", "product_vessel", "waste_vessel"}
+    seen = 0
+    for (device, action_name), _type in sorted(COMPILER_ACTIONS.items()):
+        mapping = registry[device]["class"]["action_value_mappings"][action_name]
+        method = getattr(default_manager.get_class(registry[device]["class"]["module"]), action_name)
+        slots = {
+            name for name, parameter in inspect.signature(method).parameters.items()
+            if resource_slot_shape(parameter.annotation)
+        }
+        assert slots == vessel_fields & set(inspect.signature(method).parameters), (device, action_name)
+        assert set(mapping["materials_need_lock"]) == slots, (device, action_name)
+        assert {name for name, kind in mapping["placeholder_keys"].items() if kind == "unilabos_resources"} == slots
+        seen += len(slots)
+    assert seen >= 20
+
+    station, ref = _station("reactor", "flask")
+    with _running(
+        station,
+        _spec(registry, "stirrer", "virtual_stirrer", parent_device_id="station"),
+        _spec(registry, "filter", "virtual_filter", parent_device_id="station"),
+    ) as runtime:
+        reactor = runtime.devices["station"].resource_tracker.uuid_to_resources[ref["reactor"]["uuid"]]
+        _action, _context, kwargs, _mapping = runtime.devices["stirrer"]._resolve_action(
+            "start_stir", vessel=ref["reactor"], stir_speed=300.0
+        )
+        assert kwargs["vessel"] is reactor
+        _action, _context, kwargs, _mapping = runtime.devices["filter"]._resolve_action(
+            "filter", vessel=None, filtrate_vessel={}
+        )
+        # 可不填的容器（编译器把过滤器本身当容器时传 None、goal 默认值是 {}）不解析
+        assert kwargs["vessel"] is None and kwargs["filtrate_vessel"] is None
+        assert runtime.call_action("filter", "filter", filtrate_vessel=ref["flask"])["filtrate_vessel"] == "flask"
 
 
 def test_devices_read_labels_and_write_contents_through_the_volume_tracker(registry, monkeypatch) -> None:
@@ -549,7 +630,7 @@ def test_devices_read_labels_and_write_contents_through_the_volume_tracker(regis
             vial,
         ]
     )
-    # 协议编译器按设备图节点 id 引用容器：物理拓扑图给出 uuid 与 display_name
+    # 物理拓扑图（Host 装配的设备图）给出同一 uuid 的 display_name：PLR 实例本身不带人读标签
     graph = nx.Graph()
     for node in (source, target, vial):
         graph.add_node(node["id"], uuid=node["uuid"], display_name=node["display_name"])
@@ -576,31 +657,35 @@ def test_devices_read_labels_and_write_contents_through_the_volume_tracker(regis
         flask_a = tracker.uuid_to_resources[source["uuid"]]
         flask_b = tracker.uuid_to_resources[target["uuid"]]
 
-        moved = call("pump", "transfer", volume=5.0, from_vessel={"id": "flask_a"}, to_vessel={"uuid": target["uuid"]})
+        # 编译器的引用带 uuid（id 只为日志）；只给 uuid 同样解析
+        a_ref, b_ref = {"id": "flask_a", "uuid": source["uuid"]}, {"uuid": target["uuid"]}
+        moved = call("pump", "transfer", volume=5.0, from_vessel=a_ref, to_vessel=b_ref)
         assert (moved["from_vessel"], moved["to_vessel"]) == ("flask_a 瓶", "flask_b 瓶")
         assert flask_a.tracker.get_used_volume() == pytest.approx(5000.0)
         assert dict((name, volume) for name, volume, _unit in flask_b.tracker.get_liquids()) == {
             "ethanol": pytest.approx(4000.0), "water": pytest.approx(1000.0)
         }
 
-        # 控温协议传的是再包一层的 {"id": {"id": ...}}
-        added = call("dispenser", "add_solid", vessel={"id": {"id": "flask_b"}}, reagent="NaCl", mass="2 g")
+        added = call("dispenser", "add_solid", vessel=b_ref, reagent="NaCl", mass="2 g")
         assert added["recorded_in_vessel"] is True and added["vessel"] == "flask_b 瓶"
         assert flask_b.tracker.get_solids() == [("NaCl", 2_000_000.0, "ug")]
 
-        evaporated = call("rotavap", "evaporate", vessel={"id": "flask_b"}, solvent="ethanol", time=60)
+        evaporated = call("rotavap", "evaporate", vessel=b_ref, solvent="ethanol", time=60)
         assert evaporated["evaporated_volume"] == pytest.approx(4.0)
         assert [name for name, _volume, _unit in flask_b.tracker.get_liquids()] == ["water"]
         assert flask_b.tracker.get_solids() == [("NaCl", 2_000_000.0, "ug")]
 
         # 收集瓶放不下的液体留在源容器（不凭空消失）
-        collected = call("column", "run_column", from_vessel={"id": "flask_a"}, to_vessel={"id": "vial"}, column="c")
+        collected = call("column", "run_column", from_vessel=a_ref, to_vessel={"uuid": vial["uuid"]}, column="c")
         assert collected["collected_volume"] == pytest.approx(1.0)
         assert flask_a.tracker.get_used_volume() == pytest.approx(4000.0)
         assert tracker.uuid_to_resources[vial["uuid"]].tracker.get_used_volume() == pytest.approx(1000.0)
 
-        # 不在本设备可见范围内的容器只记标签，动作照常完成
-        assert call("pump", "transfer", volume=1.0, from_vessel="elsewhere", to_vessel="nowhere")["moved_contents"] == []
+        # 没指定容器：只模拟过程，动作照常完成
+        assert call("pump", "transfer", volume=1.0)["moved_contents"] == []
+        # 引用解析不到（本设备看不到、也没有物料权威可查）是失败，不当作「只记标签」
+        with pytest.raises(Exception, match="Materials Authority|找不到"):
+            call("pump", "transfer", volume=1.0, from_vessel={"id": "elsewhere"})
 
 
 # ---------------------------------------------------------------------------
@@ -735,10 +820,14 @@ def test_example_station_protocol_steps_run_on_the_virtual_devices(
     graph_name: str, tmp_path, monkeypatch, registry
 ) -> None:
     """示例协议站的代表协议按图编译，每一步都是图里某台虚拟设备注册过的动作（不回调工作站自身），
-    参数都是驱动接受的参数，并且在按图配置构造的设备上真实执行成功。"""
+    参数都是驱动接受的参数；容器参数是带 uuid 的 ResourceSlot 引用（或留空），由框架解析成工作站
+    跟踪器里的 PLR 实例；并且在按图配置构造的设备上真实执行成功。"""
 
     import inspect
 
+    from pylabrobot.resources import Resource as PLRResource
+
+    from unilabos.backend.runtime.resource_slot import resource_slot_shapes
     from unilabos.experiments import models as protocol_models
     from unilabos.experiments.compile import action_protocol_generators
 
@@ -764,16 +853,38 @@ def test_example_station_protocol_steps_run_on_the_virtual_devices(
             step["action_name"].removeprefix("auto-"),
         )
         assert set(step["action_kwargs"]) <= set(inspect.signature(method).parameters), (template, step)
+        for name in resource_slot_shapes(method):
+            ref = step["action_kwargs"].get(name)
+            # 编译器经 vessel_ref 传容器：带物理拓扑图里的 uuid，或留空（设备本身、未指定）
+            assert ref is None or (ref.get("uuid") == graph.nodes[ref["id"]]["uuid"]), (template, step)
         used[step["device_id"]] = template
 
-    # 协议在工作站进程里执行：设备看得到物理拓扑图（容器标签）
+    # 协议在工作站进程里执行：设备看得到物理拓扑图（容器标签），工作站的子设备共用它的资源跟踪器
     monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", graph)
+    station_tree = next(
+        tree for tree in loaded.resource_tree_set.trees
+        if tree.root_node.res_content.uuid == graph.nodes[station]["uuid"]
+    )
     specs = [
-        _spec(registry, device_id, template, dict(graph.nodes[device_id].get("config") or {}))
-        for device_id, template in sorted(used.items())
+        HostLinkDriverSpec(device_id=station, driver_class=_Station, config={}, device_config=station_tree.root_node),
+        *(
+            _spec(registry, device_id, template, dict(graph.nodes[device_id].get("config") or {}),
+                  parent_device_id=station)
+            for device_id, template in sorted(used.items())
+        ),
     ]
     with _running(*specs) as runtime:
+        tracker = runtime.devices[station].resource_tracker
         for step in flat:
+            node = runtime.devices[step["device_id"]]
+            _action, _context, resolved, _mapping = node._resolve_action(step["action_name"], **step["action_kwargs"])
+            for name in resource_slot_shapes(_action):
+                ref = step["action_kwargs"].get(name)
+                if ref is None:
+                    assert resolved.get(name) is None
+                else:
+                    assert isinstance(resolved[name], PLRResource)
+                    assert resolved[name] is tracker.uuid_to_resources[ref["uuid"]], (name, step)
             result = runtime.call_action(step["device_id"], step["action_name"], **step["action_kwargs"])
             assert result is not False and (not isinstance(result, dict) or result.get("success", True)), step
 
@@ -824,14 +935,16 @@ def test_protocol_station_example_runs_on_a_real_hostlink_backend(tmp_path: Path
     try:
         unilab.wait_for(lambda: "Host 已完全就绪" in unilab.text(), "Host 就绪")
         payload = request("GET", "/graphs/live/payload")
-        # 子节点的 id 带父级前缀（Station/main_reactor）；协议的物料入参带 uuid，id 留给编译器查拓扑
+        # 子节点的 id 带父级前缀（Station/main_reactor）；物料入参带 uuid（ResourceSlot 按 uuid 解析、加锁），
+        # id 留给编译器查拓扑
         reactor = next(node for node in payload["nodes"] if str(node["id"]).split("/")[-1] == "main_reactor")
         vessel = {"id": "main_reactor", "uuid": reactor["uuid"]}
 
-        # 半小时的模拟控温按默认倍率约 1.8 秒
+        # 半小时的模拟控温按默认倍率约 1.8 秒；容器由框架解析成 PLR 实例，标签是它的 display_name
         heated, elapsed = run("heatchill_1", "heat_chill", "HeatChill",
-                              {"vessel": {"id": "main_reactor"}, "temp": 60.0, "time": "30 min", "purpose": "smoke"})
+                              {"vessel": vessel, "temp": 60.0, "time": "30 min", "purpose": "smoke"})
         assert heated["success"] is True and heated["current_temp"] == 60.0
+        assert heated["vessel"] == reactor["display_name"]
         assert elapsed < 15, elapsed
 
         station = "SimpleStirHeatChillTestStation"
@@ -841,5 +954,100 @@ def test_protocol_station_example_runs_on_a_real_hostlink_backend(tmp_path: Path
         result, _ = run(station, "StirProtocol", "StirProtocol", {"vessel": vessel, "time": "5 min"})
         assert result["protocol_name"] == "StirProtocol"
         assert re.search(r"stir", json.dumps(result["step_results"]))
+    finally:
+        unilab.close()
+
+
+@pytest.mark.slow
+def test_protocol_vessel_lock_queues_other_tasks_without_locking_its_own_steps(tmp_path: Path) -> None:
+    """协议作业按容器参数加共享物料锁，编译出的子步骤直接调子设备、不再申请锁（不会自己等自己）；
+    同时对同一容器跑另一个协议、或直接调子设备动作（容器参数是 ResourceSlot，默认加锁）的任务排队，
+    协议结束释放后依次执行。"""
+
+    import urllib.request
+
+    from tests.app.test_process_lifetime import _Unilab
+
+    # 搅拌器按 0.05 倍跑：编译出的搅拌步（60 s 搅拌 + 30 s 沉降）约 4.5 秒，足够观察排队
+    payload = json.loads((EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json").read_text())
+    for node in payload["nodes"]:
+        if node["id"] == "stirrer_1":
+            node.setdefault("config", {})["time_scale"] = 0.05
+    graph = tmp_path / "slow_stir_station.json"
+    graph.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    unilab = _Unilab(tmp_path, "locks", ["-g", str(graph)], root=tmp_path / "db", builtin_devices=True)
+
+    def request(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{unilab.port}/api/v1{path}",
+            method=method,
+            data=None if body is None else json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"} if body is not None else {},
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            body_json = json.load(response)
+        assert body_json["code"] == 0, body_json
+        return body_json["data"]
+
+    def submit(device_id: str, action: str, args: dict[str, Any]) -> str:
+        return request("POST", "/job/add", {"device_id": device_id, "action": action, "action_args": args})["jobId"]
+
+    def lock_requests() -> dict[str, dict[str, Any]]:
+        return {
+            item["owner_uuid"]: item
+            for item in request("GET", "/scheduler/resources")["requests"]
+            if item["status"] != "released"
+        }
+
+    def status(job: str) -> dict[str, Any]:
+        return request("GET", f"/job/{job}/status")
+
+    try:
+        unilab.wait_for(lambda: "Host 已完全就绪" in unilab.text(), "Host 就绪")
+        live = request("GET", "/graphs/live/payload")["nodes"]
+        reactor = next(node for node in live if str(node["id"]).split("/")[-1] == "main_reactor")
+        vessel = {"id": "main_reactor", "uuid": reactor["uuid"]}
+        station = "SimpleStirHeatChillTestStation"
+
+        first = submit(station, "StirProtocol", {"vessel": vessel, "time": "60 min"})
+        held = unilab.wait_for(
+            lambda: (lock_requests().get(first) or {}).get("status") == "held" and lock_requests()[first],
+            "协议持有容器锁",
+            timeout=30,
+        )
+        assert {"kind": "material", "material_uuid": reactor["uuid"]} in held["identifiers"]
+
+        # 同一容器上的另一个协议（不同动作，动作锁不冲突）与子设备的单动作都等物料锁
+        second = submit(station, "HeatChillProtocol",
+                        {"vessel": vessel, "temp": 40.0, "time": 10.0, "stir": False, "purpose": "lock"})
+        direct = submit("heatchill_1", "heat_chill", {"vessel": vessel, "temp": 40.0, "time": 10.0})
+
+        def both_waiting() -> Any:
+            locks = lock_requests()
+            waiting = [locks.get(job) for job in (second, direct)]
+            if all(item and item["status"] == "waiting" for item in waiting):
+                return waiting
+            return None
+
+        waiting = unilab.wait_for(both_waiting, "后来的任务排队等容器锁", timeout=10)
+        for item in waiting:
+            assert first in item["blockers"], item
+            assert {"kind": "material", "material_uuid": reactor["uuid"]} in item["identifiers"], item
+        assert status(first)["status"] not in (4, 5, 6)
+
+        def finished(job: str) -> Any:
+            current = status(job)
+            return current if current["status"] in (4, 5, 6) else None
+
+        # 协议自己的子步骤没有被自己的锁挡住：按时完成
+        done = unilab.wait_for(lambda: finished(first), "协议完成", timeout=60)
+        assert done["status"] == 4, (done, unilab.text()[-4000:])
+        steps = done["result"]["return_value"]["step_results"]
+        # 子步骤拿到的是框架解析好的 PLR 实例：标签是这只容器的 display_name
+        assert [step["result"]["vessel"] for step in steps if step["action"] == "stir"] == [reactor["display_name"]]
+        for job in (second, direct):
+            result = unilab.wait_for(lambda job=job: finished(job), "排队的任务完成", timeout=60)
+            assert result["status"] == 4, (result, unilab.text()[-4000:])
+        unilab.wait_for(lambda: not lock_requests(), "锁全部释放", timeout=10)
     finally:
         unilab.close()

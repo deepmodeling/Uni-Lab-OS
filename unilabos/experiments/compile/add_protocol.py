@@ -6,7 +6,7 @@ import logging
 from typing import List, Dict, Any, Union
 
 from .utils.unit_parser import parse_volume_input, parse_mass_input, parse_time_input
-from .utils.vessel_parser import get_vessel, find_solid_dispenser, find_connected_stirrer, find_reagent_vessel
+from .utils.vessel_parser import get_vessel, find_solid_dispenser, find_connected_stirrer, find_reagent_vessel, vessel_ref
 from .utils.logger_util import action_log
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
@@ -155,7 +155,7 @@ def generate_add_protocol(
                             "device_id": stirrer_id,
                             "action_name": "start_stir",
                             "action_kwargs": {
-                                "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                                "vessel": vessel_ref(G, vessel_id),
                                 "stir_speed": stir_speed,
                                 "purpose": f"准备添加固体 {reagent}"
                             }
@@ -169,7 +169,7 @@ def generate_add_protocol(
                 
                 # 固体加样
                 add_kwargs = {
-                    "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                    "vessel": vessel_ref(G, vessel_id),
                     "reagent": reagent,
                     "purpose": purpose,
                     "event": event,
@@ -232,7 +232,7 @@ def generate_add_protocol(
                         "device_id": stirrer_id,
                         "action_name": "start_stir",
                         "action_kwargs": {
-                            "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                            "vessel": vessel_ref(G, vessel_id),
                             "stir_speed": stir_speed,
                             "purpose": f"准备添加液体 {reagent}"
                         }

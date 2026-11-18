@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import pytest
 
-from unilabos.backend.runtime.resource_slot import resource_slot_shape, resource_slot_shapes
+from unilabos.backend.runtime.resource_slot import is_unset_resource_slot, resource_slot_shape, resource_slot_shapes
 from unilabos.registry.decorators import action
 from unilabos.registry.placeholder_type import ResourceSlot
 
@@ -47,3 +47,47 @@ def test_resource_slot_shapes_with_string_annotations_through_action_decorator()
 
 def test_resource_slot_shapes_tolerates_uninspectable_callables():
     assert resource_slot_shapes(print) == {}
+
+
+@pytest.mark.parametrize(
+    ("value", "unset"),
+    [
+        (None, True),
+        ("", True),
+        ("  ", True),
+        ({}, True),
+        ([], True),
+        ({"uuid": "u"}, False),
+        ({"id": "flask"}, False),
+        ("u", False),
+        ([{"uuid": "u"}], False),
+    ],
+)
+def test_unset_resource_slot_matches_the_scheduler_absent_rule(value, unset):
+    from unilabos.server.backend.scheduler.materials import _is_absent_material
+
+    assert is_unset_resource_slot(value) is unset
+    # 调度器同一口径：未指定的物料参数不解析 uuid、不加锁
+    assert _is_absent_material(value) is unset
+
+
+class _OptionalSlotDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+
+    def heat(self, temp: float, vessel: Optional[ResourceSlot] = None) -> dict:
+        return {"vessel": vessel, "temp": temp}
+
+
+@pytest.mark.parametrize("empty", [None, "", {}])
+def test_hostlink_hands_an_unset_optional_slot_to_the_driver_as_none(empty):
+    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("heater", _OptionalSlotDriver, {}))
+    runtime.start()
+    try:
+        # goal 默认值给可选容器填的是 {}：与 None / "" 一样不解析（没有资源服务也不报错）
+        assert runtime.call_action("heater", "heat", temp=40.0, vessel=empty) == {"vessel": None, "temp": 40.0}
+    finally:
+        runtime.stop()

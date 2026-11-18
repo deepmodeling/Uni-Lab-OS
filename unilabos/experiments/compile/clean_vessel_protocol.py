@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 import networkx as nx
-from .utils.vessel_parser import get_vessel, find_solvent_vessel
+from .utils.vessel_parser import get_vessel, find_solvent_vessel, vessel_ref
 from .pump_protocol import generate_pump_protocol
 
 
@@ -136,7 +136,7 @@ def generate_clean_vessel_protocol(
             "device_id": heatchill_id,
             "action_name": "heat_chill_start",
             "action_kwargs": {
-                "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
                 "temp": temp,
                 "purpose": f"cleaning with {solvent}"
             }
@@ -288,7 +288,7 @@ def generate_clean_vessel_protocol(
             "device_id": heatchill_id,
             "action_name": "heat_chill_stop",
             "action_kwargs": {
-                "vessel": {"id": vessel_id},  # 🔧 使用 vessel_id
+                "vessel": vessel_ref(G, vessel_id),
             }
         }
         action_sequence.append(heatchill_stop_action)

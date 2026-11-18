@@ -62,7 +62,6 @@ class BasicConfig:
     log_level = "DEBUG"  # 日志级别：TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL
     port = 8002  # 管理端 HTTP/Web API 与主微前端端口
     disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
-    virtual_time_scale = 0.001  # 内置虚拟设备的模拟时间倍率：真实等待 = 模拟时长 × 倍率；1.0 按真实时长，0 不等待
 
 # WebSocket配置
 class WSConfig:
@@ -154,7 +153,6 @@ unilab --ak your_ak --sk your_sk -g graph.json
 | 参数                     | 配置类      | 说明                   |
 | ------------------------ | ----------- | ---------------------- |
 | `log_level`              | BasicConfig | 日志级别配置           |
-| `virtual_time_scale`     | BasicConfig | 内置虚拟设备的模拟时间倍率（默认 0.001；图节点 `config.time_scale` 优先） |
 | `reconnect_interval`     | WSConfig    | WebSocket 重连间隔     |
 | `max_reconnect_attempts` | WSConfig    | WebSocket 最大重连次数 |
 | `ping_interval`          | WSConfig    | WebSocket 心跳间隔     |

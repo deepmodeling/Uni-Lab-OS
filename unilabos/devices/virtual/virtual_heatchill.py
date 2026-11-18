@@ -9,12 +9,12 @@ from typing import Any, Dict, Optional, Union
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
-    VesselRef,
     VirtualDevice,
     nested_settings,
     parse_duration,
 )
 from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 室温（°C）：冷却 / 加热的分界与停止后的回落温度
 AMBIENT_TEMPERATURE = 25.0
@@ -62,7 +62,7 @@ class VirtualHeatChill(VirtualDevice):
             max_stir_speed[最高搅拌速度]: 最高搅拌速度（RPM）。
             ramp_rate[升降温速率]: 定时控温时的升 / 降温速率（°C/s）。
             port[端口]: 模拟的通信端口名，仅作显示。
-            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用全局 virtual_time_scale。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
         settings = nested_settings(
             kwargs,
@@ -187,7 +187,7 @@ class VirtualHeatChill(VirtualDevice):
         stir: bool = False,
         stir_speed: float = 0.0,
         purpose: str = "",
-        vessel: VesselRef = "",
+        vessel: Optional[ResourceSlot] = None,
         pressure: str = "",
         reflux_solvent: str = "",
         temp_spec: str = "",
@@ -265,7 +265,9 @@ class VirtualHeatChill(VirtualDevice):
         display_name="开始控温",
         description="持续控温到目标温度，直到 heat_chill_stop",
     )
-    async def heat_chill_start(self, temp: float, purpose: str = "", vessel: VesselRef = "") -> Dict[str, Any]:
+    async def heat_chill_start(
+        self, temp: float, purpose: str = "", vessel: Optional[ResourceSlot] = None
+    ) -> Dict[str, Any]:
         """开始持续控温。
 
         Args:
@@ -291,7 +293,7 @@ class VirtualHeatChill(VirtualDevice):
         display_name="停止控温",
         description="停止持续控温，回到室温",
     )
-    async def heat_chill_stop(self, vessel: VesselRef = "", purpose: str = "") -> Dict[str, Any]:
+    async def heat_chill_stop(self, vessel: Optional[ResourceSlot] = None, purpose: str = "") -> Dict[str, Any]:
         """停止控温。
 
         Args:

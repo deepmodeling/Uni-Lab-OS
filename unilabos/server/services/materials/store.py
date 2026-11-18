@@ -478,6 +478,25 @@ class MaterialsRepository:
         row = self.connection.execute(sql, (resource_id,)).fetchone()
         return self._material(row) if row is not None else None
 
+    def find_devices_by_runtime_id(self, device_id: str) -> list[MaterialRecord]:
+        """运行时设备 ID 对应的设备物料（未删除的）。
+
+        根设备的 ``resource_id`` 就是设备 ID；挂在工作站下的子设备（工作站图里的泵、搅拌器等）的
+        ``resource_id`` 带父级前缀（``Station/stirrer_1``），而 Host 与调度器用的是最后一段，按它匹配。
+        调用方自己判断是否唯一。
+        """
+
+        text = str(device_id or "").strip()
+        if not text:
+            return []
+        escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        rows = self.connection.execute(
+            "SELECT * FROM material WHERE resource_type='device' AND deleted_at_ms IS NULL "
+            "AND (resource_id=? OR resource_id LIKE ? ESCAPE '\\') ORDER BY resource_id",
+            (text, f"%/{escaped}"),
+        )
+        return [self._material(row) for row in rows]
+
     def search_materials_by_name(
         self, name: str, *, include_deleted: bool = False
     ) -> list[MaterialRecord]:

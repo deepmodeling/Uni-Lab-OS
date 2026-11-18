@@ -774,3 +774,74 @@ def test_unknown_start_event_reaches_scheduler_as_unknown_not_failure():
     assert service.handle_message("edge_change", _edge_change(1, event_type="execution.execution_unknown"))
     assert seen[0][3] == SUCCESS_TYPE_EXECUTION_UNKNOWN
     assert seen[0][4]["uncertainty_reason"] == "开始不确定"
+
+
+def test_child_devices_of_a_station_resolve_their_registry_class(tmp_path, monkeypatch) -> None:
+    """工作站下的子设备在物料权威里的 resource_id 带父级前缀（``Station/stirrer_1``），单动作作业给的是
+    运行时设备 ID（``stirrer_1``）：按最后一段找到唯一的设备物料，才能读到注册表里的物料锁参数。"""
+
+    from uuid import uuid4
+
+    from unilabos.protocol.materials import (
+        InventoryMutation,
+        MaterialIdentityWrite,
+        MaterialNodeCreate,
+        MaterialTreeCreate,
+        ResourceTemplateWrite,
+    )
+    from unilabos.server.backend import composition
+    from unilabos.server.services.materials import MaterialsService
+
+    def mutation(operation: str) -> InventoryMutation:
+        return InventoryMutation(command_uuid=str(uuid4()), effect_key=operation, operation=operation)
+
+    def device(ref: str, template: str, resource_id: str, parent: str | None = None) -> MaterialNodeCreate:
+        return MaterialNodeCreate(
+            client_ref=ref,
+            parent_client_ref=parent,
+            identity=MaterialIdentityWrite(
+                resource_id=resource_id, name=ref, resource_type="device", class_name=template, template_name=template
+            ),
+        )
+
+    materials = MaterialsService(tmp_path / "materials.db")
+    try:
+        for name in ("workstation", "virtual_stirrer"):
+            materials.put_template(
+                mutation("put_template"),
+                ResourceTemplateWrite(
+                    template_uuid=str(uuid4()), name=name, display_name=name, resource_type="device", class_name=name
+                ),
+            )
+        for nodes in (
+            [
+                device("station", "workstation", "Station"),
+                device("stirrer", "virtual_stirrer", "Station/stirrer_1", parent="station"),
+                device("twin", "virtual_stirrer", "Station/twin_1", parent="station"),
+            ],
+            [device("other", "workstation", "Other"), device("twin", "virtual_stirrer", "Other/twin_1", parent="other")],
+        ):
+            materials.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=nodes))
+        assert [item.resource_id for item in materials.find_devices_by_runtime_id("stirrer_1")] == [
+            "Station/stirrer_1"
+        ]
+        # LIKE 通配符按字面匹配
+        assert materials.find_devices_by_runtime_id("stirrer%") == []
+
+        class Registry:
+            def action_definition(self, device_class: str, action_name: str):
+                if device_class == "virtual_stirrer" and action_name == "stir":
+                    return {"materials_need_lock": ["vessel"]}
+                return None
+
+        monkeypatch.setattr(composition, "_materials", materials)
+        service = EdgeControlService(payload_client=_FakePayloadClient(), registry_service=Registry())
+        assert service._device_class("stirrer_1") == "virtual_stirrer"
+        assert service._device_class("Station/stirrer_1") == "virtual_stirrer"
+        assert service._device_class("Station") == "workstation"
+        assert service.resolve_material_lock_parameters("stirrer_1", "stir") == ["vessel"]
+        # 不唯一（两个工作站下同名的子设备）时不猜
+        assert service._device_class("twin_1") == "twin_1"
+        assert service.resolve_material_lock_parameters("twin_1", "stir") == []
+    finally:
+        materials.close()

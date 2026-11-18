@@ -44,7 +44,7 @@ def test_parallel_groups_dispatch_independently_and_join_all_results():
             right = ctx.run("right/probe", {}, name="右检测")
         ctx.run("collector/report", {"value": [left.value, right.value]}, name="汇总")
     definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:parallel",
-        display_name="并行汇合", description="", tags=[], compiler="ast")
+        display_name="并行汇合", description="", tags=[])
     catalog = DeviceCatalog()
     for device in ("left", "right", "collector"):
         catalog.add(device, "unknown", str(uuid4()))

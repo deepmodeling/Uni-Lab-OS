@@ -147,7 +147,7 @@ def test_hostlink_late_result_after_authority_restart_preserves_outputs_and_no_r
     stack.runtime.call_action_async = delay_first_receipt
     try:
         definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:recovery-output",
-            display_name="真实设备回执恢复", description="", tags=[], compiler="ast")
+            display_name="真实设备回执恢复", description="", tags=[])
         catalog = DeviceCatalog()
         catalog.add("loop-device", "loop_demo_class", str(uuid4()))
         record = upsert_workflow(stack.service, materialize_workflow_template(build_workflow_template_payload(definition), catalog))

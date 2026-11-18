@@ -35,7 +35,7 @@ def dose_flow(ctx, *, amount: Annotated[int, Field(ge=1, le=10, unit="count")] =
 
 def payload_for(fn=dose_flow):
     definition = WorkflowDefinition(uuid=str(uuid4()), source_path=f"test:{fn.__name__}",
-        display_name="带输入输出的流程", description="", tags=[], fn=fn, compiler="ast")
+        display_name="带输入输出的流程", description="", tags=[], fn=fn)
     catalog = DeviceCatalog()
     catalog.add("loop-device", "loop_demo_class", str(uuid4()))
     template = build_workflow_template_payload(definition)

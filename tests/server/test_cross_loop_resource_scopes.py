@@ -18,7 +18,7 @@ from tests.server.test_workflow_task_cancel import wait_for
 
 def _record(stack, flow):
     definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:cross-loop",
-        display_name="跨循环资源作用域", description="", tags=[], compiler="ast")
+        display_name="跨循环资源作用域", description="", tags=[])
     catalog = DeviceCatalog()
     catalog.add("loop-device", "loop_demo_class", str(uuid4()))
     return upsert_workflow(stack.service, materialize_workflow_template(build_workflow_template_payload(definition), catalog))

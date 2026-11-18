@@ -58,7 +58,7 @@ def _another_task(stack, flow):
     catalog = DeviceCatalog()
     catalog.add("reactor", "unknown", str(uuid4()))
     definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:inventory", display_name="排队",
-                                    description="", tags=[], compiler="ast")
+                                    description="", tags=[])
     record = upsert_workflow(stack.workflow, materialize_workflow_template(build_workflow_template_payload(definition), catalog))
     return stack.workflow.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal", target_node_uuid=None,
                                                input_value={}, description=None, meta_data={})

@@ -266,7 +266,7 @@ def test_hostlink_loop_rounds_have_distinct_owners_and_release_all():
     stack = _Stack()
     try:
         definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:interval-rounds",
-            display_name="循环区间", description="", tags=[], compiler="ast")
+            display_name="循环区间", description="", tags=[])
         catalog = DeviceCatalog()
         catalog.add("loop-device", "loop_demo_class", str(uuid4()))
         record = upsert_workflow(stack.service, materialize_workflow_template(build_workflow_template_payload(definition), catalog))

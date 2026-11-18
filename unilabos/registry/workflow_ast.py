@@ -126,7 +126,7 @@ def compile_workflow_source(python_source: str, *, function_name: Optional[str] 
     """作者源码文本 → 静态工作流（工作流作者 / Python 导入用）；只解析 AST，不 import、不执行。
 
     工作流函数：带 ``@workflow(...)`` 装饰的顶层函数；没有装饰器时取唯一一个首参为 ``ctx`` 的顶层函数。
-    常量只认模块级 ``NAME = <JSON 字面量>``；输入输出合同来自签名注解（与设备包 ``@workflow(compiler="ast")`` 同一规则）。
+    常量只认模块级 ``NAME = <JSON 字面量>``；输入输出合同来自签名注解（与设备包 ``@workflow`` 模板同一规则）。
     """
 
     from unilabos.registry.workflow_contract import module_symbols, parse_workflow_contract_symbols

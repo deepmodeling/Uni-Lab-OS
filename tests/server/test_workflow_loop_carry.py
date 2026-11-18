@@ -151,7 +151,7 @@ def stack():
 
 
 def test_native_while_carries_variables_between_rounds(stack: _Stack) -> None:
-    @workflow(display_name="加倍直到够量", compiler="ast")
+    @workflow(display_name="加倍直到够量")
     def flow(ctx, *, start: float = 1.0):
         volume = start
         enough = False
@@ -179,7 +179,7 @@ def test_native_while_carries_variables_between_rounds(stack: _Stack) -> None:
 def test_whole_result_carried_into_the_while_condition(stack: _Stack) -> None:
     """至少测一次、达标即停：循环前的测量结果是初值，循环体里的复测是下一轮的值。"""
 
-    @workflow(display_name="复测直到达标", compiler="ast")
+    @workflow(display_name="复测直到达标")
     def flow(ctx):
         measured = ctx.run("carry-device/probe", {}, name="测")
         while not measured.ok:
@@ -222,7 +222,7 @@ def test_consecutive_for_loops_may_reuse_the_loop_variable_name() -> None:
 
 
 def test_native_for_range_index_and_nested_carry_restarts_each_outer_round(stack: _Stack) -> None:
-    @workflow(display_name="嵌套携带", compiler="ast")
+    @workflow(display_name="嵌套携带")
     def flow(ctx):
         base = 10
         for i in range(2):
@@ -245,7 +245,7 @@ def test_native_for_range_index_and_nested_carry_restarts_each_outer_round(stack
 
 
 def test_for_range_count_from_workflow_input(stack: _Stack) -> None:
-    @workflow(display_name="按输入轮数", compiler="ast")
+    @workflow(display_name="按输入轮数")
     def flow(ctx, *, times: int = 1):
         for i in range(times):
             if i == 1:
@@ -264,7 +264,7 @@ def test_native_while_fails_at_the_default_iteration_limit(stack: _Stack, monkey
 
     monkeypatch.setattr(workflow_ast, "DEFAULT_MAX_ITERATIONS", 3)
 
-    @workflow(display_name="停不下来", compiler="ast")
+    @workflow(display_name="停不下来")
     def flow(ctx):
         done = False
         while not done:
@@ -279,7 +279,7 @@ def test_native_while_fails_at_the_default_iteration_limit(stack: _Stack, monkey
 
 
 def test_carry_initial_value_that_cannot_be_read_fails_the_loop(stack: _Stack) -> None:
-    @workflow(display_name="初值缺字段", compiler="ast")
+    @workflow(display_name="初值缺字段")
     def flow(ctx):
         first = ctx.run("carry-device/add", {"value": 1}, name="先做")
         value = first.missing
@@ -301,7 +301,7 @@ def test_carried_value_survives_restart_between_rounds(tmp_path) -> None:
     from unilabos.server.backend.scheduler.service import BackendScheduler
     from tests.server.test_workflow_task_cancel import Executor, command, wait_for
 
-    @workflow(display_name="重启续用", compiler="ast")
+    @workflow(display_name="重启续用")
     def flow(ctx):
         value = 100
         for i in range(3):
@@ -451,7 +451,7 @@ def test_old_with_loop_forms_compile_unchanged() -> None:
 def test_graph_validation_rejects_carry_next_from_a_conditional_body_step() -> None:
     """下一轮的值必须来自每轮都会执行的步骤：条件分支里的结果不保证存在。"""
 
-    @workflow(display_name="分支里的结果", compiler="ast")
+    @workflow(display_name="分支里的结果")
     def flow(ctx):
         n = 0
         for i in range(2):
@@ -480,7 +480,7 @@ def test_carry_loop_inside_a_composite_child_runs_in_the_parent() -> None:
     from unilabos.server.services.runtime.workflow.authoring_identity import expanded_node_uuid
     from tests.server.test_workflow_task_cancel import Executor, wait_for
 
-    @workflow(display_name="子循环", compiler="ast")
+    @workflow(display_name="子循环")
     def child(ctx, *, limit: int = 3):
         n = 0
         while n < limit:

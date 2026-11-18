@@ -33,6 +33,7 @@ from unilabos.registry.material_locks import (
 )
 from unilabos.registry.module_scope import resolve_relative_module
 from unilabos.registry.utils.tools import resolve_registry_display_name
+from unilabos.registry.workflow_options import ignored_workflow_options, warn_ignored_workflow_options
 from unilabos.resources.objects.site import normalize_available_sites
 
 
@@ -42,7 +43,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 21      # 21：动作不再携带推导的 materials_need_lock，旧的物料锁改写不进缓存
+_CACHE_VERSION = 22      # 22：扫描时校验 @workflow 已移除的 compiler（只接受 "ast"，其他取值是扫描错误）
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -526,6 +527,11 @@ def _parse_file(
             workflow_decorator = _find_method_decorator(node, "workflow")
             if workflow_decorator is not None and _is_workflow_decorator("workflow", import_map):
                 workflow_args = _extract_decorator_args(workflow_decorator, import_map)
+                # 已移除的 compiler：只接受 "ast"，值忽略、不进缓存与注册表，按定义告警一次
+                # （与装饰器同一身份 模块:函数）；其他取值与装饰器一样报错。
+                ignored_options = ignored_workflow_options(workflow_args)
+                if ignored_options:
+                    warn_ignored_workflow_options(f"{module_path}:{node.name}", ignored_options)
                 workflows.append(
                     {
                         "module": module_path,

@@ -57,15 +57,27 @@
 
 ## 容器与内容物
 
-协议编译器按 `{"id": <设备图节点 id>}` 传容器；单动作调用也可以传 uuid、字符串或 `{"uuid": ...}`，
-ROS 2 原生动作里的 `Resource` 字段到达时已是 PLR 实例。设备把它们统一解析为：
+容器参数（`vessel`、`from_vessel` / `to_vessel`、`filtrate_vessel`、分液的 `separation_vessel` /
+`waste_phase_to_vessel` / `product_vessel` / `waste_vessel`）都声明为 `ResourceSlot`，可不填的写成
+`Optional[ResourceSlot] = None`。参数名、动作名和 ROS 2 goal 字段都没有变，变的是谁来解析它：
 
-- 标签：引用自带的 `display_name` → 设备图里该容器的 `display_name` → 节点 id；
-- 本地物料实例：在本设备的资源跟踪器里按 uuid 查找（工作站的子设备共用工作站的跟踪器）。
-
-找得到时，泵的 `transfer`、过滤器的 `filter`、柱层析的 `run_column` 在两个容器之间按比例转移液体，
-旋蒸的 `evaporate` 去掉蒸出的溶剂，固体分装器的 `add_solid` 记入固体（质量单位）。改动通过 PLR 体积
-跟踪器提交，由快照观察者上报物料权威。容器不在本设备可见范围内时只模拟过程，动作照常完成。
+- **协议编译器怎么传**：统一经 `unilabos/experiments/compile/utils/vessel_parser.py` 的
+  `vessel_ref(G, 容器)` 生成 `{"id": <设备图节点 id>, "uuid": <物料 uuid>}`。uuid 取物理拓扑图
+  （`physical_setup_graph`）节点数据里 Graph Authority 分配的 uuid，`id` 只为日志好读；空值和设备节点
+  （例如过滤协议把过滤器本身当「容器」）给 `None`。不要在编译器里手拼 `{"id": ...}`。
+- **框架解析**：HostLink 设备节点在调用驱动之前按 uuid 把引用解析成本设备可见的 PLR 实例（工作站的子设备
+  共用工作站的资源跟踪器；本地没有时向物料权威取），解析不到时动作失败。`None`、`""`、`{}`（可选容器的
+  goal 默认值）表示未指定：不解析、不加锁，驱动拿到 `None`。ROS 2 下这些字段的类型仍由 `unilabos_msgs`
+  动作决定（`Resource`），原生动作服务端在调用驱动前同样换成 PLR 实例；`Transfer` 的 `from_vessel` /
+  `to_vessel` 在消息里是 string，到达时是字符串，只作标签。
+- **物料锁**：单独派发这些动作（工作流节点、单动作作业）时，调度器按 uuid 给 `ResourceSlot` 参数默认加共享
+  物料锁，动作结束释放；引用必须带 uuid。工作站执行协议时，锁由协议动作本身持有（它在注册表里标为资源的
+  容器参数），编译出的子步骤直接调子设备、不经调度器、不再申请锁，所以不会自己等自己；同一时间对同一容器
+  跑的另一个协议或单动作在调度器里排队，等协议结束。
+- **设备只读标签、改内容物**：人读标签取物料的 `display_name`（PLR 实例不带它，按 uuid 在物理拓扑图里取，
+  没有设备图的进程退回 PLR 名）。泵的 `transfer`、过滤器的 `filter`、柱层析的 `run_column` 在两个容器之间
+  按比例转移液体，旋蒸的 `evaporate` 去掉蒸出的溶剂，固体分装器的 `add_solid` 记入固体（质量单位）。改动通过
+  PLR 体积跟踪器提交，由快照观察者上报物料权威；容器留空时只模拟过程。
 
 ## `--test_mode`
 
@@ -78,7 +90,9 @@ ROS 2 原生动作里的 `Resource` 字段到达时已是 PLR 实例。设备把
 `comprehensive_protocol/comprehensive_station.json`）、单设备图（`mock_devices/`）、
 抽真空充气反应器（`mock_reactor.json`）和三工位加热平台（`virtual_heating_platform_demo.json`）。
 
-`tests/devices/test_virtual_devices_hostlink.py` 覆盖：注册合同（动作名、ROS 2 动作类型与 goal 字段）、
-每台设备每个动作在 HostLink 下的真实执行与失败用例、时间倍率 / 进度 / 取消、容器内容物、示例图物料构建，
-以及每张协议测试站的代表协议——编译出的每一步都是目标设备注册过的动作、参数都被驱动接受，并在按图配置
-构造的设备上执行成功。标记为 `slow` 的用例起真实 `unilab` 跑一张协议测试站。
+`tests/devices/test_virtual_devices_hostlink.py` 覆盖：注册合同（动作名、ROS 2 动作类型与 goal 字段，容器参数
+是 `ResourceSlot` 并默认加锁）、每台设备每个动作在 HostLink 下的真实执行与失败用例、时间倍率 / 进度 / 取消、
+容器内容物、示例图物料构建，以及每张协议测试站的代表协议——编译出的每一步都是目标设备注册过的动作、参数都被
+驱动接受、容器引用带 uuid 并解析成工作站跟踪器里的 PLR 实例，并在按图配置构造的设备上执行成功。标记为 `slow`
+的用例起真实 `unilab`：跑一张协议测试站，并验证协议持有容器锁时它的子步骤照常执行、同一容器上的另一个协议和
+子设备单动作排队，协议结束后锁全部释放。

@@ -1154,15 +1154,22 @@ return {
 #### 模板 A：host 全局确认（最简，仅卡点）
 
 ```python
+from typing import Annotated
+from unilabos.registry.annotations import Placeholder
 from unilabos.registry.decorators import action, NodeType
+from unilabos.registry.placeholder_type import PLACEHOLDER_MANUAL_CONFIRM
 
 @action(
     always_free=True,
     node_type=NodeType.MANUAL_CONFIRM,
-    placeholder_keys={"assignee_user_ids": "unilabos_manual_confirm"},
     goal_default={"timeout_seconds": 3600, "assignee_user_ids": []},
 )
-def manual_confirm(self, timeout_seconds: int, assignee_user_ids: list[str], **kwargs) -> dict:
+def manual_confirm(
+    self,
+    timeout_seconds: int,
+    assignee_user_ids: Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)],
+    **kwargs,
+) -> dict:
     """
     通用人工卡点。任意 kwargs 都会原样返回给下游。
     timeout_seconds: 超时时间（秒）
@@ -1175,18 +1182,18 @@ def manual_confirm(self, timeout_seconds: int, assignee_user_ids: list[str], **k
 #### 模板 B：设备携带物料的确认（带数据中转）
 
 ```python
-from typing import List
+from typing import Annotated, List
+from unilabos.registry.annotations import Placeholder
 from unilabos.registry.decorators import (
     action, NodeType, ActionInputHandle, ActionOutputHandle, DataSource,
 )
-from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
+from unilabos.registry.placeholder_type import PLACEHOLDER_MANUAL_CONFIRM, ResourceSlot, DeviceSlot
 from unilabos.resources.resource_tracker import ResourceTreeSet
 
 @action(
     always_free=True,
     node_type=NodeType.MANUAL_CONFIRM,
     feedback_interval=300,
-    placeholder_keys={"assignee_user_ids": "unilabos_manual_confirm"},
     goal_default={"timeout_seconds": 3600, "assignee_user_ids": []},
     handles=[
         # ──── 输入：来自上游 ────
@@ -1217,7 +1224,7 @@ def manual_confirm(
     mount_resource: List[ResourceSlot],
     capacity: List[float],
     timeout_seconds: int,
-    assignee_user_ids: list[str],
+    assignee_user_ids: Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)],
     **kwargs,
 ) -> dict:
     """
@@ -1240,7 +1247,7 @@ def manual_confirm(
 | `node_type=NodeType.ILAB` 配人工弹窗 | 必须 `NodeType.MANUAL_CONFIRM`，否则前端不会弹窗 |
 | 漏写 `always_free=True` | 设备会被「等待人工」长期锁住，其它动作排队 |
 | 等待人工的动作带 `ResourceSlot` 入参却只是转交数据 | 物料入参一律带锁，等待期间这些物料一直被独占；只转交数据时不要用 `ResourceSlot`，改由图连线传上游输出 |
-| 漏写 `placeholder_keys["assignee_user_ids"]` | 指派人字段退化成普通字符串数组输入框，无法搜索用户 |
+| 漏写 `Placeholder(PLACEHOLDER_MANUAL_CONFIRM)` | 指派人字段退化成普通字符串数组输入框，无法搜索用户（`@action(placeholder_keys=...)` 已删除，写了报错） |
 | 函数返回 `List[ResourceSlot]`（PLR 对象）给下游 | 必须 `ResourceTreeSet.from_plr_resources(x).dump()` 转 dict |
 | `ActionOutputHandle.data_source=HANDLE` | 输出口必须 `EXECUTOR`，否则下游拿不到数据 |
 | `key` 与函数参数名/return dict key 不一致 | 接线找不到字段；保持完全同名 |

@@ -22,7 +22,6 @@ import hashlib
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -31,6 +30,14 @@ from unilabos.registry.material_locks import (
     REMOVED_MATERIAL_LOCK_OPTIONS,
     warn_ignored_material_lock_override,
 )
+from unilabos.registry.action_options import check_action_options
+from unilabos.registry.action_schema import (
+    ModuleBindings,
+    build_action_schema_draft,
+    placeholder_constants,
+    strip_placeholder,
+)
+from unilabos.registry.material_roles import material_contract, material_roles_from_ast
 from unilabos.registry.module_scope import resolve_relative_module
 from unilabos.registry.utils.tools import resolve_registry_display_name
 from unilabos.registry.workflow_options import ignored_workflow_options, warn_ignored_workflow_options
@@ -43,7 +50,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 22      # 22：扫描时校验 @workflow 已移除的 compiler（只接受 "ast"，其他取值是扫描错误）
+_CACHE_VERSION = 23      # 23：每个 JSON 动作按签名生成统一 schema 草稿；@action 已删除的写法是扫描错误
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -54,34 +61,10 @@ _REGISTRY_DECORATOR_MODULE = "unilabos.registry.decorators"
 _REGISTRY_WORKFLOW_MODULE = "unilabos.registry.workflows"
 # @subscribe 订阅装饰器来源模块（区分于注册表，这是运行时，订阅回调不应被当作 action）
 _SUBSCRIBE_DECORATOR_MODULE = "unilabos.utils.decorator"
-# placeholder_keys 常量来源模块（如 PLACEHOLDER_DEDUCT_RESOURCE），值需解析成字符串字面量
+# placeholder_type 常量来源模块（如 PLACEHOLDER_NODES），装饰器参数里的常量解析成字符串字面量
 _PLACEHOLDER_MODULE = "unilabos.registry.placeholder_type"
-
-
-@lru_cache(maxsize=1)
-def _placeholder_constants() -> Dict[str, str]:
-    """静态解析同目录 ``placeholder_type.py``，提取顶层 ``NAME = "str"`` 常量映射。
-
-    让 @action 装饰器里能用 placeholder 常量替代字面量：扫描器把对应 ``ast.Name``
-    解析成常量的字符串值。值由静态 AST 解析得到（不 import 该模块，保持纯文本扫描），
-    与 ``placeholder_type.py`` 单一数据源（DRY）。
-    """
-    consts: Dict[str, str] = {}
-    try:
-        path = Path(__file__).with_name("placeholder_type.py")
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in tree.body:
-            if (
-                isinstance(node, ast.Assign)
-                and isinstance(node.value, ast.Constant)
-                and isinstance(node.value.value, str)
-            ):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        consts[target.id] = node.value.value
-    except Exception:
-        pass
-    return consts
+#: 静态读取的 placeholder_type 常量（与 ``Placeholder(...)`` 注解解析同一数据源）
+_placeholder_constants = placeholder_constants
 
 
 def _validate_device_ids(device_ids: List[str]) -> None:
@@ -904,8 +887,8 @@ def _resolve_name(name: str, import_map: Dict[str, str]) -> str:
     E.g. "SendCmd" -> "unilabos_msgs.action:SendCmd"
          "True" -> True (handled by ast.Constant in Python 3.8+)
 
-    placeholder_type 常量（如 PLACEHOLDER_DEDUCT_RESOURCE）特殊处理：解析成其字符串值，
-    使装饰器 placeholder_keys 可用常量替代字面量；按导入的原始属性名取值以兼容 as 别名。
+    placeholder_type 常量（如 PLACEHOLDER_NODES）特殊处理：解析成其字符串值，
+    使装饰器参数可用常量替代字面量；按导入的原始属性名取值以兼容 as 别名。
     """
     source = import_map.get(name)
     if source and source.startswith(_PLACEHOLDER_MODULE + ":"):
@@ -1016,6 +999,9 @@ def _extract_class_body(
         "auto_methods": {},     # method_name -> method_info (no @action decorator)
     }
 
+    # 同一模块内的动作共用一份注解绑定（严格作用域解析失败时退回导入表）
+    bindings = ModuleBindings(module, module_name=module_name, is_package=is_package, import_map=import_map)
+
     for item in cls_node.body:
         if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -1080,39 +1066,34 @@ def _extract_class_body(
             ignored_lock_options = [f"{name}=" for name in REMOVED_MATERIAL_LOCK_OPTIONS if name in action_args]
             for name in REMOVED_MATERIAL_LOCK_OPTIONS:
                 action_args.pop(name, None)
-            contract_kind = action_args.get("contract", "legacy")
-            if contract_kind not in {"legacy", "typed"}:
-                raise ValueError("contract 仅支持 legacy 或 typed")
+            json_action = not action_args.get("action_type")
+            # 已删除的写法（contract= / resource_contract= / placeholder_keys= / JSON 动作的 goal= 与 result=）
+            # 与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
+            check_action_options(action_args, json_action=json_action, definition=definition)
             canonical_schema = None
-            if contract_kind == "typed":
-                if module is None or action_args.get("action_type"):
-                    raise ValueError("typed 合同需要完整模块和 JSON 动作")
-                from unilabos.registry.action_contract_schema import (
-                    parse_action_contract, validate_legacy_action_assertions,
+            resource_contract: Dict[str, Any] = {}
+            if action_args.get("material") is not None:
+                if not json_action:
+                    raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
+                resource_contract = material_contract(material_roles_from_ast(action_args.pop("material")))
+            action_args.pop("material", None)
+            if json_action:
+                draft = build_action_schema_draft(
+                    item,
+                    bindings,
+                    action_name=method_name,
+                    description=str(action_args.get("description") or ""),
+                    definition=definition,
                 )
-                from unilabos.registry.action_resource_contract import (
-                    normalize_action_resource_contract, validate_action_resource_contract_schema,
-                )
-
-                parsed = parse_action_contract(module, item, module_name=module_name, is_package=is_package)
-                ignored_lock_options.extend(
-                    f"{name}: MaterialLock(free=True)" for name in parsed.input_material_lock_free
-                )
-                canonical_schema = parsed.to_action_schema(
-                    action_name=method_name, description=str(action_args.get("description") or ""),
-                )
-                action_args["goal_default"] = validate_legacy_action_assertions(
-                    canonical_schema, action_name=method_name,
-                    goal_default=action_args.get("goal_default"), handles=action_args.get("handles"),
-                )
-                resource_contract = normalize_action_resource_contract(action_args.get("resource_contract"))
-                validate_action_resource_contract_schema(resource_contract, canonical_schema)
+                canonical_schema = draft["schema"]
                 if resource_contract:
+                    from unilabos.registry.action_resource_contract import validate_action_resource_contract_schema
+
+                    validate_action_resource_contract_schema(resource_contract, canonical_schema)
                     canonical_schema["x-unilabos-action-contract"]["resource_contract"] = resource_contract
-                if any(action_args.get(key) for key in ("goal", "result", "placeholder_keys")):
-                    raise ValueError("typed 合同不接受重命名字段或 placeholder_keys 覆盖")
-            elif action_args.get("resource_contract") is not None:
-                raise ValueError("资源合同必须绑定 typed 动作")
+                ignored_lock_options.extend(_material_lock_free_parameters(item, bindings))
+            else:
+                draft = {"placeholders": _parameter_placeholders(item, bindings, definition)}
             # 补全 @action 装饰器的默认值（与 decorators.py 中 action() 签名一致）
             action_args.setdefault("action_type", None)
             action_args.setdefault("goal", {})
@@ -1120,7 +1101,6 @@ def _extract_class_body(
             action_args.setdefault("result", {})
             action_args.setdefault("handles", {})
             action_args.setdefault("goal_default", {})
-            action_args.setdefault("placeholder_keys", {})
             action_args.setdefault("always_free", False)
             action_args.setdefault("is_protocol", False)
             action_args.setdefault("feedback_interval", 1.0)
@@ -1186,8 +1166,7 @@ def _extract_class_body(
                 "is_async": is_async,
                 "docstring": method_doc,
             }
-            if canonical_schema is not None:
-                result["actions"][method_name]["canonical_schema"] = canonical_schema
+            _store_schema_draft(result["actions"][method_name], canonical_schema, draft)
             continue
 
         # --- Check for @not_action ---
@@ -1226,6 +1205,11 @@ def _extract_class_body(
         }
         if _has_decorator(item, "always_free") and _is_registry_decorator("always_free", import_map):
             auto_entry["always_free"] = True
+        definition = f"{module_name}.{cls_node.name}.{method_name}"
+        draft = build_action_schema_draft(
+            item, bindings, action_name=f"auto-{method_name}", definition=definition
+        )
+        _store_schema_draft(auto_entry, draft["schema"], draft)
         result["auto_methods"][method_name] = auto_entry
 
     return result
@@ -1234,6 +1218,53 @@ def _extract_class_body(
 # ---------------------------------------------------------------------------
 # Method parameter extraction
 # ---------------------------------------------------------------------------
+
+
+def _store_schema_draft(entry: dict, schema: Optional[dict], draft: dict) -> None:
+    """把统一 schema 草稿与扫描附带的信息写进缓存条目（注册表补全推断字段后使用）。"""
+
+    if schema is not None:
+        entry["canonical_schema"] = schema
+        if draft.get("inferred"):
+            entry["schema_inferred"] = list(draft["inferred"])
+        if draft.get("result_inferred"):
+            entry["result_inferred"] = list(draft["result_inferred"])
+        if draft.get("skipped"):
+            entry["schema_skipped"] = list(draft["skipped"])
+    if draft.get("placeholders"):
+        entry["placeholders"] = dict(draft["placeholders"])
+
+
+def _parameter_placeholders(item: Union[ast.FunctionDef, ast.AsyncFunctionDef], bindings: Any, definition: str) -> dict:
+    """ROS 动作参数上 ``Annotated[..., Placeholder(...)]`` 声明的前端选择器。"""
+
+    placeholders: dict = {}
+    arguments = item.args
+    for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]:
+        if argument.annotation is None:
+            continue
+        _, kind = strip_placeholder(argument.annotation, bindings, definition=definition, name=argument.arg)
+        if kind:
+            placeholders[argument.arg] = kind
+    return placeholders
+
+
+def _material_lock_free_parameters(item: Union[ast.FunctionDef, ast.AsyncFunctionDef], bindings: Any) -> List[str]:
+    """写了已废弃 ``MaterialLock(free=True)`` 的参数（只用于告警，不再免锁）。"""
+
+    names: List[str] = []
+    for argument in [*item.args.posonlyargs, *item.args.args, *item.args.kwonlyargs]:
+        annotation = argument.annotation
+        if not isinstance(annotation, ast.Subscript) or bindings.identity(annotation.value) not in {
+            "typing:Annotated",
+            "typing_extensions:Annotated",
+        }:
+            continue
+        members = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
+        for member in members[1:]:
+            if isinstance(member, ast.Call) and bindings.identity(member.func) == "unilabos.registry.annotations:MaterialLock":
+                names.append(f"{argument.arg}: MaterialLock(free=True)")
+    return names
 
 
 #: 由运行时注入、不属于动作契约的参数：``sample_uuids``（样品映射）与

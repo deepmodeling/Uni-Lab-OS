@@ -51,7 +51,7 @@ def driver_repo(tmp_path: Path) -> Path:
 
         @device(id="layout_photometer", category=["layout"])
         class Photometer:
-            @action(contract="typed", description="read")
+            @action(description="read")
             def read(self, wavelength_nm: Annotated[float, Field(ge=190, le=1100)] = 600.0) -> Reading:
                 return Reading(absorbance=0.1)
         ''',
@@ -105,7 +105,7 @@ def test_inspect_fails_when_a_driver_file_cannot_be_scanned(driver_repo: Path, t
 
         @device(id="layout_broken", category=["layout"])
         class Broken:
-            @action(contract="typed", action_type="SendCmd")
+            @action(resource_contract={"version": 2, "order_sensitive": True})
             def run(self) -> None:
                 return None
         ''',

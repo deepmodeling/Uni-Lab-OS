@@ -25,7 +25,7 @@
 | W03 | 作者接口没有 | 已实现 | `with ctx.parallel():` + `ctx.group`（与 V1 写法一致） |
 | W04 | 已有 | 已有 | |
 | A01 | 无预计时长合同 | 已实现（A01 分支） | `@action(estimate_duration_fixed / estimate_duration_express)`，派发时求值记在 attempt 上，时间线消费；V1 闭源引擎的学习估时与时间求解不移植 |
-| A02 | #358 未合并 | 已实现 | `contract="typed"`、`registry/typed_contract.py` 等已在 #361 |
+| A02 | #358 未合并 | 已实现 | 严格动作合同已在 #361；后来去掉 `contract=` 开关，所有 JSON 动作同一标准（[动作的参数、返回值与资源语义](action_standard.md)） |
 | A03 | 仅能解析 | 已实现 | `device_tenancy` / `operate_in_place` / `transfer` / `transfer_step` / `aliquot` 在调度器托管下启用（`scheduler/physical_contract.py`、`materials/execution.py`）；`order_sensitive` 按 V1 规则在发布和创建任务时检查同一资源上无先后关系的兄弟动作（`scheduler/interval_plan.py`，`tests/server/test_order_sensitive_actions.py`）；并行成员同时就绪时按书写顺序派发 |
 | I01 | #358 未合并 | 已实现 | `materials/quantity.py`、`capacity.py`，批次计数盘点 `stocktake_inventory_lot` |
 | I02 | 未对齐 | 已实现（按用户决定收口） | 批次侧（多任务共享数量、`on_ready` 就绪时预留、执行结果不明时冻结）已有；容器内物质（`kind="content"`）的工作流预留、多任务共享、随作业结算与恢复、一次性实际用量更正、结算防错（不吃别人的预留、单位换算失败即拒绝、快照不能移除已预留内容物）已实现（I02 分支）；不做运行时补料分支（`material_source` + `sufficient`）——人工装入 / 取走 / 补量节点 `material_io` 按负责人 2026-11-16 决定作为作者显式写出的独立一步实现（见下方 U01 工作流表），与预检决策互不依赖：按用户决定缺料是**预检报错**——任务启动整任务预留不足直接失败（`plan_not_executable`，`scope=task`）；动作执行前才预留的需求不足则该动作挂起为 `preflight` 决策，补料后重试，或跳过 / 人工替换为成功 / 放弃（`scope=action`）；动作执行中失败另为**执行报错**。不静默等待补料，与 V1 的等待入库 / 补料分支有意不同。**实物够、只是被其他任务预留**不算缺料（负责人 2026-11-16 决定，同 V1）：权威预检的短缺带 `cause`（`insufficient` / `reserved_by_other_tasks`），任务启动时被占则任务保持 `pending` 排队、动作就绪时（含重试、循环下一轮）被占则 attempt 排队，都不持有任何东西、不失败也不开决策，预留释放 / 结算或 5 秒兜底重算时按先后重试，重启后照样排队（`test_inventory_held_wait.py`） |
@@ -180,7 +180,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | W03 并行 | 已实现：`with ctx.parallel():` + `group`（11-14 复核） | Dev 保留调度实现；作者层编译出分叉/汇合并定义返回引用和失败语义。V1 实际写法是 `with parallel():` + `group`，不是 `parallel(A, B)`。 |
 | W04 循环 | Dev 已有 for/while 及 `ctx.step_output` 条件 | 现有循环测试通过。它不能抵消 W02 的 if/else 缺口；后续只补作者语法和嵌套组合回归。 |
 | A01 动作预计时长 | 已实现（2026-11-14） | `@action(estimate_duration_fixed / estimate_duration_express)`，字段名与 V1 相同，表达式也认 V1 的 `{name}` 写法；派发时用最终参数求值并记在 attempt 上，时间线依次取声明值 → 历史实测 → 60 s 兜底。只用于展示与观测，不是准入条件。V1 的学习型估时与时间求解属于闭源引擎，不移植。 |
-| A02 严格动作合同 | 已在 #361（11-14 复核） | `contract="typed"`、AST 参数/具名返回 Schema、建任务冻结、预检、派发与 Host 校验已接入；仍有的缺口见 [严格动作合同的已知缺口](v1_inventory_preflight_contracts.md)。 |
+| A02 严格动作合同 | 已在 #361（11-14 复核） | AST 参数/具名返回 Schema、建任务冻结、预检、派发与 Host 校验已接入；之后去掉 `contract=` 开关，每个 JSON 动作都按同一标准生成并校验（见 [动作的参数、返回值与资源语义](action_standard.md)），仍有的缺口见 [动作合同的已知缺口](v1_inventory_preflight_contracts.md)。 |
 | A03 高级资源合同 | 已实现（见上方「当前状态」A03） | `device_tenancy`、`transfer`、`transfer_step`、`operate_in_place`、`aliquot` 只在调度器托管下接受：建任务、预检与派发都按托管校验；Host 只在作业带开始许可（`execution_permit`）时接受，不经调度器托管的作业（如旧 WS 直接派发）被拒绝（`registry/typed_contract.py:validate_action_values`）。`order_sensitive` 运行时从不拒绝，只在发布与建任务时检查计划（`scheduler/interval_plan.py`）。 |
 | I01 库存增量 | 已在 #361（11-14 复核） | 单位换算、整批虚拟余量预检、容量、计数盘点；先解决 C01，再合入。 |
 | I02 内容物数量共享与补料 | 已实现（按用户决定收口，见上方「当前状态」I02） | 物料实例（`material`）、批次（`lot`）与容器内容物（`content`，`material_content_reservation`）都按尝试预留、多任务共享余量、随作业结算并由 `scheduler/inventory_recovery.py` 对账；V1 的数量预留 Saga 由尝试上冻结的库存请求（`scheduler/attempt_inventory.py`）与恢复对账承担。运行时补料分支按决定不做：缺料是预检报错，人工补料用 `material_io`。数量预留与 M02 的物理锁相互独立。 |

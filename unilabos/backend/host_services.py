@@ -4,7 +4,7 @@
 （apply_deduct_resource / set_substance / discard_resource / transfer_resource）、
 系统自带 manual_confirm，以及诊断动作 test_resource / test_latency。
 
-本类提供 @device/@action 扫描所需的 schema、placeholder、handles 和签名，
+本类提供 @device/@action 扫描所需的签名（schema 与前端选择器都由注解生成）和 handles，
 业务实现委托给 :mod:`unilabos.backend.host_material_actions`。两种 backend
 通过各自的设备管线初始化本类：
 
@@ -24,7 +24,7 @@ ResourceSlot/SiteSlot 等注解必须保持运行时类型对象，HostLink runt
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
 from typing_extensions import TypedDict
 
@@ -39,10 +39,10 @@ from unilabos.registry.decorators import (
     action,
     device,
 )
+from unilabos.registry.annotations import Placeholder
 from unilabos.registry.placeholder_type import (
     PLACEHOLDER_DEDUCT_REAGENT,
     PLACEHOLDER_DEDUCT_RESOURCE,
-    PLACEHOLDER_DEVICES,
     PLACEHOLDER_MANUAL_CONFIRM,
     PLACEHOLDER_NODES,
     DeviceSlot,
@@ -207,10 +207,14 @@ class HostServices:
         description="通用人工确认：等待指定用户在前端确认后继续",
         always_free=True,
         node_type=NodeType.MANUAL_CONFIRM,
-        placeholder_keys={"assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM},
         goal_default={"timeout_seconds": 3600, "assignee_user_ids": []},
     )
-    def manual_confirm(self, timeout_seconds: int, assignee_user_ids: list[str], **kwargs) -> dict:
+    def manual_confirm(
+        self,
+        timeout_seconds: int,
+        assignee_user_ids: Annotated[list[str], Placeholder(PLACEHOLDER_MANUAL_CONFIRM)],
+        **kwargs,
+    ) -> dict:
         """通用人工确认动作的注册表入口。
 
         ``timeout_seconds`` 为等待上限，``assignee_user_ids`` 限定可确认用户；
@@ -222,11 +226,6 @@ class HostServices:
         display_name="物料出库并挂载",
         description="申请扣减物料并挂载（接收服务端已扣减的单个根物料，挂载到目标设备的目标物料上）",
         always_free=True,
-        placeholder_keys={
-            "resource": PLACEHOLDER_DEDUCT_RESOURCE,
-            "device_id": PLACEHOLDER_DEVICES,
-            "mount_resource": PLACEHOLDER_NODES,
-        },
         handles=[
             ActionInputHandle(
                 key="device_id",
@@ -260,11 +259,11 @@ class HostServices:
     )
     async def apply_deduct_resource(
         self,
-        resource: ResourceSlot = None,
+        resource: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_DEDUCT_RESOURCE)] = None,
         registry_class: str = "",
         material_name: str = "",
         device_id: DeviceSlot = "",
-        mount_resource: ResourceSlot = None,
+        mount_resource: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)] = None,
         bind_locations: ResourceDictPositionObject = None,
         slot_on_deck: str = "",
     ) -> DeductResourceReturn:
@@ -319,7 +318,6 @@ class HostServices:
         display_name="设置物料内容物",
         description="设置物料内容物（液体/固体，默认单位 微升/微克）；接收单个物料，设置后输出",
         always_free=True,
-        placeholder_keys={"resource": PLACEHOLDER_DEDUCT_REAGENT},
         handles=[
             ActionInputHandle(
                 key="resource",
@@ -339,7 +337,7 @@ class HostServices:
     )
     async def set_substance(
         self,
-        resource: ResourceSlot,
+        resource: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_DEDUCT_REAGENT)],
         substance_names: List[str],
         amounts: List[float],
         slots: List[str] = [],
@@ -372,10 +370,6 @@ class HostServices:
         display_name="废弃物料",
         description="废弃台面物料（指定设备 + uuid：云端销毁并通知该设备本地移除）",
         always_free=True,
-        placeholder_keys={
-            "resource": PLACEHOLDER_NODES,
-            "device_id": PLACEHOLDER_DEVICES,
-        },
         handles=[
             ActionInputHandle(
                 key="device_id",
@@ -393,7 +387,11 @@ class HostServices:
             ),
         ],
     )
-    async def discard_resource(self, resource: ResourceSlot, device_id: DeviceSlot = "") -> dict:
+    async def discard_resource(
+        self,
+        resource: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)],
+        device_id: DeviceSlot = "",
+    ) -> dict:
         """
         废弃单个台面物料。
 
@@ -417,10 +415,6 @@ class HostServices:
         display_name="转移物料",
         description="转移物料（系统派发）：把已物理就位的物料在系统中改挂到目标设备的目标孔位（人工/机械臂工作流的统一末步）",
         always_free=True,
-        placeholder_keys={
-            "target_device": PLACEHOLDER_DEVICES,
-            "mount_resource": PLACEHOLDER_NODES,
-        },
         handles=[
             ActionInputHandle(
                 key="resource",
@@ -476,7 +470,7 @@ class HostServices:
     async def transfer_resource(
         self,
         resource: ResourceSlot,
-        mount_resource: ResourceSlot = None,
+        mount_resource: Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)] = None,
         site: SiteSlot = "",
         target_device: DeviceSlot = "",
     ) -> TransferResourceReturn:

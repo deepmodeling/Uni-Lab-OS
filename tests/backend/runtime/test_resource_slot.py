@@ -27,6 +27,8 @@ from unilabos.registry.placeholder_type import ResourceSlot
         ("str", None),
         (list[str], None),
         (dict, None),
+        ("Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]", "single"),
+        ("Annotated[list[ResourceSlot], Placeholder(PLACEHOLDER_NODES)]", "list"),
     ],
 )
 def test_resource_slot_shape(annotation, shape):
@@ -36,7 +38,7 @@ def test_resource_slot_shape(annotation, shape):
 class _Driver:
     # 本模块启用了 from __future__ import annotations：这里的注解全是字符串，
     # 与驱动包里常见写法一致（ROS 2 曾因此把 ResourceSlot 原样以 dict 传入驱动）。
-    @action(contract="typed", always_free=False)
+    @action(always_free=False)
     def pick(self, sample: ResourceSlot, owners: list[ResourceSlot], site: str, note: Optional[str] = None) -> dict:
         return {}
 

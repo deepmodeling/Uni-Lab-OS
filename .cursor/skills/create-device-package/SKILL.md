@@ -116,11 +116,56 @@ class <ClassName>:
 - `description`：动作描述；JSON Command 动作会写入 schema 的顶层描述。若为空，会使用 docstring 第一行作为描述。
 - `always_free=True`：动作不占用设备 busy 队列，适合 `get_status`、`query_*`、`ping`、连接测试等轻量查询动作；会在 `action_value_mappings.<action>.always_free` 中写入 `true`。
 - `feedback_interval`：动作反馈发布间隔，单位秒；AST 扫描默认补 `1.0`，长任务可调大，例如 `5.0`、`30.0`。
-- `goal_default`：覆盖参数默认值；普通 Python 默认参数也会进入 `goal_default`。
-- `placeholder_keys`：资源/设备选择器配置；`ResourceSlot`、`DeviceSlot` 通常会被自动检测，特殊字段再手动补。
-- `handles`：动作级输入/输出端口，使用 `ActionInputHandle`、`ActionOutputHandle`。
+- `goal_default`：编辑器里的初始参数值，叠加在签名默认值上；它不让参数变成可选，没有签名默认值的参数仍然必填。
+- `material`：资源语义（装载托管、原位处理、搬运、分装、顺序敏感），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
+- `handles`：动作级输入/输出端口，使用 `ActionInputHandle`、`ActionOutputHandle`；不写时按 schema 生成。
+- 已删除、写了会报错的参数：`contract=`、`resource_contract=`、`placeholder_keys=`，以及 JSON 动作的 `goal=` / `result=`
+  重命名（参数名就是字段名）。前端选择器：物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot`，其他写
+  `Annotated[类型, Placeholder(PLACEHOLDER_...)]`。
+
+参数与返回值只有一个标准，注册表按签名生成 schema，调度端与 Host 调用前校验参数，调用后按返回注解校验返回值：
+
+| 写法 | 生成与校验 |
+| --- | --- |
+| `str` / `int` / `float` / `bool` / `Literal` / `list[X]` / `Optional[X]` / `Annotated[X, Field(...)]` | 严格类型与范围 |
+| `x: X = None` | 同 `Optional[X]` |
+| `ResourceSlot` / `list[ResourceSlot]` | 物料引用，自动加物料锁，Host 解析成物料实例 |
+| `dict` / `Dict[str, Any]` | 任意 JSON 对象 |
+| 不写类型、`Any` | 任意 JSON 值 |
+| 其他（`Union`、枚举、PLR 类型……） | 退回签名推断，不会注册失败 |
+| 没有默认值 | 必填，缺了直接报错（不会补 0 / 空串） |
+| `**kwargs` | 允许多传字段；`*args` 忽略并告警 |
+| 返回注解 | 没写不校验；`-> None` 只接受空返回；`-> dict` 只要求是对象；同模块 `TypedDict` 字段齐全、每个字段一个输出端口；`-> bool` 等按类型 |
+
+所以返回注解要写真实的返回类型：注解 `-> bool` 却返回字典、注解 `-> None` 却返回值，都会让动作在执行后按失败处理。
 
 旧的 `@always_free` 仍可被 AST 扫描识别，但新设备包优先使用 `@action(always_free=True)`，把动作元数据集中在一个装饰器里。
+
+#### 资源语义：`material=`
+
+```python
+from unilabos.registry.decorators import Material, action
+from unilabos.registry.placeholder_type import ResourceSlot
+
+@action(display_name="装载样品", material=Material.load("sample", device="vessel"))
+def load_sample(self, sample: ResourceSlot, vessel: str) -> LoadResult: ...
+
+@action(display_name="原位搅拌", material=[Material.in_place("sample"), Material.order_sensitive()])
+def stir(self, sample: ResourceSlot, rpm: int = 300) -> None: ...
+```
+
+| 写法 | 含义 |
+| --- | --- |
+| `Material.load("sample", device="vessel")` / `Material.unload(...)` | 装进 / 取出设备，期间任务托管设备 |
+| `Material.load("sample", device="b", from_device="a")` | 设备间转移 |
+| `Material.in_place("sample")` | 物料必须仍在执行设备内 |
+| `Material.pick(...)` / `Material.place("sample", owner=, site=, carriers=[...])` | 两步搬运 |
+| `Material.transfer("plate", to=, site=, gripper=, ...)` | 一次完成的机械臂搬运 |
+| `Material.aliquot(source=, targets=[...])` | 按实测量分装 |
+| `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 额外占用的资源参数 |
+| `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序 |
+
+字符串都是参数名，注册时对照签名检查；物料参数必须是 `ResourceSlot`，设备参数可以是 `ResourceSlot` 或设备 ID 字符串。
 
 ### 3.2 `@topic_config` 规则
 
@@ -175,14 +220,14 @@ def transfer(self, source: str, target: str, volume_ul: float) -> dict:
 外部设备包验证走 `unilab --check_mode --devices ./<package_name> --external_devices_only`，registry 会静态扫描 Python AST 构建设备 schema：
 
 - 只识别来自 `unilabos.registry.decorators` 的 `@device`、`@action`、`@topic_config`、`@not_action`、`@always_free`。
-- 包内模块之间可以用相对导入（`from .labware import Deck`、`from ..common import helper`）：扫描器按包结构（`__init__.py`）把它们解析成绝对模块路径，typed 合同动作同样适用；越过顶层包的相对导入会让该文件扫描失败。
+- 包内模块之间可以用相对导入（`from .labware import Deck`、`from ..common import helper`）：扫描器按包结构（`__init__.py`）把它们解析成绝对模块路径，动作参数注解同样按它解析；越过顶层包的相对导入会让该文件扫描失败。
 - `@device` 类会生成设备条目；`id/category/description/handles/model/hardware_interface` 来自装饰器。
 - `__init__` 参数、类型注解、默认值和 docstring 会进入 `init_param_schema.config`。
 - 带 `@action` 的方法会进入 `action_value_mappings`；未加 `@action` 的 public 方法会生成 `auto-<method_name>` 动作。
 - 辅助方法用私有名 `_helper` 或 `@not_action`，避免被自动暴露为动作。
 - `@action(action_type=...)` 会优先从 ROS Action 类型补全 `goal/feedback/result/schema/goal_default`，再用装饰器里的 `goal/feedback/result/goal_default` 覆盖。
-- `@action()` / auto action 会从方法参数生成 `goal/schema/goal_default`，从返回值注解补 result schema。
-- 参数类型注解必须完整；`str/int/float/bool/list/dict`、`Optional`、`Union`、`List`、`Dict`、`Literal`、`TypedDict`、`ResourceSlot`、`DeviceSlot` 都有不同程度的自动 schema 支持。
+- `@action()` / auto action 按 3.1 的规则从方法签名生成 `goal/schema/goal_default/handles`，从返回值注解生成 result schema。
+- 参数与返回值尽量写完整类型注解：写了类型才会严格校验，不写就接受任意值。
 - `__init__` 的现场配置参数不要设计成单个 `config: dict` 或其他大对象参数；按基础类型拆成 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool` 这类可直接生成表单字段的参数。旧驱动保留的 `config` 参数在 HostLink 上收到整份节点配置，同时声明的其他具名参数仍按名取值。
 
 ### 4. 生成 pyproject.toml

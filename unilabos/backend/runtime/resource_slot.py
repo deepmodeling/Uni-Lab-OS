@@ -5,7 +5,7 @@ from __future__ import annotations
 import inspect
 import types
 from collections.abc import Mapping
-from typing import Any, Optional, Union, get_args, get_origin
+from typing import Annotated, Any, Optional, Union, get_args, get_origin
 
 
 def resource_slot_shape(annotation: Any) -> Optional[str]:
@@ -13,13 +13,16 @@ def resource_slot_shape(annotation: Any) -> Optional[str]:
 
     驱动模块常用 ``from __future__ import annotations``，此时注解是字符串（如
     ``"ResourceSlot"``、``"list[ResourceSlot]"``），必须与真实类型同样识别；
-    ``Optional[ResourceSlot]`` 视为单个。
+    ``Optional[ResourceSlot]`` 视为单个；``Annotated[...]`` 按它包着的类型识别。
     """
 
     if annotation is inspect.Parameter.empty:
         return None
     if isinstance(annotation, str):
         normalized = annotation.replace(" ", "").replace("typing.", "")
+        if normalized.startswith("Annotated["):
+            # Annotated[类型, 元数据...]：只看第一个成员（元数据里不会出现 ResourceSlot）
+            normalized = normalized[len("Annotated["):]
         if "ResourceSlot" not in normalized:
             return None
         if normalized.startswith(("list[", "List[")):
@@ -27,6 +30,9 @@ def resource_slot_shape(annotation: Any) -> Optional[str]:
         return "single"
 
     origin = get_origin(annotation)
+    if origin is Annotated:
+        arguments = get_args(annotation)
+        return resource_slot_shape(arguments[0]) if arguments else None
     if origin is list:
         arguments = get_args(annotation)
         if arguments and resource_slot_shape(arguments[0]) == "single":

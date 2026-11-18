@@ -60,6 +60,7 @@ from unilabos.registry.utils.tools import (
     type_node_to_schema,
     resolve_type_object,
     type_to_schema,
+    is_typed_dict_class,
     detect_slot_type,
     detect_placeholder_keys,
     normalize_ast_handles,
@@ -106,6 +107,123 @@ _module_hash_cache: Dict[str, Optional[str]] = {}
 EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/container.yaml",)
 
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
+def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
+    """按导入得到的真实类型推断字段 schema（严格解析器不认识的注解的退回推断）。
+
+    只推断一层结构：顶层 TypedDict 展开字段（具名输出端口靠它），嵌套的 TypedDict / 类只要求是对象；
+    推断不出的部分接受任意值。比旧推断（pydantic 深层 schema）宽松，因为推断结果要用来校验。
+    """
+
+    import enum as _enum
+    import types as _types
+    import typing as _typing
+
+    if depth > 6:
+        return {}
+    if tp is _typing.Any or tp is object:
+        return {}
+    if tp is None or tp is type(None):
+        return {"type": "null"}
+    for kind, name in ((bool, "boolean"), (int, "integer"), (float, "number"), (str, "string")):
+        if tp is kind:
+            return {"type": name}
+    origin = _typing.get_origin(tp)
+    args = _typing.get_args(tp)
+    if origin is _typing.Annotated:
+        return _runtime_type_schema(args[0], depth=depth) if args else {}
+    if origin in (_typing.Union, _types.UnionType):
+        members = [arg for arg in args if arg is not type(None)]
+        schemas = []
+        for member in members:
+            schema = _runtime_type_schema(member, depth=depth + 1)
+            if not schema:
+                return {}
+            if schema not in schemas:
+                schemas.append(schema)
+        result: Dict[str, Any] = schemas[0] if len(schemas) == 1 else {"anyOf": schemas} if schemas else {"type": "null"}
+        if len(members) != len(args):
+            from unilabos.registry.action_schema import _with_null
+
+            result = _with_null(result)
+        return result
+    if origin is _typing.Literal:
+        values = list(args)
+        if values and all(isinstance(value, str) for value in values):
+            return {"type": "string", "enum": values}
+        return {"enum": values} if values else {}
+    if origin in (list, tuple, set, frozenset) or getattr(origin, "__name__", "") in {
+        "Sequence", "MutableSequence", "Iterable", "Collection",
+    }:
+        if origin is tuple and len(args) > 1 and args[1] is not Ellipsis:
+            return {"type": "array"}
+        return {"type": "array", "items": _runtime_type_schema(args[0], depth=depth + 1)} if args else {"type": "array"}
+    if origin is dict or getattr(origin, "__name__", "") in {"Mapping", "MutableMapping"}:
+        schema: Dict[str, Any] = {"type": "object"}
+        if len(args) == 2:
+            value_schema = _runtime_type_schema(args[1], depth=depth + 1)
+            if value_schema:
+                schema["additionalProperties"] = value_schema
+        return schema
+    if isinstance(tp, type):
+        name = tp.__name__
+        if name == "ResourceSlot":
+            return _material_reference_schema()
+        if name in {"DeviceSlot", "SiteSlot"}:
+            return {"type": "string"}
+        if issubclass(tp, _enum.Enum):
+            values = [member.value for member in tp]
+            return {"type": "string", "enum": values} if values and all(isinstance(v, str) for v in values) else {}
+        if issubclass(tp, (list, tuple, set, frozenset)):
+            return {"type": "array"}
+        if tp.__module__ in {"builtins", "datetime", "decimal", "pathlib", "uuid", "fractions"} and not issubclass(tp, dict):
+            # bytes / datetime / Path 等：线上形态取决于序列化方式，接受任意值
+            return {}
+        if issubclass(tp, dict) and not is_typed_dict_class(tp):
+            return {"type": "object"}
+        if is_typed_dict_class(tp):
+            if depth > 0:
+                return {"type": "object"}
+            try:
+                hints = _typing.get_type_hints(tp)
+            except Exception:  # noqa: BLE001 - 前向引用解析不了：只按键名推断
+                hints = dict(getattr(tp, "__annotations__", {}) or {})
+            properties = {
+                key: _runtime_type_schema(value, depth=depth + 1)
+                for key, value in hints.items()
+                if key != RETURN_UNILABOS_SAMPLES
+            }
+            required = [key for key in getattr(tp, "__required_keys__", hints) if key in properties]
+            return {"type": "object", "properties": properties, "required": required}
+        return {"type": "object"}
+    return {}
+
+
+def _is_import_deadlock(error: BaseException) -> bool:
+    """并行导入时 importlib 检测到的模块锁死锁（``_DeadlockError``，可能包在导入失败异常里）。"""
+
+    current: Optional[BaseException] = error
+    while current is not None:
+        if type(current).__name__ == "_DeadlockError" or "deadlock detected by _ModuleLock" in str(current):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _material_reference_schema() -> Dict[str, Any]:
+    """物料引用字段：与严格解析器的 ResourceSlot 同一形状（带物料锁标记）。"""
+
+    return {
+        "type": "object",
+        "properties": {"uuid": {"type": "string", "format": "uuid"}},
+        "required": ["uuid"],
+        "additionalProperties": False,
+        "x-unilabos-material-lock": True,
+    }
+
+
+#: 签名类型推断里的数组 / 对象容器名（``typing`` 与内置、``collections.abc`` 写法）。
+ARRAY_LIKE_TYPE_NAMES = frozenset({"list", "List", "tuple", "Tuple", "set", "Set", "frozenset", "FrozenSet", "Sequence", "MutableSequence", "Iterable", "Collection"})
+OBJECT_LIKE_TYPE_NAMES = frozenset({"dict", "Dict", "Mapping", "MutableMapping", "OrderedDict", "DefaultDict", "defaultdict"})
 
 
 def _default_category(entry: Dict[str, Any], file: Path) -> None:
@@ -1049,123 +1167,39 @@ class Registry:
         action_value_mappings: Dict[str, Any] = {}
 
         def _build_json_command_entry(method_name, method_info, action_args=None):
-            """构建 UniLabJsonCommand 类型的 action entry"""
+            """构建 UniLabJsonCommand 类型的 action entry（所有 JSON 动作同一标准，见 registry/action_schema）。"""
+            action_args = action_args or {}
             is_async = method_info.get("is_async", False)
             type_str = "UniLabJsonCommandAsync" if is_async else "UniLabJsonCommand"
             params = method_info.get("params", [])
-            method_doc = method_info.get("docstring")
-            method_doc_info = parse_docstring(method_doc)
-            goal_schema = self._generate_schema_from_ast_params(params, method_name, method_doc, imap)
 
-            if action_args is not None:
+            if action_args:
                 action_name = action_args.get("action_name", method_name)
                 if action_args.get("auto_prefix"):
                     action_name = f"auto-{action_name}"
             else:
                 action_name = f"auto-{method_name}"
 
-            # Source C: 从 schema 生成类型默认值
-            goal_default = JSONSchemaMessageInstance.generate_default_from_schema(goal_schema)
-            # Source B: method param 显式 default 覆盖 Source C
-            for p in params:
-                if p.get("default") is not None:
-                    goal_default[p["name"]] = p["default"]
-            # goal 为 identity mapping {param_name: param_name}, 默认值只放在 goal_default
-            goal = {p["name"]: p["name"] for p in params}
-
-            # @action 中的显式 goal/goal_default 覆盖
-            goal_override = dict((action_args or {}).get("goal", {}))
-            goal_default_override = dict((action_args or {}).get("goal_default", {}))
-            if goal_override:
-                override_values = set(goal_override.values())
-                goal = {k: v for k, v in goal.items() if not (k == v and v in override_values)}
-            goal.update(goal_override)
-            goal_default.update(goal_default_override)
-
-            # action handles: 从 @action(handles=[...]) 提取并转换为标准格式
-            raw_handles = (action_args or {}).get("handles")
-            handles = (
-                normalize_ast_action_handles(raw_handles)
-                if isinstance(raw_handles, list)
-                else (raw_handles or {})
+            entry = self._json_action_entry(
+                method_info,
+                action_args,
+                action_name=action_name,
+                import_map=imap,
             )
-
-            # placeholder_keys: 先从参数类型自动检测，再用装饰器显式配置覆盖/补充
-            pk = detect_placeholder_keys(params)
-            pk.update((action_args or {}).get("placeholder_keys") or {})
-
-            # 从方法返回值类型生成 result schema
-            result_schema = None
-            ret_type_str = method_info.get("return_type", "")
-            if ret_type_str and ret_type_str not in ("None", "Any", ""):
-                result_schema = self._generate_schema_from_info(
-                    "result", ret_type_str, None, imap
-                )
-                # result schema 完整生成后再剥离保留字段 unilabos_samples
-                self._strip_reserved_result_fields(result_schema)
-
-            entry = {
-                "type": type_str,
-                "goal": goal,
-                "feedback": (action_args or {}).get("feedback") or {},
-                "result": (action_args or {}).get("result") or {},
-                "schema": wrap_action_schema(
-                    goal_schema,
-                    action_name,
-                    description=(action_args or {}).get("description") or method_doc_info.get("description", ""),
-                    result_schema=result_schema,
-                ),
-                "goal_default": goal_default,
-                "handles": handles,
-                "placeholder_keys": pk,
-                "display_name": (action_args or {}).get("display_name") or "",
-            }
-            if (action_args or {}).get("always_free") or method_info.get("always_free"):
+            entry["type"] = type_str
+            if action_args.get("always_free") or method_info.get("always_free"):
                 entry["always_free"] = True
-            _fb_iv = (action_args or {}).get("feedback_interval", method_info.get("feedback_interval", 1.0))
-            entry["feedback_interval"] = _fb_iv
-            entry["error_policy"] = (action_args or {}).get("error_policy") or {}
-            # 每个物料入参默认加共享资源锁（未带 @action 的 auto- 动作同样如此）
-            entry["materials_need_lock"] = default_material_lock_parameters(
-                params=params,
-                placeholder_keys=(action_args or {}).get("placeholder_keys"),
-            )
+            entry["feedback_interval"] = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
+            entry["error_policy"] = action_args.get("error_policy") or {}
             _apply_action_timeouts(
                 entry,
-                action_args or {},
+                action_args,
                 action_parameter_names=(param["name"] for param in params),
                 action_name=action_name,
             )
-            nt = normalize_enum_value((action_args or {}).get("node_type"), NodeType)
+            nt = normalize_enum_value(action_args.get("node_type"), NodeType)
             if nt:
                 entry["node_type"] = nt
-            canonical_schema = method_info.get("canonical_schema")
-            if canonical_schema is not None:
-                from unilabos.registry.typed_contract import material_lock_parameters
-
-                entry["schema"] = canonical_schema
-                entry["contract_kind"] = "typed"
-                from unilabos.registry.action_template_projection import compile_backend_action_handles
-
-                entry["handles"] = compile_backend_action_handles(canonical_schema)
-                properties = canonical_schema["properties"]["goal"]["properties"]
-                entry["goal"] = {name: name for name in properties}
-                entry["goal_default"] = {
-                    name: schema["default"] for name, schema in properties.items() if "default" in schema
-                }
-                entry["goal_default"].update((action_args or {}).get("goal_default") or {})
-                entry["materials_need_lock"] = material_lock_parameters(canonical_schema)
-                def resource_field(field: Dict[str, Any]) -> bool:
-                    if not field:
-                        return False
-                    return "x-unilabos-material-lock" in field or resource_field(field.get("items", {}))
-                entry["placeholder_keys"] = {
-                    name: "unilabos_resources" for name, field in properties.items() if resource_field(field)
-                }
-                entry["placeholder_keys"].update({
-                    name: "unilabos_sites" for name, field in properties.items()
-                    if "x-unilabos-site-selector" in field
-                })
             return action_name, entry
 
         # 1) auto- actions
@@ -1315,7 +1349,7 @@ class Registry:
                 "handles": handles,
                 "placeholder_keys": {
                     **detect_placeholder_keys(method_params),
-                    **(action_args.get("placeholder_keys") or {}),
+                    **(method_info.get("placeholders") or {}),
                 },
                 "display_name": action_args.get("display_name") or "",
             }
@@ -1324,10 +1358,7 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
-            action_entry["materials_need_lock"] = default_material_lock_parameters(
-                params=method_params,
-                placeholder_keys=action_args.get("placeholder_keys"),
-            )
+            action_entry["materials_need_lock"] = default_material_lock_parameters(params=method_params)
             _apply_action_timeouts(
                 action_entry,
                 action_args,
@@ -1400,6 +1431,258 @@ class Registry:
                 hardware_interface = {k: v for k, v in hardware_interface.items() if k != "_call"}
             entry["class"]["hardware_interface"] = hardware_interface
         return entry
+
+    # ------------------------------------------------------------------
+    # JSON 动作的统一 schema（草稿由 AST 扫描生成，这里补全推断字段）
+    # ------------------------------------------------------------------
+
+    def _infer_annotation_schema(self, annotation: str, import_map: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """严格解析器不认识的注解：退回原来的签名类型推断，生成可用于校验的字段 schema。
+
+        与旧推断的差别只在校验会用到的地方：``Any`` / 推断不出的类型接受任意值（旧推断当 string），
+        ``Optional`` / ``| None`` 保留可空，物料 / 设备 / 库位槽位用与严格解析器相同的形状。
+        """
+
+        node = parse_type_node(annotation) if annotation else None
+        if node is None:
+            return {}
+        return self._infer_annotation_node(node, import_map or {}, depth=0)
+
+    def _infer_annotation_node(self, node: Any, import_map: Dict[str, str], *, depth: int) -> Dict[str, Any]:
+        import ast as _ast
+        import enum as _enum
+
+        if depth > 8:
+            return {}
+        recurse = lambda child: self._infer_annotation_node(child, import_map, depth=depth + 1)  # noqa: E731
+        if isinstance(node, _ast.Constant):
+            if node.value is None:
+                return {"type": "null"}
+            if isinstance(node.value, str):
+                inner = parse_type_node(node.value)
+                return recurse(inner) if inner is not None else {}
+            return {}
+        if isinstance(node, _ast.Attribute):
+            # typing.Any / np.ndarray 等：按属性名处理常见情况，其余接受任意值
+            return recurse(_ast.Name(id=node.attr, ctx=_ast.Load())) if node.attr in SIMPLE_TYPE_MAP else {}
+        if isinstance(node, _ast.Name):
+            name = node.id
+            source = import_map.get(name, "")
+            if name in {"Any", "object"} or source in {"typing:Any", "typing_extensions:Any"}:
+                return {}
+            if name == "None":
+                return {"type": "null"}
+            if name == "ResourceSlot" or source.endswith(":ResourceSlot"):
+                return _material_reference_schema()
+            if name in {"DeviceSlot", "SiteSlot"} or source.endswith((":DeviceSlot", ":SiteSlot")):
+                return {"type": "string"}
+            if name in SIMPLE_TYPE_MAP and name not in import_map:
+                return {"type": SIMPLE_TYPE_MAP[name]}
+            if not source:
+                return {}
+            type_obj = resolve_type_object(source)
+            if type_obj is None:
+                return {}
+            return _runtime_type_schema(type_obj, depth=depth)
+        if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.BitOr):
+            members: list = []
+            pending = [node]
+            while pending:
+                current = pending.pop()
+                if isinstance(current, _ast.BinOp) and isinstance(current.op, _ast.BitOr):
+                    pending.extend([current.right, current.left])
+                else:
+                    members.append(current)
+            return self._infer_union(members, recurse)
+        if isinstance(node, _ast.Subscript):
+            base = node.value
+            base_name = base.id if isinstance(base, _ast.Name) else base.attr if isinstance(base, _ast.Attribute) else ""
+            args = list(node.slice.elts) if isinstance(node.slice, _ast.Tuple) else [node.slice]
+            if base_name in {"Annotated", "NotRequired", "Required", "ReadOnly"}:
+                return recurse(args[0]) if args else {}
+            if base_name == "Optional":
+                return self._infer_union([args[0], _ast.Constant(value=None)], recurse) if args else {}
+            if base_name == "Union":
+                return self._infer_union(args, recurse)
+            if base_name == "Literal":
+                values = [arg.value for arg in args if isinstance(arg, _ast.Constant)]
+                if not values or len(values) != len(args):
+                    return {}
+                kinds = {type(value) for value in values}
+                if kinds == {str}:
+                    return {"type": "string", "enum": values}
+                if kinds == {bool}:
+                    return {"type": "boolean", "enum": values}
+                if kinds <= {int, float} and bool not in kinds:
+                    return {"type": "integer" if kinds == {int} else "number", "enum": values}
+                return {"enum": values}
+            if base_name in ARRAY_LIKE_TYPE_NAMES:
+                if base_name in {"tuple", "Tuple"} and len(args) > 1 and not (
+                    len(args) == 2 and isinstance(args[1], _ast.Constant) and args[1].value is Ellipsis
+                ):
+                    return {"type": "array"}
+                return {"type": "array", "items": recurse(args[0])} if args else {"type": "array"}
+            if base_name in OBJECT_LIKE_TYPE_NAMES:
+                schema: Dict[str, Any] = {"type": "object"}
+                if len(args) == 2:
+                    value_schema = recurse(args[1])
+                    if value_schema:
+                        schema["additionalProperties"] = value_schema
+                return schema
+            return {}
+        return {}
+
+    @staticmethod
+    def _infer_union(members: list, recurse) -> Dict[str, Any]:
+        import ast as _ast
+
+        nullable = any(
+            (isinstance(m, _ast.Constant) and m.value is None) or (isinstance(m, _ast.Name) and m.id == "None")
+            for m in members
+        )
+        schemas = []
+        for member in members:
+            if (isinstance(member, _ast.Constant) and member.value is None) or (
+                isinstance(member, _ast.Name) and member.id == "None"
+            ):
+                continue
+            schema = recurse(member)
+            if not schema:
+                return {}
+            if schema not in schemas:
+                schemas.append(schema)
+        if not schemas:
+            return {"type": "null"}
+        result = schemas[0] if len(schemas) == 1 else {"anyOf": schemas}
+        if nullable:
+            from unilabos.registry.action_schema import _with_null
+
+            result = _with_null(result)
+        return result
+
+    def _finalize_action_schema(
+        self, draft: Dict[str, Any], import_map: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """补全统一 schema 草稿里的推断字段（不修改草稿本身）。"""
+
+        from unilabos.registry.action_schema import finalize_action_schema
+
+        return finalize_action_schema(
+            copy.deepcopy(draft),
+            lambda annotation: self._infer_annotation_schema(annotation, import_map),
+        )
+
+    @staticmethod
+    def _draft_from_params(method_info: Dict[str, Any], action_name: str) -> Dict[str, Any]:
+        """没有扫描草稿（旧缓存条目）时，按参数列表生成全推断的草稿。"""
+
+        from unilabos.registry.action_schema import INFER_KEY
+
+        params = method_info.get("params", []) or []
+        properties: Dict[str, Any] = {}
+        for param in params:
+            name = param.get("name")
+            if not name:
+                continue
+            field: Dict[str, Any] = {
+                INFER_KEY: {"annotation": str(param.get("type") or ""), "nullable": param.get("default") is None}
+            } if param.get("type") else {}
+            if not param.get("required", True) and param.get("default") is not None:
+                field["default"] = param.get("default")
+            properties[name] = field
+        return_type = method_info.get("return_type") or ""
+        result = {INFER_KEY: {"annotation": return_type, "nullable": False}} if return_type else {}
+        display = action_name.removeprefix("auto-")
+        return {
+            "title": f"{display}参数",
+            "description": f"{display}的参数schema",
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": [p["name"] for p in params if p.get("name") and p.get("required", True)],
+                    "additionalProperties": False,
+                },
+                "feedback": {},
+                "result": result,
+            },
+            "required": ["goal"],
+            "x-unilabos-action-contract": {
+                "version": 2,
+                "input_order": list(properties),
+                "output_order": [],
+                "resource_template_symbols": {"goal": {}, "result": {}},
+            },
+        }
+
+    def _json_action_entry(
+        self,
+        method_info: Dict[str, Any],
+        action_args: Dict[str, Any],
+        *,
+        action_name: str,
+        import_map: Optional[Dict[str, str]] = None,
+        previous: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """JSON 动作条目的 schema 相关字段：schema、goal、goal_default、handles、placeholder_keys、物料锁。
+
+        ``previous`` 是 YAML 里已有的条目（补全注册表时保留手写的说明、端口与前端选择器）。
+        """
+
+        from unilabos.registry.action_template_projection import compile_backend_action_handles
+        from unilabos.registry.typed_contract import material_lock_parameters
+
+        draft = method_info.get("canonical_schema") or self._draft_from_params(method_info, action_name)
+        schema = self._finalize_action_schema(draft, import_map)
+        description = str(action_args.get("description") or "")
+        if description:
+            schema["description"] = description
+        previous = previous or {}
+        previous_schema = previous.get("schema") or {}
+        if previous_schema:
+            preserve_field_descriptions(schema, previous_schema)
+            if previous_schema.get("description") and not description:
+                schema["description"] = previous_schema["description"]
+        properties = schema["properties"]["goal"]["properties"]
+        goal_default = {name: copy.deepcopy(field["default"]) for name, field in properties.items() if "default" in field}
+        goal_default.update(action_args.get("goal_default") or {})
+
+        raw_handles = action_args.get("handles")
+        if isinstance(raw_handles, list) and raw_handles:
+            handles = normalize_ast_action_handles(raw_handles)
+        elif isinstance(raw_handles, dict) and raw_handles:
+            handles = raw_handles
+        elif isinstance(previous.get("handles"), dict) and previous.get("handles"):
+            handles = previous["handles"]
+        else:
+            handles = compile_backend_action_handles(schema)
+
+        def resource_field(field: Any) -> bool:
+            if not isinstance(field, dict):
+                return False
+            return "x-unilabos-material-lock" in field or resource_field(field.get("items"))
+
+        placeholder_keys: Dict[str, str] = dict(previous.get("placeholder_keys") or {})
+        placeholder_keys.update(detect_placeholder_keys(method_info.get("params", []) or []))
+        placeholder_keys.update(
+            {name: "unilabos_resources" for name, field in properties.items() if resource_field(field)}
+        )
+        placeholder_keys.update(
+            {name: "unilabos_sites" for name, field in properties.items() if "x-unilabos-site-selector" in field}
+        )
+        placeholder_keys.update(method_info.get("placeholders") or {})
+        return {
+            "goal": {name: name for name in properties},
+            "feedback": action_args.get("feedback") or {},
+            "result": {},
+            "schema": schema,
+            "goal_default": goal_default,
+            "handles": handles,
+            "placeholder_keys": placeholder_keys,
+            "display_name": action_args.get("display_name") or previous.get("display_name") or "",
+            "materials_need_lock": material_lock_parameters(schema),
+        }
 
     def _generate_schema_from_ast_params(
         self, params: list, method_name: str, docstring: Optional[str] = None,
@@ -1750,7 +2033,9 @@ class Registry:
 
         lock = threading.Lock()
 
-        def _verify_device(device_id: str, entry: dict):
+        deadlocked: List[Tuple[str, dict]] = []
+
+        def _verify_device(device_id: str, entry: dict, serial: bool = False):
             nonlocal import_success_count, resolved_count
             module_str = entry.get("class", {}).get("module", "")
             if not module_str or ":" not in module_str:
@@ -1772,6 +2057,11 @@ class Registry:
 
                 return None
             except Exception as e:
+                if _is_import_deadlock(e) and not serial:
+                    # 并行导入撞上包之间的循环导入：线程池结束后在本线程重试，不算失败
+                    with lock:
+                        deadlocked.append((device_id, entry))
+                    return None
                 supported = entry.get("class", {}).get("supported_backends") or []
                 if supported and active_backend not in supported:
                     logger.warning(
@@ -1807,6 +2097,11 @@ class Registry:
                 )
                 return f"resource:{resource_id}: {e}"
 
+        # 设备模块几乎都依赖运行时内核：先在本线程导入，减少并行导入时包之间互相等待
+        try:
+            importlib.import_module("unilabos.backend.runtime")
+        except Exception as e:  # noqa: BLE001 - 只是预热，失败照常逐个校验
+            logger.debug(f"[Uni-Lab-OS Registry/Verify] 预先导入运行时内核失败: {e}")
         executor = self._startup_executor or ThreadPoolExecutor(max_workers=8)
         try:
             device_futures = {}
@@ -1832,6 +2127,10 @@ class Registry:
         finally:
             if self._startup_executor is None:
                 executor.shutdown(wait=True)
+        for device_id, entry in deadlocked:
+            result = _verify_device(device_id, entry, serial=True)
+            if result:
+                errors.append(result)
 
         errors.sort()
         skipped.sort()
@@ -1946,10 +2245,10 @@ class Registry:
 
                 for action_name_key, action_config in action_mappings.items():
                     type_obj = action_config.get("type")
-                    # AST / YAML 已给出的 schema 就是运行时使用的那一份（typed 合同还带
+                    # AST / YAML 已给出的 schema 就是运行时使用的那一份（带
                     # x-unilabos-action-contract 与注解约束）；导入期签名只补缺失的 schema，
                     # 不覆盖，否则 check_mode 校验的会是另一份 schema。
-                    if action_config.get("contract_kind") == "typed" or action_config.get("schema"):
+                    if action_config.get("schema"):
                         continue
                     if isinstance(type_obj, str) and type_obj in (
                         "UniLabJsonCommand", "UniLabJsonCommandAsync"
@@ -2360,9 +2659,34 @@ class Registry:
                             continue
                         else:
                             action_key = f"auto-{k}"
-                        existing = old_action_configs.get(action_key, {})
-                        if "x-unilabos-action-contract" in (existing.get("schema") or {}):
-                            device_config["class"]["action_value_mappings"][action_key] = existing
+                        old_cfg = old_action_configs.get(action_key) or old_action_configs.get(f"auto-{k}", {})
+                        old_type = old_cfg.get("type", "")
+                        if not old_type or old_type.startswith("UniLabJsonCommand"):
+                            # JSON 动作：与 AST 注册同一标准（按签名生成并校验的统一 schema），
+                            # 保留 YAML 里手写的说明、端口与前端选择器
+                            entry = self._json_action_entry(
+                                {**v, "params": v["args"]},
+                                {},
+                                action_name=action_key,
+                                import_map=enhanced_import_map,
+                                previous=old_cfg,
+                            )
+                            entry["type"] = "UniLabJsonCommandAsync" if v["is_async"] else "UniLabJsonCommand"
+                            entry["error_policy"] = old_cfg.get("error_policy") or {}
+                            signature_material_locks.add((device_id, action_key))
+                            if v.get("always_free"):
+                                entry["always_free"] = True
+                            _apply_action_timeouts(
+                                entry,
+                                old_cfg,
+                                action_parameter_names=(param["name"] for param in v["args"]),
+                                action_name=action_key,
+                            )
+                            if old_cfg.get("node_type") in [NodeType.ILAB.value, NodeType.MANUAL_CONFIRM.value]:
+                                entry["node_type"] = old_cfg["node_type"]
+                            if not entry["display_name"]:
+                                entry.pop("display_name")
+                            device_config["class"]["action_value_mappings"][action_key] = entry
                             continue
                         goal_schema = self._generate_unilab_json_command_schema(
                             v["args"], docstring=v.get("docstring"), import_map=enhanced_import_map
@@ -2375,7 +2699,6 @@ class Registry:
                             )
                             # result schema 完整生成后再剥离保留字段 unilabos_samples
                             self._strip_reserved_result_fields(result_schema)
-                        old_cfg = old_action_configs.get(action_key) or old_action_configs.get(f"auto-{k}", {})
                         doc_info = parse_docstring(v.get("docstring"))
                         new_schema = wrap_action_schema(
                             goal_schema,
@@ -2390,7 +2713,6 @@ class Registry:
                                 new_schema["description"] = old_schema["description"]
                         new_schema.setdefault("description", "")
 
-                        old_type = old_cfg.get("type", "")
                         entry_goal = old_cfg.get("goal", {})
                         entry_feedback = {}
                         entry_result = {}

@@ -1,8 +1,7 @@
 # 资源借还与设备托管（dev）
 
 本阶段使用 dev 的 Scheduler → 持久准入 → 开始许可 → Host 执行链路。
-实现位于 WSL `/home/wz/unilab-custody-review-20261111`，演示位于
-`/home/wz/LabDeviceCustodyDemo-review-20261111`。Windows 主目录和已有预览未合入或重启。
+回归见 `tests/server/test_workflow_resource_custody.py`。
 
 ## 设备托管
 
@@ -70,7 +69,8 @@ v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管
 
 ## 管理接口
 
-这些请求发给调度权威的同一管理地址，沿用现有控制面认证。
+这些请求发给调度权威的同一管理地址，与其他管理 API 一样不需要任何凭据（管理 API 不鉴权，
+原来的控制面 token 已取消，见 [HTTP 接入](interfaces/http.md)）。
 
 | 接口 | 用途 |
 | --- | --- |

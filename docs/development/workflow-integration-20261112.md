@@ -5,7 +5,7 @@
 ## 显式资源作用域
 
 ```python
-@workflow(compiler="ast")
+@workflow(display_name="反应")
 def experiment(ctx):
     with ctx.resource_scope("reactor", name="reaction"):
         ctx.run("reactor/load", {})

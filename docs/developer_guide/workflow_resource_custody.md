@@ -99,7 +99,7 @@ runtime.db 记录借还与托管的四张表：`workflow_resource_loan`、`workf
 双进程 smoke 的 9 个任务成功，46 次设备尝试和准入、13 个已释放区间、1 次已归还借用、
 1 条已释放设备托管，实际使用残留为 0。证据文件见交付目录 validation.json。
 
-外部 demo 新增两个 AST `@workflow`：`资源演示：样品托管` 和 `资源演示：空闲借还`。
+外部 demo 新增两个 `@workflow` 模板：`资源演示：样品托管` 和 `资源演示：空闲借还`。
 smoke 经 HTTP 实例化、单步、暂停、借出、恢复，在默认 authority + Host 双进程中执行；
 检查两库开始记录、借还和托管终态，结束后无活动实际使用。
 

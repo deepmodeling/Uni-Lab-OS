@@ -28,6 +28,7 @@ developer_guide/networking_overview.md
 developer_guide/databases.md
 developer_guide/add_device.md
 developer_guide/add_action.md
+developer_guide/action_standard.md
 developer_guide/add_registry.md
 developer_guide/add_yaml.md
 developer_guide/action_includes.md

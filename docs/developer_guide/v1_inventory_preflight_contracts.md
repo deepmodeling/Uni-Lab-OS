@@ -24,10 +24,10 @@
 | 容量 | 容器 config、内容物与化学品关联 | 额定与实例上限校验；同一容器所有内容物合计；建树、内容更新、快照、增量、配置及模板变更在同一事务最终状态校验 |
 | 盘点 | 库存版本与幂等命令 | 人工计数盘点；必需操作人、理由与期望版本；预留、隔离、已登记实物的数量差异拒绝自动覆盖 |
 | 运行预检 | 直接建任务再调度 | 复用建任务的执行计划与入口参数；检查在线动作能力、严格合同、物料和库位、当前库存；不建任务、不预留、不记命令流水 |
-| 动作合同 | 宽松签名推断、默认物料锁 | 显式 `@action(contract="typed")`；AST 严格参数与具名返回合同；冻结到任务；派发及 Host 调用前再校验，错误结果进入失败决策 |
+| 动作合同 | 宽松签名推断、默认物料锁 | 所有 JSON 动作同一标准（见 [动作的参数、返回值与资源语义](action_standard.md)）：注册表按签名生成 schema，冻结到任务；派发及 Host 调用前再校验，错误结果进入失败决策 |
 | 前端接入 | 主仓库调试站曾接入预检 | 调试站现按决定移除；保留后端预检与修订保护，正式前端仍需协议适配 |
 
-继续使用 dev 的 Authority/Host 拓扑、materials.db、并行任务调度、HostLink/ROS2 适配器和既有物料接口。本次没有新增数据库列或表，因此不需要 DDL 迁移。新能力使用既有 config/definition 字段及命令流水；旧动作默认保持 legacy。
+继续使用 dev 的 Authority/Host 拓扑、materials.db、并行任务调度、HostLink/ROS2 适配器和既有物料接口。本次没有新增数据库列或表，因此不需要 DDL 迁移。新能力使用既有 config/definition 字段及命令流水。
 
 ## API
 
@@ -57,7 +57,7 @@
 {"requirements":[{"key":"dose","kind":"lot","template_uuid":"reagent-template","quantity":1,"unit":"mL"}]}
 ```
 
-返回 `available`、候选 `allocations` 和全部 `shortages`。一批需求共用虚拟余量，不会分别判断后超卖。真正预留复用同一分配算法，分配与扣减仍以每个批次的原单位保存。传给动作的同一需求合计及 lot 明细统一为首个批次的单位；typed 物料参数只投影为合同要求的 `{uuid}`。
+返回 `available`、候选 `allocations` 和全部 `shortages`。一批需求共用虚拟余量，不会分别判断后超卖。真正预留复用同一分配算法，分配与扣减仍以每个批次的原单位保存。传给动作的同一需求合计及 lot 明细统一为首个批次的单位；物料参数（ResourceSlot）只投影为 schema 要求的 `{uuid}`。
 
 同维度支持 mg/g/kg、µL/μL/uL/mL/L，以及 count/piece/粒。同名的其他单位仍兼容原行为。散装 lot 没有可信密度字段，不进行质量与体积的跨维度猜测。
 
@@ -106,43 +106,29 @@
 
 旧规格下成功同步只证明已知部分没有超量，不能据此声称完整容量安全或授权设备动作；需要完整容量检查的调用方应采用显式容量合同并提供可验算的数据。本轮没有增加动作容量准入接口，也没有改变库存扣减的单位换算规则。
 
-## 严格动作合同
+## 动作合同
 
-```python
-from typing import Annotated, TypedDict
-from pydantic import Field
-from unilabos.registry.decorators import action
-from unilabos.registry.placeholder_type import ResourceSlot
+所有 JSON 动作只有一个标准，规则、资源语义写法与不兼容变更见 [动作的参数、返回值与资源语义](action_standard.md)。
+注册表按签名用同一个 AST 解析器生成 schema（不执行作者模块）：写了类型的参数严格解析并校验，没写类型或 `Any` 接受任意
+JSON 值，解析器不认识的注解退回原来的签名推断，任何写法都不会让动作注册失败。必填参数不再被补成 0/空串；每个物料入参都加
+共享资源锁，在动作使用期间互斥。已废弃的 `MaterialLock(free=True)` 仍可写、仍按原语法校验，但不再免锁，扫描时按定义告警一次
+（负责人 2026-11-17 决定）。
 
-class DoseResult(TypedDict):
-    actual_volume: float
-
-@action(contract="typed")
-def dose(
-    self,
-    source: ResourceSlot,
-    reference: ResourceSlot,
-    volume: Annotated[float, Field(ge=0)] = 1.0,
-) -> DoseResult:
-    ...
-```
-
-严格声明由 AST 静态解析，不执行作者模块。支持的有限注解语言、默认值、资源引用、SiteSelector 和具名返回来自 V1 的规范解析器。必填参数不再被类型默认值补成 0/空串；每个物料入参（上例的 `source` 与 `reference`）都加共享资源锁，在动作使用期间互斥。已废弃的 `MaterialLock(free=True)` 仍可写、仍按原语法校验，但不再免锁，扫描时按定义告警一次（负责人 2026-11-17 决定）。用户所说的“共享”是空闲时可以借出，并不意味着免锁或同时使用：物料锁只在动作使用期间持有，空闲时不被持有；不能借出的独占只有设备托管。兼容装饰器断言不能覆盖规范字段；格式错误的显式 typed 动作不能悄悄降级为普通动作：AST 扫描报错时整个源文件被跳过（`ast_registry_scanner.py`），文件里的其他设备也一起缺席。
-
-规范 Schema 的 `x-unilabos-action-contract.version` 为 2。输入/输出 handles、默认值、选择器和物料锁由同一份 Schema 派生。画布节点即使没有动作模板，建任务时也会从当前注册表取合同并冻结到任务，前提是此刻注册表里有这台设备的这个动作。实际参数在调度端与 Host 调用前验证；返回值不符合合同会进入失败决策，不上报成功。人工替换结果也遵守返回合同，无效替换保留待决策记录。
+规范 Schema 的 `x-unilabos-action-contract.version` 为 2。输入/输出 handles、默认值、选择器和物料锁由同一份 Schema 派生
+（写了 `handles=` 的动作照旧用写的端口）。画布节点即使没有动作模板，建任务时也会从当前注册表取合同并冻结到任务，前提是此刻
+注册表里有这台设备的这个动作。实际参数在调度端与 Host 调用前验证；返回值不符合返回注解会进入失败决策，不上报成功。人工替换结果
+也遵守返回注解，无效替换保留待决策记录。
 
 ### 已知缺口
 
-- 建任务时注册表里查不到该设备 / 动作（Host 尚未上报、设备未加载）就不冻结合同：建任务与派发都跳过类型化校验和
-  `order_sensitive` 检查；Host 调用前仍按自己当前的 Schema 校验，但声明了 `resource_contract` 的动作会因计划里没有冻结的资源合同被拒绝。
-- 只在建任务、运行预检、派发与 Host 调用前校验参数；保存图、发布工作流、暂停期间改入口参数（`edit_input`）都不做类型化参数校验，问题要到派发时才暴露。
-- Host 按驱动**当前**的 Schema 校验输入与返回值，只要求 `resource_contract` 与冻结值一致；建任务之后驱动改了参数或返回 Schema，
+- 建任务时注册表里查不到该设备 / 动作（Host 尚未上报、设备未加载）就不冻结合同：建任务与派发都跳过参数校验和
+  `order_sensitive` 检查；Host 调用前仍按自己当前的 Schema 校验，但声明了资源语义（`material=`）的动作会因计划里没有冻结的资源合同被拒绝。
+- 只在建任务、运行预检、派发与 Host 调用前校验参数；保存图、发布工作流、暂停期间改入口参数（`edit_input`）都不做参数校验，问题要到派发时才暴露。
+- Host 按驱动**当前**的 Schema 校验输入与返回值，只要求资源合同与冻结值一致；建任务之后驱动改了参数或返回 Schema，
   新 Schema 直接生效，不要求重建任务。
-- 旧 WS 协议直接派发的作业不经调度器托管，只有 Host 侧校验；声明了任何 `resource_contract`（包括只有 `order_sensitive`）的 typed 动作都会被拒绝。
-- 反馈（feedback）不校验。`@action` 装饰器本身只检查 `contract` 取值、JSON 动作与 `resource_contract` 形状，不拒绝 typed 动作上的
-  `goal` / `result` / `placeholder_keys`；这些由 AST 扫描拒绝。`materials_need_lock` / `materials_free` 和普通动作一样被忽略并告警一次。
-- 仓库内置设备都还没有使用 `contract="typed"`，现有覆盖来自测试（`tests/registry/test_typed_contract_dev_wiring.py`、
-  `tests/server/test_typed_action_execution.py`、`tests/registry/test_action_resource_contract.py`）。
+- 旧 WS 协议直接派发的作业不经调度器托管，只有 Host 侧校验；声明了任何资源语义（包括只有 `order_sensitive`）的动作都会被拒绝。
+- 反馈（feedback）不校验。手写 YAML 注册表里的 JSON 动作要跑一次 `--complete_registry` 才按统一标准生成 schema；
+  没补全的 schema（以及 ROS 动作类型）不做参数与返回值校验。
 
 ## 尚未达到 V1 完整运行期对等
 

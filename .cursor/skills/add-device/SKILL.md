@@ -149,17 +149,24 @@ from unilabos.registry.decorators import action
 @action(description="执行操作")       # 带描述
 @action(
     action_type=HeatChill,           # 指定 ROS Action 消息类型
-    goal={"temperature": "temp"},    # Goal 字段映射
+    goal={"temperature": "temp"},    # Goal 字段映射（只用于 ROS 动作类型）
     feedback={},                     # Feedback 字段映射
-    result={},                       # Result 字段映射
-    handles=[...],                   # 动作级别端口
-    goal_default={"temp": 25.0},     # Goal 默认值
-    placeholder_keys={...},          # 参数占位符
+    result={},                       # Result 字段映射（只用于 ROS 动作类型）
+    handles=[...],                   # 动作级别端口（不写时按 schema 生成）
+    goal_default={"temp": 25.0},     # 编辑器里的初始参数值（不改变是否必填）
     always_free=True,                # 不受排队限制
     auto_prefix=True,                # 强制使用 auto- 前缀
     parent=True,                     # 从父类 MRO 获取参数签名
 )
+@action(material=Material.load("sample", device="vessel"))   # 资源语义：一个字段，见下
 ```
+
+JSON 动作（不写 `action_type`）的参数与返回值只有一个标准：注册表按签名生成 schema，调度端与 Host 调用前按它校验参数，
+调用后按返回注解校验返回值。写了类型的参数严格校验；没写类型或 `Any` 接受任意 JSON 值；没有默认值的参数必填。
+资源语义用 `material=Material.load / unload / in_place / pick / place / transfer / aliquot / uses / order_sensitive(...)`，
+多个写成列表。前端选择器：物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot`，其他用
+`Annotated[..., Placeholder(PLACEHOLDER_...)]`。`contract=`、`resource_contract=`、`placeholder_keys=` 以及 JSON 动作的
+`goal=` / `result=` 已删除，写了报错。完整规则见 `docs/developer_guide/action_standard.md`。
 
 **自动识别规则：**
 - 带 `@action` 的公开方法 → 注册为动作（方法名即动作名）

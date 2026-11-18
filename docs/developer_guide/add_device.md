@@ -337,6 +337,11 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
 - 自动注册为设备 Action；ROS backend 使用 ROS2，HostLink 使用 TCP RPC
 - 支持参数和返回值
 
+参数与返回值只有一个标准：注册表按方法签名生成 schema，调度端与 Host 调用前按它校验参数（没有默认值的参数必填，
+缺了直接报错），调用后按返回注解校验返回值（注解 `-> bool` 却返回字典会按失败处理）。没写类型的参数接受任意值。
+物料托管、搬运、分装等资源语义写在 `@action(material=Material.xxx(...))` 一个字段里。完整规则、资源语义写法和
+已删除的旧写法见 [动作的参数、返回值与资源语义](action_standard.md)。
+
 ### 超时：`timeout` 与 `execution_timeout`
 
 `@action` 提供两道彼此独立的超时闸门，都由执行面在动作真正下发后启动看门狗，并在到期时进入
@@ -733,6 +738,10 @@ my_device:
 
 - `unilabos_resources`: 渲染为资源选择下拉框
 - `unilabos_devices`: 渲染为设备选择下拉框
+
+`placeholder_keys` 是注册表按注解生成的结果，不能在 `@action` 里手写（`@action(placeholder_keys=...)` 已删除）。
+其他前端选择器（节点、人工确认指派人、出库扣减等）写在注解里：
+`Annotated[ResourceSlot, Placeholder(PLACEHOLDER_NODES)]`（`unilabos.registry.annotations.Placeholder`）。
 
 #### 4. 运行时解析
 

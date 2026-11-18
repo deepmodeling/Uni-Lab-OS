@@ -8,17 +8,17 @@
 v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管，成功卸载才释放。
 任务停止、取消、超时、跳过、进程退出都不是卸载证据。
 
-在 `@action(contract="typed", resource_contract=...)` 声明参数名：
+在 `@action(material=...)` 声明参数名（写法对照见 [动作的参数、返回值与资源语义](action_standard.md)）：
 
 ```python
-{"version": 1, "device_tenancy": {
-    "mode": "task_while_loaded", "material_param": "sample",
-    "acquire_device_param": "vessel"
-}}
+@action(material=Material.load("sample", device="vessel"))
+def load_sample(self, sample: ResourceSlot, vessel: str) -> CustodyResult: ...
 ```
 
-卸载使用 `release_device_param`；设备间转移同时指定取得和释放参数。
-原位处理使用 `{"version": 2, "operate_in_place": {"material_param": "sample"}}`。
+卸载使用 `Material.unload("sample", device="vessel")`；设备间转移写
+`Material.load("sample", device="b", from_device="a")`（同时取得 b、释放 a）。
+原位处理使用 `Material.in_place("sample")`。注册表把它们规范化成动作 schema 里的资源合同
+（`device_tenancy` / `operate_in_place`），调度器按合同执行。
 样品字段为 ResourceSlot；设备参数使用字符串 ID，也可解析旧 ResourceSlot 设备身份为可读 `resource_id`，
 例如 `reactor`。设备字符串经过物料权威校验，避免把设备当作 PLR 物料实例装配；旧 ResourceSlot 的实际装配仍受其 PLR 配置约束。Python 定义默认设备 ID 和过程，前端负责样品、设备绑定。
 

@@ -1,7 +1,7 @@
 """虚拟旋转蒸发仪：按温度、真空度、转速蒸发溶剂。
 
 水系溶剂自动提高温度（≥ 80°C）与压力（≥ 0.2 bar），乙醇 / 甲醇 / 丙酮等易挥发溶剂自动降低
-（≤ 50°C、≤ 0.05 bar）。容器在本设备可见时，蒸发结束从容器里去掉该溶剂（未给溶剂时去掉全部液体，
+（≤ 50°C、≤ 0.05 bar）。容器有体积跟踪器时，蒸发结束从容器里去掉该溶剂（未给溶剂时去掉全部液体，
 只留固体），写回 PLR 体积跟踪器。
 """
 
@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Union
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
     UL_PER_ML,
-    VesselRef,
     VirtualDevice,
     nested_settings,
     parse_duration,
@@ -26,6 +25,7 @@ from unilabos.registry.decorators import (
     device,
     topic_config,
 )
+from unilabos.registry.placeholder_type import ResourceSlot
 
 MIN_TEMP = 10.0
 MIN_ROTATION_SPEED = 10.0
@@ -200,7 +200,7 @@ class VirtualRotavap(VirtualDevice):
     )
     async def evaporate(
         self,
-        vessel: VesselRef,
+        vessel: ResourceSlot,
         pressure: float = 0.1,
         temp: float = 60.0,
         time: Union[float, str] = 180.0,

@@ -1,7 +1,7 @@
 """虚拟固体加样器：按质量（或物质的量）向容器加入固体试剂。
 
 加样量优先取 ``mass``，其次 ``mol`` × 摩尔质量（默认 100 g/mol），都没给时按 1 g。模拟时长每克
-0.1 秒（至少 0.5 秒）。目标容器在本设备可见时，把固体写进容器内容物（PLR 体积跟踪器，质量单位）。
+0.1 秒（至少 0.5 秒）。目标容器有体积跟踪器时，把固体写进容器内容物（PLR 体积跟踪器，质量单位）。
 """
 
 from __future__ import annotations
@@ -11,10 +11,8 @@ from typing import Any, Dict, Optional
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
     UG_PER_G,
-    VesselRef,
     VirtualDevice,
     physical_graph,
-    is_empty_ref,
     nested_settings,
     parse_amount,
     parse_mass,
@@ -28,6 +26,7 @@ from unilabos.registry.decorators import (
     device,
     topic_config,
 )
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 没给质量与物质的量时的默认加样量（g）
 DEFAULT_MASS = 1.0
@@ -149,7 +148,7 @@ class VirtualSolidDispenser(VirtualDevice):
     )
     async def add_solid(
         self,
-        vessel: VesselRef,
+        vessel: ResourceSlot,
         reagent: str,
         mass: str = "",
         mol: str = "",
@@ -185,7 +184,7 @@ class VirtualSolidDispenser(VirtualDevice):
             stir_speed[搅拌速度]: 协议里的搅拌速度，仅记录。
             viscous[粘稠]: 协议里的粘稠标记，仅记录。
         """
-        if is_empty_ref(vessel):
+        if vessel is None:
             self._reject("目标容器不能为空")
         reagent_name = str(reagent or "").strip()
         if not reagent_name:

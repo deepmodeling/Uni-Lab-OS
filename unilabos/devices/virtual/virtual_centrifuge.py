@@ -6,12 +6,12 @@ from typing import Any, Dict, Optional, Union
 
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
-    VesselRef,
     VirtualDevice,
     nested_settings,
     parse_duration,
 )
 from unilabos.registry.decorators import DataSource, InputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 离心机能稳定运行的最低转速（RPM）
 MIN_SPEED = 100.0
@@ -172,7 +172,7 @@ class VirtualCentrifuge(VirtualDevice):
     )
     async def centrifuge(
         self,
-        vessel: VesselRef,
+        vessel: ResourceSlot,
         speed: float,
         time: Union[float, str],
         temp: float = 25.0,

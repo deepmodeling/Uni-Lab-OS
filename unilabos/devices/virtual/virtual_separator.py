@@ -7,7 +7,7 @@ import re
 from typing import Any, Dict, Optional, Union
 
 from unilabos.backend.runtime.action import ActionContext
-from unilabos.devices.virtual.simulation import VesselRef, VirtualDevice, nested_settings
+from unilabos.devices.virtual.simulation import VirtualDevice, nested_settings
 from unilabos.registry.decorators import (
     DataSource,
     InputHandle,
@@ -17,6 +17,7 @@ from unilabos.registry.decorators import (
     device,
     topic_config,
 )
+from unilabos.registry.placeholder_type import ResourceSlot
 
 _PHASES = ("top", "bottom")
 _PURPOSES = ("wash", "extract", "separate")
@@ -193,10 +194,10 @@ class VirtualSeparator(VirtualDevice):
         self,
         purpose: str,
         product_phase: str,
-        from_vessel: VesselRef,
-        separation_vessel: VesselRef,
-        to_vessel: VesselRef,
-        waste_phase_to_vessel: VesselRef = "",
+        from_vessel: ResourceSlot,
+        separation_vessel: ResourceSlot,
+        to_vessel: ResourceSlot,
+        waste_phase_to_vessel: Optional[ResourceSlot] = None,
         solvent: str = "",
         solvent_volume: Union[float, str] = 50.0,
         through: str = "",
@@ -204,10 +205,10 @@ class VirtualSeparator(VirtualDevice):
         stir_time: float = 30.0,
         stir_speed: float = 300.0,
         settling_time: float = 300.0,
-        vessel: VesselRef = "",
+        vessel: Optional[ResourceSlot] = None,
         volume: str = "",
-        product_vessel: VesselRef = "",
-        waste_vessel: VesselRef = "",
+        product_vessel: Optional[ResourceSlot] = None,
+        waste_vessel: Optional[ResourceSlot] = None,
         action_context: Optional[ActionContext] = None,
     ) -> Dict[str, Any]:
         """萃取 / 洗涤分液。

@@ -1,7 +1,7 @@
 """虚拟过滤器：把容器里的液体过滤到滤液容器，可加热、搅拌。
 
 过滤时长按体积估算（5 mL/s，搅拌 ×0.8、50°C 以上 ×0.7，至少 10 秒模拟时间）；容器在本设备
-可见时把滤过的液体从源容器转到滤液容器（PLR 体积跟踪器）。
+有体积跟踪器时把滤过的液体从源容器转到滤液容器（PLR 体积跟踪器）。
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from typing import Any, Dict, Optional
 from unilabos.backend.runtime.action import ActionContext
 from unilabos.devices.virtual.simulation import (
     UL_PER_ML,
-    VesselRef,
     VirtualDevice,
     nested_settings,
 )
@@ -24,6 +23,7 @@ from unilabos.registry.decorators import (
     device,
     topic_config,
 )
+from unilabos.registry.placeholder_type import ResourceSlot
 
 #: 过滤器能工作的最低温度（°C）；0 表示「未指定」按室温处理
 MIN_TEMP = 4.0
@@ -190,8 +190,8 @@ class VirtualFilter(VirtualDevice):
     )
     async def filter(
         self,
-        vessel: VesselRef,
-        filtrate_vessel: VesselRef = "",
+        vessel: Optional[ResourceSlot] = None,
+        filtrate_vessel: Optional[ResourceSlot] = None,
         stir: bool = False,
         stir_speed: float = 300.0,
         temp: float = 25.0,
@@ -202,7 +202,7 @@ class VirtualFilter(VirtualDevice):
         """过滤。
 
         Args:
-            vessel[待过滤容器]: 待过滤的容器（协议编译器传过滤器本身时只模拟过程）。
+            vessel[待过滤容器]: 待过滤的容器，可不填（协议编译器先把液体转进过滤器本身，此时不传，只模拟过程）。
             filtrate_vessel[滤液容器]: 接收滤液的容器，可不填。
             stir[搅拌]: 过滤时是否搅拌。
             stir_speed[搅拌速度]: 搅拌速度（RPM），stir 为真时校验。

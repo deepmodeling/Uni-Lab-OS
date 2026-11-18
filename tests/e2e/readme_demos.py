@@ -184,7 +184,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceComplexWorkflowDemo",
         url="https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo",
-        ref="eac228d452b0db8e9b5ca9544b699b78a1ea0782",
+        ref="51482f508ffdb5fec33c5a38251248ae32418800",
         package="complex_workflow_demo",
         host_graph="graph/complex_workflow_demo.json",
         # 循环容器：循环体节点每轮一个 attempt（trigger=loop_iteration），循环节点自身 1 个 attempt；
@@ -232,7 +232,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceLockDemo",
         url="https://github.com/Xuwznln/LabDeviceLockDemo",
-        ref="abd933eb4a88da8a60b5345c03f5dfcfdd4d1794",
+        ref="82735c9bab02722e94adc66e72af1ae0c388b7ad",
         package="lock_demo",
         host_graph="graph/lock_demo.json",
         # 无设备自跑闭环：锁语义只能在"多个任务同时申请资源"时观察，靠并发组制造竞争。

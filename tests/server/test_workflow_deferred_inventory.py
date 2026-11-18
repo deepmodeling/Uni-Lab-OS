@@ -1,10 +1,13 @@
 """条件选料、缺料的预检报错（任务级直接失败、动作级挂起待补料重试）及双库恢复走实际工作流计划和库存事务。"""
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any, Callable
 from uuid import uuid4
 import pytest
 
-from unilabos.registry.workflows import WorkflowDefinition, DeviceCatalog, build_workflow_template_payload, materialize_workflow_template, upsert_workflow
+from unilabos.registry.workflows import (WorkflowBuildContext, WorkflowDefinition, DeviceCatalog, build_workflow_template_payload,
+    materialize_workflow_template, upsert_workflow)
 from unilabos.server.backend.scheduler.service import BackendScheduler
 from unilabos.server.backend.scheduler.attempt_inventory import freeze_inventory
 from tests.server.test_workflow_inventory_recovery import Stack
@@ -12,19 +15,22 @@ from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from tests.server.test_scheduler_inventory_authority import _template, _inbound
 
 
-def create(stack, executor, flow, *, submit=True):
+def _new_task(stack: Stack, flow: Callable[[WorkflowBuildContext], None]) -> dict[str, Any]:
     catalog = DeviceCatalog()
     catalog.add("reactor", "unknown", str(uuid4()))
     definition = WorkflowDefinition(fn=flow, uuid=str(uuid4()), source_path="test:inventory",
         display_name="分支选料", description="", tags=[])
     payload = materialize_workflow_template(build_workflow_template_payload(definition), catalog)
     record = upsert_workflow(stack.workflow, payload)
+    return stack.workflow.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
+        target_node_uuid=None, input_value={}, description=None, meta_data={})
+
+
+def create(stack, executor, flow, *, submit=True):
     scheduler = BackendScheduler(stack.workflow, executor, materials_gateway=stack.client)
     if submit:
         stack.workflow.set_task_submitter(scheduler.submit)
-    task = stack.workflow.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal",
-        target_node_uuid=None, input_value={}, description=None, meta_data={})
-    return scheduler, task
+    return scheduler, _new_task(stack, flow)
 
 
 def test_only_selected_branch_reserves_and_consumes(tmp_path):
@@ -166,20 +172,33 @@ def test_action_preflight_error_can_be_skipped_or_done_by_hand(tmp_path, action,
         stack.close()
 
 
-def test_action_preflight_decision_survives_restart_without_holding_resources(tmp_path):
-    def flow(ctx):
-        ctx.run("reactor/operate", {}, inventory_mode="on_ready", inventory=[{"key": "solvent", "kind": "lot",
-            "lot_uuid": "lot-a", "quantity": 5, "unit": "ul"}])
+def _on_ready_shortage_flow(ctx: WorkflowBuildContext) -> None:
+    ctx.run("reactor/operate", {}, inventory_mode="on_ready", inventory=[{"key": "solvent", "kind": "lot",
+        "lot_uuid": "lot-a", "quantity": 5, "unit": "ul"}])
+
+
+def _probe_flow(ctx: WorkflowBuildContext) -> None:
+    ctx.run("reactor/probe", {})
+
+
+def _restart_with_preflight_decision(
+    tmp_path: Path, executor: Executor,
+) -> tuple[Stack, dict[str, Any], dict[str, Any]]:
+    """动作预检缺料挂起待决策后停掉调度器、重开两库；返回重开的库、任务和重启前的决策。"""
     stack = Stack(tmp_path)
     _template(stack.materials, "reagent-template", "reagent")
     _inbound(stack.materials, lot_uuid="lot-a", quantity=1)
-    executor = Executor()
-    scheduler, task = create(stack, executor, flow)
+    scheduler, task = create(stack, executor, _on_ready_shortage_flow)
     wait_for(lambda: _preflight_decision(scheduler, task["uuid"]) is not None)
     before = _preflight_decision(scheduler, task["uuid"])
     scheduler.stop()
     stack.close()
-    reopened = Stack(tmp_path)
+    return Stack(tmp_path), task, before
+
+
+def test_action_preflight_decision_survives_restart_without_holding_resources(tmp_path):
+    executor = Executor()
+    reopened, task, before = _restart_with_preflight_decision(tmp_path, executor)
     resumed = BackendScheduler(reopened.workflow, executor, materials_gateway=reopened.client)
     try:
         resumed.submit(task["uuid"])
@@ -193,6 +212,42 @@ def test_action_preflight_decision_survives_restart_without_holding_resources(tm
         assert resumed.resolve_reconciliation_decision(after["decision_id"], {"action": "retry", "reason": "已补料"})
         wait_for(lambda: len(executor.dispatched) == 1)
         executor.finish(0, {})
+        wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
+    finally:
+        resumed.stop()
+        reopened.close()
+
+
+def test_pending_action_preflight_decision_after_restart_does_not_pause_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """预检挂起的动作从未派发、按设计没有资源声明，重启后不能当成旧库在飞尝试暂停派发。
+
+    当成旧库遗留时，决策待处置期间所有任务（同一设备的也一样）都派发不了；补料重试后也只能等
+    周期兜底重算解除暂停。这里关掉周期重算，派发只能由事件直接驱动。
+    """
+    async def no_periodic_recompute(self: BackendScheduler) -> None:
+        return None
+
+    monkeypatch.setattr(BackendScheduler, "_inventory_recovery_loop", no_periodic_recompute)
+    executor = Executor()
+    reopened, task, before = _restart_with_preflight_decision(tmp_path, executor)
+    resumed = BackendScheduler(reopened.workflow, executor, materials_gateway=reopened.client)
+    try:
+        assert not resumed.dispatch_pause_reasons
+        resumed.submit(task["uuid"])
+        wait_for(lambda: _preflight_decision(resumed, task["uuid"]) is not None)
+        other = _new_task(reopened, _probe_flow)
+        resumed.submit(other["uuid"])
+        wait_for(lambda: len(executor.dispatched) == 1)
+        assert (executor.dispatched[0]["task_id"], executor.dispatched[0]["action"]) == (other["uuid"], "probe")
+        executor.finish(0, {})
+        wait_for(lambda: reopened.workflow.get_workflow_task(other["uuid"])["status"] == "succeeded")
+        _inbound(reopened.materials, lot_uuid="lot-a", quantity=4)
+        assert resumed.resolve_reconciliation_decision(before["decision_id"], {"action": "retry", "reason": "已补料"})
+        wait_for(lambda: len(executor.dispatched) == 2)
+        assert (executor.dispatched[1]["task_id"], executor.dispatched[1]["action"]) == (task["uuid"], "operate")
+        executor.finish(1, {})
         wait_for(lambda: reopened.workflow.get_workflow_task(task["uuid"])["status"] == "succeeded")
     finally:
         resumed.stop()

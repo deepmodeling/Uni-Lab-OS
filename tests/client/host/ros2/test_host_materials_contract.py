@@ -394,7 +394,8 @@ def test_ensure_host_node_resource_reuses_graph_identity_or_inserts_default() ->
     # 图中按 template_name 声明的 host node，id 与配置实例名不同：以配置为准重命名。
     reused = ensure_host_node_resource(tree_set, renamed_id)
     assert reused.res_content.id == renamed_id
-    assert reused.res_content.name == renamed_id
+    # name 不再跟着实例 id 改（物料层 name 按 uuid 规则处理），人读标签在 display_name
+    assert reused.res_content.display_name == renamed_id
     assert reused.res_content.uuid == host_uuid
     assert reused.res_content.klass == "host_node"
     assert reused.res_content.template_name == "host_node"

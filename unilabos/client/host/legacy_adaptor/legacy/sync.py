@@ -89,7 +89,7 @@ def upload_registry_snapshot(
     for tag, entries in (("device", devices), ("resource", resources)):
         if not entries:
             continue
-        started = time.time()
+        started = time.monotonic()
         try:
             data = client.upload_registry(
                 [_legacy_registry_entry(item) for item in entries.values()]
@@ -106,7 +106,7 @@ def upload_registry_snapshot(
             tag,
             "跳过（内容未变化）" if skipped else "上报成功",
             len(entries),
-            time.time() - started,
+            time.monotonic() - started,
         )
     return RegistryUploadReport(
         device_count=len(devices),
@@ -297,14 +297,14 @@ class LegacyMaterialMirror:
             logger.info("[LegacyMaterials] 权威中没有物料，跳过全量上报")
             return {}
         self._ensure_templates(nodes)
-        started = time.time()
+        started = time.monotonic()
         mapping = self.client.upload_material_tree(nodes, mount_uuid="", first_add=True)
         drifted = {edge: cloud for edge, cloud in mapping.items() if edge != cloud}
         logger.info(
             "[LegacyMaterials] 全量物料上报 %d 节点 / %d 棵树 (%.3fs)%s",
             len(nodes),
             len(roots),
-            time.time() - started,
+            time.monotonic() - started,
             f"，旧后端改写了 {len(drifted)} 个 uuid（忽略，权威以微后端为准）" if drifted else "",
         )
         with self._lock:

@@ -61,8 +61,8 @@ def run_one(n: int, out_dir: str, bench_params: Dict[str, Any], device_tick_ms: 
     print(f"[run] N={n} 启动 dataflow -> {df_path}")
     with open(log_path, "w") as logf:
         proc = runtime.run_dataflow(df_path, stdout=logf, stderr=logf)
-        deadline = time.time() + bench_params.get("timeout_s", 30.0) + 30.0
-        while time.time() < deadline:
+        deadline = time.monotonic() + bench_params.get("timeout_s", 30.0) + 30.0
+        while time.monotonic() < deadline:
             if os.path.exists(results_path):
                 time.sleep(0.5)  # 等待写盘完成
                 break

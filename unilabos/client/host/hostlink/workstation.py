@@ -86,7 +86,7 @@ class WorkstationNode:
         protocol_steps = list(generator(G=physical_setup_graph(), **kwargs))
         log.info(f"[Workstation] {protocol_name} 生成 {len(protocol_steps)} 步骤，开始执行")
 
-        time_start = time.time()
+        time_start = time.monotonic()
         step_results: List[Dict[str, Any]] = []
         for i, action in enumerate(protocol_steps):
             if isinstance(action, dict):
@@ -124,7 +124,7 @@ class WorkstationNode:
             "protocol_name": protocol_name,
             "steps_executed": len(protocol_steps),
             "step_results": step_results,
-            "total_time": time.time() - time_start,
+            "total_time": time.monotonic() - time_start,
         }
 
     async def _execute_single(

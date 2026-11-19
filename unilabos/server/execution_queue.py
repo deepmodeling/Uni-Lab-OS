@@ -88,6 +88,8 @@ class JobInfo:
     timeout_seconds: Optional[float] = None
     execution_timeout_seconds: Optional[float] = None
     execution_payload: dict[str, Any] = field(default_factory=dict)
+    #: 创建时的单调时钟读数：超时报告的已运行时长按它算（start_time 仍是墙钟时间戳）
+    start_monotonic: float = field(default_factory=time.monotonic)
 
     def update_timestamp(self) -> None:
         self.last_update_time = time.time()

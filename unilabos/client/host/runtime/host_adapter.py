@@ -225,11 +225,14 @@ class HostAdapterBase:
         samples: List[Dict[str, float]] = []
         for i in range(self._LATENCY_ROUNDS):
             send_timestamp = time.time()
+            # 往返时长按单调时钟计；墙钟只用来与服务端时钟比较时间差
+            send_monotonic = time.monotonic()
             server_timestamp = link.ping(self._PING_TIMEOUT_SECONDS)
             if server_timestamp is None:
                 log.error(f"❌ {link.name} 第{i + 1}次 ping 失败")
                 continue
-            sample = self._latency_sample(send_timestamp, time.time(), float(server_timestamp))
+            round_trip = time.monotonic() - send_monotonic
+            sample = self._latency_sample(send_timestamp, send_timestamp + round_trip, float(server_timestamp))
             samples.append(sample)
             log.info(f"✅ {link.name} 第{i + 1}次: 往返={sample['rtt_ms']:.2f}ms, 时间差={sample['time_diff_ms']:.2f}ms")
         result.update(self._summarize_link(samples))

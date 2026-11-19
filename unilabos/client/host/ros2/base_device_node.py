@@ -787,9 +787,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self, future, timeout: Optional[float], device_id: str, action_name: str, stage: str, poll_interval: float
     ) -> None:
         """阻塞轮询 rclpy Future 直到完成或超时（用于同步上下文）。"""
-        start = time.time()
+        start = time.monotonic()
         while not future.done():
-            if timeout is not None and (time.time() - start) > timeout:
+            if timeout is not None and (time.monotonic() - start) > timeout:
                 raise DeviceActionError(device_id, action_name, f"{stage}超时（{timeout}s）")
             time.sleep(poll_interval)
 
@@ -1263,7 +1263,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                             execution_error = traceback.format_exc()
                             break
 
-            time_start = time.time()
+            time_start = time.monotonic()
             time_overall = 100
             future = None
             if not error_skip:
@@ -1332,7 +1332,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
             def _publish_feedback():
                 if future is not None and not future.done():
-                    self._time_spent = time.time() - time_start
+                    self._time_spent = time.monotonic() - time_start
                     self._time_remaining = time_overall - self._time_spent
                     feedback_values = {}
                     for msg_name, attr_name in action_value_mapping["feedback"].items():

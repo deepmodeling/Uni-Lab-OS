@@ -790,9 +790,9 @@ class LiquidHandlerAbstract(LiquidHandlerMiddleware):
             res_volumes.append(volume)
 
         task = self._ros_node.create_task(self._ros_node.update_resource(wells))
-        submit_time = time.time()
+        submit_time = time.monotonic()
         while not task.done():
-            if time.time() - submit_time > 10:
+            if time.monotonic() - submit_time > 10:
                 self._ros_node.lab_logger().info(f"set_liquid_from_plate {plate} 超时")
                 break
             time.sleep(0.01)

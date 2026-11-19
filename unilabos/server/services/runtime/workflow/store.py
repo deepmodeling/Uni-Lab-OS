@@ -29,6 +29,8 @@ from unilabos.server.database.sqlite_domain import SqliteDomain
 from unilabos.server.database.tables.runtime import RUNTIME_DATABASE
 
 _STORE_SQLITE_BUSY_TIMEOUT_MS = 5000
+#: 调度权威重启时把在飞 attempt 转 execution_unknown 记下的原因；裁决说明据此认出「进程重启」
+PROCESS_RESTART_UNCERTAINTY_REASON = "process restarted with an in-flight workflow node job"
 
 
 def utc_now() -> str:
@@ -2603,7 +2605,7 @@ class WorkflowStore:
                     run["status"] = self._sync_run_projection(conn, run["uuid"], now)["status"]
             statuses = {run["status"] for run in runs}
             if statuses & self._RUN_IN_FLIGHT:
-                reason = "process restarted with an in-flight workflow node job"
+                reason = PROCESS_RESTART_UNCERTAINTY_REASON
                 in_flight_runs = [
                     run for run in runs if run["status"] in self._RUN_IN_FLIGHT
                 ]

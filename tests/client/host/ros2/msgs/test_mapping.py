@@ -92,6 +92,11 @@ class TestFieldMapping(unittest.TestCase):
         point = Point3D(x=1.0, y=2.0, z=3.0)
         self.assertTrue(compare_model_fields(Point3D, type(point)))
 
+    def test_compare_model_fields_with_string_annotation(self):
+        """``from __future__ import annotations`` 下的注解是字符串：不是类，比较为不同而不是抛错。"""
+        self.assertFalse(compare_model_fields(float, "float"))
+        self.assertFalse(compare_model_fields("float", Point3D))
+
     def test_set_msg_data(self):
         """测试设置消息数据类型"""
         # 测试float转换

@@ -1,3 +1,5 @@
+import annotationlib
+import typing
 from typing import Dict, Any, Optional, Type, TypeVar
 
 from unilabos.client.host.ros2.msgs.message_converter import (
@@ -9,6 +11,24 @@ from unilabos.resources.resource_tracker import ResourceDictInstance
 
 # 定义泛型类型变量
 T = TypeVar("T")
+
+
+def _property_type(prop: property) -> Any:
+    """公共 property 的返回注解，解析成真实类型；没写返回注解按 ``str``。
+
+    驱动模块常用 ``from __future__ import annotations``，此时 ``__annotations__`` 里是字符串
+    （如 ``"float"``），要按 getter 所在模块的全局名字解析成类型，才能映射 ROS 消息 / 动作类型。
+    解析不了（如只在 ``TYPE_CHECKING`` 下导入的名字）时取字符串形式，映射时按不支持的类型报错。
+    """
+
+    getter = prop.fget
+    if getter is None:
+        return str
+    try:
+        hints = typing.get_type_hints(getter)
+    except Exception:  # noqa: BLE001 - 注解里有解析不了的名字
+        hints = annotationlib.get_annotations(getter, format=annotationlib.Format.STRING)
+    return hints.get("return", str)
 
 
 # noinspection PyMissingConstructor
@@ -57,8 +77,7 @@ def ros2_device_node(
     # 从公共 property 及其 get_/set_ 方法补全状态与动作映射。
     for k, v in cls.__dict__.items():
         if not k.startswith("_") and isinstance(v, property):
-            # noinspection PyUnresolvedReferences
-            property_type = v.fget.__annotations__.get("return", str)
+            property_type = _property_type(v)
             get_method_name = f"get_{k}"
             set_method_name = f"set_{k}"
 

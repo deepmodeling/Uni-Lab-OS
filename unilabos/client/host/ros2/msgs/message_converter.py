@@ -8,7 +8,7 @@
 import json
 import traceback
 from io import StringIO
-from typing import Iterable, Any, Dict, Type, TypeVar, Union
+from typing import Iterable, Any, Dict, Optional, Type, TypeVar, Union
 
 import yaml
 from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
@@ -20,6 +20,7 @@ from rosidl_parser.definition import UnboundedSequence, NamespacedType, BasicTyp
 from unilabos.utils import logger
 from unilabos.utils.import_manager import ImportManager
 from unilabos.config.config import ROSConfig
+from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot
 from unilabos.resources.objects.joint_state import ResourceJointState
 
 # 定义泛型类型
@@ -144,6 +145,21 @@ def _resource_to_ros(x: Any) -> Any:
     )
 
 
+def _resource_field_to_ros(value: Any) -> Any:
+    """消息里的单个 ``Resource`` 字段（如 goal 的 ``vessel``），与 ``sequence<Resource>`` 元素同一契约。
+
+    引用整体 JSON 化放进 ``data``：``Resource`` 只有 id / name 等字段，逐字段拷贝会丢掉 uuid，
+    而接收端只解析 ``data``。未指定的可选容器（None / "" / {}）发空 ``Resource()``，接收端按
+    「未指定」处理（与 HostLink 的 ``is_unset_resource_slot`` 同一口径）。
+    """
+
+    if isinstance(value, Resource):
+        return value
+    if is_unset_resource_slot(value):
+        return Resource()
+    return _resource_to_ros(value)
+
+
 def _joint_state_to_ros(x: Any) -> Any:
     canonical = ResourceJointState.model_validate(_extract_data(x))
     return JointState(
@@ -228,17 +244,21 @@ _msg_data_mapping: Dict[str, Type] = {
 
 
 def compare_model_fields(cls1: Any, cls2: Any) -> bool:
-    """比较两个类的字段是否相同"""
+    """比较两个类的字段是否相同。
 
-    def get_class_fields(cls: Any) -> set:
+    任一方没有可比较的字段（如字符串形式的注解 ``"float"``）时视为不同，
+    由 ``get_msg_type`` / ``get_action_type`` 按不支持的类型报 ``ValueError``。
+    """
+
+    def get_class_fields(cls: Any) -> Optional[set]:
         if hasattr(cls, "__annotations__"):
             return set(cls.__annotations__.keys())
-        else:
-            return set(cls.__dict__.keys())
+        fields = getattr(cls, "__dict__", None)
+        return set(fields.keys()) if fields is not None else None
 
     fields1 = get_class_fields(cls1)
     fields2 = get_class_fields(cls2)
-    return fields1 == fields2
+    return fields1 is not None and fields2 is not None and fields1 == fields2
 
 
 def get_msg_type(datatype: Type) -> Type:
@@ -389,6 +409,8 @@ def convert_to_ros_msg(ros_msg_type: Union[Type, Any], obj: Any) -> Any:
                     setattr(ros_msg, key, [float(i) for i in value])
                 else:
                     setattr(ros_msg, key, value)
+            elif isinstance(attr, Resource):
+                setattr(ros_msg, key, _resource_field_to_ros(value))
             else:
                 nested_ros_msg = convert_to_ros_msg(type(attr)(), value)
                 setattr(ros_msg, key, nested_ros_msg)

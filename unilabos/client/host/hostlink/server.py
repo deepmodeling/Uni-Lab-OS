@@ -91,6 +91,14 @@ class _Pending:
         except InvalidStateError:
             pass
 
+    def fail(self, error: BaseException) -> None:
+        if self.future.done():
+            return
+        try:
+            self.future.set_exception(error)
+        except InvalidStateError:
+            pass
+
     def wait(self, timeout: Optional[float]) -> Dict[str, Any]:
         return self.future.result(timeout=timeout)
 
@@ -201,7 +209,9 @@ class _PeerSession:
         with self._pending_lock:
             pending_items = list(self._pending.values())
         for pending in pending_items:
-            pending.resolve({"ok": False, "error": "connection closed"})
+            # 请求已经发出、应答随连接一起丢了：Slave 可能已收到并开始执行。这是传输层的不确定
+            # （LinkError），不能当成 Slave 的失败应答（RemoteError 表示 Slave 明确回了失败）。
+            pending.fail(LinkError("HostLink 连接在 Slave 应答前断开，请求可能已送达"))
 
 
 class HostLinkPortInUseError(OSError):
@@ -787,6 +797,25 @@ class HostLinkServer:
 
     def has_device(self, device_id: str) -> bool:
         return str(device_id) in self.devices(online_only=True)
+
+    def device_offline_reason(self, device_id: str) -> str:
+        """Slave 上报过、但此刻发不出请求的设备返回原因；可达或从未上报过的设备返回空串。
+
+        与 ``request_device`` 发请求前的两道判定一致：上报它的 Slave 在线（连接未断、心跳未超时），
+        且该连接的会话仍在。只用于开始边界之前的预检：返回空串不保证随后的请求一定送达。
+        """
+
+        device_id = str(device_id)
+        peer = self.devices(online_only=True).get(device_id)
+        if peer is None:
+            known = self.devices(online_only=False).get(device_id)
+            if known is None:
+                return ""
+            return f"Slave {known.get('machine_name') or known.get('addr')} 已断开或心跳超时"
+        with self._sessions_lock:
+            if str(peer.get("addr")) in self._sessions:
+                return ""
+        return f"Slave {peer.get('machine_name') or peer.get('addr')} 的连接会话已关闭"
 
     def _handle_hello(
         self,

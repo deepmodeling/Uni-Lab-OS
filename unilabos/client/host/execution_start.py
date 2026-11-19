@@ -21,6 +21,10 @@ class ExecutionNotStarted(RuntimeError):
     这是明确的失败，不是结果未知；执行面按普通失败上报并带上 error_info。
     """
 
+    #: 写进 error_info 的分类，与执行面 ``_fail_before_start`` 一致：传输类、不会自行恢复
+    category = "transport"
+    severity = "fatal"
+
 
 class ExecutionStartGuard:
     def __init__(self, channel: Any, payload: dict[str, Any], executor_epoch: str,

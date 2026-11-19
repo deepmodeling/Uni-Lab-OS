@@ -41,6 +41,7 @@ from unilabos.protocol.materials import (
     InventoryTaskReservationCreate,
 )
 from unilabos.server.services.materials.core import MaterialsServiceError
+from unilabos.server.edge_dispatch import HOST_RESTART_UNCERTAINTY_REASON
 from unilabos.server.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
 from unilabos.server.scheduler.payloads import build_job_start_payload
 from unilabos.server.scheduler.materials import (
@@ -80,6 +81,7 @@ from unilabos.server.scheduler.resource_manager import (
 )
 from unilabos.server.scheduler.resource_wait_policy import temporary_resource_condition
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
+from unilabos.server.services.runtime.workflow.store import PROCESS_RESTART_UNCERTAINTY_REASON
 from unilabos.server.services.runtime.workflow.task_lifecycle import TERMINAL_TASK
 
 logger = logging.getLogger(__name__)
@@ -121,6 +123,26 @@ _RECONCILIATION_OPTIONS = (
         "description": "记为失败，任务按失败收敛",
     },
 )
+
+
+#: 执行端回报结果未知却没带原因时的兜底（Host 重启后补报的遗留 job）
+_LOST_ATTEMPT_DEFAULT_REASON = "execution host restarted while the action was running"
+#: 真正由进程重启造成的「结果未知」原因：调度权威重启时恢复在飞 attempt、Host 进程在动作进行中重启。
+#: 其余原因（Slave 离线、HostLink 传输中断、开始许可应答丢失等）不能写成进程重启。
+_PROCESS_RESTART_REASONS = frozenset(
+    {PROCESS_RESTART_UNCERTAINTY_REASON, HOST_RESTART_UNCERTAINTY_REASON, _LOST_ATTEMPT_DEFAULT_REASON}
+)
+
+
+def _execution_unknown_message(reason: str, attempt_no: int) -> str:
+    """执行态未知的 attempt 的裁决说明：按它实际的不确定原因写，只有进程重启才说进程重启。"""
+
+    detail = reason.strip() or PROCESS_RESTART_UNCERTAINTY_REASON
+    if detail in _PROCESS_RESTART_REASONS:
+        lead = f"进程重启时该动作正在执行（attempt {attempt_no}），无法确认设备是否已完成"
+    else:
+        lead = f"无法确认该动作（attempt {attempt_no}）是否已在设备上完成"
+    return f"{lead}：{detail}。请核对设备实际状态后选择重试、跳过、替换为成功或标记失败。"
 
 
 _TIMEOUT_EXCEPTION_TYPES = frozenset({"TimeoutException", "ExecutionTimeoutException"})
@@ -3471,17 +3493,14 @@ class BackendScheduler:
     # ── 重启后的执行态裁决 ──────────────────────────────────────
 
     def _reconcile_lost_attempt(self, job_id: str, return_info: Dict[str, Any]) -> None:
-        """执行端在动作进行中重启：attempt 转 execution_unknown 并开裁决。
+        """动作结果无法确认（执行端在动作进行中重启、Slave 离线、传输中断等）：attempt 转 execution_unknown 并开裁决。
 
         与调度权威重启后的恢复同一语义：不重放、不直接判失败，由人选择重试 / 跳过 /
         替换为成功 / 标记失败。该 attempt 已占有的资源保持到裁决收敛——设备实际状态
         未知时不放行其他任务。
         """
 
-        reason = str(
-            return_info.get("uncertainty_reason")
-            or "execution host restarted while the action was running"
-        )
+        reason = str(return_info.get("uncertainty_reason") or _LOST_ATTEMPT_DEFAULT_REASON)
         with self._guard:
             run_uuid = self._job_runs.get(job_id)
             context = self._run_context.get(run_uuid or "")
@@ -3564,14 +3583,7 @@ class BackendScheduler:
         previous = (job.get("control_data") or {}).get("pending_decision") or {}
         if recovered_status == "execution_unknown":
             exception_type = "ExecutionStateUnknown"
-            detail = str(
-                job.get("uncertainty_reason")
-                or "process restarted with an in-flight workflow node job"
-            )
-            error_message = (
-                f"进程重启时该动作正在执行（attempt {attempt_no}），无法确认设备是否已完成"
-                f"：{detail}。请核对设备实际状态后选择重试、跳过、替换为成功或标记失败。"
-            )
+            error_message = _execution_unknown_message(str(job.get("uncertainty_reason") or ""), attempt_no)
             category = "execution_state_unknown"
         else:
             exception_type = str(previous.get("exception_type") or "DeviceActionError")
@@ -3618,8 +3630,7 @@ class BackendScheduler:
             }
         self.workflow.mark_workflow_node_job_decision_pending(job_uuid, report)
         logger.info(
-            "workflow node %s awaits reconciliation decision %s after restart "
-            "(job %s was %s)",
+            "workflow node %s awaits reconciliation decision %s (job %s was %s)",
             spec["workflow_node_uuid"],
             decision_id,
             job_uuid,

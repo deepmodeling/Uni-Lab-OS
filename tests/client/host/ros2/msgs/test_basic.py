@@ -40,6 +40,8 @@ class TestBasicFunctionality(unittest.TestCase):
         # 测试错误情况
         with self.assertRaises(ValueError):
             get_msg_type(set)  # 不支持的类型
+        with self.assertRaises(ValueError):
+            get_msg_type("UnresolvedType")  # 解析不了的字符串注解同样按不支持的类型报错
 
     def test_get_action_type(self):
         """测试获取动作类型"""
@@ -52,6 +54,8 @@ class TestBasicFunctionality(unittest.TestCase):
         # 测试错误情况
         with self.assertRaises(ValueError):
             get_action_type(set)  # 不支持的类型
+        with self.assertRaises(ValueError):
+            get_action_type("UnresolvedType")  # 解析不了的字符串注解同样按不支持的类型报错
 
     def test_get_ros_type_by_msgname(self):
         """测试通过消息名称获取ROS类型"""

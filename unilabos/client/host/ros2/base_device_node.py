@@ -147,6 +147,17 @@ def _coerce_device_error_info(
     return error_info
 
 
+def _is_unset_resource_field(message: Any, value: Any) -> bool:
+    """goal 里的单个 ``Resource`` 字段是否「未指定」：消息不带任何身份，``data`` 解码出空值。
+
+    可选容器留空（None / "" / {}）时发送端发空 ``Resource()``；与 HostLink 的
+    ``is_unset_resource_slot`` 同一口径，不查物料、驱动拿到 None。带 id / name 的消息不算未指定
+    （旧发送端只填 id、不填 data）：照常查询，失败可见，而不是被当成未指定静默跳过。
+    """
+
+    return is_unset_resource_slot(value) and not getattr(message, "id", "") and not getattr(message, "name", "")
+
+
 # 在线设备注册表
 registered_devices: Dict[str, "DeviceInfoType"] = {}
 
@@ -1197,6 +1208,14 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             if action_name not in ["create_resource_detailed", "create_resource"]:
                 for k, v in goal.get_fields_and_field_types().items():
                     if v in ["unilabos_msgs/Resource", "sequence<unilabos_msgs/Resource>"]:
+                        if (
+                            v == "unilabos_msgs/Resource"
+                            and k in action_kwargs
+                            and _is_unset_resource_field(getattr(goal, k, None), action_kwargs[k])
+                        ):
+                            # 可选容器留空：按「未指定」处理（与 HostLink 一致），不查物料，驱动拿到 None
+                            action_kwargs[k] = None
+                            continue
                         self.lab_logger().info(f"{action_name} 查询资源状态: Key: {k} Type: {v}")
 
                         try:

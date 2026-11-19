@@ -1093,6 +1093,16 @@ class HostNode(HostAdapterBase, Node):
             ),
         }
 
+    @staticmethod
+    def _local_registry_action_mappings(registry_name: str) -> Dict[str, Any]:
+        """本机注册表里 ``registry_name`` 的动作映射（没有时为空）。"""
+
+        from unilabos.registry.registry import lab_registry
+
+        entry = (getattr(lab_registry, "device_type_registry", None) or {}).get(registry_name) or {}
+        mappings = (entry.get("class") or {}).get("action_value_mappings") if isinstance(entry, dict) else None
+        return dict(mappings) if isinstance(mappings, dict) else {}
+
     def _node_info_update_callback(self, request, response):
         """更新节点信息回调。
 
@@ -1119,6 +1129,21 @@ class HostNode(HostAdapterBase, Node):
                         self.lab_logger().info(
                             f"[Host Node] Loaded {len(action_mappings)} action mappings "
                             f"for remote device {edge_device_id} (registry: {registry_name})"
+                        )
+                elif registry_name:
+                    # Host 重启后没有 Slave 首次上报的注册表，设备重注册只带 registry_name：
+                    # 用本机注册表的同名条目兜底，否则 Slave 设备在能力快照里没有动作
+                    action_mappings = self._local_registry_action_mappings(registry_name)
+                    if action_mappings:
+                        self._action_value_mappings[edge_device_id] = action_mappings
+                        self.lab_logger().info(
+                            f"[Host Node] Loaded {len(action_mappings)} action mappings "
+                            f"for remote device {edge_device_id} from the local registry (registry: {registry_name})"
+                        )
+                    else:
+                        self.lab_logger().warning(
+                            f"[Host Node] 远端设备 {edge_device_id} 的注册表 {registry_name} 不在本机，"
+                            "重启 Slave 后才有动作能力"
                         )
             else:
                 devices_config = info.pop("devices_config")

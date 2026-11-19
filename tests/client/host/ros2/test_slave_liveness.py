@@ -150,3 +150,42 @@ def test_dispatch_to_offline_device_fails_before_start_boundary(monkeypatch) -> 
         host._send_goal_ros2(item, "EmptyIn", {}, {})
     guard.assert_not_called()
     assert item.job_id not in host._goal_items
+
+
+def test_host_restart_restores_slave_action_mappings_from_local_registry(monkeypatch) -> None:
+    """Host 重启后没有 Slave 首次上报的注册表；设备重注册只带 registry_name 时用本机注册表兜底。"""
+
+    import json
+
+    from unilabos.registry import registry as registry_module
+
+    mappings = {"set_valve_position": {"type": "SendCmd"}, "open": {"type": "EmptyIn"}}
+    monkeypatch.setattr(
+        registry_module.lab_registry,
+        "device_type_registry",
+        {"virtual_solenoid_valve": {"class": {"action_value_mappings": mappings}}},
+        raising=False,
+    )
+
+    class RestartedHost:
+        _node_info_update_callback = HostNode._node_info_update_callback
+        _local_registry_action_mappings = staticmethod(HostNode._local_registry_action_mappings)
+
+        def __init__(self) -> None:
+            self._slave_registry_configs = {}
+            self._action_value_mappings = {}
+            self.device_machine_names = {}
+            self.lab_logger = Mock()
+            self._notify_capabilities_changed = Mock()
+
+    host = RestartedHost()
+    request = SimpleNamespace(command=json.dumps({"SYNC_SLAVE_NODE_INFO": {
+        "machine_name": "slave-a", "type": "slave", "edge_device_id": "slave_valve",
+        "registry_name": "virtual_solenoid_valve",
+    }}))
+    response = SimpleNamespace(response="")
+    host._node_info_update_callback(request, response)
+    assert response.response == "OK"
+    assert host._action_value_mappings["slave_valve"] == mappings
+    assert host.device_machine_names["slave_valve"] == "slave-a"
+    host._notify_capabilities_changed.assert_called_once()

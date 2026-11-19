@@ -279,6 +279,9 @@ ROS2 Slave 的设备在以下情况离线：Slave 的 HostLink 连接断开或�
 动作收尾（已请求取消的按取消，其余按结果未知交给核实）。Slave 重连且设备回到 ROS 图上后，
 下一轮设备发现（约 15 秒内）恢复在线。Slave 收到 SIGINT / SIGTERM 都有序退出（退出码 0）。
 
+两种 backend 下，派发给所在 Slave 已断开或心跳超时的设备的动作，都在开始边界之前失败：开始许可
+不领用，作业带 `error_info`（`ExecutionNotStarted`，传输类）走普通的失败决策，而不是结果未知。
+
 ### WebSocket 通信
 
 **用途**: 主节点与云端通信

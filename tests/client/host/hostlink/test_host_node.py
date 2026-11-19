@@ -5,6 +5,7 @@ import threading
 import time
 import uuid
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 
@@ -17,8 +18,10 @@ from unilabos.client.host.execution import JobExecutionBackend
 from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.host.runtime.action import ActionContext
 from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.hostlink.server import HostLinkServer
 from unilabos.server.execution_queue import QueueItem
-from unilabos.registry.action_policy import normalize_error_policy
+from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN, normalize_error_policy
 from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.protocol.runtime.workflow import WorkflowNodeWrite
 from unilabos.server.services.runtime.workflow.service import WorkflowService
@@ -212,6 +215,108 @@ def execution_stack():
         adapter.stop()
         runtime.stop()
         HostNode.reset_state()
+
+
+#: 结构合法的开始许可；开始许可权威是替身，只看它有没有被调用
+_PERMIT = {
+    "claim_uuid": "claim-1",
+    "authority_epoch": "epoch-1",
+    "attempt_no": 1,
+    "payload_hash": "sha256:" + "0" * 64,
+    "fences": {"device": 1},
+}
+
+
+@pytest.fixture
+def slave_stack():
+    """Host 带一个经 HostLink 接入的 Slave（设备 slave_valve），执行面要求开始许可。"""
+
+    runtime, _driver = _runtime()
+    server = HostLinkServer()
+    server._touch_peer(
+        "slave-conn",
+        ActionType.HELLO,
+        {"machine_name": "slave-a", "device_ids": ["slave_valve"]},
+    )
+    runtime.server = server
+    bridge = RecordingBridge()
+    adapter = HostNode("host_node", runtime, bridges=[])
+    channel = Mock()
+    channel.begin_execution.return_value = {"decision": "START"}
+    channel.record_start_receipt.return_value = {"may_start": True}
+    microbackend = JobExecutionBackend(
+        host_node_getter=lambda: adapter,
+        result_bridges=[bridge],
+    )
+    microbackend.configure_execution_authority(channel)
+    adapter.bridges = [microbackend]
+    microbackend.start()
+    try:
+        yield adapter, microbackend, server, channel, bridge
+    finally:
+        clear_execution_adapter(adapter)
+        microbackend.stop()
+        adapter.stop()
+        runtime.stop()
+        HostNode.reset_state()
+
+
+def test_dispatch_to_a_disconnected_slave_fails_before_the_start_boundary(slave_stack) -> None:
+    """Slave 已断开：派发在开始边界之前失败，带 error_info 走普通失败决策，开始许可不领用。
+
+    修复前许可先被领用、请求才发现发不出去（hostlink device offline），作业成了要人工核实的
+    execution_unknown。设备快照每 0.5 s 才刷新，这里停掉刷新，让快照仍以为 Slave 在线。
+    """
+
+    adapter, microbackend, server, channel, bridge = slave_stack
+    adapter._stop_event.set()
+    adapter._monitor_thread.join(2)
+    server.mark_disconnected("slave-conn")
+    assert "slave_valve" in adapter.devices_names
+
+    job_id = str(uuid.uuid4())
+    microbackend.dispatch(
+        {
+            "job_id": job_id,
+            "task_id": "task-1",
+            "node_id": "node-1",
+            "device_id": "slave_valve",
+            "action": "set_valve_position",
+            "action_type": "NativeAction",
+            "action_args": {"command": "OPEN"},
+            "execution_permit": _PERMIT,
+        }
+    )
+
+    assert bridge.decision_event.wait(2), bridge.statuses
+    report = bridge.decisions[-1]
+    assert report["job_id"] == job_id
+    assert report["exception_type"] == "ExecutionNotStarted"
+    assert report["category"] == "transport"
+    assert "slave-a" in report["error_message"]
+    channel.begin_execution.assert_not_called()
+    assert not bridge.status_event.is_set()
+
+
+def test_slave_lost_after_send_goal_still_fails_before_the_start_boundary(slave_stack) -> None:
+    """send_goal 放行之后、进入开始边界之前 Slave 才断开：同样不进开始边界，按明确失败上报。"""
+
+    adapter, _microbackend, server, _channel, _bridge = slave_stack
+    recorder = RecordingBridge()
+    adapter.bridges = [recorder]
+    item = _item("set_valve_position")
+    item.device_id = "slave_valve"
+    item.start_guard = Mock()
+    server.mark_disconnected("slave-conn")
+
+    adapter._execute_job(item, "NativeAction", {"command": "OPEN"}, ActionContext(action_id=item.job_id))
+
+    item.start_guard.assert_not_called()
+    _job_id, status, _data, return_info = recorder.statuses[-1]
+    assert status == "failed"
+    assert return_info.get("suc_type") != SUCCESS_TYPE_EXECUTION_UNKNOWN
+    assert return_info["error_info"]["exception_type"] == "ExecutionNotStarted"
+    assert return_info["error_info"]["category"] == "transport"
 
 
 def test_hostlink_adapter_executes_microbackend_job(

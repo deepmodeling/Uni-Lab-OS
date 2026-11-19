@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
 
+from unilabos.client.host.execution_start import ExecutionNotStarted
 from unilabos.client.host.hostlink.adapter_registry import set_execution_adapter
 from unilabos.client.host.hostlink.backend import to_wire_value
 from unilabos.client.host.hostlink.protocol import RemoteError
@@ -250,6 +251,21 @@ class HostNode(HostAdapterBase):
     def _action_descriptor(self, device_id: str) -> Dict[str, Any]:
         return self._device_descriptors.get(device_id, {})
 
+    def _raise_if_slave_offline(self, item: "QueueItem") -> None:
+        """目标是远端设备、而 Host 此刻就能确认它所在的 Slave 离线时，抛 ``ExecutionNotStarted``。
+
+        只能在进入开始边界之前调用：请求根本发不出去、开始许可没领用，这是明确失败，
+        不是结果未知。设备快照每 0.5 s 才刷新一次，所以直接看 HostLink 的连接状态。
+        本机设备与从未有 Slave 上报过的设备不在此判定（后者由调用方按未知设备处理）。
+        """
+
+        if item.device_id in self.runtime.local.devices:
+            return
+        server = getattr(self.runtime, "server", None)
+        reason = server.device_offline_reason(item.device_id) if server is not None else ""
+        if reason:
+            raise ExecutionNotStarted(f"设备 {item.device_id} 不可达：{reason}，动作 {item.action_name} 未下发")
+
     def _prepare_action_kwargs(
         self,
         item: "QueueItem",
@@ -286,6 +302,8 @@ class HostNode(HostAdapterBase):
         if item.action_name == "test_latency" and server_info is not None:
             self.server_latest_timestamp = float(server_info.get("send_timestamp", 0.0))
 
+        # Slave 已离线：在开始边界之前失败（带 error_info 走普通失败决策），而不是领用许可后才发现发不出去
+        self._raise_if_slave_offline(item)
         if item.device_id not in self.devices_names:
             self.refresh_devices(initial=False, notify_ready=False)
         if item.device_id not in self.devices_names:
@@ -340,6 +358,8 @@ class HostNode(HostAdapterBase):
         from unilabos.client.host.execution_start import confirm_execution_start, ExecutionStartUnknown
         try:
             context.raise_if_cancelled()
+            # send_goal 之后、进入开始边界之前 Slave 才断开：同样不领用许可、不发请求
+            self._raise_if_slave_offline(item)
             confirm_execution_start(item)
             # A scheduler action may legitimately run for hours.  ``-1`` means
             # no transport request deadline; cancellation remains explicit.
@@ -354,6 +374,17 @@ class HostNode(HostAdapterBase):
             )
             status, return_info = self._normalize_result(item, action_type, result)
             result_data = self._result_data(item, result, return_info)
+        except ExecutionNotStarted as exc:
+            # 开始边界之前就失败：设备没被调用、开始许可没领用，是带 error_info 的明确失败
+            status = "failed"
+            error_text = str(exc)
+            return_info = serialize_result_info(
+                error_text,
+                False,
+                {},
+                error_info=self._exception_error_info(item.action_name, exc, error_text),
+            )
+            result_data = self._result_data(item, {}, return_info)
         except ExecutionStartUnknown as exc:
             from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
             status = "failed"

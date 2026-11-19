@@ -16,6 +16,9 @@ FULL_SUPPORT_RECIPES = (
     "rinoh-typeface-texgyreheros", "rinoh-typeface-texgyrepagella",
 )
 
+# 框架平台包每次发布都必须是新的版本/build：频道里已有同一坐标时上传失败，不跳过也不覆盖。
+FRAMEWORK_PLATFORM_PACKAGES = frozenset({"unilabos", "unilabos-full"})
+
 # ABI 升级时前置包必须来自同一次构建，不能依赖频道中的旧 cp312 产物。
 EXTERNAL_RECIPES = {
     "opentrons-shared-data": "recipes/opentrons-shared-data/recipe.yaml",
@@ -86,7 +89,7 @@ def main() -> None:
 
     token = os.environ["ANACONDA_API_TOKEN"]
     upload_env = {**os.environ, "ANACONDA_CLIENT_FORCE_STANDALONE": "1"}
-    # noarch 在矩阵内重复构建；平台相关的 MCP 依赖也会被后续框架版本复用。
+    # noarch 在矩阵内重复构建；平台相关的依赖（MCP、ROS 消息包等）也会被后续框架版本复用。
     # 这些已有坐标只跳过、不覆盖；框架平台包仍须发布新的版本/build。
     packages = sorted((output / "noarch").glob("*.conda")) + sorted((output / args.platform).glob("*.conda"))
     if not packages:
@@ -100,7 +103,7 @@ def main() -> None:
             continue
         command = [sys.executable, "-m", "binstar_client.scripts.cli", "-t", token,
                    "upload", "--user", "uni-lab", "--register"]
-        if package.parent.name == "noarch" or package_name == "mcp":
+        if package.parent.name == "noarch" or package_name not in FRAMEWORK_PLATFORM_PACKAGES:
             command.append("--skip-existing")
         command.append(str(package))
         if subprocess.run(command, env=upload_env).returncode:

@@ -1,6 +1,7 @@
 networkx
 typing_extensions
 websockets
+certifi
 msgcenterpy>=0.1.8
 orjson>=3.11
 opentrons_shared_data

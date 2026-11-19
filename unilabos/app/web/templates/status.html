@@ -201,6 +201,34 @@ ros2 action send_goal {{ action_info.action_path }} {{ action_info.type_name_con
     </table>
   </div>
 
+  <!-- UniLabJsonCommand 复用 command ROS action，业务注册单独展示。 -->
+  <div class="host-section">
+    <h3>
+      业务动作
+      <span class="count-badge">{{ host_node_info.business_actions|length }}</span>
+    </h3>
+    <table class="responsive-table">
+      <tr>
+        <th>设备 ID</th>
+        <th>动作名</th>
+        <th>类型</th>
+        <th>说明</th>
+      </tr>
+      {% for action_key, action_info in host_node_info.business_actions.items() %}
+      <tr>
+        <td>{{ action_info.device_id }}</td>
+        <td><code>{{ action_info.action_name }}</code></td>
+        <td>{{ action_info.action_type }}</td>
+        <td>{{ action_info.description }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="4" class="empty-state">没有发现已注册的业务动作</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
   <!-- 主机已订阅的主题 -->
   <div class="host-section">
     <h3>

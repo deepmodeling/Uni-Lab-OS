@@ -72,6 +72,6 @@ Status: accepted（2026-11-13，统一分支）
 ## 依据
 
 - 测试：`tests/server/test_action_timeout_hold.py`、`tests/server/test_custody_commits_with_terminal.py`、
-  `tests/backend/hostlink/test_host_node.py::test_sync_driver_outliving_its_hard_timeout_keeps_the_hold_until_it_returns`、
-  `tests/backend/hostlink/test_local_runtime_timeout.py`。
+  `tests/client/host/hostlink/test_host_node.py::test_sync_driver_outliving_its_hard_timeout_keeps_the_hold_until_it_returns`、
+  `tests/client/host/hostlink/test_local_runtime_timeout.py`。
 - 决策记录：统一分支用户决定（2026-11-13）"硬超时自动继续工作流，但锁不放，直到驱动返回或人工强制释放"。

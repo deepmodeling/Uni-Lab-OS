@@ -123,7 +123,7 @@ python -m tests.e2e.run_mcp_demos --output .whalent_tmp/mcp-luna/recheck --reche
 
 ```powershell
 $env:PYTEST_DISABLE_PLUGIN_AUTOLOAD='1'
-python -m pytest tests/server tests/resources/test_material_owner.py tests/resources/test_materials_helpers.py tests/backend/hostlink/test_material_transfer_proxy.py tests/backend/hostlink/test_materials_proxy.py tests/e2e/test_mcp_demo_harness.py -q -p anyio.pytest_plugin --disable-warnings
+python -m pytest tests/server tests/resources/test_material_owner.py tests/resources/test_materials_helpers.py tests/client/host/hostlink/test_material_transfer_proxy.py tests/client/host/hostlink/test_materials_proxy.py tests/e2e/test_mcp_demo_harness.py -q -p anyio.pytest_plugin --disable-warnings
 ```
 
 显式关闭环境自动加载的 ROS pytest 插件，使用 AnyIO 插件；不因此绕过上述业务测试。

@@ -194,13 +194,12 @@ is the community frontend listed under "推荐前端" on the page that `unilab`
 serves at `/` ([source](https://github.com/Xuwznln/OpenLabSite)). Two ways to
 connect it to a running `unilab`:
 
-- Open `http://127.0.0.1:8002/` and click the OpenLab card. When `unilab`
-  opens this page itself at startup, the URL carries the control token, and
-  the card hands OpenLab both the backend address and the token.
+- Open `http://127.0.0.1:8002/` and click the OpenLab card. It opens OpenLab
+  connected to this backend.
 - Or open OpenLab directly, open its connection settings (`连接设置`) and enter
   the backend address, e.g. `http://127.0.0.1:8002` or
-  `http://<host-ip>:8002` for another machine. Write operations need the
-  control token: run `unilab token` on the machine running `unilab` and paste it.
+  `http://<host-ip>:8002` for another machine. No token is needed; expose the
+  management port only to trusted networks.
 
 If the HTTPS site cannot reach a local HTTP backend, run OpenLab locally as
 described in its repository.

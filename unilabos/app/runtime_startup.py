@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import sys
 import threading
 import time
 from typing import Any
@@ -12,6 +13,10 @@ from unilabos.utils.banner_print import print_status
 
 #: 设备 runtime 就绪等待上限：真实驱动初始化（串口 / 网络设备握手）可能要几十秒
 BACKEND_READY_TIMEOUT_S = 120.0
+#: Slave 收到停机信号后等设备 runtime 有序收尾的上限（秒）。
+SLAVE_SHUTDOWN_JOIN_S = 10.0
+#: 建议的 Slave 命令里 Host 地址的占位符（本机没有可推荐的地址时使用）。
+SLAVE_HINT_HOST_PLACEHOLDER = "<本机IP>"
 
 
 def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> bool:
@@ -89,15 +94,23 @@ def print_slave_launch_hint() -> None:
     hostlink_enabled = bool(HostLinkConfig.enable)
     host_ip = str(HostLinkConfig.advertise_ip or "").strip()
     hostlink_port = int(HostLinkConfig.port)
+    unsuggested_ip = ""
     if hostlink_enabled:
-        from unilabos.client.host.hostlink.ros_assist import detect_local_ip
+        from unilabos.client.host.hostlink.ros_assist import detect_local_ip, suggestable_host_ip
         from unilabos.client.host.hostlink.server import get_hostlink_server
 
         server = get_hostlink_server()
         if server is not None:
             hostlink_port = int(server.port)
         if not host_ip:
-            host_ip = detect_local_ip() or "127.0.0.1"
+            # 默认出口地址只在像局域网 / 公网地址时才写进建议命令：出口落在代理 / VPN 虚拟网卡
+            # 时 Slave 多半连不上它，宁可留占位符让用户填 Slave 实际能访问的本机地址。
+            detected = detect_local_ip()
+            if suggestable_host_ip(detected):
+                host_ip = detected
+            else:
+                unsuggested_ip = detected
+                host_ip = SLAVE_HINT_HOST_PLACEHOLDER
 
     command = build_slave_launch_command(
         backend=backend,
@@ -108,6 +121,12 @@ def print_slave_launch_hint() -> None:
     transport = "HostLink TCP" if hostlink_enabled else "ROS 2 DDS 发现"
     print_status(f"Host 已就绪（backend={backend}，Slave 经 {transport} 接入）", "success")
     print_status(f"在其他机器上启动 Slave 接入本 Host：{command}", "info")
+    if unsuggested_ip:
+        print_status(
+            f"本机默认出口地址 {unsuggested_ip} 不像局域网地址（常见于代理 / VPN 虚拟网卡），"
+            f"请把 {SLAVE_HINT_HOST_PLACEHOLDER} 换成 Slave 所在机器能访问到的本机地址。",
+            "info",
+        )
     if hostlink_enabled:
         print_status(
             "同一台机器上可把 --host_node_ip 改为 127.0.0.1，并用 --server_database_root 指定另一个"
@@ -191,9 +210,33 @@ def _join_backend(backend_thread: threading.Thread) -> None:
         backend_thread.join(timeout=0.5)
 
 
+def _stop_backend_runtime() -> None:
+    """请设备 runtime 结束：ROS 2 下关闭 rclpy 上下文，runtime 线程随即有序收尾。"""
+
+    rclpy = sys.modules.get("rclpy")
+    if rclpy is None:
+        return
+    try:
+        rclpy.try_shutdown()
+    except Exception:  # noqa: BLE001 - 停机路径尽力而为
+        pass
+
+
+def _join_backend_until_stopped(backend_thread: threading.Thread) -> None:
+    """等设备 runtime 线程结束；收到停机信号时先让它有序收尾（断开 HostLink、销毁节点、
+    关 rclpy），限时等它结束后再把停机异常交给上层。"""
+
+    try:
+        _join_backend(backend_thread)
+    except (SystemExit, KeyboardInterrupt):
+        _stop_backend_runtime()
+        backend_thread.join(timeout=SLAVE_SHUTDOWN_JOIN_S)
+        raise
+
+
 def _run_management_or_wait(backend_thread: threading.Thread) -> None:
     if not BasicConfig.is_host_mode:
-        _join_backend(backend_thread)
+        _join_backend_until_stopped(backend_thread)
         _exit_on_backend_failure()
         return
 
@@ -272,7 +315,7 @@ def run_runtime(args: dict[str, Any]) -> None:
             "info",
         )
 
-    _join_backend(backend_thread)
+    _join_backend_until_stopped(backend_thread)
     _exit_on_backend_failure()
 
 

@@ -394,7 +394,8 @@ def test_ensure_host_node_resource_reuses_graph_identity_or_inserts_default() ->
     # 图中按 template_name 声明的 host node，id 与配置实例名不同：以配置为准重命名。
     reused = ensure_host_node_resource(tree_set, renamed_id)
     assert reused.res_content.id == renamed_id
-    assert reused.res_content.name == renamed_id
+    # name 不再跟着实例 id 改（物料层 name 按 uuid 规则处理），人读标签在 display_name
+    assert reused.res_content.display_name == renamed_id
     assert reused.res_content.uuid == host_uuid
     assert reused.res_content.klass == "host_node"
     assert reused.res_content.template_name == "host_node"
@@ -413,6 +414,51 @@ def test_ensure_host_node_resource_reuses_graph_identity_or_inserts_default() ->
     )
     with pytest.raises(ValueError, match="只能声明一个 host node"):
         ensure_host_node_resource(duplicated, renamed_id)
+
+
+def test_implicit_host_node_keeps_its_authority_identity_across_restarts(monkeypatch) -> None:
+    """图里没声明 host node 时，每次启动都插入默认树；物料权威已有同名 host_node 就沿用它的
+    uuid，重启不会再拿新 uuid 去创建同一个 resource_id（0.13.0a1 建的库里 uuid 是随机的）。"""
+
+    from types import SimpleNamespace
+
+    from unilabos.client.host.ros2.presets.host_node import ensure_host_node_resource
+    from unilabos.resources import materials
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+
+    existing_uuid = "7f0c6f1e-2f0a-4b8e-9a51-0d9c2b7f9a10"
+    lookups: list[str] = []
+
+    class _Gateway:
+        def get_material_by_resource_id(self, resource_id: str):
+            lookups.append(resource_id)
+            if resource_id == "host_node":
+                template = "host_node"
+            elif resource_id == "bench":
+                template = "virtual_solenoid_valve"
+            else:
+                raise LookupError(resource_id)
+            return SimpleNamespace(
+                material=SimpleNamespace(
+                    material_uuid=existing_uuid,
+                    template_name=template,
+                    parent_material_uuid=None,
+                )
+            )
+
+    monkeypatch.setattr(materials, "resolve_materials_gateway", lambda: _Gateway())
+
+    first = ensure_host_node_resource(ResourceTreeSet([]), "host_node")
+    restarted = ensure_host_node_resource(ResourceTreeSet([]), "host_node")
+    assert first.res_content.uuid == existing_uuid
+    assert restarted.res_content.uuid == existing_uuid
+
+    # 权威里还没有（首次启动）或同名物料不是 host node：照旧新发 uuid
+    fresh = ensure_host_node_resource(ResourceTreeSet([]), "host_node_new")
+    other = ensure_host_node_resource(ResourceTreeSet([]), "bench")
+    assert fresh.res_content.uuid not in {"", existing_uuid}
+    assert other.res_content.uuid not in {"", existing_uuid}
+    assert lookups == ["host_node", "host_node", "host_node_new", "bench"]
 
 
 def test_run_node_coroutine_is_backend_neutral() -> None:

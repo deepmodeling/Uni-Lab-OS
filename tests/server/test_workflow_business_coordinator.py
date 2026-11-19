@@ -285,6 +285,32 @@ def test_cancel_is_applied_through_command_inbox_and_adapter_outbox(tmp_path) ->
     assert runtime.get_execution_job("job-1").status == "canceled"
 
 
+def test_cancellation_reported_as_failed_lands_as_canceled(tmp_path) -> None:
+    """执行面把取消的真实收尾报成 failed + cancellation（JobExecutionBackend 与两种适配器都如此）；
+    本地账本必须按 canceled 落库并上报，否则 running → failed 被拒，任务一直停在取消中、锁不释放。"""
+
+    from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION
+
+    coordinator, runtime, _history, _executor, data_plane = _coordinator(tmp_path)
+    execute_notice, execute_document = _document(
+        "execute-1", 1, "execute_job", "payload-execute-1", _execute_payload(), job_uuid="job-1"
+    )
+    data_plane.documents["execute-1"] = execute_document
+    coordinator.handle_backend_notice(execute_notice)
+    item = _item()
+    coordinator.publish_job_started(item)
+    coordinator.publish_job_status({}, item, "running")
+
+    coordinator.publish_job_status(
+        {},
+        item,
+        "failed",
+        {"suc": False, "suc_type": SUCCESS_TYPE_CANCELLATION, "error": "Job was cancelled"},
+    )
+
+    assert runtime.get_execution_job("job-1").status == "canceled"
+
+
 def test_operator_result_replacement_preserves_raw_failure_chain(tmp_path) -> None:
     coordinator, runtime, history, executor, data_plane = _coordinator(tmp_path)
     execute_notice, execute_document = _document(

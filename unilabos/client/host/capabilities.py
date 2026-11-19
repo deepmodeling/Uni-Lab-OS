@@ -123,9 +123,14 @@ def build_endpoint_capabilities(
     mappings: Dict[str, Dict[str, Any]] = dict(
         getattr(adapter, "_action_value_mappings", None) or {}
     )
+    # 适配器知道已离线的设备（ROS 2 的 Slave 断开 / 不在 ROS 图上）不进快照，
+    # 与 HostLink backend 只把在线设备放进 ``devices_names`` 的口径一致。
+    offline = {str(device_id) for device_id in (getattr(adapter, "offline_device_ids", None) or ())}
     routes: List[DeviceRoute] = []
     capabilities: List[DeviceActionCapability] = []
     for device_id in sorted(devices_names):
+        if device_id in offline:
+            continue
         is_host_node, registry_name = _is_host_node_device(adapter, device_id)
         route_config: Dict[str, Any] = {}
         if registry_name:

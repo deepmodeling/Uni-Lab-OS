@@ -253,10 +253,10 @@ HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS �
 | `--host-node-ip` | Slave | 空 | Host IP/主机名；兼容 `ip:port` |
 | `--hostlink-port` | Host + Slave | `7302` | HostLink TCP 监听/连接端口；优先于 `--host-node-ip` 中的端口 |
 | `--hostlink-bind` | Host | `0.0.0.0` | HostLink 监听网卡 |
-| `--hostlink-advertise-ip` | Host | 自动探测 | 多网卡时发布给 Slave 的可达 IP |
+| `--hostlink-advertise-ip` | Host | 自动探测 | 可选覆盖：握手里广播的 Host 地址与启动提示里的地址；Slave 总是改用它实际连上的 Host 地址，一般不需要设置 |
 | `--disable-hostlink` | Host + Slave | 否 | 仅 ROS2 可用：禁用 HostLink 并回退原 ROS2 发现；不能和 `--backend hostlink` 同用 |
 | `--hostlink-heartbeat-interval` | Slave | `5` 秒 | 心跳发送间隔 |
-| `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间 |
+| `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间；ROS2 backend 下 Slave 的设备同样据此离线（连接断开时立即离线） |
 | `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时（不是等 Host 的总时长） |
 | `--hostlink-host-wait-timeout` | Slave | `120` 秒 | 等 Host 的上限：启动时退避重连直到端口可连，以及 Host 启动中「未就绪」请求的重试，各自计时 |
 | `--hostlink-request-timeout` | Host + Slave | `10` 秒 | 控制请求/设备 RPC 超时 |
@@ -268,9 +268,16 @@ HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS �
 | `--no-ros-assist` | ROS2 Slave | 否 | 保留 HostLink 心跳/设备发现，但不应用 Host ROS 参数 |
 
 ROS2 Host 的微后端会在 `rclpy.init` 前启动托管的 Fast DDS Discovery
-Server；若当前环境找不到 `fast-discovery-server`/`fastdds` 可执行文件，会记录错误并
+Server（监听全部网卡；Host 自己的节点经 `127.0.0.1` 连它，Slave 经它连上 Host 的地址连它）；
+若当前环境找不到 `fast-discovery-server`/`fastdds` 可执行文件，会记录错误并
 回退到现有 `ROS_AUTOMATIC_DISCOVERY_RANGE`/`ROS_STATIC_PEERS` 策略。direct
 `hostlink` backend 不启动 DDS 进程。
+
+ROS2 Slave 的设备在以下情况离线：Slave 的 HostLink 连接断开或心跳超时（进程退出、被杀
+时立即离线），或设备节点不在 ROS 图上（DDS 租约过期，未经 HostLink 接入时的兜底）。离线
+设备退出能力快照，调度权威的 `/devices`、`/online-devices` 与调度随之把它当离线；已发给它的
+动作收尾（已请求取消的按取消，其余按结果未知交给核实）。Slave 重连且设备回到 ROS 图上后，
+下一轮设备发现（约 15 秒内）恢复在线。Slave 收到 SIGINT / SIGTERM 都有序退出（退出码 0）。
 
 ### WebSocket 通信
 
@@ -535,21 +542,24 @@ export ROS_DOMAIN_ID=42
 
 ```bash
 # Host：发布 domain 42
-unilab -g host.json --ros-domain-id 42
+unilab -g host.json --backend ros2 --ros-domain-id 42
 
 # Slave：通过 HostLink 获取 domain 42 和发现配置
-unilab -g slave.json --is-slave --host-node-ip 192.168.1.10
+unilab -g slave.json --backend ros2 --is-slave --host-node-ip 192.168.1.10
 ```
 
 如实验室使用已有 Fast DDS Discovery Server，可在 Host 指定并下发：
 
 ```bash
-unilab -g host.json --ros-domain-id 42 \
+unilab -g host.json --backend ros2 --ros-domain-id 42 \
   --ros-discovery-server 192.168.1.10:11811
 ```
 
-此功能切片不会自动启动 Discovery Server 进程；未指定时仍沿用 ROS2/DDS
-原有发现机制，并把 Host IP 加入 `ROS_STATIC_PEERS`。
+未指定 `--ros-discovery-server` 时，ROS2 Host 自动启动托管的 Fast DDS Discovery Server：
+监听全部网卡（不受 `--hostlink-bind` 限制），UDP 端口默认与 HostLink 端口号相同。Host
+自己的节点经 `127.0.0.1` 连它；Slave 用它实际连上的 Host 地址加同一端口，不需要
+`--hostlink-advertise-ip`。环境里找不到 `fast-discovery-server` / `fastdds` 时回退到
+ROS2/DDS 原有发现机制，并把 Host IP 加入 `ROS_STATIC_PEERS`。
 
 ### 防火墙配置
 

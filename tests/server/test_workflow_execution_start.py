@@ -210,3 +210,60 @@ def test_stopped_authority_cannot_start_and_old_stop_does_not_revoke_new_owner(s
     task2, job2 = make_task(service)
     # 旧进程迟到的 stop 不能让新调度器失去派发资格。
     claims.reserve(request(task2, job2).model_copy(update={"always_free": True}), authority_epoch=current)
+
+
+def test_dispatch_failing_before_the_start_boundary_is_a_definite_failure():
+    """派发在开始边界之前失败（如 ROS 2 Action server 不可达）：开始许可没领用、驱动没被调用，
+    作业是带 error_info 的明确失败，走普通设备失败的决策链，而不是要人工核实的 execution_unknown。"""
+    from tests.server.test_workflow_loop_execution import _Stack
+    from unilabos.registry.workflows import upsert_workflow
+
+    stack = _Stack()
+
+    def unreachable(item, **_kwargs):
+        # 适配器在进入开始边界之前抛出的任何异常（ROS 2 是 ExecutionNotStarted）都说明设备没被调用
+        raise RuntimeError(
+            "Action server /devices/loop-device/record 在 30s 内不可达（设备离线或尚未完成启动），动作未下发"
+        )
+
+    stack.adapter.send_goal = unreachable
+    finished: list[tuple] = []
+    stack.microbackend.add_job_finished_listener(
+        lambda job_id, success, _value, suc_type, return_info: finished.append((job_id, success, suc_type, return_info))
+    )
+    try:
+        record = upsert_workflow(stack.service, {"workflow_uuid": str(uuid4()), "name": "设备不可达", "description": "", "tags": [],
+            "nodes": [{"uuid": str(uuid4()), "name": "记录", "type": "device_action", "material_uuid": str(uuid4()),
+                       "action_name": "record", "meta_data": {"target_device_id": "loop-device"}, "param": {"value": 7}}], "edges": []})
+        task = stack.service.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal", target_node_uuid=None,
+            input_value={}, description=None, meta_data={})
+
+        def terminal_job():
+            jobs = stack.service.list_workflow_node_jobs(task["uuid"])
+            return next((job for job in jobs if job["status"] in {"failed", "execution_unknown"}), None)
+
+        wait_for(lambda: terminal_job() is not None)
+        job = terminal_job()
+        assert job["status"] == "failed"
+        assert job["error_info"]
+        wait_for(lambda: bool(finished))
+        job_id, success, suc_type, return_info = finished[0]
+        assert (job_id, success, suc_type) == (job["uuid"], False, "normal")
+        error_info = return_info["error_info"]
+        assert error_info["exception_type"] == "RuntimeError"
+        assert error_info["category"] == "transport"
+        assert "不可达" in error_info["error_message"]
+        assert stack.driver.calls == []
+        assert stack.scheduler.list_reconciliation_decisions() == []
+        assert (ExecutionClaims(stack.service).get(job["uuid"]) or {}).get("state") != "uncertain"
+        wait_for(lambda: not stack.scheduler.resources.held_by(job["uuid"]))
+    finally:
+        stack.close()
+
+
+def test_start_guard_reports_whether_the_boundary_was_entered():
+    guard = ExecutionStartGuard(None, {"job_id": "job-1"}, "epoch", canceled=lambda: False, consume=lambda: None)
+    assert guard.entered is False
+    with pytest.raises(ExecutionStartUnknown):
+        guard()
+    assert guard.entered is True

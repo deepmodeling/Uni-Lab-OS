@@ -176,18 +176,24 @@ unilab -g host.json --machine_name lab-host --port 8002 --hostlink_port 7302
 # 另一台机器（或同机另一个进程）
 unilab --is_slave -g slave.json --machine_name lab-slave --host_node_ip 192.168.1.10 --hostlink_port 7302
 
+# ROS 2 backend（需要下方的 ROS2 扩展）：两端都写 --backend ros2，Slave 同样只指定 Host IP
+unilab --backend ros2 -g host.json --machine_name lab-host --port 8002 --hostlink_port 7302
+unilab --backend ros2 --is_slave -g slave.json --machine_name lab-slave --host_node_ip 192.168.1.10 --hostlink_port 7302
+
 # 单独的调度/物料权威，不启动设备（端口默认 8002，与默认启动同一个 --port 设置）
 unilab --role backend
 ```
 
 `--role backend` 与用 `--address` 接入它的 Edge 都会监听自己的 `--port`（默认都是 `8002`），
 在同一台机器上运行时给 Edge 换一个端口，例如 `--address http://127.0.0.1:8002 --port 8003`。
+用 `--address` 接入的 Host 把物料也交给该权威，不用再写 `--material_microbackend_addr`。
+ROS 2 下 Slave 连上 Host 后由 Host 下发 domain 与发现配置，不需要 `--hostlink_advertise_ip`。
 
 默认启动会分为微后端权威和 Host 子进程；前端只连接管理端 HTTP 端口，
 Slave 连接 HostLink TCP 端口。同机时 Host IP 可用 `127.0.0.1`。
 前端是独立部署的静态站点：推荐的 [OpenLab](https://xuwznln.github.io/OpenLabSite/) 可以从
-`http://127.0.0.1:8002/` 导航页的卡片进入（`unilab` 启动时自动打开的导航页会把后端地址和控制令牌一起交给它），
-也可以直接打开后在「连接设置」里填 `http://<主机>:8002`；写操作需要的控制令牌由 `unilab token` 打印。
+`http://127.0.0.1:8002/` 导航页的卡片进入（卡片会把后端地址交给它），
+也可以直接打开后在「连接设置」里填 `http://<主机>:8002`；不需要令牌，管理端口只应暴露给可信网络。
 正式前端 Uni-Lab FE 需要自行部署，同样填管理端地址，不要填 HostLink 端口。
 调度权威不自己扫描设备注册表，设备与资源目录由 Host 启动时上报。所有进程在同一台机器上时
 （默认启动、受管设备进程、同机的 Slave），上报的变化自动生效；有 Slave 在另一台机器上时，
@@ -215,7 +221,7 @@ unilab --backend ros2 -g graph.json
 mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.13.0a1=humble_1"
 ```
 
-ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
+ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.2 的 ABI 基线；
 安装扩展后也必须使用 `--backend ros2`，不会偷偷切换默认 backend。
 需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.13.0a1=jazzy_1` 或 `humble_1`，
 这些大型组件的可用性还取决于平台和 RoboStack 包。

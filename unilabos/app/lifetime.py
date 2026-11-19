@@ -151,6 +151,27 @@ def _force_exit(code: int, reason: str, seconds: float) -> NoReturn:
     os._exit(code)
 
 
+def install_stop_signal_handlers(role: str) -> None:
+    """常驻进程的停机信号处理器：SIGINT / SIGTERM / SIGHUP 都让主线程抛 ``SystemExit(0)`` 有序退出。
+
+    ROS 2 Slave 必须在 ``rclpy.init`` 之前装上：rclpy 接管 SIGINT / SIGTERM 后先关闭上下文，
+    再只转给原来的 Python 处理器——原来是默认动作（SIGTERM）时什么也不做，进程既不退出也不再
+    处理 ROS 回调。重复的信号忽略，收尾整体限时 :data:`SHUTDOWN_DEADLINE_S`。
+    """
+
+    start_exit_watchdog()
+
+    def _stop(signum: int, _frame: Any) -> None:
+        if not begin_shutdown(0, reason=f"{role} 收到停机信号 {signum}"):
+            return
+        sys.exit(0)
+
+    for name in ("SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, _stop)
+
+
 def request_main_exit() -> None:
     """从任意线程请主线程按本进程收到 SIGTERM 的路径退出。
 
@@ -562,6 +583,7 @@ __all__ = [
     "follow_parent",
     "follow_parent_env",
     "follow_parent_from_env",
+    "install_stop_signal_handlers",
     "request_main_exit",
     "shutdown_started",
     "start_exit_watchdog",

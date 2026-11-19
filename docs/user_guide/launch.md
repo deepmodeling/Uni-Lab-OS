@@ -229,13 +229,17 @@ HostLink 不是 ROS2 graph 的替代实现，也不面向高频大载荷流。�
 
 ```bash
 # Host：8002 是微后端 HTTP API 和前端导航页端口，7302 是 HostLink TCP
-unilab -g host.json --port-management 8002 \
+unilab -g host.json --backend ros2 --port-management 8002 \
   --hostlink-port 7302 --ros-domain-id 42
 
 # Slave：管理端口只影响本机 Web/API；HostLink 目标端口单独配置
-unilab -g slave.json --is-slave \
+unilab -g slave.json --backend ros2 --is-slave \
   --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
 ```
+
+Slave 连上 Host 后，Host 下发 domain 与发现配置；托管 Discovery Server 的地址用 Slave
+实际连上的 Host 地址加 HostLink 端口号，Host 自己经回环地址连它，一般不需要
+`--hostlink-advertise-ip`。
 
 主要组网参数：
 
@@ -243,7 +247,7 @@ unilab -g slave.json --is-slave \
 - `--port-management` / `--port_management`：微后端 HTTP API 和前端导航页端口，默认 `8002`；`--port` 是兼容缩写。
 - `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。配置了 `--address`（backend-controlled 模式）时，浏览器打开的是 backend 管理页；本进程 `/` 只保留指向调度权威的路标页和设备侧 API 文档入口。
 - `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
-- `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
+- `--hostlink-bind` / `--hostlink-advertise-ip`：Host 的 HostLink 监听地址，与握手 / 启动提示里广播的 Host 地址（可选覆盖，Slave 总是改用它实际连上的地址）。
 - `--hostlink-host-wait-timeout`：Slave 等 Host 的上限，默认 `120` 秒。
 - `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
 - `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。

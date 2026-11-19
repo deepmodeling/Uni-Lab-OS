@@ -34,6 +34,10 @@ from unilabos.client.host.hostlink.server import HostLinkServer, set_hostlink_se
 from unilabos.utils import logger
 
 SERVICE_OWNER = "edge-microbackend"
+#: 托管 Fast DDS Discovery Server 的监听地址：全部网卡，与 --hostlink_bind 无关。
+MANAGED_DISCOVERY_BIND = "0.0.0.0"
+#: Host 自己的 ROS 节点连本机托管 Discovery Server 用的地址。
+LOCAL_DISCOVERY_HOST = "127.0.0.1"
 
 
 class HostNetworkService:
@@ -144,11 +148,9 @@ class HostNetworkService:
             configured_port = int(HostLinkConfig.ros_discovery_port or 0)
             discovery_port = configured_port or int(HostLinkConfig.port or 0)
             if discovery_port <= 0:
-                discovery_port = available_udp_port(
-                    HostLinkConfig.bind
-                    if HostLinkConfig.bind not in ("", "::")
-                    else "0.0.0.0"
-                )
+                # 托管服务器总是监听全部网卡（见下方 FastDDSDiscoveryServer），按同一地址探测空闲端口
+                discovery_port = available_udp_port(MANAGED_DISCOVERY_BIND)
+            # 广播给 Slave 的地址只是占位：Slave 会换成它实际连上的 Host 地址（use_connected_host）
             discovery_endpoint = format_host_port(host_ip, discovery_port)
 
         ros_info = build_host_ros_info(
@@ -177,11 +179,27 @@ class HostNetworkService:
         )
         if managed_discovery:
             _host, discovery_port = parse_host_port(discovery_endpoint)
+            # 不随 --hostlink_bind 收窄：只监听 127.0.0.1 的 Discovery Server 无法把彼此的
+            # 定位器转达给客户端（同机两个节点也互相发现不了）。DDS 参与者本身同样监听全部网卡。
             service._discovery_server = FastDDSDiscoveryServer(
-                HostLinkConfig.bind,
+                MANAGED_DISCOVERY_BIND,
                 discovery_port,
             )
         return service
+
+    def local_ros_info(self) -> RosNetworkInfo:
+        """本进程（Host 自己的 ROS 节点）使用的组网配置。
+
+        广播给 Slave 的托管 Discovery Server 地址按 Slave 实际连上的 Host 地址改写；
+        Host 自己的节点则经回环地址连本机托管的服务器，不依赖自动探测出的出口地址——
+        出口可能是 VPN / 代理虚拟网卡，本机发往它的 UDP 收不到。
+        """
+
+        info = RosNetworkInfo.from_dict(self.ros_info.to_dict())
+        if info.discovery_server and info.discovery_server_managed:
+            _host, port = parse_host_port(info.discovery_server)
+            info.discovery_server = format_host_port(LOCAL_DISCOVERY_HOST, port)
+        return info
 
     def start(self) -> "HostNetworkService":
         if self._discovery_server is not None:
@@ -204,7 +222,7 @@ class HostNetworkService:
                 self.ros_info.automatic_discovery_range = self._fallback_discovery_range
                 self._refresh_hello_payload()
 
-        applied = apply_ros_network_env(self.ros_info)
+        applied = apply_ros_network_env(self.local_ros_info())
         if self.ros_info.discovery_server:
             # HostNode performs graph introspection and must receive all endpoint
             # metadata from Discovery Server v2, not only pre-matched topics.

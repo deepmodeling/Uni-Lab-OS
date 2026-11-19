@@ -1,7 +1,8 @@
 """HostLink 包内只在本进程计时的时长与期限：墙钟跳变不影响。
 
 覆盖设备定时器、Workstation 协议编排耗时和 doctor 的运行时长。只改写墙钟
-（``time.time`` / ``time.time_ns``），单调时钟照常走。
+（``time.time`` / ``time.time_ns``），单调时钟照常走；doctor 的测试另把单调时钟换成
+只随 ``time.sleep`` 前进的假时钟，循环跑几轮只取决于时长与周期，与 CI 机器快慢无关。
 """
 
 from __future__ import annotations
@@ -37,6 +38,22 @@ def _jumping_wall_clock(monkeypatch, step_s: float) -> None:
     real_time = time.time
     reads = itertools.count(1)
     monkeypatch.setattr(time, "time", lambda: real_time() + step_s * next(reads))
+
+
+def _sleep_driven_monotonic_clock(monkeypatch) -> None:
+    """单调时钟只随 ``time.sleep`` 前进、不真睡。
+
+    真睡时，慢的 CI 机器上 ``sleep(0.02)`` 常睡过头，0.3 s 内只跑得了两轮；
+    换成这个时钟后轮数是确定的，墙钟照样按 :func:`_jumping_wall_clock` 跳。
+    """
+
+    now = [time.monotonic()]
+
+    def fake_sleep(seconds: float) -> None:
+        now[0] += max(float(seconds), 0.0)
+
+    monkeypatch.setattr(time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time, "sleep", fake_sleep)
 
 
 # ── 设备定时器 ───────────────────────────────────────────────
@@ -190,6 +207,7 @@ class _FakeRos:
 def test_doctor_publish_duration_ignores_forward_wall_clock_jumps(monkeypatch, run, minimum) -> None:
     ros = _FakeRos(monkeypatch)
     _jumping_wall_clock(monkeypatch, 13.0)
+    _sleep_driven_monotonic_clock(monkeypatch)
 
     run()
 
@@ -199,6 +217,7 @@ def test_doctor_publish_duration_ignores_forward_wall_clock_jumps(monkeypatch, r
 def test_doctor_listener_duration_ignores_forward_wall_clock_jumps(monkeypatch) -> None:
     ros = _FakeRos(monkeypatch)
     _jumping_wall_clock(monkeypatch, 13.0)
+    _sleep_driven_monotonic_clock(monkeypatch)
 
     doctor.run_listener(None, "test", duration_s=0.3, quiet=True)
 

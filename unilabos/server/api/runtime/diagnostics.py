@@ -214,7 +214,7 @@ def create_backend_router(
         """本进程是否承载工作流运行时：调度权威为 ready，仅执行面的 Host 为 disabled。"""
 
         try:
-            from unilabos.server.backend.composition import get_workflow_service
+            from unilabos.server.execution_composition import get_workflow_service
 
             return "ready" if get_workflow_service() is not None else "disabled"
         except Exception:  # noqa: BLE001 - 探针不因装配查询失败而失败

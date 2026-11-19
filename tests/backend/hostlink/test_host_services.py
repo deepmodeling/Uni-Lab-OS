@@ -35,7 +35,7 @@ from unilabos.client.host.hostlink.host_services import (
 from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.registry.registry import lab_registry
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials import MaterialNotFoundError
 from tests.plr_fixtures import PLATE_MODULE, SiteDeck, plate, registry_entry, site_deck, tip_rack

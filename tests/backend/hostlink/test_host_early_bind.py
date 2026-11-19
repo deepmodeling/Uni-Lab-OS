@@ -407,7 +407,7 @@ def test_not_ready_wait_is_bounded_with_a_clear_error(hostlink_config) -> None:
 
 def test_prebound_port_serves_materials_once_backend_attaches(hostlink_config, tmp_path) -> None:
     from unilabos.client.materials import LocalMaterialsClient
-    from unilabos.server.backend.composition import set_materials_gateway
+    from unilabos.server.execution_composition import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 
     server = hostlink_startup.prebind_host_server()

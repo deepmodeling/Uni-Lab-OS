@@ -56,7 +56,7 @@ class UncertainJobResolutionRequest(_StrictModel):
 
 
 def _default_materials() -> Any:
-    from unilabos.server.backend.composition import get_materials_service
+    from unilabos.server.execution_composition import get_materials_service
 
     return get_materials_service()
 

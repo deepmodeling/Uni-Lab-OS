@@ -119,7 +119,7 @@ def setup_host_server_stack(
         HTTPMaterialsClient,
         LocalMaterialsClient,
     )
-    from unilabos.server.backend.composition import (
+    from unilabos.server.execution_composition import (
         set_materials_gateway,
         shutdown_backend_services,
         setup_execution_backend,
@@ -160,7 +160,7 @@ def setup_host_server_stack(
         from unilabos.client.host.legacy_adaptor.url import build_backend_websocket_url
 
         if not build_backend_websocket_url():
-            from unilabos.server.backend.composition import (
+            from unilabos.server.execution_composition import (
                 setup_local_scheduler,
             )
 

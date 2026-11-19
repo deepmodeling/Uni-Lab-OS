@@ -596,7 +596,7 @@ def test_workflow_from_template_endpoint_instantiates_registry_template(tmp_path
             ]
 
     monkeypatch.setattr(
-        "unilabos.server.backend.composition.get_materials_service", lambda: _Materials()
+        "unilabos.server.execution_composition.get_materials_service", lambda: _Materials()
     )
     try:
         # 缺模板：3002

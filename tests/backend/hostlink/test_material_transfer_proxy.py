@@ -15,7 +15,7 @@ from unilabos.client.host.hostlink.protocol import RemoteError
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.protocol.materials import MaterialTransfer, MaterialTransferItem
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 

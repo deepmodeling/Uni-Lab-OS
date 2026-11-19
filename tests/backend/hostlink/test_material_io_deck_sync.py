@@ -23,7 +23,7 @@ from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, Host
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.scheduler.material_io import sync_material_io_device
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials.contents import ContentContract

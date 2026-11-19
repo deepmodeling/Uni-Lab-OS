@@ -103,8 +103,8 @@ def test_microbackend_namespaces_live_under_server() -> None:
     assert not (server_root / "database" / "migrations").exists()
     # 调度权威与两边共用的执行模块在 server 下，只在 Host 上跑的执行链在 client/host 下
     host_root = package_root / "client" / "host"
-    for module_name in ("composition.py", "coordinator.py"):
-        assert (server_root / "backend" / module_name).is_file()
+    assert (server_root / "execution_composition.py").is_file()
+    assert (server_root / "backend" / "coordinator.py").is_file()
     for module_name in ("execution_queue.py", "inventory.py"):
         assert (server_root / module_name).is_file()
     for module_name in ("execution.py", "incidents.py", "telemetry.py"):

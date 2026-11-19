@@ -177,7 +177,7 @@ class ErrorDecisionDesk:
 def default_desk() -> ErrorDecisionDesk:
     """本进程装配的调度器 / 执行面 getter（工作流路由投递干预决定时使用）。"""
 
-    from unilabos.server.backend.composition import get_execution_backend, get_scheduler
+    from unilabos.server.execution_composition import get_execution_backend, get_scheduler
 
     return ErrorDecisionDesk(get_scheduler, get_execution_backend)
 

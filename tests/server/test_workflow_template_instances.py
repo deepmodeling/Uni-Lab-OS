@@ -37,7 +37,7 @@ def stack(monkeypatch):
     monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: registry)
     materials = SimpleNamespace(list_materials=lambda **kwargs: [SimpleNamespace(
         resource_type="device", resource_id="lab/second-reactor", template_name="demo.reactor", material_uuid=str(uuid4()))])
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: materials)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: materials)
     service = WorkflowService(":memory:")
     try:
         with TestClient(create_workflow_app(service)) as client:

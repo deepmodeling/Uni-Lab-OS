@@ -445,7 +445,7 @@ def resolve_materials_gateway() -> MaterialGateway:
             raise RuntimeError("Slave 尚未连接 HostLink，无法访问物料权威")
         return HostLinkMaterialsClient(client)
 
-    from unilabos.server.backend.composition import get_materials_gateway
+    from unilabos.server.execution_composition import get_materials_gateway
 
     gateway = get_materials_gateway()
     if gateway is None:

@@ -71,7 +71,7 @@ def _get_business_coordinator() -> Any:
     """延迟解析进程内微后端，避免通信工厂与组合根循环导入。"""
 
     try:
-        from unilabos.server.backend.composition import get_business_coordinator
+        from unilabos.server.execution_composition import get_business_coordinator
 
         return get_business_coordinator()
     except ImportError:

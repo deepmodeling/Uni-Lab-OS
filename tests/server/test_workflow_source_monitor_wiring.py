@@ -10,7 +10,7 @@ from typing import Any
 
 from unilabos.config.config import BasicConfig
 from unilabos.registry.workflows import DeviceCatalog
-from unilabos.server.backend.composition import (
+from unilabos.server.execution_composition import (
     get_workflow_service,
     reset_for_test,
     setup_execution_backend,

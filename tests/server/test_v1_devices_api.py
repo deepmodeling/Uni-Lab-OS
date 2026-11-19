@@ -80,7 +80,7 @@ def lab(tmp_path, monkeypatch):
         "status_types": {"pressure": "float"},
     }}], edge_uuid="test")
     endpoints = {"value": [endpoint("pump-1", "dose")]}
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: materials)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: materials)
     monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: registry)
     monkeypatch.setattr("unilabos.server.services.runtime.devices.read_online_endpoints", lambda: endpoints["value"])
     monkeypatch.setattr("unilabos.server.composition.get_server_services", lambda: None)

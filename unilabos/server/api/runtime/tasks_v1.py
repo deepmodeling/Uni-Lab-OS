@@ -137,7 +137,7 @@ def create_task_observability_router(service: Any) -> APIRouter:
     def list_task_material_events(task_uuid: str) -> list:
         """物料权威台账中由本任务作业产生的变化（搬运、消耗、标为已使用…），标注节点与步骤路径。"""
 
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
         from unilabos.server.services.runtime.workflow.task_lifecycle import task_material_events
 
         return task_material_events(service, task_uuid, get_materials_service())

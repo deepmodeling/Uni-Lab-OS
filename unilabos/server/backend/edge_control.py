@@ -359,7 +359,7 @@ class EdgeControlService:
         ResourceSlot 参数不加物料锁。
         """
 
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
 
         service = get_materials_service()
         if service is not None:

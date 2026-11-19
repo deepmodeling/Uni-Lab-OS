@@ -133,7 +133,7 @@ class HostLinkBackend:
                     self.client.configure_device_descriptors(self.local.descriptors())
                     self.announce_devices()
             else:
-                from unilabos.server.backend.composition import (
+                from unilabos.server.execution_composition import (
                     get_materials_gateway,
                 )
 
@@ -289,7 +289,7 @@ class HostLinkBackend:
         data: dict[str, Any], peer: dict[str, Any]
     ) -> list[dict[str, Any]]:
         from unilabos.client.host.hostlink.materials_proxy import template_list
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -302,7 +302,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import ResourceTemplateWrite
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -321,7 +321,7 @@ class HostLinkBackend:
 
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialTreeCreate
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -335,7 +335,7 @@ class HostLinkBackend:
     def _handle_material_get_tree(
         data: dict[str, Any], _peer: dict[str, Any]
     ) -> dict[str, Any]:
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -351,7 +351,7 @@ class HostLinkBackend:
     def _handle_material_get_by_resource_id(
         data: dict[str, Any], _peer: dict[str, Any]
     ) -> dict[str, Any]:
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -367,7 +367,7 @@ class HostLinkBackend:
     def _handle_material_search(
         data: dict[str, Any], _peer: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -386,7 +386,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialDataWrite
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -408,7 +408,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialMove
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -425,7 +425,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialTransfer
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -445,7 +445,7 @@ class HostLinkBackend:
     def _bind_material_transfer_dispatcher(self) -> None:
         """让嵌入式 MaterialsService 通过当前 HostLink runtime 调设备服务。"""
 
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         service = getattr(gateway, "service", None)
@@ -484,7 +484,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialDelete
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -500,7 +500,7 @@ class HostLinkBackend:
         data: dict[str, Any], _peer: dict[str, Any]
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import MaterialSnapshot
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -516,7 +516,7 @@ class HostLinkBackend:
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation
         from unilabos.protocol.materials import MaterialSnapshot
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:
@@ -532,7 +532,7 @@ class HostLinkBackend:
         data: dict[str, Any], _peer: dict[str, Any]
     ) -> dict[str, Any]:
         from unilabos.protocol.materials import InventoryMutation, MaterialDelta
-        from unilabos.server.backend.composition import get_materials_gateway
+        from unilabos.server.execution_composition import get_materials_gateway
 
         gateway = get_materials_gateway()
         if gateway is None:

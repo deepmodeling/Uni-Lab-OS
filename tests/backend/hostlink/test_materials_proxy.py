@@ -17,7 +17,7 @@ from unilabos.protocol.materials import (
     MaterialTreeCreate,
     ResourceTemplateWrite,
 )
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 

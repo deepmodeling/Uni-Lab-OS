@@ -104,7 +104,7 @@ def run_backend_process(
     )
     from unilabos.server.api.edge_proxy import configure_edge_proxy
     from unilabos.server.api.runtime import install_edge_control_api
-    from unilabos.server.backend.composition import (
+    from unilabos.server.execution_composition import (
         set_materials_gateway,
         setup_local_scheduler,
         setup_materials_service,
@@ -214,7 +214,7 @@ def run_backend_process(
             )
             host_child.start()
             def reset_preflight() -> None:
-                from unilabos.server.backend.composition import get_scheduler
+                from unilabos.server.execution_composition import get_scheduler
                 from unilabos.server.lifecycle.drain import active_device_job_ids
                 from unilabos.server.lifecycle.restart import get_restart_coordinator
 

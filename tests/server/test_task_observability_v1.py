@@ -183,13 +183,13 @@ def test_material_events_filter_the_materials_ledger_by_task_jobs(stack: Stack, 
         def changes(self, *, after_sequence=0, limit=100):
             return [item for item in ledger if item.sequence > after_sequence][:limit]
 
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: Materials())
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: Materials())
     events = ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/material-events"))
     assert [event["sequence"] for event in events] == [1]
     event = events[0]
     assert event["kind"] == "move_material" and event["material_uuid"] == "vial-1"
     assert event["workflow_node_job_uuid"] == job_uuid and event["node_name"] == "动作0"
     assert event["occurred_at"].endswith("Z") and event["step_path"] == []
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: None)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: None)
     assert ok_data(stack.client.get(f"/api/v1/workflow-tasks/{task['uuid']}/material-events")) == []
     error_of(stack.client.get(f"/api/v1/workflow-tasks/{uuid4()}/material-events"), 3002)

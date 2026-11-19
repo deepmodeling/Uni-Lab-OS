@@ -106,7 +106,7 @@ def _execution_backend() -> Any:
     """延迟解析进程内执行微后端，避免与组合根循环导入。"""
 
     try:
-        from unilabos.server.backend.composition import get_execution_backend
+        from unilabos.server.execution_composition import get_execution_backend
 
         return get_execution_backend()
     except ImportError:

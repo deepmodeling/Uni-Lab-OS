@@ -14,7 +14,7 @@ from unilabos.devices.virtual.heating_platform import (
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.decorators import get_device_meta
 from unilabos.resources.objects.resource import ResourceDict
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 

@@ -13,7 +13,7 @@ from unilabos.client.host.hostlink.host_node import HostNode
 from unilabos.server.execution_queue import QueueItem
 from unilabos.client.host.execution import JobExecutionBackend
 from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.telemetry import TelemetryService
 

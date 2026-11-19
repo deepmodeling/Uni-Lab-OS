@@ -6,7 +6,7 @@ import pytest
 
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.client.materials import LocalMaterialsClient
-from unilabos.server.backend.composition import (
+from unilabos.server.execution_composition import (
     get_materials_gateway,
     get_materials_service,
     get_scheduler,

@@ -533,22 +533,22 @@ def test_unknown_or_malformed_messages_never_raise():
 def test_legacy_client_is_registered_as_execution_result_bridge(tmp_path, monkeypatch):
     """微后端释放的 job 结果必须能回到旧协议客户端，否则旧后端永远等不到 job_status。"""
 
-    from unilabos.server.backend import composition
+    from unilabos.server import execution_composition
     from unilabos.server.database import ServerDatabasePaths
 
-    composition.reset_for_test()
+    execution_composition.reset_for_test()
     monkeypatch.setattr(BasicConfig, "backend", "hostlink")
     paths = ServerDatabasePaths.resolve(str(tmp_path), {})
     client = _connected_client(_Backend(), _Adapter())
     try:
-        backend = composition.setup_execution_backend(
+        backend = execution_composition.setup_execution_backend(
             control_client=client, host_node_getter=lambda: None, database_paths=paths
         )
         assert client in backend.result_bridges
         # runtime.v1 客户端只做通知回调，不进 result bridge
         assert not getattr(BackendWebSocketClient, "mirrors_job_results", False)
     finally:
-        composition.reset_for_test()
+        execution_composition.reset_for_test()
 
 
 # ── runtime.v1 WS 修复 ─────────────────────────────────────────────

@@ -18,7 +18,7 @@ from unilabos.server.services.runtime.workflow.timeline import CHANNELS, Executi
 
 
 def _default_scheduler() -> Any:
-    from unilabos.server.backend.composition import get_scheduler
+    from unilabos.server.execution_composition import get_scheduler
 
     return get_scheduler()
 

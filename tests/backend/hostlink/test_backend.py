@@ -436,7 +436,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
         MaterialNodeCreate,
         MaterialTreeCreate,
     )
-    from unilabos.server.backend.composition import set_materials_gateway
+    from unilabos.server.execution_composition import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 
     monkeypatch.setattr(HostLinkConfig, "enable", True)
@@ -985,7 +985,7 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
 ) -> None:
     from unilabos.resources.presets.container import RegularContainer
     from unilabos.client.materials import LocalMaterialsClient
-    from unilabos.server.backend.composition import set_materials_gateway
+    from unilabos.server.execution_composition import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 
     monkeypatch.setattr(HostLinkConfig, "enable", True)

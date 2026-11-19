@@ -1152,7 +1152,7 @@ def _run_main():
         if comm_client is not None:
             comm_client.stop()
         if BasicConfig.is_host_mode:
-            from unilabos.server.backend.composition import shutdown_backend_services
+            from unilabos.server.execution_composition import shutdown_backend_services
 
             shutdown_backend_services()
 

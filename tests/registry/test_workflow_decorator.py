@@ -473,7 +473,7 @@ def test_upsert_over_http_like_client_survives_bodiless_get(monkeypatch) -> None
         authority_registry = SimpleNamespace(action_definition=lambda klass, action: {
             "schema": {"properties": {"goal": {"type": "object", "properties": {"value": {"type": "integer"}}}}},
         } if (klass, action) == ("demo_class", "succeed") else None)
-        monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: authority_materials)
+        monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: authority_materials)
         monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: authority_registry)
         upsert_workflow(reporter, payload)
         upsert_workflow(reporter, payload)
@@ -519,7 +519,7 @@ def test_upsert_over_http_keeps_resource_scopes(monkeypatch) -> None:
         authority_registry = SimpleNamespace(action_definition=lambda klass, action: {
             "schema": {"properties": {"goal": {"type": "object", "properties": {"value": {"type": "integer"}}}}},
         } if (klass, action) == ("demo_class", "succeed") else None)
-        monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: authority_materials)
+        monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: authority_materials)
         monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: authority_registry)
         upsert_workflow(reporter, payload)
         stored = service.get_graph(payload["workflow_uuid"])["workflow"]["meta_data"]["unilab"]["resource_scopes"]

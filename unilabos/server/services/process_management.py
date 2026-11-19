@@ -510,16 +510,16 @@ class ProcessManagementService:
         get_materials: Optional[Callable[[], Any]] = None,
         poll_interval: float = 0.2,
     ) -> None:
-        from unilabos.server.backend import composition
+        from unilabos.server import execution_composition
 
         self.store = ProcessManagementStore(workflow)
         self._context = context
         self.gateway = gateway or HostGateway()
-        self._get_scheduler = get_scheduler or composition.get_scheduler
-        self._get_execution_backend = get_execution_backend or composition.get_execution_backend
+        self._get_scheduler = get_scheduler or execution_composition.get_scheduler
+        self._get_execution_backend = get_execution_backend or execution_composition.get_execution_backend
         self._get_edge_control = get_edge_control or _default_edge_control
         self._get_restart_coordinator = get_restart_coordinator or _default_restart_coordinator
-        self._get_materials = get_materials or composition.get_materials_service
+        self._get_materials = get_materials or execution_composition.get_materials_service
         self.poll_interval = poll_interval
         # 本进程代次：没有控制面权威纪元时（单进程）用它标识 backend 组件
         self._generation = f"authority:{os.getpid()}:{int(time.time() * 1000)}"

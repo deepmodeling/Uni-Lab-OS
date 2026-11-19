@@ -789,7 +789,7 @@ def test_child_devices_of_a_station_resolve_their_registry_class(tmp_path, monke
         MaterialTreeCreate,
         ResourceTemplateWrite,
     )
-    from unilabos.server.backend import composition
+    from unilabos.server import execution_composition
     from unilabos.server.services.materials import MaterialsService
 
     def mutation(operation: str) -> InventoryMutation:
@@ -834,7 +834,7 @@ def test_child_devices_of_a_station_resolve_their_registry_class(tmp_path, monke
                     return {"materials_need_lock": ["vessel"]}
                 return None
 
-        monkeypatch.setattr(composition, "_materials", materials)
+        monkeypatch.setattr(execution_composition, "_materials", materials)
         service = EdgeControlService(payload_client=_FakePayloadClient(), registry_service=Registry())
         assert service._device_class("stirrer_1") == "virtual_stirrer"
         assert service._device_class("Station/stirrer_1") == "virtual_stirrer"

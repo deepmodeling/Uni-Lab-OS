@@ -407,7 +407,7 @@ def get_restart_coordinator() -> RestartCoordinator:
     global _coordinator
     with _coordinator_lock:
         if _coordinator is None:
-            from unilabos.server.backend.composition import (
+            from unilabos.server.execution_composition import (
                 get_execution_backend,
                 get_scheduler,
             )

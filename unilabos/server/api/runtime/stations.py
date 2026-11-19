@@ -161,7 +161,7 @@ def create_station_router(
         return bool(deliverer(decision_id, payload))
 
     def default_materials() -> Any:
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
 
         return get_materials_service()
 

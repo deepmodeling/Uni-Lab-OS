@@ -1,4 +1,7 @@
-"""调度权威、运行控制服务与 HostLink/ROS2 执行适配器的装配层。"""
+"""调度权威、运行控制服务与 HostLink/ROS2 执行适配器的装配层。
+
+建立在 :mod:`unilabos.server.composition`（四库 ``ServerServices`` 组合根）之上。
+"""
 
 from __future__ import annotations
 

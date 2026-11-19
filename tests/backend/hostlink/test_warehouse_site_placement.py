@@ -22,7 +22,7 @@ from unilabos.protocol.materials import InventoryMutation, MaterialMove
 from unilabos.resources import materials
 from unilabos.resources.presets.itemized_carrier import Bottle
 from unilabos.resources.presets.warehouse import warehouse_factory
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 DEVICE_ID = "stocker"

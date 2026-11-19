@@ -191,7 +191,7 @@ def authority(tmp_path, monkeypatch):
                 "roles": [{"role": "bench", "label": "bench", "kind": "device", "device_id": "bench", "matches": ["bench"]}],
                 "nodes": [{"key": "step", "kind": "action", "role": "bench", "action_name": "load", "name": "装载", "param": {"site": "T1"}}], "edges": []}
     registry.report([{"id": "bench", "registry_type": "device", "class": {"module": "test:Bench", "type": "python", "action_value_mappings": {"load": ACTION}}}, template], edge_uuid="test")
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: mat)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: mat)
     monkeypatch.setattr("unilabos.server.services.runtime.registry.get_registry_service", lambda: registry)
     monkeypatch.setattr("unilabos.server.composition.get_server_services", lambda: None)
     monkeypatch.setattr("unilabos.server.api.edge_proxy.edge_proxy_enabled", lambda: False)

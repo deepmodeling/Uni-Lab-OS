@@ -349,7 +349,7 @@ def read_online_endpoints() -> Optional[List[Dict[str, Any]]]:
     """当前 Host 的 endpoint 能力快照；Host 暂不可达时返回 ``None``（目录按全部离线投影）。"""
 
     try:
-        from unilabos.server.backend.composition import read_preflight_endpoints
+        from unilabos.server.execution_composition import read_preflight_endpoints
 
         return read_preflight_endpoints()
     except Exception:  # noqa: BLE001 - 设备目录读模型不因 Host 暂不可用而失败
@@ -364,7 +364,7 @@ def current_device_directory(
     if endpoints_reader is None:
         endpoints_reader = globals()["read_online_endpoints"]
 
-    from unilabos.server.backend.composition import get_materials_service
+    from unilabos.server.execution_composition import get_materials_service
     from unilabos.server.services.runtime.registry import get_registry_service
 
     materials = get_materials_service()

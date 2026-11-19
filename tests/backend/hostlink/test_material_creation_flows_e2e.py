@@ -52,7 +52,7 @@ from unilabos.client.host.hostlink.backend import HostLinkBackend
 from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.host.hostlink.protocol import ActionType
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from tests.plr_fixtures import TIP_RACK_MODULE, SiteDeck, plate, registry_entry, site_deck, tip_rack
 

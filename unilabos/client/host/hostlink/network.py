@@ -260,7 +260,7 @@ class HostNetworkService:
         with self._material_gateway_lock:
             gateway = self._material_gateway
         if gateway is None:
-            from unilabos.server.backend.composition import (
+            from unilabos.server.execution_composition import (
                 get_materials_gateway,
             )
 

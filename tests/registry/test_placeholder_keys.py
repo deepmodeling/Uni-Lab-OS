@@ -109,8 +109,8 @@ def test_type_derived_and_handwritten_selectors_are_merged_handwritten_first(act
     assert goal["assignees"] == {"type": "array", "items": {"type": "string"}}
 
 
-def test_handwritten_resource_selector_still_locks_the_parameter(actions) -> None:
-    """兼容此前的规则：手写成 unilabos_resources 的参数也加共享锁，但类型与校验不变。"""
+def test_handwritten_resource_selector_locks_the_parameter(actions) -> None:
+    """物料锁取并集：手写成 unilabos_resources 的参数也加共享锁，但类型与校验不变。"""
 
     legacy = actions["legacy"]
     assert legacy["placeholder_keys"] == {"plate": "unilabos_resources"}

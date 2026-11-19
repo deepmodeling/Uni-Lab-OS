@@ -118,19 +118,29 @@ schema 里的 `_unilabos_placeholder_info`）是**两者的并集，同一参数
 
 ```python
 from unilabos.registry.decorators import action
-from unilabos.registry.placeholder_type import PLACEHOLDER_MANUAL_CONFIRM, PLACEHOLDER_NODES, ResourceSlot
+from unilabos.registry.placeholder_type import (
+    PLACEHOLDER_DEDUCT_RESOURCE,
+    PLACEHOLDER_MANUAL_CONFIRM,
+    PLACEHOLDER_NODES,
+    ResourceSlot,
+)
 
-# 传进去的是物料（ResourceSlot：解析成物料实例、加锁、按物料引用校验），网页上显示节点选择器
-@action(placeholder_keys={"mount_resource": PLACEHOLDER_NODES})
-def transfer(self, resource: ResourceSlot, mount_resource: ResourceSlot = None): ...
+# 出库扣减：网页上在仓储里点选要出库的物料（服务端扣减后回传实例的 uuid），挂载目标用节点选择器；
+# 执行时两个参数收到的都是解析好的物料实例（ResourceSlot：解析成物料实例、加锁、按物料引用校验）
+@action(placeholder_keys={"resource": PLACEHOLDER_DEDUCT_RESOURCE, "mount_resource": PLACEHOLDER_NODES})
+def apply_deduct_resource(self, resource: ResourceSlot = None, mount_resource: ResourceSlot = None): ...
 
 # 没有专门类型的选择器（节点、人工确认指派人、出库 / 试剂扣减……）一律手写
 @action(placeholder_keys={"assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM})
 def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 ```
 
-- 手写的只改显示：参数是什么（是不是物料、要不要解析成物料实例、加不加物料锁、怎么校验）仍由类型决定。
-  兼容此前的规则，唯一的例外：手写成 `unilabos_resources` 的参数也算物料参数、加共享资源锁（类型与校验不变）。
+- 手写的只改显示：参数是什么（是不是物料、要不要解析成物料实例、怎么校验）仍由类型决定。
+- 物料锁取并集：`ResourceSlot` 类型的参数（含列表 / Optional），加上选择器（合并后）为 `unilabos_resources` 的参数。
+  后一半是签名看不到的条目标出物料的唯一办法：手写 YAML、ROS / 协议动作的字段都靠它加锁。手写成 `unilabos_resources`
+  的非 `ResourceSlot` 参数只加锁，类型与校验不变；`ResourceSlot` 参数换了显示（如上面的出库扣减）照样加锁。
+- `unilabos_sites` 的值是库位 UUID：程序化导入工作流时按它把库位标签解析成 `site_uuid`。它只给 `SiteSlot` 或字符串参数用，
+  物料参数要换显示，用出库扣减、节点这类选物料的选择器。
 - 键必须是动作的参数名（ROS 动作类型还可以是 `goal=` 映射的字段名），否则注册时报错；`parent=True` 与协议动作的签名
   在注册时看不到，不核对。值不是已知种类时按定义告警一次、照常写入（前端以后可能加新的种类）。
 - 手写 YAML 注册表里已有的 `placeholder_keys` 同样算手写：`--complete_registry` 补全时与类型推出的取并集，手写优先，

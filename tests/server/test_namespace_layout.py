@@ -110,6 +110,10 @@ def test_microbackend_namespaces_live_under_server() -> None:
     for module_name in ("execution.py", "incidents.py", "telemetry.py"):
         assert (host_root / module_name).is_file()
     assert (server_root / "scheduler" / "service.py").is_file()
+    # 生命周期一个包：停机信号在包 __init__，排空 / 重启 / 重置各一个模块
+    for module_name in ("__init__.py", "drain.py", "restart.py", "reset.py"):
+        assert (server_root / "lifecycle" / module_name).is_file()
+    assert not (server_root / "lifecycle.py").exists()
     assert (server_root / "scheduler" / "dag" / "executor.py").is_file()
     assert (server_root / "composition.py").is_file()
     assert not list((server_root / "storage").glob("*.py"))

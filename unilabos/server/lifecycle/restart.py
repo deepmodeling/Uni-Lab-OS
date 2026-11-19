@@ -23,7 +23,7 @@ import time
 from typing import Any, Callable, Optional
 
 from unilabos.app.supervisor import RESTART_EXIT_CODE, is_supervised
-from unilabos.server.backend.lifecycle import active_device_job_ids
+from unilabos.server.lifecycle.drain import active_device_job_ids
 
 logger = logging.getLogger(__name__)
 

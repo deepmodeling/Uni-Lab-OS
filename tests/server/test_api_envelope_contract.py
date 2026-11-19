@@ -560,7 +560,7 @@ def test_optional_annotation_is_supported() -> None:
 def test_edge_restart_notification_rejected_by_the_host_keeps_dispatch_paused(monkeypatch, body) -> None:
     from types import SimpleNamespace
 
-    from unilabos.server.backend.restart import RestartCoordinator
+    from unilabos.server.lifecycle.restart import RestartCoordinator
 
     coordinator = RestartCoordinator(lambda: None, lambda: None)
     rejected = SimpleNamespace(status_code=200, body_bytes=lambda: body)

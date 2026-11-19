@@ -11,10 +11,10 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-import unilabos.server.backend.restart as restart_module
+import unilabos.server.lifecycle.restart as restart_module
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime import create_backend_app
-from unilabos.server.backend.restart import RestartCoordinator
+from unilabos.server.lifecycle.restart import RestartCoordinator
 from unilabos.server.scheduler.service import BackendScheduler
 
 

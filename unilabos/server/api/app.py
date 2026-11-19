@@ -151,7 +151,7 @@ async def _on_client_disconnect(_request: Request, _exc: ClientDisconnect) -> Re
 
 @app.middleware("http")
 async def reset_maintenance_gate(request: Request, call_next):
-    from unilabos.server.backend.reset import get_reset_controller
+    from unilabos.server.lifecycle.reset import get_reset_controller
 
     controller = get_reset_controller()
     if controller is not None and controller.pending and request.method != "OPTIONS":

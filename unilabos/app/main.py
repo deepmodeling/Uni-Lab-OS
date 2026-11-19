@@ -532,7 +532,7 @@ def _run_main():
 
     maybe_supervise(args)
 
-    from unilabos.server.backend.restart import set_safe_restart_enabled
+    from unilabos.server.lifecycle.restart import set_safe_restart_enabled
 
     set_safe_restart_enabled(not bool(args_dict.get("no_safe_restart")))
 
@@ -946,7 +946,7 @@ def _run_main():
 
         # 限时看门狗在装处理器之前启动：处理器里布置限时只做一次赋值，不拿锁、不起线程
         lifetime.start_exit_watchdog()
-        from unilabos.server.backend.restart import (
+        from unilabos.server.lifecycle.restart import (
             RESTART_EXIT_CODE,
             is_restart_requested,
         )
@@ -1158,7 +1158,7 @@ def _run_main():
 
     # 安静点重启：端口、数据库等均已在上方退出链路释放。监督进程看到约定
     # 退出码后用相同参数拉起新实例；--no-safe-restart 时只退出。
-    from unilabos.server.backend.restart import exit_if_restart_requested
+    from unilabos.server.lifecycle.restart import exit_if_restart_requested
 
     exit_if_restart_requested()
 

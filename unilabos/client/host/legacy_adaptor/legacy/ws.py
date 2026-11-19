@@ -868,7 +868,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
             {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
         )
         await asyncio.sleep(delay)
-        from unilabos.server.backend.restart import get_restart_coordinator
+        from unilabos.server.lifecycle.restart import get_restart_coordinator
 
         try:
             get_restart_coordinator().request(mode="quiescent", scope="process")

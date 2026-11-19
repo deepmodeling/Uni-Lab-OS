@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
-from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
+from unilabos.server.lifecycle.reset import ResetController, ResetConflict, configure_reset
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.server.api.runtime.diagnostics import create_backend_router
 
@@ -70,7 +70,7 @@ def test_partial_move_failure_leaves_recovery_marker(tmp_path, monkeypatch):
     reset.request(reset.token, "清空全部数据")
     def fail(*args):
         raise OSError("locked")
-    monkeypatch.setattr("unilabos.server.backend.reset.os.replace", fail)
+    monkeypatch.setattr("unilabos.server.lifecycle.reset.os.replace", fail)
     with pytest.raises(OSError):
         reset.finish()
     assert (reset.paths.root / "reset-pending.json").exists()

@@ -556,7 +556,7 @@ def test_stale_epoch_detach_does_not_break_new_connection() -> None:
 
 
 def test_restart_coordinator_uses_edge_scope_and_inflight_view() -> None:
-    from unilabos.server.backend.restart import RestartCoordinator
+    from unilabos.server.lifecycle.restart import RestartCoordinator
 
     service = _service()
     set_edge_control_service(service)

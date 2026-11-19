@@ -333,7 +333,7 @@ graphs / lab / scheduler 由权威用 `<root>` 下的库回答。`/api/v1/debug/
 | --- | --- |
 | `--no-safe-restart` | 一个进程写 `<root>` 下全部四库（7.1 两列的并集） |
 | `--role backend` | `<root>/backend` 下的 runtime.db 与 materials.db（同 7.1 权威列）；Host 是经 `--address` 接入的另一个进程 |
-| `--address` 顶层 Host | `<root>` 下的运行控制表、telemetry、history；没有 `--material_microbackend_addr` 时物料也写本机 `<root>/materials.db` |
+| `--address` 顶层 Host | `<root>` 下的运行控制表、telemetry、history；物料经 HTTP 写到 `--address` 的权威（`--material_microbackend_addr` 可另指物料权威；只有 `HTTPConfig.backend_protocol = "legacy"` 时写本机 `<root>/materials.db`） |
 | `--is_slave` | 只把 `-g` 图登记进自己的 `materials.db`（`lab_graph`）并写 `graph_cache`；物料、作业都经 HostLink 由 Host 处理 |
 
 ### 7.3 `executor_endpoint` 的写入与读取

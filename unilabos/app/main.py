@@ -1125,6 +1125,11 @@ def _run_main():
     else:
         print_status("SlaveMode跳过Websocket连接")
         if args_dict["backend"] == "ros2":
+            # rclpy.init 会接管 SIGINT / SIGTERM，只把信号转给已有的 Python 处理器；先装上，
+            # SIGTERM 才会像 SIGINT 一样有序退出（断开 HostLink、销毁节点、关 rclpy、退出码 0）。
+            from unilabos.app import lifetime
+
+            lifetime.install_stop_signal_handlers("Slave")
             # 正常 Slave 必须在 rclpy.init 前拿到 Host 的 ROS policy；
             # --slave_no_host 才允许离线启动并后台重连。
             from unilabos.client.host.hostlink.network import (

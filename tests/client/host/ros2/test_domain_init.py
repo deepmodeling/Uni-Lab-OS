@@ -88,6 +88,8 @@ def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
     monkeypatch.setattr(main_slave_run, "HostNode", HostNode)
     monkeypatch.setattr(main_slave_run, "MultiThreadedExecutor", Executor)
     monkeypatch.setattr(main_slave_run.threading, "Thread", Thread)
+    # 运行循环只在 rclpy 仍然可用时等待（rclpy 关闭即有序退出）；这里假装 rclpy 已初始化
+    monkeypatch.setattr(main_slave_run.rclpy, "ok", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(
         main_slave_run.time,
         "sleep",

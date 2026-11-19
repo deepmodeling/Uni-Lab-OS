@@ -72,6 +72,42 @@ def wait_for_host_node_info_service(client: Any, *, interval: float = NODE_INFO_
     return False
 
 
+def spin_until_shutdown(poll_s: float = 0.5) -> None:
+    """阻塞到 rclpy 上下文关闭。
+
+    rclpy 的信号处理器在 SIGINT / SIGTERM 时关闭上下文；之后 executor 不再处理回调，
+    进程必须随之有序退出，而不是留在死循环里。
+    """
+
+    while rclpy.ok():
+        time.sleep(poll_s)
+
+
+def shutdown_ros_runtime(nodes: List[Any], executor: Any = None) -> None:
+    """有序收尾：先断开 HostLink（Host 立即知道本进程已走），再销毁节点、关 executor 与 rclpy。"""
+
+    from unilabos.client.host.hostlink.network import shutdown_network_services
+
+    try:
+        shutdown_network_services()
+    except Exception:  # noqa: BLE001 - 收尾尽力而为
+        logger.debug(f"[ROS] 关闭 HostLink 失败\n{traceback.format_exc()}")
+    for node in nodes:
+        if node is None:
+            continue
+        try:
+            node.destroy_node()
+        except Exception:  # noqa: BLE001 - 上下文已关闭时销毁节点可能报错
+            logger.debug(f"[ROS] 销毁节点失败\n{traceback.format_exc()}")
+    if executor is not None:
+        try:
+            executor.shutdown(timeout_sec=1.0)
+        except Exception:  # noqa: BLE001
+            logger.debug(f"[ROS] 关闭 executor 失败\n{traceback.format_exc()}")
+    rclpy.try_shutdown()
+    logger.info("[ROS] 已有序退出：HostLink 已断开，节点已销毁，rclpy 已关闭")
+
+
 def _spin_forever(executor) -> None:
     """守护式 spin：任何回调/协程异常都不允许终结 executor 线程。
 
@@ -107,22 +143,21 @@ def _init_rclpy(args: List[str], domain_id: Optional[int]) -> None:
 
 
 def exit() -> None:
-    """关闭ROS节点和资源"""
+    """关闭 Host 的 ROS 节点和资源。"""
     host_instance = HostNode.get_instance()
+    nodes: List[Any] = []
     if host_instance is not None:
         # 停止发现定时器
         # noinspection PyProtectedMember
         if hasattr(host_instance, "_discovery_timer") and isinstance(host_instance._discovery_timer, Timer):
             # noinspection PyProtectedMember
             host_instance._discovery_timer.cancel()
-        for _, device_node in host_instance.devices_instances.items():
-            if hasattr(device_node, "destroy_node"):
-                device_node.ros_node_instance.destroy_node()
-        host_instance.destroy_node()
-    from unilabos.client.host.hostlink.network import shutdown_network_services
-
-    shutdown_network_services()
-    rclpy.shutdown()
+        nodes.extend(
+            getattr(device_node, "ros_node_instance", None)
+            for device_node in host_instance.devices_instances.values()
+        )
+        nodes.append(host_instance)
+    shutdown_ros_runtime(nodes)
 
 
 def main(
@@ -186,8 +221,9 @@ def main(
     thread = threading.Thread(target=_spin_forever, args=(executor,), daemon=True, name="host_executor_thread")
     thread.start()
 
-    while True:
-        time.sleep(1)
+    # 保持运行到 rclpy 关闭（停机信号），然后有序收尾
+    spin_until_shutdown()
+    exit()
 
 
 def slave(
@@ -231,6 +267,7 @@ def slave(
         sclient = n.create_client(SerialCommand, "/node_info_update")
         if not wait_for_host_node_info_service(sclient):
             logger.info("[Slave] 等待 Host 时收到停机信号，退出")
+            shutdown_ros_runtime([n], executor)
             return
 
         registry_config = {}
@@ -318,9 +355,12 @@ def slave(
         executor.add_node(joint_republisher)
         executor.add_node(lh_joint_pub)
 
-    # 7. 保持运行
-    while True:
-        time.sleep(1)
+    # 7. 保持运行到 rclpy 关闭（SIGINT / SIGTERM 经 rclpy 的信号处理器关闭上下文），然后有序收尾
+    spin_until_shutdown()
+    shutdown_ros_runtime(
+        [getattr(device, "ros_node_instance", None) for device in devices_instances.values()] + [n],
+        executor,
+    )
 
 
 if __name__ == "__main__":

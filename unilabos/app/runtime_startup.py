@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+import sys
 import threading
 import time
 from typing import Any
@@ -12,6 +13,8 @@ from unilabos.utils.banner_print import print_status
 
 #: 设备 runtime 就绪等待上限：真实驱动初始化（串口 / 网络设备握手）可能要几十秒
 BACKEND_READY_TIMEOUT_S = 120.0
+#: Slave 收到停机信号后等设备 runtime 有序收尾的上限（秒）。
+SLAVE_SHUTDOWN_JOIN_S = 10.0
 #: 建议的 Slave 命令里 Host 地址的占位符（本机没有可推荐的地址时使用）。
 SLAVE_HINT_HOST_PLACEHOLDER = "<本机IP>"
 
@@ -207,9 +210,33 @@ def _join_backend(backend_thread: threading.Thread) -> None:
         backend_thread.join(timeout=0.5)
 
 
+def _stop_backend_runtime() -> None:
+    """请设备 runtime 结束：ROS 2 下关闭 rclpy 上下文，runtime 线程随即有序收尾。"""
+
+    rclpy = sys.modules.get("rclpy")
+    if rclpy is None:
+        return
+    try:
+        rclpy.try_shutdown()
+    except Exception:  # noqa: BLE001 - 停机路径尽力而为
+        pass
+
+
+def _join_backend_until_stopped(backend_thread: threading.Thread) -> None:
+    """等设备 runtime 线程结束；收到停机信号时先让它有序收尾（断开 HostLink、销毁节点、
+    关 rclpy），限时等它结束后再把停机异常交给上层。"""
+
+    try:
+        _join_backend(backend_thread)
+    except (SystemExit, KeyboardInterrupt):
+        _stop_backend_runtime()
+        backend_thread.join(timeout=SLAVE_SHUTDOWN_JOIN_S)
+        raise
+
+
 def _run_management_or_wait(backend_thread: threading.Thread) -> None:
     if not BasicConfig.is_host_mode:
-        _join_backend(backend_thread)
+        _join_backend_until_stopped(backend_thread)
         _exit_on_backend_failure()
         return
 
@@ -288,7 +315,7 @@ def run_runtime(args: dict[str, Any]) -> None:
             "info",
         )
 
-    _join_backend(backend_thread)
+    _join_backend_until_stopped(backend_thread)
     _exit_on_backend_failure()
 
 

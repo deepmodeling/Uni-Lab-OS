@@ -62,6 +62,7 @@ class DeviceTimer:
         self._lock = threading.Lock()
         self._future: Any = None
         self._cancelled = True
+        # 以下两项是单调时钟读数（time.monotonic_ns），墙钟跳变不影响定时
         self._last_call_ns = 0
         self._next_call_ns = 0
         if autostart:
@@ -75,7 +76,7 @@ class DeviceTimer:
         with self._lock:
             previous = self._future
             self._cancelled = False
-            self._next_call_ns = time.time_ns() + self.timer_period_ns
+            self._next_call_ns = time.monotonic_ns() + self.timer_period_ns
             self._future = self._node.create_task(self._run())
         if previous is not None:
             previous.cancel()
@@ -92,17 +93,17 @@ class DeviceTimer:
         return self._cancelled
 
     def is_ready(self) -> bool:
-        return not self._cancelled and time.time_ns() >= self._next_call_ns
+        return not self._cancelled and time.monotonic_ns() >= self._next_call_ns
 
     def time_since_last_call(self) -> Optional[int]:
         if not self._last_call_ns:
             return None
-        return time.time_ns() - self._last_call_ns
+        return time.monotonic_ns() - self._last_call_ns
 
     def time_until_next_call(self) -> Optional[int]:
         if self._cancelled:
             return None
-        return max(0, self._next_call_ns - time.time_ns())
+        return max(0, self._next_call_ns - time.monotonic_ns())
 
     async def _run(self) -> None:
         try:
@@ -110,7 +111,7 @@ class DeviceTimer:
                 await self._node.sleep(self._period)
                 if self._cancelled:
                     break
-                self._last_call_ns = time.time_ns()
+                self._last_call_ns = time.monotonic_ns()
                 self._next_call_ns = self._last_call_ns + self.timer_period_ns
                 result = self._callback()
                 if inspect.isawaitable(result):

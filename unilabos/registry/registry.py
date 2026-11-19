@@ -2297,7 +2297,7 @@ class Registry:
                 "[Uni-Lab-OS Registry] 保留消息类型字符串，跳过 ROS 运行时类型增强"
             )
             return
-        t0 = time.time()
+        t0 = time.monotonic()
         for device_id in list(self.device_type_registry):
             try:
                 self.resolve_types_for_device(device_id)
@@ -2305,7 +2305,7 @@ class Registry:
                 logger.debug(f"[Registry] 设备 {device_id} 类型解析失败: {e}")
         logger.info(
             f"[Uni-Lab-OS Registry] 类型解析完成: {len(self.device_type_registry)} 设备 "
-            f"(耗时 {time.time() - t0:.2f}s)"
+            f"(耗时 {time.monotonic() - t0:.2f}s)"
         )
 
     # ------------------------------------------------------------------
@@ -2995,7 +2995,7 @@ class Registry:
             }
 
         import hashlib as _hl
-        t0 = time.time()
+        t0 = time.monotonic()
         abs_path = Path(path).absolute()
         devices_path = abs_path / "devices"
         device_comms_path = abs_path / "device_comms"
@@ -3079,7 +3079,7 @@ class Registry:
             f"[Uni-Lab-OS Registry] YAML 设备加载: "
             f"{cache_hits}/{total} 缓存命中, "
             f"{len(uncached_files)} 重新加载 "
-            f"(耗时 {time.time() - t0:.2f}s){extra}"
+            f"(耗时 {time.monotonic() - t0:.2f}s){extra}"
         )
 
     def _load_community_device_registries(self, devices_dirs=None):

@@ -71,7 +71,8 @@ class IngressReservations:
         """只有 ``reserved`` 会按 TTL 自然过期；运输中的预留只能人工取消或接收。"""
 
         self.connection.execute(
-            "UPDATE station_ingress_reservation SET state='expired', updated_at_ms=MAX(?, created_at_ms), "
+            "UPDATE station_ingress_reservation SET state='expired', "
+            "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), "
             "revision=revision+1 WHERE state='reserved' AND expires_at_ms <= ?", (now, now),
         )
 
@@ -167,7 +168,8 @@ class IngressReservations:
     def _transition(self, reservation_uuid: str, state: str, now: int, **fields: Any) -> None:
         assignments = "".join(f", {key}=?" for key in fields)
         self.connection.execute(
-            f"UPDATE station_ingress_reservation SET state=?, updated_at_ms=MAX(?, created_at_ms), "
+            "UPDATE station_ingress_reservation SET state=?, "
+            "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), "
             f"revision=revision+1{assignments} WHERE reservation_uuid=?",
             (state, now, *fields.values(), reservation_uuid),
         )

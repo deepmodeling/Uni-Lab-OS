@@ -155,6 +155,25 @@ ResourceSyncDispatcher = Callable[[MaterialDeviceSync], Any]
 #: 拓扑边身份命名空间：同两端/同 handle/同类型的边跨启动稳定同 uuid。
 MATERIAL_LINK_NAMESPACE = uuid5(NAMESPACE_URL, "unilabos://material-links")
 
+_clock_lock = threading.Lock()
+#: 本进程物料时间戳时钟上次给出的值（毫秒）
+_clock_last_ms = 0
+
+
+def _non_decreasing_ms() -> int:
+    """进程级不倒退的毫秒时间戳：墙钟与本时钟上次返回值中的较大者。
+
+    墙钟会跳变（NTP 步进校时、Windows/WSL 对时、休眠唤醒）；回拨后直接用墙钟，
+    更新几秒前刚建的记录会得到早于 ``created_at_ms`` 的 ``updated_at_ms``。
+    """
+
+    global _clock_last_ms
+    current = int(time.time() * 1000)
+    with _clock_lock:
+        if current > _clock_last_ms:
+            _clock_last_ms = current
+        return _clock_last_ms
+
 
 def _keep_plr_key(current: Mapping[str, Any], desired: Mapping[str, Any]) -> dict[str, Any]:
     """PLR 键创建后不可改：新 config 缺 ``name`` 时沿用现值，给了不同的值即拒绝。"""
@@ -257,8 +276,9 @@ class MaterialsService(MaterialsRepository):
 
     @staticmethod
     def _now_ms(mutation: Optional[InventoryMutation] = None) -> int:
-        current = int(time.time() * 1000)
+        current = _non_decreasing_ms()
         if mutation is not None:
+            # 只抬高这一次写入，不推进进程时钟：时钟偏快的设备端不能把之后所有时间戳带到将来
             current = max(current, mutation.observed_at_ms)
         return current
 
@@ -648,7 +668,7 @@ class MaterialsService(MaterialsRepository):
                     update={
                         "quantity_total": current.quantity_total + value.quantity,
                         "quantity_available": current.quantity_available + value.quantity,
-                        "updated_at_ms": timestamp,
+                        "updated_at_ms": max(timestamp, current.updated_at_ms),
                         "version": current.version + 1,
                     }
                 )
@@ -867,7 +887,8 @@ class MaterialsService(MaterialsRepository):
                     material = MaterialsRepository.get_material(self, allocation.material_uuid)
                     assert material is not None
                     updated = material.model_copy(update={
-                        "lifecycle_status": "reserved", "updated_at_ms": timestamp,
+                        "lifecycle_status": "reserved",
+                        "updated_at_ms": max(timestamp, material.updated_at_ms),
                         "version": material.version + 1,
                     })
                     material_updates.append((material, updated))
@@ -1425,7 +1446,7 @@ class MaterialsService(MaterialsRepository):
                 "quantity_total": total,
                 "quantity_available": available,
                 "quantity_reserved": reserved,
-                "updated_at_ms": timestamp,
+                "updated_at_ms": max(timestamp, current.updated_at_ms),
                 "version": current.version + 1,
             }
         )
@@ -1561,7 +1582,7 @@ class MaterialsService(MaterialsRepository):
                 updated_material = material.model_copy(
                     update={
                         "lifecycle_status": desired,
-                        "updated_at_ms": timestamp,
+                        "updated_at_ms": max(timestamp, material.updated_at_ms),
                         "version": material.version + 1,
                     }
                 )
@@ -1611,7 +1632,7 @@ class MaterialsService(MaterialsRepository):
             updated = current.model_copy(
                 update={
                     "status": target_status,
-                    "updated_at_ms": timestamp,
+                    "updated_at_ms": max(timestamp, current.updated_at_ms),
                     "version": current.version + 1,
                 }
             )
@@ -1696,6 +1717,7 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialNoChangeError("template already has this definition")
             version = 1 if current is None else current.version + 1
             created_at = timestamp if current is None else current.created_at_ms
+            updated_at = timestamp if current is None else max(timestamp, current.updated_at_ms)
             record = ResourceTemplateRecord(
                 template_uuid=template_uuid,
                 name=value.name,
@@ -1711,7 +1733,7 @@ class MaterialsService(MaterialsRepository):
                 definition_hash=definition_hash,
                 status=value.status,
                 created_at_ms=created_at,
-                updated_at_ms=timestamp,
+                updated_at_ms=updated_at,
                 version=version,
             )
             if current is None:
@@ -1792,12 +1814,13 @@ class MaterialsService(MaterialsRepository):
                 raise MaterialNotFoundError(f"template not found: {template_uuid}", subject="template")
             if self.count_active_materials_for_template(template_uuid):
                 raise MaterialConflictError("template still has active materials")
+            deleted_at = max(timestamp, current.updated_at_ms)
             updated = ResourceTemplateRecord.model_validate(
                 {
                     **current.model_dump(mode="json"),
                     "status": "deleted",
-                    "deleted_at_ms": timestamp,
-                    "updated_at_ms": timestamp,
+                    "deleted_at_ms": deleted_at,
+                    "updated_at_ms": deleted_at,
                     "version": current.version + 1,
                 }
             )
@@ -2749,7 +2772,13 @@ class MaterialsService(MaterialsRepository):
                     meta_data_json=substance.meta_data,
                     content_version=content_version,
                     observed_at_ms=max(timestamp, value.observed_at_ms),
-                    updated_at_ms=max(timestamp, value.observed_at_ms),
+                    updated_at_ms=max(
+                        timestamp,
+                        value.observed_at_ms,
+                        previous_by_uuid[substance_uuid].updated_at_ms
+                        if substance_uuid in previous_by_uuid
+                        else 0,
+                    ),
                     version=(
                         previous_by_uuid[substance_uuid].version + 1
                         if substance_uuid in previous_by_uuid
@@ -2826,7 +2855,7 @@ class MaterialsService(MaterialsRepository):
                 {
                     **semantic,
                     **changes,
-                    "updated_at_ms": timestamp,
+                    "updated_at_ms": max(timestamp, current.updated_at_ms),
                     "version": current.version + 1,
                 }
             )
@@ -2876,7 +2905,7 @@ class MaterialsService(MaterialsRepository):
             self.replace_position(
                 MaterialPositionRecord(
                     material_uuid=material_uuid,
-                    updated_at_ms=timestamp,
+                    updated_at_ms=max(timestamp, current.updated_at_ms),
                     version=current.version + 1,
                     **values,
                 )
@@ -2884,7 +2913,7 @@ class MaterialsService(MaterialsRepository):
             updated_material = MaterialRecord.model_validate(
                 {
                     **material.model_dump(mode="json"),
-                    "updated_at_ms": timestamp,
+                    "updated_at_ms": max(timestamp, material.updated_at_ms),
                     "version": material.version + 1,
                 }
             )
@@ -2960,7 +2989,7 @@ class MaterialsService(MaterialsRepository):
                 substances=substances,
                 content_version=new_content_version,
                 state_hash=state_hash,
-                updated_at_ms=timestamp,
+                updated_at_ms=max(timestamp, current.updated_at_ms),
                 version=current.version + 1,
                 **data_values,
             )
@@ -2969,7 +2998,7 @@ class MaterialsService(MaterialsRepository):
             updated_material = MaterialRecord.model_validate(
                 {
                     **material.model_dump(mode="json"),
-                    "updated_at_ms": timestamp,
+                    "updated_at_ms": max(timestamp, material.updated_at_ms),
                     "version": material.version + 1,
                 }
             )
@@ -3272,14 +3301,15 @@ class MaterialsService(MaterialsRepository):
         if source is not None and (
             destination is None or source.site_uuid != destination.site_uuid
         ):
+            source_changed_at = max(timestamp, source.updated_at_ms)
             updated_source = SiteRecord.model_validate(
                 {
                     **source.model_dump(mode="json"),
                     "occupied_material_uuid": None,
                     "changed_by_job_uuid": mutation.job_uuid,
                     "changed_by_command_uuid": mutation.command_uuid,
-                    "changed_at_ms": timestamp,
-                    "updated_at_ms": timestamp,
+                    "changed_at_ms": source_changed_at,
+                    "updated_at_ms": source_changed_at,
                     "version": source.version + 1,
                 }
             )
@@ -3311,7 +3341,7 @@ class MaterialsService(MaterialsRepository):
             {
                 **material.model_dump(mode="json"),
                 "parent_material_uuid": parent_uuid,
-                "updated_at_ms": timestamp,
+                "updated_at_ms": max(timestamp, material.updated_at_ms),
                 "version": material.version + 1,
             }
         )
@@ -3322,14 +3352,15 @@ class MaterialsService(MaterialsRepository):
         self.update_material(updated_material)
 
         if destination is not None:
+            destination_changed_at = max(timestamp, destination.updated_at_ms)
             updated_destination = SiteRecord.model_validate(
                 {
                     **destination.model_dump(mode="json"),
                     "occupied_material_uuid": value.material_uuid,
                     "changed_by_job_uuid": mutation.job_uuid,
                     "changed_by_command_uuid": mutation.command_uuid,
-                    "changed_at_ms": timestamp,
-                    "updated_at_ms": timestamp,
+                    "changed_at_ms": destination_changed_at,
+                    "updated_at_ms": destination_changed_at,
                     "version": destination.version + 1,
                 }
             )
@@ -3617,15 +3648,16 @@ class MaterialsService(MaterialsRepository):
         for site_uuid in sorted(sites):
             current = sites[site_uuid]
             removed = site_uuid in deleting
+            changed_at = max(timestamp, current.updated_at_ms)
             updated = SiteRecord.model_validate(
                 {
                     **current.model_dump(mode="json"),
                     "occupied_material_uuid": None,
                     "changed_by_job_uuid": mutation.job_uuid,
                     "changed_by_command_uuid": mutation.command_uuid,
-                    "changed_at_ms": timestamp,
-                    "updated_at_ms": timestamp,
-                    "deleted_at_ms": timestamp if removed else None,
+                    "changed_at_ms": changed_at,
+                    "updated_at_ms": changed_at,
+                    "deleted_at_ms": changed_at if removed else None,
                     "version": current.version + 1,
                 }
             )
@@ -3673,12 +3705,13 @@ class MaterialsService(MaterialsRepository):
         get/tree/list 读取里，单物料台账（``/materials/{uuid}/ledger``）仍可查。
         """
 
+        retired_at = max(timestamp, current.updated_at_ms)
         updated = MaterialRecord.model_validate(
             {
                 **current.model_dump(mode="json"),
                 "lifecycle_status": "retired",
-                "deleted_at_ms": timestamp,
-                "updated_at_ms": timestamp,
+                "deleted_at_ms": retired_at,
+                "updated_at_ms": retired_at,
                 "version": current.version + 1,
             }
         )
@@ -3995,7 +4028,7 @@ class MaterialsService(MaterialsRepository):
                     self.replace_position(
                         MaterialPositionRecord(
                             material_uuid=material_uuid,
-                            updated_at_ms=timestamp,
+                            updated_at_ms=max(timestamp, current_position.updated_at_ms),
                             version=current_position.version + 1,
                             **position_values,
                         )
@@ -4047,7 +4080,7 @@ class MaterialsService(MaterialsRepository):
                             source_job_uuid=desired_data.source_job_uuid,
                             source_command_uuid=desired_data.source_command_uuid,
                             observed_at_ms=desired_data.observed_at_ms,
-                            updated_at_ms=timestamp,
+                            updated_at_ms=max(timestamp, current_data.updated_at_ms),
                             version=current_data.version + 1,
                         )
                     )
@@ -4071,7 +4104,7 @@ class MaterialsService(MaterialsRepository):
                         "extra_json": identity.extra,
                         "meta_data_json": identity.meta_data,
                         "lifecycle_status": identity.lifecycle_status,
-                        "updated_at_ms": timestamp,
+                        "updated_at_ms": max(timestamp, current_record.updated_at_ms),
                         "version": current_record.version + 1,
                     }
                 )
@@ -4087,6 +4120,7 @@ class MaterialsService(MaterialsRepository):
                 desired = desired_sites[site_uuid]
                 if current_record is None:
                     raise MaterialNotFoundError(f"site not found: {site_uuid}", subject="site")
+                changed_at = max(timestamp, current_record.updated_at_ms)
                 updated_record = SiteRecord(
                     site_uuid=site_uuid,
                     schema_version=desired.schema_version,
@@ -4105,9 +4139,9 @@ class MaterialsService(MaterialsRepository):
                     extra_json=desired.extra,
                     changed_by_job_uuid=mutation.job_uuid,
                     changed_by_command_uuid=mutation.command_uuid,
-                    changed_at_ms=timestamp,
+                    changed_at_ms=changed_at,
                     created_at_ms=current_record.created_at_ms,
-                    updated_at_ms=timestamp,
+                    updated_at_ms=changed_at,
                     deleted_at_ms=desired.deleted_at_ms,
                     version=current_record.version + 1,
                 )
@@ -4267,7 +4301,7 @@ class MaterialsService(MaterialsRepository):
                     self.replace_position(
                         MaterialPositionRecord(
                             material_uuid=node.material_uuid,
-                            updated_at_ms=timestamp,
+                            updated_at_ms=max(timestamp, position_record.updated_at_ms),
                             version=position_record.version + 1,
                             **position_values,
                         )
@@ -4281,7 +4315,10 @@ class MaterialsService(MaterialsRepository):
                     record = MaterialsRepository.get_material(self, node.material_uuid)
                     assert record is not None
                     updated_record = record.model_copy(
-                        update={"updated_at_ms": timestamp, "version": record.version + 1}
+                        update={
+                            "updated_at_ms": max(timestamp, record.updated_at_ms),
+                            "version": record.version + 1,
+                        }
                     )
                     self.update_material(updated_record)
                     aggregate = self._aggregate(node.material_uuid)
@@ -4406,7 +4443,7 @@ class MaterialsService(MaterialsRepository):
                 source_job_uuid=desired.source_job_uuid,
                 source_command_uuid=desired.source_command_uuid,
                 observed_at_ms=desired.observed_at_ms,
-                updated_at_ms=timestamp,
+                updated_at_ms=max(timestamp, current_data.updated_at_ms),
                 version=current_data.version + 1,
             )
         )
@@ -4446,13 +4483,14 @@ class MaterialsService(MaterialsRepository):
                 updates["extra_json"] = dict(delta.extra)
             if not updates:
                 continue
+            changed_at = max(timestamp, record.updated_at_ms)
             updated = record.model_copy(
                 update={
                     **updates,
                     "changed_by_job_uuid": mutation.job_uuid,
                     "changed_by_command_uuid": mutation.command_uuid,
-                    "changed_at_ms": timestamp,
-                    "updated_at_ms": timestamp,
+                    "changed_at_ms": changed_at,
+                    "updated_at_ms": changed_at,
                     "version": record.version + 1,
                 }
             )

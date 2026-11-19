@@ -644,8 +644,8 @@ class EdgeControlService:
                     logger.exception("[EdgeControl] publish_job_late_outcome 失败")
 
     def wait_idle(self, timeout: float = 5.0) -> bool:
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             with self._lock:
                 if not self._inflight:
                     return True

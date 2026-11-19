@@ -633,6 +633,9 @@ class HostLinkServer:
         data: Dict[str, Any],
     ) -> Dict[str, Any]:
         now = time.time()
+        # 在线判定只看单调时钟；墙钟会跳变（NTP 步进校时、Windows/WSL 对时、休眠唤醒），
+        # 只留给 last_seen / connected_at 展示
+        now_monotonic = time.monotonic()
         with self._peers_lock:
             known_node = self._connection_nodes.get(peer_key)
             if action == ActionType.HELLO:
@@ -731,6 +734,7 @@ class HostLinkServer:
                     if device_id and isinstance(state, dict):
                         states[device_id] = dict(state)
             peer["last_seen"] = now
+            peer["last_seen_monotonic"] = now_monotonic
             peer["connected"] = True
             return dict(peer)
 
@@ -747,15 +751,18 @@ class HostLinkServer:
     def peers(self) -> List[Dict[str, Any]]:
         """Return all known Slaves with a calculated ``online`` field."""
 
-        now = time.time()
+        # 心跳超时按单调时钟计：墙钟前跳不会把存活的 Slave 判成离线，
+        # 回拨也不会让已经没有心跳的 Slave 一直显示在线
+        now = time.monotonic()
         with self._peers_lock:
             result: List[Dict[str, Any]] = []
             for peer in self._peers.values():
                 snapshot = dict(peer)
+                last_seen = snapshot.get("last_seen_monotonic")
                 snapshot["online"] = bool(
                     snapshot.get("connected")
-                    and now - float(snapshot.get("last_seen") or 0)
-                    < self.heartbeat_timeout
+                    and last_seen is not None
+                    and now - float(last_seen) < self.heartbeat_timeout
                 )
                 result.append(snapshot)
             return result

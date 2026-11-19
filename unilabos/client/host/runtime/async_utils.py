@@ -35,7 +35,7 @@ class DeviceAsyncMutex:
 
     async def acquire(self, node: Any, tag: str = "") -> None:
         """获取锁；已被占用时异步等待直到释放。"""
-        t0 = time.time()
+        t0 = time.monotonic()
         with self._lock:
             qlen = len(self._queue)
             if not self._acquired:
@@ -58,7 +58,7 @@ class DeviceAsyncMutex:
                         f"[Mutex:{self._name}] 取消锁等待 tag={tag} queue={len(self._queue)}"
                     )
             raise
-        wait_ms = (time.time() - t0) * 1000
+        wait_ms = (time.monotonic() - t0) * 1000
         self._holder = tag
         node.lab_logger().debug(
             f"[Mutex:{self._name}] 队列继续执行 tag={tag} waited={wait_ms:.0f}ms"

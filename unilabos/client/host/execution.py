@@ -165,8 +165,8 @@ class JobExecutionBackend:
 
     def wait_idle(self, timeout: float = 5.0) -> bool:
         """等待全部已入队事件处理完（测试/关停用）。"""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             with self._pending_lock:
                 if self._pending == 0:
                     return True
@@ -732,7 +732,7 @@ class JobExecutionBackend:
                 return None
             self._resolved_action_error_decisions[decision_id] = {
                 "report": deepcopy(report),
-                "retain_until": now + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS,
+                "retain_until": time.monotonic() + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS,
             }
         if self._monitor is not None:
             try:
@@ -887,7 +887,7 @@ class JobExecutionBackend:
                 self._resolved_action_error_decisions[decision_id] = {
                     "report": deepcopy(report),
                     "retain_until": (
-                        now + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
+                        time.monotonic() + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
                     ),
                 }
                 resolved.append(report)
@@ -1727,7 +1727,8 @@ class JobExecutionBackend:
     ) -> Optional[Dict[str, Any]]:
         """Return a short-lived idempotency tombstone for repeated releases."""
 
-        now = time.time()
+        # retain_until 是单调时钟读数：墓碑保留期不受墙钟跳变影响
+        now = time.monotonic()
         with self._pending_action_error_decisions_lock:
             stale = [
                 key
@@ -1818,7 +1819,7 @@ class JobExecutionBackend:
             self._resolved_action_error_decisions[decision_id] = {
                 "report": deepcopy(resolved_report),
                 "retain_until": (
-                    time.time() + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
+                    time.monotonic() + self._ACTION_ERROR_DECISION_TOMBSTONE_TTL_SECONDS
                 ),
             }
 
@@ -2105,7 +2106,7 @@ class JobExecutionBackend:
                 logger.exception(
                     "[JobExecutionBackend] cancel goal failed for timed-out job %s", job_log
                 )
-        elapsed = time.time() - float(job.start_time or time.time())
+        elapsed = time.monotonic() - job.start_monotonic
         error = TimeoutException(
             job.action_name,
             seconds,
@@ -2133,7 +2134,7 @@ class JobExecutionBackend:
         with self._timeout_lock:
             entry = self._job_timeouts.get(job_id) or {}
             spec = entry.get("soft_spec")
-        elapsed = time.time() - float(job.start_time or time.time())
+        elapsed = time.monotonic() - job.start_monotonic
         error = ExecutionTimeoutException(
             job.action_name,
             seconds,

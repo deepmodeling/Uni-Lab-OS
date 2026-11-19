@@ -120,7 +120,8 @@ class _JobRecord:
     request: Dict[str, Any]
     terminal_message: Optional[Dict[str, Any]] = None
     terminal_status: str = ""
-    updated_at: float = field(default_factory=time.time)
+    #: 单调时钟读数，只用于缓存过期与淘汰顺序
+    updated_at: float = field(default_factory=time.monotonic)
 
 
 class LegacyBackendWebSocketClient(BaseBackendClient):
@@ -247,7 +248,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
         job_log = format_job_log(item.job_id, item.task_id, item.device_id, item.action_name)
         key = (item.task_id, item.job_id)
         if status == "running":
-            now = time.time()
+            now = time.monotonic()
             cached = self._running_last_sent.get(item.job_id)
             if (
                 cached is not None
@@ -289,7 +290,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
                     return
                 record.terminal_message = copy.deepcopy(message)
                 record.terminal_status = status
-                record.updated_at = time.time()
+                record.updated_at = time.monotonic()
                 self._prune_jobs_locked()
         if not self._queue_message(message):
             logger.debug("[LegacyWS] 未连接，job_status %s (%s) 已缓存待重放", job_log, status)
@@ -675,7 +676,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
             self._prune_jobs_locked()
             record = self._jobs.get(key)
             if record is not None:
-                record.updated_at = time.time()
+                record.updated_at = time.monotonic()
                 replay = copy.deepcopy(record.terminal_message)
             else:
                 self._jobs[key] = _JobRecord(request=copy.deepcopy(data))
@@ -880,7 +881,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
     # ------------------------------------------------------------------
 
     def _prune_jobs_locked(self) -> None:
-        now = time.time()
+        now = time.monotonic()
         expired = [
             key for key, record in self._jobs.items()
             if now - record.updated_at > _JOB_CACHE_TTL_SECONDS

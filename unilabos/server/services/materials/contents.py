@@ -292,7 +292,7 @@ class ContentContract:
         assignments = ",".join(f"{key}=?" for key in fields)
         self.connection.execute(
             f"UPDATE material_content SET {assignments}{',' if assignments else ''} revision=revision+1, "
-            "updated_at_ms=MAX(?, created_at_ms) WHERE substance_uuid=?",
+            "updated_at_ms=MAX(?, created_at_ms, updated_at_ms) WHERE substance_uuid=?",
             (*fields.values(), now, substance_uuid),
         )
 
@@ -1022,7 +1022,8 @@ class ContentContract:
                 raise MaterialConflictError(f"content reservation is already {row['status']}", conflict="state")
             now = self._now()
             self.connection.execute(
-                "UPDATE material_content_reservation SET status=?, updated_at_ms=MAX(?, created_at_ms), version=version+1 "
+                "UPDATE material_content_reservation SET status=?, "
+                "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), version=version+1 "
                 "WHERE reservation_uuid=?", (status, now, reservation_uuid),
             )
             if status == "consumed":
@@ -1102,7 +1103,8 @@ class ContentContract:
                 return self._reservation_row(row)
             now = self._now()
             self.connection.execute(
-                "UPDATE material_content_reservation SET status='consumed', updated_at_ms=MAX(?, created_at_ms), "
+                "UPDATE material_content_reservation SET status='consumed', "
+                "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), "
                 "version=version+1 WHERE reservation_uuid=?", (now, reservation_uuid),
             )
             physical = self._physical(row["substance_uuid"])

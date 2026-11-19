@@ -103,7 +103,7 @@ def create_scheduling_router(service: Any, *, get_scheduler: Optional[Callable[[
                 yield frame(event)
             if not follow:
                 return
-            last_beat = time.time()
+            last_beat = time.monotonic()
             while not await request.is_disconnected():
                 events = await asyncio.to_thread(timeline.monitor_events, after=cursor, channels=selected)
                 latest = await asyncio.to_thread(timeline.latest_sequence)
@@ -111,10 +111,10 @@ def create_scheduling_router(service: Any, *, get_scheduler: Optional[Callable[[
                     yield frame(event)
                 cursor = max([cursor, latest, *[event["seq"] for event in events]])
                 if events:
-                    last_beat = time.time()
-                elif time.time() - last_beat > 15:
+                    last_beat = time.monotonic()
+                elif time.monotonic() - last_beat > 15:
                     yield ": keepalive\n\n"
-                    last_beat = time.time()
+                    last_beat = time.monotonic()
                 await asyncio.sleep(0.4)
 
         return StreamingResponse(stream(), media_type="text/event-stream",

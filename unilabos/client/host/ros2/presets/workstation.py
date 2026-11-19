@@ -358,7 +358,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                     f"{json.dumps(logs, indent=4, ensure_ascii=False)}"
                 )
 
-                time_start = time.time()
+                time_start = time.monotonic()
                 self._busy = True
 
                 # 逐步执行工作流
@@ -412,7 +412,7 @@ class ROS2WorkstationNode(BaseROS2DeviceNode):
                     "protocol_name": protocol_name,
                     "steps_executed": len(protocol_steps),
                     "step_results": step_results,
-                    "total_time": time.time() - time_start,
+                    "total_time": time.monotonic() - time_start,
                 }
 
                 goal_handle.succeed()

@@ -288,7 +288,8 @@ class MaterialExecutions:
                 for identity in record["snapshot"]:
                     service._validate_material_capacity(identity)
                 conn.execute(
-                    "UPDATE material_execution SET state='settled',receipt_json=?,result_json=?,version=version+1,updated_at_ms=? WHERE job_uuid=?",
+                    "UPDATE material_execution SET state='settled',receipt_json=?,result_json=?,version=version+1,"
+                    "updated_at_ms=MAX(?, created_at_ms, updated_at_ms) WHERE job_uuid=?",
                     (_json(receipt), _json({"materials": sorted(record["snapshot"])}), now, receipt.job_uuid),
                 )
                 conn.execute("DELETE FROM material_execution_hold WHERE job_uuid=?", (receipt.job_uuid,))
@@ -536,7 +537,8 @@ class MaterialExecutions:
             if not value.reason.strip():
                 raise MaterialConflictError("必须记录现场核实说明")
             conn.execute(
-                "UPDATE material_execution SET state='released',confirmation_json=?,version=version+1,updated_at_ms=? WHERE job_uuid=?",
+                "UPDATE material_execution SET state='released',confirmation_json=?,version=version+1,"
+                "updated_at_ms=MAX(?, created_at_ms, updated_at_ms) WHERE job_uuid=?",
                 (_json(value), self.service._now_ms(), job_uuid),
             )
             conn.execute("DELETE FROM material_execution_hold WHERE job_uuid=?", (job_uuid,))

@@ -284,9 +284,9 @@ def run_talker(
     publisher = node.create_publisher(String, topic, 10)
     print(f"[doctor] talker 就绪: topic={topic} rate={rate_hz}Hz sender={sender}（Ctrl-C 结束）")
     seq = 0
-    deadline = time.time() + duration_s if duration_s > 0 else None
+    deadline = time.monotonic() + duration_s if duration_s > 0 else None
     try:
-        while rclpy.ok() and (deadline is None or time.time() < deadline):
+        while rclpy.ok() and (deadline is None or time.monotonic() < deadline):
             seq += 1
             publisher.publish(String(data=make_probe_message(seq, sender)))
             if seq % max(int(rate_hz * 5), 1) == 0 or seq == 1:
@@ -330,9 +330,9 @@ def run_listener(
     node.create_subscription(String, topic, on_message, 10)
     print(f"[doctor] listener 就绪: topic={topic}"
           + (f" 持续 {duration_s}s" if duration_s > 0 else "（Ctrl-C 结束）"))
-    deadline = time.time() + duration_s if duration_s > 0 else None
+    deadline = time.monotonic() + duration_s if duration_s > 0 else None
     try:
-        while rclpy.ok() and (deadline is None or time.time() < deadline):
+        while rclpy.ok() and (deadline is None or time.monotonic() < deadline):
             rclpy.spin_once(node, timeout_sec=0.2)
     except KeyboardInterrupt:
         pass
@@ -392,9 +392,9 @@ def run_fake_device(
     probe_pub = node.create_publisher(String, DEFAULT_TOPIC, 10)
     print(f"[doctor] fake-device 就绪: id={device_id}，发布 {topic} 与 {DEFAULT_TOPIC}")
     seq = 0
-    deadline = time.time() + duration_s if duration_s > 0 else None
+    deadline = time.monotonic() + duration_s if duration_s > 0 else None
     try:
-        while rclpy.ok() and (deadline is None or time.time() < deadline):
+        while rclpy.ok() and (deadline is None or time.monotonic() < deadline):
             seq += 1
             payload = make_probe_message(seq, device_id)
             publisher.publish(String(data=payload))

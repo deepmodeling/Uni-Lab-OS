@@ -164,6 +164,8 @@ class WorkstationBase(ABC):
         self.current_workflow_status = WorkflowStatus.IDLE
         self.current_workflow_info = None
         self.workflow_start_time = None
+        # 运行时长按单调时钟计；workflow_start_time 是墙钟，只用于展示
+        self._workflow_start_monotonic: Optional[float] = None
         self.workflow_parameters = {}
 
         # 支持的工作流（静态预定义）
@@ -281,6 +283,7 @@ class WorkstationBase(ABC):
             self.current_workflow_status = WorkflowStatus.INITIALIZING
             self.workflow_parameters = parameters
             self.workflow_start_time = time.time()
+            self._workflow_start_monotonic = time.monotonic()
 
             # 委托给子类实现
             success = self._execute_workflow_impl(workflow_name, parameters)
@@ -346,7 +349,10 @@ class WorkstationBase(ABC):
         """获取工作流运行时间（秒）"""
         if self.workflow_start_time is None:
             return 0.0
-        return time.time() - self.workflow_start_time
+        if self._workflow_start_monotonic is None:
+            # 子类自己写入的 workflow_start_time 没有单调时钟读数，只能按墙钟估算
+            return time.time() - self.workflow_start_time
+        return time.monotonic() - self._workflow_start_monotonic
 
 
 class ProtocolNode(WorkstationBase):

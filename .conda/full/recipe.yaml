@@ -21,12 +21,6 @@ requirements:
   - myst-nb >=1
   - sphinx-copybutton >=0.5
   - sphinx-autobuild >=2024.2.4
-  - rinohtype >=0.5.4
-  # 上游 Conda 元数据漏列字体依赖；由本发布链构建原始字体发行包。
-  - rinoh-typeface-dejavuserif
-  - rinoh-typeface-texgyrecursor
-  - rinoh-typeface-texgyreheros
-  - rinoh-typeface-texgyrepagella
   - sphinx-simplepdf >=1.6
   # 通信适配器（device_comms）与数据分析依赖；厂商驱动 SDK 随各驱动包声明
   - opcua >=0.98.13
@@ -83,7 +77,6 @@ tests:
         then:
           - if not exist "%USERPROFILE%\AppData\Local" mkdir "%USERPROFILE%\AppData\Local"
           - if not exist "%USERPROFILE%\AppData\Roaming" mkdir "%USERPROFILE%\AppData\Roaming"
-      - python -c "import rinoh_typeface_dejavuserif, rinoh_typeface_texgyrecursor, rinoh_typeface_texgyreheros, rinoh_typeface_texgyrepagella"
       # conda-forge 的 Ruff 是原生可执行文件，无 Python dist-info，仍须校验实际版本。
       - python -c "import subprocess; from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(subprocess.check_output(['ruff', '--version'], text=True).split()[1] if r.name == 'ruff' else version(r.name))]; assert not missing, missing"
 about:

@@ -89,7 +89,7 @@ Host 只跟随本机的监督进程，网络断开只重连、不退出。详见
 
 - `.conda/base/`、`.conda/environment/`：唯一一套无 ROS 核心和依赖。
 - `.conda/msgcenterpy/`、`.conda/pylabrobot/`：固定版本的消息转换和 PLR 分支依赖。
-- `.conda/mcp/`：补齐既有 MCP 1.30 最低版本，不通过降低版本绕过缺包。
+- `mcp >=1.30,<2` 与 OPC UA 客户端依赖 `opcua` 直接取 conda-forge 的 noarch 构建，本仓库不再重打第三方包。
 - `.conda/ros2*/`、`.conda/full*/`：显式 ROS2 扩展和桌面变体。
 - `recipes/msgs*/`：独立的 ROS 消息发布；不由普通 HostLink 发布触发。
 - `scripts/build_conda_release.py`：默认只构建无 ROS 包；ROS 需指定 `--ros-distros`。

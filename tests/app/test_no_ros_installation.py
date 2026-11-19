@@ -92,10 +92,11 @@ class Counter:
 
 
 def test_conda_build_default_has_no_ros_channels():
-    from scripts.build_conda_release import FULL_SUPPORT_RECIPES, recipes
+    from scripts.build_conda_release import recipes
 
+    # opcua / mcp 来自 conda-forge 的 noarch 包，本发布链不再重打第三方包。
     assert recipes() == [(name, []) for name in (
-        "opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base"
+        "opentrons-shared-data", "msgcenterpy", "pylabrobot", "base"
     )]
     assert recipes("jazzy")[-1] == ("ros2", ["robostack-jazzy"])
     with pytest.raises(ValueError, match="显式"):
@@ -103,7 +104,6 @@ def test_conda_build_default_has_no_ros_channels():
     with pytest.raises(ValueError, match="显式"):
         recipes(extensions_only=True)
     assert recipes("jazzy", full=True, extensions_only=True) == [
-        *((name, []) for name in FULL_SUPPORT_RECIPES),
         ("msgs", ["robostack-jazzy"]),
         ("ros2", ["robostack-jazzy"]), ("full", ["robostack-jazzy"]),
     ]
@@ -116,8 +116,10 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
-    support = tmp_path / "noarch" / "rinoh-typeface-dejavuserif-0.1.3-py_0.conda"
-    support.parent.mkdir()
+    # 默认档的 noarch 依赖在扩展发布里不能再传一次；扩展自己的 noarch 包要传。
+    (tmp_path / "noarch").mkdir()
+    (tmp_path / "noarch" / "msgcenterpy-0.1.8-py_1.conda").touch()
+    support = tmp_path / "noarch" / "unilabos-ros2-0.13.0a1-jazzy_1.conda"
     support.touch()
     monkeypatch.setenv("ANACONDA_API_TOKEN", "test-token-not-a-secret")
     monkeypatch.setattr(sys, "argv", ["build_conda_release.py", "upload", "--platform", "win-64",
@@ -148,7 +150,7 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
 
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
-        "win-64/mcp-1.30.0-py314_0.conda": True,
+        "win-64/ros-jazzy-unilabos-msgs-0.12.2-h3c70cbc_1.conda": True,
         "win-64/unilabos-0.13.0a1-py314_0.conda": False,
     }
     for name in packages:
@@ -502,29 +504,26 @@ def test_full_conda_profiles_cover_python_extras(monkeypatch):
             assert canonicalize_name(conda_names.get(requirement.name, requirement.name)) in names
 
 
-def test_full_conda_support_packages_and_closed_dependency_validation():
+def test_full_conda_dependencies_and_closed_dependency_validation():
     import yaml
-    from scripts.build_conda_release import FULL_SUPPORT_RECIPES
 
     root = Path(__file__).resolve().parents[2]
-    for name in FULL_SUPPORT_RECIPES:
-        recipe = yaml.safe_load((root / f".conda/{name}/recipe.yaml").read_text(encoding="utf-8"))
-        assert recipe["package"]["name"] == name
-        assert recipe["build"]["noarch"] == "python"
-        sources = recipe["source"] if isinstance(recipe["source"], list) else [recipe["source"]]
-        assert all(len(source["sha256"]) == 64 for source in sources)
+    # 公共频道已有的第三方包不再自建（opcua、mcp 取 conda-forge 的 noarch 构建）。
+    for name in ("opcua", "mcp", "rinoh-typeface-dejavuserif"):
+        assert not (root / f".conda/{name}").exists()
     for suffix in ("", "-humble"):
         full = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text(encoding="utf-8"))
         dependencies = full["requirements"]["run"]
         assert "colcon-notification" in dependencies
-        assert set(FULL_SUPPORT_RECIPES) <= {dep.split()[0] for dep in dependencies if isinstance(dep, str)}
+        assert "opcua >=0.98.13" in dependencies
+        assert not any("rinoh" in str(dep) for dep in dependencies)
         assert {"if": "win", "then": "pywinauto >=0.6.8"} in dependencies
         assert not any("pyautogui" in str(dep) or "pprp" in str(dep) or "pylibftdi" in str(dep) for dep in dependencies)
         assert any(test.get("python", {}).get("pip_check") is True for test in full["tests"])
         commands = next(test["script"] for test in full["tests"] if "script" in test)
         windows = next(command for command in commands if isinstance(command, dict) and command.get("if") == "win")
         assert all("%USERPROFILE%\\AppData\\" in command for command in windows["then"])
-        assert any("import rinoh_typeface_dejavuserif" in command for command in commands if isinstance(command, str))
+        assert not any("rinoh" in str(command) for command in commands)
         # ROS 冒烟测试统一走 conda_smoke 模块（本机发现 + 超时），模块内先修补 Windows DLL 路径。
         assert commands[0] == "python -m unilabos.client.host.ros2.conda_smoke"
         validation = next(command for command in commands if isinstance(command, str) and "reqs =" in command)

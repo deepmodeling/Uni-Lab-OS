@@ -8,7 +8,7 @@
 import json
 import traceback
 from io import StringIO
-from typing import Iterable, Any, Dict, Type, TypeVar, Union
+from typing import Iterable, Any, Dict, Optional, Type, TypeVar, Union
 
 import yaml
 from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
@@ -228,17 +228,21 @@ _msg_data_mapping: Dict[str, Type] = {
 
 
 def compare_model_fields(cls1: Any, cls2: Any) -> bool:
-    """比较两个类的字段是否相同"""
+    """比较两个类的字段是否相同。
 
-    def get_class_fields(cls: Any) -> set:
+    任一方没有可比较的字段（如字符串形式的注解 ``"float"``）时视为不同，
+    由 ``get_msg_type`` / ``get_action_type`` 按不支持的类型报 ``ValueError``。
+    """
+
+    def get_class_fields(cls: Any) -> Optional[set]:
         if hasattr(cls, "__annotations__"):
             return set(cls.__annotations__.keys())
-        else:
-            return set(cls.__dict__.keys())
+        fields = getattr(cls, "__dict__", None)
+        return set(fields.keys()) if fields is not None else None
 
     fields1 = get_class_fields(cls1)
     fields2 = get_class_fields(cls2)
-    return fields1 == fields2
+    return fields1 is not None and fields2 is not None and fields1 == fields2
 
 
 def get_msg_type(datatype: Type) -> Type:

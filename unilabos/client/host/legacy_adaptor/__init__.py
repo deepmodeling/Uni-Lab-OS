@@ -19,8 +19,8 @@ legacy（旧云端 Backend：``job_start`` / ``host_node_ready`` 消息族）
 
 公共部分：``session`` 会话工厂（Edge 固定 runtime.v1）、``url`` 连接地址
 构建（runtime.v1 与 HTTP 同端口；``+1`` 只在 ``build_legacy_backend_websocket_url``）。
-``probe`` 与 ``legacy`` 客户端只供 Backend 侧显式兼容旧云端；调度权威、执行
-bridge 与 Edge 控制面等本地微后端代码留在 ``server.backend`` 直下，不属于本包。
+``probe`` 与 ``legacy`` 客户端只供 Backend 侧显式兼容旧云端；调度权威与 Edge 控制面在
+``unilabos.server``，执行 bridge 在 ``unilabos.client.host`` 直下，都不属于本包。
 """
 
 from unilabos.client.host.legacy_adaptor.http import (

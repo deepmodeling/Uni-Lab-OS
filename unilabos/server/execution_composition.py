@@ -21,7 +21,7 @@ from unilabos.client.host.execution import (
     make_device_materials_need_lock_resolver,
     make_device_status_policy_resolver,
 )
-from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
+from unilabos.client.host.edge_executor import WorkflowBusinessCoordinator
 from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
 from unilabos.protocol.base import canonical_json

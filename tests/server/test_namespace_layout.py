@@ -105,7 +105,9 @@ def test_microbackend_namespaces_live_under_server() -> None:
     host_root = package_root / "client" / "host"
     assert (server_root / "execution_composition.py").is_file()
     assert (server_root / "edge_dispatch.py").is_file()
-    assert (server_root / "backend" / "coordinator.py").is_file()
+    assert (host_root / "edge_executor.py").is_file()
+    # 不再有 server/backend 子包（旧 checkout 可能残留只有 __pycache__ 的空目录，只检查源码）
+    assert not list((server_root / "backend").rglob("*.py"))
     for module_name in ("execution_queue.py", "inventory.py"):
         assert (server_root / module_name).is_file()
     for module_name in ("execution.py", "incidents.py", "telemetry.py"):

@@ -480,7 +480,7 @@ class _HistoryPayloads:
 
 def test_split_topology_reports_the_hold_and_the_late_outcome_over_runtime_v1(tmp_path) -> None:
     from tests.server.test_workflow_business_coordinator import _DataPlane, _document, _execute_payload
-    from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
+    from unilabos.client.host.edge_executor import WorkflowBusinessCoordinator
     from unilabos.server.edge_dispatch import EdgeControlService
     from unilabos.server.services.history import HistoryService
     from unilabos.server.services.runtime import RuntimeService

@@ -88,7 +88,7 @@ class ColoredFormatter(logging.Formatter):
         "unilabos.server.scheduler": "scheduler",
         "unilabos.client.host.execution": "scheduler",
         "unilabos.server.execution_queue": "scheduler",
-        "unilabos.server.backend.coordinator": "scheduler",
+        "unilabos.client.host.edge_executor": "scheduler",
         "unilabos.client.host.hostlink": "hostlink",
         # 与 Backend 的连接（legacy_adaptor）原在 unilabos.server 下，保持微后端配色
         "unilabos.client.host.legacy_adaptor": "microbackend",

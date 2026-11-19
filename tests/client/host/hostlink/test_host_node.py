@@ -319,6 +319,43 @@ def test_slave_lost_after_send_goal_still_fails_before_the_start_boundary(slave_
     assert return_info["error_info"]["category"] == "transport"
 
 
+def test_request_lost_with_its_connection_stays_execution_unknown(slave_stack) -> None:
+    """请求已经发给 Slave、之后连接断开：Slave 可能已执行，作业保持 execution_unknown 等核实。
+
+    修复前断开的连接把挂起的请求当成 Slave 的失败应答（RemoteError），作业成了可以直接重试的普通失败。
+    """
+
+    import socket
+
+    adapter, _microbackend, server, _channel, _bridge = slave_stack
+    recorder = RecordingBridge()
+    adapter.bridges = [recorder]
+    host_end, slave_end = socket.socketpair()
+    session = server.register_session("slave-conn", host_end)
+    item = _item("set_valve_position")
+    item.device_id = "slave_valve"
+    worker = threading.Thread(
+        target=adapter._execute_job,
+        args=(item, "NativeAction", {"command": "OPEN"}, ActionContext(action_id=item.job_id)),
+    )
+    worker.start()
+    try:
+        slave_end.settimeout(2)
+        assert b"set_valve_position" in slave_end.recv(65536)  # 请求已经到了 Slave 一侧
+        server.unregister_session("slave-conn", session)  # 连接断开，应答丢失
+        worker.join(2)
+    finally:
+        slave_end.close()
+        host_end.close()
+
+    assert not worker.is_alive()
+    _job_id, status, _data, return_info = recorder.statuses[-1]
+    assert status == "failed"
+    assert return_info.get("suc_type") == SUCCESS_TYPE_EXECUTION_UNKNOWN
+    assert "连接" in return_info["uncertainty_reason"]
+    assert "error_info" not in return_info
+
+
 def test_hostlink_adapter_executes_microbackend_job(
     execution_stack,
 ) -> None:

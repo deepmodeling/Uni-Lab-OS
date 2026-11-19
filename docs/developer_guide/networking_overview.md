@@ -281,6 +281,8 @@ ROS2 Slave 的设备在以下情况离线：Slave 的 HostLink 连接断开或�
 
 两种 backend 下，派发给所在 Slave 已断开或心跳超时的设备的动作，都在开始边界之前失败：开始许可
 不领用，作业带 `error_info`（`ExecutionNotStarted`，传输类）走普通的失败决策，而不是结果未知。
+请求已经发给 Slave、之后连接才断开（如 Slave 在动作进行中被杀）的，Slave 可能已经执行，按结果未知
+（`execution_unknown`）交给核实。
 
 ### WebSocket 通信
 

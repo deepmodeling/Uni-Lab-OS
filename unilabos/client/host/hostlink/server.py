@@ -91,6 +91,14 @@ class _Pending:
         except InvalidStateError:
             pass
 
+    def fail(self, error: BaseException) -> None:
+        if self.future.done():
+            return
+        try:
+            self.future.set_exception(error)
+        except InvalidStateError:
+            pass
+
     def wait(self, timeout: Optional[float]) -> Dict[str, Any]:
         return self.future.result(timeout=timeout)
 
@@ -201,7 +209,9 @@ class _PeerSession:
         with self._pending_lock:
             pending_items = list(self._pending.values())
         for pending in pending_items:
-            pending.resolve({"ok": False, "error": "connection closed"})
+            # 请求已经发出、应答随连接一起丢了：Slave 可能已收到并开始执行。这是传输层的不确定
+            # （LinkError），不能当成 Slave 的失败应答（RemoteError 表示 Slave 明确回了失败）。
+            pending.fail(LinkError("HostLink 连接在 Slave 应答前断开，请求可能已送达"))
 
 
 class HostLinkPortInUseError(OSError):

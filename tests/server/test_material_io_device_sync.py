@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from tests.backend.hostlink.test_downlink import _FakeNode
+from tests.client.host.hostlink.test_downlink import _FakeNode
 from tests.server.test_material_io_inventory import (
     RESERVOIR,
     RESERVOIR_MODULE,

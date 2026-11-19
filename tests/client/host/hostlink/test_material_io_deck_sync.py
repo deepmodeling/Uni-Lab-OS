@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from tests.backend.hostlink.test_warehouse_site_placement import DEVICE_ID, _bottle, stocker  # noqa: F401 - fixture
+from tests.client.host.hostlink.test_warehouse_site_placement import DEVICE_ID, _bottle, stocker  # noqa: F401 - fixture
 from tests.plr_fixtures import site_deck
 from tests.server.test_material_io_inventory import TIP_RACK, registry_template
 from unilabos.client.host.hostlink import downlink, main_hostlink_run

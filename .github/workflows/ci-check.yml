@@ -43,7 +43,7 @@ jobs:
           python scripts/verify_installation.py --assert-no-ros
           unilab --help
       - name: Test Python-only API and runtime contracts
-        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/app/test_process_lifetime.py tests/server tests/protocol tests/backend/hostlink
+        run: python -m pytest -q tests/app/test_no_ros_installation.py tests/app/test_wheel_release.py tests/app/test_docs_build.py tests/app/test_process_lifetime.py tests/server tests/protocol tests/client/host/hostlink
       # 原生锁授予策略（native/grant-policy，Rust → C ABI）：各平台编译，并与 Python 参考实现逐条比对
       - name: Build and test the native grant policy
         shell: bash
@@ -53,7 +53,7 @@ jobs:
       - name: Scheduler contracts with the native grant policy
         env:
           UNILABOS_REQUIRE_NATIVE_GRANT_POLICY: '1'
-        run: python -m pytest -q tests/server/backend/scheduler tests/server/test_workflow_task_pause.py tests/server/test_workflow_task_cancel.py
+        run: python -m pytest -q tests/server/scheduler tests/server/test_workflow_task_pause.py tests/server/test_workflow_task_cancel.py
       - name: Test seven complete demos including graph CLI and split Host/Slave
         run: python -m pytest -q tests/e2e/test_readme_demos.py --basetemp="${{ runner.temp }}/no-ros-demos" --junitxml="${{ runner.temp }}/no-ros-demos.xml"
       - uses: actions/upload-artifact@v6
@@ -205,7 +205,7 @@ jobs:
           call conda activate check-env
           call install\unilabos_msgs\setup.bat
           echo Running HostLink direct backend, microbackend ownership, ROS2 assist and decorator tests...
-          python -m pytest -q tests\backend\hostlink tests\networking tests\backend\runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\backend\ros2\test_action_schema_compat.py tests\backend\ros2\test_domain_init.py tests\backend\ros2\test_device_node_contract.py tests\backend\ros2\test_workstation_registration.py -p no:launch_testing -p no:launch_ros
+          python -m pytest -q tests\client\host\hostlink tests\networking tests\client\host\runtime tests\app\test_backend_selection.py tests\app\test_rclpy_dll_patch.py tests\registry\test_backend_metadata.py tests\client\host\ros2\test_action_schema_compat.py tests\client\host\ros2\test_domain_init.py tests\client\host\ros2\test_device_node_contract.py tests\client\host\ros2\test_workstation_registration.py -p no:launch_testing -p no:launch_ros
 
       - name: Run check mode (AST registry validation)
         # check_mode 会真实 import 所有设备类(连带 matplotlib/opencv 等原生库)。

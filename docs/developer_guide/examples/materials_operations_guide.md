@@ -3,7 +3,7 @@
 > **文档类型**：物料系统操作教程（新权威架构）
 > **适用场景**：物料创建、挂载、换位、跨设备转移、内容物管理、状态同步
 > **前置知识**：PyLabRobot 基础 | HostLink 概念
-> **可运行参照**：`tests/backend/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/backend/hostlink/test_host_services.py`（host_node 物料动作）。原 14 阶段 PRCXI 全链路测试已随 PRCXI 驱动迁出主仓库。文中 PRCXI 耗材只是示例，换成任意驱动包或 PLR 自带的耗材类同样适用。
+> **可运行参照**：`tests/client/host/hostlink/test_material_creation_flows_e2e.py`（三种创建来源 + transfer 换位）、`tests/client/host/hostlink/test_host_services.py`（host_node 物料动作）。原 14 阶段 PRCXI 全链路测试已随 PRCXI 驱动迁出主仓库。文中 PRCXI 耗材只是示例，换成任意驱动包或 PLR 自带的耗材类同样适用。
 
 ---
 

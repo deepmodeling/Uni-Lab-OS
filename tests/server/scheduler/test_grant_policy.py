@@ -21,7 +21,7 @@ from unilabos.server.scheduler.grant import (
 from unilabos.server.scheduler.models import ActionLockClaim, SchedulerResourceRequest
 from unilabos.server.scheduler.resource_manager import SchedulerResourceManager
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _generator():

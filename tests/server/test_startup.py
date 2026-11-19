@@ -136,24 +136,105 @@ def test_host_stack_mounts_local_scheduler_by_default(tmp_path) -> None:
 
 
 def test_host_stack_defers_scheduling_when_backend_address_configured(
-    tmp_path,
+    tmp_path, monkeypatch
 ) -> None:
     """显式配置云端地址后调度权威在远端 Backend，本机不挂本地调度器。"""
 
-    HTTPConfig.remote_addr = "https://backend.example/api/v1"
-    setup_host_server_stack(
-        args={
-            "backend": "hostlink",
-            "server_database_root": str(tmp_path / "edge"),
-            "material_microbackend_addr": "",
-        },
-        working_dir=tmp_path,
-        registry=_Registry(),
-        communication_client=_communication_client(),
+    authority = MaterialsService(tmp_path / "authority-materials.db")
+    monkeypatch.setattr(
+        "unilabos.client.materials.HTTPMaterialsClient",
+        lambda _address: LocalMaterialsClient(authority),
     )
+    HTTPConfig.remote_addr = "https://backend.example/api/v1"
+    try:
+        setup_host_server_stack(
+            args={
+                "backend": "hostlink",
+                "server_database_root": str(tmp_path / "edge"),
+                "material_microbackend_addr": "",
+            },
+            working_dir=tmp_path,
+            registry=_Registry(),
+            communication_client=_communication_client(),
+        )
 
-    assert get_scheduler() is None
-    assert get_workflow_service() is None
+        assert get_scheduler() is None
+        assert get_workflow_service() is None
+    finally:
+        authority.close()
+
+
+def test_host_with_backend_address_uses_it_as_materials_authority(tmp_path, monkeypatch) -> None:
+    """``--address`` 不带物料地址的 Host 与默认拓扑的 Host 子进程一样，把物料交给调度权威，
+    不在本机另起一个物料库（否则权威的设备目录里看不到这个 Host 的设备）。"""
+
+    authority = MaterialsService(tmp_path / "authority-materials.db")
+    addresses: list[str] = []
+
+    def http_client(address):
+        addresses.append(address)
+        return LocalMaterialsClient(authority)
+
+    monkeypatch.setattr("unilabos.client.materials.HTTPMaterialsClient", http_client)
+    HTTPConfig.remote_addr = "http://127.0.0.1:18210"
+    try:
+        stack = setup_host_server_stack(
+            args={"backend": "hostlink", "server_database_root": str(tmp_path / "edge")},
+            working_dir=tmp_path,
+            registry=_Registry(),
+            communication_client=_communication_client(),
+        )
+
+        assert addresses == ["http://127.0.0.1:18210"]
+        assert stack.material_authority == "http://127.0.0.1:18210"
+        assert get_materials_service() is None
+        assert len(LocalMaterialsClient(authority).list_templates()) == 1
+    finally:
+        authority.close()
+
+
+@pytest.mark.parametrize(
+    ("explicit", "protocol", "expected"),
+    [
+        ("http://materials:8092/api/v1", "", "http://materials:8092/api/v1"),
+        (None, "legacy", None),
+    ],
+)
+def test_explicit_materials_address_or_legacy_backend_keep_their_authority(
+    tmp_path, monkeypatch, explicit, protocol, expected
+) -> None:
+    """显式 --material_microbackend_addr 优先；显式声明为旧云端协议（没有 materials.v1）时仍用本机物料库。"""
+
+    external = MaterialsService(tmp_path / "external-materials.db")
+    addresses: list[str] = []
+
+    def http_client(address):
+        addresses.append(address)
+        return LocalMaterialsClient(external)
+
+    monkeypatch.setattr("unilabos.client.materials.HTTPMaterialsClient", http_client)
+    monkeypatch.setattr(HTTPConfig, "backend_protocol", protocol)
+    HTTPConfig.remote_addr = "https://backend.example/api/v1"
+    try:
+        stack = setup_host_server_stack(
+            args={
+                "backend": "hostlink",
+                "server_database_root": str(tmp_path / "edge"),
+                "material_microbackend_addr": explicit,
+            },
+            working_dir=tmp_path,
+            registry=_Registry(),
+            communication_client=_communication_client(),
+        )
+        if expected is None:
+            assert addresses == []
+            assert isinstance(stack.materials_gateway, LocalMaterialsClient)
+            assert stack.material_authority == str(stack.database_paths.materials_db)
+        else:
+            assert addresses == [expected]
+            assert stack.material_authority == expected
+    finally:
+        external.close()
 
 
 def test_host_stack_closes_partial_services_when_template_sync_fails(tmp_path) -> None:

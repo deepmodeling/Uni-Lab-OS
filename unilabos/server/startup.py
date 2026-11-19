@@ -105,6 +105,23 @@ def resolve_database_paths(
     return paths
 
 
+def default_material_authority_address() -> str:
+    """没有显式物料地址时的物料权威：``--address`` 指向的调度权威，没有则为空（本机物料库）。
+
+    Edge 对 ``--address`` 只走 runtime.v1，调度、工作流、物料与注册表都由那个权威承接；
+    默认拓扑的 Host 子进程也是同时带 ``--address`` 和 ``--material_microbackend_addr``。
+    只有显式声明对方是旧云端协议（``HTTPConfig.backend_protocol = "legacy"``，旧云端没有
+    materials.v1 接口）时保留本机物料库。
+    """
+
+    remote = str(HTTPConfig.remote_addr or "").strip()
+    if not remote:
+        return ""
+    if str(getattr(HTTPConfig, "backend_protocol", "") or "").strip().lower() == "legacy":
+        return ""
+    return remote
+
+
 def setup_host_server_stack(
     *,
     args: Mapping[str, Any],
@@ -135,7 +152,11 @@ def setup_host_server_stack(
         address_arg = args.get("material_microbackend_addr")
         if address_arg is not None:
             HTTPConfig.material_microbackend_addr = str(address_arg).strip()
-        external_address = str(HTTPConfig.material_microbackend_addr or "").strip()
+        # 显式物料地址优先；否则用 --address 的调度权威（与默认拓扑的 Host 子进程一致）
+        external_address = (
+            str(HTTPConfig.material_microbackend_addr or "").strip()
+            or default_material_authority_address()
+        )
 
         if external_address:
             materials_gateway = HTTPMaterialsClient(external_address)
@@ -189,6 +210,7 @@ def setup_host_server_stack(
 
 __all__ = [
     "HostServerStack",
+    "default_material_authority_address",
     "process_database_root",
     "resolve_database_paths",
     "setup_host_server_stack",

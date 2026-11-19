@@ -12,6 +12,7 @@ from typing import Any, Callable
 import pytest
 
 from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
+from unilabos.server.edge_dispatch import HOST_RESTART_UNCERTAINTY_REASON
 from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -86,6 +87,39 @@ def _lose_first_attempt(service, executor, scheduler) -> tuple[dict, dict, dict]
     )
     report = _wait(lambda: next(iter(scheduler.list_reconciliation_decisions()), None), "reconciliation decision")
     return first, second, report
+
+
+def _report_for(service, executor, scheduler, reason: str) -> dict:
+    _occupy(service, "probe")
+    dispatched = _wait(lambda: executor.dispatched[0] if executor.dispatched else None, "dispatch")
+    executor.listener(
+        dispatched["job_id"], False, None, SUCCESS_TYPE_EXECUTION_UNKNOWN, {"uncertainty_reason": reason}
+    )
+    return _wait(lambda: next(iter(scheduler.list_reconciliation_decisions()), None), "reconciliation decision")
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Slave 的 HostLink 连接已断开或心跳超时，设备离线",
+        "HostLink 连接在 Slave 应答前断开，请求可能已送达",
+    ],
+)
+def test_decision_text_names_the_actual_cause_instead_of_a_restart(harness, reason: str) -> None:
+    """设备离线、传输中断造成的结果未知：裁决说明写实际原因，不能说成进程重启（修复前一律写「进程重启」）。"""
+
+    report = _report_for(*harness, reason)
+
+    assert report["exception_type"] == "ExecutionStateUnknown"
+    assert reason in report["error_message"]
+    assert "重启" not in report["error_message"]
+
+
+def test_decision_text_still_names_a_host_restart(harness) -> None:
+    report = _report_for(*harness, HOST_RESTART_UNCERTAINTY_REASON)
+
+    assert report["error_message"].startswith("进程重启时该动作正在执行（attempt 1）")
+    assert HOST_RESTART_UNCERTAINTY_REASON in report["error_message"]
 
 
 def test_lost_attempt_opens_decision_and_keeps_the_device_locked(harness) -> None:

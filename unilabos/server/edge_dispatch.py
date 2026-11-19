@@ -47,6 +47,8 @@ JobFinishedListener = Callable[..., None]
 #: 仍取不到时按降级口径落地（终态带空 return_info、失败决策快照缺失则不登记），还失败就记一条
 #: 死信并确认，免得一条坏事件永远挡住后面的事件。
 EDGE_EVENT_MAX_ATTEMPTS = 5
+#: Host 进程在动作进行中重启：上一进程已开始执行的 job 记下的结果未知原因
+HOST_RESTART_UNCERTAINTY_REASON = "执行端（Host）进程在动作进行中重启，无法确认设备是否已完成该动作"
 
 
 class EdgeEventRetry(RuntimeError):
@@ -829,7 +831,7 @@ class EdgeControlService:
     def _notify_lost_jobs(self, job_uuids: list[str]) -> None:
         with self._lock:
             listeners = list(self._listeners)
-        reason = "执行端（Host）进程在动作进行中重启，无法确认设备是否已完成该动作"
+        reason = HOST_RESTART_UNCERTAINTY_REASON
         logger.warning(
             "[EdgeControl] Host 进程已重启：%d 个执行中的 job 结果未知，转人工裁决：%s",
             len(job_uuids),

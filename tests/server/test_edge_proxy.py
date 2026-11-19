@@ -15,7 +15,7 @@ from tests.api_envelope import error_of, ok_data
 from unilabos.protocol.runtime.control import EdgeHttpResponse
 from unilabos.server.api import edge_proxy
 from unilabos.server.api.runtime.diagnostics import create_backend_app
-import unilabos.server.backend.edge_control as edge_control
+import unilabos.server.edge_dispatch as edge_dispatch
 
 
 class _FakeEdgeControl:
@@ -66,12 +66,12 @@ def authority_app():
     edge_proxy.configure_edge_proxy(True)
     yield app
     edge_proxy.configure_edge_proxy(False)
-    edge_control.set_edge_control_service(None)
+    edge_dispatch.set_edge_control_service(None)
 
 
 def test_proxy_forwards_host_routes_over_control_plane(host_app: FastAPI, authority_app: FastAPI) -> None:
     fake = _FakeEdgeControl(host_app)
-    edge_control.set_edge_control_service(fake)
+    edge_dispatch.set_edge_control_service(fake)
     client = TestClient(authority_app)
 
     response = client.get("/api/v1/driver-packages", params={"a": "1"}, headers={"x-probe": "yes"})
@@ -105,13 +105,13 @@ def test_proxy_forwards_host_routes_over_control_plane(host_app: FastAPI, author
 
 
 def test_proxy_returns_5001_while_host_is_offline(host_app: FastAPI, authority_app: FastAPI) -> None:
-    edge_control.set_edge_control_service(_FakeEdgeControl(host_app, connected=False))
+    edge_dispatch.set_edge_control_service(_FakeEdgeControl(host_app, connected=False))
     response = TestClient(authority_app).get("/api/v1/telemetry/states")
     # Host 不在线：HTTP 200 + 业务码 5001（503 → 5001），仍带 Retry-After
     assert "Host 执行进程" in error_of(response, 5001)["msg"]
     assert response.headers["retry-after"] == "3"
 
-    edge_control.set_edge_control_service(None)
+    edge_dispatch.set_edge_control_service(None)
     error_of(TestClient(authority_app).get("/api/v1/runtime/endpoints"), 5001)
     assert edge_proxy.edge_http("GET", "/api/v1/health") is None
 
@@ -122,7 +122,7 @@ def test_proxy_logs_host_offline_once_per_episode(
     """Host 启动期间前端每秒轮询多条路由：只在开始拒绝 / 恢复各记一条，不逐请求刷屏。"""
 
     fake = _FakeEdgeControl(host_app, connected=False)
-    edge_control.set_edge_control_service(fake)
+    edge_dispatch.set_edge_control_service(fake)
     client = TestClient(authority_app)
     with caplog.at_level(logging.INFO, logger=edge_proxy.__name__):
         for path in ("/api/v1/telemetry/states", "/api/v1/hostlink/peers", "/api/v1/runtime/endpoints"):
@@ -148,7 +148,7 @@ def test_proxy_logs_host_offline_once_per_episode(
 
 
 def test_proxy_disabled_when_not_configured(host_app: FastAPI, authority_app: FastAPI) -> None:
-    edge_control.set_edge_control_service(_FakeEdgeControl(host_app))
+    edge_dispatch.set_edge_control_service(_FakeEdgeControl(host_app))
     edge_proxy.configure_edge_proxy(False)
     assert edge_proxy.edge_proxy_enabled() is False
     error_of(TestClient(authority_app).get("/api/v1/runtime/endpoints"), 5001)
@@ -161,10 +161,10 @@ def test_health_reports_host_child_state(monkeypatch: pytest.MonkeyPatch) -> Non
 
     edge_proxy.configure_edge_proxy(True)
     try:
-        monkeypatch.setattr(edge_control, "get_edge_control_service", lambda: None)
+        monkeypatch.setattr(edge_dispatch, "get_edge_control_service", lambda: None)
         assert client.get("/api/v1/health").json()["data"]["execution"] == "restarting"
         monkeypatch.setattr(
-            edge_control, "get_edge_control_service", lambda: SimpleNamespace(connected=True)
+            edge_dispatch, "get_edge_control_service", lambda: SimpleNamespace(connected=True)
         )
         assert client.get("/api/v1/health").json()["data"]["execution"] == "ready"
     finally:

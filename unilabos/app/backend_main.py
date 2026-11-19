@@ -110,7 +110,7 @@ def run_backend_process(
         setup_materials_service,
         shutdown_backend_services,
     )
-    from unilabos.server.backend.edge_control import (
+    from unilabos.server.edge_dispatch import (
         EdgeControlService,
         set_edge_control_service,
     )

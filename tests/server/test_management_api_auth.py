@@ -22,7 +22,7 @@ from unilabos.server.api.app import (
     browser_landing_url,
 )
 from unilabos.server.api.runtime.control import install_edge_control_api
-from unilabos.server.backend.edge_control import EdgeControlService, set_edge_control_service
+from unilabos.server.edge_dispatch import EdgeControlService, set_edge_control_service
 
 
 @pytest.fixture(autouse=True)
@@ -169,7 +169,7 @@ def test_cors_exposes_retry_after_on_host_starting_answers(monkeypatch) -> None:
     app = FastAPI()
     app.add_middleware(ConfiguredCORSMiddleware)
     edge_proxy.configure_edge_proxy(True)
-    monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
+    monkeypatch.setattr("unilabos.server.edge_dispatch.get_edge_control_service", lambda: None)
     app.include_router(edge_proxy.create_edge_proxy_router())
     try:
         with TestClient(app) as client:

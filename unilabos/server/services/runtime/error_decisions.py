@@ -78,7 +78,7 @@ class ErrorDecisionDesk:
         self._get_scheduler = get_scheduler
         self._get_execution_backend = get_execution_backend
         if get_edge_control is None:
-            from unilabos.server.backend.edge_control import get_edge_control_service
+            from unilabos.server.edge_dispatch import get_edge_control_service
 
             get_edge_control = get_edge_control_service
         self._get_edge_control = get_edge_control

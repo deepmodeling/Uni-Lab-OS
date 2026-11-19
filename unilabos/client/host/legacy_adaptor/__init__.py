@@ -1,6 +1,6 @@
 """上联 Backend 适配层（``edge -> 微后端 -> Backend`` 的最后一跳）。
 
-进程分层中，微后端对 Edge 扮演 Backend（见 ``server.backend.edge_control``）；
+进程分层中，微后端对 Edge 扮演 Backend（见 ``server.edge_dispatch``）；
 本包收敛微后端对**上游 Backend** 的全部上联适配，并按线协议分成两族：
 
 runtime.v1（微后端 / ``--role backend``）

@@ -113,7 +113,7 @@ def test_slave_sends_empty_notice_only_for_own_log():
 
 
 def test_edge_control_notice_is_ephemeral_and_resyncs_on_attach_detach(monkeypatch):
-    from unilabos.server.backend.edge_control import EdgeControlService
+    from unilabos.server.edge_dispatch import EdgeControlService
 
     hub = Mock()
     monkeypatch.setattr(notices, "log_notices", hub)

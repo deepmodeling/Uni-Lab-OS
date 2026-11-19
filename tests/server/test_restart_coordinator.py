@@ -159,7 +159,7 @@ def test_authority_rejects_whole_process_restart(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("UNILABOS_SUPERVISOR_INNER", raising=False)
     edge_control = SimpleNamespace(active_job_ids=lambda: [], connected=True)
     monkeypatch.setattr(
-        "unilabos.server.backend.edge_control.get_edge_control_service", lambda: edge_control
+        "unilabos.server.edge_dispatch.get_edge_control_service", lambda: edge_control
     )
     coordinator = RestartCoordinator(lambda: None, lambda: _FakeScheduler())
     assert coordinator.status()["effective_scope"] == "edge"

@@ -25,7 +25,7 @@ def active_device_job_ids(scheduler: Any, backend: Any) -> list[str]:
         if manager is not None:
             jobs.update(job.job_id for job in manager.get_active_jobs())
     else:
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        from unilabos.server.edge_dispatch import get_edge_control_service
 
         service = get_edge_control_service()
         if service is not None:

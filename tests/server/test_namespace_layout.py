@@ -104,6 +104,7 @@ def test_microbackend_namespaces_live_under_server() -> None:
     # 调度权威与两边共用的执行模块在 server 下，只在 Host 上跑的执行链在 client/host 下
     host_root = package_root / "client" / "host"
     assert (server_root / "execution_composition.py").is_file()
+    assert (server_root / "edge_dispatch.py").is_file()
     assert (server_root / "backend" / "coordinator.py").is_file()
     for module_name in ("execution_queue.py", "inventory.py"):
         assert (server_root / module_name).is_file()

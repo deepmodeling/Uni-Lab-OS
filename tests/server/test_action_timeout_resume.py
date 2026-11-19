@@ -289,7 +289,7 @@ def test_scheduler_action_timeouts_prefer_execution_policy_then_registry() -> No
 
 
 def test_edge_control_wait_issues_resume_pending_and_resumes_scheduler() -> None:
-    from unilabos.server.backend.edge_control import EdgeControlService
+    from unilabos.server.edge_dispatch import EdgeControlService
 
     service = EdgeControlService.__new__(EdgeControlService)
     import threading

@@ -17,7 +17,7 @@ from unilabos.protocol.runtime.control import (
     CancelJobContent,
     ExecuteJobContent,
 )
-from unilabos.server.backend.edge_control import (
+from unilabos.server.edge_dispatch import (
     EDGE_EVENT_MAX_ATTEMPTS,
     EdgeControlService,
     get_edge_control_service,

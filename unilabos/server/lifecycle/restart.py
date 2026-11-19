@@ -61,7 +61,7 @@ class RestartCoordinator:
 
     @staticmethod
     def _edge_control_service() -> Any:
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        from unilabos.server.edge_dispatch import get_edge_control_service
 
         return get_edge_control_service()
 

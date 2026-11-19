@@ -159,7 +159,7 @@ def create_backend_router(
         if get_execution_backend() is not None:
             return "ready"
         from unilabos.server.api.edge_proxy import edge_proxy_enabled
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        from unilabos.server.edge_dispatch import get_edge_control_service
 
         if not edge_proxy_enabled():
             return "disabled"

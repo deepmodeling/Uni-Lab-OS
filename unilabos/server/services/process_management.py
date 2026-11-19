@@ -1176,7 +1176,7 @@ class ProcessManagementService:
 
 
 def _default_edge_control() -> Any:
-    from unilabos.server.backend.edge_control import get_edge_control_service
+    from unilabos.server.edge_dispatch import get_edge_control_service
 
     return get_edge_control_service()
 

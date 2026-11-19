@@ -147,7 +147,7 @@ class Stack:
         monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
         self.edge = FakeEdge()
         # 重启协调器经模块级入口判断「本进程是带控制面的调度权威」
-        monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: self.edge)
+        monkeypatch.setattr("unilabos.server.edge_dispatch.get_edge_control_service", lambda: self.edge)
         self.workflow = WorkflowService(":memory:")
         self.scheduler = BackendScheduler(self.workflow, MagicMock())
         self.active: list[str] = []

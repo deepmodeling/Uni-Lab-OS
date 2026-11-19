@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from unilabos.protocol.runtime.control import EdgeHttpResponse
 from unilabos.server.api.envelope import envelope_router
-from unilabos.server.backend.edge_control import (
+from unilabos.server.edge_dispatch import (
     EdgeControlService,
     get_edge_control_service,
 )

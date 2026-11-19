@@ -28,7 +28,7 @@ def _run(tmp_path, capsys, *argv):
 
 
 def test_status_drain_resume_use_existing_scheduler(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
+    monkeypatch.setattr("unilabos.server.edge_dispatch.get_edge_control_service", lambda: None)
     # 调度器启动即按 runtime.db 做库存/执行对账：用真实（空的）WorkflowService，
     # MagicMock 的查询结果恒为真值，会被当成遗留派发而暂停派发。
     workflow = WorkflowService(":memory:")

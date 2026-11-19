@@ -141,8 +141,9 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceWorkstationDemo",
         url="https://github.com/Xuwznln/LabDeviceWorkstationDemo",
-        # b9da1ae6：设备不自跑 proof，inspect_endpoints 成为第四步。
-        ref="b9a172536022d9d1a1b69c282a2a2328149bcd77",
+        # b9da1ae6 起设备不自跑 proof，inspect_endpoints 成为第四步。
+        # chore/client-host-paths：DeviceNode 改从 unilabos.client.host.runtime 导入；核心合并后改回 main 的合并提交。
+        ref="cebcc4962f53d160834eb1347cfbedf651ef9342",
         package="workstation_demo",
         host_graph="graph/workstation_demo.json",
         # 设备不自跑闭环：串口回环 / 双传感器探测 / 共享端点计数全部由 @workflow 经 API 触发

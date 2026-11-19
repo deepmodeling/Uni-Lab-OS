@@ -457,10 +457,45 @@ def test_managed_discovery_lifecycle_belongs_to_microbackend(monkeypatch) -> Non
     service = setup_host_network_service()
     assert service is not None
     endpoint = f"127.0.0.1:{link_port}"
-    assert starts == [("127.0.0.1", link_port)]
+    # HostLink 绑 127.0.0.1 时托管服务器仍监听全部网卡：只监听回环的服务器转达不了定位器
+    assert starts == [("0.0.0.0", link_port)]
     assert service.ros_info.discovery_server == endpoint
     assert os.environ["ROS_DISCOVERY_SERVER"] == endpoint
     assert os.environ["ROS_SUPER_CLIENT"] == "TRUE"
 
     shutdown_network_services()
     assert stops == [link_port]
+
+
+def test_host_node_reaches_managed_discovery_over_loopback(monkeypatch) -> None:
+    """没配 --hostlink_advertise_ip 时出口地址可能是本机收不到 UDP 的 VPN 地址：
+    Host 自己的节点经回环连托管服务器，广播给 Slave 的地址由 Slave 换成实际连上的地址。"""
+
+    from unilabos.client.host.hostlink import network
+    from unilabos.client.host.hostlink.ros_assist import FastDDSDiscoveryServer
+
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        link_port = reservation.getsockname()[1]
+
+    starts: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        FastDDSDiscoveryServer,
+        "start",
+        lambda self: (starts.append((self.bind, self.port)), self)[1],
+    )
+    monkeypatch.setattr(FastDDSDiscoveryServer, "stop", lambda self: None)
+    monkeypatch.setattr(network, "detect_local_ip", lambda *_args, **_kw: "198.18.0.1")
+    monkeypatch.setattr(HostLinkConfig, "advertise_ip", "")
+    monkeypatch.setattr(HostLinkConfig, "port", link_port)
+    monkeypatch.setattr(HostLinkConfig, "ros_discovery_server", "")
+    monkeypatch.setattr(HostLinkConfig, "ros_discovery_port", 0)
+
+    service = setup_host_network_service()
+    assert service is not None
+    assert starts == [("0.0.0.0", link_port)]
+    assert os.environ["ROS_DISCOVERY_SERVER"] == f"127.0.0.1:{link_port}"
+    assert os.environ["ROS_SUPER_CLIENT"] == "TRUE"
+    # 握手广播的仍是 Host 地址；Slave 侧 use_connected_host 换成它实际连上的地址
+    assert service.ros_info.discovery_server == f"198.18.0.1:{link_port}"
+    assert service.ros_info.discovery_server_managed is True

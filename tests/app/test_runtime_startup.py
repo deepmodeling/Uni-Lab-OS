@@ -46,6 +46,58 @@ def test_slave_launch_command_without_hostlink_falls_back_to_dds() -> None:
     assert command == "unilab --backend ros2 --is_slave --disable_hostlink -g <图文件.json>"
 
 
+def _launch_hint_messages(monkeypatch, detected_ip: str) -> list[str]:
+    from unilabos.client.host.hostlink import ros_assist
+    from unilabos.client.host.hostlink import server as hostlink_server
+    from unilabos.config.config import BasicConfig, HostLinkConfig
+
+    messages: list[str] = []
+    monkeypatch.setattr(runtime_startup, "print_status", lambda message, *_args, **_kw: messages.append(message))
+    monkeypatch.setattr(BasicConfig, "backend", "ros2")
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "advertise_ip", "")
+    monkeypatch.setattr(HostLinkConfig, "port", 7302)
+    monkeypatch.setattr(hostlink_server, "get_hostlink_server", lambda: None)
+    monkeypatch.setattr(ros_assist, "detect_local_ip", lambda *_args, **_kw: detected_ip)
+    runtime_startup.print_slave_launch_hint()
+    return messages
+
+
+def test_slave_hint_does_not_suggest_a_proxy_tun_address(monkeypatch) -> None:
+    """默认出口落在代理 / VPN 虚拟网卡（198.18.0.0/15）时，建议命令不能写这个连不上的地址。"""
+
+    messages = _launch_hint_messages(monkeypatch, "198.18.0.1")
+    command = next(message for message in messages if "--host_node_ip" in message)
+    assert "198.18.0.1" not in command
+    assert runtime_startup.SLAVE_HINT_HOST_PLACEHOLDER in command
+
+
+def test_slave_hint_keeps_an_ordinary_lan_address(monkeypatch) -> None:
+    messages = _launch_hint_messages(monkeypatch, "192.168.31.20")
+    command = next(message for message in messages if "--host_node_ip" in message)
+    assert "--host_node_ip 192.168.31.20 --hostlink_port 7302" in command
+
+
+@pytest.mark.parametrize(
+    ("address", "expected"),
+    [
+        ("192.168.1.10", True),
+        ("10.0.0.5", True),
+        ("172.20.1.2", True),
+        ("8.8.4.4", True),
+        ("198.18.0.1", False),
+        ("100.100.1.1", False),
+        ("127.0.0.1", False),
+        ("169.254.3.4", False),
+        ("", False),
+    ],
+)
+def test_suggestable_host_ip(address: str, expected: bool) -> None:
+    from unilabos.client.host.hostlink.ros_assist import suggestable_host_ip
+
+    assert suggestable_host_ip(address) is expected
+
+
 def test_port_check_reports_actionable_hint_when_in_use() -> None:
     holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     holder.bind(("127.0.0.1", 0))

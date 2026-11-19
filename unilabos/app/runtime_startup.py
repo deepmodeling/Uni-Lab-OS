@@ -12,6 +12,8 @@ from unilabos.utils.banner_print import print_status
 
 #: 设备 runtime 就绪等待上限：真实驱动初始化（串口 / 网络设备握手）可能要几十秒
 BACKEND_READY_TIMEOUT_S = 120.0
+#: 建议的 Slave 命令里 Host 地址的占位符（本机没有可推荐的地址时使用）。
+SLAVE_HINT_HOST_PLACEHOLDER = "<本机IP>"
 
 
 def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> bool:
@@ -89,15 +91,23 @@ def print_slave_launch_hint() -> None:
     hostlink_enabled = bool(HostLinkConfig.enable)
     host_ip = str(HostLinkConfig.advertise_ip or "").strip()
     hostlink_port = int(HostLinkConfig.port)
+    unsuggested_ip = ""
     if hostlink_enabled:
-        from unilabos.client.host.hostlink.ros_assist import detect_local_ip
+        from unilabos.client.host.hostlink.ros_assist import detect_local_ip, suggestable_host_ip
         from unilabos.client.host.hostlink.server import get_hostlink_server
 
         server = get_hostlink_server()
         if server is not None:
             hostlink_port = int(server.port)
         if not host_ip:
-            host_ip = detect_local_ip() or "127.0.0.1"
+            # 默认出口地址只在像局域网 / 公网地址时才写进建议命令：出口落在代理 / VPN 虚拟网卡
+            # 时 Slave 多半连不上它，宁可留占位符让用户填 Slave 实际能访问的本机地址。
+            detected = detect_local_ip()
+            if suggestable_host_ip(detected):
+                host_ip = detected
+            else:
+                unsuggested_ip = detected
+                host_ip = SLAVE_HINT_HOST_PLACEHOLDER
 
     command = build_slave_launch_command(
         backend=backend,
@@ -108,6 +118,12 @@ def print_slave_launch_hint() -> None:
     transport = "HostLink TCP" if hostlink_enabled else "ROS 2 DDS 发现"
     print_status(f"Host 已就绪（backend={backend}，Slave 经 {transport} 接入）", "success")
     print_status(f"在其他机器上启动 Slave 接入本 Host：{command}", "info")
+    if unsuggested_ip:
+        print_status(
+            f"本机默认出口地址 {unsuggested_ip} 不像局域网地址（常见于代理 / VPN 虚拟网卡），"
+            f"请把 {SLAVE_HINT_HOST_PLACEHOLDER} 换成 Slave 所在机器能访问到的本机地址。",
+            "info",
+        )
     if hostlink_enabled:
         print_status(
             "同一台机器上可把 --host_node_ip 改为 127.0.0.1，并用 --server_database_root 指定另一个"

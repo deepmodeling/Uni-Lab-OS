@@ -7,6 +7,7 @@ both processes join the same ROS graph.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shutil
 import socket
@@ -322,6 +323,28 @@ def detect_local_ip(probe_addr: str = "8.8.8.8") -> str:
         return ""
 
 
+#: 不推荐给 Slave 的保留网段：基准测试网段常被代理 / VPN 虚拟网卡（TUN）占用，
+#: 共享地址空间（CGNAT）多为运营商或覆盖网络地址。
+_UNSUGGESTED_NETWORKS = (
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("100.64.0.0/10"),
+)
+
+
+def suggestable_host_ip(address: str) -> bool:
+    """``address`` 是否适合写进给 Slave 的建议命令：普通局域网（RFC 1918）或公网 IPv4。"""
+
+    try:
+        ip = ipaddress.ip_address(str(address or "").strip())
+    except ValueError:
+        return False
+    if ip.version != 4 or ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast:
+        return False
+    if any(ip in network for network in _UNSUGGESTED_NETWORKS):
+        return False
+    return ip.is_private or ip.is_global
+
+
 __all__ = [
     "FastDDSDiscoveryServer",
     "RosNetworkInfo",
@@ -332,6 +355,7 @@ __all__ = [
     "format_host_port",
     "parse_host_port",
     "parse_host_target",
+    "suggestable_host_ip",
     "use_connected_host",
     "validate_domain_id",
 ]

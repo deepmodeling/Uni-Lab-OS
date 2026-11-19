@@ -66,6 +66,34 @@ if TYPE_CHECKING:
     from unilabos.server.execution_queue import QueueItem
 
 
+def authority_host_node_uuid(device_id: str) -> str:
+    """物料权威里已有的同名 host node 物料 uuid；没有、不是 host node 或查不到时返回空串。
+
+    图里没声明 host node 时 Host 每次启动都会插入一棵默认树。沿用权威已有的身份，
+    重启时就不会再拿新 uuid 去创建同一个 ``resource_id``（权威按 resource_id 唯一）。
+    0.13.0a1 建的库里这个 uuid 是随机的，只能按 resource_id 查，不能靠推导。
+    """
+
+    from unilabos.resources.materials import resolve_materials_gateway
+
+    try:
+        gateway = resolve_materials_gateway()
+    except RuntimeError:
+        return ""
+    try:
+        aggregate = gateway.get_material_by_resource_id(device_id)
+    except Exception:  # noqa: BLE001 - 查不到即视为权威尚无该 host node
+        return ""
+    material = getattr(aggregate, "material", None)
+    if material is None:
+        return ""
+    if str(getattr(material, "template_name", "") or "").casefold() != HOST_NODE_REGISTRY_NAME:
+        return ""
+    if getattr(material, "parent_material_uuid", None):
+        return ""
+    return str(getattr(material, "material_uuid", "") or "")
+
+
 def ensure_host_node_resource(
     resources_config: ResourceTreeSet, device_id: str
 ) -> ResourceDictInstance:
@@ -73,7 +101,8 @@ def ensure_host_node_resource(
 
     设备图可以显式声明 host node（按 ``template_name == "host_node"`` 判别，
     且全图只能有一个）；声明时复用图中的 uuid 等身份信息，实例 id 统一为
-    配置的 ``--host_node_id``。未声明时按默认值创建一棵新树。
+    配置的 ``--host_node_id``。未声明时按默认值创建一棵新树：物料权威已有
+    同名 host node 时沿用它的 uuid，否则新发一个。
     """
 
     host_roots = [
@@ -109,9 +138,12 @@ def ensure_host_node_resource(
             content.sites = []
         return root
 
+    existing_uuid = authority_host_node_uuid(device_id)
+    if existing_uuid:
+        logger.info(f"[Host Node] 沿用物料权威中 {device_id} 的身份 {existing_uuid}")
     host_node_dict = {
         "id": device_id,
-        "uuid": str(uuid.uuid4()),
+        "uuid": existing_uuid or str(uuid.uuid4()),
         "parent_uuid": "",
         # 物料 name 等于 uuid（ResourceDict 缺省补齐），人读标签是 display_name
         "display_name": device_id,
@@ -979,6 +1011,7 @@ class HostNode(HostAdapterBase, Node):
 
 __all__ = [
     "HostNode",
+    "authority_host_node_uuid",
     "ensure_host_node_resource",
     "is_host_node_config",
     "iter_host_managed_device_configs",

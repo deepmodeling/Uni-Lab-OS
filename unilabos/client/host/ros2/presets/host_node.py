@@ -49,6 +49,7 @@ from unilabos.client.host.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
 )
+from unilabos.client.host.execution_start import ExecutionNotStarted
 from unilabos.config.config import BasicConfig, HOST_NODE_REGISTRY_NAME
 from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION
 from unilabos.resources.resource_tracker import (
@@ -64,6 +65,9 @@ from unilabos.utils.serialization import serialize_result_info
 
 if TYPE_CHECKING:
     from unilabos.server.execution_queue import QueueItem
+
+#: 设备 Action server 尚未出现在 ROS 图上时的等待上限（秒）。
+ACTION_SERVER_WAIT_S = 30.0
 
 
 def authority_host_node_uuid(device_id: str) -> str:
@@ -712,9 +716,11 @@ class HostNode(HostAdapterBase, Node):
 
             self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {action_kwargs}")
             self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
-            if not action_client.wait_for_server(timeout_sec=30.0):
-                raise RuntimeError(
-                    f"Action server {action_id} 在 30s 内不可达（设备离线或尚未完成启动）"
+            if not action_client.wait_for_server(timeout_sec=ACTION_SERVER_WAIT_S):
+                # 还没进开始边界：许可没领用、goal 没发出，是明确失败而不是结果未知
+                raise ExecutionNotStarted(
+                    f"Action server {action_id} 在 {ACTION_SERVER_WAIT_S:.0f}s 内不可达"
+                    "（设备离线或尚未完成启动），动作未下发"
                 )
             goal_uuid_obj = UUID(uuid=list(u.bytes))
 

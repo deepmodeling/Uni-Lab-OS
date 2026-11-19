@@ -809,6 +809,37 @@ class JobExecutionBackend:
         if not self._begin_action_error_decision(item, return_info, {}):
             self._release_terminal(item, "failed", return_info, {})
 
+    def _fail_before_start(self, job: JobInfo, item: QueueItem, exc: BaseException) -> None:
+        """派发在开始边界之前失败（如 Action server 不可达）：按普通设备失败上报。
+
+        开始许可没领用、设备没被调用，所以带 error_info 走与其它设备失败相同的决策链，
+        不进入「结果未知」的核实流程。
+        """
+
+        message = str(exc) or type(exc).__name__
+        logger.error(
+            "[JobExecutionBackend] job %s 未下发到设备：%s",
+            format_job_log(job.job_id, job.task_id, job.device_id, job.action_name),
+            message,
+        )
+        self._safe_inventory_cancel(job.job_id, reason="action_not_started")
+        exception_type = type(exc).__name__
+        return_info = serialize_result_info(
+            message,
+            False,
+            {},
+            error_info={
+                "action_name": job.action_name,
+                "exception_type": exception_type,
+                "exception_mro": [cls.__name__ for cls in type(exc).__mro__ if cls is not object],
+                "error_message": message,
+                "category": "transport",
+                "severity": "fatal",
+            },
+        )
+        if not self._begin_action_error_decision(item, return_info, {}):
+            self._release_terminal(item, "failed", return_info, {})
+
     def add_job_finished_listener(self, listener: Callable[..., None]) -> None:
         """注册完成回调。
 
@@ -2049,10 +2080,20 @@ class JobExecutionBackend:
                     timeouts.get("execution_timeout_spec"),
                 )
         except Exception as exc:  # noqa: BLE001 - 开始许可之后的异常不能推断设备未执行
-            if guarded:
+            start_guard = getattr(queue_item, "start_guard", None)
+            if guarded and (start_guard is None or start_guard.entered):
+                logger.warning(
+                    "[JobExecutionBackend] job %s 开始边界之后派发失败，结果未知：%s",
+                    job_log,
+                    exc,
+                )
                 return_info = serialize_result_info(str(exc), False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
                 return_info["uncertainty_reason"] = str(exc)
                 self._release_terminal(queue_item, "failed", return_info, {})
+                return
+            if guarded:
+                # 没进入开始边界：设备没被调用、开始许可没领用，是明确失败而不是结果未知
+                self._fail_before_start(job, queue_item, exc)
                 return
             logger.exception("[JobExecutionBackend] send_goal failed for job %s", job_log)
             return_info = serialize_result_info(

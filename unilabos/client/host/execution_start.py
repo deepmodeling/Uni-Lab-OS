@@ -15,6 +15,13 @@ class ExecutionStartUnknown(RuntimeError):
     """无法证明本次调用仍有唯一开始许可；保留资源等待核实。"""
 
 
+class ExecutionNotStarted(RuntimeError):
+    """开始边界之前就失败：设备 / 驱动没被调用，开始许可也没领用（如 Action server 不可达）。
+
+    这是明确的失败，不是结果未知；执行面按普通失败上报并带上 error_info。
+    """
+
+
 class ExecutionStartGuard:
     def __init__(self, channel: Any, payload: dict[str, Any], executor_epoch: str,
                  canceled: Callable[[], bool], consume: Callable[[], None], *, stopped: Callable[[], bool] = lambda: False):
@@ -27,8 +34,17 @@ class ExecutionStartGuard:
         self.invocation_uuid = str(uuid4())
         self._lock = threading.Lock()
         self._attempted = False
+        self._entered = False
+
+    @property
+    def entered(self) -> bool:
+        """是否已进入开始边界。两种 backend 都只在通过开始边界后才调用设备，
+        没进入过就失败的派发一定没有执行。"""
+
+        return self._entered
 
     def __call__(self) -> None:
+        self._entered = True
         with self._lock:
             if self._attempted:
                 raise ExecutionStartUnknown("同一开始边界不能再次调用")

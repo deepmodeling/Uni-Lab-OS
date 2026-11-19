@@ -406,8 +406,17 @@ class HostNode(HostAdapterBase):
             status = "failed"
             error_text = traceback.format_exc()
             if isinstance(exc, LinkError) and not isinstance(exc, RemoteError):
-                return_info = serialize_result_info(error_text, False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
-                return_info["uncertainty_reason"] = str(exc)
+                with self._goal_state_lock:
+                    cancel_requested = item.job_id in self._canceled_jobs
+                if cancel_requested:
+                    # 已请求取消、连接又断了：Slave 已不在，动作不会再跑，按取消收尾
+                    # （与 ROS 2 HostNode 设备离线时收尾已请求取消的作业一致）
+                    return_info = serialize_result_info(
+                        f"Job was cancelled; {exc}", False, {}, suc_type=SUCCESS_TYPE_CANCELLATION
+                    )
+                else:
+                    return_info = serialize_result_info(error_text, False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+                    return_info["uncertainty_reason"] = str(exc)
             else:
                 error_info = self._exception_error_info(item.action_name, exc, error_text)
                 return_info = serialize_result_info(error_text, False, {}, error_info=error_info)

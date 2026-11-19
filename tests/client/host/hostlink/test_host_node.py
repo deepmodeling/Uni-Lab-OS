@@ -21,7 +21,11 @@ from unilabos.client.host.hostlink.backend import HostLinkBackend
 from unilabos.client.host.hostlink.protocol import ActionType
 from unilabos.client.host.hostlink.server import HostLinkServer
 from unilabos.server.execution_queue import QueueItem
-from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN, normalize_error_policy
+from unilabos.registry.action_policy import (
+    SUCCESS_TYPE_CANCELLATION,
+    SUCCESS_TYPE_EXECUTION_UNKNOWN,
+    normalize_error_policy,
+)
 from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.protocol.runtime.workflow import WorkflowNodeWrite
 from unilabos.server.services.runtime.workflow.service import WorkflowService
@@ -354,6 +358,41 @@ def test_request_lost_with_its_connection_stays_execution_unknown(slave_stack) -
     assert return_info.get("suc_type") == SUCCESS_TYPE_EXECUTION_UNKNOWN
     assert "连接" in return_info["uncertainty_reason"]
     assert "error_info" not in return_info
+
+
+def test_cancel_requested_job_whose_connection_drops_settles_as_canceled(slave_stack) -> None:
+    """已请求取消的作业、连接随后断开：Slave 已不在，按取消收尾而不是转核实（与 ROS 2 一致）。"""
+
+    import socket
+
+    adapter, _microbackend, server, _channel, _bridge = slave_stack
+    recorder = RecordingBridge()
+    adapter.bridges = [recorder]
+    host_end, slave_end = socket.socketpair()
+    session = server.register_session("slave-conn", host_end)
+    item = _item("set_valve_position")
+    item.device_id = "slave_valve"
+    worker = threading.Thread(
+        target=adapter._execute_job,
+        args=(item, "NativeAction", {"command": "OPEN"}, ActionContext(action_id=item.job_id)),
+    )
+    worker.start()
+    try:
+        slave_end.settimeout(2)
+        assert b"set_valve_position" in slave_end.recv(65536)  # 请求已经到了 Slave 一侧
+        with adapter._goal_state_lock:
+            adapter._canceled_jobs.add(item.job_id)  # 用户已请求取消
+        server.unregister_session("slave-conn", session)  # 连接断开，应答丢失
+        worker.join(2)
+    finally:
+        slave_end.close()
+        host_end.close()
+
+    assert not worker.is_alive()
+    _job_id, status, _data, return_info = recorder.statuses[-1]
+    assert status == "failed"
+    assert return_info.get("suc_type") == SUCCESS_TYPE_CANCELLATION
+    assert "uncertainty_reason" not in return_info
 
 
 def test_hostlink_adapter_executes_microbackend_job(

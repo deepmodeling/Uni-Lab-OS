@@ -29,12 +29,14 @@ description: >-
 
 ### 认证信息
 
+> AK / SK 不要写进文件：从环境变量 `UNILAB_AK` / `UNILAB_SK` 读取，认证头是 `Authorization: Lab <base64(AK:SK)>`。
+
 ```
-AUTH="Authorization: Lab OTdlY2FkNmUtZmZmMi00YjhiLThhOWEtNWM5ODAyOTJmOTUxOmU0OGM2YWJkLTA4ZmEtNDFjMy04NzhhLTc4M2FiODlhZjYxMw=="
+AUTH="Authorization: Lab <base64(UNILAB_AK:UNILAB_SK)>"
 BASE="https://uni-lab.test.bohrium.com"
 ```
 
-来源：`--ak 97ecad6e-fff2-4b8b-8a9a-5c980292f951 --sk e48c6abd-08fa-41c3-878a-783ab89af613 --addr test`
+来源：`--ak <UNILAB_AK> --sk <UNILAB_SK> --addr test`
 
 ### 启动 unilab（云端模式）
 
@@ -44,7 +46,7 @@ BASE="https://uni-lab.test.bohrium.com"
 $env:PYTHONIOENCODING="utf-8"
 conda activate newunilab2603
 cd D:\UniLabdev\Uni-Lab-OS\unilabos\devices\workstation
-unilab -g D:\UniLabdev\Uni-Lab-OS\yibin_electrolyte_config.json --ak 97ecad6e-fff2-4b8b-8a9a-5c980292f951 --sk e48c6abd-08fa-41c3-878a-783ab89af613 --upload_registry --addr test --disable_browser --skip_env_check
+unilab -g D:\UniLabdev\Uni-Lab-OS\yibin_electrolyte_config.json --ak <UNILAB_AK> --sk <UNILAB_SK> --upload_registry --addr test --disable_browser --skip_env_check
 ```
 
 **启动要点**：

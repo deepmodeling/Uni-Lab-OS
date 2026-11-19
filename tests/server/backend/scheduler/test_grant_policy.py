@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from unilabos.server.backend.scheduler.grant import (
+from unilabos.server.scheduler.grant import (
     NativeGrantPolicy,
     PythonFifoPolicy,
     WaitingRequest,
@@ -18,8 +18,8 @@ from unilabos.server.backend.scheduler.grant import (
     load_grant_policy,
     validate_grants,
 )
-from unilabos.server.backend.scheduler.models import ActionLockClaim, SchedulerResourceRequest
-from unilabos.server.backend.scheduler.resource_manager import SchedulerResourceManager
+from unilabos.server.scheduler.models import ActionLockClaim, SchedulerResourceRequest
+from unilabos.server.scheduler.resource_manager import SchedulerResourceManager
 
 ROOT = Path(__file__).resolve().parents[4]
 

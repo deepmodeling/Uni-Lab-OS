@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from unilabos.server.backend.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
+from unilabos.server.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
 
 
 class DispatchPayload(Dict[str, Any]):

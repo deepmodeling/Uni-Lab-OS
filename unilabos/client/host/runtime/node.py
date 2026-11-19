@@ -11,7 +11,7 @@ import threading
 import traceback
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterator, List, Optional
 
-from unilabos.backend.runtime.async_utils import (
+from unilabos.client.host.runtime.async_utils import (
     CommitPoint,
     DeviceAsyncMutex,
     run_node_coroutine,
@@ -19,7 +19,7 @@ from unilabos.backend.runtime.async_utils import (
 )
 
 if TYPE_CHECKING:
-    from unilabos.backend.runtime.resource import ResourceService
+    from unilabos.client.host.runtime.resource import ResourceService
 
 StatusListener = Callable[[str, str, Any], None]
 
@@ -147,7 +147,7 @@ class DeviceNode(ABC):
         tracker = getattr(self, "resource_tracker", None)
         if tracker is None:
             return
-        from unilabos.backend.runtime.resource import MaterialSnapshotObserver
+        from unilabos.client.host.runtime.resource import MaterialSnapshotObserver
 
         observer = getattr(tracker, "_material_snapshot_observer", None)
         if observer is None:
@@ -201,7 +201,7 @@ class DeviceNode(ABC):
         ``ResourceTreeSet`` 均可；重复节点在服务内按 uuid 去重。
         """
 
-        from unilabos.backend.runtime.async_utils import run_blocking
+        from unilabos.client.host.runtime.async_utils import run_blocking
         from unilabos.resources import materials
 
         return await run_blocking(materials.update, self, *resources)

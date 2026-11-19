@@ -2,15 +2,15 @@
 
 「host_node」在系统中拆成两层：
 
-1. **host_node 服务设备** —— :class:`unilabos.backend.host_services.HostServices`
-   是唯一的动作定义源（registry 单独扫描 ``backend/host_services.py``），
-   HostLink 形态经 :func:`unilabos.backend.hostlink.host_services.register_host_services`
+1. **host_node 服务设备** —— :class:`unilabos.client.host.host_services.HostServices`
+   是唯一的动作定义源（registry 单独扫描 ``client/host/host_services.py``），
+   HostLink 形态经 :func:`unilabos.client.host.hostlink.host_services.register_host_services`
    装进本进程 runtime；
 2. **执行编排（本类）** —— 本地驱动线程池执行、设备快照刷新、结果规范化。
-   ROS2 对应物是 :class:`unilabos.backend.ros2.presets.host_node.HostNode`，
+   ROS2 对应物是 :class:`unilabos.client.host.ros2.presets.host_node.HostNode`，
    两者共享 :class:`HostAdapterBase` 的簿记/桥接通知/ping-pong/test_mode 逻辑。
 
-物料/设备管理下行是 :mod:`unilabos.backend.hostlink.downlink` 的模块级函数，
+物料/设备管理下行是 :mod:`unilabos.client.host.hostlink.downlink` 的模块级函数，
 不挂在本类上。微后端只依赖 ``adapter_registry.get_execution_adapter()`` 契约。
 """
 
@@ -26,12 +26,12 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional
 
-from unilabos.backend.hostlink.adapter_registry import set_execution_adapter
-from unilabos.backend.hostlink.backend import to_wire_value
-from unilabos.backend.hostlink.protocol import RemoteError
-from unilabos.backend.runtime.action import ActionCancelled, ActionContext
-from unilabos.backend.runtime.test_mode import driver_runs_in_test_mode
-from unilabos.backend.runtime.host_adapter import (
+from unilabos.client.host.hostlink.adapter_registry import set_execution_adapter
+from unilabos.client.host.hostlink.backend import to_wire_value
+from unilabos.client.host.hostlink.protocol import RemoteError
+from unilabos.client.host.runtime.action import ActionCancelled, ActionContext
+from unilabos.client.host.runtime.test_mode import driver_runs_in_test_mode
+from unilabos.client.host.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
 )
@@ -42,8 +42,8 @@ from unilabos.utils import logger
 from unilabos.utils.serialization import serialize_result_info
 
 if TYPE_CHECKING:
-    from unilabos.backend.hostlink.backend import HostLinkBackend
-    from unilabos.server.backend.execution_queue import QueueItem
+    from unilabos.client.host.hostlink.backend import HostLinkBackend
+    from unilabos.server.execution_queue import QueueItem
 
 
 class HostNode(HostAdapterBase):
@@ -296,7 +296,7 @@ class HostNode(HostAdapterBase):
             local_node is not None and driver_runs_in_test_mode(local_node.driver)
         )
         if BasicConfig.test_mode and not run_simulator:
-            from unilabos.server.backend.execution_start import confirm_execution_start
+            from unilabos.client.host.execution_start import confirm_execution_start
             confirm_execution_start(item)
             result = self._build_test_mode_return(item.device_id, item.action_name, action_kwargs)
             return_info = serialize_result_info("", True, result)
@@ -337,7 +337,7 @@ class HostNode(HostAdapterBase):
         action_kwargs: Dict[str, Any],
         context: ActionContext,
     ) -> None:
-        from unilabos.server.backend.execution_start import confirm_execution_start, ExecutionStartUnknown
+        from unilabos.client.host.execution_start import confirm_execution_start, ExecutionStartUnknown
         try:
             context.raise_if_cancelled()
             confirm_execution_start(item)
@@ -370,7 +370,7 @@ class HostNode(HostAdapterBase):
             )
             result_data = self._result_data(item, {}, return_info)
         except Exception as exc:  # noqa: BLE001 - 驱动明确失败与传输结果未知必须区分
-            from unilabos.backend.hostlink.protocol import LinkError, RemoteError
+            from unilabos.client.host.hostlink.protocol import LinkError, RemoteError
             from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
             status = "failed"
             error_text = traceback.format_exc()

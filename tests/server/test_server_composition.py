@@ -128,7 +128,7 @@ def test_local_scheduler_publishes_registry_authority_and_mounts_api(
 
     from unilabos.server.api import app as app_module
     from unilabos.server.backend.composition import setup_local_scheduler
-    from unilabos.server.backend.legacy_adaptor.sync.templates import (
+    from unilabos.client.host.legacy_adaptor.sync.templates import (
         report_registry_snapshot_local,
     )
     from unilabos.server.services.runtime.registry import get_registry_service

@@ -1,6 +1,6 @@
 """Backend Job 到 HostLink/ROS2 动作的执行适配层。
 
-调度、资源等待和库存预占都属于 ``server.backend.scheduler``。本模块只接受已经
+调度、资源等待和库存预占都属于 ``server.scheduler``。本模块只接受已经
 获准执行的 Job：动作冲突直接拒绝，库存仅校验既有 reservation 并在驱动调用前
 幂等消费，不保存本地待调度队列。
 """
@@ -16,23 +16,23 @@ import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
-from unilabos.server.backend.execution_queue import (
+from unilabos.server.execution_queue import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
     QueueItem,
     format_job_log,
 )
-from unilabos.server.backend.scheduler.payloads import DispatchPayload
-from unilabos.server.backend.scheduler.materials import (
+from unilabos.server.scheduler.payloads import DispatchPayload
+from unilabos.server.scheduler.materials import (
     material_uuids_for_parameters,
     resolve_material_name_references,
 )
-from unilabos.server.backend.inventory import (
+from unilabos.server.inventory import (
     ExecutionInventoryCoordinator,
     ExecutionInventoryError,
 )
-from unilabos.backend.runtime.exception import (
+from unilabos.client.host.runtime.exception import (
     ExecutionTimeoutException,
     TimeoutException,
 )
@@ -2007,7 +2007,7 @@ class JobExecutionBackend:
         except ValueError as error:
             self._reject_job(job, str(error), "TypedActionValueError")
             return
-        from unilabos.server.backend.execution_start import ExecutionStartGuard, confirm_execution_start
+        from unilabos.client.host.execution_start import ExecutionStartGuard, confirm_execution_start
         from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
         guarded = self._require_execution_permit or bool(job.execution_payload.get("execution_permit"))
         if guarded:
@@ -2190,7 +2190,7 @@ class JobExecutionBackend:
 
     @staticmethod
     def _default_host_getter() -> Any:
-        from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
+        from unilabos.client.host.hostlink.adapter_registry import get_execution_adapter
 
         return get_execution_adapter(0)
 

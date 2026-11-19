@@ -10,11 +10,11 @@ from tests.api_envelope import error_of, ok_data
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.protocol.materials import InventoryRequirement, InventoryReservationCreate, InventoryReservationTransition
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
-from unilabos.server.backend.execution_start import ExecutionStartGuard, ExecutionStartUnknown
-from unilabos.server.backend.scheduler.inventory_recovery import InventoryRecovery
-from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
+from unilabos.server.inventory import ExecutionInventoryCoordinator
+from unilabos.client.host.execution_start import ExecutionStartGuard, ExecutionStartUnknown
+from unilabos.server.scheduler.inventory_recovery import InventoryRecovery
+from unilabos.server.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.payloads import build_job_start_payload
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
@@ -385,11 +385,11 @@ def test_real_scheduler_completion_settles_inventory_without_host_callback(stack
 
 
 def test_hostlink_consumes_before_one_driver_call_and_reopen_never_deducts_again(tmp_path):
-    from unilabos.backend.hostlink.backend import HostLinkBackend
-    from unilabos.backend.hostlink.host_node import HostNode
-    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-    from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
-    from unilabos.server.backend.execution import JobExecutionBackend
+    from unilabos.client.host.hostlink.backend import HostLinkBackend
+    from unilabos.client.host.hostlink.host_node import HostNode
+    from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+    from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
+    from unilabos.client.host.execution import JobExecutionBackend
     value = Stack(tmp_path)
     task, job, payload = value.create()
     calls = []
@@ -435,12 +435,12 @@ def test_hostlink_consumes_before_one_driver_call_and_reopen_never_deducts_again
 def test_failed_action_replaced_by_operator_success_does_not_pause_dispatch(tmp_path):
     """真实 HostLink 驱动失败：开始时已扣减，失败后 Host 隔离预留再打开决策；操作员经
     ``/api/v1/error-decisions`` 人工替换为成功后，库存对账不得把它当冲突而全局暂停派发。"""
-    from unilabos.backend.hostlink.backend import HostLinkBackend
-    from unilabos.backend.hostlink.host_node import HostNode
-    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-    from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
+    from unilabos.client.host.hostlink.backend import HostLinkBackend
+    from unilabos.client.host.hostlink.host_node import HostNode
+    from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+    from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
     from unilabos.server.api.runtime.diagnostics import create_backend_app
-    from unilabos.server.backend.execution import JobExecutionBackend
+    from unilabos.client.host.execution import JobExecutionBackend
     value = Stack(tmp_path)
     task, job, payload = value.create()
     calls = []

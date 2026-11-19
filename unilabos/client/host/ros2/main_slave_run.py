@@ -11,7 +11,7 @@ import uuid
 import rclpy
 
 from unilabos.app.register import collect_devices_and_resources
-from unilabos.backend.ros2.presets.resource_mesh_manager import ResourceMeshManager
+from unilabos.client.host.ros2.presets.resource_mesh_manager import ResourceMeshManager
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker, ResourceTreeSet
 from unilabos.devices.ros_dev.liquid_handler_joint_publisher import LiquidHandlerJointPublisher
 from unilabos_msgs.srv import SerialCommand  # type: ignore
@@ -20,8 +20,8 @@ from rclpy.node import Node
 from rclpy.timer import Timer
 
 from unilabos.registry.registry import lab_registry
-from unilabos.backend.ros2.initialize_device import initialize_device_from_dict
-from unilabos.backend.ros2.presets.host_node import HostNode
+from unilabos.client.host.ros2.initialize_device import initialize_device_from_dict
+from unilabos.client.host.ros2.presets.host_node import HostNode
 from unilabos.utils import logger
 from unilabos.config.config import BasicConfig, resolve_host_node_name
 from unilabos.utils.serialization import TypeEncoder
@@ -74,7 +74,7 @@ def exit() -> None:
             if hasattr(device_node, "destroy_node"):
                 device_node.ros_node_instance.destroy_node()
         host_instance.destroy_node()
-    from unilabos.backend.hostlink.network import shutdown_network_services
+    from unilabos.client.host.hostlink.network import shutdown_network_services
 
     shutdown_network_services()
     rclpy.shutdown()
@@ -96,7 +96,7 @@ def main(
 
     # ROS2 模式下 HostLink 只负责组网控制面，并由微后端持有生命周期。
     # 必须先发布/应用 Host ROS 策略，再初始化 DDS。
-    from unilabos.backend.hostlink.network import setup_host_network_service
+    from unilabos.client.host.hostlink.network import setup_host_network_service
 
     setup_host_network_service()
     raw_domain_id = os.environ.get("ROS_DOMAIN_ID", "").strip()
@@ -115,7 +115,7 @@ def main(
     )
 
     if visual != "disable":
-        from unilabos.backend.ros2.presets.joint_republisher import JointRepublisher
+        from unilabos.client.host.ros2.presets.joint_republisher import JointRepublisher
 
         # 将 ResourceTreeSet 转换为 list 用于 visual 组件
         resources_list = (
@@ -159,7 +159,7 @@ def slave(
     """从节点函数"""
     # 1. Slave 先由微后端通过 HostLink 获取 domain/discovery 信息，再初始化
     # DDS；设备动作、装饰器、Topic、Service 与注册流程仍全部走 ROS2。
-    from unilabos.backend.hostlink.network import (
+    from unilabos.client.host.hostlink.network import (
         require_slave_startup_device_ids,
         setup_slave_network_client,
     )
@@ -242,14 +242,14 @@ def slave(
     # 4.5 物料下行链路（append_resource / 资源树同步）走 HostLink，不建 ROS service：
     # 把下行 handler 挂到 HostLink client，Host 的分发经此调用本进程设备节点实例。
     if _hostlink_client is not None:
-        from unilabos.backend.hostlink.downlink import register_hostlink_resource_handlers
+        from unilabos.client.host.hostlink.downlink import register_hostlink_resource_handlers
 
         register_hostlink_resource_handlers(_hostlink_client)
         logger.info("HostLink 物料下行 handler 已注册（资源树同步 / 物料挂载）。")
 
     # 5. 如果启用可视化，创建可视化相关节点
     if visual != "disable":
-        from unilabos.backend.ros2.presets.joint_republisher import JointRepublisher
+        from unilabos.client.host.ros2.presets.joint_republisher import JointRepublisher
 
         # 将 ResourceTreeSet 转换为 list 用于 visual 组件
         resources_list = (

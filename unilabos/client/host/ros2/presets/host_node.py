@@ -2,15 +2,15 @@
 
 「host_node」在系统中拆成两层：
 
-1. **host_node 服务设备** —— :class:`unilabos.backend.host_services.HostServices`
-   是唯一的动作定义源（registry 单独扫描 ``backend/host_services.py``），
+1. **host_node 服务设备** —— :class:`unilabos.client.host.host_services.HostServices`
+   是唯一的动作定义源（registry 单独扫描 ``client/host/host_services.py``），
    ROS2 形态经通用管线 ``initialize_device_from_dict`` 从外部初始化；
 2. **执行编排（本类）** —— DDS 设备发现、ActionClient 派发、设备状态订阅、
    slave 上报处理、控制器初始化。HostLink 对应物是
-   :class:`unilabos.backend.hostlink.host_node.HostNode`，两者共享
+   :class:`unilabos.client.host.hostlink.host_node.HostNode`，两者共享
    :class:`HostAdapterBase` 的簿记/桥接通知/ping-pong/test_mode 逻辑。
 
-物料/设备管理下行是 :mod:`unilabos.backend.hostlink.downlink` 的模块级函数，
+物料/设备管理下行是 :mod:`unilabos.client.host.hostlink.downlink` 的模块级函数，
 不挂在本类上。微后端只依赖 ``adapter_registry.get_execution_adapter()`` 契约。
 """
 
@@ -34,18 +34,18 @@ from unilabos_msgs.action import StrSingleInput  # type: ignore
 from unilabos_msgs.srv import SerialCommand  # type: ignore
 from unique_identifier_msgs.msg import UUID
 
-from unilabos.backend.hostlink.adapter_registry import set_execution_adapter
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.hostlink.adapter_registry import set_execution_adapter
+from unilabos.client.host.ros2.msgs.message_converter import (
     convert_from_ros_msg,
     convert_to_ros_msg,
     get_msg_type,
     get_ros_type_by_msgname,
     msg_converter_manager,
 )
-from unilabos.backend.ros2.presets.controller_node import ControllerNode
-from unilabos.backend.runtime.definition import is_host_node_config
-from unilabos.backend.runtime.exception import DeviceClassInvalid
-from unilabos.backend.runtime.host_adapter import (
+from unilabos.client.host.ros2.presets.controller_node import ControllerNode
+from unilabos.client.host.runtime.definition import is_host_node_config
+from unilabos.client.host.runtime.exception import DeviceClassInvalid
+from unilabos.client.host.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
 )
@@ -63,7 +63,7 @@ from unilabos.utils import logger
 from unilabos.utils.serialization import serialize_result_info
 
 if TYPE_CHECKING:
-    from unilabos.server.backend.execution_queue import QueueItem
+    from unilabos.server.execution_queue import QueueItem
 
 
 def ensure_host_node_resource(
@@ -465,7 +465,7 @@ class HostNode(HostAdapterBase, Node):
 
     def initialize_device(self, device_id: str, device_config: ResourceDictInstance) -> None:
         """根据配置初始化本机设备（经 ROS2 通用管线），并创建动作客户端。"""
-        from unilabos.backend.ros2.initialize_device import initialize_device_from_dict
+        from unilabos.client.host.ros2.initialize_device import initialize_device_from_dict
 
         self.lab_logger().info(f"[Host Node] Initializing device: {device_id}")
 
@@ -632,7 +632,7 @@ class HostNode(HostAdapterBase, Node):
                         f"[Host Node] action_type 兜底解析: {device_id}/{action_name} -> {action_type}"
                     )
         if BasicConfig.test_mode:
-            from unilabos.server.backend.execution_start import confirm_execution_start
+            from unilabos.client.host.execution_start import confirm_execution_start
             confirm_execution_start(item)
             action_id = f"/devices/{device_id}/{action_name}"
             self.lab_logger().info(
@@ -686,7 +686,7 @@ class HostNode(HostAdapterBase, Node):
                 )
             goal_uuid_obj = UUID(uuid=list(u.bytes))
 
-            from unilabos.server.backend.execution_start import confirm_execution_start
+            from unilabos.client.host.execution_start import confirm_execution_start
             confirm_execution_start(item)
             future = action_client.send_goal_async(
                 goal_msg,

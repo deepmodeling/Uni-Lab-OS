@@ -30,7 +30,7 @@ class SlaveAnnouncer:
         debounce_s: float = DEBOUNCE_S,
     ) -> None:
         if slaves is None:
-            from unilabos.server.backend.legacy_adaptor.sync.templates import current_hostlink_slaves
+            from unilabos.client.host.legacy_adaptor.sync.templates import current_hostlink_slaves
 
             slaves = current_hostlink_slaves
         self._send = send
@@ -45,7 +45,7 @@ class SlaveAnnouncer:
     def start(self, *, already_sent: SlaveList = ()) -> "SlaveAnnouncer":
         """开始监听；``already_sent`` 是注册表上报里已经带过的列表，与它相同就不重复发。"""
 
-        from unilabos.backend.hostlink.server import add_peer_listener
+        from unilabos.client.host.hostlink.server import add_peer_listener
 
         self._sent = _key(already_sent)
         self._remove_listener = add_peer_listener(self._on_peer)
@@ -99,7 +99,7 @@ def http_slave_sender(backend_address: str, *, edge_uuid: str, timeout: float = 
 
     import requests
 
-    from unilabos.server.backend.legacy_adaptor.sync.templates import _api_base
+    from unilabos.client.host.legacy_adaptor.sync.templates import _api_base
     from unilabos.utils.machine_identity import machine_id
 
     url = f"{_api_base(backend_address)}/registry/slaves"

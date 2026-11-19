@@ -1,7 +1,7 @@
 """在 HostLink Host 进程中装配 host_node 服务设备。
 
 host_node 的动作定义与实现是 backend 无关的
-:class:`unilabos.backend.host_services.HostServices`；本模块把该驱动注册进
+:class:`unilabos.client.host.host_services.HostServices`；本模块把该驱动注册进
 本进程 runtime（device_id 即 ``BasicConfig.host_node_name``），使微前端单点
 动作（ad_hoc_device_action）与工作流画布节点在两种 backend 下都能对同一
 device_id 提交这些动作。
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from unilabos.backend.host_services import HOST_SERVICE_ACTIONS, HostServices
+from unilabos.client.host.host_services import HOST_SERVICE_ACTIONS, HostServices
 from unilabos.config.config import resolve_host_node_name
 from unilabos.utils.log import logger
 
@@ -45,7 +45,7 @@ def register_host_services(backend: Any) -> Optional[Any]:
     registry 未加载（如精简单测环境）时跳过并返回 None——此时没有
     schema/placeholder 描述，注册空动作设备没有意义。
     """
-    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec
+    from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec
 
     device_id = resolve_host_node_name()
     existing = backend.local.devices.get(device_id)

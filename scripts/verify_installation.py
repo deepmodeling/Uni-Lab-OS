@@ -181,7 +181,7 @@ def main():
     except Exception as e:
         all_passed = False
         print(f"  {CROSS_MARK} Environment check failed: {str(e)}")
-    for module in ("unilabos.server.api.app", "unilabos.backend.hostlink.local_runtime"):
+    for module in ("unilabos.server.api.app", "unilabos.client.host.hostlink.local_runtime"):
         all_passed = check_package(module) and all_passed
     all_passed = check_material_catalog() and all_passed
     print()

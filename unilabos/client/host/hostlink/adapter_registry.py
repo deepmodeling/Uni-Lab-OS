@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Optional
 
-from unilabos.backend.runtime.host_adapter import execution_result_bridges
+from unilabos.client.host.runtime.host_adapter import execution_result_bridges
 
 _adapter_condition = threading.Condition()
 _active_adapter: Optional[Any] = None

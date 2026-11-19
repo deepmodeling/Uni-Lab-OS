@@ -4,5 +4,5 @@
 提供与 ROS2 后端等价的「设备状态发布 + 命令下发」能力，用于本机通信性能验证。
 
 对外入口：
-    - unilabos.backend.dora.main_dora_run.main / slave  —— 与 app/backend.py:start_backend 对接
+    - unilabos.client.host.dora.main_dora_run.main / slave  —— 与 client/host/__init__.py:start_backend 对接
 """

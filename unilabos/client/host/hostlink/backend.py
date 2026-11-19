@@ -8,19 +8,19 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.runtime.action import ActionCancelled, ActionContext
-from unilabos.backend.runtime.async_utils import run_node_coroutine
-from unilabos.backend.runtime.resource import AuthorityResourceService
-from unilabos.backend.hostlink.service import normalize_service_name
-from unilabos.backend.hostlink.topic import (
+from unilabos.client.host.runtime.action import ActionCancelled, ActionContext
+from unilabos.client.host.runtime.async_utils import run_node_coroutine
+from unilabos.client.host.runtime.resource import AuthorityResourceService
+from unilabos.client.host.hostlink.service import normalize_service_name
+from unilabos.client.host.hostlink.topic import (
     TopicEvent,
     message_to_value,
     normalize_topic,
 )
-from unilabos.backend.hostlink.client import HostLinkClient, set_hostlink_client
-from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
-from unilabos.backend.hostlink.protocol import ActionType, LinkError
-from unilabos.backend.hostlink.server import (
+from unilabos.client.host.hostlink.client import HostLinkClient, set_hostlink_client
+from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.client.host.hostlink.protocol import ActionType, LinkError
+from unilabos.client.host.hostlink.server import (
     HostLinkServer,
     HostStage,
     set_hostlink_server,
@@ -152,7 +152,7 @@ class HostLinkBackend:
                 self.local.start()
                 # 内置 host 服务设备：承载 transfer/出库/加试剂等物料编排动作，
                 # 与 ROS2 HostNode 的 @action 同 device_id、同 schema。
-                from unilabos.backend.hostlink.host_services import register_host_services
+                from unilabos.client.host.hostlink.host_services import register_host_services
 
                 register_host_services(self)
                 self._bind_material_transfer_dispatcher()
@@ -177,7 +177,7 @@ class HostLinkBackend:
         阶段就绪前回「Host 启动中」，Slave 原样重试，不会拿到错误结果。
         """
 
-        from unilabos.backend.hostlink.startup import (
+        from unilabos.client.host.hostlink.startup import (
             adopt_prebound_host_server,
             create_host_server,
         )
@@ -288,7 +288,7 @@ class HostLinkBackend:
     def _handle_material_template_list(
         data: dict[str, Any], peer: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        from unilabos.backend.hostlink.materials_proxy import template_list
+        from unilabos.client.host.hostlink.materials_proxy import template_list
         from unilabos.server.backend.composition import get_materials_gateway
 
         gateway = get_materials_gateway()

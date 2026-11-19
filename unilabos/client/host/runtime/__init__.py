@@ -1,29 +1,29 @@
 """Backend-neutral contracts shared by device drivers and runtime adapters."""
 
-from unilabos.backend.runtime.async_utils import schedule_async_func
-from unilabos.backend.runtime.definition import (
+from unilabos.client.host.runtime.async_utils import schedule_async_func
+from unilabos.client.host.runtime.definition import (
     DeviceConfigEntry,
     DeviceDefinition,
     iter_device_config_entries,
     resolve_device_definition,
 )
-from unilabos.backend.runtime.action import (
+from unilabos.client.host.runtime.action import (
     ActionCancelled,
     ActionContext,
     DeviceActionRouter,
 )
-from unilabos.backend.runtime.node import (
+from unilabos.client.host.runtime.node import (
     BackendCapabilityError,
     DeviceNode,
     StatusListener,
 )
-from unilabos.backend.runtime.exception import (
+from unilabos.client.host.runtime.exception import (
     ActionResultError,
     DeviceActionError,
     DeviceBackendUnsupported,
     DeviceClassInvalid,
 )
-from unilabos.backend.runtime.resource import (
+from unilabos.client.host.runtime.resource import (
     AuthorityResourceService,
     MaterialSnapshotObserver,
     ResourceService,

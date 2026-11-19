@@ -1,11 +1,11 @@
 from typing import Optional
 
-from unilabos.backend.runtime.definition import resolve_device_definition
+from unilabos.client.host.runtime.definition import resolve_device_definition
 from unilabos.registry.registry import lab_registry  # noqa: F401 - 兼容嵌入方/测试
-from unilabos.backend.ros2.device_node_wrapper import ros2_device_node
-from unilabos.backend.ros2.base_device_node import ROS2DeviceNode, DeviceInitError
+from unilabos.client.host.ros2.device_node_wrapper import ros2_device_node
+from unilabos.client.host.ros2.base_device_node import ROS2DeviceNode, DeviceInitError
 from unilabos.resources.resource_tracker import ResourceDictInstance
-from unilabos.backend.runtime.exception import DeviceClassInvalid  # noqa: F401 - 兼容公开属性
+from unilabos.client.host.runtime.exception import DeviceClassInvalid  # noqa: F401 - 兼容公开属性
 
 
 def initialize_device_from_dict(device_id, device_config: ResourceDictInstance) -> Optional[ROS2DeviceNode]:

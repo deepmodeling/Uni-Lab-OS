@@ -12,7 +12,7 @@ from tests.api_envelope import envelope
 from unilabos.client.runtime import HTTPLifecycleClient, SchedulerDrainTimeout
 from unilabos.protocol.runtime.lifecycle import RestartRequest, ResetRequest, SchedulerDrainStatus
 from unilabos.server.api.runtime.diagnostics import create_backend_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 
 
 def _status(*, active=True):

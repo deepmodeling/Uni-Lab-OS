@@ -21,8 +21,8 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Optional
 
-from unilabos.server.backend.scheduler.dag.executor import DagExecutor, DagWalk, OnTerminalFn
-from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState, TaskDag
+from unilabos.server.scheduler.dag.executor import DagExecutor, DagWalk, OnTerminalFn
+from unilabos.server.scheduler.dag.models import DagNode, NodeState, TaskDag
 
 logger = logging.getLogger(__name__)
 

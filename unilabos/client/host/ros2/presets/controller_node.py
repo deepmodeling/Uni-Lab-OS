@@ -1,7 +1,7 @@
 from typing import Callable, Dict
 from std_msgs.msg import Float64
 
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 
 
 class ControllerNode(BaseROS2DeviceNode):

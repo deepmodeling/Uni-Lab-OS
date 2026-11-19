@@ -13,14 +13,14 @@ from unilabos.server.composition import (
     shutdown_server_services,
 )
 from unilabos.server.database import ServerDatabasePaths
-from unilabos.server.backend.execution import (
+from unilabos.client.host.execution import (
     JobExecutionBackend,
     make_device_materials_need_lock_resolver,
     make_device_status_policy_resolver,
 )
 from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
-from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.backend.telemetry import TelemetryDeviceStateProjection
+from unilabos.server.scheduler.service import BackendScheduler
+from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
 from unilabos.protocol.base import canonical_json
 from unilabos.protocol.history import HistoryEventAppend, InlinePayloadWrite
 from unilabos.server.services.history import HistoryService
@@ -152,7 +152,7 @@ def setup_local_scheduler(
     if execution_backend is None:
         raise RuntimeError("job execution backend must be ready first")
 
-    from unilabos.server.backend.scheduler.authority import SchedulerAuthorityProfile
+    from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
     from unilabos.server.composition import get_server_services
     from unilabos.server.services.runtime.workflow.service import WorkflowService
 
@@ -421,7 +421,7 @@ def setup_execution_backend(
         endpoint_uuid=endpoint_uuid,
     )
 
-    from unilabos.server.backend.incidents import StatusIncidentManager
+    from unilabos.client.host.incidents import StatusIncidentManager
 
     status_incidents = StatusIncidentManager()
     status_incidents.add_listener(
@@ -501,7 +501,7 @@ def shutdown_backend_services() -> None:
         _release_log_notices = None
 
     if BasicConfig.backend == "ros2":
-        from unilabos.backend.hostlink.network import shutdown_network_services
+        from unilabos.client.host.hostlink.network import shutdown_network_services
 
         shutdown_network_services()
     if _scheduler is not None:

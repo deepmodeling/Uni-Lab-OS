@@ -10,16 +10,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.runtime import (
+from unilabos.client.host.runtime import (
     ActionCancelled,
     ActionContext,
 )
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.protocol import ActionType, RemoteError
-from unilabos.backend.hostlink.server import HostLinkServer
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.protocol import ActionType, RemoteError
+from unilabos.client.host.hostlink.server import HostLinkServer
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> bool:
@@ -793,9 +793,9 @@ def test_hostlink_transports_ros_messages_as_json(monkeypatch) -> None:
 
 def test_hostlink_backend_import_does_not_load_ros() -> None:
     code = (
-        "import sys; import unilabos.backend.hostlink.main_hostlink_run; "
+        "import sys; import unilabos.client.host.hostlink.main_hostlink_run; "
         "assert 'rclpy' not in sys.modules; "
-        "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
+        "assert not any(name.startswith('unilabos.client.host.ros2') for name in sys.modules)"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

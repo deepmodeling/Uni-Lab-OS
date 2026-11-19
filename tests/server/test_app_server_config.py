@@ -202,7 +202,7 @@ def test_abort_serving_stops_control_plane_wait_even_before_it_starts(monkeypatc
 
 
 def test_backend_thread_failure_is_recorded_and_aborts_serving(monkeypatch) -> None:
-    from unilabos import backend as backend_module
+    from unilabos.client import host as backend_module
 
     aborted: list[bool] = []
     monkeypatch.setattr(app_module, "abort_serving", lambda: aborted.append(True))

@@ -17,7 +17,7 @@ from unilabos.registry.action_timeout import (
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.decorators import action, get_action_meta
 from unilabos.registry.registry import Registry
-from unilabos.server.backend.legacy_adaptor.sync.templates import _action_definition
+from unilabos.client.host.legacy_adaptor.sync.templates import _action_definition
 
 
 # ── 归一化与求值 ────────────────────────────────────────────────

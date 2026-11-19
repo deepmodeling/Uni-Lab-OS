@@ -18,7 +18,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
-from unilabos.backend.hostlink.topic import message_to_value
+from unilabos.client.host.hostlink.topic import message_to_value
 from unilabos.utils import logger
 
 PROTOCOL_VERSION = 1

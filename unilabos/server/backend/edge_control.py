@@ -35,7 +35,7 @@ from unilabos.protocol.runtime.control import (
     PongNotice,
 )
 from unilabos.protocol.runtime import CommandEnvelope
-from unilabos.server.backend.scheduler.payloads import DispatchPayload
+from unilabos.server.scheduler.payloads import DispatchPayload
 
 logger = logging.getLogger(__name__)
 

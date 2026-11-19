@@ -3,7 +3,7 @@ from threading import Lock
 from unilabos_msgs.srv import SerialCommand
 from serial import Serial, SerialException
 
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 
 
 class ROS2SerialNode(BaseROS2DeviceNode):

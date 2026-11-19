@@ -8,14 +8,14 @@ import threading
 import pytest
 import yaml
 
-from unilabos.backend.hostlink.local_runtime import (
+from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDeviceNode,
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
     instantiate_driver,
 )
-from unilabos.backend.runtime import BackendCapabilityError
-from unilabos.backend.runtime.action import ActionContext
+from unilabos.client.host.runtime import BackendCapabilityError
+from unilabos.client.host.runtime.action import ActionContext
 from unilabos.registry.decorators import topic_config
 from unilabos.registry.placeholder_type import ResourceSlot
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker

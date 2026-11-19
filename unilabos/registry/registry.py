@@ -87,7 +87,7 @@ from msgcenterpy.instances.json_schema_instance import JSONSchemaMessageInstance
 _ROS_TYPE_RESOLUTION_ENABLED = BasicConfig.backend == "ros2"
 
 if _ROS_TYPE_RESOLUTION_ENABLED:
-    from unilabos.backend.ros2.msgs.message_converter import (
+    from unilabos.client.host.ros2.msgs.message_converter import (
         msg_converter_manager,
         ros_action_result_mapping,
         ros_action_to_json_schema,
@@ -487,7 +487,7 @@ class Registry:
         # ROS type objects are added later and are not a second schema source.
         host_entry = copy.deepcopy(ast_entry)
         class_config = host_entry.setdefault("class", {})
-        class_config["module"] = "unilabos.backend.host_services:HostServices"
+        class_config["module"] = "unilabos.client.host.host_services:HostServices"
         action_mappings = class_config.setdefault("action_value_mappings", {})
         # Accept cached metadata produced before test_latency was explicitly
         # decorated, but publish only its stable public action name.
@@ -591,7 +591,7 @@ class Registry:
         # AST 扫描不 import 模块，schema-only 模式下同样安全。
         host_scan = scan_directory(
             scan_root, python_path=python_path, executor=self._startup_executor,
-            cache=ast_cache, include_files=[pkg_root / "backend" / "host_services.py"],
+            cache=ast_cache, include_files=[pkg_root / "client" / "host" / "host_services.py"],
         )
         self.scan_errors.extend(scan_result.pop("_scan_errors", []))
         self.scan_errors.extend(host_scan.pop("_scan_errors", []))
@@ -2115,7 +2115,7 @@ class Registry:
 
         # 设备模块几乎都依赖运行时内核：先在本线程导入，减少并行导入时包之间互相等待
         try:
-            importlib.import_module("unilabos.backend.runtime")
+            importlib.import_module("unilabos.client.host.runtime")
         except Exception as e:  # noqa: BLE001 - 只是预热，失败照常逐个校验
             logger.debug(f"[Uni-Lab-OS Registry/Verify] 预先导入运行时内核失败: {e}")
         executor = self._startup_executor or ThreadPoolExecutor(max_workers=8)

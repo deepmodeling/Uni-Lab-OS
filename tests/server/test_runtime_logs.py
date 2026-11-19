@@ -11,9 +11,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.protocol import ActionType, RemoteError
-from unilabos.backend.hostlink.server import HostLinkServer
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.protocol import ActionType, RemoteError
+from unilabos.client.host.hostlink.server import HostLinkServer
 from unilabos.server.api.runtime import logs as api_logs
 from unilabos.server.services.runtime.logs import LogSourceNotFound, LogSourceUnavailable, RuntimeLogService
 from unilabos.utils import log as log_config

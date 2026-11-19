@@ -6,9 +6,9 @@ import threading
 import time
 from typing import Any
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.backend import HostLinkBackend
 from unilabos.utils.decorator import subscribe, topic_config
 
 

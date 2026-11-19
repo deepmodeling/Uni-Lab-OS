@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from unilabos.server.backend.capabilities import build_endpoint_capabilities
+from unilabos.client.host.capabilities import build_endpoint_capabilities
 from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
 from unilabos.server.services.history import HistoryService
 from unilabos.server.services.runtime import RuntimeService

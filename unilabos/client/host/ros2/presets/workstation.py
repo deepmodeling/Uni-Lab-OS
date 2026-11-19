@@ -8,10 +8,10 @@ workstation 按「驱动 / 编排」分层：
 2. **工作站编排（本类）** —— 继承 :class:`BaseROS2DeviceNode` 作为设备节点壳，
    负责子设备初始化、硬件接口代理、XDL protocol ActionServer 与子设备
    ActionClient。HostLink 对应物是
-   :class:`unilabos.backend.hostlink.workstation.WorkstationNode`。
+   :class:`unilabos.client.host.hostlink.workstation.WorkstationNode`。
 
 protocol 步骤生成、协议名/模型解析与资源展开/回写是 backend 无关共享逻辑
-（:mod:`unilabos.backend.runtime.workstation_protocol` 与
+（:mod:`unilabos.client.host.runtime.workstation_protocol` 与
 :mod:`unilabos.experiments.compile`），双 backend 同一份。
 """
 
@@ -28,18 +28,18 @@ from rclpy.action import ActionClient, ActionServer
 from rclpy.action.server import ServerGoalHandle
 from rosidl_runtime_py import message_to_ordereddict
 
-from unilabos.backend.ros2.base_device_node import (
+from unilabos.client.host.ros2.base_device_node import (
     BaseROS2DeviceNode,
     DeviceNodeResourceTracker,
     ROS2DeviceNode,
 )
-from unilabos.backend.ros2.initialize_device import initialize_device_from_dict
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.ros2.initialize_device import initialize_device_from_dict
+from unilabos.client.host.ros2.msgs.message_converter import (
     convert_from_ros_msg_with_mapping,
     convert_to_ros_msg,
     get_action_type,
 )
-from unilabos.backend.runtime.workstation_protocol import (
+from unilabos.client.host.runtime.workstation_protocol import (
     WorkstationNodeTempError,
     expand_resource_value,
     physical_setup_graph,

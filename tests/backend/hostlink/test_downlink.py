@@ -14,10 +14,10 @@ from typing import Any, Dict, List
 
 import pytest
 
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.runtime.node import DeviceNode
-from unilabos.backend.hostlink import downlink
-from unilabos.backend.hostlink.downlink import (
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.runtime.node import DeviceNode
+from unilabos.client.host.hostlink import downlink
+from unilabos.client.host.hostlink.downlink import (
     local_resource_append,
     local_resource_tree_sync,
     notify_resource_tree_update,
@@ -101,7 +101,7 @@ def fake_device(request, monkeypatch):
     monkeypatch.setattr(BasicConfig, "backend", request.param)
     if request.param == "hostlink":
         from types import SimpleNamespace
-        from unilabos.backend.hostlink import main_hostlink_run
+        from unilabos.client.host.hostlink import main_hostlink_run
 
         runtime = SimpleNamespace(local=SimpleNamespace(
             get_device=lambda identity: node if identity == node.device_id else None,
@@ -110,7 +110,7 @@ def fake_device(request, monkeypatch):
         yield node
         return
     pytest.importorskip("rclpy", reason="仅 ROS2 设备表分支需要选装 ROS")
-    from unilabos.backend.ros2.base_device_node import registered_devices
+    from unilabos.client.host.ros2.base_device_node import registered_devices
 
     registered_devices[node.device_id] = {"base_node_instance": node}  # type: ignore[typeddict-item]
     try:
@@ -191,7 +191,7 @@ def test_get_local_device_node_queries_hostlink_runtime(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(BasicConfig, "backend", "hostlink")
     monkeypatch.setattr(
-        "unilabos.backend.hostlink.main_hostlink_run.get_runtime", lambda: _FakeRuntime()
+        "unilabos.client.host.hostlink.main_hostlink_run.get_runtime", lambda: _FakeRuntime()
     )
     assert downlink.get_local_device_node("hl_dev") is node
     assert downlink.get_local_device_node("ghost") is None

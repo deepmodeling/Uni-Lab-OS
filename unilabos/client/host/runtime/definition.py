@@ -10,7 +10,7 @@ from unilabos.registry.init_enforce import merge_init_param_enforce
 from unilabos.registry.material_locks import normalize_material_parameter_names
 from unilabos.resources.adapters.device_site import apply_device_authority_state
 from unilabos.resources.resource_tracker import ResourceDictInstance
-from unilabos.backend.runtime.exception import DeviceBackendUnsupported, DeviceClassInvalid
+from unilabos.client.host.runtime.exception import DeviceBackendUnsupported, DeviceClassInvalid
 from unilabos.utils.import_manager import default_manager
 
 
@@ -132,7 +132,7 @@ def resolve_device_definition(
             f"{device_config}"
         )
     if backend_name is not None:
-        from unilabos.backend import resolve_driver_backends
+        from unilabos.client.host import resolve_driver_backends
 
         supported = resolve_driver_backends(driver_config)
         if backend_name not in supported:

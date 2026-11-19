@@ -14,7 +14,7 @@ from tests.server.test_scheduler_inventory_authority import _inbound, _template
 from tests.server.test_workflow_inventory_recovery import Stack
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.materials.contents import ContentContract
 from unilabos.server.services.materials.resource_contract import ResourceContract
 from unilabos.server.services.runtime.workflow.service import WorkflowError

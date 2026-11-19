@@ -6,15 +6,15 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 from unilabos.protocol.runtime.resource_intervals import DeviceTenancyTransition, DeviceTenancyRequirement
-from unilabos.server.backend.scheduler.models import MaterialLockClaim
-from unilabos.server.backend.scheduler.resource_keys import material_lock_key
+from unilabos.server.scheduler.models import MaterialLockClaim
+from unilabos.server.scheduler.resource_keys import material_lock_key
 from unilabos.server.services.runtime.workflow.device_tenancy import DeviceTenancies
 from unilabos.server.services.runtime.workflow.resource_loans import ResourceLoans
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
 from unilabos.server.services.runtime.workflow.service import WorkflowService
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from tests.server.test_workflow_resource_intervals import make_task, request_for, service
 from tests.server.test_workflow_task_cancel import Executor, command, wait_for
@@ -271,7 +271,7 @@ def test_completion_without_unload_requires_attention(service):
 
 
 def test_device_contract_resolves_material_uuid_to_readable_device_id():
-    from unilabos.server.backend.scheduler.tenancy_contract import resolve_tenancy_contract
+    from unilabos.server.scheduler.tenancy_contract import resolve_tenancy_contract
     sample,target=str(uuid4()),str(uuid4())
     schema={"x-unilabos-action-contract":{"resource_contract":{"device_tenancy":{
         "mode":"task_while_loaded","material_param":"sample","acquire_device_param":"target"}}}}
@@ -415,7 +415,7 @@ def test_released_device_does_not_leave_a_false_wait_cycle(service):
 
 
 def test_readable_device_id_is_validated_by_materials_authority():
-    from unilabos.server.backend.scheduler.tenancy_contract import resolve_tenancy_contract
+    from unilabos.server.scheduler.tenancy_contract import resolve_tenancy_contract
     from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
     sample=str(uuid4())
     contract={'version':1,'device_tenancy':{'mode':'task_while_loaded','material_param':'sample','acquire_device_param':'vessel'}}

@@ -8,10 +8,10 @@ import pytest
 
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.runtime.resource import AuthorityResourceService
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.hostlink.protocol import RemoteError
+from unilabos.client.host.runtime.resource import AuthorityResourceService
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.protocol import RemoteError
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.protocol.materials import MaterialTransfer, MaterialTransferItem

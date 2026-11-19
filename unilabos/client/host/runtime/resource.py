@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Iterator, Optional, Protocol, Sequence
 from uuid import uuid4
 
-from unilabos.backend.runtime.async_utils import run_blocking
+from unilabos.client.host.runtime.async_utils import run_blocking
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.resources.plr_identity import has_legacy_tip_channels, material_children
 from unilabos.resources.adapters.plr_materials import (

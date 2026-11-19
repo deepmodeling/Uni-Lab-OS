@@ -44,7 +44,7 @@ def main() -> None:
     driver = driver_cls(device_id=device_id, config=config)
 
     # 延迟导入，确保 driver 先完成（driver import 可能较慢）
-    from unilabos.backend.dora.dora_device_node import DoraDeviceNode
+    from unilabos.client.host.dora.dora_device_node import DoraDeviceNode
 
     DoraDeviceNode(driver, device_id).run()
 

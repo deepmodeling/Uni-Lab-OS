@@ -21,21 +21,21 @@ from typing import (
     Type,
 )
 
-from unilabos.backend.runtime.action import ActionContext
-from unilabos.backend.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
+from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
 from unilabos.config.config import BasicConfig
-from unilabos.backend.runtime.exception import TimeoutException
-from unilabos.backend.runtime.driver_creator import (
+from unilabos.client.host.runtime.exception import TimeoutException
+from unilabos.client.host.runtime.driver_creator import (
     is_workstation_driver,
     pylabrobot_setup_finished,
     select_driver_creator,
     uses_pylabrobot_creator,
 )
-from unilabos.backend.runtime.node import BackendCapabilityError, DeviceNode
-from unilabos.backend.runtime.resource import ResourceService
-from unilabos.backend.runtime.resource_slot import is_unset_resource_slot
-from unilabos.backend.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
-from unilabos.backend.hostlink.service import (
+from unilabos.client.host.runtime.node import BackendCapabilityError, DeviceNode
+from unilabos.client.host.runtime.resource import ResourceService
+from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot
+from unilabos.client.host.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
+from unilabos.client.host.hostlink.service import (
     DeviceService,
     DeviceServiceClient,
     LocalServiceBus,
@@ -43,12 +43,12 @@ from unilabos.backend.hostlink.service import (
     build_service_callback,
     normalize_service_name,
 )
-from unilabos.backend.hostlink.primitives import (
+from unilabos.client.host.hostlink.primitives import (
     DeviceClock,
     DeviceRate,
     DeviceTimer,
 )
-from unilabos.backend.hostlink.topic import (
+from unilabos.client.host.hostlink.topic import (
     LocalTopicBus,
     TopicBus,
     TopicPublisher,
@@ -310,7 +310,7 @@ class HostLinkDeviceNode(DeviceNode):
         ] = {}
         self._hardware_interface = dict(hardware_interface or {})
         self.driver_is_workstation = bool(is_workstation)
-        self._logger = logging.getLogger(f"unilabos.backend.hostlink.{device_id}")
+        self._logger = logging.getLogger(f"unilabos.client.host.hostlink.{device_id}")
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
             target=self._run_loop,
@@ -808,7 +808,7 @@ class HostLinkDeviceNode(DeviceNode):
                 f"HostLink 设备 {self.device_id!r} 没有动作 {action_name!r}"
             )
         # workstation 的 XDL protocol 动作没有 driver 方法，路由到协议编排器
-        # （unilabos.backend.hostlink.workstation.WorkstationNode）。
+        # （unilabos.client.host.hostlink.workstation.WorkstationNode）。
         orchestrator = self.__dict__.get("_workstation_protocols")
         if orchestrator is not None:
             protocol_action = orchestrator.protocol_action(action_name)
@@ -1400,7 +1400,7 @@ class HostLinkLocalRuntime:
         # 动作解析时把 protocol 名路由给它。
         protocol_type = (spec.config or {}).get("protocol_type")
         if node.driver_is_workstation and protocol_type:
-            from unilabos.backend.hostlink.workstation import WorkstationNode
+            from unilabos.client.host.hostlink.workstation import WorkstationNode
 
             node.__dict__["_workstation_protocols"] = WorkstationNode(
                 protocol_type,
@@ -1440,7 +1440,7 @@ class HostLinkLocalRuntime:
         *,
         parent_device_id: str = "",
     ) -> HostLinkDeviceNode:
-        from unilabos.backend.runtime.definition import resolve_device_definition
+        from unilabos.client.host.runtime.definition import resolve_device_definition
 
         definition = resolve_device_definition(
             device_id,

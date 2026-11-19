@@ -19,10 +19,10 @@ from typing import Any, Optional
 import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
+from unilabos.client.host.hostlink.adapter_registry import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
-from unilabos.server.backend.legacy_adaptor.session import BaseBackendClient
-from unilabos.server.backend.legacy_adaptor.url import build_backend_websocket_url
+from unilabos.client.host.legacy_adaptor.session import BaseBackendClient
+from unilabos.client.host.legacy_adaptor.url import build_backend_websocket_url
 from unilabos.protocol.runtime.data import RUNTIME_PROTOCOL_VERSION
 from unilabos.protocol.runtime.control import (
     BackendHttpRequest,

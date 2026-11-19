@@ -1,6 +1,6 @@
 import pytest
 
-from unilabos.backend.hostlink.ros_assist import (
+from unilabos.client.host.hostlink.ros_assist import (
     RosNetworkInfo,
     apply_ros_network_env,
     build_host_ros_info,

@@ -4,13 +4,13 @@ import time
 
 import pytest
 
-from unilabos.server.backend.execution_queue import (
+from unilabos.server.execution_queue import (
     DeviceActionManager,
     JobInfo,
     JobStatus,
     QueueItem,
 )
-from unilabos.server.backend.execution import JobExecutionBackend
+from unilabos.client.host.execution import JobExecutionBackend
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_CANCELLATION,
     SUCCESS_TYPE_NORMAL,
@@ -27,11 +27,11 @@ from unilabos.registry.decorators import action, get_action_meta
 # 本模块覆盖 ROS 2 HostNode 的动作策略；无 ROS 运行时（HostLink-only 环境）整体跳过。
 pytest.importorskip("rclpy", reason="需要 ROS 2 运行时")
 
-from unilabos.backend.ros2.base_device_node import (
+from unilabos.client.host.ros2.base_device_node import (
     _coerce_device_error_info,
     _native_driver_result_failed,
 )
-from unilabos.backend.ros2.presets.host_node import HostNode
+from unilabos.client.host.ros2.presets.host_node import HostNode
 from unilabos.utils.serialization import serialize_result_info
 
 

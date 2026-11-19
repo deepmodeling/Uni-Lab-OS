@@ -12,7 +12,7 @@ from typing import Any, Callable
 import pytest
 
 from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 

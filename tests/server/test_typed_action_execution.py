@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 
 from unilabos.registry.typed_contract import TypedActionValueError, validate_action_values
-from unilabos.server.backend.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
+from unilabos.server.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
 from tests.server.test_action_timeout_execution import _Bridge, _make_backend, _payload, _wait_until
 
 SCHEMA = {

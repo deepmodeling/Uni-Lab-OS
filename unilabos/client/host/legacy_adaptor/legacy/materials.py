@@ -4,7 +4,7 @@
 ``/edge/material/query`` 把节点拉回来再挂到设备上。现在权威是微后端：
 
 1. 从旧后端拉节点（旧形状：``position``、``position_3d``、``liquids``…），
-   经 :mod:`~unilabos.server.backend.legacy_adaptor.legacy.graph` 投影成
+   经 :mod:`~unilabos.client.host.legacy_adaptor.legacy.graph` 投影成
    ``ResourceDict`` 输入；
 2. add   → 权威 ``ensure``（保留旧后端 uuid）→ 设备 ``add`` 分发；
    update → 权威 ``update``（diff/apply）→ 设备 ``update`` 分发；
@@ -18,10 +18,10 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
-from unilabos.backend.hostlink.downlink import notify_resource_tree_update
+from unilabos.client.host.hostlink.downlink import notify_resource_tree_update
 from unilabos.config.config import BasicConfig, HTTPConfig
 from unilabos.protocol.materials import ACTOR_BACKEND
-from unilabos.server.backend.legacy_adaptor.legacy.graph import (
+from unilabos.client.host.legacy_adaptor.legacy.graph import (
     normalize_legacy_material_nodes,
 )
 from unilabos.utils.log import get_comm_logger
@@ -60,7 +60,7 @@ def _group_notice(
 
 
 def _legacy_client() -> Any:
-    from unilabos.server.backend.legacy_adaptor.legacy.http import LegacyBackendHTTPClient
+    from unilabos.client.host.legacy_adaptor.legacy.http import LegacyBackendHTTPClient
 
     return LegacyBackendHTTPClient()
 

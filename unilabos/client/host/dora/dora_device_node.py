@@ -18,9 +18,9 @@ import queue
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
-from unilabos.backend.dora.serialization import decode, encode, make_pad, now_ns
+from unilabos.client.host.dora.serialization import decode, encode, make_pad, now_ns
 
-logger = logging.getLogger("unilabos.backend.dora")
+logger = logging.getLogger("unilabos.client.host.dora")
 
 
 def introspect_driver(driver: Any) -> (List[str], Dict[str, Callable]):  # type: ignore[valid-type]
@@ -57,7 +57,7 @@ class DoraDeviceNode:
     def __init__(self, driver: Any, device_id: str):
         self.driver = driver
         self.device_id = device_id
-        self._logger = logging.getLogger(f"unilabos.backend.dora.{device_id}")
+        self._logger = logging.getLogger(f"unilabos.client.host.dora.{device_id}")
         self.status_props, self.action_methods = introspect_driver(driver)
 
         # 驱动协程运行的 asyncio 线程

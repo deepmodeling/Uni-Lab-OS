@@ -1,13 +1,13 @@
 """HostLink 形态的工作站 XDL protocol 编排器。
 
 设备节点壳（子设备、硬件代理、动态设备管理）由
-:class:`unilabos.backend.hostlink.local_runtime.HostLinkDeviceNode` 原生承载；
+:class:`unilabos.client.host.hostlink.local_runtime.HostLinkDeviceNode` 原生承载；
 本类只承载 protocol 编排——``local_runtime`` 在动作解析时把 protocol 名
 路由到本类，子设备动作经 backend 无关的 ``call_device_action_async`` 派发。
 
-ROS2 对应物是 :class:`unilabos.backend.ros2.presets.workstation.ROS2WorkstationNode`；
+ROS2 对应物是 :class:`unilabos.client.host.ros2.presets.workstation.ROS2WorkstationNode`；
 协议名/模型解析与资源展开/回写共用
-:mod:`unilabos.backend.runtime.workstation_protocol`。
+:mod:`unilabos.client.host.runtime.workstation_protocol`。
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any, Dict, List
 
-from unilabos.backend.runtime.workstation_protocol import (
+from unilabos.client.host.runtime.workstation_protocol import (
     WorkstationNodeTempError,
     expand_resource_value,
     physical_setup_graph,
@@ -28,7 +28,7 @@ from unilabos.experiments.compile import action_protocol_generators
 from unilabos.utils import logger
 
 if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+    from unilabos.client.host.runtime.node import DeviceNode
 
 
 class WorkstationNode:

@@ -23,7 +23,7 @@ from unilabos.server.backend.edge_control import (
     get_edge_control_service,
     set_edge_control_service,
 )
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
+from unilabos.server.scheduler.payloads import build_job_start_payload
 from unilabos.server.api.runtime.control import _pump_incoming
 
 

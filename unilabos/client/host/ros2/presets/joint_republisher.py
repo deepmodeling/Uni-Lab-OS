@@ -4,7 +4,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import JointState 
 from std_msgs.msg import String
 from rclpy.callback_groups import ReentrantCallbackGroup
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode
 
 class JointRepublisher(BaseROS2DeviceNode):
     def __init__(self,device_id, registry_name, resource_tracker, **kwargs):

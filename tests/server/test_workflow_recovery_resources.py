@@ -14,7 +14,7 @@ from tests.server.test_workflow_execution_claims import make_task
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from tests.server.test_workflow_task_cancel import command, create_task
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.service import WorkflowService

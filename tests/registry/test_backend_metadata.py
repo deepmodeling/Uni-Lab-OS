@@ -237,7 +237,7 @@ def test_ast_scanner_skips_runtime_injected_parameters(tmp_path) -> None:
         "\n".join(
             [
                 "from unilabos.registry.decorators import device, action",
-                "from unilabos.backend.runtime.action import ActionContext",
+                "from unilabos.client.host.runtime.action import ActionContext",
                 "",
                 "@device(id='ctx_ast_test', category=['test'])",
                 "class Driver:",
@@ -261,13 +261,13 @@ def test_ast_scanner_skips_runtime_injected_parameters(tmp_path) -> None:
 def test_ast_cache_rejects_previous_metadata_version(tmp_path) -> None:
     cache_path = tmp_path / "ast_scan_cache.json"
     cache_path.write_text(
-        '{"version": 22, "files": {"stale.py": {"devices": [{"device_id": "stale"}]}}}',
+        '{"version": 24, "files": {"stale.py": {"devices": [{"device_id": "stale"}]}}}',
         encoding="utf-8",
     )
 
     cache = load_scan_cache(cache_path)
 
-    assert _CACHE_VERSION == 24
+    assert _CACHE_VERSION == 25
     assert cache == {"version": _CACHE_VERSION, "files": {}}
 
 

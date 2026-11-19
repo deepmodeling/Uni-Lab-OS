@@ -1,6 +1,6 @@
 """Backend Scheduler 的规范 DAG 模型与走图器。"""
 
-from unilabos.server.backend.scheduler.dag.models import (
+from unilabos.server.scheduler.dag.models import (
     DagEdge,
     DagNode,
     DagValidationError,
@@ -8,7 +8,7 @@ from unilabos.server.backend.scheduler.dag.models import (
     TaskDag,
     TERMINAL_STATES,
 )
-from unilabos.server.backend.scheduler.dag.executor import DagExecutor, DagWalk
+from unilabos.server.scheduler.dag.executor import DagExecutor, DagWalk
 
 __all__ = [
     "DagEdge",

@@ -69,7 +69,7 @@ def test_host_transfer_actions_declare_site_slot() -> None:
 
     import inspect
 
-    from unilabos.backend.host_services import HostServices
+    from unilabos.client.host.host_services import HostServices
 
     method = HostServices.transfer_resource
     parameters = inspect.signature(method).parameters

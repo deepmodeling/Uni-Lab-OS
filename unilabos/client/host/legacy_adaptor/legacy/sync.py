@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 
-from unilabos.server.backend.legacy_adaptor.legacy.http import (
+from unilabos.client.host.legacy_adaptor.legacy.http import (
     LegacyBackendHTTPClient,
     LegacyBackendHTTPError,
 )

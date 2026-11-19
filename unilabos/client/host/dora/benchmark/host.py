@@ -19,9 +19,9 @@ import logging
 import os
 from typing import Any, Dict, List
 
-from unilabos.backend.dora.serialization import decode, encode, now_ns
+from unilabos.client.host.dora.serialization import decode, encode, now_ns
 
-log = logging.getLogger("unilabos.backend.dora.bench")
+log = logging.getLogger("unilabos.client.host.dora.bench")
 
 DEFAULTS = {
     "warmup": 200,

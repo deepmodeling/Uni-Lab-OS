@@ -81,7 +81,7 @@ def test_log_append_ignores_observer_transport_and_not_normal_driver_errors(monk
 
 
 def test_hostlink_notice_uses_registered_connection_identity(monkeypatch):
-    from unilabos.backend.hostlink.server import HostLinkServer
+    from unilabos.client.host.hostlink.server import HostLinkServer
 
     hub = Mock()
     monkeypatch.setattr(notices, "log_notices", hub)
@@ -96,8 +96,8 @@ def test_hostlink_notice_uses_registered_connection_identity(monkeypatch):
 
 
 def test_slave_sends_empty_notice_only_for_own_log():
-    from unilabos.backend.hostlink.client import HostLinkClient
-    from unilabos.backend.hostlink.protocol import ActionType
+    from unilabos.client.host.hostlink.client import HostLinkClient
+    from unilabos.client.host.hostlink.protocol import ActionType
 
     client = HostLinkClient("127.0.0.1", 1, machine_name="test")
     # 不启动网络；仅验证本进程 -> 已有连接的通知边界。

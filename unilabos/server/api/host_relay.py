@@ -24,7 +24,7 @@ def create_host_relay_router() -> APIRouter:
     def material_sync(command: MaterialDeviceSync) -> Dict[str, Any]:
         """微后端 transfer 的设备侧投影（unload / load）：本进程直调，跨机经 HostLink。"""
 
-        from unilabos.backend.hostlink.downlink import material_sync_to_device
+        from unilabos.client.host.hostlink.downlink import material_sync_to_device
 
         try:
             result = material_sync_to_device(
@@ -40,7 +40,7 @@ def create_host_relay_router() -> APIRouter:
     def notify_device(value: ResourceTreeNotify) -> ResourceTreeNotifyResult:
         """权威已完成的物料变更分发到目标设备（add / update / remove）。"""
 
-        from unilabos.backend.hostlink.downlink import notify_resource_tree_update
+        from unilabos.client.host.hostlink.downlink import notify_resource_tree_update
 
         notified = notify_resource_tree_update(
             value.device_id, value.action, list(value.resource_uuids)

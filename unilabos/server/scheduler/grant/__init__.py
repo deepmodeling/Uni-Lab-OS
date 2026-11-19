@@ -5,13 +5,13 @@
 - :mod:`._abi`：由 ``scripts/gen_grant_bindings.py`` 从 cbindgen 头文件生成的 ctypes 声明。
 """
 
-from unilabos.server.backend.scheduler.grant.native import (
+from unilabos.server.scheduler.grant.native import (
     NativeGrantPolicy,
     candidate_library_paths,
     library_filename,
     load_grant_policy,
 )
-from unilabos.server.backend.scheduler.grant.policy import (
+from unilabos.server.scheduler.grant.policy import (
     GrantPolicy,
     KeyIndex,
     PythonFifoPolicy,

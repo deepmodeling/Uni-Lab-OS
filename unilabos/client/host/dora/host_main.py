@@ -1,7 +1,7 @@
 """Dora 实验性监控 host 节点，不属于公开 runtime backend。
 
 订阅所有设备的状态输出并周期性汇总打印。它不参与性能测试——
-性能测试由 `unilabos/backend/dora/benchmark/host.py` 中的专用 host 承担。
+性能测试由 `unilabos/client/host/dora/benchmark/host.py` 中的专用 host 承担。
 
 环境变量：
     UNILAB_DORA_DEVICES : 设备 id 列表的 JSON 数组
@@ -13,12 +13,12 @@ import json
 import logging
 import os
 
-from unilabos.backend.dora.serialization import decode
+from unilabos.client.host.dora.serialization import decode
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    log = logging.getLogger("unilabos.backend.dora.host")
+    log = logging.getLogger("unilabos.client.host.dora.host")
     devices = json.loads(os.environ.get("UNILAB_DORA_DEVICES", "[]"))
     log.info(f"dora host 启动，监控设备: {devices}")
 

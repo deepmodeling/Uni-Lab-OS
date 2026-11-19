@@ -101,51 +101,48 @@ def test_microbackend_namespaces_live_under_server() -> None:
     assert not (client_root / "output.py").exists()
     # DDL 与表模型同文件，当前 schema 采用 checksum 重建策略。
     assert not (server_root / "database" / "migrations").exists()
-    assert not (server_root / "scheduler").exists()
-    for module_name in (
-        "composition.py",
-        "coordinator.py",
-        "execution.py",
-        "execution_queue.py",
-        "incidents.py",
-        "inventory.py",
-        "telemetry.py",
-    ):
+    # 调度权威与两边共用的执行模块在 server 下，只在 Host 上跑的执行链在 client/host 下
+    host_root = package_root / "client" / "host"
+    for module_name in ("composition.py", "coordinator.py"):
         assert (server_root / "backend" / module_name).is_file()
-    assert (server_root / "backend" / "scheduler" / "service.py").is_file()
-    assert (
-        server_root / "backend" / "scheduler" / "dag" / "executor.py"
-    ).is_file()
+    for module_name in ("execution_queue.py", "inventory.py"):
+        assert (server_root / module_name).is_file()
+    for module_name in ("execution.py", "incidents.py", "telemetry.py"):
+        assert (host_root / module_name).is_file()
+    assert (server_root / "scheduler" / "service.py").is_file()
+    assert (server_root / "scheduler" / "dag" / "executor.py").is_file()
     assert (server_root / "composition.py").is_file()
     assert not list((server_root / "storage").glob("*.py"))
 
-    # 契约层独立于 server；物料适配器归 resources，传输实现归 backend。
+    # 契约层独立于 server；物料适配器归 resources，传输实现归 client/host。
     assert (package_root / "protocol" / "base.py").is_file()
     assert (package_root / "resources" / "adapters" / "plr_materials.py").is_file()
     assert not (package_root / "adapters").exists()
     assert not (server_root / "protocol").exists()
     assert not (server_root / "adapters").exists()
-    backend_root = package_root / "backend"
-    assert (backend_root / "hostlink" / "network.py").is_file()
-    assert (backend_root / "ros2" / "base_device_node.py").is_file()
+    assert (host_root / "__init__.py").is_file()  # 传输 backend 清单
+    assert (host_root / "hostlink" / "network.py").is_file()
+    assert (host_root / "ros2" / "base_device_node.py").is_file()
     # Host 与 Workstation 编排按 backend 各一份（ros2/presets 与 hostlink），
     # 共享逻辑在 runtime（HostAdapterBase / workstation_protocol）；
-    # backend 根目录不提供合一编排层；downlink 是归属 hostlink 且供 ROS2
+    # client/host 根目录不提供合一编排层；downlink 是归属 hostlink 且供 ROS2
     # 复用的函数集。
-    assert (backend_root / "ros2" / "presets" / "host_node.py").is_file()
-    assert (backend_root / "ros2" / "presets" / "workstation.py").is_file()
-    assert (backend_root / "hostlink" / "host_node.py").is_file()
-    assert (backend_root / "hostlink" / "workstation.py").is_file()
-    assert (backend_root / "hostlink" / "downlink.py").is_file()
-    assert (backend_root / "runtime" / "host_adapter.py").is_file()
-    assert (backend_root / "runtime" / "workstation_protocol.py").is_file()
-    assert not (backend_root / "presets").exists()
-    assert not (backend_root / "ros2" / "hostlink_bridge.py").exists()
-    assert not (backend_root / "hostlink" / "execution_adapter.py").exists()
-    assert (backend_root / "dora" / "runtime.py").is_file()
-    # 设备执行内核与传输实现同属 backend 大类
-    assert (backend_root / "runtime" / "node.py").is_file()
-    assert (backend_root / "runtime" / "exception.py").is_file()
-    assert not (backend_root / "device_runtime").exists()
+    assert (host_root / "ros2" / "presets" / "host_node.py").is_file()
+    assert (host_root / "ros2" / "presets" / "workstation.py").is_file()
+    assert (host_root / "hostlink" / "host_node.py").is_file()
+    assert (host_root / "hostlink" / "workstation.py").is_file()
+    assert (host_root / "hostlink" / "downlink.py").is_file()
+    assert (host_root / "runtime" / "host_adapter.py").is_file()
+    assert (host_root / "runtime" / "workstation_protocol.py").is_file()
+    assert not (host_root / "presets").exists()
+    assert not (host_root / "ros2" / "hostlink_bridge.py").exists()
+    assert not (host_root / "hostlink" / "execution_adapter.py").exists()
+    assert (host_root / "dora" / "runtime.py").is_file()
+    # 设备执行内核与传输实现同在 client/host 下
+    assert (host_root / "runtime" / "node.py").is_file()
+    assert (host_root / "runtime" / "exception.py").is_file()
+    assert not (host_root / "device_runtime").exists()
+    # 旧的 unilabos/backend 已整体迁走（旧 checkout 可能残留只有 __pycache__ 的空目录，只检查源码）
+    assert not list((package_root / "backend").rglob("*.py"))
     for forbidden_top_level in ("ros", "hostlink", "dora", "device_runtime", "runtime"):
         assert not (package_root / forbidden_top_level).exists()

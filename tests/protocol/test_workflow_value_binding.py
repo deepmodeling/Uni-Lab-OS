@@ -6,7 +6,7 @@ import pytest
 from unilabos.protocol.runtime.value_binding import (
     result_references, remap_result_bindings, resolve_result_bindings, validate_result_binding_graph,
 )
-from unilabos.server.backend.scheduler.parameters import json_get_exists
+from unilabos.server.scheduler.parameters import json_get_exists
 
 SOURCE, TARGET, LOOP, CONDITION = [str(uuid4()) for _ in range(4)]
 

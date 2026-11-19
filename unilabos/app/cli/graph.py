@@ -61,7 +61,7 @@ def _registry_resource_lookup(client: HTTPGraphClient) -> Callable[[str], Option
     查不到，报「未上报」比报「模板不在注册表」更准确），再按模板逐个查并缓存。
     """
 
-    from unilabos.server.backend.legacy_adaptor.legacy.graph import LegacyGraphError
+    from unilabos.client.host.legacy_adaptor.legacy.graph import LegacyGraphError
 
     cache: dict[str, Optional[dict[str, Any]]] = {}
     checked = False
@@ -120,7 +120,7 @@ def _load_graph_file(file_path: str, client: HTTPGraphClient) -> dict[str, Any]:
         print_error("graph payload 必须是含 nodes 数组的 JSON 对象")
         raise SystemExit(1)
 
-    from unilabos.server.backend.legacy_adaptor.legacy.graph import upgrade_legacy_graph_payload
+    from unilabos.client.host.legacy_adaptor.legacy.graph import upgrade_legacy_graph_payload
 
     return upgrade_legacy_graph_payload(
         payload,

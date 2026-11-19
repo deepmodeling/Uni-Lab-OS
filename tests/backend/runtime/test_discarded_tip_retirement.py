@@ -13,7 +13,7 @@ import pytest
 from pylabrobot.resources import Coordinate, Deck, Resource, Tip, TipSpot, Trash
 from pylabrobot.resources.opentrons.tip_racks import opentrons_96_tiprack_300ul
 
-from unilabos.backend.runtime.resource import AuthorityResourceService
+from unilabos.client.host.runtime.resource import AuthorityResourceService
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.resources import materials
 from unilabos.resources.adapters.plr_materials import (

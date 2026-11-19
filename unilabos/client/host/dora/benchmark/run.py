@@ -4,7 +4,7 @@
 收集 host 写出的结果，汇总为一个 results.json 并打印摘要表。
 
 用法：
-    python -m unilabos.backend.dora.benchmark.run --counts 1 4 8 16 --out /tmp/dora_bench
+    python -m unilabos.client.host.dora.benchmark.run --counts 1 4 8 16 --out /tmp/dora_bench
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ import os
 import time
 from typing import Any, Dict, List
 
-from unilabos.backend.dora import dataflow as dataflow_mod
-from unilabos.backend.dora import runtime
+from unilabos.client.host.dora import dataflow as dataflow_mod
+from unilabos.client.host.dora import runtime
 
 # 仅需 sleep 的纯 Python 虚拟驱动池（非 ROS2 专属），轮流分配给设备节点
 DRIVER_POOL = [
@@ -45,7 +45,7 @@ def run_one(n: int, out_dir: str, bench_params: Dict[str, Any], device_tick_ms: 
 
     df = dataflow_mod.build_dataflow(
         devices,
-        host_module="unilabos.backend.dora.benchmark.host",
+        host_module="unilabos.client.host.dora.benchmark.host",
         device_tick_ms=device_tick_ms,
         host_tick_ms=20,
         host_env={

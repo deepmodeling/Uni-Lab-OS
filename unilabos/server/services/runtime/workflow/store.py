@@ -407,7 +407,7 @@ class WorkflowStore:
             )
             graph = WorkflowStore.get_graph(self, workflow_uuid, conn=conn)
             unilab = (graph["workflow"].get("meta_data") or {}).get("unilab") or {}
-            from unilabos.server.backend.scheduler.interval_plan import (
+            from unilabos.server.scheduler.interval_plan import (
                 graph_declares_resource_scopes, validate_graph_resource_scopes,
             )
             if graph_declares_resource_scopes(graph):

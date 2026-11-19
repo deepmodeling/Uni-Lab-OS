@@ -11,7 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from unilabos.protocol.utils.json_codec import encode_json, decode_json_bytes
-from unilabos.server.backend.scheduler.models import SchedulerResourceRequest
+from unilabos.server.scheduler.models import SchedulerResourceRequest
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.store import WorkflowStore, utc_now
 

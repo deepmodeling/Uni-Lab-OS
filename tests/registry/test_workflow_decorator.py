@@ -647,15 +647,15 @@ class OrderedDriver:
 def test_workflow_end_to_end_runs_via_local_scheduler() -> None:
     """@workflow -> 模板 -> 实例化 -> 创建任务 -> HostLink 执行栈真实跑通并按序执行。"""
 
-    from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
-    from unilabos.backend.hostlink.backend import HostLinkBackend
-    from unilabos.backend.hostlink.local_runtime import (
+    from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
+    from unilabos.client.host.hostlink.backend import HostLinkBackend
+    from unilabos.client.host.hostlink.local_runtime import (
         HostLinkDriverSpec,
         HostLinkLocalRuntime,
     )
-    from unilabos.backend.hostlink.host_node import HostNode
-    from unilabos.server.backend.execution import JobExecutionBackend
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.client.host.hostlink.host_node import HostNode
+    from unilabos.client.host.execution import JobExecutionBackend
+    from unilabos.server.scheduler.service import BackendScheduler
 
     local = HostLinkLocalRuntime()
     node = local.add_driver(

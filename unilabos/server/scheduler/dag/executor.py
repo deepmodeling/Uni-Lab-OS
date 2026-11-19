@@ -19,7 +19,7 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Optional
 
-from unilabos.server.backend.scheduler.dag.models import (
+from unilabos.server.scheduler.dag.models import (
     NodeState,
     TaskDag,
     TERMINAL_STATES,

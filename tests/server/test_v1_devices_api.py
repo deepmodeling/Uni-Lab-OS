@@ -166,7 +166,7 @@ def _report_with_host_node(lab) -> None:
             "module": "lab.pump:Pump", "type": "python", "action_value_mappings": {"dose": ACTION},
             "status_types": {"pressure": "float"}}},
         {"id": "host_node", "registry_type": "device", "class": {
-            "module": "unilabos.backend.host_services:HostServices", "type": "python",
+            "module": "unilabos.client.host.host_services:HostServices", "type": "python",
             "action_value_mappings": {"create_resource": HOST_ACTION}}},
     ], edge_uuid="test")
 
@@ -309,7 +309,7 @@ def test_device_action_runs_and_legacy_job_routes(lab) -> None:
 
 def test_device_state_routes_read_the_telemetry_projection(tmp_path) -> None:
     from unilabos.server.api.runtime.diagnostics import create_backend_router
-    from unilabos.server.backend.telemetry import TelemetryDeviceStateProjection
+    from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
     from unilabos.server.services.telemetry import TelemetryService
 
     telemetry = TelemetryService(tmp_path / "telemetry.db")

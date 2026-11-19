@@ -1,9 +1,9 @@
 import asyncio
 import inspect
 
-from unilabos.backend.runtime import DeviceNode
-from unilabos.backend.ros2 import base_device_node
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
+from unilabos.client.host.runtime import DeviceNode
+from unilabos.client.host.ros2 import base_device_node
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode
 from unilabos.utils.decorator import subscribe
 
 

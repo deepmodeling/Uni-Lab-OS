@@ -9,8 +9,8 @@ import pytest
 
 from unilabos.registry.workflows import (WorkflowBuildContext, WorkflowDefinition, DeviceCatalog, build_workflow_template_payload,
     materialize_workflow_template, upsert_workflow)
-from unilabos.server.backend.scheduler.service import BackendScheduler
-from unilabos.server.backend.scheduler.attempt_inventory import freeze_inventory
+from unilabos.server.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.attempt_inventory import freeze_inventory
 from tests.server.test_workflow_inventory_recovery import Stack
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from tests.server.test_scheduler_inventory_authority import _template, _inbound

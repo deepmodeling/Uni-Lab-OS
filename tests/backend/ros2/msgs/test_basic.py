@@ -6,7 +6,7 @@
 
 import unittest
 
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.ros2.msgs.message_converter import (
     msg_converter_manager,
     get_msg_type,
     get_action_type,

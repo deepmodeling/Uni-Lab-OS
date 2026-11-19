@@ -152,7 +152,7 @@ def test_uncommitted_tip_transfer_is_explicitly_rejected():
 
 
 def test_observer_reports_tip_moves_and_contents(tmp_path, monkeypatch):
-    from unilabos.backend.runtime.resource import (
+    from unilabos.client.host.runtime.resource import (
         AuthorityResourceService,
         MaterialSnapshotObserver,
     )

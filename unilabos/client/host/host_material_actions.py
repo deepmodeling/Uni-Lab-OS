@@ -28,8 +28,8 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Sequence
 
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.runtime.async_utils import run_blocking as _run_blocking
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.runtime.async_utils import run_blocking as _run_blocking
 from unilabos.protocol.materials import ACTOR_WORKFLOW
 from unilabos.resources import materials
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -80,7 +80,7 @@ def _owner_device_local(node: Any, value: Any) -> str:
     res_uuid = str(getattr(value, "unilabos_uuid", "") or "")
     if not res_uuid:
         return ""
-    from unilabos.backend.hostlink.downlink import iter_local_device_nodes
+    from unilabos.client.host.hostlink.downlink import iter_local_device_nodes
 
     candidates: list[tuple[str, Any]] = []
     if node is not None:

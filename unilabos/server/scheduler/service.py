@@ -41,44 +41,44 @@ from unilabos.protocol.materials import (
     InventoryTaskReservationCreate,
 )
 from unilabos.server.services.materials.core import MaterialsServiceError
-from unilabos.server.backend.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
-from unilabos.server.backend.scheduler.materials import (
+from unilabos.server.execution_queue import JOB_ORIGIN_LOCAL_SCHEDULER
+from unilabos.server.scheduler.payloads import build_job_start_payload
+from unilabos.server.scheduler.materials import (
     material_uuids_for_parameters,
     resolve_material_name_references,
 )
-from unilabos.server.backend.scheduler.material_sanity import (
+from unilabos.server.scheduler.material_sanity import (
     MaterialProblem,
     MaterialSanity,
     error_item as material_sanity_error,
     material_references,
 )
-from unilabos.server.backend.scheduler.resource_keys import material_lock_key
-from unilabos.server.backend.scheduler.models import (
+from unilabos.server.scheduler.resource_keys import material_lock_key
+from unilabos.server.scheduler.models import (
     ActionLockClaim,
     MaterialLockClaim,
     SchedulerResourceRequest,
     SchedulerResourceRequestRecord,
 )
-from unilabos.server.backend.scheduler.parameters import (
+from unilabos.server.scheduler.parameters import (
     ParamResolveError,
     json_get_exists,
     json_set,
 )
-from unilabos.server.backend.scheduler.dag.executor import DagWalk
-from unilabos.server.backend.scheduler.dag.models import (
+from unilabos.server.scheduler.dag.executor import DagWalk
+from unilabos.server.scheduler.dag.models import (
     NODE_KIND_LOOP,
     DagEdge,
     DagNode,
     NodeState,
     TaskDag,
 )
-from unilabos.server.backend.scheduler.dag.runner import RunBodyFn, TaskDagRunner
-from unilabos.server.backend.scheduler.resource_manager import (
+from unilabos.server.scheduler.dag.runner import RunBodyFn, TaskDagRunner
+from unilabos.server.scheduler.resource_manager import (
     ResourceNotFound,
     SchedulerResourceManager,
 )
-from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
+from unilabos.server.scheduler.resource_wait_policy import temporary_resource_condition
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
 from unilabos.server.services.runtime.workflow.task_lifecycle import TERMINAL_TASK
 
@@ -2524,7 +2524,7 @@ class BackendScheduler:
                 "workflow declares inventory requirements but materials authority "
                 "is unavailable"
             )
-        from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+        from unilabos.server.inventory import ExecutionInventoryCoordinator
         from unilabos.protocol.base import canonical_hash
         task_uuid = str(task["uuid"])
         existing = {item.job_uuid: item for item in self.materials_gateway.list_inventory_reservations(task_uuid=task_uuid)}

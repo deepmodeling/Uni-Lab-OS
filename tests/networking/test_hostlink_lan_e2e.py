@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.backend import HostLinkBackend
 
 from tests.e2e.readme_demos import DEMOS_BY_REPO, resolve_demo_source
 from tests.networking.hostlink_lan_virtual_devices import (

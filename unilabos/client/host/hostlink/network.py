@@ -13,13 +13,13 @@ import threading
 from typing import Any, Iterable, Optional, Tuple
 
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.client import (
+from unilabos.client.host.hostlink.client import (
     HostLinkClient,
     get_hostlink_client,
     set_hostlink_client,
 )
-from unilabos.backend.hostlink.protocol import ActionType, PROTOCOL_VERSION
-from unilabos.backend.hostlink.ros_assist import (
+from unilabos.client.host.hostlink.protocol import ActionType, PROTOCOL_VERSION
+from unilabos.client.host.hostlink.ros_assist import (
     FastDDSDiscoveryServer,
     RosNetworkInfo,
     apply_ros_network_env,
@@ -30,7 +30,7 @@ from unilabos.backend.hostlink.ros_assist import (
     parse_host_port,
     use_connected_host,
 )
-from unilabos.backend.hostlink.server import HostLinkServer, set_hostlink_server
+from unilabos.client.host.hostlink.server import HostLinkServer, set_hostlink_server
 from unilabos.utils import logger
 
 SERVICE_OWNER = "edge-microbackend"
@@ -272,7 +272,7 @@ class HostNetworkService:
     def _material_template_list(
         self, data: dict[str, Any], peer: dict[str, Any]
     ) -> list[dict[str, Any]]:
-        from unilabos.backend.hostlink.materials_proxy import template_list
+        from unilabos.client.host.hostlink.materials_proxy import template_list
 
         return template_list(self._require_material_gateway(), data, peer)
 
@@ -389,7 +389,7 @@ class HostNetworkService:
         物料链路不走 ROS service 发现，与资源树同步 / 挂载下行同构。
         """
 
-        from unilabos.backend.hostlink.downlink import material_sync_to_device
+        from unilabos.client.host.hostlink.downlink import material_sync_to_device
 
         data = command.model_dump(mode="json", exclude_none=False)
         device_id = str(data["device_id"])

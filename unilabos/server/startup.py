@@ -157,7 +157,7 @@ def setup_host_server_stack(
         )
         # 调度权威归属：没有显式 --address 时调度权威随本进程装配（Scheduler +
         # Workflow API）；配置了 --address 的 Host 只提供执行面，调度在 Backend 地址上。
-        from unilabos.server.backend.legacy_adaptor.url import build_backend_websocket_url
+        from unilabos.client.host.legacy_adaptor.url import build_backend_websocket_url
 
         if not build_backend_websocket_url():
             from unilabos.server.backend.composition import (
@@ -168,7 +168,7 @@ def setup_host_server_stack(
 
         host_network = None
         if args.get("backend") == "ros2":
-            from unilabos.backend.hostlink.network import setup_host_network_service
+            from unilabos.client.host.hostlink.network import setup_host_network_service
 
             host_network = setup_host_network_service(
                 material_gateway=materials_gateway

@@ -22,13 +22,13 @@ from unilabos.protocol.materials import (
     MaterialTreeCreate,
     ResourceTemplateWrite,
 )
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.incidents import StatusIncidentManager
-from unilabos.server.backend.inventory import (
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.client.host.incidents import StatusIncidentManager
+from unilabos.server.inventory import (
     ExecutionInventoryCoordinator,
     ExecutionInventoryError,
 )
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.materials import (
     InsufficientInventoryError,
     MaterialsService,
@@ -740,7 +740,7 @@ def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> N
 
 def test_backend_scheduler_reserves_container_content_for_the_task(tmp_path) -> None:
     """容器内容物需求（I02）与批次同一条路径：任务开始整批预留，分配结果按需求 key 注入动作参数。"""
-    from unilabos.server.backend.scheduler.service import allocation_arguments
+    from unilabos.server.scheduler.service import allocation_arguments
     from unilabos.server.services.materials.contents import ContentContract
     from unilabos.server.services.materials.resource_contract import ResourceContract
 

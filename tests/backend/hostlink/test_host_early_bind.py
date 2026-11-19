@@ -17,11 +17,11 @@ from typing import Any, Callable, Optional
 
 import pytest
 
-from unilabos.backend.hostlink import startup as hostlink_startup
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.hostlink.protocol import (
+from unilabos.client.host.hostlink import startup as hostlink_startup
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.protocol import (
     HOST_NOT_READY,
     ActionType,
     HostNotReadyError,
@@ -30,7 +30,7 @@ from unilabos.backend.hostlink.protocol import (
     new_request,
     response_error,
 )
-from unilabos.backend.hostlink.server import (
+from unilabos.client.host.hostlink.server import (
     HOST_STARTUP_GATES,
     HostLinkServer,
     HostStage,

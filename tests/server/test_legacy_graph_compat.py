@@ -12,7 +12,7 @@ from uuid import uuid4
 
 import pytest
 
-from unilabos.server.backend.legacy_adaptor.legacy.graph import (
+from unilabos.client.host.legacy_adaptor.legacy.graph import (
     legacy_graph_children_index,
     legacy_graph_markers,
     normalize_legacy_graph,

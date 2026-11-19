@@ -3,11 +3,11 @@ from __future__ import annotations
 from uuid import uuid4
 import time
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.client import HostLinkClient
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
 from unilabos.protocol.materials import InventoryMutation
 from unilabos.protocol.materials import (
@@ -32,7 +32,7 @@ def _mutation(operation: str) -> InventoryMutation:
 
 
 def test_template_list_query_decodes_hostlink_payload() -> None:
-    from unilabos.backend.hostlink.materials_proxy import template_list_query
+    from unilabos.client.host.hostlink.materials_proxy import template_list_query
 
     # 链路默认目录模式：不带 include_definition 的对端拿 name/uuid/hash，不拿 definition
     assert template_list_query(None) == {"name": None, "include_definition": False}
@@ -50,7 +50,7 @@ def test_template_list_warns_once_per_peer_about_full_definitions(monkeypatch) -
     """显式要完整 definition 又不带 name 的全量列表是 Slave 侧最大的浪费，Host 提示一次；
     默认的目录模式和按 name 取正文都不算。"""
 
-    from unilabos.backend.hostlink import materials_proxy
+    from unilabos.client.host.hostlink import materials_proxy
 
     warnings: list[str] = []
     monkeypatch.setattr(materials_proxy, "_warned_peers", set())

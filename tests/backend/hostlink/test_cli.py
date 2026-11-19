@@ -2,7 +2,7 @@ import pytest
 
 from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import HostLinkConfig
-from unilabos.backend.hostlink.startup import apply_hostlink_cli
+from unilabos.client.host.hostlink.startup import apply_hostlink_cli
 
 
 @pytest.mark.parametrize(

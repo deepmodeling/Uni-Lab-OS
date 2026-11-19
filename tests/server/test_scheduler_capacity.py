@@ -8,7 +8,7 @@ import pytest
 
 from tests.server.v1_lifecycle_support import Stack, wait_for
 from unilabos.config.config import BasicConfig
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 
 
 def _stack(**limits) -> Stack:

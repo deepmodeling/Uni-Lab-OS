@@ -1,4 +1,4 @@
-"""dora 后端入口，与 app/backend.py:start_backend 对接。
+"""dora 后端入口，与 client/host/__init__.py:start_backend 对接。
 
 `main` / `slave` 的位置参数签名与 ROS 后端保持一致。它从 devices_config 生成
 dora dataflow（每个设备一个 dora 节点 + 一个监控 host），用 `dora run` 启动并守护。
@@ -11,8 +11,8 @@ import tempfile
 import time
 from typing import Any, Dict, List, Optional
 
-from unilabos.backend.dora import dataflow as dataflow_mod
-from unilabos.backend.dora import runtime
+from unilabos.client.host.dora import dataflow as dataflow_mod
+from unilabos.client.host.dora import runtime
 from unilabos.utils import logger
 
 
@@ -65,7 +65,7 @@ def _launch(devices: List[Dict[str, Any]], device_tick_ms: int = 100, persistent
 
     df = dataflow_mod.build_dataflow(
         devices,
-        host_module="unilabos.backend.dora.host_main",
+        host_module="unilabos.client.host.dora.host_main",
         device_tick_ms=device_tick_ms,
         host_tick_ms=2000,
         device_inputs_on_host=["status"],  # 监控 host 只需状态

@@ -13,7 +13,7 @@
     ``restart_acknowledged`` / ``normal_exit``
 
 本类不重新实现调度或队列：``job_start`` 直接交给微后端
-:class:`~unilabos.server.backend.execution.JobExecutionBackend`（``dispatch``），
+:class:`~unilabos.client.host.execution.JobExecutionBackend`（``dispatch``），
 执行结果通过 result bridge 回调（``publish_job_status`` 等）翻译成 ``job_status``。
 旧后端要求 Edge 用锁上报（``report_action_lock``）表达动作可用性，Edge 侧
 设备-动作互斥仍由微后端登记表保证；这里只把状态镜像出去。
@@ -38,11 +38,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import websockets
 
-from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
+from unilabos.client.host.hostlink.adapter_registry import get_execution_adapter
 from unilabos.config.config import BasicConfig, WSConfig
-from unilabos.server.backend.execution_queue import QueueItem, format_job_log
-from unilabos.server.backend.legacy_adaptor.session import BaseBackendClient
-from unilabos.server.backend.legacy_adaptor.url import (
+from unilabos.server.execution_queue import QueueItem, format_job_log
+from unilabos.client.host.legacy_adaptor.session import BaseBackendClient
+from unilabos.client.host.legacy_adaptor.url import (
     build_legacy_backend_websocket_url,
 )
 from unilabos.protocol.runtime.control import PingNotice, PongNotice
@@ -835,7 +835,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
 
         if not items:
             return
-        from unilabos.server.backend.legacy_adaptor.legacy.materials import (
+        from unilabos.client.host.legacy_adaptor.legacy.materials import (
             apply_legacy_material_notice,
         )
 
@@ -845,7 +845,7 @@ class LegacyBackendWebSocketClient(BaseBackendClient):
             logger.error("[LegacyWS] 处理 %s_material 失败:\n%s", action, traceback.format_exc())
 
     def _handle_device_manage(self, action: str, items: List[Any]) -> None:
-        from unilabos.backend.hostlink.downlink import device_manage_to_device
+        from unilabos.client.host.hostlink.downlink import device_manage_to_device
 
         for item in items:
             if not isinstance(item, dict):

@@ -10,8 +10,8 @@ from dataclasses import asdict, is_dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
-from unilabos.server.backend.execution_queue import JOB_ORIGIN_BACKEND_CONTROL
-from unilabos.server.backend.legacy_adaptor.http import BackendHTTPClient
+from unilabos.server.execution_queue import JOB_ORIGIN_BACKEND_CONTROL
+from unilabos.client.host.legacy_adaptor.http import BackendHTTPClient
 from unilabos.server.database.tables.runtime import ExecutionJobRecord
 from unilabos.protocol.base import canonical_hash, canonical_json
 from unilabos.protocol.runtime.control import (
@@ -119,7 +119,7 @@ class WorkflowBusinessCoordinator:
         adapter = adapter_getter() if callable(adapter_getter) else None
         if adapter is None:
             return
-        from unilabos.server.backend.capabilities import build_endpoint_capabilities
+        from unilabos.client.host.capabilities import build_endpoint_capabilities
 
         now_ms = int(time.time() * 1000)
         routes, capabilities = build_endpoint_capabilities(

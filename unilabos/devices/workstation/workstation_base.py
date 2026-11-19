@@ -18,7 +18,7 @@ from pylabrobot.resources.coordinate import Coordinate
 from unilabos.utils.log import logger
 
 if TYPE_CHECKING:
-    from unilabos.backend.ros2.presets.workstation import ROS2WorkstationNode
+    from unilabos.client.host.ros2.presets.workstation import ROS2WorkstationNode
 
 
 class WorkflowStatus(Enum):

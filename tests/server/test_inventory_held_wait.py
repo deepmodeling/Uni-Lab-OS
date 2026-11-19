@@ -13,7 +13,7 @@ from tests.server.test_workflow_deferred_inventory import _preflight_decision, c
 from tests.server.test_workflow_inventory_recovery import Stack
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from unilabos.protocol.materials import InventoryRequirement, InventoryReservationCreate, InventoryReservationTransition
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 
 
 def _start_flow(ctx):

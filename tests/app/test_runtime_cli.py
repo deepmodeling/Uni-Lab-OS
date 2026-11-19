@@ -13,7 +13,7 @@ from unilabos.app.cli.parser import build_parser
 from unilabos.app.cli.router import run_cli_command
 from unilabos.client.http import HTTPClient
 from unilabos.server.api.runtime.diagnostics import create_backend_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 

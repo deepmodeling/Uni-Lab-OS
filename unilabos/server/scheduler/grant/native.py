@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from unilabos.server.backend.scheduler.grant import _abi
-from unilabos.server.backend.scheduler.grant.policy import GrantPolicy, PythonFifoPolicy
+from unilabos.server.scheduler.grant import _abi
+from unilabos.server.scheduler.grant.policy import GrantPolicy, PythonFifoPolicy
 
 logger = logging.getLogger(__name__)
 

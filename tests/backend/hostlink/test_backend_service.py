@@ -11,7 +11,7 @@ import time
 import pytest
 
 from tests.api_envelope import ok_data
-from unilabos.backend.hostlink.network import (
+from unilabos.client.host.hostlink.network import (
     SERVICE_OWNER,
     get_host_network_service,
     require_slave_startup_device_ids,
@@ -21,9 +21,9 @@ from unilabos.backend.hostlink.network import (
     startup_device_ids,
 )
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.client import HostLinkClient, get_hostlink_client
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.hostlink.server import get_hostlink_server
+from unilabos.client.host.hostlink.client import HostLinkClient, get_hostlink_client
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.hostlink.server import get_hostlink_server
 
 
 class _Content:
@@ -237,7 +237,7 @@ def test_slave_microbackend_applies_host_ros_config_before_ros_init(monkeypatch)
 def test_slave_material_create_is_proxied_by_host_authority(
     tmp_path, monkeypatch
 ) -> None:
-    from unilabos.backend.runtime.resource import AuthorityResourceService
+    from unilabos.client.host.runtime.resource import AuthorityResourceService
     from unilabos.resources.presets.container import RegularContainer
     from unilabos.client.materials import LocalMaterialsClient
     from unilabos.server.services.materials import MaterialsService
@@ -432,7 +432,7 @@ def test_microbackend_shutdown_releases_hostlink_port() -> None:
 
 
 def test_managed_discovery_lifecycle_belongs_to_microbackend(monkeypatch) -> None:
-    from unilabos.backend.hostlink.ros_assist import FastDDSDiscoveryServer
+    from unilabos.client.host.hostlink.ros_assist import FastDDSDiscoveryServer
 
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))

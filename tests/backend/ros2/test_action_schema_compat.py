@@ -1,4 +1,4 @@
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.ros2.msgs.message_converter import (
     NavigateThroughPoses,
     ros_action_result_mapping,
     ros_action_to_json_schema,

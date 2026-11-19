@@ -6,7 +6,7 @@
 
 本类提供 @device/@action 扫描所需的签名（schema 由注解生成）、前端选择器（按类型推出，
 节点 / 人工确认指派人 / 出库与试剂扣减等没有专门类型的写在 ``placeholder_keys``）和 handles，
-业务实现委托给 :mod:`unilabos.backend.host_material_actions`。两种 backend
+业务实现委托给 :mod:`unilabos.client.host.host_material_actions`。两种 backend
 通过各自的设备管线初始化本类：
 
 - ROS2：``initialize_device_from_dict`` 按 registry 的 host_node 条目
@@ -16,7 +16,7 @@
   ``HostLinkDeviceNode``，下行通道走 backend.local / server 路由。
 
 test_latency 的 ping-pong 实现在执行适配器共享基类
-（:class:`unilabos.backend.runtime.host_adapter.HostAdapterBase`），
+（:class:`unilabos.client.host.runtime.host_adapter.HostAdapterBase`），
 两种 backend 均可执行，这里仅委托当前适配器。
 
 注意：本模块不使用 ``from __future__ import annotations``——动作签名的
@@ -29,9 +29,9 @@ from typing import Any, Dict, List
 
 from typing_extensions import TypedDict
 
-from unilabos.backend import host_material_actions
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.runtime.node import BackendCapabilityError
+from unilabos.client.host import host_material_actions
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.runtime.node import BackendCapabilityError
 from unilabos.registry.decorators import (
     ActionInputHandle,
     ActionOutputHandle,
@@ -156,7 +156,7 @@ class HostServices:
         self, device_id: str, action_type: str, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """HostLink backend 路由：本进程设备直调协程；跨机设备走 HostLink RPC。"""
-        from unilabos.backend.runtime.async_utils import run_node_coroutine
+        from unilabos.client.host.runtime.async_utils import run_node_coroutine
 
         backend = self._backend
         if backend is None:
@@ -194,7 +194,7 @@ class HostServices:
                 self._dispatch_blocking, device_id, action_type, payload
             )
         # 默认通道：本进程直调 / 跨机 HostLink 下行（双 backend 通用）
-        from unilabos.backend.hostlink.downlink import material_dispatch
+        from unilabos.client.host.hostlink.downlink import material_dispatch
 
         return await material_dispatch(device_id, action_type, payload)
 
@@ -565,7 +565,7 @@ class HostServices:
 
         测的是 Edge ↔ Backend 的链路（按部署形态自动选目标），不是本机执行适配器本身。
         """
-        from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
+        from unilabos.client.host.hostlink.adapter_registry import get_execution_adapter
 
         adapter = get_execution_adapter(timeout=5.0)
         impl = getattr(adapter, "test_latency", None) if adapter is not None else None

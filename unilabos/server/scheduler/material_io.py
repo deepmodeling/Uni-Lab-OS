@@ -23,7 +23,7 @@ import logging
 from typing import Any, Mapping, Optional
 
 from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json
-from unilabos.server.backend.scheduler.models import MaterialLockClaim, SchedulerResourceRequest
+from unilabos.server.scheduler.models import MaterialLockClaim, SchedulerResourceRequest
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 
@@ -126,7 +126,7 @@ def sync_material_io_device(
     update 载入权威的绝对数量而不是增量；命令身份同时作 ``transfer_uuid``，同一设备进程已应用过的直接回
     ``replayed``。发送前再读一次权威，物料已不在（load / refill）或又回到（unload）这个库位时不再投影旧变化。
     """
-    from unilabos.backend.hostlink import downlink
+    from unilabos.client.host.hostlink import downlink
     from unilabos.protocol.materials import MaterialDeviceSync
     from unilabos.resources.materials import find_owner_device
 

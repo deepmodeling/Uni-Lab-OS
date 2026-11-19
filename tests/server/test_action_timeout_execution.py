@@ -13,14 +13,14 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from unilabos.server.backend import execution as execution_module
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.execution_queue import (
+from unilabos.client.host import execution as execution_module
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.server.execution_queue import (
     JOB_ORIGIN_BACKEND_CONTROL,
     JOB_ORIGIN_LOCAL_SCHEDULER,
     QueueItem,
 )
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
+from unilabos.server.scheduler.payloads import build_job_start_payload
 
 
 class _Adapter:

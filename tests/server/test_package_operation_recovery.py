@@ -182,7 +182,7 @@ def test_unconfirmed_recovery_starts_management_without_device_runtime(tmp_path,
     monkeypatch.setattr(runtime_startup, '_ensure_management_port_available', lambda: None)
     called = []
     monkeypatch.setattr(runtime_startup, '_start_management_server', lambda: called.append('management'))
-    monkeypatch.setattr('unilabos.backend.start_backend', lambda **args: pytest.fail('不得初始化驱动'))
+    monkeypatch.setattr('unilabos.client.host.start_backend', lambda **args: pytest.fail('不得初始化驱动'))
     runtime_startup.run_runtime({'visual': 'disable'})
     assert called == ['management']
 

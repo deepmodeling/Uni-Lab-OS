@@ -18,9 +18,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from unilabos.backend.runtime.async_utils import run_node_coroutine
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.hostlink.server import get_hostlink_server
+from unilabos.client.host.runtime.async_utils import run_node_coroutine
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.hostlink.server import get_hostlink_server
 from unilabos.utils import logger
 
 DEFAULT_DOWNLINK_TIMEOUT = 30.0
@@ -81,14 +81,14 @@ def get_local_device_node(device_id: str) -> Optional[Any]:
     from unilabos.config.config import BasicConfig
 
     if BasicConfig.backend == "hostlink":
-        from unilabos.backend.hostlink.main_hostlink_run import get_runtime
+        from unilabos.client.host.hostlink.main_hostlink_run import get_runtime
 
         runtime = get_runtime()
         if runtime is None:
             return None
         return runtime.local.get_device(str(device_id))
 
-    from unilabos.backend.ros2.base_device_node import registered_devices
+    from unilabos.client.host.ros2.base_device_node import registered_devices
 
     info = registered_devices.get(str(device_id))
     if info is None:
@@ -106,7 +106,7 @@ def iter_local_device_nodes() -> Iterator[Tuple[str, Any]]:
     from unilabos.config.config import BasicConfig
 
     if BasicConfig.backend == "hostlink":
-        from unilabos.backend.hostlink.main_hostlink_run import get_runtime
+        from unilabos.client.host.hostlink.main_hostlink_run import get_runtime
 
         runtime = get_runtime()
         if runtime is None:
@@ -116,7 +116,7 @@ def iter_local_device_nodes() -> Iterator[Tuple[str, Any]]:
         return
 
     try:
-        from unilabos.backend.ros2.base_device_node import registered_devices
+        from unilabos.client.host.ros2.base_device_node import registered_devices
     except ImportError:  # 无 rclpy 的进程（纯 server / 单测）：本进程没有 ROS 设备节点
         return
     for device_id, info in list(registered_devices.items()):
@@ -195,7 +195,7 @@ async def material_dispatch(
     设备经 HostLink 下行 RPC（同步 RPC，多线程 executor 下阻塞可接受；
     设备不在线/未启用 HostLink 时直接抛错，物料链路不回退 ROS 发现）。
 
-    :class:`unilabos.backend.host_services.HostServices` 未显式注入 dispatcher
+    :class:`unilabos.client.host.host_services.HostServices` 未显式注入 dispatcher
     时使用本函数。
     """
     if action_type == ActionType.RESOURCE_APPEND:

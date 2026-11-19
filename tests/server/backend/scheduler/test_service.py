@@ -5,17 +5,17 @@ from unittest.mock import Mock
 import pytest
 
 from unilabos.protocol.materials import InventoryAllocation
-from unilabos.server.backend.scheduler.dag.models import DagNode, NodeState
-from unilabos.server.backend.scheduler.service import BackendScheduler, allocation_arguments
+from unilabos.server.scheduler.dag.models import DagNode, NodeState
+from unilabos.server.scheduler.service import BackendScheduler, allocation_arguments
 from unilabos.server.services.runtime.workflow.store import WorkflowStore
 
 # 这些模块在顶层 ``from ...execution_claim import ExecutionClaims``，而 BackendScheduler 只在
 # 运行时才惰性导入它们。若首次导入发生在下方 autouse 夹具的 monkeypatch 生效期间，模块会把
 # Mock 工厂永久绑定为 ExecutionClaims，污染之后所有用真实调度器的测试（CI 按
 # tests/server 顺序运行时稳定复现）。在打补丁前先导入，确保它们绑定真实类。
-import unilabos.server.backend.scheduler.attempt_inventory  # noqa: E402,F401
-import unilabos.server.backend.scheduler.inventory_recovery  # noqa: E402,F401
-import unilabos.server.backend.scheduler.physical_recovery  # noqa: E402,F401
+import unilabos.server.scheduler.attempt_inventory  # noqa: E402,F401
+import unilabos.server.scheduler.inventory_recovery  # noqa: E402,F401
+import unilabos.server.scheduler.physical_recovery  # noqa: E402,F401
 
 
 @pytest.fixture(autouse=True)
@@ -222,7 +222,7 @@ def test_resource_request_locks_every_material_parameter_despite_removed_overrid
 
     from unilabos.registry.ast_registry_scanner import _parse_file
     from unilabos.registry.registry import Registry
-    from unilabos.server.backend.execution import make_device_materials_need_lock_resolver
+    from unilabos.client.host.execution import make_device_materials_need_lock_resolver
 
     source = tmp_path / "legacy_lock_driver.py"
     source.write_text(

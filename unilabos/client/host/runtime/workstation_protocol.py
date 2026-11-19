@@ -1,7 +1,7 @@
 """workstation XDL protocol 编排的 backend 无关共享逻辑。
 
-ROS2 :class:`unilabos.backend.ros2.presets.workstation.ROS2WorkstationNode` 与
-HostLink :class:`unilabos.backend.hostlink.workstation.WorkstationNode`
+ROS2 :class:`unilabos.client.host.ros2.presets.workstation.ROS2WorkstationNode` 与
+HostLink :class:`unilabos.client.host.hostlink.workstation.WorkstationNode`
 共用本模块：协议名/参数模型解析、资源占位展开与协议结束后的资源回写
 （均走 DeviceNode 权威 API：get_resource / update_resource）。
 
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, List
 from unilabos.experiments import models as protocol_models
 
 if TYPE_CHECKING:
-    from unilabos.backend.runtime.node import DeviceNode
+    from unilabos.client.host.runtime.node import DeviceNode
 
 
 class WorkstationNodeTempError(Exception):

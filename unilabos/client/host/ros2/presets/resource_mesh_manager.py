@@ -21,7 +21,7 @@ from tf2_ros import TransformBroadcaster, Buffer, TransformListener
 from rclpy.action import ActionServer
 from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode,DeviceNodeResourceTracker
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode,DeviceNodeResourceTracker
 from unilabos.registry.registry import lab_registry
 
 class ResourceMeshManager(BaseROS2DeviceNode):
@@ -59,8 +59,8 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         self.__planning_scene       = PlanningScene()
         self.__old_planning_scene   = None
         self.__old_allowed_collision_matrix = None
-        # unilabos 包根（本文件位于 unilabos/backend/ros2/presets/ 下）
-        self.mesh_path = Path(__file__).parents[3].absolute()
+        # unilabos 包根（本文件位于 unilabos/client/host/ros2/presets/ 下）
+        self.mesh_path = Path(__file__).parents[4].absolute()
         self.msg_type = 'resource_status'
         self.resource_status_dict = {}
         

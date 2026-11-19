@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.scheduler.models import ActionLockClaim, MaterialLockClaim, SchedulerResourceRequest
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.models import ActionLockClaim, MaterialLockClaim, SchedulerResourceRequest
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.service import WorkflowService

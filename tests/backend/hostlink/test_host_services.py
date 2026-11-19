@@ -26,13 +26,13 @@ import pytest
 
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import HostLinkConfig
-from unilabos.backend.runtime.async_utils import run_node_coroutine
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.host_services import (
+from unilabos.client.host.runtime.async_utils import run_node_coroutine
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.host_services import (
     HOST_SERVICE_ACTIONS,
     register_host_services,
 )
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.registry.registry import lab_registry
 from unilabos.resources import materials
 from unilabos.server.backend.composition import set_materials_gateway
@@ -119,8 +119,8 @@ def test_register_host_services_skipped_without_registry_entry(monkeypatch) -> N
 
 def test_host_services_visible_in_endpoint_capabilities(monkeypatch) -> None:
     """host_node 物料动作应进入 runtime.v1 能力快照（画布/单点动作目录）。"""
-    from unilabos.backend.hostlink.host_node import HostNode
-    from unilabos.server.backend.capabilities import build_endpoint_capabilities
+    from unilabos.client.host.hostlink.host_node import HostNode
+    from unilabos.client.host.capabilities import build_endpoint_capabilities
 
     monkeypatch.setitem(
         lab_registry.device_type_registry, "host_node", _host_node_registry_entry()

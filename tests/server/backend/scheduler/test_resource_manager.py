@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.backend.scheduler import (
+from unilabos.server.scheduler import (
     ActionLockClaim,
     InvalidLockHandoff,
     MaterialHandleTransferProof,

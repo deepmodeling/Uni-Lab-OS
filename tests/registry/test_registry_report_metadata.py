@@ -15,14 +15,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import unilabos
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.protocol import ActionType
-from unilabos.backend.hostlink.server import HostLinkServer, add_peer_listener
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.protocol import ActionType
+from unilabos.client.host.hostlink.server import HostLinkServer, add_peer_listener
 from unilabos.config.config import BasicConfig
 from unilabos.registry.package_provenance import PackageResolver, registry_entry_packages
 from unilabos.server.api.runtime.registry import install_registry_api
-from unilabos.server.backend.legacy_adaptor.sync.slaves import SlaveAnnouncer
-from unilabos.server.backend.legacy_adaptor.sync.templates import (
+from unilabos.client.host.legacy_adaptor.sync.slaves import SlaveAnnouncer
+from unilabos.client.host.legacy_adaptor.sync.templates import (
     TemplateSynchronizer,
     collect_registry_templates,
 )
@@ -87,7 +87,7 @@ class TestPackageProvenance:
             "unilabos", unilabos.__version__)
         assert resolver.for_file(mounted / "devices" / "arm.py") == ("bench-drivers", "0.2.0")
         assert resolver.for_file(loose / "thing.py") == ("", "")
-        assert resolver.for_module("unilabos.backend.host_services:HostServices") == (
+        assert resolver.for_module("unilabos.client.host.host_services:HostServices") == (
             "unilabos", unilabos.__version__)
         assert resolver.for_module("lab_drivers.devices.pump:Pump") == ("lab-drivers", "1.4.0")
 
@@ -177,7 +177,7 @@ class TestReportCarriesAcceptanceInputs:
         service, session = stack
         monkeypatch.setattr(BasicConfig, "machine_id", AUTHORITY_MACHINE)
         monkeypatch.setattr(
-            "unilabos.server.backend.legacy_adaptor.sync.templates.current_hostlink_slaves",
+            "unilabos.client.host.legacy_adaptor.sync.templates.current_hostlink_slaves",
             lambda: [{"machine_name": "lab-b", "machine_id": "machine-b"}],
         )
         registry = _Registry({"arm": _device("arm", str(tmp_path / "arm.py"))})
@@ -274,7 +274,7 @@ def test_http_slave_sender_posts_without_a_token_and_reads_the_envelope(monkeypa
 
     import requests
 
-    from unilabos.server.backend.legacy_adaptor.sync.slaves import http_slave_sender
+    from unilabos.client.host.legacy_adaptor.sync.slaves import http_slave_sender
 
     calls: list[dict[str, Any]] = []
     replies = iter([{"code": 0, "data": {"recorded": 1}}, {"code": 1001, "error": {"msg": "参数不合法"}}])

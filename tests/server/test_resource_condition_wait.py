@@ -17,8 +17,8 @@ from tests.server.test_workflow_physical_recovery import make_task, result, seed
 from unilabos.client.materials.core import MaterialsHTTPError
 from unilabos.protocol.materials import MaterialIdentityWrite, MaterialMove, MaterialNodeCreate, MaterialTreeCreate, SiteCreate
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.resource_wait_policy import temporary_resource_condition
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.materials.core import MaterialConflictError, MaterialValidationError
 
 _LOCK = {"type": "object", "properties": {"uuid": {"type": "string"}}, "required": ["uuid"],
@@ -199,8 +199,8 @@ def test_wait_policy_classifies_conditions(error, code):
 
 
 def test_physical_contract_marks_temporary_conditions():
-    from unilabos.server.backend.scheduler.physical_contract import resolve_physical_contract
-    from unilabos.server.backend.scheduler.resource_wait_policy import ResourceConditionWait
+    from unilabos.server.scheduler.physical_contract import resolve_physical_contract
+    from unilabos.server.scheduler.resource_wait_policy import ResourceConditionWait
 
     class Materials:
         def get_material(self, identity):

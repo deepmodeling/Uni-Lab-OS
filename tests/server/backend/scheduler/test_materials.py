@@ -6,7 +6,7 @@ import pytest
 
 from types import SimpleNamespace
 
-from unilabos.server.backend.scheduler.materials import (
+from unilabos.server.scheduler.materials import (
     extract_material_uuids,
     material_uuids_for_parameters,
     resolve_material_name_references,

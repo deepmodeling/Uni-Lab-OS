@@ -10,7 +10,7 @@ from unilabos.registry.workflows import (
     DeviceCatalog, WorkflowDefinition, build_workflow_template_payload,
     materialize_workflow_template, upsert_workflow,
 )
-from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+from unilabos.server.scheduler.interval_plan import compile_interval_plan
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
 from tests.server.test_workflow_loop_execution import _Stack
 from tests.server.test_workflow_task_cancel import wait_for
@@ -154,7 +154,7 @@ def test_paused_loop_owner_survives_database_reopen_and_blocks_competitor(tmp_pa
     from types import SimpleNamespace
     from fastapi.testclient import TestClient
     from unilabos.server.api.runtime.workflow import create_workflow_app
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.server.scheduler.service import BackendScheduler
     from unilabos.server.services.runtime.workflow.service import WorkflowService
     from tests.server.test_workflow_resource_intervals import make_task
     from tests.server.test_workflow_task_cancel import Executor, command

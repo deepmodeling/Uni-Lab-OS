@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.authoring_identity import expanded_node_uuid
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 

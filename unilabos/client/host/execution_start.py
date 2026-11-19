@@ -8,7 +8,7 @@ from typing import Any, Callable
 from uuid import uuid4
 
 from unilabos.protocol.runtime.execution_start import ExecutionPermit, execution_identity
-from unilabos.backend.runtime.action import ActionCancelled
+from unilabos.client.host.runtime.action import ActionCancelled
 
 
 class ExecutionStartUnknown(RuntimeError):

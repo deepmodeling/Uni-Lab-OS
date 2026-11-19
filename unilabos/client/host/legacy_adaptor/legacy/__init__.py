@@ -13,11 +13,11 @@ runtime.v1 之前的 Backend 直接在 WebSocket 上下发执行命令、在 HTT
   注册表上报 + 物料镜像（``app.main`` 对旧后端的全部触碰都只是调用这里）。
 """
 
-from unilabos.server.backend.legacy_adaptor.legacy.http import (
+from unilabos.client.host.legacy_adaptor.legacy.http import (
     LegacyBackendHTTPClient,
     LegacyBackendHTTPError,
 )
-from unilabos.server.backend.legacy_adaptor.legacy.ws import LegacyBackendWebSocketClient
+from unilabos.client.host.legacy_adaptor.legacy.ws import LegacyBackendWebSocketClient
 
 __all__ = [
     "LegacyBackendHTTPClient",

@@ -57,7 +57,7 @@ class ErrorDecision(BaseModel):
 def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
     """本进程设备 runtime 跳过的设备；本进程不带 HostLink runtime 时为 None。"""
 
-    from unilabos.backend.hostlink import main_hostlink_run
+    from unilabos.client.host.hostlink import main_hostlink_run
 
     if main_hostlink_run.get_runtime() is None:
         return None
@@ -65,8 +65,8 @@ def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
-    from unilabos.backend.hostlink.client import get_hostlink_client
-    from unilabos.backend.hostlink.server import get_hostlink_server
+    from unilabos.client.host.hostlink.client import get_hostlink_client
+    from unilabos.client.host.hostlink.server import get_hostlink_server
 
     link_server = get_hostlink_server()
     link_client = get_hostlink_client()

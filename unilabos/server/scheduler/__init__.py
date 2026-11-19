@@ -1,8 +1,8 @@
 """唯一 Backend Scheduler、DAG 与资源分配合同。"""
 
-from unilabos.server.backend.scheduler.authority import SchedulerAuthorityProfile
+from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
 
-from unilabos.server.backend.scheduler.models import (
+from unilabos.server.scheduler.models import (
     ActionLockClaim,
     LockHandoffStatus,
     LockKind,
@@ -18,7 +18,7 @@ from unilabos.server.backend.scheduler.models import (
     SchedulerResourceRequestRecord,
     SchedulerResourceSnapshot,
 )
-from unilabos.server.backend.scheduler.resource_manager import (
+from unilabos.server.scheduler.resource_manager import (
     InvalidLockHandoff,
     ResourceNotFound,
     ResourceRequestConflict,

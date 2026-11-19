@@ -17,7 +17,7 @@ from concurrent.futures import (
 )
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
-from unilabos.backend.hostlink.protocol import (
+from unilabos.client.host.hostlink.protocol import (
     ActionType,
     exception_error_info,
     LineReader,

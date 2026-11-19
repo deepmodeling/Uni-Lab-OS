@@ -6,7 +6,7 @@
 只允许本机发现并设置硬超时：macOS CI 上 Cyclone DDS 向组播地址写入失败后会一直重试，
 曾让 conda 构建卡到 6 小时上限。超时按失败处理，不再无限等待。
 
-用法：``python -m unilabos.backend.ros2.conda_smoke``，返回码 0 表示通过。
+用法：``python -m unilabos.client.host.ros2.conda_smoke``，返回码 0 表示通过。
 """
 
 from __future__ import annotations

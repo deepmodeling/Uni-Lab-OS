@@ -1,8 +1,8 @@
 """Host 执行适配器的 transport 中立基类。
 
-:class:`unilabos.backend.host_services.HostServices` 定义 host_node 的服务动作，
-ROS2 :class:`unilabos.backend.ros2.presets.host_node.HostNode` 与 HostLink
-:class:`unilabos.backend.hostlink.host_node.HostNode` 分别负责各自 transport
+:class:`unilabos.client.host.host_services.HostServices` 定义 host_node 的服务动作，
+ROS2 :class:`unilabos.client.host.ros2.presets.host_node.HostNode` 与 HostLink
+:class:`unilabos.client.host.hostlink.host_node.HostNode` 分别负责各自 transport
 的执行编排。本模块提供两种 transport 共用的设备状态、goal 簿记、桥接器
 通知、延迟诊断和 test_mode 行为。微后端通过 ``adapter_registry``
 只依赖该公共契约。
@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Set, Tupl
 from unilabos.utils import logger
 
 if TYPE_CHECKING:
-    from unilabos.server.backend.execution_queue import QueueItem
+    from unilabos.server.execution_queue import QueueItem
 
 #: 与 rclpy ``GoalStatus`` 对齐的数值（基类不依赖 ROS 运行时）。
 GOAL_STATUS_UNKNOWN = 0
@@ -41,7 +41,7 @@ class HostAdapterBase:
 
     子类必须实现 transport 特定的两个能力：``send_goal`` / ``cancel_job``。
     物料/设备管理下行不在本契约内——它们是模块级函数
-    （:mod:`unilabos.backend.hostlink.downlink`），微后端直接调用。
+    （:mod:`unilabos.client.host.hostlink.downlink`），微后端直接调用。
     """
 
     #: 设备命名空间前缀（ROS2 侧按设备实例覆写为 ``/devices/<id>``）。
@@ -183,7 +183,7 @@ class HostAdapterBase:
     def handle_pong_response(self, pong_data: Dict[str, Any]) -> None:
         """兼容入口：pong 的簿记在 Backend 会话上（BaseBackendClient.handle_pong）。"""
 
-        from unilabos.server.backend.legacy_adaptor.session import get_backend_client
+        from unilabos.client.host.legacy_adaptor.session import get_backend_client
 
         if not get_backend_client().handle_pong(pong_data):
             self.lab_logger().debug("忽略没有等待者或无效的 Pong 响应")
@@ -245,7 +245,7 @@ class HostAdapterBase:
         时钟偏差校正。
         """
 
-        from unilabos.server.backend.legacy_adaptor.session import get_backend_client
+        from unilabos.client.host.legacy_adaptor.session import get_backend_client
 
         log = self.lab_logger()
         client = get_backend_client()
@@ -315,7 +315,7 @@ class HostAdapterBase:
     ) -> Dict[str, Any]:
         """按注册表 handles 的 output 定义构建 test_mode 模拟返回值（规则见 ``runtime.test_mode``）。"""
 
-        from unilabos.backend.runtime.test_mode import build_test_mode_return
+        from unilabos.client.host.runtime.test_mode import build_test_mode_return
 
         del action_kwargs
         action_mapping = self._action_value_mappings.get(device_id, {}).get(action_name, {})

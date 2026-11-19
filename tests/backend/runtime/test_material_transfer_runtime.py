@@ -4,9 +4,9 @@ import asyncio
 
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.runtime.resource import AuthorityResourceService
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime.resource import AuthorityResourceService
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.resources.presets.container import RegularContainer
 from unilabos.server.backend.composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService

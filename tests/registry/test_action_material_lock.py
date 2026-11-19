@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from unilabos.backend.runtime.definition import DeviceDefinition
+from unilabos.client.host.runtime.definition import DeviceDefinition
 from unilabos.registry import material_locks
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.registry import Registry
@@ -80,7 +80,7 @@ def test_host_material_actions_lock_every_material_parameter(caplog) -> None:
     caplog.set_level(logging.WARNING, logger="unilabos.registry.material_locks")
     repo_root = Path(__file__).parents[2]
     # host_node 动作的唯一 @device/@action 扫描源（backend 无关的 HostServices）
-    source = repo_root / "unilabos" / "backend" / "host_services.py"
+    source = repo_root / "unilabos" / "client" / "host" / "host_services.py"
     devices, _resources, _workflows = _parse_file(source, repo_root)
     host = next(
         device for device in devices if device["device_id"] == "host_node"

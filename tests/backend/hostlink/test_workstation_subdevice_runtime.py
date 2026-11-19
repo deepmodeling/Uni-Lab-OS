@@ -5,8 +5,8 @@ from types import SimpleNamespace
 from typing import Any
 
 from unilabos.devices.workstation.workstation_base import WorkstationBase
-from unilabos.backend.hostlink import main_hostlink_run
-from unilabos.backend.hostlink.local_runtime import (
+from unilabos.client.host.hostlink import main_hostlink_run
+from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
 )
@@ -134,7 +134,7 @@ def test_hostlink_graph_starts_subdevice_before_workstation_post_init(
 def test_workstation_dynamic_subdevice_exposes_action_service_and_status(
     monkeypatch,
 ) -> None:
-    from unilabos.backend.runtime import definition as definition_module
+    from unilabos.client.host.runtime import definition as definition_module
 
     monkeypatch.setattr(definition_module, "resolve_device_definition", _definition)
     runtime = HostLinkLocalRuntime()

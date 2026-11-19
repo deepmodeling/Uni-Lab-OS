@@ -14,7 +14,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
-from unilabos.backend.runtime.async_utils import schedule_async_func
+from unilabos.client.host.runtime.async_utils import schedule_async_func
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceDictInstance,

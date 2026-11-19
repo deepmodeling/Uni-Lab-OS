@@ -165,7 +165,7 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
         remove=卸载移除），不经任何 host 编排类。同步等待设备回执；调用方
         应校验 notified 为 true。（def 端点走线程池，允许阻塞等待。）
         """
-        from unilabos.backend.hostlink.downlink import notify_resource_tree_update
+        from unilabos.client.host.hostlink.downlink import notify_resource_tree_update
 
         notified = notify_resource_tree_update(
             value.device_id, value.action, list(value.resource_uuids)

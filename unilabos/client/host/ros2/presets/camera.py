@@ -3,7 +3,7 @@ from rclpy.node import Node
 import cv2
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 from unilabos.registry.decorators import device
 
 

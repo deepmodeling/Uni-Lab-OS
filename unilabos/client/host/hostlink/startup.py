@@ -12,8 +12,8 @@ import threading
 from typing import Any, Mapping, Optional
 
 from unilabos.config.config import HostLinkConfig
-from unilabos.backend.hostlink.ros_assist import parse_host_target, validate_domain_id
-from unilabos.backend.hostlink.server import (
+from unilabos.client.host.hostlink.ros_assist import parse_host_target, validate_domain_id
+from unilabos.client.host.hostlink.server import (
     HOST_STARTUP_GATES,
     HostLinkServer,
     get_hostlink_server,
@@ -117,7 +117,7 @@ def validate_hostlink_backend(args: Mapping[str, Any], *, is_slave: bool) -> Non
 def create_host_server() -> HostLinkServer:
     """按 ``HostLinkConfig`` 构造尚未监听的 Host server，并进入启动期门控。
 
-    门控见 :data:`~unilabos.backend.hostlink.server.HOST_STARTUP_GATES`：HELLO / 心跳 /
+    门控见 :data:`~unilabos.client.host.hostlink.server.HOST_STARTUP_GATES`：HELLO / 心跳 /
     状态上报随时可用；物料请求等 ``materials``、设备与 service 调用等 ``devices`` 阶段。
     """
 

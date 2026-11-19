@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import Iterable
 
-from unilabos.server.backend.scheduler.grant import (
+from unilabos.server.scheduler.grant import (
     GrantPolicy,
     KeyIndex,
     WaitingRequest,
@@ -21,7 +21,7 @@ from unilabos.server.backend.scheduler.grant import (
     load_grant_policy,
     validate_grants,
 )
-from unilabos.server.backend.scheduler.models import (
+from unilabos.server.scheduler.models import (
     ResourceLockIdentifier,
     SchedulerLockEvent,
     SchedulerLockHandoffRecord,

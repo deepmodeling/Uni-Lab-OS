@@ -2,20 +2,20 @@
 
 术语区分：本包的「backend」指设备通信的传输运行时（CLI ``--backend`` 所选），
 与云端 Backend 对接的微后端权威（调度器、执行协调）位于
-``unilabos.server.backend``，两者是不同概念。
+``unilabos.server``（``scheduler`` 等），两者是不同概念。
 
 公开名称直接说明使用的通信协议，不跟内部运行时包名绑定：
 
 ``hostlink``
     本地 Python 驱动 + HostLink TCP 的分布式运行时；不启动 rclpy/DDS，
     但可以加载 ROS message 包用于字段解析和 JSON 转换。
-    实现位于 ``unilabos.backend.hostlink``，包体即通信实现。
+    实现位于 ``unilabos.client.host.hostlink``，包体即通信实现。
 ``ros2``
-    完整 ROS 2 运行时，实现位于 ``unilabos.backend.ros2``；其
+    完整 ROS 2 运行时，实现位于 ``unilabos.client.host.ros2``；其
     ``presets`` 子包放 ROS 预设节点（host_node、controller_node 等）。
 
-传输无关的设备执行内核在 ``unilabos.backend.runtime``；Dora
-（``unilabos.backend.dora``）保留用于实验，不进入公开选择。CLI、运行时、
+传输无关的设备执行内核在 ``unilabos.client.host.runtime``；Dora
+（``unilabos.client.host.dora``）保留用于实验，不进入公开选择。CLI、运行时、
 测试和文档共享本模块中的公开 backend 清单，并确保可选 backend 只在被
 选中时导入。
 """
@@ -64,7 +64,7 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
     "hostlink": BackendProfile(
         name="hostlink",
         display_name="HostLink",
-        module="unilabos.backend.hostlink.main_hostlink_run",
+        module="unilabos.client.host.hostlink.main_hostlink_run",
         description="HostLink TCP 分布式 Python 驱动运行时（不启动 rclpy/DDS）",
         supports_slave=True,
         supports_visualization=False,
@@ -72,7 +72,7 @@ BACKEND_PROFILES: dict[str, BackendProfile] = {
     "ros2": BackendProfile(
         name="ros2",
         display_name="ROS 2",
-        module="unilabos.backend.ros2.main_slave_run",
+        module="unilabos.client.host.ros2.main_slave_run",
         description="ROS 2 分布式设备运行时",
         supports_slave=True,
         supports_visualization=True,

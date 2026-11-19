@@ -292,7 +292,7 @@ def test_graph_upload_reuses_uuid_names_and_rejects_conflicts(tmp_path) -> None:
 
 
 def test_legacy_graph_boundary_moves_names_out_of_the_way() -> None:
-    from unilabos.server.backend.legacy_adaptor.legacy.graph import (
+    from unilabos.client.host.legacy_adaptor.legacy.graph import (
         legacy_graph_markers,
         upgrade_legacy_graph_payload,
     )

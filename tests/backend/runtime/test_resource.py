@@ -6,8 +6,8 @@ from uuid import uuid4
 from pylabrobot.resources import Coordinate
 import pytest
 
-from unilabos.backend.runtime import resource as resource_module
-from unilabos.backend.runtime.resource import (
+from unilabos.client.host.runtime import resource as resource_module
+from unilabos.client.host.runtime.resource import (
     AuthorityResourceService,
     MaterialSnapshotObserver,
 )

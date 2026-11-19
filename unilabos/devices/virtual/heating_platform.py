@@ -19,8 +19,8 @@ from threading import RLock
 from typing import Any
 from uuid import uuid4
 
-from unilabos.backend.runtime.action import ActionContext
-from unilabos.backend.hostlink.protocol import LinkError
+from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.hostlink.protocol import LinkError
 from unilabos.devices.virtual.simulation import DEFAULT_TIME_SCALE, resolve_time_scale
 from unilabos.registry.decorators import action, device, not_action, topic_config
 from unilabos.resources.objects.pose import (

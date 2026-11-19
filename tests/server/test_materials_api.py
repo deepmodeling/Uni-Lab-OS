@@ -96,7 +96,7 @@ def test_notify_device_dispatches_via_downlink_and_returns_receipt(
     tmp_path, monkeypatch
 ) -> None:
     """物料创建只发生在微后端；变更经模块级 downlink 分发到设备并透传回执。"""
-    from unilabos.backend.hostlink import downlink
+    from unilabos.client.host.hostlink import downlink
 
     service = MaterialsService(tmp_path / "materials.db")
     app = FastAPI()

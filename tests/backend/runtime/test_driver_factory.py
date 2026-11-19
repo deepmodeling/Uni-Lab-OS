@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from unilabos.backend.hostlink.main_hostlink_run import build_runtime
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.runtime.definition import (
+from unilabos.client.host.hostlink.main_hostlink_run import build_runtime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime.definition import (
     is_host_node_config,
     iter_device_config_entries,
 )
-from unilabos.backend.runtime.driver_creator import select_driver_creator
+from unilabos.client.host.runtime.driver_creator import select_driver_creator
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
@@ -124,7 +124,7 @@ def test_host_node_is_identified_by_template_name_only() -> None:
 
 
 def test_hostlink_runtime_uses_same_factory_for_dynamic_subdevice(monkeypatch) -> None:
-    from unilabos.backend.runtime import definition as definition_module
+    from unilabos.client.host.runtime import definition as definition_module
 
     dynamic_config = ResourceDictInstance.get_resource_instance_from_dict(
         {
@@ -332,7 +332,7 @@ class _ConfigAndFlatDriver:
 def test_hostlink_config_parameter_does_not_swallow_other_declared_parameters() -> None:
     """FRAMEWORK_GAPS #24：声明了 ``config`` 的构造函数，其他具名参数仍按名取节点配置。"""
 
-    from unilabos.backend.hostlink.local_runtime import instantiate_driver
+    from unilabos.client.host.hostlink.local_runtime import instantiate_driver
 
     node_config = {"debug_mode": True, "address": "127.0.0.1", "vendor_option": 3}
     driver = instantiate_driver(_ConfigAndFlatDriver, "cell", node_config)

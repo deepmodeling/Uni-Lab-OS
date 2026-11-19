@@ -247,8 +247,8 @@ def test_execution_policy_accepts_node_level_timeouts() -> None:
 
 
 def test_scheduler_action_timeouts_prefer_execution_policy_then_registry() -> None:
-    from unilabos.server.backend.scheduler.dag.models import DagNode
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.server.scheduler.dag.models import DagNode
+    from unilabos.server.scheduler.service import BackendScheduler
 
     class _Executor:
         def __init__(self) -> None:

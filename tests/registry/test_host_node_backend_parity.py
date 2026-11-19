@@ -26,10 +26,10 @@ BasicConfig.enable_resource_load = False
 
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.registry import Registry
-from unilabos.server.backend.legacy_adaptor.sync.templates import _template_definition
+from unilabos.client.host.legacy_adaptor.sync.templates import _template_definition
 
 devices, _resources, _workflows = _parse_file(
-    root / "unilabos" / "backend" / "host_services.py",
+    root / "unilabos" / "client" / "host" / "host_services.py",
     root,
 )
 registry = Registry()
@@ -92,7 +92,7 @@ def test_host_node_registry_definition_is_backend_neutral(tmp_path) -> None:
 
     assert hostlink["definition"] == ros2["definition"]
     assert hostlink["definition"]["class"]["module"] == (
-        "unilabos.backend.host_services:HostServices"
+        "unilabos.client.host.host_services:HostServices"
     )
     assert set(hostlink["definition"]["class"]["action_value_mappings"]) == {
         "apply_deduct_resource",

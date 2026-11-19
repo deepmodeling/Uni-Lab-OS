@@ -18,7 +18,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from unilabos.server.backend.scheduler.resource_keys import (
+from unilabos.server.scheduler.resource_keys import (
     canonical_resource_lock_scope,
     device_lock_key,
     is_canonical_generic_resource_lock_key,

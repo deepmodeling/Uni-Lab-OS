@@ -27,7 +27,7 @@ from unilabos.client.utils.envelope import EnvelopeError
 from unilabos.config.config import BasicConfig
 from unilabos.registry.registry import lab_registry
 from unilabos.resources.adapters.registry_materials import registry_resource_class_name
-from unilabos.server.backend.legacy_adaptor.legacy.graph import (
+from unilabos.client.host.legacy_adaptor.legacy.graph import (
     LegacyGraphError,
     legacy_graph_markers,
     upgrade_legacy_graph_payload,
@@ -214,7 +214,7 @@ def test_current_format_graph_is_left_alone() -> None:
 def host_registry(monkeypatch):
     """Host 进程的本地扫描注册表里有 ``container``（读图时 Registry Authority 尚未装配）。"""
 
-    from unilabos.backend.runtime import workstation_protocol
+    from unilabos.client.host.runtime import workstation_protocol
 
     monkeypatch.setitem(lab_registry.resource_type_registry, "container", _container_entry())
     monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", None)

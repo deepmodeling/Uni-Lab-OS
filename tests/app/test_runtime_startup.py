@@ -13,8 +13,8 @@ from unilabos.app import runtime_startup
 from unilabos.app.cli.parser import build_parser
 from unilabos.app.runtime_startup import build_slave_launch_command
 from unilabos.app.supervisor import PORT_IN_USE_EXIT_CODE
-from unilabos.backend import BACKEND_PROFILES
-from unilabos.backend.hostlink import adapter_registry
+from unilabos.client.host import BACKEND_PROFILES
+from unilabos.client.host.hostlink import adapter_registry
 from unilabos.server.api.app import ManagementPortInUseError, ensure_port_available
 
 
@@ -143,7 +143,7 @@ def test_nothing_is_launched_when_backend_dies_before_ready(monkeypatch) -> None
 
 
 def test_exit_code_follows_backend_failure_kind(monkeypatch) -> None:
-    from unilabos import backend as backend_module
+    from unilabos.client import host as backend_module
 
     monkeypatch.setattr(backend_module, "_fatal_failure", None)
     runtime_startup._exit_on_backend_failure()  # 正常运行：不退出

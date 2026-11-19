@@ -7,7 +7,7 @@ from typing import Any, Dict
 from tests.server.test_workflow_resource_intervals import make_task
 from tests.server.test_workflow_task_cancel import Executor, wait_for
 from unilabos.registry.action_duration import resolve_action_estimate
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.runtime.workflow.timeline import ExecutionTimeline
 

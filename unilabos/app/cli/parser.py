@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
-from unilabos.backend import BACKEND_NAMES, backend_cli_value
+from unilabos.client.host import BACKEND_NAMES, backend_cli_value
 from unilabos.app.cli.router import register_cli_commands
 
 

@@ -91,7 +91,7 @@ def run_backend_process(
     ``launch_host=True`` 时同时看护 Host 子进程（默认拓扑）。
     """
 
-    from unilabos.backend.hostlink.downlink import (
+    from unilabos.client.host.hostlink.downlink import (
         configure_remote_device_relay,
         remote_material_sync_dispatcher,
     )

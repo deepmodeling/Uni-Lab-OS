@@ -9,8 +9,8 @@ from uuid import uuid4
 import pytest
 from pylabrobot.resources import Coordinate
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDeviceNode, HostLinkLocalRuntime
-from unilabos.backend.runtime import (
+from unilabos.client.host.hostlink.local_runtime import HostLinkDeviceNode, HostLinkLocalRuntime
+from unilabos.client.host.runtime import (
     ActionCancelled,
     ActionContext,
     BackendCapabilityError,
@@ -199,7 +199,7 @@ def test_virtual_drivers_import_without_ros() -> None:
         "[importlib.import_module('unilabos.devices.virtual.' + path.stem) "
         "for path in pathlib.Path(virtual.__file__).parent.glob('*.py') if path.stem != '__init__']; "
         "import unilabos.devices.workstation.workstation_base; "
-        "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
+        "assert not any(name.startswith('unilabos.client.host.ros2') for name in sys.modules)"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -217,7 +217,7 @@ def test_liquid_handling_package_keeps_optional_rviz_ros_import_lazy() -> None:
         "BasicConfig.backend = 'hostlink'; "
         "import unilabos.devices.liquid_handling; "
         "assert 'rclpy' not in sys.modules; "
-        "assert 'unilabos.backend.ros2' not in sys.modules"
+        "assert 'unilabos.client.host.ros2' not in sys.modules"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -241,7 +241,7 @@ def test_liquid_handler_drivers_import_in_hostlink_without_ros_runtime() -> None
         "assert 'unilabos.devices.liquid_handling.rviz_backend' in sys.modules; "
         "assert LiquidHandlerAbstract; "
         "assert 'rclpy' not in sys.modules; "
-        "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
+        "assert not any(name.startswith('unilabos.client.host.ros2') for name in sys.modules)"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

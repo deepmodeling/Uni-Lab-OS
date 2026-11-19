@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, Optional, Protocol
 
-from unilabos.backend.hostlink.topic import normalize_topic, value_to_message
+from unilabos.client.host.hostlink.topic import normalize_topic, value_to_message
 
 ServiceCallback = Callable[[Any], Awaitable[Any]]
 

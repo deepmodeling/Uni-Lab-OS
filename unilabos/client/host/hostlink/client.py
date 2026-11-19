@@ -15,7 +15,7 @@ from concurrent.futures import (
 )
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
-from unilabos.backend.hostlink.protocol import (
+from unilabos.client.host.hostlink.protocol import (
     ActionType,
     exception_error_info,
     HostNotReadyError,
@@ -29,7 +29,7 @@ from unilabos.backend.hostlink.protocol import (
     send_message,
     send_response_or_reject,
 )
-from unilabos.backend.hostlink.ros_assist import RosNetworkInfo
+from unilabos.client.host.hostlink.ros_assist import RosNetworkInfo
 from unilabos.utils import logger
 from unilabos.utils.machine_identity import machine_id
 

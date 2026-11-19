@@ -3,7 +3,7 @@
 //! `no_std`、不分配内存：键与等待请求在宿主侧编号为整数，键状态用调用方给的 scratch 缓冲区
 //! （每个键一个字节，长度即键空间），结果写入调用方给的输出缓冲区。所有访问都做边界检查并以
 //! 错误码返回，没有会 panic 的路径。C 头文件由 build.rs 经 cbindgen 生成，Python 绑定再由头文件
-//! 生成。Python 参考实现 `unilabos/server/backend/scheduler/grant/policy.py::fifo_grants` 必须与
+//! 生成。Python 参考实现 `unilabos/server/scheduler/grant/policy.py::fifo_grants` 必须与
 //! 这里逐条等价。
 #![cfg_attr(not(test), no_std)]
 

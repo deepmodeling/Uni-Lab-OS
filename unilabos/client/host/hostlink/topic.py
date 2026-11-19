@@ -16,7 +16,7 @@ TopicCallback = Callable[[Any], Any]
 TopicEventListener = Callable[["TopicEvent"], None]
 SubscriptionListener = Callable[[str, bool], None]
 
-_logger = logging.getLogger("unilabos.backend.hostlink.topic")
+_logger = logging.getLogger("unilabos.client.host.hostlink.topic")
 
 
 def normalize_topic(topic: str, device_id: str = "") -> str:

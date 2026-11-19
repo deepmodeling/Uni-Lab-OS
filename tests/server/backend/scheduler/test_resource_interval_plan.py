@@ -7,10 +7,10 @@ from __future__ import annotations
 import pytest
 
 
-from unilabos.server.backend.scheduler.resource_keys import material_lock_key, site_lock_key
+from unilabos.server.scheduler.resource_keys import material_lock_key, site_lock_key
 
 
-from unilabos.server.backend.scheduler.resource_plan import (
+from unilabos.server.scheduler.resource_plan import (
     RESOURCE_PLAN_CAPABILITY,
     CanonicalResource,
     ResourcePlan,

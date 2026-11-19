@@ -30,9 +30,9 @@ from rclpy.action.server import ServerGoalHandle
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import StrSingleInput
-from unilabos.backend.runtime.node import DeviceNode
-from unilabos.backend.runtime.resource_slot import is_unset_resource_slot, resource_slot_shapes
-from unilabos.backend.runtime.async_utils import schedule_async_func
+from unilabos.client.host.runtime.node import DeviceNode
+from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot, resource_slot_shapes
+from unilabos.client.host.runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.action_policy import (
     SUCCESS_TYPE_NORMAL,
@@ -46,7 +46,7 @@ from unilabos.resources.materials import (
     parse_resource_slot,
 )
 from unilabos.resources.objects.resource import EXTRA_SAMPLE_UUID, ResourceDictType
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.ros2.msgs.message_converter import (
     String,
     convert_to_ros_msg,
     convert_from_ros_msg,
@@ -64,14 +64,14 @@ from unilabos.resources.resource_tracker import (
     JSON_UNILABOS_PARAM,
     find_resource_by_uuid,
 )
-from unilabos.backend.runtime.driver_creator import (
+from unilabos.client.host.runtime.driver_creator import (
     select_driver_creator,
 )
 from rclpy.task import Task, Future
 from unilabos.utils.import_manager import default_manager
 from unilabos.utils.log import info, debug, warning, error, critical, logger, trace
 from unilabos.utils.serialization import TypeEncoder, serialize_result_info
-from unilabos.backend.runtime.exception import ActionResultError, DeviceActionError
+from unilabos.client.host.runtime.exception import ActionResultError, DeviceActionError
 
 if TYPE_CHECKING:
     from pylabrobot.resources import Resource as ResourcePLR
@@ -403,7 +403,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         self.publish_high_frequency = False
         self.callback_group = ReentrantCallbackGroup()
         self.resource_tracker = resource_tracker
-        from unilabos.backend.runtime.resource import AuthorityResourceService
+        from unilabos.client.host.runtime.resource import AuthorityResourceService
 
         self.set_resource_service(AuthorityResourceService())
 
@@ -812,7 +812,7 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         # 加入全局注册表
         registered_devices[self.device_id] = device_info
         from unilabos.config.config import BasicConfig
-        from unilabos.backend.ros2.presets.host_node import HostNode
+        from unilabos.client.host.ros2.presets.host_node import HostNode
 
         if not BasicConfig.is_host_mode:
             sclient = self.create_client(SerialCommand, "/node_info_update")
@@ -1931,7 +1931,7 @@ class ROS2DeviceNode:
         if driver_is_ros:
             self._ros_node = self._driver_instance  # type: ignore
         elif self.driver_is_workstation:
-            from unilabos.backend.ros2.presets.workstation import ROS2WorkstationNode
+            from unilabos.client.host.ros2.presets.workstation import ROS2WorkstationNode
 
             self._ros_node = ROS2WorkstationNode(
                 protocol_type=driver_params["protocol_type"],

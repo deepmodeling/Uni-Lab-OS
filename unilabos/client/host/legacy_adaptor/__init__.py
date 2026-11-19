@@ -23,21 +23,21 @@ legacy（旧云端 Backend：``job_start`` / ``host_node_ready`` 消息族）
 bridge 与 Edge 控制面等本地微后端代码留在 ``server.backend`` 直下，不属于本包。
 """
 
-from unilabos.server.backend.legacy_adaptor.http import (
+from unilabos.client.host.legacy_adaptor.http import (
     BackendHTTPClient,
     BackendHTTPError,
 )
-from unilabos.server.backend.legacy_adaptor.probe import (
+from unilabos.client.host.legacy_adaptor.probe import (
     PROTOCOL_LEGACY,
     PROTOCOL_RUNTIME_V1,
     detect_backend_protocol,
 )
-from unilabos.server.backend.legacy_adaptor.session import (
+from unilabos.client.host.legacy_adaptor.session import (
     BackendSessionFactory,
     BaseBackendClient,
     get_backend_client,
 )
-from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
 __all__ = [
     "BackendHTTPClient",

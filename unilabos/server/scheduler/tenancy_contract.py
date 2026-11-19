@@ -1,5 +1,5 @@
 """从冻结的动作合同和实际参数解析托管；设备使用物料权威的可读 resource_id。"""
-from unilabos.server.backend.scheduler.models import DeviceTenancyTransition, DeviceTenancyRequirement
+from unilabos.server.scheduler.models import DeviceTenancyTransition, DeviceTenancyRequirement
 
 
 def resolve_tenancy_contract(schema: dict | None, values: dict, device_id: str, materials) -> dict:

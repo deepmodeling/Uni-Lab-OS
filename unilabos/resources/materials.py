@@ -437,7 +437,7 @@ def resolve_materials_gateway() -> MaterialGateway:
     from unilabos.config.config import BasicConfig
 
     if not BasicConfig.is_host_mode:
-        from unilabos.backend.hostlink.client import get_hostlink_client
+        from unilabos.client.host.hostlink.client import get_hostlink_client
         from unilabos.client.materials import HostLinkMaterialsClient
 
         client = get_hostlink_client()
@@ -826,7 +826,7 @@ async def snapshot(
     child 的 state/assign/unassign 变化后自动调用同一严格服务入口。
     """
 
-    from unilabos.backend.runtime.resource import AuthorityResourceService
+    from unilabos.client.host.runtime.resource import AuthorityResourceService
 
     service = AuthorityResourceService(
         gateway or resolve_materials_gateway()
@@ -1021,8 +1021,8 @@ def update(
     返回更新后的权威树。
     """
 
-    from unilabos.backend.runtime.node import DeviceNode
-    from unilabos.backend.runtime.resource import AuthorityResourceService
+    from unilabos.client.host.runtime.node import DeviceNode
+    from unilabos.client.host.runtime.resource import AuthorityResourceService
 
     node = items[0] if items and isinstance(items[0], DeviceNode) else None
     payload_items = items[1:] if node is not None else items
@@ -1056,7 +1056,7 @@ def remove(
 ) -> List[str]:
     """按 uuid 或 resource id 删除权威物料树，返回实际删除的根 uuid。"""
 
-    from unilabos.backend.runtime.resource import AuthorityResourceService
+    from unilabos.client.host.runtime.resource import AuthorityResourceService
 
     gw = gateway or resolve_materials_gateway()
     uuids: List[str] = []

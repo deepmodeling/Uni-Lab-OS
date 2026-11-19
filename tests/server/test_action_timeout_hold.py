@@ -20,11 +20,11 @@ from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend import execution as execution_module
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.execution_queue import QueueItem
-from unilabos.server.backend.scheduler.dag.runner import TaskDagRunner
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.client.host import execution as execution_module
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.server.execution_queue import QueueItem
+from unilabos.server.scheduler.dag.runner import TaskDagRunner
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 DEVICE = "device-1"

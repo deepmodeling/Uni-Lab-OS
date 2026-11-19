@@ -14,10 +14,10 @@ from typing import Any, Optional
 
 import pytest
 
-from unilabos.backend.runtime.host_adapter import HostAdapterBase
+from unilabos.client.host.runtime.host_adapter import HostAdapterBase
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.server.backend.legacy_adaptor import session as session_module
-from unilabos.server.backend.legacy_adaptor.session import BackendLink, BaseBackendClient
+from unilabos.client.host.legacy_adaptor import session as session_module
+from unilabos.client.host.legacy_adaptor.session import BackendLink, BaseBackendClient
 
 
 class _Session(BaseBackendClient):

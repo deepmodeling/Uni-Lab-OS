@@ -15,7 +15,7 @@ import unilabos.server.backend.restart as restart_module
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime import create_backend_app
 from unilabos.server.backend.restart import RestartCoordinator
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 
 
 class _FakeExecutionBackend:

@@ -15,9 +15,9 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping, Sequence
 
 from unilabos.config.config import HTTPConfig
-from unilabos.server.backend.legacy_adaptor.legacy.graph import upgrade_legacy_graph_payload
-from unilabos.server.backend.legacy_adaptor.legacy.http import LegacyBackendHTTPClient
-from unilabos.server.backend.legacy_adaptor.legacy.sync import (
+from unilabos.client.host.legacy_adaptor.legacy.graph import upgrade_legacy_graph_payload
+from unilabos.client.host.legacy_adaptor.legacy.http import LegacyBackendHTTPClient
+from unilabos.client.host.legacy_adaptor.legacy.sync import (
     LegacyMaterialMirror,
     upload_registry_snapshot,
 )

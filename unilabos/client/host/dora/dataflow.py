@@ -42,7 +42,7 @@ def build_dataflow(
             {
                 "id": dev_id,
                 "path": "python",
-                "args": "-m unilabos.backend.dora.node_main",
+                "args": "-m unilabos.client.host.dora.node_main",
                 "env": {
                     "UNILAB_DORA_DEVICE_ID": dev_id,
                     "UNILAB_DORA_DRIVER": dev["driver"],

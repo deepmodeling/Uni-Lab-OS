@@ -28,7 +28,7 @@ from unilabos.protocol.runtime.process_management import SCHEMA_VERSION, Process
 from unilabos.server.api.envelope import install_envelope_fallback
 from unilabos.server.api.process_management import install_process_management_api
 from unilabos.server.backend.restart import RestartCoordinator
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.process_management import (
     HostGateway,

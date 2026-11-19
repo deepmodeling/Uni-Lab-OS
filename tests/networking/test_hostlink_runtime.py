@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import pytest
 
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.runtime import (
+from unilabos.client.host.hostlink.runtime import (
     setup_hostlink_client,
     setup_hostlink_server,
     shutdown_hostlink,

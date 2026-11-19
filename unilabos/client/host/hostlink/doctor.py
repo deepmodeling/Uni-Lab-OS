@@ -33,7 +33,7 @@ import time
 import uuid as uuid_mod
 from typing import Any, Dict, List, Optional, Tuple
 
-from unilabos.backend.hostlink.protocol import (
+from unilabos.client.host.hostlink.protocol import (
     ActionType,
     LineReader,
     LinkError,
@@ -41,7 +41,7 @@ from unilabos.backend.hostlink.protocol import (
     read_message,
     send_message,
 )
-from unilabos.backend.hostlink.ros_assist import (
+from unilabos.client.host.hostlink.ros_assist import (
     RosNetworkInfo,
     apply_ros_network_env,
     use_connected_host,

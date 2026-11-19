@@ -11,7 +11,7 @@ from unilabos.app.main import (
     _read_graph_json,
     _register_graph_file_to_authority,
 )
-from unilabos.server.backend.legacy_adaptor.legacy.startup import (
+from unilabos.client.host.legacy_adaptor.legacy.startup import (
     upgrade_startup_graph_payload,
 )
 from unilabos.server.database.layout import ServerDatabasePaths
@@ -422,7 +422,7 @@ class TestLoadStartupGraph:
 
     @pytest.fixture()
     def physical_graph_slot(self, monkeypatch):
-        from unilabos.backend.runtime import workstation_protocol
+        from unilabos.client.host.runtime import workstation_protocol
 
         monkeypatch.setattr(workstation_protocol, "_physical_setup_graph", None)
         return workstation_protocol

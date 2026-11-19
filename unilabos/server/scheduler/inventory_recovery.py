@@ -8,7 +8,7 @@ from typing import Any
 from unilabos.protocol.materials import InventoryMutation, InventoryReservationTransition
 from unilabos.protocol.utils.json_codec import decode_json_bytes
 from unilabos.registry.action_policy import SUCCESS_TYPE_OPERATOR_INTERVENTION
-from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+from unilabos.server.inventory import ExecutionInventoryCoordinator
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.store import utc_now
 

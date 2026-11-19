@@ -322,7 +322,7 @@ class BackendSessionFactory:
 
     Edge 的调度面只有 runtime.v1：完整的命令、工作流、物料和调度事实
     都由微后端承接。旧云端的字段转换保留在
-    ``server.backend.legacy_adaptor.legacy``，由 Backend 侧显式装配，不能
+    ``client.host.legacy_adaptor.legacy``，由 Backend 侧显式装配，不能
     再通过启动时探测把另一套调度协议带回 Edge。
     """
 
@@ -371,7 +371,7 @@ class BackendSessionFactory:
     def _create_backend_client(cls) -> BaseBackendClient:
         """创建 runtime.v1 WebSocket 轻通知客户端。"""
 
-        from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+        from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
         return BackendWebSocketClient()
 
@@ -383,7 +383,7 @@ class BackendSessionFactory:
         当前微后端调度链路。
         """
 
-        from unilabos.server.backend.legacy_adaptor.legacy.ws import (
+        from unilabos.client.host.legacy_adaptor.legacy.ws import (
             LegacyBackendWebSocketClient,
         )
 

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
-from unilabos.backend.runtime.definition import (
+from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
+from unilabos.client.host.runtime.definition import (
     is_host_node_config,
     iter_device_config_entries,
     resolve_device_definition,
 )
-from unilabos.backend.runtime.exception import DeviceBackendUnsupported
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import (
+from unilabos.client.host.runtime.exception import DeviceBackendUnsupported
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
 )
@@ -212,7 +212,7 @@ def _run(
             populate=startup_populate(devices_config, resources_config, is_slave=is_slave)
         )
         if not is_slave:
-            from unilabos.backend.hostlink.host_node import HostNode
+            from unilabos.client.host.hostlink.host_node import HostNode
             from unilabos.config.config import BasicConfig
 
             # HostNode 构造时注册执行适配器、刷新设备快照并启动监控；

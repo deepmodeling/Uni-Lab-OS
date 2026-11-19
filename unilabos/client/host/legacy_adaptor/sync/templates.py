@@ -283,7 +283,7 @@ def current_hostlink_slaves() -> list[Dict[str, str]]:
     """本 Host 的 HostLink 当前认识的 Slave（machine_name + 自报的 machine_id）。"""
 
     try:
-        from unilabos.backend.hostlink.server import get_hostlink_server
+        from unilabos.client.host.hostlink.server import get_hostlink_server
     except Exception:  # noqa: BLE001 - 精简环境没有 HostLink
         return []
     server = get_hostlink_server()

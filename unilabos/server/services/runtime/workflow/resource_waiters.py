@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Iterable, Optional
 
 from unilabos.protocol.utils.json_codec import decode_json_bytes
-from unilabos.server.backend.scheduler.resource_keys import material_lock_key
+from unilabos.server.scheduler.resource_keys import material_lock_key
 
 #: 等待老化周期（秒）：每等待一个完整周期，有效优先级加 1（与 V1 默认值相同）。
 WAITER_AGING_INTERVAL_S = 30.0

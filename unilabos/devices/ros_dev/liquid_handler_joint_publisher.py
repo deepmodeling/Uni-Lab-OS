@@ -11,7 +11,7 @@ from rclpy.action import ActionServer,ActionClient
 from sensor_msgs.msg import JointState
 from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode
 from tf_transformations import quaternion_from_euler
 from tf2_ros import TransformBroadcaster, Buffer, TransformListener 
 

@@ -12,6 +12,7 @@ from unilabos.client.host.ros2.msgs.message_converter import (
     convert_from_ros_msg,
     convert_to_ros_msg_with_mapping,
     convert_from_ros_msg_with_mapping,
+    resource_msg_to_dict,
     Point,
     Float64,
     String,
@@ -125,6 +126,29 @@ class TestMappingConversion(unittest.TestCase):
         self.assertEqual(py_data["position"].x, 1.0)
         self.assertEqual(py_data["position"].y, 2.0)
         self.assertEqual(py_data["position"].z, 3.0)
+
+
+class TestResourceGoalField(unittest.TestCase):
+    """goal 里的单个 Resource 字段（如 ``Stir.vessel``）：引用整体进 data，未指定的容器发空消息。"""
+
+    def test_specified_vessel_keeps_its_reference(self):
+        from unilabos_msgs.action import Stir
+
+        reference = {"id": "beaker", "uuid": "6c8e2f7a-9a51-4c43-8f0e-2d4b1a7f5e10"}
+        goal = convert_to_ros_msg(Stir.Goal(), {"vessel": reference, "stir_time": 2.0})
+
+        self.assertEqual(resource_msg_to_dict(goal.vessel), reference)
+        self.assertEqual(goal.vessel.id, "beaker")
+        self.assertEqual(goal.stir_time, 2.0)
+
+    def test_unset_vessel_is_an_empty_resource(self):
+        from unilabos_msgs.action import Stir
+
+        for unset in (None, "", {}):
+            goal = convert_to_ros_msg(Stir.Goal(), {"vessel": unset, "stir_time": 2.0})
+            self.assertEqual(goal.vessel, Resource(), unset)
+            self.assertEqual(resource_msg_to_dict(goal.vessel), {})
+        self.assertEqual(convert_to_ros_msg(Stir.Goal(), {"stir_time": 2.0}).vessel, Resource())
 
 
 if __name__ == "__main__":

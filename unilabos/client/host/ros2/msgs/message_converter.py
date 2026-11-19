@@ -20,6 +20,7 @@ from rosidl_parser.definition import UnboundedSequence, NamespacedType, BasicTyp
 from unilabos.utils import logger
 from unilabos.utils.import_manager import ImportManager
 from unilabos.config.config import ROSConfig
+from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot
 from unilabos.resources.objects.joint_state import ResourceJointState
 
 # 定义泛型类型
@@ -142,6 +143,21 @@ def _resource_to_ros(x: Any) -> Any:
         name=str(x.get("name", "") or ""),
         data=json.dumps(x, ensure_ascii=False),
     )
+
+
+def _resource_field_to_ros(value: Any) -> Any:
+    """消息里的单个 ``Resource`` 字段（如 goal 的 ``vessel``），与 ``sequence<Resource>`` 元素同一契约。
+
+    引用整体 JSON 化放进 ``data``：``Resource`` 只有 id / name 等字段，逐字段拷贝会丢掉 uuid，
+    而接收端只解析 ``data``。未指定的可选容器（None / "" / {}）发空 ``Resource()``，接收端按
+    「未指定」处理（与 HostLink 的 ``is_unset_resource_slot`` 同一口径）。
+    """
+
+    if isinstance(value, Resource):
+        return value
+    if is_unset_resource_slot(value):
+        return Resource()
+    return _resource_to_ros(value)
 
 
 def _joint_state_to_ros(x: Any) -> Any:
@@ -393,6 +409,8 @@ def convert_to_ros_msg(ros_msg_type: Union[Type, Any], obj: Any) -> Any:
                     setattr(ros_msg, key, [float(i) for i in value])
                 else:
                     setattr(ros_msg, key, value)
+            elif isinstance(attr, Resource):
+                setattr(ros_msg, key, _resource_field_to_ros(value))
             else:
                 nested_ros_msg = convert_to_ros_msg(type(attr)(), value)
                 setattr(ros_msg, key, nested_ros_msg)

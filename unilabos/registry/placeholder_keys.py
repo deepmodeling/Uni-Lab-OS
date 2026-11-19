@@ -9,11 +9,12 @@
 
 ``@action(placeholder_keys={"参数名": PLACEHOLDER_...})`` 手写一份。最终给前端的（注册表条目的
 ``placeholder_keys``，以及 schema goal 里的 ``_unilabos_placeholder_info``）是两者的并集，同一参数两边
-不同时以手写的为准：传进去的是物料（``ResourceSlot``），网页上却希望显示另一种选择器时，只改显示。
+不同时以手写的为准：传进去的是物料（``ResourceSlot``），网页上却希望显示另一种选择器时（例如出库扣减在仓储里
+点选物料，执行时收到的是物料实例），只改显示。
 
-参数是什么（是不是物料、要不要解析成物料实例、加不加物料锁、怎么校验）仍由类型决定，与手写的选择器
-无关。唯一的兼容例外沿用此前的规则：手写成 ``unilabos_resources`` 的参数也算物料参数、加共享资源锁
-（见 :mod:`unilabos.registry.material_locks`）。
+参数是什么（是不是物料、要不要解析成物料实例、怎么校验）仍由类型决定，与手写的选择器无关。物料锁取并集：
+``ResourceSlot`` 类型的参数，加上合并后选择器为 ``unilabos_resources`` 的参数；后一半是签名看不到的 YAML /
+协议动作标出物料的唯一办法（见 :mod:`unilabos.registry.material_locks`）。
 
 手写的键必须是动作的参数名（注册时对照签名报错）；值不是已知种类时按定义告警一次、照常写入（前端以后
 可能加新的种类）。

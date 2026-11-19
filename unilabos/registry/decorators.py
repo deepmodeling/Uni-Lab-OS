@@ -440,7 +440,8 @@ def action(
         goal_default: 编辑器里的初始参数值 (字段名 -> 默认值)，叠加在签名默认值上；不改变参数是否必填
         placeholder_keys: 前端选择器 (参数名 -> ``placeholder_type`` 的 ``PLACEHOLDER_*``)。注册表按类型推出的
                           （ResourceSlot / DeviceSlot / SiteSlot）与它取并集，同一参数以这里写的为准；只改前端
-                          显示，不改参数类型与校验（兼容规则：标成 ``unilabos_resources`` 的参数也加物料锁）。
+                          显示，不改参数类型与校验（物料锁取并集：ResourceSlot 参数，加上选择器为
+                          ``unilabos_resources`` 的参数）。
                           键必须是参数名；值不是已知种类时告警一次（见 ``unilabos.registry.placeholder_keys``）
         always_free: 是否为永久闲置动作 (不受排队限制)
         is_protocol: 是否为工作站协议 (protocol)。True 时运行时走 protocol generator 路径。

@@ -1361,7 +1361,7 @@ class Registry:
             _fb_iv = action_args.get("feedback_interval", method_info.get("feedback_interval", 1.0))
             action_entry["feedback_interval"] = _fb_iv
             action_entry["error_policy"] = action_args.get("error_policy") or {}
-            # 物料参数（ResourceSlot，及兼容规则：选择器标成 unilabos_resources 的参数）加共享锁
+            # 物料锁取并集：ResourceSlot 参数，加上选择器（合并后）为 unilabos_resources 的参数
             action_entry["materials_need_lock"] = default_material_lock_parameters(
                 params=method_params, placeholder_keys=placeholder_keys
             )
@@ -1637,7 +1637,7 @@ class Registry:
 
         ``placeholder_keys`` = 按类型推出的（``ResourceSlot`` / ``DeviceSlot`` / ``SiteSlot``）∪ 手写的
         （``@action(placeholder_keys=...)``；YAML 条目里已有的同样算手写），同一参数以手写的为准。
-        物料锁按类型（schema 里的物料参数）推导，另按兼容规则加上选择器为 ``unilabos_resources`` 的参数。
+        物料锁取并集：按类型（schema 里的物料参数）推导的，加上选择器为 ``unilabos_resources`` 的参数。
         """
 
         from unilabos.registry.action_template_projection import compile_backend_action_handles

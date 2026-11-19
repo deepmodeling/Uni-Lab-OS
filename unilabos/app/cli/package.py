@@ -348,7 +348,7 @@ def build_action_value_mappings(
         entry["result"] = {"type": "object", "properties": {}}
         if goal_default:
             entry["goal_default"] = goal_default
-        # 与注册表同一规则：每个物料入参默认加锁（兼容规则：手写选择器标成 unilabos_resources 的入参同样加锁）
+        # 与注册表同一规则：物料锁取并集，ResourceSlot 入参加上选择器标成 unilabos_resources 的入参
         placeholder_keys = action_args.get("placeholder_keys")
         entry["materials_need_lock"] = default_material_lock_parameters(
             params=[param for param in params if isinstance(param, dict)],

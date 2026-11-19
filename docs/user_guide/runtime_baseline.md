@@ -45,7 +45,7 @@ Workstation/sub-device 初始化，以及 Host/Slave 跨进程和跨机器通信
 完整命令见[安装指南](installation.md)。默认不添加 RoboStack channel：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0a1"
 mamba activate unilab
 unilab --disable-browser
 ```

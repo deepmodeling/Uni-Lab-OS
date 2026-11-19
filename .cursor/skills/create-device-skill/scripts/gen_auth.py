@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-从 ak/sk 生成 UniLab API Authorization header。
+从 ak/sk 生成 Uni-Lab-OS API Authorization header。
 
 算法: base64(ak:sk) → "Authorization: Lab <token>"
 

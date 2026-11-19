@@ -2,6 +2,12 @@
 
 在 Uni-Lab 中，设备（Device）是实验操作的基础单元。Uni-Lab 使用**注册表机制**来兼容管理种类繁多的设备驱动程序。抽象的设备对外拥有【话题】【服务】【动作】三种通信机制，因此将设备添加进 Uni-Lab，实际上是将设备驱动中的这三种机制映射到 Uni-Lab 标准指令集上。
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库不再内置厂商驱动（PRCXI、LaiYu、Bioyond 工作站、HPLC、天平、机械臂等）。新设备请按 `.cursor/skills/create-device-package`（基于 LabDeviceTemplate）建立独立驱动包，用 `unilab package install <GitHub 仓库/归档/源码目录>` 安装，开发时也可用 `--devices <包目录>` 直接挂载。驱动包的注册表放在包内 `registry/{devices,resources}/`，结构与 `unilabos/registry` 相同；用 `@device` 装饰器时通常无需手写 YAML。下文示例中的 `my_device_pkg.xxx:Class` 就是你的驱动包里的模块路径。
+>
+> `unilabos/devices/` 只保留框架依赖的内置代码：`workstation/workstation_base.py`（`WorkstationBase`、`WorkStationContainer`）、`virtual/`（虚拟设备，供协议编译器、`--test_mode`、示例图和测试使用）、`liquid_handling/liquid_handler_abstract.py` 与 `rviz_backend.py`、`ros_dev/liquid_handler_joint_publisher*.py`。驱动包可以继承这些基类，但不要把新驱动加进这个目录。
+>
+> 驱动包自定义的 PLR 资源类或液体处理后端如果不在注册表条目里，需在包导入时调用 `unilabos.resources.plr_additional_res_reg.register_plr_module("<模块路径>")`（或给类加 `@register_plr_class`），物料反序列化才能找到它们。框架自己的预设类（`unilabos.resources.presets` 里的 `RegularContainer`、`Bottle`、`ItemizedCarrier`、`BottleCarrier`、`WareHouse`）已内置登记，直接使用或继承它们不需要再登记。
+
 > **💡 提示：** 本文档介绍如何使用已有的设备驱动（SDK）。若设备没有现成的驱动程序，需要自己开发驱动，请参考 {doc}`add_old_device`。
 
 ## 支持的驱动类型
@@ -21,7 +27,7 @@ from unilabos.registry.decorators import device, topic_config
     id="mock_gripper",
     category=["gripper"],
     description="Mock Gripper",
-    displayname="模拟夹爪",
+    display_name="模拟夹爪",
 )
 class MockGripper:
     def __init__(self):
@@ -147,14 +153,15 @@ public class MockGripper
 ```yaml
 my_device: # 设备唯一标识符
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice # Python 类路径
+    module: my_device_pkg.my_device:MyDevice # Python 类路径
     type: python # 驱动类型
 ```
 
 **注册表文件位置：**
 
-- 默认路径：`unilabos/registry/devices`
+- 驱动包内：`<包根>/registry/devices`（随 `unilab package install` 或 `--devices <包目录>` 自动加载）
 - 自定义路径：启动时使用 `--registry_path` 参数指定
+- `unilabos/registry/devices` 只放内置的工作站、抽象液体处理器等 YAML 注册表；内置虚拟设备与驱动包一样用装饰器注册（见 {doc}`../user_guide/virtual_devices`）
 - 可将多个设备写在同一个 YAML 文件中
 
 **系统自动生成的内容：**
@@ -171,7 +178,7 @@ my_device: # 设备唯一标识符
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.your_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     status_types: {} # 自动生成
     action_value_mappings: {} # 自动生成
@@ -181,7 +188,7 @@ my_device:
   schema: {} # 自动生成
 ```
 
-> 💡 **提示：** 详细的注册表编写指南和高级配置，请参考 {doc}`03_add_device_registry`。
+> 💡 **提示：** 详细的注册表编写指南和高级配置，请参考 {doc}`add_registry`。
 
 ---
 
@@ -197,7 +204,7 @@ from unilabos.registry.decorators import device, topic_config
     id="my_device",
     category=["general"],
     description="My Device",
-    displayname="我的设备",
+    display_name="我的设备",
 )
 class MyDevice:
     """设备类文档字符串
@@ -290,7 +297,7 @@ def get_sensor_data(self) -> Dict[str, float]:
 - 添加到注册表的 `status_types`
 - 定期发布到 ROS2 topic
 
-> **⚠️ 重要：** 仅有 `@property` 装饰器而没有 `@topic_config` 的属性**不会**被广播。这是一个 Breaking Change。
+> **⚠️ 重要：** 仅有 `@property` 装饰器而没有 `@topic_config` 的属性**不会**被广播。
 
 ### 动作方法
 
@@ -318,8 +325,8 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
     Args:
         duration: 持续时间(秒)
     """
-    # 使用 self.sleep 而不是 asyncio.sleep（ROS2 异步机制）
-    await self.sleep(duration)
+    # node 由 post_init 注入；该写法兼容 ROS2 与 HostLink backend
+    await self._node.sleep(duration)
     return {"success": True}
 ```
 
@@ -327,10 +334,92 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
 
 - 普通方法或 async 方法
 - 返回 Dict 类型的结果
-- 自动注册为 ROS2 Action
+- 自动注册为设备 Action；ROS backend 使用 ROS2，HostLink 使用 TCP RPC
 - 支持参数和返回值
 
+参数与返回值只有一个标准：注册表按方法签名生成 schema，调度端与 Host 调用前按它校验参数（没有默认值的参数必填，
+缺了直接报错），调用后按返回注解校验返回值（注解 `-> bool` 却返回字典会按失败处理）。没写类型的参数接受任意值。
+物料托管、搬运、分装等资源语义写在 `@action(material=Material.xxx(...))` 一个字段里。完整规则、资源语义写法和
+已删除的旧写法见 [动作的参数、返回值与资源语义](action_standard.md)。
+
+### 超时：`timeout` 与 `execution_timeout`
+
+`@action` 提供两道彼此独立的超时闸门，都由执行面在动作真正下发后启动看门狗，并在到期时进入
+错误决策链（`/api/v1/error-decisions`）：
+
+```python
+from unilabos.registry.decorators import action
+
+@action(
+    description="升温到目标温度",
+    timeout=600,                              # 硬超时：600 s 后取消动作，attempt 以 TimeoutException 进决策
+    execution_timeout="duration * 1.5 + 30",  # 业务软超时：按入参求值；到期只提醒，动作继续执行
+)
+async def heat_to(self, temperature: float = 25.0, duration: float = 60.0) -> Dict[str, Any]:
+    """升温并保温。
+
+    Args:
+        temperature[目标温度]: 单位摄氏度。
+        duration[保温时长]: 单位秒。
+    """
+    ...
+```
+
+| 参数 | 取值 | 到期行为 |
+|---|---|---|
+| `timeout` | 正数秒 | 执行面对动作发起协作式取消（HostLink 本地运行时同时用 `asyncio.wait_for` 真正取消协程动作；同步方法的线程无法被杀死）；attempt 以 `exception_type=TimeoutException`（`category=timeout`）进入决策链，选项与普通失败相同。工作流按决策继续，但驱动真实返回之前该 attempt 的设备 / 物料锁一直保留（ADR 0008），需要同一设备的后续动作排队等待；线程返回后结果作为迟到结果记录，不改变已结算的 attempt |
+| `execution_timeout` | 正数秒，或只引用**本动作入参**的四则运算表达式（`+ - * /`、括号、一元负号、数字字面量，如 `"duration * 1.5 + 30"`） | 动作**不被取消**；执行面以 `exception_type=ExecutionTimeoutException`（`severity=warning`，报告带 `action_still_running=true`）打开一条决策，选项前置 `wait`（继续等待并按同样秒数重新计时）；选 `abort` / `retry` / `operator_intervention` 时才取消动作。动作在等待期间真实完成则真实结果优先，决策自动收回 |
+
+表达式在声明期只校验语法与参数名（引用了非入参名会在 `@action` 或 `--check_mode` 时报错），
+注册表保存归一化后的字符串（如 `duration * 1.5 + 30`）；派发前由调度器用**最终**
+`action_args`（叠加注册表 `goal_default`，也就是函数签名默认值）求值，参数缺失或不是数字时
+只记录告警、放弃这一道看门狗，不阻断下发。工作流节点还可以用 `execution_policy.timeout_seconds` /
+`execution_policy.execution_timeout_seconds`（正整数，0 = 未声明）覆盖注册表声明。
+
+> `error_policy.options` 按异常类名匹配：需要给超时定制选项时，用 `"TimeoutException"` /
+> `"ExecutionTimeoutException"` 作为键。两个超时可以同时声明，软超时应小于硬超时，否则永远不会先触发。
+>
+> 超时之后设备可能被长时间锁住：同步驱动最好在长循环里调用 `context.raise_if_cancelled()`
+> 配合取消，让驱动尽快真正返回；否则只能等它自然返回，或由操作员在现场核实后经
+> `POST /api/v1/workflow-tasks/{uuid}/execution-locks/{lease_uuid}/force-release` 强制释放。
+
+### 预计时长：`estimate_duration_fixed` 与 `estimate_duration_express`
+
+预计时长告诉操作员一个动作大概要跑多久，用在时间线（`/api/v1/timeline`）、监控面板和任务 ETA 上。
+它**不是**准入条件，也不影响上面两道超时。字段名与 V1 相同，V1 写的驱动可以原样迁移：
+
+```python
+@action(
+    description="离心",
+    estimate_duration_fixed=30,                  # 兜底秒数（≥ 0）
+    estimate_duration_express="cycles * 20 + 5",  # 按入参计算；也认 V1 写法 "{cycles} * 20 + 5"
+)
+def spin(self, cycles: int = 3) -> Dict[str, Any]:
+    ...
+```
+
+| 声明 | 派发时得到的预计时长 |
+| --- | --- |
+| 表达式能用**最终** `action_args`（叠加 `goal_default`）求出 ≥ 0 的有限数 | 表达式的值，来源 `expression` |
+| 表达式缺参数、参数不是数字、除零或结果为负 | 退回兜底，原因记日志 |
+| 写了 `estimate_duration_fixed` | 该秒数，来源 `fixed` |
+| 两个都没写 | 60 s，来源 `default`（与 V1 相同） |
+| `estimate_duration_fixed=None` | 不给出预计时长 |
+
+表达式与 `execution_timeout` 同一套语法（只允许入参名、数字、`+ - * /`、括号、一元正负号），声明期
+校验语法与入参名。调度器在派发每个 attempt 时求值，结果记在 attempt 上（`estimated_s` /
+`estimate_source`，`GET /api/v1/workflow-node-jobs/{uuid}` 可见）。时间线依次取：attempt 上的
+`expression` / `fixed` → 同一「设备:动作」的历史实测均值（`observed`）→ `default` 的 60 s → 没有（`unknown`）。
+
 ### 返回值设计指南
+
+> **⚠️ 动作失败要 `raise`，不要靠返回值表达**
+>
+> 普通 `@action`（`UniLabJsonCommand`）的成败只看方法有没有抛异常：返回 `False`、`{"success": False}`
+> 或带 `error` 字段的字典都按**成功**结算，后续节点照常执行、库存按成功扣减。设备报错、参数非法、
+> 结果不合格需要中止流程时，抛出异常（可用自定义异常类，见下文「自定义异常」），失败处置走
+> `error_policy`。返回值只承载结果数据（测量值、状态说明等），供下游节点引用和前端展示。
+> （与 V1 不同：V1 会把 `success=false` 判为失败。）
 
 > **⚠️ 重要：返回值会自动显示在前端**
 >
@@ -340,24 +429,16 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
 
 ```python
 def my_action(self, param: float) -> Dict[str, Any]:
-    """执行操作"""
-    try:
-        # 执行操作...
-        result = self._do_something(param)
+    """执行操作；失败时抛异常，不返回失败字典"""
+    # 执行操作；设备报错时 _do_something 抛出的异常直接向上传播，节点按失败结算
+    result = self._do_something(param)
 
-        return {
-            "success": True,              # 必需：操作是否成功
-            "message": "操作完成",          # 推荐：用户友好的消息
-            "result": result,             # 可选：具体结果数据
-            "param_used": param,          # 可选：记录使用的参数
-            # 其他有用的信息...
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "操作失败"
-        }
+    return {
+        "message": "操作完成",          # 推荐：用户友好的消息
+        "result": result,             # 可选：具体结果数据
+        "param_used": param,          # 可选：记录使用的参数
+        # 其他有用的信息...
+    }
 ```
 
 **最佳实践示例（参考 `host_node.test_latency`）：**
@@ -401,42 +482,32 @@ def test_latency(self) -> Dict[str, Any]:
 
 **返回值设计建议：**
 
-1. **始终包含 `success` 字段**：布尔值，表示操作是否成功
+1. **成败靠异常表达**：失败就 `raise`；返回值里的 `success` / `error` 字段只是展示数据，不影响结算
 2. **包含 `message` 字段**：字符串，提供用户友好的描述
 3. **使用有意义的键名**：使用描述性的键名（如 `avg_rtt_ms` 而不是 `v1`）
 4. **包含单位**：在键名中包含单位（如 `_ms`、`_ml`、`_celsius`）
 5. **记录重要参数**：返回使用的关键参数值，便于追溯
-6. **错误信息详细**：失败时包含 `error` 字段和详细的错误描述
+6. **错误信息详细**：异常消息写清原因和关键参数，它会记进作业的错误信息
 7. **避免返回大数据**：不要返回大型数组或二进制数据，这会影响前端性能
 
 **错误处理示例：**
 
 ```python
 def risky_operation(self, param: float) -> Dict[str, Any]:
-    """可能失败的操作"""
+    """可能失败的操作：参数非法、通信失败都抛异常"""
     if param < 0:
-        return {
-            "success": False,
-            "error": "参数不能为负数",
-            "message": f"无效参数: {param}",
-            "param": param
-        }
+        raise ValueError(f"参数不能为负数: {param}")
 
     try:
         result = self._execute(param)
-        return {
-            "success": True,
-            "message": "操作成功",
-            "result": result,
-            "param": param
-        }
     except IOError as e:
-        return {
-            "success": False,
-            "error": "通信错误",
-            "message": str(e),
-            "device_status": self._status
-        }
+        # 补充上下文后重新抛出，保留原始异常链
+        raise RuntimeError(f"通信错误（设备状态 {self._status}）: {e}") from e
+    return {
+        "message": "操作成功",
+        "result": result,
+        "param": param
+    }
 ```
 
 ## 特殊参数类型：ResourceSlot 和 DeviceSlot
@@ -668,6 +739,12 @@ my_device:
 - `unilabos_resources`: 渲染为资源选择下拉框
 - `unilabos_devices`: 渲染为设备选择下拉框
 
+按类型推出的选择器之外，其他前端选择器（节点、人工确认指派人、出库扣减等）或想把某个参数换一种显示时，在
+`@action(placeholder_keys={"参数名": PLACEHOLDER_...})` 里手写。最终的 `placeholder_keys` 是按类型推出的与手写的并集，
+同一参数以手写的为准；手写的只改前端显示，参数类型与校验不变。例如
+`@action(placeholder_keys={"mount_resource": PLACEHOLDER_NODES})` 让 `mount_resource: ResourceSlot` 显示节点选择器，
+它仍是物料参数（加锁、解析成物料实例）。规则见 `action_standard.md`。
+
 #### 4. 运行时解析
 
 用户选择资源/设备后，实际调用时会传入完整的资源/设备对象：
@@ -680,6 +757,19 @@ source.name      # "96孔板"
 source.type      # "resource"
 source.class_    # "corning_96_wellplate_360ul_flat"
 ```
+
+## 继承内置液体处理器 `LiquidHandlerAbstract`
+
+驱动包里的 PyLabRobot 液体处理器可以继承 `unilabos.devices.liquid_handling.liquid_handler_abstract.LiquidHandlerAbstract`，用 `@action` 重新声明要暴露的动作并调用 `super()`。基类的约定：
+
+- **触壁（`touch_tip`）**：`transfer_liquid`、`add_liquid`、`remove_liquid` 只在参数 `touch_tip=True` 时触壁，默认不触壁。`touch_tip()` 接受单个孔或孔列表，用当前装着枪头的通道在孔的左右两壁各做一次 0 uL 吸液；0 uL 吸液不改变枪头里记录的样品。后端做不了触壁的设备设 `support_touch_tip = False`，`touch_tip()` 即什么都不做。
+- **耗材**：`aspirate()` / `dispense()` 用 `unilabos_extra` 记录样品 uuid，直接用 PLR 工厂建的耗材（没有 `unilabos_extra`）也可以吸排；`use_channels=None` 时与 PLR 一样取前 N 个通道。
+- **枪头**：`transfer_liquid(tip_racks=...)` 直接使用传入的枪头盒，不需要先调用 `set_tiprack`；与上一次相同的枪头盒（同一对象或同一物料 uuid）接着上次的位置往后取，不同的枪头盒从它第一个有枪头的位置取，空列表沿用 `set_tiprack` 设定的枪头盒。PLR 默认不跟踪枪头（取走的位置 `has_tip()` 仍为 True），所以连续调用不会回到 A1；`set_tiprack` 则明确从头开始，开启 PLR 枪头跟踪时跳过已取走的位置。`add_liquid` / `remove_liquid` 不带枪头盒参数，使用 `set_tiprack` 设定的枪头盒。没有可用枪头盒或枪头用完时报 `RuntimeError`。
+- **体积**：`asp_vols` / `dis_vols` 可以是单个体积（标量或单元素列表），按模式展开：一对一两者都展开到每一对；一对多的 `dis_vols` 展开到每个目标（`asp_vols` 仍是总吸液量）；多对一的 `asp_vols` 展开到每个源（`dis_vols` 仍是汇总体积）。`add_liquid` / `remove_liquid` 的单个体积对所有目标 / 源通用，`add_liquid` 的单个试剂源也对所有目标通用。
+- **通道**：`transfer_liquid`、`add_liquid`、`remove_liquid` 的 `use_channels` 缺省为设备全部通道（`channel_num`），在这些通道上取枪头、吸排、丢枪头。
+- **混匀（`mix`）**：在每个目标孔内吸排 `mix_time` 次（需已装枪头、需要 `mix_vol`）；用当前装着枪头的通道，每孔一个通道同时混匀，孔多于通道时分批。`offsets` 可以是一个 `Coordinate` 或与目标等长的列表。
+
+子类覆盖这些方法时保留同样的调用方式：基类内部按关键字调用 `self.mix(targets=..., mix_time=..., mix_vol=..., offsets=..., height_to_bottom=..., mix_rate=...)`、`self.touch_tip(targets)` 与 `self.set_tiprack(tip_racks)`。
 
 ## 支持的通信方式
 
@@ -731,21 +821,33 @@ class TCPDevice:
 
 ```python
 from pymodbus.client import ModbusTcpClient
+from unilabos.device_comms.modbus_plc.modbus import call_with_slave
 
 class ModbusDevice:
     def __init__(self, config: Dict[str, Any]):
         self.host = config['host']
         self.port = config.get('port', 502)
+        self.slave_id = config.get('slave_id', 1)
         self.client = ModbusTcpClient(self.host, port=self.port)
         self.client.connect()
 
     def read_register(self, address: int) -> int:
-        result = self.client.read_holding_registers(address, 1)
+        result = call_with_slave(self.client.read_holding_registers, address, count=1, slave=self.slave_id)
         return result.registers[0]
 
     def write_register(self, address: int, value: int):
-        self.client.write_register(address, value)
+        call_with_slave(self.client.write_register, address, value, slave=self.slave_id)
 ```
+
+核心允许 `pymodbus>=3.6.9,<4`（3.8.0 / 3.8.1 除外：它们在 Python 3.14 上无法创建同步客户端），这个范围里接口变过：
+
+- 从站地址关键字 3.6.9–3.9 叫 `slave`，3.10 起叫 `device_id`，用错名字直接 `TypeError`。直接调用 pymodbus 时用 `call_with_slave(方法, ..., slave=N)`，它按方法签名选名字。
+- 3.8 起 `count` 等参数只能按关键字传（`read_holding_registers(address, count=1)`）。
+- `convert_from_registers` / `convert_to_registers` 3.8 之前没有 `word_order`；`modbus.py` 的同名函数在老版本上自行交换字序。
+
+核心的 `device_comms/modbus_plc`（`TCPClient` / `RTUClient` 与 `Coil`、`HoldRegister` 等节点）已经处理这些差异，节点的 `read(..., slave=N)` / `write(..., slave=N)` 在整个范围内可用。
+
+每个 `TCPClient` / `RTUClient` 实例有自己的节点表、函数表和工作流表（`opcua_client` 的客户端同样），一个驱动里连多台 PLC、或一个进程里跑多个工作站时互不影响；读地址表的 `load_csv` 需要 pandas（`drivers` 可选依赖），导入客户端模块本身不需要。
 
 ### 4. OPC UA
 
@@ -802,110 +904,100 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
     """长时间运行的操作"""
     self._status = "running"
 
-    # 使用 ROS2 提供的 sleep 方法（而不是 asyncio.sleep）
-    await self.sleep(duration)
+    # 使用通用 DeviceNode，驱动无需判断当前 backend
+    await self._node.sleep(duration)
 
-    # 可以在过程中发送feedback
-    # 需要配合ROS2 Action的feedback机制
+    # ActionContext 可在 ROS 和 HostLink 中发送 feedback、接收取消
 
     self._status = "idle"
     return {"success": True, "duration": duration}
 ```
 
-> **⚠️ 重要提示：ROS2 异步机制 vs Python asyncio**
+> **异步驱动的兼容写法**
 >
-> Uni-Lab 的设备驱动虽然使用 `async def` 语法，但**底层是 ROS2 的异步机制，而不是 Python 的 asyncio**。
+> 驱动通过 `post_init(node)` 保存通用 `DeviceNode`，不要继承或导入
+> `BaseROS2DeviceNode`。`node.sleep()`、`node.create_task()`、Topic 和设备 Action
+> API 会由当前 backend 实现。
 >
-> **不能使用的 asyncio 功能：**
->
-> - ❌ `asyncio.sleep()` - 会导致 ROS2 事件循环阻塞
-> - ❌ `asyncio.create_task()` - 任务不会被 ROS2 正确调度
-> - ❌ `asyncio.gather()` - 无法与 ROS2 集成
-> - ❌ 其他 asyncio 标准库函数
->
-> **应该使用的方法（继承自 BaseROS2DeviceNode）：**
->
-> - ✅ `await self.sleep(seconds)` - ROS2 兼容的睡眠
-> - ✅ `await self.create_task(func, **kwargs)` - ROS2 兼容的任务创建
-> - ✅ ROS2 的 Action/Service 回调机制
+> - HostLink backend 使用标准 Python `asyncio` 事件循环，可使用
+>   `asyncio.gather()`、`asyncio.wait_for()` 等原生能力。
+> - ROS backend 由 rclpy executor 调度。需要同时支持两类 backend 的驱动，优先使用
+>   `DeviceNode` 提供的 `sleep()` 和 `create_task()`。
+> - 同步动作调用使用 `node.call_device_action(...)`；异步动作中使用
+>   `await node.call_device_action_async(...)`，不要用同步调用阻塞当前事件循环。
 >
 > **示例：**
 >
 > ```python
 > async def complex_operation(self, duration: float) -> Dict[str, Any]:
->     """正确使用 ROS2 异步方法"""
+>     """同一份驱动可在 ROS2 和 HostLink backend 中运行。"""
 >     self._status = "processing"
 >
->     # ✅ 正确：使用 self.sleep
->     await self.sleep(duration)
+>     await self._node.sleep(duration)
 >
->     # ✅ 正确：创建并发任务
->     task = await self.create_task(self._background_work)
->
->     # ❌ 错误：不要使用 asyncio
->     # await asyncio.sleep(duration)  # 这会导致问题！
->     # task = asyncio.create_task(...)  # 这也不行！
+>     result = await self._node.call_device_action_async(
+>         "heater-2",
+>         "set_temperature",
+>         {"temperature": 60.0},
+>     )
 >
 >     self._status = "idle"
->     return {"success": True}
+>     return {"success": True, "peer_result": result}
 >
 > async def _background_work(self):
 >     """后台任务"""
->     await self.sleep(1.0)
->     self.lab_logger().info("Background work completed")
+>     await self._node.sleep(1.0)
+>     self._node.lab_logger().info("Background work completed")
 > ```
 >
-> **为什么不能混用？**
+> **后端差异：**
 >
-> ROS2 使用 `rclpy` 的事件循环来管理所有异步操作。如果使用 `asyncio` 的函数，这些操作会在不同的事件循环中运行，导致：
->
-> - ROS2 回调无法正确执行
-> - 任务可能永远不会完成
-> - 程序可能死锁或崩溃
->
-> **参考实现：**
->
-> `BaseROS2DeviceNode` 提供的方法定义（`base_device_node.py:563-572`）：
->
-> ```python
-> async def sleep(self, rel_time: float, callback_group=None):
->     """ROS2 兼容的异步睡眠"""
->     if callback_group is None:
->         callback_group = self.callback_group
->     await ROS2DeviceNode.async_wait_for(self, rel_time, callback_group)
->
-> @classmethod
-> async def create_task(cls, func, trace_error=True, **kwargs) -> Task:
->     """ROS2 兼容的任务创建"""
->     return ROS2DeviceNode.run_async_func(func, trace_error, **kwargs)
-> ```
+> HostLink 为每个设备维护标准 Python 事件循环；ROS backend 使用 rclpy
+> executor。只在 HostLink 中运行的驱动可以直接使用 Python `asyncio`；需要在
+> 两类 backend 中运行时，通过 `DeviceNode` 调度即可，不需要在驱动中写 backend 判断。
+
+### `post_init` 的可选入参：位点与持有的物料
+
+声明了 `available_sites` 或在图中挂了物料的设备，装配时会按物料权威取回它的位点和
+持有的物料。驱动不必再从 `node.resource_tracker` 或物料权威反查——在 `post_init`
+里**按名声明**需要的参数即可，框架按签名注入（只写 `post_init(self, node)` 的驱动不受
+影响；`**kwargs` 不会被隐式注入）：
+
+```python
+def post_init(self, node, sites=None, resources=None, site_resources=None):
+    self._node = node
+    self._site_uuid = {label: site.uuid for label, site in sites.items()}   # 位点 uuid / pose / 占用
+    self.deck = resources["PRCXI_Deck"]                                     # 直接挂在设备上的台面
+    plate = site_resources["slot_1"]                                        # 该位点上的板，空位为 None
+```
+
+| 参数 | 类型 | 内容 |
+|---|---|---|
+| `sites` | `dict[label, ResourceSite]` | 设备自身的位点：`uuid`、`index`、`pose`、`occupied_material_uuid` |
+| `resources` | `dict[name, PLR Resource]` | 设备持有的物料实例：位点上的占用物、直接挂在设备上的台面（与 tracker 里同一份实例） |
+| `site_resources` | `dict[label, PLR Resource \| None]` | 位点 → 占用物的对应 |
+
+三者都以权威为准（不是图文件的初值）。运行期上下料仍经 `resource_tree_add/remove`
+回调与 `materials.*` 门面同步，见 `examples/materials_operations_guide.md`。
 
 ## 错误处理
 
 ### 基本错误处理
+
+普通 `@action` 的成败只看方法有没有抛异常（见「返回值设计指南」）。捕获异常是为了更新设备状态或补充上下文，
+处理完要继续抛出，不能改成返回 `{"success": False}`，否则节点按成功结算。
 
 ```python
 def operation_with_error_handling(self, param: float) -> Dict[str, Any]:
     """带错误处理的操作"""
     try:
         result = self._risky_operation(param)
-        return {
-            "success": True,
-            "result": result
-        }
     except ValueError as e:
-        return {
-            "success": False,
-            "error": "Invalid parameter",
-            "message": str(e)
-        }
+        raise ValueError(f"Invalid parameter: {e}") from e
     except IOError as e:
         self._status = "error"
-        return {
-            "success": False,
-            "error": "Communication error",
-            "message": str(e)
-        }
+        raise RuntimeError(f"Communication error: {e}") from e
+    return {"result": result}
 ```
 
 ### 自定义异常
@@ -943,7 +1035,7 @@ from unilabos.registry.decorators import device
     id="my_heating_device",
     category=["heating"],
     description="My Heating Device",
-    displayname="加热设备",
+    display_name="加热设备",
     icon="heater.webp",
 )
 class MyDevice:
@@ -953,7 +1045,7 @@ class MyDevice:
 - `id`：设备唯一标识符，用于注册表匹配；只能包含英文大小写字母、数字、下划线，不能包含中文、空格、短横线、点号或其他符号
 - `category`：分类列表，前端用于分组显示
 - `description`：设备描述
-- `displayname`：设备显示名称，用于 UI 展示中文名或更友好的名称；不要把显示名写进 `id`
+- `display_name`：设备显示名称，用于 UI 展示中文名或更友好的名称；不要把显示名写进 `id`
 - `icon`：图标文件名（可选）
 
 ### 2. 使用 `@topic_config` 声明需要广播的状态
@@ -1103,14 +1195,13 @@ return {
 
 进阶主题：
 
-- {doc}`03_add_device_registry` - 了解如何配置注册表
-- {doc}`04_add_device_testing` - 学习如何测试设备
+- {doc}`add_registry` - 了解如何配置注册表
 - {doc}`add_old_device` - 没有 SDK 时如何开发设备驱动
 
 ## 参考
 
 - [Python 类型注解](https://docs.python.org/3/library/typing.html)
-- [ROS2 rclpy 异步编程](https://docs.ros.org/en/humble/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html) - Uni-Lab 使用 ROS2 的异步机制
+- [ROS2 rclpy 异步编程](https://docs.ros.org/en/jazzy/Tutorials/Intermediate/Writing-an-Action-Server-Client/Py.html) - Uni-Lab 使用 ROS2 的异步机制
 - [串口通信](https://pyserial.readthedocs.io/)
 
 > **注意：** 虽然设备驱动使用 `async def` 语法，但请**不要参考** Python 标准的 [asyncio 文档](https://docs.python.org/3/library/asyncio.html)。Uni-Lab 使用的是 ROS2 的异步机制，两者不兼容。请使用 `self.sleep()` 和 `self.create_task()` 等 BaseROS2DeviceNode 提供的方法。

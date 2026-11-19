@@ -63,6 +63,36 @@ class ColoredFormatter(logging.Formatter):
         "DATE": "\033[37m",  # 日期始终使用灰色
     }
 
+    # 组件配色：让微后端、调度器、HostLink 等子系统的 TRACE/DEBUG/INFO 日志在
+    # 控制台里一眼可分；WARNING 及以上仍按级别着色，保证严重程度不被组件色盖住。
+    COMPONENT_COLORS = {
+        "microbackend": "\033[96m",  # 亮青色
+        "scheduler": "\033[95m",  # 亮紫色
+        "hostlink": "\033[94m",  # 亮蓝色
+    }
+    # 消息开头的 [Tag] → 组件；适用于经 unilabos.utils.log 便捷函数打出的日志
+    TAG_COMPONENTS = {
+        "Microbackend": "microbackend",
+        "EdgeMicrobackend": "microbackend",
+        "Web": "microbackend",
+        "Uvicorn": "microbackend",
+        "Uvicorn.HTTP": "microbackend",
+        "FastAPI": "microbackend",
+        "Scheduler": "scheduler",
+        "JobExecutionBackend": "scheduler",
+        "HostLink": "hostlink",
+    }
+    # logger 名前缀 → 组件；适用于 logging.getLogger(__name__) 的模块，取最长匹配
+    MODULE_COMPONENTS = {
+        "unilabos.server": "microbackend",
+        "unilabos.server.backend.scheduler": "scheduler",
+        "unilabos.server.backend.execution": "scheduler",
+        "unilabos.server.backend.execution_queue": "scheduler",
+        "unilabos.server.backend.coordinator": "scheduler",
+        "unilabos.backend.hostlink": "hostlink",
+    }
+    _COMPONENT_COLOR_MAX_LEVEL = logging.INFO
+
     def __init__(self, use_colors=True, microseconds=False, show_thread=False):
         super().__init__()
         # 强制启用颜色
@@ -89,6 +119,30 @@ class ColoredFormatter(logging.Formatter):
         thread_part = f" [{record.threadName}]" if self.show_thread else ""
         return f"{thread_part} [{func_line}] [{module_path}]"
 
+    def _component_of(self, record, message: str):
+        """按消息标签或 logger 名判定日志所属组件，找不到返回 None。"""
+        if message.startswith("["):
+            end = message.find("]")
+            if end > 1:
+                component = self.TAG_COMPONENTS.get(message[1:end])
+                if component:
+                    return component
+        name = record.name or ""
+        best = None
+        for prefix, component in self.MODULE_COMPONENTS.items():
+            if (name == prefix or name.startswith(prefix + ".")) and (
+                best is None or len(prefix) > len(best[0])
+            ):
+                best = (prefix, component)
+        return best[1] if best else None
+
+    def _text_color_for(self, record, message: str) -> str:
+        if record.levelno <= self._COMPONENT_COLOR_MAX_LEVEL:
+            component = self._component_of(record, message)
+            if component in self.COMPONENT_COLORS:
+                return self.COMPONENT_COLORS[component]
+        return self.COLORS.get(f"{record.levelname}_TEXT", self.COLORS["WHITE"])
+
     def format(self, record):
         # 检查是否有自定义堆栈信息
         if hasattr(record, "custom_stack_info") and record.custom_stack_info:  # type: ignore
@@ -102,8 +156,11 @@ class ColoredFormatter(logging.Formatter):
         if not self.use_colors:
             return self._format_basic(record)
 
+        # 主要消息
+        main_msg = record.getMessage()
+
         level_color = self.COLORS.get(f"{record.levelname}_LEVEL", self.COLORS["WHITE"])
-        text_color = self.COLORS.get(f"{record.levelname}_TEXT", self.COLORS["WHITE"])
+        text_color = self._text_color_for(record, main_msg)
         date_color = self.COLORS["DATE"]
         reset = self.COLORS["RESET"]
 
@@ -112,9 +169,6 @@ class ColoredFormatter(logging.Formatter):
 
         # 线程、模块和函数信息
         right_info = self._format_right_info(record)
-
-        # 主要消息
-        main_msg = record.getMessage()
 
         # 构建基本消息格式
         formatted_message = (
@@ -163,6 +217,30 @@ class ColoredFormatter(logging.Formatter):
         return formatted_exc
 
 
+def _console_colors_enabled() -> bool:
+    """遵循 https://no-color.org：非空 NO_COLOR 关闭控制台着色（受管子进程由拉起方设置）。"""
+
+    return not os.environ.get("NO_COLOR")
+
+
+def _create_log_file(logs_dir: str, stem: str) -> str:
+    """独占创建日志文件并返回路径。
+
+    文件名只到秒：同一秒拉起的多个进程（Host 同时启动几个受管 Slave）会算出同一个
+    名字，各自 append 就混成一份日志。首选名已存在时改用 ``<stem>-<pid>.log``。
+    """
+
+    candidates = [f"{stem}.log", f"{stem}-{os.getpid()}.log"]
+    for filename in candidates:
+        path = os.path.join(logs_dir, filename)
+        try:
+            os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        except FileExistsError:
+            continue
+        return path
+    return os.path.join(logs_dir, candidates[-1])
+
+
 def _to_numeric_level(loglevel, default=logging.DEBUG) -> int:
     """将日志级别(字符串/常量)统一转换为数字级别。
 
@@ -184,6 +262,14 @@ def _to_numeric_level(loglevel, default=logging.DEBUG) -> int:
 
 
 # 配置日志处理器
+_log_file_path: str | None = None
+
+
+def get_log_file_path() -> str | None:
+    """仅暴露本进程 configure_logger 选择的主日志，不包含通信日志或任意文件。"""
+    return _log_file_path
+
+
 def configure_logger(loglevel=None, working_dir=None):
     """配置日志记录器
 
@@ -191,6 +277,8 @@ def configure_logger(loglevel=None, working_dir=None):
         loglevel: 日志级别，可以是字符串（'TRACE', 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'）
                  或logging模块的常量（如logging.DEBUG）或TRACE_LEVEL
     """
+    global _log_file_path
+    _log_file_path = None
     # 获取根日志记录器
     root_logger = logging.getLogger()
     root_logger.setLevel(TRACE_LEVEL)
@@ -206,35 +294,20 @@ def configure_logger(loglevel=None, working_dir=None):
     console_handler.setLevel(numeric_level)  # 使用与根记录器相同的级别
 
     # 使用自定义的颜色格式化器
-    color_formatter = ColoredFormatter()
+    color_formatter = ColoredFormatter(use_colors=_console_colors_enabled())
     console_handler.setFormatter(color_formatter)
 
     # 添加处理器到根日志记录器
     root_logger.addHandler(console_handler)
-    
-    # 降低第三方库的日志级别，避免过多输出
-    # pymodbus 库的日志太详细，设置为 WARNING
-    logging.getLogger('pymodbus').setLevel(logging.WARNING)
-    logging.getLogger('pymodbus.logging').setLevel(logging.WARNING)
-    logging.getLogger('pymodbus.logging.base').setLevel(logging.WARNING)
-    logging.getLogger('pymodbus.logging.decoders').setLevel(logging.WARNING)
-    
-    # websockets 库的日志输出较多，设置为 WARNING
-    logging.getLogger('websockets').setLevel(logging.WARNING)
-    logging.getLogger('websockets.client').setLevel(logging.WARNING)
-    logging.getLogger('websockets.server').setLevel(logging.WARNING)
-    
-    # ROS 节点的状态更新日志过于频繁，设置为 INFO
-    logging.getLogger('unilabos.ros.nodes.presets.host_node').setLevel(logging.INFO)
 
     # 如果指定了工作目录，添加文件处理器
+    log_filepath = None
     if working_dir is not None:
         logs_dir = os.path.join(working_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
 
         # 生成日志文件名：日期 时间.log
-        log_filename = datetime.now().strftime("%Y-%m-%d %H-%M-%S") + ".log"
-        log_filepath = os.path.join(logs_dir, log_filename)
+        log_filepath = _create_log_file(logs_dir, datetime.now().strftime("%Y-%m-%d %H-%M-%S"))
 
         # 创建文件处理器
         file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
@@ -245,9 +318,17 @@ def configure_logger(loglevel=None, working_dir=None):
         file_handler.setFormatter(file_formatter)
 
         root_logger.addHandler(file_handler)
+        _log_file_path = log_filepath
+        from unilabos.utils.log_notices import LogAppendHandler
+
+        root_logger.addHandler(LogAppendHandler())
 
     logging.getLogger("asyncio").setLevel(logging.INFO)
     logging.getLogger("urllib3").setLevel(logging.INFO)
+    # 权威进程转发 Host 路由用 httpx；它的 DEBUG 是逐连接字节级 trace
+    logging.getLogger("httpcore").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    return log_filepath
 
 
 # ============================================================================
@@ -311,7 +392,9 @@ def configure_comm_logger(working_dir=None, loglevel=None):
     # 控制台 handler：保留实时可见性，带线程名便于现场观察
     console_handler = logging.StreamHandler()
     console_handler.setLevel(_to_numeric_level(loglevel))
-    console_handler.setFormatter(ColoredFormatter(use_colors=True, show_thread=True))
+    console_handler.setFormatter(
+        ColoredFormatter(use_colors=_console_colors_enabled(), show_thread=True)
+    )
     comm_logger.addHandler(console_handler)
 
     log_filepath = None
@@ -319,8 +402,9 @@ def configure_comm_logger(working_dir=None, loglevel=None):
         logs_dir = os.path.join(working_dir, "logs")
         os.makedirs(logs_dir, exist_ok=True)
 
-        log_filename = "ws_comm_" + datetime.now().strftime("%Y-%m-%d %H-%M-%S") + ".log"
-        log_filepath = os.path.join(logs_dir, log_filename)
+        log_filepath = _create_log_file(
+            logs_dir, "ws_comm_" + datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        )
 
         file_handler = logging.FileHandler(log_filepath, encoding="utf-8")
         file_handler.setLevel(TRACE_LEVEL)  # 全量保留到本地
@@ -502,6 +586,18 @@ if __name__ == "__main__":
     warning("这是一条警告日志 (WARNING级别显示为黄色，其他文本也为黄色)")
     error("这是一条错误日志 (ERROR级别显示为红色，其他文本也为红色)")
     critical("这是一条严重错误日志 (CRITICAL级别显示为紫色，其他文本也为紫色)")
+    print("测试组件配色:")
+    info("[Microbackend] 启动 FastAPI: 0.0.0.0:8002 (微后端：亮青色)")
+    info("[HostLink] server listening on 0.0.0.0:7302 (HostLink：亮蓝色)")
+    logging.getLogger("unilabos.server.backend.scheduler.service").info(
+        "workflow node retrying as attempt 2 (调度器：按模块名匹配，亮紫色)"
+    )
+    logging.getLogger("unilabos.server.backend.execution").info(
+        "[JobExecutionBackend] job start now (调度器执行链路：亮紫色)"
+    )
+    logging.getLogger("unilabos.server.backend.scheduler.service").warning(
+        "组件色不覆盖 WARNING 及以上级别，这一条仍是黄色"
+    )
     # 测试异常输出
     try:
         1 / 0

@@ -5,6 +5,7 @@ eppendorf_96_tiprack_1000ul_eptips:
     module: pylabrobot.resources.opentrons.tip_racks:eppendorf_96_tiprack_1000ul_eptips
     type: pylabrobot
   description: Eppendorf 96 tiprack 1000ul eptips
+  display_name: Eppendorf 96 位枪头盒 1000µL epTIPS
   handles: []
   icon: ''
   init_param_schema: {}
@@ -16,6 +17,7 @@ eppendorf_96_tiprack_10ul_eptips:
     module: pylabrobot.resources.opentrons.tip_racks:eppendorf_96_tiprack_10ul_eptips
     type: pylabrobot
   description: Eppendorf 96 tiprack 10ul eptips
+  display_name: Eppendorf 96 位枪头盒 10µL epTIPS
   handles: []
   icon: ''
   init_param_schema: {}
@@ -27,6 +29,7 @@ geb_96_tiprack_1000ul:
     module: pylabrobot.resources.opentrons.tip_racks:geb_96_tiprack_1000ul
     type: pylabrobot
   description: Geb 96 tiprack 1000ul
+  display_name: GEB 96 位枪头盒 1000µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -38,6 +41,7 @@ geb_96_tiprack_10ul:
     module: pylabrobot.resources.opentrons.tip_racks:geb_96_tiprack_10ul
     type: pylabrobot
   description: Geb 96 tiprack 10ul
+  display_name: GEB 96 位枪头盒 10µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -49,6 +53,7 @@ opentrons_96_filtertiprack_1000ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_filtertiprack_1000ul
     type: pylabrobot
   description: Opentrons 96 filtertiprack 1000ul
+  display_name: Opentrons 96 位滤芯枪头盒 1000µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -79,6 +84,7 @@ opentrons_96_filtertiprack_10ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_filtertiprack_10ul
     type: pylabrobot
   description: Opentrons 96 filtertiprack 10ul
+  display_name: Opentrons 96 位滤芯枪头盒 10µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -90,6 +96,7 @@ opentrons_96_filtertiprack_200ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_filtertiprack_200ul
     type: pylabrobot
   description: Opentrons 96 filtertiprack 200ul
+  display_name: Opentrons 96 位滤芯枪头盒 200µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -101,6 +108,7 @@ opentrons_96_filtertiprack_20ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_filtertiprack_20ul
     type: pylabrobot
   description: Opentrons 96 filtertiprack 20ul
+  display_name: Opentrons 96 位滤芯枪头盒 20µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -112,6 +120,7 @@ opentrons_96_tiprack_1000ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_1000ul
     type: pylabrobot
   description: Opentrons 96 tiprack 1000ul
+  display_name: Opentrons 96 位枪头盒 1000µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -123,6 +132,7 @@ opentrons_96_tiprack_10ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_10ul
     type: pylabrobot
   description: Opentrons 96 tiprack 10ul
+  display_name: Opentrons 96 位枪头盒 10µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -134,6 +144,7 @@ opentrons_96_tiprack_20ul:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_20ul
     type: pylabrobot
   description: Opentrons 96 tiprack 20ul
+  display_name: Opentrons 96 位枪头盒 20µL
   handles: []
   icon: ''
   init_param_schema: {}
@@ -144,6 +155,7 @@ opentrons_96_tiprack_300ul:
   class:
     module: pylabrobot.resources.opentrons.tip_racks:opentrons_96_tiprack_300ul
     type: pylabrobot
+  display_name: Opentrons 96 位枪头盒 300µL
   handles: []
   icon: ''
   init_param_schema: {}

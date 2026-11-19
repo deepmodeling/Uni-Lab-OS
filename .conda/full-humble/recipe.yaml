@@ -1,0 +1,81 @@
+# Humble full package variant.
+
+package:
+  name: unilabos-full
+  version: 0.13.0rc1
+
+build:
+  number: 1
+  string: humble_1
+
+requirements:
+  run:
+  - unilabos-ros2 ==0.13.0rc1 humble_1
+  - sphinx >=7
+  - sphinx_rtd_theme >=2
+  - myst-parser >=2
+  - sphinxcontrib-mermaid
+  - myst-nb >=1
+  - sphinx-copybutton >=0.5
+  - sphinx-autobuild >=2024.2.4
+  - rinohtype >=0.5.4
+  - rinoh-typeface-dejavuserif
+  - rinoh-typeface-texgyrecursor
+  - rinoh-typeface-texgyreheros
+  - rinoh-typeface-texgyrepagella
+  - sphinx-simplepdf >=1.6
+  - opcua >=0.98.13
+  - pandas >=2.2
+  - matplotlib-base >=3.8
+  - if: win
+    then: pywinauto >=0.6.8
+  - if: win
+    then: psutil >=5.9
+  - gradio
+  - flask
+  - ipython >=8
+  - jupyterlab >=4
+  - pytest >=8
+  - pytest-asyncio >=0.23
+  - python-build >=1.2
+  - ruff >=0.9
+  - jupyter
+  - jupyros
+  - colcon-common-extensions
+  - colcon-notification
+  - ros-humble-desktop-full
+  - ros-humble-navigation2
+  - ros-humble-ros2-control
+  - ros-humble-robot-state-publisher
+  - ros-humble-joint-state-publisher
+  - ros-humble-moveit
+  - ros-humble-moveit-servo
+  - ros-humble-simulation
+
+tests:
+  - python:
+      imports:
+        - unilabos.backend.hostlink.local_runtime
+        - unilabos_msgs.action
+        - sphinx
+        - myst_parser
+        - pytest
+        - IPython
+        - jupyterlab
+        - opcua
+      pip_check: true
+  - script:
+      # ROS 启动按应用约定先修复 DLL，首次修补后必须在新进程验证。
+      - python -m unilabos.backend.ros2.conda_smoke
+      # 与 Jazzy 相同的 Windows 隔离用户目录初始化，字体导入测试不跳过。
+      - if: win
+        then:
+          - if not exist "%USERPROFILE%\AppData\Local" mkdir "%USERPROFILE%\AppData\Local"
+          - if not exist "%USERPROFILE%\AppData\Roaming" mkdir "%USERPROFILE%\AppData\Roaming"
+      - python -c "import rinoh_typeface_dejavuserif, rinoh_typeface_texgyrecursor, rinoh_typeface_texgyreheros, rinoh_typeface_texgyrepagella"
+      # conda-forge 的 Ruff 是原生可执行文件，无 Python dist-info，仍须校验实际版本。
+      - python -c "import subprocess; from importlib.metadata import requires, version; from packaging.requirements import Requirement; reqs = [Requirement(r) for r in requires('unilabos')]; missing = [str(r) for r in reqs if (r.marker is None or r.marker.evaluate({'extra':'full'})) and not r.specifier.contains(subprocess.check_output(['ruff', '--version'], text=True).split()[1] if r.name == 'ruff' else version(r.name))]; assert not missing, missing"
+about:
+  repository: https://github.com/deepmodeling/Uni-Lab-OS
+  license: GPL-3.0-only
+  description: "UniLabOS Full - runtime, docs, tests, development and ROS 2 Humble Desktop"

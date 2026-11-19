@@ -1,318 +1,336 @@
-import asyncio
-import logging
-import time as time_module  # 重命名time模块，避免与参数冲突
-from typing import Dict, Any
+"""虚拟加热 / 冷却器：定时控温（``heat_chill``）或持续控温（``heat_chill_start`` / ``heat_chill_stop``）。
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+定时控温先按 ``ramp_rate`` 线性升 / 降温，再保持到总时长；持续控温直接到达目标温度。
+"""
 
-class VirtualHeatChill:
-    """Virtual heat chill device for HeatChillProtocol testing 🌡️"""
-    
-    _ros_node: BaseROS2DeviceNode
-    
-    def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
-        # 处理可能的不同调用方式
-        if device_id is None and 'id' in kwargs:
-            device_id = kwargs.pop('id')
-        if config is None and 'config' in kwargs:
-            config = kwargs.pop('config')
-        
-        # 设置默认值
-        self.device_id = device_id or "unknown_heatchill"
-        self.config = config or {}
-        
-        self.logger = logging.getLogger(f"VirtualHeatChill.{self.device_id}")
-        self.data = {}
-        
-        # 从config或kwargs中获取配置参数
-        self.port = self.config.get('port') or kwargs.get('port', 'VIRTUAL')
-        self._max_temp = self.config.get('max_temp') or kwargs.get('max_temp', 200.0)
-        self._min_temp = self.config.get('min_temp') or kwargs.get('min_temp', -80.0)
-        self._max_stir_speed = self.config.get('max_stir_speed') or kwargs.get('max_stir_speed', 1000.0)
-        
-        # 处理其他kwargs参数
-        skip_keys = {'port', 'max_temp', 'min_temp', 'max_stir_speed'}
-        for key, value in kwargs.items():
-            if key not in skip_keys and not hasattr(self, key):
-                setattr(self, key, value)
-        
-        print(f"🌡️ === 虚拟温控设备 {self.device_id} 已创建 === ✨")
-        print(f"🔥 温度范围: {self._min_temp}°C ~ {self._max_temp}°C | 🌪️ 最大搅拌: {self._max_stir_speed} RPM")
-    
-    def post_init(self, ros_node: BaseROS2DeviceNode):
-        self._ros_node = ros_node
-    
-    async def initialize(self) -> bool:
-        """Initialize virtual heat chill 🚀"""
-        self.logger.info(f"🔧 初始化虚拟温控设备 {self.device_id} ✨")
-        
-        # 初始化状态信息
-        self.data.update({
-            "status": "🏠 待机中",
-            "operation_mode": "Idle",
-            "is_stirring": False,
-            "stir_speed": 0.0,
-            "remaining_time": 0.0,
-        })
-        
-        self.logger.info(f"✅ 温控设备 {self.device_id} 初始化完成 🌡️")
-        self.logger.info(f"📊 设备规格: 温度范围 {self._min_temp}°C ~ {self._max_temp}°C | 搅拌范围 0 ~ {self._max_stir_speed} RPM")
-        return True
-    
-    async def cleanup(self) -> bool:
-        """Cleanup virtual heat chill 🧹"""
-        self.logger.info(f"🧹 清理虚拟温控设备 {self.device_id} 🔚")
-        
-        self.data.update({
-            "status": "💤 离线",
-            "operation_mode": "Offline",
-            "is_stirring": False,
-            "stir_speed": 0.0,
-            "remaining_time": 0.0
-        })
-        
-        self.logger.info(f"✅ 温控设备 {self.device_id} 清理完成 💤")
-        return True
-    
-    async def heat_chill(self, temp: float, time, stir: bool,
-                        stir_speed: float, purpose: str, vessel: dict = {}) -> bool:
-        """Execute heat chill action - 🔧 修复：确保参数类型正确"""
-        
-        # 🔧 关键修复：确保所有参数类型正确
-        try:
-            temp = float(temp)
-            time_value = float(time)  # 强制转换为浮点数
-            stir_speed = float(stir_speed)
-            stir = bool(stir)
-            purpose = str(purpose)
-        except (ValueError, TypeError) as e:
-            error_msg = f"参数类型转换错误: temp={temp}({type(temp)}), time={time}({type(time)}), error={str(e)}"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: {error_msg}",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        # 确定温度操作emoji
-        if temp > 25.0:
-            temp_emoji = "🔥"
-            operation_mode = "Heating"
-            status_action = "加热"
-        elif temp < 25.0:
-            temp_emoji = "❄️"
-            operation_mode = "Cooling"
-            status_action = "冷却"
-        else:
-            temp_emoji = "🌡️"
-            operation_mode = "Maintaining"
-            status_action = "保温"
-        
-        self.logger.info(f"🌡️ 开始温控操作: {temp}°C {temp_emoji}")
-        self.logger.info(f"  🎯 目标温度: {temp}°C {temp_emoji}")
-        self.logger.info(f"  ⏰ 持续时间: {time_value}s")
-        self.logger.info(f"  🌪️ 搅拌: {stir} ({stir_speed} RPM)")
-        self.logger.info(f"  📝 目的: {purpose}")
-        
-        # 验证参数范围
-        if temp > self._max_temp or temp < self._min_temp:
-            error_msg = f"🌡️ 温度 {temp}°C 超出范围 ({self._min_temp}°C - {self._max_temp}°C) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 温度超出范围 ⚠️",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        if stir and stir_speed > self._max_stir_speed:
-            error_msg = f"🌪️ 搅拌速度 {stir_speed} RPM 超出最大值 {self._max_stir_speed} RPM ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 搅拌速度超出范围 ⚠️",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        if time_value <= 0:
-            error_msg = f"⏰ 时间 {time_value}s 必须大于0 ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 时间参数无效 ⚠️",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        # 🔧 修复：使用转换后的时间值
-        start_time = time_module.time()
-        total_time = time_value  # 使用转换后的浮点数
-        
-        self.logger.info(f"🚀 开始{status_action}程序! 预计用时 {total_time:.1f}秒 ⏱️")
-        
-        # 开始操作
-        stir_info = f" | 🌪️ 搅拌: {stir_speed} RPM" if stir else ""
-        
-        self.data.update({
-            "status": f"{temp_emoji} 运行中: {status_action} 至 {temp}°C | ⏰ 剩余: {total_time:.0f}s{stir_info}",
-            "operation_mode": operation_mode,
-            "is_stirring": stir,
-            "stir_speed": stir_speed if stir else 0.0,
-            "remaining_time": total_time,
-        })
-        
-        # 在等待过程中每秒更新剩余时间
-        last_logged_time = 0
-        while True:
-            current_time = time_module.time()
-            elapsed = current_time - start_time
-            remaining = max(0, total_time - elapsed)
-            progress = (elapsed / total_time) * 100 if total_time > 0 else 100
-            
-            # 更新剩余时间和状态
-            self.data.update({
-                "remaining_time": remaining,
-                "status": f"{temp_emoji} 运行中: {status_action} 至 {temp}°C | ⏰ 剩余: {remaining:.0f}s{stir_info}",
-                "progress": progress
-            })
-            
-            # 进度日志（每25%打印一次）
-            if progress >= 25 and int(progress) % 25 == 0 and int(progress) != last_logged_time:
-                self.logger.info(f"📊 {status_action}进度: {progress:.0f}% | ⏰ 剩余: {remaining:.0f}s | {temp_emoji} 目标: {temp}°C ✨")
-                last_logged_time = int(progress)
-            
-            # 如果时间到了，退出循环
-            if remaining <= 0:
-                break
-            
-            # 等待1秒后再次检查
-            await self._ros_node.sleep(1.0)
-        
-        # 操作完成
-        final_stir_info = f" | 🌪️ 搅拌: {stir_speed} RPM" if stir else ""
-        
-        self.data.update({
-            "status": f"✅ 完成: 已达到 {temp}°C {temp_emoji} | ⏱️ 用时: {total_time:.0f}s{final_stir_info}",
-            "operation_mode": "Completed",
-            "remaining_time": 0.0,
-            "is_stirring": False,
-            "stir_speed": 0.0,
-            "progress": 100.0
-        })
-        
-        self.logger.info(f"🎉 温控操作完成! ✨")
-        self.logger.info(f"📊 操作结果:")
-        self.logger.info(f"  🌡️ 达到温度: {temp}°C {temp_emoji}")
-        self.logger.info(f"  ⏱️ 总用时: {total_time:.0f}s")
-        if stir:
-            self.logger.info(f"  🌪️ 搅拌速度: {stir_speed} RPM")
-        self.logger.info(f"  📝 操作目的: {purpose} 🏁")
-        
-        return True
-    
-    async def heat_chill_start(self, temp: float, purpose: str, vessel: dict = {}) -> bool:
-        """Start continuous heat chill 🔄"""
-        
-        # 🔧 添加类型转换
-        try:
-            temp = float(temp)
-            purpose = str(purpose)
-        except (ValueError, TypeError) as e:
-            error_msg = f"参数类型转换错误: {str(e)}"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: {error_msg}",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        # 确定温度操作emoji
-        if temp > 25.0:
-            temp_emoji = "🔥"
-            operation_mode = "Heating"
-            status_action = "持续加热"
-        elif temp < 25.0:
-            temp_emoji = "❄️"
-            operation_mode = "Cooling"
-            status_action = "持续冷却"
-        else:
-            temp_emoji = "🌡️"
-            operation_mode = "Maintaining"
-            status_action = "恒温保持"
-        
-        self.logger.info(f"🔄 启动持续温控: {temp}°C {temp_emoji}")
-        self.logger.info(f"  🎯 目标温度: {temp}°C {temp_emoji}")
-        self.logger.info(f"  🔄 模式: {status_action}")
-        self.logger.info(f"  📝 目的: {purpose}")
-        
-        # 验证参数
-        if temp > self._max_temp or temp < self._min_temp:
-            error_msg = f"🌡️ 温度 {temp}°C 超出范围 ({self._min_temp}°C - {self._max_temp}°C) ⚠️"
-            self.logger.error(f"❌ {error_msg}")
-            self.data.update({
-                "status": f"❌ 错误: 温度超出范围 ⚠️",
-                "operation_mode": "Error"
-            })
-            return False
-        
-        self.data.update({
-            "status": f"🔄 启动: {status_action} 至 {temp}°C {temp_emoji} | ♾️ 持续运行",
-            "operation_mode": operation_mode,
-            "is_stirring": False,
-            "stir_speed": 0.0,
-            "remaining_time": -1.0,  # -1 表示持续运行
-        })
-        
-        self.logger.info(f"✅ 持续温控已启动! {temp_emoji} {status_action}模式 🚀")
-        return True
-    
-    async def heat_chill_stop(self, vessel: dict = {}) -> bool:
-        """Stop heat chill 🛑"""
-        
-        self.logger.info(f"🛑 停止温控:")
-        
-        self.data.update({
-            "status": f"🛑 {self.device_id} 温控停止",
-            "operation_mode": "Stopped",
-            "is_stirring": False,
-            "stir_speed": 0.0,
-            "remaining_time": 0.0,
-        })
-        
-        self.logger.info(f"✅ 温控设备已停止 {self.device_id} 温度控制 🏁")
-        return True
-    
-    # 状态属性
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Union
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    VirtualDevice,
+    nested_settings,
+    parse_duration,
+)
+from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
+
+#: 室温（°C）：冷却 / 加热的分界与停止后的回落温度
+AMBIENT_TEMPERATURE = 25.0
+
+
+@device(
+    id="virtual_heatchill",
+    display_name="虚拟加热冷却器",
+    category=["virtual_device"],
+    description="定时 / 持续控温的虚拟加热冷却器（可带搅拌），供控温、溶解、干燥等协议与示例图使用",
+    icon="Heater.webp",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        OutputHandle(
+            key="heatchill",
+            data_type="mechanical",
+            label="heatchill",
+            side=Side.NORTH,
+            data_key="vessel",
+            data_source=DataSource.HANDLE,
+            description="加热/冷却器的物理连接口",
+        ),
+    ],
+)
+class VirtualHeatChill(VirtualDevice):
+    """温度范围 min_temp ~ max_temp（°C），可带搅拌（≤ max_stir_speed）。"""
+
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_temp: float = 200.0,
+        min_temp: float = -80.0,
+        max_stir_speed: float = 1000.0,
+        ramp_rate: float = 1.0,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟加热冷却器。
+
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_temp[最高温度]: 最高温度（°C）。
+            min_temp[最低温度]: 最低温度（°C）。
+            max_stir_speed[最高搅拌速度]: 最高搅拌速度（RPM）。
+            ramp_rate[升降温速率]: 定时控温时的升 / 降温速率（°C/s）。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
+        """
+        settings = nested_settings(
+            kwargs,
+            max_temp=max_temp,
+            min_temp=min_temp,
+            max_stir_speed=max_stir_speed,
+            ramp_rate=ramp_rate,
+            port=port,
+            time_scale=time_scale,
+        )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_heatchill", settings["time_scale"])
+        self._max_temp = float(settings["max_temp"])
+        self._min_temp = float(settings["min_temp"])
+        if self._min_temp > self._max_temp:
+            raise ValueError(f"min_temp {self._min_temp} 不能大于 max_temp {self._max_temp}")
+        self._max_stir_speed = float(settings["max_stir_speed"])
+        self.ramp_rate = float(settings["ramp_rate"])
+        if self.ramp_rate <= 0:
+            raise ValueError(f"ramp_rate 必须大于 0，收到 {self.ramp_rate}")
+        self.port = str(settings["port"])
+        self._operation_mode = "Idle"
+        self._current_temp = AMBIENT_TEMPERATURE
+        self._target_temp = AMBIENT_TEMPERATURE
+        self._stir_speed = 0.0
+        self._continuous = False
+
+    # ============ 状态 ============
+
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
-        return self.data.get("status", "🏠 待机中")
-    
+        """Idle / Heating / Cooling / Maintaining / Error。"""
+        return self._status
+
     @property
+    @topic_config(period=1.0)
     def operation_mode(self) -> str:
-        return self.data.get("operation_mode", "Idle")
-    
+        """Idle / Heating / Cooling / Maintaining / Completed / Stopped / Error。"""
+        return self._operation_mode
+
     @property
+    @topic_config(period=1.0)
+    def current_temp(self) -> float:
+        """当前温度（°C）。"""
+        return round(self._current_temp, 3)
+
+    @property
+    @topic_config(period=1.0)
+    def target_temp(self) -> float:
+        """目标温度（°C）。"""
+        return round(self._target_temp, 3)
+
+    @property
+    @topic_config(period=1.0)
     def is_stirring(self) -> bool:
-        return self.data.get("is_stirring", False)
-    
+        """是否在搅拌。"""
+        return self._stir_speed > 0
+
     @property
+    @topic_config(period=1.0)
     def stir_speed(self) -> float:
-        return self.data.get("stir_speed", 0.0)
-    
+        """当前搅拌速度（RPM）。"""
+        return self._stir_speed
+
     @property
+    @topic_config(period=1.0)
     def remaining_time(self) -> float:
-        return self.data.get("remaining_time", 0.0)
-    
+        """剩余模拟时间（s）；持续控温时为 -1。"""
+        return -1.0 if self._continuous else self._remaining_time
+
     @property
+    @topic_config(period=1.0)
     def progress(self) -> float:
-        return self.data.get("progress", 0.0)
-    
+        """当前动作进度（%）。"""
+        return self._progress
+
     @property
+    @topic_config(period=5.0)
     def max_temp(self) -> float:
+        """最高温度（°C）。"""
         return self._max_temp
-    
+
     @property
+    @topic_config(period=5.0)
     def min_temp(self) -> float:
+        """最低温度（°C）。"""
         return self._min_temp
-    
+
     @property
+    @topic_config(period=5.0)
     def max_stir_speed(self) -> float:
+        """最高搅拌速度（RPM）。"""
         return self._max_stir_speed
+
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="停止控温并回到室温")
+    async def initialize(self) -> bool:
+        """初始化：回到室温待机。"""
+        self._stop("Idle")
+        return True
+
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的控温并离线")
+    async def cleanup(self) -> bool:
+        """清理：请求停止当前控温。"""
+        self._request_stop()
+        self._stop("Offline")
+        return True
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:HeatChill",
+        display_name="定时控温",
+        description="升 / 降温到目标温度并保持，总时长 time（可带单位），可同时搅拌",
+        feedback_interval=0.5,
+    )
+    async def heat_chill(
+        self,
+        temp: float,
+        time: Union[float, str],
+        stir: bool = False,
+        stir_speed: float = 0.0,
+        purpose: str = "",
+        vessel: Optional[ResourceSlot] = None,
+        pressure: str = "",
+        reflux_solvent: str = "",
+        temp_spec: str = "",
+        time_spec: str = "",
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """定时控温。
+
+        Args:
+            temp[目标温度]: 目标温度（°C）。
+            time[时长]: 总时长，数字按秒，也可写 "30 min"。
+            stir[搅拌]: 是否同时搅拌。
+            stir_speed[搅拌速度]: 搅拌速度（RPM），stir 为真时生效。
+            purpose[目的]: 操作目的，仅记录。
+            vessel[容器]: 被控温的容器，可不填。
+            pressure[压力]: 协议给的压力描述，仅记录。
+            reflux_solvent[回流溶剂]: 回流溶剂，仅记录。
+            temp_spec[温度规格]: 协议里的温度规格，仅记录。
+            time_spec[时间规格]: 协议里的时间规格，仅记录。
+        """
+        target = self._checked_temp(temp)
+        duration = parse_duration(time)
+        if duration <= 0:
+            self._reject(f"控温时长必须大于 0，收到 {time!r}")
+        speed = float(stir_speed) if stir else 0.0
+        if speed < 0 or speed > self._max_stir_speed:
+            self._reject(f"搅拌速度 {speed:g} RPM 超出范围 0 ~ {self._max_stir_speed:g} RPM")
+        label = self._vessel_label(vessel)
+        mode = self._mode_for(target)
+        start = self._current_temp
+        ramp_seconds = min(duration, abs(target - start) / self.ramp_rate)
+        ramp_share = 100.0 * ramp_seconds / duration
+
+        def ramp(fraction: float) -> None:
+            self._current_temp = start + (target - start) * fraction
+
+        self._continuous = False
+        with self._operation(mode, f"{label or '容器'} 控温到 {target:g}°C，{duration:g}s", action_context):
+            self._operation_mode = mode
+            self._target_temp = target
+            self._stir_speed = speed
+            completed = False
+            try:
+                await self._simulate(
+                    ramp_seconds,
+                    action_context,
+                    progress_span=(0.0, ramp_share),
+                    remaining_after=duration - ramp_seconds,
+                    feedback={"target_temp": target},
+                    on_step=ramp,
+                )
+                self._current_temp = target
+                await self._simulate(
+                    duration - ramp_seconds,
+                    action_context,
+                    progress_span=(ramp_share, 100.0),
+                    feedback={"target_temp": target},
+                )
+                completed = True
+            finally:
+                self._stir_speed = 0.0
+                self._operation_mode = "Completed" if completed else "Stopped"
+        self._message = f"控温完成：{target:g}°C × {duration:g}s" + (f"，搅拌 {speed:g} RPM" if speed else "")
+        return {
+            "success": True,
+            "vessel": label,
+            "temp": target,
+            "time": duration,
+            "stir_speed": speed,
+            "current_temp": round(self._current_temp, 3),
+        }
+
+    @action(
+        action_type="unilabos_msgs.action:HeatChillStart",
+        display_name="开始控温",
+        description="持续控温到目标温度，直到 heat_chill_stop",
+    )
+    async def heat_chill_start(
+        self, temp: float, purpose: str = "", vessel: Optional[ResourceSlot] = None
+    ) -> Dict[str, Any]:
+        """开始持续控温。
+
+        Args:
+            temp[目标温度]: 目标温度（°C）。
+            purpose[目的]: 操作目的，仅记录。
+            vessel[容器]: 被控温的容器，可不填。
+        """
+        target = self._checked_temp(temp)
+        label = self._vessel_label(vessel)
+        mode = self._mode_for(target)
+        with self._lock:
+            self._status = "Idle"
+            self._operation_mode = mode
+            self._continuous = True
+            self._target_temp = target
+            self._current_temp = target
+            self._remaining_time = 0.0
+            self._message = f"持续控温 {label or '容器'} {target:g}°C" + (f"（{purpose}）" if purpose else "")
+        return {"success": True, "vessel": label, "temp": target}
+
+    @action(
+        action_type="unilabos_msgs.action:HeatChillStop",
+        display_name="停止控温",
+        description="停止持续控温，回到室温",
+    )
+    async def heat_chill_stop(self, vessel: Optional[ResourceSlot] = None, purpose: str = "") -> Dict[str, Any]:
+        """停止控温。
+
+        Args:
+            vessel[容器]: 被控温的容器，可不填。
+            purpose[目的]: 操作目的，仅记录。
+        """
+        label = self._vessel_label(vessel)
+        previous = self._target_temp
+        self._stop("Stopped")
+        self._message = f"已停止控温 {label or ''}（之前目标 {previous:g}°C）".strip()
+        return {"success": True, "vessel": label, "previous_target_temp": previous}
+
+    # ============ 内部 ============
+
+    def _checked_temp(self, temp: Any) -> float:
+        target = float(temp)
+        if not self._min_temp <= target <= self._max_temp:
+            self._reject(f"温度 {target:g}°C 超出范围 {self._min_temp:g} ~ {self._max_temp:g}°C")
+        return target
+
+    @staticmethod
+    def _mode_for(target: float) -> str:
+        if target > AMBIENT_TEMPERATURE:
+            return "Heating"
+        if target < AMBIENT_TEMPERATURE:
+            return "Cooling"
+        return "Maintaining"
+
+    def _stop(self, mode: str) -> None:
+        with self._lock:
+            self._status = "Idle"
+            self._operation_mode = mode
+            self._continuous = False
+            self._target_temp = AMBIENT_TEMPERATURE
+            self._current_temp = AMBIENT_TEMPERATURE
+            self._stir_speed = 0.0
+            self._remaining_time = 0.0
+
+    def __repr__(self) -> str:
+        return f"VirtualHeatChill({self.device_id}: {self._operation_mode}, {self._current_temp:.1f}°C)"

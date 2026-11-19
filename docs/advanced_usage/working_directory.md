@@ -4,73 +4,53 @@
 
 ## 什么是工作目录
 
-工作目录是 Uni-Lab 存储配置文件、日志和运行数据的目录。默认情况下，工作目录为 `当前目录/unilabos_data`。
+工作目录是 Uni-Lab 存储配置文件、日志和运行数据的目录，其下通常有：
+
+- `local_config.py` - 配置文件
+- `logs/` - 日志
+- `database/` - 微后端的四个数据库（`runtime.db`、`materials.db`、`telemetry.db`、`history.db`），Host 子进程用 `database/edge/`
+- 注册表缓存、驱动包源码树等运行数据
+
+默认情况下，工作目录为 `~/.unilabos`。
 
 ## 工作目录判断逻辑
 
-系统按以下决策树自动确定工作目录：
+实现见 `unilabos/config/working_dir.py`，`unilab` 主命令与 `unilab workflow` 等子命令共用：
 
-### 第一步：初始判断
+1. 指定了 `--working_dir` 时使用它；
+2. 否则 `--config` 指向的文件存在时，使用其所在目录；
+3. 否则看当前目录；
+4. 上一步得到的目录本身名为 `.unilabos` 或 `unilabos_data` 时直接使用；其下有这样的子目录时使用该子目录；
+5. 当前目录（第 3 步）不满足第 4 步时，使用默认的 `~/.unilabos`。显式指定的目录（第 1、2 步）原样使用。
 
-```python
-# 检查当前目录
-if 当前目录以 "unilabos_data" 结尾:
-    working_dir = 当前目录的绝对路径
-else:
-    working_dir = 当前目录/unilabos_data
-```
-
-**解释：**
-- 如果您已经在 `unilabos_data` 目录内启动，系统直接使用当前目录
-- 否则，系统会在当前目录下创建或使用 `unilabos_data` 子目录
-
-### 第二步：处理 `--working_dir` 参数
-
-如果用户指定了 `--working_dir` 参数：
-
-```python
-working_dir = 用户指定的路径
-```
-
-此时还会检查配置文件：
-- 如果同时指定了 `--config` 但该文件不存在
-- 系统会尝试在 `working_dir/local_config.py` 查找
-- 如果仍未找到，报错退出
-
-### 第三步：处理 `--config` 参数
-
-如果用户指定了 `--config` 且文件存在：
-
-```python
-# 工作目录改为配置文件所在目录
-working_dir = config_path 的父目录
-```
-
-**重要：** 这意味着配置文件的位置会影响工作目录的判断。
+`unilabos_data` 是旧版本在当前目录下自动生成的目录名，已有的 `unilabos_data` 会继续被识别和使用；
+新的默认不再在当前目录下生成它。
 
 ## 使用场景示例
 
 ### 场景 1：默认场景（推荐）
 
 ```bash
-# 当前目录：/home/user/project
+# 当前目录：/home/user/project（其下没有 .unilabos / unilabos_data）
 unilab --ak your_ak --sk your_sk -g graph.json
 
 # 结果：
-# working_dir = /home/user/project/unilabos_data
-# config_path = /home/user/project/unilabos_data/local_config.py
+# working_dir = /home/user/.unilabos
+# config_path = /home/user/.unilabos/local_config.py
+# 数据库      = /home/user/.unilabos/database/
 ```
 
-### 场景 2：在 unilabos_data 目录内启动
+### 场景 2：沿用项目目录下已有的 unilabos_data
 
 ```bash
-cd /home/user/project/unilabos_data
+# 当前目录 /home/user/project 下已有 unilabos_data/（旧版本生成）
 unilab --ak your_ak --sk your_sk -g graph.json
 
 # 结果：
 # working_dir = /home/user/project/unilabos_data
-# config_path = /home/user/project/unilabos_data/local_config.py
 ```
+
+在 `unilabos_data` 或 `.unilabos` 目录内启动时同样直接使用该目录。
 
 ### 场景 3：手动指定工作目录
 
@@ -78,7 +58,7 @@ unilab --ak your_ak --sk your_sk -g graph.json
 unilab --working_dir /custom/path --ak your_ak --sk your_sk -g graph.json
 
 # 结果：
-# working_dir = /custom/path
+# working_dir = /custom/path（其下有 .unilabos / unilabos_data 时使用该子目录）
 # config_path = /custom/path/local_config.py （如果存在）
 ```
 
@@ -120,16 +100,15 @@ unilab --config ~/labs/lab_b/config.py --ak ak_b --sk sk_b -g graph_b.json
 
 ```bash
 #!/bin/bash
-cd ~/labs/lab_a
-unilab --ak your_ak_a --sk your_sk_a -g graph_a.json
+# 默认工作目录是 ~/.unilabos；多套实验室并存时用 --working_dir 区分
+unilab --working_dir ~/labs/lab_a --ak your_ak_a --sk your_sk_a -g graph_a.json
 ```
 
 创建 `start_lab_b.sh`：
 
 ```bash
 #!/bin/bash
-cd ~/labs/lab_b
-unilab --ak your_ak_b --sk your_sk_b -g graph_b.json
+unilab --working_dir ~/labs/lab_b --ak your_ak_b --sk your_sk_b -g graph_b.json
 ```
 
 ## 完整决策流程图
@@ -137,19 +116,21 @@ unilab --ak your_ak_b --sk your_sk_b -g graph_b.json
 ```
 开始
   ↓
-判断当前目录是否以 unilabos_data 结尾？
-  ├─ 是 → working_dir = 当前目录
-  └─ 否 → working_dir = 当前目录/unilabos_data
+指定了 --working_dir？
+  ├─ 是 → 候选 = 指定路径
+  └─ 否 → 指定了 --config 且文件存在？
+            ├─ 是 → 候选 = config 文件所在目录
+            └─ 否 → 候选 = 当前目录
   ↓
-用户是否指定 --working_dir？
-  └─ 是 → working_dir = 指定路径
-  ↓
-用户是否指定 --config 且文件存在？
-  └─ 是 → working_dir = config 文件所在目录
+候选名为 .unilabos / unilabos_data，或其下有这样的子目录？
+  ├─ 是 → working_dir = 该目录
+  └─ 否 → 候选来自 --working_dir / --config？
+            ├─ 是 → working_dir = 候选
+            └─ 否 → working_dir = ~/.unilabos
   ↓
 检查 working_dir/local_config.py 是否存在？
   ├─ 是 → 加载配置文件 → 继续启动
-  └─ 否 → 询问是否首次使用
+  └─ 否 → 询问是否首次使用（无交互输入时按默认「是」）
       ├─ 是 → 创建目录和配置文件 → 继续启动
       └─ 否 → 退出程序
 ```
@@ -179,15 +160,16 @@ unilab --working_dir ~/lab2 --ak ak2 --sk sk2 -g graph2.json
 ### 3. 工作目录中存储了什么？
 
 - `local_config.py` - 配置文件
-- 日志文件
-- 临时运行数据
-- 缓存文件
+- `logs/` - 日志文件
+- `database/` - 微后端数据库（见 [配置指南·数据库位置](configuration.md)）
+- 注册表缓存、驱动包等运行数据
 
 ### 4. 可以删除工作目录吗？
 
 可以，但会丢失：
 - 配置文件（需要重新创建）
 - 历史日志
+- 数据库（工作流、任务、物料等）
 - 缓存数据
 
 建议定期备份配置文件。

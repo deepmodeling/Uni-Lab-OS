@@ -4,6 +4,9 @@
 
 本指南将引导您从零开始完成 Uni-Lab-OS 实验室系统的完整搭建，从环境安装到高级设备开发。无论您是初次接触 Uni-Lab-OS 的用户，还是希望深入定制开发的开发者，都能在本指南中找到清晰的步骤和实用建议。
 
+> 默认环境为 Python 3.14、HostLink 和 NumPy 2，不需要 ROS；ROS2 仅显式选装。
+> 旧 ROS 环境迁移及 ROS 专用设备的安装见[运行时与 ABI 基线](runtime_baseline.md)。
+
 ### 适用对象
 
 - **实验室管理员**：负责实验室系统部署和维护
@@ -35,9 +38,9 @@
 
 | 安装包          | 适用场景                     | 包含组件                                      |
 | --------------- | ---------------------------- | --------------------------------------------- |
-| `unilabos`      | **推荐大多数用户**，生产部署 | 完整安装包，开箱即用                          |
-| `unilabos-env`  | 开发者（可编辑安装）         | 仅环境依赖，通过 pip 安装 unilabos            |
-| `unilabos-full` | 仿真/可视化                  | unilabos + 完整 ROS2 桌面版 + Gazebo + MoveIt |
+| `unilabos`      | **推荐大多数用户**，生产部署 | 无 ROS 的 HostLink / 微后端应用                |
+| `unilabos-ros2` | ROS 专用驱动                 | 显式选装 Jazzy/Humble 运行时及消息             |
+| `unilabos-full` | 完整开发与仿真               | 运行、文档、测试、开发工具及完整 ROS2 桌面环境 |
 
 **关键步骤：**
 
@@ -46,7 +49,7 @@
 # 下载 Miniforge: https://github.com/conda-forge/miniforge/releases
 
 # 2. 创建 Conda 环境
-mamba create -n unilab python=3.11.14
+mamba create -n unilab python=3.14.10
 
 # 3. 激活环境
 mamba activate unilab
@@ -54,21 +57,22 @@ mamba activate unilab
 # 4. 安装 Uni-Lab-OS（选择其一）
 
 # 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
+mamba install --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
 
 # 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-pip install -e /path/to/Uni-Lab-OS  # 可编辑安装
-uv pip install -r unilabos/utils/requirements.txt  # 安装 pip 依赖
+cd /path/to/Uni-Lab-OS
+python scripts/dev_install.py --extras full  # 可编辑安装
 
 # 方案 C：完整版（仿真/可视化）
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
+mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.13.0rc1=jazzy_1"
 ```
+
+以上 Conda 命令需对应新版本已发布；发布前可按安装指南从源码安装。
 
 **选择建议：**
 
 - **日常使用/生产部署**：使用 `unilabos`（推荐），完整功能，开箱即用
-- **开发者**：使用 `unilabos-env` + `pip install -e .` + `uv pip install -r unilabos/utils/requirements.txt`，代码修改立即生效
+- **开发者**：使用 Python 3.14 虚拟环境 + `python scripts/dev_install.py --extras full`，一次安装全部 Python 开发依赖；需要原生 ROS 时选 Conda full
 - **仿真/可视化**：使用 `unilabos-full`，含 Gazebo、rviz2、MoveIt
 
 #### 1.2 验证安装
@@ -77,11 +81,12 @@ mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 # 检查 unilabos 是否安装成功
 python -c "import unilabos; print(unilabos.__version__)"
 
-# 验证 ROS 消息包
-python -c "from unilabos_msgs.msg import Resource; print('ROS msgs OK')"
+# 验证默认运行时
+python -c "from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime; print('HostLink OK')"
+python -m pip check
 ```
 
-如果两条命令都正常输出，说明安装成功。
+进一步的安装验证与显式 ROS 消息检查见安装指南。
 
 ---
 
@@ -117,7 +122,7 @@ conda activate unilab
 unilab --ak your_ak --sk your_sk
 ```
 
-系统会询问是否创建配置文件，输入 `Y` 确认。配置文件会自动生成在 `./unilabos_data/local_config.py`。
+系统会询问是否创建配置文件，输入 `Y` 确认。配置文件会自动生成在默认工作目录下的 `~/.unilabos/local_config.py`。
 
 更多配置选项请参考 [配置指南](../advanced_usage/configuration.md)。
 
@@ -151,26 +156,20 @@ unilab --ak your_ak --sk your_sk -g path/to/graph.json
 Uni-Lab-OS 在安装时已经预置了大量真实的设备图文件示例，无需下载或创建，直接使用 `-g` 参数指定即可：
 
 ```bash
-# 使用简单的工作台示例（推荐新手）
-unilab --ak your_ak --sk your_sk -g test/experiments/workshop.json
+# 使用虚拟设备集（推荐新手，无需真实硬件）
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_all.json
 
-# 使用 PRCXI 液体处理工作站示例
-unilab --ak your_ak --sk your_sk -g test/experiments/prcxi_9300.json
+# 使用虚拟有机合成反应器示例（抽真空/充气）
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 
-# 使用格林纳德反应工作站示例（有机合成）
-unilab --ak your_ak --sk your_sk -g test/experiments/Grignard_flow_batchreact_single_pumpvalve.json
-
-# 使用 Bioyond 配液站示例
-unilab --ak your_ak --sk your_sk -g test/experiments/dispensing_station_bioyond.json
-
-# 使用 HPLC 分析系统示例
-unilab --ak your_ak --sk your_sk -g test/experiments/HPLC.json
+# 使用 PyLabRobot 液体处理示例
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/plr_test.json
 
 # 使用空设备配置（最小化配置）
-unilab --ak your_ak --sk your_sk -g test/experiments/empty_devices.json
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/empty_devices.json
 ```
 
-**更多可用示例**：系统预置了 40+ 个组态图文件，涵盖液体处理、有机合成、分析检测等多个领域。完整列表请查看 `unilabos/test/experiments/` 目录。
+**更多可用示例**：主仓库只预置使用虚拟设备和内置设备的组态图（协议测试站、虚拟反应器、三工位虚拟加热平台等），完整列表请查看 `unilabos/test/experiments/` 目录。PRCXI、Bioyond、HPLC 等真实设备的组态图随各自的外部驱动包发布。
 
 **方案 2：创建一个空的组态图**
 
@@ -203,11 +202,11 @@ unilab --ak your_ak --sk your_sk -g example_empty.json
 # 禁用自动打开浏览器
 unilab --ak your_ak --sk your_sk -g graph.json --disable_browser
 
-# 使用不同端口
-unilab --ak your_ak --sk your_sk -g graph.json --port 8080
+# 使用不同的管理 Web/API 端口
+unilab --ak your_ak --sk your_sk -g graph.json --port-management 8080
 
 # 测试环境
-unilab --addr test --ak your_ak --sk your_sk -g graph.json
+unilab --address test --ak your_ak --sk your_sk -g graph.json
 
 # 跳过环境检查（加快启动）
 unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
@@ -215,35 +214,34 @@ unilab --ak your_ak --sk your_sk -g graph.json --skip_env_check
 
 ---
 
-### 4. 上传注册表（一次性操作）
+### 4. 同步注册表
 
-#### 4.1 什么是注册表上传？
+#### 4.1 什么是注册表同步？
 
-注册表包含您的设备和物料的完整定义。上传到云端后，在线界面才能识别和使用这些设备。
+注册表包含设备和物料的完整定义。Host 启动时会把定义同步到本地微后端，Backend
+和在线界面再通过当前 API 读取这些定义。
 
-#### 4.2 何时需要上传？
+#### 4.2 何时需要重启同步？
 
-**必须上传的情况：**
+**需要重新同步的情况：**
 
 - 首次启动实验室
 - 添加了新的设备类型
 - 修改了设备的注册表定义
 
-#### 4.3 如何上传注册表
+#### 4.3 如何同步注册表
 
 ```bash
-unilab --ak your_ak --sk your_sk -g graph.json --upload_registry
+unilab --ak your_ak --sk your_sk -g graph.json
 ```
 
 **性能影响说明：**
 
-- 上传注册表会增加启动时间（通常 5-15 秒）
-- 上传时间取决于：
+- 同步注册表会增加少量启动时间
+- 同步时间取决于：
   - 设备和物料的数量
-  - 网络速度
-- 建议：开发调试时首次上传，后续本地测试可省略
 
-**验证上传成功：**
+**验证同步成功：**
 
 在 Web 界面的"仪器设备"或"物料耗材"模块中，应该能看到您的设备和物料列表。
 
@@ -255,44 +253,35 @@ unilab --ak your_ak --sk your_sk -g graph.json --upload_registry
 
 Uni-Lab-OS 在安装时已经包含了大量真实的设备图文件，位于 `unilabos/test/experiments/` 目录，涵盖：
 
-- 液体处理：PRCXI、Biomek 等自动化移液工作站
-- 有机合成：格林纳德反应、流动化学等工作站
-- 分析检测：HPLC、光谱仪等分析仪器
-- 生物实验：Bioyond 配液站、反应站等
+- 液体处理：基于 PyLabRobot 的抽象液体处理器
+- 有机合成：虚拟反应器、协议测试工作站
 - 协议测试：各种实验协议的测试工作站
 - 虚拟设备：用于开发调试的 mock 设备
+
+真实设备（PRCXI、Biomek、Bioyond、HPLC 等）的示例组态图随各自的外部驱动包发布。
 
 **常用示例组态图：**
 
 | 组态图文件                                       | 说明                 | 适合场景             |
 | ------------------------------------------------ | -------------------- | -------------------- |
-| `workshop.json`                                  | 综合工作台           | 新手入门推荐         |
+| `mock_devices/mock_all.json`                     | 完整虚拟设备集       | 新手入门推荐，离线测试 |
 | `empty_devices.json`                             | 空设备配置           | 最小化配置，快速启动 |
-| `prcxi_9300.json`                                | PRCXI 液体处理工作站 | 液体处理自动化       |
-| `Grignard_flow_batchreact_single_pumpvalve.json` | 格林纳德反应工作站   | 有机合成流动化学     |
-| `dispensing_station_bioyond.json`                | Bioyond 配液站       | 生物样品配液         |
-| `reaction_station_bioyond.json`                  | Bioyond 反应站       | 生物化学反应         |
-| `HPLC.json`                                      | HPLC 分析系统        | 色谱分析             |
+| `mock_reactor.json`                              | 虚拟有机合成反应器   | 抽真空/充气协议      |
+| `Protocol_Test_Station/*.json`                   | 协议测试工作站       | 各类实验协议调试     |
+| `virtual_heating_platform_demo.json`             | 三工位虚拟加热平台   | 工位物料、按工位遥测 |
 | `plr_test.json`                                  | PyLabRobot 测试      | PyLabRobot 集成测试  |
-| `mock_devices/mock_all.json`                     | 完整虚拟设备集       | 开发调试，离线测试   |
 
 **使用方法：**
 
 ```bash
-# 使用简单工作台（推荐新手第一次启动）
-unilab --ak your_ak --sk your_sk -g test/experiments/workshop.json
+# 使用虚拟设备（推荐新手第一次启动，无需真实硬件）
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_devices/mock_all.json
 
-# 使用 PRCXI 液体处理工作站
-unilab --ak your_ak --sk your_sk -g test/experiments/prcxi_9300.json
-
-# 使用格林纳德反应工作站（有机合成）
-unilab --ak your_ak --sk your_sk -g test/experiments/Grignard_flow_batchreact_single_pumpvalve.json
-
-# 使用虚拟设备（无需真实硬件，用于学习和测试）
-unilab --ak your_ak --sk your_sk -g test/experiments/mock_devices/mock_all.json
+# 使用虚拟有机合成反应器
+unilab --ak your_ak --sk your_sk -g unilabos/test/experiments/mock_reactor.json
 ```
 
-**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。
+**注意**：所有组态图文件都是真实项目中使用的配置，可以直接学习和参考。完整文件列表请查看 `unilabos/test/experiments/` 目录。使用内置虚拟设备的组态图在默认的 HostLink backend 下即可启动并真实执行动作，不需要安装 ROS 2，也不需要 `--test_mode`；虚拟设备的模拟耗时按时间倍率缩放（默认很快），见 [内置虚拟设备](virtual_devices.md)。
 
 > 关于设备图文件的结构、字段定义、格式兼容性等完整指南，请参考 [设备图文件说明](graph_files.md)。
 
@@ -530,7 +519,7 @@ volume: 50（根据需求填写，默认单位 ml，这里举例 50）
 
 - 运行状态和消息实时显示在底部控制台
 - 如有报错，可点击查看详细信息
-- 查看日志文件：`unilabos_data/logs/unilab.log`
+- 查看日志文件：`<工作目录>/logs/unilab.log`（默认 `~/.unilabos/logs/unilab.log`）
 
 #### 7.9 结果验证
 
@@ -641,7 +630,7 @@ sudo systemctl stop ufw
 ```bash
 # 在主机（Host）上启动
 conda activate unilab
-unilab --ak your_ak --sk your_sk -g host.json --upload_registry
+unilab --ak your_ak --sk your_sk -g host.json
 ```
 
 **主节点职责：**
@@ -796,39 +785,35 @@ Waiting for host service...
 
 #### 9.1 开发环境准备
 
-**推荐使用 `unilabos-env` + `pip install -e .` + `uv pip install`** 进行设备开发：
+**推荐使用 `full` 档位**进行设备开发；不再单独安装 `unilabos-env`：
 
 ```bash
-# 1. 创建环境并安装 unilabos-env（ROS2 + conda 依赖 + uv）
-mamba create -n unilab python=3.11.14
+# 1. 创建 Python 环境；需要原生 ROS 时改用安装指南中的 Conda full
+mamba create -n unilab python=3.14.10
 conda activate unilab
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
 
 # 2. 克隆代码
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
 
 # 3. 以可编辑模式安装（推荐使用脚本，自动检测中文环境）
-python scripts/dev_install.py
-
-# 或手动安装：
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
+python scripts/dev_install.py --extras full
 ```
 
 **为什么使用这种方式？**
 
-- `unilabos-env` 提供 ROS2 核心组件和 uv（通过 conda 安装，避免编译）
-- `unilabos/utils/requirements.txt` 包含所有运行时需要的 pip 依赖
-- `dev_install.py` 自动检测中文环境，中文系统自动使用清华镜像
-- 使用 `uv` 替代 `pip`，安装速度更快
+- 默认安装仅包含运行依赖；`full` 同时包含内置驱动 SDK、文档、测试和开发工具
+- pip 不安装原生 ROS；完整 ROS 环境使用 `unilabos-full`，硬件系统驱动仍按设备包准备
+- `dev_install.py` 先构建固定 PLR / Opentrons 配套 wheel，再安装源码；普通包可使用清华镜像
+- 已有发行包时，可用 `--wheelhouse <解压目录>/wheelhouse` 跳过配套依赖构建；修正版不在公共 PyPI
+- 已安装 `uv` 时脚本默认用它安装，否则提示后回退 pip（`--installer pip` 可显式改用 pip）
+- 在已激活的 Conda / venv 中运行时装入该环境；否则装入项目根目录 `.venv`（不存在时以 Python 3.14 新建）
 - 可编辑模式：代码修改**立即生效**，无需重新安装
 
 **如果安装失败或速度太慢**，可以手动执行（使用清华镜像）：
 
 ```bash
-pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
+python scripts/dev_install.py --extras full --china
 ```
 
 #### 9.2 为什么需要自定义设备？
@@ -897,7 +882,7 @@ setup(
         # "pyserial",
         # "requests",
     ],
-    python_requires=">=3.11",
+    python_requires=">=3.14,<3.15",
     # 包含注册表文件
     package_data={
         "my_lab_devices": [
@@ -1187,8 +1172,7 @@ my_pump:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/registry
 ```
 
 **支持多个注册表路径**（按顺序查找）：
@@ -1482,12 +1466,12 @@ io_snrd:
   description: 'IO Board with 16 IOs via Modbus'
 ```
 
-**使用通信的设备注册表**（`devices/pump_and_valve.yaml`）：
+**使用通信的设备注册表**（驱动包内 `registry/devices/pump_and_valve.yaml`）：
 
 ```yaml
 syringe_pump_with_valve.runze.SY03B-T06:
   class:
-    module: unilabos.devices.pump_and_valve.runze_backbone:RunzeSyringePump
+    module: my_device_pkg.runze_backbone:RunzeSyringePump
     type: python
 
     # hardware_interface.name 初始化时是通信设备的设备名（字符串）
@@ -1503,12 +1487,12 @@ syringe_pump_with_valve.runze.SY03B-T06:
 
 solenoid_valve:
   class:
-    module: unilabos.devices.pump_and_valve.solenoid_valve:SolenoidValve
+    module: my_device_pkg.solenoid_valve:SolenoidValve
     type: python
 
     # 使用 io_device_port 字段接收通信设备名
     hardware_interface:
-      name: io_device_port # 例如当前电磁阀修改了name，从默认的hardware_interface改成了io_device_port，那么启动json中就应该对__init__中的io_device_port进行赋值
+      name: io_device_port # 与驱动 __init__ 接收的通信设备参数名保持一致
       read: read_io_coil
       write: write_io_coil
 ```
@@ -1613,6 +1597,41 @@ solenoid_valve:
 
 ---
 
+### 11.6 参考驱动实现（可运行示例仓库）
+
+为了让上述机制有可直接运行、可对照学习的范本，我们提供了七个**自包含外部设备包**，均作为独立 GitHub 仓库维护（由 [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) fork 生成）。克隆后通过 `--devices <包目录> --external_devices_only` 加载。当前主仓库支持的 demo 版本固定在 `tests/e2e/readme_demos.py`；完整验证使用[七个 demo 回归指南](../developer_guide/readme_demo_tests.md)，覆盖 HostLink / ROS2 与单进程 / 默认拆分拓扑。各 demo 自带的 `smoke` 脚本与其固定的主仓库版本配套，不应把旧脚本通过当作当前主仓库的验证结果。
+
+| 示例仓库                                                                          | 演示要点                                           | 关键技术                                                                                                |
+| --------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo)                   | 局域网跨设备闭环：中枢 hub 与子设备 sub 分进程运行 | 跨设备 `@subscribe` 订阅、`call_device_action` 远程 ros action 调用、自动 `msg_type` 解析、轮次复位检测  |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)   | 工作站内 `hardware_interface` 代理：多子设备共享同一通信端点 | 共享串口（默认 IO 方法名 `send_command`/`read_data`）、Modbus `extra_info` 按设备注入 `slave_id`（即本章 §11.5） |
+| [LabDeviceExceptionDemo](https://github.com/Xuwznln/LabDeviceExceptionDemo)       | 网页式工作流提交路径上的异常传播与决策             | 异常穿出动作边界 → 错误决策链 `abort`；点对点 `call_device_action` 异常在调用侧捕获（作为工作流节点）；业务级守卫返回；`operator_intervention` 人工替换结果让任务 `succeeded`；故障后 `stats` 仍可服务 |
+| [LabDeviceMaterialsDemo](https://github.com/Xuwznln/LabDeviceMaterialsDemo)                 | host/slave 双进程：固定位点、物料 CRUD、出库装板三条权威链 | `@device(available_sites=...)` 声明 → 注册表模板 → 权威位点实例 → 占用流转；`@resource` 物料 + `materials.*` 门面跨 HostLink 创建/赋值/转移/删除；`SiteSlot` 参数（uuid 或 label）；全 HTTP 的出库装板：按件 `POST /materials/instantiate` + 按量 `POST /materials/lots/inbound` 登记 → `POST /workflows` + `PUT graph` 上传三节点图（`host_node/apply_deduct_resource` 带 `kind: "material"` 需求、`mount_resource={"name": ...}` 只按名字引用台面 → `fill_well` 带 `kind: "lot"` 需求 → 报告）→ 首次提交整任务预留失败 `plan_not_executable`（板与水都无预留痕迹）→ 补料再提交成功（板 `active → in_use` 跨进程挂到 slave 台面、lot 扣减、孔位内容物落权威） |
+| [LabDeviceLockDemo](https://github.com/Xuwznln/LabDeviceLockDemo)                 | 调度器锁语义：并发提交工作流制造竞争，账本区间即证据 | `(device, action)` 动作锁串行、先提交先执行（`/api/v1/scheduler/resources` 的 `waiting` + `blockers`）；`@action(always_free=True)` 同一动作两次并行；物料参数 `plate`（物料入参一律加锁）按权威 `material_uuid` 互斥；`lock_auditor` 点对点读账本核对四条结论 |
+| [LabDeviceInventoryDemo](https://github.com/Xuwznln/LabDeviceInventoryDemo)       | 按数量计量的库存：入库、带预留的出库、数量不足拒绝 | `@resource` 试剂模板同步为权威模板；`restock` → `inbound_inventory_lot`（固定 lot）；`ctx.run(..., inventory=[...])` 声明试剂需求 → 任务启动 all-or-nothing 预留 → 动作开始扣减；不足时任务 `plan_not_executable` 且库存不变 |
+| [LabDeviceComplexWorkflowDemo](https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo) | 工作流运行时控制流：for / while 循环容器由调度器逐轮执行 | `with ctx.loop_for(3)` + 参数 `{{loop.iteration}}`；`ctx.loop_while(ctx.device_state(...))` 空循环体按间隔轮询设备状态字段（设备后台升温，"等到某状态"）；`ctx.loop_while(ctx.step_output("取样检测", ...))` 条件引用循环体里的检测步骤（"重复直到达标"）；两层 `for` 嵌套；每轮 = 循环体节点的新 attempt（`trigger=loop_iteration`），循环节点 `control_data.loop` 显示轮次 |
+
+**快速启动（本地微后端 + Host，默认拆分进程）：**
+
+```bash
+conda activate unilab-dev-jazzy
+git clone https://github.com/Xuwznln/LabDeviceWorkstationDemo.git
+python -m unilabos.app.main \
+  --devices <克隆目录下的设备包目录> \
+  --external_devices_only \
+  --backend hostlink --machine_name demo-host \
+  --disable_browser --port 8100 \
+  -g <仓库内提供的图文件>
+```
+
+`--devices` 指向的设备包目录、`-g` 图文件等具体路径以各仓库 README 为准；`LabDeviceLanDemo` 与 `LabDeviceMaterialsDemo` 还需按「先 host 后 slave」启动两个进程（仅图文件与 `--is_slave` 不同；同一台机器上 slave 另加 `--server_database_root <另一个目录>`，一个数据库根目录只能由一个实例使用）。
+
+**一键安装（不克隆源码）：** 七个包都收录在驱动包索引 [awesome-lab-devices](https://github.com/Xuwznln/awesome-lab-devices)（`index.json`）。先用空图起一个 Host（`unilab --backend hostlink`，不带 `-g`），打开 [OpenLab](https://xuwznln.github.io/OpenLabSite/) 连接 `http://127.0.0.1:8002`，在「驱动包」页点「安装到 Edge」——浏览器直接读索引，把 `spec`（`git+https://github.com/Xuwznln/LabDevice…Demo.git`）下发给微后端 `POST /api/v1/driver-packages/install` 下载并登记源码目录，只用 uv/pip 安装第三方依赖；装完后「启动」即把随包设备图作为受管设备进程拉起，不需要重启 Host。命令行可使用 `unilab package install "<spec>" --wait`；需要主 Host 重挂载时执行 `unilab runtime restart`。浏览器需要访问索引，安装执行侧也需要访问包源及依赖下载地址；离线环境应使用可达的内网包源。
+
+> 这七个仓库同时是 §9（自定义设备）、§11.5（通信共享机制）、§12（物料定义）的可运行落地示例：想从零写一个新驱动，可直接 fork [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) 作为脚手架，改写设备类与图文件即可，再给 awesome-lab-devices 提 PR 收录。主仓库 CI 对 pinned 版本运行完整工作流，除终态外还核对实验实值、权威物料与库存账目。
+
+---
+
 ### 12. 撰写物料定义
 
 详细的物料编写指南请参考：
@@ -1627,6 +1646,12 @@ solenoid_valve:
 - **容器**：孔板、试管、烧杯、反应瓶
 - **耗材**：枪头、移液管、过滤器
 - **试剂**：溶剂、试剂、样品
+
+登记到库存时按**账目形态**而不是按上述分类选择入口：有 uuid、要放到位点、逐件追踪的走「按件登记」
+（`POST /api/v1/materials/instantiate`，成为 `material` 实例，工作流用 `kind: "material"` 需求选取）；
+只记数量 / 单位 / 有效期、按量扣减的走「按量登记」（`POST /api/v1/materials/lots/inbound`，成为
+`inventory_lot`，工作流用 `kind: "lot"` 需求预留与扣减）。一盒枪头、一瓶试剂都可以按件记，
+散装枪头、散装溶剂都可以按量记。
 
 #### 12.2 创建自定义物料类型
 
@@ -1771,8 +1796,7 @@ properties:
 
 ```bash
 unilab --ak your_ak --sk your_sk -g graph.json \
-       --registry_path ./my_lab_devices/my_lab_devices/registry \
-       --upload_registry
+       --registry_path ./my_lab_devices/my_lab_devices/registry
 ```
 
 2. **在组态图中添加**：
@@ -1858,7 +1882,7 @@ unilab --ak your_ak --sk your_sk -g graph.json \
 
 #### 14.4 外部资源
 
-- **ROS 2 文档**：[https://docs.ros.org/en/humble/](https://docs.ros.org/en/humble/)
+- **ROS 2 文档**：[https://docs.ros.org/en/jazzy/](https://docs.ros.org/en/jazzy/)
 - **PyLabRobot**：[https://github.com/PyLabRobot/pylabrobot](https://github.com/PyLabRobot/pylabrobot)
 - **Python 类型注解**：[https://docs.python.org/3/library/typing.html](https://docs.python.org/3/library/typing.html)
 - **YAML 语法**：[https://yaml.org/](https://yaml.org/)
@@ -1888,8 +1912,3 @@ unilab --ak your_ak --sk your_sk -g graph.json \
 2. 在 GitHub 上提问和分享经验
 3. 关注文档更新和新功能发布
 4. 为 Uni-Lab-OS 社区贡献您的设备驱动和最佳实践
-
----
-
-_本指南最后更新：2025-11_
-_Uni-Lab-OS 版本：最新稳定版_

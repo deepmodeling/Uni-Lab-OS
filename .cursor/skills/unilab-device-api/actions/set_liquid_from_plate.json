@@ -1,0 +1,214 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {},
+  "feedback": {},
+  "result": {},
+  "schema": {
+    "type": "object",
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "plate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD280>"
+          },
+          "name": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD240>"
+          },
+          "sample_id": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD220>"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAC320>"
+            },
+            "description": "Field of type <rosidl_parser.definition.UnboundedSequence object at 0x000001A5E0E92EC0>"
+          },
+          "parent": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EACF80>"
+          },
+          "type": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EACE20>"
+          },
+          "category": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD2A0>"
+          },
+          "pose": {
+            "type": "object",
+            "properties": {
+              "position": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2237FD0>"
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2268040>"
+                  },
+                  "z": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2268070>"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "title": "position",
+                "description": "Field of type <rosidl_parser.definition.NamespacedType object at 0x000001A5E226A050>",
+                "additionalProperties": false
+              },
+              "orientation": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2288BE0>"
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2288C10>"
+                  },
+                  "z": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2288C40>"
+                  },
+                  "w": {
+                    "type": "number",
+                    "minimum": -1.7976931348623157e+308,
+                    "maximum": 1.7976931348623157e+308,
+                    "description": "Field of type <rosidl_parser.definition.BasicType object at 0x000001A5E2288C70>"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "z",
+                  "w"
+                ],
+                "title": "orientation",
+                "description": "Field of type <rosidl_parser.definition.NamespacedType object at 0x000001A5E226A080>",
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "position",
+              "orientation"
+            ],
+            "title": "pose",
+            "description": "Field of type <rosidl_parser.definition.NamespacedType object at 0x000001A5E0E92EF0>",
+            "additionalProperties": false
+          },
+          "config": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD2C0>"
+          },
+          "data": {
+            "type": "string",
+            "description": "Field of type <rosidl_parser.definition.UnboundedString object at 0x000001A5E0EAD2E0>"
+          }
+        },
+        "title": "plate"
+      },
+      "well_names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "liquid_names": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "volumes": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "required": [
+      "plate",
+      "well_names",
+      "liquid_names",
+      "volumes"
+    ],
+    "_unilabos_placeholder_info": {
+      "plate": "unilabos_resources"
+    }
+  },
+  "goal_default": {
+    "plate": null,
+    "well_names": null,
+    "liquid_names": null,
+    "volumes": null
+  },
+  "handles": {
+    "input": [
+      {
+        "data_key": "@this.0@@@plate",
+        "data_source": "handle",
+        "data_type": "resource",
+        "handler_key": "input_plate",
+        "label": "待设定液体板"
+      }
+    ],
+    "output": [
+      {
+        "data_key": "plate.@flatten",
+        "data_source": "executor",
+        "data_type": "resource",
+        "handler_key": "output_plate",
+        "label": "已设定液体板"
+      },
+      {
+        "data_key": "wells.@flatten",
+        "data_source": "executor",
+        "data_type": "resource",
+        "handler_key": "output_wells",
+        "label": "已设定液体孔"
+      },
+      {
+        "data_key": "volumes",
+        "data_source": "executor",
+        "data_type": "number_array",
+        "handler_key": "output_volumes",
+        "label": "各孔设定体积"
+      }
+    ]
+  },
+  "placeholder_keys": {
+    "plate": "unilabos_resources"
+  }
+}

@@ -1,622 +1,278 @@
 # Uni-Lab-OS 安装指南
 
-本指南提供 Uni-Lab-OS 的完整安装说明，涵盖从快速一键安装到完整开发环境配置的所有方式。
+从 **0.13** 起，默认安装和运行均使用 **HostLink，不需要 ROS**。Python 要求为
+`>=3.14,<3.15`；Windows、Linux、macOS 可使用相同的 Python 入口。
 
-## 系统要求
+本文的 Conda 命令适用于 0.13 及之后的发布。如果 channel 尚未提供该版本，请先使用
+下方源码安装；旧的 0.12.2 Conda 包仍包含 ROS，升级源码不会自动卸载旧环境中的 ROS。
 
-- **操作系统**: Windows 10/11, Linux (Ubuntu 20.04+), macOS (10.15+)
-- **内存**: 最小 4GB，推荐 8GB 以上
-- **磁盘空间**: 至少 10GB 可用空间
-- **网络**: 稳定的互联网连接（用于下载软件包）
-- **其他**:
-  - 已安装 Conda/Miniconda/Miniforge/Mamba
-  - 开发者需要 Git 和基本的 Python 开发知识
-  - 自定义 msgs 需要 GitHub 账号
+## uv 安装（不需要 ROS 时的默认方式）
 
-## 安装包选择
+不需要 ROS 时推荐用 [uv](https://docs.astral.sh/uv/)：它按需下载 CPython 3.14，解析和安装都比 pip 快得多。
+需要 ROS 时仍使用下文的 Conda 档位。PLR fork 与 Opentrons NumPy 2 修正版（下称“配套 wheel”）
+不在公共 PyPI，每种方式都要用 `--find-links` 指向一个配套 wheel 目录。按实际能拿到的来源选择：
 
-Uni-Lab-OS 提供三个安装包版本，根据您的需求选择：
+| 配套 wheel 来源 | 说明 |
+| --- | --- |
+| 本地构建 `scripts/build_wheel_release.py --dependencies-only` | 源码安装；0.13 正式 Release 发布前唯一的公开途径，需要 Git 和网络，源码按 SHA256 校验 |
+| Release 附件 `unilabos-<版本>-wheelhouse-<平台>.zip` 中的 `wheelhouse/` | 只有已发布该版本附件时可用；可完全离线 |
+| [配套 wheel 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/wheel-release.yml) 的 artifact | 开发版本；需要登录 GitHub 下载，保留 90 天 |
 
-| 安装包 | 适用场景 | 包含组件 | 磁盘占用 |
-|--------|----------|----------|----------|
-| **unilabos** | **推荐大多数用户**，生产部署 | 完整安装包，开箱即用 | ~2-3 GB |
-| **unilabos-env** | 开发者环境（可编辑安装） | 仅环境依赖，通过 pip 安装 unilabos | ~2 GB |
-| **unilabos-full** | 仿真可视化、完整功能体验 | unilabos + 完整 ROS2 桌面版 + Gazebo + MoveIt | ~8-10 GB |
-
-## 安装方式选择
-
-根据您的使用场景，选择合适的安装方式：
-
-| 安装方式               | 适用人群             | 推荐安装包        | 特点                           | 安装时间                     |
-| ---------------------- | -------------------- | ----------------- | ------------------------------ | ---------------------------- |
-| **方式一：一键安装**   | 快速体验、演示       | 预打包环境        | 离线可用，无需配置             | 5-10 分钟 (网络良好的情况下) |
-| **方式二：手动安装**   | **大多数用户**       | `unilabos`        | 完整功能，开箱即用             | 10-20 分钟                   |
-| **方式三：开发者安装** | 开发者、需要修改源码 | `unilabos-env`    | 可编辑模式，支持自定义开发     | 20-30 分钟                   |
-| **仿真/可视化**        | 仿真测试、可视化调试 | `unilabos-full`   | 含 Gazebo、rviz2、MoveIt       | 30-60 分钟                   |
-
----
-
-## 方式一：一键安装（推荐新用户）
-
-使用预打包的 conda 环境，最快速的安装方法。
-
-### 前置条件
-
-确保已安装 Conda/Miniconda/Miniforge/Mamba。
-
-### 安装步骤
-
-#### 第一步：下载预打包环境
-
-1. 访问 [GitHub Actions - Conda Pack Build](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/conda-pack-build.yml)
-
-2. 选择最新的成功构建记录（绿色勾号 ✓）
-
-3. 在页面底部的 "Artifacts" 部分，下载对应你操作系统的压缩包：
-   - Windows: `unilab-pack-win-64-{branch}.zip`
-   - macOS (Intel): `unilab-pack-osx-64-{branch}.tar.gz`
-   - macOS (Apple Silicon): `unilab-pack-osx-arm64-{branch}.tar.gz`
-   - Linux: `unilab-pack-linux-64-{branch}.tar.gz`
-
-#### 第二步：解压并运行安装脚本
-
-**Windows**:
-
-```batch
-REM 使用 Windows 资源管理器解压下载的 zip 文件
-REM 或使用命令行：
-tar -xzf unilab-pack-win-64-dev.zip
-
-REM 进入解压后的目录
-cd unilab-pack-win-64-dev
-
-REM 双击运行 install_unilab.bat
-REM 或在命令行中执行：
-install_unilab.bat
-```
-
-**macOS**:
+源码安装：
 
 ```bash
-# 解压下载的压缩包
-tar -xzf unilab-pack-osx-arm64-dev.tar.gz
-
-# 进入解压后的目录
-cd unilab-pack-osx-arm64-dev
-
-# 运行安装脚本
-bash install_unilab.sh
-```
-
-**Linux**:
-
-```bash
-# 解压下载的压缩包
-tar -xzf unilab-pack-linux-64-dev.tar.gz
-
-# 进入解压后的目录
-cd unilab-pack-linux-64-dev
-
-# 添加执行权限（如果需要）
-chmod +x install_unilab.sh
-
-# 运行安装脚本
-./install_unilab.sh
-```
-
-#### 第三步：激活环境
-
-```bash
-conda activate unilab
-```
-
-激活后，您的命令行提示符应该会显示 `(unilab)` 前缀。
-
----
-
-## 方式二：手动安装（标准用户）
-
-适合生产环境和需要灵活配置的用户。
-
-### 第一步：安装 Mamba 环境管理器
-
-Mamba 是 Conda 的快速替代品，我们强烈推荐使用 Mamba 来管理 Uni-Lab 环境。
-
-#### Windows
-
-下载并安装 Miniforge（包含 Mamba）:
-
-```powershell
-# 访问 https://github.com/conda-forge/miniforge/releases
-# 下载 Miniforge3-Windows-x86_64.exe
-# 运行安装程序
-
-# 也可以使用镜像站 https://mirrors.tuna.tsinghua.edu.cn/github-release/conda-forge/miniforge/LatestRelease/
-# 下载 Miniforge3-Windows-x86_64.exe
-# 运行安装程序
-```
-
-#### Linux/macOS
-
-```bash
-# 下载 Miniforge 安装脚本
-curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-
-# 运行安装
-bash Miniforge3-$(uname)-$(uname -m).sh
-
-# 按照提示完成安装，建议选择 yes 来初始化
-```
-
-安装完成后，重新打开终端使 Mamba 生效。
-
-### 第二步：创建 Uni-Lab 环境
-
-使用以下命令创建 Uni-Lab 专用环境：
-
-```bash
-mamba create -n unilab python=3.11.14  # 目前ros2组件依赖版本大多为3.11.14
-mamba activate unilab
-
-# 选择安装包（三选一）：
-
-# 方案 A：标准安装（推荐大多数用户）
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
-
-# 方案 B：开发者环境（可编辑模式开发）
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-# 然后安装 unilabos 和 pip 依赖：
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
-
-# 方案 C：完整版（含仿真和可视化工具）
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
-```
-
-**参数说明**:
-
-- `-n unilab`: 创建名为 "unilab" 的环境
-- `uni-lab::unilabos`: 安装 unilabos 完整包，开箱即用（推荐）
-- `uni-lab::unilabos-env`: 仅安装环境依赖，适合开发者使用 `pip install -e .`
-- `uni-lab::unilabos-full`: 安装完整包（含 ROS2 Desktop、Gazebo、MoveIt 等）
-- `-c robostack-staging -c conda-forge`: 添加额外的软件源
-
-**包选择建议**：
-- **日常使用/生产部署**：安装 `unilabos`（推荐，完整功能，开箱即用）
-- **开发者**：安装 `unilabos-env`，然后使用 `uv pip install -r unilabos/utils/requirements.txt` 安装依赖，再 `pip install -e .` 进行可编辑安装
-- **仿真/可视化**：安装 `unilabos-full`（Gazebo、rviz2、MoveIt）
-
-**如果遇到网络问题**，可以使用清华镜像源加速下载：
-
-```bash
-# 配置清华镜像源
-mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
-mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
-mamba config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
-
-# 然后重新执行安装命令（推荐标准安装）
-mamba create -n unilab uni-lab::unilabos -c robostack-staging
-
-# 或完整版（仿真/可视化）
-mamba create -n unilab uni-lab::unilabos-full -c robostack-staging
-
-# pip 安装时使用清华镜像（开发者安装时使用）
-uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-```
-
-### 第三步：激活环境
-
-```bash
-conda activate unilab
-```
-
----
-
-## 方式三：开发者安装
-
-适用于需要修改 Uni-Lab 源代码或开发新设备驱动的开发者。
-
-### 前置条件
-
-- 已安装 Git
-- 已安装 Mamba/Conda
-- 有 GitHub 账号（如需自定义 msgs）
-- 基本的 Python 开发知识
-
-### 第一步：克隆仓库
-
-```bash
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git
+git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
+uv venv --python 3.14 --seed   # 新建 .venv；--seed 带上 pip，构建配套 wheel 时使用
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+python scripts/build_wheel_release.py --dependencies-only --output-dir dist/companion
+uv pip install --find-links dist/companion/wheelhouse .
+python scripts/verify_installation.py --assert-no-ros
+unilab --disable-browser
 ```
 
-如果您需要贡献代码，建议先 Fork 仓库：
-
-1. 访问 https://github.com/deepmodeling/Uni-Lab-OS
-2. 点击右上角的 "Fork" 按钮
-3. Clone 您的 Fork 版本：
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/Uni-Lab-OS.git
-   cd Uni-Lab-OS
-   ```
-
-### 第二步：安装开发环境（unilabos-env）
-
-**重要**：开发者请使用 `unilabos-env` 包，它专为开发者设计：
-- 包含 ROS2 核心组件和消息包（ros-humble-ros-core、std-msgs、geometry-msgs 等）
-- 包含 transforms3d、cv-bridge、tf2 等 conda 依赖
-- 包含 `uv` 工具，用于快速安装 pip 依赖
-- **不包含** pip 依赖和 unilabos 包（由 `pip install -e .` 和 `uv pip install` 安装）
+发行包离线安装，在解压目录执行：
 
 ```bash
-# 创建并激活环境
-mamba create -n unilab python=3.11.14
-conda activate unilab
-
-# 安装开发者环境包（ROS2 + conda 依赖 + uv）
-mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
+uv venv --python 3.14
+source .venv/bin/activate      # Windows PowerShell：.venv\Scripts\Activate.ps1
+uv pip install --no-index --find-links wheelhouse --require-hashes -r requirements.lock
+python verify_installation.py --assert-no-ros
+unilab --disable-browser
 ```
 
-### 第三步：安装 pip 依赖和可编辑模式安装
+先激活 `.venv`，`uv pip install` 和后续命令就都作用于它。开发者可用
+`python scripts/dev_install.py` 一步完成源码方式并改为可编辑安装，见下文“Python 安装”。
+扩展档位同样可用 uv：`uv pip install --find-links <配套 wheel 目录> ".[full]"`。
 
-克隆代码并安装依赖：
+## 配套 wheel 发行包（标准库安装入口，无须 uv / Conda）
+
+下载对应平台的 `unilabos-<版本>-wheelhouse-<平台>.zip` 并解压。需要自行安装 Python 3.14；
+Windows x64、Linux x64、macOS Intel/Apple Silicon 分别提供独立产物，不能混用。
+在解压目录执行：
 
 ```bash
-# 确保环境已激活
-conda activate unilab
+python install_wheel_release.py
+# 可选：指定一个尚不存在的新环境目录
+python install_wheel_release.py --prefix /path/to/new-environment
+```
 
-# 克隆仓库（如果还未克隆）
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git
+入口会校验 SHA256、创建 `.venv`、离线安装全部默认依赖并验证 CLI、微后端和 Opentrons 96 孔板。
+已有环境目录不会覆盖；安装不需要 ROS、Git、Conda、编译器或访问包源。执行结束会打印启动命令。
+这个包不包含 Python 解释器，需要连同解释器分发时使用下文 Conda-Pack 包。
+
+PLR fork 和 Opentrons NumPy 2 修正版只作为配套文件提供，**不上传官方 PyPI**。
+发布到公开 GitHub Release 的附件仍然可公开下载；不等于私有源。
+未发布正式 Release 时，可从 [配套 wheel 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/wheel-release.yml)
+的成功 artifact 获取；`local-test` 文件仅供本地验证，不是正式发布版本。
+
+已有独立 Python 3.14 环境时，也可由 pip 自动解析依赖：
+
+```bash
+# 完整离线、精确版本与文件哈希：推荐保留安装入口的默认行为
+python -m pip install --no-index --find-links ./wheelhouse --require-hashes -r requirements.lock
+# 只指定主包，自动安装所需依赖（不锁定清单中全部间接依赖版本）
+python -m pip install --no-index --find-links ./wheelhouse "unilabos==0.13.0rc1"
+```
+
+只复制 `unilabos.whl`、不提供配套目录，或直接对公共源执行 `pip install unilabos`，
+都不能让 pip 发现未托管在公共源的修正版。不要用上游同名包、`--no-deps` 或降级 NumPy 来绕过它。
+
+## Python 安装
+
+源码开发用 `scripts/dev_install.py`，一步完成构建配套 wheel、可编辑安装和依赖检查：
+
+```bash
+git clone --branch dev https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
-
-# 切换到 dev 分支（可选）
-git checkout dev
-git pull
+python scripts/dev_install.py          # 装有 uv 时，启动它的 Python 不必是 3.14
+source .venv/bin/activate              # Windows PowerShell：.venv\Scripts\Activate.ps1
+unilab --help
+unilab --disable_browser --port 8002
 ```
 
-**推荐：使用安装脚本**（自动检测中文环境，使用 uv 加速）：
+安装工具默认 `--installer auto`：找到 `uv` 就用 uv，否则提示后回退当前解释器的 pip；
+`--installer uv|pip` 可显式指定，旧参数 `--use-pip` 等同 `--installer pip`。目标环境按以下顺序确定：
+
+1. `--venv <目录>`：已存在时必须是 CPython 3.14 环境，否则新建；
+2. 脚本由已激活的 venv / Conda 环境中的解释器运行时，直接装入该环境（须为 CPython 3.14），
+   Conda + `--skip-deps` 的用法不变；
+3. 否则使用项目根目录的 `.venv`，不存在时新建。
+
+新建环境时，uv 执行 `uv venv --seed --python cpython3.14`（本机没有 3.14 时自动下载；`--seed` 带上 pip，
+配套 wheel 构建要用），pip 方式用当前解释器的 `venv` 模块，因此必须由 CPython 3.14 运行脚本。
+脚本不会装入全局解释器，避免改动系统或其他工具的 Python。
+
+首次运行按提示选择工作目录和配置；不带 `-g` 时以空设备图启动，可从微前端安装设备包。
+安装时已声明微后端、调度、物料、HostLink 和 CLI 所需的 Python 依赖，不再需要额外安装
+`unilabos_msgs`、执行 `colcon build` 或手动补一个 requirements 清单。
+
+源码安装入口先用目标环境的解释器从固定源码构建配套 wheel，再以 `--find-links` 可编辑安装 UniLabOS，
+最后执行 `uv pip check` / `pip check`。此构建过程需要 Git、Python 包源和 GitHub；
+如果已有配套包，用 `python scripts/dev_install.py --wheelhouse <解压目录>/wheelhouse`
+可以跳过这一步。构建产物不会上传 PyPI，源码下载以 SHA256 校验。
+
+用户安装 wheel 并提供 `--find-links` 时，也会自动安装其 `Requires-Dist` 依赖，不需要源码仓库。
+依赖清单随 wheel 安装在 `unilabos/utils/requirements.txt`，启动检查不读取仓库根目录。
+若使用了 `pip install --no-deps`，可显式运行
+`python -m unilabos.utils.environment_check --wheelhouse <解压目录>/wheelhouse` 补齐当前包声明的依赖；
+仅检查使用 `--no-auto-install`。也可通过 `UNILABOS_WHEELHOUSE` 显式设置该目录。
+这只是误用 `--no-deps` 后的恢复入口，正常安装不依靠首次启动时再下载依赖；
+恢复入口允许访问普通包源，严格离线安装应使用前面的安装入口/锁定清单。
+
+两个修正版是默认物料依赖：`pylabrobot==1.0.0b1+unilabos.6a8f3dda7642.ot10` 固定到已验证的 fork 提交，
+`opentrons-shared-data==10.1.0+unilabos.np2.1` 与 Conda 共用 NumPy 2 补丁。
+普通上游 `opentrons-shared-data` 仍限制 NumPy 1，不能替换修正版。
+PLR 自身也声明了这个 Opentrons 数据包前置依赖；从完整配套 `wheelhouse` 只安装 PLR 时，
+pip 仍会自动带齐修正版和 NumPy 2，无须手动安排安装顺序，也无须安装完整的 `opentrons` SDK。
+
+安装只分三档，不再拆分独立的 docs/dev/test/drivers 选项：
+
+| 档位 | Python 安装 | 内容 |
+| --- | --- | --- |
+| 默认 | `python scripts/dev_install.py` | HostLink、微后端、工作流、物料，默认无 ROS |
+| ros2 | `python scripts/dev_install.py --extras ros2` | 默认依赖及 ROS Python 辅助依赖；原生 ROS 另装 |
+| full | `python scripts/dev_install.py --extras full` | 全部 Python 依赖：内置驱动 SDK、文档、测试、开发工具及 ROS Python 辅助依赖 |
+
+已有配套 wheel 时追加 `--wheelhouse <解压目录>/wheelhouse`。非源码安装使用
+`uv pip install --find-links <解压目录>/wheelhouse "unilabos[full]==0.13.0rc1"`
+（没有 uv 时换成 `python -m pip install`，参数相同）。
+默认离线 wheel 包只锁定默认依赖；扩展档位还需联网取得公共依赖，不能宣称整套 full 离线可用。
+pip 的 `[ros2]` / `[full]` **不安装原生 ROS、DDS、RViz 或消息 typesupport**，
+需要这些组件时使用下方 Conda 对应档位。专有硬件 SDK、系统驱动和许可证仍按设备包要求准备。
+`--test_mode` 是硬件模拟开关，与“无 ROS”不是同一概念；普通 Python 驱动可通过 HostLink 操作真实硬件。
+
+## Conda 安装
+
+默认只启用 Uni-Lab 和 conda-forge，不添加 RoboStack channel：
 
 ```bash
-# 自动检测中文环境，如果是中文系统则使用清华镜像
-python scripts/dev_install.py
-
-# 或者手动指定：
-python scripts/dev_install.py --china     # 强制使用清华镜像
-python scripts/dev_install.py --no-mirror # 强制使用 PyPI
-python scripts/dev_install.py --skip-deps # 跳过 pip 依赖安装
-python scripts/dev_install.py --use-pip   # 使用 pip 而非 uv
-```
-
-**手动安装**（如果脚本安装失败或速度太慢）：
-
-```bash
-# 1. 安装 unilabos（可编辑模式）
-pip install -e .
-
-# 2. 使用 uv 安装 pip 依赖（推荐，速度更快）
-uv pip install -r unilabos/utils/requirements.txt
-
-# 国内用户使用清华镜像：
-pip install -e . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-uv pip install -r unilabos/utils/requirements.txt -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-```
-
-**注意**：
-- `uv` 已包含在 `unilabos-env` 中，无需单独安装
-- `unilabos/utils/requirements.txt` 包含运行 unilabos 所需的所有 pip 依赖
-- 部分特殊包（如 pylabrobot）会在运行时由 unilabos 自动检测并安装
-
-**为什么使用可编辑模式？**
-
-- `-e` (editable mode)：代码修改**立即生效**，无需重新安装
-- 适合开发调试：修改代码后直接运行测试
-- 与 `unilabos-env` 配合：环境依赖由 conda 管理，unilabos 代码由 pip 管理
-
-**验证安装**：
-
-```bash
-# 检查 unilabos 版本
-python -c "import unilabos; print(unilabos.__version__)"
-
-# 检查安装位置（应该指向你的代码目录）
-pip show unilabos | grep Location
-```
-
-### 第四步：安装或自定义 ros-humble-unilabos-msgs（可选）
-
-Uni-Lab 使用 ROS2 消息系统进行设备间通信。如果你使用方式一或方式二安装，msgs 包已经自动安装。
-
-#### 使用已安装的 msgs（大多数用户）
-
-如果你不需要修改 msgs，可以跳过此步骤，直接使用已安装的 msgs 包。验证安装：
-
-```bash
-# 列出所有 unilabos_msgs 接口
-ros2 interface list | grep unilabos_msgs
-
-# 查看特定 action 定义
-ros2 interface show unilabos_msgs/action/DeviceCmd
-```
-
-#### 自定义 msgs（高级用户）
-
-如果你需要：
-
-- 添加新的 ROS2 action 定义
-- 修改现有 msg/srv/action 接口
-- 为特定设备定制通信协议
-
-请参考 **[添加新动作指令（Action）指南](../developer_guide/add_action.md)**，该指南详细介绍了如何：
-
-- 编写新的 Action 定义
-- 在线构建 Action（通过 GitHub Actions）
-- 下载并安装自定义的 msgs 包
-- 测试和验证新的 Action
-
-```bash
-# 安装自定义构建的 msgs 包
-mamba remove --force ros-humble-unilabos-msgs
-mamba config set safety_checks disabled  # 关闭 md5 检查
-mamba install /path/to/ros-humble-unilabos-msgs-*.conda --offline
-```
-
-### 第五步：验证开发环境
-
-完成上述步骤后，验证开发环境是否正确配置：
-
-```bash
-# 确保环境已激活
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
 conda activate unilab
+unilab --help
+unilab --disable_browser --port 8002
+```
 
-# 检查 ROS2 环境
-ros2 --version
+| 包 | 用途 | 是否安装 ROS |
+| --- | --- | --- |
+| `unilabos` | 默认完整的 HostLink / 微后端运行程序 | 否 |
+| `unilabos-ros2` | 显式选装 Jazzy 或 Humble 的设备通信扩展 | 是 |
+| `unilabos-full` | 完整运行、文档、测试、开发工具及 ROS Desktop / MoveIt | 是 |
 
-# 检查 msgs 包
-ros2 interface list | grep unilabos_msgs
+默认包的 build 为 `py314_0`。不再发布 `unilabos-env` 中间包；这与用户自行创建的
+名为 `unilab` 的 Conda 环境不是同一概念，不会删除或更改已有环境。
+ROS 扩展使用另一个包名，避免 Conda 在同名默认包的 ROS / 非 ROS 变体之间自行选择。
 
-# 检查 Python 可以导入 unilabos
-python -c "import unilabos; print(f'Uni-Lab版本: {unilabos.__version__}')"
+只安装 `unilabos` 即会直接带上 PLR fork、`msgcenterpy` 及 NumPy 2 修复版
+`opentrons-shared-data=10.1.0+unilabos.np2.1=py314_np2_1`，不要求用户另装环境中间包
+或 ROS 扩展。发行自检会实际创建 Opentrons 96 孔板，并检查 NumPy 2 积分接口，不能只验证 import。
 
-# 检查 unilab 命令
+## 运行 Host 与 Slave
+
+```bash
+# 默认 HostLink；省略 --backend 也一样
+unilab -g host.json --machine_name lab-host --port 8002 --hostlink_port 7302
+
+# 另一台机器（或同机另一个进程）
+unilab --is_slave -g slave.json --machine_name lab-slave --host_node_ip 192.168.1.10 --hostlink_port 7302
+
+# 单独的调度/物料权威，不启动设备（端口默认 8002，与默认启动同一个 --port 设置）
+unilab --role backend
+```
+
+`--role backend` 与用 `--address` 接入它的 Edge 都会监听自己的 `--port`（默认都是 `8002`），
+在同一台机器上运行时给 Edge 换一个端口，例如 `--address http://127.0.0.1:8002 --port 8003`。
+
+默认启动会分为微后端权威和 Host 子进程；前端只连接管理端 HTTP 端口，
+Slave 连接 HostLink TCP 端口。同机时 Host IP 可用 `127.0.0.1`。
+前端是独立部署的静态站点：推荐的 [OpenLab](https://xuwznln.github.io/OpenLabSite/) 可以从
+`http://127.0.0.1:8002/` 导航页的卡片进入（`unilab` 启动时自动打开的导航页会把后端地址和控制令牌一起交给它），
+也可以直接打开后在「连接设置」里填 `http://<主机>:8002`；写操作需要的控制令牌由 `unilab token` 打印。
+正式前端 Uni-Lab FE 需要自行部署，同样填管理端地址，不要填 HostLink 端口。
+调度权威不自己扫描设备注册表，设备与资源目录由 Host 启动时上报。所有进程在同一台机器上时
+（默认启动、受管设备进程、同机的 Slave），上报的变化自动生效；有 Slave 在另一台机器上时，
+注册表的变化要经确认才生效（驱动包版本号升高的变化仍自动生效）：启动日志会提示待确认的
+条目数，用 `POST /api/v1/registry/pending/apply`（或前端的注册表确认入口）确认；不再使用的跨机器
+Slave 用 `DELETE /api/v1/registry/slaves/<machine_name>` 删除记录。
+设备归属可以提前登记，但必须完成 `post_init/setup/initialize` 后才会进入可调度设备快照。
+
+无 ROS 安装支持普通设备驱动、Workstation/sub-device、动作与 Service、物料创建及 transfer、
+工作流、异常干预、逐步执行、实时日志和 MCP。原生 ROS graph/TF、MoveIt、RViz、
+依赖 ROS 消息或 DDS/QoS 的驱动、ROS 高频图像流需要下方的 ROS 扩展。
+HTTP/FFmpeg 等非 ROS 图像方案不因此被禁用，但仍需安装自己的依赖。
+
+## 显式选装 ROS2
+
+分别创建环境，不能混用 Jazzy 和 Humble 的 channel：
+
+```bash
+# Jazzy
+mamba create -n unilab-jazzy --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-ros2=0.13.0rc1=jazzy_1"
+conda activate unilab-jazzy
+unilab --backend ros2 -g graph.json
+
+# Humble：在另一个环境执行
+mamba create -n unilab-humble --override-channels -c uni-lab -c conda-forge -c robostack-humble "unilabos-ros2=0.13.0rc1=humble_1"
+```
+
+ROS 扩展保持 Python 3.14.10 / NumPy 2 与消息包 0.12.1 的 ABI 基线；
+安装扩展后也必须使用 `--backend ros2`，不会偷偷切换默认 backend。
+需要 RViz/MoveIt 时再显式选择匹配的 `unilabos-full=0.13.0rc1=jazzy_1` 或 `humble_1`，
+这些大型组件的可用性还取决于平台和 RoboStack 包。
+
+自定义 ROS Action/消息参见[添加动作](../developer_guide/add_action.md)。
+纯 Python/HostLink 驱动不需要为了增加动作而编译 ROS 消息。
+
+## 完整开发与文档环境
+
+需要连同 ROS 运行与文档一起开发时，创建完整环境后可编辑安装源码：
+
+```bash
+mamba create -n unilab-full --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "unilabos-full=0.13.0rc1=jazzy_1"
+conda activate unilab-full
+python scripts/dev_install.py --extras full
+python -m pytest tests/
+python -m sphinx -b html -d .local/docs/doctrees docs .local/docs/html
+```
+
+`full` 统一包含文档、测试、开发工具和内置驱动的通用 Python SDK，不再拆分额外档位。
+Conda 发行同时提供 PDF 字体和各平台的 OPC-UA 依赖；Windows GUI 自动化依赖仅在
+Windows 安装，因为对应的 Agilent HPLC 驱动依赖 Windows 应用，并不支持其他操作系统。
+
+正式文档构建设置 `UNILABOS_DOCS_REQUIRE_ROS=1`，缺少 `control_msgs` / `nav2_msgs`
+动作定义时直接失败，不静默生成缺页文档。无 ROS 环境只做普通页面预览；若已有另一套 ROS
+环境，可设置 `UNILABOS_DOCS_ROS_PREFIX` 指向它，仅复用 `share` 中的消息定义，不混用 Python 包。
+生成的动作参考和 HTML 均保留在构建输出目录，不改写 `docs/developer_guide` 或提交生成物。
+
+## 离线包
+
+在 [Conda-Pack 构建](https://github.com/deepmodeling/Uni-Lab-OS/actions/workflows/conda-pack-build.yml)
+选择成功的 `unilab-pack-hostlink-<平台>-<源码SHA>` 产物，解压 GitHub artifact ZIP 后，
+Windows 运行 `install_unilab.bat`，Linux/macOS 运行 `bash install_unilab.sh`。
+
+包内包含 Python 环境、安装/验证工具和对应源码归档；默认不包含 ROS。
+已存在的环境不会被覆盖；需要新名字时用 `install_unilab.bat unilab-hostlink`
+或 `bash install_unilab.sh unilab-hostlink`。
+自动打包使用上游同一次构建的 Conda 文件，不覆盖安装另一个源码版本，不追踪最新 ROS 消息。
+手动构建会先按指定 SHA 构建默认 Conda 包，再安装验证和打包。
+
+## 验证与排错
+
+在源码目录执行（离线包中省略 `scripts/` 前缀）：
+
+```bash
+python -m pip check
+python scripts/verify_installation.py --assert-no-ros
 unilab --help
 ```
 
-如果所有命令都正常输出，说明开发环境配置成功！
-
----
-
-## 验证安装
-
-无论使用哪种安装方式，都应该验证安装是否成功。
-
-### 基本验证
-
-```bash
-# 确保已激活环境
-conda activate unilab  # 或 unilab-dev
-
-# 检查 unilab 命令
-unilab --help
-```
-
-您应该看到类似以下的输出：
-
-```
-usage: unilab [-h] [-g GRAPH] [-c CONTROLLERS] [--registry_path REGISTRY_PATH]
-              [--working_dir WORKING_DIR] [--backend {ros,simple,automancer}]
-              ...
-```
-
-### 检查版本
-
-```bash
-python -c "import unilabos; print(f'Uni-Lab版本: {unilabos.__version__}')"
-```
-
-### 使用验证脚本（方式一）
-
-如果使用一键安装，可以运行预打包的验证脚本：
-
-```bash
-# 确保已激活环境
-conda activate unilab
-
-# 运行验证脚本
-python verify_installation.py
-```
-
-如果看到 "✓ All checks passed!"，说明安装成功！
-
----
-
-## 常见问题
-
-### 问题 1: 找不到 unilab 命令
-
-**原因**: 环境未正确激活或 PATH 未设置
-
-**解决方案**:
-
-```bash
-# 确保激活了正确的环境
-conda activate unilab
-
-# 检查 unilab 是否在 PATH 中
-which unilab  # Linux/macOS
-where unilab  # Windows
-```
-
-### 问题 2: 包冲突或依赖错误
-
-**解决方案**:
-
-```bash
-# 删除旧环境重新创建
-conda deactivate
-conda env remove -n unilab
-mamba create -n unilab uni-lab::unilabos -c robostack-staging -c conda-forge
-```
-
-### 问题 3: 下载速度慢
-
-**解决方案**: 使用国内镜像源（清华、中科大等）
-
-```bash
-# 查看当前 channel 配置
-conda config --show channels
-
-# 添加清华镜像
-conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
-```
-
-### 问题 4: 权限错误
-
-**Windows 解决方案**: 以管理员身份运行命令提示符
-
-**Linux/macOS 解决方案**:
-
-```bash
-# 不要使用 sudo 安装 conda 包
-# 如果 conda 安装在需要权限的位置，考虑重新安装 conda 到用户目录
-```
-
-### 问题 5: 安装脚本找不到 conda（方式一）
-
-**解决方案**: 确保你已经安装了 conda/miniconda/miniforge，并且安装在标准位置：
-
-- **Windows**:
-
-  - `%USERPROFILE%\miniforge3`
-  - `%USERPROFILE%\miniconda3`
-  - `%USERPROFILE%\anaconda3`
-  - `C:\ProgramData\miniforge3`
-
-- **macOS/Linux**:
-  - `~/miniforge3`
-  - `~/miniconda3`
-  - `~/anaconda3`
-  - `/opt/conda`
-
-如果安装在其他位置，可以先激活 conda base 环境，然后手动运行安装脚本。
-
-### 问题 6: 安装后激活环境提示找不到？
-
-**解决方案**: 尝试以下方法：
-
-```bash
-# 方法 1: 使用 conda activate
-conda activate unilab
-
-# 方法 2: 使用完整路径激活（Windows）
-call C:\Users\{YourUsername}\miniforge3\envs\unilab\Scripts\activate.bat
-
-# 方法 2: 使用完整路径激活（Unix）
-source ~/miniforge3/envs/unilab/bin/activate
-```
-
-### 问题 7: conda-unpack 失败怎么办？（方式一）
-
-**解决方案**: 尝试手动运行：
-
-```bash
-# Windows
-cd %CONDA_PREFIX%\envs\unilab
-.\Scripts\conda-unpack.exe
-
-# macOS/Linux
-cd $CONDA_PREFIX/envs/unilab
-./bin/conda-unpack
-```
-
-### 问题 8: 环境很大，有办法减小吗？
-
-**解决方案**: 
-
-1. **使用 `unilabos` 标准版**（推荐大多数用户）：
-   ```bash
-   mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
-   ```
-   标准版包含完整功能，环境大小约 2-3GB（相比完整版的 8-10GB）。
-
-2. **使用 `unilabos-env` 开发者版**（最小化）：
-   ```bash
-   mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-   # 然后手动安装依赖
-   pip install -e .
-   uv pip install -r unilabos/utils/requirements.txt
-   ```
-   开发者版只包含环境依赖，体积最小约 2GB。
-
-3. **按需安装额外组件**：
-   如果后续需要特定功能，可以单独安装：
-   ```bash
-   # 需要 Jupyter
-   mamba install jupyter jupyros
-   
-   # 需要可视化
-   mamba install matplotlib opencv
-   
-   # 需要仿真（注意：这会安装大量依赖）
-   mamba install ros-humble-gazebo-ros
-   ```
-
-4. **预打包环境问题**：
-   预打包环境（方式一）包含所有依赖，通常较大（压缩后 2-5GB）。这是为了确保离线安装和完整功能。
-
-**包选择建议**：
-| 需求 | 推荐包 | 预估大小 |
-|------|--------|----------|
-| 日常使用/生产部署 | `unilabos` | ~2-3 GB |
-| 开发调试（可编辑模式） | `unilabos-env` | ~2 GB |
-| 仿真/可视化 | `unilabos-full` | ~8-10 GB |
-
-### 问题 9: 如何更新到最新版本？
-
-**解决方案**:
-
-**方式一用户**: 重新下载最新的预打包环境，运行安装脚本时选择覆盖现有环境。
-
-**方式二/三用户**: 在现有环境中更新：
-
-```bash
-conda activate unilab
-
-# 更新 unilabos
-cd /path/to/Uni-Lab-OS
-git pull
-pip install -e . --upgrade -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple
-
-# 更新 ros-humble-unilabos-msgs
-mamba update ros-humble-unilabos-msgs -c uni-lab -c robostack-staging -c conda-forge
-```
-
----
-
-## 下一步
-
-安装完成后，请继续：
-
-- **快速启动**: 学习如何首次启动 Uni-Lab
-- **配置指南**: 配置您的实验室环境和设备
-- **运行示例**: 查看启动示例和最佳实践
-- **开发指南**:
-  - 添加新设备驱动
-  - 添加新物料资源
-  - 了解工作站架构
-
-## 需要帮助？
-
-- **故障排查**: 查看更详细的故障排查信息
-- **GitHub Issues**: [报告问题](https://github.com/deepmodeling/Uni-Lab-OS/issues)
-- **开发者文档**: 查看开发者指南获取更多技术细节
-- **社区讨论**: [GitHub Discussions](https://github.com/deepmodeling/Uni-Lab-OS/discussions)
-
----
-
-**提示**:
-
-- **大多数用户**推荐使用方式二（手动安装）的 `unilabos` 标准版
-- **开发者**推荐使用方式三（开发者安装），安装 `unilabos-env` 后使用 `uv pip install -r unilabos/utils/requirements.txt` 安装依赖
-- **仿真/可视化**推荐安装 `unilabos-full` 完整版
-- **快速体验和演示**推荐使用方式一（一键安装）
+ROS 环境改为 `python scripts/verify_installation.py --backend ros2`，不加 `--assert-no-ros`。
+验证默认不会自动安装缺失依赖；缺失或版本不满足时返回非零退出码。
+
+- 找不到 `unilab`：先激活安装时使用的环境，或执行 `python -m unilabos.app.main`。
+- 提示缺少 `rclpy`：普通驱动使用默认 HostLink；确实需要 ROS 才安装匹配扩展，不用 pip 猜装 ROS 原生库。
+- 想从旧环境去掉 ROS：保留原环境，另建干净环境；不要删除数据库或复制旧的 site-packages。
+- 驱动缺少专用 SDK：按设备包的声明安装，不代表默认微后端需要 ROS。
+- 网络下载失败：目标机器优先使用配套离线包；源码构建仍需下载固定上游归档，不能改成任意分支。
+
+运行参数见[启动指南](launch.md)，接口与设计见[开发者指南](../developer_guide/interfaces/index.md)。

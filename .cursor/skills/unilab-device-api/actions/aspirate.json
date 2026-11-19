@@ -1,0 +1,206 @@
+{
+  "type": "LiquidHandlerAspirate",
+  "goal": {
+    "resources": "resources",
+    "vols": "vols",
+    "use_channels": "use_channels",
+    "flow_rates": "flow_rates",
+    "offsets": "offsets",
+    "liquid_height": "liquid_height",
+    "blow_out_air_volume": "blow_out_air_volume",
+    "spread": "spread"
+  },
+  "feedback": {},
+  "result": {
+    "return_info": "return_info",
+    "success": "success"
+  },
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "resources": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position"
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation"
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose"
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "sample_id",
+            "children",
+            "parent",
+            "type",
+            "category",
+            "pose",
+            "config",
+            "data"
+          ]
+        }
+      },
+      "vols": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "use_channels": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "flow_rates": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "offsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ]
+        }
+      },
+      "liquid_height": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "blow_out_air_volume": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "spread": {
+        "type": "string"
+      }
+    },
+    "title": "LiquidHandlerAspirate_Goal",
+    "_unilabos_placeholder_info": {
+      "resources": "unilabos_resources"
+    }
+  },
+  "goal_default": {
+    "resources": [],
+    "vols": [],
+    "use_channels": [],
+    "flow_rates": [],
+    "offsets": [],
+    "liquid_height": [],
+    "blow_out_air_volume": [],
+    "spread": ""
+  },
+  "handles": {},
+  "placeholder_keys": {
+    "resources": "unilabos_resources"
+  }
+}

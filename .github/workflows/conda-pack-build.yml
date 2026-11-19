@@ -1,388 +1,147 @@
 name: Build Conda-Pack Environment
 
 on:
-  # 在 UniLabOS Conda Build 成功上传后自动构建非全量 conda-pack
   workflow_run:
     workflows: ["UniLabOS Conda Build"]
     types: [completed]
   workflow_dispatch:
     inputs:
       branch:
-        description: '选择要构建的分支'
+        description: '构建并打包此源码的无 ROS 默认发行版'
         required: true
         default: 'dev'
         type: string
       platforms:
-        description: '选择构建平台 (逗号分隔): linux-64, osx-64, osx-arm64, win-64'
-        required: false
-        default: 'win-64'
+        description: '逗号分隔的平台'
+        default: 'linux-64,osx-64,osx-arm64,win-64'
         type: string
-      build_full:
-        description: '是否构建完整版 unilabos-full (默认构建轻量版 unilabos)'
-        required: false
-        default: false
-        type: boolean
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
+  resolve-source:
+    runs-on: ubuntu-latest
+    outputs:
+      should_continue: ${{ steps.source.outputs.should_continue }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      platforms: ${{ steps.source.outputs.platforms }}
+    steps:
+      - name: Resolve the source that was actually built and uploaded
+        id: source
+        uses: actions/github-script@v8
+        env:
+          REQUESTED_REF: ${{ inputs.branch }}
+          PLATFORMS: ${{ inputs.platforms }}
+        with:
+          script: |
+            core.setOutput("should_continue", "false");
+            if (context.eventName === "workflow_dispatch") {
+              const {data: commit} = await github.rest.repos.getCommit({
+                ...context.repo, ref: process.env.REQUESTED_REF
+              });
+              core.setOutput("source_sha", commit.sha);
+              core.setOutput("platforms", process.env.PLATFORMS || "linux-64,osx-64,osx-arm64,win-64");
+              core.setOutput("should_continue", "true");
+              return;
+            }
+            const run = context.payload.workflow_run;
+            if (run.conclusion !== "success") return;
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              ...context.repo, run_id: run.id, per_page: 100
+            });
+            const proofs = artifacts.filter(a => !a.expired)
+              .map(a => a.name.match(/^unilabos-source-published-([0-9a-f]{40})-hostlink-(linux-64|osx-64|osx-arm64|win-64)$/))
+              .filter(Boolean);
+            const shas = new Set(proofs.map(match => match[1]));
+            if (shas.size === 0) {
+              core.notice("上游没有无 ROS 默认包的上传凭证，不打包。");
+              return;
+            }
+            if (shas.size !== 1) {
+              core.setFailed("上游源码凭证不一致。");
+              return;
+            }
+            core.setOutput("source_sha", [...shas][0]);
+            core.setOutput("platforms", [...new Set(proofs.map(match => match[2]))].join(","));
+            core.setOutput("should_continue", "true");
+
   build-conda-pack:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'workflow_run'
-      )
+    needs: resolve-source
+    if: needs.resolve-source.outputs.should_continue == 'true'
     env:
-      BUILD_FULL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.build_full == 'true' }}
-      PACKAGE_REF: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref_name }}
+      PACKAGE_REF: ${{ needs.resolve-source.outputs.source_sha }}
+      PYTHONUTF8: '1'
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             platform: linux-64
-            env_file: unilabos-linux-64.yaml
-            script_ext: sh
-          - os: macos-15-intel # Intel x86_64
+          - os: macos-15-intel
             platform: osx-64
-            env_file: unilabos-osx-64.yaml
-            script_ext: sh
-          - os: macos-latest # ARM64
+          - os: macos-latest
             platform: osx-arm64
-            env_file: unilabos-osx-arm64.yaml
-            script_ext: sh
-          - os: windows-latest
+          - os: windows-2022
             platform: win-64
-            env_file: unilabos-win64.yaml
-            script_ext: bat
-
     runs-on: ${{ matrix.os }}
-
     defaults:
       run:
-        # Windows uses cmd for better conda/mamba compatibility, Unix uses bash
-        shell: ${{ matrix.platform == 'win-64' && 'cmd' || 'bash' }}
-
+        shell: bash -l {0}
     steps:
       - name: Check if platform should be built
         id: should_build
-        shell: bash
+        env:
+          PLATFORMS: ${{ needs.resolve-source.outputs.platforms }}
+          PLATFORM: ${{ matrix.platform }}
         run: |
-          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [[ -z "${{ github.event.inputs.platforms }}" ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event.inputs.platforms }}" == *"${{ matrix.platform }}"* ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
+          if [[ ",$PLATFORMS," == *",$PLATFORM,"* ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
           else
-            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
           fi
-
       - uses: actions/checkout@v6
         if: steps.should_build.outputs.should_build == 'true'
         with:
-          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_sha || github.ref }}
-          fetch-depth: 0
-
-      - name: Setup Miniforge (with mamba)
+          ref: ${{ needs.resolve-source.outputs.source_sha }}
+      - uses: conda-incubator/setup-miniconda@v4
         if: steps.should_build.outputs.should_build == 'true'
-        uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging,uni-lab
-          channel-priority: flexible
-          activate-environment: unilab
+          python-version: '3.14.10'
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: build-env
           auto-update-conda: false
-          show-channel-urls: true
-
-      - name: Install conda-pack, unilabos and dependencies (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo Installing unilabos and dependencies to unilab environment...
-          echo Using mamba for faster and more reliable dependency resolution...
-          echo Build full: ${{ env.BUILD_FULL }}
-          if "${{ env.BUILD_FULL }}"=="true" (
-            echo Installing unilabos-full ^(complete package^)...
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
-          ) else (
-            echo Installing unilabos ^(minimal package^)...
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
-          )
-
-      - name: Install conda-pack, unilabos and dependencies (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "Installing unilabos and dependencies to unilab environment..."
-          echo "Using mamba for faster and more reliable dependency resolution..."
-          echo "Build full: ${{ env.BUILD_FULL }}"
-          if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
-            echo "Installing unilabos-full (complete package)..."
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos-full conda-pack zstandard -y
-          else
-            echo "Installing unilabos (minimal package)..."
-            mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos conda-pack zstandard -y
-          fi
-
-      - name: Get latest ros-humble-unilabos-msgs version (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        id: msgs_version_win
-        run: |
-          echo Checking installed ros-humble-unilabos-msgs version...
-          conda list -n unilab ros-humble-unilabos-msgs
-          for /f "tokens=2" %%i in ('conda list -n unilab ros-humble-unilabos-msgs --json ^| python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')"') do set VERSION=%%i
-          echo installed_version=%VERSION% >> %GITHUB_OUTPUT%
-          echo Installed ros-humble-unilabos-msgs version: %VERSION%
-
-      - name: Get latest ros-humble-unilabos-msgs version (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        id: msgs_version_unix
-        shell: bash
-        run: |
-          echo "Checking installed ros-humble-unilabos-msgs version..."
-          VERSION=$(conda list -n unilab ros-humble-unilabos-msgs --json | python -c "import sys, json; pkgs=json.load(sys.stdin); print(pkgs[0]['version'] if pkgs else 'not-found')")
-          echo "installed_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Installed ros-humble-unilabos-msgs version: $VERSION"
-
-      - name: Check for newer ros-humble-unilabos-msgs (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo Checking for available ros-humble-unilabos-msgs versions...
-          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo Search completed
-          echo.
-          echo Updating ros-humble-unilabos-msgs to latest version...
-          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo Already at latest version
-
-      - name: Check for newer ros-humble-unilabos-msgs (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "Checking for available ros-humble-unilabos-msgs versions..."
-          mamba search --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs || echo "Search completed"
-          echo ""
-          echo "Updating ros-humble-unilabos-msgs to latest version..."
-          mamba update -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge ros-humble-unilabos-msgs -y || echo "Already at latest version"
-
-      - name: Install latest unilabos from source (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo Uninstalling existing unilabos...
-          mamba run -n unilab pip uninstall unilabos -y || echo unilabos not installed via pip
-          echo Installing unilabos from source (ref: ${{ env.PACKAGE_REF }})...
-          mamba run -n unilab pip install .
-          echo Verifying installation...
-          mamba run -n unilab pip show unilabos
-
-      - name: Install latest unilabos from source (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "Uninstalling existing unilabos..."
-          mamba run -n unilab pip uninstall unilabos -y || echo "unilabos not installed via pip"
-          echo "Installing unilabos from source (ref: ${{ env.PACKAGE_REF }})..."
-          mamba run -n unilab pip install .
-          echo "Verifying installation..."
-          mamba run -n unilab pip show unilabos
-
-      - name: Display environment info (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo === Environment Information ===
-          mamba env list
-          echo.
-          echo === Installed Packages ===
-          mamba list -n unilab | findstr /C:"unilabos" /C:"ros-humble-unilabos-msgs" || mamba list -n unilab
-          echo.
-          echo === Python Packages ===
-          mamba run -n unilab pip list | findstr unilabos || mamba run -n unilab pip list
-
-      - name: Display environment info (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "=== Environment Information ==="
-          mamba env list
-          echo ""
-          echo "=== Installed Packages ==="
-          mamba list -n unilab | grep -E "(unilabos|ros-humble-unilabos-msgs)" || mamba list -n unilab
-          echo ""
-          echo "=== Python Packages ==="
-          mamba run -n unilab pip list | grep unilabos || mamba run -n unilab pip list
-
-      - name: Verify environment integrity (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo Verifying Python version...
-          mamba run -n unilab python -c "import sys; print(f'Python version: {sys.version}')"
-          echo Verifying unilabos import...
-          mamba run -n unilab python -c "import unilabos; print(f'UniLabOS version: {unilabos.__version__}')" || echo Warning: Could not import unilabos
-          echo Checking critical packages...
-          mamba run -n unilab python -c "import rclpy; print('ROS2 rclpy: OK')"
-          echo Running comprehensive verification script...
-          mamba run -n unilab python scripts\verify_installation.py --auto-install || echo Warning: Verification script reported issues
-          echo Environment verification complete!
-
-      - name: Verify environment integrity (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "Verifying Python version..."
-          mamba run -n unilab python -c "import sys; print(f'Python version: {sys.version}')"
-          echo "Verifying unilabos import..."
-          mamba run -n unilab python -c "import unilabos; print(f'UniLabOS version: {unilabos.__version__}')" || echo "Warning: Could not import unilabos"
-          echo "Checking critical packages..."
-          mamba run -n unilab python -c "import rclpy; print('ROS2 rclpy: OK')"
-          echo "Running comprehensive verification script..."
-          mamba run -n unilab python scripts/verify_installation.py --auto-install || echo "Warning: Verification script reported issues"
-          echo "Environment verification complete!"
-
-      - name: Pack conda environment (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo Packing unilab environment with conda-pack...
-          for /f "delims=" %%i in ('mamba run -n unilab python -c "import os; print(os.environ['CONDA_PREFIX'])"') do set "UNILAB_PREFIX=%%i"
-          echo Packing environment at: %UNILAB_PREFIX%
-          mamba run -n unilab conda-pack -p "%UNILAB_PREFIX%" -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
-          echo Pack file created:
-          dir unilab-env-${{ matrix.platform }}.tar.gz
-
-      - name: Pack conda environment (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "Packing unilab environment with conda-pack..."
-          UNILAB_PREFIX="$(mamba run -n unilab python -c 'import os; print(os.environ["CONDA_PREFIX"])')"
-          echo "Packing environment at: $UNILAB_PREFIX"
-          mamba run -n unilab conda-pack -p "$UNILAB_PREFIX" -o unilab-env-${{ matrix.platform }}.tar.gz --ignore-missing-files
-          echo "Pack file created:"
-          ls -lh unilab-env-${{ matrix.platform }}.tar.gz
-
-      - name: Prepare Windows distribution package
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
-        run: |
-          echo ==========================================
-          echo Creating distribution package...
-          echo Platform: ${{ matrix.platform }}
-          echo ==========================================
-          mkdir dist-package 2>nul || cd .
-
-          rem Copy packed environment
-          echo Adding: unilab-env-${{ matrix.platform }}.tar.gz
-          copy unilab-env-${{ matrix.platform }}.tar.gz dist-package\
-
-          rem Copy installation script
-          echo Adding: install_unilab.bat
-          copy scripts\install_unilab.bat dist-package\
-
-          rem Copy verification script
-          echo Adding: verify_installation.py
-          copy scripts\verify_installation.py dist-package\
-
-          rem Copy source code repository (including .git)
-          echo Adding: Uni-Lab-OS source repository
-          robocopy . dist-package\Uni-Lab-OS /E /XD dist-package /NFL /NDL /NJH /NJS /NC /NS || if %ERRORLEVEL% LSS 8 exit /b 0
-
-          rem Create README using Python script
-          echo Creating: README.txt
-          python scripts\create_readme.py ${{ matrix.platform }} ${{ env.PACKAGE_REF }} dist-package\README.txt
-
-          echo.
-          echo Distribution package contents:
-          dir /b dist-package
-          echo.
-
-      - name: Prepare Unix/Linux distribution package
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "=========================================="
-          echo "Creating distribution package..."
-          echo "Platform: ${{ matrix.platform }}"
-          echo "=========================================="
-          mkdir -p dist-package
-
-          # Copy packed environment
-          echo "Adding: unilab-env-${{ matrix.platform }}.tar.gz"
-          cp unilab-env-${{ matrix.platform }}.tar.gz dist-package/
-
-          # Copy installation script
-          echo "Adding: install_unilab.sh"
-          cp scripts/install_unilab.sh dist-package/
-          chmod +x dist-package/install_unilab.sh
-
-          # Copy verification script
-          echo "Adding: verify_installation.py"
-          cp scripts/verify_installation.py dist-package/
-
-          # Copy source code repository (including .git)
-          echo "Adding: Uni-Lab-OS source repository"
-          rsync -a --exclude='dist-package' . dist-package/Uni-Lab-OS
-
-          # Create README using Python script
-          echo "Creating: README.txt"
-          python scripts/create_readme.py ${{ matrix.platform }} ${{ env.PACKAGE_REF }} dist-package/README.txt
-
-          echo ""
-          echo "Distribution package contents:"
-          ls -lh dist-package/
-          echo ""
-
-      - name: Upload distribution package
+      - name: Install build and index tools
         if: steps.should_build.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v6
-        with:
-          name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
-          path: dist-package/
-          retention-days: 90
-          if-no-files-found: error
-
-      - name: Display package info (Windows)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform == 'win-64'
         run: |
-          echo ==========================================
-          echo Build Summary
-          echo ==========================================
-          echo Platform: ${{ matrix.platform }}
-          echo Branch: ${{ env.PACKAGE_REF }}
-          echo Python version: 3.11.14
-          if "${{ env.BUILD_FULL }}"=="true" (
-            echo Package: unilabos-full ^(complete^)
-          ) else (
-            echo Package: unilabos ^(minimal^)
-          )
-          echo.
-          echo Distribution package contents:
-          dir dist-package
-          echo.
-          echo Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
-          echo.
-          echo After download, extract the ZIP and run:
-          echo   install_unilab.bat
-          echo ==========================================
-
-      - name: Display package info (Unix)
-        if: steps.should_build.outputs.should_build == 'true' && matrix.platform != 'win-64'
-        shell: bash
-        run: |
-          echo "=========================================="
-          echo "Build Summary"
-          echo "=========================================="
-          echo "Platform: ${{ matrix.platform }}"
-          echo "Branch: ${{ env.PACKAGE_REF }}"
-          echo "Python version: 3.11.14"
-          if [[ "${{ env.BUILD_FULL }}" == "true" ]]; then
-            echo "Package: unilabos-full (complete)"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cmd //D //S //C '%CONDA%\condabin\mamba.bat install -n build-env --override-channels -c conda-forge rattler-build conda-index -y'
           else
-            echo "Package: unilabos (minimal)"
+            mamba install -n build-env --override-channels -c conda-forge rattler-build conda-index -y
           fi
-          echo ""
-          echo "Distribution package contents:"
-          ls -lh dist-package/
-          echo ""
-          echo "Artifact name: unilab-pack-${{ matrix.platform }}-${{ env.PACKAGE_REF }}"
-          echo ""
-          echo "After download:"
-          echo "  install_unilab.sh"
-          echo "=========================================="
+      - name: Download the exact upstream packages
+        if: steps.should_build.outputs.should_build == 'true' && github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v5
+        with:
+          name: conda-package-unilabos-hostlink-${{ matrix.platform }}
+          path: conda-artifacts
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Build exact source for a manual bundle
+        if: steps.should_build.outputs.should_build == 'true' && github.event_name == 'workflow_dispatch'
+        run: python scripts/build_conda_release.py build --platform "${{ matrix.platform }}"
+      - name: Install, verify and pack the ROS-free environment
+        if: steps.should_build.outputs.should_build == 'true'
+        run: |
+          python scripts/pack_conda_release.py --platform "${{ matrix.platform }}" --source-sha "$PACKAGE_REF" --prefix "${{ runner.temp }}/unilab-bundle"
+      - uses: actions/upload-artifact@v6
+        if: steps.should_build.outputs.should_build == 'true'
+        with:
+          name: unilab-pack-hostlink-${{ matrix.platform }}-${{ env.PACKAGE_REF }}
+          path: dist-package/
+          if-no-files-found: error
+          retention-days: 90

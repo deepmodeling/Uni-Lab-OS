@@ -1,15 +1,29 @@
 serial:
+  available_sites: []
   category:
   - communication_devices
   class:
     action_value_mappings:
       auto-handle_serial_request:
+        error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          request: null
-          response: null
-        handles: {}
+        goal:
+          request: request
+          response: response
+        goal_default: {}
+        handles:
+          input:
+          - data_key: request
+            data_source: goal
+            data_type: any
+            handler_key: request
+            label: request
+          - data_key: response
+            data_source: goal
+            data_type: any
+            handler_key: response
+            label: response
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -17,11 +31,10 @@ serial:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
-                request:
-                  type: string
-                response:
-                  type: string
+                request: {}
+                response: {}
               required:
               - request
               - response
@@ -31,12 +44,24 @@ serial:
           - goal
           title: handle_serial_request参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - request
+            - response
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-read_data:
+        error_policy: {}
         feedback: {}
         goal: {}
         goal_default: {}
-        handles: {}
+        handles:
+          input: []
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -44,6 +69,7 @@ serial:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties: {}
               required: []
               type: object
@@ -52,13 +78,28 @@ serial:
           - goal
           title: read_data参数
           type: object
+          x-unilabos-action-contract:
+            input_order: []
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
       auto-send_command:
+        error_policy: {}
         feedback: {}
-        goal: {}
-        goal_default:
-          command: null
-        handles: {}
+        goal:
+          command: command
+        goal_default: {}
+        handles:
+          input:
+          - data_key: command
+            data_source: goal
+            data_type: string
+            handler_key: command
+            label: command
+          output: []
         placeholder_keys: {}
         result: {}
         schema:
@@ -66,6 +107,7 @@ serial:
           properties:
             feedback: {}
             goal:
+              additionalProperties: false
               properties:
                 command:
                   type: string
@@ -77,15 +119,28 @@ serial:
           - goal
           title: send_command参数
           type: object
+          x-unilabos-action-contract:
+            input_order:
+            - command
+            output_order: []
+            resource_template_symbols:
+              goal: {}
+              result: {}
+            version: 2
         type: UniLabJsonCommand
-    module: unilabos.ros.nodes.presets.serial_node:ROS2SerialNode
+    module: unilabos.backend.ros2.presets.serial_node:ROS2SerialNode
+    status_policies: {}
     status_types: {}
+    supported_backends:
+    - ros2
     type: ros2
   config_info: []
   description: Serial communication interface, used when sharing same serial port
     for multiple devices
+  display_name: 串口通讯
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

@@ -30,13 +30,15 @@
             "children": [],
             "parent": "ReactorX",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 698.1111111111111,
                 "y": 428,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 5000.0,
                 "size_x": 200.0,
                 "size_y": 200.0,
@@ -54,7 +56,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "solenoid_valve.mock",
+            "class": "virtual_solenoid_valve",
             "position": {
                 "x": 620.6111111111111,
                 "y": 171,
@@ -72,7 +74,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "solenoid_valve.mock",
+            "class": "virtual_solenoid_valve",
             "position": {
                 "x": 780,
                 "y": 171,
@@ -90,7 +92,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "vacuum_pump.mock",
+            "class": "virtual_vacuum_pump",
             "position": {
                 "x": 500,
                 "y": 171,
@@ -108,7 +110,7 @@
             ],
             "parent": "ReactorX",
             "type": "device",
-            "class": "gas_source.mock",
+            "class": "virtual_gas_source",
             "position": {
                 "x": 900,
                 "y": 171,

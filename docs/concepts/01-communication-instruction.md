@@ -34,7 +34,9 @@ Uni-Lab-OS的目的是将不同类型和厂家的实验仪器进行抽象统一�
 
 ## 通信指令集
 
-Uni-Lab 目前使用 ROS2 作为通信中间件，因此大量使用其标准消息作为话题、服务、动作。新增指令位于仓库中的 `unilabos_msgs` ，各类实验动作指令集分类整理于 {ref}`actions`
+Uni-Lab-OS 支持 ROS2 与 HostLink 两种设备通信 backend。ROS2 使用
+`unilabos_msgs` 和标准 ROS 消息承载 Topic、Service 与 Action；HostLink 将相同的
+设备语义映射为 JSON/RPC。实验动作指令集分类整理于 {ref}`actions`。
 
 ## 通信中间件层
 

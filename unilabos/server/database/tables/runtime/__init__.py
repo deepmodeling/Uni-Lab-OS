@@ -1,0 +1,170 @@
+"""``runtime.db`` 域的表映射与库规格（运行控制 + workflow + registry）。
+
+runtime.db 是"运行过程产生/服务运行"事实的单库单写者：
+
+- ``control``：微后端命令与执行控制（backend_session / command_inbox /
+  execution_job / adapter outbox-inbox 等）；
+- ``workflow``：Workflow Authority 的定义 / 任务 / 作业 / 前端事件；
+- ``registry``：Edge 注册表快照（条目级版本模型三表 + 跨机器 Slave 记录）；
+- ``process_management``：V1 进程管理协议的操作记录与快照修订号。
+
+对外导入只看表：一律 ``from unilabos.server.database.tables.runtime
+import X``，不感知域内文件拆分；库级规格 ``RUNTIME_DATABASE`` 在此聚合。
+"""
+
+from unilabos.server.database.schema import SCHEMA_IDENTITY_TABLE, DatabaseSpec
+from unilabos.server.database.tables.runtime.data import (
+    DATA_TABLES,
+    DATA_TABLE_MODELS,
+    AdapterCommandOutboxRecord,
+    AdapterEventInboxRecord,
+    AttemptTrigger,
+    BackendEventOutboxRecord,
+    BackendSessionRecord,
+    CommandInboxRecord,
+    DeviceActionCapability,
+    DeviceRoute,
+    ExecutionJobRecord,
+    ExecutorEndpointRecord,
+    MaterialBinding,
+    Transport,
+    validate_attempt_link,
+)
+from unilabos.server.database.tables.runtime.registry import (
+    REGISTRY_TABLES,
+    REGISTRY_TABLE_MODELS,
+    RegistryEntryRecord,
+    RegistryEntryStateRecord,
+    RegistryRemoteSlaveRecord,
+    RegistryReportRecord,
+)
+from unilabos.server.database.tables.runtime.workflow import (
+    WORKFLOW_TABLES,
+    WORKFLOW_TABLE_MODELS,
+    ExecutionLockLeaseRecord,
+    FrontendEventRecord,
+    WorkflowAuthoringRecord,
+    WorkflowEdgeRecord,
+    WorkflowHandleTemplateRecord,
+    WorkflowInterventionRecord,
+    WorkflowManualConfirmationRecord,
+    WorkflowNodeJobFeedbackHistoryRecord,
+    WorkflowNodeJobRecord,
+    WorkflowNodeJobResultRecord,
+    WorkflowNodeRecord,
+    WorkflowNodeRunRecord,
+    WorkflowNodeTemplateRecord,
+    WorkflowOperationCategoryRecord,
+    WorkflowPublicationRecord,
+    WorkflowRecord,
+    WorkflowSourceRegistrationRecord,
+    WorkflowTaskCommandRecord,
+    WorkflowTaskRecord,
+)
+
+
+from unilabos.server.database.tables.runtime.execution_claim import (
+    EXECUTION_CLAIM_TABLES, EXECUTION_CLAIM_MODELS,
+)
+
+
+from .resource_interval import RESOURCE_INTERVAL_TABLES, RESOURCE_INTERVAL_MODELS
+
+
+from .resource_custody import RESOURCE_CUSTODY_TABLES, RESOURCE_CUSTODY_MODELS
+
+
+from .task_lifecycle import TASK_LIFECYCLE_TABLES, TASK_LIFECYCLE_MODELS
+from .station_handling import STATION_HANDLING_TABLES, STATION_HANDLING_MODELS
+from .process_management import PROCESS_MANAGEMENT_TABLES, PROCESS_MANAGEMENT_MODELS
+
+RUNTIME_TABLE_MODELS = (
+    *DATA_TABLE_MODELS,
+    *WORKFLOW_TABLE_MODELS,
+    *REGISTRY_TABLE_MODELS,
+    *EXECUTION_CLAIM_MODELS,
+    *RESOURCE_INTERVAL_MODELS,
+    *RESOURCE_CUSTODY_MODELS,
+    *TASK_LIFECYCLE_MODELS,
+    *STATION_HANDLING_MODELS,
+    *PROCESS_MANAGEMENT_MODELS,
+)
+
+
+# control / workflow / registry 同域同库：都是"运行过程产生/服务运行"的
+# 事实（调度任务、frontend 事件、edge 注册表快照），合并为单库单写者，
+# 进程内 join 查询直达。表定义留在各自模块，这里做库级规格聚合。
+RUNTIME_DATABASE = DatabaseSpec(
+    key="runtime",
+    filename="runtime.db",
+    role=(
+        "critical microbackend command and execution control, "
+        "workflow authority and registry snapshots"
+    ),
+    synchronous="FULL",
+    tables=(
+        *DATA_TABLES,
+        *(spec for spec in WORKFLOW_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
+        *(spec for spec in REGISTRY_TABLES if spec is not SCHEMA_IDENTITY_TABLE),
+        *EXECUTION_CLAIM_TABLES,
+        *RESOURCE_INTERVAL_TABLES,
+        *RESOURCE_CUSTODY_TABLES,
+        *TASK_LIFECYCLE_TABLES,
+        *STATION_HANDLING_TABLES,
+        *PROCESS_MANAGEMENT_TABLES,
+    ),
+    # 0.13 发布线的基线：schema v1，没有迁移。发布前的结构变化直接并进 v1 基线；发布后改 DDL /
+    # contract_version 时提升 schema_version、在 migrations 里补 v2 起的迁移，并把 v1 的结构指纹
+    # 登记进 released_checksums。
+    schema_version=1,
+    migrations=(),
+    # 工作流定义、任务与注册表记录：结构变化必须带迁移。没有迁移路径时拒绝启动、保留旧库；
+    # 确认旧数据不再需要时由 BasicConfig.database_rebuild_on_mismatch 显式允许备份后重建。
+    on_unmigratable="refuse",
+)
+
+
+__all__ = [
+    # 库级聚合
+    "RUNTIME_DATABASE",
+    "RUNTIME_TABLE_MODELS",
+    # control（运行控制）
+    "AdapterCommandOutboxRecord",
+    "AdapterEventInboxRecord",
+    "AttemptTrigger",
+    "BackendEventOutboxRecord",
+    "BackendSessionRecord",
+    "CommandInboxRecord",
+    "DeviceActionCapability",
+    "DeviceRoute",
+    "ExecutionJobRecord",
+    "ExecutorEndpointRecord",
+    "MaterialBinding",
+    "Transport",
+    "validate_attempt_link",
+    # workflow（Workflow Authority）
+    "ExecutionLockLeaseRecord",
+    "FrontendEventRecord",
+    "WorkflowAuthoringRecord",
+    "WorkflowEdgeRecord",
+    "WorkflowHandleTemplateRecord",
+    "WorkflowInterventionRecord",
+    "WorkflowManualConfirmationRecord",
+    "WorkflowNodeJobFeedbackHistoryRecord",
+    "WorkflowNodeJobRecord",
+    "WorkflowNodeJobResultRecord",
+    "WorkflowNodeRecord",
+    "WorkflowNodeRunRecord",
+    "WorkflowNodeTemplateRecord",
+    "WorkflowOperationCategoryRecord",
+    "WorkflowPublicationRecord",
+    "WorkflowRecord",
+    "WorkflowSourceRegistrationRecord",
+    "WorkflowTaskCommandRecord",
+    "WorkflowTaskRecord",
+    # registry（注册表快照）
+    "RegistryEntryRecord",
+    "RegistryEntryStateRecord",
+    "RegistryRemoteSlaveRecord",
+    "RegistryReportRecord",
+]

@@ -6,7 +6,7 @@
 
 ### 设备配置文件
 
-移液站设备的完整配置可在 `test/experiments/plr_test.json` 文件中找到。该配置文件采用平展结构，通过 `type` 字段区分物料和设备，并通过 `parent` 和 `children` 字段实现层级关系。
+移液站设备的完整配置可在 `unilabos/test/experiments/plr_test.json` 文件中找到。该配置文件采用平展结构，通过 `type` 字段区分物料和设备，并通过 `parent` 和 `children` 字段实现层级关系。
 
 配置文件示例片段：
 
@@ -54,7 +54,7 @@
 使用以下命令启动移液站设备：
 
 ```bash
-unilab -g test/experiments/plr_test.json --ak [通过网页获取的ak值] --sk [通过网页获取的sk值]
+unilab -g unilabos/test/experiments/plr_test.json --ak [通过网页获取的ak值] --sk [通过网页获取的sk值]
 ```
 
 ### 2. 执行枪头插入操作

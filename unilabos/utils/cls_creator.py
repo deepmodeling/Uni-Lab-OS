@@ -115,24 +115,3 @@ def create_instance_from_config(config: Dict[str, Any]) -> Any:
     return cls(*processed_args, **processed_params)
 
 
-def create_config_from_instance(instance: Any, include_args: bool = False) -> Dict[str, Any]:
-    """
-    从实例创建配置字典（序列化）
-
-    Args:
-        instance: 要序列化的实例
-        include_args: 是否包含位置参数（通常无法获取）
-
-    Returns:
-        配置字典
-    """
-    if instance is None:
-        return {}
-
-    # 获取实例的类路径
-    cls = instance.__class__
-    class_path = f"{cls.__module__}.{cls.__name__}"
-
-    # 无法获取实例的构造参数，这里返回空字典
-    # 实际使用时可能需要手动指定或通过其他方式获取
-    return {INSTANCE_TYPE_KEY: class_path, INSTANCE_PARAMS_KEY: {}, INSTANCE_ARGS_KEY: [] if include_args else None}

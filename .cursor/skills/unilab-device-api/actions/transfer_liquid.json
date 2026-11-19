@@ -1,0 +1,537 @@
+{
+  "type": "LiquidHandlerTransfer",
+  "goal": {
+    "asp_vols": "asp_vols",
+    "dis_vols": "dis_vols",
+    "sources": "sources",
+    "targets": "targets",
+    "tip_racks": "tip_racks",
+    "use_channels": "use_channels",
+    "asp_flow_rates": "asp_flow_rates",
+    "dis_flow_rates": "dis_flow_rates",
+    "offsets": "offsets",
+    "touch_tip": "touch_tip",
+    "liquid_height": "liquid_height",
+    "blow_out_air_volume": "blow_out_air_volume",
+    "spread": "spread",
+    "is_96_well": "is_96_well",
+    "mix_stage": "mix_stage",
+    "mix_times": "mix_times",
+    "mix_vol": "mix_vol",
+    "mix_rate": "mix_rate",
+    "mix_liquid_height": "mix_liquid_height",
+    "delays": "delays",
+    "none_keys": "none_keys"
+  },
+  "feedback": {},
+  "result": {
+    "return_info": "return_info",
+    "success": "success"
+  },
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "asp_vols": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "dis_vols": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "sources": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position"
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation"
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose"
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "sample_id",
+            "children",
+            "parent",
+            "type",
+            "category",
+            "pose",
+            "config",
+            "data"
+          ]
+        }
+      },
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position"
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation"
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose"
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "sample_id",
+            "children",
+            "parent",
+            "type",
+            "category",
+            "pose",
+            "config",
+            "data"
+          ]
+        }
+      },
+      "tip_racks": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position"
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation"
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose"
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "sample_id",
+            "children",
+            "parent",
+            "type",
+            "category",
+            "pose",
+            "config",
+            "data"
+          ]
+        }
+      },
+      "use_channels": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "asp_flow_rates": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "dis_flow_rates": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "offsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ]
+        }
+      },
+      "touch_tip": {
+        "type": "boolean"
+      },
+      "liquid_height": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "blow_out_air_volume": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "spread": {
+        "type": "string"
+      },
+      "is_96_well": {
+        "type": "boolean"
+      },
+      "mix_stage": {
+        "type": "string"
+      },
+      "mix_times": {
+        "type": "integer",
+        "minimum": -2147483648,
+        "maximum": 2147483647
+      },
+      "mix_vol": {
+        "type": "integer",
+        "minimum": -2147483648,
+        "maximum": 2147483647
+      },
+      "mix_rate": {
+        "type": "integer",
+        "minimum": -2147483648,
+        "maximum": 2147483647
+      },
+      "mix_liquid_height": {
+        "type": "number",
+        "minimum": -1.7976931348623157e+308,
+        "maximum": 1.7976931348623157e+308
+      },
+      "delays": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "none_keys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "title": "LiquidHandlerTransfer_Goal",
+    "_unilabos_placeholder_info": {
+      "sources": "unilabos_resources",
+      "targets": "unilabos_resources",
+      "tip_racks": "unilabos_resources"
+    }
+  },
+  "goal_default": {
+    "asp_vols": [],
+    "dis_vols": [],
+    "sources": [],
+    "targets": [],
+    "tip_racks": [],
+    "use_channels": [],
+    "asp_flow_rates": [],
+    "dis_flow_rates": [],
+    "offsets": [],
+    "touch_tip": false,
+    "liquid_height": [],
+    "blow_out_air_volume": [],
+    "spread": "",
+    "is_96_well": false,
+    "mix_stage": "",
+    "mix_times": 0,
+    "mix_vol": 0,
+    "mix_rate": 0,
+    "mix_liquid_height": 0.0,
+    "delays": [],
+    "none_keys": []
+  },
+  "handles": {
+    "input": [
+      {
+        "data_key": "sources",
+        "data_source": "handle",
+        "data_type": "resource",
+        "handler_key": "sources_identifier",
+        "label": "待移动液体"
+      },
+      {
+        "data_key": "targets",
+        "data_source": "handle",
+        "data_type": "resource",
+        "handler_key": "targets_identifier",
+        "label": "转移目标"
+      },
+      {
+        "data_key": "tip_rack",
+        "data_source": "handle",
+        "data_type": "resource",
+        "handler_key": "tip_rack_identifier",
+        "label": "枪头盒"
+      }
+    ],
+    "output": [
+      {
+        "data_key": "sources.@flatten",
+        "data_source": "executor",
+        "data_type": "resource",
+        "handler_key": "sources_out",
+        "label": "移液后源孔"
+      },
+      {
+        "data_key": "targets.@flatten",
+        "data_source": "executor",
+        "data_type": "resource",
+        "handler_key": "targets_out",
+        "label": "移液后目标孔"
+      }
+    ]
+  },
+  "placeholder_keys": {
+    "sources": "unilabos_resources",
+    "targets": "unilabos_resources",
+    "tip_racks": "unilabos_resources"
+  }
+}

@@ -134,13 +134,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -158,13 +160,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 200,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -182,18 +186,20 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 450,
                 "z": 0
             },
             "config": {
-                "max_volume": 300.0,
-                "filter_type": "celite_pad"
+                "type": "RegularContainer",
+                "max_volume": 300.0
             },
             "data": {
-                "liquid": []
+                "liquid": [],
+                "filter_type": "celite_pad"
             }
         },
         {
@@ -202,18 +208,20 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 450,
                 "z": 0
             },
             "config": {
-                "max_volume": 200.0,
-                "filter_type": "silica_gel_column"
+                "type": "RegularContainer",
+                "max_volume": 200.0
             },
             "data": {
-                "liquid": []
+                "liquid": [],
+                "filter_type": "silica_gel_column"
             }
         },
         {
@@ -222,18 +230,20 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 450,
                 "z": 0
             },
             "config": {
-                "max_volume": 100.0,
-                "filter_type": "C18_cartridge"
+                "type": "RegularContainer",
+                "max_volume": 100.0
             },
             "data": {
-                "liquid": []
+                "liquid": [],
+                "filter_type": "C18_cartridge"
             }
         },
         {
@@ -242,13 +252,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -261,13 +273,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -280,13 +294,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -299,13 +315,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -318,13 +336,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 300,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -337,13 +357,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 400,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -356,13 +378,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -380,13 +404,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 200,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -404,13 +430,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 300,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -428,13 +456,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 400,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -452,13 +482,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 500,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -476,13 +508,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -500,13 +534,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -519,13 +555,15 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {

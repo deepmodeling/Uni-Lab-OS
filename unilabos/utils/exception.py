@@ -1,3 +1,0 @@
-
-class DeviceClassInvalid(Exception):
-    pass

@@ -98,13 +98,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -123,13 +125,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 180,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -148,13 +152,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 260,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -173,13 +179,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 340,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -198,13 +206,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 720,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -217,13 +227,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 850,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 3000.0
             },
             "data": {
@@ -236,13 +248,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 950,
                 "y": 300,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -261,13 +275,15 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 950,
                 "y": 400,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -296,7 +312,7 @@
             "target": "flask_reagent1",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-1",
+                "multiway_valve": "1",
                 "flask_reagent1": "top"
             }
         },
@@ -305,7 +321,7 @@
             "target": "flask_reagent2",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-2",
+                "multiway_valve": "2",
                 "flask_reagent2": "top"
             }
         },
@@ -314,7 +330,7 @@
             "target": "flask_reagent3",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-3",
+                "multiway_valve": "3",
                 "flask_reagent3": "top"
             }
         },
@@ -323,7 +339,7 @@
             "target": "flask_reagent4",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-4",
+                "multiway_valve": "4",
                 "flask_reagent4": "top"
             }
         },
@@ -332,7 +348,7 @@
             "target": "reactor",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-5",
+                "multiway_valve": "5",
                 "reactor": "top"
             }
         },
@@ -341,7 +357,7 @@
             "target": "flask_waste",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-6",
+                "multiway_valve": "6",
                 "flask_waste": "top"
             }
         },
@@ -350,7 +366,7 @@
             "target": "flask_rinsing",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-7",
+                "multiway_valve": "7",
                 "flask_rinsing": "top"
             }
         },
@@ -359,7 +375,7 @@
             "target": "flask_buffer",
             "type": "physical",
             "port": {
-                "multiway_valve": "multiway-valve-port-8",
+                "multiway_valve": "8",
                 "flask_buffer": "top"
             }
         },

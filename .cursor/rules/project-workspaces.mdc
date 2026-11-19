@@ -1,0 +1,14 @@
+---
+description: Record the three primary Uni-Lab development workspaces
+alwaysApply: true
+---
+
+# Project Workspaces
+
+Daily development for this project usually happens across three sibling/local directories:
+
+- `../leaplab`: design-related workspace.
+- `../unilabcloud`: backend workspace.
+- `.` / `Uni-Lab-OS`: unilabos client workspace on this machine.
+
+When working on Uni-Lab tasks, first choose context and implementation targets from these directories according to the task domain: design in `../leaplab`, backend in `../unilabcloud`, and client/local Uni-Lab-OS code in this repository.

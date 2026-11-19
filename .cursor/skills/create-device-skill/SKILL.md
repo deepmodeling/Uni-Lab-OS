@@ -12,7 +12,7 @@ description: Create a skill for any Uni-Lab device by extracting action schemas 
 - **设备注册表**: `unilabos_data/req_device_registry_upload.json`
 - **结构**: `{ "resources": [{ "id": "<device_id>", "class": { "module": "<python_module:ClassName>", "action_value_mappings": { ... } } }] }`
 - **生成时机**: `unilab` 启动并完成注册表上传后自动生成
-- **module 字段**: 格式 `unilabos.devices.xxx.yyy:ClassName`，可转为源码路径 `unilabos/devices/xxx/yyy.py`，阅读源码可了解参数含义和设备行为
+- **module 字段**: 格式 `<模块路径>:ClassName`（内置设备如 `unilabos.devices.virtual.xxx`，外部驱动包如 `<package_name>.xxx`），可转为源码路径（如 `unilabos/devices/virtual/xxx.py` 或驱动包内 `<package_name>/xxx.py`），阅读源码可了解参数含义和设备行为
 
 ## 创建流程
 

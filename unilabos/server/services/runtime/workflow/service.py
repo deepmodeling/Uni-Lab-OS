@@ -1,0 +1,5242 @@
+"""本地 Backend-shaped Workflow Authority 的应用服务。"""
+
+from __future__ import annotations
+
+import errno
+import hashlib
+import json
+import logging
+import os
+import re
+import signal
+import stat
+import struct
+import threading
+import time
+from collections import defaultdict
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager, suppress
+from datetime import datetime, timezone
+from pathlib import Path, PurePosixPath
+from typing import Any, BinaryIO, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+from uuid import UUID, uuid4
+
+try:  # Linux authoring CAS 使用 file lease；Windows 仍需支持 Workflow Runtime。
+    import fcntl  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - exercised on Windows CI/runtime
+    fcntl = None  # type: ignore[assignment]
+
+from pydantic import ValidationError
+
+from unilabos.server.backend.scheduler.authority import SchedulerAuthorityProfile
+from unilabos.protocol.materials import InventoryRequirement
+from unilabos.server.services.runtime.workflow.execution_plan_graph import (
+    CompositeExecutionPlanNormalizer,
+)
+from unilabos.protocol.utils.workflow_validation import GraphValidationError, validate_graph
+from unilabos.protocol.utils.workflow_hierarchy import (
+    HierarchyError,
+    execution_parents,
+    lift_edge,
+)
+from unilabos.protocol.utils.json_codec import encode_json, strict_json_equal
+from unilabos.protocol.runtime.workflow import (
+    CandidateChangeset,
+    CandidateCompilation,
+    CandidateDiagnostic,
+    CandidateSourceMapEntry,
+    WorkflowEdgeWrite,
+    WorkflowNodeWrite,
+    normalize_json_array,
+    normalize_json_object,
+    validate_uuid,
+)
+from unilabos.server.services.runtime.workflow.errors import (
+    StoreAuthoringConflict,
+    StoreConflict,
+    StoreNotFound,
+    StoreRevisionConflict,
+)
+from unilabos.server.services.runtime.workflow.store import WorkflowStore, utc_now
+from unilabos.server.services.runtime.workflow.authoring_kernel import (
+    AuthoringCatalogError,
+    AuthoringCatalogSnapshot,
+)
+from unilabos.server.services.runtime.workflow.composite_expansion import (
+    CompositeAuthoring,
+)
+from unilabos.server.services.runtime.workflow.entry_parameters import (
+    EntryParameterError,
+    declared_input_contract,
+    resolve_declared_output,
+    resolve_task_input,
+    substitute_entry_references,
+    validate_entry_value,
+)
+from unilabos.server.services.runtime.workflow.publication import (
+    PUBLICATION_MODULE,
+    PUBLICATION_TEMPLATE_AUTHORITY,
+    FrozenSnapshotProvider,
+    PublicationError,
+    PublicationProjection,
+    PublicationResolver,
+    authoring_view,
+    base_template_uuids,
+    freeze_publication_snapshot,
+    merged_invocation_entities,
+    nested_pins,
+    project_publication,
+    publication_source_hash,
+    publication_summary,
+)
+from unilabos.server.services.runtime.workflow.definition_service import WorkflowDefinitionEditing
+from unilabos.server.services.runtime.workflow.node_templates import NodeTemplateCatalog
+from unilabos.server.services.runtime.workflow.operation_category import (
+    UNSET as CATEGORY_UNSET,
+    OperationCategories,
+    OperationCategoryError,
+    category_uuid,
+    normalize_workflow_type,
+)
+from unilabos.server.services.runtime.workflow.workflow_io import (
+    WorkflowIOValidationError,
+    validate_workflow_graph_io,
+)
+from unilabos.server.database.sqlite_domain import DomainDatabase
+from unilabos.utils.file_lock import acquire_exclusive_file_lock, release_file_lock
+
+logger = logging.getLogger(__name__)
+
+_ERRORS = {
+    "invalid_input": (400, "提交内容格式不正确"),
+    "not_found": (404, "请求的资源不存在"),
+    "conflict": (409, "资源已发生冲突，请刷新后重试"),
+    "workflow_not_found": (404, "工作流不存在或已被删除"),
+    "draft_hash_conflict": (
+        409,
+        "草稿已被其他程序修改，请查看差异后再保存",
+    ),
+    "workflow_revision_conflict": (
+        409,
+        "工作流已在其他位置更新，请刷新并重新确认本次修改",
+    ),
+    "candidate_hash_conflict": (
+        409,
+        "预览结果已变化，请重新检查 DAG 和源码差异",
+    ),
+    "template_catalog_conflict": (
+        409,
+        "设备动作模板已更新，请重新编译并检查工作流",
+    ),
+    "candidate_not_ready": (409, "当前草稿尚未生成可应用的工作流"),
+    "draft_invalid": (422, "草稿存在错误，修复后才能应用"),
+    "candidate_invalid": (422, "工作流校验失败，请检查节点、连线和输入输出"),
+    "template_catalog_unavailable": (
+        503,
+        "设备动作模板暂不可用，请稍后重试",
+    ),
+    "workflow_template_not_found": (404, "工作流模板不存在或已随设备包移除"),
+    "workflow_template_unavailable": (
+        503,
+        "工作流模板暂不可用（注册表权威未就绪）",
+    ),
+    "registry_not_reported": (
+        503,
+        "注册表尚未上报：调度权威不扫描注册表，等待 Host 启动并上报设备注册表后重试",
+    ),
+    "template_binding_invalid": (
+        422,
+        "工作流模板的角色未能绑定到设备，请在 bindings 中指定",
+    ),
+    "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
+    "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
+    "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
+    "local_task_authority_forbidden": (
+        409,
+        "当前调度权威运行模式不允许创建本地可执行工作流任务",
+    ),
+    "manual_confirmation_not_assignee": (
+        409,
+        "确认人不在该确认单的指派名单中，请以被指派的用户身份确认",
+    ),
+    "manual_confirmation_decided": (409, "该人工确认已被处理，请刷新查看结果"),
+    "manual_confirmation_key_used": (
+        409,
+        "决策幂等键已被其他确认单使用，请换一个键重试",
+    ),
+    "internal_error": (500, "本地工作流服务出现错误，请重试或查看日志"),
+}
+
+# store 层 StoreConflict 文案 → 面向前端的稳定错误码（人工确认决策）
+_MANUAL_CONFIRMATION_CONFLICTS = {
+    "confirmed_by is not an assignee": "manual_confirmation_not_assignee",
+    "manual confirmation already has another decision": "manual_confirmation_decided",
+    "decision_idempotency_key already used": "manual_confirmation_key_used",
+}
+_HASH_TOKEN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+#: 本机托管源码工作区的包身份与可导入文件名
+MANAGED_SOURCE_PACKAGE = "local"
+_SOURCE_FILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,100}\.py\Z")
+_NO_EXPECTED_HASH = object()
+_F_SETOWN_EX = getattr(fcntl, "F_SETOWN_EX", 15) if fcntl is not None else 15
+_F_OWNER_TID = 0
+_LEASE_BREAK_SIGNAL = getattr(signal, "SIGRTMAX", signal.SIGTERM)
+
+# 源码回写后端 -----------------------------------------------------------------
+# linux_lease：Linux file lease + dir_fd 的强路径（_compare_and_replace）；
+# portable：macOS / Windows 的路径版实现（_portable_atomic_write），外部契约相同，
+# 但检测不到“外部编辑器在比较与替换之间写入”，差异见 _portable_atomic_write。
+#: 仅供测试强制可移植路径：``UNILABOS_SOURCE_WRITE_BACKEND=portable``
+_SOURCE_WRITE_BACKEND_ENV = "UNILABOS_SOURCE_WRITE_BACKEND"
+_SOURCE_WRITE_LEASE = "linux_lease"
+_SOURCE_WRITE_PORTABLE = "portable"
+#: 可移植路径等待 sidecar 锁的上限；超时按并发修改返回 draft_hash_conflict
+_PORTABLE_LOCK_TIMEOUT_SECONDS = 10.0
+_PORTABLE_LOCK_POLL_SECONDS = 0.02
+#: Windows 名称代理型重解析点（符号链接、目录联接、挂载点）标志位
+_REPARSE_TAG_NAME_SURROGATE = 0x20000000
+_O_BINARY = getattr(os, "O_BINARY", 0)
+_O_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+#: 目标缺失时的不覆盖发布：Windows 的 rename 不替换已有文件；POSIX 用 link（已存在即失败）
+_NO_CLOBBER_RENAME = os.name == "nt"
+
+
+def _linux_lease_write_supported() -> bool:
+    """Linux 强路径所需原语是否齐备（缺任何一项都不能走强路径）。
+
+    需要 file lease（``F_SETLEASE`` / ``F_SETSIG``）、同步消费 lease 通知的
+    ``signal.sigtimedwait`` / ``pthread_sigmask`` 与实时信号，以及 ``O_DIRECTORY`` /
+    ``O_NOFOLLOW`` 和 ``dir_fd`` 相对的 open / stat / mkdir / link / unlink / rename
+    （``os.replace`` 与 ``os.rename`` 共用 dir_fd 支持）。
+    """
+
+    if fcntl is None or not all(
+        hasattr(fcntl, name) for name in ("F_SETLEASE", "F_SETSIG", "F_WRLCK", "F_UNLCK")
+    ):
+        return False
+    if not all(hasattr(signal, name) for name in ("sigtimedwait", "pthread_sigmask", "SIGRTMAX")):
+        return False
+    if not all(hasattr(os, name) for name in ("O_DIRECTORY", "O_NOFOLLOW", "O_CLOEXEC")):
+        return False
+    supported = os.supports_dir_fd
+    return all(
+        function in supported
+        for function in (os.open, os.stat, os.mkdir, os.link, os.unlink, os.rename)
+    )
+
+
+def _select_source_write_backend(environ: Optional[Mapping[str, str]] = None) -> str:
+    """按平台能力选择源码回写后端；模块加载时调用一次，结果存入 ``_SOURCE_WRITE_BACKEND``。"""
+
+    requested = (
+        (os.environ if environ is None else environ).get(_SOURCE_WRITE_BACKEND_ENV, "").strip().lower()
+    )
+    if requested == _SOURCE_WRITE_PORTABLE:
+        return _SOURCE_WRITE_PORTABLE
+    if requested not in {"", "auto"}:
+        logger.warning(
+            "忽略未知的 %s=%r，按平台能力选择源码回写后端",
+            _SOURCE_WRITE_BACKEND_ENV,
+            requested,
+        )
+    return _SOURCE_WRITE_LEASE if _linux_lease_write_supported() else _SOURCE_WRITE_PORTABLE
+
+
+_SOURCE_WRITE_BACKEND = _select_source_write_backend()
+
+
+def _is_redirecting_entry(stat_result: os.stat_result) -> bool:
+    """lstat 结果是否为符号链接或会把路径重定向到别处的 Windows 重解析点。"""
+
+    if stat.S_ISLNK(stat_result.st_mode):
+        return True
+    return bool(getattr(stat_result, "st_reparse_tag", 0) & _REPARSE_TAG_NAME_SURROGATE)
+
+
+_WORKFLOW_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "name",
+    "tags",
+    "revision",
+    "description",
+}
+_NODE_TEMPLATE_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "resource_template_uuid",
+    "name",
+    "display_name",
+    "goal",
+    "goal_default",
+    "feedback",
+    "result",
+    "type",
+    "node_type",
+    "description",
+    "class",
+    "schema",
+    "icon",
+    "header",
+    "footer",
+}
+_HANDLE_TEMPLATE_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "workflow_node_template_uuid",
+    "handle_key",
+    "io_type",
+    "display_name",
+    "type",
+    "required",
+    "description",
+    "data_source",
+    "data_key",
+}
+_WORKFLOW_REQUIRED_READ_FIELDS = _WORKFLOW_READ_FIELDS - {"description"}
+_NODE_REQUIRED_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "workflow_uuid",
+    "name",
+    "status",
+    "type",
+    "pose",
+    "param",
+    "execution_policy",
+    "disabled",
+    "minimized",
+}
+_EDGE_REQUIRED_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "source_node_uuid",
+    "target_node_uuid",
+    "source_handle_uuid",
+    "target_handle_uuid",
+}
+_NODE_TEMPLATE_REQUIRED_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "resource_template_uuid",
+    "name",
+    "display_name",
+    "goal",
+    "goal_default",
+    "feedback",
+    "result",
+    "type",
+    "node_type",
+}
+_HANDLE_TEMPLATE_REQUIRED_READ_FIELDS = {
+    "uuid",
+    "create_time",
+    "update_time",
+    "meta_data",
+    "workflow_node_template_uuid",
+    "handle_key",
+    "io_type",
+    "display_name",
+    "type",
+    "required",
+}
+
+
+class WorkflowError(RuntimeError):
+    """面向前端的稳定 Workflow 错误。
+
+    ``detail`` 追加在稳定文案之后（如具体哪个模板角色没绑到设备），错误码不变。
+    """
+
+    def __init__(self, code: str, *, detail: str = ""):
+        status, message = _ERRORS[code]
+        if detail:
+            message = f"{message}：{detail}"
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+class WorkflowConflict(WorkflowError):
+    pass
+
+
+class AuthoringCompiler(Protocol):
+    compiler_version: str
+    template_catalog_fingerprint: str
+
+    def compile(
+        self,
+        *,
+        workflow_uuid: str,
+        workflow_revision: int,
+        python_source: str,
+        source_uri: str,
+        applied_graph: Dict[str, Any],
+    ) -> CandidateCompilation: ...
+
+
+def _sha256(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _canonical_json(value: Any) -> bytes:
+    return encode_json(value, sort_keys=True)
+
+
+def _source_ranges_fit(
+    python_source: str,
+    ranges: Iterable[Dict[str, Any]],
+) -> bool:
+    """检查每个从 1 开始的范围端点是否落在原始源码内。"""
+
+    try:
+        line_byte_lengths = [
+            len(line.encode("utf-8")) for line in re.split(r"\r\n|\r|\n", python_source)
+        ]
+    except UnicodeEncodeError:
+        return False
+
+    def position_fits(line: int, column: int) -> bool:
+        return (
+            line <= len(line_byte_lengths) and column <= line_byte_lengths[line - 1] + 1
+        )
+
+    return all(
+        position_fits(item["start_line"], item["start_column"])
+        and position_fits(item["end_line"], item["end_column"])
+        for item in ranges
+    )
+
+
+def _mtime_rfc3339(timestamp: float) -> str:
+    return (
+        datetime.fromtimestamp(timestamp, timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowStore):
+    """Workflow 域单层服务：持连接（继承 WorkflowStore 的 SQL 事实层）、
+    协调 package Draft 文件与编译器状态。
+
+    生产传 RuntimeService 实例共享 runtime.db 连接；测试可传路径或
+    ``:memory:``。
+    """
+
+    def __init__(
+        self,
+        database: DomainDatabase,
+        *,
+        compiler: Optional[AuthoringCompiler] = None,
+        compiler_rebuilder: Optional[Callable[[], AuthoringCompiler]] = None,
+        authority_profile: SchedulerAuthorityProfile = (
+            SchedulerAuthorityProfile.LOCAL_SCHEDULER
+        ),
+    ):
+        super().__init__(database)
+        self._preflight_materials = None
+        self._preflight_endpoints = None
+        self._action_schema_resolver = None
+        self.compiler = compiler
+        self._compiler_rebuilder = compiler_rebuilder
+        self._authority_profile = SchedulerAuthorityProfile.parse(authority_profile)
+        self._locks_guard = threading.Lock()
+        self._authoring_locks: Dict[str, threading.RLock] = {}
+        self._task_submitter: Optional[Callable[[str], None]] = None
+        self._task_controller: Optional[Callable[[str], None]] = None
+        self._resource_change_listener: Optional[Callable[[], None]] = None
+        self._task_resource_releaser: Optional[Callable[[str, List[str]], None]] = None
+        # Scheduler 绑定此回调消费 durable 人工确认决策；Service 本身不依赖调度器。
+        self._manual_confirmation_resolver: Optional[
+            Callable[[Dict[str, Any]], None]
+        ] = None
+
+    @property
+    def authority_profile(self) -> SchedulerAuthorityProfile:
+        return self._authority_profile
+
+    def set_task_submitter(
+        self,
+        submitter: Optional[Callable[[str], None]],
+    ) -> None:
+        """绑定唯一运行 Adapter；定义/任务事实仍由本服务持有。"""
+
+        self._task_submitter = submitter
+
+    def set_manual_confirmation_resolver(
+        self,
+        resolver: Optional[Callable[[Dict[str, Any]], None]],
+    ) -> None:
+        """绑定人工确认决策消费者；决策事实始终先落 runtime.db。"""
+
+        self._manual_confirmation_resolver = resolver
+
+    def set_task_controller(self, controller: Optional[Callable[[str], None]]) -> None:
+        """绑定持久化控制命令后的调度唤醒；HTTP 层不直接操作执行器。"""
+        self._task_controller = controller
+
+    def set_resource_change_listener(self, listener: Optional[Callable[[], None]]) -> None:
+        """资源释放已提交后唤醒调度器；回调失败不撤销持久决策。"""
+        self._resource_change_listener = listener
+
+    def list_resource_intervals(self, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_intervals import ResourceIntervals
+
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        return ResourceIntervals(self).snapshot(task_uuid)
+
+    def release_resource_interval(self, owner_uuid: str, *, expected_version: int, reason: str) -> Dict[str, Any]:
+        from .resource_intervals import ResourceIntervals
+
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        try:
+            result = ResourceIntervals(self).confirm_release(owner_uuid, expected_version=expected_version, reason=reason)
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._resource_change_listener is not None:
+            try:
+                self._resource_change_listener()
+            except Exception:
+                logger.exception("资源区间 %s 的释放已持久化，等待调度器恢复", owner_uuid)
+        return result
+
+    def list_resource_custody(self, kind: str, task_uuid: Optional[str] = None) -> List[Dict[str, Any]]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        if task_uuid is not None:
+            task_uuid = self.get_workflow_task(task_uuid)["uuid"]
+        with self.write_lock:
+            return (ResourceLoans if kind == "loans" else DeviceTenancies).snapshot(self.connection, task_uuid)
+
+    def change_resource_custody(self, operation: str, identity: str, **values) -> Dict[str, Any]:
+        from .resource_loans import ResourceLoans
+        from .device_tenancy import DeviceTenancies
+        from unilabos.protocol.runtime.resource_intervals import ResourceIntervalReleaseRequest, ResourceLoanRequest
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        body = (ResourceLoanRequest if operation == "lend" else ResourceIntervalReleaseRequest).model_validate(values)
+        try:
+            with self.transaction() as conn:
+                if operation == "lend":
+                    result = ResourceLoans.lend(conn, identity, **body.model_dump())
+                elif operation == "return":
+                    result = ResourceLoans.confirm_return(conn, identity, **body.model_dump())
+                elif operation == "release_tenancy":
+                    result = DeviceTenancies.confirm_release(conn, identity, **body.model_dump())
+                    if not DeviceTenancies.snapshot(conn, result["task_uuid"]):
+                        conn.execute("UPDATE workflow_task SET cleanup_status='settled',attention_reason='device_tenancy_released' "
+                                     "WHERE uuid=? AND attention_reason='device_tenancy_active'", (result["task_uuid"],))
+                else:
+                    raise StoreConflict("未知资源操作")
+                self._append_event(conn, event="workflow.resource.changed", data={"operation": operation, "identity": identity}, now=utc_now())
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._resource_change_listener is not None:
+            try:
+                self._resource_change_listener()
+            except Exception:
+                logger.exception("资源操作 %s 已持久化，等待调度器恢复", identity)
+        return result
+
+    def command_workflow_task(
+        self, task_uuid: str, *, command_type: str,
+        idempotency_key: str, expected_revision: Optional[int] = None,
+        target_node_uuid: Optional[str] = None, description: Optional[str] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """V1 任务控制命令（状态机见 ``task_lifecycle.TaskCommands``），返回命令投影。"""
+
+        from .task_lifecycle import TaskCommands
+
+        try:
+            return TaskCommands(self).apply(
+                task_uuid, command_type=command_type, target_node_uuid=target_node_uuid,
+                idempotency_key=idempotency_key, description=description,
+                meta_data=dict(meta_data or {}), expected_revision=expected_revision,
+            )
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+
+    def set_task_resource_releaser(self, releaser: Optional[Callable[[str, List[str]], None]]) -> None:
+        """绑定 ``unlock_resources`` 持久释放后的调度器内存占用释放（任务 uuid, 作业 uuid 列表）。"""
+
+        self._task_resource_releaser = releaser
+
+    def mark_workflow_node_job_cancel_requested(self, job_uuid: str) -> bool:
+        return self.mark_job_cancel_requested(job_uuid)
+
+    def _notify_manual_confirmation_resolver(
+        self, confirmation: Dict[str, Any]
+    ) -> None:
+        resolver = self._manual_confirmation_resolver
+        if resolver is None:
+            return
+        try:
+            resolver(confirmation)
+        except Exception:  # noqa: BLE001 - durable 决策不可因执行器暂时异常丢失
+            logger.exception(
+                "人工确认 %s 已持久化，但调度器消费失败",
+                confirmation.get("uuid"),
+            )
+
+    # Workflow 与 Graph --------------------------------------------------
+
+    def create_workflow(
+        self,
+        *,
+        name: str,
+        tags: List[Any],
+        description: Optional[str],
+        meta_data: Dict[str, Any],
+        workflow_uuid: Optional[str] = None,
+        workflow_type: str = "normal",
+        operation_category_uuid: Any = CATEGORY_UNSET,
+    ) -> Dict[str, Any]:
+        """创建普通工作流或实验操作（V1 ``workflow_type``）；类别规则见 ``operation_category``。"""
+
+        try:
+            name = name.strip()
+            if not name:
+                raise ValueError("workflow name must not be blank")
+            identity = validate_uuid(workflow_uuid or str(uuid4()))
+            tags = normalize_json_array(tags)
+            meta_data = normalize_json_object(meta_data)
+            public_meta_data = dict(meta_data)
+            public_meta_data.pop("unilab", None)
+            public_meta_data.pop("operation_category_uuid", None)
+        except (ValueError, ValidationError):
+            raise WorkflowError("invalid_input") from None
+        with self.write_lock:
+            try:
+                kind = normalize_workflow_type(workflow_type)
+                category = self.operation_categories.resolve_for_workflow(
+                    workflow_type=kind, category=operation_category_uuid, tags=tags,
+                )
+            except OperationCategoryError as exc:
+                raise WorkflowError(exc.code, detail=exc.message) from None
+            try:
+                super().create_workflow(
+                    workflow_uuid=identity,
+                    name=name,
+                    tags=tags,
+                    description=self._optional_text(description),
+                    meta_data=public_meta_data,
+                )
+            except (ValueError, ValidationError):
+                raise WorkflowError("invalid_input") from None
+            except StoreConflict:
+                raise WorkflowConflict("conflict") from None
+            self.operation_categories.set_workflow_kind(identity, workflow_type=kind, category=category)
+        return WorkflowStore.get_workflow(self, identity)
+
+    @property
+    def operation_categories(self) -> OperationCategories:
+        """实验操作类别（runtime.db ``workflow_operation_category``）。"""
+
+        categories = getattr(self, "_operation_categories", None)
+        if categories is None:
+            categories = self._operation_categories = OperationCategories(self)
+        return categories
+
+    def public_workflow(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 工作流读模型：补 ``workflow_type`` / ``operation_category_uuid`` / ``status``。
+
+        ``status``：当前修订已发布为 ``published``，否则 ``source``。
+        """
+
+        workflow_type, category = self.operation_categories.workflow_kind(record["uuid"])
+        published = self.find_workflow_publication(record["uuid"], record["revision"])
+        return dict(
+            record,
+            workflow_type=workflow_type,
+            operation_category_uuid=category,
+            status="published" if published is not None else "source",
+        )
+
+    def list_operation_categories(self) -> List[Dict[str, Any]]:
+        return self.operation_categories.list()
+
+    def get_operation_category(self, category_uuid: str) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.get, category_uuid)
+
+    def create_operation_category(self, *, name: str, sort_order: int = 100) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.create, name=name, sort_order=sort_order)
+
+    def update_operation_category(self, category_uuid: str, **changes: Any) -> Dict[str, Any]:
+        return self._category_call(self.operation_categories.update, category_uuid, **changes)
+
+    def delete_operation_category(self, category_uuid: str) -> None:
+        self._category_call(self.operation_categories.delete, category_uuid)
+
+    @staticmethod
+    def _category_call(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        try:
+            return function(*args, **kwargs)
+        except OperationCategoryError as exc:
+            error_type = WorkflowConflict if exc.code == "conflict" else WorkflowError
+            raise error_type(exc.code, detail=exc.message) from None
+
+    def get_workflow(self, workflow_uuid: str) -> Dict[str, Any]:
+        try:
+            identity = validate_uuid(workflow_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return super().get_workflow(identity)
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+
+    def list_workflows(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        name: str = "",
+        workflow_type: Optional[str] = None,
+        status: Optional[str] = None,
+        operation_category_uuid: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """分页列表；``workflow_type`` / ``status``（source|published）/ 类别为 V1 筛选。"""
+
+        page, page_size = self._normalize_page(page, page_size)
+        try:
+            kind = normalize_workflow_type(workflow_type) if workflow_type is not None else None
+            category = category_uuid(operation_category_uuid) if operation_category_uuid is not None else None
+        except OperationCategoryError:
+            raise WorkflowError("invalid_input") from None
+        if status not in {None, "source", "published"}:
+            raise WorkflowError("invalid_input")
+        return super().list_workflows(
+            page=page,
+            page_size=page_size,
+            name=name,
+            workflow_type=kind,
+            operation_category_uuid=category,
+            published=None if status is None else status == "published",
+        )
+
+    def update_workflow(
+        self,
+        workflow_uuid: str,
+        *,
+        name: str,
+        tags: List[Any],
+        description: Optional[str],
+        meta_data: Dict[str, Any],
+        workflow_type: Optional[str] = None,
+        operation_category_uuid: Any = CATEGORY_UNSET,
+    ) -> Dict[str, Any]:
+        """更新根字段。类型可省略或重复当前值，不能在普通工作流与实验操作间转换（V1）；
+        类别省略则保持，显式 ``None`` 清空。"""
+
+        current = self.get_workflow(workflow_uuid)
+        identity = current["uuid"]
+        with self._authoring_lock(identity):
+            current = self.get_workflow(identity)
+            try:
+                name = name.strip()
+                if not name:
+                    raise ValueError("workflow name must not be blank")
+                tags = normalize_json_array(tags)
+                public_meta_data = dict(normalize_json_object(meta_data))
+            except (AttributeError, TypeError, ValueError):
+                raise WorkflowError("invalid_input") from None
+            public_meta_data.pop("unilab", None)
+            public_meta_data.pop("operation_category_uuid", None)
+            if "unilab" in current["meta_data"]:
+                public_meta_data["unilab"] = current["meta_data"]["unilab"]
+            current_type, current_category = self.operation_categories.workflow_kind(identity)
+            if workflow_type is not None and workflow_type != current_type:
+                raise WorkflowError("invalid_input", detail="不能在普通工作流和实验操作之间转换")
+            try:
+                category = (
+                    current_category
+                    if operation_category_uuid is CATEGORY_UNSET
+                    else self.operation_categories.resolve_for_workflow(
+                        workflow_type=current_type, category=operation_category_uuid, tags=tags,
+                    )
+                )
+            except OperationCategoryError as exc:
+                raise WorkflowError(exc.code, detail=exc.message) from None
+            updated = super().update_workflow(
+                identity,
+                name=name,
+                tags=tags,
+                description=self._optional_text(description),
+                meta_data=public_meta_data,
+            )
+            if category != current_category:
+                self.operation_categories.set_workflow_kind(identity, workflow_type=current_type, category=category)
+            return updated
+
+    def list_referencing_workflows(
+        self, workflow_uuid: str, *, page: int = 1, page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """引用该工作流（组合调用 ``meta_data.unilab.composite.child_workflow_uuid``）的父工作流。"""
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        page, page_size = self._normalize_page(page, page_size)
+        with self.write_lock:
+            rows = self.connection.execute(
+                """
+                SELECT DISTINCT workflow.* FROM workflow
+                JOIN workflow_node AS node ON node.workflow_uuid = workflow.uuid
+                WHERE workflow.deleted_at IS NULL AND node.deleted_at IS NULL
+                  AND json_extract(node.meta_data, '$.unilab.composite.child_workflow_uuid') = ?
+                  AND workflow.uuid <> ?
+                ORDER BY workflow.create_time DESC, workflow.uuid
+                """,
+                (identity, identity),
+            ).fetchall()
+        offset = (page - 1) * page_size
+        return {
+            "items": [self._workflow_row(row) for row in rows[offset: offset + page_size]],
+            "total": len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
+
+    def delete_workflow(self, workflow_uuid: str) -> None:
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            self.get_workflow(identity)
+            super().delete_workflow(identity)
+
+    def get_graph(self, workflow_uuid: str) -> Dict[str, Any]:
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        return self._validated_applied_backend_graph(
+            super().get_graph(identity),
+        )
+
+    def get_published_workflow_snapshot(
+        self,
+        workflow_uuid: str,
+    ) -> Dict[str, Any]:
+        """返回组合目录使用的同视图已应用工作流快照。"""
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        return super().get_published_workflow_snapshot(identity)
+
+    def save_graph(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        nodes: List[WorkflowNodeWrite | Dict[str, Any]],
+        edges: List[WorkflowEdgeWrite | Dict[str, Any]],
+        workflow_io: Optional[Dict[str, Any]] = None,
+        resource_scopes: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        if any(
+            (item.workflow_node_template_uuid if isinstance(item, WorkflowNodeWrite) else (item or {}).get("workflow_node_template_uuid"))
+            for item in nodes
+        ):
+            # 引用设备动作模板的节点：先把注册表投影同步进模板表，图校验才能找到模板
+            self._sync_registry_templates_best_effort()
+        with self._authoring_lock(identity):
+            self.get_workflow(identity)
+            try:
+                node_values = [
+                    item
+                    if isinstance(item, WorkflowNodeWrite)
+                    else WorkflowNodeWrite.model_validate(item)
+                    for item in nodes
+                ]
+                edge_values = [
+                    item
+                    if isinstance(item, WorkflowEdgeWrite)
+                    else WorkflowEdgeWrite.model_validate(item)
+                    for item in edges
+                ]
+                return super().save_graph(
+                    identity,
+                    revision=revision,
+                    nodes=node_values,
+                    edges=edge_values,
+                    protect_reserved_metadata=True,
+                    workflow_io=normalize_json_object(workflow_io) if workflow_io is not None else None,
+                    resource_scopes=resource_scopes,
+                )
+            except ValidationError as exc:
+                detail = "; ".join(
+                    f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
+                    for item in exc.errors(include_input=False, include_url=False)[:5]
+                )
+                raise WorkflowError("invalid_input", detail=detail) from None
+            except StoreRevisionConflict:
+                raise WorkflowConflict("conflict") from None
+            except StoreNotFound:
+                raise WorkflowError("not_found") from None
+            except StoreConflict as exc:
+                # 留下 protocol 图校验的具体原因；仅有笼统文案时前端/AI 都无法纠正节点。
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+
+    def declare_workflow_resource_scopes(
+        self, workflow_uuid: str, *, revision: int, scopes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """资源作用域通过专用修订接口写入，普通 metadata 更新不能改保留字段。"""
+        from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+        from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            graph = WorkflowStore.get_graph(self, identity)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict")
+            try:
+                body = WorkflowResourceScopesRequest(revision=revision, scopes=scopes)
+                metadata = dict(graph["workflow"]["meta_data"])
+                metadata["unilab"] = {**(metadata.get("unilab") or {}),
+                    "resource_scopes": [scope.model_dump(exclude_none=True) for scope in body.scopes]}
+                candidate = {**graph, "workflow": {**graph["workflow"], "meta_data": metadata}}
+                validate_graph_resource_scopes(candidate)
+            except (ValueError, TypeError) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            return self._save_reserved_graph(identity, revision=revision, workflow_meta_data=metadata,
+                                             nodes=graph["nodes"], edges=graph["edges"])
+
+    # 工作流 I/O、发布与组合调用 --------------------------------------------
+
+    def declare_workflow_io(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        input_contract: Optional[Dict[str, Any]],
+        output_contract: Optional[Dict[str, Any]],
+        output_bindings: Dict[str, Any],
+        node_input_bindings: Dict[str, Dict[str, Any]],
+        node_params: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """声明工作流公共输入输出，写入服务端保留的 ``meta_data.unilab``。
+
+        ``node_input_bindings`` 是完整替换：未列出的节点清空 input_bindings。绑定即该输入的
+        唯一 Provider，节点 param 里同名静态值随之移除；``node_params`` 按节点合并进 param，
+        用于解绑必填输入时同时给回静态值。
+        """
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            graph = WorkflowStore.get_graph(self, identity)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict")
+            try:
+                bindings_by_node = {
+                    validate_uuid(node_uuid): normalize_json_object(bindings)
+                    for node_uuid, bindings in node_input_bindings.items()
+                }
+                params_by_node = {
+                    validate_uuid(node_uuid): normalize_json_object(values)
+                    for node_uuid, values in (node_params or {}).items()
+                }
+            except (AttributeError, TypeError, ValueError):
+                raise WorkflowError("invalid_input") from None
+            known = {node["uuid"] for node in graph["nodes"]}
+            unknown = sorted((set(bindings_by_node) | set(params_by_node)) - known)
+            if unknown:
+                raise WorkflowError(
+                    "invalid_input",
+                    detail=f"I/O 声明引用了图中不存在的节点 {unknown[0]}",
+                )
+            handles = {item["uuid"]: item for item in graph["handle_templates"]}
+            nodes = []
+            for node in graph["nodes"]:
+                meta_data = dict(node["meta_data"])
+                unilab = dict(meta_data.get("unilab") or {})
+                param = {
+                    **(node.get("param") or {}),
+                    **params_by_node.get(node["uuid"], {}),
+                }
+                bindings = bindings_by_node.get(node["uuid"])
+                if bindings:
+                    unilab["input_bindings"] = bindings
+                    for handle_uuid in bindings:
+                        handle = handles.get(handle_uuid)
+                        if handle is not None:
+                            param.pop(
+                                self._final_target_data_key(
+                                    self._handle_data_key(handle)
+                                ),
+                                None,
+                            )
+                else:
+                    unilab.pop("input_bindings", None)
+                if unilab:
+                    meta_data["unilab"] = unilab
+                else:
+                    meta_data.pop("unilab", None)
+                nodes.append({**node, "meta_data": meta_data, "param": param})
+            workflow_meta = dict(graph["workflow"]["meta_data"])
+            unilab = dict(workflow_meta.get("unilab") or {})
+            unilab["input_contract"] = input_contract
+            unilab["output_contract"] = output_contract
+            unilab["output_bindings"] = output_bindings
+            workflow_meta["unilab"] = unilab
+            candidate = {
+                **graph,
+                "workflow": {**graph["workflow"], "meta_data": workflow_meta},
+                "nodes": nodes,
+            }
+            try:
+                workflow_io = validate_workflow_graph_io(candidate)
+            except WorkflowIOValidationError as exc:
+                raise WorkflowError(
+                    "invalid_input",
+                    detail=f"{exc.code}（{exc.path}）",
+                ) from None
+            # 落库规范化后的合同，发布与展开读取的是同一份形状。
+            unilab["input_contract"] = workflow_io.input_contract.to_dict()
+            unilab["output_contract"] = workflow_io.output_contract.to_dict()
+            unilab["output_bindings"] = {
+                name: dict(binding)
+                for name, binding in workflow_io.output_bindings.items()
+            }
+            return self._save_reserved_graph(
+                identity,
+                revision=revision,
+                workflow_meta_data=workflow_meta,
+                nodes=nodes,
+                edges=graph["edges"],
+            )
+
+    def publish_workflow(self, workflow_uuid: str, *, revision: int) -> Dict[str, Any]:
+        """把当前修订冻结为不可变发布；同一修订重复发布返回既有发布。"""
+
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            existing = self.find_workflow_publication(identity, revision)
+            if existing is not None:
+                return self._publication_dto(existing)
+            graph = WorkflowStore.get_graph(self, identity)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict", detail="只能发布工作流的当前修订")
+            self._check_resource_order(graph)
+            source_hash = publication_source_hash(graph)
+            snapshot = freeze_publication_snapshot(graph, source_hash=source_hash)
+            try:
+                projection = project_publication(snapshot)
+            except PublicationError as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            try:
+                row = self.insert_workflow_publication(
+                    workflow_uuid=identity,
+                    revision=revision,
+                    name=graph["workflow"]["name"],
+                    source_hash=source_hash,
+                    contract_digest=projection.contract_digest,
+                    snapshot=snapshot,
+                )
+            except StoreConflict:
+                raise WorkflowConflict("conflict") from None
+            logger.info(
+                "工作流 %s 已发布修订 %s（%s）", identity, revision, projection.contract_digest
+            )
+            return publication_summary(row, projection)
+
+    def _check_resource_order(self, graph: Dict[str, Any]) -> None:
+        """发布期检查（与 V1 相同）：声明了 ``order_sensitive`` 的动作与同一资源上的兄弟动作必须显式排序。
+
+        任务创建时按执行计划再查一次，没发布直接运行的工作流同样受约束。
+        """
+        from unilabos.server.backend.scheduler.interval_plan import (
+            graph_has_order_sensitive_actions, validate_graph_resource_scopes,
+        )
+
+        resolver = self._action_schema_resolver
+        if not graph_has_order_sensitive_actions(graph, resolver):
+            return
+        try:
+            validate_graph_resource_scopes(graph, action_schema=resolver)
+        except (ValueError, TypeError) as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+
+    def list_workflow_publications(self, workflow_uuid: str) -> List[Dict[str, Any]]:
+        identity = self.get_workflow(workflow_uuid)["uuid"]
+        return [
+            self._publication_dto(row)
+            for row in super().list_workflow_publications(identity)
+        ]
+
+    def list_published_workflows(self) -> List[Dict[str, Any]]:
+        """每个工作流的最新发布及其投影节点模板（前端调色板）。"""
+
+        return [
+            self._publication_dto(row)
+            for row in self.list_latest_workflow_publications()
+        ]
+
+    def insert_composite_invocation(
+        self,
+        parent_workflow_uuid: str,
+        *,
+        revision: int,
+        child_workflow_uuid: str,
+        child_revision: Optional[int] = None,
+        invocation_uuid: Optional[str] = None,
+        pose: Optional[Dict[str, Any]] = None,
+        arguments: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """把子工作流的一次发布作为组合调用插入父图，并内联展开为普通分支。"""
+
+        parent = self.get_workflow(parent_workflow_uuid)["uuid"]
+        try:
+            child = validate_uuid(child_workflow_uuid)
+            invocation = validate_uuid(invocation_uuid or str(uuid4()))
+            arguments = normalize_json_object(arguments or {})
+            pose = normalize_json_object(pose or {})
+        except (AttributeError, TypeError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        if child == parent:
+            raise WorkflowError(
+                "invalid_input",
+                detail="composite_recursive_reference（/composite/child_workflow_uuid）",
+            )
+        # 子工作流已删除时不再允许新插入；已插入的调用不受影响（快照不可变）。
+        self.get_workflow(child)
+        with self._authoring_lock(parent):
+            graph = WorkflowStore.get_graph(self, parent)
+            if graph["workflow"]["revision"] != revision:
+                raise WorkflowConflict("conflict")
+            selected = self.find_workflow_publication(child, child_revision)
+            if selected is None:
+                raise WorkflowError("not_found", detail="子工作流没有该发布修订")
+            try:
+                authoring, projection = self._composite_authoring(selected)
+            except PublicationError as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            parent_unilab = graph["workflow"]["meta_data"].get("unilab") or {}
+            expansion = authoring.compile_invocation(
+                parent_workflow_uuid=parent,
+                invocation_uuid=invocation,
+                module=PUBLICATION_MODULE,
+                symbol=projection.source.symbol,
+                keyword_arguments=arguments,
+                parent_input_contract=(
+                    parent_unilab.get("input_contract")
+                    or {"version": 1, "parameters": []}
+                ),
+            )
+            if expansion.diagnostics:
+                diagnostic = expansion.diagnostics[0]
+                raise WorkflowError(
+                    "invalid_input",
+                    detail=f"{diagnostic['code']}（{diagnostic['path']}）",
+                )
+            nodes, edges, templates, handles = merged_invocation_entities(
+                expansion,
+                name=selected["name"],
+                pose=pose,
+            )
+            if {node["uuid"] for node in nodes} & {
+                node["uuid"] for node in graph["nodes"]
+            } or {edge["uuid"] for edge in edges} & {
+                edge["uuid"] for edge in graph["edges"]
+            }:
+                raise WorkflowConflict("conflict", detail="组合调用身份已存在于父图")
+            from unilabos.server.backend.scheduler.interval_plan import (
+                graph_declares_resource_scopes, validate_graph_resource_scopes,
+            )
+
+            candidate = {**graph, "nodes": [*graph["nodes"], *nodes], "edges": [*graph["edges"], *edges]}
+            if graph_declares_resource_scopes(candidate):
+                # 子操作带来的资源作用域要能和父图已有的作用域一起规划
+                try:
+                    validate_graph_resource_scopes(candidate)
+                except (ValueError, TypeError) as exc:
+                    raise WorkflowError("invalid_input", detail=str(exc)) from None
+            saved = self._save_reserved_graph(
+                parent,
+                revision=revision,
+                workflow_meta_data=graph["workflow"]["meta_data"],
+                nodes=[*graph["nodes"], *nodes],
+                edges=[*graph["edges"], *edges],
+                node_templates=templates,
+                handle_templates=handles,
+            )
+            return {
+                "invocation_uuid": invocation,
+                "contract_pin": dict(expansion.contract_pin),
+                "graph": saved,
+            }
+
+    # V1 发布合同 / 组合调用 ------------------------------------------------
+
+    def publication_contract(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """dev 发布行 → V1 公共发布合同（``uuid`` 即 ``contract_uuid``），保留 dev 摘要字段。
+
+        V1 字段：``workflow_revision`` / ``version``（该工作流第几次发布）/ ``input_contract`` /
+        ``output_contract`` / ``executor_requirements``（dev 发布不带执行器绑定，恒为空）/
+        ``node_template_uuid`` / ``node_count`` / ``edge_count`` / ``revision_fingerprint``。
+        """
+
+        summary = self._publication_dto(row)
+        snapshot = row.get("snapshot") or {}
+        snapshot_workflow = snapshot.get("workflow") or {}
+        with self.write_lock:
+            version = self.connection.execute(
+                "SELECT COUNT(*) FROM workflow_publication WHERE workflow_uuid = ? AND revision <= ?",
+                (row["workflow_uuid"], row["revision"]),
+            ).fetchone()[0]
+        contract = {
+            "uuid": summary["uuid"],
+            "create_time": summary["create_time"],
+            "update_time": summary["create_time"],
+            "meta_data": {},
+            "workflow_uuid": summary["workflow_uuid"],
+            "workflow_revision": summary["revision"],
+            "version": int(version),
+            "name": summary["name"],
+            "tags": list(snapshot_workflow.get("tags") or []),
+            "node_template_uuid": (summary.get("node_template") or {}).get("uuid"),
+            "input_contract": {"version": 1, "parameters": summary.get("inputs") or []},
+            "output_contract": {"version": 1, "outputs": summary.get("outputs") or []},
+            "executor_requirements": [],
+            "source_hash": summary["source_hash"],
+            "contract_digest": summary["contract_digest"],
+            "node_count": len(snapshot.get("nodes") or []),
+            "edge_count": len(snapshot.get("edges") or []),
+            "revision_fingerprint": summary["source_hash"],
+        }
+        if "description" in summary:
+            contract["description"] = summary["description"]
+        # dev 调色板字段（节点模板与 Handle）一并保留，供组合插入前展示
+        for key in ("revision", "inputs", "outputs", "node_template", "handle_templates"):
+            contract[key] = summary.get(key)
+        return contract
+
+    def publish_workflow_contract(self, workflow_uuid: str, *, revision: int) -> Dict[str, Any]:
+        """V1 ``POST /publications``：当前修订冻结为发布，返回 V1 发布合同。"""
+
+        summary = self.publish_workflow(workflow_uuid, revision=revision)
+        row = self.find_workflow_publication(summary["workflow_uuid"], summary["revision"])
+        assert row is not None
+        return self.publication_contract(row)
+
+    def get_publication_by_uuid(self, contract_uuid: str) -> Optional[Dict[str, Any]]:
+        with self.write_lock:
+            row = self.connection.execute(
+                "SELECT * FROM workflow_publication WHERE uuid = ?", (contract_uuid,),
+            ).fetchone()
+        return self._publication_row(row) if row is not None else None
+
+    def list_published_workflow_contracts(
+        self, *, page: int = 1, page_size: int = 20, keyword: str = "",
+    ) -> Dict[str, Any]:
+        """V1 旧客户端兼容列表：每个工作流的最新发布合同（按名称关键字筛选）。"""
+
+        page, page_size = self._normalize_page(page, page_size)
+        needle = keyword.strip().lower()
+        rows = [
+            row for row in self.list_latest_workflow_publications()
+            if not needle or needle in str(row.get("name") or "").lower()
+        ]
+        offset = (page - 1) * page_size
+        return {
+            "items": [self.publication_contract(row) for row in rows[offset: offset + page_size]],
+            "has_more": page * page_size < len(rows),
+            "page": page,
+            "page_size": page_size,
+        }
+
+    def insert_composite_workflow(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        contract_uuid: str,
+        invocation_uuid: Optional[str] = None,
+        device_bindings: Optional[Dict[str, str]] = None,
+        pose: Optional[Dict[str, Any]] = None,
+        param: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """V1 组合调用：按发布合同（``contract_uuid``）插入已发布实验操作，返回父图。
+
+        dev 的 CAS 字段由服务端从合同推导：子工作流 = 合同所属工作流，子修订 = 合同修订；
+        ``param`` 即 dev 的 ``arguments``。V1 规则：子工作流必须是实验操作且当前修订已发布；
+        dev 发布没有执行器需求，``device_bindings`` 必须为空对象。
+        """
+
+        try:
+            identity = validate_uuid(contract_uuid)
+        except (TypeError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+            raise WorkflowError("invalid_input")
+        row = self.get_publication_by_uuid(identity)
+        if row is None:
+            raise WorkflowError("not_found", detail="发布合同不存在")
+        child = self.public_workflow(self.get_workflow(row["workflow_uuid"]))
+        if child["workflow_type"] != "experiment_operation":
+            raise WorkflowError("invalid_composite_child_type", detail="只有实验操作可以被其他工作流引用")
+        if child["status"] != "published":
+            raise WorkflowConflict("invalid_composite_child_status", detail="被引用的实验操作当前修订尚未发布")
+        if device_bindings:
+            raise WorkflowError("invalid_input", detail="该发布合同没有执行器需求，device_bindings 必须为空")
+        result = self.insert_composite_invocation(
+            workflow_uuid,
+            revision=revision,
+            child_workflow_uuid=row["workflow_uuid"],
+            child_revision=row["revision"],
+            invocation_uuid=invocation_uuid,
+            pose=pose,
+            arguments=param,
+        )
+        return result["graph"]
+
+    def _composite_authoring(
+        self,
+        selected: Dict[str, Any],
+    ) -> Tuple[CompositeAuthoring, PublicationProjection]:
+        """为一次插入装配封闭目录：选定发布 + 其嵌套调用固定的发布 + 当前普通模板。"""
+
+        rows: Dict[str, Dict[str, Any]] = {selected["workflow_uuid"]: selected}
+        pending = nested_pins(authoring_view(selected["snapshot"]))
+        while pending:
+            workflow_uuid, revision = pending.pop()
+            known = rows.get(workflow_uuid)
+            if known is not None:
+                if known["revision"] != revision:
+                    # 一个目录代际里每个工作流只能有一个发布修订
+                    raise PublicationError(
+                        "composite_catalog_mismatch",
+                        "/child/nodes/composite/child_workflow_revision",
+                    )
+                continue
+            row = self.find_workflow_publication(workflow_uuid, revision)
+            if row is None:
+                raise PublicationError("composite_child_not_found", "/child/workflow_uuid")
+            rows[workflow_uuid] = row
+            pending.extend(nested_pins(authoring_view(row["snapshot"])))
+        projections = {
+            workflow_uuid: project_publication(row["snapshot"])
+            for workflow_uuid, row in rows.items()
+        }
+        views = {
+            workflow_uuid: authoring_view(row["snapshot"])
+            for workflow_uuid, row in rows.items()
+        }
+        base_templates, base_handles = self.list_catalog_templates(
+            base_template_uuids(views.values())
+        )
+        try:
+            catalog = AuthoringCatalogSnapshot.from_entities(
+                [*base_templates, *(item.template for item in projections.values())],
+                [
+                    *base_handles,
+                    *(handle for item in projections.values() for handle in item.handles),
+                ],
+            )
+        except AuthoringCatalogError:
+            raise PublicationError("composite_catalog_mismatch", "/catalog") from None
+        authoring = CompositeAuthoring(
+            snapshot_provider=FrozenSnapshotProvider(views),
+            catalog=catalog,
+            resolver=PublicationResolver(item.source for item in projections.values()),
+        )
+        return authoring, projections[selected["workflow_uuid"]]
+
+    def _publication_dto(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            return publication_summary(row, project_publication(row["snapshot"]))
+        except (KeyError, TypeError, PublicationError):
+            logger.exception("工作流发布 %s 的快照无法投影", row.get("uuid"))
+            raise WorkflowError("internal_error") from None
+
+    def _save_reserved_graph(self, workflow_uuid: str, **kwargs: Any) -> Dict[str, Any]:
+        """保留元数据写图，错误映射与 ``save_graph`` 一致。"""
+
+        try:
+            return self.save_graph_with_reserved_metadata(
+                workflow_uuid,
+                template_authority_id=PUBLICATION_TEMPLATE_AUTHORITY,
+                **kwargs,
+            )
+        except ValidationError as exc:
+            detail = "; ".join(
+                f"{'.'.join(map(str, item['loc']))}: {item['msg']}"
+                for item in exc.errors(include_input=False, include_url=False)[:5]
+            )
+            raise WorkflowError("invalid_input", detail=detail) from None
+        except StoreRevisionConflict:
+            raise WorkflowConflict("conflict") from None
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+        except StoreConflict as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+
+    # WorkflowTask 与 WorkflowNodeJob -----------------------------------
+
+    def configure_preflight(
+        self, *, materials: Any = None,
+        endpoints: Optional[Callable[[], list[dict[str, Any]]]] = None,
+        action_schema_resolver: Optional[Callable[[str, str], Optional[dict[str, Any]]]] = None,
+    ) -> None:
+        """组合根注入只读库存与设备快照，不把 HTTP 依赖带入领域服务。"""
+        self._preflight_materials = materials
+        self._preflight_endpoints = endpoints
+        self._action_schema_resolver = action_schema_resolver
+
+    def preflight_workflow(self, **kwargs: Any) -> dict[str, Any]:
+        from .run_preflight import build_run_preflight_report
+
+        return build_run_preflight_report(self, **kwargs)
+
+    def create_workflow_task(
+        self,
+        *,
+        workflow_uuid: str,
+        run_mode: str,
+        target_node_uuid: Optional[str],
+        input_value: Dict[str, Any],
+        description: Optional[str],
+        meta_data: Dict[str, Any],
+        idempotency_key: Optional[str] = None,
+        expected_revision: Optional[int] = None,
+        priority: str = "normal",
+        inventory_bindings: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        workflow_uuid = self.get_workflow(workflow_uuid)["uuid"]
+        from .task_lifecycle import (
+            InventoryBindingUnavailable,
+            bind_plan_inventory,
+            inventory_binding_sources,
+            normalize_inventory_bindings,
+            normalize_task_priority,
+        )
+
+        try:
+            priority = normalize_task_priority(priority)
+            bindings = normalize_inventory_bindings(inventory_bindings)
+        except ValueError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        run_mode = "normal" if run_mode == "" else run_mode
+        if run_mode not in {"normal", "step", "single_node"}:
+            raise WorkflowError("invalid_input")
+        if target_node_uuid is not None:
+            try:
+                target_node_uuid = validate_uuid(target_node_uuid)
+            except ValueError:
+                raise WorkflowError("invalid_input") from None
+        try:
+            input_value = normalize_json_object(input_value)
+            meta_data = normalize_json_object(meta_data)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        # 任务输入只承载工作流声明的入口参数（input_contract）；未声明合同的工作流
+        # 仍只接受空对象。校验与补默认值在建任务事务内按同一份图完成。
+        description = self._optional_text(description)
+        # 幂等键可选：同一次提交（按钮重发、网络重试）复用同一键只建一个任务。指纹锁定
+        # 运行语义 (workflow, run_mode, target, input)；同键不同语义按 conflict 拒绝。
+        fingerprint = ""
+        if idempotency_key is not None:
+            idempotency_key = str(idempotency_key).strip()
+            if not idempotency_key or len(idempotency_key) > 200:
+                raise WorkflowError("invalid_input")
+            semantics: Dict[str, Any] = {
+                "workflow_uuid": workflow_uuid,
+                "run_mode": run_mode,
+                "target_node_uuid": target_node_uuid,
+            }
+            if input_value:
+                # 空输入不进指纹：与引入任务输入之前的既有任务保持同一指纹
+                semantics["input"] = input_value
+            if expected_revision is not None:
+                semantics["expected_revision"] = expected_revision
+            # V1 字段取默认值时不进指纹，与既有任务保持同一指纹
+            if priority != "normal":
+                semantics["priority"] = priority
+            if bindings:
+                semantics["inventory_bindings"] = bindings
+            fingerprint = _sha256(_canonical_json(semantics))
+            existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
+            if existing is not None:
+                if existing.get("request_fingerprint", "") != fingerprint:
+                    raise WorkflowConflict("conflict")
+                return existing
+        resolved: Dict[str, Dict[str, Any]] = {}
+        # 绑定指向的库存实例在建任务事务外读取（物料库是另一个权威，不在 runtime 写锁内访问）；
+        # 事务内按冻结计划把绑定落到对应需求，不匹配即拒绝建任务。
+        binding_sources: Optional[Dict[str, Dict[str, Any]]] = {}
+        if bindings:
+            try:
+                binding_sources = (inventory_binding_sources(bindings, self._preflight_materials)
+                                   if self._preflight_materials is not None else None)
+            except (ValueError, InventoryBindingUnavailable) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            except (RuntimeError, OSError) as exc:
+                raise WorkflowError("invalid_input", detail=f"无法读取绑定的库存：{exc}") from None
+
+        def build_plan(graph: Dict[str, Any]) -> Any:
+            plan, jobs = self._build_execution_plan(
+                graph,
+                run_mode=run_mode,
+                target_node_uuid=target_node_uuid,
+                entry_input=resolved["input"],
+            )
+            try:
+                bind_plan_inventory(plan, bindings, binding_sources)
+            except (ValueError, InventoryBindingUnavailable) as exc:
+                raise StoreConflict(str(exc)) from None
+            return plan, jobs
+
+        def build_input(graph: Dict[str, Any]) -> Dict[str, Any]:
+            # 在建任务事务内比较修订，避免预检后图被修改却提交了另一份计划。
+            if expected_revision is not None and graph["workflow"]["revision"] != expected_revision:
+                raise WorkflowConflict("conflict", detail="工作流修订已变化，请刷新后重新预检")
+            try:
+                contract = declared_input_contract(graph["workflow"])
+                resolved["input"] = resolve_task_input(contract, input_value)
+            except EntryParameterError as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            return resolved["input"]
+
+        try:
+            task = self.create_task_with_jobs(
+                workflow_uuid=workflow_uuid,
+                task_uuid=str(uuid4()),
+                run_mode=run_mode,
+                target_node_uuid=target_node_uuid,
+                input_value={},
+                input_builder=build_input,
+                description=description,
+                meta_data=meta_data,
+                plan_builder=build_plan,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+                priority=priority,
+                inventory_bindings=bindings,
+            )
+        except StoreConflict as exc:
+            if idempotency_key is not None:
+                # 唯一索引兜底：并发同键提交，读回先到者
+                existing = self.find_task_by_idempotency_key("workflow", idempotency_key)
+                if existing is not None:
+                    if existing.get("request_fingerprint", "") != fingerprint:
+                        raise WorkflowConflict("conflict") from None
+                    return existing
+            # 计划编译的具体原因（如哪两步须显式排序、哪个参数不合合同）留给前端 / 作者
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        if self._task_submitter is not None:
+            self._task_submitter(task["uuid"])
+        return task
+
+    def create_ad_hoc_device_action_task(
+        self,
+        *,
+        device_id: str,
+        action_name: str,
+        action_type: str = "",
+        param: Dict[str, Any],
+        execution_policy: Optional[Dict[str, Any]] = None,
+        execution_timeout_seconds: int = 0,
+        idempotency_key: Optional[str] = None,
+        description: Optional[str],
+        meta_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """微前端单点设备动作：单 job 任务，复用整图任务的调度/历史/异常链路。
+
+        request_fingerprint 锁定 (device, action, param) 语义；同 idempotency_key
+        重复提交时指纹一致返回既有任务（幂等），不一致按 conflict 拒绝。
+        """
+
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        device_id = str(device_id or "").strip()
+        action_name = str(action_name or "").strip()
+        if not device_id or not action_name:
+            raise WorkflowError("invalid_input")
+        try:
+            param = normalize_json_object(param)
+            meta_data = normalize_json_object(meta_data)
+            policy = normalize_json_object(execution_policy or {})
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        if execution_timeout_seconds < 0:
+            raise WorkflowError("invalid_input")
+        description = self._optional_text(description)
+        fingerprint = _sha256(
+            _canonical_json(
+                {
+                    "device_id": device_id,
+                    "action_name": action_name,
+                    "param": param,
+                }
+            )
+        )
+        if idempotency_key is not None:
+            idempotency_key = str(idempotency_key).strip()
+            if not idempotency_key:
+                raise WorkflowError("invalid_input")
+        else:
+            idempotency_key = str(uuid4())
+        existing = self.find_task_by_idempotency_key(
+            "ad_hoc_device_action", idempotency_key
+        )
+        if existing is not None:
+            if existing.get("request_fingerprint", "") not in {"", fingerprint}:
+                raise WorkflowConflict("conflict")
+            return existing
+        try:
+            task = self.create_ad_hoc_task_with_job(
+                task_uuid=str(uuid4()),
+                node_uuid=str(uuid4()),
+                device_id=device_id,
+                action_name=action_name,
+                action_type=str(action_type or ""),
+                param=param,
+                execution_policy=policy,
+                execution_timeout_seconds=execution_timeout_seconds,
+                description=description,
+                meta_data=meta_data,
+                idempotency_key=idempotency_key,
+                request_fingerprint=fingerprint,
+            )
+        except StoreConflict:
+            # 唯一索引兜底：并发同键提交，读回先到者
+            existing = self.find_task_by_idempotency_key(
+                "ad_hoc_device_action", idempotency_key
+            )
+            if existing is None:
+                raise WorkflowError("internal_error") from None
+            if existing.get("request_fingerprint", "") != fingerprint:
+                raise WorkflowConflict("conflict") from None
+            return existing
+        if self._task_submitter is not None:
+            self._task_submitter(task["uuid"])
+        return task
+
+    def create_device_action_run(
+        self,
+        *,
+        material_uuid: str,
+        workflow_node_template_uuid: str,
+        param: Optional[Dict[str, Any]],
+        execution_policy: Optional[Dict[str, Any]],
+        idempotency_key: str,
+        description: Optional[str],
+        meta_data: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """V1 ``POST /device-action-runs``：按设备物料 + 动作模板创建（或幂等复用）单动作任务。
+
+        设备 ID 由物料权威解析（设备根物料的 ``resource_id``），动作名 / 类型取自节点模板；
+        执行沿用 dev 的单点设备动作任务（同一套调度、历史与异常链路）。返回 ``{task, job, created}``。
+        """
+
+        try:
+            material_identity = validate_uuid(material_uuid)
+        except (TypeError, ValueError):
+            raise WorkflowError("invalid_input", detail="material_uuid 必须是有效 UUID") from None
+        if not str(idempotency_key or "").strip():
+            raise WorkflowError("invalid_input", detail="idempotency_key 不能为空")
+        template = self.get_node_template_record(workflow_node_template_uuid)
+        device_id = self._device_id_for_material(material_identity, template)
+        if not device_id:
+            raise WorkflowError("invalid_input", detail="设备物料不存在或不是设备")
+        existed = self.find_task_by_idempotency_key("ad_hoc_device_action", str(idempotency_key).strip())
+        effective_param = param if param is not None else dict(template.get("goal_default") or {})
+        task = self.create_ad_hoc_device_action_task(
+            device_id=device_id,
+            action_name=str(template["name"]),
+            action_type=str(template.get("type") or ""),
+            param=effective_param,
+            execution_policy=execution_policy,
+            idempotency_key=idempotency_key,
+            description=description,
+            meta_data=dict(meta_data or {}, material_uuid=material_identity,
+                           workflow_node_template_uuid=template["uuid"]),
+        )
+        jobs = self.list_workflow_node_jobs(task["uuid"])
+        return {
+            "task": self.get_workflow_task(task["uuid"]),
+            "job": jobs[0] if jobs else None,
+            "created": existed is None,
+        }
+
+    def list_template_action_references(self) -> List[Dict[str, Any]]:
+        """活跃 workflow 节点对模板 action 的引用明细行（Registry 冲突检测用）。"""
+
+        return super().list_template_action_references()
+
+    def list_recoverable_workflow_tasks(self) -> List[Dict[str, Any]]:
+        """列出本地 Adapter 可接管的非终态规范任务。"""
+
+        if not self._authority_profile.can_recover_local_workflow_task:
+            return []
+        return self.list_recoverable_tasks()
+
+    def prepare_workflow_task_execution(self, task_uuid: str) -> Dict[str, Any]:
+        return self.prepare_task_execution(task_uuid)
+
+    def settle_workflow_task_reconciliation(self, task_uuid: str) -> Dict[str, Any]:
+        """重启后待裁决的 attempt 全部收敛后恢复任务控制态（见 store）。"""
+
+        return self.settle_task_reconciliation(task_uuid)
+
+    def mark_workflow_node_job_running(self, job_uuid: str) -> Dict[str, Any]:
+        return self.mark_job_running(job_uuid)
+
+    def mark_workflow_node_job_execution_unknown(self, job_uuid: str, reason: str) -> bool:
+        return self.mark_job_execution_unknown(job_uuid, reason)
+
+    def mark_workflow_node_job_decision_pending(
+        self, job_uuid: str, report: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return self.mark_job_decision_pending(job_uuid, report)
+
+    def mark_workflow_node_job_decision_resumed(
+        self, job_uuid: str, decision_id: str = "", *, status: str = "running"
+    ) -> Dict[str, Any]:
+        return self.mark_job_decision_resumed(job_uuid, decision_id, status=status)
+
+    def set_workflow_node_run_execution_timeout(
+        self, run_uuid: str, seconds: int
+    ) -> Dict[str, Any]:
+        return self.set_node_run_execution_timeout(run_uuid, seconds)
+
+    def set_workflow_node_job_estimate(
+        self, job_uuid: str, estimated_s: Optional[float], source: Optional[str]
+    ) -> None:
+        self.set_job_estimate(job_uuid, estimated_s, source)
+
+    def record_workflow_node_job_terminal(
+        self,
+        job_uuid: str,
+        *,
+        status: str,
+        return_info: Optional[Dict[str, Any]] = None,
+        error_info: Optional[List[Dict[str, Any]]] = None,
+        error_resolution: Optional[Dict[str, Any]] = None,
+        timeout_hold: Optional[Dict[str, Any]] = None,
+        late_outcome: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """attempt 终态 + 节点运行投影；返回 ``{"job", "run", "next_job"}``（见 store）。"""
+
+        return self.record_job_terminal(
+            job_uuid,
+            status=status,
+            return_info=return_info or {},
+            error_info=error_info or [],
+            error_resolution=error_resolution,
+            timeout_hold=timeout_hold,
+            late_outcome=late_outcome,
+        )
+
+    def record_workflow_node_job_late_outcome(
+        self, job_uuid: str, outcome: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """超时结算后驱动的迟到结果：只记录，并放开仍持有的锁（见 store）。"""
+
+        return self.record_job_late_outcome(job_uuid, outcome)
+
+    def begin_workflow_loop_iteration(
+        self,
+        loop_run_uuid: str,
+        *,
+        iteration: int,
+        progress: Dict[str, Any],
+        body_run_uuids: Sequence[str],
+    ) -> Dict[str, Any]:
+        """循环节点开始新一轮：循环体节点运行追加 attempt，返回 ``{"run", "next_jobs"}``（见 store）。"""
+
+        return self.begin_loop_iteration(
+            loop_run_uuid,
+            iteration=iteration,
+            progress=progress,
+            body_run_uuids=body_run_uuids,
+        )
+
+    def close_workflow_node_run(self, run_uuid: str, *, status: str) -> Dict[str, Any]:
+        return self.close_node_run(run_uuid, status=status)
+
+    def finish_workflow_task(
+        self,
+        task_uuid: str,
+        *,
+        status: str,
+        output: Optional[Dict[str, Any]] = None,
+        error_info: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        if status == "succeeded":
+            # 声明了 output_contract 的工作流：任务输出按 output_bindings 求值；
+            # 未声明时沿用调用方给的逐节点结果映射。
+            try:
+                task = self.get_task(task_uuid)
+                declared = resolve_declared_output(
+                    task.get("workflow_snapshot") or {},
+                    self.list_node_runs(task_uuid, include_attempts=False),
+                    task.get("input") or {},
+                )
+            except StoreNotFound:
+                declared = None
+            except EntryParameterError as exc:
+                declared = None
+                status = "failed"
+                error_info = [*(error_info or []), {"code": exc.code, "message": str(exc), "path": exc.path}]
+            if declared is not None:
+                output = declared
+        return self.finish_task(
+            task_uuid,
+            status=status,
+            output=output or {},
+            error_info=error_info or [],
+        )
+
+    def edit_workflow_task_input(
+        self,
+        task_uuid: str,
+        *,
+        expected_revision: int,
+        input_value: Dict[str, Any],
+        idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """暂停时修改入口参数（ADR 0002）：只改尚未下发、且未被已下发节点用过的参数。"""
+
+        if not self._authority_profile.can_create_local_workflow_task:
+            raise WorkflowError("local_task_authority_forbidden")
+        task = self.get_workflow_task(task_uuid)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise WorkflowError("invalid_input")
+        key = str(idempotency_key or uuid4()).strip()
+        if not key or len(key) > 200:
+            raise WorkflowError("invalid_input")
+        try:
+            patch = normalize_json_object(input_value)
+            contract = declared_input_contract(
+                (task.get("workflow_snapshot") or {}).get("workflow") or {}
+            )
+            descriptors = {
+                str(item["name"]): item for item in (contract or {}).get("parameters", [])
+            }
+            unknown = sorted(set(patch) - set(descriptors))
+            if unknown:
+                raise EntryParameterError("workflow_input_unknown", f"/input/{unknown[0]}")
+            values = {
+                name: validate_entry_value(descriptors[name], value)
+                for name, value in patch.items()
+            }
+        except ValueError as exc:
+            detail = str(exc) if isinstance(exc, EntryParameterError) else ""
+            raise WorkflowError("invalid_input", detail=detail) from None
+        try:
+            result = self.edit_task_input(
+                task["uuid"],
+                expected_revision=expected_revision,
+                values=values,
+                idempotency_key=key,
+            )
+        except StoreRevisionConflict:
+            raise WorkflowConflict("conflict") from None
+        except StoreConflict as exc:
+            raise WorkflowConflict("conflict", detail=str(exc)) from None
+        if self._task_controller is not None:
+            try:
+                # 唤醒调度器：未下发节点按库内参数重载
+                self._task_controller(task["uuid"])
+            except Exception:
+                logger.exception("任务 %s 入口参数已修改，等待调度器恢复", task["uuid"])
+        return result
+
+    def get_workflow_task(self, task_uuid: str) -> Dict[str, Any]:
+        try:
+            identity = validate_uuid(task_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return self.get_task(identity)
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+
+    def list_workflow_tasks(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        workflow_uuid: Optional[str] = None,
+        status: str = "",
+        cleanup_status: str = "",
+        execution_kind: str = "",
+    ) -> Dict[str, Any]:
+        page, page_size = self._normalize_page(page, page_size)
+        execution_kind = execution_kind.strip().lower()
+        if execution_kind and execution_kind not in {"workflow", "ad_hoc_device_action"}:
+            raise WorkflowError("invalid_input")
+        if workflow_uuid is not None:
+            try:
+                workflow_uuid = validate_uuid(workflow_uuid)
+            except ValueError:
+                raise WorkflowError("invalid_input") from None
+        status = status.strip().lower()
+        cleanup_status = cleanup_status.strip().lower()
+        if status and status not in {
+            "pending",
+            "running",
+            "canceling",
+            "succeeded",
+            "failed",
+            "canceled",
+            "timeout",
+        }:
+            raise WorkflowError("invalid_input")
+        if cleanup_status and cleanup_status not in {
+            "none",
+            "pending",
+            "canceling",
+            "settled",
+            "requires_attention",
+        }:
+            raise WorkflowError("invalid_input")
+        return self.list_tasks(
+            page=page,
+            page_size=page_size,
+            workflow_uuid=workflow_uuid,
+            status=status,
+            cleanup_status=cleanup_status,
+            execution_kind=execution_kind,
+        )
+
+    def list_workflow_node_runs(self, task_uuid: str) -> List[Dict[str, Any]]:
+        """节点运行视图：每节点一条，当前 attempt 的结果 + ``attempts`` 历史。"""
+
+        identity = self.get_workflow_task(task_uuid)["uuid"]
+        return self.list_node_runs(identity)
+
+    def get_workflow_node_run(self, run_uuid: str) -> Dict[str, Any]:
+        try:
+            identity = validate_uuid(run_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return self.get_node_run(identity)
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+
+    def list_workflow_node_jobs(self, task_uuid: str) -> List[Dict[str, Any]]:
+        """attempt（物理执行）平铺视图。"""
+
+        from .task_lifecycle import enrich_jobs
+
+        identity = self.get_workflow_task(task_uuid)["uuid"]
+        return enrich_jobs(self, self.list_jobs(identity))
+
+    def get_workflow_node_job(self, job_uuid: str) -> Dict[str, Any]:
+        from .task_lifecycle import enrich_jobs
+
+        try:
+            identity = validate_uuid(job_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return enrich_jobs(self, [self.get_job(identity)])[0]
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+
+    @staticmethod
+    def _normalize_runtime_window(
+        limit: Optional[int], offset: int
+    ) -> tuple[Optional[int], int]:
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise WorkflowError("invalid_input")
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+        ):
+            raise WorkflowError("invalid_input")
+        return limit, offset
+
+    def list_task_manual_confirmations(
+        self, task_uuid: str, *, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        identity = self.get_workflow_task(task_uuid)["uuid"]
+        limit, offset = self._normalize_runtime_window(limit, offset)
+        # 读回时顺手收敛已到期单，保证 UI 不会永久看到 pending。
+        self.expire_workflow_manual_confirmations()
+        return self.list_manual_confirmations(
+            identity, limit=limit, offset=offset
+        )
+
+    def get_workflow_manual_confirmation(
+        self, confirmation_uuid: str
+    ) -> Dict[str, Any]:
+        try:
+            identity = validate_uuid(confirmation_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return self.get_manual_confirmation(identity)
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+
+    def open_workflow_manual_confirmation(
+        self,
+        job_uuid: str,
+        *,
+        param: Dict[str, Any],
+        description: Optional[str] = None,
+        meta_data: Optional[Dict[str, Any]] = None,
+        timeout_seconds: Optional[int] = 3600,
+        confirmation_uuid: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """为 scheduler 暂停的 manual_confirm attempt 建立确认单。"""
+
+        try:
+            result = self.open_manual_confirmation(
+                job_uuid,
+                param=param,
+                description=description,
+                meta_data=meta_data,
+                timeout_seconds=timeout_seconds,
+                confirmation_uuid=confirmation_uuid,
+            )
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+        except (StoreConflict, TypeError, ValueError):
+            raise WorkflowConflict("conflict") from None
+        return result
+
+    def decide_workflow_manual_confirmation(
+        self,
+        confirmation_uuid: str,
+        *,
+        action: str,
+        confirmed_by: Optional[str] = None,
+        comment: Optional[str] = None,
+        decision_idempotency_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """记录人工确认决策，并通知当前 scheduler（若已装配）。"""
+
+        try:
+            identity = validate_uuid(confirmation_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            result = self.decide_manual_confirmation(
+                identity,
+                action=action,
+                confirmed_by=confirmed_by,
+                comment=comment,
+                decision_idempotency_key=decision_idempotency_key,
+            )
+        except StoreNotFound:
+            raise WorkflowError("not_found") from None
+        except StoreConflict as exc:
+            raise WorkflowConflict(
+                _MANUAL_CONFIRMATION_CONFLICTS.get(str(exc), "conflict")
+            ) from None
+        except (TypeError, ValueError):
+            raise WorkflowConflict("conflict") from None
+        self._notify_manual_confirmation_resolver(result)
+        return result
+
+    def expire_workflow_manual_confirmations(
+        self, *, now: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        try:
+            result = self.expire_due_manual_confirmations(now=now)
+        except (StoreConflict, TypeError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        for confirmation in result:
+            self._notify_manual_confirmation_resolver(confirmation)
+        return result
+
+    def list_task_interventions(
+        self, task_uuid: str, *, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        identity = self.get_workflow_task(task_uuid)["uuid"]
+        limit, offset = self._normalize_runtime_window(limit, offset)
+        return self.list_interventions(identity, limit=limit, offset=offset)
+
+    def list_node_job_results(
+        self, job_uuid: str, *, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        identity = self.get_workflow_node_job(job_uuid)["uuid"]
+        limit, offset = self._normalize_runtime_window(limit, offset)
+        return self.list_job_results(identity, limit=limit, offset=offset)
+
+    def list_node_job_feedback_history(
+        self, job_uuid: str, *, limit: Optional[int] = None, offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        identity = self.get_workflow_node_job(job_uuid)["uuid"]
+        limit, offset = self._normalize_runtime_window(limit, offset)
+        return self.list_job_feedback_history(
+            identity, limit=limit, offset=offset
+        )
+
+    def _build_execution_plan(
+        self,
+        graph: Dict[str, Any],
+        *,
+        run_mode: str,
+        target_node_uuid: Optional[str],
+        entry_input: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        templates = {
+            template["uuid"]: template for template in graph.get("node_templates", [])
+        }
+        handles = {
+            handle["uuid"]: handle for handle in graph.get("handle_templates", [])
+        }
+        graph_nodes = graph["nodes"]
+        node_index = {node["uuid"]: node for node in graph_nodes}
+        graph_edges, composite_params = (
+            CompositeExecutionPlanNormalizer().flatten_composite_edges(
+                nodes=node_index,
+                edges=graph["edges"],
+                handles=handles,
+            )
+        )
+        if run_mode == "single_node" and target_node_uuid is not None:
+            selected_node = next(
+                (node for node in graph_nodes if node["uuid"] == target_node_uuid),
+                None,
+            )
+            if selected_node is None or selected_node["disabled"]:
+                raise StoreConflict("single_node target is not enabled")
+            graph_nodes = [selected_node]
+            graph_edges = []
+
+        def stable_key(node_uuid: str) -> Tuple[int, int, str, str]:
+            # 同时可排的节点：先按声明顺序——模板实例化记的 ``source_order``（``ctx.parallel`` 的成员
+            # 按书写顺序派发），或作者接口逐个添加时服务端记的 ``unilab.authoring_source_order``；
+            # 没有声明顺序的节点排在后面，再按创建时间、UUID。
+            node = enabled[node_uuid]
+            meta = node.get("meta_data") or {}
+            order = meta.get("source_order")
+            if type(order) is not int:
+                order = (meta.get("unilab") or {}).get("authoring_source_order")
+            declared = type(order) is int
+            return (0 if declared else 1, order if declared else 0, str(node.get("create_time") or ""), node_uuid)
+
+        enabled: Dict[str, Dict[str, Any]] = {}
+        node_kinds: Dict[str, str] = {}
+        all_kinds: Dict[str, str] = {}
+        invocations: set[str] = set()
+        for node in graph_nodes:
+            template = templates.get(node.get("workflow_node_template_uuid"))
+            raw_kind = (
+                template.get("node_type") if template is not None else node["type"]
+            )
+            if str(raw_kind).strip().lower() == "workflow":
+                # Composite 调用节点只用于画布、追溯和边界映射，不拥有 Job。
+                invocations.add(node["uuid"])
+                continue
+            kind = self._executor_kind(raw_kind)
+            all_kinds[node["uuid"]] = kind
+            if self._node_or_ancestor_disabled(node, node_index) or kind == "group":
+                continue
+            enabled[node["uuid"]] = node
+            node_kinds[node["uuid"]] = kind
+
+        # 循环容器层级：跨边界的依赖提升到同级，拓扑序/环检测按层级进行
+        try:
+            parents = execution_parents(node_index, all_kinds, enabled=enabled)
+        except HierarchyError as exc:
+            raise StoreConflict(str(exc)) from exc
+
+        def lifted(source: str, target: str) -> Tuple[str, str]:
+            try:
+                return lift_edge(parents, source, target)
+            except HierarchyError as exc:
+                raise StoreConflict(str(exc)) from exc
+
+        indegree = {node_uuid: 0 for node_uuid in enabled}
+        outgoing: Dict[str, List[str]] = defaultdict(list)
+        ordering_pairs: set[Tuple[str, str]] = set()
+
+        def add_ordering(source: str, target: str) -> None:
+            pair = lifted(source, target)
+            if pair[0] == pair[1] or pair in ordering_pairs:
+                return
+            ordering_pairs.add(pair)
+            outgoing[pair[0]].append(pair[1])
+            indegree[pair[1]] += 1
+
+        planned_edges: List[Dict[str, Any]] = []
+        for edge in graph_edges:
+            source = edge["source_node_uuid"]
+            target = edge["target_node_uuid"]
+            if source not in enabled or target not in enabled:
+                continue
+            source_handle = handles.get(edge["source_handle_uuid"])
+            target_handle = handles.get(edge["target_handle_uuid"])
+            if source_handle is None or target_handle is None:
+                raise StoreConflict("workflow edge references a missing handle")
+            add_ordering(source, target)
+            planned_edge = {
+                "uuid": edge["uuid"],
+                "source_node_uuid": source,
+                "target_node_uuid": target,
+                "source_handle_uuid": edge["source_handle_uuid"],
+                "target_handle_uuid": edge["target_handle_uuid"],
+                "source_data_key": self._handle_data_key(source_handle),
+                "target_data_key": self._handle_data_key(target_handle),
+                "source_type": str(source_handle.get("type") or "").strip(),
+                "target_type": str(target_handle.get("type") or "").strip(),
+            }
+            if self._dependency_only(source_handle):
+                planned_edge["dependency_only"] = True
+            planned_edges.append(planned_edge)
+
+        # execution_policy.depends_on：无 handle 数据流的纯执行序依赖（@workflow 声明式
+        # 步骤、编排画布的顺序连线）。不生成计划边，但参与拓扑排序与环检测，
+        # 这样 topological_index / 节点运行顺序与调度器实际的 DAG 一致。
+        # 组合调用节点没有 Job：depends_on 指向它等价于依赖它展开出的全部可执行后代；
+        # 它自己的 depends_on 施加到这些后代上（与 ready 连线经边界映射平面化同义）。
+        composite_members: Dict[str, List[str]] = defaultdict(list)
+        for node_uuid in enabled:
+            seen: set[str] = set()
+            parent = node_index[node_uuid].get("parent_uuid")
+            while parent is not None and str(parent) in node_index:
+                identity = str(parent)
+                if identity in seen:
+                    break
+                seen.add(identity)
+                if identity in invocations:
+                    composite_members[identity].append(node_uuid)
+                parent = node_index[identity].get("parent_uuid")
+
+        def upstream_nodes(upstream: Any) -> List[str]:
+            identity = str(upstream)
+            return composite_members.get(identity, [identity])
+
+        # 调度器按每个节点运行自己的 depends_on 建 DAG：含组合调用时把平面化后的上游写回。
+        effective_depends_on: Dict[str, List[str]] = defaultdict(list)
+
+        def depend(source_uuid: str, target_uuid: str) -> None:
+            add_ordering(source_uuid, target_uuid)
+            if source_uuid not in effective_depends_on[target_uuid]:
+                effective_depends_on[target_uuid].append(source_uuid)
+
+        from unilabos.protocol.runtime.condition import validate_condition_graph
+
+        from unilabos.protocol.runtime.value_binding import validate_result_binding_graph
+
+        effective_params = {key: {**(node.get("param") or {}), **composite_params.get(key, {})}
+                            for key, node in enabled.items()}
+        condition_dependencies = validate_condition_graph(enabled, node_kinds, parents, effective_params)
+        result_dependencies = validate_result_binding_graph(enabled, node_kinds, parents, effective_params)
+        for target_uuid, sources in result_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+        for target_uuid, sources in condition_dependencies.items():
+            for source_uuid in sorted(sources):
+                depend(source_uuid, target_uuid)
+
+        for target_uuid, node in enabled.items():
+            depends_on = (node.get("execution_policy") or {}).get("depends_on") or []
+            if not isinstance(depends_on, list):
+                continue
+            for upstream in depends_on:
+                for source_uuid in upstream_nodes(upstream):
+                    if source_uuid not in enabled or source_uuid == target_uuid:
+                        continue
+                    depend(source_uuid, target_uuid)
+        for invocation_uuid, members in composite_members.items():
+            depends_on = (
+                node_index[invocation_uuid].get("execution_policy") or {}
+            ).get("depends_on") or []
+            if not isinstance(depends_on, list):
+                continue
+            for upstream in depends_on:
+                for source_uuid in upstream_nodes(upstream):
+                    if source_uuid not in enabled or source_uuid in members:
+                        continue
+                    for member in members:
+                        depend(source_uuid, member)
+
+        # 分层拓扑排序：同级节点按依赖序，容器紧跟着它的循环体，再回到外层的后继。
+        children: Dict[Optional[str], List[str]] = defaultdict(list)
+        for node_uuid in enabled:
+            children[parents.get(node_uuid)].append(node_uuid)
+
+        def order_level(container: Optional[str]) -> List[str]:
+            members = children.get(container, [])
+            remaining = {uuid: indegree[uuid] for uuid in members}
+            available = sorted(
+                (uuid for uuid, degree in remaining.items() if degree == 0),
+                key=stable_key,
+            )
+            result: List[str] = []
+            placed = 0
+            while available:
+                node_uuid = available.pop(0)
+                result.append(node_uuid)
+                placed += 1
+                if node_kinds[node_uuid] == "loop":
+                    result.extend(order_level(node_uuid))
+                for target in outgoing[node_uuid]:
+                    remaining[target] -= 1
+                    if remaining[target] == 0:
+                        available.append(target)
+                        available.sort(key=stable_key)
+            if placed != len(members):
+                raise StoreConflict("workflow graph contains a cycle")
+            return result
+
+        ordered = order_level(None)
+        if len(ordered) != len(enabled):
+            raise StoreConflict("workflow graph contains a cycle")
+        if run_mode == "single_node":
+            if target_node_uuid is None:
+                if not ordered:
+                    raise StoreConflict("workflow has no enabled nodes")
+                target_node_uuid = ordered[0]
+            if target_node_uuid not in enabled:
+                raise StoreConflict("single_node target is not enabled")
+            # 单节点运行一个循环：连同整个循环体
+            selected = {target_node_uuid}
+            for node_uuid in ordered:
+                chain = parents.get(node_uuid)
+                while chain is not None and chain not in selected:
+                    chain = parents.get(chain)
+                if chain is not None:
+                    selected.add(node_uuid)
+            ordered = [node_uuid for node_uuid in ordered if node_uuid in selected]
+            enabled = {node_uuid: enabled[node_uuid] for node_uuid in ordered}
+            planned_edges = [
+                edge
+                for edge in planned_edges
+                if edge["source_node_uuid"] in selected and edge["target_node_uuid"] in selected
+            ]
+
+        planned_nodes: List[Dict[str, Any]] = []
+        jobs: List[Dict[str, Any]] = []
+        for index, node_uuid in enumerate(ordered):
+            node = enabled[node_uuid]
+            kind = node_kinds[node_uuid]
+            if kind == "script":
+                raise StoreConflict("script executor is not configured")
+            policy = node.get("execution_policy") or {}
+            if effective_depends_on.get(node_uuid):
+                policy = {**policy, "depends_on": list(effective_depends_on[node_uuid])}
+            template_uuid = node.get("workflow_node_template_uuid")
+            template = templates.get(template_uuid)
+            planned_param = dict(node.get("param") or {})
+            planned_param.update(composite_params.get(node_uuid, {}))
+            from copy import deepcopy
+            from unilabos.protocol.runtime.input_binding import input_references
+
+            entry_param_template = deepcopy(planned_param)
+            # 入口参数递归替换；保留原始引用供暂停修改时重新生成未派发参数。
+            if kind == "condition":
+                entry_bindings = {}
+            else:
+                planned_param, entry_bindings = substitute_entry_references(planned_param, entry_input or {})
+            if kind == "loop":
+                from unilabos.protocol.runtime.loop import parse_loop_spec
+
+                # for range(n) 的 n 可以是工作流输入：建任务时就要是合法的轮数
+                try:
+                    loop_spec = parse_loop_spec(planned_param)
+                except ValueError as exc:
+                    raise StoreConflict(f"{node.get('name') or node_uuid}: {exc}") from None
+                if loop_spec.mode == "for" and type(loop_spec.count) is not int:
+                    raise StoreConflict(f"{node.get('name') or node_uuid}: for 循环轮数引用的工作流输入没有提供")
+            node_unilab = (node.get("meta_data") or {}).get("unilab")
+            input_bindings = (
+                node_unilab.get("input_bindings") if isinstance(node_unilab, dict) else None
+            )
+            for handle_uuid, binding in (
+                input_bindings.items() if isinstance(input_bindings, dict) else ()
+            ):
+                handle = handles.get(handle_uuid)
+                parameter = binding.get("parameter") if isinstance(binding, dict) else None
+                if handle is None or not isinstance(parameter, str):
+                    continue
+                data_key = self._final_target_data_key(self._handle_data_key(handle))
+                entry_bindings[data_key] = parameter
+                entry_param_template[data_key] = {"kind": "workflow_input", "parameter": parameter}
+                if parameter in (entry_input or {}):
+                    planned_param[data_key] = (entry_input or {})[parameter]
+            target_handles = sorted(
+                (
+                    handle
+                    for handle in handles.values()
+                    if template_uuid is not None
+                    and handle.get("workflow_node_template_uuid") == template_uuid
+                    and handle.get("io_type") == "target"
+                ),
+                key=lambda item: item["uuid"],
+            )
+            source_handle_uuids = sorted(
+                handle["uuid"]
+                for handle in handles.values()
+                if template_uuid is not None
+                and handle.get("workflow_node_template_uuid") == template_uuid
+                and handle.get("io_type") == "source"
+            )
+            planned_node: Dict[str, Any] = {
+                "uuid": node_uuid,
+                "topological_index": index,
+                "kind": kind,
+                "param": planned_param,
+                "execution_policy": policy,
+                "inputs": [
+                    {
+                        "handle_uuid": handle["uuid"],
+                        "data_key": self._final_target_data_key(
+                            self._handle_data_key(handle)
+                        ),
+                        "type": str(handle.get("type") or "").strip(),
+                        "required": bool(handle.get("required")),
+                    }
+                    for handle in target_handles
+                ],
+            }
+            raw_inventory_requirements = (
+                (node.get("meta_data") or {}).get("inventory_requirements") or []
+            )
+            if not isinstance(raw_inventory_requirements, list):
+                raise StoreConflict("inventory_requirements must be a list")
+            if raw_inventory_requirements:
+                try:
+                    from unilabos.protocol.runtime.inventory import normalize_inventory, inventory_deferred
+                    planned_node["inventory_requirements"] = normalize_inventory(raw_inventory_requirements)
+                    planned_node["inventory_deferred"] = inventory_deferred(
+                        planned_node["inventory_requirements"], policy=policy,
+                        mode=(node.get("meta_data") or {}).get("inventory_mode", "task"))
+                except ValueError as exc:
+                    raise StoreConflict(
+                        f"invalid inventory requirement on node {node_uuid}: {exc}"
+                    ) from exc
+            if node.get("material_uuid") is not None:
+                planned_node["material_uuid"] = node["material_uuid"]
+            if parents.get(node_uuid) is not None:
+                # 执行父级（最近的循环容器）：调度器据此组装循环体子 DAG
+                planned_node["parent_uuid"] = parents[node_uuid]
+            if node.get("script") is not None:
+                planned_node["script"] = node["script"]
+            if source_handle_uuids:
+                planned_node["source_handle_uuids"] = source_handle_uuids
+            if template is not None and template.get("schema") is not None:
+                planned_node["param_schema"] = self._template_param_schema(template["schema"])
+            if self._action_schema_resolver is not None and kind == "device_action":
+                device_id = str((node.get("meta_data") or {}).get("target_device_id") or node.get("material_uuid") or planned_param.get("device_id") or "")
+                action_name = str(node.get("action_name") or planned_param.get("action") or "")
+                schema = self._action_schema_resolver(device_id, action_name)
+                if schema and "x-unilabos-action-contract" in schema:
+                    planned_node["param_schema"] = schema
+            if entry_bindings:
+                planned_node["entry_bindings"] = entry_bindings
+            parameter_names = set() if kind == "condition" else input_references(entry_param_template)
+            if kind == "condition":
+                from unilabos.protocol.runtime.condition import condition_input_references
+
+                parameter_names.update(condition_input_references(entry_param_template))
+            if kind == "loop":
+                from unilabos.protocol.runtime.loop import loop_input_references
+
+                parameter_names.update(loop_input_references(entry_param_template))
+            parameter_names.update(input_references(raw_inventory_requirements))
+            if parameter_names:
+                planned_node["entry_parameter_names"] = sorted(parameter_names)
+                planned_node["entry_param_template"] = entry_param_template
+            planned_nodes.append(planned_node)
+            jobs.append(
+                {
+                    "uuid": str(uuid4()),
+                    "workflow_node_uuid": node_uuid,
+                    "topological_index": index,
+                    "executor_kind": kind,
+                    "execution_policy": policy,
+                    "execution_timeout_seconds": 0,
+                    "param": planned_param,
+                }
+            )
+        plan = {
+            "run_mode": run_mode,
+            "nodes": planned_nodes,
+            "edges": planned_edges,
+        }
+        if target_node_uuid is not None:
+            plan["target_node_uuid"] = target_node_uuid
+        from unilabos.registry.typed_contract import validate_action_values
+        from .run_preflight import deferred_parameters
+
+        for node, job in zip(planned_nodes, jobs):
+            schema = node.get("param_schema")
+            if schema and "x-unilabos-action-contract" in schema:
+                try:
+                    pending = deferred_parameters(plan, node)
+                    normalized = validate_action_values(schema, node["param"], deferred=pending, managed_resources=True)
+                    # 未生成的动态值仍保留引用；预检不得用空值覆盖引用。
+                    node["param"] = {**node["param"], **normalized}
+                    job["param"] = dict(node["param"])
+                except ValueError as error:
+                    raise StoreConflict(str(error)) from None
+        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+
+        try:
+            plan["resource_intervals"] = compile_interval_plan(plan, graph)
+        except ValueError as exc:
+            raise StoreConflict(str(exc)) from None
+        return plan, jobs
+
+    @staticmethod
+    def _node_or_ancestor_disabled(
+        node: Mapping[str, Any],
+        nodes: Mapping[str, Mapping[str, Any]],
+    ) -> bool:
+        current: Mapping[str, Any] | None = node
+        seen: set[str] = set()
+        while current is not None:
+            if bool(current.get("disabled", False)):
+                return True
+            parent_uuid = current.get("parent_uuid")
+            if parent_uuid is None:
+                return False
+            identity = str(parent_uuid)
+            if identity in seen:
+                raise StoreConflict("workflow node parent hierarchy contains a cycle")
+            seen.add(identity)
+            current = nodes.get(identity)
+        return False
+
+    @staticmethod
+    def _template_param_schema(schema: Any) -> Any:
+        """节点模板行里的 schema 是 JSON 文本，执行计划里的 ``param_schema`` 按字典读取。
+
+        调度器的物料核对、物理 / 托管合同都对它调 ``.get``；原样放文本，注册表投影出的
+        旧合同动作（内置虚拟设备的全部动作）一进工作流就在派发前失败。
+        """
+
+        if not isinstance(schema, str):
+            return schema
+        try:
+            decoded = json.loads(schema) if schema.strip() else None
+        except ValueError:
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
+    @staticmethod
+    def _handle_data_key(handle: Dict[str, Any]) -> str:
+        return str(handle.get("data_key") or handle.get("handle_key") or "").strip()
+
+    @staticmethod
+    def _final_target_data_key(data_key: str) -> str:
+        return data_key.split("@@@")[-1].strip()
+
+    @staticmethod
+    def _dependency_only(handle: Dict[str, Any]) -> bool:
+        if str(handle.get("handle_key") or "").strip().lower() == "ready":
+            return True
+        data_source = str(handle.get("data_source") or "").strip()
+        return bool(data_source) and data_source.lower() != "executor"
+
+    @staticmethod
+    def _executor_kind(node_type: str) -> str:
+        normalized = node_type.strip().lower()
+        aliases = {
+            "ilab": "device_action",
+            "device": "device_action",
+            "action": "device_action",
+            "resource_action": "device_action",
+            "py_script": "script",
+        }
+        kind = aliases.get(normalized, normalized)
+        if kind not in {
+            "device_action",
+            "compute",
+            "condition",
+            "script",
+            "group",
+            "tool_call",
+            "manual_confirm",
+            "loop",
+            "material_io",
+        }:
+            raise StoreConflict(f"unsupported workflow node type {node_type!r}")
+        return kind
+
+    # Authoring ----------------------------------------------------------
+
+    def register_editable_source(
+        self,
+        *,
+        workflow_uuid: str,
+        package_id: str,
+        package_root: str | Path,
+        relative_path: str,
+    ) -> Dict[str, Any]:
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            self._get_authoring_workflow(workflow_uuid)
+            raw_root = Path(os.path.abspath(package_root))
+            if self._path_contains_symlink(raw_root):
+                raise WorkflowError("invalid_input")
+            try:
+                root = raw_root.resolve(strict=True)
+            except OSError:
+                raise WorkflowError("invalid_input") from None
+            if not root.is_dir() or not package_id:
+                raise WorkflowError("invalid_input")
+            relative = PurePosixPath(relative_path)
+            if (
+                relative.is_absolute()
+                or len(relative.parts) != 2
+                or any(part in {"", ".", ".."} for part in relative.parts)
+                or relative.parts[0] != "workflows"
+                or relative.suffix != ".py"
+                or not relative.stem
+            ):
+                raise WorkflowError("invalid_input")
+            target = root.joinpath(*relative.parts)
+            self._assert_contained_regular_target(
+                root,
+                target,
+                allow_missing=True,
+            )
+            source_uri = f"package://{package_id}/{relative.as_posix()}"
+            try:
+                return self.register_source(
+                    workflow_uuid=workflow_uuid,
+                    package_id=package_id,
+                    package_root=str(root),
+                    relative_path=relative.as_posix(),
+                    source_uri=source_uri,
+                )
+            except StoreConflict:
+                raise WorkflowConflict("invalid_input") from None
+
+    def list_registered_sources(self) -> List[Dict[str, Any]]:
+        """返回 Draft 监视与启动恢复所需的已注册源码。"""
+
+        return self.list_source_registrations()
+
+    def recover_registered_sources(
+        self,
+        *,
+        force_compile: bool = False,
+        preserve_author_source: bool = False,
+        on_error: Optional[Callable[[str, Exception], None]] = None,
+    ) -> None:
+        """按当前目录恢复全部源码（重编译外部改动、重试待写回的 Apply）。
+
+        固定点模式不吞目录基础设施错误；给出 ``on_error`` 时（Authority 启动）单个
+        源码失败只报告给它，其余源码照常恢复。
+        """
+
+        for registration in self.list_registered_sources():
+            try:
+                self.reconcile_registered_source(
+                    registration["workflow_uuid"],
+                    force_compile=force_compile,
+                    preserve_author_source=preserve_author_source,
+                )
+            except Exception as exc:  # noqa: BLE001 - 是否吞掉由调用方决定
+                if on_error is None:
+                    raise
+                on_error(registration["workflow_uuid"], exc)
+
+    def activate_registered_sources_to_fixed_point(self) -> None:
+        """按 child-first 依赖逐轮应用工作区候选，直到没有新工作流推进。"""
+
+        registrations = self.list_registered_sources()
+        self.recover_registered_sources(
+            force_compile=True,
+            preserve_author_source=True,
+        )
+        applied_workflows: set[str] = set()
+        while True:
+            applied_in_pass = False
+            for registration in registrations:
+                workflow_uuid = str(registration["workflow_uuid"])
+                if workflow_uuid in applied_workflows:
+                    continue
+                record = self.get_authoring_record(workflow_uuid)
+                candidate = record.get("candidate")
+                if not isinstance(candidate, dict):
+                    continue
+                candidate_hash = candidate.get("candidate_hash")
+                draft_hash = candidate.get("draft_hash")
+                workflow_revision = candidate.get("base_workflow_revision")
+                if (
+                    not isinstance(candidate_hash, str)
+                    or not isinstance(draft_hash, str)
+                    or isinstance(workflow_revision, bool)
+                    or not isinstance(workflow_revision, int)
+                ):
+                    raise WorkflowError("candidate_invalid")
+                result = self.apply_authoring(
+                    workflow_uuid,
+                    expected_draft_hash=draft_hash,
+                    expected_workflow_revision=workflow_revision,
+                    expected_candidate_hash=candidate_hash,
+                    preserve_author_source=True,
+                )
+                warnings = result.get("apply_result", {}).get("warnings")
+                if warnings:
+                    raise WorkflowError("template_catalog_unavailable")
+                applied_workflows.add(workflow_uuid)
+                applied_in_pass = True
+                if self._compiler_rebuilder is not None:
+                    try:
+                        self.compiler = self._compiler_rebuilder()
+                    except Exception:
+                        raise WorkflowError("template_catalog_unavailable") from None
+                self.recover_registered_sources(
+                    force_compile=True,
+                    preserve_author_source=True,
+                )
+            if not applied_in_pass:
+                return
+
+    def close(self) -> None:
+        """关闭由该 Service 独占的 Workflow 持久存储。"""
+
+        super().close()
+
+    def get_authoring(self, workflow_uuid: str) -> Dict[str, Any]:
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            workflow = self._get_authoring_workflow(workflow_uuid)
+            registration = self._registration(workflow_uuid)
+            source = self._read_source(registration)
+            graph = self.get_graph(workflow_uuid)
+            record = self.get_authoring_record(workflow_uuid)
+            return self._authoring_aggregate(
+                workflow=workflow,
+                graph=graph,
+                registration=registration,
+                source=source,
+                record=record,
+            )
+
+    def save_draft(
+        self,
+        workflow_uuid: str,
+        *,
+        python_source: str,
+        expected_draft_hash: Optional[str],
+        expected_workflow_revision: int,
+    ) -> Dict[str, Any]:
+        self._validate_hash(expected_draft_hash, nullable=True)
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            workflow = self._get_authoring_workflow(workflow_uuid)
+            registration = self._registration(workflow_uuid)
+            current = self._read_source(registration)
+            current_hash = current["draft_hash"] if current is not None else None
+            if current_hash != expected_draft_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            if workflow["revision"] != expected_workflow_revision:
+                raise WorkflowConflict("workflow_revision_conflict")
+
+            try:
+                encoded = python_source.encode("utf-8")
+            except UnicodeEncodeError:
+                raise WorkflowError("invalid_input") from None
+            try:
+                self._atomic_write(
+                    registration,
+                    encoded,
+                    expected_hash=current_hash,
+                )
+            except OSError:
+                raise WorkflowError("internal_error") from None
+            source = self._read_source(registration)
+            assert source is not None
+            if source["draft_hash"] != _sha256(encoded):
+                raise WorkflowConflict("draft_hash_conflict")
+            applied_graph = self.get_graph(workflow_uuid)
+            compilation = self._compile(
+                workflow=workflow,
+                graph=applied_graph,
+                registration=registration,
+                python_source=source["python_source"],
+            )
+            candidate = self._issue_candidate(
+                workflow_revision=workflow["revision"],
+                draft_hash=source["draft_hash"],
+                compilation=compilation,
+                applied_graph=applied_graph,
+                draft_python_source=source["python_source"],
+            )
+            event_data = {
+                "workflow_uuid": workflow_uuid,
+                "cause": "draft_saved",
+                "workflow_revision": workflow["revision"],
+                "draft_hash": source["draft_hash"],
+                "candidate_hash": (
+                    candidate["candidate_hash"] if candidate is not None else None
+                ),
+            }
+            self.record_draft_compilation(
+                workflow_uuid=workflow_uuid,
+                draft_hash=source["draft_hash"],
+                draft_update_time=source["update_time"],
+                diagnostics=compilation.diagnostics,
+                candidate_hash=(
+                    candidate["candidate_hash"] if candidate is not None else None
+                ),
+                candidate=candidate,
+                event_data=event_data,
+            )
+            return self.get_authoring(workflow_uuid)
+
+    def reconcile_registered_source(
+        self,
+        workflow_uuid: str,
+        *,
+        force_compile: bool = False,
+        preserve_author_source: bool = False,
+    ) -> Dict[str, Any]:
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            workflow = self._get_authoring_workflow(workflow_uuid)
+            registration = self._registration(workflow_uuid)
+            source = self._read_source(registration)
+            record = self.get_authoring_record(workflow_uuid)
+            applied_source = record.get("applied_source")
+            writeback_marker_valid = (
+                record.get("writeback_source") is not None
+                and record.get("writeback_expected_hash") is not None
+                and record.get("writeback_generation") is not None
+            )
+            if (
+                record["writeback_status"] == "pending"
+                and writeback_marker_valid
+                and source is not None
+                and applied_source is not None
+                and source["draft_hash"] == applied_source["source_hash"]
+            ):
+                self.settle_writeback(
+                    workflow_uuid=workflow_uuid,
+                    expected_writeback_source=record["writeback_source"],
+                    expected_writeback_hash=record["writeback_expected_hash"],
+                    expected_writeback_generation=record["writeback_generation"],
+                    observed_draft_hash=source["draft_hash"],
+                    draft_update_time=source["update_time"],
+                    event_data={
+                        "workflow_uuid": workflow_uuid,
+                        "cause": "recovered",
+                        "workflow_revision": workflow["revision"],
+                        "draft_hash": source["draft_hash"],
+                        "candidate_hash": None,
+                    },
+                )
+                return self.get_authoring(workflow_uuid)
+            if (
+                record["writeback_status"] == "pending"
+                and writeback_marker_valid
+                and (
+                    source is None
+                    or source["draft_hash"] == record["writeback_expected_hash"]
+                )
+            ):
+                recovery_source = record.get("writeback_source")
+                if recovery_source is not None:
+                    try:
+                        recovery_bytes = recovery_source.encode("utf-8")
+                        recovery_hash = _sha256(recovery_bytes)
+                        self._atomic_write(
+                            registration,
+                            recovery_bytes,
+                            expected_hash=(
+                                source["draft_hash"] if source is not None else None
+                            ),
+                        )
+                        source = self._read_source(registration)
+                        if source is not None and source["draft_hash"] == recovery_hash:
+                            self.settle_writeback(
+                                workflow_uuid=workflow_uuid,
+                                expected_writeback_source=record["writeback_source"],
+                                expected_writeback_hash=record[
+                                    "writeback_expected_hash"
+                                ],
+                                expected_writeback_generation=record[
+                                    "writeback_generation"
+                                ],
+                                observed_draft_hash=source["draft_hash"],
+                                draft_update_time=source["update_time"],
+                                event_data={
+                                    "workflow_uuid": workflow_uuid,
+                                    "cause": "recovered",
+                                    "workflow_revision": workflow["revision"],
+                                    "draft_hash": source["draft_hash"],
+                                    "candidate_hash": None,
+                                },
+                            )
+                            return self.get_authoring(workflow_uuid)
+                    except (OSError, UnicodeError, WorkflowError):
+                        return self.get_authoring(workflow_uuid)
+            actual_hash = source["draft_hash"] if source is not None else None
+            invalid_writeback_marker = (
+                record["writeback_status"] == "pending" and not writeback_marker_valid
+            )
+            if (
+                actual_hash == record["observed_draft_hash"]
+                and not invalid_writeback_marker
+                and not (actual_hash is None and record.get("candidate") is not None)
+                and not force_compile
+            ):
+                return self.get_authoring(workflow_uuid)
+
+            candidate: Optional[Dict[str, Any]] = None
+            diagnostics: List[Dict[str, Any]] = []
+            if source is not None:
+                applied_graph = self.get_graph(workflow_uuid)
+                compilation = self._compile(
+                    workflow=workflow,
+                    graph=applied_graph,
+                    registration=registration,
+                    python_source=source["python_source"],
+                )
+                if preserve_author_source:
+                    compilation = self._preserve_author_source_compilation(
+                        compilation=compilation,
+                        workflow=workflow,
+                        graph=applied_graph,
+                        python_source=source["python_source"],
+                    )
+                diagnostics = compilation.diagnostics
+                candidate = self._issue_candidate(
+                    workflow_revision=workflow["revision"],
+                    draft_hash=source["draft_hash"],
+                    compilation=compilation,
+                    applied_graph=applied_graph,
+                    draft_python_source=source["python_source"],
+                )
+            cause = (
+                "recovered"
+                if source is not None
+                and record["observed_draft_hash"] is None
+                and record["update_time"] is not None
+                else "external_draft_changed"
+            )
+            self.record_draft_compilation(
+                workflow_uuid=workflow_uuid,
+                draft_hash=actual_hash,
+                draft_update_time=(
+                    source["update_time"] if source is not None else None
+                ),
+                diagnostics=diagnostics,
+                candidate_hash=(
+                    candidate["candidate_hash"] if candidate is not None else None
+                ),
+                candidate=candidate,
+                event_data={
+                    "workflow_uuid": workflow_uuid,
+                    "cause": cause,
+                    "workflow_revision": workflow["revision"],
+                    "draft_hash": actual_hash,
+                    "candidate_hash": (
+                        candidate["candidate_hash"] if candidate is not None else None
+                    ),
+                },
+            )
+            return self.get_authoring(workflow_uuid)
+
+    def apply_authoring_by_candidate(self, workflow_uuid: str, *, candidate_hash: str) -> Dict[str, Any]:
+        """V1 ``POST /authoring/apply {candidate_hash}``：dev 的三元 CAS 由服务端从持久候选推导。
+
+        客户端只确认候选哈希；草稿哈希与基线修订取自签发该哈希时的候选，因此不能混搭不同世代。
+        """
+
+        self._validate_hash(candidate_hash, nullable=False)
+        identity = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(identity):
+            record = self.get_authoring_record(identity)
+            candidate = record.get("candidate")
+            if candidate is None:
+                if any(str(item.get("severity", "")).lower() == "error" for item in record["diagnostics"]):
+                    raise WorkflowError("draft_invalid")
+                raise WorkflowConflict("candidate_not_ready")
+            if candidate.get("candidate_hash") != candidate_hash:
+                raise WorkflowConflict("candidate_hash_conflict")
+            draft_hash = candidate.get("draft_hash")
+            base_revision = candidate.get("base_workflow_revision")
+            if not isinstance(draft_hash, str) or type(base_revision) is not int:
+                raise WorkflowError("candidate_invalid")
+            return self.apply_authoring(
+                identity,
+                expected_draft_hash=draft_hash,
+                expected_workflow_revision=base_revision,
+                expected_candidate_hash=candidate_hash,
+            )
+
+    def apply_authoring(
+        self,
+        workflow_uuid: str,
+        *,
+        expected_draft_hash: str,
+        expected_workflow_revision: int,
+        expected_candidate_hash: str,
+        preserve_author_source: bool = False,
+    ) -> Dict[str, Any]:
+        self._validate_hash(expected_draft_hash, nullable=False)
+        self._validate_hash(expected_candidate_hash, nullable=False)
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            workflow = self._get_authoring_workflow(workflow_uuid)
+            registration = self._registration(workflow_uuid)
+            source = self._read_source(registration)
+            actual_hash = source["draft_hash"] if source is not None else None
+
+            # D-079 固定了这里的冲突顺序。
+            if actual_hash != expected_draft_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            if workflow["revision"] != expected_workflow_revision:
+                raise WorkflowConflict("workflow_revision_conflict")
+
+            record = self.get_authoring_record(workflow_uuid)
+            candidate = record.get("candidate")
+            current_catalog = self._catalog_fingerprint()
+            if (
+                candidate is not None
+                and candidate["template_catalog_fingerprint"] != current_catalog
+            ):
+                raise WorkflowConflict("template_catalog_conflict")
+            if candidate is None:
+                if any(
+                    str(item.get("severity", "")).lower() == "error"
+                    for item in record["diagnostics"]
+                ):
+                    raise WorkflowError("draft_invalid")
+                raise WorkflowConflict("candidate_not_ready")
+            if candidate["candidate_hash"] != expected_candidate_hash:
+                raise WorkflowConflict("candidate_hash_conflict")
+            if source is None:
+                raise WorkflowConflict("draft_hash_conflict")
+
+            applied_graph = self.get_graph(workflow_uuid)
+            compilation = self._compile(
+                workflow=workflow,
+                graph=applied_graph,
+                registration=registration,
+                python_source=source["python_source"],
+            )
+            if preserve_author_source:
+                compilation = self._preserve_author_source_compilation(
+                    compilation=compilation,
+                    workflow=workflow,
+                    graph=applied_graph,
+                    python_source=source["python_source"],
+                )
+            if not self._normalize_candidate_diagnostics(
+                compilation,
+                python_source=source["python_source"],
+            ):
+                raise WorkflowError("candidate_invalid")
+            if not compilation.valid:
+                if any(
+                    str(item.get("severity", "")).lower() == "error"
+                    for item in compilation.diagnostics
+                ):
+                    raise WorkflowError("draft_invalid")
+                raise WorkflowError("candidate_invalid")
+            revalidated = self._issue_candidate(
+                workflow_revision=workflow["revision"],
+                draft_hash=source["draft_hash"],
+                compilation=compilation,
+                applied_graph=applied_graph,
+                draft_python_source=source["python_source"],
+            )
+            if revalidated is None:
+                raise WorkflowError("candidate_invalid")
+            if (
+                revalidated["template_catalog_fingerprint"]
+                != candidate["template_catalog_fingerprint"]
+            ):
+                raise WorkflowConflict("template_catalog_conflict")
+            if revalidated["candidate_hash"] != candidate["candidate_hash"]:
+                raise WorkflowConflict("candidate_hash_conflict")
+
+            def validate_authorities() -> None:
+                latest_source = self._read_source(registration)
+                if (
+                    latest_source is None
+                    or latest_source["draft_hash"] != expected_draft_hash
+                ):
+                    raise WorkflowConflict("draft_hash_conflict")
+                if (
+                    self._catalog_fingerprint()
+                    != candidate["template_catalog_fingerprint"]
+                ):
+                    raise WorkflowConflict("template_catalog_conflict")
+
+            validate_authorities()
+
+            normalized_source = candidate["normalized_python_source"]
+            normalized_bytes = normalized_source.encode("utf-8")
+            normalized_hash = _sha256(normalized_bytes)
+            applied_source = {
+                "python_source": normalized_source,
+                "source_hash": normalized_hash,
+                "source_map": candidate["source_map"],
+                "compiler_version": candidate["compiler_version"],
+                "template_catalog_fingerprint": candidate[
+                    "template_catalog_fingerprint"
+                ],
+            }
+            previous_revision = workflow["revision"]
+            try:
+                (
+                    resulting_revision,
+                    writeback_generation,
+                ) = self.apply_authoring_candidate(
+                    workflow_uuid=workflow_uuid,
+                    expected_revision=previous_revision,
+                    expected_draft_hash=expected_draft_hash,
+                    expected_candidate_hash=expected_candidate_hash,
+                    expected_catalog_fingerprint=candidate[
+                        "template_catalog_fingerprint"
+                    ],
+                    candidate=candidate,
+                    applied_source=applied_source,
+                    event_data={
+                        "workflow_uuid": workflow_uuid,
+                        "cause": "applied",
+                        "draft_hash": normalized_hash,
+                        "candidate_hash": None,
+                    },
+                )
+            except StoreAuthoringConflict as error:
+                raise WorkflowConflict(error.code) from None
+            except StoreRevisionConflict:
+                raise WorkflowConflict("workflow_revision_conflict") from None
+            except (StoreConflict, ValidationError):
+                raise WorkflowError("candidate_invalid") from None
+
+            warnings: List[Dict[str, str]] = []
+            response_source = source
+
+            def warn_writeback() -> None:
+                if warnings:
+                    return
+                warnings.append(
+                    {
+                        "code": "draft_writeback_pending",
+                        "message": (
+                            "工作流已应用，但本地源码同步失败；"
+                            "OS 已保留可恢复的源码记录。"
+                        ),
+                    }
+                )
+
+            def mark_pending_best_effort() -> None:
+                for _attempt in range(2):
+                    try:
+                        marker_owned = self.mark_writeback_pending(
+                            workflow_uuid=workflow_uuid,
+                            expected_writeback_source=normalized_source,
+                            expected_writeback_hash=actual_hash,
+                            expected_writeback_generation=writeback_generation,
+                        )
+                        if not marker_owned:
+                            # marker 已由另一轮 Apply/Draft 接管，本轮到此结束。
+                            return
+                        return
+                    except Exception:  # noqa: BLE001 - 提交后只能尽力恢复
+                        continue
+
+            try:
+                latest = self._read_source(registration)
+                if latest is None or latest["draft_hash"] != actual_hash:
+                    raise WorkflowError("draft_hash_conflict")
+                self._atomic_write(
+                    registration,
+                    normalized_bytes,
+                    expected_hash=actual_hash,
+                )
+                written = self._read_source(registration)
+                assert written is not None
+                response_source = written
+                if written["draft_hash"] != normalized_hash:
+                    raise WorkflowConflict("draft_hash_conflict")
+            except Exception:  # noqa: BLE001 - 主事务已提交
+                # 主事务已经提交。之后任何文件系统、数据库或聚合错误
+                # 都只能降级为可恢复警告，不能把成功伪装成失败。
+                warn_writeback()
+                mark_pending_best_effort()
+            else:
+                settled = False
+                for _attempt in range(2):
+                    try:
+                        marker_owned = self.settle_writeback(
+                            workflow_uuid=workflow_uuid,
+                            expected_writeback_source=normalized_source,
+                            expected_writeback_hash=actual_hash,
+                            expected_writeback_generation=writeback_generation,
+                            observed_draft_hash=written["draft_hash"],
+                            draft_update_time=written["update_time"],
+                        )
+                        if not marker_owned:
+                            # 新 generation 已接管；陈旧 settle 无需恢复。
+                            settled = True
+                            break
+                        settled = True
+                        break
+                    except Exception:  # noqa: BLE001 - 主事务已提交
+                        warn_writeback()
+                if not settled:
+                    mark_pending_best_effort()
+
+            fallback_meta_data = dict(workflow["meta_data"])
+            candidate_workflow = candidate["graph"].get("workflow") or {}
+            candidate_meta_data = candidate_workflow.get("meta_data") or {}
+            if (
+                isinstance(candidate_meta_data, dict)
+                and "unilab" in candidate_meta_data
+            ):
+                fallback_meta_data["unilab"] = candidate_meta_data["unilab"]
+            fallback_workflow = {
+                **workflow,
+                "revision": resulting_revision,
+                "meta_data": fallback_meta_data,
+                "update_time": utc_now(),
+            }
+            fallback_applied_source = {
+                **applied_source,
+                "workflow_revision": resulting_revision,
+                "update_time": utc_now(),
+            }
+            fallback_record = {
+                "observed_draft_hash": (
+                    response_source["draft_hash"]
+                    if response_source is not None
+                    else None
+                ),
+                "diagnostics": [],
+                "candidate": None,
+                "applied_source": fallback_applied_source,
+            }
+            try:
+                authoring = self.get_authoring(workflow_uuid)
+            except Exception:  # noqa: BLE001 - 主事务已提交
+                try:
+                    authoring = self.get_authoring(workflow_uuid)
+                except Exception:  # noqa: BLE001 - 使用已知事实降级
+                    try:
+                        fallback_graph = self.get_graph(workflow_uuid)
+                        fallback_workflow = fallback_graph["workflow"]
+                        fallback_record = self.get_authoring_record(
+                            workflow_uuid
+                        )
+                    except Exception:  # noqa: BLE001 - 使用提交时事实降级
+                        fallback_graph = self._post_commit_candidate_graph(
+                            candidate["graph"],
+                            workflow=fallback_workflow,
+                        )
+                    authoring = self._authoring_aggregate(
+                        workflow=fallback_workflow,
+                        graph=fallback_graph,
+                        registration=registration,
+                        source=response_source,
+                        record=fallback_record,
+                    )
+
+            return {
+                "apply_result": {
+                    "kind": candidate["changeset"]["kind"],
+                    "previous_workflow_revision": previous_revision,
+                    "workflow_revision": resulting_revision,
+                    "applied_candidate_hash": candidate["candidate_hash"],
+                    "applied_source_hash": normalized_hash,
+                    "warnings": warnings,
+                },
+                "authoring": authoring,
+            }
+
+    def list_events(
+        self,
+        *,
+        after_id: int = 0,
+        limit: int = 200,
+    ) -> Dict[str, Any]:
+        if after_id < 0 or not 1 <= limit <= 1000:
+            raise WorkflowError("invalid_input")
+        return {
+            "items": super().list_events(after_id=after_id, limit=limit),
+            "after_id": after_id,
+        }
+
+    # Authoring 内部实现 -------------------------------------------------
+
+    def _get_authoring_workflow(
+        self,
+        workflow_uuid: str,
+    ) -> Dict[str, Any]:
+        try:
+            identity = validate_uuid(workflow_uuid)
+        except ValueError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            return super().get_workflow(identity)
+        except StoreNotFound:
+            raise WorkflowError("workflow_not_found") from None
+
+    def _registration(self, workflow_uuid: str) -> Dict[str, Any]:
+        try:
+            return self.get_source_registration(workflow_uuid)
+        except StoreNotFound:
+            pass
+        root = getattr(self, "_managed_source_root", None)
+        if root is None:
+            raise WorkflowError("workflow_not_found")
+        # 本机托管源码工作区：任何工作流第一次进入作者态时登记 workflows/wf_<uuid>.py（文件按需创建）
+        return self._register_managed_source(workflow_uuid, f"wf_{UUID(workflow_uuid).hex}.py")
+
+    def _register_managed_source(self, workflow_uuid: str, file_name: str) -> Dict[str, Any]:
+        root = Path(self._managed_source_root)
+        (root / "workflows").mkdir(parents=True, exist_ok=True)
+        return self.register_editable_source(
+            workflow_uuid=workflow_uuid,
+            package_id=MANAGED_SOURCE_PACKAGE,
+            package_root=root,
+            relative_path=f"workflows/{file_name}",
+        )
+
+    def configure_authoring(
+        self,
+        *,
+        compiler: Optional[AuthoringCompiler],
+        source_root: Optional[str | Path] = None,
+    ) -> None:
+        """装配作者编译器与本机托管源码工作区（``<source_root>/workflows/*.py``）。"""
+
+        self.compiler = compiler
+        self._managed_source_root = Path(source_root) if source_root is not None else None
+
+    def import_python_workflow(self, *, file_name: str, python_source: str) -> Dict[str, Any]:
+        """V1 ``POST /local/workflows/import-python``：静态编译并原子导入一个 ``@workflow`` 源码文件。
+
+        新建工作流 → 登记托管源码 ``workflows/<文件名>`` → 写入草稿并签发候选 → 按候选哈希应用。
+        任一步失败都删除本次新建的工作流与源码文件，不留下半个定义。源码只进静态编译器，不执行。
+        """
+
+        from unilabos.registry.workflow_ast import WorkflowSourceError, compile_workflow_source
+
+        if self.compiler is None or getattr(self, "_managed_source_root", None) is None:
+            raise WorkflowError("template_catalog_unavailable")
+        name = str(file_name or "").strip()
+        if (
+            not _SOURCE_FILE_NAME.fullmatch(name)
+            or name in {".py"}
+        ):
+            raise WorkflowError("invalid_input", detail="文件名必须是不含路径的 .py 文件名（字母、数字、下划线、短横线）")
+        try:
+            program = compile_workflow_source(python_source)
+        except WorkflowSourceError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=program.display_name or Path(name).stem,
+            tags=list(program.tags),
+            description=program.description or None,
+            meta_data={},
+        )
+        identity = record["uuid"]
+        target = Path(self._managed_source_root) / "workflows" / f"{Path(name).stem}_{UUID(identity).hex[:8]}.py"
+        registration: Optional[Dict[str, Any]] = None
+        try:
+            registration = self._register_managed_source(identity, target.name)
+            authoring = self.save_draft(
+                identity, python_source=python_source, expected_draft_hash=None,
+                expected_workflow_revision=record["revision"],
+            )
+            candidate = authoring.get("candidate")
+            if candidate is None:
+                diagnostics = ((authoring.get("draft") or {}).get("diagnostics")) or []
+                message = next((item.get("message") for item in diagnostics if item.get("message")), "")
+                raise WorkflowError("draft_invalid", detail=message)
+            self.apply_authoring_by_candidate(identity, candidate_hash=candidate["candidate_hash"])
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(identity)
+            if registration is not None:
+                with suppress(Exception):
+                    self._discard_source_file(registration)
+            raise
+        return self.get_graph(identity)
+
+    def import_legacy_workflow(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """V1 ``POST /workflows/import``：旧版 JSON 图（直接或 ``data`` 包装）重建身份后原子导入。"""
+
+        from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
+
+        definition = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        name = definition.get("name") or definition.get("workflow_name")
+        if not isinstance(name, str) or not name.strip():
+            raise WorkflowError("invalid_input", detail="缺少工作流名称（name 或 workflow_name）")
+        nodes = definition.get("nodes")
+        edges = definition.get("edges") or []
+        if not isinstance(nodes, list) or not nodes or not isinstance(edges, list):
+            raise WorkflowError("invalid_input", detail="nodes 必须是至少包含一个节点的数组，edges 必须是数组")
+        if definition.get("inventory_requirements") not in (None, []):
+            raise WorkflowError("invalid_input", detail="暂不支持在导入图中携带 inventory_requirements")
+        try:
+            for index, node in enumerate(nodes):
+                if not isinstance(node, dict):
+                    raise ValueError(f"nodes[{index}] 必须是对象")
+                validate_uuid(node.get("uuid"))
+            new_nodes, new_edges, _requirements = duplicate_graph({"nodes": nodes, "edges": edges})
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        record = self.create_workflow(
+            name=name,
+            tags=list(definition.get("tags") or []),
+            description=definition.get("description"),
+            meta_data={key: value for key, value in (definition.get("meta_data") or {}).items() if key != "unilab"},
+            workflow_type=str(definition.get("workflow_type") or "normal"),
+        )
+        try:
+            return self.save_graph(record["uuid"], revision=record["revision"], nodes=new_nodes, edges=new_edges)
+        except BaseException:
+            with suppress(Exception):
+                self.delete_workflow(record["uuid"])
+            raise
+
+    def _read_source(
+        self,
+        registration: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_read_source(registration)
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        with self._source_parent_fd(
+            registration,
+            create=False,
+        ) as source_parent:
+            if source_parent is None:
+                return None
+            parent_fd, filename = source_parent
+            try:
+                descriptor = os.open(
+                    filename,
+                    os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                return None
+            except OSError:
+                raise WorkflowError("invalid_input") from None
+            try:
+                stat_result = os.fstat(descriptor)
+                if not stat.S_ISREG(stat_result.st_mode):
+                    raise WorkflowError("invalid_input")
+                with os.fdopen(descriptor, "rb") as stream:
+                    descriptor = -1
+                    try:
+                        raw = stream.read()
+                    except OSError:
+                        raise WorkflowError("invalid_input") from None
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeError:
+            raise WorkflowError("invalid_input") from None
+        return {
+            "python_source": source,
+            "draft_hash": _sha256(raw),
+            "update_time": _mtime_rfc3339(stat_result.st_mtime),
+        }
+
+    def source_reconciliation_pending(self, workflow_uuid: str) -> bool:
+        """告知源码监视器一次成功调用后是否仍需重试。"""
+
+        workflow_uuid = self._get_authoring_workflow(workflow_uuid)["uuid"]
+        with self._authoring_lock(workflow_uuid):
+            record = self.get_authoring_record(workflow_uuid)
+            return record["writeback_status"] == "pending"
+
+    def source_signature(
+        self,
+        registration: Dict[str, Any],
+    ) -> Tuple[Any, ...]:
+        """返回无需读取文件内容的稳定性签名，供 Draft 监视器去抖。"""
+
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            return self._portable_source_signature(registration)
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        with self._source_parent_fd(
+            registration,
+            create=False,
+        ) as source_parent:
+            if source_parent is None:
+                return ("missing",)
+            parent_fd, filename = source_parent
+            try:
+                stat_result = os.stat(
+                    filename,
+                    dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                return ("missing",)
+            except OSError:
+                raise WorkflowError("invalid_input") from None
+            if not stat.S_ISREG(stat_result.st_mode):
+                raise WorkflowError("invalid_input")
+        return (
+            "file",
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+            stat_result.st_ctime_ns,
+        )
+
+    def _atomic_write(
+        self,
+        registration: Dict[str, Any],
+        content: bytes,
+        *,
+        expected_hash: Any = _NO_EXPECTED_HASH,
+    ) -> None:
+        if _SOURCE_WRITE_BACKEND == _SOURCE_WRITE_PORTABLE:
+            self._portable_atomic_write(registration, content, expected_hash=expected_hash)
+            return
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        # 先以目录 FD 安全地创建（如有需要）固定的 workflows 目录。
+        # 该上下文关闭后再次打开，避免依赖校验时拿到的字符串路径。
+        with self._source_parent_fd(registration, create=True):
+            pass
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        with self._source_parent_fd(
+            registration,
+            create=False,
+        ) as source_parent:
+            if source_parent is None:
+                raise WorkflowError("invalid_input")
+            parent_fd, filename = source_parent
+            temporary_name = f".{filename}.{uuid4().hex}.tmp"
+            descriptor = -1
+            try:
+                descriptor = os.open(
+                    temporary_name,
+                    (
+                        os.O_WRONLY
+                        | os.O_CREAT
+                        | os.O_EXCL
+                        | os.O_CLOEXEC
+                        | os.O_NOFOLLOW
+                    ),
+                    0o600,
+                    dir_fd=parent_fd,
+                )
+                with os.fdopen(descriptor, "wb") as stream:
+                    descriptor = -1
+                    stream.write(content)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                if expected_hash is _NO_EXPECTED_HASH:
+                    os.replace(
+                        temporary_name,
+                        filename,
+                        src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd,
+                    )
+                else:
+                    self._compare_and_replace(
+                        parent_fd=parent_fd,
+                        target_name=filename,
+                        temporary_name=temporary_name,
+                        expected_hash=expected_hash,
+                    )
+                os.fsync(parent_fd)
+            except WorkflowError:
+                raise
+            except OSError:
+                raise WorkflowError("internal_error") from None
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary_name, dir_fd=parent_fd)
+
+    @staticmethod
+    def _compare_and_replace(
+        *,
+        parent_fd: int,
+        target_name: str,
+        temporary_name: str,
+        expected_hash: Optional[str],
+    ) -> None:
+        """在可安全中断的 lease 下执行 fsync 后的原子 CAS replace。"""
+
+        target_descriptor = -1
+        temporary_descriptor = -1
+        backup_name = f".{target_name}.{uuid4().hex}.cas"
+        backup_created = False
+        replacement_attempted = False
+        lease_held = False
+        previous_signal_mask: Optional[set[signal.Signals]] = None
+        try:
+            try:
+                target_descriptor = os.open(
+                    target_name,
+                    os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW,
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                if expected_hash is not None:
+                    raise WorkflowConflict("draft_hash_conflict") from None
+                try:
+                    os.link(
+                        temporary_name,
+                        target_name,
+                        src_dir_fd=parent_fd,
+                        dst_dir_fd=parent_fd,
+                        follow_symlinks=False,
+                    )
+                except FileExistsError:
+                    raise WorkflowConflict("draft_hash_conflict") from None
+                os.unlink(temporary_name, dir_fd=parent_fd)
+                return
+
+            if expected_hash is None:
+                raise WorkflowConflict("draft_hash_conflict")
+            try:
+                previous_signal_mask = signal.pthread_sigmask(
+                    signal.SIG_BLOCK,
+                    {_LEASE_BREAK_SIGNAL},
+                )
+                fcntl.fcntl(
+                    target_descriptor,
+                    _F_SETOWN_EX,
+                    struct.pack(
+                        "ii",
+                        _F_OWNER_TID,
+                        threading.get_native_id(),
+                    ),
+                )
+                fcntl.fcntl(
+                    target_descriptor,
+                    fcntl.F_SETSIG,
+                    _LEASE_BREAK_SIGNAL,
+                )
+                fcntl.fcntl(
+                    target_descriptor,
+                    fcntl.F_SETLEASE,
+                    fcntl.F_WRLCK,
+                )
+                lease_held = True
+            except (AttributeError, OSError, ValueError):
+                # 无法证明没有预打开的读写句柄时必须失败关闭。
+                raise WorkflowConflict("draft_hash_conflict") from None
+
+            original = WorkflowService._read_regular_fd(target_descriptor)
+            if _sha256(original) != expected_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            if not WorkflowService._target_matches_fd(
+                parent_fd,
+                target_name,
+                target_descriptor,
+            ):
+                raise WorkflowConflict("draft_hash_conflict")
+
+            temporary_descriptor = os.open(
+                temporary_name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+                dir_fd=parent_fd,
+            )
+            replacement_hash = WorkflowService._hash_regular_fd(temporary_descriptor)
+
+            os.link(
+                target_name,
+                backup_name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+            backup_created = True
+            os.fsync(parent_fd)
+            if WorkflowService._drain_lease_break_signal():
+                raise WorkflowConflict("draft_hash_conflict")
+
+            replacement_attempted = True
+            os.replace(
+                temporary_name,
+                target_name,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+            )
+            os.fsync(parent_fd)
+            if WorkflowService._drain_lease_break_signal():
+                raise WorkflowConflict("draft_hash_conflict")
+            if (
+                not WorkflowService._target_matches_fd(
+                    parent_fd,
+                    target_name,
+                    temporary_descriptor,
+                )
+                or WorkflowService._hash_regular_fd(temporary_descriptor)
+                != replacement_hash
+            ):
+                raise WorkflowConflict("draft_hash_conflict")
+
+            fcntl.fcntl(
+                target_descriptor,
+                fcntl.F_SETLEASE,
+                fcntl.F_UNLCK,
+            )
+            lease_held = False
+            if WorkflowService._drain_lease_break_signal():
+                raise WorkflowConflict("draft_hash_conflict")
+            if (
+                not WorkflowService._target_matches_fd(
+                    parent_fd,
+                    target_name,
+                    temporary_descriptor,
+                )
+                or WorkflowService._hash_regular_fd(temporary_descriptor)
+                != replacement_hash
+            ):
+                raise WorkflowConflict("draft_hash_conflict")
+
+            with suppress(OSError):
+                os.unlink(backup_name, dir_fd=parent_fd)
+                backup_created = False
+                os.fsync(parent_fd)
+        except Exception:
+            # os.replace() 一旦被调用，异常路径便无法证明 canonical
+            # 仍是本进程发布的 inode；外部 authority 可能已经原地写入
+            # 或再次原子替换。此时绝不能用历史 `.cas` 覆盖或删除它。
+            # 保留 fsync 过的原稿 artifact，只允许显式人工/Git 恢复。
+            if backup_created and not replacement_attempted:
+                with suppress(OSError):
+                    os.unlink(backup_name, dir_fd=parent_fd)
+                    backup_created = False
+                    os.fsync(parent_fd)
+            raise
+        finally:
+            if lease_held and target_descriptor >= 0:
+                with suppress(OSError):
+                    fcntl.fcntl(
+                        target_descriptor,
+                        fcntl.F_SETLEASE,
+                        fcntl.F_UNLCK,
+                    )
+            if previous_signal_mask is not None:
+                with suppress(OSError, ValueError):
+                    WorkflowService._drain_lease_break_signal()
+                signal.pthread_sigmask(
+                    signal.SIG_SETMASK,
+                    previous_signal_mask,
+                )
+            if temporary_descriptor >= 0:
+                os.close(temporary_descriptor)
+            if target_descriptor >= 0:
+                os.close(target_descriptor)
+
+    @staticmethod
+    def _drain_lease_break_signal() -> bool:
+        """同步消费发给当前线程的 lease 通知。"""
+
+        observed = False
+        while True:
+            try:
+                notification = signal.sigtimedwait(
+                    {_LEASE_BREAK_SIGNAL},
+                    0,
+                )
+            except InterruptedError:
+                continue
+            if notification is None:
+                return observed
+            observed = True
+
+    @staticmethod
+    def _target_matches_fd(
+        parent_fd: int,
+        target_name: str,
+        descriptor: int,
+    ) -> bool:
+        try:
+            target_stat = os.stat(
+                target_name,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            return False
+        descriptor_stat = os.fstat(descriptor)
+        return (
+            stat.S_ISREG(target_stat.st_mode)
+            and target_stat.st_dev == descriptor_stat.st_dev
+            and target_stat.st_ino == descriptor_stat.st_ino
+        )
+
+    @staticmethod
+    def _read_regular_fd(descriptor: int) -> bytes:
+        stat_result = os.fstat(descriptor)
+        if not stat.S_ISREG(stat_result.st_mode):
+            raise WorkflowError("invalid_input")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    @staticmethod
+    def _write_regular_fd(descriptor: int, content: bytes) -> None:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        offset = 0
+        while offset < len(content):
+            written = os.write(descriptor, content[offset:])
+            if written <= 0:
+                raise OSError("short write while replacing Workflow Draft")
+            offset += written
+        os.ftruncate(descriptor, len(content))
+        os.fsync(descriptor)
+
+    @staticmethod
+    def _restore_regular_fd(descriptor: int, content: bytes) -> None:
+        WorkflowService._write_regular_fd(descriptor, content)
+
+    @staticmethod
+    def _hash_regular_fd(descriptor: int) -> str:
+        return _sha256(WorkflowService._read_regular_fd(descriptor))
+
+    @classmethod
+    @contextmanager
+    def _source_parent_fd(
+        cls,
+        registration: Dict[str, Any],
+        *,
+        create: bool,
+    ) -> Iterator[Optional[Tuple[int, str]]]:
+        relative = cls._checked_source_relative(registration)
+
+        root_fd = cls._open_directory_chain(Path(registration["package_root"]))
+        parent_fd = -1
+        try:
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+            try:
+                parent_fd = os.open(
+                    relative.parts[0],
+                    flags,
+                    dir_fd=root_fd,
+                )
+            except FileNotFoundError:
+                if not create:
+                    yield None
+                    return
+                with suppress(FileExistsError):
+                    os.mkdir(relative.parts[0], 0o755, dir_fd=root_fd)
+                parent_fd = os.open(
+                    relative.parts[0],
+                    flags,
+                    dir_fd=root_fd,
+                )
+            yield parent_fd, relative.parts[1]
+        except WorkflowError:
+            raise
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        finally:
+            if parent_fd >= 0:
+                os.close(parent_fd)
+            os.close(root_fd)
+
+    @staticmethod
+    def _checked_source_relative(registration: Dict[str, Any]) -> PurePosixPath:
+        """登记的相对路径只能是 ``workflows/<名称>.py``，两条回写后端共用。"""
+
+        relative = PurePosixPath(registration["relative_path"])
+        if (
+            relative.is_absolute()
+            or len(relative.parts) != 2
+            or relative.parts[0] != "workflows"
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or relative.suffix != ".py"
+            or not relative.stem
+        ):
+            raise WorkflowError("invalid_input")
+        return relative
+
+    @staticmethod
+    def _open_directory_chain(path: Path) -> int:
+        absolute = Path(os.path.abspath(path))
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+        try:
+            current_fd = os.open(absolute.anchor, flags)
+            for part in absolute.parts[1:]:
+                try:
+                    next_fd = os.open(part, flags, dir_fd=current_fd)
+                finally:
+                    os.close(current_fd)
+                current_fd = next_fd
+            return current_fd
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+
+    @staticmethod
+    def _source_path(
+        registration: Dict[str, Any],
+    ) -> Tuple[Path, Path]:
+        stored_root = Path(registration["package_root"])
+        if WorkflowService._path_contains_symlink(stored_root):
+            raise WorkflowError("invalid_input")
+        try:
+            root = stored_root.resolve(strict=True)
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        relative = PurePosixPath(registration["relative_path"])
+        return root, root.joinpath(*relative.parts)
+
+    @staticmethod
+    def _path_contains_symlink(path: Path) -> bool:
+        absolute = Path(os.path.abspath(path))
+        current = Path(absolute.anchor)
+        for part in absolute.parts[1:]:
+            current = current / part
+            if current.is_symlink():
+                return True
+        return False
+
+    @staticmethod
+    def _assert_contained_regular_target(
+        root: Path,
+        target: Path,
+        *,
+        allow_missing: bool,
+    ) -> None:
+        if target.is_symlink():
+            raise WorkflowError("invalid_input")
+        try:
+            relative = target.relative_to(root)
+            current = root
+            for part in relative.parts[:-1]:
+                current = current / part
+                if current.is_symlink():
+                    raise WorkflowError("invalid_input")
+            resolved = target.resolve(strict=False)
+            resolved.relative_to(root)
+        except WorkflowError:
+            raise
+        except (OSError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        if target.exists() and not target.is_file():
+            raise WorkflowError("invalid_input")
+        if not allow_missing and not target.exists():
+            raise WorkflowError("invalid_input")
+
+    # 可移植源码回写（macOS / Windows）-------------------------------------
+
+    def _portable_read_source(
+        self,
+        registration: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """路径版 ``_read_source``：逐级 lstat 校验后读取，不依赖 dir_fd。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return None
+        parent, filename = source_parent
+        try:
+            raw, stat_result = self._portable_read_regular(parent / filename)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeError:
+            raise WorkflowError("invalid_input") from None
+        return {
+            "python_source": source,
+            "draft_hash": _sha256(raw),
+            "update_time": _mtime_rfc3339(stat_result.st_mtime),
+        }
+
+    def _portable_source_signature(
+        self,
+        registration: Dict[str, Any],
+    ) -> Tuple[Any, ...]:
+        """路径版 ``source_signature``：只 lstat，不跟随符号链接。"""
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=False)
+        if source_parent is None:
+            return ("missing",)
+        parent, filename = source_parent
+        try:
+            stat_result = os.lstat(parent / filename)
+        except FileNotFoundError:
+            return ("missing",)
+        except OSError:
+            raise WorkflowError("invalid_input") from None
+        if _is_redirecting_entry(stat_result) or not stat.S_ISREG(stat_result.st_mode):
+            raise WorkflowError("invalid_input")
+        return (
+            "file",
+            stat_result.st_dev,
+            stat_result.st_ino,
+            stat_result.st_size,
+            stat_result.st_mtime_ns,
+            stat_result.st_ctime_ns,
+        )
+
+    def _portable_atomic_write(
+        self,
+        registration: Dict[str, Any],
+        content: bytes,
+        *,
+        expected_hash: Any,
+    ) -> None:
+        """macOS / Windows 的源码回写，外部契约与 Linux lease 路径（``_compare_and_replace``）相同。
+
+        相同的契约：按 ``expected_hash`` 做内容 CAS（目标缺失而期望哈希非空、或目标存在而
+        期望为 None 都是 ``draft_hash_conflict``）；同目录临时文件 fsync 后 ``os.replace``
+        原子发布（POSIX 与 Windows 均为原子替换）；只写登记包根内固定的
+        ``workflows/<名称>.py``，逐级 lstat 拒绝符号链接与目录联接等重解析点；失败不留下
+        临时文件；``os.replace`` 一旦发布，绝不覆盖或删除无法证明属于本进程的内容。
+
+        步骤：持目标旁 sidecar 锁 ``.<名称>.py.lock``（``utils/file_lock``：POSIX flock，
+        Windows msvcrt）→ 写临时文件并 fsync → 读目标、比对哈希 → 写 fsync 过的 ``.cas``
+        备份 → 再次确认目标仍是同一文件且哈希未变 → ``os.replace`` → fsync 目录（Windows
+        跳过）→ 验证目标哈希等于新内容 → 删除备份。锁文件常驻，不随写入删除。
+
+        与 Linux 的保证差异：没有 file lease，无法发现外部编辑器仍持有目标的打开句柄，也检测
+        不到外部程序在“最后一次哈希确认”与 ``os.replace`` 之间写入的内容——这部分写入会被
+        本次发布覆盖（备份里也没有它）。Linux 上 lease 会让这两种情况都返回冲突。本仓库的
+        进程之间由 sidecar 锁串行化；外部写入只有发生在 replace 之后、发布后验证之前，才会
+        被发现（返回冲突并保留 ``.cas`` 备份供人工恢复）。Windows 上目标被其他程序打开而
+        使 ``os.replace`` 抛 PermissionError 时，同样按 ``draft_hash_conflict`` 处理。
+        """
+
+        root, target = self._source_path(registration)
+        self._assert_contained_regular_target(root, target, allow_missing=True)
+        source_parent = self._portable_source_parent(registration, create=True)
+        if source_parent is None:  # pragma: no cover - create=True 时目录必然存在
+            raise WorkflowError("invalid_input")
+        parent, filename = source_parent
+        try:
+            with self._portable_source_lock(parent, filename):
+                # 等锁期间路径链可能已被替换：持锁后重新校验一次。
+                self._assert_contained_regular_target(root, target, allow_missing=True)
+                if self._portable_source_parent(registration, create=False) != source_parent:
+                    raise WorkflowError("invalid_input")
+                temporary = parent / f".{filename}.{uuid4().hex}.tmp"
+                try:
+                    self._portable_write_new_file(temporary, content)
+                    if expected_hash is _NO_EXPECTED_HASH:
+                        self._portable_replace(temporary, parent / filename)
+                    else:
+                        self._portable_compare_and_replace(
+                            parent=parent,
+                            target_name=filename,
+                            temporary=temporary,
+                            replacement_hash=_sha256(content),
+                            expected_hash=expected_hash,
+                        )
+                    self._portable_fsync_directory(parent)
+                finally:
+                    self._portable_discard(temporary)
+        except WorkflowError:
+            raise
+        except OSError:
+            raise WorkflowError("internal_error") from None
+
+    @staticmethod
+    def _portable_compare_and_replace(
+        *,
+        parent: Path,
+        target_name: str,
+        temporary: Path,
+        replacement_hash: str,
+        expected_hash: Optional[str],
+    ) -> None:
+        """sidecar 锁内的 CAS：读-哈希-比较 → 备份原稿 → 原子发布 → 发布后验证。
+
+        与 Linux 路径相同的规则：``os.replace()`` 成功发布后，异常路径无法证明 canonical
+        仍是本进程写入的内容（外部程序可能已在发布后写入或再次替换），此时绝不用 ``.cas``
+        备份覆盖或删除它，只保留 fsync 过的备份供人工 / Git 恢复。
+        """
+
+        target = parent / target_name
+        backup = parent / f".{target_name}.{uuid4().hex}.cas"
+        backup_pending = False
+        published = False
+        try:
+            staged, _staged_stat = WorkflowService._portable_read_regular(temporary)
+            if _sha256(staged) != replacement_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+            try:
+                original, original_stat = WorkflowService._portable_read_regular(target)
+            except FileNotFoundError:
+                if expected_hash is not None:
+                    raise WorkflowConflict("draft_hash_conflict") from None
+                WorkflowService._portable_publish_new(temporary, target)
+                published = True
+                WorkflowService._portable_verify_published(target, replacement_hash)
+                return
+            except PermissionError:
+                # Windows：目标被其他程序以独占方式打开。
+                raise WorkflowConflict("draft_hash_conflict") from None
+            if expected_hash is None or _sha256(original) != expected_hash:
+                raise WorkflowConflict("draft_hash_conflict")
+
+            backup_pending = True
+            WorkflowService._portable_write_new_file(backup, original)
+            WorkflowService._portable_fsync_directory(parent)
+            # 发布前最后确认目标仍是刚才校验的同一文件且内容未变，尽量缩小外部写入窗口。
+            WorkflowService._portable_assert_unchanged(target, original_stat, expected_hash)
+            WorkflowService._portable_replace(temporary, target)
+            published = True
+            WorkflowService._portable_fsync_directory(parent)
+            WorkflowService._portable_verify_published(target, replacement_hash)
+            with suppress(OSError):
+                os.unlink(backup)
+                backup_pending = False
+                WorkflowService._portable_fsync_directory(parent)
+        except Exception:
+            # 未发布时备份只是本进程的副本，可以删除；已发布则保留供人工恢复。
+            if backup_pending and not published:
+                with suppress(OSError):
+                    os.unlink(backup)
+            raise
+
+    @staticmethod
+    def _portable_replace(source: Path, target: Path) -> None:
+        """原子替换；PermissionError（Windows 上目标被其他程序打开）按并发修改处理。"""
+
+        try:
+            os.replace(source, target)
+        except PermissionError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+
+    @staticmethod
+    def _portable_publish_new(source: Path, target: Path) -> None:
+        """目标缺失时不覆盖地发布：POSIX 用 link，Windows 用不带替换语义的 rename。"""
+
+        try:
+            if _NO_CLOBBER_RENAME:
+                os.rename(source, target)
+            else:
+                os.link(source, target)
+        except FileExistsError:
+            raise WorkflowConflict("draft_hash_conflict") from None
+        except PermissionError:
+            if _NO_CLOBBER_RENAME:
+                raise WorkflowConflict("draft_hash_conflict") from None
+            raise
+
+    @staticmethod
+    def _portable_assert_unchanged(
+        target: Path,
+        original_stat: os.stat_result,
+        expected_hash: str,
+    ) -> None:
+        try:
+            current, current_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if (
+            not os.path.samestat(current_stat, original_stat)
+            or _sha256(current) != expected_hash
+        ):
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_verify_published(target: Path, replacement_hash: str) -> None:
+        """发布后验证：目标必须是普通文件且哈希等于新内容，否则视为外部并发写入。"""
+
+        try:
+            published, _published_stat = WorkflowService._portable_read_regular(target)
+        except (FileNotFoundError, PermissionError, WorkflowError):
+            raise WorkflowConflict("draft_hash_conflict") from None
+        if _sha256(published) != replacement_hash:
+            raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_read_regular(path: Path) -> Tuple[bytes, os.stat_result]:
+        """先 lstat 拒绝符号链接、重解析点与非普通文件，再打开、比对文件身份后读取。
+
+        ``FileNotFoundError`` / ``PermissionError`` 等 OSError 原样抛出，由调用方映射。
+        """
+
+        before = os.lstat(path)
+        if _is_redirecting_entry(before) or not stat.S_ISREG(before.st_mode):
+            raise WorkflowError("invalid_input")
+        descriptor = os.open(path, os.O_RDONLY | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY)
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
+                # lstat 与 open 之间路径被换成了别的文件（Windows 没有 O_NOFOLLOW）。
+                raise WorkflowConflict("draft_hash_conflict")
+            return WorkflowService._read_regular_fd(descriptor), opened
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _portable_write_new_file(path: Path, content: bytes) -> None:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+    @staticmethod
+    def _portable_discard(path: Path) -> None:
+        """尽力删除本进程创建的临时文件；删除失败只记录，不掩盖原始异常。"""
+
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logger.warning("未能删除源码回写临时文件 %s", path, exc_info=True)
+
+    @staticmethod
+    def _portable_fsync_directory(path: Path) -> None:
+        """POSIX 上 fsync 目录以持久化 rename / link；Windows 无法以 os.open 打开目录，跳过。"""
+
+        if os.name == "nt":
+            return
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | _O_CLOEXEC)
+        try:
+            os.fsync(descriptor)
+        except OSError as exc:
+            # 部分文件系统不支持目录 fsync，视同平台不支持。
+            if exc.errno not in {errno.EINVAL, errno.ENOTSUP, errno.EOPNOTSUPP}:
+                raise
+        finally:
+            os.close(descriptor)
+
+    @classmethod
+    def _portable_source_parent(
+        cls,
+        registration: Dict[str, Any],
+        *,
+        create: bool,
+    ) -> Optional[Tuple[Path, str]]:
+        """路径版 ``_source_parent_fd``：逐级 lstat 拒绝符号链接与重解析点，返回固定 workflows 目录。"""
+
+        relative = cls._checked_source_relative(registration)
+        root = Path(os.path.abspath(registration["package_root"]))
+        parent = root / relative.parts[0]
+        try:
+            cls._portable_assert_plain_directories(root)
+            try:
+                parent_stat = os.lstat(parent)
+            except FileNotFoundError:
+                if not create:
+                    return None
+                with suppress(FileExistsError):
+                    os.mkdir(parent, 0o755)
+                parent_stat = os.lstat(parent)
+            if _is_redirecting_entry(parent_stat) or not stat.S_ISDIR(parent_stat.st_mode):
+                raise WorkflowError("invalid_input")
+            # 兜底：解析后的目录仍须位于解析后的包根内。
+            Path(os.path.realpath(parent)).relative_to(Path(os.path.realpath(root)))
+        except WorkflowError:
+            raise
+        except (OSError, ValueError):
+            raise WorkflowError("invalid_input") from None
+        return parent, relative.parts[1]
+
+    @staticmethod
+    def _portable_assert_plain_directories(path: Path) -> None:
+        """从盘符 / 根起逐级 lstat：每一级都必须是目录，且不是符号链接或重解析点。"""
+
+        absolute = Path(os.path.abspath(path))
+        current = Path(absolute.anchor)
+        for part in absolute.parts[1:]:
+            current = current / part
+            entry = os.lstat(current)
+            if _is_redirecting_entry(entry) or not stat.S_ISDIR(entry.st_mode):
+                raise WorkflowError("invalid_input")
+
+    @staticmethod
+    def _portable_lock_path(parent: Path, filename: str) -> Path:
+        return parent / f".{filename}.lock"
+
+    @staticmethod
+    @contextmanager
+    def _portable_source_lock(parent: Path, filename: str) -> Iterator[None]:
+        """目标旁 sidecar 锁文件上的跨进程排他锁，覆盖读-哈希-比较-替换全过程。
+
+        flock / msvcrt 锁按打开的文件生效，同一进程的不同线程也互斥。持锁后确认路径
+        仍指向所锁文件（锁文件被持锁者删除时重新打开）；等待超过上限按并发修改处理。
+        """
+
+        lock_path = WorkflowService._portable_lock_path(parent, filename)
+        deadline = time.monotonic() + _PORTABLE_LOCK_TIMEOUT_SECONDS
+        while True:
+            stream = WorkflowService._portable_open_lock_file(lock_path)
+            locked = False
+            try:
+                while True:
+                    try:
+                        acquire_exclusive_file_lock(stream, blocking=False)
+                        locked = True
+                        break
+                    except BlockingIOError:
+                        if time.monotonic() >= deadline:
+                            raise WorkflowConflict("draft_hash_conflict") from None
+                        time.sleep(_PORTABLE_LOCK_POLL_SECONDS)
+                if WorkflowService._portable_lock_file_current(lock_path, stream):
+                    yield
+                    return
+            finally:
+                if locked:
+                    with suppress(OSError):
+                        release_file_lock(stream)
+                stream.close()
+            if time.monotonic() >= deadline:
+                raise WorkflowConflict("draft_hash_conflict")
+
+    @staticmethod
+    def _portable_open_lock_file(lock_path: Path) -> BinaryIO:
+        try:
+            existing = os.lstat(lock_path)
+        except FileNotFoundError:
+            pass
+        else:
+            if _is_redirecting_entry(existing) or not stat.S_ISREG(existing.st_mode):
+                raise WorkflowError("invalid_input")
+        descriptor = os.open(
+            lock_path,
+            os.O_RDWR | os.O_CREAT | _O_NOFOLLOW | _O_CLOEXEC | _O_BINARY,
+            0o600,
+        )
+        try:
+            return os.fdopen(descriptor, "r+b")
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    @staticmethod
+    def _portable_lock_file_current(lock_path: Path, stream: BinaryIO) -> bool:
+        try:
+            current = os.lstat(lock_path)
+        except FileNotFoundError:
+            return False
+        if _is_redirecting_entry(current):
+            raise WorkflowError("invalid_input")
+        opened = os.fstat(stream.fileno())
+        return stat.S_ISREG(opened.st_mode) and os.path.samestat(current, opened)
+
+    def _discard_source_file(self, registration: Dict[str, Any]) -> None:
+        """导入失败时删除本次创建的源码文件；可移植后端持锁一并删除 sidecar 锁文件。"""
+
+        target = self._source_path(registration)[1]
+        if _SOURCE_WRITE_BACKEND != _SOURCE_WRITE_PORTABLE:
+            target.unlink(missing_ok=True)
+            return
+        lock_path = self._portable_lock_path(target.parent, target.name)
+        with self._portable_source_lock(target.parent, target.name):
+            target.unlink(missing_ok=True)
+            if os.name != "nt":
+                # POSIX 持锁删除：等待者拿到锁后发现路径已不指向所锁文件，会重新打开。
+                with suppress(OSError):
+                    os.unlink(lock_path)
+        if os.name == "nt":
+            # Windows 不能删除仍被打开的文件：释放后再删；其他进程仍打开着它时删除失败，
+            # 正好不会破坏对方的锁。
+            with suppress(OSError):
+                os.unlink(lock_path)
+
+    def _compile(
+        self,
+        *,
+        workflow: Dict[str, Any],
+        graph: Dict[str, Any],
+        registration: Dict[str, Any],
+        python_source: str,
+    ) -> CandidateCompilation:
+        if self.compiler is None:
+            raise WorkflowError("template_catalog_unavailable")
+        try:
+            result = self.compiler.compile(
+                workflow_uuid=workflow["uuid"],
+                workflow_revision=workflow["revision"],
+                python_source=python_source,
+                source_uri=registration["source_uri"],
+                applied_graph=graph,
+            )
+            return CandidateCompilation.model_validate(result)
+        except WorkflowError:
+            raise
+        except Exception:
+            raise WorkflowError("internal_error") from None
+
+    def _preserve_author_source_compilation(
+        self,
+        *,
+        compilation: CandidateCompilation,
+        workflow: Dict[str, Any],
+        graph: Dict[str, Any],
+        python_source: str,
+    ) -> CandidateCompilation:
+        """冷启动自动应用时保留作者源码，不制造未确认的规范化编辑。"""
+
+        if (
+            not compilation.valid
+            or compilation.normalized_python_source == python_source
+        ):
+            return compilation
+        if self.compiler is None:
+            raise WorkflowError("template_catalog_unavailable")
+        preserve = getattr(self.compiler, "preserve_author_source", None)
+        if not callable(preserve):
+            raise WorkflowError("candidate_invalid")
+        try:
+            result = preserve(
+                compilation=compilation,
+                workflow_uuid=workflow["uuid"],
+                workflow_revision=workflow["revision"],
+                python_source=python_source,
+                applied_graph=graph,
+            )
+            preserved = CandidateCompilation.model_validate(result)
+        except WorkflowError:
+            raise
+        except Exception:
+            raise WorkflowError("candidate_invalid") from None
+        if preserved.normalized_python_source != python_source:
+            raise WorkflowError("candidate_invalid")
+        return preserved
+
+    def _catalog_fingerprint(self) -> str:
+        if self.compiler is None:
+            raise WorkflowError("template_catalog_unavailable")
+        try:
+            value = self.compiler.template_catalog_fingerprint
+        except Exception:
+            raise WorkflowError("template_catalog_unavailable") from None
+        if not isinstance(value, str) or _HASH_TOKEN.fullmatch(value) is None:
+            raise WorkflowError("template_catalog_unavailable")
+        return value
+
+    def _issue_candidate(
+        self,
+        *,
+        workflow_revision: int,
+        draft_hash: str,
+        compilation: CandidateCompilation,
+        applied_graph: Dict[str, Any],
+        draft_python_source: str,
+    ) -> Optional[Dict[str, Any]]:
+        applied_graph = self._validated_applied_backend_graph(applied_graph)
+        if not self._normalize_candidate_diagnostics(
+            compilation,
+            python_source=draft_python_source,
+        ):
+            return None
+        if not compilation.valid:
+            return None
+        assert compilation.graph is not None
+        try:
+            graph = self._backend_candidate_graph(
+                compilation.graph,
+                applied_graph=applied_graph,
+            )
+            if not isinstance(compilation.source_map, list):
+                raise ValueError
+            source_map = [
+                CandidateSourceMapEntry.model_validate(item).model_dump()
+                for item in compilation.source_map
+            ]
+            if not _source_ranges_fit(
+                compilation.normalized_python_source,
+                source_map,
+            ):
+                raise ValueError
+            changeset = CandidateChangeset.model_validate(
+                compilation.changeset,
+            ).model_dump()
+            self._validate_candidate_bundle_semantics(
+                graph=graph,
+                applied_graph=applied_graph,
+                source_map=source_map,
+                changeset=changeset,
+            )
+            compiler_version = compilation.compiler_version
+            if not compiler_version.strip():
+                raise ValueError
+            template_catalog_fingerprint = compilation.template_catalog_fingerprint
+            if _HASH_TOKEN.fullmatch(template_catalog_fingerprint) is None:
+                raise ValueError
+        except (
+            GraphValidationError,
+            KeyError,
+            TypeError,
+            ValidationError,
+            ValueError,
+            WorkflowError,
+        ) as error:
+            if isinstance(error, WorkflowError) and error.code != "candidate_invalid":
+                raise
+            self._set_candidate_invalid_diagnostic(compilation)
+            return None
+        bundle = {
+            "base_workflow_revision": workflow_revision,
+            "draft_hash": draft_hash,
+            "graph": graph,
+            "normalized_python_source": compilation.normalized_python_source,
+            "source_map": source_map,
+            "changeset": changeset,
+            "compiler_version": compiler_version,
+            "template_catalog_fingerprint": template_catalog_fingerprint,
+        }
+        try:
+            canonical_bundle = _canonical_json(bundle)
+        except (TypeError, UnicodeError, ValueError):
+            self._set_candidate_invalid_diagnostic(compilation)
+            return None
+        return {
+            "candidate_hash": _sha256(canonical_bundle),
+            **bundle,
+            "update_time": utc_now(),
+        }
+
+    @staticmethod
+    def _set_candidate_invalid_diagnostic(
+        compilation: CandidateCompilation,
+    ) -> None:
+        compilation.diagnostics = [
+            {
+                "severity": "error",
+                "code": "candidate_invalid",
+                "message": _ERRORS["candidate_invalid"][1],
+            }
+        ]
+
+    @classmethod
+    def _normalize_candidate_diagnostics(
+        cls,
+        compilation: CandidateCompilation,
+        *,
+        python_source: str,
+    ) -> bool:
+        try:
+            if not isinstance(compilation.diagnostics, list):
+                raise ValueError
+            compilation.diagnostics = [
+                CandidateDiagnostic.model_validate(item).model_dump(
+                    exclude_none=True,
+                )
+                for item in compilation.diagnostics
+            ]
+            source_ranges = [
+                item["source_range"]
+                for item in compilation.diagnostics
+                if item.get("source_range") is not None
+            ]
+            if not _source_ranges_fit(python_source, source_ranges):
+                raise ValueError
+        except (TypeError, ValidationError, ValueError):
+            cls._set_candidate_invalid_diagnostic(compilation)
+            return False
+        return True
+
+    @staticmethod
+    def _semantic_node(node: Dict[str, Any]) -> Dict[str, Any]:
+        return WorkflowNodeWrite.model_validate(
+            {
+                field: node[field]
+                for field in WorkflowNodeWrite.model_fields
+                if field in node
+            }
+        ).model_dump()
+
+    @staticmethod
+    def _semantic_edge(edge: Dict[str, Any]) -> Dict[str, Any]:
+        return WorkflowEdgeWrite.model_validate(
+            {
+                field: edge[field]
+                for field in WorkflowEdgeWrite.model_fields
+                if field in edge
+            }
+        ).model_dump()
+
+    @classmethod
+    def _validate_candidate_bundle_semantics(
+        cls,
+        *,
+        graph: Dict[str, Any],
+        applied_graph: Dict[str, Any],
+        source_map: List[Dict[str, Any]],
+        changeset: Dict[str, Any],
+    ) -> None:
+        """证明编译器 bundle 精确描述了完整工作流图。"""
+
+        workflow = graph["workflow"]
+        applied_workflow = applied_graph["workflow"]
+        for field in _WORKFLOW_READ_FIELDS - {"meta_data"}:
+            if not strict_json_equal(
+                workflow.get(field),
+                applied_workflow.get(field),
+            ):
+                raise ValueError("Candidate changed an unsupported Workflow field")
+
+        workflow_meta = dict(workflow["meta_data"])
+        applied_meta = dict(applied_workflow["meta_data"])
+        reserved_changed = not strict_json_equal(
+            workflow_meta.pop("unilab", None),
+            applied_meta.pop("unilab", None),
+        )
+        if not strict_json_equal(workflow_meta, applied_meta):
+            raise ValueError("Candidate changed non-authoring Workflow metadata")
+
+        for field in ("node_templates", "handle_templates"):
+            candidate_entities = sorted(graph[field], key=lambda item: item["uuid"])
+            applied_entities = sorted(
+                applied_graph[field],
+                key=lambda item: item["uuid"],
+            )
+            if not strict_json_equal(candidate_entities, applied_entities):
+                raise ValueError("Candidate catalog projection is not authoritative")
+
+        nodes = [cls._semantic_node(item) for item in graph["nodes"]]
+        edges = [cls._semantic_edge(item) for item in graph["edges"]]
+        candidate_nodes = {item["uuid"]: item for item in nodes}
+        candidate_edges = {item["uuid"]: item for item in edges}
+        if len(candidate_nodes) != len(nodes) or len(candidate_edges) != len(edges):
+            raise ValueError("Candidate graph contains duplicate UUIDs")
+
+        templates = {item["uuid"]: item for item in graph["node_templates"]}
+        handles = {item["uuid"]: item for item in graph["handle_templates"]}
+        validate_graph(
+            nodes=[
+                WorkflowNodeWrite.model_validate(item)
+                for item in candidate_nodes.values()
+            ],
+            edges=[
+                WorkflowEdgeWrite.model_validate(item)
+                for item in candidate_edges.values()
+            ],
+            templates=templates,
+            handles=handles,
+            effective_params={
+                uuid: item["param"] or {} for uuid, item in candidate_nodes.items()
+            },
+            workflow_meta_data=workflow["meta_data"],
+            node_meta_data={
+                uuid: item["meta_data"] for uuid, item in candidate_nodes.items()
+            },
+        )
+
+        if any(
+            entry["workflow_node_uuid"] not in candidate_nodes for entry in source_map
+        ):
+            raise ValueError("Source map references a Node outside the Candidate")
+
+        applied_nodes = {
+            item["uuid"]: cls._semantic_node(item) for item in applied_graph["nodes"]
+        }
+        applied_edges = {
+            item["uuid"]: cls._semantic_edge(item) for item in applied_graph["edges"]
+        }
+        expected = {
+            "created_node_uuids": set(candidate_nodes) - set(applied_nodes),
+            "updated_node_uuids": {
+                uuid
+                for uuid in set(candidate_nodes) & set(applied_nodes)
+                if not strict_json_equal(
+                    candidate_nodes[uuid],
+                    applied_nodes[uuid],
+                )
+            },
+            "deleted_node_uuids": set(applied_nodes) - set(candidate_nodes),
+            "created_edge_uuids": set(candidate_edges) - set(applied_edges),
+            "updated_edge_uuids": {
+                uuid
+                for uuid in set(candidate_edges) & set(applied_edges)
+                if not strict_json_equal(
+                    candidate_edges[uuid],
+                    applied_edges[uuid],
+                )
+            },
+            "deleted_edge_uuids": set(applied_edges) - set(candidate_edges),
+        }
+        node_fields = (
+            "created_node_uuids",
+            "updated_node_uuids",
+            "deleted_node_uuids",
+        )
+        edge_fields = (
+            "created_edge_uuids",
+            "updated_edge_uuids",
+            "deleted_edge_uuids",
+        )
+        for fields in (node_fields, edge_fields):
+            values = [changeset[field] for field in fields]
+            if any(len(value) != len(set(value)) for value in values):
+                raise ValueError("Changeset contains duplicate UUIDs")
+            if any(
+                set(values[left]) & set(values[right])
+                for left in range(len(values))
+                for right in range(left + 1, len(values))
+            ):
+                raise ValueError("Changeset lifecycle UUID sets overlap")
+        if any(set(changeset[field]) != expected[field] for field in expected):
+            raise ValueError("Changeset does not describe the Candidate graph")
+        if changeset["reserved_metadata_changed"] is not reserved_changed:
+            raise ValueError("Changeset reserved metadata flag is inaccurate")
+
+        graph_changed = reserved_changed or any(expected.values())
+        expected_kind = "graph" if graph_changed else "source_only"
+        if changeset["kind"] != expected_kind:
+            raise ValueError("Changeset kind does not match graph semantics")
+
+    @staticmethod
+    def _backend_graph_projection(
+        graph: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """按 Backend JSON omitempty 语义投影 Candidate。"""
+
+        def omit_none(value: Any) -> Any:
+            if not isinstance(value, dict):
+                return value
+            return {key: item for key, item in value.items() if item is not None}
+
+        return {
+            "workflow": omit_none(graph.get("workflow") or {}),
+            "nodes": [omit_none(item) for item in (graph.get("nodes") or [])],
+            "edges": [omit_none(item) for item in (graph.get("edges") or [])],
+            "node_templates": [
+                omit_none(item) for item in (graph.get("node_templates") or [])
+            ],
+            "handle_templates": [
+                omit_none(item) for item in (graph.get("handle_templates") or [])
+            ],
+        }
+
+    @classmethod
+    def _backend_candidate_graph(
+        cls,
+        graph: Dict[str, Any],
+        *,
+        applied_graph: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """把编译器写实体补全为冻结的 Backend 读取形状。"""
+
+        applied = cls._validated_applied_backend_graph(applied_graph)
+        cls._require_candidate_graph_containers(graph)
+        projected = cls._backend_graph_projection(graph)
+        applied_workflow = applied["workflow"]
+        workflow_uuid = applied_workflow["uuid"]
+        timestamp = applied_workflow["update_time"]
+        applied_nodes = {item["uuid"]: item for item in applied["nodes"]}
+        applied_edges = {item["uuid"]: item for item in applied["edges"]}
+        applied_node_templates = {
+            item["uuid"]: item for item in applied["node_templates"]
+        }
+        applied_handle_templates = {
+            item["uuid"]: item for item in applied["handle_templates"]
+        }
+
+        nodes = []
+        for item in projected["nodes"]:
+            value = WorkflowNodeWrite.model_validate(item).model_dump(
+                exclude_none=True,
+            )
+            persisted = applied_nodes.get(value["uuid"], {})
+            nodes.append(
+                {
+                    "uuid": value["uuid"],
+                    "create_time": persisted.get("create_time", timestamp),
+                    "update_time": persisted.get("update_time", timestamp),
+                    "meta_data": value.get("meta_data", {}),
+                    "workflow_uuid": workflow_uuid,
+                    **value,
+                }
+            )
+        cls._require_backend_read_fields(
+            nodes,
+            _NODE_REQUIRED_READ_FIELDS,
+        )
+
+        edges = []
+        for item in projected["edges"]:
+            value = WorkflowEdgeWrite.model_validate(item).model_dump(
+                exclude_none=True,
+            )
+            persisted = applied_edges.get(value["uuid"], {})
+            edges.append(
+                {
+                    "uuid": value["uuid"],
+                    "create_time": persisted.get("create_time", timestamp),
+                    "update_time": persisted.get("update_time", timestamp),
+                    "meta_data": value.get("meta_data", {}),
+                    **value,
+                }
+            )
+        cls._require_backend_read_fields(
+            edges,
+            _EDGE_REQUIRED_READ_FIELDS,
+        )
+
+        projected["workflow"] = {
+            key: value
+            for key, value in {
+                **applied_workflow,
+                **projected["workflow"],
+                "uuid": workflow_uuid,
+                "create_time": applied_workflow["create_time"],
+                "update_time": timestamp,
+            }.items()
+            if key in _WORKFLOW_READ_FIELDS
+        }
+        projected["nodes"] = nodes
+        projected["edges"] = edges
+        projected["node_templates"] = cls._hydrate_backend_catalog_entities(
+            projected["node_templates"],
+            persisted=applied_node_templates,
+            timestamp=timestamp,
+            uuid_fields={"uuid", "resource_template_uuid"},
+            allowed_fields=_NODE_TEMPLATE_READ_FIELDS,
+            required_fields=_NODE_TEMPLATE_REQUIRED_READ_FIELDS,
+        )
+        projected["handle_templates"] = cls._hydrate_backend_catalog_entities(
+            projected["handle_templates"],
+            persisted=applied_handle_templates,
+            timestamp=timestamp,
+            uuid_fields={"uuid", "workflow_node_template_uuid"},
+            allowed_fields=_HANDLE_TEMPLATE_READ_FIELDS,
+            required_fields=_HANDLE_TEMPLATE_REQUIRED_READ_FIELDS,
+        )
+        cls._require_backend_read_fields(
+            [projected["workflow"]],
+            _WORKFLOW_REQUIRED_READ_FIELDS,
+        )
+        try:
+            cls._require_backend_entity_types(projected)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise WorkflowError("candidate_invalid") from None
+        if projected["workflow"]["revision"] != applied_workflow["revision"]:
+            raise WorkflowError("candidate_invalid")
+        return projected
+
+    @classmethod
+    def _validated_applied_backend_graph(
+        cls,
+        graph: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """检查 Candidate 前先校验 Authority 持有的工作流图。"""
+
+        try:
+            applied = cls._backend_graph_projection(graph)
+            cls._require_backend_read_fields(
+                [applied["workflow"]],
+                _WORKFLOW_REQUIRED_READ_FIELDS,
+                error_code="internal_error",
+            )
+            cls._require_backend_read_fields(
+                applied["nodes"],
+                _NODE_REQUIRED_READ_FIELDS,
+                error_code="internal_error",
+            )
+            cls._require_backend_read_fields(
+                applied["edges"],
+                _EDGE_REQUIRED_READ_FIELDS,
+                error_code="internal_error",
+            )
+            cls._require_backend_read_fields(
+                applied["node_templates"],
+                _NODE_TEMPLATE_REQUIRED_READ_FIELDS,
+                error_code="internal_error",
+            )
+            cls._require_backend_read_fields(
+                applied["handle_templates"],
+                _HANDLE_TEMPLATE_REQUIRED_READ_FIELDS,
+                error_code="internal_error",
+            )
+            cls._require_backend_entity_types(applied)
+            return applied
+        except WorkflowError:
+            raise
+        except (AttributeError, KeyError, TypeError, ValueError):
+            raise WorkflowError("internal_error") from None
+
+    @staticmethod
+    def _require_backend_entity_types(graph: Dict[str, Any]) -> None:
+        """在完整工作流图上强制执行冻结的 Backend JSON 类型。"""
+
+        def exact(entity: Dict[str, Any], fields: set[str], expected: type) -> None:
+            if any(type(entity[field]) is not expected for field in fields):
+                raise ValueError
+
+        def optional(
+            entity: Dict[str, Any],
+            fields: set[str],
+            expected: type,
+        ) -> None:
+            if any(
+                field in entity and type(entity[field]) is not expected
+                for field in fields
+            ):
+                raise ValueError
+
+        def uuids(entity: Dict[str, Any], fields: set[str]) -> None:
+            exact(entity, fields, str)
+            for field in fields:
+                validate_uuid(entity[field])
+
+        def optional_uuids(entity: Dict[str, Any], fields: set[str]) -> None:
+            for field in fields:
+                if field in entity:
+                    uuids(entity, {field})
+
+        workflow = graph["workflow"]
+        uuids(workflow, {"uuid"})
+        exact(workflow, {"create_time", "update_time", "name"}, str)
+        exact(workflow, {"meta_data"}, dict)
+        exact(workflow, {"tags"}, list)
+        normalize_json_object(workflow["meta_data"])
+        normalize_json_array(workflow["tags"])
+        optional(workflow, {"description"}, str)
+        revision = workflow["revision"]
+        if type(revision) is not int or not 1 <= revision <= (1 << 63) - 1:
+            raise ValueError
+
+        for node in graph["nodes"]:
+            uuids(node, {"uuid", "workflow_uuid"})
+            optional_uuids(
+                node,
+                {
+                    "workflow_node_template_uuid",
+                    "parent_uuid",
+                    "material_uuid",
+                },
+            )
+            exact(
+                node,
+                {"create_time", "update_time", "name", "status", "type"},
+                str,
+            )
+            exact(
+                node,
+                {"meta_data", "pose", "param", "execution_policy"},
+                dict,
+            )
+            for field in ("meta_data", "pose", "param", "execution_policy"):
+                normalize_json_object(node[field])
+            exact(node, {"disabled", "minimized"}, bool)
+            optional(
+                node,
+                {
+                    "description",
+                    "icon",
+                    "footer",
+                    "action_name",
+                    "action_type",
+                    "script",
+                },
+                str,
+            )
+
+        for edge in graph["edges"]:
+            uuids(
+                edge,
+                {
+                    "uuid",
+                    "source_node_uuid",
+                    "target_node_uuid",
+                    "source_handle_uuid",
+                    "target_handle_uuid",
+                },
+            )
+            exact(edge, {"create_time", "update_time"}, str)
+            exact(edge, {"meta_data"}, dict)
+            normalize_json_object(edge["meta_data"])
+            optional(edge, {"description"}, str)
+
+        for template in graph["node_templates"]:
+            uuids(template, {"uuid", "resource_template_uuid"})
+            exact(
+                template,
+                {
+                    "create_time",
+                    "update_time",
+                    "name",
+                    "display_name",
+                    "type",
+                    "node_type",
+                },
+                str,
+            )
+            exact(
+                template,
+                {
+                    "meta_data",
+                    "goal",
+                    "goal_default",
+                    "feedback",
+                    "result",
+                },
+                dict,
+            )
+            for field in (
+                "meta_data",
+                "goal",
+                "goal_default",
+                "feedback",
+                "result",
+            ):
+                normalize_json_object(template[field])
+            optional(
+                template,
+                {
+                    "description",
+                    "class",
+                    "schema",
+                    "icon",
+                    "header",
+                    "footer",
+                },
+                str,
+            )
+
+        for handle in graph["handle_templates"]:
+            uuids(handle, {"uuid", "workflow_node_template_uuid"})
+            exact(
+                handle,
+                {
+                    "create_time",
+                    "update_time",
+                    "handle_key",
+                    "io_type",
+                    "display_name",
+                    "type",
+                },
+                str,
+            )
+            exact(handle, {"meta_data"}, dict)
+            normalize_json_object(handle["meta_data"])
+            exact(handle, {"required"}, bool)
+            optional(
+                handle,
+                {"description", "data_source", "data_key"},
+                str,
+            )
+
+    @staticmethod
+    def _require_candidate_graph_containers(graph: Dict[str, Any]) -> None:
+        workflow = graph.get("workflow")
+        if workflow is not None and not isinstance(workflow, dict):
+            raise WorkflowError("candidate_invalid")
+        for field in (
+            "nodes",
+            "edges",
+            "node_templates",
+            "handle_templates",
+        ):
+            entities = graph.get(field)
+            if entities is None:
+                continue
+            if not isinstance(entities, list) or any(
+                not isinstance(item, dict) for item in entities
+            ):
+                raise WorkflowError("candidate_invalid")
+
+    @staticmethod
+    def _hydrate_backend_catalog_entities(
+        entities: List[Dict[str, Any]],
+        *,
+        persisted: Dict[str, Dict[str, Any]],
+        timestamp: str,
+        uuid_fields: set[str],
+        allowed_fields: set[str],
+        required_fields: set[str],
+    ) -> List[Dict[str, Any]]:
+        hydrated = []
+        for item in entities:
+            value = {
+                key: child
+                for key, child in item.items()
+                if key in allowed_fields and child is not None
+            }
+            for field in uuid_fields:
+                try:
+                    value[field] = validate_uuid(value[field])
+                except (KeyError, ValueError):
+                    raise WorkflowError("candidate_invalid") from None
+            previous = persisted.get(value["uuid"], {})
+            hydrated.append(
+                {
+                    "uuid": value["uuid"],
+                    "create_time": previous.get("create_time", timestamp),
+                    "update_time": previous.get("update_time", timestamp),
+                    "meta_data": value.get("meta_data", {}),
+                    **value,
+                }
+            )
+        WorkflowService._require_backend_read_fields(
+            hydrated,
+            required_fields,
+        )
+        return hydrated
+
+    @staticmethod
+    def _require_backend_read_fields(
+        entities: List[Dict[str, Any]],
+        required_fields: set[str],
+        *,
+        error_code: str = "candidate_invalid",
+    ) -> None:
+        if any(
+            not isinstance(item, dict) or not required_fields.issubset(item)
+            for item in entities
+        ):
+            raise WorkflowError(error_code)
+
+    @classmethod
+    def _post_commit_candidate_graph(
+        cls,
+        graph: Dict[str, Any],
+        *,
+        workflow: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        projected = cls._backend_graph_projection(graph)
+        projected["workflow"] = {
+            **projected["workflow"],
+            **workflow,
+        }
+        return projected
+
+    def _authoring_aggregate(
+        self,
+        *,
+        workflow: Dict[str, Any],
+        graph: Dict[str, Any],
+        registration: Dict[str, Any],
+        source: Optional[Dict[str, Any]],
+        record: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        draft: Optional[Dict[str, Any]] = None
+        diagnostics: List[Dict[str, Any]] = []
+        if source is not None:
+            if record["observed_draft_hash"] == source["draft_hash"]:
+                diagnostics = record["diagnostics"]
+            draft = {
+                "source_uri": registration["source_uri"],
+                **source,
+                "diagnostics": diagnostics,
+            }
+
+        stored_candidate = record.get("candidate")
+        candidate: Optional[Dict[str, Any]] = None
+        candidate_stale = False
+        if stored_candidate is not None and source is not None:
+            catalog_matches = False
+            try:
+                catalog_matches = (
+                    stored_candidate["template_catalog_fingerprint"]
+                    == self._catalog_fingerprint()
+                )
+            except WorkflowError:
+                catalog_matches = False
+            candidate_current = (
+                record["observed_draft_hash"] == source["draft_hash"]
+                and stored_candidate["draft_hash"] == source["draft_hash"]
+                and stored_candidate["base_workflow_revision"] == workflow["revision"]
+                and catalog_matches
+            )
+            if candidate_current:
+                candidate = stored_candidate
+            else:
+                candidate_stale = True
+
+        applied_source = record.get("applied_source")
+        if source is None:
+            state = "draft_missing"
+        elif candidate_stale:
+            state = "candidate_stale"
+        elif any(
+            str(item.get("severity", "")).lower() == "error" for item in diagnostics
+        ):
+            state = "draft_invalid"
+        elif candidate is not None:
+            state = (
+                "unapplied_source_only"
+                if candidate["changeset"]["kind"] == "source_only"
+                else "unapplied_graph"
+            )
+        elif (
+            applied_source is not None
+            and applied_source["workflow_revision"] == workflow["revision"]
+            and applied_source["source_hash"] == source["draft_hash"]
+        ):
+            state = "applied"
+        else:
+            state = "applied_source_stale"
+
+        return {
+            "workflow_uuid": workflow["uuid"],
+            "workflow_revision": workflow["revision"],
+            "state": state,
+            "applied_graph": graph,
+            "draft": draft,
+            "candidate": candidate,
+            "applied_source": applied_source,
+        }
+
+    def _authoring_lock(self, workflow_uuid: str) -> threading.RLock:
+        with self._locks_guard:
+            return self._authoring_locks.setdefault(
+                workflow_uuid,
+                threading.RLock(),
+            )
+
+    @staticmethod
+    def _normalize_page(page: int, page_size: int) -> Tuple[int, int]:
+        if page < 1:
+            page = 1
+        if page_size < 1:
+            page_size = 20
+        if page_size > 100:
+            page_size = 100
+        return page, page_size
+
+    @staticmethod
+    def _optional_text(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @staticmethod
+    def _validate_hash(value: Optional[str], *, nullable: bool) -> None:
+        if value is None:
+            if nullable:
+                return
+            raise WorkflowError("invalid_input")
+        if _HASH_TOKEN.fullmatch(value) is None:
+            raise WorkflowError("invalid_input")
+
+
+__all__ = [
+    "AuthoringCompiler",
+    "WorkflowConflict",
+    "WorkflowError",
+    "WorkflowService",
+]

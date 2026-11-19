@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================"
-echo "UniLabOS Environment Installation Script"
+echo "Uni-Lab-OS Environment Installation Script"
 echo "================================================"
 echo ""
 
@@ -44,29 +44,29 @@ if [ -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then
 fi
 
 # Set target environment path
-ENV_NAME="unilab"
+ENV_NAME="${1:-unilab}"
+if [[ ! "$ENV_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    echo "ERROR: Use only letters, numbers, '-' or '_' in the environment name."
+    exit 1
+fi
 ENV_PATH="$CONDA_BASE/envs/$ENV_NAME"
 
 # Check if environment already exists
-if [ -d "$ENV_PATH" ]; then
-    echo "WARNING: Environment '$ENV_NAME' already exists at $ENV_PATH"
-    read -p "Do you want to overwrite it? (y/n): " OVERWRITE
-    if [ "$OVERWRITE" != "y" ] && [ "$OVERWRITE" != "Y" ]; then
-        echo "Installation cancelled."
-        exit 0
-    fi
-    echo "Removing existing environment..."
-    rm -rf "$ENV_PATH"
+if [ -e "$ENV_PATH" ]; then
+    echo "ERROR: Environment already exists at $ENV_PATH. Nothing was removed."
+    echo "Use a new name: bash install_unilab.sh unilab-hostlink"
+    exit 1
 fi
 
 # Find the packed environment file
-PACK_FILE=$(ls unilab-env*.tar.gz 2>/dev/null | head -n 1)
-
-if [ -z "$PACK_FILE" ]; then
-    echo "ERROR: Could not find unilab-env*.tar.gz file!"
+shopt -s nullglob
+PACK_FILES=(unilab-env*.tar.gz)
+if [ "${#PACK_FILES[@]}" -ne 1 ]; then
+    echo "ERROR: Expected exactly one unilab-env*.tar.gz file!"
     echo "Please make sure the packed environment file is in the same directory as this script."
     exit 1
 fi
+PACK_FILE="${PACK_FILES[0]}"
 
 echo "Found packed environment: $PACK_FILE"
 echo ""
@@ -97,28 +97,19 @@ else
 fi
 
 echo ""
-echo "Checking UniLabOS entry point..."
+echo "Checking Uni-Lab-OS entry point..."
 # Check if unilab script exists in bin directory
 UNILAB_SCRIPT="$ENV_PATH/bin/unilab"
 if [ ! -f "$UNILAB_SCRIPT" ]; then
-    echo "WARNING: unilab script not found, creating it..."
-    cat > "$UNILAB_SCRIPT" << 'EOF'
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-import re
-import sys
-
-from unilabos.app.main import main
-
-if __name__ == '__main__':
-    sys.argv[0] = re.sub(r'(-script\.pyw?|\.exe)?$', '', sys.argv[0])
-    sys.exit(main())
-EOF
-    chmod +x "$UNILAB_SCRIPT"
-    echo "Created: $UNILAB_SCRIPT"
+    echo "ERROR: Entry point is missing. The archive is incomplete."
+    exit 1
 else
     echo "Found: $UNILAB_SCRIPT"
 fi
+
+conda activate "$ENV_PATH"
+"$ENV_PATH/bin/python" "$SCRIPT_DIR/verify_installation.py" --assert-no-ros
+"$UNILAB_SCRIPT" --help
 
 echo ""
 echo "================================================"
@@ -134,6 +125,6 @@ echo "  source $ENV_PATH/bin/activate"
 echo ""
 echo "You can verify the installation by running:"
 echo "  cd $SCRIPT_DIR"
-echo "  python verify_installation.py"
+echo "  python verify_installation.py --assert-no-ros"
 echo ""
 

@@ -1,18 +1,21 @@
 import asyncio
+import uuid
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
 import pytest
 
+from pylabrobot.resources import Container
+
 from unilabos.devices.liquid_handling.liquid_handler_abstract import LiquidHandlerAbstract
 
 
-@dataclass(frozen=True)
-class DummyContainer:
-    name: str
+def DummyContainer(name: str) -> Container:
+    """真实 PLR Container：transfer_liquid 返回值会 dump 资源树，要求微后端 UUID。"""
 
-    def __repr__(self) -> str:  # pragma: no cover
-        return f"DummyContainer({self.name})"
+    container = Container(name=name, size_x=10.0, size_y=10.0, size_z=10.0, max_volume=1000.0)
+    container.unilabos_uuid = str(uuid.uuid4())
+    return container
 
 
 @dataclass(frozen=True)
@@ -104,7 +107,7 @@ class FakeLiquidHandler(LiquidHandlerAbstract):
         self.calls.append(("custom_delay", {"seconds": seconds, "msg": msg}))
 
     async def touch_tip(self, targets):
-        # 原实现会访问 targets.get_size_x() 等；测试里只记录调用
+        # 测试替身只记录调用，不执行几何计算。
         self.calls.append(("touch_tip", {"targets": targets}))
 
     async def mix(self, targets, mix_time=None, mix_vol=None, height_to_bottom=None, offsets=None, mix_rate=None, none_keys=None):

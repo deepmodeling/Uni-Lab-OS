@@ -1,0 +1,141 @@
+{
+    "nodes": [
+        {
+            "id": "SimpleStirHeatChillTestStation",
+            "name": "搅拌加热测试站",
+            "children": [
+                "stirrer_1",
+                "heatchill_1",
+                "main_reactor",
+                "secondary_reactor"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": [
+                    "StirProtocol",
+                    "StartStirProtocol", 
+                    "StopStirProtocol",
+                    "HeatChillProtocol", 
+                    "HeatChillStartProtocol", 
+                    "HeatChillStopProtocol"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "stirrer_1",
+            "name": "主搅拌器",
+            "children": [],
+            "parent": "SimpleStirHeatChillTestStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 400,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_STIRRER1",
+                "max_speed": 1500.0,
+                "min_speed": 50.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "heatchill_1",
+            "name": "主加热冷却器",
+            "children": [],
+            "parent": "SimpleStirHeatChillTestStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 600,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_HEATCHILL1",
+                "max_temp": 200.0,
+                "min_temp": -80.0,
+                "max_stir_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "main_reactor",
+            "name": "主反应器",
+            "children": [],
+            "parent": "SimpleStirHeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 500,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "water",
+                        "liquid_volume": 500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "secondary_reactor",
+            "name": "副反应器",
+            "children": [],
+            "parent": "SimpleStirHeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 700,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_stirrer1_main_reactor",
+            "source": "stirrer_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "stirrer_1": "stirrer",
+                "main_reactor": "stirrer_port"
+            }
+        },
+        {
+            "id": "link_heatchill1_main_reactor",
+            "source": "heatchill_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "heatchill_1": "heatchill",
+                "main_reactor": "heating_jacket"
+            }
+        }
+    ]
+}

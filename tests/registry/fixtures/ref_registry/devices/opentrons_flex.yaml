@@ -1,0 +1,7 @@
+pylabrobot.lh.opentrons_flex:
+  class:
+    module: pylabrobot.liquid_handling.liquid_handler:LiquidHandler
+    action_value_mappings:
+      $ref: ../contracts/liquid_handler.yaml#/actions
+    status_types:
+      $ref: ../contracts/liquid_handler.yaml#/status_types

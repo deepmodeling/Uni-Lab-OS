@@ -1,0 +1,31 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {},
+  "feedback": {},
+  "result": {},
+  "schema": {
+    "type": "object",
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "tip_racks": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      }
+    },
+    "required": [
+      "tip_racks"
+    ],
+    "_unilabos_placeholder_info": {}
+  },
+  "goal_default": {
+    "tip_racks": null
+  },
+  "handles": {},
+  "placeholder_keys": {}
+}

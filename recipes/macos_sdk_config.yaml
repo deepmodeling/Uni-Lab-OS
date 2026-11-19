@@ -4,4 +4,4 @@ MACOSX_DEPLOYMENT_TARGET:
   - "11.0"
 CONDA_SUBDIR:
   - osx-arm64
-# boa build -m ./recipes/conda_build_config.yaml -m ./recipes/macos_sdk_config.yaml ./recipes/ros-humble-unilabos-msgs
+# rattler-build build -r ./recipes/msgs/recipe.yaml -c conda-forge -c robostack-jazzy

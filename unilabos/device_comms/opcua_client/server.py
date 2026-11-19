@@ -29,7 +29,7 @@ class OpcUaTestServer:
         self.server.set_endpoint(endpoint)
         
         # 设置服务器名称
-        self.server.set_server_name("UniLabOS OPC UA Test Server")
+        self.server.set_server_name("Uni-Lab-OS OPC UA Test Server")
         
         # 设置服务器命名空间
         self.idx = self.server.register_namespace("http://unilabos.com/opcua/test")

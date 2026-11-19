@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 from opcua import Client, ua
 from opcua.ua import NodeClass
-import pandas as pd
 import os
 
 from unilabos.device_comms.opcua_client.node.uniopcua import Base as OpcUaNodeBase
@@ -114,19 +113,21 @@ class ExecuteProcedureJson(BaseModel):
 
 class BaseClient(UniversalDriver):
     client: Optional[Client] = None
-    _node_registry: Dict[str, OpcUaNodeBase] = {}
     DEFAULT_ADDRESS_PATH = ""
-    _variables_to_find: Dict[str, Dict[str, Any]] = {}
-    _name_mapping: Dict[str, str] = {}  # 英文名到中文名的映射
-    _reverse_mapping: Dict[str, str] = {}  # 中文名到英文名的映射
 
     def __init__(self):
         super().__init__()
         # 自动查找节点功能默认开启
         self._auto_find_nodes = True
-        # 初始化名称映射字典
-        self._name_mapping = {}
-        self._reverse_mapping = {}
+        # 节点表、待查找表、名称映射、函数表、工作流表每个客户端一份。原来声明为类属性字典，经 self 原地修改时
+        # 所有客户端共用，第二个客户端会沿用第一个客户端（连着另一台服务器）的节点
+        self._node_registry: Dict[str, OpcUaNodeBase] = {}
+        self._variables_to_find: Dict[str, Dict[str, Any]] = {}
+        self._name_mapping: Dict[str, str] = {}  # 英文名到中文名的映射
+        self._reverse_mapping: Dict[str, str] = {}  # 中文名到英文名的映射
+        self.function_name: Dict[str, Callable[[Callable[[str], OpcUaNodeBase]], bool]] = {}
+        self.workflow_name: Dict[str, OpcUaWorkflowModel] = {}
+        self._workflow_params: Dict[str, Any] = {}
 
     def _set_client(self, client: Optional[Client]) -> None:
         if client is None:
@@ -218,6 +219,9 @@ class BaseClient(UniversalDriver):
         CSV文件需包含Name,NodeType,DataType列
         可选包含EnglishName和NodeLanguage列
         """
+        # pandas 只有读节点表才用到（drivers 可选依赖），不在导入模块时要求
+        import pandas as pd
+
         df = pd.read_csv(file_path)
         df = df.drop_duplicates(subset='Name', keep='first')  # 重复的数据应该报错
         nodes = []
@@ -446,8 +450,6 @@ class BaseClient(UniversalDriver):
                 raise ValueError(f'invalid action type {type(action)}')
 
         return True
-
-    function_name: Dict[str, Callable[[Callable[[str], OpcUaNodeBase]], bool]] = {}
 
     def create_node_function(self, func_name: str = None, node_name: str = None, mode: str = None, value: Any = None,
                              **kwargs) -> Callable[[Callable[[str], OpcUaNodeBase]], bool]:
@@ -918,8 +920,6 @@ class BaseClient(UniversalDriver):
 
         return WorkflowAction(init=init, start=start, stop=stop, cleanup=cleanup)
 
-    workflow_name: Dict[str, OpcUaWorkflowModel] = {}
-
     def create_workflow_from_json(self, data: List[Dict]) -> None:
         """
         从JSON配置创建工作流程序
@@ -1168,8 +1168,13 @@ class OpcUaClient(BaseClient):
         self.start_node_refresh()
 
     def _register_nodes_as_attributes(self):
-        """将所有节点注册为实例属性，可以通过self.node_name访问"""
-        for node_name, node in self._node_registry.items():
+        """将所有节点注册为本实例的属性，可以通过self.node_name访问
+
+        属性名登记在实例的 ``_node_attributes`` 里，由 ``__getattr__`` 读节点值。原来把 property setattr 到
+        OpcUaClient 类上，所有实例（及子类）都带上别的服务器的节点属性，还可能盖掉同名方法。
+        """
+        attributes = self.__dict__.setdefault("_node_attributes", {})
+        for node_name in self._node_registry:
             # 检查是否有对应的英文名称
             eng_name = self._reverse_mapping.get(node_name)
             if eng_name:
@@ -1179,21 +1184,25 @@ class OpcUaClient(BaseClient):
                 # 如果没有对应的英文名称，使用原始名称，但替换空格和特殊字符
                 attr_name = node_name.replace(' ', '_').replace('-', '_')
 
-            # 创建获取节点值的属性方法，使用中文名称获取节点值
-            def create_property_getter(node_key):
-                def getter(self):
-                    # 优先从缓存获取值
-                    if node_key in self._node_values:
-                        return self._node_values[node_key]
-                    # 缓存中没有则直接读取
-                    value, _ = self.use_node(node_key).read()
-                    return value
-
-                return getter
-
-            # 使用property装饰器将方法注册为类属性
-            setattr(OpcUaClient, attr_name, property(create_property_getter(node_name)))
+            if hasattr(type(self), attr_name) or attr_name in self.__dict__:
+                logger.warning(f"节点 '{node_name}' 的属性名 '{attr_name}' 与客户端已有属性重名，未注册为属性")
+                continue
+            attributes[attr_name] = node_name
             logger.info(f"已注册节点 '{node_name}' 为属性 '{attr_name}'")
+
+    def __getattr__(self, name: str) -> Any:
+        # 只在常规属性查找失败时调用：解析 _register_nodes_as_attributes 登记的节点属性
+        attributes = self.__dict__.get("_node_attributes")
+        if attributes and name in attributes:
+            node_key = attributes[name]
+            # 优先从缓存获取值
+            values = self.__dict__.get("_node_values") or {}
+            if node_key in values:
+                return values[node_key]
+            # 缓存中没有则直接读取
+            value, _ = self.use_node(node_key).read()
+            return value
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def refresh_node_values(self):
         """刷新所有节点的值到缓存"""

@@ -1,0 +1,29 @@
+{
+  "feedback": {},
+  "goal": {
+    "plate_num": "plate_num"
+  },
+  "goal_default": {
+    "plate_num": null
+  },
+  "handles": {},
+  "placeholder_keys": {},
+  "result": {},
+  "schema": {
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "plate_num": {
+        "description": "盘号 (1 或 2)，如果为null则返回所有盘的状态",
+        "type": "integer"
+      }
+    },
+    "required": [],
+    "type": "object",
+    "_unilabos_placeholder_info": {}
+  },
+  "type": "UniLabJsonCommand"
+}

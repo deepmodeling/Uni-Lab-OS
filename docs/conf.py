@@ -8,13 +8,14 @@
 
 import os
 import sys
+from pathlib import Path
 
 # 将项目的根目录添加到 sys.path 中，以便 Sphinx 能够找到 unilabos 包
-sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-project = "Uni-Lab"
-copyright = "2025, Uni-Lab Community, DP Technology & Peking University"
-author = "Uni-Lab Community, DP Technology & Peking University"
+project = "Uni-Lab-OS"
+copyright = "2026, Uni-Lab-OS Community"
+author = "Uni-Lab-OS Community"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -53,25 +54,20 @@ language = "zh"
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-# 设置 HTML 主题为 sphinx-book-theme
+# Read the Docs 主题；不要混用其他主题的配置键。
 html_theme = "sphinx_rtd_theme"
 
-# sphinx-book-theme 主题选项
 html_theme_options = {
-    "repository_url": "https://github.com/deepmodeling/Uni-Lab-OS",
-    "use_repository_button": True,
-    "use_issues_button": True,
-    "use_edit_page_button": True,
-    "use_download_button": True,
-    "path_to_docs": "docs",
-    "show_navbar_depth": 2,
-    "show_toc_level": 2,
-    "home_page_in_toc": True,
+    "navigation_depth": 3,
     "logo_only": False,
 }
-
-# 设置 HTML 文档的静态文件路径
-html_static_path = ["_static"]  # 如果有自定义 CSS，可以放在 _static 目录中
+html_context = {
+    "display_github": True,
+    "github_user": "deepmodeling",
+    "github_repo": "Uni-Lab-OS",
+    "github_version": "dev",
+    "conf_py_path": "/docs/",
+}
 
 section_titles = {
     "Simple": "## 简单单变量动作函数",
@@ -90,44 +86,38 @@ Uni-Lab 机械臂、机器人、夹爪和导航指令集沿用 ROS2 的 `control
 """,
 }
 
-import os
-from pathlib import Path
-
-
 def get_conda_share_dir(package_name=None):
     """获取 Conda 环境的 share 目录路径
 
     :param package_name: 可选参数，指定具体包的 share 子目录
     :return: Path 对象或 None
     """
-    # 获取当前 Conda 环境根目录
-    conda_prefix = os.getenv("CONDA_PREFIX")
+    # 可显式复用 ROS 的消息定义目录；读取文档数据，不把另一环境加入 Python 导入路径。
+    conda_prefix = os.getenv("UNILABOS_DOCS_ROS_PREFIX") or os.getenv("CONDA_PREFIX")
     if not conda_prefix:
-        raise EnvironmentError("未检测到激活的 Conda 环境")
+        conda_prefix = sys.prefix
 
-    # 构建基础 share 目录路径
-    share_dir = Path(conda_prefix) / "share"
-
-    # 如果指定了包名，追加包子目录
+    # Windows Conda 把 ROS 数据放在 Library/share；Unix 位于 share。
+    candidates = [Path(conda_prefix) / "share", Path(conda_prefix) / "Library/share"]
     if package_name:
-        share_dir = share_dir / package_name
-
-    # 验证路径是否存在
-    if not share_dir.exists():
-        print(f"警告: 路径 {share_dir} 不存在")
-        return None
-
-    return share_dir
+        candidates = [path / package_name for path in candidates]
+    for share_dir in candidates:
+        if share_dir.is_dir():
+            return share_dir
+    if os.getenv("UNILABOS_DOCS_REQUIRE_ROS") == "1":
+        raise EnvironmentError(f"完整文档缺少 ROS 消息定义目录：{candidates}")
+    print(f"警告: 未找到 ROS 消息定义目录：{candidates}")
+    return None
 
 
 def generate_action_includes(app):
     src_dir = Path(app.srcdir)
     print(f"Generating action includes for {src_dir}")
     action_dir = src_dir.parent / "unilabos_msgs" / "action"  # 修改为你的实际路径
-    output_file = src_dir / "developer_guide" / "action_includes.md"
+    output_file = Path(app.doctreedir) / "generated" / "action_includes.md"
 
     # 确保输出目录存在
-    output_file.parent.mkdir(exist_ok=True)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # 初始化各部分内容
     sections = {}
@@ -164,16 +154,19 @@ def generate_action_includes(app):
         print(f"警告: 动作消息目录 {action_dir} 不存在")
 
     ros_action_dirs = []
-    control_msgs_dir = get_conda_share_dir("control_msgs")
-    nav2_msgs_dir = get_conda_share_dir("nav2_msgs")
+    control_msgs_dir = get_conda_share_dir("control_msgs/action")
+    nav2_msgs_dir = get_conda_share_dir("nav2_msgs/action")
 
     if control_msgs_dir is not None:
-        ros_action_dirs.append(control_msgs_dir / "action")
+        ros_action_dirs.append(control_msgs_dir)
     if nav2_msgs_dir is not None:
-        ros_action_dirs.append(nav2_msgs_dir / "action")
+        ros_action_dirs.append(nav2_msgs_dir)
 
     for action_dir in ros_action_dirs:
-        for action_file in sorted(action_dir.glob("*.action")):
+        action_files = sorted(action_dir.glob("*.action"))
+        if not action_files and os.getenv("UNILABOS_DOCS_REQUIRE_ROS") == "1":
+            raise EnvironmentError(f"完整文档缺少 ROS 动作定义：{action_dir}")
+        for action_file in action_files:
             # 获取相对路径
             rel_path = f"{action_file.absolute()}"
             # 读取首行注释
@@ -194,17 +187,26 @@ def generate_action_includes(app):
                 else:
                     sections[section] += text
 
-    # 写入内容到输出文件
-    with open(output_file, "w", encoding="utf-8") as f:
-        # 按 Section 生成总文档
-        for section, title in section_titles.items():
-            content = sections.get(section, "")
-            if content:  # 只有有内容时才写入标题和内容
-                f.write(f"{title}\n\n")
-                f.write(content)
+    # 生成物留在构建目录；不改写仓库里已跟踪的 Markdown。
+    rendered = "# 动作接口参考\n\n" + "".join(f"{title}\n\n{sections[section]}" for section, title in section_titles.items()
+                       if sections.get(section))
+    output_file.write_text(rendered, encoding="utf-8")
+    app._unilab_action_reference = rendered
+
+
+def inject_action_includes(app, docname, source):
+    if docname == "developer_guide/action_includes":
+        source[0] = app._unilab_action_reference
+
+
+def refresh_action_reference(app, env, added, changed, removed):
+    # ROS 环境可能与上次构建不同；增量构建也必须更新这一页，不能复用缺项内容。
+    return ["developer_guide/action_includes"]
 
 
 def setup(app):
     app.connect("builder-inited", generate_action_includes)
+    app.connect("source-read", inject_action_includes)
+    app.connect("env-get-outdated", refresh_action_reference)
     app.add_js_file("https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js")
     app.add_js_file(None, body="mermaid.initialize({startOnLoad:true});")

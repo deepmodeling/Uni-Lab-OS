@@ -1,0 +1,22 @@
+{
+  "feedback": {},
+  "goal": {},
+  "goal_default": {},
+  "handles": {},
+  "result": {
+    "return_info": "return_info",
+    "success": "success"
+  },
+  "schema": {
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      }
+    },
+    "required": [],
+    "type": "object"
+  },
+  "type": "UniLabJsonCommand"
+}

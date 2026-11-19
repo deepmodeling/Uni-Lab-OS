@@ -1,72 +1,72 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-Also follow the monorepo-level rules in `../AGENTS.md`.
+This file provides guidance for coding agents working in this repository.
 
 ## Build & Development
 
 ```bash
-# Install in editable mode (requires mamba env with python 3.11)
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
+# Default installation needs only Python 3.14; ROS 2 is explicitly optional
+python scripts/dev_install.py  # uv by default (pip fallback): active venv/Conda env, else ./.venv on CPython 3.14; builds companion PLR / Opentrons wheels, no PyPI upload
+python scripts/dev_install.py --extras full  # docs, tests, driver SDKs and development tools
 
 # Run with a device graph
-unilab --graph <graph.json> --config <config.py> --backend ros
-unilab --graph <graph.json> --config <config.py> --backend simple  # no ROS2 needed
+unilab --graph <graph.json> --config <config.py>  # HostLink, no ROS runtime or messages
+unilab --graph <graph.json> --config <config.py> --backend ros2  # requires unilabos-ros2
 
 # Common CLI flags
-unilab --app_bridges websocket fastapi    # communication bridges
 unilab --test_mode                        # simulate hardware, no real execution
 unilab --check_mode                       # CI validation of registry imports
 unilab --skip_env_check                   # skip auto-install of dependencies
 unilab --visual rviz|web|disable          # visualization mode
 unilab --is_slave                         # run as slave node
+unilab --role backend                     # scheduler authority and runtime.v1 control plane, without devices or ROS (--port, default 8002)
 
 # Workflow upload subcommand
-unilab workflow_upload -f <workflow.json> -n <name> --tags tag1 tag2
+unilab workflow upload -f <workflow.json> -n <name> --tags tag1 tag2
 
 # Tests
 pytest tests/                              # all tests
-pytest tests/resources/test_resourcetreeset.py  # single test file
-pytest tests/resources/test_resourcetreeset.py::TestClassName::test_method  # single test
+pytest tests/resources/test_resourcetreeset_groups.py  # single test file
+pytest tests/resources/test_resourcetreeset_groups.py::test_name  # single test
 ```
 
 ## Architecture
 
 ### Startup Flow
 
-`unilab` CLI → `unilabos/app/main.py:main()` → loads config → builds registry → reads device graph (JSON/GraphML) → starts backend thread (ROS2/simple) → starts FastAPI web server + WebSocket client.
+`unilab` CLI → `unilabos/app/cli/parser.py:build_parser()` → `app/cli/router.py` handles lightweight subcommands (`package` included) → `unilabos/app/main.py:main()` loads config and starts device runtime only when no CLI subcommand handled the request. Default `unilab` is a two-process tree (`app/backend_main.py`, `app/supervisor.py`): the `unilab` process itself is the scheduling authority (Scheduler / Workflow / Registry / Materials, owns the `--port` management API the browser connects to) and directly supervises the Host child (devices, HostLink, telemetry, driver packages; started with `--address` pointing back at the authority, databases under `<root>/edge`). The Host child binds no HTTP port: it only makes outbound HTTP calls (materials / registry / workflow reports, response delivery) and keeps the runtime.v1 control WebSocket. Host-only routes are served by `server/api/edge_proxy.py` sending a `backend_http` notice over that WebSocket; the Host runs the request against its own ASGI app in-process and posts the result to `POST /api/v1/edge/http-responses/{request_uuid}`. Payload pulls, restart notification and the device relay use the same channel, so the browser sees one address. `POST /api/v1/restart` defaults to `scope=edge`: only the Host child exits (code 75) and is relaunched; the authority and its port stay up, and it rejects `scope=process` for itself. `--role backend` runs the authority alone, on the same `--port` / `BasicConfig.port` setting as the default authority (8002; an old `HTTPConfig.backend_port` is ignored with one startup warning); `--address` runs a top-level Host against a remote authority (only then a thin supervisor from `app/supervisor.py` wraps it for whole-process restarts; unlike the Host child it serves its own `--port`, so next to a `--role backend` on one machine it needs a different port); `--no-safe-restart` collapses everything into one process (debugging); `--is_slave` and `--check_mode` never get any wrapper. Children follow their local parent (`app/lifetime.py`): the spawner writes `UNILABOS_PARENT_PID` (`follow_parent_env`; consumed and removed by `app/main.py:main()` via `follow_parent_from_env`), the follower polls `getppid()` (POSIX) or waits on the parent's process handle (Windows), the Host child and the thin supervisor's inner process (spawned from a long-lived thread) also get `PR_SET_PDEATHSIG` on Linux, and on Windows the spawner puts them in a KILL_ON_JOB_CLOSE job; managed Slaves (`server/services/device_processes.py`) follow their Host by polling plus the Host's job (no PDEATHSIG: it tracks the spawning thread, and Slaves are started from API / timer threads). A follower whose parent disappears (SIGKILL, crash) runs its own SIGTERM path, bounded by `lifetime.SHUTDOWN_DEADLINE_S`. Only the local parent counts: an `--address` Host follows its thin supervisor, never the remote authority, so a dropped link only reconnects. Shutdown: the authority treats SIGTERM / SIGHUP like Ctrl+C (`backend_main._stop_on_signal`; uvicorn re-raises the signal after its graceful drain, which with the default disposition used to kill the authority before its `finally`), asks the Host to exit at the first signal, fails pending `backend_http` waits, and kills a Host that is still alive after `CHILD_EXIT_GRACE_S` (also one launched while stopping); the Host's handler acts once (repeated signals are ignored) and wakes `wait_routes_ready`; runtime processes leave through `lifetime.exit_now` (atexit callbacks, then `os._exit`) instead of interpreter finalization, which joins every thread-pool worker. One process owns one database root: before opening any database, `app/main.py:_claim_process_database_root` takes an exclusive OS lock on `<root>/unilab.lock` (`server/database/root_lock.py`; the authority holds `<root>`, its Host child `<root>/edge`, `--role backend` `<root>/backend`, each managed Slave its own `device_processes/<id>/database`; `--check_mode` takes none), re-entrant within the process and released by the OS on exit; a second instance exits with code 73. A `hostlink` Host opens its HostLink port right after config load, before the registry, graph and devices (`backend/hostlink/startup.py:prebind_host_server`, called from `app/main.py`); `HostLinkBackend.start()` adopts that server and gates Slave requests until `materials` (authority attached) and then `devices` (local devices and host services started) are ready, answering "Host 启动中" (`not_ready`) that Slaves retry within `HostLinkConfig.host_wait_timeout`. Runtime then builds the registry, loads the device graph (node-link JSON, registered with the Graph Authority), and starts `hostlink` or `ros2`. HostLink's local driver executor is `unilabos.backend.hostlink.local_runtime.HostLinkLocalRuntime`.
 
 ### Core Layers
 
-**Registry** (`unilabos/registry/`): Singleton `Registry` class discovers and catalogs all device types, resource types, and communication devices from YAML definitions. Device types live in `registry/devices/*.yaml`, resources in `registry/resources/`, comms in `registry/device_comms/`. The registry resolves class paths to actual Python classes via `utils/import_manager.py`.
+**Registry** (`unilabos/registry/`): Singleton `Registry` class discovers and catalogs all device types, resource types, and communication devices from YAML definitions. Device types live in `registry/devices/**/*.yaml`, resources in `registry/resources/`, comms in `registry/device_comms/` (all read recursively; a declared `category` is kept, the file stem is only the fallback). The registry resolves class paths to actual Python classes via `utils/import_manager.py`. Every JSON action (`@action()` without `action_type`, and `auto-` methods) gets one signature-derived schema (`registry/action_schema.py`: the AST scan builds a draft per parameter with the strict annotation parser, unknown annotations fall back to the registry's signature inference in `Registry._infer_annotation_schema`), carrying the `x-unilabos-action-contract` v2 envelope; the scheduler, run preflight and the Host validate arguments and results against it (`registry/typed_contract.py`). Resource semantics are one decorator field, `@action(material=Material.load(...) | [...])` (`registry/material_roles.py`); a site parameter is annotated `SiteSlot` and its relation to the material parameters is `Material.site(...)`, written into that field's `x-unilabos-site-selector` extension. Frontend selectors: the entry's `placeholder_keys` is the type-derived set (`ResourceSlot` / `DeviceSlot` / `SiteSlot`) united with `@action(placeholder_keys={...})`, the hand-written kind winning per parameter (`registry/placeholder_keys.py`); it changes only the display. The material lock is a union: `ResourceSlot` parameters plus every parameter whose merged selector is `unilabos_resources`, which is how signature-less YAML and ROS / protocol entries mark their materials. `contract=`, `resource_contract=`, JSON-action `goal=` / `result=` renames and the removed `Placeholder` / `SiteSelector` annotations are rejected by both the decorator and the scan (`registry/action_options.py`). Rules: `docs/developer_guide/action_standard.md`.
 
-**Resource Tracking** (`unilabos/resources/resource_tracker.py`): Pydantic-based `ResourceDict` → `ResourceDictInstance` → `ResourceTreeSet` hierarchy. `ResourceTreeSet` is the canonical in-memory representation of all devices and resources, used throughout the system. Graph I/O is in `resources/graphio.py` (reads JSON/GraphML device topology files into `nx.Graph` + `ResourceTreeSet`).
+**Resource Tracking** (`unilabos/resources/resource_tracker.py`): Pydantic-based `ResourceDict` → `ResourceDictInstance` → `ResourceTreeSet` hierarchy. `ResourceTreeSet` is the canonical in-memory representation of all devices and resources, used throughout the system, and it owns every resource conversion: flat dicts (`from_raw_dict_list`, `dump`/`load`) and PLR (`from_plr_resources`, `to_plr_resources`). PLR drafts from a registry resource class come from `resources/materials.py:instantiate_registry_resource`. There is no separate graph I/O module: device graphs are node-link JSON only (GraphML is not supported) and are turned into runtime structures by the Graph Authority (`server/services/materials/graph.py:load_graph_payload`).
 
-**Device Drivers** (`unilabos/devices/`): 30+ hardware drivers organized by device type (liquid_handling, hplc, balance, arm, etc.). Each driver is a Python class that gets wrapped by `ros/device_node_wrapper.py:ros2_device_node()` to become a ROS2 node with publishers, subscribers, and action servers.
+**Device Drivers**: vendor drivers (PRCXI, LaiYu, Bioyond, HPLC, balances, arms, …) are not in this repository. They live in external driver packages, installed with `unilab package install` (`app/cli/package.py`, `server/services/driver_packages.py`) or mounted with `--devices`; create new ones with `.cursor/skills/create-device-package`. A driver is a Python class with `@device` / `@action` decorators that the runtime wraps as a HostLink or ROS 2 device node. Driver packages that define PLR resource or backend classes outside their registry entries register them with `register_plr_module()` / `@register_plr_class` from `resources/plr_additional_res_reg.py`, so `ResourceTreeSet.to_plr_resources()` can deserialize them. `unilabos/devices/` keeps only the built-ins the framework depends on: `workstation/workstation_base.py` (`WorkstationBase`, `WorkStationContainer`), `virtual/*` (used by the protocol compilers, `--test_mode`, example graphs and tests), `liquid_handling/liquid_handler_abstract.py` with `rviz_backend.py`, and `ros_dev/liquid_handler_joint_publisher*.py`.
 
-**ROS2 Layer** (`unilabos/ros/`): `device_node_wrapper.py` dynamically wraps any device class into `ROS2DeviceNode` (defined in `ros/nodes/base_device_node.py`). Preset node types in `ros/nodes/presets/` include `host_node`, `controller_node`, `workstation`, `serial_node`, `camera`. Messages use custom `unilabos_msgs` (pre-built, distributed via releases).
+**Device Runtime** (`unilabos/backend/runtime/`): Transport-neutral device execution kernel shared by HostLink and ROS 2 — `DeviceNode`, action routing, resource service, and runtime exceptions (`DeviceActionError`, `DeviceClassInvalid`, `ActionResultError`).
 
-**Protocol Compilation** (`unilabos/compile/`): 20+ protocol compilers (add, centrifuge, dissolve, filter, heatchill, stir, pump, etc.) that transform YAML protocol definitions into executable sequences.
+**Transport Layers**: `unilabos/backend/ros2/` wraps device classes as `ROS2DeviceNode` instances; its presets include `host_node`, `workstation`, controller, serial, and camera nodes. `unilabos/backend/hostlink/` provides the HostLink transport runtime plus its own `host_node.py:HostNode` and `workstation.py:WorkstationNode` (the ROS2 counterpart keeps its original name `ROS2WorkstationNode`); `unilabos/backend/dora/` is experimental. The per-backend host/workstation orchestrators share transport-neutral logic from `backend/runtime/` (`host_adapter.py:HostAdapterBase` for bookkeeping/bridge notification/ping-pong/test-mode, `workstation_protocol.py` for protocol name/model resolution and resource expand/write-back) and carry no `@device` decorator. `backend/host_services.py:HostServices` uniquely defines the host service actions; the file is excluded from the default registry AST scan and scanned separately by `Registry._setup_host_node`. Host-to-device material and management requests use the module-level functions in `backend/hostlink/downlink.py` (cross-machine channel is HostLink RPC; ros2 reuses it).
 
-**Communication** (`unilabos/device_comms/`): Hardware communication adapters — OPC-UA client, Modbus PLC, RPC, and a universal driver. `app/communication.py` provides a factory pattern for WebSocket client connections to the cloud.
+**Experiment Protocols** (`unilabos/experiments/`): `models.py` holds Pydantic parameter models for XDL-style experiment actions (mirroring `unilabos_msgs` ROS actions); `compile/` holds 20+ protocol compilers (add, centrifuge, dissolve, filter, heatchill, stir, pump, etc.) that expand protocol steps into device action sequences at execution time (consumed by the `workstation` preset node). One-shot workflow import converters (`from_xdl.py`, `from_python_script.py`, legacy JSON) live in `scripts/workflow/`, not in the runtime packages.
 
-**Web/API** (`unilabos/app/web/`): FastAPI server with REST API (`api.py`), Jinja2 template pages (`pages.py`), and HTTP client for cloud communication (`client.py`). Runs on port 8002 by default.
+**Communication** (`unilabos/device_comms/`): Hardware communication adapters that external driver packages build on — OPC-UA client, Modbus PLC, RPC, and a universal driver. `app/communication.py` provides a factory pattern for WebSocket client connections to the cloud.
+
+**Microbackend HTTP API** (`unilabos/server/api/`): FastAPI routers and the Host management application. It exposes runtime, materials, telemetry, history, and scheduler observation APIs on port 8002 by default.
 
 ### Configuration System
 
 - **Config classes** in `unilabos/config/config.py`: `BasicConfig`, `WSConfig`, `HTTPConfig`, `ROSConfig` — all class-level attributes, loaded from Python config files
 - Config files are `.py` files with matching class names (see `config/example_config.py`)
 - Environment variables override with prefix `UNILABOS_` (e.g., `UNILABOS_BASICCONFIG_PORT=9000`)
-- Device topology defined in graph files (JSON with node-link format, or GraphML)
+- Device topology defined in graph files (node-link JSON; GraphML is rejected)
 
 ### Key Data Flow
 
-1. Graph file → `graphio.read_node_link_json()` → `(nx.Graph, ResourceTreeSet, resource_links)`
+1. `-g <file>.json` → old-format graphs (legacy cloud exports, dev-era examples with `class`/root `position`/`children`) are upgraded once at the `-g` / `unilab graph upload` read boundary by `server/backend/legacy_adaptor/legacy/graph.py` (material nodes without a PLR class get `template_name` / `class` / `config.type` from the registry entry of their template — the Host's local scan for `-g`, the target authority's `/api/v1/registry/entries` for upload — and an unknown template is an error naming the node) → the Graph Authority (`GraphService.upsert_graph`, `on_existing="adopt"`) assigns identities and stores the snapshot → `app/main.py:_load_startup_graph` feeds the authority payload to `load_graph_payload()`, which returns `LoadedGraph(resource_tree_set, links, physical_setup_graph)`. `-g <name|uuid>` skips the file step and loads the stored snapshot. The Graph Authority accepts the current node-link contract only. `physical_setup_graph` (`nx.Graph`, edges carry `port`) is only for the protocol compilers and is published through `backend/runtime/workstation_protocol.py:physical_setup_graph()`
 2. `ResourceTreeSet` + `Registry` → `initialize_device.initialize_device_from_dict()` → `ROS2DeviceNode` instances
-3. Device nodes communicate via ROS2 topics/actions or direct Python calls (simple backend)
-4. Cloud sync via WebSocket (`app/ws_client.py`) and HTTP (`app/web/client.py`)
+3. Device nodes communicate via ROS2 topics/actions or HostLink
+4. Backend control notices use `server/backend/legacy_adaptor/websocket.py`; complete state and commands use the microbackend HTTP APIs in `server/api/`
 
 ### Test Data
 
@@ -75,7 +75,7 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 ## Code Conventions
 
 - Code comments and log messages in simplified Chinese
-- Python 3.11+, type hints expected
+- Python 3.14 only (CPython cp314, not free-threaded), type hints expected
 - Pydantic models for data validation (`resource_tracker.py`)
 - Singleton pattern via `@singleton` decorator (`utils/decorator.py`)
 - Dynamic class loading via `utils/import_manager.py` — device classes resolved at runtime from registry YAML paths
@@ -83,5 +83,5 @@ Example device graphs and experiment configs are in `unilabos/test/experiments/`
 
 ## Licensing
 
-- Framework code: GPL-3.0
-- Device drivers (`unilabos/devices/`): DP Technology Proprietary License — do not redistribute
+- The whole repository, including the built-ins in `unilabos/devices/`, is GPL-3.0.
+- Do not add vendor drivers to `unilabos/devices/`: they belong in external driver packages, which carry their own license.

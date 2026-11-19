@@ -4,7 +4,7 @@
 
 ## 配置文件概述
 
-Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_data/local_config.py`。配置文件采用类属性的方式定义各种配置项，比 YAML 或 JSON 提供更多的灵活性，包括支持注释、条件逻辑和复杂数据结构。
+Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为工作目录下的 `local_config.py`（工作目录默认 `~/.unilabos`，见 [工作目录详解](working_directory.md)）。配置文件采用类属性的方式定义各种配置项，比 YAML 或 JSON 提供更多的灵活性，包括支持注释、条件逻辑和复杂数据结构。
 
 ## 获取实验室密钥
 
@@ -28,6 +28,8 @@ Uni-Lab 使用 Python 格式的配置文件（`.py`），默认为 `unilabos_dat
 class BasicConfig:
     ak = ""  # 实验室网页给您提供的ak代码
     sk = ""  # 实验室网页给您提供的sk代码
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器
 
 
 # WebSocket配置，一般无需调整
@@ -54,12 +56,12 @@ class BasicConfig:
     config_path = ""  # 配置文件路径（自动设置）
     is_host_mode = True  # 是否为主站模式
     slave_no_host = False  # 从站模式下是否跳过等待主机服务
-    upload_registry = False  # 是否上传注册表
     machine_name = "undefined"  # 机器名称（自动获取）
     vis_2d_enable = False  # 是否启用2D可视化
     enable_resource_load = True  # 是否启用资源加载
-    communication_protocol = "websocket"  # 通信协议
     log_level = "DEBUG"  # 日志级别：TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL
+    port = 8002  # 管理端 HTTP/Web API 与主微前端端口
+    disable_browser = False  # 只禁止自动打开浏览器，不停止管理端服务
 
 # WebSocket配置
 class WSConfig:
@@ -70,6 +72,21 @@ class WSConfig:
 # HTTP配置
 class HTTPConfig:
     remote_addr = "https://leap-lab.bohrium.com/api/v1"  # 远程服务器地址
+
+# Host/Slave 组网控制通道；hostlink backend 也承载设备动作、JSON Topic、状态和物料树同步
+class HostLinkConfig:
+    enable = True
+    host = ""  # Slave 的 HostNode IP；推荐用 --host-node-ip 覆盖
+    port = 7302
+    bind = "0.0.0.0"
+    advertise_ip = ""  # Host 多网卡时显式填写 Slave 可达 IP
+    connect_timeout = 5.0  # 单次 TCP 连接 / 握手超时
+    host_wait_timeout = 120.0  # Slave 等 Host 端口可连、等 Host 启动就绪的上限（秒）
+    ros_domain_id = ""  # Host 下发的 ROS_DOMAIN_ID
+    ros_discovery_range = ""
+    ros_static_peers = ""
+    ros_discovery_server = ""  # 空=微后端托管；外部 host:port；off=禁用
+    ros_discovery_port = 0  # 0=复用 HostLink 数字端口（TCP/UDP）
 
 # ROS配置
 class ROSConfig:
@@ -107,10 +124,11 @@ class ROSConfig:
 | `ak` / `sk`       | `--ak` / `--sk`     | **安全考虑**：避免敏感信息泄露       |
 | `working_dir`     | `--working_dir`     | **灵活性**：不同环境可能使用不同目录 |
 | `is_host_mode`    | `--is_slave`        | **运行模式**：由启动场景决定，不固定 |
+| HostNode 地址     | `--host-node-ip`    | **组网目标**：Slave 按部署指定 Host IP |
+| ROS2 domain       | `--ros-domain-id`   | **网络隔离**：由 Host 统一发布给 Slave |
 | `slave_no_host`   | `--slave_no_host`   | **运行模式**：从站特殊配置，按需使用 |
-| `upload_registry` | `--upload_registry` | **临时操作**：仅首次启动或更新时需要 |
 | `vis_2d_enable`   | `--2d_vis`          | **调试功能**：按需临时启用           |
-| `remote_addr`     | `--addr`            | **环境切换**：测试/生产环境快速切换  |
+| `remote_addr`     | `--address`         | **环境切换**：测试/生产环境快速切换  |
 
 **推荐用法示例：**
 
@@ -119,13 +137,13 @@ class ROSConfig:
 unilab --ak your_ak --sk your_sk -g graph.json
 
 # 测试环境
-unilab --addr test --ak your_ak --sk your_sk -g graph.json
+unilab --address test --ak your_ak --sk your_sk -g graph.json
 
 # 从站模式
 unilab --is_slave --ak your_ak --sk your_sk
 
-# 首次启动上传注册表
-unilab --ak your_ak --sk your_sk -g graph.json --upload_registry
+# 使用本地组态图启动
+unilab --ak your_ak --sk your_sk -g graph.json
 ```
 
 ### 适合在配置文件中配置的参数
@@ -168,23 +186,50 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 | `BasicConfig` | `ak`              | `--ak`              | 实验室访问密钥                   |
 | `BasicConfig` | `sk`              | `--sk`              | 实验室私钥                       |
 | `BasicConfig` | `working_dir`     | `--working_dir`     | 工作目录路径                     |
+| `BasicConfig` | `server_database_root` | `--server_database_root` | 四个数据库所在目录，默认工作目录下的 `database/` |
 | `BasicConfig` | `is_host_mode`    | `--is_slave`        | 主站模式（参数为从站模式，取反） |
 | `BasicConfig` | `slave_no_host`   | `--slave_no_host`   | 从站模式下跳过等待主机服务       |
-| `BasicConfig` | `upload_registry` | `--upload_registry` | 启动时上传注册表信息             |
 | `BasicConfig` | `vis_2d_enable`   | `--2d_vis`          | 启用 2D 可视化                   |
-| `HTTPConfig`  | `remote_addr`     | `--addr`            | 远程服务地址                     |
+| `HTTPConfig`  | `remote_addr`     | `--address`         | 统一服务地址（`--addr` 为别名）  |
+| `HostLinkConfig` | `host`         | `--host-node-ip`    | Slave 连接的 HostNode IP/端口    |
+| `HostLinkConfig` | `port`         | `--hostlink-port`   | HostLink TCP 端口，默认 7302      |
+| `HostLinkConfig` | `bind`         | `--hostlink-bind`   | Host 监听地址                     |
+| `HostLinkConfig` | `advertise_ip` | `--hostlink-advertise-ip` | Host 多网卡发布地址          |
+| `HostLinkConfig` | `enable`       | `--disable-hostlink` | 禁用 HostLink                    |
+| `HostLinkConfig` | `heartbeat_interval` | `--hostlink-heartbeat-interval` | Slave 心跳周期        |
+| `HostLinkConfig` | `heartbeat_timeout` | `--hostlink-heartbeat-timeout` | Host 离线判定时间       |
+| `HostLinkConfig` | `connect_timeout` | `--hostlink-connect-timeout` | 单次 TCP 连接/握手超时     |
+| `HostLinkConfig` | `host_wait_timeout` | `--hostlink-host-wait-timeout` | Slave 等 Host 的上限（默认 120 秒）：启动时退避重连、Host 启动中请求的重试 |
+| `HostLinkConfig` | `request_timeout` | `--hostlink-request-timeout` | 控制请求/设备 RPC 超时      |
+| `HostLinkConfig` | `ros_domain_id`| `--ros-domain-id`   | Host 发布或 Slave 本地兜底 domain |
+| `HostLinkConfig` | `ros_discovery_range` | `--ros-discovery-range` | ROS 自动发现范围       |
+| `HostLinkConfig` | `ros_static_peers` | `--ros-static-peers` | 分号分隔的静态对端          |
+| `HostLinkConfig` | `ros_discovery_server` | `--ros-discovery-server` | 空=微后端托管；外部 Fast DDS Server；off=禁用 |
+| `HostLinkConfig` | `ros_discovery_port` | `--ros-discovery-port` | 托管 Fast DDS Server 的 UDP 端口；0=复用 HostLink 数字端口 |
+| `HostLinkConfig` | `ros_assist_apply` | `--no-ros-assist` | ROS2 Slave 不应用 Host 下发的 ROS 环境 |
 
 ### 特殊命令行参数
 
 除了直接覆盖配置项的参数外，还有一些特殊的命令行参数：
 
-| 参数                | 说明                                 |
-| ------------------- | ------------------------------------ |
-| `--config`          | 指定配置文件路径                     |
-| `--port`            | Web 服务端口（不影响配置文件）       |
-| `--disable_browser` | 禁用自动打开浏览器（不影响配置文件） |
-| `--visual`          | 可视化工具选择（不影响配置文件）     |
-| `--skip_env_check`  | 跳过环境检查（不影响配置文件）       |
+| 参数 | 说明 |
+| --- | --- |
+| `--config` | 指定配置文件路径 |
+| `--port-management` / `--port_management` | 管理端 HTTP/Web API 与主微前端端口，默认 `8002`；`--port` 是兼容缩写 |
+| `--hostlink-port` | HostLink TCP 端口，默认 `7302`，与管理端口独立 |
+| `--disable-browser` / `--disable_browser` | 只禁用启动时自动打开浏览器，管理端 HTTP/Web 服务仍会启动 |
+| `--visual` | 可视化工具选择（不影响配置文件） |
+| `--skip_env_check` | 跳过环境检查（不影响配置文件） |
+
+`--port-management` 最终覆盖 `BasicConfig.port`。主前端和 API 客户端都连接该
+端口；即使设置 `--disable-browser`，该端口仍会监听。浏览器参数不影响
+HostLink 的 `7302/TCP`。
+
+默认 `unilab` 的调度权威与 `--role backend` 用的都是这一个设置（默认 `8002`）；没给 `--address` 的
+Host 缺省也连本机这个端口。用 `--address` 接入权威的顶层 Host 自己同样监听 `--port`（默认也是 `8002`），
+与 `--role backend` 在同一台机器上时给其中一个换端口。原来 `--role backend` 专用的
+`HTTPConfig.backend_port`（默认 `8081`）已删除：旧配置文件或环境变量 `UNILABOS_HTTPCONFIG_BACKEND_PORT`
+里还写着时，值被忽略，启动时打印一条警告（两处都写了也只打一次）；需要别的端口时改用 `--port` 或 `BasicConfig.port`。
 
 ### 命令行覆盖使用示例
 
@@ -193,21 +238,18 @@ Uni-Lab 允许通过命令行参数覆盖配置文件中的设置，提供更灵
 unilab --ak "new_access_key" --sk "new_secret_key" -g graph.json
 
 # 覆盖服务器地址
-unilab --ak ak --sk sk --addr "https://custom.server.com/api/v1" -g graph.json
+unilab --ak ak --sk sk --address "https://custom.server.com/api/v1" -g graph.json
 
 # 启用从站模式并跳过等待主机
 unilab --is_slave --slave_no_host --ak ak --sk sk
 
-# 启用上传注册表和2D可视化
-unilab --upload_registry --2d_vis --ak ak --sk sk -g graph.json
-
 # 组合使用多个覆盖参数
-unilab --ak "key" --sk "secret" --addr "test" --upload_registry --2d_vis -g graph.json
+unilab --ak "key" --sk "secret" --address "test" --2d_vis -g graph.json
 ```
 
 ### 预设环境地址
 
-`--addr` 参数支持以下预设值，会自动转换为对应的完整 URL：
+`--address` 参数支持以下预设值，会自动转换为对应的完整 URL；`--addr` 是兼容别名：
 
 - `test` → `https://leap-lab.test.bohrium.com/api/v1`
 - `uat` → `https://leap-lab.uat.bohrium.com/api/v1`
@@ -228,12 +270,115 @@ unilab --ak "key" --sk "secret" --addr "test" --upload_registry --2d_vis -g grap
 | `config_path`            | str  | `""`          | 配置文件路径，自动设置                     |
 | `is_host_mode`           | bool | `True`        | 是否为主站模式                             |
 | `slave_no_host`          | bool | `False`       | 从站模式下是否跳过等待主机服务             |
-| `upload_registry`        | bool | `False`       | 启动时是否上传注册表信息                   |
 | `machine_name`           | str  | `"undefined"` | 机器名称，自动从 hostname 获取（不可配置） |
+| `machine_id`             | str  | `""`          | 本机身份，判断调度权威、Host、Slave 是否同一台机器（注册表自动接受的规则 B）；留空取操作系统机器标识的摘要，同一宿主机上的多个容器要算同一台时填同一个值 |
 | `vis_2d_enable`          | bool | `False`       | 是否启用 2D 可视化                         |
 | `enable_resource_load`   | bool | `True`        | 是否启用资源加载                           |
-| `communication_protocol` | str  | `"websocket"` | 通信协议，固定为 websocket                 |
 | `log_level`              | str  | `"DEBUG"`     | 日志级别                                   |
+| `frontend_event_retention_seconds` | int | `86400` | 前端失效通知保留时长目标（秒） |
+| `frontend_event_max_count` | int | `10000` | 前端失效通知保留条数目标 |
+| `frontend_event_cleanup_interval_seconds` | int | `60` | 保留清理检查间隔（秒） |
+| `frontend_event_cleanup_batch_size` | int | `1000` | 每个清理事务最多删除条数 |
+| `server_database_root`   | str  | `""`          | 四个数据库所在目录，留空为工作目录下的 `database/`，见下文「数据库位置」 |
+| `scheduler_grant_policy` | str  | `"auto"`      | 调度锁授予策略：`auto`（有原生库用原生，否则 Python FIFO）/ `python` / `native` |
+| `scheduler_grant_library` | str | `""`          | 原生授予策略库路径；留空时查 `UNILABOS_SCHEDULER_GRANT_LIBRARY`、`<working_dir>/native/` |
+| `scheduler_max_in_flight_jobs` | int | `100` | 全局在途作业（已派发、尚未落终态，含待人工确认 / 待核实）上限；超出的作业排队，有作业结束后按先后放行 |
+| `scheduler_max_active_tasks` | int | `500` | 全局运行中任务（`running` / `canceling`）上限；超出的任务保持 `pending`，按提交先后启动 |
+| `scheduler_max_tasks_per_workflow` | int | `100` | 同一工作流的运行中任务上限；只让该工作流的后续任务排队 |
+| `cors_allow_origins`     | str  | `"*"`         | 允许跨域访问管理 API 的来源，逗号分隔；`*` 为全部允许 |
+| `database_rebuild_on_mismatch` | bool | `False` | `runtime.db` / `materials.db` 结构不一致且没有迁移路径时，允许把旧库改名备份后重建（默认拒绝启动），见下文「数据库位置」 |
+
+#### 管理 API 鉴权
+
+管理 API（含 V1 工站调用 `POST /api/v1/station/workflow-invocations`）与 Host↔权威控制面（控制 WebSocket
+`/api/v1/ws/schedule`、`GET /edge/commands/{uuid}`、`POST /api/v1/edge/http-responses/{uuid}`）**不鉴权**：
+读写请求都不需要任何凭据，控制 WebSocket 握手也不检查凭据。原来的两种凭据都已取消（2026-11-17）：
+
+- 控制面 token（`X-UniLab-Token`、`<工作目录>/control_token`、`unilab token`）；
+- V1 工站密钥（`Authorization: Bearer <station_api_key>`、`BasicConfig.station_api_key`、`<工作目录>/station_api_key`）。
+
+旧客户端仍带 `X-UniLab-Token` 或 `Authorization` 请求头时直接忽略；旧配置里的 `BasicConfig.control_token` /
+`BasicConfig.station_api_key` 及对应环境变量 `UNILABOS_BASICCONFIG_CONTROL_TOKEN` /
+`UNILABOS_BASICCONFIG_STATION_API_KEY` 静默忽略，旧的 `control_token` / `station_api_key` 文件不再读取。管理端口只应
+暴露给可信网络；`cors_allow_origins` 可收窄允许跨域访问的网页来源。
+
+#### 数据库位置
+
+微后端的四个 SQLite 数据库（`runtime.db`、`materials.db`、`telemetry.db`、`history.db`）
+放在同一个根目录下，按以下优先级确定：
+
+1. 命令行 `--server_database_root <目录>`（也可写 `--server-database-root`）；
+2. 配置文件 `BasicConfig.server_database_root`，或环境变量 `UNILABOS_BASICCONFIG_SERVER_DATABASE_ROOT`；
+3. 默认放在工作目录（`local_config.py` 所在目录，默认 `~/.unilabos`）的 `database/` 子目录，即 `~/.unilabos/database`。
+
+每个工作目录各自一套数据库；需要多套实验室并存时用 `--working_dir` 区分。默认双进程拓扑下，调度权威使用根目录本身，
+Host 子进程使用 `<根目录>/edge`；`--role backend` 使用 `<根目录>/backend`。
+
+旧版本（0.12.x）默认直接放在 `~/.unilabos` 根下。升级后，如果工作目录下还没有数据库而 `~/.unilabos` 根下有，
+会继续使用旧位置并在启动时提示。迁移方法：停止 unilab，把 `runtime.db`、`materials.db`、`telemetry.db`、
+`history.db`（连同 `-wal` / `-shm` 文件）以及 `edge/`、`backend/` 目录移到 `<工作目录>/database/`；
+或者在 `local_config.py` 里把 `server_database_root` 设为固定目录。
+单个数据库文件还可以用 `--runtime_db`、`--materials_db`、`--telemetry_db`、`--history_db` 单独指定。
+
+**从 0.12.x 或 0.13 之前的开发版升级**：0.13 的四个库都以 schema v1 为起点，旧库没有迁移路径。
+`runtime.db`（工作流、任务、注册表）与 `materials.db`（物料）会**拒绝启动并保留旧库原样**，启动报错里写明了库的位置；
+确认旧数据不再需要时，在 `local_config.py` 设 `BasicConfig.database_rebuild_on_mismatch = True`
+（或环境变量 `UNILABOS_BASICCONFIG_DATABASE_REBUILD_ON_MISMATCH=true`），旧库会改名为 `.bak-<时间戳>` 后重建；
+也可以用 `--server_database_root` 换一个新目录。`telemetry.db` 与 `history.db` 不拒绝，自动备份后重建。
+0.13 正式版建立的库，之后升级时走正常迁移：启动先备份为 `<file>.pre-v<N>-<时间戳>.bak` 再迁移。
+
+#### 一个数据库根目录只归一个实例
+
+同一个数据库根目录同一时间只能由一个进程打开。每个要开库的进程在打开任何数据库之前，先独占根目录下的
+锁文件 `unilab.lock`（操作系统级独占锁：Linux / macOS 用 `fcntl`，Windows 用 `msvcrt`）：
+
+| 启动方式 | 独占的根目录 |
+| --- | --- |
+| 默认 `unilab`（调度权威） | `<根目录>` |
+| 权威拉起的 Host 子进程 | `<根目录>/edge` |
+| `--role backend` | `<根目录>/backend` |
+| `--address`（接远端权威的 Host）、`--no-safe-restart`（单进程） | `<根目录>` |
+| `--is_slave`（Slave 把 `-g` 图登记进本机 Graph Authority） | `<根目录>` |
+| 受管设备进程（Host 拉起的 Slave） | `<工作目录>/device_processes/<进程 id>/database` |
+| `--check_mode` | 不打开数据库，不取锁 |
+
+- 锁随进程结束由操作系统释放，包括崩溃、`kill -9`、任务管理器结束进程，不需要手动删除锁文件；
+  锁文件留在目录里不代表被占用，也不要手动删除正在运行的实例的锁文件。
+- 权威与 Host 子进程各持各的锁。Host 子进程安静点重启（退出码 75）后，新拉起的一代等上一代释放
+  （最多 10 秒）再取锁。
+- 第二个实例在打开任何数据库之前就以退出码 73 失败，并说明是谁占着：
+
+  ```text
+  [ERROR] 数据库根目录 /home/lab/.unilabos/database 已被另一个 Uni-Lab-OS 进程占用（pid 12345，调度权威，2026-11-13 09:30:12 启动，命令行 python …/unilabos/app/main.py --port 8002 …）。一个数据库根目录同一时间只能由一个实例使用：请先停止该进程；要并行运行另一个实例，请用 --working_dir 或 --server_database_root 指定另一个目录。锁文件：/home/lab/.unilabos/database/unilab.lock
+  ```
+
+  先确认该 pid 是不是忘了关的 `unilab`。默认拓扑里权威无论怎么结束（含 `kill -9`、崩溃、任务管理器
+  结束进程），Host 子进程都会自行退出并释放 `<根目录>/edge`（见下面的「停止与子进程」），下一次
+  `unilab` 直接就能启动；万一冲突的是 `<根目录>/edge`，说明占用者是另一个实例拉起的 Host（例如
+  手动用同一根目录起的第二套），结束它即可，新权威拉起的 Host 子进程按崩溃退避重试，会自动恢复。
+  要在同一台机器上并行运行第二套实验室或一个 Slave，给它另一个 `--working_dir` 或 `--server_database_root`。
+- 锁只覆盖根目录：用 `--runtime_db` 等把单个库指到根目录之外时，需自行保证不与其他实例共用同一个文件。
+  默认拓扑下这些单库覆盖只作用于调度权威，Host 子进程的四库总在 `<根目录>/edge`。
+- 根目录应放在本地磁盘；网络文件系统上的文件锁不一定可靠。
+
+#### 停止与子进程
+
+- 停止默认的 `unilab`：对调度权威发 SIGTERM、Ctrl+C，或在 Windows 上关闭控制台窗口 / Ctrl+Break，
+  效果相同——权威一收到就请 Host 子进程退出，两边并行收尾（Host 关控制链路、关库、停受管设备进程），
+  权威等 Host 退出后关自己的库，以退出码 0 结束，正常情况下几秒内完成。Host 子进程
+  `CHILD_EXIT_GRACE_S`（30 秒）内仍未退出时被强制结束。
+- 子进程跟随本机父进程：权威拉起的 Host 子进程、Host 拉起的受管设备进程、`--address` 外层薄监督进程
+  拉起的 Host，在父进程无论怎么消失时（含 `kill -9`、崩溃）都会察觉并走自己的有序退出，20 秒内没退完
+  就强制结束，所以不会留下孤儿继续占着端口和数据库根目录。实现上 Linux 用 `PR_SET_PDEATHSIG` 立即通知，
+  Linux / macOS 再轮询父进程是否还在，Windows 等待父进程的进程句柄，并把子进程放进父进程的
+  Job Object（父进程消失时由系统结束）。
+- 只跟随**本机**父进程：`--address` 连远端权威的 Host 与权威之间的网络断开时只是重连，不会退出。
+- 单独对 Host 子进程发 SIGTERM，它同样立即有序退出（退出码 0，权威视为正常结束，不再拉起）；
+  重复的停机信号会被忽略，不会打断正在进行的收尾。
+
+四个数据库的结构版本（`PRAGMA user_version`）在 0.13 发布线上都从 v1 开始。0.13 之前的开发版建的库
+结构版本更高或结构不同，首次启动时会被改名为 `<文件>.bak-<时间戳>`（连同 `-wal` / `-shm`）保留，再按 v1 重建空库；
+确认旧数据不再需要后可以删除这些备份。
 
 #### 日志级别选项
 
@@ -304,8 +449,8 @@ class ROSConfig:
         "control_msgs.msg",       # 控制消息类型
         "control_msgs.action",    # 控制动作类型
         "nav2_msgs.action",       # 导航动作类型
-        "unilabos_msgs.msg",      # UniLab 自定义消息类型
-        "unilabos_msgs.action",   # UniLab 自定义动作类型
+        "unilabos_msgs.msg",      # Uni-Lab-OS 自定义消息类型
+        "unilabos_msgs.action",   # Uni-Lab-OS 自定义动作类型
     ]
 ```
 
@@ -411,7 +556,7 @@ export UNILABOS_HTTPCONFIG_REMOTE_ADDR="https://leap-lab.test.bohrium.com/api/v1
 系统会自动查找并加载配置文件：
 
 ```bash
-# 直接启动，使用默认的 unilabos_data/local_config.py
+# 直接启动，使用默认工作目录 ~/.unilabos 下的 local_config.py
 unilab --ak your_ak --sk your_sk -g graph.json
 ```
 
@@ -496,7 +641,7 @@ export UNILABOS_HTTPCONFIG_REMOTE_ADDR=https://leap-lab.test.bohrium.com/api/v1
 **命令行方式（推荐）：**
 
 ```bash
-unilab --addr test --ak your_ak --sk your_sk -g graph.json
+unilab --address test --ak your_ak --sk your_sk -g graph.json
 ```
 
 ### 场景 4：从站模式配置
@@ -558,10 +703,10 @@ configs/
 
 ```bash
 # 本地开发环境
-unilab --config configs/dev_config.py --addr local --ak ak --sk sk -g graph.json
+unilab --config configs/dev_config.py --address local --ak ak --sk sk -g graph.json
 
 # 测试环境
-unilab --config configs/test_config.py --addr test --ak ak --sk sk --upload_registry -g graph.json
+unilab --config configs/test_config.py --address test --ak ak --sk sk -g graph.json
 
 # 生产环境
 unilab --config configs/prod_config.py --ak "$PROD_AK" --sk "$PROD_SK" -g graph.json
@@ -592,7 +737,6 @@ unilab --config configs/prod_config.py --ak "$PROD_AK" --sk "$PROD_SK" -g graph.
 class BasicConfig:
     # 非敏感配置写在文件中
     is_host_mode = True
-    upload_registry = False
     vis_2d_enable = False
     log_level = "INFO"
 
@@ -607,8 +751,7 @@ class WSConfig:
 unilab --config base_config.py \
        --ak "$AK" \
        --sk "$SK" \
-       --addr "test" \
-       --upload_registry \
+       --address "test" \
        --2d_vis \
        -g graph.json
 ```
@@ -723,4 +866,4 @@ unilab --config base_config.py \
 
 - [工作目录详解](working_directory.md)
 - [启动参数详解](../user_guide/launch.md)
-- [快速安装指南](../user_guide/quick_install_guide.md)
+- [安装指南](../user_guide/installation.md)

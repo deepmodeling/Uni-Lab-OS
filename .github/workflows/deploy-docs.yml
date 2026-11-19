@@ -42,12 +42,14 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
+    env:
+      UNILABOS_DOCS_REQUIRE_ROS: '1'
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           # workflow_run 时使用触发工作流的分支，手动触发时使用输入的分支
-          ref: ${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.branch || github.ref }}
           fetch-depth: 0
 
       - name: Setup Miniforge (with mamba)
@@ -55,32 +57,22 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging,uni-lab
-          channel-priority: flexible
+          python-version: '3.14.10'
+          channels: conda-forge,robostack-jazzy,uni-lab
+          channel-priority: strict
           activate-environment: unilab
           auto-update-conda: false
           show-channel-urls: true
 
-      - name: Install unilabos and dependencies
+      - name: Install native ROS message definitions for complete documentation
         run: |
-          echo "Installing unilabos and dependencies to unilab environment..."
-          echo "Using mamba for faster and more reliable dependency resolution..."
-          mamba install -n unilab --override-channels -c uni-lab -c robostack-staging -c conda-forge uni-lab::unilabos -y
+          mamba install -n unilab --override-channels -c uni-lab -c conda-forge -c robostack-jazzy numpy=2 robostack-jazzy::ros-jazzy-ros-core robostack-jazzy::ros-jazzy-control-msgs robostack-jazzy::ros-jazzy-nav2-msgs uni-lab::ros-jazzy-unilabos-msgs=0.12.1 -y
 
       - name: Install latest unilabos from source
         run: |
-          echo "Uninstalling existing unilabos..."
-          mamba run -n unilab pip uninstall unilabos -y || echo "unilabos not installed via pip"
-          echo "Installing unilabos from source..."
-          mamba run -n unilab pip install .
-          echo "Verifying installation..."
-          mamba run -n unilab pip show unilabos
-
-      - name: Install documentation dependencies
-        run: |
-          echo "Installing documentation build dependencies..."
-          mamba run -n unilab pip install -r docs/requirements.txt
+          mamba run -n unilab python scripts/build_wheel_release.py --dependencies-only
+          mamba run -n unilab pip install --find-links dist/wheel-release/wheelhouse ".[full]"
+          mamba run -n unilab pip check
 
       - name: Setup Pages
         id: pages
@@ -92,17 +84,13 @@ jobs:
       - name: Build Sphinx documentation
         run: |
           cd docs
-          # Clean previous builds
-          rm -rf _build
-          # Build HTML documentation in conda environment
-          mamba run -n unilab python -m sphinx -b html . _build/html -v
+          mamba run -n unilab python -m sphinx -b html . "${{ runner.temp }}/unilab-docs/html" -d "${{ runner.temp }}/unilab-docs/doctrees" -v
 
       - name: Check build results
         run: |
           echo "Documentation build completed, checking output directory:"
-          ls -la docs/_build/html/
-          echo "Checking for index.html:"
-          test -f docs/_build/html/index.html && echo "✓ index.html exists" || echo "✗ index.html missing"
+          test -f "${{ runner.temp }}/unilab-docs/html/index.html"
+          git diff --exit-code -- docs
 
       - name: Upload build artifacts
         uses: actions/upload-pages-artifact@v5
@@ -110,7 +98,7 @@ jobs:
           github.event.workflow_run.head_branch == 'main' ||
           (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_pages == 'true')
         with:
-          path: docs/_build/html
+          path: ${{ runner.temp }}/unilab-docs/html
 
   # Deploy to GitHub Pages
   deploy:

@@ -1,61 +1,33 @@
 name: Multi-Platform Conda Build
 
 on:
-  # 在 CI Check 工作流完成后触发（仅限 main/dev 分支）
-  workflow_run:
-    workflows: ["CI Check"]
-    types:
-      - completed
-    branches: [main, dev]
-  # 支持 tag 推送（不依赖 CI Check）
+  # ROS 消息独立发布，不由默认 Python/HostLink 发布触发。
   push:
-    tags: ['v*']
-  # GitHub Release 发布时自动构建并上传
-  release:
-    types: [published]
+    tags: ['msgs-v*']
   # 手动触发
   workflow_dispatch:
     inputs:
+      source_ref:
+        description: '构建源码分支或完整 SHA；工作流定义仍取所选运行分支'
+        required: true
+        default: 'dev'
+        type: string
       platforms:
         description: '选择构建平台 (逗号分隔): linux-64, osx-64, osx-arm64, win-64'
         required: false
         default: 'osx-arm64'
+      ros_distros:
+        description: '选择 ROS 2 发行版 (逗号分隔): jazzy, humble'
+        required: false
+        default: 'jazzy,humble'
       upload_to_anaconda:
         description: '是否上传到Anaconda.org'
         required: false
         default: false
         type: boolean
-      skip_ci_check:
-        description: '跳过等待 CI Check (手动触发时可选)'
-        required: false
-        default: false
-        type: boolean
 
 jobs:
-  # 等待 CI Check 完成的 job (仅用于 workflow_run 触发)
-  wait-for-ci:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_run'
-    outputs:
-      should_continue: ${{ steps.check.outputs.should_continue }}
-    steps:
-      - name: Check CI status
-        id: check
-        run: |
-          if [[ "${{ github.event.workflow_run.conclusion }}" == "success" ]]; then
-            echo "should_continue=true" >> $GITHUB_OUTPUT
-            echo "CI Check passed, proceeding with build"
-          else
-            echo "should_continue=false" >> $GITHUB_OUTPUT
-            echo "CI Check did not succeed (status: ${{ github.event.workflow_run.conclusion }}), skipping build"
-          fi
-
   build:
-    needs: [wait-for-ci]
-    # 运行条件：workflow_run 触发且 CI 成功，或者其他触发方式
-    if: |
-      always() &&
-      (needs.wait-for-ci.result == 'skipped' || needs.wait-for-ci.outputs.should_continue == 'true')
     strategy:
       fail-fast: false
       matrix:
@@ -63,15 +35,47 @@ jobs:
           - os: ubuntu-latest
             platform: linux-64
             env_file: unilabos-linux-64.yaml
+            ros_distro: jazzy
+            ros_channel: robostack-jazzy
+            recipe: msgs
           - os: macos-15-intel # Intel x86_64
             platform: osx-64
             env_file: unilabos-osx-64.yaml
+            ros_distro: jazzy
+            ros_channel: robostack-jazzy
+            recipe: msgs
           - os: macos-latest # ARM64
             platform: osx-arm64
             env_file: unilabos-osx-arm64.yaml
-          - os: windows-latest
+            ros_distro: jazzy
+            ros_channel: robostack-jazzy
+            recipe: msgs
+          - os: windows-2022
             platform: win-64
             env_file: unilabos-win64.yaml
+            ros_distro: jazzy
+            ros_channel: robostack-jazzy
+            recipe: msgs
+          - os: ubuntu-latest
+            platform: linux-64
+            ros_distro: humble
+            ros_channel: robostack-humble
+            recipe: msgs-humble
+          - os: macos-15-intel
+            platform: osx-64
+            ros_distro: humble
+            ros_channel: robostack-humble
+            recipe: msgs-humble
+          - os: macos-latest
+            platform: osx-arm64
+            ros_distro: humble
+            ros_channel: robostack-humble
+            recipe: msgs-humble
+          - os: windows-2022
+            platform: win-64
+            ros_distro: humble
+            ros_channel: robostack-humble
+            recipe: msgs-humble
 
     runs-on: ${{ matrix.os }}
 
@@ -82,8 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # 如果是 workflow_run 触发，使用触发 CI Check 的 commit
-          ref: ${{ github.event.workflow_run.head_sha || github.event.release.tag_name || github.ref }}
+          ref: ${{ inputs.source_ref || github.ref }}
           fetch-depth: 0
 
       - name: Check if platform should be built
@@ -91,9 +94,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [[ -z "${{ github.event.inputs.platforms }}" ]]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event.inputs.platforms }}" == *"${{ matrix.platform }}"* ]]; then
+          elif [[ ( -z "${{ github.event.inputs.platforms }}" || "${{ github.event.inputs.platforms }}" == *"${{ matrix.platform }}"* ) && ( -z "${{ github.event.inputs.ros_distros }}" || "${{ github.event.inputs.ros_distros }}" == *"${{ matrix.ros_distro }}"* ) ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
@@ -105,8 +106,8 @@ jobs:
         with:
           miniforge-version: latest
           use-mamba: true
-          python-version: '3.11.14'
-          channels: conda-forge,robostack-staging
+          python-version: '3.14.10'
+          channels: conda-forge,${{ matrix.ros_channel }}
           channel-priority: strict
           activate-environment: build-env
           auto-update-conda: false
@@ -123,6 +124,10 @@ jobs:
           echo "CONDA_NO_PLUGINS=true" >> "$GITHUB_ENV"
           echo "PYTHONUTF8=1" >> "$GITHUB_ENV"
           echo "PYTHONIOENCODING=utf-8" >> "$GITHUB_ENV"
+          # anaconda-client 1.13+ 把 `anaconda` 入口迁移到插件化的 anaconda-cli-base，
+          # 新版顶层移除了 `--version`，且会改变 `anaconda upload` 的命名空间。
+          # 强制使用独立(standalone)CLI 以恢复完全向后兼容的行为(--version 与 upload 均可用)。
+          echo "ANACONDA_CLIENT_FORCE_STANDALONE=1" >> "$GITHUB_ENV"
 
       - name: Show environment info
         if: steps.should_build.outputs.should_build == 'true'
@@ -130,14 +135,16 @@ jobs:
           conda info
           conda list -n build-env | grep -E "(rattler-build|anaconda-client)"
           conda run -n build-env rattler-build --version
-          conda run -n build-env anaconda --version
+          # 用 binstar_client 模块入口查看版本，无论 anaconda CLI 处于 standalone 还是 plugin 模式都可用
+          conda run -n build-env python -m binstar_client.scripts.cli --version
           echo "Platform: ${{ matrix.platform }}"
           echo "OS: ${{ matrix.os }}"
+          echo "ROS distro: ${{ matrix.ros_distro }}"
 
       - name: Build conda package
         if: steps.should_build.outputs.should_build == 'true'
         run: |
-          conda run -n build-env rattler-build build -r ./recipes/msgs/recipe.yaml --target-platform ${{ matrix.platform }} -c robostack -c robostack-staging -c conda-forge
+          conda run -n build-env rattler-build build -r ./recipes/${{ matrix.recipe }}/recipe.yaml --target-platform ${{ matrix.platform }} -c conda-forge -c ${{ matrix.ros_channel }}
 
       - name: List built packages
         if: steps.should_build.outputs.should_build == 'true'
@@ -161,16 +168,15 @@ jobs:
         if: steps.should_build.outputs.should_build == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: conda-package-${{ matrix.platform }}
+          name: conda-package-${{ matrix.ros_distro }}-${{ matrix.platform }}
           path: conda-packages-temp
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
       - name: Upload to Anaconda.org (unilab organization)
         if: |
           steps.should_build.outputs.should_build == 'true' &&
           (
-            github.event_name == 'release' ||
             startsWith(github.ref, 'refs/tags/') ||
             github.event.inputs.upload_to_anaconda == 'true'
           )
@@ -179,3 +185,27 @@ jobs:
             echo "Uploading $package to unilab organization..."
             conda run -n build-env anaconda -t ${{ secrets.ANACONDA_API_TOKEN }} upload --user uni-lab --force "$package"
           done
+
+      # 只在真实构建/上传成功后记录源码；下游不使用 workflow_run 的默认分支 SHA。
+      - name: Record successful source provenance
+        id: source
+        if: steps.should_build.outputs.should_build == 'true'
+        env:
+          PUBLISHED: ${{ startsWith(github.ref, 'refs/tags/') || inputs.upload_to_anaconda == true }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          state=tested
+          if [[ "$PUBLISHED" == "true" ]]; then state=published; fi
+          printf '%s\n' "$sha" > source-sha.txt
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "Built $sha (${{ matrix.ros_distro }}/${{ matrix.platform }}, $state)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload successful source provenance
+        if: steps.should_build.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: msgs-source-${{ steps.source.outputs.state }}-${{ steps.source.outputs.sha }}-${{ matrix.ros_distro }}-${{ matrix.platform }}
+          path: source-sha.txt
+          if-no-files-found: error
+          retention-days: 30

@@ -1,18 +1,2 @@
-# Sphinx文档构建依赖
-sphinx>=7.0.0
-sphinx-rtd-theme>=2.0.0
-myst-parser>=2.0.0
-sphinxcontrib-mermaid
-
-# 用于支持Jupyter notebook文档
-myst-nb>=1.0.0
-
-# 用于代码复制按钮
-sphinx-copybutton>=0.5.0
-
-# 用于自动摘要生成
-sphinx-autobuild>=2024.2.4
-
-# 用于PDF导出 (rinohtype方案，纯Python无需LaTeX)
-rinohtype>=0.5.4
-sphinx-simplepdf>=1.6.0
+# 与 unilabos[full] 使用同一份依赖，不维护第二套版本。
+-r ../unilabos/utils/requirements-docs.txt

@@ -48,7 +48,7 @@ from unilabos.registry.decorators import device, topic_config, not_action
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 
 try:
-    from unilabos.ros.nodes.presets.workstation import ROS2WorkstationNode
+    from unilabos.backend.ros2.presets.workstation import ROS2WorkstationNode
 except ImportError:
     ROS2WorkstationNode = None
 
@@ -129,7 +129,7 @@ class MyWorkstation(WorkstationBase):
         heater.set_temperature(80)
 ```
 
-> 参考实现：`unilabos/devices/workstation/bioyond_studio/reaction_station/reaction_station.py` 中通过 `self._ros_node.sub_devices.get(reactor_id)` 获取子反应器实例并更新数据。
+> 参考实现：Bioyond 驱动包的反应站（原 `unilabos/devices/workstation/bioyond_studio/reaction_station/reaction_station.py`）中通过 `self._ros_node.sub_devices.get(reactor_id)` 获取子反应器实例并更新数据。
 
 ---
 
@@ -141,13 +141,13 @@ class MyWorkstation(WorkstationBase):
 
 `ROS2WorkstationNode` 初始化时分两轮遍历子设备（`workstation.py`）：
 
-**第一轮 — 初始化所有子设备**：按 `children` 顺序调用 `initialize_device()`，通信设备（`serial_` / `io_` 开头的 id）优先完成初始化，创建 `serial.Serial()` 实例。其他子设备此时 `self.hardware_interface = "serial_pump"`（字符串）。
+**第一轮 — 初始化所有子设备**：按子设备在图 `nodes` 数组中的出现顺序调用 `initialize_device()`，通信设备（`serial_` / `io_` 开头的 id）优先完成初始化，创建 `serial.Serial()` 实例。其他子设备此时 `self.hardware_interface = "serial_pump"`（字符串）。
 
 **第二轮 — 代理替换**：遍历所有已初始化的子设备，读取子设备的 `_hardware_interface` 配置：
 
 ```
 hardware_interface = d.ros_node_instance._hardware_interface
-# → {"name": "hardware_interface", "read": "send_command", "write": "send_command"}
+# → {"name": "hardware_interface", "read": "read_data", "write": "send_command", "extra_info": []}
 ```
 
 1. 取 `name` 字段对应的属性值：`name_value = getattr(driver, hardware_interface["name"])`
@@ -159,7 +159,7 @@ hardware_interface = d.ros_node_instance._hardware_interface
 
 - **通信设备 id 必须与子设备 config 中填的字符串完全一致**（如 `"serial_pump"`）
 - **通信设备 id 必须以 `serial_` 或 `io_` 开头**（否则第一轮不会被识别为通信设备）
-- **通信设备必须在 `children` 列表中排在最前面**，确保先初始化
+- **通信设备节点必须在图 `nodes` 数组中排在其他子设备之前**，确保先初始化
 
 ### HardwareInterface 参数说明
 
@@ -167,62 +167,147 @@ hardware_interface = d.ros_node_instance._hardware_interface
 from unilabos.registry.decorators import HardwareInterface
 
 HardwareInterface(
-    name="hardware_interface",   # __init__ 中接收通信实例的属性名
-    read="send_command",         # 通信设备上暴露的读方法名
-    write="send_command",        # 通信设备上暴露的写方法名
-    extra_info=["list_ports"],   # 可选：额外暴露的方法
+    name="hardware_interface",   # 【属性名】存放"目标通信设备 id"的属性名
+    read="read_data",            # 【方法名】本设备"读"原语方法名
+    write="send_command",        # 【方法名】本设备"写"原语方法名
+    extra_info=["slave_id"],     # 【属性名列表】随每次读写注入给通信设备的属性（见示例 3）
 )
 ```
 
-**`name` 字段的含义**：对应设备类 `__init__` 中，用于保存通信实例的**属性名**。系统据此知道要替换哪个属性。大部分设备直接用 `"hardware_interface"`，也可以自定义（如 `"io_device_port"`）。
+务必分清 **属性名** 与 **方法名**：
 
-### 示例 1：泵（name="hardware_interface"）
+| 字段 | 是什么 | 作用 |
+|------|--------|------|
+| `name` | **属性名** | 系统读 `getattr(self, name)` 的"值"判断该设备要连哪个通信设备（`None`=自己是端点；字符串=指向某通信设备 id） |
+| `read` / `write` | **方法名** | 指定读/写两个原语方法的名字 |
+| `extra_info` | **属性名列表** | 转发读写时，从使用方实例读取这些属性的值，按 `属性名=值` 作为关键字参数注入给通信设备的读写函数 |
+
+#### 默认值：方法名用约定名时可整段省略
+
+不在 `@device` 写 `hardware_interface` 时，系统使用默认值（见 `unilabos/backend/ros2/initialize_device.py`）：
+
+```python
+{"name": "hardware_interface", "write": "send_command", "read": "read_data", "extra_info": []}
+```
+
+因此：**只要读写方法就叫 `send_command` / `read_data`，并用 `self.hardware_interface` 存目标 id，就完全不用写 `hardware_interface=`。** 仅当方法名不同（如 `tx`/`rx`、`read_io_coil`/`write_io_coil`）时才需显式声明。
+
+#### 两类角色对照
+
+| | `name` 指向的属性值 | `read`/`write` | `__init__` 里要做 |
+|---|---|---|---|
+| **通信端点**（id 以 `serial_`/`io_` 开头） | `None` | 必须对应**真实 IO** 方法（或用默认名省略声明） | `self.hardware_interface = None`，保证自己不被反向代理 |
+| **使用方** | `"<通信设备 id>"`（字符串） | 指定**自身要被替换**的两个方法名 | `self.hardware_interface = "<通信设备 id>"`，并提供读写占位实现 |
+
+> 通信端点的 `name` 值对外无意义（没有任何代码读它），它只决定"自己会不会被当成使用方"。所以通信端点推荐直接省略 `hardware_interface=`，只 `self.hardware_interface = None` 即可。
+
+#### 运行时替换机制（代理本身不带额外内容）
+
+`ROS2WorkstationNode` 第二轮对使用方执行 `setattr` 替换（`workstation.py: _setup_hardware_proxy`）：
+
+- 使用方自身的 `read`/`write` 方法被替换成**转发闭包**，闭包内部调用**通信设备实例**的对应方法；
+- 替换上去的是普通函数，**不绑定使用方的 self**——闭包捕获的是通信设备的绑定方法，所以方法内部 `self` 始终是通信设备。因此读写共享的是**通信设备那一份状态**；
+- 转发时**参数原样透传**，只额外注入 `extra_info` 声明的关键字参数（调用方显式传的同名参数优先级更高）。
+
+### 示例 1：泵（方法名用默认名，可省略 hardware_interface）
+
+```python
+from unilabos.registry.decorators import device
+
+@device(id="my_pump", category=["pump_and_valve"])
+class MyPump:
+    def __init__(self, port=None, address="1", **kwargs):
+        self.hardware_interface = port  # 图文件 config 里填 "port": "serial_pump"
+        self.address = address
+
+    def send_command(self, command: str):   # 默认 write 名（被代理后实际转发到 serial 的 send_command）
+        ...
+
+    def read_data(self):                     # 默认 read 名
+        ...
+```
+
+### 示例 2：电磁阀（自定义属性名 + 自定义方法名，需显式声明）
 
 ```python
 from unilabos.registry.decorators import device, HardwareInterface
 
 @device(
-    id="my_pump",
-    category=["pump_and_valve"],
-    hardware_interface=HardwareInterface(
-        name="hardware_interface",
-        read="send_command",
-        write="send_command",
-    ),
-)
-class MyPump:
-    def __init__(self, port=None, address="1", **kwargs):
-        # name="hardware_interface" → 系统替换 self.hardware_interface
-        self.hardware_interface = port  # 初始为字符串 "serial_pump"，启动后被替换为 Serial 实例
-        self.address = address
-
-    def send_command(self, command: str):
-        full_command = f"/{self.address}{command}\r\n"
-        self.hardware_interface.write(bytearray(full_command, "ascii"))
-        return self.hardware_interface.read_until(b"\n")
-```
-
-### 示例 2：电磁阀（name="io_device_port"，自定义属性名）
-
-```python
-@device(
     id="solenoid_valve",
     category=["pump_and_valve"],
     hardware_interface=HardwareInterface(
-        name="io_device_port",       # 自定义属性名 → 系统替换 self.io_device_port
+        name="io_device_port",       # 自定义属性名 → self.io_device_port
         read="read_io_coil",
         write="write_io_coil",
     ),
 )
 class SolenoidValve:
     def __init__(self, io_device_port: str = None, **kwargs):
-        # name="io_device_port" → 图文件 config 中用 "io_device_port": "io_board_1"
-        self.io_device_port = io_device_port  # 初始为字符串，系统替换为 Modbus 实例
+        # 图文件 config 中用 "io_device_port": "io_board_1"
+        self.io_device_port = io_device_port
+    def read_io_coil(self): ...
+    def write_io_coil(self, coil, value): ...
 ```
+
+### 示例 3：Modbus 从站 id（extra_info 注入每设备固有参数）
+
+多个 Modbus 设备共享同一条总线，但各自 `slave_id` 不同。用 `extra_info` 声明要随读写带过去的属性，系统转发时会自动以 `slave_id=<本设备的值>` 注入给总线读写函数（值在**每次调用时**实时读取）：
+
+```python
+from unilabos.registry.decorators import device, HardwareInterface, action, not_action
+
+# 使用方：声明 extra_info=["slave_id"]，并在实例上保存 slave_id
+@device(
+    id="modbus_sensor",
+    category=["sensor"],
+    hardware_interface=HardwareInterface(
+        name="hardware_interface",
+        read="read_io_coil",
+        write="write_io_coil",
+        extra_info=["slave_id"],          # ← 关键：把 self.slave_id 随读写注入给总线
+    ),
+)
+class ModbusSensor:
+    def __init__(self, port="io_modbus_bus", slave_id=3, **kwargs):
+        self.hardware_interface = port    # 指向通信端点 id（io_ 开头）
+        self.slave_id = slave_id          # ← 会被注入给总线读写
+    @not_action
+    def read_io_coil(self, coil): ...     # 占位，运行时被替换为总线实现(自动带上 slave_id)
+    @not_action
+    def write_io_coil(self, coil, value): ...
+    @action(description="写一个线圈再读回")
+    def probe(self, coil: int = 0, value: int = 1):
+        self.write_io_coil(coil, value)   # 实际 → bus.write_io_coil(coil, value, slave_id=self.slave_id)
+        return self.read_io_coil(coil)    # 实际 → bus.read_io_coil(coil, slave_id=self.slave_id)
+
+# 通信端点：用了非默认方法名 → 必须显式声明 hardware_interface（否则代理会回退到
+# 默认名 send_command/read_data 而报 AttributeError）。读写函数还要能接收 slave_id。
+@device(
+    id="io_modbus_bus",
+    category=["communication_devices"],
+    hardware_interface=HardwareInterface(
+        name="hardware_interface",
+        read="read_io_coil",
+        write="write_io_coil",
+    ),
+)
+class ModbusBus:
+    def __init__(self, **kwargs):
+        self.hardware_interface = None     # 端点自身不被代理
+    def write_io_coil(self, coil, value, slave_id=None): ...  # 收到 slave_id=3
+    def read_io_coil(self, coil, slave_id=None): ...
+```
+
+要点：
+- `extra_info` 写的是**属性名**（`"slave_id"`），不是方法名；
+- 以 `属性名=值` 作为**关键字参数**注入，故通信端点读写函数签名要带 `slave_id=...`；
+- **通信端点用非默认方法名时必须显式声明 `hardware_interface`**（指向真实读写方法名），否则代理回退到默认名 `send_command`/`read_data` 会报 `AttributeError`；框架会打印清晰错误并跳过该绑定而非崩整站，但需补声明后才生效；
+- 通信端点也可声明 `extra_info`（与使用方取并集），但值始终从**使用方实例**读取；
+- 完整可运行示例见 `device_package_workstation_demo`（`mock_modbus_bus.py` + `modbus_sensor.py`）。
 
 ### Serial 通信设备（class="serial"）
 
-`serial` 是 Uni-Lab-OS 内置的通信代理设备，代码位于 `unilabos/ros/nodes/presets/serial_node.py`：
+`serial` 是 Uni-Lab-OS 内置的通信代理设备，代码位于 `unilabos/backend/ros2/presets/serial_node.py`：
 
 ```python
 from serial import Serial, SerialException
@@ -271,7 +356,7 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 
 ### 图文件配置
 
-**通信设备必须在 `children` 列表中排在最前面**，确保先于其他子设备初始化：
+层级只由子节点的 `parent` 表达（不写 `children`）；**通信设备节点必须在 `nodes` 数组中排在其他子设备之前**，确保先于其他子设备初始化：
 
 ```json
 {
@@ -279,7 +364,6 @@ class ROS2SerialNode(BaseROS2DeviceNode):
     {
       "id": "my_station",
       "class": "workstation",
-      "children": ["serial_pump", "pump_1", "pump_2"],
       "config": { "protocol_type": ["PumpTransferProtocol"] }
     },
     {
@@ -318,6 +402,8 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 }
 ```
 
+> **代理绑定与 `links` 无关**：`hardware_interface` 代理只依据"子设备 config 中指向通信设备 id 的字符串值"（如 `"port": "serial_pump"`）建立，不读取 `links`。`links` 仅用于资源拓扑展示，可按需省略——例如 `device_package_workstation_demo` 的图文件 `links` 就是空的。
+
 ### 通信协议速查
 
 | 协议                 | config 参数                    | 依赖包     | 通信设备 class             |
@@ -328,7 +414,7 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 | TCP Socket           | `host`, `port`                 | stdlib     | 自定义                     |
 | HTTP API             | `url`, `token`                 | `requests` | `device_comms/rpc.py`      |
 
-参考实现：`unilabos/test/experiments/Grignard_flow_batchreact_single_pumpvalve.json`
+参考实现：README 列出的 [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo)（`hardware_interface` 代理：多个子设备共享串口 / Modbus 通信设备）
 
 ---
 
@@ -347,7 +433,7 @@ class ROS2SerialNode(BaseROS2DeviceNode):
 ```json
 "config": {
     "deck": {
-        "_resource_type": "unilabos.devices.liquid_handling.prcxi.prcxi:PRCXI9300Deck",
+        "_resource_type": "prcxi_driver_pkg.prcxi:PRCXI9300Deck",
         "_resource_child_name": "PRCXI_Deck"
     }
 }
@@ -388,7 +474,7 @@ def __init__(self, config=None, deck=None, protocol_type=None, **kwargs):
 
 #### Deck 节点（图文件中）
 
-Deck 节点作为设备的 `children` 之一，`parent` 指向设备 id：
+Deck 节点通过 `parent` 挂到设备下（层级只由 `parent` 表达，不写 `children`）：
 
 ```json
 {
@@ -396,7 +482,6 @@ Deck 节点作为设备的 `children` 之一，`parent` 指向设备 id：
     "parent": "PRCXI",
     "type": "deck",
     "class": "",
-    "children": [],
     "config": {
         "type": "PRCXI9300Deck",
         "size_x": 542, "size_y": 374, "size_z": 0,
@@ -408,12 +493,12 @@ Deck 节点作为设备的 `children` 之一，`parent` 指向设备 id：
 ```
 
 - `config` 中的字段会传入 Deck 类的 `__init__`（因此 `__init__` 必须能接受所有 `serialize()` 输出的字段）
-- `children` 初始为空时，由同步器或手动初始化填充
+- Deck 上的物料是 `parent` 指向 Deck 的独立节点；图中不列时由同步器或手动初始化填充
 - `config.type` 填 Deck 类名
 
 ### 2. Deck 为空时自行初始化
 
-如果 Deck 节点的 `children` 为空，工作站需在 `post_init` 或首次同步时自行初始化内容：
+如果图中没有挂在 Deck 下的物料节点，工作站需在 `post_init` 或首次同步时自行初始化内容：
 
 ```python
 @not_action
@@ -447,8 +532,8 @@ class MyResourceSynchronizer(ResourceSynchronizer):
         return True
 
     def sync_to_external(self, resource) -> bool:
-        """将 UniLab 侧物料变更同步到外部系统"""
-        # 以 UniLab 为准：将 PLR 资源转为外部格式并推送
+        """将 Uni-Lab-OS 侧物料变更同步到外部系统"""
+        # 以 Uni-Lab-OS 为准：将 PLR 资源转为外部格式并推送
         external_format = self._convert_to_external(resource)
         return self._push_to_external(external_format)
 
@@ -460,7 +545,7 @@ class MyResourceSynchronizer(ResourceSynchronizer):
 同步策略取决于业务场景：
 
 - **以外部工站为准**：从外部 API 查询物料数据，反向创建对应的 PLR 资源实例放到 Deck 上
-- **以 UniLab 为准**：UniLab 侧的物料变更通过 `sync_to_external` 推送到外部系统
+- **以 Uni-Lab-OS 为准**：Uni-Lab-OS 侧的物料变更通过 `sync_to_external` 推送到外部系统
 
 在工作站 `post_init` 中初始化同步器：
 
@@ -521,7 +606,7 @@ class MyPlate(Plate):
 
 子物料（Bottle、Plate、TipRack 等）放到 Deck 上后，系统会自动将其同步到前端的 Deck 视图。只需保证资源类正确实现了 `serialize()` / `serialize_state()` 和反序列化即可。
 
-### 6. 图文件配置（参考 prcxi_9320_slim.json）
+### 6. 图文件配置（参考 PRCXI 驱动包的示例图）
 
 ```json
 {
@@ -544,7 +629,6 @@ class MyPlate(Plate):
       "parent": "my_station",
       "type": "deck",
       "class": "",
-      "children": [],
       "config": {
         "type": "MyLabDeck",
         "size_x": 542,
@@ -573,7 +657,7 @@ Deck 节点要点：
 
 - `config.type` 填 Deck 类名（如 `"PRCXI9300Deck"`）
 - `config.sites` 完整列出所有 site（从 Deck 类的 `serialize()` 输出获取）
-- `children` 初始为空（由同步器或手动初始化填充）
+- Deck 上的物料以 `parent` 指向 Deck 的独立节点表达；图中不列时由同步器或手动初始化填充
 - 设备节点 `config.deck._resource_type` 指向 Deck 类的完整模块路径
 
 ---
@@ -584,8 +668,8 @@ Deck 节点要点：
 
 子设备约束：
 
-- 图文件中 `parent` 指向工作站 ID
-- 在工作站 `children` 数组中列出
+- 图文件中 `parent` 指向工作站 ID（工作站节点不写 `children`）
+- 初始化顺序即子设备在 `nodes` 数组中的出现顺序
 
 ---
 
@@ -607,10 +691,10 @@ Deck 节点要点：
 
 ```bash
 # 模块可导入
-python -c "from unilabos.devices.workstation.<name>.<name> import <ClassName>"
+python -c "from <package_name>.<name> import <ClassName>"
 
-# 启动测试（AST 自动扫描）
-unilab -g <graph>.json
+# 启动测试（AST 自动扫描，挂载驱动包）
+unilab -g <graph>.json --devices <包目录>
 ```
 
 ---
@@ -623,4 +707,4 @@ unilab -g <graph>.json
 | Bioyond 反应站 | `BioyondReactionStation`      | 外部系统 |
 | 纽扣电池组装   | `CoinCellAssemblyWorkstation` | 硬件控制 |
 
-参考路径：`unilabos/devices/workstation/` 目录下各工作站实现。
+`WorkstationBase` / `ProtocolNode` 在主仓库 `unilabos/devices/workstation/workstation_base.py`；Bioyond、纽扣电池等具体工作站已迁到各自的外部驱动包。新工作站同样写进驱动包（见 `create-device-package` skill），不要加到主仓库 `unilabos/devices/`。

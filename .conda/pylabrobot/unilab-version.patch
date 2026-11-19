@@ -1,0 +1,6 @@
+diff --git a/pylabrobot/version.txt b/pylabrobot/version.txt
+--- a/pylabrobot/version.txt
++++ b/pylabrobot/version.txt
+@@ -1 +1 @@
+-1.0.0b1
++1.0.0b1+unilabos.6a8f3dda7642.ot10

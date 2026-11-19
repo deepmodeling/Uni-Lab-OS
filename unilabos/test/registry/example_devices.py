@@ -4,7 +4,7 @@
 
 import asyncio
 from typing import Dict, Any, List
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
 
 
 class AnyDevice:

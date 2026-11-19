@@ -174,13 +174,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -198,13 +200,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -217,13 +221,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 500.0
             },
             "data": {
@@ -236,13 +242,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -255,13 +263,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 900,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -274,13 +284,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 200,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -298,13 +310,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 300,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -322,13 +336,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 400,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -346,13 +362,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 100,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -365,13 +383,15 @@
             "children": [],
             "parent": "FilterProtocolTestStation",
             "type": "container",
-            "class": null,
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 600,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {

@@ -41,31 +41,23 @@ def get_readme_content(platform: str, branch: str) -> str:
     is_windows = platform == "win-64"
 
     if is_windows:
-        archive_ext = "zip"
         install_script = "install_unilab.bat"
         platform_instructions = """Windows:
   1. Extract the downloaded ZIP file
   2. Double-click install_unilab.bat (or run in cmd)
   3. Follow the prompts"""
     else:
-        archive_ext = "tar.gz"
         install_script = "install_unilab.sh"
-        platform_name = {"linux-64": "linux-64", "osx-64": "osx-64", "osx-arm64": "osx-arm64"}.get(platform, platform)
-        platform_instructions = f"""macOS/Linux:
-  1. Download and extract unilab-pack-{platform_name}.tar.gz
+        platform_instructions = """macOS/Linux:
+  1. Extract the downloaded GitHub artifact ZIP
   2. Run: bash install_unilab.sh
-  3. Follow the prompts
-  
-  Alternative (if downloaded from GitHub Actions):
-  1. Extract the artifact ZIP file
-  2. Extract unilab-pack-{platform_name}.tar.gz inside
-  3. Run: bash install_unilab.sh"""
+  3. Follow the prompts"""
 
     # Generate README content
-    readme = f"""UniLabOS Conda-Pack Environment
+    readme = f"""Uni-Lab-OS Conda-Pack Environment
 ================================
 
-This package contains a pre-built UniLabOS environment.
+This package contains a pre-built ROS-free Uni-Lab-OS HostLink environment.
 
 Installation Instructions:
 --------------------------
@@ -76,20 +68,25 @@ The installation script will:
   - Automatically find your conda installation
   - Extract the environment to conda's envs/unilab directory
   - Run conda-unpack to finalize setup
+  - Verify the entry point and dependencies without downloading packages
+
+Existing environments are never overwritten. To choose a new name:
+  {('install_unilab.bat' if is_windows else 'bash install_unilab.sh')} unilab-hostlink
 
 After installation:
   conda activate unilab
-  python verify_installation.py
+  python verify_installation.py --assert-no-ros
+  unilab --disable-browser
 
 Verification:
 -------------
 
 The verify_installation.py script will check:
-  - Python version (3.11.14)
-  - ROS2 rclpy installation
-  - UniLabOS installation and dependencies
+  - Python version (3.14 / cp314)
+  - HostLink runtime and microbackend (no ROS installation required)
+  - Uni-Lab-OS installation and dependencies
 
-If all checks pass, you're ready to use UniLabOS!
+If all checks pass, you're ready to use Uni-Lab-OS!
 
 Package Contents:
 -----------------
@@ -97,14 +94,15 @@ Package Contents:
   - {install_script} (automatic installation script)
   - unilab-env-{platform}.tar.gz (packed conda environment)
   - verify_installation.py (environment verification tool)
+  - source.zip (source snapshot and Markdown documentation at the SHA below)
   - README.txt (this file)
 
 Build Information:
 ------------------
 
-  Branch:   {branch}
+  Source:   {branch}
   Platform: {platform}
-  Python:   3.11.14
+  Python:   3.14 (cp314)
   Date:     {build_date}
 
 Troubleshooting:
@@ -116,7 +114,7 @@ If installation fails:
      Check: conda --version
 
   2. Verify you have sufficient disk space
-     Required: ~5-10 GB after extraction
+     Leave sufficient space for the extracted Python environment and experiment data
 
   3. Check installation permissions
      You need write access to conda's envs directory
@@ -124,14 +122,13 @@ If installation fails:
   4. For detailed logs, run the install script from terminal
 
 For more help:
-  - Documentation: docs/user_guide/installation.md
-  - Quick Start: QUICK_START_CONDA_PACK.md
+  - Documentation: docs/user_guide/installation.md in source.zip
   - Issues: https://github.com/deepmodeling/Uni-Lab-OS/issues
 
 License:
 --------
 
-UniLabOS is licensed under GPL-3.0-only.
+Uni-Lab-OS is licensed under GPL-3.0-only.
 See LICENSE file for details.
 
 Repository: https://github.com/deepmodeling/Uni-Lab-OS

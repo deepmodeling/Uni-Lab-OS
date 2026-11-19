@@ -1,9 +1,11 @@
 workstation:
+  available_sites: []
   category:
   - work_station
   class:
     action_value_mappings:
       AGVTransferProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           from_repo: from_repo
@@ -271,6 +273,7 @@ workstation:
           type: object
         type: AGVTransfer
       AddProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           amount: amount
@@ -501,6 +504,7 @@ workstation:
           type: object
         type: Add
       AdjustPHProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           ph_value: ph_value
@@ -688,6 +692,7 @@ workstation:
           type: object
         type: AdjustPH
       CentrifugeProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           speed: speed
@@ -881,6 +886,7 @@ workstation:
           type: object
         type: Centrifuge
       CleanProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           repeats: repeats
@@ -1103,6 +1109,7 @@ workstation:
           type: object
         type: Clean
       CleanVesselProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           repeats: repeats
@@ -1297,6 +1304,7 @@ workstation:
           type: object
         type: CleanVessel
       DissolveProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           amount: amount
@@ -1516,6 +1524,7 @@ workstation:
           type: object
         type: Dissolve
       DryProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           compound: compound
@@ -1687,6 +1696,7 @@ workstation:
           type: object
         type: Dry
       EvacuateAndRefillProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           gas: gas
@@ -1886,6 +1896,7 @@ workstation:
           type: object
         type: EvacuateAndRefill
       EvaporateProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           pressure: pressure
@@ -2112,6 +2123,7 @@ workstation:
           type: object
         type: Evaporate
       FilterProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           continue_heatchill: continue_heatchill
@@ -2436,6 +2448,7 @@ workstation:
           type: object
         type: Filter
       FilterThroughProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           eluting_repeats: eluting_repeats
@@ -2865,6 +2878,7 @@ workstation:
           type: object
         type: FilterThrough
       HeatChillProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           pressure: pressure
@@ -3068,6 +3082,7 @@ workstation:
           type: object
         type: HeatChill
       HeatChillStartProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           purpose: purpose
@@ -3239,6 +3254,7 @@ workstation:
           type: object
         type: HeatChillStart
       HeatChillStopProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           vessel: vessel
@@ -3400,6 +3416,7 @@ workstation:
           type: object
         type: HeatChillStop
       HydrogenateProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           temp: temp
@@ -3575,6 +3592,7 @@ workstation:
           type: object
         type: Hydrogenate
       PumpTransferProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           amount: amount
@@ -3962,6 +3980,7 @@ workstation:
           type: object
         type: PumpTransfer
       RecrystallizeProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           ratio: ratio
@@ -4155,6 +4174,7 @@ workstation:
           type: object
         type: Recrystallize
       ResetHandlingProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           solvent: solvent
@@ -4318,6 +4338,7 @@ workstation:
           type: object
         type: ResetHandling
       RunColumnProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           column: column
@@ -4631,6 +4652,7 @@ workstation:
           type: object
         type: RunColumn
       SeparateProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           from_vessel: from_vessel
@@ -5532,6 +5554,7 @@ workstation:
           type: object
         type: Separate
       StartStirProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           purpose: purpose
@@ -5713,6 +5736,7 @@ workstation:
           type: object
         type: StartStir
       StirProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           event: event
@@ -5904,6 +5928,7 @@ workstation:
           type: object
         type: Stir
       StopStirProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           vessel: vessel
@@ -6071,6 +6096,7 @@ workstation:
           type: object
         type: StopStir
       TransferProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           amount: amount
@@ -6194,6 +6220,7 @@ workstation:
           type: object
         type: Transfer
       WashSolidProtocol:
+        error_policy: {}
         feedback: {}
         goal:
           filtrate_vessel: filtrate_vessel
@@ -6535,12 +6562,18 @@ workstation:
           type: object
         type: WashSolid
     module: unilabos.devices.workstation.workstation_base:ProtocolNode
+    status_policies: {}
     status_types: {}
+    supported_backends:
+    - hostlink
+    - ros2
     type: python
   config_info: []
   description: Workstation
+  display_name: 通用工作站
   handles: []
   icon: ''
+  init_param_enforce: {}
   init_param_schema:
     config:
       properties:

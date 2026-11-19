@@ -8,9 +8,9 @@ description: Operate Uni-Lab host node via REST API — create resources, test l
 ## 设备信息
 
 - **device_id**: `host_node`
-- **Python 源码**: `unilabos/ros/nodes/presets/host_node.py`
+- **Python 源码**: `unilabos/backend/ros2/presets/host_node.py`
 - **设备类**: `HostNode`
-- **动作数**: 4（`create_resource`, `test_latency`, `auto-test_resource`, `manual_confirm`）
+- **动作数**: 4（`create_resource`, `test_latency`, `test_resource`, `manual_confirm`）
 
 ## 前置条件（缺一不可）
 
@@ -142,7 +142,7 @@ curl -s -X POST "$BASE/api/v1/lab/mcp/run/action" \
 |--------|-------------|
 | `test_latency` | `UniLabJsonCommand` |
 | `create_resource` | `ResourceCreateFromOuterEasy` |
-| `auto-test_resource` | `UniLabJsonCommand` |
+| `test_resource` | `UniLabJsonCommand` |
 | `manual_confirm` | `UniLabJsonCommand` |
 
 ### 10. 查询任务状态
@@ -218,10 +218,10 @@ curl -s -X PUT "$BASE/api/v1/edge/material/node" \
 | `create_resource` | `device_id` | DeviceSlot   | 归属设备                       |
 | `create_resource` | `parent`    | NodeSlot     | 父节点路径                     |
 | `create_resource` | `class_name`| ClassSlot    | 资源类名如 `"container"`       |
-| `auto-test_resource` | `resource`  | ResourceSlot | 单个测试物料                |
-| `auto-test_resource` | `resources` | ResourceSlot | 测试物料数组                |
-| `auto-test_resource` | `device`    | DeviceSlot   | 测试设备                    |
-| `auto-test_resource` | `devices`   | DeviceSlot   | 测试设备                    |
+| `test_resource` | `resource`  | ResourceSlot | 单个测试物料                |
+| `test_resource` | `resources` | ResourceSlot | 测试物料数组                |
+| `test_resource` | `device`    | DeviceSlot   | 测试设备                    |
+| `test_resource` | `devices`   | DeviceSlot   | 测试设备                    |
 
 ---
 

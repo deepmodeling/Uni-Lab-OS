@@ -4,9 +4,57 @@
 用于将各种框架的日志（如Uvicorn、FastAPI等）统一适配到ilabos的日志系统
 """
 
+import asyncio
 import logging
 
-from unilabos.utils.log import debug, info, warning, error, critical
+from unilabos.utils.log import debug, info, warning, error, critical, trace
+
+# 只读请求：前端轮询与 CORS 预检，每秒数十条，不该出现在控制台
+_READ_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+# 进程间管道：Host 把每条被代理请求的结果 POST 回权威，与前端轮询同频，不是业务写操作
+_PLUMBING_PATH_PREFIXES = ("/api/v1/edge/http-responses/",)
+# uvicorn 经 websockets 库打出的连接生命周期消息（INFO 级）
+_WS_LIFECYCLE_MESSAGES = frozenset({"connection open", "connection closed"})
+
+
+def _is_cancelled_task_report(record: logging.LogRecord) -> bool:
+    """uvicorn 的 "Exception in ASGI application" 若只是 CancelledError，就是停机取消。"""
+
+    exc_info = record.exc_info
+    if not exc_info or not isinstance(exc_info, tuple):
+        return False
+    return isinstance(exc_info[1], asyncio.CancelledError)
+
+
+def access_log_func(record: logging.LogRecord):
+    """按 HTTP 方法与状态码给 uvicorn 访问日志分级。
+
+    写请求（提交工作流、保存图、人工确认……）才是值得在控制台看到的事件，保持 INFO；
+    只读请求与进程间管道请求降到 TRACE（仍全量落盘）；4xx 说明客户端用错了接口；
+    只读请求的 503 是"服务尚未就绪 / Host 未接入"期间前端轮询的约定降级响应（EdgeProxy
+    只在状态切换时记一条），按 TRACE；写请求的 503（如物料转移同步失败）与其余 5xx
+    才是服务端故障。
+    uvicorn 访问日志的 args 固定为 ``(client, method, path, http_version, status)``，
+    形状不符时按 INFO 原样输出。
+    """
+    args = record.args
+    if not isinstance(args, tuple) or len(args) != 5:
+        return info
+    method, path, status = args[1], args[2], args[4]
+    if not isinstance(status, int):
+        return info
+    read_only = str(method).upper() in _READ_METHODS
+    if status == 503 and read_only:
+        return trace
+    if status >= 500:
+        return warning
+    if status >= 400:
+        return debug
+    if read_only:
+        return trace
+    if str(path).startswith(_PLUMBING_PATH_PREFIXES):
+        return trace
+    return info
 
 
 class UvicornLogAdapter:
@@ -56,8 +104,20 @@ class UvicornToIlabosHandler(logging.Handler):
     def emit(self, record):
         """发送日志记录到ilabos日志系统"""
         try:
-            msg = self.format(record)
-            log_func = self.level_map.get(record.levelno, info)
+            if _is_cancelled_task_report(record):
+                # 停机时 uvicorn 取消仍在途的请求任务（SSE 长连接）：不是应用异常，
+                # 三层 CancelledError 堆栈没有任何诊断价值，压成一行
+                msg = f"{record.getMessage()}（请求任务在停机时被取消，已忽略）"
+                log_func = debug
+            else:
+                msg = self.format(record)
+                if record.name == "uvicorn.access":
+                    log_func = access_log_func(record)
+                elif record.getMessage() in _WS_LIFECYCLE_MESSAGES:
+                    # websockets 协议层的 open/closed：同一事件已有 "[accepted]" 与业务层"已连接"两条
+                    log_func = debug
+                else:
+                    log_func = self.level_map.get(record.levelno, info)
             # 根据日志源添加前缀
             if record.name.startswith("uvicorn"):
                 prefix = "[Uvicorn] "
@@ -78,7 +138,8 @@ def setup_fastapi_logging():
     # 配置Uvicorn的日志
     UvicornLogAdapter.configure()
 
-    # 返回适合uvicorn.run()的日志配置
+    # 返回适合uvicorn.run()的日志配置。着色交给我们自己的 ColoredFormatter，
+    # uvicorn 若再染色，进程号/URL 里的 ANSI 转义会原样写进日志文件。
     return {
         "version": 1,
         "disable_existing_loggers": False,
@@ -86,7 +147,7 @@ def setup_fastapi_logging():
             "default": {
                 "()": "uvicorn.logging.DefaultFormatter",
                 "fmt": "%(message)s",
-                "use_colors": True,
+                "use_colors": False,
             },
         },
         "handlers": {

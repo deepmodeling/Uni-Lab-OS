@@ -1,0 +1,20 @@
+actions:
+  setup:
+    goal: {}
+    feedback: {}
+    result:
+      success: success
+    schema:
+      type: object
+      properties:
+        goal:
+          type: object
+        result:
+          type: object
+          properties:
+            success:
+              type: boolean
+    goal_default: {}
+    handles: {}
+status_types:
+  initialized: bool

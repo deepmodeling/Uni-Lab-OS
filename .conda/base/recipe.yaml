@@ -1,62 +1,75 @@
-# unilabos: Production package (depends on unilabos-env + pip unilabos)
-# For production deployment
-
+# 默认发行包，不依赖 ROS。
 package:
   name: unilabos
-  version: 0.11.3
-
+  version: 0.13.0rc1
 source:
   path: ../../unilabos
   target_directory: unilabos
-
 build:
+  number: 0
+  string: py314_0
   python:
     entry_points:
-    - unilab = unilabos.app.main:main
+      - unilab = unilabos.app.main:main
   script:
-  - set PIP_NO_INDEX=
-  - if: win
-    then:
-    - copy %RECIPE_DIR%\..\..\MANIFEST.in %SRC_DIR%
-    - copy %RECIPE_DIR%\..\..\setup.cfg %SRC_DIR%
-    - copy %RECIPE_DIR%\..\..\setup.py %SRC_DIR%
-    - pip install %SRC_DIR%
-  - if: unix
-    then:
-    - cp $RECIPE_DIR/../../MANIFEST.in $SRC_DIR
-    - cp $RECIPE_DIR/../../setup.cfg $SRC_DIR
-    - cp $RECIPE_DIR/../../setup.py $SRC_DIR
-    - pip install $SRC_DIR
-
+    - if: win
+      then:
+        - copy %RECIPE_DIR%\..\..\MANIFEST.in %SRC_DIR%
+        - copy %RECIPE_DIR%\..\..\setup.py %SRC_DIR%
+        - copy %RECIPE_DIR%\..\..\pyproject.toml %SRC_DIR%
+      else:
+        - cp $RECIPE_DIR/../../MANIFEST.in $SRC_DIR
+        - cp $RECIPE_DIR/../../setup.py $SRC_DIR
+        - cp $RECIPE_DIR/../../pyproject.toml $SRC_DIR
+    - python -m pip install . --no-deps --no-build-isolation
 requirements:
   host:
-  - python ==3.11.14
-  - pip
-  - setuptools
-  - zstd
-  - zstandard
+    - python ==3.14.10
+    - python_abi 3.14.* *_cp314
+    - pip
+    - setuptools >=68
+    - wheel
   run:
-  - zstd
-  - zstandard
-  - networkx
-  - typing_extensions
-  - websockets
-  - pint
-  - fastapi
-  - jinja2
-  - requests
-  - uvicorn
-  - if: not osx
-    then:
-    - opcua
-  - pyserial
-  - pandas
-  - pymodbus
-  - matplotlib
-  - pylibftdi
-  - uni-lab::unilabos-env ==0.11.3
-
+    - python >=3.14,<3.15
+    - python_abi 3.14.* *_cp314
+    - pip
+    - setuptools >=68
+    - packaging >=24
+    - pyyaml >=6
+    - pydantic >=2.11,<3
+    - numpy >=2,<3
+    - networkx >=3.2
+    - typing_extensions >=4.12
+    - websockets >=12
+    - msgcenterpy ==0.1.8
+    - orjson >=3.11
+    - pint >=0.23
+    - fastapi >=0.115
+    - sqlmodel >=0.0.39,<0.1
+    - jinja2 >=3.1.4
+    - requests >=2.32
+    - httpx >=0.27
+    - mcp >=1.30,<2
+    # 规范动作合同与 MCP 共用的 JSON Schema 校验器，与 requirements.txt 一致。
+    - jsonschema >=4.18,<5
+    - uvicorn >=0.30
+    - pyserial >=3.5
+    - pymodbus >=3.6.9,<4,!=3.8.0,!=3.8.1
+    - pylabrobot-unilab ==1.0.0b1+unilabos.6a8f3dda7642.ot10 py314_0
+    - opentrons-shared-data ==10.1.0+unilabos.np2.1 py314_np2_1
+tests:
+  - python:
+      imports:
+        - unilabos.app.main
+        - unilabos.server.api.app
+        - unilabos.backend.hostlink.local_runtime
+        - opentrons_shared_data.labware.labware_definition
+      pip_check: true
+  - script:
+      - unilab --help
+      - python -c "import importlib.util; assert importlib.util.find_spec('rclpy') is None"
+      - python -c "import importlib.metadata as m; from opentrons_shared_data.labware import labware_definition as ld; from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat; assert m.version('opentrons-shared-data') == '10.1.0+unilabos.np2.1'; assert ld.trapezoid([1, 2, 3]) == 4; assert corning_96_wellplate_360ul_flat('install_check').num_items == 96"
 about:
   repository: https://github.com/deepmodeling/Uni-Lab-OS
   license: GPL-3.0-only
-  description: "UniLabOS - Production package with minimal ROS2 dependencies"
+  description: UniLabOS HostLink and microbackend (Python 3.14, no ROS required)

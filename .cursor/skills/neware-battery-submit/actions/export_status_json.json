@@ -1,0 +1,30 @@
+{
+  "feedback": {},
+  "goal": {
+    "filepath": "filepath"
+  },
+  "goal_default": {
+    "filepath": "bts_status.json"
+  },
+  "handles": {},
+  "placeholder_keys": {},
+  "result": {},
+  "schema": {
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "filepath": {
+        "default": "bts_status.json",
+        "description": "输出JSON文件路径",
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object",
+    "_unilabos_placeholder_info": {}
+  },
+  "type": "UniLabJsonCommand"
+}

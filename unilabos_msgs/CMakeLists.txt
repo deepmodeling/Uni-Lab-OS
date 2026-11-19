@@ -13,7 +13,12 @@ endif()
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
-  add_compile_options(-include cstdint)
+  # ROS 头文件依赖旧标准库的间接 include；新 libc++ 不再经 codecvt 引入 locale。
+  # 只为 C++ 补齐头文件，SHELL 分组避免 CMake 去重掉第二个 -include。
+  add_compile_options(
+    "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include cstdint>"
+    "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include locale>"
+  )
 endif()
 
 # find dependencies

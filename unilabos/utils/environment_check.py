@@ -1,18 +1,22 @@
 """
 环境检查模块
-用于检查并自动安装 UniLabOS 运行所需的 Python 包
+用于检查并自动安装 Uni-Lab-OS 运行所需的 Python 包
 """
 
 import argparse
 import importlib
 import locale
+import os
+import re
 import shutil
+import site
 import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 from unilabos.utils.banner_print import print_status
+from unilabos.utils.log import logger
 
 
 # ---------------------------------------------------------------------------
@@ -46,6 +50,8 @@ def _has_uv() -> bool:
 
 
 def _install_command(installer: str, package: str, upgrade: bool, is_chinese: bool) -> List[str]:
+    # 配套 wheel 路径只由用户显式指定，不隐式访问未发布的 URL 或更换依赖版本。
+    wheelhouse = os.environ.get("UNILABOS_WHEELHOUSE")
     if installer == "uv":
         # uv >= 0.5 默认要求虚拟环境，对 conda env 会报 "No virtual environment found"。
         # 显式 --python sys.executable 让 uv 把当前解释器（conda/venv/system 都行）
@@ -56,6 +62,8 @@ def _install_command(installer: str, package: str, upgrade: bool, is_chinese: bo
         cmd.append(package)
         if is_chinese:
             cmd.extend(["--index-url", "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"])
+        if wheelhouse:
+            cmd.extend(["--find-links", wheelhouse])
         return cmd
 
     cmd = [sys.executable, "-m", "pip", "install", "--disable-pip-version-check"]
@@ -64,6 +72,8 @@ def _install_command(installer: str, package: str, upgrade: bool, is_chinese: bo
     cmd.append(package)
     if is_chinese:
         cmd.extend(["-i", "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"])
+    if wheelhouse:
+        cmd.extend(["--find-links", wheelhouse])
     return cmd
 
 
@@ -73,6 +83,20 @@ def _installer_candidates() -> List[str]:
         installers.append("uv")
     installers.append("pip")
     return installers
+
+
+def _requirement_candidates(requirement: str, is_chinese: bool) -> List[str]:
+    """PLR 中文镜像只替换下载站点；镜像缺少固定提交时回退原地址，不换分支。"""
+    match = re.fullmatch(
+        r"pylabrobot\s*@\s*https://github\.com/Xuwznln/pylabrobot/archive/([0-9a-f]{40})\.tar\.gz",
+        requirement.strip(),
+    )
+    if not is_chinese or not match:
+        return [requirement]
+    return [
+        f"pylabrobot @ https://gitee.com/xuwznln/pylabrobot/repository/archive/{match[1]}.tar.gz",
+        requirement,
+    ]
 
 
 def _git_url_from_requirement(requirement: str) -> Optional[str]:
@@ -139,26 +163,43 @@ def _install_packages(
         pkg_installed = False
         last_error = "unknown error"
 
-        for installer in installers:
-            cmd = _install_command(installer, pkg, upgrade, is_chinese)
+        attempts = [(source, installer) for source in _requirement_candidates(pkg, is_chinese)
+                    for installer in installers]
+        for source, installer in attempts:
+            cmd = _install_command(installer, source, upgrade, is_chinese)
+            logger.trace(f"[install]{(' [' + label + ']') if label else ''} exec: {' '.join(cmd)}")
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                        errors="replace", timeout=300)
                 if result.returncode == 0:
-                    print_status(f"✓ {pkg} {action_word}成功 (via {installer})", "success")
+                    print_status(f"✓ {source} {action_word}成功 (via {installer})", "success")
+                    logger.trace(
+                        f"[install] ok: {pkg} via {installer} (rc=0)\n"
+                        f"{(result.stdout or '').strip()[-2000:]}"
+                    )
                     pkg_installed = True
                     break
 
                 last_error = result.stderr.strip().split("\n")[-1] if result.stderr else "unknown error"
-                print_status(f"× {pkg} {action_word}失败 (via {installer}): {last_error}", "warning")
+                print_status(f"× {source} {action_word}失败 (via {installer}): {last_error}", "warning")
+                logger.trace(
+                    f"[install] fail: {pkg} via {installer} (rc={result.returncode})\n"
+                    f"STDOUT:\n{(result.stdout or '').strip()[-2000:]}\n"
+                    f"STDERR:\n{(result.stderr or '').strip()[-2000:]}"
+                )
             except subprocess.TimeoutExpired:
                 last_error = "timeout after 300s"
                 print_status(f"× {pkg} {action_word}超时 (via {installer}, 300s)", "warning")
+                logger.trace(f"[install] timeout: {pkg} via {installer} (300s) cmd={' '.join(cmd)}")
             except Exception as e:
                 last_error = str(e)
                 print_status(f"× {pkg} {action_word}异常 (via {installer}): {e}", "warning")
+                logger.trace(f"[install] error: {pkg} via {installer}: {e!r} cmd={' '.join(cmd)}")
 
         if not pkg_installed:
             print_status(f"× {pkg} {action_word}失败: {last_error}", "error")
+            if "+unilabos." in pkg:
+                print_status("此修正版不在 PyPI：请下载配套发行包，或用 --wheelhouse 指定包内 wheelhouse 目录。", "warning")
             _print_manual_git_install_hint(pkg)
             failed.append(pkg)
 
@@ -171,6 +212,59 @@ def _install_packages(
 # ---------------------------------------------------------------------------
 # requirements.txt 安装（可多次调用）
 # ---------------------------------------------------------------------------
+
+def _requirement_import_name(requirement: str) -> str:
+    """从 PEP 508 依赖声明取用于 import 探测的模块名（hyphen→underscore）。
+
+    git+/URL/本地路径无法可靠探测，返回空串，由调用方当作"必须交给安装器"处理。
+    正则只取首段分发名，天然覆盖 ~= != === >= 等各种约束、extras 与环境标记。
+    """
+    s = requirement.strip()
+    if s.startswith(("git+", "http://", "https://", "file:", "-", ".", "/")):
+        return ""
+    match = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)", s)
+    return (match.group(1) if match else "").replace("-", "_")
+
+
+def install_requirements_list(reqs: List[str], label: str = "") -> bool:
+    """
+    检查一组 PEP 508 依赖声明（按 import 名探测缺失）并安装缺失项。
+
+    requirements.txt 与社区包 pyproject [project].dependencies 共用这套缺失检测 + 安装逻辑
+    （uv 优先回退 pip，中文 locale 自动走清华源）。
+
+    Returns:
+        True if all ok, False if any install failed.
+    """
+    reqs = [str(r).strip() for r in (reqs or []) if str(r).strip()]
+    if not reqs:
+        return True
+
+    tag = label or "deps"
+    logger.trace(f"[{tag}] 依赖解析输入 ({len(reqs)}): {reqs}")
+    missing: List[str] = []
+    for req in reqs:
+        pkg_import = _requirement_import_name(req)
+        if not pkg_import:
+            missing.append(req)  # git/URL/本地路径无法探测，始终交给安装器
+            continue
+        try:
+            importlib.import_module(pkg_import)
+        except ImportError:
+            missing.append(req)
+
+    if not missing:
+        print_status(f"[{tag}] ✓ 依赖检查通过 ({len(reqs)} 个包)", "success")
+        logger.trace(f"[{tag}] 全部依赖已满足，无需安装: {reqs}")
+        return True
+
+    print_status(f"[{tag}] 缺失 {len(missing)} 个依赖: {', '.join(missing)}", "warning")
+    logger.trace(f"[{tag}] 待安装缺失依赖 ({len(missing)}): {missing}")
+    ok = _install_packages(missing, label=tag)
+    # 运行时新装的包必须刷新 import 缓存：进程启动时 FileFinder 已缓存各 site-packages
+    importlib.invalidate_caches()
+    return ok
+
 
 def install_requirements_txt(req_path: str | Path, label: str = "") -> bool:
     """
@@ -197,24 +291,7 @@ def install_requirements_txt(req_path: str | Path, label: str = "") -> bool:
             if line and not line.startswith("#") and not line.startswith("-"):
                 reqs.append(line)
 
-    if not reqs:
-        return True
-
-    missing: List[str] = []
-    for req in reqs:
-        pkg_import = req.split(">=")[0].split("==")[0].split("<")[0].split("[")[0].split(">")[0].strip()
-        pkg_import = pkg_import.replace("-", "_")
-        try:
-            importlib.import_module(pkg_import)
-        except ImportError:
-            missing.append(req)
-
-    if not missing:
-        print_status(f"[{tag}] ✓ 依赖检查通过 ({len(reqs)} 个包)", "success")
-        return True
-
-    print_status(f"[{tag}] 缺失 {len(missing)} 个依赖: {', '.join(missing)}", "warning")
-    return _install_packages(missing, label=tag)
+    return install_requirements_list(reqs, label=tag)
 
 
 def check_device_package_requirements(devices_dirs: list[str]) -> bool:
@@ -240,34 +317,29 @@ def check_device_package_requirements(devices_dirs: list[str]) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# UniLabOS 核心环境检查
+# Uni-Lab-OS 核心环境检查
 # ---------------------------------------------------------------------------
 
 class EnvironmentChecker:
     """环境检查器"""
 
     def __init__(self):
-        self.required_packages = {
-            "websockets": "websockets",
-            "msgcenterpy": "msgcenterpy",
-            "orjson": "orjson",
-            "opentrons_shared_data": "opentrons_shared_data",
-            "typing_extensions": "typing_extensions",
-            "crcmod": "crcmod-plus",
-        }
+        self.required_packages = {}
 
-        # 中文 locale 下走 Gitee 镜像，规避 GitHub 拉取失败
-        pylabrobot_url = (
-            "git+https://gitee.com/xuwznln/pylabrobot.git"
-            if _is_chinese_locale()
-            else "git+https://github.com/Xuwznln/pylabrobot.git"
-        )
-        self.special_packages = {"pylabrobot": pylabrobot_url}
+        # 与 wheel 安装共用依赖清单，不能在首次启动时换成另一个可变 PLR 分支。
+        from packaging.requirements import Requirement
 
-        self.version_requirements = {
-            "msgcenterpy": "0.1.8",
-        }
-
+        import_names = {"PyYAML": "yaml", "pyserial": "serial"}
+        self.requirements = {}
+        for line in Path(__file__).with_name("requirements.txt").read_text(encoding="utf-8").splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            requirement = Requirement(line)
+            if requirement.marker and not requirement.marker.evaluate():
+                continue
+            name = import_names.get(requirement.name, requirement.name.replace("-", "_"))
+            self.required_packages[name] = line.strip()
+            self.requirements[name] = requirement
         self.missing_packages: List[tuple] = []
         self.failed_installs: List[tuple] = []
         self.packages_need_upgrade: List[tuple] = []
@@ -279,43 +351,33 @@ class EnvironmentChecker:
         except ImportError:
             return False
 
-    def get_package_version(self, package_name: str) -> str | None:
-        try:
-            module = importlib.import_module(package_name)
-            return getattr(module, "__version__", None)
-        except (ImportError, AttributeError):
-            return None
-
-    def compare_version(self, current: str, required: str) -> bool:
-        try:
-            current_parts = [int(x) for x in current.split(".")]
-            required_parts = [int(x) for x in required.split(".")]
-            max_len = max(len(current_parts), len(required_parts))
-            current_parts.extend([0] * (max_len - len(current_parts)))
-            required_parts.extend([0] * (max_len - len(required_parts)))
-            return current_parts >= required_parts
-        except Exception:
-            return True
-
     def check_all_packages(self) -> bool:
         print_status("开始检查环境依赖...", "info")
+        from importlib.metadata import PackageNotFoundError, version
 
+        self.missing_packages.clear()
+        self.packages_need_upgrade.clear()
+
+        # 先只查分发元数据：依赖尚未齐全时不能 import 留下半初始化的模块，
+        # 否则第一次补装完成后仍可能把同一进程内的旧状态误判成缺包。
         for import_name, pip_name in self.required_packages.items():
-            if not self.check_package_installed(import_name):
+            requirement = self.requirements[import_name]
+            try:
+                current_version = version(requirement.name)
+            except PackageNotFoundError:
                 self.missing_packages.append((import_name, pip_name))
-            elif import_name in self.version_requirements:
-                current_version = self.get_package_version(import_name)
-                required_version = self.version_requirements[import_name]
-                if current_version and not self.compare_version(current_version, required_version):
-                    print_status(
-                        f"{import_name} 版本过低 (当前: {current_version}, 需要: >={required_version})",
-                        "warning",
-                    )
-                    self.packages_need_upgrade.append((import_name, pip_name))
+                continue
+            if not requirement.specifier.contains(current_version, prereleases=True):
+                print_status(
+                    f"{import_name} 版本不匹配 (当前: {current_version}, 需要: {requirement.specifier})",
+                    "warning",
+                )
+                self.packages_need_upgrade.append((import_name, pip_name))
 
-        for package_name, install_url in self.special_packages.items():
-            if not self.check_package_installed(package_name):
-                self.missing_packages.append((package_name, install_url))
+        if not self.missing_packages and not self.packages_need_upgrade:
+            for import_name, pip_name in self.required_packages.items():
+                if not self.check_package_installed(import_name):
+                    self.missing_packages.append((import_name, pip_name))
 
         all_ok = not self.missing_packages and not self.packages_need_upgrade
 
@@ -325,12 +387,15 @@ class EnvironmentChecker:
 
         if self.missing_packages:
             print_status(f"发现 {len(self.missing_packages)} 个缺失的包", "warning")
+            for import_name, pip_name in self.missing_packages:
+                print_status(f"  - {import_name}: {pip_name}", "warning")
         if self.packages_need_upgrade:
             print_status(f"发现 {len(self.packages_need_upgrade)} 个需要升级的包", "warning")
 
         return False
 
     def install_missing_packages(self, auto_install: bool = True) -> bool:
+        self.failed_installs.clear()
         if not self.missing_packages and not self.packages_need_upgrade:
             return True
 
@@ -358,37 +423,14 @@ class EnvironmentChecker:
         return not self.failed_installs
 
     def verify_installation(self) -> bool:
-        if not self.missing_packages and not self.packages_need_upgrade:
-            return True
-
         print_status("验证安装结果...", "info")
-        failed_verification = []
-
-        for import_name, pip_name in self.missing_packages:
-            if not self.check_package_installed(import_name):
-                failed_verification.append((import_name, pip_name))
-
-        for import_name, pip_name in self.packages_need_upgrade:
-            if not self.check_package_installed(import_name):
-                failed_verification.append((import_name, pip_name))
-            elif import_name in self.version_requirements:
-                current_version = self.get_package_version(import_name)
-                required_version = self.version_requirements[import_name]
-                if current_version and not self.compare_version(current_version, required_version):
-                    failed_verification.append((import_name, pip_name))
-                    print_status(
-                        f"  {import_name} 版本仍然过低 (当前: {current_version}, 需要: >={required_version})",
-                        "error",
-                    )
-
-        if failed_verification:
-            print_status(f"有 {len(failed_verification)} 个包验证失败:", "error")
-            for import_name, pip_name in failed_verification:
-                print_status(f"  - {import_name}", "error")
-            return False
-
-        print_status("✓ 所有包验证通过", "success")
-        return True
+        # pip 子进程安装的 pywin32 等依赖通过 .pth 注册额外模块路径。
+        # 仅刷新 FileFinder 缓存不会加载它们，需补一次 site 路径初始化。
+        for directory in site.getsitepackages():
+            site.addsitedir(directory)
+        importlib.invalidate_caches()
+        # 同时重查缺失、版本上下限；不能只判断 import 成功就放过不兼容版本。
+        return self.check_all_packages()
 
 
 def check_environment(auto_install: bool = True, show_details: bool = True) -> bool:
@@ -402,6 +444,18 @@ def check_environment(auto_install: bool = True, show_details: bool = True) -> b
     Returns:
         bool: 环境检查是否通过
     """
+    # 支持只安装 wheel（--no-deps）的显式补装入口：解析清单前先补齐解析器。
+    # 本模块以及 banner/log 模块仅依赖标准库，不要求源码仓库或 scripts 目录。
+    try:
+        import packaging.requirements  # noqa: F401
+    except ImportError:
+        if not auto_install:
+            print_status("缺少 packaging>=24，无法检查依赖清单", "error")
+            return False
+        if not _install_packages(["packaging>=24"], label="bootstrap"):
+            return False
+        importlib.invalidate_caches()
+
     checker = EnvironmentChecker()
 
     if checker.check_all_packages():
@@ -421,11 +475,21 @@ def check_environment(auto_install: bool = True, show_details: bool = True) -> b
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="UniLabOS 环境依赖检查工具")
+    # 此入口也可从只有 wheel 的环境独立运行，不经过 app.main 的终端编码配置。
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(description="Uni-Lab-OS 环境依赖检查工具")
     parser.add_argument("--no-auto-install", action="store_true", help="仅检查环境，不自动安装缺失的包")
     parser.add_argument("--silent", action="store_true", help="静默模式，不显示详细信息")
+    parser.add_argument("--wheelhouse", type=Path, help="配套发行包中的 wheelhouse 目录，用于显式补装依赖")
 
     args = parser.parse_args()
+    if args.wheelhouse:
+        if not args.wheelhouse.is_dir():
+            parser.error("--wheelhouse 必须指向已存在的目录")
+        os.environ["UNILABOS_WHEELHOUSE"] = str(args.wheelhouse.resolve())
 
     auto_install = not args.no_auto_install
     show_details = not args.silent

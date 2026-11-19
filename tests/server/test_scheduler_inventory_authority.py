@@ -1,0 +1,837 @@
+from __future__ import annotations
+
+import threading
+from uuid import uuid4
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from tests.api_envelope import command_result, error_of, ok_data
+from unilabos.client.materials import LocalMaterialsClient, bind_payload
+from unilabos.server.api.materials import install_materials_api
+from unilabos.protocol.materials import InventoryMutation
+from unilabos.protocol.materials import (
+    InventoryLotInbound,
+    InventoryRequirement,
+    InventoryReservationCreate,
+    InventoryReservationTransition,
+    InventoryTaskReservationCreate,
+    MaterialIdentityWrite,
+    MaterialNodeCreate,
+    MaterialTreeCreate,
+    ResourceTemplateWrite,
+)
+from unilabos.server.backend.execution import JobExecutionBackend
+from unilabos.server.backend.incidents import StatusIncidentManager
+from unilabos.server.backend.inventory import (
+    ExecutionInventoryCoordinator,
+    ExecutionInventoryError,
+)
+from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.services.materials import (
+    InsufficientInventoryError,
+    MaterialsService,
+)
+from unilabos.server.services.runtime.workflow.service import WorkflowService
+
+
+def _mutation(operation: str, *, job_uuid: str | None = None) -> InventoryMutation:
+    return InventoryMutation(
+        command_uuid=str(uuid4()),
+        effect_key=operation,
+        operation=operation,
+        actor_type="scheduler",
+        job_uuid=job_uuid,
+    )
+
+
+def _template(service: MaterialsService, template_uuid: str, name: str) -> None:
+    service.put_template(
+        _mutation("put_template"),
+        ResourceTemplateWrite(
+            template_uuid=template_uuid,
+            name=name,
+            display_name=name,
+            resource_type="container",
+            class_name="Container",
+        ),
+    )
+
+
+def _material(service: MaterialsService, template_name: str) -> str:
+    result = service.create_tree(
+        _mutation("create_material_tree"),
+        MaterialTreeCreate(
+            nodes=[
+                MaterialNodeCreate(
+                    client_ref="material",
+                    identity=MaterialIdentityWrite(
+                        resource_id=f"resource-{uuid4()}",
+                        name=f"material-{uuid4()}",
+                        resource_type="container",
+                        class_name="Container",
+                        template_name=template_name,
+                    ),
+                )
+            ]
+        ),
+    )
+    return result.data.nodes[0].material.material_uuid
+
+
+def _inbound(
+    service: MaterialsService,
+    *,
+    lot_uuid: str,
+    quantity: float,
+) -> None:
+    service.inbound_inventory_lot(
+        _mutation("inbound_inventory_lot"),
+        InventoryLotInbound(
+            lot_uuid=lot_uuid,
+            template_uuid="reagent-template",
+            batch_no=lot_uuid,
+            unit="ul",
+            quantity=quantity,
+        ),
+    )
+
+
+def _reservation(
+    service: MaterialsService,
+    *,
+    material_uuid: str,
+    quantity: float = 12,
+    job_uuid: str = "job-1",
+):
+    return service.reserve_inventory(
+        _mutation("reserve_inventory", job_uuid=job_uuid),
+        InventoryReservationCreate(
+            task_uuid="task-1",
+            node_uuid="node-1",
+            job_uuid=job_uuid,
+            scheduler_revision=3,
+            requirements=[
+                InventoryRequirement(
+                    key="plate",
+                    kind="material",
+                    material_uuid=material_uuid,
+                ),
+                InventoryRequirement(
+                    key="solvent",
+                    kind="lot",
+                    template_uuid="reagent-template",
+                    quantity=quantity,
+                    unit="ul",
+                ),
+            ],
+        ),
+    ).data
+
+
+def test_execution_rejects_stale_or_changed_inventory_reservation(
+    tmp_path,
+) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        material_uuid = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=20)
+        reservation = _reservation(
+            service,
+            material_uuid=material_uuid,
+            job_uuid="job-strict",
+        )
+        requirements = [
+            InventoryRequirement(
+                key="plate",
+                kind="material",
+                material_uuid=material_uuid,
+            ).model_dump(mode="json", exclude_none=False),
+            InventoryRequirement(
+                key="solvent",
+                kind="lot",
+                template_uuid="reagent-template",
+                quantity=12,
+                unit="ul",
+            ).model_dump(mode="json", exclude_none=False),
+        ]
+        payload = {
+            "job_id": "job-strict",
+            "task_id": "task-1",
+            "node_id": "node-1",
+            "scheduler_revision": 3,
+            "inventory_requirements": requirements,
+            "inventory_reservation_uuid": reservation.reservation_uuid,
+        }
+        coordinator = ExecutionInventoryCoordinator(client)
+
+        with pytest.raises(
+            ExecutionInventoryError,
+            match="scheduler_revision",
+        ):
+            coordinator.prepare({**payload, "scheduler_revision": 2})
+
+        changed = [dict(item) for item in requirements]
+        changed[1]["quantity"] = 11
+        with pytest.raises(
+            ExecutionInventoryError,
+            match="requirements do not match",
+        ):
+            coordinator.prepare(
+                {**payload, "inventory_requirements": changed}
+            )
+
+        assert coordinator.prepare(payload) == reservation
+    finally:
+        service.close()
+
+
+def test_reserve_and_consume_material_and_lot_atomically(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        material_uuid = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=5)
+        _inbound(service, lot_uuid="lot-b", quantity=10)
+
+        reservation = _reservation(service, material_uuid=material_uuid)
+
+        assert reservation.status == "active"
+        assert service.get_material(material_uuid).material.lifecycle_status == "reserved"
+        assert [
+            (lot.lot_uuid, lot.quantity_available, lot.quantity_reserved)
+            for lot in service.list_inventory_lots()
+        ] == [("lot-a", 0, 5), ("lot-b", 3, 7)]
+
+        consumed = service.consume_inventory_reservation(
+            _mutation("consume_inventory_reservation", job_uuid="job-1"),
+            InventoryReservationTransition(
+                reservation_uuid=reservation.reservation_uuid,
+                reason="action_start",
+            ),
+        ).data
+
+        assert consumed.status == "consumed"
+        assert service.get_material(material_uuid).material.lifecycle_status == "in_use"
+        assert [
+            (lot.lot_uuid, lot.quantity_total, lot.quantity_available, lot.quantity_reserved)
+            for lot in service.list_inventory_lots()
+        ] == [("lot-a", 0, 0, 0), ("lot-b", 3, 3, 0)]
+    finally:
+        service.close()
+
+
+def test_insufficient_reservation_rolls_back_the_complete_set(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        material_uuid = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=5)
+
+        with pytest.raises(InsufficientInventoryError):
+            _reservation(service, material_uuid=material_uuid, quantity=6)
+
+        assert service.get_material(material_uuid).material.lifecycle_status == "active"
+        lot = service.get_inventory_lot("lot-a")
+        assert (lot.quantity_total, lot.quantity_available, lot.quantity_reserved) == (
+            5,
+            5,
+            0,
+        )
+        assert service.list_inventory_reservations() == []
+    finally:
+        service.close()
+
+
+def test_task_batch_reservation_is_all_or_nothing_across_jobs(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        first = _material(service, "plate")
+        second = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=5)
+
+        def request(quantity: float) -> InventoryTaskReservationCreate:
+            return InventoryTaskReservationCreate(
+                task_uuid="task-batch",
+                scheduler_revision=7,
+                reservations=[
+                    InventoryReservationCreate(
+                        task_uuid="task-batch",
+                        node_uuid=f"node-{index}",
+                        job_uuid=f"job-{index}",
+                        scheduler_revision=7,
+                        requirements=[
+                            InventoryRequirement(
+                                key="plate",
+                                kind="material",
+                                material_uuid=material_uuid,
+                            ),
+                            InventoryRequirement(
+                                key="solvent",
+                                kind="lot",
+                                template_uuid="reagent-template",
+                                quantity=quantity,
+                                unit="ul",
+                            ),
+                        ],
+                    )
+                    for index, material_uuid in enumerate((first, second), start=1)
+                ],
+            )
+
+        with pytest.raises(InsufficientInventoryError):
+            service.reserve_task_inventory(
+                _mutation("reserve_task_inventory"),
+                request(3),
+            )
+
+        assert service.list_inventory_reservations(task_uuid="task-batch") == []
+        assert service.get_material(first).material.lifecycle_status == "active"
+        assert service.get_material(second).material.lifecycle_status == "active"
+        assert service.get_inventory_lot("lot-a").quantity_available == 5
+
+        result = service.reserve_task_inventory(
+            _mutation("reserve_task_inventory"),
+            request(2),
+        )
+        assert [item.job_uuid for item in result.data.reservations] == [
+            "job-1",
+            "job-2",
+        ]
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
+    finally:
+        service.close()
+
+
+def test_inventory_http_protocol_uses_the_same_authority_transitions(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        _template(service, "reagent-template", "reagent")
+        inbound = InventoryLotInbound(
+            lot_uuid="lot-http",
+            template_uuid="reagent-template",
+            unit="ul",
+            quantity=8,
+        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/inventory/commands",
+                json=bind_payload(
+                    _mutation("inbound_inventory_lot"), inbound
+                ).model_dump(mode="json", exclude_none=False),
+            )
+            command_result(response)
+
+            request = InventoryReservationCreate(
+                task_uuid="task-http",
+                node_uuid="node-http",
+                job_uuid="job-http",
+                scheduler_revision=1,
+                requirements=[
+                    InventoryRequirement(
+                        key="solvent",
+                        kind="lot",
+                        template_uuid="reagent-template",
+                        quantity=3,
+                        unit="ul",
+                    )
+                ],
+            )
+            response = client.post(
+                "/api/v1/inventory/commands",
+                json=bind_payload(
+                    _mutation("reserve_inventory", job_uuid="job-http"),
+                    request,
+                ).model_dump(mode="json", exclude_none=False),
+            )
+            reservation_uuid = command_result(response)["data"]["reservation_uuid"]
+
+            transition = InventoryReservationTransition(
+                reservation_uuid=reservation_uuid,
+                reason="action_start",
+            )
+            response = client.post(
+                "/api/v1/inventory/commands",
+                json=bind_payload(
+                    _mutation(
+                        "consume_inventory_reservation",
+                        job_uuid="job-http",
+                    ),
+                    transition,
+                ).model_dump(mode="json", exclude_none=False),
+            )
+            assert command_result(response)["data"]["status"] == "consumed"
+            assert ok_data(client.get(
+                "/api/v1/materials/reservations/by-job/job-http"
+            ))["status"] == "consumed"
+            listed = ok_data(client.get("/api/v1/inventory/reservations", params={"task_uuid": "task-http"}))
+            assert [item["reservation_id"] for item in listed["reservations"]] == [reservation_uuid]
+    finally:
+        service.close()
+
+
+class _InventoryAwareAdapter:
+    def __init__(self, service: MaterialsService, material_uuid: str) -> None:
+        self.service = service
+        self.material_uuid = material_uuid
+        self._action_value_mappings = {
+            "device-a": {"use": {"materials_need_lock": ["material"]}}
+        }
+        self.goals = []
+        self.goal_event = threading.Event()
+
+    def send_goal(self, item, **_kwargs) -> None:
+        reservation = self.service.get_inventory_reservation_by_job(item.job_id)
+        assert reservation.status == "consumed"
+        assert self.service.get_inventory_lot("lot-a").quantity_total == 6
+        self.goals.append(item)
+        self.goal_event.set()
+
+    def cancel_goal(self, _job_id: str) -> None:
+        return None
+
+
+class _RecordingAdapter:
+    def __init__(self) -> None:
+        self._action_value_mappings = {}
+        self.goals = []
+        self.goal_event = threading.Event()
+
+    def send_goal(self, item, **_kwargs) -> None:
+        self.goals.append(item)
+        self.goal_event.set()
+
+    def cancel_goal(self, _job_id: str) -> None:
+        return None
+
+
+def test_execution_consumes_scheduler_reservation_before_driver_call(
+    tmp_path,
+) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        material_uuid = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=10)
+        adapter = _InventoryAwareAdapter(service, material_uuid)
+        reservation = _reservation(
+            service,
+            material_uuid=material_uuid,
+            quantity=4,
+            job_uuid="job-execute",
+        )
+        backend = JobExecutionBackend(
+            host_node_getter=lambda: adapter,
+            materials_gateway=client,
+        )
+        backend.start()
+        try:
+            backend.dispatch(
+                {
+                    "job_id": "job-execute",
+                    "task_id": "task-1",
+                    "node_id": "node-1",
+                    "device_id": "device-a",
+                    "action": "use",
+                    "action_type": "NativeAction",
+                    "action_args": {"material": {"uuid": material_uuid}},
+                    "materials_need_lock": ["material"],
+                    "inventory_requirements": [
+                        InventoryRequirement(
+                            key="plate",
+                            kind="material",
+                            material_uuid=material_uuid,
+                        ).model_dump(mode="json", exclude_none=False),
+                        InventoryRequirement(
+                            key="solvent",
+                            kind="lot",
+                            template_uuid="reagent-template",
+                            quantity=4,
+                            unit="ul",
+                        ).model_dump(mode="json", exclude_none=False)
+                    ],
+                    "scheduler_revision": 3,
+                    "inventory_reservation_uuid": reservation.reservation_uuid,
+                }
+            )
+            assert adapter.goal_event.wait(2)
+            assert backend.device_manager.get_job_info("job-execute") is not None
+
+            backend.publish_job_status(
+                {},
+                adapter.goals[0],
+                "success",
+                {"return_value": None},
+            )
+            assert backend.wait_idle()
+            assert backend.device_manager.get_job_info("job-execute") is None
+            assert (
+                service.get_inventory_reservation_by_job("job-execute").status
+                == "consumed"
+            )
+        finally:
+            backend.stop()
+    finally:
+        service.close()
+
+
+def test_failed_action_quarantines_consumed_material_without_refund(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    try:
+        _template(service, "plate-template", "plate")
+        _template(service, "reagent-template", "reagent")
+        material_uuid = _material(service, "plate")
+        _inbound(service, lot_uuid="lot-a", quantity=10)
+        adapter = _InventoryAwareAdapter(service, material_uuid)
+        reservation = _reservation(
+            service,
+            material_uuid=material_uuid,
+            quantity=4,
+            job_uuid="job-failed",
+        )
+        backend = JobExecutionBackend(
+            host_node_getter=lambda: adapter,
+            materials_gateway=client,
+        )
+        backend.start()
+        try:
+            backend.dispatch(
+                {
+                    "job_id": "job-failed",
+                    "task_id": "task-1",
+                    "node_id": "node-1",
+                    "device_id": "device-a",
+                    "action": "use",
+                    "action_args": {"material": {"uuid": material_uuid}},
+                    "materials_need_lock": ["material"],
+                    "inventory_requirements": [
+                        InventoryRequirement(
+                            key="plate",
+                            kind="material",
+                            material_uuid=material_uuid,
+                        ).model_dump(mode="json", exclude_none=False),
+                        InventoryRequirement(
+                            key="solvent",
+                            kind="lot",
+                            template_uuid="reagent-template",
+                            quantity=4,
+                            unit="ul",
+                        ).model_dump(mode="json", exclude_none=False),
+                    ],
+                    "scheduler_revision": 3,
+                    "inventory_reservation_uuid": reservation.reservation_uuid,
+                }
+            )
+            assert adapter.goal_event.wait(2)
+            backend.publish_job_status(
+                {},
+                adapter.goals[0],
+                "failed",
+                {"error": "device failed"},
+            )
+            assert backend.wait_idle()
+
+            reservation = service.get_inventory_reservation_by_job("job-failed")
+            assert reservation.status == "quarantined"
+            assert service.get_material(material_uuid).material.lifecycle_status == (
+                "quarantined"
+            )
+            assert service.get_inventory_lot("lot-a").quantity_total == 6
+            assert backend.device_manager.get_job_info("job-failed") is None
+        finally:
+            backend.stop()
+    finally:
+        service.close()
+
+
+def test_execution_rejects_unreserved_warehouse_requirement(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    adapter = _RecordingAdapter()
+    try:
+        _template(service, "plate-template", "plate")
+        _material(service, "plate")
+        backend = JobExecutionBackend(
+            host_node_getter=lambda: adapter,
+            materials_gateway=client,
+        )
+        backend.start()
+        try:
+            backend.dispatch(
+                {
+                    "job_id": "job-auto-material",
+                    "task_id": "task-auto-material",
+                    "node_id": "node-auto-material",
+                    "device_id": "device-a",
+                    "action": "use",
+                    "action_args": {},
+                    "inventory_requirements": [
+                        InventoryRequirement(
+                            key="plate",
+                            kind="material",
+                            template_uuid="plate-template",
+                        ).model_dump(mode="json", exclude_none=False)
+                    ],
+                }
+            )
+
+            assert backend.wait_idle()
+            assert adapter.goals == []
+            assert service.list_inventory_reservations() == []
+        finally:
+            backend.stop()
+    finally:
+        service.close()
+
+
+def test_status_hold_rejects_and_releases_scheduler_reservation(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    incidents = StatusIncidentManager()
+    try:
+        _template(service, "reagent-template", "reagent")
+        _inbound(service, lot_uuid="lot-a", quantity=5)
+        incident = incidents.observe(
+            "device-held",
+            "mode",
+            "Error",
+            {
+                "normal_values": ["Idle"],
+                "incidents": {"Error": {"hold": True}},
+            },
+        )
+        assert incident is not None
+        assert incidents.is_device_held("device-held")
+
+        requirement = InventoryRequirement(
+            key="solvent",
+            kind="lot",
+            template_uuid="reagent-template",
+            quantity=2,
+            unit="ul",
+        )
+        reservation = service.reserve_inventory(
+            _mutation("reserve_inventory", job_uuid="job-held"),
+            InventoryReservationCreate(
+                task_uuid="task-held",
+                node_uuid="node-held",
+                job_uuid="job-held",
+                scheduler_revision=1,
+                requirements=[requirement],
+            ),
+        ).data
+        backend = JobExecutionBackend(
+            status_incidents=incidents,
+            materials_gateway=client,
+        )
+        backend.start()
+        try:
+            backend.dispatch(
+                {
+                    "job_id": "job-held",
+                    "task_id": "task-held",
+                    "node_id": "node-held",
+                    "device_id": "device-held",
+                    "action": "use",
+                    "action_args": {},
+                    "inventory_requirements": [
+                        requirement.model_dump(mode="json", exclude_none=False)
+                    ],
+                    "scheduler_revision": 1,
+                    "inventory_reservation_uuid": reservation.reservation_uuid,
+                }
+            )
+            assert backend.wait_idle()
+            assert backend.cancel_task("task-held") == []
+            assert service.get_inventory_reservation_by_job("job-held").status == (
+                "released"
+            )
+            lot = service.get_inventory_lot("lot-a")
+            assert (lot.quantity_available, lot.quantity_reserved) == (5, 0)
+        finally:
+            backend.stop()
+    finally:
+        service.close()
+
+
+class _ListenerOnlyBackend:
+    def add_job_finished_listener(self, listener) -> None:
+        self.listener = listener
+
+
+def test_backend_scheduler_reserves_complete_task_before_dispatch(tmp_path) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
+    try:
+        _template(service, "reagent-template", "reagent")
+        _inbound(service, lot_uuid="lot-a", quantity=5)
+        scheduler = BackendScheduler(
+            workflow,
+            _ListenerOnlyBackend(),
+            materials_gateway=client,
+        )
+        requirement = InventoryRequirement(
+            key="solvent",
+            kind="lot",
+            template_uuid="reagent-template",
+            quantity=2,
+            unit="ul",
+        ).model_dump(mode="json", exclude_none=False)
+        # reservation 绑定当前 attempt 的 job uuid（执行器按 job_id 校验），键是节点运行
+        specs = {
+            "run-a": {
+                "workflow_node_uuid": "node-a",
+                "inventory_requirements": [requirement],
+                "scheduler_revision": 1,
+                "current_job_uuid": "run-a-attempt-1",
+            },
+            "run-b": {
+                "workflow_node_uuid": "node-b",
+                "inventory_requirements": [requirement],
+                "scheduler_revision": 1,
+                "current_job_uuid": "run-b-attempt-1",
+            },
+        }
+
+        scheduler._reserve_task_inventory({"uuid": "task-local"}, specs)  # noqa: SLF001
+
+        assert all(spec.get("inventory_reservation_uuid") for spec in specs.values())
+        reservations = service.list_inventory_reservations(task_uuid="task-local")
+        assert [item.status for item in reservations] == ["active", "active"]
+        assert {item.job_uuid for item in reservations} == {"run-a-attempt-1", "run-b-attempt-1"}
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
+        # 权威解析出的出库内容按需求 key 留在 spec，派发时注入同名动作参数
+        assert specs["run-a"]["inventory_allocations"] == {
+            "solvent": {
+                "key": "solvent",
+                "kind": "lot",
+                "template_uuid": "reagent-template",
+                "unit": "ul",
+                "quantity": 2.0,
+                "lots": [{"lot_uuid": "lot-a", "quantity": 2.0}],
+            }
+        }
+
+        scheduler._release_unconsumed_task_inventory("task-local")  # noqa: SLF001
+        # 没有 runtime 尝试事实的外部预留不能仅凭清理调用返还；真实终态由恢复测试覆盖。
+        assert [
+            item.status
+            for item in service.list_inventory_reservations(task_uuid="task-local")
+        ] == ["active", "active"]
+        assert service.get_inventory_lot("lot-a").quantity_available == 1
+    finally:
+        workflow.close()
+        service.close()
+
+
+def test_backend_scheduler_reserves_container_content_for_the_task(tmp_path) -> None:
+    """容器内容物需求（I02）与批次同一条路径：任务开始整批预留，分配结果按需求 key 注入动作参数。"""
+    from unilabos.server.backend.scheduler.service import allocation_arguments
+    from unilabos.server.services.materials.contents import ContentContract
+    from unilabos.server.services.materials.resource_contract import ResourceContract
+
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    workflow = WorkflowService(tmp_path / "runtime.db")
+    try:
+        contents = ContentContract(service, compound_source=None)
+        contract = ResourceContract(service)
+        template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource"}])["templates"][0]
+        bottle = contract.create_material({"resource_template_uuid": template["uuid"], "name": "缓冲液瓶"})
+        info = contents.create_reagent_info({"name": "PBS", "physical_state": "liquid"})
+        reagent = contents.create_reagent({"material_uuid": bottle["uuid"], "reagent_info_uuid": info["uuid"],
+                                           "quantity": 10, "quantity_unit": "ml"})
+        scheduler = BackendScheduler(workflow, _ListenerOnlyBackend(), materials_gateway=client)
+        requirement = InventoryRequirement(
+            key="buffer", kind="content", material_uuid=bottle["uuid"], substance_name="PBS", quantity=4, unit="ml",
+        ).model_dump(mode="json", exclude_none=False)
+        specs = {
+            run: {"workflow_node_uuid": f"node-{run}", "inventory_requirements": [requirement],
+                  "scheduler_revision": 1, "current_job_uuid": f"{run}-attempt-1"}
+            for run in ("run-a", "run-b")
+        }
+
+        scheduler._reserve_task_inventory({"uuid": "task-content"}, specs)  # noqa: SLF001
+
+        assert contents.get_reagent(reagent["uuid"])["active_workflow_reserved_quantity"] == 8
+        assert specs["run-a"]["inventory_allocations"] == {"buffer": {
+            "key": "buffer", "kind": "content", "material_uuid": bottle["uuid"],
+            "substance_uuid": reagent["uuid"], "quantity": 4.0, "unit": "ml"}}
+        # 参数是带物料锁的 ResourceSlot 时，给容器本身的引用
+        [reservation] = service.list_inventory_reservations(task_uuid="task-content")[:1]
+        locked = allocation_arguments(
+            [item for item in reservation.items],
+            action_schema={"properties": {"goal": {"properties": {"buffer": {"x-unilabos-material-lock": True}}}}},
+        )
+        assert locked == {"buffer": {"uuid": bottle["uuid"]}}
+        # 余量 2 ml 不够第三个任务的 4 ml：整批拒绝
+        with pytest.raises(Exception, match="缺少 2 ml"):
+            scheduler._reserve_task_inventory(  # noqa: SLF001
+                {"uuid": "task-short"},
+                {"run-c": {"workflow_node_uuid": "node-c", "inventory_requirements": [requirement],
+                           "scheduler_revision": 1, "current_job_uuid": "run-c-attempt-1"}},
+            )
+    finally:
+        workflow.close()
+        service.close()
+
+
+def test_workflow_plan_freezes_inventory_requirements() -> None:
+    node_uuid = "10000000-0000-4000-8000-000000000001"
+    template_uuid = "20000000-0000-4000-8000-000000000001"
+    requirement = {
+        "key": "solvent",
+        "kind": "lot",
+        "template_uuid": "reagent-template",
+        "quantity": 2,
+        "unit": "ul",
+    }
+    graph = {
+        "nodes": [
+            {
+                "uuid": node_uuid,
+                "workflow_node_template_uuid": template_uuid,
+                "parent_uuid": None,
+                "type": "device",
+                "disabled": False,
+                "param": {},
+                "execution_policy": {},
+                "meta_data": {"inventory_requirements": [requirement]},
+            }
+        ],
+        "edges": [],
+        "node_templates": [
+            {"uuid": template_uuid, "node_type": "device", "type": "action"}
+        ],
+        "handle_templates": [],
+    }
+    workflow = WorkflowService(":memory:")
+    try:
+        plan, jobs = workflow._build_execution_plan(  # noqa: SLF001
+            graph,
+            run_mode="normal",
+            target_node_uuid=None,
+        )
+    finally:
+        workflow.close()
+
+    assert len(jobs) == 1
+    assert plan["nodes"][0]["inventory_requirements"] == [
+        InventoryRequirement.model_validate(requirement).model_dump(
+            mode="json", exclude_none=False
+        )
+    ]

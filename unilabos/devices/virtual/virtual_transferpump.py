@@ -1,437 +1,409 @@
-import asyncio
-import time
-from enum import Enum
-from typing import Union, Optional
-import logging
+"""虚拟注射泵（泵阀一体）。
 
-from unilabos.registry.decorators import topic_config
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+协议编译器把 ``virtual_transfer_pump`` 当作带分配阀的注射泵：先 ``set_valve_position``
+切到连线端口，再 ``set_position`` 把柱塞移到绝对体积（吸液 / 排液）。柱塞移动的模拟时长
+= 移动体积 ÷ 速度，按时间倍率缩放后真实等待。``transfer`` 在两个容器之间按注射器容量分次
+转移，容器有体积跟踪器时同步改写两边的内容物（PLR 体积跟踪器）。
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional, Union
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    UL_PER_ML,
+    VirtualDevice,
+    nested_settings,
+)
+from unilabos.registry.decorators import DataSource, OutputHandle, Side, action, device, topic_config
+from unilabos.registry.placeholder_type import ResourceSlot
+
+#: 体积比较的容差（mL）
+_EPSILON = 1e-6
+_MIN_VELOCITY = 0.1
+_MAX_VELOCITY = 50.0
 
 
-class VirtualPumpMode(Enum):
-    Normal = 0
-    AccuratePos = 1
-    AccuratePosVel = 2
+@device(
+    id="virtual_transfer_pump",
+    display_name="虚拟传输泵",
+    category=["virtual_device"],
+    description="注射器式虚拟转移泵（泵阀一体），供泵送类协议与示例图使用",
+    icon="Pump.webp",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        OutputHandle(
+            key="transferpump",
+            data_type="fluid",
+            label="transferpump",
+            side=Side.SOUTH,
+            data_key="fluid_port",
+            data_source=DataSource.HANDLE,
+            description="注射器式转移泵的连接口",
+        ),
+    ],
+)
+class VirtualTransferPump(VirtualDevice):
+    """柱塞位置即注射器内的液体体积（mL）。"""
 
-
-class VirtualTransferPump:
-    """虚拟转移泵类 - 模拟泵的基本功能，无需实际硬件 🚰"""
-
-    _ros_node: BaseROS2DeviceNode
-
-    def __init__(self, device_id: str = None, config: dict = None, **kwargs):
-        """
-        初始化虚拟转移泵
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_volume: float = 25.0,
+        transfer_rate: float = 0.0,
+        max_velocity: Optional[float] = None,
+        port: str = "VIRTUAL",
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟注射泵。
 
         Args:
-            device_id: 设备ID
-            config: 配置字典，包含max_volume, port等参数
-            **kwargs: 其他参数，确保兼容性
+            device_id[设备ID]: 设备实例 ID。
+            max_volume[注射器容量]: 注射器最大体积（mL）。
+            transfer_rate[转移速率]: 默认柱塞速度（mL/s）；不填时用 max_velocity。
+            max_velocity[最大速度]: 柱塞最大速度（mL/s），默认 5。
+            port[端口]: 模拟的通信端口名，仅作显示。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
         """
-        self.device_id = device_id or "virtual_transfer_pump"
-
-        # 从config或kwargs中获取参数，确保类型正确
-        if config:
-            self.max_volume = float(config.get("max_volume", 25.0))
-            self.port = config.get("port", "VIRTUAL")
-        else:
-            self.max_volume = float(kwargs.get("max_volume", 25.0))
-            self.port = kwargs.get("port", "VIRTUAL")
-
-        self._transfer_rate = float(kwargs.get("transfer_rate", 0))
-        self.mode = kwargs.get("mode", VirtualPumpMode.Normal)
-
-        # 状态变量 - 确保都是正确类型
-        self._status = "Idle"
-        self._position = 0.0  # float
-        self._max_velocity = 5.0  # float
-        self._current_volume = 0.0  # float
-
-        # 🚀 新增：快速模式设置 - 大幅缩短执行时间
-        self._fast_mode = True  # 是否启用快速模式
-        self._fast_move_time = 1.0  # 快速移动时间（秒）
-        self._fast_dispense_time = 1.0  # 快速喷射时间（秒）
-
-        self.logger = logging.getLogger(f"VirtualTransferPump.{self.device_id}")
-
-        print(f"🚰 === 虚拟转移泵 {self.device_id} 已创建 === ✨")
-        print(
-            f"💨 快速模式: {'启用' if self._fast_mode else '禁用'} | 移动时间: {self._fast_move_time}s | 喷射时间: {self._fast_dispense_time}s"
+        settings = nested_settings(
+            kwargs,
+            max_volume=max_volume,
+            transfer_rate=transfer_rate,
+            max_velocity=max_velocity,
+            port=port,
+            time_scale=time_scale,
         )
-        print(f"📊 最大容量: {self.max_volume}mL | 端口: {self.port}")
-
-    def post_init(self, ros_node: BaseROS2DeviceNode):
-        self._ros_node = ros_node
-
-    async def initialize(self) -> bool:
-        """初始化虚拟泵 🚀"""
-        self.logger.info(f"🔧 初始化虚拟转移泵 {self.device_id} ✨")
-        self._status = "Idle"
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_transfer_pump", settings["time_scale"])
+        self.max_volume = float(settings["max_volume"])
+        if self.max_volume <= 0:
+            raise ValueError(f"max_volume 必须大于 0，收到 {self.max_volume}")
+        self.port = str(settings["port"])
+        self._transfer_rate = float(settings["transfer_rate"] or 0.0)
+        default_velocity = settings["max_velocity"]
+        if default_velocity is None:
+            default_velocity = self._transfer_rate if self._transfer_rate > 0 else 5.0
+        self._max_velocity = self._clamp_velocity(float(default_velocity))
         self._position = 0.0
-        self._current_volume = 0.0
-        self.logger.info(f"✅ 转移泵 {self.device_id} 初始化完成 🚰")
-        return True
+        # 泵头集成的分配阀当前通道（直连容器时由协议编译器按图里连线的端口名切换）
+        self._valve_position = ""
 
-    async def cleanup(self) -> bool:
-        """清理虚拟泵 🧹"""
-        self.logger.info(f"🧹 清理虚拟转移泵 {self.device_id} 🔚")
-        self._status = "Idle"
-        self.logger.info(f"✅ 转移泵 {self.device_id} 清理完成 💤")
-        return True
+    # ============ 状态 ============
 
-    # 基本属性
     @property
+    @topic_config(period=1.0)
     def status(self) -> str:
+        """Idle / Aspirating / Dispensing / Error。"""
         return self._status
 
     @property
+    @topic_config(period=1.0)
     def position(self) -> float:
-        """当前柱塞位置 (ml) 📍"""
-        return self._position
+        """柱塞位置（mL）。"""
+        return round(self._position, 6)
 
     @property
+    @topic_config(period=1.0)
     def current_volume(self) -> float:
-        """当前注射器中的体积 (ml) 💧"""
-        return self._current_volume
+        """注射器内的液体体积（mL），与柱塞位置一致。"""
+        return round(self._position, 6)
 
     @property
+    @topic_config(period=1.0)
+    def remaining_capacity(self) -> float:
+        """注射器剩余容量（mL）。"""
+        return round(self.max_volume - self._position, 6)
+
+    @property
+    @topic_config(period=5.0)
     def max_velocity(self) -> float:
+        """当前最大柱塞速度（mL/s）。"""
         return self._max_velocity
 
     @property
+    @topic_config(period=5.0)
     def transfer_rate(self) -> float:
+        """配置的转移速率（mL/s）。"""
         return self._transfer_rate
 
-    def set_max_velocity(self, velocity: float):
-        """设置最大速度 (ml/s) 🌊"""
-        self._max_velocity = max(0.1, min(50.0, velocity))  # 限制在合理范围内
-        self.logger.info(f"🌊 设置最大速度为 {self._max_velocity} mL/s")
-
-    def get_status(self) -> str:
-        """获取泵状态 📋"""
-        return self._status
-
-    async def _simulate_operation(self, duration: float):
-        """模拟操作延时 ⏱️"""
-        self._status = "Busy"
-        await self._ros_node.sleep(duration)
-        self._status = "Idle"
-
-    def _calculate_duration(self, volume: float, velocity: float = None) -> float:
-        """
-        计算操作持续时间 ⏰
-        🚀 快速模式：保留计算逻辑用于日志显示，但实际使用固定的快速时间
-        """
-        if velocity is None:
-            velocity = self._max_velocity
-
-        # 📊 计算理论时间（用于日志显示）
-        theoretical_duration = abs(volume) / velocity
-
-        # 🚀 如果启用快速模式，使用固定的快速时间
-        if self._fast_mode:
-            # 根据操作类型选择快速时间
-            if abs(volume) > 0.1:  # 大于0.1mL的操作
-                actual_duration = self._fast_move_time
-            else:  # 很小的操作
-                actual_duration = 0.5
-
-            self.logger.debug(f"⚡ 快速模式: 理论时间 {theoretical_duration:.2f}s → 实际时间 {actual_duration:.2f}s")
-            return actual_duration
-        else:
-            # 正常模式使用理论时间
-            return theoretical_duration
-
-    def _calculate_display_duration(self, volume: float, velocity: float = None) -> float:
-        """
-        计算显示用的持续时间（用于日志） 📊
-        这个函数返回理论计算时间，用于日志显示
-        """
-        if velocity is None:
-            velocity = self._max_velocity
-        return abs(volume) / velocity
-
-    # 新的set_position方法 - 专门用于SetPumpPosition动作
-    async def set_position(self, position: float, max_velocity: float = None):
-        """
-        移动到绝对位置 - 专门用于SetPumpPosition动作 🎯
-
-        Args:
-            position (float): 目标位置 (ml)
-            max_velocity (float): 移动速度 (ml/s)
-
-        Returns:
-            dict: 符合SetPumpPosition.action定义的结果
-        """
-        try:
-            # 验证并转换参数
-            target_position = float(position)
-            velocity = float(max_velocity) if max_velocity is not None else self._max_velocity
-
-            # 限制位置在有效范围内
-            target_position = max(0.0, min(float(self.max_volume), target_position))
-
-            # 计算移动距离
-            volume_to_move = abs(target_position - self._position)
-
-            # 📊 计算显示用的时间（用于日志）
-            display_duration = self._calculate_display_duration(volume_to_move, velocity)
-
-            # ⚡ 计算实际执行时间（快速模式）
-            actual_duration = self._calculate_duration(volume_to_move, velocity)
-
-            # 🎯 确定操作类型和emoji
-            if target_position > self._position:
-                operation_type = "吸液"
-                operation_emoji = "📥"
-            elif target_position < self._position:
-                operation_type = "排液"
-                operation_emoji = "📤"
-            else:
-                operation_type = "保持"
-                operation_emoji = "📍"
-
-            self.logger.info(f"🎯 SET_POSITION: {operation_type} {operation_emoji}")
-            self.logger.info(
-                f"  📍 位置: {self._position:.2f}mL → {target_position:.2f}mL (移动 {volume_to_move:.2f}mL)"
-            )
-            self.logger.info(f"  🌊 速度: {velocity:.2f} mL/s")
-            self.logger.info(f"  ⏰ 预计时间: {display_duration:.2f}s")
-
-            if self._fast_mode:
-                self.logger.info(f"  ⚡ 快速模式: 实际用时 {actual_duration:.2f}s")
-
-            # 🚀 模拟移动过程
-            if volume_to_move > 0.01:  # 只有当移动距离足够大时才显示进度
-                start_position = self._position
-                steps = 5 if actual_duration > 0.5 else 2  # 根据实际时间调整步数
-                step_duration = actual_duration / steps
-
-                self.logger.info(f"🚀 开始{operation_type}... {operation_emoji}")
-
-                for i in range(steps + 1):
-                    # 计算当前位置和进度
-                    progress = (i / steps) * 100 if steps > 0 else 100
-                    current_pos = (
-                        start_position + (target_position - start_position) * (i / steps)
-                        if steps > 0
-                        else target_position
-                    )
-
-                    # 更新状态
-                    if i < steps:
-                        self._status = f"{operation_type}中"
-                        status_emoji = "🔄"
-                    else:
-                        self._status = "Idle"
-                        status_emoji = "✅"
-
-                    self._position = current_pos
-                    self._current_volume = current_pos
-
-                    # 显示进度（每25%或最后一步）
-                    if i == 0:
-                        self.logger.debug(f"  🔄 {operation_type}开始: {progress:.0f}%")
-                    elif progress >= 50 and i == steps // 2:
-                        self.logger.debug(f"  🔄 {operation_type}进度: {progress:.0f}%")
-                    elif i == steps:
-                        self.logger.info(f"  ✅ {operation_type}完成: {progress:.0f}% | 当前位置: {current_pos:.2f}mL")
-
-                    # 等待一小步时间
-                    if i < steps and step_duration > 0:
-                        await self._ros_node.sleep(step_duration)
-            else:
-                # 移动距离很小，直接完成
-                self._position = target_position
-                self._current_volume = target_position
-                self.logger.info(f"  📍 微调完成: {target_position:.2f}mL")
-
-            # 确保最终位置准确
-            self._position = target_position
-            self._current_volume = target_position
-            self._status = "Idle"
-
-            # 📊 最终状态日志
-            if volume_to_move > 0.01:
-                self.logger.info(
-                    f"🎉 SET_POSITION 完成! 📍 最终位置: {self._position:.2f}mL | 💧 当前体积: {self._current_volume:.2f}mL"
-                )
-
-            # 返回符合action定义的结果
-            return {
-                "success": True,
-                "message": f"✅ 成功移动到位置 {self._position:.2f}mL ({operation_type})",
-                "final_position": self._position,
-                "final_volume": self._current_volume,
-                "operation_type": operation_type,
-            }
-
-        except Exception as e:
-            error_msg = f"❌ 设置位置失败: {str(e)}"
-            self.logger.error(error_msg)
-            return {
-                "success": False,
-                "message": error_msg,
-                "final_position": self._position,
-                "final_volume": self._current_volume,
-            }
-
-    # 其他泵操作方法
-    async def pull_plunger(self, volume: float, velocity: float = None):
-        """
-        拉取柱塞（吸液） 📥
-
-        Args:
-            volume (float): 要拉取的体积 (ml)
-            velocity (float): 拉取速度 (ml/s)
-        """
-        new_position = min(self.max_volume, self._position + volume)
-        actual_volume = new_position - self._position
-
-        if actual_volume <= 0:
-            self.logger.warning("⚠️ 无法吸液 - 已达到最大容量")
-            return
-
-        display_duration = self._calculate_display_duration(actual_volume, velocity)
-        actual_duration = self._calculate_duration(actual_volume, velocity)
-
-        self.logger.info(f"📥 开始吸液: {actual_volume:.2f}mL")
-        self.logger.info(f"  📍 位置: {self._position:.2f}mL → {new_position:.2f}mL")
-        self.logger.info(f"  ⏰ 预计时间: {display_duration:.2f}s")
-
-        if self._fast_mode:
-            self.logger.info(f"  ⚡ 快速模式: 实际用时 {actual_duration:.2f}s")
-
-        await self._simulate_operation(actual_duration)
-
-        self._position = new_position
-        self._current_volume = new_position
-
-        self.logger.info(f"✅ 吸液完成: {actual_volume:.2f}mL | 💧 当前体积: {self._current_volume:.2f}mL")
-
-    async def push_plunger(self, volume: float, velocity: float = None):
-        """
-        推出柱塞（排液） 📤
-
-        Args:
-            volume (float): 要推出的体积 (ml)
-            velocity (float): 推出速度 (ml/s)
-        """
-        new_position = max(0, self._position - volume)
-        actual_volume = self._position - new_position
-
-        if actual_volume <= 0:
-            self.logger.warning("⚠️ 无法排液 - 已达到最小容量")
-            return
-
-        display_duration = self._calculate_display_duration(actual_volume, velocity)
-        actual_duration = self._calculate_duration(actual_volume, velocity)
-
-        self.logger.info(f"📤 开始排液: {actual_volume:.2f}mL")
-        self.logger.info(f"  📍 位置: {self._position:.2f}mL → {new_position:.2f}mL")
-        self.logger.info(f"  ⏰ 预计时间: {display_duration:.2f}s")
-
-        if self._fast_mode:
-            self.logger.info(f"  ⚡ 快速模式: 实际用时 {actual_duration:.2f}s")
-
-        await self._simulate_operation(actual_duration)
-
-        self._position = new_position
-        self._current_volume = new_position
-
-        self.logger.info(f"✅ 排液完成: {actual_volume:.2f}mL | 💧 当前体积: {self._current_volume:.2f}mL")
-
-    # 便捷操作方法
-    async def aspirate(self, volume: float, velocity: float = None):
-        """吸液操作 📥"""
-        await self.pull_plunger(volume, velocity)
-
-    async def dispense(self, volume: float, velocity: float = None):
-        """排液操作 📤"""
-        await self.push_plunger(volume, velocity)
-
-    async def transfer(self, volume: float, aspirate_velocity: float = None, dispense_velocity: float = None):
-        """转移操作（先吸后排） 🔄"""
-        self.logger.info(f"🔄 开始转移操作: {volume:.2f}mL")
-
-        # 吸液
-        await self.aspirate(volume, aspirate_velocity)
-
-        # 短暂停顿
-        self.logger.debug("⏸️ 短暂停顿...")
-        await self._ros_node.sleep(0.1)
-
-        # 排液
-        await self.dispense(volume, dispense_velocity)
-
-    async def empty_syringe(self, velocity: float = None):
-        """清空注射器"""
-        await self.set_position(0, velocity)
-
-    async def fill_syringe(self, velocity: float = None):
-        """充满注射器"""
-        await self.set_position(self.max_volume, velocity)
-
-    async def stop_operation(self):
-        """停止当前操作"""
-        self._status = "Idle"
-        self.logger.info("Operation stopped")
-
-    # 状态查询方法
-    def get_position(self) -> float:
-        """获取当前位置"""
-        return self._position
-
-    def get_current_volume(self) -> float:
-        """获取当前体积"""
-        return self._current_volume
-
     @property
-    @topic_config()
-    def remaining_capacity(self) -> float:
-        """剩余容量 (ml)"""
-        return self.max_volume - self._current_volume
+    @topic_config(period=1.0)
+    def valve_position(self) -> str:
+        """泵头集成阀当前通道（图中连线的端口名）。"""
+        return self._valve_position
 
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="柱塞回到 0、注射器排空")
+    async def initialize(self) -> bool:
+        """初始化：柱塞归零。"""
+        with self._lock:
+            self._status = "Idle"
+            self._position = 0.0
+            self._message = ""
+        return True
+
+    @action(auto_prefix=True, display_name="清理", description="停止当前操作并回到空闲")
+    async def cleanup(self) -> bool:
+        """清理：请求停止正在进行的移动。"""
+        self._request_stop()
+        self._status = "Idle"
+        return True
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:SendCmd",
+        display_name="切换泵阀通道",
+        description="切换泵头集成阀的通道（端口名或编号），供泵直连容器的协议使用",
+    )
+    def set_valve_position(self, command: Union[int, str]) -> Dict[str, Any]:
+        """切换泵头集成阀。
+
+        Args:
+            command[通道]: 目标通道，图中连线在泵一侧的端口名（如 inlet、outlet）或编号。
+        """
+        channel = str(command).strip()
+        if not channel:
+            self._reject("泵阀通道不能为空")
+        self._valve_position = channel
+        self._message = f"泵阀切换到 {channel}"
+        return {"success": True, "valve_position": channel}
+
+    @action(
+        action_type="unilabos_msgs.action:SetPumpPosition",
+        display_name="移动柱塞",
+        description="把柱塞移到绝对位置（mL）：位置变大为吸液、变小为排液",
+        feedback_interval=0.5,
+    )
+    async def set_position(
+        self,
+        position: float,
+        max_velocity: Optional[float] = None,
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """移动柱塞到绝对位置。
+
+        Args:
+            position[目标位置]: 柱塞目标位置（mL），0 到注射器容量之间。
+            max_velocity[速度]: 移动速度（mL/s），不填用当前最大速度。
+        """
+        target = float(position)
+        if target < -_EPSILON or target > self.max_volume + _EPSILON:
+            self._reject(f"柱塞位置 {target} mL 超出注射器范围 0 ~ {self.max_volume} mL")
+        target = min(max(target, 0.0), self.max_volume)
+        moved = await self._move_to(target, max_velocity, action_context)
+        return {
+            "success": True,
+            "position": round(self._position, 6),
+            "moved_volume": round(moved, 6),
+            "message": self._message,
+        }
+
+    @action(
+        action_type="unilabos_msgs.action:Transfer",
+        display_name="容器间转移",
+        description="从源容器吸液、排到目标容器；超过注射器容量时分次转移，同步改写两边容器的内容物",
+        feedback_interval=0.5,
+    )
+    async def transfer(
+        self,
+        volume: float,
+        from_vessel: Optional[ResourceSlot] = None,
+        to_vessel: Optional[ResourceSlot] = None,
+        aspirate_velocity: Optional[float] = None,
+        dispense_velocity: Optional[float] = None,
+        amount: str = "",
+        time: float = 0.0,
+        viscous: bool = False,
+        rinsing_solvent: str = "",
+        rinsing_volume: float = 0.0,
+        rinsing_repeats: int = 0,
+        solid: bool = False,
+        action_context: Optional[ActionContext] = None,
+    ) -> Dict[str, Any]:
+        """在两个容器之间转移液体。
+
+        Args:
+            volume[体积]: 转移体积（mL）。
+            from_vessel[源容器]: 源容器，可不填。
+            to_vessel[目标容器]: 目标容器，可不填。
+            aspirate_velocity[吸液速度]: 吸液速度（mL/s），不填用当前最大速度。
+            dispense_velocity[排液速度]: 排液速度（mL/s），不填用当前最大速度。
+            amount[用量描述]: 协议里的原始用量描述，仅记录。
+            time[时间]: 协议给的转移时间（s），仅记录。
+            viscous[粘稠]: 是否粘稠液体，仅记录。
+            rinsing_solvent[润洗溶剂]: 润洗溶剂，仅记录。
+            rinsing_volume[润洗体积]: 润洗体积（mL），仅记录。
+            rinsing_repeats[润洗次数]: 润洗次数，仅记录。
+            solid[固体]: 是否固体，仅记录。
+        """
+        total = float(volume)
+        if total <= 0:
+            self._reject(f"转移体积必须大于 0，收到 {total} mL")
+        source, target = self._vessel_label(from_vessel), self._vessel_label(to_vessel)
+        moved_contents: list = []
+        strokes = 0
+        remaining = total
+        with self._operation("Busy", f"转移 {total} mL：{source or '?'} → {target or '?'}", action_context):
+            if self._position > _EPSILON:
+                await self._move_to(0.0, dispense_velocity, action_context)
+            while remaining > _EPSILON:
+                chunk = min(remaining, self.max_volume)
+                await self._move_to(chunk, aspirate_velocity, action_context)
+                await self._move_to(0.0, dispense_velocity, action_context)
+                for name, liquid_volume, unit in self._transfer_liquid(from_vessel, to_vessel, chunk * UL_PER_ML):
+                    moved_contents.append({"name": name, "amount": round(liquid_volume, 6), "unit": unit})
+                remaining -= chunk
+                strokes += 1
+        return {
+            "success": True,
+            "volume": total,
+            "strokes": strokes,
+            "from_vessel": source,
+            "to_vessel": target,
+            "moved_contents": moved_contents,
+        }
+
+    # ============ 其他柱塞操作 ============
+
+    @action(auto_prefix=True, display_name="设置最大速度", always_free=True)
+    def set_max_velocity(self, velocity: float) -> Dict[str, Any]:
+        """设置最大柱塞速度。
+
+        Args:
+            velocity[速度]: 最大速度（mL/s），限制在 0.1 ~ 50。
+        """
+        self._max_velocity = self._clamp_velocity(float(velocity))
+        return {"success": True, "max_velocity": self._max_velocity}
+
+    @action(auto_prefix=True, display_name="吸液", feedback_interval=0.5)
+    async def aspirate(
+        self, volume: float, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """吸入指定体积。
+
+        Args:
+            volume[体积]: 吸入体积（mL）。
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        return await self.pull_plunger(volume, velocity, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="排液", feedback_interval=0.5)
+    async def dispense(
+        self, volume: float, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """排出指定体积。
+
+        Args:
+            volume[体积]: 排出体积（mL）。
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        return await self.push_plunger(volume, velocity, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="拉柱塞", feedback_interval=0.5)
+    async def pull_plunger(
+        self, volume: float, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """柱塞后拉（吸液）。
+
+        Args:
+            volume[体积]: 吸入体积（mL），不能超过剩余容量。
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        amount = float(volume)
+        if amount <= 0:
+            self._reject(f"吸液体积必须大于 0，收到 {amount} mL")
+        if self._position + amount > self.max_volume + _EPSILON:
+            self._reject(f"吸液 {amount} mL 超过剩余容量 {self.max_volume - self._position:.3f} mL")
+        moved = await self._move_to(min(self.max_volume, self._position + amount), velocity, action_context)
+        return {"success": True, "volume": round(moved, 6), "position": round(self._position, 6)}
+
+    @action(auto_prefix=True, display_name="推柱塞", feedback_interval=0.5)
+    async def push_plunger(
+        self, volume: float, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """柱塞前推（排液）。
+
+        Args:
+            volume[体积]: 排出体积（mL），不能超过注射器内现有体积。
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        amount = float(volume)
+        if amount <= 0:
+            self._reject(f"排液体积必须大于 0，收到 {amount} mL")
+        if amount > self._position + _EPSILON:
+            self._reject(f"排液 {amount} mL 超过注射器内现有 {self._position:.3f} mL")
+        moved = await self._move_to(max(0.0, self._position - amount), velocity, action_context)
+        return {"success": True, "volume": round(moved, 6), "position": round(self._position, 6)}
+
+    @action(auto_prefix=True, display_name="充满注射器", feedback_interval=0.5)
+    async def fill_syringe(
+        self, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """把柱塞拉到满量程。
+
+        Args:
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        return await self.set_position(self.max_volume, velocity, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="排空注射器", feedback_interval=0.5)
+    async def empty_syringe(
+        self, velocity: Optional[float] = None, action_context: Optional[ActionContext] = None
+    ) -> Dict[str, Any]:
+        """把柱塞推回 0。
+
+        Args:
+            velocity[速度]: 速度（mL/s），不填用当前最大速度。
+        """
+        return await self.set_position(0.0, velocity, action_context=action_context)
+
+    @action(auto_prefix=True, display_name="停止", always_free=True, description="请求取消正在进行的柱塞移动")
+    async def stop_operation(self) -> Dict[str, Any]:
+        """停止当前操作（柱塞停在当前位置）。"""
+        stopped = self._request_stop()
+        return {"success": True, "stopped": stopped, "position": round(self._position, 6)}
+
+    @action(auto_prefix=True, display_name="是否为空", always_free=True)
     def is_empty(self) -> bool:
-        """检查是否为空"""
-        return self._current_volume <= 0.01  # 允许小量误差
+        """注射器是否为空。"""
+        return self._position <= 0.01
 
+    @action(auto_prefix=True, display_name="是否已满", always_free=True)
     def is_full(self) -> bool:
-        """检查是否已满"""
-        return self._current_volume >= (self.max_volume - 0.01)  # 允许小量误差
+        """注射器是否已满。"""
+        return self._position >= self.max_volume - 0.01
 
-    def __str__(self):
-        return (
-            f"VirtualTransferPump({self.device_id}: {self._current_volume:.2f}/{self.max_volume} ml, {self._status})"
-        )
+    # ============ 内部 ============
 
-    def __repr__(self):
-        return self.__str__()
+    @staticmethod
+    def _clamp_velocity(velocity: float) -> float:
+        return max(_MIN_VELOCITY, min(_MAX_VELOCITY, velocity))
 
+    async def _move_to(
+        self, target: float, velocity: Optional[float], action_context: Optional[ActionContext]
+    ) -> float:
+        """柱塞移动到 ``target``（mL），模拟时长 = 距离 ÷ 速度；返回移动的体积。"""
 
-# 使用示例
-async def demo():
-    """虚拟泵使用示例"""
-    pump = VirtualTransferPump("demo_pump", {"max_volume": 50.0})
+        speed = self._clamp_velocity(float(velocity)) if velocity else self._max_velocity
+        start = self._position
+        distance = abs(target - start)
+        if distance <= _EPSILON:
+            self._position = target
+            return 0.0
+        kind = "Aspirating" if target > start else "Dispensing"
+        label = "吸液" if target > start else "排液"
 
-    await pump.initialize()
+        def step(fraction: float) -> None:
+            self._position = start + (target - start) * fraction
 
-    print(f"Initial state: {pump}")
+        with self._operation(kind, f"{label} {distance:.3f} mL（{start:.3f} → {target:.3f} mL）", action_context):
+            await self._simulate(distance / speed, action_context, on_step=step)
+        self._position = target
+        self._message = f"柱塞到 {target:.3f} mL"
+        return distance
 
-    # 测试set_position方法
-    result = await pump.set_position(10.0, max_velocity=2.0)
-    print(f"Set position result: {result}")
-    print(f"After setting position to 10ml: {pump}")
-
-    # 吸液测试
-    await pump.aspirate(5.0, velocity=2.0)
-    print(f"After aspirating 5ml: {pump}")
-
-    # 清空测试
-    result = await pump.set_position(0.0)
-    print(f"Empty result: {result}")
-    print(f"After emptying: {pump}")
-
-
-if __name__ == "__main__":
-    asyncio.run(demo())
+    def __repr__(self) -> str:
+        return f"VirtualTransferPump({self.device_id}: {self._position:.3f}/{self.max_volume} mL, {self._status})"

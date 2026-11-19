@@ -1,0 +1,688 @@
+"""当前 Workflow Authority 的 HTTP 客户端与 SSE 失效通知订阅。
+
+HTTP 是工作流定义、任务和 Authoring 状态的唯一事实来源。``/api/v1/events``
+SSE 只作为失效通知：收到相关通知后，本客户端始终重新通过 HTTP 拉取任务正文。
+执行控制 WebSocket（``/api/v1/ws/schedule``）只属于 Host，观察端不连接它：
+该通道只有一个活动连接，新连接会替换 Host 的控制连接。
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import queue
+import re
+import threading
+import time
+import warnings
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from contextlib import AbstractContextManager
+from typing import Any, Optional, Protocol
+from uuid import uuid4
+
+from unilabos.client.utils.envelope import EnvelopeError
+from unilabos.client.http import HTTPClient, HTTPClientConfig
+from unilabos.utils.address import (
+    derive_websocket_address,
+    normalize_api_address,
+)
+
+
+TERMINAL_WORKFLOW_TASK_STATUSES = frozenset(
+    {"succeeded", "failed", "canceled", "timeout"}
+)
+
+
+class WorkflowClientError(RuntimeError):
+    """工作流客户端本地校验、通知连接或等待超时错误。"""
+
+    def __init__(self, code: str, message: str, *, details: Any = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details
+
+
+class _NoticeSocket(Protocol):
+    def recv(self, timeout: Optional[float] = None) -> str | bytes: ...
+
+
+NoticeConnector = Callable[
+    [str, Mapping[str, str], float],
+    AbstractContextManager[_NoticeSocket],
+]
+
+
+def normalize_workflow_api_url(base_url: str) -> str:
+    """把管理端或 Backend 地址规范化到共享的 ``/api/v1`` 根。"""
+
+    try:
+        return normalize_api_address(base_url)
+    except ValueError as error:
+        raise ValueError("workflow API 地址不能为空") from error
+
+
+def derive_workflow_websocket_url(
+    base_url: str,
+    schedule_addr: Optional[str] = None,
+) -> str:
+    """构造只传递变更通知的 WebSocket 地址。"""
+
+    try:
+        return derive_websocket_address(
+            base_url,
+            websocket_address=schedule_addr,
+        )
+    except ValueError as error:
+        raise ValueError("workflow WebSocket 地址无效") from error
+
+
+STREAM_RESET_EVENT = "stream.reset"
+#: V1 事件名：任务 / 节点 / 作业 / 人工确认 / 资源变化都发成它，dev 细粒度种类在 ``data.kind``
+RUNTIME_CHANGED_EVENT = "workflow.runtime.changed"
+#: 作者态（草稿 / 候选 / 定义）变化，与任务运行状态无关
+AUTHORING_CHANGED_EVENT = "workflow.authoring.changed"
+_STREAM_CLOSED = object()
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def _iter_text_lines(chunks: Iterable[str]) -> Iterator[str]:
+    """按 SSE 规则（CRLF / LF / CR）切行；跨块的 CRLF 不会被拆成两个空行。"""
+
+    buffer = ""
+    for chunk in chunks:
+        buffer += chunk
+        hold = buffer.endswith("\r")
+        parts = _LINE_BREAK.split(buffer[:-1] if hold else buffer)
+        buffer = parts.pop() + ("\r" if hold else "")
+        yield from parts
+
+
+def _parse_sse_lines(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
+    """把 SSE 文本行解析成 ``{"event", "id", "data"}`` 帧。
+
+    注释行与 ``retry`` 忽略；只有 ``id`` 没有 ``data`` 的水位帧照常产出（``data`` 为
+    ``None``）。``id`` 只取本帧自带的值，没有 id 的瞬时通知不会继承上一条的序号。
+    """
+
+    event_name, event_id, data_lines = "", None, []
+    for line in lines:
+        if line == "":
+            if data_lines or event_id is not None:
+                yield {
+                    "event": event_name or "message",
+                    "id": event_id,
+                    "data": "\n".join(data_lines) if data_lines else None,
+                }
+            event_name, event_id, data_lines = "", None, []
+            continue
+        if line.startswith(":"):
+            continue
+        field, _, value = line.partition(":")
+        if value.startswith(" "):
+            value = value[1:]
+        if field == "data":
+            data_lines.append(value)
+        elif field == "event":
+            event_name = value
+        elif field == "id" and "\0" not in value:
+            event_id = value
+
+
+def _sse_frame_notice(frame: Mapping[str, Any]) -> str:
+    """SSE 帧 → watch 循环使用的通知 JSON：``{"action", "id", "data"}``。"""
+
+    try:
+        data = json.loads(frame["data"]) if frame["data"] else {}
+    except json.JSONDecodeError:
+        data = {}
+    try:
+        sequence = int(frame["id"]) if frame["id"] is not None else None
+    except ValueError:
+        sequence = None
+    return json.dumps(
+        {"action": frame["event"], "id": sequence, "data": data if isinstance(data, dict) else {}},
+        ensure_ascii=False,
+    )
+
+
+class _SSENoticeStream(AbstractContextManager["_SSENoticeStream"]):
+    """后台线程读取 ``/api/v1/events``；``recv(timeout)`` 按超时取出下一条通知。"""
+
+    def __init__(self, url: str, headers: Mapping[str, str], timeout: float) -> None:
+        import httpx
+
+        # 读超时由 recv(timeout) 控制；服务端每 15 秒发保活注释，连接本身不设读超时。
+        self._client = httpx.Client(timeout=httpx.Timeout(min(timeout, 20.0), read=None))
+        self._stream = self._client.stream("GET", url, headers=dict(headers))
+        self._entered = False
+        self._queue: "queue.Queue[Any]" = queue.Queue()
+
+    def __enter__(self) -> "_SSENoticeStream":
+        try:
+            response = self._stream.__enter__()
+            self._entered = True
+            response.raise_for_status()
+            if not response.headers.get("content-type", "").startswith("text/event-stream"):
+                # 非法游标时 Workflow Authority 返回 HTTP 200 的 JSON 错误信封。
+                body = response.read().decode("utf-8", "replace")
+                raise WorkflowClientError("watch_rejected", "工作流通知流被拒绝", details=body[:2000])
+        except BaseException:
+            self._close()
+            raise
+        threading.Thread(target=self._pump, args=(response,), name="unilab-workflow-sse", daemon=True).start()
+        return self
+
+    def _pump(self, response: Any) -> None:
+        try:
+            for frame in _parse_sse_lines(_iter_text_lines(response.iter_text())):
+                self._queue.put(_sse_frame_notice(frame))
+        except Exception as error:  # noqa: BLE001 - 交给 recv() 抛给调用方
+            self._queue.put(error)
+        finally:
+            self._queue.put(_STREAM_CLOSED)
+
+    def recv(self, timeout: Optional[float] = None) -> str:
+        try:
+            item = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError from None
+        if item is _STREAM_CLOSED:
+            raise ConnectionError("工作流通知流已关闭")
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    def __exit__(self, *_exc: object) -> None:
+        self._close()
+
+    def _close(self) -> None:
+        if self._entered:
+            self._entered = False
+            try:
+                self._stream.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001 - 关闭阶段不覆盖原异常
+                pass
+        self._client.close()
+
+
+def _default_notice_connector(
+    url: str,
+    headers: Mapping[str, str],
+    timeout: float,
+) -> AbstractContextManager[_NoticeSocket]:
+    return _SSENoticeStream(url, headers, timeout)
+
+class HTTPWorkflowClient:
+    """共享 Workflow REST API 的窄客户端。"""
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        schedule_addr: Optional[str] = None,
+        ak: str = "",
+        sk: str = "",
+        timeout: float = 30.0,
+        http_client: Optional[Any] = None,
+        notice_connector: Optional[NoticeConnector] = None,
+    ) -> None:
+        self.base_url = normalize_workflow_api_url(base_url)
+        if schedule_addr:
+            warnings.warn(
+                "schedule_addr 已不再使用：watch_task 订阅 base_url 下的 /api/v1/events SSE，"
+                "不再连接执行控制 WebSocket",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self.notification_url = f"{self.base_url}/events"
+        self.timeout = timeout
+        self._auth_secret = ""
+        if ak and sk:
+            token = base64.b64encode(f"{ak}:{sk}".encode("utf-8"))
+            self._auth_secret = token.decode("ascii")
+        self._http = http_client or HTTPClient(
+            HTTPClientConfig(base_url=self.base_url, timeout=timeout),
+            get_auth_secret=(lambda: self._auth_secret),
+        )
+        self._owns_http_client = http_client is None
+        self._notice_connector = notice_connector or _default_notice_connector
+
+    def close(self) -> None:
+        if self._owns_http_client:
+            self._http.close()
+
+    def __enter__(self) -> "HTTPWorkflowClient":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.close()
+
+    def list_workflows(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 100,
+        name: str = "",
+    ) -> dict[str, Any]:
+        return self._http.get(
+            "/workflows",
+            params={"page": page, "page_size": page_size, "name": name},
+        )
+
+    def create_workflow(
+        self,
+        *,
+        name: str,
+        tags: list[Any],
+        description: Optional[str],
+        meta_data: Optional[dict[str, Any]] = None,
+        workflow_uuid: Optional[str] = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "name": name,
+            "tags": tags,
+            "description": description,
+            "meta_data": meta_data or {},
+        }
+        if workflow_uuid:
+            body["workflow_uuid"] = workflow_uuid
+        return self._http.post("/workflows", json=body)
+
+    def get_workflow(self, workflow_uuid: str) -> dict[str, Any]:
+        return self._http.get(f"/workflows/{workflow_uuid}")
+
+    def update_workflow(
+        self,
+        workflow_uuid: str,
+        *,
+        name: str,
+        tags: list[Any],
+        description: Optional[str],
+        meta_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        return self._http.put(
+            f"/workflows/{workflow_uuid}",
+            json={
+                "name": name,
+                "tags": tags,
+                "description": description,
+                "meta_data": meta_data or {},
+            },
+        )
+
+    def save_graph(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """与 ``WorkflowService.save_graph`` 同签名，便于 ``registry.workflows.upsert_workflow``
+        经 HTTP 向远端 Workflow Authority 写入实例化后的工作流。"""
+
+        return self.save_workflow_graph(
+            workflow_uuid, revision=revision, nodes=nodes, edges=edges, workflow_io=workflow_io,
+            resource_scopes=resource_scopes,
+        )
+
+    def get_workflow_graph(self, workflow_uuid: str) -> dict[str, Any]:
+        return self._http.get(f"/workflows/{workflow_uuid}/graph")
+
+    def save_workflow_graph(
+        self,
+        workflow_uuid: str,
+        *,
+        revision: int,
+        nodes: list[dict[str, Any]],
+        edges: list[dict[str, Any]],
+        workflow_io: dict[str, Any] | None = None,
+        resource_scopes: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        # 资源作用域与节点、I/O 同一次 PUT 原子保存，避免图已更新而作用域仍引用旧节点。
+        return self._http.put(
+            f"/workflows/{workflow_uuid}/graph",
+            # 程序化导入（模板实例化 / CLI 上传）显式要求按目标物料解析 Site 标签；V1 默认 preserve
+            json={"revision": revision, "nodes": nodes, "edges": edges, "site_binding_mode": "resolve",
+                  **({"workflow_io": workflow_io} if workflow_io is not None else {}),
+                  **({"resource_scopes": resource_scopes} if resource_scopes is not None else {})},
+        )
+
+    def inspect_workflow(self, workflow_uuid: str) -> dict[str, Any]:
+        workflow = self.get_workflow(workflow_uuid)
+        graph = self.get_workflow_graph(workflow_uuid)
+        try:
+            authoring: Optional[dict[str, Any]] = self.get_authoring(workflow_uuid)
+        except EnvelopeError as error:
+            if error.code != 3002:
+                raise
+            authoring = None
+        return {"workflow": workflow, "graph": graph, "authoring": authoring}
+
+    def create_task(
+        self,
+        workflow_uuid: str,
+        *,
+        run_mode: str = "normal",
+        target_node_uuid: Optional[str] = None,
+        input_value: Optional[Mapping[str, Any]] = None,
+        operation_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。"""
+
+        operation_id = operation_id or str(uuid4())
+        return self._http.post(
+            "/workflow-tasks",
+            json={
+                "workflow_uuid": workflow_uuid,
+                "run_mode": run_mode,
+                "target_node_uuid": target_node_uuid,
+                "input": dict(input_value or {}),
+                "description": "由 unilab workflow CLI 启动",
+                "meta_data": {
+                    "source": "unilab-workflow-client",
+                    "operation_id": operation_id,
+                },
+            },
+        )
+
+    def begin_execution(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/begin", json=body)
+
+    def record_start_receipt(self, job_uuid: str, body: dict[str, Any]) -> dict[str, Any]:
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/started", json=body)
+
+    def get_task(self, task_uuid: str) -> dict[str, Any]:
+        return self._http.get(f"/workflow-tasks/{task_uuid}")
+
+    def command_task(
+        self, task_uuid: str, *, command_type: str, idempotency_key: str,
+        expected_revision: Optional[int] = None, target_node_uuid: Optional[str] = None,
+        description: Optional[str] = None, meta_data: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """V1 任务控制命令（step / switch_to_step / pause / resume / cancel / unlock_resources）。
+
+        返回命令投影：``status`` 为 ``rejected`` 时 ``result.reason`` 给出业务原因。调用者保留
+        幂等键供网络重传；``expected_revision`` 可选，给出时做任务控制版本 CAS。
+        """
+        body: dict[str, Any] = {"type": command_type, "idempotency_key": idempotency_key}
+        if expected_revision is not None:
+            body["expected_revision"] = expected_revision
+        if target_node_uuid is not None:
+            body["target_node_uuid"] = target_node_uuid
+        if description is not None:
+            body["description"] = description
+        if meta_data:
+            body["meta_data"] = meta_data
+        return self._http.post(f"/workflow-tasks/{task_uuid}/commands", json=body)
+
+    def list_task_jobs(self, task_uuid: str) -> list[dict[str, Any]]:
+        return self._http.get(f"/workflow-tasks/{task_uuid}/jobs")
+
+    def inspect_task(self, task_uuid: str) -> dict[str, Any]:
+        return {
+            "task": self.get_task(task_uuid),
+            "jobs": self.list_task_jobs(task_uuid),
+        }
+
+    def get_job(self, job_uuid: str) -> dict[str, Any]:
+        return self._http.get(f"/workflow-node-jobs/{job_uuid}")
+
+    def list_task_inventory_consumptions(self, task_uuid: str) -> list[dict[str, Any]]:
+        """V1：任务的数量型库存消费事实（批次 / 试剂 / 当前内容物）。"""
+
+        return self._http.get(f"/workflow-tasks/{task_uuid}/inventory-consumptions")
+
+    def list_job_inventory_consumptions(self, job_uuid: str) -> list[dict[str, Any]]:
+        return self._http.get(f"/workflow-node-jobs/{job_uuid}/inventory-consumptions")
+
+    def list_reagent_inventory_consumptions(self, reagent_uuid: str) -> list[dict[str, Any]]:
+        """V1：一份试剂（内容物）的工作流消费谱系，新在前。"""
+
+        return self._http.get(f"/reagents/{reagent_uuid}/inventory-consumptions")
+
+    def reconcile_job_quantity(
+        self, job_uuid: str, consumptions: list[dict[str, Any]], *, reason: str,
+    ) -> dict[str, Any]:
+        """V1：人工核对作业实际用量；每项 ``{inventory_type, inventory_uuid, actual_quantity, quantity_unit}``。
+
+        同一核对可安全重放；已落账的不同用量返回 3003（不会重复扣减）。返回作业并附 ``inventory_consumptions``。
+        """
+
+        return self._http.post(
+            f"/workflow-node-jobs/{job_uuid}/reconcile-quantity",
+            json={"consumptions": consumptions, "reason": reason},
+        )
+
+    def resolve_uncertain_job(
+        self, job_uuid: str, *, reason: str, resolution: str = "canceled",
+        device_command_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """V1：结果未知作业的人工处置；``pending_edge_confirmation`` 为真时执行面尚未确认停止。"""
+
+        body: dict[str, Any] = {"resolution": resolution, "reason": reason}
+        if device_command_id is not None:
+            body["device_command_id"] = device_command_id
+        return self._http.post(f"/workflow-node-jobs/{job_uuid}/resolve-uncertain", json=body)
+
+    def get_authoring(self, workflow_uuid: str) -> dict[str, Any]:
+        return self._http.get(f"/workflows/{workflow_uuid}/authoring")
+
+    def wait_authoring(
+        self,
+        workflow_uuid: str,
+        *,
+        after_revision: int,
+        timeout: float = 30.0,
+        poll_interval: float = 0.2,
+    ) -> dict[str, Any]:
+        if after_revision < 0 or timeout < 0 or poll_interval < 0:
+            raise WorkflowClientError("invalid_input", "Authoring 等待参数无效")
+        deadline = time.monotonic() + timeout
+        last: Optional[dict[str, Any]] = None
+        while True:
+            value = self.get_authoring(workflow_uuid)
+            if not isinstance(value, dict):
+                raise WorkflowClientError(
+                    "protocol_invalid",
+                    "Authoring 响应不是对象",
+                )
+            last = value
+            revision = int(value.get("workflow_revision") or 0)
+            draft = value.get("draft")
+            diagnostics = (
+                draft.get("diagnostics") if isinstance(draft, Mapping) else None
+            )
+            if revision > after_revision or diagnostics:
+                return value
+            if time.monotonic() >= deadline:
+                raise WorkflowClientError(
+                    "authoring_timeout",
+                    f"等待 Authoring revision 超时：{workflow_uuid}",
+                    details=last,
+                )
+            time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+
+    def watch_task(
+        self,
+        task_uuid: str,
+        *,
+        after: int = 0,
+        timeout: float = 300.0,
+        max_events: int = 500,
+    ) -> Iterator[dict[str, Any]]:
+        """订阅 SSE 失效通知，并在每次相关通知后经 HTTP 拉取任务与 Job 正文。
+
+        ``after`` 为 0 时从服务端当前水位开始，不回放历史通知；大于 0 时作为
+        ``Last-Event-ID`` 从该序号之后续传。``stream.reset`` 表示游标失效，水位
+        可能回退，客户端重读 HTTP 校准。快照没有变化的通知不重复产出。
+        """
+
+        if after < 0 or timeout <= 0 or max_events < 1:
+            raise WorkflowClientError("invalid_input", "watch 参数无效")
+
+        cursor = after
+        snapshot = self.inspect_task(task_uuid)
+        yield {
+            "kind": "task_snapshot",
+            "cursor": cursor,
+            **snapshot,
+        }
+        if self._is_terminal(snapshot["task"]):
+            return
+
+        deadline = time.monotonic() + timeout
+        headers = {"Accept": "text/event-stream", "Cache-Control": "no-cache"}
+        if self._auth_secret:
+            headers["Authorization"] = f"Lab {self._auth_secret}"
+        if after > 0:
+            headers["Last-Event-ID"] = str(after)
+
+        emitted = 0
+        try:
+            with self._notice_connector(
+                self.notification_url,
+                headers,
+                timeout,
+            ) as stream:
+                # 连接建立后再拉一次，封住“首次 HTTP 快照到 SSE 订阅”之间的竞态。
+                synchronized = self.inspect_task(task_uuid)
+                if synchronized != snapshot:
+                    snapshot = synchronized
+                    emitted += 1
+                    yield {
+                        "kind": "task_changed",
+                        "cursor": cursor,
+                        **snapshot,
+                    }
+                    if self._is_terminal(snapshot["task"]):
+                        return
+                while emitted < max_events:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    raw_notice = stream.recv(timeout=remaining)
+                    notice = self._decode_notice(raw_notice)
+                    if notice is None:
+                        continue
+                    sequence = self._notice_sequence(notice)
+                    if notice.get("action") == STREAM_RESET_EVENT:
+                        # 游标过期或超前：采用服务端给出的新水位（可能回退）并重读 HTTP。
+                        if sequence is not None:
+                            cursor = sequence
+                    elif not self._notice_matches_task(notice, task_uuid):
+                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传。
+                        if sequence is not None and sequence > cursor:
+                            cursor = sequence
+                        continue
+                    elif sequence is not None:
+                        if sequence <= cursor:
+                            continue
+                        cursor = sequence
+
+                    # 通知内容只触发失效；任务事实固定从 HTTP 重新拉取。
+                    refreshed = self.inspect_task(task_uuid)
+                    if refreshed == snapshot:
+                        continue
+                    snapshot = refreshed
+                    emitted += 1
+                    yield {
+                        "kind": "task_changed",
+                        "cursor": cursor,
+                        **snapshot,
+                    }
+                    if self._is_terminal(snapshot["task"]):
+                        return
+        except TimeoutError:
+            pass
+        except WorkflowClientError:
+            raise
+        except Exception as error:
+            raise WorkflowClientError(
+                "watch_disconnected",
+                f"工作流通知连接中断：{error}",
+                details={"task_uuid": task_uuid, "cursor": cursor},
+            ) from error
+
+        if emitted >= max_events:
+            return
+        raise WorkflowClientError(
+            "watch_timeout",
+            f"等待工作流任务终态超时：{task_uuid}",
+            details={"cursor": cursor},
+        )
+
+    @staticmethod
+    def _is_terminal(task: Mapping[str, Any]) -> bool:
+        return str(task.get("status") or "").lower() in TERMINAL_WORKFLOW_TASK_STATUSES
+
+    @staticmethod
+    def _decode_notice(raw_notice: str | bytes) -> Optional[dict[str, Any]]:
+        try:
+            value = json.loads(raw_notice)
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    @staticmethod
+    def _notice_data(notice: Mapping[str, Any]) -> Mapping[str, Any]:
+        data = notice.get("data")
+        return data if isinstance(data, Mapping) else notice
+
+    @classmethod
+    def _notice_matches_task(
+        cls,
+        notice: Mapping[str, Any],
+        task_uuid: str,
+    ) -> bool:
+        if notice.get("action") == AUTHORING_CHANGED_EVENT:
+            return False
+        data = cls._notice_data(notice)
+        direct_ids = {
+            str(data.get(key) or "") for key in ("workflow_task_uuid", "task_uuid")
+        }
+        if any(direct_ids):
+            return task_uuid in direct_ids
+        aggregate_type = str(data.get("aggregate_type") or "").lower()
+        if aggregate_type in {"workflow_task", "task"}:
+            return str(data.get("aggregate_uuid") or "") == task_uuid
+
+        event_type = str(
+            data.get("event_type")
+            or data.get("change_type")
+            or data.get("type")
+            or notice.get("action")
+            or ""
+        ).lower()
+        return any(token in event_type for token in ("workflow", "task", "job"))
+
+    @classmethod
+    def _notice_sequence(cls, notice: Mapping[str, Any]) -> Optional[int]:
+        # SSE 帧的 id 是持久通知序号，优先于 data 内的业务字段。
+        top = notice.get("id")
+        if isinstance(top, int) and not isinstance(top, bool) and top >= 0:
+            return top
+        data = cls._notice_data(notice)
+        for key in ("event_sequence", "backend_sequence", "sequence", "id"):
+            value = data.get(key)
+            if isinstance(value, bool):
+                continue
+            try:
+                sequence = int(value)
+            except (TypeError, ValueError):
+                continue
+            if sequence >= 0:
+                return sequence
+        return None
+
+
+__all__ = [
+    "HTTPWorkflowClient",
+    "TERMINAL_WORKFLOW_TASK_STATUSES",
+    "WorkflowClientError",
+    "derive_workflow_websocket_url",
+    "normalize_workflow_api_url",
+]

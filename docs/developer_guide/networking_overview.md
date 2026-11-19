@@ -32,7 +32,7 @@ Uni-Lab-OS 支持多种部署模式：
           ┌──────────┴──────────┐
           │                     │
      ┌────▼─────┐         ┌────▼─────┐
-     │  Master  │◄──ROS2──►│  Slave   │
+     │  Master  │◄─backend─►│  Slave   │
      │   Node   │         │   Node   │
      │  (Host)  │         │ (Slave)  │
      └────┬─────┘         └────┬─────┘
@@ -42,6 +42,8 @@ Uni-Lab-OS 支持多种部署模式：
      │ Device C│          │ Device D│
      └─────────┘          └─────────┘
 ```
+
+图中的 `backend` 是启动时选择的 `ros2`（DDS）或 `hostlink`（TCP）。
 
 ---
 
@@ -75,7 +77,8 @@ unilab --ak your_ak --sk your_sk -g host_devices.json
 **启动命令**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave_devices.json --is_slave
+unilab --ak your_ak --sk your_sk -g slave_devices.json \
+  --is_slave --host-node-ip 192.168.1.10
 ```
 
 ---
@@ -104,6 +107,170 @@ ros2 topic list
 # 查看action
 ros2 action list
 ```
+
+### HostLink 组网控制通道与无 ROS backend
+
+Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Slave 通过
+`--host-node-ip <host-ip>[:port]` 建立控制连接并完成：
+
+- 上报启动图中的设备 ID，供 Host 发现 Slave 及其设备归属；
+- ROS2 模式在 `rclpy.init` 前接收并应用 Host 的 `ROS_DOMAIN_ID`、发现范围、
+  静态对端和外部 Fast DDS Discovery Server 地址。
+
+在 `--backend ros2` 下，设备 Action 和节点注册仍走 ROS2；物料 create/get/update
+请求经 HostLink 交给 Host，再由 Host 代发到微后端 Materials Authority。
+`--backend hostlink` 不启动 rclpy/DDS：Host 与 Slave 都使用 `HostLinkLocalRuntime`
+加载普通 Python 驱动。驱动可以导入 ROS message Python 类作为数据结构，但不能依赖
+ROS2 图。Slave 在 HELLO 中发布设备动作、服务、状态字段和设备 UUID；驱动通过通用节点
+发布的状态通知会立即发送，心跳还会定期补发完整状态。Host 与 Slave 可以双向调用设备
+Action 和 Service；Action 带独立 ID，支持反馈和协作取消。通用节点还提供与 ROS 相同形状的
+`create_publisher(...).publish(...)` 和 `create_subscription(...)`：HostLink 本地运行时
+在本进程分发，
+HostLink 由 Host 按绝对 Topic 名称转发，消息会转换为 JSON 可传输的 Python 值。
+Slave 创建物料时只提交完整 PLR Resource，不提交模板 UUID 或实例 UUID；微后端负责按
+模板名解析 complete registry、分配 UUID，并把权威树经 Host 回传。查询直接下载权威树；
+更新先获取微后端基线，再以带版本前置条件的局部 snapshot 原子提交。Host 不提供运行时
+资源树 fallback，该链路也不要求 Slave 启动 ROS service 或直接访问 Web API。
+
+```bash
+# 无 ROS Host
+unilab -g host.json --backend hostlink --hostlink-port 7302
+
+# 无 ROS Slave
+unilab -g slave.json --backend hostlink --is-slave \
+  --host-node-ip 192.168.1.10 --hostlink-port 7302
+```
+
+#### 启动顺序：Host 端口先开，Slave 不必等 Host 就绪
+
+`hostlink` Host 进程读完配置就打开 HostLink 端口，早于注册表构建、设备图加载、物料权威
+装配与设备启动；默认「调度权威 → Host 子进程」拓扑里由 Host 子进程打开，`--no-safe-restart`
+单进程模式由该进程打开。设备 runtime 启动时 `HostLinkBackend` 接管同一个 server，Host 的启动
+顺序是：
+
+1. 打开 HostLink 端口（进程启动之初；预绑定失败时由设备 runtime 启动时再绑定一次）；
+2. 构建注册表、加载设备图、装配物料权威并完成开机物料对齐；
+3. 设备 runtime 接管 server、装配请求处理器 → `materials` 阶段就绪；
+4. 装配并启动本机设备（含 Workstation `post_init`）、注册内置 host 服务 → `devices` 阶段就绪。
+
+Host 启动期间 Slave 看到的是：
+
+- 握手（HELLO）、设备登记、心跳、状态与日志通知、Topic 订阅/发布随时可用，Slave 的设备
+  立刻出现在 Host 的在线表里；HELLO / PING 应答的 `pending_stages` 列出 Host 尚未就绪的阶段；
+- 物料请求在 `materials` 就绪前、设备 Action 与 Service 调用在 `devices` 就绪前，Host 在执行
+  处理器之前回「Host 启动中」应答（`ok=false`，顶层 `not_ready=<阶段>`、`retry_after`，
+  `error_info.code=host_not_ready`）。请求没有任何副作用，Slave 按退避原样重试，Host 就绪后
+  拿到正常结果，不会拿到错误结果；
+- 门控只针对 Host 自己的拒绝：嵌套调用失败转发回来的 `error_info` 即使带 `host_not_ready`
+  也不会触发重试，避免把执行过一半的动作再跑一遍。
+
+Slave 可以先于 Host 启动：连接失败按退避重试（间隔从 0.5 秒翻倍，封顶 2 秒），直到
+`--hostlink-host-wait-timeout`（`HostLinkConfig.host_wait_timeout`，默认 120 秒）仍连不上才
+报错退出，报错带 Host 地址、最后一次连接错误和可调参数。「Host 启动中」的重试同样以该值
+为上限，超时抛 `HostNotReadyError`（属于 `LinkError`）。`--hostlink-connect-timeout` 只是单次
+TCP 连接 / 握手的超时。Host 重启（退出码 75 后以相同参数拉起）时新进程同样在启动之初重绑端口，
+已连接的 Slave 在约 2 秒内重连并重新登记，不必等新 Host 的设备全部起来。因此启动脚本和测试
+不需要先轮询 HostLink 端口再拉起 Slave。
+
+ROS2 backend 的 HostLink listener 由 Host 微后端在 `setup_host_server_stack` 里打开（早于
+ROS 设备启动，物料处理器在打开时已就绪），ROS2 Slave 在 `rclpy.init` 前无限期等待 Host
+（`--slave_no_host` 除外），不受上述连接上限影响。
+
+驱动通过 `post_init(node)` 获得通用 `DeviceNode`，可使用日志、异步等待、任务调度、
+Action、Service、状态通知、Topic 发布/订阅、物料更新/查询和跨设备动作调用。Workstation
+也按所选 backend 初始化对应 node，并使用同一 backend 初始化 sub-device；它不是只能在
+ROS2 下运行的特殊节点。相对 Topic 名称会按
+`/devices/<device_id>/<topic>` 解析；设备状态也会发布到这个路径。注册表可用
+`class.supported_backends: [hostlink, ros2]` 明确声明可运行的通信 backend；
+`class.type: ros2` 默认只允许 ROS2。注册表设备动作可以在 HostLink 上传递目标、反馈、取消和结果；
+驱动调用时携带的 `action_type` 只作为兼容信息，实际按动作名和字典参数执行。
+这套兼容接口用于普通设备控制，并不表示 HostLink 与 ROS2 100% 等价。MoveIt
+ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2 专用高频图像流或
+依赖原生 QoS、零拷贝、复杂消息图的链路仍使用 ROS2。对应驱动应标记为 `[ros2]`
+（`class.supported_backends: [ros2]`）。HostLink 启动时不导入这类驱动，而是跳过该设备及挂在它
+下面的子设备，写一条 ERROR 日志，其余设备照常启动；跳过的设备及原因出现在 `/api/v1/devices`
+（`edge_status: "unavailable"`，`unavailable` 字段写明原因与支持的 backend；设备目录与在线列表
+都不把它算作在线）、运行预检、`/api/v1/hostlink/peers` 与 `/api/v1/health` 的
+`unavailable_devices` 中。注册表缺失、模板名非法等配置错误仍让启动失败。Slave 上跳过的设备
+目前只写 Slave 自己的日志。工作站和
+普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
+相同的设备初始化路径。
+
+HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creator.py`）：
+
+- 图节点的 `config` 按 `__init__` 参数名平铺传入。构造函数声明了名为 `config` 的参数时，它收到
+  整份节点配置（旧驱动从 `config` 里读参数的写法照旧），同时声明的其他具名参数（如 `debug_mode`、
+  `address`、`deck`）仍按名取节点配置里的同名键，不会静默退回默认值。节点配置按构造签名写成
+  `{"config": {...}}`（注册表 `init_param_schema` 的形状）时，驱动的 `config` 只收内层字典，其余键
+  照常按名（或经 `**kwargs`）传入，与 ROS 2 平铺传参一致。新驱动仍应按基础类型拆开参数，不要只用
+  一个 `config: dict`。
+- 动作声明了 `sample_uuids` 参数而作业没带样品映射（单动作调用、跨设备调用）时，两种 backend 都注入
+  空映射 `{}`。
+- `UniLabJsonCommand` 动作的返回值是数据：返回 `False` 或 `{"success": False}` 不会让作业失败，
+  业务失败要抛异常（作业进入失败决策）；原生动作类型（`Centrifuge`、`SendCmd` 等）返回 `False` /
+  `success=False` 仍视为失败。
+- 工作站构造器按 `deck` 引用实例化的台面就是驱动手里的 `self.deck`，也是设备 `resource_tracker`
+  里该 uuid 唯一的实例；其余非设备子节点各登记一次。驱动不需要自己去 tracker 里去重。
+- 启动顺序是 `post_init` → `setup` → `initialize` → 状态定时发布。PyLabRobot 液体处理器
+  （`LiquidHandlerAbstract` 系）的 `setup` 成功后，运行时打开 PLR 体积跟踪（进程级开关，ROS2 在
+  构造器调度的 `setup` 完成后做同一件事），驱动不必自己调用 `set_volume_tracking`。
+- 状态定时发布与动作反馈读取的同步 getter / property 在该设备专用的状态线程上求值（各 getter
+  之间仍串行），不占设备事件循环：慢的硬件查询只推迟状态本身，不会拖住同一设备的动作与定时器。
+  `async def` getter 仍在设备事件循环上 await，不应在其中做阻塞 IO。启动时扫描 `@subscribe`
+  回调不求值 property。
+
+`--test_mode` 下只有声明 `run_in_test_mode = True` 的驱动（内置虚拟设备都声明了）真实执行，其余动作返回按注册表 handles 构造的
+模拟结果。这条规则既作用于 Host 派发的作业，也作用于驱动之间的跨设备调用
+（`node.call_device_action[_async]`）：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到
+模拟结果，不会驱动真实硬件。目标设备在别的进程（Host ↔ Slave）时，调用方把测试模式随 `device.call`
+带过去，由目标所在进程按目标驱动判定。
+
+设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
+接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
+终止。连接断开时设备在 `heartbeat_timeout` 后离线，客户端会指数退避重连（间隔封顶
+2 秒），但不会自动重放动作。Host 连接进程内或独立部署的微后端物料中心，设备侧只访问微后端边界；
+ROS 内部资源树通知也由 `ResourceService` 处理。
+
+HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS 或双方身份认证。
+部署时应通过防火墙限制 `7302` 的来源；跨不可信网络使用时应先接入 VPN/安全隧道。
+
+#### 端口与前端归属
+
+| 服务 | 默认地址 | 协议 | 使用者 |
+|---|---|---|---|
+| 主 Web/API | `0.0.0.0:8002` | HTTP/WebSocket over TCP | 微后端 API、前端导航页、API 客户端；由 `--port-management` 配置 |
+| HostLink | `0.0.0.0:7302` | NDJSON over raw TCP | Host/Slave 进程，不供浏览器访问 |
+
+因此微前端不访问 `7302`。接入主 OS API 的微前端跟随
+`--port-management`（`--port` 为兼容缩写），默认访问 `8002`。
+`--disable-browser` 只禁止自动打开页面，不会停止 `8002` 的 HTTP/Web 服务。
+两个独立 TCP 服务不能绑定同一个 IP/端口。
+
+#### HostLink 与 ROS2 参数
+
+| 参数 | 作用域 | 默认值 | 说明 |
+|---|---|---:|---|
+| `--host-node-ip` | Slave | 空 | Host IP/主机名；兼容 `ip:port` |
+| `--hostlink-port` | Host + Slave | `7302` | HostLink TCP 监听/连接端口；优先于 `--host-node-ip` 中的端口 |
+| `--hostlink-bind` | Host | `0.0.0.0` | HostLink 监听网卡 |
+| `--hostlink-advertise-ip` | Host | 自动探测 | 多网卡时发布给 Slave 的可达 IP |
+| `--disable-hostlink` | Host + Slave | 否 | 仅 ROS2 可用：禁用 HostLink 并回退原 ROS2 发现；不能和 `--backend hostlink` 同用 |
+| `--hostlink-heartbeat-interval` | Slave | `5` 秒 | 心跳发送间隔 |
+| `--hostlink-heartbeat-timeout` | Host | `15` 秒 | Slave 离线判定时间 |
+| `--hostlink-connect-timeout` | Slave | `5` 秒 | 单次 TCP 连接和握手超时（不是等 Host 的总时长） |
+| `--hostlink-host-wait-timeout` | Slave | `120` 秒 | 等 Host 的上限：启动时退避重连直到端口可连，以及 Host 启动中「未就绪」请求的重试，各自计时 |
+| `--hostlink-request-timeout` | Host + Slave | `10` 秒 | 控制请求/设备 RPC 超时 |
+| `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
+| `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |
+| `--ros-static-peers` | Host | 自动加入 Host IP | 分号分隔的静态发现对端 |
+| `--ros-discovery-server` | Host | 空 | 外部 Fast DDS `host:port`；`off` 禁用；空值由微后端托管 |
+| `--ros-discovery-port` | Host | `0` | 托管 Discovery Server 的 UDP 端口；`0` 复用 HostLink 数字端口 |
+| `--no-ros-assist` | ROS2 Slave | 否 | 保留 HostLink 心跳/设备发现，但不应用 Host ROS 参数 |
+
+ROS2 Host 的微后端会在 `rclpy.init` 前启动托管的 Fast DDS Discovery
+Server；若当前环境找不到 `fast-discovery-server`/`fastdds` 可执行文件，会记录错误并
+回退到现有 `ROS_AUTOMATIC_DISCOVERY_RANGE`/`ROS_STATIC_PEERS` 策略。direct
+`hostlink` backend 不启动 DDS 进程。
 
 ### WebSocket 通信
 
@@ -188,15 +355,21 @@ unilab --ak your_ak --sk your_sk -g all_devices.json
 **主节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g host.json
+unilab --ak your_ak --sk your_sk -g host.json --ros-domain-id 42
 ```
 
 **从节点**:
 
 ```bash
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
-unilab --ak your_ak --sk your_sk -g slave2.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g slave1.json \
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302
+unilab --ak your_ak --sk your_sk -g slave2.json \
+  --is-slave --host-node-ip 192.168.1.10 --hostlink-port 7302 --working-dir ~/unilab-slave2
 ```
+
+从节点不启动 HTTP 服务（管理 API 只在 Host / 调度权威上），不需要 `--port-management`。同一台机器上的
+每个从节点要有自己的数据库根目录（`--working-dir` 或 `--server-database-root`），否则后启动的那个拿不到
+`unilab.lock`，以退出码 73 退出（见 [微后端数据库](databases.md) 第 3 节）。
 
 ### 云端集成模式
 
@@ -221,10 +394,10 @@ Laboratory A    Laboratory B
 
 ```bash
 # 实验室A
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk
 
 # 实验室B
-unilab --ak your_ak --sk your_sk --upload_registry
+unilab --ak your_ak --sk your_sk
 ```
 
 ---
@@ -250,11 +423,11 @@ unilab --ak your_ak --sk your_sk --upload_registry
 # 基本启动
 unilab --ak your_ak --sk your_sk -g host.json
 
-# 带云端集成
-unilab --ak your_ak --sk your_sk -g host.json --upload_registry
+# 带 Backend 控制面
+unilab --ak your_ak --sk your_sk -g host.json
 
 # 指定端口
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 #### 3. 验证主节点
@@ -300,8 +473,8 @@ ros2 service list | grep host_node
 # 基本从节点启动
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave
 
-# 指定不同端口（如果多个从节点在同一台机器）
-unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --port 8003
+# 同一台机器上的第二个从节点：不监听 HTTP 端口，只需另一个数据库根目录
+unilab --ak your_ak --sk your_sk -g slave2.json --is_slave --working_dir ~/unilab-slave2
 
 # 跳过等待主节点（独立测试）
 unilab --ak your_ak --sk your_sk -g slave1.json --is_slave --slave_no_host
@@ -358,9 +531,34 @@ ping <slave_node_ip>
 export ROS_DOMAIN_ID=42
 ```
 
+推荐由 Host 启动参数统一设置 domain，并向 Slave 下发：
+
+```bash
+# Host：发布 domain 42
+unilab -g host.json --ros-domain-id 42
+
+# Slave：通过 HostLink 获取 domain 42 和发现配置
+unilab -g slave.json --is-slave --host-node-ip 192.168.1.10
+```
+
+如实验室使用已有 Fast DDS Discovery Server，可在 Host 指定并下发：
+
+```bash
+unilab -g host.json --ros-domain-id 42 \
+  --ros-discovery-server 192.168.1.10:11811
+```
+
+此功能切片不会自动启动 Discovery Server 进程；未指定时仍沿用 ROS2/DDS
+原有发现机制，并把 Host IP 加入 `ROS_STATIC_PEERS`。
+
 ### 防火墙配置
 
 **建议做法**：
+
+HostLink 需要 Slave 能访问 Host 的 TCP `7302`（若在 `--host-node-ip` 中指定
+其他端口，则开放对应端口）。ROS2 backend 下该端口只承载组网控制；HostLink
+backend 下还承载设备描述、状态、JSON Topic、动作 RPC 和物料树同步，
+但不承载浏览器流量。
 
 为了确保 ROS2 DDS 通信正常，建议直接关闭防火墙，而不是配置特定端口。ROS2 使用动态端口范围，配置特定端口可能导致通信问题。
 
@@ -413,6 +611,27 @@ ros2 run demo_nodes_cpp listener
 - 如果只能看到本地消息，说明网络配置有问题
 - 如果两台机器都能互相收发消息，则组网配置正确
 
+#### 用 `unilab doctor` 分层诊断
+
+`unilab doctor` 不启动设备运行时，逐层定位「设备不上线」卡在哪一层：
+
+```bash
+# 第一层：HostLink TCP 通路（连接 → hello 握手 → ping 往返），不需要 ROS
+unilab doctor net --hostlink-addr 192.168.1.10:7302
+
+# 第二层：ROS 收发。host（192.168.1.10）上收、slave（192.168.1.20）上发，纯单播定向诊断
+unilab doctor listener --peer 192.168.1.20 --discovery OFF --ros-domain-id 42
+unilab doctor talker --peer 192.168.1.10 --discovery OFF --ros-domain-id 42
+# 或两边都套用 host 经 HostLink 下发的组网参数
+unilab doctor talker --hostlink-addr 192.168.1.10
+
+# 假设备：以设备身份发探测消息，并检查 host 的注册服务在 ROS 图上是否可见
+unilab doctor fake-device --hostlink-addr 192.168.1.10
+```
+
+`net` 通路正常退出码为 0，连不上或握手失败为 2；`listener` 一条探测都没收到为 2；
+`fake-device` 看不到 host 注册服务为 3。`talker` / `listener` / `fake-device` 需要 ROS 2（`rclpy`）。
+
 ### 本地网络要求
 
 **ROS2 通信**:
@@ -464,21 +683,21 @@ curl https://leap-lab.bohrium.com/api/v1/health
 
 ```bash
 # host.json
-unilab --ak your_ak --sk your_sk -g host.json --port 8002
+unilab --ak your_ak --sk your_sk -g host.json --port-management 8002
 ```
 
 ### 房间 B - 从节点 1
 
 ```bash
 # liquid_handler.json
-unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave --port 8003
+unilab --ak your_ak --sk your_sk -g liquid_handler.json --is_slave
 ```
 
 ### 房间 C - 从节点 2
 
 ```bash
 # analytical.json
-unilab --ak your_ak --sk your_sk -g analytical.json --is_slave --port 8004
+unilab --ak your_ak --sk your_sk -g analytical.json --is_slave
 ```
 
 ---
@@ -543,7 +762,7 @@ ros2 topic bw /device_status
 
 ```bash
 # 查看日志
-tail -f unilabos_data/logs/unilab.log | grep sync
+tail -f ~/.unilabos/logs/unilab.log | grep sync  # 默认工作目录；自定义时换成 <工作目录>/logs
 ```
 
 **解决**:
@@ -583,12 +802,12 @@ ros2 topic list
 - [安装指南](../user_guide/installation.md) - 环境安装步骤
 - [启动参数详解](../user_guide/launch.md) - 启动参数说明
 - [添加设备驱动](add_device.md) - 自定义设备开发
-- [工作站架构](workstation_architecture.md) - 复杂工作站搭建
+- [工作站架构](examples/workstation_architecture.md) - 复杂工作站搭建
 
 ---
 
 ## 参考资料
 
-- [ROS2 网络配置](https://docs.ros.org/en/humble/Tutorials/Advanced/Networking.html)
+- [ROS2 网络配置](https://docs.ros.org/en/jazzy/Tutorials/Advanced/Networking.html)
 - [DDS 配置](https://fast-dds.docs.eprosima.com/)
 - Uni-Lab 云平台文档

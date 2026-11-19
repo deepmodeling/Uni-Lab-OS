@@ -1,0 +1,75 @@
+{
+  "goal": {
+    "aspiration_flow_rate": "aspiration_flow_rate",
+    "dispense_flow_rates": "dispense_flow_rates",
+    "ratios": "ratios",
+    "source": "source",
+    "source_vol": "source_vol",
+    "target_vols": "target_vols",
+    "targets": "targets"
+  },
+  "goal_default": {
+    "from_vessel": "",
+    "to_vessel": "",
+    "volume": 0.0,
+    "amount": "",
+    "time": 0.0,
+    "viscous": false,
+    "rinsing_solvent": "",
+    "rinsing_volume": 0.0,
+    "rinsing_repeats": 0,
+    "solid": false
+  },
+  "handles": {},
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "from_vessel": {
+        "type": "string"
+      },
+      "to_vessel": {
+        "type": "string"
+      },
+      "volume": {
+        "type": "number",
+        "minimum": -1.7976931348623157e+308,
+        "maximum": 1.7976931348623157e+308
+      },
+      "amount": {
+        "type": "string"
+      },
+      "time": {
+        "type": "number",
+        "minimum": -1.7976931348623157e+308,
+        "maximum": 1.7976931348623157e+308
+      },
+      "viscous": {
+        "type": "boolean"
+      },
+      "rinsing_solvent": {
+        "type": "string"
+      },
+      "rinsing_volume": {
+        "type": "number",
+        "minimum": -1.7976931348623157e+308,
+        "maximum": 1.7976931348623157e+308
+      },
+      "rinsing_repeats": {
+        "type": "integer",
+        "minimum": -2147483648,
+        "maximum": 2147483647
+      },
+      "solid": {
+        "type": "boolean"
+      }
+    },
+    "title": "Transfer_Goal"
+  },
+  "type": "Transfer"
+}

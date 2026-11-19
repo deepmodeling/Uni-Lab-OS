@@ -1,0 +1,36 @@
+# 显式选装；CLI 仍需 --backend ros2。
+# channel 在安装/构建命令中指定，不能写入成品包的运行依赖。
+package:
+  name: unilabos-ros2
+  version: 0.13.0rc1
+build:
+  noarch: generic
+  number: 1
+  string: jazzy_1
+requirements:
+  run:
+    - unilabos ==0.13.0rc1 py314_0
+    - python >=3.14,<3.15
+    - python_abi 3.14.* *_cp314
+    - opencv
+    - transforms3d
+    - ros2-distro-mutex 0.20.* jazzy_*
+    - ros-jazzy-ros-core
+    - ros-jazzy-action-msgs
+    - ros-jazzy-std-msgs
+    - ros-jazzy-geometry-msgs
+    - ros-jazzy-control-msgs
+    - ros-jazzy-nav2-msgs
+    - ros-jazzy-cv-bridge
+    - ros-jazzy-vision-opencv
+    - ros-jazzy-tf-transformations
+    - ros-jazzy-moveit-msgs
+    - ros-jazzy-tf2-ros
+    - ros-jazzy-tf2-ros-py
+    - ros-jazzy-unilabos-msgs ==0.12.2
+tests:
+  - script:
+    - python -m unilabos.backend.ros2.conda_smoke
+about:
+  license: GPL-3.0-only
+  description: Optional UniLabOS ROS 2 jazzy transport (CPython 3.14)

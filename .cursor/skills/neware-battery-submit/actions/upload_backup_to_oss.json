@@ -1,0 +1,53 @@
+{
+  "feedback": {},
+  "goal": {
+    "backup_dir": "backup_dir",
+    "file_pattern": "file_pattern",
+    "oss_prefix": "oss_prefix"
+  },
+  "goal_default": {
+    "backup_dir": null,
+    "file_pattern": "*",
+    "oss_prefix": null
+  },
+  "handles": {
+    "output": [
+      {
+        "data_key": "uploaded_files",
+        "data_source": "executor",
+        "data_type": "array",
+        "handler_key": "uploaded_files",
+        "io_type": "sink",
+        "label": "Uploaded Files (with standard flow info)"
+      }
+    ]
+  },
+  "placeholder_keys": {},
+  "result": {},
+  "schema": {
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "backup_dir": {
+        "description": "备份目录路径（默认使用最近一次submit_from_csv的backup_dir）",
+        "type": "string"
+      },
+      "file_pattern": {
+        "default": "*",
+        "description": "文件通配符模式，例如 *.csv 或 Battery_*.nda",
+        "type": "string"
+      },
+      "oss_prefix": {
+        "description": "OSS对象路径前缀（默认使用self.oss_prefix）",
+        "type": "string"
+      }
+    },
+    "required": [],
+    "type": "object",
+    "_unilabos_placeholder_info": {}
+  },
+  "type": "UniLabJsonCommand"
+}

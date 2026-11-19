@@ -1,12 +1,14 @@
 # yaml 注册表编写指南
 
+> **📦 设备驱动放在外部驱动包中。** 主仓库只保留框架依赖的内置设备代码（工作站基类、虚拟设备、抽象液体处理器）；厂商驱动和新设备都放在独立驱动包里，详见 {doc}`add_device` 开头的说明。下文 `module:` 示例中的 `my_device_pkg.xxx` 指你的驱动包模块路径。
+
 ## 快速开始：使用注册表编辑器
 
-推荐使用 UniLabOS 自带的可视化编辑器，它能帮你自动生成大部分配置，省去手写的麻烦。
+推荐使用 Uni-Lab-OS 自带的可视化编辑器，它能帮你自动生成大部分配置，省去手写的麻烦。
 
 ### 怎么用编辑器
 
-1. 启动 UniLabOS
+1. 启动 Uni-Lab-OS
 2. 在浏览器中打开"注册表编辑器"页面
 3. 选择你的 Python 设备驱动文件
 4. 点击"分析文件"，让系统读取你的类信息
@@ -37,7 +39,7 @@ yaml 注册表就是设备的配置文件，里面定义了设备怎么用、有
 | icon              | string | 否       | 图标路径，默认为空                  |
 | init_param_schema | object | 否       | 初始化参数，系统自动分析生成        |
 | version           | string | 否       | 版本号，默认 "1.0.0"                |
-| category          | array  | 否       | 设备分类，默认用文件名              |
+| category          | array  | 否       | 设备分类；没写时用文件名，写了就以你写的为准 |
 | config_info       | array  | 否       | 嵌套配置，默认为空                  |
 | file_path         | string | 否       | 文件路径，系统自动设置              |
 | registry_type     | string | 否       | 注册表类型，自动设为 "device"       |
@@ -67,7 +69,7 @@ new_device: # 设备名，要唯一
     action_value_mappings: # 动作配置（后面会详细说）
       action_name:
         # 具体的动作设置
-    module: unilabos.devices.your_module.new_device:NewDeviceClass # 你的 Python 类
+    module: my_device_pkg.new_device:NewDeviceClass # 你的 Python 类
     status_types: # 状态类型（系统会自动生成）
       status: str
       temperature: float
@@ -297,7 +299,7 @@ init_param_schema:
 
 ```yaml
 version: '1.0.0' # 默认版本
-category: ['文件名'] # 用你的 yaml 文件名当类别
+category: ['文件名'] # 没写 category 时用 yaml 文件名当类别
 description: '' # 默认为空，你可以手动改
 icon: '' # 默认为空，你可以加图标
 handles: [] # 默认空数组
@@ -406,7 +408,7 @@ my_temperature_controller:
           type: object
         feedback: {}
 
-    module: unilabos.devices.temperature.my_controller:MyTemperatureController
+    module: my_device_pkg.my_controller:MyTemperatureController
     status_types:
       current_temperature: float
       target_temperature: float
@@ -464,7 +466,7 @@ my_temperature_controller:
 1. 先写好你的 Python 驱动类
 2. 用注册表编辑器自动生成 yaml 配置
 3. 把生成的文件保存到 `devices/` 目录
-4. 重启 UniLabOS 就能用了
+4. 重启 Uni-Lab-OS 就能用了
 
 ### 方法二：手动写（简化版）
 
@@ -474,7 +476,7 @@ my_temperature_controller:
 # devices/my_device.yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
 ```
 
@@ -528,7 +530,7 @@ class MyDevice(DeviceBase):
 ```yaml
 my_device:
   class:
-    module: unilabos.devices.my_module.my_device:MyDevice
+    module: my_device_pkg.my_device:MyDevice
     type: python
     action_value_mappings:
       # 自定义动作
@@ -550,7 +552,7 @@ my_device:
 1. 检查模块路径：确认 `class.module` 路径写对了
 2. 确认类能导入：看看你的 Python 驱动类能不能正常导入
 3. 检查语法：用 yaml 验证器看看文件格式对不对
-4. 查看日志：看 UniLabOS 启动时有没有报错信息
+4. 查看日志：看 Uni-Lab-OS 启动时有没有报错信息
 
 ### 自动生成失败了
 

@@ -310,7 +310,7 @@ class MyLabDeck(Deck):
 | `size` | dict | 槽位尺寸 `{width, height, depth}`（mm） |
 | `content_type` | list | 允许放入的物料类型，如 `["plate", "tip_rack", "tube_rack", "adaptor"]` |
 
-**参考实现：** `unilabos/devices/liquid_handling/prcxi/prcxi.py` 中的 `PRCXI9300Deck`（4x4 共 16 个 site）。
+**参考实现：** PRCXI 驱动包中的 `PRCXI9300Deck`（4x4 共 16 个 site，原 `unilabos/devices/liquid_handling/prcxi/prcxi.py`）；主仓库测试夹具 `tests/plr_fixtures.py` 中的 `SiteDeck` 是同一 Site 语义的最小实现。
 
 ---
 
@@ -347,5 +347,5 @@ unilab -g <graph>.json
 |------|------|
 | Bottle/Carrier 基类 | `unilabos/resources/itemized_carrier.py` |
 | WareHouse 基类 + 工厂 | `unilabos/resources/warehouse.py` |
-| PLR 注册 | `unilabos/resources/plr_additional_res_reg.py` |
+| PLR 注册 | 驱动包导入时调用 `unilabos/resources/plr_additional_res_reg.py` 的 `register_plr_module()` / `@register_plr_class` |
 | 装饰器定义 | `unilabos/registry/decorators.py` |

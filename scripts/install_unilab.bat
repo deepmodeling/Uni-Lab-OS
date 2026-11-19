@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ================================================
-echo UniLabOS Environment Installation Script
+echo Uni-Lab-OS Environment Installation Script
 echo ================================================
 echo.
 
@@ -86,20 +86,14 @@ echo.
 
 REM Set target environment path
 set "ENV_NAME=unilab"
+if not "%~1"=="" set "ENV_NAME=%~1"
 set "ENV_PATH=%CONDA_BASE%\envs\%ENV_NAME%"
 
 REM Check if environment already exists
 if exist "%ENV_PATH%" (
-    echo WARNING: Environment '%ENV_NAME%' already exists at %ENV_PATH%
-    echo.
-    set /p "OVERWRITE=Do you want to overwrite it? (y/n): "
-    if /i not "!OVERWRITE!"=="y" (
-        echo Installation cancelled.
-        pause
-        exit /b 0
-    )
-    echo Removing existing environment...
-    rmdir /s /q "%ENV_PATH%"
+    echo ERROR: Environment already exists at %ENV_PATH%. Nothing was removed.
+    echo Use a new name: install_unilab.bat unilab-hostlink
+    exit /b 1
 )
 
 REM Find the packed environment file
@@ -162,26 +156,21 @@ if errorlevel 1 (
 )
 
 echo.
-echo Checking UniLabOS entry point...
-REM Check if unilab-script.py exists
-set "UNILAB_SCRIPT=%ENV_PATH%\Scripts\unilab-script.py"
+echo Checking Uni-Lab-OS entry point...
+set "UNILAB_SCRIPT=%ENV_PATH%\Scripts\unilab.exe"
 if not exist "%UNILAB_SCRIPT%" (
-    echo WARNING: unilab-script.py not found, creating it...
-    (
-        echo # -*- coding: utf-8 -*-
-        echo import re
-        echo import sys
-        echo.
-        echo from unilabos.app.main import main
-        echo.
-        echo if __name__ == '__main__':
-        echo     sys.argv[0] = re.sub^(r'(-script\.pyw?^|\.exe^)?$', '', sys.argv[0]^)
-        echo     sys.exit^(main^(^)^)
-    ) > "%UNILAB_SCRIPT%"
-    echo Created: %UNILAB_SCRIPT%
+    echo ERROR: Entry point is missing. The archive is incomplete.
+    exit /b 1
 ) else (
     echo Found: %UNILAB_SCRIPT%
 )
+
+call "%CONDA_BASE%\condabin\conda.bat" activate "%ENV_PATH%"
+if errorlevel 1 exit /b 1
+"%ENV_PATH%\python.exe" "%SCRIPT_DIR%verify_installation.py" --assert-no-ros
+if errorlevel 1 exit /b 1
+"%UNILAB_SCRIPT%" --help
+if errorlevel 1 exit /b 1
 
 echo.
 echo ================================================
@@ -197,7 +186,7 @@ echo   call %ENV_PATH%\Scripts\activate.bat
 echo.
 echo You can verify the installation by running:
 echo   cd /d "%SCRIPT_DIR%"
-echo   python verify_installation.py
+echo   python verify_installation.py --assert-no-ros
 echo.
 pause
 

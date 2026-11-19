@@ -15,22 +15,24 @@ options:
                         Path to the registry directory
   --working_dir WORKING_DIR
                         Path to the working directory
-  --backend {ros,simple,automancer}
-                        Choose the backend to run with: 'ros', 'simple', or 'automancer'.
-  --app_bridges APP_BRIDGES [APP_BRIDGES ...]
-                        Bridges to connect to. Now support 'websocket' and 'fastapi'.
-  --is_slave            Run the backend as slave node (without host privileges).
-  --slave_no_host       Skip waiting for host service in slave mode
-  --upload_registry     Upload registry information when starting unilab
+  --backend {hostlink,ros2}
+                        Communication backend: hostlink (default; distributed over
+                        HostLink TCP, no DDS/ROS 2 required) or ros2.
+  --is_slave, --is-slave
+                        Run the backend as slave node (without host privileges).
+  --slave_no_host, --slave-no-host
+                        Skip waiting for host service in slave mode
   --config CONFIG       Configuration file path, supports .py format Python config files
-  --port PORT           Port for web service information page
-  --disable_browser     Disable opening information page on startup
+  --port_management PORT_MANAGEMENT, --port-management PORT_MANAGEMENT, --port PORT_MANAGEMENT
+                        微后端 HTTP API 与前端导航页端口，默认 8002
+  --disable_browser, --disable-browser
+                        只禁止自动打开浏览器，管理端服务仍会启动
   --2d_vis              Enable 2D visualization when starting pylabrobot instance
   --visual {rviz,web,disable}
                         Choose visualization tool: rviz, web, or disable
   --ak AK               Access key for laboratory requests
   --sk SK               Secret key for laboratory requests
-  --addr ADDR           Laboratory backend address
+  --address ADDRESS     统一服务地址（--addr 为兼容别名）
   --skip_env_check      Skip environment dependency check on startup
   --complete_registry   Complete registry information
 ```
@@ -54,9 +56,9 @@ Uni-Lab 的启动过程分为以下几个阶段：
 您可以直接跟随 unilabos 的提示进行，无需查阅本节
 
 - **工作目录设置**：
-  - 如果当前目录以 `unilabos_data` 结尾，则使用当前目录
-  - 否则使用 `当前目录/unilabos_data` 作为工作目录
-  - 可通过 `--working_dir` 指定自定义工作目录
+  - 默认工作目录为 `~/.unilabos`
+  - 当前目录本身名为 `.unilabos` / `unilabos_data`，或其下有这样的子目录时，直接使用它
+  - 可通过 `--working_dir` 指定自定义工作目录（详见 [工作目录详解](../advanced_usage/working_directory.md)）
 
 - **配置文件查找顺序**：
   1. 使用 `--config` 参数指定的配置文件
@@ -67,9 +69,9 @@ Uni-Lab 的启动过程分为以下几个阶段：
 
 支持多种后端环境：
 
-- `--addr test`：测试环境 (`https://leap-lab.test.bohrium.com/api/v1`)
-- `--addr uat`：UAT 环境 (`https://leap-lab.uat.bohrium.com/api/v1`)
-- `--addr local`：本地环境 (`http://127.0.0.1:48197/api/v1`)
+- `--address test`：测试环境 (`https://leap-lab.test.bohrium.com/api/v1`)
+- `--address uat`：UAT 环境 (`https://leap-lab.uat.bohrium.com/api/v1`)
+- `--address local`：本地环境 (`http://127.0.0.1:48197/api/v1`)
 - 自定义地址：直接指定完整 URL
 
 ### 5. 认证配置
@@ -82,7 +84,7 @@ Uni-Lab 的启动过程分为以下几个阶段：
 
 支持两种方式：
 
-- **本地文件**：使用 `-g` 指定图谱文件（支持 JSON 和 GraphML 格式）
+- **本地文件**：使用 `-g` 指定图谱文件（仅支持 node-link JSON；GraphML 已不再支持）
 - **远程资源**：不指定本地文件即可
 
 ### 7. 注册表构建
@@ -90,6 +92,10 @@ Uni-Lab 的启动过程分为以下几个阶段：
 - 构建设备和资源注册表
 - 支持自定义注册表路径 (`--registry_path`)
 - 可选择补全注册表信息 (`--complete_registry`)
+- `--check_mode` 只构建并校验注册表后退出：真实 import 每个注册的设备 / 资源类。AST 扫描失败而被跳过的文件
+  （日志 `AST 扫描文件失败`）、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目一视同仁）
+  都会让它以退出码 1 结束，并逐条列出问题；补全写回 YAML 时，找不到类源码的条目原样保留，交给导入校验判定；
+  `supported_backends` 不含当前 backend 的设备（例如 HostLink 下的 ROS 2 专用节点）导入失败只记为跳过。
 
 ### 8. 设备验证和注册
 
@@ -116,7 +122,7 @@ Uni-Lab 支持使用 Python 格式的配置文件进行系统设置。通过 `--
 unilab --config path/to/your/config.py
 ```
 
-配置文件包含实验室和 WebSocket 连接等设置。有关配置文件的详细信息，请参阅[配置指南](configuration.md)。
+配置文件包含实验室和 WebSocket 连接等设置。有关配置文件的详细信息，请参阅[配置指南](../advanced_usage/configuration.md)。
 
 ## 初始化信息来源
 
@@ -124,7 +130,18 @@ unilab --config path/to/your/config.py
 
 ### 1. 组态&拓扑图
 
-使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前支持 GraphML 和 node-link JSON 两种格式。格式可参照 `tests/experiments` 下的启动文件。
+使用 `-g` 时，组态&拓扑图应包含实验室所有信息，详见{ref}`graph`。目前只支持 node-link JSON 格式（GraphML 需先转换为 node-link JSON，`-g foo.graphml` 会拒绝启动）。格式可参照 `unilabos/test/experiments` 下的启动文件。
+
+`-g <文件>.json` 是**创建入口，不是运行真相**。启动时文件先登记到 Graph Authority
+（materials.db 的图快照），随后一切从权威拉取——设备的位点、持有的物料都以权威为准：
+
+- 权威还没有这张图（按文件名）→ 整图创建，节点 / 位点在此获得权威 uuid；
+- 权威已有这张图 → 沿用权威快照，文件里权威没有的节点 / 连线补进去；文件对既有节点的
+  修改（位置、config、删除）**不生效**——改图请用前端画布或 `unilab graph upload`；
+- 文件里的 uuid 与权威身份不一致、payload 非法、Graph Authority 不可达 → 拒绝启动。
+
+`-g <图名|uuid>` 直接以权威中的图启动。物料同理：图中的物料按 uuid 对齐到物料权威
+（`materials.ensure`），权威已有的沿用、没有的创建、uuid 冲突拒绝。
 
 ### 2. 分别指定控制逻辑
 
@@ -134,26 +151,119 @@ unilab --config path/to/your/config.py
 
 ## 通信中间件 `--backend`
 
-目前 Uni-Lab 支持以下通信中间件：
+Uni-Lab 对外提供两个设备通信 backend。名称、能力和实现入口由
+`unilabos.backend.BACKEND_PROFILES` 统一管理：
 
-- **ros** (默认)：基于 ROS2 的通信
-- **automancer**：Automancer 兼容模式 (实验性)
+| Backend | 设备运行时 | 支持的设备能力 | 应选择该 backend 的场景 |
+|---|---|---|---|
+| **hostlink**（默认） | 普通 Python 驱动通过 HostLink TCP 组网，不启动 rclpy/DDS | 设备发现、Action、Service、状态、JSON Topic、Workstation 及其 sub-device，以及经 Host 访问微后端物料服务 | 常规仪器控制、低中频状态和命令通信、不依赖 ROS2 图的工作站 |
+| **ros2** | 完整 ROS 2 分布式运行时 | HostLink 所覆盖的普通设备能力，以及原生 ROS graph、TF、MoveIt、RViz 和高频 ROS2 消息链路 | 运动规划、ROS 可视化、高频图像流或必须接入现有 ROS2 生态的设备 |
 
-## 端云桥接 `--app_bridges`
+`--backend` 只选择设备节点的初始化、执行和节点间通信方式，不选择微后端的
+WebSocket/HTTP 协议。Host 进程在两种 backend 下都可以提供微后端 HTTP API 和前端
+导航页。
 
-目前 Uni-Lab 提供 WebSocket、FastAPI (http) 两种端云通信方式：
+HostLink 复用了与 ROS2 backend 对齐的通用节点接口，但两者并非 100% 等价。
+普通 Python 设备驱动，包括 Workstation 和它初始化的 sub-device，可以在 HostLink
+节点上执行 Action、提供 Service 并上报状态；依赖 MoveIt、RViz、ROS graph，或使用
+ROS2 专用高频图像/消息图的驱动必须使用 `ros2` backend。
 
-- **WebSocket**：负责实时通信和任务下发
-- **FastAPI**：负责端对云物料更新和 HTTP API
+典型启动命令：
+
+```bash
+# Python Link Host：监听 7302，并运行 host.json 中的本地驱动
+unilab -g host.json --backend hostlink --hostlink-port 7302
+
+# Python Link Slave：连接 Host，并发布 slave.json 中的设备/状态
+unilab -g slave.json --backend hostlink --is-slave \
+  --host-node-ip 192.168.1.10 --hostlink-port 7302
+
+# 完整 ROS 2 运行时；不写 --backend 时使用 hostlink，需要 ROS 2 时必须显式指定
+unilab -g graph.json --backend ros2
+```
+
+公开部署支持 `hostlink` 与 `ros2` 两种 backend。Dora 代码用于实验，不属于
+CLI 可选的部署 backend。
+
+## 端云通信
+
+Host 的端云传输固定使用 WebSocket：正常模式只发送轻量变更通知，正文通过 HTTP
+拉取。Host 本地微后端 HTTP API 始终启动。
 
 ## 分布式组网
 
-启动 Uni-Lab 时，加入 `--is_slave` 将作为从站，不加将作为主站：
+Host/Slave 可选择 `ros2` 或不启动 DDS 的 `hostlink` backend。启动时加入
+`--is_slave` 将作为从站，不加将作为主站：
 
 - **主站 (host)**：持有物料修改权以及对云端的通信
 - **从站 (slave)**：无主机权限，可选择跳过等待主机服务 (`--slave_no_host`)
 
-局域网内分别启动的 Uni-Lab 主站/从站将自动组网，互相能访问所有设备状态、传感器信息并发送指令。
+`ros2` 使用 DDS 上的 ROS Action/Service/Topic；`hostlink` 直接在 TCP 长连接上同步
+注册表声明的设备描述和状态，并承载 Action、Service 与 JSON Topic。设备代码可以继续
+使用通用节点提供的 Action/Service 接口，以及
+`create_publisher(...).publish(...)` 和 `create_subscription(...)` 写法。
+
+Workstation 与普通设备遵循同一条 backend 选择规则。HostLink 模式会为 Workstation
+初始化 HostLink node，并以相同 backend 初始化其 sub-device；工作站和子设备不会因为
+没有 ROS2 runtime 而跳过。驱动应在 `post_init(node)` 中依赖通用节点能力，不要要求
+传入对象必须是 `ROS2DeviceNode`。
+
+HostLink 可以加载 `std_msgs`、`geometry_msgs`、`unilabos_msgs` 等 ROS message Python 包，
+使用其中的消息类和字段定义做类型解析。Topic、Action、Service 的参数、结果、feedback
+和状态在发送时都会递归转换为 UTF-8 JSON，因此仅使用消息数据结构并不要求启用 DDS。
+
+HostLink 不是 ROS2 graph 的替代实现，也不面向高频大载荷流。以下能力不受支持：
+
+- MoveIt、规划场景及其 ROS2 ActionClient；
+- RViz、RViz 插件和依赖 ROS graph/TF 的可视化；
+- ROS2 专用的高频图像流，以及依赖原生 QoS、零拷贝或复杂 ROS2 消息图的链路。
+
+包含这些依赖的设备应使用 `--backend ros2`。普通 Python 驱动的 Action、Service、
+状态和低中频 JSON Topic 则可以使用 HostLink。
+
+驱动需要在后台安排异步函数时，使用 `node.run_async_func(async_function, **kwargs)`；它会根据
+当前 backend 选择 ROS executor 或 Python asyncio loop。不要在驱动中直接引用
+`ROS2DeviceNode.run_async_func`。
+
+推荐由 Host 统一发布 ROS2 domain，Slave 只指定 Host IP：
+
+```bash
+# Host：8002 是微后端 HTTP API 和前端导航页端口，7302 是 HostLink TCP
+unilab -g host.json --port-management 8002 \
+  --hostlink-port 7302 --ros-domain-id 42
+
+# Slave：管理端口只影响本机 Web/API；HostLink 目标端口单独配置
+unilab -g slave.json --is-slave \
+  --host-node-ip 192.168.1.10 --hostlink-port 7302 --port-management 8003
+```
+
+主要组网参数：
+
+- `--host-node-ip`：Slave 指定 Host IP/主机名。
+- `--port-management` / `--port_management`：微后端 HTTP API 和前端导航页端口，默认 `8002`；`--port` 是兼容缩写。
+- `--disable-browser` / `--disable_browser`：只禁止启动时自动打开浏览器，不会停止管理端口。配置了 `--address`（backend-controlled 模式）时，浏览器打开的是 backend 管理页；本进程 `/` 只保留指向调度权威的路标页和设备侧 API 文档入口。
+- `--hostlink-port`：HostLink TCP 端口，默认 `7302`，与管理端口独立。
+- `--hostlink-bind` / `--hostlink-advertise-ip`：Host 监听地址与多网卡发布地址。
+- `--hostlink-host-wait-timeout`：Slave 等 Host 的上限，默认 `120` 秒。
+- `--ros-domain-id`：Host 下发给 Slave 的 ROS2 domain。
+- `--ros-discovery-range` / `--ros-static-peers` / `--ros-discovery-server`：ROS2 发现策略。
+- `--no-ros-assist`：仅用于 ROS2 backend；保留 HostLink 设备发现，不覆盖 Slave 的 ROS2 环境。
+- `--disable-hostlink`：完全关闭 HostLink，使用 ROS2/DDS 默认发现流程。
+
+Host 和 Slave 不分先后启动。`hostlink` Host 进程读完配置就打开 HostLink 端口（早于注册表、
+设备图与设备启动），Slave 随即可以连上并登记设备；Host 的物料权威或本机设备还没就绪时，
+相关请求会收到「Host 启动中」并由 Slave 自动重试。Slave 先启动时按退避重连，最多等
+`--hostlink-host-wait-timeout` 秒（默认 120）仍连不上才报错退出。详见
+[组网概览](../developer_guide/networking_overview.md)。
+
+选择 `--backend hostlink` 时不能使用 `--disable-hostlink`，Slave 也必须提供
+`--host-node-ip`。`7302` 只供 Host/Slave 进程通信，不提供浏览器页面；Host 进程的
+微后端 HTTP API 和前端导航页仍使用管理端口（默认 `8002`），不要求切换到 `ros2`
+backend。
+
+浏览器和外部微前端访问 HTTP API 端口（默认 `8002`），不会访问 HostLink 的
+`7302`。即使使用 `--disable-browser`，仍可手动访问 `http://<节点 IP>:8002/`
+选择 API 工具或已登记的 GitHub Pages 前端。
 
 ## 可视化选项
 
@@ -168,6 +278,12 @@ unilab --config path/to/your/config.py
 - **rviz**：使用 RViz 进行 3D 可视化
 - **web**：使用 Web 界面进行可视化 (基于Pylabrobot)
 - **disable** (默认)：禁用可视化
+
+RViz 和 MoveIt 依赖 ROS graph、TF、DDS 以及 ROS2 专用消息/服务，只在
+`--backend ros2` 下受支持。HostLink 不启动 ROS2，因此不支持 RViz、MoveIt，
+也会拒绝 `--backend hostlink --visual rviz`；HostLink 请使用
+`--visual disable`，设备状态可以通过微后端 HTTP API 或独立微前端展示。需要运动
+规划的设备请切换到 ROS2 backend。
 
 ## 实验室管理
 
@@ -190,14 +306,11 @@ unilab --config path/to/your/config.py
 以下是一些常用的启动命令示例：
 
 ```bash
-# 使用组态图启动，上传注册表
-unilab --ak your_ak --sk your_sk -g path/to/graph.json --upload_registry
+# 使用本地组态图启动
+unilab --ak your_ak --sk your_sk -g path/to/graph.json
 
-# 使用远程资源启动
-unilab --ak your_ak --sk your_sk
-
-# 更新注册表
-unilab --ak your_ak --sk your_sk --complete_registry
+# 本地完整校验注册表
+unilab --check_mode --complete_registry --skip_env_check
 
 # 启动从站模式
 unilab --ak your_ak --sk your_sk --is_slave
@@ -205,8 +318,8 @@ unilab --ak your_ak --sk your_sk --is_slave
 # 启用可视化
 unilab --ak your_ak --sk your_sk --visual web --2d_vis
 
-# 指定本地信息网页服务端口和禁用自动跳出浏览器
-unilab --ak your_ak --sk your_sk --port 8080 --disable_browser
+# 指定管理端口并禁止自动打开浏览器；HTTP/Web 服务仍在 8080 启动
+unilab --ak your_ak --sk your_sk --port-management 8080 --disable-browser
 ```
 
 ## 常见问题

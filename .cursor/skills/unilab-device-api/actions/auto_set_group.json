@@ -1,0 +1,44 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {},
+  "feedback": {},
+  "result": {},
+  "schema": {
+    "type": "object",
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "group_name": {
+        "type": "string"
+      },
+      "wells": {
+        "type": "array",
+        "items": {
+          "type": "object"
+        }
+      },
+      "volumes": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "required": [
+      "group_name",
+      "wells",
+      "volumes"
+    ],
+    "_unilabos_placeholder_info": {}
+  },
+  "goal_default": {
+    "group_name": null,
+    "wells": null,
+    "volumes": null
+  },
+  "handles": {},
+  "placeholder_keys": {}
+}

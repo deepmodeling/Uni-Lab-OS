@@ -1,0 +1,169 @@
+{
+  "type": "LiquidHandlerPickUpTips",
+  "goal": {
+    "tip_spots": "tip_spots",
+    "use_channels": "use_channels",
+    "offsets": "offsets"
+  },
+  "feedback": {},
+  "result": {
+    "return_info": "return_info",
+    "success": "success"
+  },
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "tip_spots": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position"
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number"
+                    },
+                    "y": {
+                      "type": "number"
+                    },
+                    "z": {
+                      "type": "number"
+                    },
+                    "w": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation"
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose"
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "sample_id",
+            "children",
+            "parent",
+            "type",
+            "category",
+            "pose",
+            "config",
+            "data"
+          ]
+        }
+      },
+      "use_channels": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "offsets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "z": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "z"
+          ]
+        }
+      }
+    },
+    "title": "LiquidHandlerPickUpTips_Goal",
+    "_unilabos_placeholder_info": {
+      "tip_spots": "unilabos_resources"
+    }
+  },
+  "goal_default": {
+    "tip_spots": [],
+    "use_channels": [],
+    "offsets": []
+  },
+  "handles": {},
+  "placeholder_keys": {
+    "tip_spots": "unilabos_resources"
+  }
+}

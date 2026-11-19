@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-UniLabOS Installation Verification Script
+Uni-Lab-OS Installation Verification Script
 =========================================
 
-This script verifies that UniLabOS and its dependencies are correctly installed.
+This script verifies that Uni-Lab-OS and its dependencies are correctly installed.
 Run this script after installing the conda-pack environment to ensure everything works.
 
 Usage:
@@ -19,6 +19,7 @@ Usage:
 """
 
 import sys
+import sysconfig
 import os
 import argparse
 
@@ -47,6 +48,7 @@ if sys.platform == "win32":
 
 # Now import other modules
 import importlib
+import importlib.util
 
 # Use ASCII-safe symbols that work across all platforms
 CHECK_MARK = "[OK]"
@@ -77,15 +79,35 @@ def check_package(package_name: str, display_name: str | None = None) -> bool:
 
 
 def check_python_version() -> bool:
-    """Check Python version."""
+    """HostLink 与 ROS 2 统一要求普通 CPython 3.14（cp314，非 free-threaded）。"""
     version = sys.version_info
     version_str = f"{version.major}.{version.minor}.{version.micro}"
 
-    if version.major == 3 and version.minor >= 11:
+    if (version.major == 3 and version.minor == 14
+            and not sysconfig.get_config_var("Py_GIL_DISABLED")):
         print(f"  {CHECK_MARK} Python {version_str}")
         return True
     else:
-        print(f"  {CROSS_MARK} Python {version_str} (requires Python 3.11+)")
+        print(f"  {CROSS_MARK} Python {version_str} (requires the Python 3.14 / cp314 ABI)")
+        return False
+
+
+def check_material_catalog() -> bool:
+    """必须实际创建物料：PLR 的可选导入可能把缺失的 Opentrons 依赖隐藏起来。"""
+    try:
+        import numpy as np
+        from opentrons_shared_data.labware import labware_definition as ld
+        from pylabrobot.resources.opentrons.plates import corning_96_wellplate_360ul_flat
+
+        if int(np.__version__.split(".")[0]) != 2 or ld.trapezoid([1, 2, 3]) != 4:
+            raise RuntimeError("NumPy 2 积分接口不正确")
+        plate = corning_96_wellplate_360ul_flat("installation_check")
+        if plate.num_items != 96:
+            raise RuntimeError("Opentrons 标准孔板定义不完整")
+        print(f"  {CHECK_MARK} NumPy 2 / Opentrons 96 孔板创建成功")
+        return True
+    except Exception as exc:
+        print(f"  {CROSS_MARK} 物料库验证失败：{exc}")
         return False
 
 
@@ -93,7 +115,7 @@ def main():
     """Run all verification checks."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description="Verify UniLabOS installation",
+        description="Verify Uni-Lab-OS installation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
@@ -101,10 +123,13 @@ def main():
         action="store_true",
         help="Automatically install missing packages",
     )
+    parser.add_argument("--backend", choices=("hostlink", "ros2"), default="hostlink")
+    parser.add_argument("--assert-no-ros", action="store_true", help="验证默认发行包未安装 ROS 运行时")
+    parser.add_argument("--materials-only", action="store_true", help="只验证 PLR / Opentrons 物料依赖，不要求安装 UniLabOS")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("UniLabOS Installation Verification")
+    print("Uni-Lab-OS Installation Verification")
     print("=" * 60)
     if args.auto_install:
         print("Mode: Auto-install missing packages")
@@ -120,18 +145,24 @@ def main():
         all_passed = False
     print()
 
-    # Check ROS2 rclpy
-    print("Checking ROS2 rclpy...")
-    if not check_package("rclpy", "ROS2 rclpy"):
-        all_passed = False
-    print()
+    if args.backend == "ros2":
+        for module in ("rclpy", "unilabos_msgs.msg", "unilabos_msgs.action"):
+            all_passed = check_package(module) and all_passed
+    elif args.assert_no_ros:
+        for module in ("rclpy", "rosidl_runtime_py", "ament_index_python"):
+            if importlib.util.find_spec(module) is not None:
+                print(f"  {CROSS_MARK} 默认包不应包含 {module}")
+                all_passed = False
+
+    if args.materials_only:
+        return 0 if check_material_catalog() and all_passed else 1
 
     # Run environment checker from unilabos
-    print("Checking UniLabOS and dependencies...")
+    print("Checking Uni-Lab-OS and dependencies...")
     try:
         from unilabos.utils.environment_check import check_environment
 
-        print(f"  {CHECK_MARK} UniLabOS installed")
+        print(f"  {CHECK_MARK} Uni-Lab-OS installed")
 
         # Check environment with optional auto-install
         # Set show_details=False to suppress detailed Chinese output that may cause encoding issues
@@ -140,14 +171,19 @@ def main():
         if env_check_passed:
             print(f"  {CHECK_MARK} All required packages available")
         else:
-            print(f"  {CROSS_MARK} Some optional packages are missing")
+            all_passed = False
+            print(f"  {CROSS_MARK} Some required packages are missing")
             if not args.auto_install:
                 print("  Hint: Run with --auto-install to automatically install missing packages")
     except ImportError:
-        print(f"  {CROSS_MARK} UniLabOS not installed")
+        print(f"  {CROSS_MARK} Uni-Lab-OS not installed")
         all_passed = False
     except Exception as e:
+        all_passed = False
         print(f"  {CROSS_MARK} Environment check failed: {str(e)}")
+    for module in ("unilabos.server.api.app", "unilabos.backend.hostlink.local_runtime"):
+        all_passed = check_package(module) and all_passed
+    all_passed = check_material_catalog() and all_passed
     print()
 
     # Summary
@@ -156,7 +192,7 @@ def main():
     print("=" * 60)
 
     if all_passed:
-        print(f"\n{CHECK_MARK} All checks passed! Your UniLabOS installation is ready.")
+        print(f"\n{CHECK_MARK} All checks passed! Your Uni-Lab-OS installation is ready.")
         print("\nNext steps:")
         print("  1. Review the documentation: docs/user_guide/launch.md")
         print("  2. Try the examples: docs/boot_examples/")

@@ -148,13 +148,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 50,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -172,13 +174,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 150,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -196,13 +200,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 250,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -220,13 +226,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 350,
                 "y": 500,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -239,13 +247,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 600,
                 "y": 450,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 2000.0
             },
             "data": {
@@ -263,13 +273,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 800,
                 "y": 450,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 1000.0
             },
             "data": {
@@ -287,13 +299,15 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "container",
+            "class": "RegularContainer",
+            "template_name": "container",
             "position": {
                 "x": 700,
                 "y": 550,
                 "z": 0
             },
             "config": {
+                "type": "RegularContainer",
                 "max_volume": 3000.0
             },
             "data": {

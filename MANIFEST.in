@@ -1,7 +1,7 @@
 recursive-include unilabos/test *
 recursive-include unilabos/utils *
 recursive-include unilabos/registry *.yaml
-recursive-include unilabos/app/web/static *
-recursive-include unilabos/app/web/templates *
+recursive-exclude * __pycache__ *.pyc
+include unilabos/devices/ros_dev/lh_joint_config.json
 recursive-include unilabos/device_mesh/devices *
 recursive-include unilabos/device_mesh/resources *

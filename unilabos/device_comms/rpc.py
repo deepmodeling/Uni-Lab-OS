@@ -1,11 +1,12 @@
 import json
+import logging
+
 import requests
-from rclpy.logging import get_logger
 
 
 class BaseRequest:
     def __init__(self):
-        self._logger = get_logger(__name__)
+        self._logger = logging.getLogger(__name__)
 
     def get_logger(self):
         return self._logger

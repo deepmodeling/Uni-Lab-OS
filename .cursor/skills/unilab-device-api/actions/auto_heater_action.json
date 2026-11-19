@@ -1,0 +1,33 @@
+{
+  "type": "UniLabJsonCommandAsync",
+  "goal": {},
+  "feedback": {},
+  "result": {},
+  "schema": {
+    "type": "object",
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "temperature": {
+        "type": "number"
+      },
+      "time": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "temperature",
+      "time"
+    ],
+    "_unilabos_placeholder_info": {}
+  },
+  "goal_default": {
+    "temperature": null,
+    "time": null
+  },
+  "handles": {},
+  "placeholder_keys": {}
+}

@@ -3,8 +3,9 @@
 > **文档类型**：实际应用案例  
 > **适用场景**：使用 PLC 控制的电池装配工站接入  
 > **前置知识**：{doc}`../add_device` | {doc}`../add_registry`
+> **驱动位置**：本文涉及的厂商驱动与物料预设（纽扣电池装配工站、电池物料）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
-本指南以电池装配工站为实际案例，引导你完成 PLC 控制设备的完整接入流程，包括新建工站文件、编写驱动与寄存器读写、生成注册表、上传及注意事项。
+本指南以电池装配工站为例，说明 PLC 驱动、寄存器读写、Registry 校验和启动配置。
 
 ## 案例概述
 
@@ -89,85 +90,32 @@ def start_and_read_metrics(self):
 
 > 提示：若需参数下发，可在 PLC 端设置标志寄存器并完成握手复位，避免粘连与竞争。
 
-## 3. 本地生成注册表并校验
+## 3. Registry 校验与同步
 
-完成工站类与驱动后，需要生成（或更新）工站注册表供系统识别。
-
-### 3.1 新增工站设备（或资源）首次生成注册表
-
-首先通过以下命令启动 unilab。进入 unilab 系统状态检查页面
-
-```bash
-python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK>
-```
-
-点击注册表编辑，进入注册表编辑页面
-
-![系统状态页面](image_battery_plc/unilab_sys_status.png)
-
-按照图示步骤填写自动生成注册表信息：
-
-![注册表生成流程](image_battery_plc/unilab_registry_process.png)
-
-步骤说明：
-
-1. 选择新增的工站`coin_cell_assembly.py`文件
-2. 点击分析按钮，分析`coin_cell_assembly.py`文件
-3. 选择`coin_cell_assembly.py`文件中继承`WorkstationBase`类
-4. 填写新增的工站.py 文件与`unilabos`目录的距离。例如，新增的工站文件`coin_cell_assembly.py`路径为`unilabos\devices\workstation\coin_cell_assembly\coin_cell_assembly.py`，则此处填写`unilabos.devices.workstation.coin_cell_assembly`。
-5. 此处填写新定义工站的类的名字（名称可以自拟）
-6. 填写新的工站注册表备注信息
-7. 生成注册表
-
-以上操作步骤完成，则会生成的新的注册表 YAML 文件，如下图：
-
-![生成的YAML文件](image_battery_plc/unilab_new_yaml.png)
-
-### 3.2 添加新生成注册表
-
-在`unilabos\registry\devices`目录下新建一个 yaml 文件，此处新建文件命名为`coincellassemblyworkstation_device.yaml`，将上面生成的新的注册表信息粘贴到`coincellassemblyworkstation_device.yaml`文件中。
-
-在终端输入以下命令进行注册表补全操作。
-
-```bash
-python unilabos\app\register.py --complete_registry
-```
-
-### 3.3 启动并上传注册表
-
-新增设备之后，启动 unilab 需要增加`--upload_registry`参数，来上传注册表信息。
-
-```bash
-python unilabos\app\main.py -g celljson.json --ak <user的AK> --sk <user的SK> --upload_registry
-```
-
-## 4. 注意事项
-
-### 4.1 验证模块路径
-
-在新生成的 YAML 中，确认 `module` 指向新工站类。本例中需检查 `coincellassemblyworkstation_device.yaml` 文件中是否正确指向了 `CoinCellAssemblyWorkstation` 类：
+本例的设备定义位于
+`unilabos/registry/devices/coin_cell_workstation.yaml`。设备条目的 `class.module`
+必须指向可导入的工作站类：
 
 ```yaml
 module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinCellAssemblyWorkstation
 ```
 
-### 4.2 首次接入流程
+使用完整 Registry 检查模块、动作和状态定义：
 
-首次新增设备（或资源）需要完整流程：
+```bash
+unilab --check_mode --complete_registry --skip_env_check
+```
 
-1. ✅ 在网页端生成注册表信息
-2. ✅ 使用 `--complete_registry` 补全注册表
-3. ✅ 使用 `--upload_registry` 上传注册表信息
+设备图中的 `class` 应与 Registry 顶层设备名一致。正常启动后，Registry 会同步到
+本地微后端：
 
-### 4.3 驱动更新流程
+```bash
+unilab -g celljson.json --ak <AK> --sk <SK>
+```
 
-如果不是新增设备，仅修改了工站驱动的 `.py` 文件：
+## 4. 注意事项
 
-1. ✅ 运行 `--complete_registry` 补全注册表
-2. ✅ 运行 `--upload_registry` 上传注册表
-3. ❌ 不需要在网页端重新生成注册表
-
-### 4.4 PLC 通信注意事项
+### 4.1 PLC 通信注意事项
 
 - **握手机制**：若需参数下发，建议在 PLC 端设置标志寄存器并完成握手复位，避免粘连与竞争
 - **字节序**：FLOAT32 等多字节数据类型需要正确指定字节序（如 `WorderOrder.LITTLE`）
@@ -180,7 +128,7 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 
 - {doc}`../add_device` - 设备驱动编写通用指南
 - {doc}`../add_registry` - 注册表配置完整指南
-- {doc}`../workstation_architecture` - 工站架构详解
+- {doc}`workstation_architecture` - 工站架构详解
 
 ### 技术要点
 
@@ -195,8 +143,7 @@ module: unilabos.devices.workstation.coin_cell_assembly.coin_cell_assembly:CoinC
 
 1. ✅ 如何创建 PLC 控制的工站驱动
 2. ✅ Modbus TCP 通信和寄存器读写
-3. ✅ 使用可视化编辑器生成注册表
-4. ✅ 注册表的补全和上传流程
-5. ✅ 新增设备与更新驱动的区别
+3. ✅ 校验 Registry 模块、动作与状态定义
+4. ✅ 启动微后端并确认 Registry 同步
 
 这个案例展示了完整的 PLC 设备接入流程，可以作为其他类似设备接入的参考模板。

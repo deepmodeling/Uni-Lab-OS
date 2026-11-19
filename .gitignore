@@ -2,6 +2,7 @@ cursor_docs/
 configs/
 temp/
 output/
+deprecated/
 unilabos_data/
 pyrightconfig.json
 .cursorignore
@@ -247,11 +248,11 @@ unilabos/device_mesh/view_robot.rviz
 # Certs
 **/.certs
 local_test2.py
-ros-humble-unilabos-msgs-0.9.13-h6403a04_5.tar.bz2
+ros-*-unilabos-msgs-*.tar.bz2
 *.bz2
 test_config.py
 
-# Local config files with secrets
-yibin_coin_cell_only_config.json
-yibin_electrolyte_config.json
-yibin_electrolyte_only_config.json
+
+
+# scripts/build_conda_release.py 的默认产物目录
+conda-artifacts/

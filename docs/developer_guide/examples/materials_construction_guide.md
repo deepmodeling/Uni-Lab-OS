@@ -3,10 +3,11 @@
 > **文档类型**：物料系统实战指南  
 > **适用场景**：工作站物料系统构建、Deck/Warehouse/Carrier/Bottle 配置  
 > **前置知识**：PyLabRobot 基础 | 资源管理概念
+> **驱动位置**：本文涉及的厂商驱动与物料预设（Bioyond 工作站、Bioyond 物料预设）已迁出主仓库，放在外部驱动包中；文中的 `unilabos.devices.*`、`unilabos.resources.presets.{bioyond,battery}` 路径请换成对应驱动包里的模块路径。框架基类 `unilabos.devices.workstation.workstation_base` 仍在主仓库。
 
 ## 概述
 
-在UniLab-OS系统中，任何工作站中所需要用到的物料主要包括四个核心组件：
+在Uni-Lab-OS系统中，任何工作站中所需要用到的物料主要包括四个核心组件：
 
 1. **桌子（Deck）** - 工作台面，定义整个工作空间的布局
 2. **堆栈（Warehouse）** - 存储区域，用于放置载具和物料
@@ -17,10 +18,10 @@
 
 ## 文件结构
 
-物料定义文件位于 `unilabos/resources/` 文件夹中：
+预设物料定义位于 `unilabos/resources/presets/`：
 
 ```
-unilabos/resources/bioyond/
+unilabos/resources/presets/bioyond/
 ├── decks.py              # 桌子定义
 ├── YB_warehouses.py      # 堆栈定义
 ├── YB_bottle_carriers.py # 载具定义
@@ -44,7 +45,7 @@ unilabos/registry/resources/bioyond/
 
 ```python
 from pylabrobot.resources import Coordinate, Deck
-from unilabos.resources.bioyond.YB_warehouses import (
+from unilabos.resources.presets.bioyond.YB_warehouses import (
     bioyond_warehouse_2x2x1,
     bioyond_warehouse_3x5x1,
     bioyond_warehouse_20x1x1,
@@ -134,7 +135,7 @@ class BIOYOND_YB_Deck(Deck):
 ### 代码示例 (YB_warehouses.py)
 
 ```python
-from unilabos.resources.warehouse import WareHouse, YB_warehouse_factory
+from unilabos.resources.presets.warehouse import WareHouse, warehouse_factory
 
 def bioyond_warehouse_1x4x4(name: str) -> WareHouse:
     """创建BioYond 1x4x4仓库
@@ -145,7 +146,7 @@ def bioyond_warehouse_1x4x4(name: str) -> WareHouse:
     Returns:
         WareHouse: 仓库对象
     """
-    return YB_warehouse_factory(
+    return warehouse_factory(
         name=name,
         num_items_x=1,      # X方向位置数量
         num_items_y=4,      # Y方向位置数量  
@@ -161,7 +162,7 @@ def bioyond_warehouse_1x4x4(name: str) -> WareHouse:
 
 def bioyond_warehouse_2x2x1(name: str) -> WareHouse:
     """创建BioYond 2x2x1仓库（自动堆栈）"""
-    return YB_warehouse_factory(
+    return warehouse_factory(
         name=name,
         num_items_x=2,
         num_items_y=2,
@@ -182,7 +183,7 @@ def bioyond_warehouse_2x2x1(name: str) -> WareHouse:
 - `dx/dy/dz`: 第一个位置的起始偏移坐标
 - `item_dx/dy/dz`: 相邻位置之间的间距
 - `category`: 仓库类别，用于分类管理
-- `YB_warehouse_factory`: 统一的仓库创建工厂函数
+- `warehouse_factory`: 统一的仓库创建工厂函数
 
 ## 3. 载具（Carriers）构建
 
@@ -192,8 +193,8 @@ def bioyond_warehouse_2x2x1(name: str) -> WareHouse:
 
 ```python
 from pylabrobot.resources import create_homogeneous_resources, Coordinate, ResourceHolder, create_ordered_items_2d
-from unilabos.resources.itemized_carrier import Bottle, BottleCarrier
-from unilabos.resources.bioyond.YB_bottles import YB_pei_ye_xiao_Bottle
+from unilabos.resources.presets.itemized_carrier import Bottle, BottleCarrier
+from unilabos.resources.presets.bioyond.YB_bottles import YB_pei_ye_xiao_Bottle
 
 def YB_peiyepingxiaoban(name: str) -> BottleCarrier:
     """配液瓶(小)板 - 4x2布局，8个位置
@@ -279,7 +280,7 @@ def YB_peiyepingxiaoban(name: str) -> BottleCarrier:
 ### 代码示例 (YB_bottles.py)
 
 ```python
-from unilabos.resources.itemized_carrier import Bottle
+from unilabos.resources.presets.itemized_carrier import Bottle
 
 def YB_pei_ye_xiao_Bottle(
     name: str,
@@ -352,7 +353,7 @@ BIOYOND_YB_Deck:
   category:
     - deck                          # 前端显示的分类存放
   class:
-    module: unilabos.resources.bioyond.decks:BIOYOND_YB_Deck  # 定义桌子的类的路径
+    module: unilabos.resources.presets.bioyond.decks:BIOYOND_YB_Deck  # 定义桌子的类的路径
     type: pylabrobot              
   description: BIOYOND_YB_Deck     # 描述信息
   handles: []                     
@@ -370,7 +371,7 @@ YB_peiyepingxiaoban:
     - yb3                          
     - YB_bottle_carriers          
   class:
-    module: unilabos.resources.bioyond.YB_bottle_carriers:YB_peiyepingxiaoban
+    module: unilabos.resources.presets.bioyond.YB_bottle_carriers:YB_peiyepingxiaoban
     type: pylabrobot
   description: YB_peiyepingxiaoban  
   handles: []
@@ -388,7 +389,7 @@ YB_pei_ye_xiao_Bottle:
     - yb3                          
     - YB_bottle                 
   class:
-    module: unilabos.resources.bioyond.YB_bottles:YB_pei_ye_xiao_Bottle
+    module: unilabos.resources.presets.bioyond.YB_bottles:YB_pei_ye_xiao_Bottle
     type: pylabrobot
   description: YB_pei_ye_xiao_Bottle
   handles: []

@@ -1,379 +1,262 @@
-import asyncio
-import logging
-import re
-from typing import Dict, Any, Optional
+"""虚拟固体加样器：按质量（或物质的量）向容器加入固体试剂。
 
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+加样量优先取 ``mass``，其次 ``mol`` × 摩尔质量（默认 100 g/mol），都没给时按 1 g。模拟时长每克
+0.1 秒（至少 0.5 秒）。目标容器有体积跟踪器时，把固体写进容器内容物（PLR 体积跟踪器，质量单位）。
+"""
 
-class VirtualSolidDispenser:
-    """
-    虚拟固体粉末加样器 - 用于处理 Add Protocol 中的固体试剂添加 ⚗️
-    
-    特点：
-    - 高兼容性：缺少参数不报错 ✅
-    - 智能识别：自动查找固体试剂瓶 🔍
-    - 简单反馈：成功/失败 + 消息 📊
-    """
-    
-    _ros_node: BaseROS2DeviceNode
-    
-    def __init__(self, device_id: str = None, config: Dict[str, Any] = None, **kwargs):
-        self.device_id = device_id or "virtual_solid_dispenser"
-        self.config = config or {}
-        
-        # 设备参数
-        self.max_capacity = float(self.config.get('max_capacity', 100.0))  # 最大加样量 (g)
-        self.precision = float(self.config.get('precision', 0.001))  # 精度 (g)
-        
-        # 状态变量
-        self._status = "Idle"
-        self._current_reagent = ""
-        self._dispensed_amount = 0.0
-        self._total_operations = 0
-        
-        self.logger = logging.getLogger(f"VirtualSolidDispenser.{self.device_id}")
-        
-        print(f"⚗️ === 虚拟固体分配器 {self.device_id} 创建成功! === ✨")
-        print(f"📊 设备规格: 最大容量 {self.max_capacity}g | 精度 {self.precision}g 🎯")
-    
-    def post_init(self, ros_node: BaseROS2DeviceNode):
-        self._ros_node = ros_node
-    
-    async def initialize(self) -> bool:
-        """初始化固体加样器 🚀"""
-        self.logger.info(f"🔧 初始化固体分配器 {self.device_id} ✨")
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from unilabos.backend.runtime.action import ActionContext
+from unilabos.devices.virtual.simulation import (
+    UG_PER_G,
+    VirtualDevice,
+    physical_graph,
+    nested_settings,
+    parse_amount,
+    parse_mass,
+)
+from unilabos.registry.decorators import (
+    DataSource,
+    InputHandle,
+    OutputHandle,
+    Side,
+    action,
+    device,
+    topic_config,
+)
+from unilabos.registry.placeholder_type import ResourceSlot
+
+#: 没给质量与物质的量时的默认加样量（g）
+DEFAULT_MASS = 1.0
+
+
+@device(
+    id="virtual_solid_dispenser",
+    display_name="虚拟固体分装器",
+    category=["virtual_device"],
+    description="按质量或物质的量加入固体试剂的虚拟加样器，供加料、溶解等协议与示例图使用",
+    supported_backends=["hostlink", "ros2"],
+    handles=[
+        OutputHandle(
+            key="SolidOut",
+            data_type="resource",
+            label="SolidOut",
+            side=Side.SOUTH,
+            data_key="solid_out",
+            data_source=DataSource.EXECUTOR,
+            description="固体试剂输出口",
+        ),
+        InputHandle(
+            key="SolidIn",
+            data_type="resource",
+            label="SolidIn",
+            side=Side.NORTH,
+            data_key="solid_in",
+            data_source=DataSource.HANDLE,
+            description="固体试剂输入口（连接试剂瓶）",
+        ),
+    ],
+)
+class VirtualSolidDispenser(VirtualDevice):
+    """单次最多加 max_capacity（g），精度 precision（g）。"""
+
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        max_capacity: float = 100.0,
+        precision: float = 0.001,
+        molar_mass: float = 100.0,
+        time_scale: Optional[float] = None,
+        **kwargs: Any,
+    ) -> None:
+        """初始化虚拟固体加样器。
+
+        Args:
+            device_id[设备ID]: 设备实例 ID。
+            max_capacity[最大加样量]: 单次最大加样量（g）。
+            precision[精度]: 加样精度（g），加样量按它取整。
+            molar_mass[摩尔质量]: 按物质的量加样时换算用的摩尔质量（g/mol）。
+            time_scale[时间倍率]: 真实等待 = 模拟时长 × 倍率；不填用设备类的默认值（0.001）。
+        """
+        settings = nested_settings(
+            kwargs, max_capacity=max_capacity, precision=precision, molar_mass=molar_mass, time_scale=time_scale
+        )
+        super().__init__(device_id or kwargs.pop("id", None), "virtual_solid_dispenser", settings["time_scale"])
+        self.max_capacity = float(settings["max_capacity"])
+        self.precision = float(settings["precision"])
+        self.molar_mass = float(settings["molar_mass"])
+        if self.max_capacity <= 0 or self.precision <= 0 or self.molar_mass <= 0:
+            raise ValueError("max_capacity、precision、molar_mass 都必须大于 0")
         self._status = "Ready"
         self._current_reagent = ""
         self._dispensed_amount = 0.0
-        
-        self.logger.info(f"✅ 固体分配器 {self.device_id} 初始化完成 ⚗️")
+        self._total_operations = 0
+
+    # ============ 状态 ============
+
+    @property
+    @topic_config(period=1.0)
+    def status(self) -> str:
+        """Ready / Dispensing / Error。"""
+        return self._status
+
+    @property
+    @topic_config(period=1.0)
+    def current_reagent(self) -> str:
+        """最近一次加入的试剂。"""
+        return self._current_reagent
+
+    @property
+    @topic_config(period=1.0)
+    def dispensed_amount(self) -> float:
+        """最近一次加样量（g）。"""
+        return self._dispensed_amount
+
+    @property
+    @topic_config(period=1.0)
+    def total_operations(self) -> int:
+        """累计加样次数。"""
+        return self._total_operations
+
+    # ============ 生命周期 ============
+
+    @action(auto_prefix=True, display_name="初始化", description="回到就绪并清空最近一次记录")
+    async def initialize(self) -> bool:
+        """初始化：回到就绪。"""
+        with self._lock:
+            self._status = "Ready"
+            self._current_reagent = ""
+            self._dispensed_amount = 0.0
         return True
-    
+
+    @action(auto_prefix=True, display_name="清理", description="停止正在进行的加样")
     async def cleanup(self) -> bool:
-        """清理固体加样器 🧹"""
-        self.logger.info(f"🧹 清理固体分配器 {self.device_id} 🔚")
+        """清理：请求停止当前加样。"""
+        self._request_stop()
         self._status = "Idle"
-        
-        self.logger.info(f"✅ 固体分配器 {self.device_id} 清理完成 💤")
         return True
-    
-    def parse_mass_string(self, mass_str: str) -> float:
-        """
-        解析质量字符串为数值 (g) ⚖️
-        
-        支持格式: "2.9 g", "19.3g", "4.5 mg", "1.2 kg" 等
-        """
-        if not mass_str or not isinstance(mass_str, str):
-            return 0.0
-        
-        # 移除空格并转小写
-        mass_clean = mass_str.strip().lower()
-        
-        # 正则匹配数字和单位
-        pattern = r'(\d+(?:\.\d+)?)\s*([a-z]*)'
-        match = re.search(pattern, mass_clean)
-        
-        if not match:
-            self.logger.debug(f"🔍 无法解析质量字符串: {mass_str}")
-            return 0.0
-        
-        try:
-            value = float(match.group(1))
-            unit = match.group(2) or 'g'  # 默认单位 g
-            
-            # 单位转换为 g
-            unit_multipliers = {
-                'g': 1.0,
-                'gram': 1.0,
-                'grams': 1.0,
-                'mg': 0.001,
-                'milligram': 0.001,
-                'milligrams': 0.001,
-                'kg': 1000.0,
-                'kilogram': 1000.0,
-                'kilograms': 1000.0,
-                'μg': 0.000001,
-                'ug': 0.000001,
-                'microgram': 0.000001,
-                'micrograms': 0.000001,
-            }
-            
-            multiplier = unit_multipliers.get(unit, 1.0)
-            result = value * multiplier
-            
-            self.logger.debug(f"⚖️ 质量解析: {mass_str} → {result:.6f}g (原值: {value} {unit})")
-            return result
-        
-        except (ValueError, TypeError):
-            self.logger.warning(f"⚠️ 无法解析质量字符串: {mass_str}")
-            return 0.0
-    
-    def parse_mol_string(self, mol_str: str) -> float:
-        """
-        解析摩尔数字符串为数值 (mol) 🧮
-        
-        支持格式: "0.12 mol", "16.2 mmol", "25.2mmol" 等
-        """
-        if not mol_str or not isinstance(mol_str, str):
-            return 0.0
-        
-        # 移除空格并转小写
-        mol_clean = mol_str.strip().lower()
-        
-        # 正则匹配数字和单位
-        pattern = r'(\d+(?:\.\d+)?)\s*(m?mol)'
-        match = re.search(pattern, mol_clean)
-        
-        if not match:
-            self.logger.debug(f"🔍 无法解析摩尔数字符串: {mol_str}")
-            return 0.0
-        
-        try:
-            value = float(match.group(1))
-            unit = match.group(2)
-            
-            # 单位转换为 mol
-            if unit == 'mmol':
-                result = value * 0.001
-            else:  # mol
-                result = value
-            
-            self.logger.debug(f"🧮 摩尔数解析: {mol_str} → {result:.6f}mol (原值: {value} {unit})")
-            return result
-        
-        except (ValueError, TypeError):
-            self.logger.warning(f"⚠️ 无法解析摩尔数字符串: {mol_str}")
-            return 0.0
-    
-    def find_solid_reagent_bottle(self, reagent_name: str) -> str:
-        """
-        查找固体试剂瓶 🔍
-        
-        这是一个简化版本，实际使用时应该连接到系统的设备图
-        """
-        if not reagent_name:
-            self.logger.debug(f"🔍 未指定试剂名称，使用默认瓶")
-            return "unknown_solid_bottle"
-        
-        # 可能的固体试剂瓶命名模式
-        possible_names = [
-            f"solid_bottle_{reagent_name}",
-            f"reagent_solid_{reagent_name}",
-            f"powder_{reagent_name}",
-            f"{reagent_name}_solid",
-            f"{reagent_name}_powder",
-            f"solid_{reagent_name}",
-        ]
-        
-        # 这里简化处理，实际应该查询设备图
-        selected_bottle = possible_names[0]
-        self.logger.debug(f"🔍 为试剂 {reagent_name} 选择试剂瓶: {selected_bottle}")
-        return selected_bottle
-    
+
+    # ============ 协议编译器使用的动作 ============
+
+    @action(
+        action_type="unilabos_msgs.action:Add",
+        display_name="加入固体",
+        description="按质量（优先）或物质的量向容器加入固体试剂",
+        feedback_interval=0.5,
+    )
     async def add_solid(
         self,
-        vessel: str,
+        vessel: ResourceSlot,
         reagent: str,
         mass: str = "",
         mol: str = "",
         purpose: str = "",
-        **kwargs  # 兼容额外参数
+        equiv: str = "",
+        event: str = "",
+        rate_spec: str = "",
+        ratio: str = "",
+        amount: str = "",
+        volume: str = "",
+        time: str = "",
+        stir: bool = False,
+        stir_speed: float = 0.0,
+        viscous: bool = False,
+        action_context: Optional[ActionContext] = None,
     ) -> Dict[str, Any]:
-        """
-        添加固体试剂的主要方法 ⚗️
-        
+        """加入固体试剂。
+
         Args:
-            vessel: 目标容器
-            reagent: 试剂名称
-            mass: 质量字符串 (如 "2.9 g")
-            mol: 摩尔数字符串 (如 "0.12 mol")
-            purpose: 添加目的
-            **kwargs: 其他兼容参数
-        
-        Returns:
-            Dict: 操作结果
+            vessel[目标容器]: 接收固体的容器。
+            reagent[试剂]: 固体试剂名。
+            mass[质量]: 质量，数字按 g，也可写 "2.5 g"、"500 mg"。
+            mol[物质的量]: 物质的量，如 "0.12 mol"、"16 mmol"；没给质量时按摩尔质量换算。
+            purpose[目的]: 操作目的，仅记录。
+            equiv[当量]: 当量，仅记录。
+            event[事件]: 协议事件，仅记录。
+            rate_spec[速率规格]: 加料速率规格，仅记录。
+            ratio[比例]: 比例，仅记录。
+            amount[用量描述]: 协议里的原始用量描述，仅记录。
+            volume[体积]: 协议里的体积，仅记录。
+            time[时间]: 协议里的加料时间，仅记录。
+            stir[搅拌]: 协议里的搅拌标记，仅记录。
+            stir_speed[搅拌速度]: 协议里的搅拌速度，仅记录。
+            viscous[粘稠]: 协议里的粘稠标记，仅记录。
         """
-        try:
-            self.logger.info(f"⚗️ === 开始固体加样操作 === ✨")
-            self.logger.info(f"  🥽 目标容器: {vessel}")
-            self.logger.info(f"  🧪 试剂: {reagent}")
-            self.logger.info(f"  ⚖️ 质量: {mass}")
-            self.logger.info(f"  🧮 摩尔数: {mol}")
-            self.logger.info(f"  📝 目的: {purpose}")
-            
-            # 参数验证 - 宽松处理
-            if not vessel:
-                vessel = "main_reactor"  # 默认容器
-                self.logger.warning(f"⚠️ 未指定容器，使用默认容器: {vessel} 🏠")
-            
-            if not reagent:
-                error_msg = "❌ 错误: 必须指定试剂名称"
-                self.logger.error(error_msg)
-                return {
-                    "success": False,
-                    "message": error_msg,
-                    "return_info": "missing_reagent"
-                }
-            
-            # 解析质量和摩尔数
-            mass_value = self.parse_mass_string(mass)
-            mol_value = self.parse_mol_string(mol)
-            
-            self.logger.info(f"📊 解析结果 - 质量: {mass_value:.6f}g | 摩尔数: {mol_value:.6f}mol")
-            
-            # 确定实际加样量
-            if mass_value > 0:
-                actual_amount = mass_value
-                amount_unit = "g"
-                amount_emoji = "⚖️"
-                self.logger.info(f"⚖️ 按质量加样: {actual_amount:.6f} {amount_unit}")
-            elif mol_value > 0:
-                # 简化处理：假设分子量为100 g/mol
-                assumed_mw = 100.0
-                actual_amount = mol_value * assumed_mw
-                amount_unit = "g (from mol)"
-                amount_emoji = "🧮"
-                self.logger.info(f"🧮 按摩尔数加样: {mol_value:.6f} mol → {actual_amount:.6f} g (假设分子量 {assumed_mw})")
-            else:
-                # 没有指定量，使用默认值
-                actual_amount = 1.0
-                amount_unit = "g (default)"
-                amount_emoji = "🎯"
-                self.logger.warning(f"⚠️ 未指定质量或摩尔数，使用默认值: {actual_amount} {amount_unit} 🎯")
-            
-            # 检查容量限制
-            if actual_amount > self.max_capacity:
-                error_msg = f"❌ 错误: 请求量 {actual_amount:.3f}g 超过最大容量 {self.max_capacity}g"
-                self.logger.error(error_msg)
-                return {
-                    "success": False,
-                    "message": error_msg,
-                    "return_info": "exceeds_capacity"
-                }
-            
-            # 查找试剂瓶
-            reagent_bottle = self.find_solid_reagent_bottle(reagent)
-            self.logger.info(f"🔍 使用试剂瓶: {reagent_bottle}")
-            
-            # 模拟加样过程
-            self._status = "Dispensing"
-            self._current_reagent = reagent
-            
-            # 计算操作时间 (基于质量)
-            operation_time = max(0.5, actual_amount * 0.1)  # 每克0.1秒，最少0.5秒
-            
-            self.logger.info(f"🚀 开始加样，预计时间: {operation_time:.1f}秒 ⏱️")
-            
-            # 显示进度的模拟
-            steps = max(3, int(operation_time))
-            step_time = operation_time / steps
-            
-            for i in range(steps):
-                progress = (i + 1) / steps * 100
-                await self._ros_node.sleep(step_time)
-                if i % 2 == 0:  # 每隔一步显示进度
-                    self.logger.debug(f"📊 加样进度: {progress:.0f}% | {amount_emoji} 正在分配 {reagent}...")
-            
-            # 更新状态
-            self._dispensed_amount = actual_amount
+        if vessel is None:
+            self._reject("目标容器不能为空")
+        reagent_name = str(reagent or "").strip()
+        if not reagent_name:
+            self._reject("试剂名不能为空")
+        mass_g, amount_mol = parse_mass(mass), parse_amount(mol)
+        if mass_g < 0 or amount_mol < 0:
+            self._reject(f"加样量不能为负：mass={mass!r}, mol={mol!r}")
+        if mass_g > 0:
+            grams, basis = mass_g, "mass"
+        elif amount_mol > 0:
+            grams, basis = amount_mol * self.molar_mass, "mol"
+        else:
+            grams, basis = DEFAULT_MASS, "default"
+            self.logger.warning("[%s] 未给质量或物质的量，按默认 %g g 加样", self.device_id, DEFAULT_MASS)
+        grams = round(grams / self.precision) * self.precision
+        if grams > self.max_capacity:
+            self._reject(f"加样量 {grams:.3f} g 超过单次最大加样量 {self.max_capacity:g} g")
+        label = self._vessel_label(vessel)
+        with self._operation("Dispensing", f"向 {label} 加入 {reagent_name} {grams:.3f} g", action_context, idle_status="Ready"):
+            self._current_reagent = reagent_name
+            await self._simulate(max(0.5, grams * 0.1), action_context, feedback={"reagent": reagent_name})
+            added = self._add_to_vessel(vessel, reagent_name, grams * UG_PER_G, "ug")
+            self._dispensed_amount = grams
             self._total_operations += 1
-            self._status = "Ready"
-            
-            # 成功结果
-            success_message = f"✅ 成功添加 {reagent} {actual_amount:.6f} {amount_unit} 到 {vessel}"
-            
-            self.logger.info(f"🎉 === 固体加样完成 === ✨")
-            self.logger.info(f"📊 操作结果:")
-            self.logger.info(f"  ✅ {success_message}")
-            self.logger.info(f"  🧪 试剂瓶: {reagent_bottle}")
-            self.logger.info(f"  ⏱️ 用时: {operation_time:.1f}秒")
-            self.logger.info(f"  🎯 总操作次数: {self._total_operations} 🏁")
-            
-            return {
-                "success": True,
-                "message": success_message,
-                "return_info": f"dispensed_{actual_amount:.6f}g",
-                "dispensed_amount": actual_amount,
-                "reagent": reagent,
-                "vessel": {"id": vessel},
-            }
-            
-        except Exception as e:
-            error_message = f"❌ 固体加样失败: {str(e)} 💥"
-            self.logger.error(error_message)
-            self._status = "Error"
-            
-            return {
-                "success": False,
-                "message": error_message,
-                "return_info": "operation_failed"
-            }
-    
-    # 状态属性
-    @property
-    def status(self) -> str:
-        return self._status
-    
-    @property
-    def current_reagent(self) -> str:
-        return self._current_reagent
-    
-    @property
-    def dispensed_amount(self) -> float:
-        return self._dispensed_amount
-    
-    @property
-    def total_operations(self) -> int:
-        return self._total_operations
-    
-    def __str__(self):
-        status_emoji = "✅" if self._status == "Ready" else "🔄" if self._status == "Dispensing" else "❌" if self._status == "Error" else "🏠"
-        return f"⚗️ VirtualSolidDispenser({status_emoji} {self.device_id}: {self._status}, 最后加样 {self._dispensed_amount:.3f}g)"
+        self._message = f"已向 {label} 加入 {reagent_name} {grams:.3f} g"
+        return {
+            "success": True,
+            "vessel": label,
+            "reagent": reagent_name,
+            "dispensed_amount": grams,
+            "basis": basis,
+            "recorded_in_vessel": added > 0,
+            "reagent_bottle": self.find_solid_reagent_bottle(reagent_name),
+        }
 
+    # ============ 辅助查询 ============
 
-# 测试函数
-async def test_solid_dispenser():
-    """测试固体加样器 🧪"""
-    print("⚗️ === 固体加样器测试开始 === 🧪")
-    
-    dispenser = VirtualSolidDispenser("test_dispenser")
-    await dispenser.initialize()
-    
-    # 测试1: 按质量加样
-    print(f"\n🧪 测试1: 按质量加样...")
-    result1 = await dispenser.add_solid(
-        vessel="main_reactor",
-        reagent="magnesium",
-        mass="2.9 g"
-    )
-    print(f"📊 测试1结果: {result1}")
-    
-    # 测试2: 按摩尔数加样
-    print(f"\n🧮 测试2: 按摩尔数加样...")
-    result2 = await dispenser.add_solid(
-        vessel="main_reactor",
-        reagent="sodium_nitrite",
-        mol="0.28 mol"
-    )
-    print(f"📊 测试2结果: {result2}")
-    
-    # 测试3: 缺少参数
-    print(f"\n⚠️ 测试3: 缺少参数测试...")
-    result3 = await dispenser.add_solid(
-        reagent="test_compound"
-    )
-    print(f"📊 测试3结果: {result3}")
-    
-    # 测试4: 超容量测试
-    print(f"\n❌ 测试4: 超容量测试...")
-    result4 = await dispenser.add_solid(
-        vessel="main_reactor",
-        reagent="heavy_compound",
-        mass="150 g"  # 超过100g限制
-    )
-    print(f"📊 测试4结果: {result4}")
-    print(f"✅ === 测试完成 === 🎉")
+    @action(auto_prefix=True, display_name="解析质量", always_free=True)
+    def parse_mass_string(self, mass_str: str) -> float:
+        """把质量字符串换算成 g。
 
+        Args:
+            mass_str[质量]: 如 "2.9 g"、"4.5 mg"、"1.2 kg"；空串为 0。
+        """
+        return parse_mass(mass_str)
 
-if __name__ == "__main__":
-    asyncio.run(test_solid_dispenser())
+    @action(auto_prefix=True, display_name="解析物质的量", always_free=True)
+    def parse_mol_string(self, mol_str: str) -> float:
+        """把物质的量字符串换算成 mol。
+
+        Args:
+            mol_str[物质的量]: 如 "0.12 mol"、"16.2 mmol"；空串为 0。
+        """
+        return parse_amount(mol_str)
+
+    @action(auto_prefix=True, display_name="查找固体试剂瓶", always_free=True)
+    def find_solid_reagent_bottle(self, reagent_name: str) -> str:
+        """在设备图里找装该固体试剂的瓶子，找不到时给出约定的瓶名。
+
+        Args:
+            reagent_name[试剂名]: 固体试剂名。
+        """
+        name = str(reagent_name or "").strip()
+        if not name:
+            return "unknown_solid_bottle"
+        graph = physical_graph()
+        if graph is not None:
+            for node_id, data in graph.nodes(data=True):
+                payload = data.get("data") or {}
+                if str(payload.get("reagent_name") or "").lower() == name.lower():
+                    return str(node_id)
+        return f"solid_bottle_{name}"
+
+    def __repr__(self) -> str:
+        return f"VirtualSolidDispenser({self.device_id}: {self._status}, 最近 {self._dispensed_amount:.3f} g)"

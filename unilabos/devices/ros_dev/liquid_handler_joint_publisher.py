@@ -11,7 +11,7 @@ from rclpy.action import ActionServer,ActionClient
 from sensor_msgs.msg import JointState
 from unilabos_msgs.action import SendCmd
 from rclpy.action.server import ServerGoalHandle
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
 from tf_transformations import quaternion_from_euler
 from tf2_ros import TransformBroadcaster, Buffer, TransformListener 
 
@@ -29,7 +29,7 @@ class LiquidHandlerJointPublisher(BaseROS2DeviceNode):
             hardware_interface={},
             print_publish=False,
             resource_tracker=resource_tracker,  
-            device_uuid=kwargs.get("uuid", str(uuid.uuid4())),
+            resource_uuid=kwargs.get("uuid", str(uuid.uuid4())),
         )  
         
         # 初始化参数

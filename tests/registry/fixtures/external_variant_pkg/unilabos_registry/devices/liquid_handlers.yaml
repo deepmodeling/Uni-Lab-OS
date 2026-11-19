@@ -1,0 +1,53 @@
+vendor.lh.model_a:
+  version: 1.0.0
+  category: [liquid_handler, vendor]
+  implementation:
+    family: vendor.liquid_handler
+    variant: model_a
+    class_ref: tests.registry.fixtures.initializer_drivers:SharedDevice
+  class:
+    module: tests.registry.fixtures.initializer_drivers:SharedDevice
+    init:
+      kwargs:
+        backend:
+          factory: tests.registry.fixtures.initializer_drivers:MockBackend
+          kwargs:
+            host: ${config.host}
+            port: ${config.port}
+        deck:
+          factory: tests.registry.fixtures.initializer_drivers:MockDeck
+          kwargs:
+            name: model-a-deck
+        name: ${node.id}
+        channels: 8
+    action_value_mappings:
+      $ref: ../contracts/liquid_handler.yaml#/actions
+    status_types:
+      $ref: ../contracts/liquid_handler.yaml#/status_types
+
+vendor.lh.model_b:
+  version: 1.0.0
+  category: [liquid_handler, vendor]
+  implementation:
+    family: vendor.liquid_handler
+    variant: model_b
+    class_ref: tests.registry.fixtures.initializer_drivers:SharedDevice
+  class:
+    module: tests.registry.fixtures.initializer_drivers:SharedDevice
+    init:
+      kwargs:
+        backend:
+          factory: tests.registry.fixtures.initializer_drivers:MockBackend
+          kwargs:
+            host: ${config.host}
+            port: ${config.port}
+        deck:
+          factory: tests.registry.fixtures.initializer_drivers:MockDeck
+          kwargs:
+            name: model-b-deck
+        name: ${node.id}
+        channels: 96
+    action_value_mappings:
+      $ref: ../contracts/liquid_handler.yaml#/actions
+    status_types:
+      $ref: ../contracts/liquid_handler.yaml#/status_types

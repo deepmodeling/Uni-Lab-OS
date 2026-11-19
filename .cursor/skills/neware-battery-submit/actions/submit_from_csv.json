@@ -1,0 +1,38 @@
+{
+  "feedback": {},
+  "goal": {
+    "csv_path": "string",
+    "output_dir": "string"
+  },
+  "goal_default": {
+    "csv_path": null,
+    "output_dir": "."
+  },
+  "handles": {},
+  "placeholder_keys": {},
+  "result": {},
+  "schema": {
+    "properties": {
+      "unilabos_device_id": {
+        "type": "string",
+        "default": "",
+        "description": "UniLabOS设备ID，用于指定执行动作的具体设备实例"
+      },
+      "csv_path": {
+        "description": "输入CSV文件的绝对路径",
+        "type": "string"
+      },
+      "output_dir": {
+        "default": ".",
+        "description": "输出目录（用于存储XML和备份文件），默认当前目录",
+        "type": "string"
+      }
+    },
+    "required": [
+      "csv_path"
+    ],
+    "type": "object",
+    "_unilabos_placeholder_info": {}
+  },
+  "type": "UniLabJsonCommand"
+}

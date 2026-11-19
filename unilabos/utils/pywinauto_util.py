@@ -1,3 +1,15 @@
+"""Windows GUI 自动化辅助（pywinauto），供驱动包使用。
+
+只支持 Windows：依赖 ``unilabos[full]`` 中以 Windows 条件声明的 ``pywinauto`` 与 ``psutil``，
+``pywinauto.controls.uiawrapper`` 还需要 ``win32api``。其它平台导入本模块直接给出明确错误。
+"""
+
+import sys
+
+if sys.platform != "win32":
+    # name 标明缺的是哪个可选依赖：驱动包的检查据此区分"平台不支持"与代码错误
+    raise ImportError("unilabos.utils.pywinauto_util 只支持 Windows（依赖 pywinauto、psutil 与 win32api）", name="pywinauto")
+
 import psutil
 import pywinauto
 try:
@@ -9,7 +21,6 @@ except ImportError:
 from pywinauto.controls.uiawrapper import UIAWrapper
 from pywinauto.application import WindowSpecification
 from pywinauto import findbestmatch
-import sys
 import codecs
 import os
 import locale

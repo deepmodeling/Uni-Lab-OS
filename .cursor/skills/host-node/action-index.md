@@ -19,7 +19,7 @@
   - `parent` — **NodeSlot**，填路径字符串如 `"/workstation/deck"`
   - `class_name` — **ClassSlot**，填类名如 `"container"`
 
-### `auto-test_resource`
+### `test_resource`
 
 测试资源系统，返回当前资源树和设备列表
 

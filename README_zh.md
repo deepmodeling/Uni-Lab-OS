@@ -83,7 +83,7 @@ unilab --disable-browser
 **0.13+ 默认 Conda 包发布后**：
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0rc1"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0a1"
 mamba activate unilab
 unilab --disable-browser
 ```

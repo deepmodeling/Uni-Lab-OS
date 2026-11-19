@@ -16,8 +16,8 @@ from uuid import uuid4
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.runtime.resource import AuthorityResourceService
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime.resource import AuthorityResourceService
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.resources import materials
 from unilabos.server.services.materials import MaterialsService
@@ -129,7 +129,7 @@ def test_mount_cancelled_before_commit_is_logged_and_leaves_nothing_behind(bench
 
 
 def test_run_node_coroutine_waits_past_the_commit_point() -> None:
-    from unilabos.backend.runtime.async_utils import CommitPoint, run_node_coroutine
+    from unilabos.client.host.runtime.async_utils import CommitPoint, run_node_coroutine
 
     class _Node:
         def __init__(self) -> None:

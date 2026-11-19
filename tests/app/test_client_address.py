@@ -5,7 +5,7 @@ from unilabos.client.runtime.workflow import (
     normalize_workflow_api_url,
 )
 from unilabos.config.config import HTTPConfig
-from unilabos.server.backend.legacy_adaptor.url import (
+from unilabos.client.host.legacy_adaptor.url import (
     build_backend_websocket_url,
     build_legacy_backend_websocket_url,
 )

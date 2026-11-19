@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.hostlink.topic import LocalTopicBus, TopicEvent
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.topic import LocalTopicBus, TopicEvent
 from unilabos.utils.decorator import subscribe
 
 

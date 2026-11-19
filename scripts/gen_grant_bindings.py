@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从原生授予策略的 C 头文件生成 Python ctypes 绑定（unilabos/server/backend/scheduler/grant/_abi.py）。
+"""从原生授予策略的 C 头文件生成 Python ctypes 绑定（unilabos/server/scheduler/grant/_abi.py）。
 
 头文件 ``native/grant-policy/include/unilab_grant_policy.h`` 由 cargo build 经 cbindgen 从 Rust 源码生成；
 本脚本再把它翻译成 ctypes 声明：``#define`` 整数常量、``typedef struct`` 结构体、函数原型。
@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 HEADER = ROOT / "native" / "grant-policy" / "include" / "unilab_grant_policy.h"
-OUTPUT = ROOT / "unilabos" / "server" / "backend" / "scheduler" / "grant" / "_abi.py"
+OUTPUT = ROOT / "unilabos" / "server" / "scheduler" / "grant" / "_abi.py"
 
 SCALARS = {
     "void": "None",

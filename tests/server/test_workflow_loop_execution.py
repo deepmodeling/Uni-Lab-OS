@@ -58,11 +58,11 @@ class _Stack:
     """HostLink 执行栈 + 本机调度器；device_state 由测试注入的读取器提供。"""
 
     def __init__(self, device_state_reader: Optional[Callable[[str], Dict[str, Any]]] = None) -> None:
-        from unilabos.backend.hostlink.backend import HostLinkBackend
-        from unilabos.backend.hostlink.host_node import HostNode
-        from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-        from unilabos.server.backend.execution import JobExecutionBackend
-        from unilabos.server.backend.scheduler.service import BackendScheduler
+        from unilabos.client.host.hostlink.backend import HostLinkBackend
+        from unilabos.client.host.hostlink.host_node import HostNode
+        from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+        from unilabos.client.host.execution import JobExecutionBackend
+        from unilabos.server.scheduler.service import BackendScheduler
 
         self.local = HostLinkLocalRuntime()
         self.node = self.local.add_driver(
@@ -95,8 +95,8 @@ class _Stack:
         return self.node.driver
 
     def close(self) -> None:
-        from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
-        from unilabos.backend.hostlink.host_node import HostNode
+        from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
+        from unilabos.client.host.hostlink.host_node import HostNode
 
         self.service.set_task_submitter(None)
         self.scheduler.stop()

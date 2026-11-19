@@ -133,7 +133,7 @@ def _existing_device_uuid(device_id: str) -> Optional[str]:
     """物料权威里若已有同 id 的设备根物料，沿用其 uuid（Graph Authority 按 uuid 校验身份，
     换 uuid 会被 identity_conflict 拒绝）。"""
     try:
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
 
         service = get_materials_service()
         if service is None:

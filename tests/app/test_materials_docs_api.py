@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from unilabos.backend.runtime.node import DeviceNode
+from unilabos.client.host.runtime.node import DeviceNode
 
 DOCS = Path(__file__).resolve().parents[2] / "docs/developer_guide/examples"
 MATERIAL_DOCS = (

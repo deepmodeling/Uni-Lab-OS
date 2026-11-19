@@ -151,7 +151,7 @@ async def _on_client_disconnect(_request: Request, _exc: ClientDisconnect) -> Re
 
 @app.middleware("http")
 async def reset_maintenance_gate(request: Request, call_next):
-    from unilabos.server.backend.reset import get_reset_controller
+    from unilabos.server.lifecycle.reset import get_reset_controller
 
     controller = get_reset_controller()
     if controller is not None and controller.pending and request.method != "OPTIONS":
@@ -362,7 +362,7 @@ async def frontend_catalog() -> str:
 def _has_execution_face() -> bool:
     """本进程是否带设备执行面（Host）；--role backend 为 False。"""
     try:
-        from unilabos.server.backend.composition import get_execution_backend
+        from unilabos.server.execution_composition import get_execution_backend
 
         return get_execution_backend() is not None
     except Exception:  # noqa: BLE001
@@ -415,7 +415,7 @@ def setup_server() -> FastAPI:
     if not edge_routes_mounted:
         try:
             from unilabos.server.api.runtime import create_backend_router
-            from unilabos.server.backend.composition import (
+            from unilabos.server.execution_composition import (
                 get_execution_backend,
                 get_scheduler,
             )
@@ -434,7 +434,7 @@ def setup_server() -> FastAPI:
     # get_workflow_service() 为 None，不挂载（写入口在 Backend 地址上）。
     if not workflow_routes_mounted:
         try:
-            from unilabos.server.backend.composition import get_workflow_service
+            from unilabos.server.execution_composition import get_workflow_service
             from unilabos.server.api.runtime.workflow import install_workflow_api
 
             workflow_service = get_workflow_service()
@@ -448,7 +448,7 @@ def setup_server() -> FastAPI:
     # 与 Workflow Authority 同归属；操作记录落 runtime.db。
     if not process_management_mounted:
         try:
-            from unilabos.server.backend.composition import get_workflow_service
+            from unilabos.server.execution_composition import get_workflow_service
 
             workflow_service = get_workflow_service()
             if workflow_service is not None:
@@ -476,7 +476,7 @@ def setup_server() -> FastAPI:
         try:
             from unilabos.server.api import install_server_apis
             from unilabos.server.composition import get_server_services
-            from unilabos.server.backend.composition import get_materials_service
+            from unilabos.server.execution_composition import get_materials_service
 
             services = get_server_services()
             if services is not None:
@@ -496,7 +496,7 @@ def setup_server() -> FastAPI:
     if not materials_routes_mounted:
         try:
             from unilabos.server.api.materials import install_materials_api
-            from unilabos.server.backend.composition import get_materials_service
+            from unilabos.server.execution_composition import get_materials_service
 
             materials_service = get_materials_service()
             if materials_service is not None:

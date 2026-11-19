@@ -17,7 +17,7 @@ BACKEND_READY_TIMEOUT_S = 120.0
 def _wait_backend_ready(backend_thread: threading.Thread, timeout: float) -> bool:
     """等设备执行适配器注册（HostLink 设备与 host 服务已就绪 / ROS HostNode 已建）或 backend 线程退出。"""
 
-    from unilabos.backend.hostlink.adapter_registry import get_execution_adapter
+    from unilabos.client.host.hostlink.adapter_registry import get_execution_adapter
 
     deadline = time.monotonic() + timeout
     while backend_thread.is_alive():
@@ -90,8 +90,8 @@ def print_slave_launch_hint() -> None:
     host_ip = str(HostLinkConfig.advertise_ip or "").strip()
     hostlink_port = int(HostLinkConfig.port)
     if hostlink_enabled:
-        from unilabos.backend.hostlink.ros_assist import detect_local_ip
-        from unilabos.backend.hostlink.server import get_hostlink_server
+        from unilabos.client.host.hostlink.ros_assist import detect_local_ip
+        from unilabos.client.host.hostlink.server import get_hostlink_server
 
         server = get_hostlink_server()
         if server is not None:
@@ -137,7 +137,7 @@ def _exit_on_backend_failure() -> None:
     会退避重试，占用者被结束后即可自动恢复；其它 runtime 崩溃按普通失败退出。
     """
 
-    from unilabos.backend import backend_fatal_failure
+    from unilabos.client.host import backend_fatal_failure
 
     failure = backend_fatal_failure()
     if failure is None:
@@ -210,7 +210,7 @@ def _run_management_or_wait(backend_thread: threading.Thread) -> None:
 def run_runtime(args: dict[str, Any]) -> None:
     """启动设备 runtime 和 Host 微后端管理 API。"""
 
-    from unilabos.backend import start_backend
+    from unilabos.client.host import start_backend
 
     _ensure_management_port_available()
 
@@ -220,7 +220,7 @@ def run_runtime(args: dict[str, Any]) -> None:
         if state['unresolved_operations'] or state['error']:
             print_status('包操作恢复尚未人工确认：仅启动管理服务，设备 runtime 与托管 slave 保持停止；确认后手动重启 Host。', 'warning')
             # 设备 runtime 不会启动：关掉进程启动时提前打开的 HostLink 端口，别让 Slave 空等
-            from unilabos.backend.hostlink.startup import release_prebound_host_server
+            from unilabos.client.host.hostlink.startup import release_prebound_host_server
 
             release_prebound_host_server()
             _start_management_server()

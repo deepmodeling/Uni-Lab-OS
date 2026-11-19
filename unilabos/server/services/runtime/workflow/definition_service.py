@@ -145,7 +145,7 @@ class WorkflowDefinitionEditing:
         if not material_uuid or template is None:
             return ""
         try:
-            from unilabos.server.backend.composition import get_materials_service
+            from unilabos.server.execution_composition import get_materials_service
 
             materials = get_materials_service()
             if materials is None:

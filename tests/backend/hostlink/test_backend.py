@@ -10,16 +10,16 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.runtime import (
+from unilabos.client.host.runtime import (
     ActionCancelled,
     ActionContext,
 )
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.protocol import ActionType, RemoteError
-from unilabos.backend.hostlink.server import HostLinkServer
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.protocol import ActionType, RemoteError
+from unilabos.client.host.hostlink.server import HostLinkServer
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> bool:
@@ -436,7 +436,7 @@ def test_hostlink_backend_proxies_material_create_without_template_uuid(
         MaterialNodeCreate,
         MaterialTreeCreate,
     )
-    from unilabos.server.backend.composition import set_materials_gateway
+    from unilabos.server.execution_composition import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 
     monkeypatch.setattr(HostLinkConfig, "enable", True)
@@ -793,9 +793,9 @@ def test_hostlink_transports_ros_messages_as_json(monkeypatch) -> None:
 
 def test_hostlink_backend_import_does_not_load_ros() -> None:
     code = (
-        "import sys; import unilabos.backend.hostlink.main_hostlink_run; "
+        "import sys; import unilabos.client.host.hostlink.main_hostlink_run; "
         "assert 'rclpy' not in sys.modules; "
-        "assert not any(name.startswith('unilabos.backend.ros2') for name in sys.modules)"
+        "assert not any(name.startswith('unilabos.client.host.ros2') for name in sys.modules)"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -985,7 +985,7 @@ def test_hostlink_runtime_uses_microbackend_resource_authority(
 ) -> None:
     from unilabos.resources.presets.container import RegularContainer
     from unilabos.client.materials import LocalMaterialsClient
-    from unilabos.server.backend.composition import set_materials_gateway
+    from unilabos.server.execution_composition import set_materials_gateway
     from unilabos.server.services.materials import MaterialsService
 
     monkeypatch.setattr(HostLinkConfig, "enable", True)

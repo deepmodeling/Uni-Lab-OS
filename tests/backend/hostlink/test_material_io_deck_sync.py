@@ -17,14 +17,14 @@ import pytest
 from tests.backend.hostlink.test_warehouse_site_placement import DEVICE_ID, _bottle, stocker  # noqa: F401 - fixture
 from tests.plr_fixtures import site_deck
 from tests.server.test_material_io_inventory import TIP_RACK, registry_template
-from unilabos.backend.hostlink import downlink, main_hostlink_run
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink import downlink, main_hostlink_run
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
-from unilabos.server.backend.scheduler.material_io import sync_material_io_device
+from unilabos.server.execution_composition import set_materials_gateway
+from unilabos.server.scheduler.material_io import sync_material_io_device
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials.contents import ContentContract
 from unilabos.server.services.materials.inventory_commands import InventoryCommands

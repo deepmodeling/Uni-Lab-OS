@@ -11,7 +11,7 @@ from unilabos.protocol.runtime.control import (
 )
 from unilabos.protocol.history import HistoryEventQuery
 from unilabos.protocol.runtime import CommandEnvelope
-from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
+from unilabos.client.host.edge_executor import WorkflowBusinessCoordinator
 from unilabos.server.services.history import HistoryService
 from unilabos.server.services.runtime import RuntimeService
 

@@ -65,14 +65,14 @@ def test_not_ready_while_devices_are_still_initializing() -> None:
 
 def test_split_topology_follows_the_host_control_connection(monkeypatch) -> None:
     import unilabos.server.api.edge_proxy as edge_proxy
-    import unilabos.server.backend.edge_control as edge_control
+    import unilabos.server.edge_dispatch as edge_dispatch
 
     class _Service:
         connected = False
 
     service = _Service()
     monkeypatch.setattr(edge_proxy, "edge_proxy_enabled", lambda: True)
-    monkeypatch.setattr(edge_control, "get_edge_control_service", lambda: service)
+    monkeypatch.setattr(edge_dispatch, "get_edge_control_service", lambda: service)
     client = _client(object(), None)
 
     summary = error_of(client.get("/api/v1/readiness"), 5001, status=503)["details"]

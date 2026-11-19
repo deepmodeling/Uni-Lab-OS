@@ -11,24 +11,24 @@ from typing import Any
 import pytest
 
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.server.backend.execution_queue import QueueItem
-from unilabos.server.backend.legacy_adaptor import probe
-from unilabos.server.backend.legacy_adaptor.legacy.http import (
+from unilabos.server.execution_queue import QueueItem
+from unilabos.client.host.legacy_adaptor import probe
+from unilabos.client.host.legacy_adaptor.legacy.http import (
     LegacyBackendHTTPClient,
     LegacyBackendHTTPError,
 )
-from unilabos.server.backend.legacy_adaptor.legacy.sync import (
+from unilabos.client.host.legacy_adaptor.legacy.sync import (
     LegacyMaterialMirror,
     legacy_material_edge,
     legacy_material_node,
     upload_registry_snapshot,
 )
-from unilabos.server.backend.legacy_adaptor.legacy.ws import (
+from unilabos.client.host.legacy_adaptor.legacy.ws import (
     LegacyBackendWebSocketClient,
     _PriorityMessageQueue as LegacyPriorityMessageQueue,
 )
-from unilabos.server.backend.legacy_adaptor.session import BackendSessionFactory
-from unilabos.server.backend.legacy_adaptor.websocket import (
+from unilabos.client.host.legacy_adaptor.session import BackendSessionFactory
+from unilabos.client.host.legacy_adaptor.websocket import (
     BackendWebSocketClient,
     _PriorityMessageQueue as RuntimePriorityMessageQueue,
 )
@@ -486,7 +486,7 @@ def test_failure_decision_is_released_as_abort_on_behalf_of_legacy_backend():
 def test_failure_decision_uses_real_execution_backend_release_path(tmp_path, monkeypatch):
     """端到端：JobExecutionBackend 的失败挂起 → legacy 桥接 abort → 终态 failed 释放。"""
 
-    from unilabos.server.backend.execution import JobExecutionBackend
+    from unilabos.client.host.execution import JobExecutionBackend
 
     monkeypatch.setattr(BasicConfig, "machine_name", "M1")
     adapter = _Adapter()
@@ -533,22 +533,22 @@ def test_unknown_or_malformed_messages_never_raise():
 def test_legacy_client_is_registered_as_execution_result_bridge(tmp_path, monkeypatch):
     """微后端释放的 job 结果必须能回到旧协议客户端，否则旧后端永远等不到 job_status。"""
 
-    from unilabos.server.backend import composition
+    from unilabos.server import execution_composition
     from unilabos.server.database import ServerDatabasePaths
 
-    composition.reset_for_test()
+    execution_composition.reset_for_test()
     monkeypatch.setattr(BasicConfig, "backend", "hostlink")
     paths = ServerDatabasePaths.resolve(str(tmp_path), {})
     client = _connected_client(_Backend(), _Adapter())
     try:
-        backend = composition.setup_execution_backend(
+        backend = execution_composition.setup_execution_backend(
             control_client=client, host_node_getter=lambda: None, database_paths=paths
         )
         assert client in backend.result_bridges
         # runtime.v1 客户端只做通知回调，不进 result bridge
         assert not getattr(BackendWebSocketClient, "mirrors_job_results", False)
     finally:
-        composition.reset_for_test()
+        execution_composition.reset_for_test()
 
 
 # ── runtime.v1 WS 修复 ─────────────────────────────────────────────
@@ -608,7 +608,7 @@ def test_heartbeat_queue_bypasses_business_capacity(queue_type):
 def test_runtime_v1_heartbeat_bypasses_business_queue(monkeypatch):
     """pong 在接收协程内直接投递给适配器；业务通知只入队、由 worker 串行消费。"""
 
-    from unilabos.server.backend.legacy_adaptor import websocket as ws_module
+    from unilabos.client.host.legacy_adaptor import websocket as ws_module
 
     adapter = _Adapter()
     monkeypatch.setattr(ws_module, "get_execution_adapter", lambda _index: adapter)
@@ -647,7 +647,7 @@ def test_runtime_v1_heartbeat_bypasses_business_queue(monkeypatch):
 
 
 def test_runtime_v1_answers_backend_ping_and_drops_malformed_pong(monkeypatch):
-    from unilabos.server.backend.legacy_adaptor import websocket as ws_module
+    from unilabos.client.host.legacy_adaptor import websocket as ws_module
 
     adapter = _Adapter()
     monkeypatch.setattr(ws_module, "get_execution_adapter", lambda _index: adapter)
@@ -972,7 +972,7 @@ def test_registry_snapshot_uses_legacy_field_names(monkeypatch):
 
 def test_start_legacy_uplink_reports_registry_then_mirrors_materials(monkeypatch, capsys):
     """开机上联顺序：注册表上报 → 全量物料镜像（失败不阻断）→ 增量线程启动。"""
-    from unilabos.server.backend.legacy_adaptor.legacy import startup
+    from unilabos.client.host.legacy_adaptor.legacy import startup
 
     events: list[str] = []
 

@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.runtime.action import ActionContext
-from unilabos.backend.runtime.exception import TimeoutException
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.runtime.exception import TimeoutException
 
 
 class SlowDriver:

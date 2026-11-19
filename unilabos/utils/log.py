@@ -85,11 +85,13 @@ class ColoredFormatter(logging.Formatter):
     # logger 名前缀 → 组件；适用于 logging.getLogger(__name__) 的模块，取最长匹配
     MODULE_COMPONENTS = {
         "unilabos.server": "microbackend",
-        "unilabos.server.backend.scheduler": "scheduler",
-        "unilabos.server.backend.execution": "scheduler",
-        "unilabos.server.backend.execution_queue": "scheduler",
-        "unilabos.server.backend.coordinator": "scheduler",
-        "unilabos.backend.hostlink": "hostlink",
+        "unilabos.server.scheduler": "scheduler",
+        "unilabos.client.host.execution": "scheduler",
+        "unilabos.server.execution_queue": "scheduler",
+        "unilabos.client.host.edge_executor": "scheduler",
+        "unilabos.client.host.hostlink": "hostlink",
+        # 与 Backend 的连接（legacy_adaptor）原在 unilabos.server 下，保持微后端配色
+        "unilabos.client.host.legacy_adaptor": "microbackend",
     }
     _COMPONENT_COLOR_MAX_LEVEL = logging.INFO
 
@@ -591,13 +593,13 @@ if __name__ == "__main__":
     print("测试组件配色:")
     info("[Microbackend] 启动 FastAPI: 0.0.0.0:8002 (微后端：亮青色)")
     info("[HostLink] server listening on 0.0.0.0:7302 (HostLink：亮蓝色)")
-    logging.getLogger("unilabos.server.backend.scheduler.service").info(
+    logging.getLogger("unilabos.server.scheduler.service").info(
         "workflow node retrying as attempt 2 (调度器：按模块名匹配，亮紫色)"
     )
-    logging.getLogger("unilabos.server.backend.execution").info(
+    logging.getLogger("unilabos.client.host.execution").info(
         "[JobExecutionBackend] job start now (调度器执行链路：亮紫色)"
     )
-    logging.getLogger("unilabos.server.backend.scheduler.service").warning(
+    logging.getLogger("unilabos.server.scheduler.service").warning(
         "组件色不覆盖 WARNING 及以上级别，这一条仍是黄色"
     )
     # 测试异常输出

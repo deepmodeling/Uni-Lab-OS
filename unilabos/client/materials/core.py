@@ -271,7 +271,7 @@ class HostLinkMaterialsClient:
         比 definition_hash 都够用）；只有确实要用 definition 正文的调用方才传
         ``include_definition=True``，把全注册表的 definition 拖过链路。"""
 
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         query: dict[str, Any] = {"include_definition": include_definition}
         if name is not None:
@@ -284,7 +284,7 @@ class HostLinkMaterialsClient:
         mutation: InventoryMutation,
         value: ResourceTemplateWrite,
     ) -> MutationResult[ResourceTemplateRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -296,7 +296,7 @@ class HostLinkMaterialsClient:
     def create_tree(
         self, mutation: InventoryMutation, value: MaterialTreeCreate
     ) -> MutationResult[MaterialTreeRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -306,7 +306,7 @@ class HostLinkMaterialsClient:
         return MutationResult[MaterialTreeRead].model_validate(response)
 
     def get_tree(self, root_material_uuid: str) -> MaterialTreeRead:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         response = self.client.request(
             ActionType.MATERIAL_GET_TREE,
@@ -321,7 +321,7 @@ class HostLinkMaterialsClient:
         return tree.nodes[0]
 
     def get_material_by_resource_id(self, resource_id: str) -> MaterialAggregateRead:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         response = self.client.request(
             ActionType.MATERIAL_GET_BY_RESOURCE_ID,
@@ -330,7 +330,7 @@ class HostLinkMaterialsClient:
         return MaterialAggregateRead.model_validate(response)
 
     def search_materials(self, name: str) -> list[MaterialAggregateRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         response = self.client.request(
             ActionType.MATERIAL_SEARCH,
@@ -344,7 +344,7 @@ class HostLinkMaterialsClient:
         material_uuid: str,
         value: MaterialDataWrite,
     ) -> MutationResult[MaterialAggregateRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value).model_dump(
             mode="json", exclude_none=False
@@ -358,7 +358,7 @@ class HostLinkMaterialsClient:
         mutation: InventoryMutation,
         value: MaterialMove,
     ) -> MutationResult[MaterialAggregateRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -372,7 +372,7 @@ class HostLinkMaterialsClient:
         mutation: InventoryMutation,
         value: MaterialTransfer,
     ) -> MutationResult[MaterialTransferResult]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -386,7 +386,7 @@ class HostLinkMaterialsClient:
         mutation: InventoryMutation,
         value: MaterialDelete,
     ) -> MutationResult[MaterialDeleteResult]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -396,7 +396,7 @@ class HostLinkMaterialsClient:
         return MutationResult[MaterialDeleteResult].model_validate(response)
 
     def compare_snapshot(self, value: MaterialSnapshot) -> MaterialSnapshotDiff:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         response = self.client.request(
             ActionType.MATERIAL_COMPARE_SNAPSHOT,
@@ -407,7 +407,7 @@ class HostLinkMaterialsClient:
     def apply_snapshot(
         self, mutation: InventoryMutation, value: MaterialSnapshot
     ) -> MutationResult[MaterialTreeRead]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(
@@ -419,7 +419,7 @@ class HostLinkMaterialsClient:
     def apply_delta(
         self, mutation: InventoryMutation, value: MaterialDelta
     ) -> MutationResult[MaterialDeltaResult]:
-        from unilabos.backend.hostlink.protocol import ActionType
+        from unilabos.client.host.hostlink.protocol import ActionType
 
         bound = bind_payload(mutation, value)
         response = self.client.request(

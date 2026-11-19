@@ -100,7 +100,7 @@ def test_plan_decodes_template_schema_stored_as_json_text(tmp_path):
 
     import json
 
-    from unilabos.server.backend.scheduler.material_sanity import material_references
+    from unilabos.server.scheduler.material_sanity import material_references
 
     action = typed_action(tmp_path)["legacy"]
     node_uuid, template_uuid = str(uuid4()), str(uuid4())
@@ -141,7 +141,7 @@ def test_nodes_without_template_freeze_registered_contract(tmp_path):
 
 def test_inventory_material_allocation_matches_strict_resource_reference(tmp_path):
     from unilabos.protocol.materials import InventoryAllocation
-    from unilabos.server.backend.scheduler.service import allocation_arguments
+    from unilabos.server.scheduler.service import allocation_arguments
 
     schema = typed_action(tmp_path)["dispense"]["schema"]
     identity = str(uuid4())

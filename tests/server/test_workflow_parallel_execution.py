@@ -9,7 +9,7 @@ import pytest
 from unilabos.registry.workflow_ast import collect_static_steps
 from unilabos.registry.workflows import (WorkflowDefinition, DeviceCatalog, build_workflow_template_payload,
     materialize_workflow_template, upsert_workflow)
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 

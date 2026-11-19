@@ -14,15 +14,15 @@ from uuid import uuid4
 
 import pytest
 
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import HostLinkConfig
 from unilabos.protocol.materials import InventoryMutation, MaterialMove
 from unilabos.resources import materials
 from unilabos.resources.presets.itemized_carrier import Bottle
 from unilabos.resources.presets.warehouse import warehouse_factory
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 DEVICE_ID = "stocker"

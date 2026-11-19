@@ -19,7 +19,7 @@ from tests.server.test_workflow_loop_execution import _Stack
 from tests.server.test_workflow_entry_params import Executor, wait_for, stack
 from unilabos.registry.annotations import JSONValue
 from unilabos.registry.placeholder_type import ResourceSlot
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 
 
 class DoseOutput(TypedDict):

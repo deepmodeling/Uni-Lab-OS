@@ -247,8 +247,8 @@ def test_execution_policy_accepts_node_level_timeouts() -> None:
 
 
 def test_scheduler_action_timeouts_prefer_execution_policy_then_registry() -> None:
-    from unilabos.server.backend.scheduler.dag.models import DagNode
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.server.scheduler.dag.models import DagNode
+    from unilabos.server.scheduler.service import BackendScheduler
 
     class _Executor:
         def __init__(self) -> None:
@@ -289,7 +289,7 @@ def test_scheduler_action_timeouts_prefer_execution_policy_then_registry() -> No
 
 
 def test_edge_control_wait_issues_resume_pending_and_resumes_scheduler() -> None:
-    from unilabos.server.backend.edge_control import EdgeControlService
+    from unilabos.server.edge_dispatch import EdgeControlService
 
     service = EdgeControlService.__new__(EdgeControlService)
     import threading

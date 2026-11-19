@@ -109,7 +109,7 @@ def edge_http(
 ) -> Optional[EdgeHttpResponse]:
     """进程内调用：让 Host 执行一条请求；Host 不在线 / 超时返回 None。"""
 
-    from unilabos.server.backend.edge_control import get_edge_control_service
+    from unilabos.server.edge_dispatch import get_edge_control_service
 
     service = get_edge_control_service()
     if service is None or not service.connected:
@@ -151,7 +151,7 @@ async def _forward(request: Request) -> Response:
         if key.lower() not in _DROP_REQUEST_HEADERS
     }
     body = await request.body()
-    from unilabos.server.backend.edge_control import get_edge_control_service
+    from unilabos.server.edge_dispatch import get_edge_control_service
 
     service = get_edge_control_service()
     if service is None or not service.connected:

@@ -78,7 +78,7 @@ class ErrorDecisionDesk:
         self._get_scheduler = get_scheduler
         self._get_execution_backend = get_execution_backend
         if get_edge_control is None:
-            from unilabos.server.backend.edge_control import get_edge_control_service
+            from unilabos.server.edge_dispatch import get_edge_control_service
 
             get_edge_control = get_edge_control_service
         self._get_edge_control = get_edge_control
@@ -177,7 +177,7 @@ class ErrorDecisionDesk:
 def default_desk() -> ErrorDecisionDesk:
     """本进程装配的调度器 / 执行面 getter（工作流路由投递干预决定时使用）。"""
 
-    from unilabos.server.backend.composition import get_execution_backend, get_scheduler
+    from unilabos.server.execution_composition import get_execution_backend, get_scheduler
 
     return ErrorDecisionDesk(get_scheduler, get_execution_backend)
 

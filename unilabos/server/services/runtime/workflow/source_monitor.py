@@ -1,6 +1,6 @@
 """Authoring Draft 文件的进程级轮询监视器。
 
-由本机 Workflow Authority 拥有（``server/backend/composition.py:setup_local_scheduler``
+由本机 Workflow Authority 拥有（``server/execution_composition.py:setup_local_scheduler``
 启动、``shutdown_backend_services`` 停止）：外部编辑器改动已注册源码后重新编译出候选，
 Apply 写回失败留下的 ``writeback_status=pending`` 记录持续重试直到写回落盘。
 """

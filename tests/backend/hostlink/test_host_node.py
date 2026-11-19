@@ -8,18 +8,18 @@ from typing import Any
 
 import pytest
 
-from unilabos.backend.hostlink.adapter_registry import (
+from unilabos.client.host.hostlink.adapter_registry import (
     clear_execution_adapter,
     get_execution_adapter,
 )
-from unilabos.backend.hostlink.host_node import HostNode
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.runtime.action import ActionContext
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.server.backend.execution_queue import QueueItem
+from unilabos.client.host.hostlink.host_node import HostNode
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.server.execution_queue import QueueItem
 from unilabos.registry.action_policy import normalize_error_policy
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.protocol.runtime.workflow import WorkflowNodeWrite
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 

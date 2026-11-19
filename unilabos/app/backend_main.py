@@ -91,7 +91,7 @@ def run_backend_process(
     ``launch_host=True`` 时同时看护 Host 子进程（默认拓扑）。
     """
 
-    from unilabos.backend.hostlink.downlink import (
+    from unilabos.client.host.hostlink.downlink import (
         configure_remote_device_relay,
         remote_material_sync_dispatcher,
     )
@@ -104,13 +104,13 @@ def run_backend_process(
     )
     from unilabos.server.api.edge_proxy import configure_edge_proxy
     from unilabos.server.api.runtime import install_edge_control_api
-    from unilabos.server.backend.composition import (
+    from unilabos.server.execution_composition import (
         set_materials_gateway,
         setup_local_scheduler,
         setup_materials_service,
         shutdown_backend_services,
     )
-    from unilabos.server.backend.edge_control import (
+    from unilabos.server.edge_dispatch import (
         EdgeControlService,
         set_edge_control_service,
     )
@@ -147,7 +147,7 @@ def run_backend_process(
     # 由子进程自己取锁，权威运行期间不碰它。
     claim_database_root(paths.root, role="调度权威" if launch_host else "调度权威（--role backend）")
 
-    from unilabos.server.backend.reset import ResetController, ResetConflict, configure_reset
+    from unilabos.server.lifecycle.reset import ResetController, ResetConflict, configure_reset
     if (paths.root / "reset-pending.json").exists():
         raise RuntimeError("上次全量重置未完成；请根据 reset-pending.json 恢复或完成归档后再启动")
     reset_controller = None
@@ -214,9 +214,9 @@ def run_backend_process(
             )
             host_child.start()
             def reset_preflight() -> None:
-                from unilabos.server.backend.composition import get_scheduler
-                from unilabos.server.backend.lifecycle import active_device_job_ids
-                from unilabos.server.backend.restart import get_restart_coordinator
+                from unilabos.server.execution_composition import get_scheduler
+                from unilabos.server.lifecycle.drain import active_device_job_ids
+                from unilabos.server.lifecycle.restart import get_restart_coordinator
 
                 restart = get_restart_coordinator().status()
                 if restart["pending"] or restart["restarting"]:
@@ -325,7 +325,7 @@ def run_backend_process(
             print_status(f"全部数据已移至 {reset_controller.backup}；重置完成。请不带旧 -g 重新启动 unilab。", "info")
         configure_reset(None)
 
-    from unilabos.server.backend.restart import exit_if_restart_requested
+    from unilabos.server.lifecycle.restart import exit_if_restart_requested
 
     exit_if_restart_requested()
 

@@ -277,7 +277,7 @@ protocol_version、capabilities、device_ids/devices 等；响应有 assigned_no
 
 TopicEvent 为 topic、value、publisher_device_id、message_type、message_id、published_at、retain。
 相对 topic 在设备命名空间下规范为 `/devices/{device_id}/{topic}`。
-JSON 消息转换位于 `backend/hostlink/topic.py`，并不是所有 backend 的公共序列化接口。
+JSON 消息转换位于 `client/host/hostlink/topic.py`，并不是所有 backend 的公共序列化接口。
 
 HostLink 支持 Python 驱动动作、普通 service/topic、Workstation/sub-device 初始化与物料通信；
 **不支持 MoveIt、RViz，也不承诺 ROS2 原生 QoS/高频图像流的等价性**。依赖这些功能的设备保持 ROS2 backend。

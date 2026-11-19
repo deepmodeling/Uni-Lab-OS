@@ -62,7 +62,7 @@
 
 ### 标准化流程
 
-1. **legacy 适配层**（`server/backend/legacy_adaptor/legacy/graph.py`）：`-g` / `unilab graph upload` 读取边界把根级 `position` 折叠进 `pose.position`
+1. **legacy 适配层**（`client/host/legacy_adaptor/legacy/graph.py`）：`-g` / `unilab graph upload` 读取边界把根级 `position` 折叠进 `pose.position`
 2. **Graph Authority `load_graph_payload`**（`server/services/materials/graph.py`）：从节点顶层提取 `x/y/z` 填入 `pose.position`；仍带根级 `position` 的节点拒绝
 3. **resource_tracker.py `get_resource_instance_from_dict`**：`pose.size` 从 `config.size_x/size_y/size_z` 自动填充
 
@@ -230,7 +230,7 @@ node-link JSON：节点 id 用真实设备名，GraphML 里 `父::子` 的层级
 | 内容 | 路径 |
 |------|------|
 | ResourceDict 模型 | `unilabos/resources/resource_tracker.py` |
-| 旧格式图升级 | `unilabos/server/backend/legacy_adaptor/legacy/graph.py` |
+| 旧格式图升级 | `unilabos/client/host/legacy_adaptor/legacy/graph.py` |
 | 图登记 + 运行时装配 | `unilabos/server/services/materials/graph.py` (`GraphService.upsert_graph`, `load_graph_payload`) |
 | `-g` 启动入口 | `unilabos/app/main.py` (`_load_startup_graph`) |
 | Handle 验证 | `unilabos/app/main.py` (449-481 行) |

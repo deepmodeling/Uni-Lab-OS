@@ -1090,7 +1090,7 @@ class TestTemplateSynchronizerOverHttp:
         return sorted(entry["id"] for entry in posted["entries"] if "payload" in entry)
 
     def test_incremental_report_over_http(self, stack, service) -> None:
-        from unilabos.server.backend.legacy_adaptor.sync.templates import TemplateSynchronizer
+        from unilabos.client.host.legacy_adaptor.sync.templates import TemplateSynchronizer
 
         registry = _FakeRegistry({"pump": _device("pump"), "stirrer": _device("stirrer")})
         session = _SessionOverTestClient(stack)
@@ -1114,7 +1114,7 @@ class TestTemplateSynchronizerOverHttp:
 
     def test_missing_entries_are_resent_with_payload(self, stack, service, monkeypatch) -> None:
         from unilabos.protocol.runtime.registry import RegistryDigest
-        from unilabos.server.backend.legacy_adaptor.sync.templates import (
+        from unilabos.client.host.legacy_adaptor.sync.templates import (
             TemplateSynchronizer,
             collect_registry_templates,
         )
@@ -1134,7 +1134,7 @@ class TestTemplateSynchronizerOverHttp:
         assert self._payload_names(session.posted[1]) == ["pump"]
 
     def test_old_authority_without_digest_gets_full_snapshot(self, stack, monkeypatch) -> None:
-        from unilabos.server.backend.legacy_adaptor.sync.templates import TemplateSynchronizer
+        from unilabos.client.host.legacy_adaptor.sync.templates import TemplateSynchronizer
 
         registry = _FakeRegistry({"pump": _device("pump")})
         session = _SessionOverTestClient(stack)

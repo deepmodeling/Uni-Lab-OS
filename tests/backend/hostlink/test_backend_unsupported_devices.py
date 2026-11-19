@@ -11,9 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
-from unilabos.backend.hostlink.main_hostlink_run import populate_runtime
-from unilabos.backend.runtime import definition as definition_module
+from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.client.host.hostlink.main_hostlink_run import populate_runtime
+from unilabos.client.host.runtime import definition as definition_module
 from unilabos.registry.registry import lab_registry
 from unilabos.server.services.materials.graph import graph_resource_tree
 
@@ -70,7 +70,7 @@ def test_ros2_only_device_is_skipped_and_the_rest_of_the_graph_starts(registry) 
 def test_other_invalid_devices_still_fail_the_startup(registry) -> None:
     """只对"本 backend 跑不了"放行；注册表缺失等真正的配置错误照旧让启动失败。"""
 
-    from unilabos.backend.runtime.exception import DeviceClassInvalid
+    from unilabos.client.host.runtime.exception import DeviceClassInvalid
 
     devices = graph_resource_tree([_device("ghost", "test_missing_registry_entry")])
     with pytest.raises(DeviceClassInvalid):
@@ -78,7 +78,7 @@ def test_other_invalid_devices_still_fail_the_startup(registry) -> None:
 
 
 def test_endpoint_snapshot_carries_the_skipped_device_as_a_disabled_route() -> None:
-    from unilabos.server.backend.capabilities import build_endpoint_capabilities
+    from unilabos.client.host.capabilities import build_endpoint_capabilities
 
     adapter = SimpleNamespace(
         devices_names={"balance": "/devices/balance"},
@@ -100,7 +100,7 @@ def test_endpoint_snapshot_carries_the_skipped_device_as_a_disabled_route() -> N
 def test_hostlink_diagnostics_and_health_list_the_skipped_device(registry, monkeypatch) -> None:
     from fastapi.testclient import TestClient
 
-    from unilabos.backend.hostlink import main_hostlink_run
+    from unilabos.client.host.hostlink import main_hostlink_run
     from unilabos.server.api import edge_proxy
     from unilabos.server.api.runtime.diagnostics import create_backend_app
 

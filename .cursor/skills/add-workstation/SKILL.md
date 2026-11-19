@@ -48,7 +48,7 @@ from unilabos.registry.decorators import device, topic_config, not_action
 from unilabos.devices.workstation.workstation_base import WorkstationBase
 
 try:
-    from unilabos.backend.ros2.presets.workstation import ROS2WorkstationNode
+    from unilabos.client.host.ros2.presets.workstation import ROS2WorkstationNode
 except ImportError:
     ROS2WorkstationNode = None
 
@@ -184,7 +184,7 @@ HardwareInterface(
 
 #### 默认值：方法名用约定名时可整段省略
 
-不在 `@device` 写 `hardware_interface` 时，系统使用默认值（见 `unilabos/backend/ros2/initialize_device.py`）：
+不在 `@device` 写 `hardware_interface` 时，系统使用默认值（见 `unilabos/client/host/ros2/initialize_device.py`）：
 
 ```python
 {"name": "hardware_interface", "write": "send_command", "read": "read_data", "extra_info": []}
@@ -307,7 +307,7 @@ class ModbusBus:
 
 ### Serial 通信设备（class="serial"）
 
-`serial` 是 Uni-Lab-OS 内置的通信代理设备，代码位于 `unilabos/backend/ros2/presets/serial_node.py`：
+`serial` 是 Uni-Lab-OS 内置的通信代理设备，代码位于 `unilabos/client/host/ros2/presets/serial_node.py`：
 
 ```python
 from serial import Serial, SerialException

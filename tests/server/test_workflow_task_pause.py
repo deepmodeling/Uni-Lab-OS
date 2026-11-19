@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.api.runtime.diagnostics import create_backend_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 

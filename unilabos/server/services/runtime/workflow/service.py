@@ -28,7 +28,7 @@ except ImportError:  # pragma: no cover - exercised on Windows CI/runtime
 
 from pydantic import ValidationError
 
-from unilabos.server.backend.scheduler.authority import SchedulerAuthorityProfile
+from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
 from unilabos.protocol.materials import InventoryRequirement
 from unilabos.server.services.runtime.workflow.execution_plan_graph import (
     CompositeExecutionPlanNormalizer,
@@ -895,7 +895,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
     ) -> Dict[str, Any]:
         """资源作用域通过专用修订接口写入，普通 metadata 更新不能改保留字段。"""
         from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
-        from unilabos.server.backend.scheduler.interval_plan import validate_graph_resource_scopes
+        from unilabos.server.scheduler.interval_plan import validate_graph_resource_scopes
 
         identity = self.get_workflow(workflow_uuid)["uuid"]
         with self._authoring_lock(identity):
@@ -1057,7 +1057,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
 
         任务创建时按执行计划再查一次，没发布直接运行的工作流同样受约束。
         """
-        from unilabos.server.backend.scheduler.interval_plan import (
+        from unilabos.server.scheduler.interval_plan import (
             graph_has_order_sensitive_actions, validate_graph_resource_scopes,
         )
 
@@ -1152,7 +1152,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 edge["uuid"] for edge in graph["edges"]
             }:
                 raise WorkflowConflict("conflict", detail="组合调用身份已存在于父图")
-            from unilabos.server.backend.scheduler.interval_plan import (
+            from unilabos.server.scheduler.interval_plan import (
                 graph_declares_resource_scopes, validate_graph_resource_scopes,
             )
 
@@ -2483,7 +2483,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                     job["param"] = dict(node["param"])
                 except ValueError as error:
                     raise StoreConflict(str(error)) from None
-        from unilabos.server.backend.scheduler.interval_plan import compile_interval_plan
+        from unilabos.server.scheduler.interval_plan import compile_interval_plan
 
         try:
             plan["resource_intervals"] = compile_interval_plan(plan, graph)

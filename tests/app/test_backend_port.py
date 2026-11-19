@@ -13,7 +13,7 @@ import pytest
 from unilabos.app.backend_main import authority_port
 from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import BasicConfig, HTTPConfig
-from unilabos.server.backend.legacy_adaptor.session import BaseBackendClient
+from unilabos.client.host.legacy_adaptor.session import BaseBackendClient
 
 
 def test_role_backend_defaults_to_the_default_authority_port(monkeypatch) -> None:

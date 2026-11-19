@@ -67,7 +67,7 @@ class ResourceLoans:
     @staticmethod
     def live_blockers(conn, task_uuid: str, keys: set[str]) -> set[str]:
         """等待边必须仍有占用事实支撑，不能用已释放资源的旧队列记录误判环路。"""
-        from unilabos.server.backend.scheduler.resource_keys import material_lock_key
+        from unilabos.server.scheduler.resource_keys import material_lock_key
         result = set()
         for row in conn.execute("SELECT * FROM workflow_resource_interval WHERE state!='released'"):
             if row["lock_key"] in keys:

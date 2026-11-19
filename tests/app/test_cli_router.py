@@ -119,13 +119,13 @@ def test_doctor_is_dispatched_without_session_or_runtime(monkeypatch) -> None:
 
     monkeypatch.setattr("unilabos.app.cli.router._prepare_command_session", no_session)
     monkeypatch.setattr(
-        "unilabos.backend.hostlink.doctor.run_doctor", lambda values: calls.append(dict(values)) or 0,
+        "unilabos.client.host.hostlink.doctor.run_doctor", lambda values: calls.append(dict(values)) or 0,
     )
     parser = build_parser()
 
     assert run_cli_command(parser.parse_args(["doctor", "net", "--hostlink-addr", "10.0.0.2"]), parser) is True
     assert calls[0]["doctor_command"] == "net" and calls[0]["hostlink_addr"] == "10.0.0.2"
-    monkeypatch.setattr("unilabos.backend.hostlink.doctor.run_doctor", lambda _values: 3)
+    monkeypatch.setattr("unilabos.client.host.hostlink.doctor.run_doctor", lambda _values: 3)
     with pytest.raises(SystemExit) as exited:
         run_cli_command(parser.parse_args(["doctor", "fake-device"]), parser)
     assert exited.value.code == 3
@@ -136,7 +136,7 @@ def _report(output: str) -> dict:
 
 
 def test_doctor_net_probes_a_real_hostlink_server(capsys) -> None:
-    from unilabos.backend.hostlink.server import HostLinkServer
+    from unilabos.client.host.hostlink.server import HostLinkServer
 
     parser = build_parser()
     server = HostLinkServer("127.0.0.1", 0).start()

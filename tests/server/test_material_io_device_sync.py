@@ -36,10 +36,10 @@ from tests.server.test_material_io_scheduler import (
 )
 from tests.server.test_scheduler_inventory_authority import _mutation
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
-from unilabos.backend.hostlink import downlink, main_hostlink_run
+from unilabos.client.host.hostlink import downlink, main_hostlink_run
 from unilabos.config.config import BasicConfig
 from unilabos.protocol.materials import MaterialMove
-from unilabos.server.backend.scheduler.material_io import sync_material_io_device
+from unilabos.server.scheduler.material_io import sync_material_io_device
 
 DEVICE = "liquid_handler"
 

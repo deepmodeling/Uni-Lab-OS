@@ -128,7 +128,7 @@ serial:
               result: {}
             version: 2
         type: UniLabJsonCommand
-    module: unilabos.backend.ros2.presets.serial_node:ROS2SerialNode
+    module: unilabos.client.host.ros2.presets.serial_node:ROS2SerialNode
     status_policies: {}
     status_types: {}
     supported_backends:

@@ -9,13 +9,13 @@
 | 层次 | 文件 | 本轮职责 |
 | --- | --- | --- |
 | 协议 | `unilabos/protocol/runtime/lifecycle.py` | Health、Readiness、Restart、Reset、SchedulerDrain DTO；从 diagnostics 移出已有请求模型并补充响应模型 |
-| 协调 | `unilabos/server/backend/lifecycle.py` | 排空、恢复与在途设备作业合并查询，使用现有 Scheduler |
-| 调度 | `unilabos/server/backend/scheduler/service.py` | 按来源保存派发暂停，覆盖已获派发许可到执行端登记之间的窗口 |
+| 协调 | `unilabos/server/lifecycle/drain.py` | 排空、恢复与在途设备作业合并查询，使用现有 Scheduler |
+| 调度 | `unilabos/server/scheduler/service.py` | 按来源保存派发暂停，覆盖已获派发许可到执行端登记之间的窗口 |
 | API | `unilabos/server/api/runtime/lifecycle.py` | V1 三条 drain 路由，装入现有 diagnostics router |
-| 现有生命周期 | `server/backend/restart.py`、`app/backend_main.py` | 重启和重置各自持有暂停来源，解除时保留其他来源 |
+| 现有生命周期 | `server/lifecycle/restart.py`、`app/backend_main.py` | 重启和重置各自持有暂停来源，解除时保留其他来源 |
 | SDK | `unilabos/client/runtime/lifecycle.py` | HTTPLifecycleClient，复用 HTTPClient 与地址规范化；不自动启动进程 |
 
-`server/backend` 放协调实现，公开 DTO 放 `protocol/runtime`，API 和 SDK 分别放 `server/api/runtime`、`client/runtime`。协议命名沿 Dev 的 runtime 层；`edge` 继续作为兼容的重启 scope，不做整仓名称替换。
+`server/lifecycle/`（`drain.py`、`restart.py`）放协调实现，公开 DTO 放 `protocol/runtime`，API 和 SDK 分别放 `server/api/runtime`、`client/runtime`。协议命名沿 Dev 的 runtime 层；`edge` 继续作为兼容的重启 scope，不做整仓名称替换。
 
 ## API
 

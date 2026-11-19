@@ -588,7 +588,7 @@ def run_client_command(
 def _run_doctor_command(args: argparse.Namespace) -> bool:
     """执行组网诊断；诊断失败按 ``run_doctor`` 的退出码退出（1 参数错误，2 / 3 诊断不通过）。"""
 
-    from unilabos.backend.hostlink.doctor import run_doctor
+    from unilabos.client.host.hostlink.doctor import run_doctor
 
     code = run_doctor(vars(args))
     sys.stdout.flush()

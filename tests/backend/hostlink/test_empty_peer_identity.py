@@ -2,12 +2,12 @@
 
 import pytest
 
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
-from unilabos.backend.hostlink.topic import TopicEvent
-from unilabos.backend.hostlink.protocol import ActionType, RemoteError
-from unilabos.backend.hostlink.server import HostLinkServer
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.client.host.hostlink.topic import TopicEvent
+from unilabos.client.host.hostlink.protocol import ActionType, RemoteError
+from unilabos.client.host.hostlink.server import HostLinkServer
 from unilabos.client.materials.core import MaterialsHTTPError
 
 

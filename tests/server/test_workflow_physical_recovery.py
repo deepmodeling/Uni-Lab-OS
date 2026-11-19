@@ -7,7 +7,7 @@ import pytest
 
 from tests.api_envelope import error_of, ok_data
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from tests.server.test_workflow_inventory_recovery import Stack
 from tests.server.test_workflow_parallel_execution import Executor, wait_for
 from tests.server.test_scheduler_inventory_authority import _template, _material
@@ -142,7 +142,7 @@ def test_aliquot_source_reserved_as_content_is_deducted_once_when_the_scheduler_
 
 def test_aliquot_source_consumed_at_action_start_is_settled_by_the_actual_aliquot(tmp_path):
     """Host 在动作开始时消费预留：来源内容物等分装回执按实际量扣一次，期间预留仍挡住其他任务。"""
-    from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+    from unilabos.server.inventory import ExecutionInventoryCoordinator
     from unilabos.protocol.materials import InventoryRequirement
 
     stack, executor = Stack(tmp_path), Executor()
@@ -171,7 +171,7 @@ def test_aliquot_source_consumed_at_action_start_is_settled_by_the_actual_aliquo
 def test_released_aliquot_releases_the_source_content_reserved_at_action_start(tmp_path):
     """动作开始后失败、现场核实恢复原状（不结算分装）：留给分装结算的来源预留按未取用释放。"""
     from unilabos.protocol.runtime.execution_start import execution_identity
-    from unilabos.server.backend.inventory import ExecutionInventoryCoordinator
+    from unilabos.server.inventory import ExecutionInventoryCoordinator
 
     stack, executor = Stack(tmp_path), Executor()
     source, target = seed(stack)

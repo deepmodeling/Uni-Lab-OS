@@ -70,11 +70,11 @@ class _Stack:
     """HostLink 执行栈 + 本机调度器（同 test_workflow_loop_execution，换成 carry 用的驱动）。"""
 
     def __init__(self) -> None:
-        from unilabos.backend.hostlink.backend import HostLinkBackend
-        from unilabos.backend.hostlink.host_node import HostNode
-        from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-        from unilabos.server.backend.execution import JobExecutionBackend
-        from unilabos.server.backend.scheduler.service import BackendScheduler
+        from unilabos.client.host.hostlink.backend import HostLinkBackend
+        from unilabos.client.host.hostlink.host_node import HostNode
+        from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+        from unilabos.client.host.execution import JobExecutionBackend
+        from unilabos.server.scheduler.service import BackendScheduler
 
         self.local = HostLinkLocalRuntime()
         actions = ("dose", "add", "note", "mark", "probe")
@@ -98,8 +98,8 @@ class _Stack:
         return self.node.driver
 
     def close(self) -> None:
-        from unilabos.backend.hostlink.adapter_registry import clear_execution_adapter
-        from unilabos.backend.hostlink.host_node import HostNode
+        from unilabos.client.host.hostlink.adapter_registry import clear_execution_adapter
+        from unilabos.client.host.hostlink.host_node import HostNode
 
         self.service.set_task_submitter(None)
         self.scheduler.stop()
@@ -298,7 +298,7 @@ def test_carried_value_survives_restart_between_rounds(tmp_path) -> None:
     from fastapi.testclient import TestClient
 
     from unilabos.server.api.runtime.workflow import create_workflow_app
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.server.scheduler.service import BackendScheduler
     from tests.server.test_workflow_task_cancel import Executor, command, wait_for
 
     @workflow(display_name="重启续用")
@@ -476,7 +476,7 @@ def test_graph_validation_rejects_carry_next_from_a_conditional_body_step() -> N
 def test_carry_loop_inside_a_composite_child_runs_in_the_parent() -> None:
     """组合展开：子操作循环的条件表达式、携带引用换成展开后的身份，条件里的输入改绑到实参。"""
 
-    from unilabos.server.backend.scheduler.service import BackendScheduler
+    from unilabos.server.scheduler.service import BackendScheduler
     from unilabos.server.services.runtime.workflow.authoring_identity import expanded_node_uuid
     from tests.server.test_workflow_task_cancel import Executor, wait_for
 

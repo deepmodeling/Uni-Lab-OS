@@ -252,7 +252,7 @@ def test_physical_move_off_a_warehouse_site_finds_the_site_through_the_holder(au
         ResourceTemplateWrite,
         SiteCreate,
     )
-    from unilabos.server.backend.scheduler.physical_contract import resolve_physical_contract
+    from unilabos.server.scheduler.physical_contract import resolve_physical_contract
 
     service, gateway = authority
     source = _warehouse(gateway, "src")

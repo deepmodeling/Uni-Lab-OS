@@ -21,14 +21,14 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import unilabos.server.backend.restart as restart_module
+import unilabos.server.lifecycle.restart as restart_module
 from tests.api_envelope import error_of, ok_data
 from unilabos.config.config import BasicConfig
 from unilabos.protocol.runtime.process_management import SCHEMA_VERSION, ProcessManagementError
 from unilabos.server.api.envelope import install_envelope_fallback
 from unilabos.server.api.process_management import install_process_management_api
-from unilabos.server.backend.restart import RestartCoordinator
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.lifecycle.restart import RestartCoordinator
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.process_management import (
     HostGateway,
@@ -147,7 +147,7 @@ class Stack:
         monkeypatch.setattr(BasicConfig, "working_dir", str(tmp_path))
         self.edge = FakeEdge()
         # 重启协调器经模块级入口判断「本进程是带控制面的调度权威」
-        monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: self.edge)
+        monkeypatch.setattr("unilabos.server.edge_dispatch.get_edge_control_service", lambda: self.edge)
         self.workflow = WorkflowService(":memory:")
         self.scheduler = BackendScheduler(self.workflow, MagicMock())
         self.active: list[str] = []

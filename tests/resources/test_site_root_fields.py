@@ -1111,7 +1111,7 @@ def test_ros_resource_transport_roundtrip_single_json_field():
     """Resource msg 整 JSON 单字段传输：``data`` 承载全部内容并无损往返。"""
 
     message_converter = pytest.importorskip(
-        "unilabos.backend.ros2.msgs.message_converter",
+        "unilabos.client.host.ros2.msgs.message_converter",
         reason="ROS 消息转换依赖 Jazzy 版 unilabos_msgs.Resource",
         exc_type=ImportError,
     )
@@ -1178,7 +1178,7 @@ def test_ros_resource_transport_preserves_unknown_position():
     """pose.position=None 通过完整 JSON 保持为空。"""
 
     message_converter = pytest.importorskip(
-        "unilabos.backend.ros2.msgs.message_converter",
+        "unilabos.client.host.ros2.msgs.message_converter",
         reason="ROS 消息转换依赖 Jazzy 版 unilabos_msgs.Resource",
         exc_type=ImportError,
     )

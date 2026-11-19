@@ -7,7 +7,7 @@
 import unittest
 from dataclasses import dataclass
 
-from unilabos.backend.ros2.msgs.message_converter import (
+from unilabos.client.host.ros2.msgs.message_converter import (
     _msg_mapping,
     _action_mapping,
     _msg_converter,

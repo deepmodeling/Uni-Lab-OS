@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 from tests.api_envelope import ok_data
 from unilabos.server.api.runtime import create_backend_router
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.incidents import StatusIncidentManager
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.client.host.incidents import StatusIncidentManager
 from unilabos.server.api.runtime.workflow import install_workflow_api
 from unilabos.protocol.runtime.workflow import WorkflowNodeWrite
 from unilabos.server.services.runtime.workflow.service import WorkflowService

@@ -57,7 +57,7 @@ class ErrorDecision(BaseModel):
 def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
     """本进程设备 runtime 跳过的设备；本进程不带 HostLink runtime 时为 None。"""
 
-    from unilabos.backend.hostlink import main_hostlink_run
+    from unilabos.client.host.hostlink import main_hostlink_run
 
     if main_hostlink_run.get_runtime() is None:
         return None
@@ -65,8 +65,8 @@ def _local_unavailable_devices() -> Optional[list[dict[str, Any]]]:
 
 
 def _hostlink_snapshot() -> dict[str, Any]:
-    from unilabos.backend.hostlink.client import get_hostlink_client
-    from unilabos.backend.hostlink.server import get_hostlink_server
+    from unilabos.client.host.hostlink.client import get_hostlink_client
+    from unilabos.client.host.hostlink.server import get_hostlink_server
 
     link_server = get_hostlink_server()
     link_client = get_hostlink_client()
@@ -118,7 +118,7 @@ def create_backend_router(
 
     @router.get("/reset", response_model=ResetStatus)
     def reset_preview() -> dict[str, Any]:
-        from unilabos.server.backend.reset import get_reset_controller, ResetConflict
+        from unilabos.server.lifecycle.reset import get_reset_controller, ResetConflict
 
         controller = get_reset_controller()
         if controller is None:
@@ -130,7 +130,7 @@ def create_backend_router(
 
     @router.post("/reset", status_code=202, response_model=ResetStatus)
     def reset_request(body: ResetRequest, background: BackgroundTasks) -> dict[str, Any]:
-        from unilabos.server.backend.reset import get_reset_controller, ResetConflict
+        from unilabos.server.lifecycle.reset import get_reset_controller, ResetConflict
         from unilabos.server.api.app import request_server_shutdown
 
         controller = get_reset_controller()
@@ -159,7 +159,7 @@ def create_backend_router(
         if get_execution_backend() is not None:
             return "ready"
         from unilabos.server.api.edge_proxy import edge_proxy_enabled
-        from unilabos.server.backend.edge_control import get_edge_control_service
+        from unilabos.server.edge_dispatch import get_edge_control_service
 
         if not edge_proxy_enabled():
             return "disabled"
@@ -214,7 +214,7 @@ def create_backend_router(
         """本进程是否承载工作流运行时：调度权威为 ready，仅执行面的 Host 为 disabled。"""
 
         try:
-            from unilabos.server.backend.composition import get_workflow_service
+            from unilabos.server.execution_composition import get_workflow_service
 
             return "ready" if get_workflow_service() is not None else "disabled"
         except Exception:  # noqa: BLE001 - 探针不因装配查询失败而失败
@@ -432,7 +432,7 @@ def create_backend_router(
     @router.post("/restart", response_model=RestartStatus)
     def request_restart(body: RestartRequest) -> dict[str, Any]:
         """登记重启：暂停新派发，active job 清空后按 scope 重启并自动恢复。"""
-        from unilabos.server.backend.restart import get_restart_coordinator
+        from unilabos.server.lifecycle.restart import get_restart_coordinator
 
         try:
             return get_restart_coordinator().request(mode=body.mode, scope=body.scope)
@@ -441,13 +441,13 @@ def create_backend_router(
 
     @router.get("/restart", response_model=RestartStatus)
     def restart_status() -> dict[str, Any]:
-        from unilabos.server.backend.restart import get_restart_coordinator
+        from unilabos.server.lifecycle.restart import get_restart_coordinator
 
         return get_restart_coordinator().status()
 
     @router.delete("/restart", response_model=RestartStatus)
     def cancel_restart() -> dict[str, Any]:
-        from unilabos.server.backend.restart import get_restart_coordinator
+        from unilabos.server.lifecycle.restart import get_restart_coordinator
 
         return get_restart_coordinator().cancel()
 

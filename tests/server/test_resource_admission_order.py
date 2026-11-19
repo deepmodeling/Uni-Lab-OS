@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from unilabos.protocol.runtime.resource_intervals import DeviceTenancyTransition
-from unilabos.server.backend.scheduler.models import MaterialLockClaim
+from unilabos.server.scheduler.models import MaterialLockClaim
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
 from unilabos.server.services.runtime.workflow.resource_waiters import WAITER_AGING_INTERVAL_S

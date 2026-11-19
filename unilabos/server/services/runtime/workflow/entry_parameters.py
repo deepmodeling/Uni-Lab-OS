@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
-from unilabos.server.backend.scheduler.parameters import json_get_exists
+from unilabos.server.scheduler.parameters import json_get_exists
 from unilabos.server.services.runtime.workflow.value_schema import (
     WorkflowValueSchemaError,
     validate_value,

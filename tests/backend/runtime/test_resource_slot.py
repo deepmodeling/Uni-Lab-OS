@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import pytest
 
-from unilabos.backend.runtime.resource_slot import is_unset_resource_slot, resource_slot_shape, resource_slot_shapes
+from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot, resource_slot_shape, resource_slot_shapes
 from unilabos.registry.decorators import action
 from unilabos.registry.placeholder_type import ResourceSlot
 
@@ -66,7 +66,7 @@ def test_resource_slot_shapes_tolerates_uninspectable_callables():
     ],
 )
 def test_unset_resource_slot_matches_the_scheduler_absent_rule(value, unset):
-    from unilabos.server.backend.scheduler.materials import _is_absent_material
+    from unilabos.server.scheduler.materials import _is_absent_material
 
     assert is_unset_resource_slot(value) is unset
     # 调度器同一口径：未指定的物料参数不解析 uuid、不加锁
@@ -83,7 +83,7 @@ class _OptionalSlotDriver:
 
 @pytest.mark.parametrize("empty", [None, "", {}])
 def test_hostlink_hands_an_unset_optional_slot_to_the_driver_as_none(empty):
-    from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+    from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 
     runtime = HostLinkLocalRuntime()
     runtime.add_driver(HostLinkDriverSpec("heater", _OptionalSlotDriver, {}))

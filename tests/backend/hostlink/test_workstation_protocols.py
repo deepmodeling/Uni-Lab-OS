@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel
 
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import (
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
 )
@@ -122,17 +122,17 @@ def test_workstation_shared_logic_is_single_source_across_backends() -> None:
       并在动作解析时路由；
     - 协议名/模型解析与资源展开/回写是模块级共享函数，两个实现均引用之。
     """
-    import unilabos.backend.hostlink.local_runtime as local_runtime_module
-    import unilabos.backend.hostlink.workstation as hostlink_workstation_module
-    from unilabos.backend.runtime import workstation_protocol
+    import unilabos.client.host.hostlink.local_runtime as local_runtime_module
+    import unilabos.client.host.hostlink.workstation as hostlink_workstation_module
+    from unilabos.client.host.runtime import workstation_protocol
 
     # 验证装配关系时不导入 ROS 运行时，无 ROS 的 HostLink CI 也覆盖此契约。
     ros2_directory = Path(local_runtime_module.__file__).parents[1] / "ros2"
     base_source = (ros2_directory / "base_device_node.py").read_text(encoding="utf-8")
-    assert "unilabos.backend.ros2.presets.workstation" in base_source
+    assert "unilabos.client.host.ros2.presets.workstation" in base_source
 
     runtime_source = inspect.getsource(local_runtime_module.HostLinkLocalRuntime.add_driver)
-    assert "unilabos.backend.hostlink.workstation" in runtime_source
+    assert "unilabos.client.host.hostlink.workstation" in runtime_source
     assert '_workstation_protocols' in runtime_source
 
     resolve_source = inspect.getsource(
@@ -150,10 +150,10 @@ def test_workstation_shared_logic_is_single_source_across_backends() -> None:
     ):
         assert hasattr(workstation_protocol, name), name
     hostlink_source = inspect.getsource(hostlink_workstation_module)
-    assert "unilabos.backend.runtime.workstation_protocol" in hostlink_source
+    assert "unilabos.client.host.runtime.workstation_protocol" in hostlink_source
     ros2_workstation_path = ros2_directory / "presets" / "workstation.py"
     assert ros2_workstation_path.is_file()
-    assert "unilabos.backend.runtime.workstation_protocol" in ros2_workstation_path.read_text(
+    assert "unilabos.client.host.runtime.workstation_protocol" in ros2_workstation_path.read_text(
         encoding="utf-8"
     )
 
@@ -169,7 +169,7 @@ def test_expanded_protocol_vessel_uses_the_physical_graph_node_id(monkeypatch) -
 
     import networkx as nx
 
-    from unilabos.backend.runtime import workstation_protocol
+    from unilabos.client.host.runtime import workstation_protocol
     from unilabos.resources.resource_tracker import ResourceTreeSet
 
     flask_uuid, station_uuid = str(uuid.uuid4()), str(uuid.uuid4())

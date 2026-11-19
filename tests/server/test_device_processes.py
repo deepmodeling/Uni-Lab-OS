@@ -100,7 +100,7 @@ def test_create_writes_graph_and_command(service: dpx.DeviceProcessService, tmp_
 
 def test_device_node_reuses_authority_uuid(service: dpx.DeviceProcessService, monkeypatch: pytest.MonkeyPatch) -> None:
     """同 id 设备再次登记时沿用权威 uuid，否则 Graph Authority 会以 identity_conflict 拒绝启动图。"""
-    from unilabos.server.backend import composition
+    from unilabos.server import execution_composition
 
     class _Record:
         class material:  # noqa: N801 - 模拟 MaterialAggregateRead.material
@@ -112,7 +112,7 @@ def test_device_node_reuses_authority_uuid(service: dpx.DeviceProcessService, mo
                 raise LookupError(resource_id)
             return _Record()
 
-    monkeypatch.setattr(composition, "get_materials_service", lambda: _Materials())
+    monkeypatch.setattr(execution_composition, "get_materials_service", lambda: _Materials())
     assert dpx.build_device_node("pump_1", "acme_pump")["uuid"] == _Record.material.material_uuid
     fresh = dpx.build_device_node("pump_2", "acme_pump")["uuid"]
     assert fresh != _Record.material.material_uuid and len(fresh) == 36

@@ -4,16 +4,16 @@ import threading
 import time
 import uuid
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.devices.virtual.heating_platform import VirtualHeatingPlatform
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.host_node import HostNode
-from unilabos.server.backend.execution_queue import QueueItem
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.telemetry import TelemetryDeviceStateProjection
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.host_node import HostNode
+from unilabos.server.execution_queue import QueueItem
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.telemetry import TelemetryService
 

@@ -17,7 +17,7 @@ Uni-Lab-OS 希望把设备能力、实验步骤和物料状态组织成可执行
 注册表发现、设备初始化、在线能力上报、动作执行和结果验证是不同阶段。前端既要查静态声明，
 也要查 endpoint 的实际路由；不能将已安装的类显示为已连接的硬件。
 
-业务驱动尽量不依赖传输层。通用执行与物料操作由 `backend.runtime` 承担，HostLink 与 ROS2
+业务驱动尽量不依赖传输层。通用执行与物料操作由 `client.host.runtime` 承担，HostLink 与 ROS2
 各自完成节点初始化、通信和执行适配。Workstation 动态子设备也必须初始化对应 backend 的 node，
 而不只是保存一个 Python 对象。具体声明与导入路径见 [驱动接入](python-cli-mcp.md)。
 

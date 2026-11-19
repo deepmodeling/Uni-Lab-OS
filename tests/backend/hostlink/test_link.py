@@ -5,10 +5,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from unilabos.backend.hostlink.client import HostLinkClient
-from unilabos.backend.hostlink.protocol import ActionType, RemoteError
-from unilabos.backend.hostlink.ros_assist import RosNetworkInfo
-from unilabos.backend.hostlink.server import HostLinkPortInUseError, HostLinkServer
+from unilabos.client.host.hostlink.client import HostLinkClient
+from unilabos.client.host.hostlink.protocol import ActionType, RemoteError
+from unilabos.client.host.hostlink.ros_assist import RosNetworkInfo
+from unilabos.client.host.hostlink.server import HostLinkPortInUseError, HostLinkServer
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> bool:
@@ -221,7 +221,7 @@ def test_large_messages_are_chunked_and_oversized_ones_fail_fast(monkeypatch) ->
     request timeout 失败，两侧日志都没有原因。Host → Slave 与 Slave → Host 两个方向同样处理。
     """
 
-    from unilabos.backend.hostlink import protocol
+    from unilabos.client.host.hostlink import protocol
 
     monkeypatch.setattr(protocol, "MAX_FRAME_BYTES", 4096)
     monkeypatch.setattr(protocol, "MAX_MESSAGE_BYTES", 64 * 1024)

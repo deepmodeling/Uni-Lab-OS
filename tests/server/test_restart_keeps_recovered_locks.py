@@ -9,8 +9,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.dag.runner import TaskDagRunner
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.dag.runner import TaskDagRunner
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 

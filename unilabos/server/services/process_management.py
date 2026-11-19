@@ -510,16 +510,16 @@ class ProcessManagementService:
         get_materials: Optional[Callable[[], Any]] = None,
         poll_interval: float = 0.2,
     ) -> None:
-        from unilabos.server.backend import composition
+        from unilabos.server import execution_composition
 
         self.store = ProcessManagementStore(workflow)
         self._context = context
         self.gateway = gateway or HostGateway()
-        self._get_scheduler = get_scheduler or composition.get_scheduler
-        self._get_execution_backend = get_execution_backend or composition.get_execution_backend
+        self._get_scheduler = get_scheduler or execution_composition.get_scheduler
+        self._get_execution_backend = get_execution_backend or execution_composition.get_execution_backend
         self._get_edge_control = get_edge_control or _default_edge_control
         self._get_restart_coordinator = get_restart_coordinator or _default_restart_coordinator
-        self._get_materials = get_materials or composition.get_materials_service
+        self._get_materials = get_materials or execution_composition.get_materials_service
         self.poll_interval = poll_interval
         # 本进程代次：没有控制面权威纪元时（单进程）用它标识 backend 组件
         self._generation = f"authority:{os.getpid()}:{int(time.time() * 1000)}"
@@ -547,12 +547,12 @@ class ProcessManagementService:
     # ── 快照 ──────────────────────────────────────────────────────
 
     def _scheduler_lifecycle(self) -> Any:
-        from unilabos.server.backend.lifecycle import SchedulerLifecycle
+        from unilabos.server.lifecycle.drain import SchedulerLifecycle
 
         return SchedulerLifecycle(self._get_scheduler, self._get_execution_backend)
 
     def _drain_status(self) -> Optional[dict[str, Any]]:
-        from unilabos.server.backend.lifecycle import SchedulerUnavailable
+        from unilabos.server.lifecycle.drain import SchedulerUnavailable
 
         try:
             return self._scheduler_lifecycle().status().model_dump()
@@ -1012,7 +1012,7 @@ class ProcessManagementService:
     # 排空 / 恢复
 
     def _drain(self, timeout: float) -> dict[str, Any]:
-        from unilabos.server.backend.lifecycle import SchedulerUnavailable
+        from unilabos.server.lifecycle.drain import SchedulerUnavailable
 
         lifecycle = self._scheduler_lifecycle()
         try:
@@ -1032,7 +1032,7 @@ class ProcessManagementService:
         return status.model_dump()
 
     def _resume(self) -> dict[str, Any]:
-        from unilabos.server.backend.lifecycle import SchedulerUnavailable
+        from unilabos.server.lifecycle.drain import SchedulerUnavailable
 
         try:
             return self._scheduler_lifecycle().resume().model_dump()
@@ -1176,13 +1176,13 @@ class ProcessManagementService:
 
 
 def _default_edge_control() -> Any:
-    from unilabos.server.backend.edge_control import get_edge_control_service
+    from unilabos.server.edge_dispatch import get_edge_control_service
 
     return get_edge_control_service()
 
 
 def _default_restart_coordinator() -> Any:
-    from unilabos.server.backend.restart import get_restart_coordinator
+    from unilabos.server.lifecycle.restart import get_restart_coordinator
 
     return get_restart_coordinator()
 

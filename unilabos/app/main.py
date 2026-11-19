@@ -344,7 +344,7 @@ def _load_startup_graph(
     时以空图启动（只有 host_node）。物理拓扑图同时交给协议编译器使用。
     """
 
-    from unilabos.backend.runtime.workstation_protocol import set_physical_setup_graph
+    from unilabos.client.host.runtime.workstation_protocol import set_physical_setup_graph
     from unilabos.server.services.materials.graph import load_graph_payload
 
     file_path = args_dict.get("_graph_file_path")
@@ -368,7 +368,7 @@ def _load_startup_graph(
             # -g 本地 JSON 是创建入口：旧格式图在读取边界由 legacy 适配层转成
             # 当前契约，注册表就绪后登记到 Graph Authority（权威没有则创建，已有则
             # 以权威为准只补新增，冲突 / 不可达拒绝启动），再以权威 payload 装配。
-            from unilabos.server.backend.legacy_adaptor.legacy.startup import (
+            from unilabos.client.host.legacy_adaptor.legacy.startup import (
                 upgrade_startup_graph_payload,
             )
 
@@ -532,11 +532,11 @@ def _run_main():
 
     maybe_supervise(args)
 
-    from unilabos.server.backend.restart import set_safe_restart_enabled
+    from unilabos.server.lifecycle.restart import set_safe_restart_enabled
 
     set_safe_restart_enabled(not bool(args_dict.get("no_safe_restart")))
 
-    from unilabos.backend import (
+    from unilabos.client.host import (
         BackendConfigurationError,
         resolve_backend_selection,
     )
@@ -666,7 +666,7 @@ def _run_main():
     # ROS2 backend 用 HostLink 辅助发现；hostlink backend 则在同一 TCP 长连接上
     # 直接同步设备描述/状态和执行设备动作，不导入 ROS。
     is_slave = bool(args_dict.get("is_slave", False))
-    from unilabos.backend.hostlink.startup import (
+    from unilabos.client.host.hostlink.startup import (
         apply_hostlink_cli,
         validate_hostlink_backend,
     )
@@ -711,7 +711,7 @@ def _run_main():
     # hostlink Host 在配置就绪后立刻打开 HostLink 端口，不等注册表、设备图与设备启动：
     # Slave 可以马上连上并登记，物料 / 设备请求在 Host 就绪前回「Host 启动中」由 Slave 重试。
     # 设备 runtime 启动时 HostLinkBackend 接管同一个 server。
-    from unilabos.backend.hostlink.startup import (
+    from unilabos.client.host.hostlink.startup import (
         prebind_host_server,
         should_prebind_host_server,
     )
@@ -869,7 +869,7 @@ def _run_main():
         os._exit(0)
 
     # 以下导入依赖 ROS2 环境，check_mode 已退出不需要
-    from unilabos.server.backend.legacy_adaptor import get_backend_client
+    from unilabos.client.host.legacy_adaptor import get_backend_client
     from unilabos.resources.resource_tracker import ResourceDict
 
     loaded_graph = _load_startup_graph(args_dict, working_dir, is_slave=is_slave)
@@ -946,7 +946,7 @@ def _run_main():
 
         # 限时看门狗在装处理器之前启动：处理器里布置限时只做一次赋值，不拿锁、不起线程
         lifetime.start_exit_watchdog()
-        from unilabos.server.backend.restart import (
+        from unilabos.server.lifecycle.restart import (
             RESTART_EXIT_CODE,
             is_restart_requested,
         )
@@ -1053,7 +1053,7 @@ def _run_main():
         # 由前端插入画布或经 POST /workflows/from-template 实例化。权威在别的进程（默认拓扑的
         # 子进程、--address）时走 HTTP，失败时后台重试直到成功；单进程（--no-safe-restart）时
         # 直接写进程内服务，两条路径共用同一投影。
-        from unilabos.server.backend.legacy_adaptor.sync.slaves import (
+        from unilabos.client.host.legacy_adaptor.sync.slaves import (
             http_slave_sender,
             local_slave_sender,
             start_slave_announcer,
@@ -1065,7 +1065,7 @@ def _run_main():
             # 远端模式只接入 runtime.v1 微后端；注册表、物料、工作流和调度
             # 均由后端权威承接。旧云端字段兼容属于 Backend 侧
             # ``legacy_adaptor``，不能在 Edge 启动时分叉出第二套上联链路。
-            from unilabos.server.backend.legacy_adaptor.sync.templates import (
+            from unilabos.client.host.legacy_adaptor.sync.templates import (
                 report_registry_snapshot,
                 retry_registry_report_in_background,
             )
@@ -1078,7 +1078,7 @@ def _run_main():
                 retry_registry_report_in_background(lab_registry, HTTPConfig.remote_addr)
             start_slave_announcer(http_slave_sender(HTTPConfig.remote_addr, edge_uuid=edge_uuid))
         else:
-            from unilabos.server.backend.legacy_adaptor.sync.templates import (
+            from unilabos.client.host.legacy_adaptor.sync.templates import (
                 report_registry_snapshot_local,
             )
             from unilabos.server.services.runtime.registry import get_registry_service
@@ -1127,7 +1127,7 @@ def _run_main():
         if args_dict["backend"] == "ros2":
             # 正常 Slave 必须在 rclpy.init 前拿到 Host 的 ROS policy；
             # --slave_no_host 才允许离线启动并后台重连。
-            from unilabos.backend.hostlink.network import (
+            from unilabos.client.host.hostlink.network import (
                 require_slave_startup_device_ids,
                 setup_slave_network_client,
             )
@@ -1152,13 +1152,13 @@ def _run_main():
         if comm_client is not None:
             comm_client.stop()
         if BasicConfig.is_host_mode:
-            from unilabos.server.backend.composition import shutdown_backend_services
+            from unilabos.server.execution_composition import shutdown_backend_services
 
             shutdown_backend_services()
 
     # 安静点重启：端口、数据库等均已在上方退出链路释放。监督进程看到约定
     # 退出码后用相同参数拉起新实例；--no-safe-restart 时只退出。
-    from unilabos.server.backend.restart import exit_if_restart_requested
+    from unilabos.server.lifecycle.restart import exit_if_restart_requested
 
     exit_if_restart_requested()
 

@@ -8,15 +8,15 @@ from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime.diagnostics import create_backend_app
-from unilabos.server.backend.lifecycle import SchedulerLifecycle
-from unilabos.server.backend.restart import RestartCoordinator
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.lifecycle.drain import SchedulerLifecycle
+from unilabos.server.lifecycle.restart import RestartCoordinator
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 
 @pytest.fixture
 def stack(monkeypatch):
-    monkeypatch.setattr("unilabos.server.backend.edge_control.get_edge_control_service", lambda: None)
+    monkeypatch.setattr("unilabos.server.edge_dispatch.get_edge_control_service", lambda: None)
     workflow = WorkflowService(":memory:")
     scheduler = BackendScheduler(workflow, MagicMock())
     backend = SimpleNamespace(device_manager=SimpleNamespace(get_active_jobs=lambda: []))
@@ -129,7 +129,7 @@ def test_remote_runtime_and_scheduler_reservations_are_combined(stack, monkeypat
     scheduler, _, _ = stack
     scheduler._dispatched_jobs.update({"reserved", "remote"})
     monkeypatch.setattr(
-        "unilabos.server.backend.edge_control.get_edge_control_service",
+        "unilabos.server.edge_dispatch.get_edge_control_service",
         lambda: SimpleNamespace(active_job_ids=lambda: ["remote", "external"]),
     )
     lifecycle = SchedulerLifecycle(lambda: scheduler, lambda: None)

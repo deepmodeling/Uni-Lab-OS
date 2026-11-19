@@ -48,11 +48,11 @@ from uuid import uuid4
 
 from unilabos.client.materials import HostLinkMaterialsClient, LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.hostlink.protocol import ActionType
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.hostlink.protocol import ActionType
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from tests.plr_fixtures import TIP_RACK_MODULE, SiteDeck, plate, registry_entry, site_deck, tip_rack
 
@@ -559,7 +559,7 @@ def _is_retired(service: MaterialsService, material_uuid: str) -> bool:
 def test_slave_observer_retires_discarded_tip_over_hostlink(tmp_path, monkeypatch) -> None:
     """Slave 设备的快照观察者经 HostLink 上报：丢弃枪头不调用 update_resource 也会退役。"""
 
-    from unilabos.backend.runtime.async_utils import run_node_coroutine
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
 
     service = MaterialsService(tmp_path / "materials.db")
     gateway = LocalMaterialsClient(service)

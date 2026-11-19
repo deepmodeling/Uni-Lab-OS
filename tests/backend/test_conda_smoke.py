@@ -1,6 +1,6 @@
 """conda 包 ROS 2 冒烟测试的超时与本机发现约定；不需要 ROS。"""
 
-from unilabos.backend.ros2 import conda_smoke
+from unilabos.client.host.ros2 import conda_smoke
 
 
 def test_environment_limits_discovery_to_localhost_without_overriding_explicit_values():

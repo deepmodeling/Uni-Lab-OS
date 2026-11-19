@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from unilabos.backend.hostlink.protocol import ActionType, LinkError
+from unilabos.client.host.hostlink.protocol import ActionType, LinkError
 from unilabos.protocol.runtime.logs import RuntimeLogBatch, RuntimeLogQuery, RuntimeLogSource, RuntimeLogSources
 from unilabos.utils.runtime_logs import current_log_path, read_log_file
 
@@ -113,7 +113,7 @@ class RuntimeLogService:
 
 
 def get_runtime_log_service() -> RuntimeLogService:
-    from unilabos.backend.hostlink.server import get_hostlink_server
+    from unilabos.client.host.hostlink.server import get_hostlink_server
     from unilabos.config.config import BasicConfig
     from unilabos.server.services.device_processes import get_device_process_service
 

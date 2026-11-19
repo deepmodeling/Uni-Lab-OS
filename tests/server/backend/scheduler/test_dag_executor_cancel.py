@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from unilabos.server.backend.scheduler.dag.executor import DagExecutor
-from unilabos.server.backend.scheduler.dag.models import DagEdge, DagNode, NodeState, TaskDag
+from unilabos.server.scheduler.dag.executor import DagExecutor
+from unilabos.server.scheduler.dag.models import DagEdge, DagNode, NodeState, TaskDag
 
 
 def _chain(*ids: str) -> TaskDag:

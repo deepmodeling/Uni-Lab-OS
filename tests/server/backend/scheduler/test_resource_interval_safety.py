@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 
-from unilabos.server.backend.scheduler.resource_plan import (
+from unilabos.server.scheduler.resource_plan import (
     ResourcePlanError,
     bind_station_resource_plan,
     compile_template_resource_plan,
@@ -443,7 +443,7 @@ def test_shared_scopes_acquired_at_same_ancestor_have_no_synthetic_cycle():
 
 
 def test_outer_iteration_sees_its_nested_rounds_without_other_outer_iteration():
-    from unilabos.server.backend.scheduler.resource_plan import completed_resource_nodes_for_job
+    from unilabos.server.scheduler.resource_plan import completed_resource_nodes_for_job
 
     def candidate(node_id, status, path, iteration, runtime):
         return {

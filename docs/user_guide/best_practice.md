@@ -82,7 +82,7 @@ mamba install --override-channels -c uni-lab -c conda-forge -c robostack-jazzy "
 python -c "import unilabos; print(unilabos.__version__)"
 
 # 验证默认运行时
-python -c "from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime; print('HostLink OK')"
+python -c "from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime; print('HostLink OK')"
 python -m pip check
 ```
 

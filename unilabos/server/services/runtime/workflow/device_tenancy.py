@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from unilabos.protocol.utils.json_codec import encode_json, decode_json_bytes
-from unilabos.server.backend.scheduler.resource_keys import device_lock_key, material_lock_key
+from unilabos.server.scheduler.resource_keys import device_lock_key, material_lock_key
 from .errors import StoreConflict
 from .store import utc_now
 

@@ -6,9 +6,9 @@ from typing import Any, Iterable
 from uuid import NAMESPACE_URL, uuid5
 
 from unilabos.protocol.utils.json_codec import encode_json, decode_json_bytes
-from unilabos.server.backend.scheduler.models import SchedulerResourceRequest
-from unilabos.server.backend.scheduler.resource_keys import device_lock_key, material_lock_key
-from unilabos.server.backend.scheduler.resource_plan import deserialize_resource_plan, validate_station_resource_plans
+from unilabos.server.scheduler.models import SchedulerResourceRequest
+from unilabos.server.scheduler.resource_keys import device_lock_key, material_lock_key
+from unilabos.server.scheduler.resource_plan import deserialize_resource_plan, validate_station_resource_plans
 from .errors import StoreConflict
 from .device_tenancy import DeviceTenancies
 from .resource_loans import ResourceLoans

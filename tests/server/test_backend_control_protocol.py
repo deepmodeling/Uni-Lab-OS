@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from unilabos.server.backend.legacy_adaptor.http import BackendHTTPClient
-from unilabos.server.backend.legacy_adaptor.sync import (
+from unilabos.client.host.legacy_adaptor.http import BackendHTTPClient
+from unilabos.client.host.legacy_adaptor.sync import (
     InstanceSynchronizer,
     TemplateSynchronizer,
 )
-from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.runtime.control import BackendCommandNotice
 
@@ -133,7 +133,7 @@ def _drive_reconnect_failures(client: BackendWebSocketClient, refused: Exception
 def test_backend_adaptor_owns_transport_and_data_sync() -> None:
     """Backend 传输与同步实现归属 ``legacy_adaptor`` 命名空间。"""
 
-    prefix = "unilabos.server.backend.legacy_adaptor"
+    prefix = "unilabos.client.host.legacy_adaptor"
     assert BackendWebSocketClient.__module__ == f"{prefix}.websocket"
     assert BackendHTTPClient.__module__ == f"{prefix}.http"
     assert InstanceSynchronizer.__module__ == f"{prefix}.sync.instances"

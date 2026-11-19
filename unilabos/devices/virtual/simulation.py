@@ -24,7 +24,7 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 from pylabrobot.resources import Resource as PLRResource
 
-from unilabos.backend.runtime.action import ActionCancelled, ActionContext
+from unilabos.client.host.runtime.action import ActionCancelled, ActionContext
 from unilabos.registry.decorators import not_action
 
 #: 设备类自带的默认时间倍率：一小时的模拟操作约 3.6 秒跑完。
@@ -116,7 +116,7 @@ def nested_settings(kwargs: Dict[str, Any], **explicit: Any) -> Dict[str, Any]:
 def physical_graph() -> Any:
     """协议编译器用的物理拓扑图（Host 进程装配了设备图时才有，否则 None）。"""
 
-    from unilabos.backend.runtime.workstation_protocol import physical_setup_graph
+    from unilabos.client.host.runtime.workstation_protocol import physical_setup_graph
 
     return physical_setup_graph()
 

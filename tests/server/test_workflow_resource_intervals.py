@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 
 from unilabos.registry.workflows import upsert_workflow
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.models import ActionLockClaim, SchedulerResourceRequest
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.models import ActionLockClaim, SchedulerResourceRequest
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals

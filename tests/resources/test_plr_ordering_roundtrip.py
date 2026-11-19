@@ -21,7 +21,7 @@ from pylabrobot.resources.utils import create_ordered_items_2d
 
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.resources import materials
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 

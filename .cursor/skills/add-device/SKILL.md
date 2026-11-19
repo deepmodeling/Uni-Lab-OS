@@ -291,7 +291,7 @@ def on_counter(self, value) -> None:           # 首参 = 收到的值（经 con
 
 ```python
 import json
-from unilabos.backend.runtime.exception import DeviceActionError
+from unilabos.client.host.runtime.exception import DeviceActionError
 
 @not_action
 def post_init(self, ros_node: BaseROS2DeviceNode) -> None:
@@ -330,7 +330,7 @@ def call_peer(self, target_device: str, function_name: str, function_args: str =
   - 可显式传 `action_type=<某 ROS Action 类型>` 强制走原生通道并跳过探测。
 - 入参 `action_kwargs` **必须是 dict**（`None` 视为 `{}`）；序列化（dump）统一由 `call_device_action` 内部按通道完成——调用方**不要自己 `json.dumps`**。若入参来自前端 JSON 字符串，先 `json.loads` 成 dict 再传。
 - **结果解析两通道统一**（与 host_node `get_result_callback` 一致）：先 `convert_from_ros_msg` 把 ROS 结果消息**转成 dict**，再看是否带 `return_info`——带的（serial / Uni-Lab-OS `@action`）解析出真正的 `return_value` 返回；纯原生 action 返回整份结果 dict。所以**拿到的恒为 dict / python 值**，不用自己再解析 ROS 消息。
-- 失败统一抛 `unilabos.backend.runtime.exception.DeviceActionError`，按需 try/except 转成本设备的业务处理。
+- 失败统一抛 `unilabos.client.host.runtime.exception.DeviceActionError`，按需 try/except 转成本设备的业务处理。
 
 ---
 
@@ -340,7 +340,7 @@ def call_peer(self, target_device: str, function_name: str, function_args: str =
 import logging
 from typing import Any, Dict, Optional
 
-from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
+from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode
 from unilabos.registry.decorators import action, device, not_action, topic_config
 
 @device(

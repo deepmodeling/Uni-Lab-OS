@@ -5,7 +5,7 @@
   ``services/materials/consumption.py``），由这里补齐 runtime 一侧的节点 / 工作流名称与人工核对记录。未装配
   物料权威时为空数组（V1 同口径）；任务 / 作业不存在 3002，非法身份 1000；试剂删除后仍可读。
 - ``POST /workflow-node-jobs/{job_uuid}/reconcile-quantity``：人工核对任何作业的实际用量；返回作业（V1）并附
-  ``inventory_consumptions``。规则见 ``backend/scheduler/manual_settlement.py``。
+  ``inventory_consumptions``。规则见 ``server/scheduler/manual_settlement.py``。
 - ``POST /workflow-node-jobs/{job_uuid}/resolve-uncertain``：结果未知作业的人工处置（``resolution=canceled``）；
   ``{job, resolution_command_uuid, pending_edge_confirmation, created}``，执行面尚未确认时 HTTP 202，否则 200。
 """
@@ -56,7 +56,7 @@ class UncertainJobResolutionRequest(_StrictModel):
 
 
 def _default_materials() -> Any:
-    from unilabos.server.backend.composition import get_materials_service
+    from unilabos.server.execution_composition import get_materials_service
 
     return get_materials_service()
 
@@ -159,7 +159,7 @@ def create_inventory_seam_router(
     @router.post("/workflow-node-jobs/{job_uuid}/reconcile-quantity", summary="核对作业实际用量")
     def reconcile_job_quantity(job_uuid: str, body: QuantityReconciliationRequest, request: Request) -> Any:
         from unilabos.server.api.runtime.tasks_v1 import operator_identity
-        from unilabos.server.backend.scheduler.manual_settlement import QuantityReconciliation
+        from unilabos.server.scheduler.manual_settlement import QuantityReconciliation
 
         materials = materials_getter()
         if materials is None:
@@ -174,7 +174,7 @@ def create_inventory_seam_router(
     @router.post("/workflow-node-jobs/{job_uuid}/resolve-uncertain", summary="结果未知作业的人工处置")
     def resolve_uncertain_job(job_uuid: str, body: UncertainJobResolutionRequest, request: Request) -> Any:
         from unilabos.server.api.runtime.tasks_v1 import operator_identity
-        from unilabos.server.backend.scheduler.manual_settlement import UncertainResolution
+        from unilabos.server.scheduler.manual_settlement import UncertainResolution
         from unilabos.server.services.runtime.error_decisions import ErrorDecisionNotPending
         from unilabos.server.services.runtime.workflow.errors import StoreConflict
 

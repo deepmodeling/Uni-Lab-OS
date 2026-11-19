@@ -7,12 +7,12 @@ import pytest
 
 from unilabos.app.cli.parser import build_parser
 from unilabos.config.config import BasicConfig, _update_config_from_module
-from unilabos.server.backend.legacy_adaptor.session import (
+from unilabos.client.host.legacy_adaptor.session import (
     APP_BRIDGES,
     BackendSessionFactory,
     COMMUNICATION_PROTOCOL,
 )
-from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
 
 class _Coordinator:

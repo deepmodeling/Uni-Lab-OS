@@ -17,13 +17,13 @@ from unilabos.protocol.runtime.control import (
     CancelJobContent,
     ExecuteJobContent,
 )
-from unilabos.server.backend.edge_control import (
+from unilabos.server.edge_dispatch import (
     EDGE_EVENT_MAX_ATTEMPTS,
     EdgeControlService,
     get_edge_control_service,
     set_edge_control_service,
 )
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
+from unilabos.server.scheduler.payloads import build_job_start_payload
 from unilabos.server.api.runtime.control import _pump_incoming
 
 
@@ -556,7 +556,7 @@ def test_stale_epoch_detach_does_not_break_new_connection() -> None:
 
 
 def test_restart_coordinator_uses_edge_scope_and_inflight_view() -> None:
-    from unilabos.server.backend.restart import RestartCoordinator
+    from unilabos.server.lifecycle.restart import RestartCoordinator
 
     service = _service()
     set_edge_control_service(service)
@@ -789,7 +789,7 @@ def test_child_devices_of_a_station_resolve_their_registry_class(tmp_path, monke
         MaterialTreeCreate,
         ResourceTemplateWrite,
     )
-    from unilabos.server.backend import composition
+    from unilabos.server import execution_composition
     from unilabos.server.services.materials import MaterialsService
 
     def mutation(operation: str) -> InventoryMutation:
@@ -834,7 +834,7 @@ def test_child_devices_of_a_station_resolve_their_registry_class(tmp_path, monke
                     return {"materials_need_lock": ["vessel"]}
                 return None
 
-        monkeypatch.setattr(composition, "_materials", materials)
+        monkeypatch.setattr(execution_composition, "_materials", materials)
         service = EdgeControlService(payload_client=_FakePayloadClient(), registry_service=Registry())
         assert service._device_class("stirrer_1") == "virtual_stirrer"
         assert service._device_class("Station/stirrer_1") == "virtual_stirrer"

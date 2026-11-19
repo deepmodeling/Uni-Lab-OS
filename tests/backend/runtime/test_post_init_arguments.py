@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from unilabos.backend.hostlink.local_runtime import (
+from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
     HostLinkLocalRuntime,
 )

@@ -318,10 +318,10 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 
 | 库 | 权威 `<root>` | Host 子进程 `<root>/edge` |
 | --- | --- | --- |
-| runtime.db | 工作流、任务、调度持久事实、注册表、进程管理 | 只有运行控制表：`backend_session`、`executor_endpoint`、`command_inbox`、`execution_job`、`adapter_command_outbox`、`backend_event_outbox`（`server/backend/coordinator.py:WorkflowBusinessCoordinator`） |
+| runtime.db | 工作流、任务、调度持久事实、注册表、进程管理 | 只有运行控制表：`backend_session`、`executor_endpoint`、`command_inbox`、`execution_job`、`adapter_command_outbox`、`backend_event_outbox`（`client/host/edge_executor.py:WorkflowBusinessCoordinator`） |
 | materials.db | 物料权威、Graph Authority、库存全部 | 基本为空：Host 子进程带 `--material_microbackend_addr <权威>`，物料经 HTTP 写到权威（`server/startup.py:setup_host_server_stack`） |
-| telemetry.db | 建表后不写 | 设备状态投影（`server/backend/telemetry.py:TelemetryDeviceStateProjection`） |
-| history.db | 建表后不写 | 作业转移、反馈、结果、日志、错误快照与决策审计（`coordinator.py`、`composition.py` 的状态事件监听） |
+| telemetry.db | 建表后不写 | 设备状态投影（`client/host/telemetry.py:TelemetryDeviceStateProjection`） |
+| history.db | 建表后不写 | 作业转移、反馈、结果、日志、错误快照与决策审计（`client/host/edge_executor.py`、`server/execution_composition.py` 的状态事件监听） |
 
 浏览器只连权威端口：`/api/v1/runtime`、`/telemetry`、`/edge/history`、`/device-state` 等 Host 数据由
 `server/api/edge_proxy.py` 转发给 Host 子进程、读的是 `<root>/edge` 下的库；workflow / registry / materials /
@@ -339,11 +339,11 @@ graphs / lab / scheduler 由权威用 `<root>` 下的库回答。`/api/v1/debug/
 ### 7.3 `executor_endpoint` 的写入与读取
 
 - **写入**：Host 侧 `WorkflowBusinessCoordinator` 构造时以 `state="online"` 登记一行
-  （`endpoint_uuid = "<backend>:<machine_name>"`，`server/backend/composition.py:setup_execution_backend`），
+  （`endpoint_uuid = "<backend>:<machine_name>"`，`server/execution_composition.py:setup_execution_backend`），
   执行器就绪或设备增减时 `publish_endpoint_capabilities()` 写入设备路由与动作能力（内容哈希去重）。
   也可以经 `PUT /api/v1/runtime/endpoints/{uuid}/snapshot` 整份写入。代码里没有把它置为 `offline` 的路径。
 - **读取**：`GET /api/v1/runtime/endpoints`（默认拓扑经 edge_proxy 读 Host 的库）；设备目录与预检
-  （`composition.py:read_preflight_endpoints`、`services/runtime/devices.py`）、V1 工站动作列表
+  （`server/execution_composition.py:read_preflight_endpoints`、`services/runtime/devices.py`）、V1 工站动作列表
   （`api/runtime/stations.py`）、工作流 Site 绑定校验（`api/runtime/workflow.py`）；`execution_job`、
   `adapter_command_outbox` 等外键引用它，建作业、取消、认领适配器命令前都要求 endpoint 存在。
 
@@ -353,7 +353,7 @@ graphs / lab / scheduler 由权威用 `<root>` 下的库回答。`/api/v1/debug/
 | --- | --- | --- | --- |
 | `<root>/unilab.lock`（每个根目录一个） | 持锁进程 | 根目录独占锁与持有者记录 | 否 |
 | `<进程根目录>/graph_cache/<图 uuid>.json` | 加载 `-g` 的进程（默认拓扑是 Host 子进程，在 `<root>/edge/graph_cache`） | Graph Authority 载荷的本地缓存，`load_graph_payload` 从它装配（`app/main.py:_write_graph_cache`） | 否 |
-| `<权威根目录>/workflow_sources/` | 调度权威 | 托管的 `@workflow` 源码（`server/backend/composition.py:setup_local_scheduler`） | 否 |
+| `<权威根目录>/workflow_sources/` | 调度权威 | 托管的 `@workflow` 源码（`server/execution_composition.py:setup_local_scheduler`） | 否 |
 | `<root>/reset-backups/<随机标识>/`、`<root>/reset-pending.json` | 全量重置 | 归档与进行中标记（第 9.3 节） | — |
 | `<file>.pre-v<N>-<时间戳>.bak`、`<file>.bak-<时间戳>` | 建库 | 迁移前快照、重建前的旧库 | 否 |
 | `<working_dir>/driver_packages.json` | Host 驱动包服务 | 驱动包台账（来源、版本、sha256、源码根、启用状态） | 否 |
@@ -392,7 +392,7 @@ graphs / lab / scheduler 由权威用 `<root>` 下的库回答。`/api/v1/debug/
 
 ### 9.3 全量重置（`/api/v1/reset`）
 
-现有重置接口（`server/backend/reset.py`，路由在 `server/api/runtime/diagnostics.py`）只在**默认拓扑**
+现有重置接口（`server/lifecycle/reset.py`，路由在 `server/api/runtime/diagnostics.py`）只在**默认拓扑**
 （权威带 Host 子进程）里可用；`--role backend`、`--no-safe-restart`、`--address` 顶层 Host 的预览返回 `supported=false`。
 
 1. `GET /api/v1/reset` 预览：范围、备份目录、本进程的一次性 `confirmation_token`。

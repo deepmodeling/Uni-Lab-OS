@@ -1,4 +1,4 @@
-"""派发前物料健全性检查的只读事实（调度器 ``server/backend/scheduler/material_sanity.py`` 消费）。
+"""派发前物料健全性检查的只读事实（调度器 ``server/scheduler/material_sanity.py`` 消费）。
 
 节点就绪、申请资源之前，调度器把它引用的全部物料和它持有的库存预留一次交给这里，在同一把锁下读出：
 

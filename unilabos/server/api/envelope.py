@@ -449,7 +449,7 @@ def _message_not_found(fallback: int) -> Callable[[Any], ApiError]:
 
 
 _SERVICES = "unilabos.server.services"
-_BACKEND = "unilabos.server.backend"
+_LIFECYCLE = "unilabos.server.lifecycle"
 
 #: 异常类完整路径 → 映射函数。沿异常 MRO 取第一个命中的条目，子类继承父类口径。
 DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
@@ -504,10 +504,10 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.device_processes.DeviceProcessBusyError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.device_processes.DeviceProcessError": _message_not_found(INVALID_PARAMETER),
     # 调度权威生命周期
-    f"{_BACKEND}.lifecycle.SchedulerUnavailable": _fixed(SERVICE_UNAVAILABLE),
+    f"{_LIFECYCLE}.drain.SchedulerUnavailable": _fixed(SERVICE_UNAVAILABLE),
     # V1 进程管理（/v1/*）：符号码留在 error.code
     "unilabos.protocol.runtime.process_management.ProcessManagementError": _process_management_error,
-    f"{_BACKEND}.reset.ResetConflict": _fixed(STATE_CONFLICT),
+    f"{_LIFECYCLE}.reset.ResetConflict": _fixed(STATE_CONFLICT),
 }
 
 

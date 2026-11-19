@@ -22,7 +22,7 @@ from unilabos.registry.workflows import (
     materialize_workflow_template,
     upsert_workflow,
 )
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from tests.server.test_scheduler_inventory_authority import _mutation
 
 

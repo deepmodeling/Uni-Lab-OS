@@ -55,7 +55,7 @@ requirements:
 tests:
   - python:
       imports:
-        - unilabos.backend.hostlink.local_runtime
+        - unilabos.client.host.hostlink.local_runtime
         - unilabos_msgs.action
         - sphinx
         - myst_parser
@@ -66,7 +66,7 @@ tests:
       pip_check: true
   - script:
       # ROS 启动按应用约定先修复 DLL，首次修补后必须在新进程验证。
-      - python -m unilabos.backend.ros2.conda_smoke
+      - python -m unilabos.client.host.ros2.conda_smoke
       # 与 Jazzy 相同的 Windows 隔离用户目录初始化，字体导入测试不跳过。
       - if: win
         then:

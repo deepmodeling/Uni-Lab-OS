@@ -96,8 +96,8 @@ def test_process_crash_reconciles_source_and_ledger_once_and_requires_confirmati
 
 @pytest.mark.parametrize('mode', ['quiescent', 'immediate'])
 def test_restart_waits_for_durable_package_finish_and_blocks_new_writes(tmp_path, monkeypatch, mode):
-    from unilabos.server.backend import restart as restart_module
-    from unilabos.server.backend.restart import RestartCoordinator
+    from unilabos.server.lifecycle import restart as restart_module
+    from unilabos.server.lifecycle.restart import RestartCoordinator
     from tests.server.test_driver_packages import _write_source_tree, _wait
     monkeypatch.setattr(restart_module, '_POLL_INTERVAL_SECONDS', 0.01)
     service = dp.DriverPackageService(tmp_path)
@@ -182,15 +182,15 @@ def test_unconfirmed_recovery_starts_management_without_device_runtime(tmp_path,
     monkeypatch.setattr(runtime_startup, '_ensure_management_port_available', lambda: None)
     called = []
     monkeypatch.setattr(runtime_startup, '_start_management_server', lambda: called.append('management'))
-    monkeypatch.setattr('unilabos.backend.start_backend', lambda **args: pytest.fail('不得初始化驱动'))
+    monkeypatch.setattr('unilabos.client.host.start_backend', lambda **args: pytest.fail('不得初始化驱动'))
     runtime_startup.run_runtime({'visual': 'disable'})
     assert called == ['management']
 
 
 def test_edge_wait_needs_new_host_process_not_an_unchanged_connection(monkeypatch):
     from types import SimpleNamespace
-    from unilabos.server.backend import restart as restart_module
-    from unilabos.server.backend.restart import RestartCoordinator
+    from unilabos.server.lifecycle import restart as restart_module
+    from unilabos.server.lifecycle.restart import RestartCoordinator
     monkeypatch.setattr(restart_module, '_POLL_INTERVAL_SECONDS', .005)
     remote = SimpleNamespace(connected=True, edge_process='old')
     coordinator = RestartCoordinator(lambda: None, lambda: None)

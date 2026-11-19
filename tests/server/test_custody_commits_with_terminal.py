@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from tests.server.test_workflow_resource_custody import tenancy_request
 from tests.server.test_workflow_resource_intervals import make_task, request_for
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.resource_intervals import ResourceIntervals
 from unilabos.server.services.runtime.workflow.service import WorkflowService

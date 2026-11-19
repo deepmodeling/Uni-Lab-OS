@@ -339,7 +339,7 @@ def test_host_child_serves_backend_http_in_process(monkeypatch: pytest.MonkeyPat
 
     from unilabos.protocol.runtime.control import EdgeHttpResponse
     from unilabos.server.api import app as app_module
-    from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+    from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
     host_app = FastAPI()
 
@@ -388,8 +388,8 @@ def test_host_child_reads_the_enveloped_reply_to_its_backend_http_result(monkeyp
     import httpx
 
     from unilabos.protocol.runtime.control import EdgeHttpResponse
-    from unilabos.server.backend.legacy_adaptor import websocket as websocket_module
-    from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+    from unilabos.client.host.legacy_adaptor import websocket as websocket_module
+    from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
     replies = [
         httpx.Response(200, json={"code": 0, "data": {"accepted": True}}),
@@ -420,7 +420,7 @@ def test_host_child_backend_http_waits_for_routes_before_executing(monkeypatch: 
 
     from unilabos.protocol.runtime.control import EdgeHttpResponse
     from unilabos.server.api import app as app_module
-    from unilabos.server.backend.legacy_adaptor.websocket import BackendWebSocketClient
+    from unilabos.client.host.legacy_adaptor.websocket import BackendWebSocketClient
 
     host_app = FastAPI()
 

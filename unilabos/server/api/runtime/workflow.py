@@ -470,7 +470,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             return _error(WorkflowError("conflict", detail=str(exc)))
 
     def bind_sites(nodes: List[Any], *, mapped_paths: Optional[Dict[str, List[str]]] = None) -> List[Any]:
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
         from unilabos.server.composition import get_server_services
         from unilabos.client.utils.envelope import EnvelopeError
         from unilabos.server.api.edge_proxy import edge_http, edge_proxy_enabled, edge_response_data
@@ -551,7 +551,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             materialize_workflow_template,
             upsert_workflow,
         )
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
         from unilabos.server.services.runtime.registry import get_registry_service
 
         registry = get_registry_service()
@@ -586,7 +586,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
     @router.get("/workflows/template-catalog")
     def workflow_template_catalog() -> JSONResponse:
         from unilabos.registry.workflows import DeviceCatalog
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
         from unilabos.server.services.runtime.registry import get_registry_service
 
         registry = get_registry_service()
@@ -607,7 +607,7 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
         from unilabos.registry.workflows import (
             DeviceCatalog, WorkflowTemplateBindingError, materialize_workflow_template,
         )
-        from unilabos.server.backend.composition import get_materials_service
+        from unilabos.server.execution_composition import get_materials_service
         from unilabos.server.services.runtime.registry import get_registry_service
 
         registry = get_registry_service()

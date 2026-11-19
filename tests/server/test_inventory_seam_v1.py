@@ -41,7 +41,7 @@ def _mutation(operation: str, **extra: Any) -> InventoryMutation:
 def seam(monkeypatch, tmp_path):
     stack = Stack()
     materials = MaterialsService(tmp_path / "materials.db")
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: materials)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: materials)
     desk = ErrorDecisionDesk(lambda: stack.scheduler, lambda: None, lambda: None)
     monkeypatch.setattr("unilabos.server.services.runtime.error_decisions.default_desk", lambda: desk)
     materials.put_template(_mutation("put_template"), ResourceTemplateWrite(
@@ -249,7 +249,7 @@ def test_content_reservation_reconcile_and_reagent_lineage(seam) -> None:
 def test_consumptions_are_empty_without_a_materials_authority(seam, monkeypatch) -> None:
     stack, _materials = seam
     run = _running_job(stack)
-    monkeypatch.setattr("unilabos.server.backend.composition.get_materials_service", lambda: None)
+    monkeypatch.setattr("unilabos.server.execution_composition.get_materials_service", lambda: None)
     assert ok_data(stack.client.get(f"/api/v1/workflow-node-jobs/{run['job']['uuid']}/inventory-consumptions")) == []
     assert ok_data(stack.client.get(f"/api/v1/reagents/{uuid4()}/inventory-consumptions")) == []
     error_of(_reconcile(stack, run["job"]["uuid"], [_lot_item(1)]), 5001)

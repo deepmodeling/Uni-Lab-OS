@@ -196,7 +196,7 @@ ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2
 普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
 相同的设备初始化路径。
 
-HostLink 构造驱动与 ROS2 同一套构造器（`backend/runtime/driver_creator.py`）：
+HostLink 构造驱动与 ROS2 同一套构造器（`client/host/runtime/driver_creator.py`）：
 
 - 图节点的 `config` 按 `__init__` 参数名平铺传入。构造函数声明了名为 `config` 的参数时，它收到
   整份节点配置（旧驱动从 `config` 里读参数的写法照旧），同时声明的其他具名参数（如 `debug_mode`、

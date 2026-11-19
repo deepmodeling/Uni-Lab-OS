@@ -45,7 +45,7 @@ import unilabos.server.services.materials.graph as graph_authority
 graph_authority.load_graph_payload({"nodes": [], "links": []}, machine_name="no-ros")
 import unilabos.registry.registry
 import unilabos.server.api.app
-import unilabos.backend.hostlink.local_runtime
+import unilabos.client.host.hostlink.local_runtime
 ''')
 
 
@@ -496,15 +496,15 @@ def test_full_conda_support_packages_and_closed_dependency_validation():
         assert all("%USERPROFILE%\\AppData\\" in command for command in windows["then"])
         assert any("import rinoh_typeface_dejavuserif" in command for command in commands if isinstance(command, str))
         # ROS 冒烟测试统一走 conda_smoke 模块（本机发现 + 超时），模块内先修补 Windows DLL 路径。
-        assert commands[0] == "python -m unilabos.backend.ros2.conda_smoke"
+        assert commands[0] == "python -m unilabos.client.host.ros2.conda_smoke"
         validation = next(command for command in commands if isinstance(command, str) and "reqs =" in command)
         assert "['ruff', '--version']" in validation
         assert "r.specifier.contains" in validation
-    from unilabos.backend.ros2 import conda_smoke
+    from unilabos.client.host.ros2 import conda_smoke
     assert "patch_rclpy_dll_windows()" in conda_smoke.CHILD_CODE
     for name in ("ros2", "ros2-humble"):
         ros2 = yaml.safe_load((root / f".conda/{name}/recipe.yaml").read_text(encoding="utf-8"))
-        assert ros2["tests"][0]["script"] == ["python -m unilabos.backend.ros2.conda_smoke"]
+        assert ros2["tests"][0]["script"] == ["python -m unilabos.client.host.ros2.conda_smoke"]
 
 
 def test_offline_release_rejects_wrong_source_before_installing(monkeypatch, tmp_path):

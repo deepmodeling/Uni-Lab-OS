@@ -26,7 +26,7 @@ from unilabos.protocol.materials import (
 from unilabos.registry.registry import lab_registry
 from unilabos.resources.adapters.registry_materials import register_resource_definitions
 from unilabos.resources.objects.site import SITE_TEMPLATE_WHITELIST_KEY
-from unilabos.server.backend.scheduler.resource_wait_policy import temporary_resource_condition
+from unilabos.server.scheduler.resource_wait_policy import temporary_resource_condition
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.materials.contents import ContentContract
 from unilabos.server.services.materials.core import (

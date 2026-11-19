@@ -3,8 +3,8 @@ from array import array
 
 import pytest
 
-from unilabos.backend.hostlink import protocol
-from unilabos.backend.hostlink.protocol import (
+from unilabos.client.host.hostlink import protocol
+from unilabos.client.host.hostlink.protocol import (
     ActionType,
     LinkError,
     MAX_FRAME_BYTES,

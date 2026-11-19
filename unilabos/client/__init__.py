@@ -4,7 +4,8 @@
 Local/HTTP/HostLink 等价 client。服务端 API 与数据模型仍归属
 ``unilabos.server``，调用入口统一归属本命名空间。
 
-横切辅助（响应封套解析、CLI 输出格式化）收纳在 ``utils`` 子包
+Host 进程的运行时（传输清单、设备执行内核、HostLink / ROS 2 / Dora、执行面与 Backend 连接）
+位于 ``host`` 子包。横切辅助（响应封套解析、CLI 输出格式化）收纳在 ``utils`` 子包
 （与 ``unilabos.protocol.utils`` 同范式），本层顶层保持 re-export。
 """
 

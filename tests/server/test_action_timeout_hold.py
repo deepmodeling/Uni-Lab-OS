@@ -20,11 +20,11 @@ from fastapi.testclient import TestClient
 
 from tests.api_envelope import error_of, ok_data
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend import execution as execution_module
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.execution_queue import QueueItem
-from unilabos.server.backend.scheduler.dag.runner import TaskDagRunner
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.client.host import execution as execution_module
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.server.execution_queue import QueueItem
+from unilabos.server.scheduler.dag.runner import TaskDagRunner
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 
 DEVICE = "device-1"
@@ -480,8 +480,8 @@ class _HistoryPayloads:
 
 def test_split_topology_reports_the_hold_and_the_late_outcome_over_runtime_v1(tmp_path) -> None:
     from tests.server.test_workflow_business_coordinator import _DataPlane, _document, _execute_payload
-    from unilabos.server.backend.coordinator import WorkflowBusinessCoordinator
-    from unilabos.server.backend.edge_control import EdgeControlService
+    from unilabos.client.host.edge_executor import WorkflowBusinessCoordinator
+    from unilabos.server.edge_dispatch import EdgeControlService
     from unilabos.server.services.history import HistoryService
     from unilabos.server.services.runtime import RuntimeService
 

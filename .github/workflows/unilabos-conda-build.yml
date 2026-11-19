@@ -11,7 +11,7 @@ on:
       - 'setup.py'
       - 'unilabos/utils/requirements.txt'
       - 'unilabos_msgs/**'
-      - 'unilabos/backend/ros2/conda_smoke.py'
+      - 'unilabos/client/host/ros2/conda_smoke.py'
   # 默认发行链与 ROS msgs 脱钩；dev CI 仅构建验证，正式 Release 才自动发布。
   workflow_run:
     workflows: ["CI Check"]

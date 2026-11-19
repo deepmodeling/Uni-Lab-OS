@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | app/web 内置状态页、编辑器和展示 API | server/api 业务 HTTP，前端独立实现 | 旧页面路由不能当新后台能力；主页只作入口展示 |
 | 一个进程承包管理 API 与设备 | 权威常驻管理端口，Host 子进程仅控制 WS/出站 HTTP/HostLink | 健康、重启、日志要区分进程 |
-| unilabos.ros、顶层 hostlink | backend.ros2、backend.hostlink；共享 backend.runtime | 更新驱动 import 和扩展点 |
+| unilabos.ros、顶层 hostlink | client.host.ros2、client.host.hostlink；共享 client.host.runtime | 更新驱动 import 和扩展点（旧 `unilabos.backend.*` 路径见下文「不兼容变更」） |
 | unilabos.workflow 的多重含义 | server.services.runtime.workflow 管理；registry.workflows 声明；experiments 执行协议 | 上传、编排、实验编译不能混为同一个命名空间 |
 | 顶层 compile 协议代码 | experiments.compile | 更新高级实验协议引用 |
 | package_cli 独立入口 | app.cli 的 package/pkg 子命令 | 从统一 unilab 入口使用 |
@@ -53,6 +53,51 @@
 不能因此让当前 Graph Authority 或 PLR 序列化同时接受多套互相矛盾的字段。缺 `config.type` 的旧物料节点
 也在这一步按注册表（模板 → 条目 `config_info` 的 PLR 类名）补齐，查不到就报错，不按名字猜。
 旧云端 Legacy 适配仍是独立边界，本次既不删除，也不改写它的协议。
+
+## 不兼容变更：`unilabos.backend` 与 `unilabos.server.backend` 拆进 `unilabos.client.host` / `unilabos.server`
+
+包结构只分两半：`unilabos/server/` 是 Backend（调度、向 Host 派发、排空 / 重启 / 重置）加数据与交互（database、services、
+api、mcp）；`unilabos/client/` 是怎样请求 server（HTTP / 会话 / 各域客户端），以及 Host 的运行时 `unilabos/client/host/`。
+`unilabos/backend/` 整体变成 `unilabos/client/host/`（包 `__init__` 仍是传输 backend 清单），`unilabos/server/backend/` 拆到两边，
+两个 `backend` 子包都已删除。旧导入路径不保留，也没有转发模块：仍按旧路径导入的驱动包或脚本导入直接失败，按下表改 import。
+数据库、runtime.v1 与 HostLink 线协议、HTTP 路由和 CLI 参数（包括 `--backend hostlink|ros2`）都不变。
+
+驱动包常用的路径：
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `unilabos.backend.runtime.node`（`DeviceNode`） | `unilabos.client.host.runtime.node` |
+| `unilabos.backend.runtime.action`（`ActionContext`、`ActionCancelled`） | `unilabos.client.host.runtime.action` |
+| `unilabos.backend.runtime.exception`（`DeviceActionError` 等） | `unilabos.client.host.runtime.exception` |
+| `unilabos.backend.runtime.*` 的其余模块（`driver_creator`、`async_utils`、`resource_slot` 等） | `unilabos.client.host.runtime.*` |
+| `unilabos.backend.hostlink.*`（`local_runtime`、`backend`、`protocol`、`downlink` 等） | `unilabos.client.host.hostlink.*` |
+| `unilabos.backend.ros2.*`（`base_device_node`、`presets.workstation` 等） | `unilabos.client.host.ros2.*` |
+| `unilabos.backend.dora.*` | `unilabos.client.host.dora.*` |
+| `unilabos.backend.host_services`、`unilabos.backend.host_material_actions` | `unilabos.client.host.host_services`、`unilabos.client.host.host_material_actions` |
+| `unilabos.backend` 包本身（`BackendProfile`、`BACKEND_PROFILES`、`resolve_backend_selection`、`start_backend`、`backend_fatal_failure` 等传输清单） | `unilabos.client.host` |
+
+原 `unilabos.server.backend`（多为框架内部模块）：
+
+| 旧路径 | 新路径 |
+| --- | --- |
+| `unilabos.server.backend.scheduler.*` | `unilabos.server.scheduler.*` |
+| `unilabos.server.backend.edge_control` | `unilabos.server.edge_dispatch`（只改文件名，类名不变） |
+| `unilabos.server.backend.lifecycle`（排空） | `unilabos.server.lifecycle.drain` |
+| `unilabos.server.backend.restart`、`unilabos.server.backend.reset` | `unilabos.server.lifecycle.restart`、`unilabos.server.lifecycle.reset` |
+| `unilabos.server.lifecycle`（停机信号，原为单文件） | 不变，现为包 `unilabos.server.lifecycle` 的 `__init__` |
+| `unilabos.server.backend.composition` | `unilabos.server.execution_composition`（与四库组合根 `unilabos.server.composition` 区分） |
+| `unilabos.server.backend.execution_queue`、`unilabos.server.backend.inventory` | `unilabos.server.execution_queue`、`unilabos.server.inventory` |
+| `unilabos.server.backend.coordinator` | `unilabos.client.host.edge_executor`（只改文件名，类名不变） |
+| `unilabos.server.backend.` 下的 `execution`、`execution_start`、`capabilities`、`incidents`、`telemetry` | `unilabos.client.host.` 下的同名模块 |
+| `unilabos.server.backend.legacy_adaptor.*` | `unilabos.client.host.legacy_adaptor.*`（内部结构不变） |
+
+内置注册表里只有 `host_node`、`serial`、`camera` 三个条目的 `class.module` 随之改成新路径（如 `host_node` 为
+`unilabos.client.host.host_services:HostServices`），动作定义不变；驱动包条目只有在注册表 YAML 里写了上述旧模块路径
+（例如引用内置的 `ROS2SerialNode`）时才需要同步修改。升级后 Host 启动时照常上报注册表，权威把这三个条目记为新版本：
+单机部署按规则 B 直接生效；有跨机器 Slave 或远端 Host 上报时，`unilabos` 版本号升高的发布按规则 A 直接生效，
+同一版本内则作为待确认变化出现在前端，确认即可（动作没有变化，不涉及工作流冲突）。
+日志的 logger 名跟着模块路径变（例如 HostLink 模块从 `unilabos.backend.hostlink.*` 变成 `unilabos.client.host.hostlink.*`），按 logger 名过滤或调整级别的日志配置要一起改。
+在旧 checkout 上拉取后，`unilabos/backend/`、`unilabos/server/backend/` 等目录可能只剩 `__pycache__`，可以直接删除。
 
 ## 已知缺口：文档不能替代码兑现
 

@@ -4,7 +4,7 @@ import pytest
 
 
 initialize_device = pytest.importorskip(
-    "unilabos.backend.ros2.initialize_device",
+    "unilabos.client.host.ros2.initialize_device",
     reason="设备初始化测试依赖 Jazzy 版 unilabos_msgs",
     exc_type=ImportError,
 )

@@ -10,10 +10,10 @@ from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
-from unilabos.backend.hostlink import main_hostlink_run
-from unilabos.backend.hostlink.backend import HostLinkBackend
-from unilabos.backend.hostlink.client import get_hostlink_client
-from unilabos.backend.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.client.host.hostlink import main_hostlink_run
+from unilabos.client.host.hostlink.backend import HostLinkBackend
+from unilabos.client.host.hostlink.client import get_hostlink_client
+from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.config.config import BasicConfig, HostLinkConfig
 from unilabos.resources.adapters import device_site
@@ -24,7 +24,7 @@ from unilabos.resources.resource_tracker import (
     ResourceTreeInstance,
     ResourceTreeSet,
 )
-from unilabos.server.backend.composition import set_materials_gateway
+from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 
 REGISTRY_NAME = "slave_site_device"

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from unilabos.server.backend.execution import JobExecutionBackend
-from unilabos.server.backend.execution_queue import (
+from unilabos.client.host.execution import JobExecutionBackend
+from unilabos.server.execution_queue import (
     JOB_ORIGIN_BACKEND_CONTROL,
     JOB_ORIGIN_LOCAL_SCHEDULER,
     QueueItem,

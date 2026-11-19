@@ -30,7 +30,7 @@ requirements:
     - ros-humble-unilabos-msgs ==0.12.2
 tests:
   - script:
-    - python -m unilabos.backend.ros2.conda_smoke
+    - python -m unilabos.client.host.ros2.conda_smoke
 about:
   license: GPL-3.0-only
   description: Optional UniLabOS ROS 2 humble transport (CPython 3.14)

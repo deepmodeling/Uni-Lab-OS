@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from unilabos.server.backend.scheduler.authority import SchedulerAuthorityProfile
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.authority import SchedulerAuthorityProfile
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.services.runtime.workflow.service import (
     WorkflowConflict,

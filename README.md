@@ -179,7 +179,7 @@ HTTP. `--role backend` starts exactly such an authority.
 
 Compatibility with the old cloud Backend (the `job_start` / `host_node_ready`
 message family, `/ws/schedule` on HTTP port `+1`) is not selected on the Edge
-any more. It lives in `unilabos.server.backend.legacy_adaptor.legacy` and is
+any more. It lives in `unilabos.client.host.legacy_adaptor.legacy` and is
 wired explicitly on the Backend side (`BackendSessionFactory.create_legacy_client()`,
 `build_legacy_backend_websocket_url()`), so neither address derivation nor the
 Edge connection factory branches on a legacy probe.

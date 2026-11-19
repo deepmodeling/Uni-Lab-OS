@@ -7,13 +7,13 @@ Uni-Lab-OS 的微后端数据面和调度职责如下：
 | 能力 | 唯一实现 | 说明 |
 | --- | --- | --- |
 | Workflow 定义、Graph、Task、Node Job | `runtime.db`（workflow 表）+ `WorkflowService`（`unilabos/server/services/runtime/workflow/`） | 调度权威（Backend）持有并提供写入口 |
-| DAG、动作锁、物料锁、库存准入 | `unilabos/server/backend/scheduler/` | 同一轮调度使用一个完整资源申请 |
-| 执行与 Backend 命令协调 | `unilabos/server/backend/` | Host 只执行 Backend 已准入的 Job |
+| DAG、动作锁、物料锁、库存准入 | `unilabos/server/scheduler/` | 同一轮调度使用一个完整资源申请 |
+| 执行与 Backend 命令协调 | Host 侧 `unilabos/client/host/` 的 `execution.py`、`edge_executor.py`；权威侧派发 `unilabos/server/edge_dispatch.py` | Host 只执行 Backend 已准入的 Job |
 | Material、Site、库存预留与账本 | `materials.db` + `MaterialsService` | 物料聚合与库存事实共用事务边界 |
 | 设备状态 | `telemetry.db` + `TelemetryService` | latest 与 append-only event 分表存储 |
 | Job 生命周期与可靠收发 | `runtime.db` + `RuntimeService` | Backend 命令先持久化再执行 |
 | 结果、反馈、错误与人工替换 | `history.db` + `HistoryService` | 使用统一的追加式历史流 |
-| HostLink 网络 | `unilabos/backend/hostlink/` | 与调度实现解耦 |
+| HostLink 网络 | `unilabos/client/host/hostlink/` | 与调度实现解耦 |
 
 进程角色有两个：**Host**（执行端：设备、HostLink、遥测、人工决策、驱动包、受管设备进程）与
 **Backend**（调度权威：Scheduler、Workflow Authority、Registry Authority 与四库）。Host 通过

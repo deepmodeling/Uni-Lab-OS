@@ -147,7 +147,7 @@ def _validate_result(schema: Mapping[str, Any], values: Any) -> Any:
     selected = schema.get("properties", {}).get("result")
     if not isinstance(selected, Mapping) or not selected:
         return values
-    from unilabos.backend.runtime.test_mode import is_simulated_return
+    from unilabos.client.host.runtime.test_mode import is_simulated_return
     from unilabos.protocol.utils.json_codec import encode_json
 
     if is_simulated_return(values):

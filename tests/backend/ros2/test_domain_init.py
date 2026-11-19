@@ -1,6 +1,6 @@
 import pytest
 
-from unilabos.backend.ros2 import main_slave_run
+from unilabos.client.host.ros2 import main_slave_run
 
 
 class _StopRuntime(RuntimeError):
@@ -44,7 +44,7 @@ def test_rclpy_without_domain_id_keyword_uses_environment(monkeypatch) -> None:
 
 
 def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
-    from unilabos.backend.hostlink import network as host_network
+    from unilabos.client.host.hostlink import network as host_network
 
     events = []
 
@@ -102,7 +102,7 @@ def test_ros_host_starts_microbackend_network_before_rclpy(monkeypatch) -> None:
 
 
 def test_ros_slave_gets_hostlink_policy_before_rclpy(monkeypatch) -> None:
-    from unilabos.backend.hostlink import network as host_network
+    from unilabos.client.host.hostlink import network as host_network
 
     events = []
     device_config = object()

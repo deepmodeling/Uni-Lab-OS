@@ -30,9 +30,9 @@ from unilabos.protocol.materials import (
     SiteCreate,
 )
 from unilabos.registry.workflows import upsert_workflow
-from unilabos.server.backend.scheduler.material_sanity import MaterialSanity, material_references
-from unilabos.server.backend.scheduler.resource_wait_policy import ResourceConditionWait
-from unilabos.server.backend.scheduler.service import BackendScheduler
+from unilabos.server.scheduler.material_sanity import MaterialSanity, material_references
+from unilabos.server.scheduler.resource_wait_policy import ResourceConditionWait
+from unilabos.server.scheduler.service import BackendScheduler
 from unilabos.server.services.materials.store import MaterialsRepository
 
 _LOCK = {"type": "object", "properties": {"uuid": {"type": "string"}}, "required": ["uuid"],

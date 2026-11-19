@@ -9,8 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from unilabos.protocol.runtime.execution_start import execution_identity
-from unilabos.server.backend.scheduler.payloads import build_job_start_payload
-from unilabos.server.backend.execution_start import ExecutionStartGuard, ExecutionStartUnknown
+from unilabos.server.scheduler.payloads import build_job_start_payload
+from unilabos.client.host.execution_start import ExecutionStartGuard, ExecutionStartUnknown
 from unilabos.server.services.runtime.workflow.execution_claim import ExecutionClaims
 from unilabos.server.services.runtime.workflow.service import WorkflowService
 from unilabos.server.services.runtime.workflow.errors import StoreConflict
@@ -176,7 +176,7 @@ def test_epoch_change_between_begin_and_driver_boundary_prevents_call(service):
 def test_unknown_hostlink_transport_keeps_task_and_resource_for_reconciliation():
     from tests.server.test_workflow_loop_execution import _Stack
     from unilabos.registry.workflows import upsert_workflow
-    from unilabos.backend.hostlink.protocol import LinkError
+    from unilabos.client.host.hostlink.protocol import LinkError
     stack = _Stack()
     original = stack.runtime.call_action_async
     async def lose_result(*args, **kwargs):

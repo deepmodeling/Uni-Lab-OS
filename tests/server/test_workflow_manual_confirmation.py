@@ -8,8 +8,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from unilabos.server.api.runtime.workflow import create_workflow_app
-from unilabos.server.backend.scheduler.dag.models import NodeState
-from unilabos.server.backend.scheduler.service import (
+from unilabos.server.scheduler.dag.models import NodeState
+from unilabos.server.scheduler.service import (
     BackendScheduler,
     BackendSchedulingError,
 )

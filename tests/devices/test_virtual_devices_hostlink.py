@@ -20,9 +20,9 @@ from typing import Any, Iterator
 import networkx as nx
 import pytest
 
-from unilabos.backend.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
-from unilabos.backend.runtime import workstation_protocol
-from unilabos.backend.runtime.action import ActionCancelled, ActionContext
+from unilabos.client.host.hostlink.local_runtime import HostLinkDriverSpec, HostLinkLocalRuntime
+from unilabos.client.host.runtime import workstation_protocol
+from unilabos.client.host.runtime.action import ActionCancelled, ActionContext
 from unilabos.config.config import BasicConfig
 from unilabos.devices.virtual.simulation import DEFAULT_TIME_SCALE, VirtualDevice
 from unilabos.devices.workstation.workstation_base import WorkstationBase
@@ -577,7 +577,7 @@ def test_vessel_parameters_are_resource_slots_resolved_by_the_framework(registry
 
     import inspect
 
-    from unilabos.backend.runtime.resource_slot import resource_slot_shape
+    from unilabos.client.host.runtime.resource_slot import resource_slot_shape
 
     vessel_fields = {"vessel", "from_vessel", "to_vessel", "filtrate_vessel", "separation_vessel",
                      "waste_phase_to_vessel", "product_vessel", "waste_vessel"}
@@ -827,7 +827,7 @@ def test_example_station_protocol_steps_run_on_the_virtual_devices(
 
     from pylabrobot.resources import Resource as PLRResource
 
-    from unilabos.backend.runtime.resource_slot import resource_slot_shapes
+    from unilabos.client.host.runtime.resource_slot import resource_slot_shapes
     from unilabos.experiments import models as protocol_models
     from unilabos.experiments.compile import action_protocol_generators
 

@@ -113,7 +113,7 @@ def candidate_changeset(graph: Mapping[str, Any], applied: Mapping[str, Any]) ->
 
 def _default_catalog() -> Any:
     from unilabos.registry.workflows import DeviceCatalog
-    from unilabos.server.backend.composition import get_materials_service
+    from unilabos.server.execution_composition import get_materials_service
 
     return DeviceCatalog.from_materials_service(get_materials_service())
 

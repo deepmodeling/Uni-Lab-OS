@@ -3,7 +3,7 @@
 
 每次编译：cargo 的 build.rs 经 cbindgen 从 Rust 源码生成 C 头文件
 ``native/grant-policy/include/unilab_grant_policy.h``，本脚本再调用 ``scripts/gen_grant_bindings.py``
-从头文件生成 Python ctypes 绑定 ``unilabos/server/backend/scheduler/grant/_abi.py``。
+从头文件生成 Python ctypes 绑定 ``unilabos/server/scheduler/grant/_abi.py``。
 
     python scripts/build_grant_policy.py                  # 编译 + 重新生成，打印产物路径
     python scripts/build_grant_policy.py --check          # CI：生成物与已提交的不一致时失败

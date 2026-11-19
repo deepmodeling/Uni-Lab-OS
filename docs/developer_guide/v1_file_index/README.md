@@ -31,7 +31,7 @@ V1.0（`690491a3`）的 492 个源文件（不含厂商驱动与 `unilabos/test/
    V1 的 `workspace_host/*`、工作区产品代 / 发布部署（release_publish、launch、authority_sync 等）属于此类。
 2. **graphio 删除**：图只认 node-link JSON，经 Graph Authority 加载（`server/services/materials/graph.py`），GraphML 不再支持。
 3. **厂商驱动移出核心**：`unilabos/devices/` 只留工作站基类、虚拟设备、抽象移液站；驱动在外部驱动包（`unilab package install`）。
-4. **架构沿用 dev**：权威进程 + Host 子进程、HostLink 传输（ROS 2 可选）、runtime.v1 控制面、dev 的调度器（`server/backend/scheduler/`）
+4. **架构沿用 dev**：权威进程 + Host 子进程、HostLink 传输（ROS 2 可选）、runtime.v1 控制面、dev 的调度器（`server/scheduler/`）
    与工作流服务（`server/services/runtime/workflow/`）、dev 的物料权威（`server/services/materials/`）与驱动包系统（`server/services/driver_packages.py`）。
    V1 的 EdgeScheduler / edge_control / local authority 等由这些承担，核验的是**行为**是否等价。
 5. **开源树没有时间规划引擎（CP-SAT）**：`/scheduler/time-plan` 返回 `{enabled:false}`，时间线用实测平均时长 + 动作声明的预计时长（A01）。

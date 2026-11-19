@@ -12,7 +12,7 @@ from unilabos.server.composition import (
 from unilabos.server.database import ServerDatabasePaths
 from unilabos.protocol.history import HistoryEventQuery
 from unilabos.config.config import BasicConfig
-from unilabos.server.backend.composition import (
+from unilabos.server.execution_composition import (
     get_execution_backend,
     get_materials_service,
     reset_for_test,
@@ -69,7 +69,7 @@ def test_local_scheduler_and_registry_share_runtime_database(
 ) -> None:
     """Workflow 与 Registry 服务共享 runtime.db 的连接和写锁。"""
 
-    from unilabos.server.backend.composition import (
+    from unilabos.server.execution_composition import (
         get_workflow_service,
         setup_local_scheduler,
     )
@@ -127,8 +127,8 @@ def test_local_scheduler_publishes_registry_authority_and_mounts_api(
     from fastapi.testclient import TestClient
 
     from unilabos.server.api import app as app_module
-    from unilabos.server.backend.composition import setup_local_scheduler
-    from unilabos.server.backend.legacy_adaptor.sync.templates import (
+    from unilabos.server.execution_composition import setup_local_scheduler
+    from unilabos.client.host.legacy_adaptor.sync.templates import (
         report_registry_snapshot_local,
     )
     from unilabos.server.services.runtime.registry import get_registry_service

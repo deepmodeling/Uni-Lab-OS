@@ -5,8 +5,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from unilabos.backend.ros2.presets.host_node import HostNode
-from unilabos.server.backend.capabilities import build_endpoint_capabilities
+from unilabos.client.host.ros2.presets.host_node import HostNode
+from unilabos.client.host.capabilities import build_endpoint_capabilities
 
 
 class Host:

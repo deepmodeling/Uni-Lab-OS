@@ -27,6 +27,51 @@ from unilabos.config.config import BasicConfig, resolve_host_node_name
 from unilabos.utils.serialization import TypeEncoder
 
 
+#: Slave 等 Host 的 ``/node_info_update`` 服务时，每隔多少秒告警一次。
+NODE_INFO_WAIT_LOG_INTERVAL_S = 10.0
+#: 告警里附带的 ROS 发现配置。
+_ROS_DISCOVERY_ENV = (
+    "ROS_DOMAIN_ID",
+    "ROS_DISCOVERY_SERVER",
+    "ROS_AUTOMATIC_DISCOVERY_RANGE",
+    "ROS_STATIC_PEERS",
+)
+
+
+def ros_discovery_summary() -> str:
+    """当前进程的 ROS 发现配置（排查 Host / Slave 互相发现不了时用）。"""
+
+    parts = [f"{key}={os.environ[key]}" for key in _ROS_DISCOVERY_ENV if os.environ.get(key)]
+    return ", ".join(parts) or "未设置 ROS 发现相关环境变量"
+
+
+def wait_for_host_node_info_service(client: Any, *, interval: float = NODE_INFO_WAIT_LOG_INTERVAL_S) -> bool:
+    """等 Host 的 ``/node_info_update`` 服务出现在 ROS 图上，没等到时每 ``interval`` 秒告警一次。
+
+    HostLink 已连上 Host 却迟迟发现不了这个服务，几乎总是 DDS 发现配置的问题；
+    告警里带上本进程的发现端点，而不是一声不吭地一直等下去。
+    返回 False 表示等待期间收到停机信号（rclpy 已关闭）。
+    """
+
+    waited = 0.0
+    while rclpy.ok():
+        try:
+            if client.wait_for_service(timeout_sec=interval):
+                return True
+        except Exception:  # noqa: BLE001 - 停机信号关闭 rclpy 上下文后，服务探测会抛错
+            if not rclpy.ok():
+                return False
+            raise
+        if not rclpy.ok():
+            return False
+        waited += interval
+        logger.warning(
+            f"[Slave] 已等待 {waited:.0f}s，仍未在 ROS 图上发现 Host 的 /node_info_update 服务；"
+            f"请检查 Host 与本机的 DDS 发现配置（{ros_discovery_summary()}）"
+        )
+    return False
+
+
 def _spin_forever(executor) -> None:
     """守护式 spin：任何回调/协程异常都不允许终结 executor 线程。
 
@@ -184,7 +229,9 @@ def slave(
     if not BasicConfig.slave_no_host:
         # 3.1 报送节点信息
         sclient = n.create_client(SerialCommand, "/node_info_update")
-        sclient.wait_for_service()
+        if not wait_for_host_node_info_service(sclient):
+            logger.info("[Slave] 等待 Host 时收到停机信号，退出")
+            return
 
         registry_config = {}
         devices_to_register, resources_to_register = collect_devices_and_resources(

@@ -23,7 +23,7 @@ import time
 import traceback
 import uuid
 
-from typing import TYPE_CHECKING, Any, ClassVar, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Iterable, List, Optional, Set, Tuple
 
 import rclpy
 from action_msgs.msg import GoalStatus
@@ -51,7 +51,7 @@ from unilabos.client.host.runtime.host_adapter import (
 )
 from unilabos.client.host.execution_start import ExecutionNotStarted
 from unilabos.config.config import BasicConfig, HOST_NODE_REGISTRY_NAME
-from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION
+from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION, SUCCESS_TYPE_EXECUTION_UNKNOWN
 from unilabos.resources.resource_tracker import (
     JSON_UNILABOS_PARAM,
     PARAM_SAMPLE_UUIDS,
@@ -68,6 +68,9 @@ if TYPE_CHECKING:
 
 #: 设备 Action server 尚未出现在 ROS 图上时的等待上限（秒）。
 ACTION_SERVER_WAIT_S = 30.0
+#: Slave 的 HostLink 连接状态巡检周期（秒）：连接断开 / 心跳超时后它的设备随即离线，
+#: 不必等 DDS 租约过期和下一轮 DDS 发现。
+HOSTLINK_LIVENESS_INTERVAL_S = 1.0
 
 
 def authority_host_node_uuid(device_id: str) -> str:
@@ -280,6 +283,16 @@ class HostNode(HostAdapterBase, Node):
         self._action_clients: Dict[str, Any] = {}
         self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config
         self._discovery_lock = threading.Lock()
+        # 离线簿记：DDS 上消失的远端设备、HostLink 连接已断开的 Slave 上报的设备。
+        # 能力快照据此剔除离线设备（与 HostLink backend 只上报在线设备一致）。
+        self._liveness_lock = threading.Lock()
+        self._dds_offline_devices: Set[str] = set()
+        self._hostlink_offline_devices: Set[str] = set()
+        self._hostlink_owned_devices: Set[str] = set()
+        # 已发出、尚未收尾的 goal（job_id -> QueueItem）：设备离线时据此收尾，
+        # 不让作业和设备锁一直挂着；_settled_jobs 记下已收尾的，忽略它们迟到的回调。
+        self._goal_items: Dict[str, Any] = {}
+        self._settled_jobs: Set[str] = set()
 
         # host_node 服务设备（backend 无关的 HostServices）从外部初始化：
         # 与其他设备走同一条通用管线，ActionServer / 注册表登记由包装节点
@@ -333,6 +346,9 @@ class HostNode(HostAdapterBase, Node):
         # 创建定时器，定期发现设备
         self._discovery_timer = self.create_timer(
             discovery_interval, self._discovery_devices_callback, callback_group=self.callback_group
+        )
+        self._hostlink_liveness_timer = self.create_timer(
+            HOSTLINK_LIVENESS_INTERVAL_S, self._hostlink_liveness_callback, callback_group=self.callback_group
         )
 
         # 编排节点自身加入全局 executor（设备节点由各自包装类加入）
@@ -446,9 +462,129 @@ class HostNode(HostAdapterBase, Node):
             self._online_devices.discard(device_key)
 
         self._online_devices = current_devices
+        absent = self._remote_devices_absent_from(current_devices)
+        with self._liveness_lock:
+            newly_absent = absent - self._dds_offline_devices
+            self._dds_offline_devices = absent
+            hostlink_owned = set(self._hostlink_owned_devices)
+        # 经 HostLink 接入的 Slave 设备由连接状态收尾在途作业（断开即离线，不等 DDS 租约）；
+        # 没经 HostLink 接入的（如 --disable_hostlink）只能按 DDS 判定
+        dds_only = newly_absent - hostlink_owned
+        if dds_only:
+            self._settle_jobs_on_offline_devices(dds_only, reason="设备已不在 ROS 图上（DDS 发现超时）")
         if previous_device_names != set(self.devices_names) or previous_online_devices != current_devices:
             self._notify_capabilities_changed()
         self.lab_logger().trace(f"[Host Node] Total online devices: {len(self._online_devices)}")
+
+    def _remote_devices_absent_from(self, current_devices: Set[str]) -> Set[str]:
+        """发现过、但这一轮 DDS 发现里不在 ROS 图上的远端设备（本机设备随进程存亡，不算）。"""
+
+        return {
+            device_id
+            for device_id, namespace in self.devices_names.items()
+            if device_id not in self.devices_instances and f"{namespace}/{device_id}" not in current_devices
+        }
+
+    @property
+    def offline_device_ids(self) -> Set[str]:
+        """离线的远端设备：DDS 上消失，或上报它的 Slave 的 HostLink 连接已断开 / 心跳超时。
+
+        能力快照（``build_endpoint_capabilities``）剔除这些设备，权威的 ``/devices``、
+        ``/online-devices`` 与调度随之把它们当离线；派发给它们的动作直接失败。
+        """
+
+        with self._liveness_lock:
+            offline = self._dds_offline_devices | self._hostlink_offline_devices
+        return offline - set(self.devices_instances)
+
+    def _hostlink_liveness_callback(self) -> None:
+        """按 HostLink 连接状态更新 Slave 设备的在线状态。
+
+        Slave 进程退出、被杀或心跳超时后，HostLink 立即（或在心跳超时内）知道；DDS 要等
+        参与者租约过期，再等下一轮设备发现。重连后撤销离线标记，DDS 仍看得到设备即恢复在线。
+        """
+
+        from unilabos.client.host.hostlink.server import get_hostlink_server
+
+        server = get_hostlink_server()
+        if server is None:
+            return
+        online_ids: Set[str] = set()
+        offline_ids: Set[str] = set()
+        for peer in server.peers():
+            ids = {str(device_id) for device_id in peer.get("device_ids") or []}
+            (online_ids if peer.get("online") else offline_ids).update(ids)
+        # 同一设备由在线的 Slave 上报（如换了连接重新接入）时以在线为准
+        offline_ids -= online_ids
+        with self._liveness_lock:
+            previous = self._hostlink_offline_devices
+            self._hostlink_offline_devices = offline_ids
+            self._hostlink_owned_devices = online_ids | offline_ids
+        if offline_ids == previous:
+            return
+        went_offline = offline_ids - previous
+        came_back = previous - offline_ids
+        if went_offline:
+            self.lab_logger().warning(
+                f"[Host Node] Slave 的 HostLink 连接已断开或心跳超时，设备离线: {sorted(went_offline)}"
+            )
+            self._settle_jobs_on_offline_devices(
+                went_offline, reason="Slave 的 HostLink 连接已断开或心跳超时，设备离线"
+            )
+        if came_back:
+            self.lab_logger().info(f"[Host Node] Slave 已重新接入 HostLink: {sorted(came_back)}")
+        self._notify_capabilities_changed()
+
+    def _settle_jobs_on_offline_devices(self, device_ids: Iterable[str], *, reason: str) -> None:
+        """设备离线时收尾发给它的在途作业，释放作业与设备锁。
+
+        已请求取消的按取消收尾（Slave 已不在，动作不会再跑）；其余按结果未知收尾，
+        交给核实流程（与 HostLink 传输中断的口径一致）。迟到的回调会被忽略。
+        """
+
+        targets = set(device_ids)
+        with self._goal_state_lock:
+            pending = [
+                (job_id, item, job_id in self._canceled_jobs)
+                for job_id, item in self._goal_items.items()
+                if item.device_id in targets
+            ]
+            for job_id, _item, _canceled in pending:
+                self._goal_items.pop(job_id, None)
+                self._settled_jobs.add(job_id)
+        for job_id, item, canceled in pending:
+            if canceled:
+                return_info = serialize_result_info(
+                    f"Job was cancelled; {reason}", False, {}, suc_type=SUCCESS_TYPE_CANCELLATION
+                )
+            else:
+                return_info = serialize_result_info(reason, False, {}, suc_type=SUCCESS_TYPE_EXECUTION_UNKNOWN)
+                return_info["uncertainty_reason"] = reason
+            self.lab_logger().warning(
+                f"[Host Node] {item.device_id}/{item.action_name} ({job_id[:8]}) 的设备已离线，"
+                f"作业按{'取消' if canceled else '结果未知'}收尾"
+            )
+            self._publish_terminal_result(item, "failed", return_info, {})
+
+    def _publish_terminal_result(
+        self,
+        item: "QueueItem",
+        status: str,
+        return_info: Dict[str, Any],
+        result_data: Dict[str, Any],
+    ) -> None:
+        with self._goal_state_lock:
+            self._goal_items.pop(item.job_id, None)
+        super()._publish_terminal_result(item, status, return_info, result_data)
+
+    def _take_settled(self, job_id: str) -> bool:
+        """作业是否已因设备离线收尾（是则消费掉这条记录，调用方忽略迟到的回调）。"""
+
+        with self._goal_state_lock:
+            if job_id in self._settled_jobs:
+                self._settled_jobs.discard(job_id)
+                return True
+            return False
 
     def _spawn_re_register(self, namespace: str) -> None:
         sclient = self.create_client(SerialCommand, f"/srv{namespace}/re_register_device")
@@ -680,6 +816,11 @@ class HostNode(HostAdapterBase, Node):
             self._publish_terminal_result(item, "success", return_info, mock_return)
             return
 
+        if device_id in self.offline_device_ids:
+            # 离线设备不等 Action server 超时：goal 没发出、许可没领用，是明确失败
+            raise ExecutionNotStarted(
+                f"设备 {device_id} 已离线（Slave 已断开或不在 ROS 图上），动作 {action_name} 未下发"
+            )
         if action_type.startswith("UniLabJsonCommand"):
             if action_name.startswith("auto-"):
                 action_name = action_name[5:]
@@ -726,6 +867,8 @@ class HostNode(HostAdapterBase, Node):
 
             from unilabos.client.host.execution_start import confirm_execution_start
             confirm_execution_start(item)
+            with self._goal_state_lock:
+                self._goal_items[item.job_id] = item
             future = action_client.send_goal_async(
                 goal_msg,
                 feedback_callback=lambda feedback_msg: self.feedback_callback(
@@ -737,6 +880,8 @@ class HostNode(HostAdapterBase, Node):
             )
         except Exception:
             self._inflight_goal_jobs.discard(item.job_id)
+            with self._goal_state_lock:
+                self._goal_items.pop(item.job_id, None)
             raise
         future.add_done_callback(
             lambda f: self.goal_response_callback(
@@ -749,6 +894,16 @@ class HostNode(HostAdapterBase, Node):
     def goal_response_callback(self, item: "QueueItem", action_id: str, future) -> None:
         """目标响应回调。"""
         self._inflight_goal_jobs.discard(item.job_id)
+        if self._take_settled(item.job_id):
+            # 设备离线时已收尾：迟到的受理只请求取消，不再登记结果
+            try:
+                goal_handle = future.result()
+                if goal_handle is not None and goal_handle.accepted:
+                    self._request_goal_cancel(item.job_id, goal_handle)
+            except Exception:  # noqa: BLE001 - 已收尾的作业不再上报
+                pass
+            self.lab_logger().info(f"[Host Node] Goal {item.job_id[:8]} 已因设备离线收尾，忽略迟到的受理")
+            return
         try:
             goal_handle = future.result()
         except Exception as ex:  # noqa: BLE001 - 转成 job 终态失败
@@ -805,6 +960,9 @@ class HostNode(HostAdapterBase, Node):
     def get_result_callback(self, item: "QueueItem", action_id: str, future) -> None:
         """获取结果回调。"""
         job_id = item.job_id
+        if self._take_settled(job_id):
+            self.lab_logger().info(f"[Host Node] Goal {job_id[:8]} 已因设备离线收尾，忽略迟到的结果")
+            return
 
         try:
             result = future.result()

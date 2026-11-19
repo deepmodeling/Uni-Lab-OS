@@ -10,12 +10,6 @@ import subprocess
 import sys
 
 
-# 公共 channel 缺失的纯 Python/字体包，仅 full 需要，不增加用户安装档位。
-FULL_SUPPORT_RECIPES = (
-    "opcua", "rinoh-typeface-dejavuserif", "rinoh-typeface-texgyrecursor",
-    "rinoh-typeface-texgyreheros", "rinoh-typeface-texgyrepagella",
-)
-
 # 框架平台包每次发布都必须是新的版本/build：频道里已有同一坐标时上传失败，不跳过也不覆盖。
 FRAMEWORK_PLATFORM_PACKAGES = frozenset({"unilabos", "unilabos-full"})
 
@@ -36,10 +30,8 @@ def recipes(ros_distros: str = "", full: bool = False, extensions_only: bool = F
     if extensions_only and not distros:
         raise ValueError("仅构建扩展必须显式选择 ros_distros，并先发布同版本默认包")
     result = [] if extensions_only else [
-        (name, []) for name in ("opentrons-shared-data", "msgcenterpy", "pylabrobot", "mcp", "base")
+        (name, []) for name in ("opentrons-shared-data", "msgcenterpy", "pylabrobot", "base")
     ]
-    if full:
-        result.extend((name, []) for name in FULL_SUPPORT_RECIPES)
     for distro in distros:
         suffix = "-humble" if distro == "humble" else ""
         result.append((f"msgs{suffix}", [f"robostack-{distro}"]))
@@ -89,7 +81,7 @@ def main() -> None:
 
     token = os.environ["ANACONDA_API_TOKEN"]
     upload_env = {**os.environ, "ANACONDA_CLIENT_FORCE_STANDALONE": "1"}
-    # noarch 在矩阵内重复构建；平台相关的依赖（MCP、ROS 消息包等）也会被后续框架版本复用。
+    # noarch 在矩阵内重复构建；平台相关的依赖（ROS 消息包等）也会被后续框架版本复用。
     # 这些已有坐标只跳过、不覆盖；框架平台包仍须发布新的版本/build。
     packages = sorted((output / "noarch").glob("*.conda")) + sorted((output / args.platform).glob("*.conda"))
     if not packages:
@@ -98,7 +90,7 @@ def main() -> None:
         package_name = package.name.rsplit("-", 2)[0]
         if args.extensions_only and package_name not in {
             "unilabos-ros2", "unilabos-full", "ros-jazzy-unilabos-msgs",
-            "ros-humble-unilabos-msgs", *FULL_SUPPORT_RECIPES,
+            "ros-humble-unilabos-msgs",
         }:
             continue
         command = [sys.executable, "-m", "binstar_client.scripts.cli", "-t", token,

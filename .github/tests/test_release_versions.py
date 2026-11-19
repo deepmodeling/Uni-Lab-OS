@@ -76,7 +76,8 @@ class ReleaseVersionTests(unittest.TestCase):
     def test_mcp_security_baseline_is_not_lowered_for_conda(self):
         self.assertIn("mcp>=1.30,<2", (ROOT / "unilabos/utils/requirements.txt").read_text())
         self.assertIn("mcp >=1.30,<2", recipe(".conda/base/recipe.yaml")["requirements"]["run"])
-        self.assertEqual(recipe(".conda/mcp/recipe.yaml")["package"]["version"], "1.30.0")
+        # conda-forge 提供 mcp 1.30.0 noarch，下限由依赖声明保证，不再自建配方。
+        self.assertFalse((ROOT / ".conda/mcp").exists())
 
     def test_numpy2_opentrons_is_a_default_material_dependency(self):
         patched = recipe("recipes/opentrons-shared-data/recipe.yaml")

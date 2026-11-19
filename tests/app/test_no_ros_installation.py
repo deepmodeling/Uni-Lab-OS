@@ -174,6 +174,36 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
         assert "--force" not in command
 
 
+
+def test_extension_upload_skips_published_message_packages(monkeypatch, tmp_path):
+    """扩展发布会重新构建消息包；频道已有同一坐标时跳过，框架平台包仍不允许重复上传。"""
+    from scripts import build_conda_release
+
+    packages = {
+        "noarch/unilabos-ros2-0.13.0a1-jazzy_1.conda": True,
+        "linux-64/ros-humble-unilabos-msgs-0.12.2-h81b34b9_1.conda": True,
+        "linux-64/ros-jazzy-unilabos-msgs-0.12.2-h81b34b9_1.conda": True,
+        "linux-64/unilabos-full-0.13.0a1-jazzy_1.conda": False,
+    }
+    for name in packages:
+        package = tmp_path / name
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.touch()
+    monkeypatch.setenv("ANACONDA_API_TOKEN", "test-token-not-a-secret")
+    monkeypatch.setattr(sys, "argv", ["build_conda_release.py", "upload", "--platform", "linux-64",
+                                     "--ros-distros", "jazzy,humble", "--full", "--extensions-only",
+                                     "--output-dir", str(tmp_path)])
+    commands = []
+    monkeypatch.setattr(build_conda_release.subprocess, "run",
+                        lambda command, **kw: commands.append(command)
+                        or subprocess.CompletedProcess(command, 0))
+    build_conda_release.main()
+    assert len(commands) == len(packages)
+    for command in commands:
+        relative = Path(command[-1]).relative_to(tmp_path).as_posix()
+        assert ("--skip-existing" in command) is packages[relative]
+        assert "--force" not in command
+
 def test_verification_failure_is_not_reported_as_success(monkeypatch):
     import scripts.verify_installation as verifier
     import unilabos.utils.environment_check as checker

@@ -96,6 +96,7 @@ api、mcp）；`unilabos/client/` 是怎样请求 server（HTTP / 会话 / 各�
 （例如引用内置的 `ROS2SerialNode`）时才需要同步修改。升级后 Host 启动时照常上报注册表，权威把这三个条目记为新版本：
 单机部署按规则 B 直接生效；有跨机器 Slave 或远端 Host 上报时，`unilabos` 版本号升高的发布按规则 A 直接生效，
 同一版本内则作为待确认变化出现在前端，确认即可（动作没有变化，不涉及工作流冲突）。
+日志的 logger 名跟着模块路径变（例如 HostLink 模块从 `unilabos.backend.hostlink.*` 变成 `unilabos.client.host.hostlink.*`），按 logger 名过滤或调整级别的日志配置要一起改。
 在旧 checkout 上拉取后，`unilabos/backend/`、`unilabos/server/backend/` 等目录可能只剩 `__pycache__`，可以直接删除。
 
 ## 已知缺口：文档不能替代码兑现

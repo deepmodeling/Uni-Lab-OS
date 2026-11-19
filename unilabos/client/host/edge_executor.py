@@ -598,11 +598,16 @@ class WorkflowBusinessCoordinator:
             "failed": "failed",
             "canceled": "canceled",
         }[status]
-        from unilabos.registry.action_policy import SUCCESS_TYPE_EXECUTION_UNKNOWN
-        if (return_info or {}).get("suc_type") == SUCCESS_TYPE_EXECUTION_UNKNOWN:
+        from unilabos.registry.action_policy import SUCCESS_TYPE_CANCELLATION, SUCCESS_TYPE_EXECUTION_UNKNOWN
+        suc_type = (return_info or {}).get("suc_type")
+        if suc_type == SUCCESS_TYPE_EXECUTION_UNKNOWN:
             target_status = "execution_unknown"
             if latest.status == target_status:
                 return
+        elif status == "failed" and suc_type == SUCCESS_TYPE_CANCELLATION:
+            # 执行面把取消的真实收尾报成 failed + cancellation；本地账本里 failed 只能在错误
+            # 闸门放行后落库，按 canceled 落库并上报，权威才会收尾任务、释放设备锁。
+            target_status = "canceled"
         transition = ExecutionJobTransition(
             expected_version=latest.version,
             status=target_status,

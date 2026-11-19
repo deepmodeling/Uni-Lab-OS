@@ -13,7 +13,7 @@
 以吸液为例：消息重发或 Host 崩溃后，仅有“命令已发送”无法判断是否已经吸过。持久开始许可与 attempt 身份、结果记录结合，才能区分可恢复派发的未开始动作与需要核实的未知执行。即使已经取得许可，设备仍可能尚未动作，所以不能据此推断实际吸液量。
 
 #358 当时没有实现 dev 的 begin/fencing 握手，也没有把内存资源锁变成持久租约。两者现已实现：Host 调用设备前经
-`server/backend/execution_start.py`（`ExecutionStartGuard`）向调度权威 `begin_execution` 领取开始许可，领到后才消费库存并记录开始回执；
+`client/host/execution_start.py`（`ExecutionStartGuard`）向调度权威 `begin_execution` 领取开始许可，领到后才消费库存并记录开始回执；
 派发前的资源声明、租约与栅栏持久化在 runtime.db 的 `workflow_execution_claim` / `workflow_execution_lease` / `workflow_execution_fence`。
 
 ## 这次接入的能力

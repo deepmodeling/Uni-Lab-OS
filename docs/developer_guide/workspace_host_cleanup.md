@@ -40,7 +40,7 @@
 
 另有结构化错误 `code/message/details`，以及 HTTP 401/404/409/400 的映射。发现文件位于 `<workspace>/.unilabos/runtime/workbench/session.json`，通过 `host.token` 的 Bearer token 访问本机服务。
 
-这些是旧 CLI/SDK 所依赖的对外约定，不能在迁移调用方之前随着 `host.py` 一起消失。当前迁移沿用 Dev 已有的 `protocol/runtime`、`client/runtime`、`server/api/runtime` 和 `server/backend`，本轮不采用另建 `workspace` 管理层的旧建议。状态/重启/重置与排空已归位；旧 snapshot、通用 operation 日志、revision/eventCursor 尚未提供兼容 API，也不宣称新 SDK 可直接替换旧 WorkspaceHostClient。
+这些是旧 CLI/SDK 所依赖的对外约定，不能在迁移调用方之前随着 `host.py` 一起消失。当前迁移沿用 Dev 已有的 `protocol/runtime`、`client/runtime`、`server/api/runtime` 以及 `server/`、`client/host/` 下的执行协调模块，本轮不采用另建 `workspace` 管理层的旧建议。状态/重启/重置与排空已归位；旧 snapshot、通用 operation 日志、revision/eventCursor 尚未提供兼容 API，也不宣称新 SDK 可直接替换旧 WorkspaceHostClient。
 
 整理时要保留几个区别：
 
@@ -70,7 +70,7 @@ Dev 基线没有这三个同名接口。本地本轮已复用 `BackendScheduler`
 
 这套旧流程负责跨后端模板/物料/工作流身份映射。当前 `_dispatch()` 对 `authority.switch`、`release.publish`、`release.inspect` 均直接返回 `backend_mode_removed`；`_switch_authority()` 本身也拒绝执行。静态调用盘点显示 `_publish_release()`、`_inspect_release_target()`、`_bootstrap_backend_authority()` 已没有本模块内的正常调用入口。两份旧模块合计 **3,398 行，占该目录约 41%**，是最明确的首批清理候选。
 
-但执行开始确认、命令账本和结果恢复在 V1 的 `app/edge_control/`、`workflow/`、`app/scheduler/` 等目录；Dev 对应 `protocol/runtime/control.py`、`server/backend/edge_control.py`、`backend/runtime/` 等。Workspace Host 只是启动这些进程，或在显式 reset 时操作它们的存储。清理旧管理层不能把这些执行协议一并认定为可删，也不能宣称它们已经随主进程替换而完成移植。
+但执行开始确认、命令账本和结果恢复在 V1 的 `app/edge_control/`、`workflow/`、`app/scheduler/` 等目录；Dev 对应 `protocol/runtime/control.py`、`server/edge_dispatch.py`、`client/host/runtime/` 等。Workspace Host 只是启动这些进程，或在显式 reset 时操作它们的存储。清理旧管理层不能把这些执行协议一并认定为可删，也不能宣称它们已经随主进程替换而完成移植。
 
 ## 关于多 runtime，纠正上一轮的表述
 
@@ -86,7 +86,7 @@ backend 主进程：Scheduler / Workflow / Registry / Materials
 
 用户已确认这就是目标结构：Host 的职责是 runtime，一个 backend 只连接一个主 Host，通过 slave 启动多个设备运行实例。多主 Host 同时接入不属于待补差异。
 
-证据：`server/backend/edge_control.py:126` 明确写着“单 Edge”；它只有一组 `edge_uuid/session_uuid/connection_epoch/outgoing`，且模块全局只有一个 service。`attach_connection():673` 实现后来连接替换旧连接。`device_processes.py::build_command` 则使用 `--is_slave --host_node_ip --hostlink_port` 启动多个设备进程。
+证据：`server/edge_dispatch.py:126` 明确写着“单 Edge”；它只有一组 `edge_uuid/session_uuid/connection_epoch/outgoing`，且模块全局只有一个 service。`attach_connection():673` 实现后来连接替换旧连接。`device_processes.py::build_command` 则使用 `--is_slave --host_node_ip --hostlink_port` 启动多个设备进程。
 
 因此保持单主 runtime 的 session、epoch、通知队列、事件游标、HTTP 代理与在途作业视图。管理客户端只访问统一 HTTP API，不占用主 Host 的控制 WebSocket。
 

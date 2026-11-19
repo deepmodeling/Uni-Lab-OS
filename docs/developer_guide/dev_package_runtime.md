@@ -75,7 +75,7 @@ unilab package operation <operation_id> --wait --timeout 300
 | 客户端 | `client/runtime/driver_packages.py` | HTTP、操作查询与等待，不自动重发写请求 |
 | HTTP 路由 | `server/api/driver_packages.py`、`edge_proxy.py` | 统一管理入口、控制面鉴权与 Host 转发 |
 | 包所有者 | `server/services/driver_packages.py` | 下载、依赖、AST 扫描、源码登记、启停、台账 |
-| 发现与加载 | `registry/`、`app/community_packages.py`、`backend/runtime/driver_creator.py` | 沿用 dev 的扫描、社区引用解析、类加载 |
+| 发现与加载 | `registry/`、`app/community_packages.py`、`client/host/runtime/driver_creator.py` | 沿用 dev 的扫描、社区引用解析、类加载 |
 | 进程 | `app/backend_main.py`、`app/supervisor.py`、`server/services/device_processes.py` | 监督 Host 和多个 slave，包管理不再另设进程所有者 |
 
 依赖安装发生在 Host 解释器中，文件回滚不回滚 pip/uv 对共享环境的修改。

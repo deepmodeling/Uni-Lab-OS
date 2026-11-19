@@ -1,7 +1,7 @@
 # 调度与执行架构
 
 本文描述 Uni-Lab-OS 当前微后端、统一调度器、库存与 Edge 执行链路。实现入口以
-`unilabos/server/backend/` 为准；四个 SQLite 库（`runtime.db` / `materials.db` /
+`unilabos/server/`（`scheduler/`、`edge_dispatch.py`、`lifecycle/`）与 Host 侧的 `unilabos/client/host/`（`execution.py`、`edge_executor.py`）为准；四个 SQLite 库（`runtime.db` / `materials.db` /
 `telemetry.db` / `history.db`）的建表 DDL 与行模型以 `unilabos/server/database/tables/`
 为唯一来源，各库通过对应 Service 单 writer 写入，业务代码不跨库外键、不 `ATTACH`。
 位置、锁、表清单与各进程的写入范围见 [微后端数据库](databases.md)。
@@ -198,7 +198,7 @@ op, value)` 构造（循环体里的步骤在 `with` 打开时还没声明，用
 确认后在库存里装入、取走或补量。它由**权威侧调度器本地执行**，和 `condition` / `loop` 一样不派发到 Host /
 edge、不占设备动作锁，执行器永远收不到它。作者写法见
 [静态条件流程](workflow_static_conditions.md#人工装入--取走--补量material_io)，参数合同在
-`protocol/runtime/material_io.py`，调度器侧实现在 `server/backend/scheduler/material_io.py` 与
+`protocol/runtime/material_io.py`，调度器侧实现在 `server/scheduler/material_io.py` 与
 `BackendScheduler._start_material_io / _open_material_io / _settle_material_io`。
 
 1. **试运行**：起跑时解析参数里的工作流输入、上游结果引用与循环占位符，再请物料权威试运行一次
@@ -238,7 +238,7 @@ edge、不占设备动作锁，执行器永远收不到它。作者写法见
    （`resources/materials.py:find_owner_device`；独立根树按它登记的所属设备）。load 与 transfer 的目标端相同，发
    `MaterialDeviceSync(action="load", destination_site_uuids=[库位])`，设备从权威拉取新物料挂到同一库位；unload 发
    `action="unload"`，设备把物料连同子树从台面移除；refill 发资源树 `update`（与 `notify-device` 同一路径），设备按权威
-   当前状态重载这只容器的内容物。下行经 `backend/hostlink/downlink.py`（`send_material_sync` /
+   当前状态重载这只容器的内容物。下行经 `client/host/hostlink/downlink.py`（`send_material_sync` /
    `notify_resource_tree_update`）：调度权威与 Host 分开时经控制面交给 Host 的 `/api/v1/hostlink/{material-sync,notify-device}`
    中继（权威不查本进程设备表），Host 本进程的设备直调，托管 Slave 上的设备经 HostLink RPC；和 transfer 一样在收敛批准的
    同一调用里等设备确认（下行超时 30 秒，Host 不在线时立即失败）。结果记在节点输出
@@ -494,7 +494,7 @@ CI 在 Linux / macOS / Windows 上编译它，并用随机场景与 Python 实�
    与预留无法换算的单位；内容物单位换算一律按物态 / 浓度 / 密度进行，换算不了就拒绝。
 2. **每轮资源重算都带入物料**：每个 Node 的完整资源申请包含 action 参数物料和
    reservation 分配出的实体物料，所以不同设备也不能同时操作同一物料。
-3. **驱动调用前只消费一次**：Host 的 `ExecutionInventoryCoordinator`（`backend/inventory.py`）派发时校验 reservation
+3. **驱动调用前只消费一次**：Host 的 `ExecutionInventoryCoordinator`（`server/inventory.py`）派发时校验 reservation
    的 `job_uuid`、Task、revision 和 requirements；有开始许可的作业在领到许可（`begin_execution` 返回 START）之后、
    记录开始回执之前 consume，没有许可的作业在 `send_goal` 前 consume。
 4. **终态收口按尝试，不按 Task**：
@@ -541,7 +541,7 @@ Backend WebSocket notice
 执行层仍保留最后一道防线：同一动作已有 active Job、状态 incident 持有设备、库存
 reservation 不合法或物料 UUID 契约错误时，立即拒绝。它不会在 Edge 内部悄悄排队。
 
-HostLink 主从通信位于 `unilabos/backend/hostlink/`。Slave 同步设备 action 注册信息到 Host，
+HostLink 主从通信位于 `unilabos/client/host/hostlink/`。Slave 同步设备 action 注册信息到 Host，
 Host 因而能读取远端设备推导出的 `materials_need_lock` 和 status policy；动作执行仍由
 HostLink adapter 路由到实际 Slave。
 
@@ -611,16 +611,16 @@ Backend 必须先更新调度事实，然后下发 `release_failed` 或 replacem
 | --- | --- |
 | Host 组合与启动 | `unilabos/server/startup.py` |
 | 四库组合根 | `unilabos/server/composition.py` |
-| 运行时组件装配 | `unilabos/server/backend/composition.py` |
-| Backend 命令协调 | `unilabos/server/backend/coordinator.py` |
-| 执行适配 | `unilabos/server/backend/execution.py` |
-| 库存执行边界 | `unilabos/server/backend/inventory.py` |
-| 统一调度服务 | `unilabos/server/backend/scheduler/service.py` |
-| 动作/物料资源管理 | `unilabos/server/backend/scheduler/resource_manager.py` |
-| 临时资源条件 / 派发前物料健全性检查 | `unilabos/server/backend/scheduler/resource_wait_policy.py`、`material_sanity.py`（物料权威侧只读事实 `unilabos/server/services/materials/sanity.py`） |
-| DAG runner | `unilabos/server/backend/scheduler/dag/` |
+| 运行时组件装配 | `unilabos/server/execution_composition.py` |
+| Backend 命令协调 | `unilabos/client/host/edge_executor.py` |
+| 执行适配 | `unilabos/client/host/execution.py` |
+| 库存执行边界 | `unilabos/server/inventory.py` |
+| 统一调度服务 | `unilabos/server/scheduler/service.py` |
+| 动作/物料资源管理 | `unilabos/server/scheduler/resource_manager.py` |
+| 临时资源条件 / 派发前物料健全性检查 | `unilabos/server/scheduler/resource_wait_policy.py`、`material_sanity.py`（物料权威侧只读事实 `unilabos/server/services/materials/sanity.py`） |
+| DAG runner | `unilabos/server/scheduler/dag/` |
 | Backend 诊断 API | `unilabos/server/api/runtime/diagnostics.py` |
-| HostLink 网络与执行 adapter | `unilabos/backend/hostlink/` |
+| HostLink 网络与执行 adapter | `unilabos/client/host/hostlink/` |
 
 ## 14. 扩展约束
 

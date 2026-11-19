@@ -195,7 +195,7 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
 `-g <文件>.json` 的读取链路：
 
 1. 旧格式图（`class` 无 `template_name`、根级 `position`、`children` 列表、
-   `edges` 键、`name` 不是 uuid 等）在读取边界由 `server/backend/legacy_adaptor/legacy/graph.py`
+   `edges` 键、`name` 不是 uuid 等）在读取边界由 `client/host/legacy_adaptor/legacy/graph.py`
    一次性转换为当前契约，并打印 WARNING。旧液体字段一并转成内容物：dev 时代容器的
    `data.liquid=[{"liquid_type": ..., "liquid_volume": ...}]` 在节点还没有
    `liquids` / `substances` 时转为 `substances`（单位 `ul`，与 `max_volume` 同单位），
@@ -284,4 +284,4 @@ unilab --check_mode --complete_registry --skip_env_check -g path/to/device_graph
 - `unilabos/resources/objects/pose.py`
 - `unilabos/resources/resource_tracker.py`
 - `unilabos/server/services/materials/graph.py`
-- `unilabos/server/backend/legacy_adaptor/legacy/graph.py`
+- `unilabos/client/host/legacy_adaptor/legacy/graph.py`

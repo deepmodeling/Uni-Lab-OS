@@ -152,7 +152,7 @@ unilab --config path/to/your/config.py
 ## 通信中间件 `--backend`
 
 Uni-Lab 对外提供两个设备通信 backend。名称、能力和实现入口由
-`unilabos.backend.BACKEND_PROFILES` 统一管理：
+`unilabos.client.host.BACKEND_PROFILES` 统一管理：
 
 | Backend | 设备运行时 | 支持的设备能力 | 应选择该 backend 的场景 |
 |---|---|---|---|

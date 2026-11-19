@@ -355,7 +355,7 @@ Windows 不支持目录 fsync，跳过这一步。sidecar 锁文件常驻，不�
 ### 外部编辑与待回写恢复
 
 已登记源码归本机 Workflow Authority（调度权威进程；`--no-safe-restart` 时是单进程 Host）所有，
-`server/backend/composition.py:setup_local_scheduler` 装配调度器后：
+`server/execution_composition.py:setup_local_scheduler` 装配调度器后：
 
 1. 先同步跑一遍 `recover_registered_sources`：外部改过的源码重新编译出候选（事件 cause
    `external_draft_changed` / `recovered`）；Apply 已提交但写回失败留下的 `writeback_status=pending`

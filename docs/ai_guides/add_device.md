@@ -157,7 +157,7 @@ from typing import Dict, Any
 from unilabos.registry.decorators import device, action, topic_config, not_action
 
 try:
-    from unilabos.backend.ros2.base_device_node import BaseROS2DeviceNode
+    from unilabos.client.host.ros2.base_device_node import BaseROS2DeviceNode
 except ImportError:
     BaseROS2DeviceNode = None
 

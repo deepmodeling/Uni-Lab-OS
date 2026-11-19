@@ -391,9 +391,9 @@ materials.assign(node, deducted_uuid, parent="PRCXI_Deck", slot="T3")
 
 `host_node` 对前端画布与工作流暴露**固定的四个物料动作**，方便与 Slave 通信
 和在画布上展示；host_node 服务设备只有一份定义
-（`unilabos/backend/host_services.py` 的 `HostServices`），两种 backend 都经
+（`unilabos/client/host/host_services.py` 的 `HostServices`），两种 backend 都经
 各自的通用设备管线从外部初始化它，动作是同一份共享实现
-（`unilabos/backend/host_material_actions.py`）的薄壳，业务全部走
+（`unilabos/client/host/host_material_actions.py`）的薄壳，业务全部走
 `materials.*`：
 
 | 动作                      | 语义        | 底层                                                     |
@@ -478,8 +478,8 @@ transfer_resource`，与机械臂 pick/place 流使用同一转移语义。
 | 职责                                                           | 模块                                                                                  |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | 物料门面（create/ensure/get/search/assign/transfer/update/内容物）    | `unilabos/resources/materials.py`                                                   |
-| 设备侧投影（append_resource/update_resource/material_sync/回调）      | `unilabos/backend/runtime/node.py`                                                   |
-| 权威快照/移动/乐观锁与观察者                                              | `unilabos/backend/runtime/resource.py`                                               |
+| 设备侧投影（append_resource/update_resource/material_sync/回调）      | `unilabos/client/host/runtime/node.py`                                                   |
+| 权威快照/移动/乐观锁与观察者                                              | `unilabos/client/host/runtime/resource.py`                                               |
 | 权威服务与存储                                                      | `unilabos/server/services/materials.py`、`server/database/repositories/materials.py` |
 | PLR ↔ 权威协议适配（草稿校验/快照投影/Site sidecar）                         | `unilabos/resources/adapters/plr_materials.py`                                         |
-| HostLink 下行分发                                                | `unilabos/backend/hostlink/backend.py`、`unilabos/backend/ros2/hostlink_bridge.py`                    |
+| HostLink 下行分发                                                | `unilabos/client/host/hostlink/backend.py`、`unilabos/client/host/ros2/hostlink_bridge.py`                    |

@@ -200,10 +200,10 @@ else:
 
 | 内容 | 路径 |
 |------|------|
-| 协议执行回调 | `unilabos/backend/ros2/presets/workstation.py` |
-| ROS 消息映射 | `unilabos/backend/ros2/msgs/message_converter.py` |
+| 协议执行回调 | `unilabos/client/host/ros2/presets/workstation.py` |
+| ROS 消息映射 | `unilabos/client/host/ros2/msgs/message_converter.py` |
 | 物理拓扑图（装配） | `unilabos/server/services/materials/graph.py` (`load_graph_payload`) |
-| 物理拓扑图（读取） | `unilabos/backend/runtime/workstation_protocol.py` (`physical_setup_graph()`) |
+| 物理拓扑图（读取） | `unilabos/client/host/runtime/workstation_protocol.py` (`physical_setup_graph()`) |
 | 单位解析 | `unilabos/experiments/compile/utils/unit_parser.py` |
 | 容器解析 | `unilabos/experiments/compile/utils/vessel_parser.py` |
 | 溶解协议（组合示例） | `unilabos/experiments/compile/dissolve_protocol.py` |

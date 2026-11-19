@@ -8,7 +8,7 @@ description: Operate Uni-Lab host node via REST API — create resources, test l
 ## 设备信息
 
 - **device_id**: `host_node`
-- **Python 源码**: `unilabos/backend/ros2/presets/host_node.py`
+- **Python 源码**: `unilabos/client/host/ros2/presets/host_node.py`
 - **设备类**: `HostNode`
 - **动作数**: 4（`create_resource`, `test_latency`, `test_resource`, `manual_confirm`）
 

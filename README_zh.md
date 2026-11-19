@@ -165,7 +165,7 @@ Backend 权威承接。WebSocket 只传短通知，完整权威内容通过 HTTP
 
 对旧云端 Backend（`job_start` / `host_node_ready` 消息族、`/ws/schedule` 在
 HTTP 端口 `+1`）的兼容不再由 Edge 自动选择：它收敛在
-`unilabos.server.backend.legacy_adaptor.legacy`，由 Backend 侧显式装配
+`unilabos.client.host.legacy_adaptor.legacy`，由 Backend 侧显式装配
 （`BackendSessionFactory.create_legacy_client()`、
 `build_legacy_backend_websocket_url()`）。地址派生与 Edge 连接工厂都不再按
 legacy 探测分叉。

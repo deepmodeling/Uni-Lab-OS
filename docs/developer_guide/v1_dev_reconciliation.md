@@ -32,7 +32,7 @@
 | I03 | 未完整 | **部分** | 搬运 / 分装按执行回执结算（`materials/execution.py`）；同一节点在分装来源上声明的内容物预留按分装实际取走的量结算、不再按计划量重复扣减（V1 `settled_quantity`，`test_workflow_physical_recovery.py::test_aliquot_source_*`）；人工计数盘点已有；按测量作业证据自动盘点未实现 |
 | I04 | 已修复 | 已修复 | |
 | P01 | FE 未兼容 | 后端已实现 | `/workflows/{uuid}/run-preflight`，接受 `inventory_bindings` 并按绑定的来源检查库存（与建任务同一规则，对不上声明需求的绑定报 `invalid_inventory_binding`）；正式 FE 对接见 F 行 |
-| R01 | 尚未移植 | 已实现 | `server/backend/execution_start.py`（开始许可；应答不确定时禁止再调用驱动，保留资源等待核实） |
+| R01 | 尚未移植 | 已实现 | `client/host/execution_start.py`（开始许可；应答不确定时禁止再调用驱动，保留资源等待核实） |
 | R02 | 未完全等同 | 基本完成 | 持久 claim / lease、硬超时保锁（ADR 0008）、重启恢复与人工裁决；容器内物质预留的恢复随 I02 补。失败动作被人工替换为成功（`operator_intervention`）时，库存对账沿用失败时已到达的隔离 / 释放结算，不再每 5 秒报“成功尝试与已释放或隔离的库存冲突”并全局暂停派发；设备回执的成功遇到隔离 / 释放仍是冲突（[库存恢复](workflow_inventory_recovery.md)，`test_workflow_inventory_recovery.py::test_failed_action_replaced_by_operator_success_does_not_pause_dispatch`） |
 | R03 | 无 | 已实现 | 调度容量（U01 汇总 C12）按 V1 默认值：全局在途作业 100、全局运行任务 500、每工作流运行任务 100（`BasicConfig.scheduler_max_*`），超出的任务保持 `pending`、作业带 `job_dispatch_capacity` 排队，按先后放行，不失败（`test_scheduler_capacity.py`） |
 | R04 | 无（负责人 11-17 在物料生命周期「节点就绪」后批注 TODO） | 已实现 | 派发前物料健全性检查（`scheduler/material_sanity.py`）：节点就绪、解析物料 / 物理合同之前向物料权威一次批量只读（`material_sanity_facts`，HTTP `POST /inventory/material-sanity`）；物料被删除 / 消耗 / 退役 / 隔离、被其他任务已开始的预留占着、规划后被挪离搬运合同声明的来源库位、本作业预留失效或分配对不上 → 动作执行前预检决策（`code=material_sanity`，恢复后重试即派发）；被另一作业未结算的物理动作或其他任务的有效预留占着 → 排队（`site_claimed` / `inventory_reserved_by_other_tasks`）；引用从未登记的物料照常按合同错误失败（`tests/server/test_material_sanity.py`） |
@@ -149,8 +149,8 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | 启动 | `app/backend_main.py` 的主进程持有 Scheduler / Workflow / Registry / Materials，默认监督 Host 子进程；Host 子进程不持有物料，开机图的节点与连线都经物料客户端写进权威（连线 `POST /api/v1/materials/links/ensure`，`tests/app/test_startup_graph_links.py`） | `app/runtime_topology.py`、`workspace_host/`；combined / workspace_backend / edge_runtime 角色 | 保留 Dev；不另搬 process_management 来重复监督主进程 |
 | 运行时拓扑 | 单主 Host/runtime（可本地或远端），下接多个 HostLink slave；支持设备进程管理与包安装 | V1 自身的 runtime、workspace 生命周期与控制面约定 | 按用户确认保留一个 backend 对应一个主 runtime，多主 Host 不在目标范围 |
 | 浏览器入口 | 主进程统一 API 地址；Host 专属请求经 runtime.v1 通道代理，Host 不另占 HTTP 端口 | V1 本地 Console 及独立前端协议 | 正式 UI 使用 Uni-Lab FE；删除主仓库 React 调试站，继续保留 API、OpenAPI、SSE 与代理 |
-| 设备 | `backend/runtime` 公共内核 + HostLink / 可选 ROS2；工作目录中的设备包和 slave | V1 工站执行适配、包目录和作者编译 | 保留 Dev 驱动生命周期；只抽取需要的合同/编排能力 |
-| 调度 | `server/backend/scheduler`；并行 DAG、动作/物料互斥、FIFO、原生授锁插件和 Python fallback | `app/scheduler`、`workflow`、`scheduling`；控制区域、资源区间、Claim/Lease、开始许可、引擎协议 | 功能逐项适配；原生授锁插件不等于 V1 全部排程引擎 |
+| 设备 | `client/host/runtime` 公共内核 + HostLink / 可选 ROS2；工作目录中的设备包和 slave | V1 工站执行适配、包目录和作者编译 | 保留 Dev 驱动生命周期；只抽取需要的合同/编排能力 |
+| 调度 | `server/scheduler`；并行 DAG、动作/物料互斥、FIFO、原生授锁插件和 Python fallback | `app/scheduler`、`workflow`、`scheduling`；控制区域、资源区间、Claim/Lease、开始许可、引擎协议 | 功能逐项适配；原生授锁插件不等于 V1 全部排程引擎 |
 | 库存 | `server/services/materials` + `protocol/materials.py` + `client/materials`；lot / instance / substance / 命令流水 | reagent/current_substance、数量预留、跨库协调及物理效果结算 | 保留 Dev 数据权威，补语义与迁移；不复制第二套库存库 |
 | 工作流作者 | `registry/workflows.py` 的 `ctx.run` / `ctx.run_template` / 循环；任务冻结计划 | `workflow/authoring.py`、Python AST、条件区域、group/parallel、资源使用区间 | 运行能力与作者语法分开验收 |
 
@@ -161,7 +161,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 | ID | 状态 | 决定与证据 |
 | --- | --- | --- |
 | D01 | 本地已完成 | 删除 `frontend/` 全部 React 调试站及 `tests/frontend/test_debug_console_api.py`；README 改指正式前端。后端 OpenAPI 导出和 API 测试保留。 |
-| D02 | 已完成（11-14 复核） | 状态/重启/重置 DTO 与 SDK 归入 protocol/runtime、client/runtime；drain 三个接口接入 server/backend 与 server/api/runtime。保留 Dev 主进程监督；布局、模板及旧操作日志尚不能判为已消解。 |
+| D02 | 已完成（11-14 复核） | 状态/重启/重置 DTO 与 SDK 归入 protocol/runtime、client/runtime；drain 三个接口接入 server/lifecycle/drain.py 与 server/api/runtime。保留 Dev 主进程监督；布局、模板及旧操作日志尚不能判为已消解。 |
 | D03 | 拓扑按设计消解，现场验收待做 | 一个 backend 对应一个主 Host/runtime，下接多个 slave；符合本轮用户确认，不再把多主 Host 列为缺失能力。现有 supervisor、device-processes、driver-packages、HostLink 覆盖基本路径，真实工站验收列 T02。 |
 | D04 | 按设计消解 | 保留并行任务和任务级单步；不将 V1 当前工站级单步准入策略直接复制过来。 |
 | D05 | 按设计消解 | 保留原生授锁插件可选、加载失败回退 Python；保留版本化数据库迁移机制。0.13 发布线四个库都从 schema v1 开始（2026-11-13 把开发期 runtime v2–v12、materials v2–v8 迁移链压平为 v1 基线），旧开发库没有迁移路径：runtime / materials 拒绝启动（`database_rebuild_on_mismatch` 可显式允许备份后重建），telemetry / history 自动备份后重建；发布前的结构变化直接并进 v1，发布后改结构从 v2 起追加迁移。四个库的位置、根目录锁、打开判定、表清单与备份 / 重置见 [微后端数据库](databases.md)。准入的等待顺序按 V1 的老化优先级 FIFO 持久化在 `runtime.db`（让行不闭合等待环）；授予策略插件只裁决恢复路径上的内存争用。 |
@@ -198,7 +198,7 @@ PR #329–357 已合并；#358 是本次唯一尚未合并的 PR。其他人的 
 
 按用户最新定义：共享资源在所有者空闲期间可以借给其他任务；独占资源在占用区间内不能借出。两者在真正使用期间都需要互斥。“共享”不是读写锁中的共享读，也不是允许两个设备同时拿同一件物料。
 
-历史要求“默认加锁”已有实现。Dev 的 `registry/material_locks.py` 生成默认锁列表（2026-11-17 起驱动不能再按动作改写，见 M01），`server/backend/scheduler/resource_manager.py` 一次申请完整锁集合；已开始动作的取消在实际结束前不释放，未知执行等待核实。已有 `begin_handoff` 会把所有权直接交给后继，并验证物料 handle 证据；这种交接不等于把资源空闲期借给第三个任务。
+历史要求“默认加锁”已有实现。Dev 的 `registry/material_locks.py` 生成默认锁列表（2026-11-17 起驱动不能再按动作改写，见 M01），`server/scheduler/resource_manager.py` 一次申请完整锁集合；已开始动作的取消在实际结束前不释放，未知执行等待核实。已有 `begin_handoff` 会把所有权直接交给后继，并验证物料 handle 证据；这种交接不等于把资源空闲期借给第三个任务。
 
 V1 的 `scheduling/resource_bindings.py` 区分完整绑定和 `active_resource_ids`，支持显式区间内纯所有权共享、活动使用互斥。这可作为 M02 参考，但不能仅凭名字中的 shared 就断言已覆盖用户所说的跨任务空闲借出。`MaterialLock(free=True)` 是免锁，不是默认共享锁；2026-11-17 起它与 `materials_free` 一样被忽略。
 

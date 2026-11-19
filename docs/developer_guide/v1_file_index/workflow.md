@@ -1,6 +1,6 @@
 # U01 workflow 区：V1.0 `unilabos/workflow/` → 统一分支（#361 `6f94ec04`）逐文件核验
 
-范围：129 个 V1 文件（V1 `690491a3`，共 85644 行）。只读核验；对照对象是统一分支 `server/services/runtime/workflow/`、`server/backend/scheduler/`、`server/backend/`、`server/services/runtime/`、`registry/workflow*.py`、`protocol/runtime|utils/`。“#n”指 [README](README.md)「已定的有意不移植」编号，W/A/I/R/D/F 指 `v1_dev_reconciliation.md` 的 ID。
+范围：129 个 V1 文件（V1 `690491a3`，共 85644 行）。只读核验；对照对象是统一分支 `server/services/runtime/workflow/`、`server/scheduler/`、`server/` 与 `client/host/` 下的执行协调模块、`server/services/runtime/`、`registry/workflow*.py`、`protocol/runtime|utils/`。“#n”指 [README](README.md)「已定的有意不移植」编号，W/A/I/R/D/F 指 `v1_dev_reconciliation.md` 的 ID。
 
 ## 统计
 
@@ -54,7 +54,7 @@
 | `unilabos/workflow/composite_graph_rewrite.py` | 517 | PARTIAL | composite_expansion.py 已重映射条件引用（`remap_expression`、`bind_condition_inputs`、condition_guards）与静态实参 | 缺 `project_experiment_operation_resource_scopes`/`merge_expanded_resource_scopes`：子实验操作 meta `resource_scopes` 不投影进父图（全仓无生成 `composite_invocation_uuid` 作用域的代码，definition_edit 只有过滤分支），子操作里的 `ctx.lock/resource_scope` 被调用后失效 |
 | `unilabos/workflow/composite_inventory_requirements.py` | 184 | PORTED | composite_expansion.py 对节点 `meta_data.inventory_requirements` 做 `map_input_bindings` / `remap_result_bindings` | dev 需求挂在节点元数据上，不是独立 requirement 表 |
 | `unilabos/workflow/composite_invocation.py` | 606 | PORTED | service.py `insert_composite_invocation` + publication.py `merged_invocation_entities`；`POST /workflows/{uuid}/composite-invocations` V1 body（route map p7-a） |  |
-| `unilabos/workflow/composition.py` | 1137 | PORTED | server/backend/composition.py `setup_local_scheduler`（configure_authoring、FrontendEventRetention、scheduler.start(recover=True)） | 不做领域包源码发现与固定点激活（#4）；启动时不调用 `recover_registered_sources`、不起源码监视器（见 source_monitor） |
+| `unilabos/workflow/composition.py` | 1137 | PORTED | server/execution_composition.py `setup_local_scheduler`（configure_authoring、FrontendEventRetention、scheduler.start(recover=True)） | 不做领域包源码发现与固定点激活（#4）；启动时不调用 `recover_registered_sources`、不起源码监视器（见 source_monitor） |
 | `unilabos/workflow/control_expression.py` | 179 | PORTED | unilabos/protocol/runtime/condition.py（validate_expression / evaluate_condition / strict_bool） |  |
 | `unilabos/workflow/convert_from_json.py` | 319 | PORTED | server/services/runtime/workflow/convert_from_json.py |  |
 | `unilabos/workflow/definition_edit.py` | 278 | PORTED | server/services/runtime/workflow/definition_edit.py + definition_service.py（单节点/单连线/批量删除/复制，整图 CAS 保存） |  |
@@ -67,14 +67,14 @@
 | `unilabos/workflow/error_control.py` | 2017 | PORTED | server/services/runtime/station_handling.py（workflow_station_error / error_session / station_control / control_command）；`/api/v1/stations/{id}/*`（route map p7-b） |  |
 | `unilabos/workflow/error_handling.py` | 119 | PORTED | station_handling.py `StationHandling` + services/runtime/error_decisions.py `ErrorDecisionDesk` |  |
 | `unilabos/workflow/event_reader.py` | 175 | PORTED | store.py `list_events`（frontend_event 游标）+ `/api/v1/events` SSE（Last-Event-ID） |  |
-| `unilabos/workflow/event_retention.py` | 95 | PORTED | server/services/runtime/workflow/event_retention.py `FrontendEventRetention`（composition.py 启动） |  |
+| `unilabos/workflow/event_retention.py` | 95 | PORTED | server/services/runtime/workflow/event_retention.py `FrontendEventRetention`（execution_composition.py 启动） |  |
 | `unilabos/workflow/event_writer.py` | 85 | PORTED | store.py `_append_event`（frontend_event） | V1 单独的运行日志由 frontend_event 投影承担（`/workflow-tasks/{uuid}/events`） |
 | `unilabos/workflow/execution_claim.py` | 503 | PORTED | server/services/runtime/workflow/execution_claim.py `ExecutionClaims`（reserve / fencing / seal_dispatch / begin_execution / uncertain / timed_out） | ADR 0008 |
 | `unilabos/workflow/execution_lock_lease.py` | 1500 | PORTED | execution_claim.py 租约 + resource_intervals.py + resource_waiters.py（老化优先级 FIFO）；`/workflow-tasks/{uuid}/execution-locks` + force-release |  |
 | `unilabos/workflow/execution_plan.py` | 2206 | PORTED | service.py `_build_execution_plan`（冻结计划、topological_index、on_ready 需求） | 执行种类差异见 _execution_plan_graph |
 | `unilabos/workflow/execution_resource_policy.py` | 347 | PARTIAL | scheduler/physical_contract.py、tenancy_contract.py、registry/action_resource_contract.py、resource_plan.py（静态取得顺序/死锁检查） | 缺「部署定义的命名库位组 / 等价库位组」：V1 `target_site_group` + `site_group()` 在建任务时由库存冻结为候选 Site UUID（V1 `inventory/site_selection.py`）；统一分支全仓无 site group 概念，动作目标库位只能固定 SiteSlot |
-| `unilabos/workflow/execution_restart_recovery.py` | 433 | DROPPED | ADR 0007（取代 V1 ADR 0005）：Host 重启不整体失败任务，未决 attempt 转 execution_unknown 人工核对，锁/区间保留 | server/backend/coordinator.py `restore()`；共同原则（不伪造失败、超时不释放）保留 |
-| `unilabos/workflow/execution_started.py` | 104 | PORTED | server/backend/execution_start.py + execution_claim.py `record_start_receipt`（调用边界回执） | R01 |
+| `unilabos/workflow/execution_restart_recovery.py` | 433 | DROPPED | ADR 0007（取代 V1 ADR 0005）：Host 重启不整体失败任务，未决 attempt 转 execution_unknown 人工核对，锁/区间保留 | client/host/edge_executor.py `restore()`；共同原则（不伪造失败、超时不释放）保留 |
+| `unilabos/workflow/execution_started.py` | 104 | PORTED | client/host/execution_start.py + execution_claim.py `record_start_receipt`（调用边界回执） | R01 |
 | `unilabos/workflow/execution_wait_graph.py` | 131 | PORTED | task_lifecycle.py `TaskObservability.wait_graph`（Tarjan）；`/workflow-runtime/wait-graph` |  |
 | `unilabos/workflow/from_python_script.py` | 241 | PORTED | scripts/workflow/from_python_script.py | 一次性导入转换器移到 scripts/（AGENTS.md） |
 | `unilabos/workflow/from_xdl.py` | 131 | PORTED | scripts/workflow/from_xdl.py | 同上 |
@@ -89,7 +89,7 @@
 | `unilabos/workflow/job_evidence.py` | 455 | PORTED | runtime.db `workflow_node_job_feedback_history` + service.py `list_node_job_results` / `list_node_job_feedback_history`；`/workflow-node-jobs/{uuid}/feedback` |  |
 | `unilabos/workflow/json_codec.py` | 340 | PORTED | unilabos/protocol/utils/json_codec.py |  |
 | `unilabos/workflow/legacy/convert_from_json_legacy.py` | 356 | PORTED | scripts/workflow/legacy/convert_from_json_legacy.py |  |
-| `unilabos/workflow/local_effects.py` | 27 | PORTED | server/backend/inventory.py `ExecutionInventoryCoordinator`（驱动调用前校验预占）+ scheduler/inventory_recovery.py（固定幂等身份） |  |
+| `unilabos/workflow/local_effects.py` | 27 | PORTED | server/inventory.py `ExecutionInventoryCoordinator`（驱动调用前校验预占）+ scheduler/inventory_recovery.py（固定幂等身份） |  |
 | `unilabos/workflow/manual_action_review.py` | 38 | PORTED | station_handling.py `_review_version` / manual_review；`/stations/{id}/manual-action-jobs/{uuid}/review` |  |
 | `unilabos/workflow/manual_confirmation.py` | 353 | PARTIAL | store.py 人工确认表 + service.py `open/decide/expire_workflow_manual_confirmation`；scheduler/service.py 对 `manual_confirm` 动作开确认单 | 节点级 `manual_confirmation.timeout_seconds` 只持久化、不生效（route map p7-a 自述）：dev 超时取 `manual_confirm` 动作参数；V1「人工确认包装真实设备动作」的节点配置被忽略 |
 | `unilabos/workflow/material_aliquot_settlement.py` | 106 | PORTED | server/services/materials/execution.py 分装结算 + scheduler/physical_recovery.py | A03 / I03 |
@@ -106,8 +106,8 @@
 | `unilabos/workflow/published_workflow_runtime.py` | 541 | PORTED | server/services/runtime/workflow/published_workflow_runtime.py |  |
 | `unilabos/workflow/python_workflow_import.py` | 150 | PORTED | service.py `import_python_workflow`；`POST /local/workflows/import-python` | 只解析不导入 |
 | `unilabos/workflow/quantity_inventory.py` | 1445 | PARTIAL | materials/quantity.py、contents.py、scheduler/attempt_inventory.py、inventory_recovery.py（I02：批次/内容物预留、多任务共享、结算与恢复） | 任务级 `inventory_bindings`（逻辑需求键→本次实际使用的试剂/当前内容物 + 预留量）在建任务时由 `task_lifecycle.py:bind_plan_inventory` 落到冻结计划里对应的 `kind="content"` 需求（换成绑定的容器与内容物，单位、预留量对不上或找不到需求即拒绝建任务，不静默丢弃），之后的预留、预检与恢复都按绑定的来源进行；运行预检按同一规则检查（`run_preflight.py`）。仍有差异：只有 `content` 需求能绑定，`lot` / `material` 需求的绑定被拒绝，来源或数量写成入口 / 上游引用的需求也不能再绑定 |
-| `unilabos/workflow/resource_lock_key.py` | 231 | PORTED | server/backend/scheduler/resource_keys.py（逐函数相同） |  |
-| `unilabos/workflow/resource_lock_plan.py` | 2275 | PORTED | server/backend/scheduler/resource_plan.py（逐函数相同）+ interval_plan.py |  |
+| `unilabos/workflow/resource_lock_key.py` | 231 | PORTED | server/scheduler/resource_keys.py（逐函数相同） |  |
+| `unilabos/workflow/resource_lock_plan.py` | 2275 | PORTED | server/scheduler/resource_plan.py（逐函数相同）+ interval_plan.py |  |
 | `unilabos/workflow/resource_reference.py` | 82 | PORTED | scheduler/materials.py `material_uuids_for_parameters` + run_preflight.py `validate_resource_values` | V1 `resource_ref()` 语法不保留；物料身份由 ResourceSlot 参数值经物料权威解析 |
 | `unilabos/workflow/resource_usage.py` | 58 | PORTED | station_handling.py `/stations/{id}/resource-usage`；`/scheduler/resources` |  |
 | `unilabos/workflow/run_preflight.py` | 391 | PORTED | server/services/runtime/workflow/run_preflight.py；GET/POST `/workflows/{uuid}/run-preflight` | `inventory_bindings` 只回显不参与检查（缺口记在 quantity_inventory） |
@@ -148,7 +148,7 @@
 | `unilabos/workflow/task_input.py` | 928 | PORTED | entry_parameters.py + service.py `create_workflow_task` / `edit_workflow_task_input`（仅暂停时、已派发消费的入口参数拒绝修改）+ 单作业参数 PATCH | 库位组冻结缺口见 execution_resource_policy |
 | `unilabos/workflow/task_material_admission.py` | 495 | DROPPED | #6（任务级缺料直接失败 `plan_not_executable`，不排队等待入库） | 物料占有由 dev 预留 + 默认物料锁承担 |
 | `unilabos/workflow/task_runtime_projection.py` | 4539 | PORTED | #4：scheduler/service.py 经 WorkflowService（`record_workflow_node_job_terminal`、`mark_workflow_node_job_*` 等）原子落 Task/Job/Claim 事实 |  |
-| `unilabos/workflow/task_scheduler_bridge.py` | 4787 | PORTED | #4：server/backend/scheduler/service.py `BackendScheduler`（任务编译、恢复、生命周期） |  |
+| `unilabos/workflow/task_scheduler_bridge.py` | 4787 | PORTED | #4：server/scheduler/service.py `BackendScheduler`（任务编译、恢复、生命周期） |  |
 | `unilabos/workflow/template_projection_generation.py` | 199 | PORTED | node_templates.py（注册表指纹不变不重算）+ services/runtime/registry.py 版本 | 代际不单独持久化 |
 | `unilabos/workflow/template_projection_store.py` | 909 | PORTED | node_templates.py `project_registry_templates`（workflow_node_template / workflow_handle_template，V1 固定 UUID 命名空间） |  |
 | `unilabos/workflow/wf_utils.py` | 151 | PORTED | server/services/runtime/workflow/upload.py + app/cli/workflow.py（`unilab workflow upload`） |  |

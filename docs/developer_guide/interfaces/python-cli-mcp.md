@@ -70,11 +70,11 @@ authoring 等待是独立的 HTTP 状态等待，不应与 watch_task 的 SSE �
 
 | 层 | Python 命名空间 |
 | --- | --- |
-| 传输无关动作/物料内核 | backend.runtime.node.DeviceNode |
-| HostLink Python 执行 | backend.hostlink.local_runtime |
-| ROS2 节点包装 | backend.ros2.device_node_wrapper |
-| Host 公共物料/管理动作 | backend.host_services.HostServices |
-| 工站编排 | backend.hostlink.workstation / backend.ros2.presets.workstation |
+| 传输无关动作/物料内核 | client.host.runtime.node.DeviceNode |
+| HostLink Python 执行 | client.host.hostlink.local_runtime |
+| ROS2 节点包装 | client.host.ros2.device_node_wrapper |
+| Host 公共物料/管理动作 | client.host.host_services.HostServices |
+| 工站编排 | client.host.hostlink.workstation / client.host.ros2.presets.workstation |
 
 Workstation/sub-device 也初始化对应 backend 的节点并登记实际能力，不能只 new 一个 Python 驱动对象，
 否则可能“实例存在，但 service/action 没有路由”。不要求每个驱动直接继承 ROS2DeviceNode 才能使用普通通信。
@@ -272,7 +272,7 @@ GET/POST/DELETE；当前 stateless、JSON 响应模式。它独立于 SSE 观察
 
 ## Legacy 的确切边界
 
-旧云端适配保留在 `server.backend.legacy_adaptor.legacy`，
+旧云端适配保留在 `client.host.legacy_adaptor.legacy`，
 由 `BackendSessionFactory.create_legacy_client()` 显式构造。
 Edge 默认工厂固定 runtime.v1；没有自动探测旧调度协议，也没有当前可用的 `--legacy` CLI 参数。
 不能把历史讨论的 CLI/deprecation 计划当成当前已发布接口。

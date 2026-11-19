@@ -11,7 +11,7 @@ Status: accepted（2026-11-12，统一分支）
 
 - Host 重新启动时，本地执行库中仍处于 `dispatched` / `running` 的 job 属于上一个 Host 进程，
   动作已随进程中断、结果无法确认，统一转为 `execution_unknown`（`error_code=host_restarted`），
-  **不重放**设备调用（`server/backend/coordinator.py` `restore()`）。
+  **不重放**设备调用（`client/host/edge_executor.py` `restore()`）。
 - 调度权威依据 Host 身份变化为这些 attempt 打开人工核对决定（`list_reconciliation_decisions`
   / `resolve_reconciliation_decision`，对外为 `/api/v1/error-decisions`）。操作员核实现场后选择
   重试、跳过、人工干预或终止；任务按决定继续或结束。
@@ -35,7 +35,7 @@ Host 重启（升级驱动包、进程崩溃恢复）比真正的现场事故更
 
 ## 已知缺口
 
-- ~~硬超时（`server/backend/execution.py` `_handle_hard_timeout`）在 abort / retry 后会释放资源，
+- ~~硬超时（`client/host/execution.py` `_handle_hard_timeout`）在 abort / retry 后会释放资源，
   而同步驱动可能仍在执行，与本 ADR“超时不构成释放证据”的原则冲突（差异核查编号 SC-N5）。~~
   已由 [0008](0008-timeout-settles-attempt-but-keeps-locks.md) 解决：attempt 照常结算，锁保留到
   驱动真实返回或人工强制释放，并跨调度权威重启保留。

@@ -6,6 +6,7 @@
 
 import copy
 import importlib
+import importlib.util
 import inspect
 import io
 import os
@@ -15,7 +16,7 @@ import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import AbstractSet, Any, Dict, List, Optional, Tuple, Union
 
 import yaml
 
@@ -107,6 +108,41 @@ _module_hash_cache: Dict[str, Optional[str]] = {}
 #: ``--external_devices_only`` 下仍从核心注册表加载的资源模板（相对 ``unilabos/registry``）：
 #: 图里的容器节点都引用 ``container``，驱动包不会自带它。
 EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/container.yaml",)
+
+#: 只有 ROS 2 backend 用得到的核心包：ROS 2 transport 与 ROS 专用的内置设备。backend 不是 ros2 时
+#: 建注册表不导入其中任何模块（没装 ROS 也不会因缺 rclpy 报错），``--check_mode`` 也不校验它们。
+ROS2_ONLY_CORE_MODULES: Tuple[str, ...] = ("unilabos.client.host.ros2", "unilabos.devices.ros_dev")
+#: 其中整个不扫描的目录（相对 ``unilabos`` 包）：``devices/ros_dev`` 只有 ROS 2 节点，没有注册表条目。
+#: ROS 2 transport 的预置设备（``camera``、YAML 声明的 ``serial``）照常登记：HostLink 据它们的
+#: ``supported_backends`` 把图里这类节点标为不可用、其余设备照常启动，缺条目则会让启动失败。
+ROS2_ONLY_SCAN_SKIPPED_DIRS: Tuple[str, ...] = ("devices/ros_dev",)
+
+
+def _ros2_installed() -> bool:
+    try:
+        return importlib.util.find_spec("rclpy") is not None
+    except (ImportError, ValueError):
+        # 查找本身失败（例如环境用导入钩子禁止 ROS）：当作没装
+        return False
+
+
+def ros2_core_enabled(backend: Optional[str]) -> bool:
+    """建注册表时是否导入、校验 ROS 2 专用核心代码（:data:`ROS2_ONLY_CORE_MODULES`），是否扫描
+    :data:`ROS2_ONLY_SCAN_SKIPPED_DIRS`。
+
+    知道 backend（运行时的 ``--backend``）时只有 ``ros2`` 才是。不知道 backend（库调用、
+    ``--check_mode``）时看本机：装了 ROS 2（找得到 ``rclpy``）就照常导入、照常校验，没装就静默跳过。
+    """
+    if backend is not None:
+        return str(backend) == "ros2"
+    return _ros2_installed()
+
+
+def _is_ros2_core_module(module: Any) -> bool:
+    from unilabos.registry.package_layout import module_in_prefix
+
+    return any(module_in_prefix(module, prefix) for prefix in ROS2_ONLY_CORE_MODULES)
+
 
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
 def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
@@ -241,6 +277,9 @@ def _default_category(entry: Dict[str, Any], file: Path) -> None:
         category = [category] if category else []
     if not category:
         entry["category"] = [file.stem]
+    elif isinstance(category, (set, frozenset)):
+        # YAML 的 !!set 没有顺序：按名称排，注册表内容不随字符串哈希种子变化
+        entry["category"] = sorted(category, key=str)
     elif not isinstance(category, list):
         entry["category"] = list(category)
     else:
@@ -398,6 +437,14 @@ class Registry:
         self.verify_errors: List[str] = []
         #: 当前 backend 不支持、导入失败只记跳过的设备："<id>: <错误>"
         self.verify_skipped: List[str] = []
+        #: 是否导入、校验 ROS 2 专用核心代码（见 :func:`ros2_core_enabled`）。``setup(backend=...)`` 按 backend
+        #: 决定；``None`` 表示到第一次用到时按「不知道 backend」决定（导入本模块时不探测 ROS）
+        self.include_ros2_core: Optional[bool] = None
+
+    def _uses_ros2_core(self) -> bool:
+        if self.include_ros2_core is None:
+            self.include_ros2_core = ros2_core_enabled(None)
+        return self.include_ros2_core
 
     # ------------------------------------------------------------------
     # 统一入口
@@ -410,12 +457,18 @@ class Registry:
         complete_registry=False,
         external_only=False,
         community_namespaces=None,
+        backend: Optional[str] = None,
     ):
-        """统一构建注册表入口。"""
+        """统一构建注册表入口。
+
+        *backend* 是本进程要启动的通信 backend；``None`` 表示不知道（库调用、``--check_mode``），
+        建注册表时是否导入 ROS 2 专用核心代码见 :func:`ros2_core_enabled`。
+        """
         if self._setup_called:
             logger.critical("[Uni-Lab-OS Registry] setup方法已被调用过，不允许多次调用")
             return
 
+        self.include_ros2_core = ros2_core_enabled(backend)
         self._startup_executor = ThreadPoolExecutor(
             max_workers=8, thread_name_prefix="RegistryStartup"
         )
@@ -584,11 +637,17 @@ class Registry:
             exclude_files = {"host_services.py"}
             if not BasicConfig.extra_resource:
                 exclude_files.add("lab_resources.py")
+            # backend 不是 ros2：devices/ros_dev 整个不扫描（不报错，也不提示）
+            exclude_dirs = (
+                set()
+                if self._uses_ros2_core()
+                else {pkg_root.joinpath(*relative.split("/")) for relative in ROS2_ONLY_SCAN_SKIPPED_DIRS}
+            )
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
-                exclude_files=exclude_files, cache=ast_cache,
+                exclude_files=exclude_files, cache=ast_cache, exclude_dirs=exclude_dirs,
             )
-            logger.info(f"[Uni-Lab-OS Registry] 排除扫描文件: {exclude_files} ")
+            logger.info(f"[Uni-Lab-OS Registry] 排除扫描文件: {sorted(exclude_files)} ")
 
         # host_node 的动作 schema 单独扫描（不进默认扫描与 build 缓存）：
         # AST 扫描不 import 模块，schema-only 模式下同样安全。
@@ -676,8 +735,10 @@ class Registry:
             {
                 "external_only": bool(external_only),
                 "extra_resource": bool(BasicConfig.extra_resource),
-                "devices_dirs": sorted(str(d) for d in extra_dirs),
+                # 命令行顺序就是合并顺序：换了顺序的同一组目录不能复用另一种顺序的结果
+                "devices_dirs": [str(d) for d in extra_dirs],
                 "namespaces": sorted(community_namespaces.items()),
+                "ros2_core": self._uses_ros2_core(),  # 不导入 ROS 2 专用核心代码时条目按 AST 推断
             },
             sort_keys=True,
         )
@@ -692,8 +753,10 @@ class Registry:
             cached_devices = cached_build.get("devices", {})
             cached_resources = cached_build.get("resources", {})
             if set(cached_devices) == set(ast_devices) and set(cached_resources) == set(ast_resources):
-                self.device_type_registry.update(cached_devices)
-                self.resource_type_registry.update(cached_resources)
+                # 按本次扫描的顺序登记：缓存可能是旧版本按线程完成先后写下的。不靠升缓存版本作废它，
+                # 那样每台 Host 都会重新生成一遍资源 config_info，其中的随机 uuid 让每个资源模板都变一版
+                self.device_type_registry.update({did: cached_devices[did] for did in ast_devices})
+                self.resource_type_registry.update({rid: cached_resources[rid] for rid in ast_resources})
                 logger.info(
                     f"[Uni-Lab-OS Registry] build 缓存命中: 跳过 {len(cached_devices)} 设备 + "
                     f"{len(cached_resources)} 资源的 entry 构建"
@@ -1135,6 +1198,9 @@ class Registry:
         module_str = ast_meta.get("module", "")
         file_path = ast_meta.get("file_path", "")
         imap = ast_meta.get("import_map") or {}
+        if not self._uses_ros2_core():
+            # 不导入 ROS 2 专用核心包：这些名字按 AST 推断（与导入失败时同一兜底），没装 ROS 也不报错
+            imap = {name: ref for name, ref in imap.items() if not _is_ros2_core_module(ref)}
 
         # --- status_types (string version) ---
         status_types_str: Dict[str, str] = {}
@@ -1248,7 +1314,7 @@ class Registry:
             result_override = dict(action_args.get("result", {}))
             goal_default_override = dict(action_args.get("goal_default", {}))
 
-            if action_args.get("parent"):
+            if action_args.get("parent") and (self._uses_ros2_core() or not _is_ros2_core_module(module_str)):
                 # @action(parent=True): 直接通过 import class + MRO 获取父类方法签名
                 goal = resolve_method_params_via_import(module_str, method_name)
             else:
@@ -2041,13 +2107,22 @@ class Registry:
 
         返回导入失败列表（同时记入 ``self.verify_errors``）。``supported_backends`` 不含当前
         backend 的设备（如 HostLink 环境里的 ROS 2 专用节点）导入失败只记入
-        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。
+        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。不导入 ROS 2 专用核心代码时
+        （见 :func:`ros2_core_enabled`），类在其中的条目不导入、也不计数。
         """
         errors = []
         skipped: List[str] = []
         import_success_count = 0
         resolved_count = 0
-        total_items = len(self.device_type_registry) + len(self.resource_type_registry)
+
+        def _verifiable(entry: Any) -> bool:
+            # backend 不是 ros2：ROS 2 专用核心代码不导入、不校验（没装 ROS 也不报错、不提示）
+            module = (entry.get("class") or {}).get("module") if isinstance(entry, dict) else None
+            return self._uses_ros2_core() or not _is_ros2_core_module(module)
+
+        devices = {did: entry for did, entry in self.device_type_registry.items() if _verifiable(entry)}
+        resources = {rid: entry for rid, entry in self.resource_type_registry.items() if _verifiable(entry)}
+        total_items = len(devices) + len(resources)
         active_backend = str(BasicConfig.backend or "hostlink")
 
         lock = threading.Lock()
@@ -2126,11 +2201,11 @@ class Registry:
             device_futures = {}
             resource_futures = {}
 
-            for device_id, entry in list(self.device_type_registry.items()):
+            for device_id, entry in devices.items():
                 fut = executor.submit(_verify_device, device_id, entry)
                 device_futures[fut] = device_id
 
-            for resource_id, entry in list(self.resource_type_registry.items()):
+            for resource_id, entry in resources.items():
                 fut = executor.submit(_verify_resource, resource_id, entry)
                 resource_futures[fut] = resource_id
 
@@ -2176,7 +2251,11 @@ class Registry:
         """``--check_mode`` 的失败清单：AST 扫描跳过的文件 + 加载失败的注册表 YAML + 注册类导入失败。"""
 
         failures = [f"AST 扫描失败: {item['file']}: {item['error']}" for item in self.scan_errors]
-        failures.extend(f"注册表 YAML 加载失败: {item['file']}: {item['error']}" for item in self.yaml_errors)
+        # YAML 由线程池并行加载，失败按完成先后记下：按文件排序后再列出
+        failures.extend(
+            f"注册表 YAML 加载失败: {item['file']}: {item['error']}"
+            for item in sorted(self.yaml_errors, key=lambda item: (item["file"], item["error"]))
+        )
         failures.extend(f"导入失败: {item}" for item in self.verify_errors)
         return failures
 
@@ -2316,10 +2395,13 @@ class Registry:
     # ------------------------------------------------------------------
 
     def _load_single_resource_file(
-        self, file: Path, complete_registry: bool
+        self, file: Path, complete_registry: bool, registered: Optional[AbstractSet[str]] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], bool]:
         """
         加载单个资源文件 (线程安全)
+
+        *registered* 是加载这批 YAML 之前已登记的资源 id（AST 扫描等）；给出时只按它判断
+        「已注册、YAML 冗余」，不读其他线程正在合并的注册表。
 
         Returns:
             (data, complete_data, is_valid): 资源数据, 完整数据, 是否有效
@@ -2343,7 +2425,7 @@ class Registry:
                 continue
 
             # AST 已有该资源 → 跳过，提示冗余
-            if self.resource_type_registry.get(resource_id):
+            if (resource_id in registered) if registered is not None else self.resource_type_registry.get(resource_id):
                 logger.warning(
                     f"[Uni-Lab-OS Registry] 资源 '{resource_id}' 已由 AST 扫描注册，"
                     f"YAML 定义冗余，跳过 YAML 处理"
@@ -2412,7 +2494,8 @@ class Registry:
         abs_path = Path(path).absolute()
         resources_path = abs_path / "resources"
         if files is None:
-            files = list(resources_path.rglob("*.yaml"))
+            # 文件系统的遍历顺序因机器而异：排好序，条目顺序与同 id 冲突的结果处处一致
+            files = sorted(resources_path.rglob("*.yaml"))
         else:
             files = [Path(file).absolute() for file in files if Path(file).is_file()]
         logger.trace(
@@ -2424,16 +2507,19 @@ class Registry:
 
         import hashlib as _hl
 
+        # 加载这批 YAML 之前已登记的资源（AST 扫描等）：YAML 里同 id 的条目冗余，跳过
+        registered = frozenset(rid for rid, entry in self.resource_type_registry.items() if entry)
         # --- YAML-level cache: per-file entries with config_info ---
         config_cache = self._load_config_cache() if upload_registry else None
         yaml_cache: dict = config_cache.get("_yaml_resources", {}) if config_cache else {}
         yaml_cache_hits = 0
         yaml_cache_misses = 0
+        cached_entries: Dict[Path, Dict[str, Any]] = {}
         uncached_files: list[Path] = []
         yaml_file_rids: dict[str, list[str]] = {}
 
         if complete_registry:
-            uncached_files = files
+            uncached_files = list(files)
             yaml_cache_misses = len(files)
         else:
             for file in files:
@@ -2455,28 +2541,42 @@ class Registry:
                         # 空文件（{} / 全注释）的 entries 是空字典，同样算命中：否则它每次启动
                         # 都被当成缺失，触发重新加载并把十几 MB 的缓存整体重写一遍
                         if all_ok and cached.get("entries") is not None:
-                            for rid, entry in cached["entries"].items():
-                                if _in_scope(entry):
-                                    self.resource_type_registry[rid] = entry
+                            cached_entries[file] = cached["entries"]
                             yaml_cache_hits += 1
                             continue
                 uncached_files.append(file)
                 yaml_cache_misses += 1
 
-        # Process uncached YAML files with thread pool
+        # 没命中缓存的文件交给线程池解析；登记一律按上面排好的文件顺序，与缓存状态、线程完成先后无关
         executor = self._startup_executor
-        future_to_file = {
-            executor.submit(self._load_single_resource_file, file, complete_registry): file
+        futures = {
+            file: executor.submit(self._load_single_resource_file, file, complete_registry, registered)
             for file in uncached_files
         }
+        loaded_from: Dict[str, Path] = {}
 
-        for future in as_completed(future_to_file):
-            file = future_to_file[future]
+        def _register(file: Path, entries: Dict[str, Any]) -> None:
+            # 同一个 id 出现在几个 YAML 里：排在前面的文件生效，与已登记的 AST 条目优先同一规则
+            for rid, entry in entries.items():
+                if rid in registered or not _in_scope(entry):
+                    continue
+                if rid in loaded_from:
+                    logger.warning(
+                        f"[Uni-Lab-OS Registry] 资源 '{rid}' 已在 {loaded_from[rid]} 定义，忽略 {file} 中的同名定义"
+                    )
+                    continue
+                loaded_from[rid] = file
+                self.resource_type_registry[rid] = entry
+
+        for file in files:
+            if file in cached_entries:
+                _register(file, cached_entries[file])
+                continue
             try:
-                data, complete_data, is_valid = future.result()
+                data, complete_data, is_valid = futures[file].result()
                 if is_valid:
                     complete_data = {rid: entry for rid, entry in complete_data.items() if _in_scope(entry)}
-                    self.resource_type_registry.update(complete_data)
+                    _register(file, complete_data)
                     file_key = str(file.absolute()).replace("\\", "/")
                     yaml_file_rids[file_key] = list(complete_data.keys())
             except Exception as e:
@@ -2523,10 +2623,13 @@ class Registry:
             )
 
     def _load_single_device_file(
-        self, file: Path, complete_registry: bool
+        self, file: Path, complete_registry: bool, registered: Optional[AbstractSet[str]] = None,
     ) -> Tuple[Dict[str, Any], Dict[str, Any], bool, List[str]]:
         """
         加载单个设备文件 (线程安全)
+
+        *registered* 是加载这批 YAML 之前已登记的设备 id（AST 扫描等）；给出时只按它判断
+        「已注册、YAML 冗余」，不读其他线程正在合并的注册表。
 
         Returns:
             (data, complete_data, is_valid, device_ids): 设备数据, 完整数据, 是否有效, 设备ID列表
@@ -2583,7 +2686,7 @@ class Registry:
 
             if "class" in device_config:
                 # --- AST 已有该设备 → 跳过，提示冗余 ---
-                if self.device_type_registry.get(device_id):
+                if (device_id in registered) if registered is not None else self.device_type_registry.get(device_id):
                     logger.warning(
                         f"[Uni-Lab-OS Registry] 设备 '{device_id}' 已由 AST 扫描注册，"
                         f"YAML 定义冗余，跳过 YAML 处理"
@@ -3012,13 +3115,16 @@ class Registry:
         if not files:
             return
 
+        # 加载这批 YAML 之前已登记的设备（AST 扫描、社区注册表、host_node 等）：YAML 里同 id 的条目冗余，跳过
+        registered = frozenset(did for did, cfg in self.device_type_registry.items() if cfg)
         config_cache = self._load_config_cache()
         yaml_dev_cache: dict = config_cache.get("_yaml_devices", {})
         cache_hits = 0
+        cached_entries: Dict[Path, Dict[str, Any]] = {}
         uncached_files: list[Path] = []
 
         if complete_registry:
-            uncached_files = files
+            uncached_files = list(files)
         else:
             for file in files:
                 file_key = str(file.absolute()).replace("\\", "/")
@@ -3030,33 +3136,45 @@ class Registry:
                 cached = yaml_dev_cache.get(file_key)
                 # 空文件的 entries 是空字典，同样算命中（见 load_resource_types 的说明）
                 if cached and cached.get("yaml_md5") == yaml_md5 and cached.get("entries") is not None:
-                    complete_data = cached["entries"]
-                    # 过滤掉 AST 已有的设备
-                    complete_data = {
-                        did: cfg for did, cfg in _in_scope(complete_data).items()
-                        if not self.device_type_registry.get(did)
-                    }
-                    runtime_data = self._rebuild_device_runtime_data(complete_data)
-                    self.device_type_registry.update(runtime_data)
+                    cached_entries[file] = cached["entries"]
                     cache_hits += 1
                     continue
                 uncached_files.append(file)
 
+        # 没命中缓存的文件交给线程池解析；登记一律按上面排好的文件顺序，与缓存状态、线程完成先后无关。
+        # 两条路径登记同一形状：文件内按 id、条目顶层键排序（缓存里的 complete_data 就是这个形状）。
         executor = self._startup_executor
-        future_to_file = {
-            executor.submit(
-                self._load_single_device_file, file, complete_registry
-            ): file
+        futures = {
+            file: executor.submit(self._load_single_device_file, file, complete_registry, registered)
             for file in uncached_files
         }
+        loaded_from: Dict[str, Path] = {}
 
-        for future in as_completed(future_to_file):
-            file = future_to_file[future]
+        def _register(file: Path, runtime_data: Dict[str, Any]) -> None:
+            # 同一个 id 出现在几个 YAML 里：排在前面的文件生效，与已登记的 AST 条目优先同一规则
+            for did, cfg in runtime_data.items():
+                if did in loaded_from:
+                    logger.warning(
+                        f"[Uni-Lab-OS Registry] 设备 '{did}' 已在 {loaded_from[did]} 定义，忽略 {file} 中的同名定义"
+                    )
+                    continue
+                loaded_from[did] = file
+                self.device_type_registry[did] = cfg
+
+        for file in files:
+            if file in cached_entries:
+                complete_data = {
+                    did: cfg for did, cfg in _in_scope(cached_entries[file]).items() if did not in registered
+                }
+                _register(file, self._rebuild_device_runtime_data(complete_data))
+                continue
             try:
-                data, _complete_data, is_valid, device_ids = future.result()
+                data, _complete_data, is_valid, device_ids = futures[file].result()
                 if is_valid:
-                    runtime_data = _in_scope({did: data[did] for did in device_ids if did in data})
-                    self.device_type_registry.update(runtime_data)
+                    runtime_data = _in_scope(
+                        {did: dict(sorted(data[did].items())) for did in sorted(device_ids) if did in data}
+                    )
+                    _register(file, runtime_data)
                     # 写入缓存
                     file_key = str(file.absolute()).replace("\\", "/")
                     try:
@@ -3309,9 +3427,13 @@ def build_registry(
     complete_registry=False,
     external_only=False,
     community_namespaces=None,
+    backend=None,
 ):
     """
     构建或获取Registry单例实例
+
+    *backend* 是本进程要启动的通信 backend（``hostlink`` / ``ros2``）；不知道时传 ``None``
+    （库调用、``--check_mode``）。建注册表时是否导入 ROS 2 专用核心代码见 :func:`ros2_core_enabled`。
     """
     logger.info("[Uni-Lab-OS Registry] 构建注册表实例")
 
@@ -3329,6 +3451,7 @@ def build_registry(
         complete_registry=complete_registry,
         external_only=external_only,
         community_namespaces=community_namespaces,
+        backend=backend,
     )
 
     # 将 AST 扫描的字符串类型替换为实际 ROS2 消息类（仅查找 ROS2 类型，不 import 设备模块）

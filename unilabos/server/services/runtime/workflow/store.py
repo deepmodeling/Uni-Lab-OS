@@ -151,6 +151,8 @@ class WorkflowStore:
         tags: List[Any],
         description: Optional[str],
         meta_data: Dict[str, Any],
+        workflow_type: str = "normal",
+        operation_category_uuid: Optional[str] = None,
     ) -> Dict[str, Any]:
         now = utc_now()
         try:
@@ -159,8 +161,9 @@ class WorkflowStore:
                     """
                     INSERT INTO workflow(
                         uuid, create_time, update_time, deleted_at,
-                        description, meta_data, name, tags, revision
-                    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 1)
+                        description, meta_data, name, tags, revision,
+                        workflow_type, operation_category_uuid
+                    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 1, ?, ?)
                     """,
                     (
                         workflow_uuid,
@@ -170,8 +173,11 @@ class WorkflowStore:
                         _json(meta_data),
                         name,
                         _json(tags),
+                        workflow_type,
+                        operation_category_uuid,
                     ),
                 )
+                self._append_definition_event(conn, workflow_uuid, "created", now)
         except sqlite3.IntegrityError as exc:
             raise StoreConflict(f"workflow {workflow_uuid} already exists") from exc
         return WorkflowStore.get_workflow(self, workflow_uuid)
@@ -251,6 +257,7 @@ class WorkflowStore:
         description: Optional[str],
         meta_data: Dict[str, Any],
     ) -> Dict[str, Any]:
+        now = utc_now()
         with self.transaction() as conn:
             WorkflowStore.get_workflow(self, workflow_uuid, conn=conn)
             conn.execute(
@@ -265,10 +272,11 @@ class WorkflowStore:
                     _json(tags),
                     description,
                     _json(meta_data),
-                    utc_now(),
+                    now,
                     workflow_uuid,
                 ),
             )
+            self._append_definition_event(conn, workflow_uuid, "updated", now)
         return WorkflowStore.get_workflow(self, workflow_uuid)
 
     def delete_workflow(self, workflow_uuid: str) -> None:
@@ -289,6 +297,7 @@ class WorkflowStore:
                 "WHERE workflow_uuid = ? AND deleted_at IS NULL",
                 (now, now, workflow_uuid),
             )
+            self._append_definition_event(conn, workflow_uuid, "deleted", now)
 
     def get_graph(
         self,
@@ -428,6 +437,7 @@ class WorkflowStore:
                 metadata["unilab"] = {**unilab, "input_contract": checked.input_contract.to_dict(),
                     "output_contract": checked.output_contract.to_dict(), "output_bindings": checked.output_bindings}
                 conn.execute("UPDATE workflow SET meta_data=? WHERE uuid=?", (_json(metadata), workflow_uuid))
+            self._append_definition_event(conn, workflow_uuid, "graph_saved", utc_now())
         return WorkflowStore.get_graph(self, workflow_uuid)
 
     def _reconcile_graph(
@@ -824,6 +834,7 @@ class WorkflowStore:
                 "WHERE uuid = ? AND deleted_at IS NULL",
                 (_json(workflow_meta_data), now, workflow_uuid),
             )
+            self._append_definition_event(conn, workflow_uuid, "graph_saved", now)
         return WorkflowStore.get_graph(self, workflow_uuid)
 
     def _upsert_published_templates(
@@ -999,8 +1010,9 @@ class WorkflowStore:
         contract_digest: str,
         snapshot: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """写入一次发布；同一 (workflow_uuid, revision) 已存在时返回既有行。"""
+        """写入一次发布；同一 (workflow_uuid, revision) 已存在时返回既有行（不算变更，不发通知）。"""
 
+        now = utc_now()
         try:
             with self.transaction() as conn:
                 conn.execute(
@@ -1012,7 +1024,7 @@ class WorkflowStore:
                     """,
                     (
                         str(uuid4()),
-                        utc_now(),
+                        now,
                         workflow_uuid,
                         revision,
                         name,
@@ -1021,6 +1033,7 @@ class WorkflowStore:
                         _json(snapshot),
                     ),
                 )
+                self._append_definition_event(conn, workflow_uuid, "published", now)
         except sqlite3.IntegrityError as exc:
             existing = WorkflowStore.find_workflow_publication(self, workflow_uuid, revision)
             if existing is None:
@@ -3849,6 +3862,27 @@ class WorkflowStore:
             (str(uuid4()), now, event, aggregate_uuid, _json(data)),
         )
         return int(cursor.lastrowid)
+
+    @staticmethod
+    def _append_definition_event(
+        conn: sqlite3.Connection,
+        workflow_uuid: str,
+        change: str,
+        now: str,
+    ) -> int:
+        """工作流定义变化（``created`` / ``updated`` / ``deleted`` / ``graph_saved`` / ``published``）
+        与变更同一事务写 ``workflow.authoring.changed``，其他页面据此重读列表与图。
+
+        ``@workflow`` 源码创作的状态迁移在自己的路径上写同名事件（``data.cause``）：它的应用直接协调
+        图，不经过这里的整图保存，所以不会重复发。
+        """
+
+        return WorkflowStore._append_event(
+            conn,
+            event="workflow.authoring.changed",
+            data={"workflow_uuid": workflow_uuid, "change": change},
+            now=now,
+        )
 
     def count_rows(self, table: str, *, include_deleted: bool = False) -> int:
         allowed = {

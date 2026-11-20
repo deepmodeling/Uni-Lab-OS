@@ -15,8 +15,10 @@ REST 读取当前状态，不需要回放历史。
 事件名按 V1 合同输出（:func:`to_v1_event`）：持久库里 dev 的细粒度事件
 ``workflow.task|node_run|node_job|manual_confirmation|resource.changed`` 一律发成
 ``workflow.runtime.changed``，原事件的种类放进 ``data.kind``（``task`` / ``node_run`` /
-``node_job`` / ``manual_confirmation`` / ``resource``），原载荷字段保留；作者态与工作流
-定义变更发成 ``workflow.authoring.changed``。游标与 ``stream.reset`` 协议不变。
+``node_job`` / ``manual_confirmation`` / ``resource``），原载荷字段保留。
+``workflow.authoring.changed`` 在库里就是 V1 名，原样发送：``@workflow`` 源码创作的状态迁移
+（``data.cause``），以及工作流定义的变化（``data.change``：``created`` / ``updated`` / ``deleted`` /
+``graph_saved`` / ``published``），都与变更同一事务写入。游标与 ``stream.reset`` 协议不变。
 """
 
 from __future__ import annotations
@@ -47,8 +49,6 @@ _V1_EVENTS: Dict[str, tuple[str, str | None]] = {
     "workflow.node_job.changed": (RUNTIME_CHANGED_EVENT, "node_job"),
     "workflow.manual_confirmation.changed": (RUNTIME_CHANGED_EVENT, "manual_confirmation"),
     "workflow.resource.changed": (RUNTIME_CHANGED_EVENT, "resource"),
-    "workflow.changed": (AUTHORING_CHANGED_EVENT, "workflow"),
-    "workflow.definition.changed": (AUTHORING_CHANGED_EVENT, "definition"),
 }
 
 

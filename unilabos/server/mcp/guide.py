@@ -25,7 +25,8 @@ GUIDE = """# 本机 MCP / protocol
   /body/data/0/action_capabilities；不要逐个猜下标。protocol_result_read 的 limit 最大 50。
 - revision 是并发前置条件；冲突先重新读取，不盲目重发写请求。使用协议已有的幂等键。
 - 日志/工作流变更用现有 SSE `/api/v1/events` 通知加 HTTP 拉取（任务运行变化统一为
-  `workflow.runtime.changed`，种类在 data.kind；作者态为 `workflow.authoring.changed`）；
+  `workflow.runtime.changed`，种类在 data.kind；作者态与工作流定义的创建 / 修改 / 删除 / 保存图 / 发布为
+  `workflow.authoring.changed`，定义变化的种类在 data.change）；
   物料用 `/api/v1/materials/events`。MCP 不把无限流塞进工具返回，也不发明另一种事件协议。
 
 ## 发现与工作流

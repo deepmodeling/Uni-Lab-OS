@@ -11,6 +11,9 @@
   开始边界之前失败（未下发）并进入动作错误决策，重试即成功；未请求取消的落 execution_unknown 并开核实决策，
   锁保留到裁决，标记失败后排队的同一动作执行成功。之后新派发的动作照常执行。
 
+另一张图里两个根设备与一个根级容器互相连着：每个受管 Slave 只装配自己的子树，经 HostLink 取 Host 的完整
+物理拓扑图后，协议编译器在 Slave 里看到的连线与设备跑在 Host 里时一样。
+
 进程拓扑 / backend 与 README demo e2e 相同，由 ``UNILABOS_E2E_TOPOLOGY`` / ``UNILABOS_E2E_BACKEND`` 选择；
 ``split`` 下全部请求（含 ``/device-processes/{id}/restart``）都经调度权威转发到 Host 子进程。
 """
@@ -420,5 +423,131 @@ def test_failing_constructor_and_hung_action_stay_inside_their_slave(tmp_path: P
     finally:
         if sampler is not None:
             sampler.stop()
+        stop_process(host)
+        handle.close()
+
+
+# ── 物理拓扑图只经 HostLink 同步：Slave 看得到跨根设备的连线 ──────────────────
+
+GRAPH_PACKAGE = "graph_sync_demo"
+
+_GRAPH_DRIVER = '''"""物理拓扑图 e2e 的极小驱动：报告本进程协议编译器看到的物理拓扑图。"""
+
+from typing import Any, Dict, Optional
+
+from unilabos.registry.decorators import action, device
+
+
+@device(
+    id="graph_sync_probe",
+    display_name="物理拓扑图探针",
+    category=["virtual_device"],
+    description="报告本进程协议编译器看到的物理拓扑图里某个节点的连线",
+    supported_backends=["hostlink", "ros2"],
+)
+class GraphSyncProbe:
+    def __init__(self, device_id: Optional[str] = None, **kwargs: Any) -> None:
+        self.device_id = device_id or "graph_sync_probe"
+
+    @action(display_name="相连节点", description="物理拓扑图里与 node_id 相连的节点", always_free=True)
+    def linked(self, node_id: str) -> Dict[str, Any]:
+        """物理拓扑图里与 node_id 相连的节点。
+
+        Args:
+            node_id[节点]: 物理拓扑图里的节点 id。
+        """
+        from unilabos.client.host.runtime.workstation_protocol import physical_setup_graph
+
+        graph = physical_setup_graph()
+        nodes = 0 if graph is None else graph.number_of_nodes()
+        linked = sorted(str(item) for item in graph.neighbors(node_id)) if graph is not None and node_id in graph else []
+        return {"success": True, "linked": linked, "nodes": nodes}
+'''
+
+
+def _write_graph_fixture(root: Path) -> tuple[Path, Path]:
+    """两个根设备各在自己的受管 Slave 里，一个根级容器留在 Host；三条连线都跨出了 Slave 的子树。"""
+
+    package_dir = root / "pkg" / GRAPH_PACKAGE
+    package_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (package_dir / "devices.py").write_text(_GRAPH_DRIVER, encoding="utf-8")
+    waste = {
+        "id": "waste",
+        "type": "container",
+        "parent": None,
+        "class": "RegularContainer",
+        "template_name": "container",
+        "display_name": "waste",
+        "pose": {"position": {"x": 600, "y": 0, "z": 0}},
+        "config": {"type": "RegularContainer", "max_volume": 500.0},
+        "data": {},
+    }
+
+    def link(source: str, target: str) -> dict[str, Any]:
+        return {"id": f"{source}-{target}", "source": source, "target": target, "type": "fluid",
+                "sourceHandle": "out", "targetHandle": "in"}
+
+    graph = root / "graph_sync.json"
+    nodes = [_device_node("probe_a", "graph_sync_probe", 0), _device_node("probe_b", "graph_sync_probe", 300), waste]
+    links = [link("probe_a", "probe_b"), link("probe_a", "waste"), link("probe_b", "waste")]
+    graph.write_text(json.dumps({"nodes": nodes, "links": links}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return package_dir, graph
+
+
+def test_root_device_slaves_compile_against_the_host_graph(tmp_path: Path) -> None:
+    """每个受管 Slave 只装配自己根设备的子树，跨根设备的连线与根级物料只在 Host 的图里；Slave 经 HostLink
+    取 Host 的完整物理拓扑图，协议编译器（这里是探针动作）看到的与设备跑在 Host 里时一样。"""
+
+    package_dir, graph = _write_graph_fixture(tmp_path)
+    work = tmp_path / "run"
+    work.mkdir()
+    port = free_port()
+    hostlink = free_port(exclude=(port,))
+    env = subprocess_env({"ROS_DOMAIN_ID": ros_domain_id(hostlink)} if E2E_BACKEND == "ros2" else {})
+    host_log = work / "host.log"
+    handle = host_log.open("w", encoding="utf-8")
+    host = subprocess.Popen(
+        runtime_command(
+            package_dir=package_dir,
+            graph=graph,
+            database_root=work / "host-db",
+            management_port=port,
+            hostlink_port=hostlink,
+            is_slave=False,
+            root_devices_as_slaves=True,
+        ),
+        cwd=tmp_path,
+        env=env,
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=os.name != "nt",
+    )
+    host_exited = lambda: host.poll() is not None  # noqa: E731
+    try:
+        wait_until(
+            lambda: {"probe_a", "probe_b"} <= set(api_request(port, "/online-devices")["online_devices"]),
+            timeout=STEP_TIMEOUT,
+            abort=host_exited,
+            description="probe_a / probe_b 由各自的受管 Slave 接入",
+        )
+        processes = {item["id"] for item in api_request(port, "/device-processes")["processes"]}
+        assert processes == {"root-probe_a", "root-probe_b"}, sorted(processes)
+        expected = {"probe_a": ["probe_b", "waste"], "probe_b": ["probe_a", "waste"]}
+        for device_id, linked in expected.items():
+            task = _start_action(port, device_id, "linked", {"node_id": device_id})
+            assert _wait_task(port, task, {"succeeded", "failed"}, timeout=STEP_TIMEOUT, abort=host_exited)["status"] == "succeeded"
+            value = (_job(port, task) or {}).get("return_info", {}).get("return_value")
+            assert value == {"success": True, "linked": linked, "nodes": 3}, value
+        for process_id in ("root-probe_a", "root-probe_b"):
+            log = work / "host-db" / "work" / "device_processes" / process_id / "process.log"
+            assert "已从 Host 取得物理拓扑图（3 个节点、3 条连线）" in log.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:  # noqa: BLE001 - 失败时附带 Host 与各受管 Slave 的日志
+        logs = f"--- host log tail ---\n{_tail(host_log)}"
+        for managed_log in sorted((work / "host-db" / "work" / "device_processes").glob("*/process.log")):
+            logs += f"\n--- managed slave {managed_log.parent.name} log tail ---\n{_tail(managed_log, 30)}"
+        pytest.fail(f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=8)}\n{logs}", pytrace=False)
+    finally:
         stop_process(host)
         handle.close()

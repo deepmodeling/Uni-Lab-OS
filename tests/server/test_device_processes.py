@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -343,6 +344,16 @@ def test_unavailable_devices_explain_why_a_managed_process_is_down(
             )
 
     monkeypatch.setattr(dpx.subprocess, "Popen", FailingPopen)
+    # 「重启中」只持续一个退避（夹具里 50 ms），轮询在高负载 CI 上可能整段错过它。退避照常计时，
+    # 真正的重启等用例读完这个状态再放行：窗口不再取决于线程调度。
+    restart_allowed = threading.Event()
+    restart_later = service._restart_later
+
+    def restart_when_allowed(process_id: str) -> None:
+        restart_allowed.wait(10)
+        restart_later(process_id)
+
+    monkeypatch.setattr(service, "_restart_later", restart_when_allowed)
     dpx.sync_generated_specs(tmp_path, "root_devices_as_slaves", [_root_device_spec(tmp_path, max_restarts=1)])
     # 从未拉起过的进程不登记原因（设备照旧只是还没上线）
     assert service.unavailable_devices() == {}
@@ -373,6 +384,7 @@ def test_unavailable_devices_explain_why_a_managed_process_is_down(
     assert "日志最后的错误：RuntimeError: acme_station 构造失败" in station["reason"]
 
     # 拉起后：进程在跑就不再登记
+    restart_allowed.set()
     deadline = time.time() + 5
     while time.time() < deadline and (len(FakePopen.instances) < 2 or service.unavailable_devices()):
         time.sleep(0.02)

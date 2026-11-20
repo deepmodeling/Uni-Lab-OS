@@ -17,6 +17,9 @@ demo 仓库的引用（URL + pinned 提交）见 :mod:`tests.e2e.readme_demos`�
 进程拓扑由 ``UNILABOS_E2E_TOPOLOGY`` 选择：``single``（缺省，``--no_safe_restart``，权威与
 Host 同进程）或 ``split``（默认拓扑：权威进程持有管理端口并看护 Host 子进程，验证浏览器
 只连权威端口时图 / 工作流 / 锁 / 决策链 / 物料投影全部经控制面闭环）。
+
+``ROOT_DEVICE_SLAVE_DEMOS`` 里的 demo 另以 ``--root_devices_as_slaves`` 再跑一遍同一条链路：每个根设备
+（连同子树）由 Host 拉起的受管 Slave 运行，工作流、锁与业务验收与设备跑在 Host 里时一致。
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from tests.e2e.demo_contracts import DemoContracts, demo_smoke
 from tests.e2e.readme_demos import (
     DEMOS,
     E2E_BACKEND,
+    ROOT_DEVICE_SLAVE_DEMOS,
     TERMINAL_TASK_STATUSES,
     DemoSpec,
     WorkflowExpectation,
@@ -105,14 +109,39 @@ def _assert_authority_shape(payload: dict[str, Any]) -> None:
             assert node.get("template_name"), f"设备节点缺少 template_name: {node.get('id')}"
 
 
+def _root_device_subtrees(payload: dict[str, Any]) -> dict[str, set[str]]:
+    """demo 图里每个根设备（host_node 除外）→ 它子树里的全部设备 id（层级按 ``parent``）。"""
+
+    nodes = [node for node in payload.get("nodes") or [] if isinstance(node, dict)]
+    by_id = {node["id"]: node for node in nodes}
+
+    def root_of(node: dict[str, Any]) -> dict[str, Any]:
+        seen = {node["id"]}
+        while node.get("parent") in by_id and node["parent"] not in seen:
+            node = by_id[node["parent"]]
+            seen.add(node["id"])
+        return node
+
+    subtrees: dict[str, set[str]] = {}
+    for node in nodes:
+        root = root_of(node)
+        if node.get("type") != "device" or root.get("type") != "device":
+            continue
+        if (root.get("template_name") or root.get("class")) == "host_node":
+            continue
+        subtrees.setdefault(root["id"], set()).add(node["id"])
+    return subtrees
+
+
 class _DemoProcesses:
     """host/slave 运行时子进程的启动、就绪等待、日志与清理。"""
 
-    def __init__(self, spec: DemoSpec, repo_root: Path, work_root: Path) -> None:
+    def __init__(self, spec: DemoSpec, repo_root: Path, work_root: Path, *, root_devices_as_slaves: bool = False) -> None:
         self.spec = spec
         self.repo_root = repo_root
         self.package_dir = repo_root / spec.package
         self.work_root = work_root
+        self.root_devices_as_slaves = root_devices_as_slaves
         self.management_port = free_port()
         self.hostlink_port = free_port(exclude=(self.management_port,))
         self.proof_paths = {env_name: work_root / filename for env_name, filename in spec.proof_env.items()}
@@ -155,6 +184,7 @@ class _DemoProcesses:
                 management_port=self.management_port,
                 hostlink_port=self.hostlink_port,
                 is_slave=False,
+                root_devices_as_slaves=self.root_devices_as_slaves,
             ),
             self.host_log,
         )
@@ -168,6 +198,38 @@ class _DemoProcesses:
         if spec.slave_graph is not None:
             self._start_slave()
         self._wait_devices()
+        if self.root_devices_as_slaves:
+            self.assert_root_device_slaves()
+
+    def assert_root_device_slaves(self) -> None:
+        """每个根设备一条生成的受管进程规格、一个在线的 Slave，子树设备都由它上报；设备身份不变。"""
+
+        expected = _root_device_subtrees(_load_graph(self.repo_root / self.spec.host_graph))
+        assert expected, f"{self.spec.repo} 的图没有根设备"
+        port = self.management_port
+        processes = [
+            item
+            for item in api_request(port, "/device-processes")["processes"]
+            if item.get("generated_by") == "root_devices_as_slaves"
+        ]
+        assert {item["name"]: set(item["device_ids"]) for item in processes} == expected, processes
+        peers = {peer["machine_name"]: peer for peer in api_request(port, "/hostlink/peers")["peers"]}
+        for item in processes:
+            assert item["id"] == f"root-{item['name']}", item
+            assert item["status"] == "running" and item["pid"], item
+            assert item["auto_start"] and item["restart_policy"] == "on-failure", item
+            assert item["restart_count"] == 0, f"受管 Slave {item['id']} 被重启过：{item}"
+            assert Path(item["log_path"]).is_file(), item
+            slave = [peer for name, peer in peers.items() if name.endswith(f"_managed_{item['id'].replace('-', '_')}")]
+            assert len(slave) == 1 and slave[0]["online"], (item["id"], sorted(peers))
+            assert set(slave[0]["device_ids"]) == expected[item["name"]], slave[0]
+        # 开机物料由 Host 对齐：设备根物料的归属机器仍是 Host，与设备跑在 Host 里时一致
+        host_machine = f"e2e_{self.package_dir.name}_{self.hostlink_port}_host"
+        online = api_request(port, "/online-devices")["online_devices"]
+        for root_id in expected:
+            assert root_id in online, sorted(online)
+            assert online[root_id]["machine_name"] == host_machine, online[root_id]
+            assert online[root_id]["transport"] == E2E_BACKEND, online[root_id]
 
     def _start_slave(self) -> None:
         self.slave = self._spawn(
@@ -239,6 +301,8 @@ class _DemoProcesses:
         text = f"--- host log tail ---\n{_tail(self.host_log)}"
         if self.spec.slave_graph is not None:
             text += f"\n--- slave log tail ---\n{_tail(self.slave_log)}"
+        for managed in sorted((self.work_root / "host-db" / "work" / "device_processes").glob("*/process.log")):
+            text += f"\n--- managed slave {managed.parent.name} log tail ---\n{_tail(managed, 40)}"
         return text
 
     def stop(self) -> None:
@@ -436,6 +500,21 @@ def _assert_attempt_history(expectation: WorkflowExpectation, run: dict) -> None
 
 @pytest.mark.parametrize("spec", DEMOS, ids=[spec.repo for spec in DEMOS])
 def test_readme_demo_end_to_end_via_unilab_cli_and_management_api(spec: DemoSpec, tmp_path: Path) -> None:
+    _run_readme_demo(spec, tmp_path)
+
+
+@pytest.mark.parametrize("spec", ROOT_DEVICE_SLAVE_DEMOS, ids=[spec.repo for spec in ROOT_DEVICE_SLAVE_DEMOS])
+def test_readme_demo_with_root_devices_as_slaves(spec: DemoSpec, tmp_path: Path) -> None:
+    """同一条链路，Host 带 ``--root_devices_as_slaves``：每个根设备在自己的受管 Slave 里运行。
+
+    WorkstationDemo 的工作站与 5 台子设备同在一个 Slave（共享串口 / Modbus 端点、协议动作）；
+    LockDemo 的 3 个根设备各占一个 Slave，动作锁 / 物料锁跨 Slave 生效，审计器跨 Slave 读探针账本。
+    """
+
+    _run_readme_demo(spec, tmp_path, root_devices_as_slaves=True)
+
+
+def _run_readme_demo(spec: DemoSpec, tmp_path: Path, *, root_devices_as_slaves: bool = False) -> None:
     repo_root, source = resolve_demo_source(spec)
     package_dir = repo_root / spec.package
     cli_env = subprocess_env({})
@@ -478,7 +557,7 @@ def test_readme_demo_end_to_end_via_unilab_cli_and_management_api(spec: DemoSpec
         assert node["uuid"] and node["parent"] is None and "children" not in node
 
     # 3) 真实运行时：unilab -g <demo 图> 启动 host（及 slave），启动即登记 Graph Authority
-    processes = _DemoProcesses(spec, repo_root, tmp_path / "run")
+    processes = _DemoProcesses(spec, repo_root, tmp_path / "run", root_devices_as_slaves=root_devices_as_slaves)
     processes.work_root.mkdir()
     try:
         try:
@@ -562,9 +641,13 @@ def test_readme_demo_end_to_end_via_unilab_cli_and_management_api(spec: DemoSpec
             assert [result["workflow"]["name"] for result in results] == [
                 expectation.name for expectation in spec.workflows
             ]
+            if root_devices_as_slaves:
+                # 全部工作流跑完：没有受管 Slave 中途崩溃重启，设备一直由各自的 Slave 承载
+                processes.assert_root_device_slaves()
         except Exception as exc:  # noqa: BLE001 - 失败时附带运行时日志再抛出
+            mode = " --root_devices_as_slaves" if root_devices_as_slaves else ""
             pytest.fail(
-                f"{spec.repo} ({source}) 失败: {type(exc).__name__}: {exc}\n"
+                f"{spec.repo}{mode} ({source}) 失败: {type(exc).__name__}: {exc}\n"
                 f"{traceback.format_exc(limit=8)}\n{processes.logs()}",
                 pytrace=False,
             )

@@ -289,6 +289,8 @@ class HostNode(HostAdapterBase, Node):
         self._dds_offline_devices: Set[str] = set()
         self._hostlink_offline_devices: Set[str] = set()
         self._hostlink_owned_devices: Set[str] = set()
+        # 受管 Slave 进程没在运行的设备及原因（unavailable_devices）的上一版，变了就重发能力快照
+        self._unavailable_fingerprint = "{}"
         # 已发出、尚未收尾的 goal（job_id -> QueueItem）：设备离线时据此收尾，
         # 不让作业和设备锁一直挂着；_settled_jobs 记下已收尾的，忽略它们迟到的回调。
         self._goal_items: Dict[str, Any] = {}
@@ -497,11 +499,23 @@ class HostNode(HostAdapterBase, Node):
             offline = self._dds_offline_devices | self._hostlink_offline_devices
         return offline - set(self.devices_instances)
 
+    @property
+    def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
+        """所在受管 Slave 进程没在运行（崩溃 / 退避重启 / 已停止）的设备及原因。
+
+        能力快照把其中不在线的设备登记为停用 route，权威的 ``/devices`` 据此显示不可用及原因。
+        """
+
+        from unilabos.server.services.device_processes import managed_device_unavailability
+
+        return managed_device_unavailability()
+
     def _hostlink_liveness_callback(self) -> None:
         """按 HostLink 连接状态更新 Slave 设备的在线状态。
 
         Slave 进程退出、被杀或心跳超时后，HostLink 立即（或在心跳超时内）知道；DDS 要等
-        参与者租约过期，再等下一轮设备发现。重连后撤销离线标记，DDS 仍看得到设备即恢复在线。
+        参与者租约过期，再等下一轮设备发现。重连后、Slave 报告设备就绪（设备节点已建好）时撤销离线
+        标记，DDS 仍看得到设备即恢复在线。受管 Slave 进程的状态（崩溃 / 重启中）变化时也重发能力快照。
         """
 
         from unilabos.client.host.hostlink.server import get_hostlink_server
@@ -510,29 +524,55 @@ class HostNode(HostAdapterBase, Node):
         if server is None:
             return
         online_ids: Set[str] = set()
-        offline_ids: Set[str] = set()
+        disconnected_ids: Set[str] = set()
+        starting_ids: Set[str] = set()
         for peer in server.peers():
-            ids = {str(device_id) for device_id in peer.get("device_ids") or []}
-            (online_ids if peer.get("online") else offline_ids).update(ids)
+            descriptors = peer.get("devices") or {}
+            for device_id in peer.get("device_ids") or []:
+                # Slave 声明「未就绪」的设备（重启后刚接回 HostLink、设备节点还没建好）仍按离线算：
+                # DDS 里可能还留着旧进程的 Action server，这时派发的 goal 没有接收方。不带描述的旧 Slave 按就绪算。
+                ready = (descriptors.get(device_id) or {}).get("ready", True) is not False
+                if not peer.get("online"):
+                    disconnected_ids.add(str(device_id))
+                elif ready:
+                    online_ids.add(str(device_id))
+                else:
+                    starting_ids.add(str(device_id))
         # 同一设备由在线的 Slave 上报（如换了连接重新接入）时以在线为准
-        offline_ids -= online_ids
+        disconnected_ids -= online_ids
+        starting_ids -= online_ids | disconnected_ids
+        offline_ids = disconnected_ids | starting_ids
         with self._liveness_lock:
             previous = self._hostlink_offline_devices
             self._hostlink_offline_devices = offline_ids
             self._hostlink_owned_devices = online_ids | offline_ids
+        unavailable = getattr(self, "unavailable_devices", None) or {}
+        fingerprint = json.dumps(unavailable, ensure_ascii=False, sort_keys=True, default=str)
+        unavailable_changed = fingerprint != getattr(self, "_unavailable_fingerprint", "{}")
+        self._unavailable_fingerprint = fingerprint
         if offline_ids == previous:
+            if unavailable_changed:
+                self._notify_capabilities_changed()
             return
         went_offline = offline_ids - previous
         came_back = previous - offline_ids
-        if went_offline:
+        if went_offline & disconnected_ids:
             self.lab_logger().warning(
-                f"[Host Node] Slave 的 HostLink 连接已断开或心跳超时，设备离线: {sorted(went_offline)}"
+                f"[Host Node] Slave 的 HostLink 连接已断开或心跳超时，设备离线: {sorted(went_offline & disconnected_ids)}"
             )
             self._settle_jobs_on_offline_devices(
-                went_offline, reason="Slave 的 HostLink 连接已断开或心跳超时，设备离线"
+                went_offline & disconnected_ids, reason="Slave 的 HostLink 连接已断开或心跳超时，设备离线"
+            )
+        if went_offline & starting_ids:
+            # 首次接入，或进程重启得太快、两次检查之间没看到断开：旧进程上的在途作业同样收尾
+            self.lab_logger().info(
+                f"[Host Node] Slave 已接入 HostLink，等待设备节点就绪: {sorted(went_offline & starting_ids)}"
+            )
+            self._settle_jobs_on_offline_devices(
+                went_offline & starting_ids, reason="Slave 已重新接入但设备尚未就绪（进程已重启），设备离线"
             )
         if came_back:
-            self.lab_logger().info(f"[Host Node] Slave 已重新接入 HostLink: {sorted(came_back)}")
+            self.lab_logger().info(f"[Host Node] Slave 已接入 HostLink 且设备就绪，恢复在线: {sorted(came_back)}")
         self._notify_capabilities_changed()
 
     def _settle_jobs_on_offline_devices(self, device_ids: Iterable[str], *, reason: str) -> None:

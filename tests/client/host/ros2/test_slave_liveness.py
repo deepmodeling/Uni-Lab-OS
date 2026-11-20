@@ -60,9 +60,14 @@ class Host:
 class FakeServer:
     def __init__(self) -> None:
         self.online = True
+        #: None 表示 Slave 不带设备描述（旧版本）；True / False 是它报告的设备就绪状态
+        self.ready = None
 
     def peers(self):
-        return [{"node_id": "slave-a", "online": self.online, "device_ids": ["slave_valve"]}]
+        peer = {"node_id": "slave-a", "online": self.online, "device_ids": ["slave_valve"]}
+        if self.ready is not None:
+            peer["devices"] = {"slave_valve": {"id": "slave_valve", "ready": self.ready}}
+        return [peer]
 
 
 def _snapshot_devices(host) -> set:
@@ -134,6 +139,66 @@ def test_hostlink_disconnect_takes_slave_devices_offline_and_settles_jobs(monkey
     host._hostlink_liveness_callback()
     assert host.offline_device_ids == set()
     assert _snapshot_devices(host) == {"host_node", "host_valve", "slave_valve"}
+
+
+def test_restarted_slave_stays_offline_until_its_device_nodes_are_ready(monkeypatch) -> None:
+    """Slave 进程重启后先接回 HostLink、后建设备节点：这段时间设备仍按离线算，派发在开始边界之前失败，
+    而不是把 goal 发给还不存在的 Action server。两次检查之间断开又接回时，旧进程上的在途作业同样收尾。"""
+
+    server = FakeServer()
+    server.ready = True
+    monkeypatch.setattr(hostlink_server, "get_hostlink_server", lambda: server)
+    host = Host(HOST_GRAPH + SLAVE_GRAPH)
+    host._discover_devices()
+    host._hostlink_liveness_callback()
+    assert host.offline_device_ids == set()
+    host._goal_items["job-old"] = _goal("job-old", "slave_valve")
+
+    server.ready = False
+    host._hostlink_liveness_callback()
+    assert host.offline_device_ids == {"slave_valve"}
+    assert _snapshot_devices(host) == {"host_node", "host_valve"}
+    assert _settled(host)["job-old"]["suc_type"] == SUCCESS_TYPE_EXECUTION_UNKNOWN
+    item = SimpleNamespace(job_id=str(uuid4()), device_id="slave_valve", action_name="open", start_guard=Mock())
+    with pytest.raises(ExecutionNotStarted, match="已离线"):
+        host._send_goal_ros2(item, "EmptyIn", {}, {})
+
+    server.ready = True
+    host._hostlink_liveness_callback()
+    assert host.offline_device_ids == set()
+    assert _snapshot_devices(host) == {"host_node", "host_valve", "slave_valve"}
+
+
+def test_down_managed_slave_device_gets_a_disabled_route_with_its_reason(monkeypatch) -> None:
+    """所在受管 Slave 没在运行的设备：能力快照登记停用 route 并带原因；原因变了（在线集合没变）也重发快照。"""
+
+    server = FakeServer()
+    monkeypatch.setattr(hostlink_server, "get_hostlink_server", lambda: server)
+    host = Host(HOST_GRAPH + SLAVE_GRAPH)
+    host._discover_devices()
+    host._hostlink_liveness_callback()
+    record = {"device_id": "slave_valve", "registry_name": "valve", "backend": "ros2", "reason": "受管设备进程 slave_valve 意外退出"}
+    host.unavailable_devices = {"slave_valve": record}
+
+    server.online = False
+    host._hostlink_liveness_callback()
+    routes, capabilities = build_endpoint_capabilities(host, observed_at_ms=1)
+    disabled = [route for route in routes if not route.enabled]
+    assert [(route.device_uuid, route.config["unavailable"]["reason"]) for route in disabled] == [
+        ("slave_valve", record["reason"])
+    ]
+    assert "slave_valve" not in {capability.device_uuid for capability in capabilities}
+
+    host._notify_capabilities_changed.reset_mock()
+    host.unavailable_devices = {"slave_valve": {**record, "reason": "受管设备进程 slave_valve 已自动重启 5 次仍退出，停止看护"}}
+    host._hostlink_liveness_callback()
+    host._notify_capabilities_changed.assert_called_once()
+
+    # 设备回到线上后不再登记停用 route，即使原因记录还在
+    server.online = True
+    host._hostlink_liveness_callback()
+    routes, _ = build_endpoint_capabilities(host, observed_at_ms=2)
+    assert all(route.enabled for route in routes)
 
 
 def test_dispatch_to_offline_device_fails_before_start_boundary(monkeypatch) -> None:

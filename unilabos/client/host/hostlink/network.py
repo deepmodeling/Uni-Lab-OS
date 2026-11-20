@@ -550,6 +550,33 @@ def require_slave_startup_device_ids(devices_config: Any) -> list[str]:
     return device_ids
 
 
+def _descriptor_heartbeat(client: HostLinkClient) -> Any:
+    """心跳带上设备描述（含就绪状态）：即时通告失败时，下一次心跳补上。没有描述时不带，
+    否则 Host 会按空列表清掉 HELLO 登记的设备。"""
+
+    def payload() -> dict[str, Any]:
+        descriptors = [dict(item) for item in client.device_descriptors]
+        return {"devices": descriptors} if descriptors else {}
+
+    return payload
+
+
+def mark_slave_devices_ready(ready_device_ids: Iterable[str]) -> None:
+    """ROS 2 Slave 的设备节点建好之后调用：这些设备改为就绪并立刻告诉 Host，没建好的保持未就绪。"""
+
+    client = get_hostlink_client()
+    if client is None or not client.device_descriptors:
+        return
+    ready = {str(device_id).strip() for device_id in ready_device_ids}
+    client.configure_device_descriptors(
+        {**item, "ready": item["id"] in ready} for item in client.device_descriptors
+    )
+    try:
+        client.heartbeat_now()
+    except Exception:  # noqa: BLE001 - 心跳循环随后会带上同一份描述
+        logger.warning("[EdgeMicrobackend] 设备就绪状态即时通告失败，随下一次心跳补上", exc_info=True)
+
+
 def setup_slave_network_client(
     *,
     device_ids: Optional[Iterable[str]] = None,
@@ -581,6 +608,11 @@ def setup_slave_network_client(
                 request_timeout=HostLinkConfig.request_timeout,
                 host_wait_timeout=HostLinkConfig.host_wait_timeout,
             )
+            # 设备节点（Action server）在 rclpy 初始化之后才建好：先按「未就绪」登记，建好后由
+            # mark_slave_devices_ready 改为就绪。Host 只把就绪的设备当在线——重启的 Slave 刚接回
+            # HostLink 时 Action server 还不存在，这时发出的 goal 没有接收方，会丢。
+            client.configure_device_descriptors({"id": device_id, "ready": False} for device_id in client.device_ids)
+            client.heartbeat_payload_provider = _descriptor_heartbeat(client)
             set_hostlink_client(client)
             _register_process_cleanup()
         elif device_ids:
@@ -656,6 +688,7 @@ __all__ = [
     "HostNetworkService",
     "SERVICE_OWNER",
     "get_host_network_service",
+    "mark_slave_devices_ready",
     "require_slave_startup_device_ids",
     "setup_host_network_service",
     "setup_slave_network_client",

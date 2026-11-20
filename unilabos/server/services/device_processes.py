@@ -15,6 +15,14 @@ Windows 上另放进 KILL_ON_JOB_CLOSE 的 Job Object 兜底。Host 有序退出
 （图文件、日志，以及该 Slave 自己的数据库根目录 ``database/``）；working_dir 即
 BasicConfig.working_dir（unilabos_data 目录）。一个数据库根目录只归一个进程，受管 Slave 不能与
 Host / 权威共用 ``<working_dir>/database``，所以每个受管进程各有一个。
+
+生成的规格（``generated_by`` 非空）不是用户手建的：``unilab --root_devices_as_slaves`` 每次 Host
+启动时按设备图重建（:meth:`DeviceProcessService.sync_generated`），API 里照常可见、可启停 / 重启，
+但不能编辑或删除——改设备图后重启 Host 即可。手建的规格从不被生成流程改动。
+
+受管进程没在运行（崩溃、退避重启中、被手动停止）时，:meth:`DeviceProcessService.unavailable_devices`
+给出其图中每台设备的不可用原因（退出码、重启次数、日志路径与日志末尾），Host 的能力快照据此登记
+停用 route，权威的 ``/devices`` 显示设备不可用及原因，而不是让它无声无息地消失。
 """
 
 from __future__ import annotations
@@ -23,11 +31,13 @@ import atexit
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -45,6 +55,10 @@ PROCESS_DATABASE_DIRNAME = "database"
 STOP_GRACE_S = 8.0
 RESTART_BACKOFF_S = (2.0, 4.0, 8.0, 15.0, 30.0)
 RESTART_POLICIES = ("never", "on-failure", "always")
+#: 进程退出后保留的日志末尾行数（写进设备不可用原因，不必先去翻日志文件）
+LOG_TAIL_LINES = 8
+_LOG_TAIL_LINE_CHARS = 300
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 class DeviceProcessError(RuntimeError):
@@ -55,6 +69,10 @@ class DeviceProcessBusyError(DeviceProcessError):
     """包变更或 Host 重启尚未完成。"""
 
 
+class DeviceProcessGeneratedError(DeviceProcessError):
+    """生成的规格不接受编辑 / 删除：它随 Host 启动按设备图重建。"""
+
+
 @dataclass
 class DeviceProcessSpec:
     """一条受管进程的静态配置（可编辑、持久化）。"""
@@ -63,6 +81,8 @@ class DeviceProcessSpec:
     name: str
     # slave 图的 nodes[]（node-link 形状），服务把它写成 graph.json 传给 -g
     graph_nodes: List[Dict[str, Any]] = field(default_factory=list)
+    # slave 图的 links[]：两端都在本进程图里的连线（协议编译按物理连线找路径）
+    graph_links: List[Dict[str, Any]] = field(default_factory=list)
     # 额外 --devices 目录；驱动包目录按 package_names 从驱动包台账解析
     devices_dirs: List[str] = field(default_factory=list)
     package_names: List[str] = field(default_factory=list)
@@ -71,6 +91,8 @@ class DeviceProcessSpec:
     restart_policy: str = "on-failure"
     max_restarts: int = 5
     extra_args: List[str] = field(default_factory=list)
+    # 生成来源（如 ``root_devices_as_slaves``）；空串为用户手建
+    generated_by: str = ""
     created_at_ms: int = 0
     updated_at_ms: int = 0
 
@@ -129,6 +151,80 @@ def save_specs(working_dir: str | Path, specs: Dict[str, DeviceProcessSpec]) -> 
     tmp.replace(path)
 
 
+def graph_filename(spec: DeviceProcessSpec) -> str:
+    """图文件名即 Graph Authority 里的图名：带进程名与 id 前缀，多个受管进程不互相覆盖。"""
+    slug = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in spec.name.strip()) or "process"
+    return f"managed_{slug}_{spec.id[:8]}.json"
+
+
+def write_graph(working_dir: str | Path, spec: DeviceProcessSpec) -> Path:
+    """把规格的 slave 图（nodes + 内部 links）写到进程目录，返回传给 ``-g`` 的文件。"""
+
+    if not spec.graph_nodes:
+        raise DeviceProcessError("受管进程至少要有一个设备节点")
+    directory = process_dir(working_dir, spec.id)
+    directory.mkdir(parents=True, exist_ok=True)
+    graph_file = directory / graph_filename(spec)
+    graph_file.write_text(
+        json.dumps({"nodes": spec.graph_nodes, "links": spec.graph_links}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return graph_file
+
+
+def sync_generated_specs(
+    working_dir: str | Path, generated_by: str, specs: List[DeviceProcessSpec]
+) -> Dict[str, List[str]]:
+    """把 ``generated_by`` 来源的规格整体换成 ``specs``（Host 启动时、拉起受管进程之前调用）。
+
+    - 同 id 的生成规格沿用 ``created_at_ms``，内容不变时连 ``updated_at_ms`` 也不变，重启 Host 不会堆出新规格；
+    - 本来源里不再出现的规格移除（进程目录里的日志保留，与 :meth:`DeviceProcessService.delete` 一致）；
+    - 手建规格（``generated_by`` 为空）与其它来源的规格一概不动；与手建规格同 id 的条目跳过，
+      由调用方按 ``conflicts`` 处理。
+
+    只改规格文件与图文件；有正在运行的进程时用 :meth:`DeviceProcessService.sync_generated`。
+    返回 ``{"created", "updated", "unchanged", "removed", "conflicts"}`` 各自的规格 id。
+    """
+
+    if not generated_by:
+        raise DeviceProcessError("generated_by 不能为空：手建规格不经此入口")
+    summary: Dict[str, List[str]] = {key: [] for key in ("created", "updated", "unchanged", "removed", "conflicts")}
+    wanted = {item.id: item for item in specs}
+    current = load_specs(working_dir)
+    for process_id, existing in list(current.items()):
+        if existing.generated_by == generated_by and process_id not in wanted:
+            current.pop(process_id)
+            summary["removed"].append(process_id)
+    now = _now_ms()
+    written: List[DeviceProcessSpec] = []
+    for process_id, item in wanted.items():
+        existing = current.get(process_id)
+        if existing is not None and existing.generated_by != generated_by:
+            summary["conflicts"].append(process_id)
+            continue
+        spec = DeviceProcessSpec(**{**asdict(item), "generated_by": generated_by})
+        if existing is None:
+            spec.created_at_ms = spec.updated_at_ms = now
+            summary["created"].append(process_id)
+        else:
+            unstamped = {"created_at_ms": 0, "updated_at_ms": 0}
+            same = {**asdict(existing), **unstamped} == {**asdict(spec), **unstamped}
+            spec.created_at_ms = existing.created_at_ms or now
+            spec.updated_at_ms = existing.updated_at_ms if same else now
+            summary["unchanged" if same else "updated"].append(process_id)
+        current[process_id] = spec
+        written.append(spec)
+    changed = any(summary[key] for key in ("created", "updated", "removed"))
+    if changed:
+        save_specs(working_dir, current)
+    # 图文件总是按规格重写：进程目录可能被清理过，或上次写入中断
+    for spec in written:
+        write_graph(working_dir, spec)
+    if changed:
+        log_notices.changed(sources_changed=True)
+    return summary
+
+
 def _existing_device_uuid(device_id: str) -> Optional[str]:
     """物料权威里若已有同 id 的设备根物料，沿用其 uuid（Graph Authority 按 uuid 校验身份，
     换 uuid 会被 identity_conflict 拒绝）。"""
@@ -175,6 +271,78 @@ def build_device_node(
     }
 
 
+def _device_ids(spec: DeviceProcessSpec) -> List[str]:
+    return [
+        str(node.get("id"))
+        for node in spec.graph_nodes
+        if node.get("id") and str(node.get("type") or "device") == "device"
+    ]
+
+
+def _device_parents(spec: DeviceProcessSpec) -> Dict[str, str]:
+    """设备 id → 图中最近的祖先设备 id（父节点用 ``parent`` id 或 ``parent_uuid`` 表达）。"""
+
+    by_id = {str(node.get("id")): node for node in spec.graph_nodes if node.get("id")}
+    by_uuid = {str(node.get("uuid")): node for node in spec.graph_nodes if node.get("uuid")}
+
+    def parent_of(node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        parent_uuid = str(node.get("parent_uuid") or "")
+        if parent_uuid and parent_uuid in by_uuid:
+            return by_uuid[parent_uuid]
+        return by_id.get(str(node.get("parent") or ""))
+
+    parents: Dict[str, str] = {}
+    for device_id in _device_ids(spec):
+        current = parent_of(by_id[device_id])
+        seen = {device_id}
+        while current is not None and str(current.get("id")) not in seen:
+            seen.add(str(current.get("id")))
+            if str(current.get("type") or "") == "device":
+                parents[device_id] = str(current.get("id"))
+                break
+            current = parent_of(current)
+    return parents
+
+
+_ERROR_MARKERS = ("Error", "Exception", "Traceback", "错误", "失败", "异常")
+
+
+def _last_error_line(tail: List[str]) -> str:
+    for line in reversed(tail):
+        if any(marker in line for marker in _ERROR_MARKERS):
+            return line
+    return ""
+
+
+def _unavailable_reason(spec: DeviceProcessSpec, runtime: DeviceProcessRuntime, log_path: str, tail: List[str]) -> str:
+    """受管进程没在运行时给设备目录看的原因：发生了什么、看护到哪一步、去哪看日志、怎么恢复。"""
+
+    name = spec.name
+    code = runtime.last_exit_code
+    exited = f"退出码 {code}" if code is not None else "进程已结束"
+    error_line = _last_error_line(tail)
+    error = f"；日志最后的错误：{error_line}" if error_line else ""
+    if runtime.status == "stopped":
+        return f"受管设备进程 {name} 已停止；在设备进程页启动它后设备恢复（日志 {log_path}）"
+    if runtime.status == "restarting":
+        return (
+            f"受管设备进程 {name} 意外退出（{exited}），按重启策略第 {runtime.restart_count}/{spec.max_restarts} 次"
+            f"重启中{error}；日志 {log_path}"
+        )
+    should_restart = spec.restart_policy == "always" or (spec.restart_policy == "on-failure" and code != 0)
+    if not should_restart:
+        return (
+            f"受管设备进程 {name} 已退出（{exited}），重启策略 {spec.restart_policy} 不自动重启{error}；"
+            f"查看日志 {log_path} 后在设备进程页启动它"
+        )
+    if runtime.restart_count >= spec.max_restarts:
+        return (
+            f"受管设备进程 {name} 意外退出（{exited}），已自动重启 {runtime.restart_count} 次仍退出，停止看护{error}；"
+            f"查看日志 {log_path}，修复后在设备进程页重启它"
+        )
+    return f"受管设备进程 {name} 重启失败：{runtime.last_error or exited}{error}；日志 {log_path}"
+
+
 class DeviceProcessService:
     """受管 Slave 子进程的规格、生命周期与看护。"""
 
@@ -184,6 +352,10 @@ class DeviceProcessService:
         self._runtime: Dict[str, DeviceProcessRuntime] = {}
         self._procs: Dict[str, subprocess.Popen[bytes]] = {}
         self._stop_requested: set[str] = set()
+        # 本 Host 生命周期内拉起过的规格（不可用原因要用进程名与图中设备，不必每次读盘）
+        self._launched: Dict[str, DeviceProcessSpec] = {}
+        # 进程输出的最后几行（输出读完即定稿），写进设备不可用原因
+        self._log_tails: Dict[str, List[str]] = {}
         self._monitor: Optional[threading.Thread] = None
         self._closing = False
         # Windows：受管 Slave 随本 Host 消亡由系统回收（拿不到 job 时靠 Slave 自己跟随父进程）
@@ -278,20 +450,10 @@ class DeviceProcessService:
     @staticmethod
     def graph_filename(spec: DeviceProcessSpec) -> str:
         """图文件名即 Graph Authority 里的图名：带进程名与 id 前缀，多个受管进程不互相覆盖。"""
-        slug = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in spec.name.strip()) or "process"
-        return f"managed_{slug}_{spec.id[:8]}.json"
+        return graph_filename(spec)
 
     def _write_graph(self, spec: DeviceProcessSpec) -> Path:
-        if not spec.graph_nodes:
-            raise DeviceProcessError("受管进程至少要有一个设备节点")
-        directory = process_dir(self.working_dir, spec.id)
-        directory.mkdir(parents=True, exist_ok=True)
-        graph_file = directory / self.graph_filename(spec)
-        graph_file.write_text(
-            json.dumps({"nodes": spec.graph_nodes, "links": []}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        return graph_file
+        return write_graph(self.working_dir, spec)
 
     # ── 规格 CRUD ─────────────────────────────────────────────────
 
@@ -319,6 +481,7 @@ class DeviceProcessService:
         current = specs.get(process_id)
         if current is None:
             raise DeviceProcessError(f"device process not found: {process_id}")
+        self._refuse_generated(current, "编辑")
         spec = self._spec_from_payload(payload, existing=current)
         specs[process_id] = spec
         save_specs(self.working_dir, specs)
@@ -331,12 +494,47 @@ class DeviceProcessService:
         specs = load_specs(self.working_dir)
         if process_id not in specs:
             raise DeviceProcessError(f"device process not found: {process_id}")
+        self._refuse_generated(specs[process_id], "删除")
         self.stop(process_id, wait=True)
         specs.pop(process_id)
         save_specs(self.working_dir, specs)
+        self._forget(process_id)
+        log_notices.changed(sources_changed=True)
+
+    @staticmethod
+    def _refuse_generated(spec: DeviceProcessSpec, operation: str) -> None:
+        if spec.generated_by:
+            raise DeviceProcessGeneratedError(
+                f"{spec.name} 由 Host 启动参数 --{spec.generated_by} 按设备图生成，每次 Host 启动时重建，"
+                f"不能{operation}；可以启动 / 停止 / 重启。改设备图后重启 Host，或去掉该参数重启 Host 恢复为 Host 内运行"
+            )
+
+    def _forget(self, process_id: str) -> None:
         with self._lock:
             self._runtime.pop(process_id, None)
-        log_notices.changed(sources_changed=True)
+            self._launched.pop(process_id, None)
+            self._log_tails.pop(process_id, None)
+
+    def sync_generated(self, generated_by: str, specs: List[DeviceProcessSpec]) -> Dict[str, List[str]]:
+        """:func:`sync_generated_specs` 的服务版：先停掉要移除且正在运行的生成规格进程。"""
+
+        wanted = {item.id for item in specs}
+        stale = [
+            process_id
+            for process_id, existing in load_specs(self.working_dir).items()
+            if existing.generated_by == generated_by and process_id not in wanted
+        ]
+        for process_id in stale:
+            # 停进程要等它退出（最多 STOP_GRACE_S）：不在持锁时等，看护线程与设备快照刷新照常
+            with self._lock:
+                proc = self._procs.get(process_id)
+            if proc is not None and proc.poll() is None:
+                self.stop(process_id, wait=True)
+        with self._lock:
+            summary = sync_generated_specs(self.working_dir, generated_by, specs)
+            for process_id in summary["removed"]:
+                self._forget(process_id)
+        return summary
 
     def _spec_from_payload(self, payload: Dict[str, Any], existing: Optional[DeviceProcessSpec]) -> DeviceProcessSpec:
         name = str(payload.get("name") or (existing.name if existing else "")).strip()
@@ -355,6 +553,7 @@ class DeviceProcessService:
             id=existing.id if existing else str(payload.get("id") or uuid.uuid4()),
             name=name,
             graph_nodes=nodes,
+            graph_links=list(payload.get("graph_links", existing.graph_links if existing else [])),
             devices_dirs=[str(item) for item in payload.get("devices_dirs", existing.devices_dirs if existing else [])],
             package_names=package_names,
             external_only=bool(payload.get("external_only", existing.external_only if existing else False)),
@@ -510,6 +709,8 @@ class DeviceProcessService:
         runtime.stopped_at_ms = None
         runtime.status = "running"
         self._procs[spec.id] = proc
+        self._launched[spec.id] = spec
+        self._log_tails.pop(spec.id, None)
         self.source_changes.set_pid(spec.id, proc.pid)
         self.source_changes.start()
         log_notices.changed(f"managed:{spec.id}", sources_changed=True)
@@ -522,12 +723,20 @@ class DeviceProcessService:
         logger.info(f"[DeviceProcesses] 已启动 {spec.name} (pid {proc.pid})")
 
     def _pump_output(self, process_id: str, proc: subprocess.Popen[bytes], log_path: Path) -> None:
+        tail: deque[str] = deque(maxlen=LOG_TAIL_LINES)
         with log_path.open("ab") as handle:
             assert proc.stdout is not None
             for raw in proc.stdout:
                 handle.write(raw)
                 handle.flush()
+                line = _ANSI_ESCAPE.sub("", raw.decode("utf-8", errors="replace")).strip()
+                if line:
+                    tail.append(line[:_LOG_TAIL_LINE_CHARS])
                 log_notices.changed(f"managed:{process_id}")
+        with self._lock:
+            # 输出读完 = 进程已退出；同一 id 已被重新拉起时不覆盖新实例
+            if self._procs.get(process_id) in (None, proc):
+                self._log_tails[process_id] = list(tail)
 
     def _terminate(self, proc: subprocess.Popen[bytes], *, wait: bool) -> None:
         try:
@@ -620,12 +829,69 @@ class DeviceProcessService:
                 runtime.status = "running"
             view = asdict(runtime)
         view.update(asdict(spec))
-        view["device_ids"] = [str(node.get("id")) for node in spec.graph_nodes]
+        # 生成规格的图带着设备子树里的物料节点：这里只列设备
+        view["device_ids"] = _device_ids(spec)
         view["graph_path"] = str(process_dir(self.working_dir, spec.id) / self.graph_filename(spec))
         notices = [item for item in self.source_changes.status()["notices"] if item["process_id"] == spec.id]
         view["restart_required"] = bool(notices)
         view["restart_notices"] = notices
         return view
+
+    # ── 设备不可用原因 ────────────────────────────────────────────
+
+    def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
+        """本 Host 拉起过、此刻没在运行的受管进程里每台设备的不可用记录（device_id → 记录）。
+
+        只看内存态（Host 每 0.5 s 刷新一次设备快照，不读盘）：从未拉起过的规格不出现；进程在跑
+        （含刚拉起、设备还没接入）也不出现。记录形状与 HostLink runtime 跳过设备时一致
+        （``device_id`` / ``registry_name`` / ``backend`` / ``reason``），另带 ``managed_process``。
+        """
+
+        from unilabos.config.config import BasicConfig
+
+        backend = str(getattr(BasicConfig, "backend", "") or "")
+        records: Dict[str, Dict[str, Any]] = {}
+        with self._lock:
+            items = [
+                (process_id, spec, self._runtime.get(process_id), self._procs.get(process_id))
+                for process_id, spec in self._launched.items()
+            ]
+            tails = {process_id: list(self._log_tails.get(process_id) or []) for process_id, *_ in items}
+        for process_id, spec, runtime, proc in items:
+            if runtime is None or runtime.status not in ("crashed", "restarting", "stopped"):
+                continue
+            if proc is not None and proc.poll() is None:
+                continue
+            log_path = runtime.log_path or str(process_dir(self.working_dir, process_id) / "process.log")
+            reason = _unavailable_reason(spec, runtime, log_path, tails.get(process_id) or [])
+            parents = _device_parents(spec)
+            for node in spec.graph_nodes:
+                if str(node.get("type") or "device") != "device":
+                    continue
+                device_id = str(node.get("id") or "")
+                if not device_id:
+                    continue
+                record: Dict[str, Any] = {
+                    "device_id": device_id,
+                    "registry_name": str(node.get("template_name") or node.get("class") or ""),
+                    "backend": backend,
+                    "reason": reason,
+                    "managed_process": {
+                        "id": process_id,
+                        "name": spec.name,
+                        "status": runtime.status,
+                        "last_exit_code": runtime.last_exit_code,
+                        "restart_count": runtime.restart_count,
+                        "max_restarts": spec.max_restarts,
+                        "restart_policy": spec.restart_policy,
+                        "log_path": log_path,
+                        "log_tail": tails.get(process_id) or [],
+                    },
+                }
+                if parents.get(device_id):
+                    record["parent_device_id"] = parents[device_id]
+                records[device_id] = record
+        return records
 
 
 _service: Optional[DeviceProcessService] = None
@@ -642,12 +908,42 @@ def get_device_process_service() -> DeviceProcessService:
         return _service
 
 
+def peek_device_process_service() -> Optional[DeviceProcessService]:
+    """已创建的服务单例；还没有时为 None（不创建：创建会登记 atexit 收尾、Windows Job 等）。"""
+
+    with _service_lock:
+        return _service
+
+
+def managed_device_unavailability() -> Dict[str, Dict[str, Any]]:
+    """Host 设备快照用：受管进程没在运行的设备及原因；本进程还没有受管进程服务时为空。
+
+    不创建服务单例，所以执行适配器可以无条件调用。
+    """
+
+    service = peek_device_process_service()
+    if service is None:
+        return {}
+    try:
+        return service.unavailable_devices()
+    except Exception:  # noqa: BLE001 - 原因记录只是诊断信息，不能拖垮设备快照刷新
+        logger.exception("[DeviceProcesses] 受管进程设备不可用原因计算失败")
+        return {}
+
+
 __all__ = [
+    "DeviceProcessBusyError",
     "DeviceProcessError",
+    "DeviceProcessGeneratedError",
     "DeviceProcessService",
     "DeviceProcessSpec",
     "build_device_node",
     "get_device_process_service",
+    "graph_filename",
     "load_specs",
+    "managed_device_unavailability",
+    "peek_device_process_service",
     "save_specs",
+    "sync_generated_specs",
+    "write_graph",
 ]

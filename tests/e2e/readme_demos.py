@@ -280,6 +280,12 @@ DEMOS: tuple[DemoSpec, ...] = (
 
 DEMOS_BY_REPO = {spec.repo: spec for spec in DEMOS}
 
+#: 另以 ``--root_devices_as_slaves`` 再跑一遍的 demo：WorkstationDemo 设备最多（一个根工作站带 5 台子设备，
+#: 整棵树进同一个受管 Slave），LockDemo 根设备最多（3 个根设备 = 3 个 Slave，动作锁 / 物料锁跨 Slave 生效）。
+ROOT_DEVICE_SLAVE_DEMOS: tuple[DemoSpec, ...] = tuple(
+    DEMOS_BY_REPO[repo] for repo in ("LabDeviceWorkstationDemo", "LabDeviceLockDemo")
+)
+
 
 def workflow_batches(
     expectations: tuple[WorkflowExpectation, ...],
@@ -434,11 +440,13 @@ def runtime_command(
     hostlink_port: int,
     is_slave: bool,
     backend: str = E2E_BACKEND,
+    root_devices_as_slaves: bool = False,
 ) -> list[str]:
     """按 demo README 记录的启动形态组装 ``unilab`` 运行时命令。
 
     两种后端都保留 HostLink（host 绑定 / slave 接入）：hostlink 模式承载全部通信，
-    ros2 模式承载物料权威与 host 服务，设备动作、Topic 走 ROS 2。
+    ros2 模式承载物料权威与 host 服务，设备动作、Topic 走 ROS 2。``root_devices_as_slaves``
+    给 host 加 ``--root_devices_as_slaves``：每个根设备由 Host 拉起的受管 Slave 运行。
     """
 
     command = unilab_command(
@@ -477,6 +485,8 @@ def runtime_command(
         if E2E_TOPOLOGY == "single":
             # 用例自己管这个进程的生死，不要监督进程 / Host 子进程再套层
             command.append("--no_safe_restart")
+        if root_devices_as_slaves:
+            command.append("--root_devices_as_slaves")
     if backend == "ros2":
         command += ["--ros_domain_id", ros_domain_id(hostlink_port)]
     return command
@@ -619,6 +629,7 @@ def hostlink_port_open(port: int) -> bool:
 __all__ = [
     "DEMOS",
     "DEMOS_BY_REPO",
+    "ROOT_DEVICE_SLAVE_DEMOS",
     "DemoSpec",
     "EXAMPLE_CONFIG",
     "REPO_ROOT",

@@ -20,6 +20,8 @@ options:
                         HostLink TCP, no DDS/ROS 2 required) or ros2.
   --is_slave, --is-slave
                         Run the backend as slave node (without host privileges).
+  --root_devices_as_slaves, --root-devices-as-slaves
+                        Host 把每个根设备（连同子树）放进各自的受管 Slave 子进程运行
   --slave_no_host, --slave-no-host
                         Skip waiting for host service in slave mode
   --config CONFIG       Configuration file path, supports .py format Python config files
@@ -268,6 +270,42 @@ backend。
 浏览器和外部微前端访问 HTTP API 端口（默认 `8002`），不会访问 HostLink 的
 `7302`。即使使用 `--disable-browser`，仍可手动访问 `http://<节点 IP>:8002/`
 选择 API 工具或已登记的 GitHub Pages 前端。
+
+### 每个根设备一个受管 Slave：`--root_devices_as_slaves`
+
+Host 加 `--root_devices_as_slaves`（也可写 `--root-devices-as-slaves`）启动时，设备图里每个根设备
+（`host_node` 除外）连同整棵子树（子设备、物料、Site）在各自的受管 Slave 子进程里运行，Host 只负责
+组网、物料权威与调度对接。某台设备构造失败、卡死或要换驱动时，只有它所在的 Slave 受影响、可以单独
+重启，Host 和其它设备照常工作。
+
+```bash
+unilab -g lab.json --root_devices_as_slaves
+```
+
+- **拆分**：一个根设备一个 Slave。Slave 的图是该子树在 Graph Authority 里的节点原件（uuid、config、
+  parent 都不变）加上两端都在子树里的连线；根级非设备物料、跨子树的连线留在 Host。设备类不支持当前
+  backend 的根设备也留在 Host，照旧显示不可用及原因。完整的图照旧登记在 Graph Authority，Host 照旧
+  对齐全部开机物料，设备身份不变。
+- **运行**：Slave 用 Host 的 backend、`--devices` 目录、`--external_devices_only`、工作目录与配置文件
+  （以及 `--test_mode`、`--registry_path` 等开关），经本机 HostLink 接回 Host。设备在
+  `/api/v1/devices`、`/api/v1/online-devices` 里与跑在 Host 里时一致，动作锁、物料锁与物料不变。
+- **规格**：每个 Slave 是一条受管设备进程，id 为 `root-<设备 id>`（含路径或 URL 不安全字符的 id 净化后
+  加一段由 id 派生的后缀），在 `GET /api/v1/device-processes` 里可见（`generated_by: root_devices_as_slaves`），
+  可以启动 / 停止 / 重启，不能编辑或删除。每次 Host 启动按当前设备图重建：同一设备复用同一条规格，
+  图里没有了的设备的规格被移除，不带本参数启动时移除全部生成的规格；用户手建的受管进程不受影响。
+- **日志与数据库**：`<工作目录>/device_processes/root-<设备 id>/process.log` 是该 Slave 的完整输出
+  （`/api/v1/device-processes` 里的 `log_path`），也可经日志接口按来源 `managed:root-<设备 id>` 读取
+  （`GET /api/v1/hostlink/logs?source_id=managed:root-<设备 id>`）；同一目录下有它的图文件和独占的
+  数据库根目录 `database/`。
+- **重启**：重启策略为 on-failure，自动重启最多 5 次（退避 2、4、8、15、30 秒），之后停止看护。
+  设备没在运行时，`/api/v1/devices` 里它的 `edge_status` 为 `unavailable`，`unavailable.reason` 写明
+  退出码、重启进度、日志路径和日志里最后的错误（`unavailable.managed_process` 带完整状态与日志末尾）。
+  手动重启一台设备：`POST /api/v1/device-processes/root-<设备 id>/restart`（默认拓扑下经调度权威的端口转发）。
+  重启时该设备的在途作业按 Slave 离线的规则收尾：已请求取消的落 `canceled`，其余落 `execution_unknown`
+  并开核实决策（锁保留到裁决）；重启期间派发给它的动作在开始边界之前失败（未下发），进入普通的动作错误决策，
+  可以直接重试。Host 退出时全部 Slave 一起退出。
+- 本参数只对运行设备的 Host 生效：`--is_slave`、`--role backend` 下启动时告警并忽略；它依赖 HostLink，
+  `--disable_hostlink` 时设备留在 Host 运行。
 
 ## 可视化选项
 

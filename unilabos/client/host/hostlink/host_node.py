@@ -183,16 +183,24 @@ class HostNode(HostAdapterBase):
 
     @property
     def unavailable_devices(self) -> Dict[str, Dict[str, Any]]:
-        """设备图中因 backend 不支持而被本机 runtime 跳过的设备（能力快照里登记为停用 route）。"""
+        """不可用的设备及原因（能力快照里登记为停用 route）：设备图中因 backend 不支持而被本机 runtime
+        跳过的设备，以及所在受管 Slave 进程没在运行（崩溃 / 退避重启 / 已停止）的设备。"""
+
+        from unilabos.server.services.device_processes import managed_device_unavailability
 
         local = getattr(self.runtime, "local", None)
-        return dict(getattr(local, "unavailable_devices", None) or {})
+        records = managed_device_unavailability()
+        records.update(getattr(local, "unavailable_devices", None) or {})
+        return records
 
     def refresh_devices(self, *, initial: bool = False, notify_ready: bool = False) -> None:
         snapshot = self._device_snapshot(initial=initial)
         self._subscribed_topics = set(self.runtime.local.topic_bus.subscribed_topics())
         old_devices = set(self.devices_names)
         current_devices = set(snapshot)
+        # 不可用原因变了（受管进程崩溃 → 退避重启 → 停止看护）也要重发能力快照，即使在线设备集合没变
+        old_unavailable = getattr(self, "_unavailable_fingerprint", "{}")
+        self._unavailable_fingerprint = json.dumps(self.unavailable_devices, ensure_ascii=False, sort_keys=True, default=str)
 
         self.devices_names = {device_id: self.namespace for device_id in sorted(current_devices)}
         self._online_devices = {f"{self.namespace}/{device_id}" for device_id in current_devices}
@@ -220,7 +228,7 @@ class HostNode(HostAdapterBase):
             self.device_status.pop(device_id, None)
             self.device_status_timestamps.pop(device_id, None)
 
-        if notify_ready and old_devices != current_devices:
+        if notify_ready and (old_devices != current_devices or old_unavailable != self._unavailable_fingerprint):
             for bridge in self.bridges:
                 publish_ready = getattr(bridge, "publish_host_ready", None)
                 if callable(publish_ready):

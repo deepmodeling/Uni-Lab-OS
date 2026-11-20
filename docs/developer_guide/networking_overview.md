@@ -279,6 +279,12 @@ ROS2 Slave 的设备在以下情况离线：Slave 的 HostLink 连接断开或�
 动作收尾（已请求取消的按取消，其余按结果未知交给核实）。Slave 重连且设备回到 ROS 图上后，
 下一轮设备发现（约 15 秒内）恢复在线。Slave 收到 SIGINT / SIGTERM 都有序退出（退出码 0）。
 
+ROS2 Slave 在 `rclpy.init` 之前就接入 HostLink，设备节点（Action server）要稍后才建好：接入时它把
+设备登记为「未就绪」，设备节点建好后再报告就绪（心跳也带同一份就绪状态）；Host 只把就绪的设备当在线。
+重启后的 Slave 刚接回 HostLink 时，DDS 里可能还留着旧进程的 Action server，这时派发的动作在开始边界
+之前失败，不会把 goal 发给还不存在的接收方。没有初始化成功的设备保持未就绪（离线）。不带就绪状态的
+旧版本 Slave 按就绪处理。
+
 两种 backend 下，派发给所在 Slave 已断开或心跳超时的设备的动作，都在开始边界之前失败：开始许可
 不领用，作业带 `error_info`（`ExecutionNotStarted`，传输类）走普通的失败决策，而不是结果未知。
 请求已经发给 Slave、之后连接才断开（如 Slave 在动作进行中被杀）的，Slave 可能已经执行，按结果未知
@@ -382,6 +388,16 @@ unilab --ak your_ak --sk your_sk -g slave2.json \
 从节点不启动 HTTP 服务（管理 API 只在 Host / 调度权威上），不需要 `--port-management`。同一台机器上的
 每个从节点要有自己的数据库根目录（`--working-dir` 或 `--server-database-root`），否则后启动的那个拿不到
 `unilab.lock`，以退出码 73 退出（见 [微后端数据库](databases.md) 第 3 节）。
+
+### 同机：每个根设备一个受管 Slave
+
+`unilab -g lab.json --root_devices_as_slaves` 不需要另写 Slave 图：Host 按设备图把每个根设备（连同子树）
+切成一个受管 Slave（`server/services/device_processes.py`），由 Host 拉起、看护、按 on-failure 重启，并随
+Host 退出。每个 Slave 经本机 HostLink 接回 Host，与手动启动的 Slave 走同一条链路（设备描述、动作、物料、
+离线判定与在途作业收尾都相同）；Slave 的图是 Host 从自己 Graph Authority 切出的 payload，带
+`--graph_is_authority_payload` 原样启动，不再登记进 Slave 自己的数据库。所在进程没在运行的设备，Host 在能力
+快照里登记一条停用 route 并附原因（退出码、重启进度、日志路径），调度权威的 `/devices` 据此显示不可用。
+参数、规格生命周期、日志位置与重启行为见 [启动指南](../user_guide/launch.md)「每个根设备一个受管 Slave」一节。
 
 ### 云端集成模式
 

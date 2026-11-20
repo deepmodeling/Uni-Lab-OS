@@ -226,6 +226,19 @@ def main(
     exit()
 
 
+def _device_ids_in_subtree(root: Any) -> set[str]:
+    """一棵设备树（根与各级子节点）里全部 ``type=device`` 节点的 id。"""
+
+    result: set[str] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.res_content.type == "device":
+            result.add(str(node.res_content.id).strip())
+        stack.extend(node.children)
+    return result
+
+
 def slave(
     devices_config: ResourceTreeSet,
     resources_config: ResourceTreeSet,
@@ -330,6 +343,17 @@ def slave(
 
         register_hostlink_resource_handlers(_hostlink_client)
         logger.info("HostLink 物料下行 handler 已注册（资源树同步 / 物料挂载）。")
+
+        # 4.6 设备节点（含 Action server）已建好：告诉 Host 它们就绪。Host 只把就绪的设备当在线，
+        #     重启后的 Slave 刚接回 HostLink 时派发的 goal 不会落到还不存在的 Action server 上；
+        #     初始化失败的根设备连同其子设备保持未就绪（离线）。
+        from unilabos.client.host.hostlink.network import mark_slave_devices_ready, startup_device_ids
+
+        not_started: set[str] = set()
+        for device_config in devices_config.root_nodes:
+            if device_config.res_content.type == "device" and device_config.res_content.id not in devices_instances:
+                not_started.update(_device_ids_in_subtree(device_config))
+        mark_slave_devices_ready(set(startup_device_ids(devices_config)) - not_started)
 
     # 5. 如果启用可视化，创建可视化相关节点
     if visual != "disable":

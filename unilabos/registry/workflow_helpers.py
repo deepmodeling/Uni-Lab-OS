@@ -28,7 +28,7 @@ import itertools
 import textwrap
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator, Optional
+from typing import AbstractSet, Any, Callable, Iterator, Optional
 
 #: 辅助函数最多嵌套这么多层（也用于发现递归）。
 MAX_HELPER_DEPTH = 8
@@ -268,7 +268,7 @@ class _Inliner:
         return bound
 
     def _import_free_names(self, helper: Helper, source: dict[str, Any], nodes: list[ast.AST],
-                           bound: set[str], locals_: set[str]) -> dict[str, str]:
+                           bound: set[str], locals_: AbstractSet[str]) -> dict[str, str]:
         """辅助函数（及其展开的嵌套辅助函数）引用的常量并入调用方常量表。
 
         调用方已有同一对象时沿用原名；否则换成带辅助函数名的新名字——原名可能与调用方的
@@ -336,10 +336,12 @@ class _Inliner:
         if any(isinstance(node, ast.Return) for statement in body for node in ast.walk(statement)):
             raise HelperError(f"辅助函数 {helper.name} 的 return 只能写在函数末尾", call)
 
-        locals_ = {
+        # 按首次出现的顺序编号：集合的遍历顺序随字符串哈希种子变化，展开后的名字（循环 carry 的键、
+        # 数据键）就会每个进程不同
+        locals_ = dict.fromkeys(
             node.id for statement in body for node in ast.walk(statement)
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
-        }
+        ).keys()
         renames = {name: f"_{helper.name}_{name}_{next(self.counter)}" for name in locals_}
         tail: list[ast.stmt] = []
         if target is not None:

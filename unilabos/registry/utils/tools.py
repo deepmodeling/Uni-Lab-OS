@@ -172,7 +172,8 @@ SIMPLE_TYPE_MAP = {
 ARRAY_TYPES = {"list", "List", "tuple", "Tuple", "set", "Set", "Sequence", "Iterable"}
 OBJECT_TYPES = {"dict", "Dict", "Mapping"}
 WRAPPER_TYPES = {"Optional"}
-SLOT_TYPES = {"ResourceSlot", "DeviceSlot", "SiteSlot"}
+#: 元组而不是集合：``detect_slot_type`` 按这个顺序取第一个匹配，结果不能随字符串哈希种子变化
+SLOT_TYPES = ("ResourceSlot", "DeviceSlot", "SiteSlot")
 
 
 # ---------------------------------------------------------------------------

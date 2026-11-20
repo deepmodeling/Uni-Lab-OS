@@ -98,6 +98,11 @@ Uni-Lab 的启动过程分为以下几个阶段：
   （日志 `AST 扫描文件失败`）、读取 / 解析失败的注册表 YAML、导入失败的注册类（`@device` 与 YAML 条目一视同仁）
   都会让它以退出码 1 结束，并逐条列出问题；补全写回 YAML 时，找不到类源码的条目原样保留，交给导入校验判定；
   `supported_backends` 不含当前 backend 的设备（例如 HostLink 下的 ROS 2 专用节点）导入失败只记为跳过。
+  本机没装 ROS 2 时，ROS 2 transport（`unilabos/client/host/ros2/`）与 `unilabos/devices/ros_dev/` 里的
+  内置代码不导入、不校验，也不提示；装了 ROS 2 就照常校验。
+- 运行时 `--backend` 不是 `ros2` 时，建注册表同样不导入这些 ROS 2 专用代码（`devices/ros_dev` 整个不扫描），
+  没装 ROS 也不会报缺少 rclpy；其中的预置设备（如 `camera`、`serial`）照常登记，图里引用它们时
+  HostLink 按 `supported_backends` 把节点标为不可用，其余设备照常启动。
 
 ### 8. 设备验证和注册
 

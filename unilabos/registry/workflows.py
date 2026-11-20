@@ -647,7 +647,12 @@ def workflow(
             source_path=source_path,
             display_name=str(display_name).strip(),
             description=str(description or ""),
-            tags=[str(tag) for tag in (tags or [])],
+            # 集合没有顺序：按名称排，上报的模板不随字符串哈希种子变化
+            tags=(
+                sorted(str(tag) for tag in tags)
+                if isinstance(tags, (set, frozenset))
+                else [str(tag) for tag in (tags or [])]
+            ),
             fn=fn,
             guide=normalized_guide,
         )

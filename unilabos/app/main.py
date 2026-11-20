@@ -862,6 +862,9 @@ def _run_main():
         check_mode=check_mode,
         complete_registry=complete_registry,
         external_only=external_only,
+        # --check_mode 只校验本机能导入的注册表、不启动 backend：ROS 2 专用核心代码不按 --backend
+        # 的默认值跳过，装了 ROS 2 就照常导入校验，没装才静默跳过
+        backend=None if check_mode else BasicConfig.backend,
     )
 
     # Check mode: 注册表验证完成后直接退出；扫描跳过的文件或导入失败的注册类都让校验失败（退出码 1）

@@ -21,6 +21,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Mapping,
     MutableMapping,
     Optional,
     Sequence,
@@ -70,14 +71,24 @@ def loopback_carries_fragmented_udp() -> bool:
     return udp_loopback_delivers(LOOPBACK_PROBE_BYTES)
 
 
+def localhost_discovery_only(env: Mapping[str, str]) -> bool:
+    """只在本机发现：rmw 会在代码里按 localhost 配置传输，盖过任何传输配置文件。"""
+
+    return env.get("ROS_LOCALHOST_ONLY") == "1" or env.get("ROS_AUTOMATIC_DISCOVERY_RANGE", "").upper() == "LOCALHOST"
+
+
 def configure_slave_transport(env: MutableMapping[str, str], *, allow_shm: bool, rmw: str) -> str:
-    """在 Slave 收到发现策略后、创建 DDS 参与者前选定传输。返回值供 Host 区分显式设置与回退。"""
+    """在 Slave 导入 rclpy、创建 DDS 参与者之前选定传输。返回值供 Host 区分显式设置与回退。
+
+    Windows 上 Fast DDS 只认加载前就在的 ``FASTRTPS_DEFAULT_PROFILES_FILE``，所以正常启动在 ``app.main``
+    里导入 rclpy 之前调用；那时还没收到 Host 下发的发现策略，收到后由调用方用
+    :func:`localhost_discovery_only` 复核上报值。
+    """
 
     if (
         rmw not in ("rmw_fastrtps_cpp", "rmw_fastrtps_dynamic_cpp")
         or any(str(env.get(name) or "").strip() for name in FASTDDS_USER_TRANSPORT_ENV)
-        or env.get("ROS_LOCALHOST_ONLY") == "1"
-        or env.get("ROS_AUTOMATIC_DISCOVERY_RANGE", "").upper() == "LOCALHOST"
+        or localhost_discovery_only(env)
         or env.get("RMW_FASTRTPS_USE_QOS_FROM_XML") == "1"
     ):
         return "user"

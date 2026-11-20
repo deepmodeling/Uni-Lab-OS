@@ -567,6 +567,16 @@ def _run_main():
                 "当前为无 ROS 安装。默认请使用 --backend hostlink；"
                 "仅需 ROS2 时安装 unilabos-ros2（jazzy/humble）及对应消息包。"
             )
+        if args_dict.get("is_slave"):
+            # 传输必须在导入 rclpy 之前选定：Windows 上导入 rclpy 之后再设 FASTRTPS_DEFAULT_PROFILES_FILE，
+            # Fast DDS 不一定按这份配置建参与者（实测 Slave 报 "No unicast locators" 并发现不了 Host）
+            from unilabos.client.host.hostlink.ros_assist import configure_slave_transport
+
+            BasicConfig.ros_transport = configure_slave_transport(
+                os.environ,
+                allow_shm=bool(args_dict.get("ros_shm")),
+                rmw=os.environ.get("RMW_IMPLEMENTATION") or "rmw_fastrtps_cpp",
+            )
         # HostLink direct backend must not probe/import rclpy as a side effect.
         from unilabos.app.utils import patch_rclpy_dll_windows
 

@@ -21,7 +21,7 @@ import ast
 import hashlib
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -205,6 +205,8 @@ def scan_directory(
         cache: Mutable cache dict (``load_scan_cache()`` result). Hits are read
                from here; misses are written back so the caller can persist later.
         include_files: 指定扫描的文件列表，提供时跳过目录递归收集，直接扫描这些文件。
+
+    结果按文件路径排序、文件内按声明顺序合并，与线程完成先后无关。
     """
     if executor is None:
         raise ValueError("executor is required and must not be None")
@@ -217,7 +219,7 @@ def scan_directory(
 
     # --- Collect files (depth/count limited) ---
     if include_files is not None:
-        py_files = [Path(f).resolve() for f in include_files if Path(f).resolve().exists()]
+        py_files = sorted(Path(f).resolve() for f in include_files if Path(f).resolve().exists())
     else:
         py_files = _collect_py_files(root_dir, max_depth=max_depth, max_files=max_files, exclude_files=exclude_files)
 
@@ -286,14 +288,16 @@ def scan_directory(
 
     def _collect_results(futures_dict: Dict):
         nonlocal cache_hits, cache_misses
-        for future in as_completed(futures_dict):
+        # 按提交顺序（排好序的文件列表）合并、不按完成先后：条目顺序与重复 id 报错里谁算先出现
+        # 都不取决于线程调度
+        for future, py_file in futures_dict.items():
             devs, ress, flows, hit, error = future.result()
             if hit:
                 cache_hits += 1
             else:
                 cache_misses += 1
             if error:
-                scan_errors.append({"file": str(futures_dict[future]).replace("\\", "/"), "error": error})
+                scan_errors.append({"file": str(py_file).replace("\\", "/"), "error": error})
             for dev in devs:
                 device_id = dev.get("device_id")
                 if device_id:

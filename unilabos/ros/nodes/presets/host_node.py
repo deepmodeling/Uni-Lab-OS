@@ -320,6 +320,10 @@ class HostNode(BaseROS2DeviceNode):
         }  # device_id -> action_value_mappings(本地+远程设备统一存储)
         self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
+        # 动作已终态但结果服务没把 Result 送回来时，补一次 get_result。
+        # 两单并行、后完成的那单曾经卡在这里，云端任务一直显示 running。
+        self._result_watch: Dict[str, Dict[str, Any]] = {}
+        self._result_settled: Set[str] = set()
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
         self._last_discovery_time = 0.0  # 上次设备发现的时间
         self._discovery_lock = threading.Lock()  # 设备发现的互斥锁
@@ -364,6 +368,9 @@ class HostNode(BaseROS2DeviceNode):
         # 创建定时器，定期发现设备
         self._discovery_timer = self.create_timer(
             discovery_interval, self._discovery_devices_callback, callback_group=self.callback_group
+        )
+        self._result_watch_timer = self.create_timer(
+            5.0, self._check_stuck_action_results, callback_group=self.callback_group
         )
 
         # 添加ping-pong相关属性
@@ -904,6 +911,14 @@ class HostNode(BaseROS2DeviceNode):
         self._goals[item.job_id] = goal_handle
         goal_future = goal_handle.get_result_async()
         goal_future.add_done_callback(lambda f: self.get_result_callback(item, action_id, f))
+        self._result_watch[item.job_id] = {
+            "item": item,
+            "action_id": action_id,
+            "goal_handle": goal_handle,
+            "future": goal_future,
+            "terminal_since": None,
+            "retried": False,
+        }
         goal_future.result()
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
@@ -916,9 +931,61 @@ class HostNode(BaseROS2DeviceNode):
             if hasattr(bridge, "publish_job_status"):
                 bridge.publish_job_status(feedback_data, item, "running")
 
+    def _check_stuck_action_results(self) -> None:
+        """终态已到、结果 Future 仍未完成时，再要一次 Result。
+
+        结果服务偶发把后完成目标的响应丢掉或卡在发送里。状态话题已经是终态，
+        服务端仍会把结果保留一段时间（默认 900 秒），补请求可以重新取回。
+        """
+        try:
+            terminal = {
+                GoalStatus.STATUS_SUCCEEDED,
+                GoalStatus.STATUS_CANCELED,
+                GoalStatus.STATUS_ABORTED,
+            }
+            now = time.monotonic()
+            for job_id, watch in list(self._result_watch.items()):
+                future = watch.get("future")
+                if future is not None and future.done():
+                    continue
+                goal_handle = watch.get("goal_handle")
+                status = getattr(goal_handle, "status", None)
+                if status not in terminal:
+                    continue
+                if watch.get("terminal_since") is None:
+                    watch["terminal_since"] = now
+                    continue
+                if watch.get("retried"):
+                    continue
+                if now - float(watch["terminal_since"]) < 5.0:
+                    continue
+                watch["retried"] = True
+                action_id = watch.get("action_id") or ""
+                self.lab_logger().warning(
+                    f"[Host Node] Goal {action_id} ({str(job_id)[:8]}) "
+                    f"已终态 status={status} 但结果未送达，重新请求结果"
+                )
+                retry_future = goal_handle.get_result_async()
+                item = watch["item"]
+                retry_future.add_done_callback(
+                    lambda f, item=item, action_id=action_id: self.get_result_callback(
+                        item, action_id, f
+                    )
+                )
+                watch["future"] = retry_future
+        except Exception as exc:
+            self.lab_logger().error(f"[Host Node] 检查未送达的动作结果失败: {exc}")
+
     def get_result_callback(self, item: "QueueItem", action_id: str, future) -> None:
         """获取结果回调"""
         job_id = item.job_id
+        if job_id in self._result_settled:
+            self.lab_logger().info(
+                f"[Host Node] 动作结果已处理，忽略重复回传 {action_id} ({str(job_id)[:8]})"
+            )
+            return
+        self._result_settled.add(job_id)
+        self._result_watch.pop(job_id, None)
 
         try:
             result = future.result()

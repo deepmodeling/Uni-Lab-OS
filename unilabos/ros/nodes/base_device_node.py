@@ -1850,7 +1850,10 @@ class BaseROS2DeviceNode(Node, Generic[T]):
                         get_result_info_str(execution_error, execution_success, action_return_value),
                     )
 
-            self.lab_logger().trace(f"动作 {action_name} 完成并返回结果")
+            return_info_len = len(getattr(result_msg, "return_info", "") or "")
+            self.lab_logger().info(
+                f"动作 {action_name} 完成并返回结果 (return_info {return_info_len} 字符)"
+            )
             return result_msg
 
         return execute_callback

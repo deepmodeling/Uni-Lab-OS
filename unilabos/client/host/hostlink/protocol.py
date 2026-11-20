@@ -62,6 +62,12 @@ class ActionType:
     TOPIC_SUBSCRIBE = "topic.subscribe"
     TOPIC_UNSUBSCRIBE = "topic.unsubscribe"
     TOPIC_DELIVER = "topic.deliver"
+    # Slave 取 Host 的完整物理拓扑图（协议编译器用，client/host/hostlink/physical_graph.py）。
+    PHYSICAL_GRAPH_GET = "graph.physical.get"
+
+
+#: HELLO / PING 应答里 Host 物理拓扑图的版本标记：Host 还没有图时为 null，旧版 Host 的应答里没有这个字段。
+PHYSICAL_GRAPH_REVISION = "physical_graph_revision"
 
 
 class LinkError(Exception):
@@ -429,6 +435,7 @@ __all__ = [
     "LinkError",
     "MAX_FRAME_BYTES",
     "MAX_MESSAGE_BYTES",
+    "PHYSICAL_GRAPH_REVISION",
     "PROTOCOL_VERSION",
     "RemoteError",
     "encode_frame",

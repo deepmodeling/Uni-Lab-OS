@@ -114,7 +114,8 @@ def nested_settings(kwargs: Dict[str, Any], **explicit: Any) -> Dict[str, Any]:
 
 
 def physical_graph() -> Any:
-    """协议编译器用的物理拓扑图（Host 进程装配了设备图时才有，否则 None）。"""
+    """协议编译器用的物理拓扑图：Slave 里是经 HostLink 取到的 Host 完整图（与本机启动图合并），
+    没有装配设备图时为 None。"""
 
     from unilabos.client.host.runtime.workstation_protocol import physical_setup_graph
 
@@ -338,9 +339,9 @@ class VirtualDevice:
     def _vessel_label(self, vessel: Any) -> str:
         """容器的人读标签：物料的 ``display_name``，取不到时用 PLR 名。
 
-        PLR 实例本身不带 ``display_name``：按它的 uuid 在物理拓扑图（Host 装配的设备图）里取；
-        没有设备图的进程（Slave）退回 PLR 名。ROS 2 ``Transfer`` 动作的 from_vessel / to_vessel 是
-        string 字段，到达时就是字符串，原样作标签。
+        PLR 实例本身不带 ``display_name``：按它的 uuid 在物理拓扑图（Slave 里是经 HostLink 取到的
+        Host 完整图）里取；图里没有这个物料时退回 PLR 名。ROS 2 ``Transfer`` 动作的 from_vessel /
+        to_vessel 是 string 字段，到达时就是字符串，原样作标签。
         """
 
         if vessel is None:

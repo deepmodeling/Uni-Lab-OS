@@ -318,9 +318,12 @@ class HostNode(HostAdapterBase):
             raise KeyError(f"未知 HostLink 设备：{item.device_id}")
 
         local_node = self.runtime.local.devices.get(item.device_id)
-        run_simulator = bool(
-            local_node is not None and driver_runs_in_test_mode(local_node.driver)
-        )
+        if local_node is not None:
+            run_simulator = driver_runs_in_test_mode(local_node.driver)
+        else:
+            # 驱动在 Slave 进程里，Host 看不到它：只信 Slave 在设备描述里声明的 run_in_test_mode
+            # （旧 Slave 不声明，仍由 Host 返回模拟结果）
+            run_simulator = self._action_descriptor(item.device_id).get("run_in_test_mode") is True
         if BasicConfig.test_mode and not run_simulator:
             from unilabos.client.host.execution_start import confirm_execution_start
             confirm_execution_start(item)
@@ -377,6 +380,8 @@ class HostNode(HostAdapterBase):
                     item.action_name,
                     action_context=context,
                     request_timeout=-1,
+                    # 测试模式下派给 Slave 的作业：目标进程按驱动再判定一次，没声明 run_in_test_mode 的不真跑
+                    _test_mode=bool(BasicConfig.test_mode),
                     **action_kwargs,
                 )
             )

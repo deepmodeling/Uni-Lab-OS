@@ -19,6 +19,10 @@ from unilabos.client.host.hostlink.topic import (
 )
 from unilabos.client.host.hostlink.client import HostLinkClient, set_hostlink_client
 from unilabos.client.host.hostlink.local_runtime import HostLinkLocalRuntime
+from unilabos.client.host.hostlink.physical_graph import (
+    PhysicalGraphSync,
+    attach_physical_graph_sync,
+)
 from unilabos.client.host.hostlink.protocol import ActionType, LinkError
 from unilabos.client.host.hostlink.server import (
     HostLinkServer,
@@ -69,6 +73,8 @@ class HostLinkBackend:
         self.is_slave = bool(is_slave)
         self.server: Optional[HostLinkServer] = None
         self.client: Optional[HostLinkClient] = None
+        # Slave：经 HostLink 取 Host 的完整物理拓扑图（协议编译用）
+        self._physical_graph: Optional[PhysicalGraphSync] = None
         self._started = False
         self._actions: Dict[str, tuple[str, ActionContext]] = {}
         self._action_callers: Dict[str, str] = {}
@@ -116,6 +122,9 @@ class HostLinkBackend:
             if self.is_slave:
                 self._start_slave()
                 self._connect_slave()
+                if self.client is not None and self.client.online and self._physical_graph is not None:
+                    # 协议编译用 Host 的完整图：装配设备前取到（最多等一个请求超时，取不到先用本机图）
+                    self._physical_graph.wait(HostLinkConfig.request_timeout)
                 if populate is not None:
                     populate(self.local)
                 # 驱动 post_init / 定时发布启动前先确认 Host 已登记设备归属。
@@ -644,6 +653,7 @@ class HostLinkBackend:
         )
         for node in self.local.devices.values():
             node.add_status_listener(self._on_local_status)
+        self._physical_graph = attach_physical_graph_sync(self.client)
         set_hostlink_client(self.client)
 
     def _connect_slave(self) -> None:
@@ -1653,6 +1663,9 @@ class HostLinkBackend:
         )
         for node in self.local.devices.values():
             node.remove_status_listener(self._on_local_status)
+        physical_graph, self._physical_graph = self._physical_graph, None
+        if physical_graph is not None:
+            physical_graph.close()
         client, self.client = self.client, None
         if client is not None:
             client.close()

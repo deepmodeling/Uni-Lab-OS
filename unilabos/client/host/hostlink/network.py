@@ -18,6 +18,10 @@ from unilabos.client.host.hostlink.client import (
     get_hostlink_client,
     set_hostlink_client,
 )
+from unilabos.client.host.hostlink.physical_graph import (
+    PhysicalGraphSync,
+    attach_physical_graph_sync,
+)
 from unilabos.client.host.hostlink.protocol import ActionType, PROTOCOL_VERSION
 from unilabos.client.host.hostlink.ros_assist import (
     FastDDSDiscoveryServer,
@@ -38,6 +42,34 @@ SERVICE_OWNER = "edge-microbackend"
 MANAGED_DISCOVERY_BIND = "0.0.0.0"
 #: Host 自己的 ROS 节点连本机托管 Discovery Server 用的地址。
 LOCAL_DISCOVERY_HOST = "127.0.0.1"
+#: Host 为自己的 ROS 节点写进本进程环境的组网变量（:meth:`HostNetworkService.start`）
+HOST_POLICY_ENV = (
+    "ROS_DOMAIN_ID",
+    "ROS_AUTOMATIC_DISCOVERY_RANGE",
+    "ROS_STATIC_PEERS",
+    "ROS_DISCOVERY_SERVER",
+    "ROS_SUPER_CLIENT",
+)
+#: 改写之前这些变量的原值（None 表示原来没有）
+_env_before_host_policy: dict[str, Optional[str]] = {}
+_env_before_host_policy_lock = threading.Lock()
+
+
+def _remember_env_before_host_policy() -> None:
+    with _env_before_host_policy_lock:
+        for name in HOST_POLICY_ENV:
+            _env_before_host_policy.setdefault(name, os.environ.get(name))
+
+
+def env_before_host_policy() -> dict[str, Optional[str]]:
+    """Host 为自己的 ROS 节点改写组网环境变量之前的原值（None 表示原来没有；没改写过时为空）。
+
+    本机拉起的受管 Slave 从这些原值起步，与另一台机器上的 Slave 一样经 HostLink 握手领取 ROS 组网
+    参数，而不是继承 Host 自己节点的设置（例如只有 Host 需要的 ``ROS_SUPER_CLIENT``）。
+    """
+
+    with _env_before_host_policy_lock:
+        return dict(_env_before_host_policy)
 
 
 class HostNetworkService:
@@ -222,6 +254,7 @@ class HostNetworkService:
                 self.ros_info.automatic_discovery_range = self._fallback_discovery_range
                 self._refresh_hello_payload()
 
+        _remember_env_before_host_policy()
         applied = apply_ros_network_env(self.local_ros_info())
         if self.ros_info.discovery_server:
             # HostNode performs graph introspection and must receive all endpoint
@@ -475,6 +508,7 @@ class HostNetworkService:
 _host_service_lock = threading.Lock()
 _host_service: Optional[HostNetworkService] = None
 _slave_setup_lock = threading.Lock()
+_slave_physical_graph: Optional[PhysicalGraphSync] = None
 _cleanup_registration_lock = threading.Lock()
 _cleanup_registered = False
 
@@ -591,10 +625,12 @@ def setup_slave_network_client(
     the behavior from :class:`BasicConfig`.
     """
 
+    global _slave_physical_graph
     if not HostLinkConfig.enable or not HostLinkConfig.host:
         return None, None
     if wait_for_host is None:
         wait_for_host = not BasicConfig.slave_no_host
+    physical_graph = None
     with _slave_setup_lock:
         client = get_hostlink_client()
         if client is None:
@@ -613,6 +649,8 @@ def setup_slave_network_client(
             # HostLink 时 Action server 还不存在，这时发出的 goal 没有接收方，会丢。
             client.configure_device_descriptors({"id": device_id, "ready": False} for device_id in client.device_ids)
             client.heartbeat_payload_provider = _descriptor_heartbeat(client)
+            # 协议编译用 Host 的完整物理拓扑图：ROS 2 Slave 同样经 HostLink 取，不经 DDS
+            physical_graph = _slave_physical_graph = attach_physical_graph_sync(client)
             set_hostlink_client(client)
             _register_process_cleanup()
         elif device_ids:
@@ -651,6 +689,9 @@ def setup_slave_network_client(
             )
         return client, None
 
+    if physical_graph is not None:
+        # 首次连上 Host：建设备节点之前取到完整图（最多等一个请求超时，取不到先用本机图）
+        physical_graph.wait(HostLinkConfig.request_timeout)
     ros_info = client.hello_ros_info()
     if not HostLinkConfig.ros_assist_apply:
         logger.info(
@@ -672,9 +713,13 @@ def setup_slave_network_client(
 
 
 def shutdown_slave_network_client() -> None:
+    global _slave_physical_graph
     with _slave_setup_lock:
         client = get_hostlink_client()
         set_hostlink_client(None)
+        physical_graph, _slave_physical_graph = _slave_physical_graph, None
+    if physical_graph is not None:
+        physical_graph.close()
     if client is not None:
         client.close()
 
@@ -685,8 +730,10 @@ def shutdown_network_services() -> None:
 
 
 __all__ = [
+    "HOST_POLICY_ENV",
     "HostNetworkService",
     "SERVICE_OWNER",
+    "env_before_host_policy",
     "get_host_network_service",
     "mark_slave_devices_ready",
     "require_slave_startup_device_ids",

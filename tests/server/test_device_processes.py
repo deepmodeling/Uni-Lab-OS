@@ -9,6 +9,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -76,6 +77,39 @@ def _payload(**overrides: Any) -> dict[str, Any]:
     }
     payload.update(overrides)
     return payload
+
+
+def test_auto_restart_survives_another_slave_restart(service, tmp_path) -> None:
+    process_id = service.create(_payload())["id"]
+    runtime = dpx.DeviceProcessRuntime(status="restarting", restart_count=1)
+    service._runtime[process_id] = runtime
+    with patch.object(dpx.threading, "Timer") as timer:
+        with dpx.get_host_mutation_gate(tmp_path).hold("slave_restart"):
+            service._restart_later(process_id)
+        assert runtime.status == "restarting"
+        assert runtime.restart_count == 1 and not FakePopen.instances
+        timer.return_value.start.assert_called_once()
+        _, callback = timer.call_args.args
+        callback(*timer.call_args.kwargs["args"])
+    assert runtime.status == "running" and runtime.pid == FakePopen.instances[-1].pid
+    assert runtime.restart_count == 1
+    service.stop(process_id)
+
+
+def test_auto_restart_does_not_retry_a_pending_host_restart(service, tmp_path) -> None:
+    process_id = service.create(_payload())["id"]
+    runtime = dpx.DeviceProcessRuntime(status="restarting", restart_count=1)
+    service._runtime[process_id] = runtime
+    gate = dpx.get_host_mutation_gate(tmp_path)
+    owner = object()
+    gate.request_restart(owner)
+    try:
+        with patch.object(dpx.threading, "Timer") as timer:
+            service._restart_later(process_id)
+            timer.assert_not_called()
+        assert runtime.status == "crashed" and not FakePopen.instances
+    finally:
+        gate.cancel_restart(owner)
 
 
 def test_create_writes_graph_and_command(service: dpx.DeviceProcessService, tmp_path: Path) -> None:

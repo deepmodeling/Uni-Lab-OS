@@ -115,7 +115,13 @@ Host 运行 ROS2 或 HostLink backend 时会在 TCP `7302` 监听 HostLink。Sla
 
 - 上报启动图中的设备 ID，供 Host 发现 Slave 及其设备归属；
 - ROS2 模式在 `rclpy.init` 前接收并应用 Host 的 `ROS_DOMAIN_ID`、发现范围、
-  静态对端和外部 Fast DDS Discovery Server 地址。
+  静态对端和外部 Fast DDS Discovery Server 地址；
+- 取 Host 的完整物理拓扑图供协议编译（两种 backend 相同）：HELLO 与心跳应答带
+  `physical_graph_revision`（Host 还没有图时为 null），版本变了 Slave 就在后台发 `graph.physical.get`
+  取 node-link 图，与本机启动图合并（两边都有的节点以本机为准；同名不同 uuid 的 Host 节点连同其连线
+  不并入）。Slave 连上 Host 后先等这次取图（最多一个请求超时）再建设备；取图失败时沿用现有的图，
+  下一次心跳再试。应答里没有该字段的旧版 Host、`--disable_hostlink`（纯 DDS）和 `--slave_no_host`
+  连上 Host 之前，只用本机启动图。
 
 在 `--backend ros2` 下，设备 Action 和节点注册仍走 ROS2；物料 create/get/update
 请求经 HostLink 交给 Host，再由 Host 代发到微后端 Materials Authority。
@@ -223,7 +229,9 @@ HostLink 构造驱动与 ROS2 同一套构造器（`client/host/runtime/driver_c
 模拟结果。这条规则既作用于 Host 派发的作业，也作用于驱动之间的跨设备调用
 （`node.call_device_action[_async]`）：测试模式下真跑的工作站调用没声明 `run_in_test_mode` 的子设备时拿到
 模拟结果，不会驱动真实硬件。目标设备在别的进程（Host ↔ Slave）时，调用方把测试模式随 `device.call`
-带过去，由目标所在进程按目标驱动判定。
+带过去，由目标所在进程按目标驱动判定。HostLink Host 派发作业给 Slave 上的设备时，按 Slave 设备描述里的
+`run_in_test_mode` 决定派过去执行还是自己返回模拟结果（驱动在 Slave 进程里，Host 看不到；不带该字段的
+旧 Slave 按模拟处理），派过去的作业同样带着测试模式，由 Slave 按驱动再判定一次。
 
 设备动作在每台设备内串行执行；不同 Slave/设备可以并行。取消是协作式的：驱动需
 接收 `ActionContext` 并在长操作中检查取消状态，已经进入的阻塞硬件调用不会被强制
@@ -398,6 +406,32 @@ Host 退出。每个 Slave 经本机 HostLink 接回 Host，与手动启动的 S
 `--graph_is_authority_payload` 原样启动，不再登记进 Slave 自己的数据库。所在进程没在运行的设备，Host 在能力
 快照里登记一条停用 route 并附原因（退出码、重启进度、日志路径），调度权威的 `/devices` 据此显示不可用。
 参数、规格生命周期、日志位置与重启行为见 [启动指南](../user_guide/launch.md)「每个根设备一个受管 Slave」一节。
+
+受管 Slave 按「可能在另一台机器上」对待，只经通信协议拿东西（`DeviceProcessService` 拉起它时的
+`slave_environment`）：
+
+- 完整物理拓扑图经 HostLink 取（见上文），不读 Host 的图文件；跨子树的连线只在 Host 的图里；
+- Host 为自己的 ROS 节点改写的组网环境变量（`ROS_DOMAIN_ID`、`ROS_AUTOMATIC_DISCOVERY_RANGE`、
+  `ROS_STATIC_PEERS`、`ROS_DISCOVERY_SERVER`、`ROS_SUPER_CLIENT`）恢复成改写前的值再交给 Slave，
+  组网参数与别处的 Slave 一样经 HELLO 下发；
+- ROS 2 Slave 的 Fast DDS 只走网络：环境里带 `FASTRTPS_DEFAULT_PROFILES_FILE`，指向进程目录里的
+  `fastdds_network_only.xml`（默认参与者配置 `useBuiltinTransports=false` 加一个 UDPv4 传输；Humble 的
+  Fast DDS 2.6 与 Jazzy 的 2.14 都认，`FASTDDS_BUILTIN_TRANSPORTS` 要 2.13 起才有，所以不用它）。配置里
+  不设发现方式，`ROS_DISCOVERY_SERVER` 照常把参与者转成托管 Discovery Server 的客户端。同机的参与者
+  默认经共享内存通信，被强制结束的 Slave 会留下没解开的进程间锁（Host 报
+  `RTPS_TRANSPORT_SHM ... owner died`，其他 Slave 随后可能崩溃）；只走 UDPv4 后同机流量经回环，没有这个
+  问题。用户已设置 `FASTRTPS_DEFAULT_PROFILES_FILE`、`FASTDDS_DEFAULT_PROFILES_FILE` 或
+  `FASTDDS_BUILTIN_TRANSPORTS` 时不改动。发现范围是仅本机（Humble 的 `ROS_LOCALHOST_ONLY=1`、Jazzy 的
+  `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`）时 rmw_fastrtps 会自己再加一个共享内存传输；托管 Discovery
+  Server 下 Host 下发的是 `SYSTEM_DEFAULT`，不受影响。只走 UDP 时同机流量经 127.0.0.1，超过 MTU 的消息
+  靠 IP 分片；WSL2 的镜像网络把 127.0.0.1 的流量经 MTU 1500 的虚拟网卡转发并丢掉分片，Slave 的 ROS
+  图信息、较大的目标与结果两个方向都送不到。Host 拉起受管 Slave 前往回环发一个 8 KB 的数据报自检
+  （`ros_assist.loopback_carries_fragmented_udp`），收不到时保留 Fast DDS 默认传输（含共享内存）并告警；
+- 停止时先请 Slave 有序退出：POSIX 发 SIGTERM，Windows 向它的进程组发 Ctrl+Break（ROS 2 Slave 当作
+  SIGBREAK 有序退出），`STOP_GRACE_S`（8 秒）后仍在才强制结束。
+
+手动在 Host 那台机器上启动的 Slave 不经过这一步，Fast DDS 用默认传输（含共享内存）；需要同样只走网络时，
+自己设置上述任一变量（例如 Jazzy 上 `FASTDDS_BUILTIN_TRANSPORTS=UDPv4`）。
 
 ### 云端集成模式
 

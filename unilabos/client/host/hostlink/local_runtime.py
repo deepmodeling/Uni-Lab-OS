@@ -1198,6 +1198,10 @@ class HostLinkDeviceNode(DeviceNode):
             descriptor["services"] = services
         if self.resource_uuid:
             descriptor["resource_uuid"] = self.resource_uuid
+        if driver_runs_in_test_mode(self.driver):
+            # --test_mode 下 Host 据此决定把作业派给本设备真实执行，还是自己返回模拟结果；
+            # 驱动在 Slave 进程里，Host 只能从描述里得知（旧 Slave 不带，按模拟处理）
+            descriptor["run_in_test_mode"] = True
         return descriptor
 
     def stop(self) -> None:

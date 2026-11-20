@@ -590,16 +590,22 @@ def serve_over_control_plane() -> None:
     在进程内执行；本函数只负责让主线程活着并响应 ``request_server_shutdown``。
     """
 
+    from unilabos.app import lifetime
+
     global _serving_over_control_plane
     setup_server()
     _control_plane_stop.clear()
-    if not _abort_serving.is_set():
+    # 停机信号可能在挂路由时就到了：那时已开始停机，不能再清掉服务端的停机状态
+    if not _abort_serving.is_set() and not lifetime.shutdown_started():
         lifecycle.reset_shutdown_state()
     _serving_over_control_plane = True
     try:
-        # 分段等待：Windows 上无限期 wait 收不到信号处理器（Ctrl+Break / SIGTERM）
-        while not _abort_serving.is_set() and not _control_plane_stop.wait(0.5):
-            pass
+        # 分段等待：Windows 上无限期 wait 收不到信号处理器（Ctrl+Break / SIGTERM）。每轮先看一眼
+        # 进程停机标记：处理器抛的 SystemExit 可能在 GC 回调里被吞掉（见 lifetime.raise_if_shutdown_started）
+        while not _abort_serving.is_set():
+            lifetime.raise_if_shutdown_started()
+            if _control_plane_stop.wait(0.5):
+                break
     finally:
         _serving_over_control_plane = False
 

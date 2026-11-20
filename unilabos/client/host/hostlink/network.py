@@ -42,6 +42,34 @@ SERVICE_OWNER = "edge-microbackend"
 MANAGED_DISCOVERY_BIND = "0.0.0.0"
 #: Host 自己的 ROS 节点连本机托管 Discovery Server 用的地址。
 LOCAL_DISCOVERY_HOST = "127.0.0.1"
+#: Host 为自己的 ROS 节点写进本进程环境的组网变量（:meth:`HostNetworkService.start`）
+HOST_POLICY_ENV = (
+    "ROS_DOMAIN_ID",
+    "ROS_AUTOMATIC_DISCOVERY_RANGE",
+    "ROS_STATIC_PEERS",
+    "ROS_DISCOVERY_SERVER",
+    "ROS_SUPER_CLIENT",
+)
+#: 改写之前这些变量的原值（None 表示原来没有）
+_env_before_host_policy: dict[str, Optional[str]] = {}
+_env_before_host_policy_lock = threading.Lock()
+
+
+def _remember_env_before_host_policy() -> None:
+    with _env_before_host_policy_lock:
+        for name in HOST_POLICY_ENV:
+            _env_before_host_policy.setdefault(name, os.environ.get(name))
+
+
+def env_before_host_policy() -> dict[str, Optional[str]]:
+    """Host 为自己的 ROS 节点改写组网环境变量之前的原值（None 表示原来没有；没改写过时为空）。
+
+    本机拉起的受管 Slave 从这些原值起步，与另一台机器上的 Slave 一样经 HostLink 握手领取 ROS 组网
+    参数，而不是继承 Host 自己节点的设置（例如只有 Host 需要的 ``ROS_SUPER_CLIENT``）。
+    """
+
+    with _env_before_host_policy_lock:
+        return dict(_env_before_host_policy)
 
 
 class HostNetworkService:
@@ -226,6 +254,7 @@ class HostNetworkService:
                 self.ros_info.automatic_discovery_range = self._fallback_discovery_range
                 self._refresh_hello_payload()
 
+        _remember_env_before_host_policy()
         applied = apply_ros_network_env(self.local_ros_info())
         if self.ros_info.discovery_server:
             # HostNode performs graph introspection and must receive all endpoint
@@ -701,8 +730,10 @@ def shutdown_network_services() -> None:
 
 
 __all__ = [
+    "HOST_POLICY_ENV",
     "HostNetworkService",
     "SERVICE_OWNER",
+    "env_before_host_policy",
     "get_host_network_service",
     "mark_slave_devices_ready",
     "require_slave_startup_device_ids",

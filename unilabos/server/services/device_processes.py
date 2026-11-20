@@ -6,6 +6,10 @@
 子进程经 HostLink 接回本 Host；驱动崩了只影响这个子进程，按策略自动拉起，
 Host 本体、物料权威和调度都不受影响；改驱动、改配置也只需重启这个子进程。
 
+本机拉起的受管 Slave 与另一台机器上的 Slave 同等对待：它需要的 Host 状态（ROS 组网参数、完整物理
+拓扑图、物料、跨设备动作）只经 HostLink / DDS 获取，不继承 Host 进程自己的设置；ROS 2 Slave 的 Fast DDS
+只走网络传输（UDPv4），不与 Host、其他 Slave 共享内存（:func:`slave_environment`）。
+
 受管 Slave 跟随拉起它的 Host：拉起时写入 Host 的 pid（``app/lifetime.py``），Host 无论怎么没了
 （含 ``kill -9``、崩溃），Slave 都察觉并退出，不留下来占着各自的数据库根目录与 HostLink 连接；
 Windows 上另放进 KILL_ON_JOB_CLOSE 的 Job Object 兜底。Host 有序退出时由 :meth:`DeviceProcessService.shutdown`
@@ -343,6 +347,54 @@ def _unavailable_reason(spec: DeviceProcessSpec, runtime: DeviceProcessRuntime, 
     return f"受管设备进程 {name} 重启失败：{runtime.last_error or exited}{error}；日志 {log_path}"
 
 
+#: 用户自己配置了 Fast DDS 传输的提示只打一次
+_kept_user_transport_reported = False
+
+
+def _command_backend(command: List[str]) -> str:
+    try:
+        return str(command[command.index("--backend") + 1])
+    except (ValueError, IndexError):
+        return ""
+
+
+def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
+    """受管 Slave 子进程的环境：本机拉起的 Slave 与另一台机器上的 Slave 同样只经通信协议拿东西。
+
+    - 以 Host 的环境为底，输出不着色（进的是文件 / API，不是终端）；
+    - ROS 2：Host 为自己的 ROS 节点改写过的组网变量（如只有 Host 需要的 ``ROS_SUPER_CLIENT``）
+      恢复成改写前的值，组网参数由 Slave 经 HostLink 握手领取
+      （:func:`unilabos.client.host.hostlink.network.env_before_host_policy`）；
+    - ROS 2：Fast DDS 只用 UDPv4，不与 Host、其他 Slave 共享内存
+      （:func:`unilabos.client.host.hostlink.ros_assist.network_only_transport_env`）；用户自己配置了
+      Fast DDS 传输或默认配置文件时照用户的来。
+    """
+
+    global _kept_user_transport_reported
+    env = dict(os.environ)
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    env.setdefault("NO_COLOR", "1")
+    env.setdefault("TERM", "dumb")
+    if _command_backend(command) != "ros2":
+        return env
+    from unilabos.client.host.hostlink.network import env_before_host_policy
+    from unilabos.client.host.hostlink.ros_assist import (
+        FASTDDS_USER_TRANSPORT_ENV,
+        network_only_transport_env,
+    )
+
+    for name, value in env_before_host_policy().items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
+    if network_only_transport_env(env, directory) is None and not _kept_user_transport_reported:
+        _kept_user_transport_reported = True
+        configured = ", ".join(name for name in FASTDDS_USER_TRANSPORT_ENV if str(env.get(name) or "").strip())
+        logger.info(f"[DeviceProcesses] 已设置 {configured}：受管 Slave 沿用这份 Fast DDS 传输配置")
+    return env
+
+
 class DeviceProcessService:
     """受管 Slave 子进程的规格、生命周期与看护。"""
 
@@ -677,11 +729,7 @@ class DeviceProcessService:
         runtime.last_error = None
         if reset_restart_count:
             runtime.restart_count = 0
-        env = dict(os.environ)
-        env.setdefault("PYTHONUNBUFFERED", "1")
-        # 输出进的是文件 / API，不是终端：关掉着色，日志页才不会满屏 ESC 序列
-        env.setdefault("NO_COLOR", "1")
-        env.setdefault("TERM", "dumb")
+        env = slave_environment(command, directory)
         # Slave 跟随本 Host 进程：Host 消失（含强制结束）时 Slave 自行退出。这里可能在 API 工作线程、
         # 重启定时器线程里执行，拉起线程不常驻，所以不用 Linux 死亡信号（它跟随的是线程）。
         follow_parent_env(env)
@@ -944,6 +992,7 @@ __all__ = [
     "managed_device_unavailability",
     "peek_device_process_service",
     "save_specs",
+    "slave_environment",
     "sync_generated_specs",
     "write_graph",
 ]

@@ -100,7 +100,9 @@ function subscribeMaterials(baseUrl, render, reportError) {
 
 持久事件按 V1 事件名发送：任务、节点运行、节点作业、人工确认与资源区间 / 借还 / 托管的变化一律为
 `workflow.runtime.changed`，`data.kind` 区分种类（`task` / `node_run` / `node_job` /
-`manual_confirmation` / `resource`）；作者态（草稿、候选、应用）为 `workflow.authoring.changed`。
+`manual_confirmation` / `resource`）；作者态（草稿、候选、应用，`data.cause`）与工作流定义的变化
+（创建、修改、删除、保存图、发布，`data.change` 为 `created` / `updated` / `deleted` / `graph_saved` /
+`published`）为 `workflow.authoring.changed`，与变更同一事务写入，其他打开的页面据此重读工作流列表与图。
 `station.error_handling.changed` 是 V1 工站异常处理的事件名，迁移该领域后出现。
 data 为相应对象身份、状态等失效信息（库里存的 dev 载荷原样保留）；例如 node job 事件带
 `kind:"node_job"`、workflow_node_job_uuid、workflow_node_run_uuid、attempt_no、status。未知事件名应安全忽略或触发相关 HTTP 校准，不能让整个流崩溃。

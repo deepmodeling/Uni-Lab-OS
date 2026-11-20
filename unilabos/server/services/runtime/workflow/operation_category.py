@@ -248,11 +248,18 @@ class OperationCategories:
         return str(row["workflow_type"] or WORKFLOW_TYPE_NORMAL), row["operation_category_uuid"]
 
     def set_workflow_kind(self, workflow_uuid: str, *, workflow_type: str, category: Optional[str]) -> None:
+        """改写工作流类型 / 类别；确有变化时同一事务发 ``workflow.authoring.changed``（``updated``）。"""
+
+        from unilabos.server.services.runtime.workflow.store import WorkflowStore, utc_now
+
         with self._store.transaction() as conn:
-            conn.execute(
-                "UPDATE workflow SET workflow_type = ?, operation_category_uuid = ? WHERE uuid = ?",
-                (workflow_type, category, workflow_uuid),
-            )
+            changed = conn.execute(
+                "UPDATE workflow SET workflow_type = ?, operation_category_uuid = ? WHERE uuid = ? "
+                "AND (workflow_type IS NOT ? OR operation_category_uuid IS NOT ?)",
+                (workflow_type, category, workflow_uuid, workflow_type, category),
+            ).rowcount
+            if changed:
+                WorkflowStore._append_definition_event(conn, workflow_uuid, "updated", utc_now())
 
 
 __all__ = [

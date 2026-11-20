@@ -633,18 +633,20 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             except OperationCategoryError as exc:
                 raise WorkflowError(exc.code, detail=exc.message) from None
             try:
+                # 类型 / 类别与工作流行同一事务写入：创建只有一条通知，宣告的就是完整的新工作流
                 super().create_workflow(
                     workflow_uuid=identity,
                     name=name,
                     tags=tags,
                     description=self._optional_text(description),
                     meta_data=public_meta_data,
+                    workflow_type=kind,
+                    operation_category_uuid=category,
                 )
             except (ValueError, ValidationError):
                 raise WorkflowError("invalid_input") from None
             except StoreConflict:
                 raise WorkflowConflict("conflict") from None
-            self.operation_categories.set_workflow_kind(identity, workflow_type=kind, category=category)
         return WorkflowStore.get_workflow(self, identity)
 
     @property

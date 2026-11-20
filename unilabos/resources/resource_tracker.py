@@ -48,6 +48,10 @@ RETURN_UNILABOS_SAMPLES = "unilabos_samples"
 # 权威容量约束不属于 PLR 构造参数，通过运行时 sidecar 往返。
 EXTRA_RESOURCE_CAPACITY = "unilabos_capacity"
 
+# 实例身份字段：注册表模板（config_info）里不带，见 ResourceTreeSet.dump_templates
+_TEMPLATE_INSTANCE_FIELDS = frozenset({"uuid", "parent_uuid", "name"})
+_TEMPLATE_SITE_INSTANCE_FIELDS = frozenset({"uuid", "material_uuid", "occupied_material_uuid"})
+
 
 def iter_serialized_plr_children(
     resource: "PLRResource", serialized: Mapping[str, Any]
@@ -1653,6 +1657,43 @@ class ResourceTreeSet(object):
                 for node in tree.get_all_nodes()
             ]
             result.append(tree_nodes)
+        return result
+
+    def dump_templates(self) -> List[List[ResourceDictType]]:
+        """按 :meth:`dump` 的形状序列化，但去掉实例身份，用作注册表模板（``config_info``）。
+
+        模板不是实例：``uuid`` / ``parent_uuid`` / 等于 uuid 的 ``name``，以及库位的
+        ``uuid`` / ``material_uuid`` / ``occupied_material_uuid`` 每次生成都是随机值，会让模板哈希
+        每次都变，实例化时物料权威也会另发。父子关系改用父节点的 ``id``（``parent_id``，根为 None；
+        PLR 要求同一棵树里名字唯一）。同一份资源定义生成的结果逐字节相同。
+        """
+
+        result = []
+        for tree in self.trees:
+            nodes = [node.res_content.model_dump(by_alias=True) for node in tree.get_all_nodes()]
+            id_of_uuid = {node["uuid"]: node["id"] for node in nodes}
+            ids = [node["id"] for node in nodes]
+            if len(set(ids)) != len(ids):
+                raise ValueError(f"资源模板 {ids[0]} 的子资源 id 重复，无法用 id 表示父子关系")
+            templates = []
+            for node in nodes:
+                template = {
+                    key: value
+                    for key, value in node.items()
+                    if key not in _TEMPLATE_INSTANCE_FIELDS
+                }
+                template["parent_id"] = id_of_uuid.get(node.get("parent_uuid"))
+                if template.get("sites"):
+                    template["sites"] = [
+                        {
+                            key: value
+                            for key, value in site.items()
+                            if key not in _TEMPLATE_SITE_INSTANCE_FIELDS
+                        }
+                        for site in template["sites"]
+                    ]
+                templates.append(template)
+            result.append(templates)
         return result
 
     @classmethod

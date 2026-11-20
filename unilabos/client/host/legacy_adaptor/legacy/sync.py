@@ -17,6 +17,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set
+from uuid import UUID, uuid5
 
 from unilabos.client.host.legacy_adaptor.legacy.http import (
     LegacyBackendHTTPClient,
@@ -43,6 +44,31 @@ _LEGACY_UNSUPPORTED_ROOT_FIELDS = frozenset(
 )
 
 
+# 旧后端模板节点的 uuid 命名空间：按 (模板 id, 节点 id) 派生，同一模板每次上报都相同
+_LEGACY_TEMPLATE_NODE_NAMESPACE = UUID("0d3c1f9e-6a57-4f0b-9a52-3c7e2b8d41a6")
+
+
+def _legacy_config_info(template_id: str, nodes: Any) -> List[Any]:
+    """注册表模板不带实例身份（``parent_id`` 表示父子）；旧后端的 config_info 每个节点要有
+    ``uuid`` / ``parent_uuid`` / ``name``（= uuid）。这里按模板 id 与节点 id 派生稳定 uuid 补回旧形状，
+    已经带 uuid 的节点（旧版本生成的定义）原样保留。"""
+
+    def node_uuid(node_id: Any) -> str:
+        return str(uuid5(_LEGACY_TEMPLATE_NODE_NAMESPACE, f"{template_id}/{node_id}"))
+
+    result: List[Any] = []
+    for node in nodes if isinstance(nodes, (list, tuple)) else []:
+        if not isinstance(node, Mapping) or "uuid" in node or not node.get("id"):
+            result.append(node)
+            continue
+        item = dict(node)
+        parent_id = item.pop("parent_id", None)
+        item["uuid"] = item["name"] = node_uuid(item["id"])
+        item["parent_uuid"] = node_uuid(parent_id) if parent_id else None
+        result.append(item)
+    return result
+
+
 @dataclass(frozen=True)
 class RegistryUploadReport:
     device_count: int
@@ -61,6 +87,8 @@ def _legacy_registry_entry(entry: Mapping[str, Any]) -> Dict[str, Any]:
     if display_name and not item.get("displayname"):
         item["displayname"] = display_name
     item.pop("available_sites", None)
+    if "config_info" in item:
+        item["config_info"] = _legacy_config_info(str(item.get("id") or ""), item["config_info"])
     klass = item.get("class")
     if isinstance(klass, dict):
         klass.pop("supported_backends", None)
@@ -194,7 +222,7 @@ def legacy_template_from_authority(template: Any) -> Dict[str, Any]:
         "description": str(definition.get("description") or ""),
         "icon": str(definition.get("icon") or ""),
         "category": list(getattr(template, "category", None) or []),
-        "config_info": list(definition.get("config_info") or []),
+        "config_info": _legacy_config_info(name, definition.get("config_info") or []),
         "handles": [
             handle.model_dump(mode="json") if hasattr(handle, "model_dump") else dict(handle)
             for handle in (getattr(template, "handles", None) or [])

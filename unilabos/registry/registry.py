@@ -753,8 +753,7 @@ class Registry:
             cached_devices = cached_build.get("devices", {})
             cached_resources = cached_build.get("resources", {})
             if set(cached_devices) == set(ast_devices) and set(cached_resources) == set(ast_resources):
-                # 按本次扫描的顺序登记：缓存可能是旧版本按线程完成先后写下的。不靠升缓存版本作废它，
-                # 那样每台 Host 都会重新生成一遍资源 config_info，其中的随机 uuid 让每个资源模板都变一版
+                # 按本次扫描的顺序登记：缓存可能是旧版本按线程完成先后写下的
                 self.device_type_registry.update({did: cached_devices[did] for did in ast_devices})
                 self.resource_type_registry.update({rid: cached_resources[rid] for rid in ast_resources})
                 logger.info(
@@ -1912,7 +1911,7 @@ class Registry:
             return Path(BasicConfig.working_dir) / "registry_cache.pkl"
         return None
 
-    _CACHE_VERSION = 10  # 10：物料锁不再按动作改写，YAML 里的 materials_need_lock / materials_free 一律忽略
+    _CACHE_VERSION = 11  # 11：config_info 不再带实例 uuid（旧缓存里是随机 uuid，需要重新生成一次）
     # 同一进程内的缓存文件快照：(mtime_ns, size, data)。AST / YAML / config_info 几个阶段各自
     # 加载一次同一个十几 MB 的 pickle 要几百毫秒；文件没变就复用已加载的对象。
     _config_cache_memo: Optional[Tuple[int, int, dict]] = None
@@ -2045,7 +2044,8 @@ class Registry:
                     tree_set = ResourceTreeSet.from_plr_resources(
                         [res_instance], known_random_uuid=True, old_size=True
                     )
-                    dumped = tree_set.dump()
+                    # 模板不带实例 uuid：同一资源定义每次生成都一样，模板哈希不会因重新生成而变
+                    dumped = tree_set.dump_templates()
                     return resource_id, dumped[0] if dumped else []
             except Exception as e:
                 logger.warning(f"[Uni-Lab-OS Registry] 资源 {resource_id} config_info 生成失败: {e}")

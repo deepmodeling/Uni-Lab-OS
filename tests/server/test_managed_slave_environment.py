@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import os
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -137,10 +138,22 @@ def test_loopback_that_drops_fragments_keeps_fast_dds_defaults(service, monkeypa
     assert dpx._reported_transport_outcomes == {"loopback"}
 
 
-def test_udp_loopback_probe() -> None:
+def test_udp_loopback_probe(monkeypatch) -> None:
     assert ros_assist.udp_loopback_delivers(512) is True
     # 超过 UDP 数据报上限：发不出去，按送不到处理
     assert ros_assist.udp_loopback_delivers(70000) is False
+
+    # 连套接字都建不了（例如文件描述符用完）：同样按送不到处理，不让受管 Slave 拉不起来
+    class NoSockets:
+        AF_INET = socket.AF_INET
+        SOCK_DGRAM = socket.SOCK_DGRAM
+
+        @staticmethod
+        def socket(*_args: Any, **_kwargs: Any) -> Any:
+            raise OSError("too many open files")
+
+    monkeypatch.setattr(ros_assist, "socket", NoSockets)
+    assert ros_assist.udp_loopback_delivers(512) is False
 
 def test_hostlink_managed_slave_environment_has_no_dds_settings(service, monkeypatch) -> None:
     proc = _start(service, monkeypatch, "hostlink")

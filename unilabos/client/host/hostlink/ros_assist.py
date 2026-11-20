@@ -69,19 +69,17 @@ LOOPBACK_PROBE_BYTES = 8192
 def udp_loopback_delivers(size: int, timeout: float = 0.5) -> bool:
     """往 127.0.0.1 发一个 ``size`` 字节的 UDP 数据报，本机原样收到时返回 True。"""
 
-    receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        receiver.bind(("127.0.0.1", 0))
-        receiver.settimeout(timeout)
-        sender.sendto(b"\0" * size, receiver.getsockname())
-        data, _address = receiver.recvfrom(size + 1)
-        return len(data) == size
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM
+        ) as sender:
+            receiver.bind(("127.0.0.1", 0))
+            receiver.settimeout(timeout)
+            sender.sendto(b"\0" * size, receiver.getsockname())
+            data, _address = receiver.recvfrom(size + 1)
+            return len(data) == size
     except OSError:
         return False
-    finally:
-        receiver.close()
-        sender.close()
 
 
 @functools.lru_cache(maxsize=1)

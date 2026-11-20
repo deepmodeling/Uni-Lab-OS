@@ -14,6 +14,10 @@ class HostMutationBusy(RuntimeError):
     """Host 正在修改运行环境，或有需要人工核实的中断操作。"""
 
 
+class SlaveLifecycleBusy(HostMutationBusy):
+    """另一个 Slave 正在启动或重启，可在它完成后重试。"""
+
+
 class HostMutationGate:
     def __init__(self, root: Path):
         self.root = root
@@ -34,6 +38,8 @@ class HostMutationGate:
 
     def acquire(self, kind: str, *, recovery: bool = False):
         with self._lock:
+            if self._restart is None and self._active and self._active[0] in ('slave_start', 'slave_restart'):
+                raise SlaveLifecycleBusy('另一个受管设备进程正在启动或重启，请稍后重试')
             if self._active is not None or self._restart is not None and not (recovery and kind == 'recovery_confirmation'):
                 raise HostMutationBusy('Host 正在等待重启或执行包变更/设备启动，请稍后重试')
             self.root.mkdir(parents=True, exist_ok=True)

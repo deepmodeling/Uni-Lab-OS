@@ -52,7 +52,7 @@ from unilabos.app.lifetime import KillOnCloseJob, follow_parent_env
 from unilabos.utils import logger
 from unilabos.utils.log_notices import log_notices
 from unilabos.server.services.driver_source_changes import get_source_changes, source_roots
-from unilabos.server.services.host_mutations import HostMutationBusy, get_host_mutation_gate
+from unilabos.server.services.host_mutations import HostMutationBusy, SlaveLifecycleBusy, get_host_mutation_gate
 
 SPEC_FILENAME = "device_processes.json"
 PROCESS_DIRNAME = "device_processes"
@@ -656,7 +656,10 @@ class DeviceProcessService:
             if proc is not None and proc.poll() is None:
                 raise DeviceProcessError(f"{spec.name} 已在运行（pid {proc.pid}）")
             self._stop_requested.discard(process_id)
-            self._launch(spec, reset_restart_count=True)
+            try:
+                self._launch(spec, reset_restart_count=True)
+            except HostMutationBusy as exc:
+                raise DeviceProcessBusyError(str(exc)) from exc
         self._ensure_monitor()
         return self._view(spec)
 
@@ -739,11 +742,8 @@ class DeviceProcessService:
     # ── 内部：启动 / 结束 / 看护 ─────────────────────────────────
 
     def _launch(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
-        try:
-            with get_host_mutation_gate(self.working_dir).hold('slave_start'):
-                self._launch_with_sources(spec, reset_restart_count=reset_restart_count)
-        except HostMutationBusy as exc:
-            raise DeviceProcessBusyError(str(exc)) from exc
+        with get_host_mutation_gate(self.working_dir).hold('slave_start'):
+            self._launch_with_sources(spec, reset_restart_count=reset_restart_count)
 
     def _launch_with_sources(self, spec: DeviceProcessSpec, *, reset_restart_count: bool) -> None:
         runtime = self._runtime.setdefault(spec.id, DeviceProcessRuntime())
@@ -876,10 +876,12 @@ class DeviceProcessService:
                 delay = RESTART_BACKOFF_S[min(runtime.restart_count, len(RESTART_BACKOFF_S) - 1)]
                 runtime.status = "restarting"
                 runtime.restart_count += 1
-                timer = threading.Timer(delay, self._restart_later, args=(process_id,))
-                # 守护线程：退避中的重启不能拖住 Host 退出
-                timer.daemon = True
-                timer.start()
+                self._schedule_restart(process_id, delay)
+
+    def _schedule_restart(self, process_id: str, delay: float) -> None:
+        timer = threading.Timer(delay, self._restart_later, args=(process_id,))
+        timer.daemon = True
+        timer.start()
 
     def _restart_later(self, process_id: str) -> None:
         if self._closing or process_id in self._stop_requested:
@@ -888,10 +890,16 @@ class DeviceProcessService:
         if spec is None:
             return
         with self._lock:
+            runtime = self._runtime.get(process_id)
+            if (self._closing or process_id in self._stop_requested or runtime is None
+                    or runtime.status != "restarting" or process_id in self._procs):
+                return
             try:
                 self._launch(spec, reset_restart_count=False)
-            except DeviceProcessError as exc:
-                runtime = self._runtime.setdefault(process_id, DeviceProcessRuntime())
+            except SlaveLifecycleBusy as exc:
+                runtime.last_error = str(exc)
+                self._schedule_restart(process_id, RESTART_BACKOFF_S[0])
+            except (DeviceProcessError, HostMutationBusy) as exc:
                 runtime.status = "crashed"
                 runtime.last_error = str(exc)
 

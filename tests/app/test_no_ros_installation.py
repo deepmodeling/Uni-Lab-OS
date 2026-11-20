@@ -112,14 +112,14 @@ def test_conda_build_default_has_no_ros_channels():
 def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_path):
     from scripts import build_conda_release
 
-    for name in ("unilabos-0.13.0a1-py314_0.conda", "unilabos-full-0.13.0a1-jazzy_0.conda"):
+    for name in ("unilabos-0.13.0a2-py314_0.conda", "unilabos-full-0.13.0a2-jazzy_0.conda"):
         package = tmp_path / "win-64" / name
         package.parent.mkdir(exist_ok=True)
         package.touch()
     # 默认档的 noarch 依赖在扩展发布里不能再传一次；扩展自己的 noarch 包要传。
     (tmp_path / "noarch").mkdir()
     (tmp_path / "noarch" / "msgcenterpy-0.1.8-py_1.conda").touch()
-    support = tmp_path / "noarch" / "unilabos-ros2-0.13.0a1-jazzy_1.conda"
+    support = tmp_path / "noarch" / "unilabos-ros2-0.13.0a2-jazzy_1.conda"
     support.touch()
     monkeypatch.setenv("ANACONDA_API_TOKEN", "test-token-not-a-secret")
     monkeypatch.setattr(sys, "argv", ["build_conda_release.py", "upload", "--platform", "win-64",
@@ -130,7 +130,7 @@ def test_extension_upload_does_not_republish_default_packages(monkeypatch, tmp_p
                         lambda command, **kw: uploads.append(Path(command[-1]).name)
                         or subprocess.CompletedProcess(command, 0))
     build_conda_release.main()
-    assert uploads == [support.name, "unilabos-full-0.13.0a1-jazzy_0.conda"]
+    assert uploads == [support.name, "unilabos-full-0.13.0a2-jazzy_0.conda"]
 
 
 def test_conda_abi_upgrade_builds_message_packages_before_consumers():
@@ -151,7 +151,7 @@ def test_conda_upload_reuses_dependencies_without_overwriting_framework(monkeypa
     packages = {
         "noarch/msgcenterpy-0.1.8-py_0.conda": True,
         "win-64/ros-jazzy-unilabos-msgs-0.12.2-h3c70cbc_1.conda": True,
-        "win-64/unilabos-0.13.0a1-py314_0.conda": False,
+        "win-64/unilabos-0.13.0a2-py314_0.conda": False,
     }
     for name in packages:
         package = tmp_path / name
@@ -182,10 +182,10 @@ def test_extension_upload_skips_published_message_packages(monkeypatch, tmp_path
     from scripts import build_conda_release
 
     packages = {
-        "noarch/unilabos-ros2-0.13.0a1-jazzy_1.conda": True,
+        "noarch/unilabos-ros2-0.13.0a2-jazzy_1.conda": True,
         "linux-64/ros-humble-unilabos-msgs-0.12.2-h81b34b9_1.conda": True,
         "linux-64/ros-jazzy-unilabos-msgs-0.12.2-h81b34b9_1.conda": True,
-        "linux-64/unilabos-full-0.13.0a1-jazzy_1.conda": False,
+        "linux-64/unilabos-full-0.13.0a2-jazzy_1.conda": False,
     }
     for name in packages:
         package = tmp_path / name

@@ -1,7 +1,7 @@
 # 默认发行包，不依赖 ROS。
 package:
   name: unilabos
-  version: 0.13.0a1
+  version: 0.13.0a2
 source:
   path: ../../unilabos
   target_directory: unilabos

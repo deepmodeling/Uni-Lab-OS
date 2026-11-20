@@ -91,7 +91,7 @@ against PyPI cannot discover the companion wheels. See the
 For the **0.13+ default Conda package**, once published:
 
 ```bash
-mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0a1"
+mamba create -n unilab --override-channels -c uni-lab -c conda-forge "unilabos>=0.13.0a2" "conda-forge::mcp>=1.30,<2"
 mamba activate unilab
 unilab --disable-browser
 ```

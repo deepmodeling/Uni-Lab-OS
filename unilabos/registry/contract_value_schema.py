@@ -20,6 +20,11 @@ from unilabos.registry.site_selector_value_schema import (
     parse_site_selector_extension,
 )
 
+#: 工作流输入可用的槽位，与节点参数一致：物料引用 ``{uuid}``、设备 id 字符串、ResourceSite uuid 字符串
+SLOT_KINDS = ("ResourceSlot", "DeviceSlot", "SiteSlot")
+#: 值是具体实例 uuid 的槽位：不允许默认值
+_INSTANCE_SLOTS = frozenset({"ResourceSlot", "SiteSlot"})
+
 _INVALID_SCHEMA = "工作流值 Schema 不符合版本 1 合同"
 _INVALID_CONTRACT = "工作流输入输出合同格式不正确"
 _INVALID_VALUE = "工作流值不符合声明的 Schema"
@@ -351,10 +356,13 @@ def _parse_slot(raw: dict[str, Any], *, path: str) -> dict[str, Any]:
         path=path,
         message=_INVALID_SCHEMA,
     )
-    if raw["$slot"] != "ResourceSlot":
+    if raw["$slot"] not in SLOT_KINDS:
         _fail("invalid_schema", _pointer(path, "$slot"), _INVALID_SCHEMA)
-    result: dict[str, Any] = {"$slot": "ResourceSlot"}
+    result: dict[str, Any] = {"$slot": raw["$slot"]}
     if "allowed_resource_template_uuids" in raw:
+        # 资源模板 allowlist 只属于物料槽位
+        if raw["$slot"] != "ResourceSlot":
+            _fail("invalid_schema", _pointer(path, "allowed_resource_template_uuids"), _INVALID_SCHEMA)
         allowlist_path = _pointer(path, "allowed_resource_template_uuids")
         result["allowed_resource_template_uuids"] = _normalize_allowlist(
             raw["allowed_resource_template_uuids"],
@@ -566,7 +574,19 @@ def _validate_json_value(
     return decode_json_bytes(encode_json(value), max_integer_digits=None)
 
 
-def _normalize_slot(value: Any, *, path: str) -> dict[str, str]:
+def _normalize_slot(value: Any, *, path: str, kind: str = "ResourceSlot") -> Any:
+    if kind == "DeviceSlot":
+        # 设备 id：非空字符串（与节点 DeviceSlot 参数同一形状）
+        if not isinstance(value, str) or not value.strip():
+            _fail("invalid_value", path, _INVALID_VALUE)
+        return value.strip()
+    if kind == "SiteSlot":
+        if not isinstance(value, str):
+            _fail("invalid_value", path, _INVALID_VALUE)
+        try:
+            return validate_uuid(value)
+        except (TypeError, ValueError):
+            _fail("invalid_value", path, _INVALID_VALUE)
     slot = _require_object(
         value,
         code="invalid_value",
@@ -602,7 +622,7 @@ def _normalize_with_schema(
             return None
         return _normalize_with_schema(schema["anyOf"][0], value, path=path)
     if "$slot" in schema:
-        return _normalize_slot(value, path=path)
+        return _normalize_slot(value, path=path, kind=schema["$slot"])
 
     kind = schema["type"]
     if kind in {"string", "integer", "number", "boolean"}:
@@ -702,9 +722,15 @@ def _normalize_default(
     path: str,
 ) -> Any:
     base = _schema_base(schema)
-    if "$slot" in base:
+    # 物料与库位都是具体实例（uuid），要在运行时选，不能写死成默认值；
+    # 设备 id 是图里稳定的名字（ctx.run 本来就写死设备 id），可以给默认值
+    if base.get("$slot") in _INSTANCE_SLOTS:
         _fail("invalid_contract", path, _INVALID_CONTRACT)
-    if base.get("type") == "array" and "$slot" in base["items"] and value != []:
+    if (
+        base.get("type") == "array"
+        and base["items"].get("$slot") in _INSTANCE_SLOTS
+        and value != []
+    ):
         _fail("invalid_contract", path, _INVALID_CONTRACT)
     try:
         return normalize_value(schema, value)

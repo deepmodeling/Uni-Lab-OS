@@ -18,7 +18,7 @@ from unilabos.server.services.runtime.workflow.service import WorkflowError, Wor
 from tests.server.test_workflow_loop_execution import _Stack
 from tests.server.test_workflow_entry_params import Executor, wait_for, stack
 from unilabos.registry.annotations import JSONValue
-from unilabos.registry.placeholder_type import ResourceSlot
+from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 from unilabos.server.scheduler.service import BackendScheduler
 
 
@@ -286,5 +286,31 @@ def test_resource_input_is_an_implicit_output_at_workflow_boundary():
         task = submit(stack.service, record, {"sample": value})
         wait_for(lambda: stack.service.get_workflow_task(task["uuid"])["status"] in {"succeeded", "failed"})
         assert stack.service.get_workflow_task(task["uuid"])["output"] == {"sample": value}
+    finally:
+        stack.close()
+
+
+def test_device_and_site_slot_inputs_reach_the_node_like_node_parameters():
+    """工作流入参可以像节点参数一样声明 DeviceSlot / SiteSlot；它们不是物料，不成为隐式输出。"""
+    def flow(ctx, *, site: SiteSlot, device: DeviceSlot = "loop-device"):
+        ctx.run("loop-device/record", {"value": device, "label": site})
+    stack = _Stack()
+    try:
+        template, payload = payload_for(flow)
+        parameters = {item["name"]: item for item in template["io"]["input_contract"]["parameters"]}
+        assert parameters["device"]["schema"] == {"$slot": "DeviceSlot"}
+        assert parameters["device"]["default"] == "loop-device"
+        assert parameters["site"]["schema"] == {"$slot": "SiteSlot"}
+        assert template["io"]["output_contract"]["outputs"] == []
+        record = upsert_workflow(stack.service, payload)
+        site_uuid = str(uuid4())
+        task = submit(stack.service, record, {"site": site_uuid})
+        wait_for(lambda: stack.service.get_workflow_task(task["uuid"])["status"] in {"succeeded", "failed"})
+        done = stack.service.get_workflow_task(task["uuid"])
+        assert done["status"] == "succeeded", done
+        assert done["input"] == {"site": site_uuid, "device": "loop-device"}
+        assert stack.driver.calls == [(site_uuid, "loop-device")]
+        with pytest.raises(WorkflowError):
+            submit(stack.service, record, {"site": "A1"})
     finally:
         stack.close()

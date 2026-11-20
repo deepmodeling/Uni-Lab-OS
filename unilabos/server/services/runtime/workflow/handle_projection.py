@@ -44,6 +44,8 @@ def workflow_handle_type(schema: Mapping[str, Any]) -> str:
     base = _non_null_schema(schema)
     if base.get("type") == "array":
         return "array"
+    if base.get("$slot") in {"DeviceSlot", "SiteSlot"}:
+        return str(base["$slot"])
     if resource_slot_schema(base) is not None:
         return "ResourceSlot"
     value_type = base.get("type")

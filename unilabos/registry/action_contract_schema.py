@@ -222,6 +222,11 @@ def _action_value_schema(
         if material_lock is not None:
             rendered["x-unilabos-material-lock"] = material_lock
         return rendered
+    # 设备 / 库位槽位在动作参数上就是字符串（与 action_schema 的 DeviceSlot / SiteSlot 渲染一致）
+    if value.get("$slot") == "DeviceSlot":
+        return {"type": "string", "description": "device reference"}
+    if value.get("$slot") == "SiteSlot":
+        return {"type": "string", "description": "site reference (ResourceSite uuid)"}
 
     nullable_members = value.get("anyOf")
     if isinstance(nullable_members, list) and len(nullable_members) == 2:

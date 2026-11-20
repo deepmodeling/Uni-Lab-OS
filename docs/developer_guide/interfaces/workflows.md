@@ -84,6 +84,19 @@ node.param = {"volume": {"kind": "workflow_input", "parameter": "volume"}, "spee
 - 画布节点的输出绑定：`{"kind": "node_output", "workflow_node_uuid", "data_key": "返回值内路径"}`
   （空串 = 整个返回值）；模板节点仍可用 `source_handle_uuid`，`workflow_input` 透传也可用。
 
+入口参数的类型与节点参数一致（`@workflow` 关键字参数注解 → input_contract 的 schema）：
+
+| 注解 | schema | 值 | 默认值 |
+| --- | --- | --- | --- |
+| `str` / `int` / `float` / `bool`、`Literal[...]`、`list[X]`、`dict[str, JSONValue]`，可加 `Annotated[..., Field(...)]` | 对应 JSON 类型与范围 | 对应 JSON 值 | 可以 |
+| `ResourceSlot` / `list[ResourceSlot]` | `{"$slot": "ResourceSlot"}` | `{"uuid": 物料 uuid}` | 不可以（`list` 只能是 `[]`）；同时成为隐式输出 |
+| `DeviceSlot` | `{"$slot": "DeviceSlot"}` | 设备 id 字符串 | 可以（设备 id 是图里的稳定名字） |
+| `SiteSlot` | `{"$slot": "SiteSlot"}` | ResourceSite uuid 字符串 | 不可以（库位是具体实例） |
+
+`DeviceSlot` / `SiteSlot` 不是物料：不加物料锁、不成为隐式输出，`AllowedResourceTemplates` 只能用在 `ResourceSlot` 上。
+它们的值形状就是字符串，可以接到节点上同名类型的参数或普通字符串参数（节点参数里 `DeviceSlot` / `SiteSlot` 渲染为
+`{"type": "string"}`）；`DeviceSlot` 与 `SiteSlot` 之间、它们与 `ResourceSlot` 之间不能互接。
+
 POST `/workflow-tasks` 可带 `input`：按合同校验（未知键、缺必填、类型不符均 1000，消息含
 `workflow_input_unknown` / `workflow_input_required` / Schema 错误码与路径），补默认值后作为任务的有效 `input` 保存。
 执行计划把引用（以及模板节点的 Handle 绑定）替换成具体值，派发的动作参数是具体值；未提供且无默认值的可选参数对应键移除。

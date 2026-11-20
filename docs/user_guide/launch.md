@@ -285,10 +285,22 @@ unilab -g lab.json --root_devices_as_slaves
 - **拆分**：一个根设备一个 Slave。Slave 的图是该子树在 Graph Authority 里的节点原件（uuid、config、
   parent 都不变）加上两端都在子树里的连线；根级非设备物料、跨子树的连线留在 Host。设备类不支持当前
   backend 的根设备也留在 Host，照旧显示不可用及原因。完整的图照旧登记在 Graph Authority，Host 照旧
-  对齐全部开机物料，设备身份不变。
+  对齐全部开机物料，设备身份不变。工作站协议编译用的是完整的物理拓扑图：Slave 连上 Host 后经 HostLink
+  取 Host 的图（与自己的子树合并），看得到跨子树的连线与别的根设备。
 - **运行**：Slave 用 Host 的 backend、`--devices` 目录、`--external_devices_only`、工作目录与配置文件
   （以及 `--test_mode`、`--registry_path` 等开关），经本机 HostLink 接回 Host。设备在
   `/api/v1/devices`、`/api/v1/online-devices` 里与跑在 Host 里时一致，动作锁、物料锁与物料不变。
+- **只走通信协议**：受管 Slave 与另一台机器上的 Slave 同等对待，需要的 Host 状态与别的设备都只经
+  HostLink / DDS / HTTP 获取：物理拓扑图与 ROS 组网参数经 HostLink 握手，跨设备动作经 Host 转发
+  （ROS 2 下经 DDS），物料经物料权威。它不继承 Host 进程自己的 ROS 组网设置（例如只有 Host 需要的
+  `ROS_SUPER_CLIENT`）。因此不同根设备的驱动之间只能经框架交互（`call_device_action`、`@subscribe`、
+  物料 API），不能共享 Python 对象或模块级全局变量，见
+  [添加设备](../developer_guide/add_device.md)「设备之间只经框架交互」。
+- **ROS 2 只走网络传输**：ROS 2 受管 Slave 的 Fast DDS 只用 UDPv4（同机经回环），不用共享内存，与
+  Host、其他 Slave 不共享进程间锁，一个 Slave 被强制结束不会拖垮别的进程。做法是给 Slave 一份默认
+  Fast DDS 配置（`FASTRTPS_DEFAULT_PROFILES_FILE`，写在该 Slave 的进程目录里），托管的 Discovery
+  Server 照常工作。启动 Host 的环境里已经设置了 `FASTRTPS_DEFAULT_PROFILES_FILE`、
+  `FASTDDS_DEFAULT_PROFILES_FILE` 或 `FASTDDS_BUILTIN_TRANSPORTS` 时，受管 Slave 照用户的配置运行。
 - **规格**：每个 Slave 是一条受管设备进程，id 为 `root-<设备 id>`（含路径或 URL 不安全字符的 id 净化后
   加一段由 id 派生的后缀），在 `GET /api/v1/device-processes` 里可见（`generated_by: root_devices_as_slaves`），
   可以启动 / 停止 / 重启，不能编辑或删除。每次 Host 启动按当前设备图重建：同一设备复用同一条规格，
@@ -303,7 +315,8 @@ unilab -g lab.json --root_devices_as_slaves
   手动重启一台设备：`POST /api/v1/device-processes/root-<设备 id>/restart`（默认拓扑下经调度权威的端口转发）。
   重启时该设备的在途作业按 Slave 离线的规则收尾：已请求取消的落 `canceled`，其余落 `execution_unknown`
   并开核实决策（锁保留到裁决）；重启期间派发给它的动作在开始边界之前失败（未下发），进入普通的动作错误决策，
-  可以直接重试。Host 退出时全部 Slave 一起退出。
+  可以直接重试。Host 退出时全部 Slave 一起退出。停止 / 重启时先请 Slave 有序退出（POSIX 发 SIGTERM，
+  Windows 向它的进程组发 Ctrl+Break），8 秒内没退出才强制结束。
 - 本参数只对运行设备的 Host 生效：`--is_slave`、`--role backend` 下启动时告警并忽略；它依赖 HostLink，
   `--disable_hostlink` 时设备留在 Host 运行。
 

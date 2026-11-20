@@ -1186,6 +1186,22 @@ return {
 }
 ```
 
+### 8. 设备之间只经框架交互
+
+每个根设备（连同它的子树）可能跑在自己的 Slave 进程里（`--root_devices_as_slaves`，或手动
+启动的 Slave），而 Slave 可能在另一台机器上。不同根设备的驱动因此不保证在同一个 Python
+进程里，彼此之间只能经框架交互：
+
+- 调用另一台设备的动作：`node.call_device_action(...)` / `await node.call_device_action_async(...)`；
+- 读另一台设备的状态：`@subscribe`（`unilabos.utils.decorator`）或 `node.create_subscription(...)`；
+- 物料：物料 API（`materials.*`、`node.get_resource` / `node.update_resource`），以物料权威为准；
+- 协议编译用的物理拓扑图由框架提供（Slave 经 HostLink 从 Host 取完整图），驱动不读图文件。
+
+不要在不同根设备之间共享 Python 对象、模块级全局变量、类属性、单例或另一台设备的驱动实例，
+也不要靠同一台机器上的文件、共享内存或环境变量传递状态：设备拆到别的进程或机器上就失效了。
+同一个根设备子树里的设备（工作站与它的子设备、`hardware_interface` 代理、共用的资源跟踪器）
+始终在同一个进程里，不受此限。
+
 ## 下一步
 
 看完本文档后，建议继续阅读：

@@ -271,6 +271,92 @@ def test_shutdown_deadline_forces_exit_and_repeated_signals_are_ignored(tmp_path
     assert "测试：" in result.stderr and "强制结束进程" in result.stderr
 
 
+_SWALLOWED_STOP = textwrap.dedent(
+    """
+    import os, signal, sys, weakref
+    from unilabos.app import lifetime
+    from unilabos.server.api import app as server_app
+
+    lifetime.start_exit_watchdog()
+
+    def _exit(signum, frame):
+        # 与 Host 的停机处理器同一做法：标记停机、布置限时，然后在主线程抛 SystemExit
+        if not lifetime.begin_shutdown(0, reason="test stop", deadline=60):
+            return
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _exit)
+
+    class _Collected:
+        pass
+
+    def _on_collect(_ref):
+        # 停机信号恰好在 weakref 回调里处理：处理器抛的 SystemExit 会被当成 "Exception ignored" 吞掉
+        os.kill(os.getpid(), signal.SIGTERM)
+        for _ in range(100000):
+            pass
+
+    victim = _Collected()
+    keep = weakref.ref(victim, _on_collect)
+    del victim
+    print("still running after the stop signal", flush=True)
+    server_app.setup_server = lambda: None  # 挂路由与本测试无关
+    server_app.serve_over_control_plane()
+    print("wait returned without stopping", flush=True)
+    """
+)
+
+
+@POSIX_ONLY
+def test_stop_signal_swallowed_in_a_gc_callback_still_stops_the_host_wait(tmp_path: Path) -> None:
+    """停机信号的 SystemExit 被 GC 回调吞掉后，Host 子进程的常驻等待仍须及时退出。
+
+    修复前主线程照常进入等待，停机标记已置、后续信号被忽略，只能等看门狗限时强制结束。
+    """
+
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, "-c", _SWALLOWED_STOP], env=_env(), capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=30,
+    )
+    elapsed = time.monotonic() - started
+    assert "still running after the stop signal" in result.stdout, result.stdout + result.stderr
+    assert "Exception ignored" in result.stderr and "SystemExit" in result.stderr, result.stderr
+    assert "wait returned without stopping" not in result.stdout
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert elapsed < 15, (elapsed, result.stderr[-2000:])
+    assert "强制结束进程" not in result.stderr
+
+
+def test_raise_if_shutdown_started_reraises_the_stop_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(lifetime, "_shutdown_flag", False)
+    lifetime.raise_if_shutdown_started()  # 没开始停机：什么也不做
+
+    monkeypatch.setattr(lifetime, "_shutdown_flag", True)
+    monkeypatch.setattr(lifetime, "_deadline", (time.monotonic() + 3600, 75, "restart", 20.0))
+    with pytest.raises(SystemExit) as stopped:
+        lifetime.raise_if_shutdown_started()
+    assert stopped.value.code == 75
+
+
+def test_backend_join_stops_once_shutdown_started(monkeypatch: pytest.MonkeyPatch) -> None:
+    from unilabos.app import runtime_startup
+
+    release = threading.Event()
+    backend = threading.Thread(target=release.wait, daemon=True)
+    backend.start()
+    try:
+        monkeypatch.setattr(lifetime, "_shutdown_flag", True)
+        monkeypatch.setattr(lifetime, "_deadline", (time.monotonic() + 3600, 0, "stop", 20.0))
+        started = time.monotonic()
+        with pytest.raises(SystemExit):
+            runtime_startup._join_backend(backend)
+        assert time.monotonic() - started < 2
+    finally:
+        release.set()
+        backend.join(timeout=5)
+
+
 def test_shutdown_deadline_exits_even_when_reporting_blocks(tmp_path: Path) -> None:
     """限时不能依赖输出流：print / logging 永远阻塞时，进程仍须按时退出（报告直接写 fd 2）。"""
 

@@ -94,6 +94,21 @@ def shutdown_started() -> bool:
     return _shutdown_flag
 
 
+def raise_if_shutdown_started() -> None:
+    """主线程的常驻等待循环每轮调用：停机已经开始，就补抛 ``SystemExit``。
+
+    停机信号处理器靠在主线程抛 ``SystemExit`` 收尾。处理器若恰好在垃圾回收调用 ``__del__`` /
+    weakref 回调时运行，这个异常会被 CPython 当成 "Exception ignored" 吞掉：停机标记已置、
+    之后的信号都被忽略，主线程却照常进入等待，直到看门狗限时强制结束。按 0.5 s 分段等待的
+    循环每轮检查一次，最多晚一个周期退出。只读普通变量，不拿锁；只用于停机之前的常驻等待，
+    不要在收尾路径里调用（那会打断正在进行的收尾）。
+    """
+
+    if _shutdown_flag:
+        deadline = _deadline
+        raise SystemExit(deadline[1] if deadline is not None else 0)
+
+
 def arm_exit_deadline(seconds: float, code: int, *, reason: str) -> None:
     """``seconds`` 后若进程仍在，强制以 ``code`` 结束；只布置一次，先布置者生效。
 
@@ -584,6 +599,7 @@ __all__ = [
     "follow_parent_env",
     "follow_parent_from_env",
     "install_stop_signal_handlers",
+    "raise_if_shutdown_started",
     "request_main_exit",
     "shutdown_started",
     "start_exit_watchdog",

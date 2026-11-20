@@ -205,8 +205,12 @@ def _start_management_server() -> None:
 
 
 def _join_backend(backend_thread: threading.Thread) -> None:
-    # 分段等待：Windows 上无限期 join 收不到 Ctrl+C，也收不到父进程消失时对主线程的中断请求
+    from unilabos.app import lifetime
+
+    # 分段等待：Windows 上无限期 join 收不到 Ctrl+C，也收不到父进程消失时对主线程的中断请求；
+    # 每轮看一眼进程停机标记（处理器抛的 SystemExit 可能在 GC 回调里被吞掉）
     while backend_thread.is_alive():
+        lifetime.raise_if_shutdown_started()
         backend_thread.join(timeout=0.5)
 
 

@@ -35,31 +35,7 @@ FASTDDS_USER_TRANSPORT_ENV = (
     "FASTDDS_DEFAULT_PROFILES_FILE",
     "FASTDDS_BUILTIN_TRANSPORTS",
 )
-#: 只用 UDPv4 的 Fast DDS 默认配置文件名（写在受管 Slave 的进程目录里）
 NETWORK_ONLY_PROFILE_FILENAME = "fastdds_network_only.xml"
-#: 默认参与者配置：关掉内置传输（UDPv4 + 共享内存），只留一个 UDPv4 传输。Fast DDS 2.6（Humble）
-#: 与 2.14（Jazzy）都认 FASTRTPS_DEFAULT_PROFILES_FILE 指向的默认配置；不设发现方式，
-#: ROS_DISCOVERY_SERVER / ROS_SUPER_CLIENT 照常把参与者转成 Discovery Server 客户端。
-NETWORK_ONLY_PROFILE = """\
-<?xml version="1.0" encoding="UTF-8" ?>
-<!-- Uni-Lab-OS managed Slave: UDPv4 only, no shared-memory transport. Generated at launch. -->
-<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
-    <transport_descriptors>
-        <transport_descriptor>
-            <transport_id>unilabos_udpv4</transport_id>
-            <type>UDPv4</type>
-        </transport_descriptor>
-    </transport_descriptors>
-    <participant profile_name="unilabos_network_only" is_default_profile="true">
-        <rtps>
-            <userTransports>
-                <transport_id>unilabos_udpv4</transport_id>
-            </userTransports>
-            <useBuiltinTransports>false</useBuiltinTransports>
-        </rtps>
-    </participant>
-</profiles>
-"""
 
 
 #: 回环自检的数据报大小：大于以太网 MTU，要拆 IP 分片才能送达
@@ -94,30 +70,26 @@ def loopback_carries_fragmented_udp() -> bool:
     return udp_loopback_delivers(LOOPBACK_PROBE_BYTES)
 
 
-def network_only_transport_env(env: MutableMapping[str, str], profile_dir: Path) -> str:
-    """让 ``env`` 启动的 ROS 2 进程只走网络传输（UDPv4，不用共享内存）。
+def configure_slave_transport(env: MutableMapping[str, str], *, allow_shm: bool, rmw: str) -> str:
+    """在 Slave 收到发现策略后、创建 DDS 参与者前选定传输。返回值供 Host 区分显式设置与回退。"""
 
-    同一台机器上的 Fast DDS 参与者默认经共享内存通信；被强制结束的进程会留下没解开的进程间锁，
-    其他进程随后报 ``RTPS_TRANSPORT_SHM ... owner died``，甚至崩溃。受管 Slave 因此与另一台机器上的
-    Slave 一样只走网络：在 ``profile_dir`` 写一份默认配置（见 :data:`NETWORK_ONLY_PROFILE`），经
-    ``FASTRTPS_DEFAULT_PROFILES_FILE`` 交给子进程。``FASTDDS_BUILTIN_TRANSPORTS=UDPv4`` 要 Fast DDS
-    2.13 起才认，覆盖不了 Humble，所以不用它。
-
-    返回 ``"applied"``（已改为只走 UDPv4）、``"user"``（``env`` 里已有 :data:`FASTDDS_USER_TRANSPORT_ENV`
-    中的变量，即用户自己配置了传输，不改动）或 ``"loopback"``（本机回环 UDP 送不了超过 MTU 的数据报，
-    见 :func:`loopback_carries_fragmented_udp`，保留 Fast DDS 默认传输）。
-    """
-
-    if any(str(env.get(name) or "").strip() for name in FASTDDS_USER_TRANSPORT_ENV):
+    if (
+        rmw not in ("rmw_fastrtps_cpp", "rmw_fastrtps_dynamic_cpp")
+        or any(str(env.get(name) or "").strip() for name in FASTDDS_USER_TRANSPORT_ENV)
+        or env.get("ROS_LOCALHOST_ONLY") == "1"
+        or env.get("ROS_AUTOMATIC_DISCOVERY_RANGE", "").upper() == "LOCALHOST"
+        or env.get("RMW_FASTRTPS_USE_QOS_FROM_XML") == "1"
+    ):
         return "user"
+    if allow_shm:
+        return "shm"
     if not loopback_carries_fragmented_udp():
-        return "loopback"
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    profile = profile_dir / NETWORK_ONLY_PROFILE_FILENAME
-    if not profile.is_file() or profile.read_text(encoding="utf-8") != NETWORK_ONLY_PROFILE:
-        profile.write_text(NETWORK_ONLY_PROFILE, encoding="utf-8")
+        return "fallback"
+    profile = Path(__file__).resolve().with_name(NETWORK_ONLY_PROFILE_FILENAME)
+    if not profile.is_file():
+        raise FileNotFoundError(f"缺少 Fast DDS 网络传输配置：{profile}")
     env["FASTRTPS_DEFAULT_PROFILES_FILE"] = str(profile)
-    return "applied"
+    return "network"
 
 
 @dataclass
@@ -440,7 +412,6 @@ __all__ = [
     "FASTDDS_USER_TRANSPORT_ENV",
     "FastDDSDiscoveryServer",
     "LOOPBACK_PROBE_BYTES",
-    "NETWORK_ONLY_PROFILE",
     "NETWORK_ONLY_PROFILE_FILENAME",
     "RosNetworkInfo",
     "apply_ros_network_env",
@@ -449,7 +420,7 @@ __all__ = [
     "detect_local_ip",
     "format_host_port",
     "loopback_carries_fragmented_udp",
-    "network_only_transport_env",
+    "configure_slave_transport",
     "parse_host_port",
     "parse_host_target",
     "suggestable_host_ip",

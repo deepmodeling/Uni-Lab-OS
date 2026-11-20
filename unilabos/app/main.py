@@ -693,6 +693,7 @@ def _run_main():
     )
     BasicConfig.disable_browser = args_dict["disable_browser"] or BasicConfig.disable_browser
     BasicConfig.is_host_mode = not is_slave
+    BasicConfig.ros_shm = bool(args_dict.get("ros_shm"))
     BasicConfig.slave_no_host = args_dict.get("slave_no_host", False)
     BasicConfig.no_update_feedback = args_dict.get("no_update_feedback", False)
     BasicConfig.test_mode = args_dict.get("test_mode", False)

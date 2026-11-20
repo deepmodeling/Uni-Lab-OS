@@ -128,6 +128,7 @@ def _collect_py_files(
     max_depth: int = MAX_SCAN_DEPTH,
     max_files: int = MAX_SCAN_FILES,
     exclude_files: Optional[set] = None,
+    exclude_dirs: Optional[set] = None,
 ) -> List[Path]:
     """
     收集 root_dir 下的 .py 文件，限制最大递归深度和文件数量。
@@ -137,12 +138,14 @@ def _collect_py_files(
         max_depth: 最大递归深度 (默认 10 层)
         max_files: 最大文件数量 (默认 1000 个)
         exclude_files: 要排除的文件名集合 (如 {"lab_resources.py"})
+        exclude_dirs: 整个跳过的目录（含子目录）
 
     Returns:
         排序后的 .py 文件路径列表
     """
     result: List[Path] = []
     _exclude = exclude_files or set()
+    _exclude_dirs = {Path(item).resolve() for item in exclude_dirs or ()}
 
     def _walk(dir_path: Path, depth: int):
         if depth > max_depth or len(result) >= max_files:
@@ -158,6 +161,8 @@ def _collect_py_files(
                 if entry.name not in _exclude:
                     result.append(entry)
             elif entry.is_dir() and not entry.name.startswith(("__", ".")):
+                if _exclude_dirs and entry.resolve() in _exclude_dirs:
+                    continue
                 _walk(entry, depth + 1)
 
     _walk(root_dir, 0)
@@ -173,6 +178,7 @@ def scan_directory(
     exclude_files: Optional[set] = None,
     cache: Optional[Dict[str, Any]] = None,
     include_files: Optional[List[Union[str, Path]]] = None,
+    exclude_dirs: Optional[set] = None,
 ) -> Dict[str, Any]:
     """
     Recursively scan .py files under *root_dir* for @device and @resource
@@ -205,6 +211,7 @@ def scan_directory(
         cache: Mutable cache dict (``load_scan_cache()`` result). Hits are read
                from here; misses are written back so the caller can persist later.
         include_files: 指定扫描的文件列表，提供时跳过目录递归收集，直接扫描这些文件。
+        exclude_dirs: 递归收集时整个跳过的目录（含子目录）。
 
     结果按文件路径排序、文件内按声明顺序合并，与线程完成先后无关。
     """
@@ -221,7 +228,10 @@ def scan_directory(
     if include_files is not None:
         py_files = sorted(Path(f).resolve() for f in include_files if Path(f).resolve().exists())
     else:
-        py_files = _collect_py_files(root_dir, max_depth=max_depth, max_files=max_files, exclude_files=exclude_files)
+        py_files = _collect_py_files(
+            root_dir, max_depth=max_depth, max_files=max_files,
+            exclude_files=exclude_files, exclude_dirs=exclude_dirs,
+        )
 
     cache_files: Dict[str, Any] = cache.get("files", {}) if cache else {}
 

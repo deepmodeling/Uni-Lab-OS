@@ -6,6 +6,7 @@
 
 import copy
 import importlib
+import importlib.util
 import inspect
 import io
 import os
@@ -107,6 +108,41 @@ _module_hash_cache: Dict[str, Optional[str]] = {}
 #: ``--external_devices_only`` 下仍从核心注册表加载的资源模板（相对 ``unilabos/registry``）：
 #: 图里的容器节点都引用 ``container``，驱动包不会自带它。
 EXTERNAL_ONLY_CORE_RESOURCE_FILES: Tuple[str, ...] = ("resources/organic/container.yaml",)
+
+#: 只有 ROS 2 backend 用得到的核心包：ROS 2 transport 与 ROS 专用的内置设备。backend 不是 ros2 时
+#: 建注册表不导入其中任何模块（没装 ROS 也不会因缺 rclpy 报错），``--check_mode`` 也不校验它们。
+ROS2_ONLY_CORE_MODULES: Tuple[str, ...] = ("unilabos.client.host.ros2", "unilabos.devices.ros_dev")
+#: 其中整个不扫描的目录（相对 ``unilabos`` 包）：``devices/ros_dev`` 只有 ROS 2 节点，没有注册表条目。
+#: ROS 2 transport 的预置设备（``camera``、YAML 声明的 ``serial``）照常登记：HostLink 据它们的
+#: ``supported_backends`` 把图里这类节点标为不可用、其余设备照常启动，缺条目则会让启动失败。
+ROS2_ONLY_SCAN_SKIPPED_DIRS: Tuple[str, ...] = ("devices/ros_dev",)
+
+
+def _ros2_installed() -> bool:
+    try:
+        return importlib.util.find_spec("rclpy") is not None
+    except (ImportError, ValueError):
+        # 查找本身失败（例如环境用导入钩子禁止 ROS）：当作没装
+        return False
+
+
+def ros2_core_enabled(backend: Optional[str]) -> bool:
+    """建注册表时是否导入、校验 ROS 2 专用核心代码（:data:`ROS2_ONLY_CORE_MODULES`），是否扫描
+    :data:`ROS2_ONLY_SCAN_SKIPPED_DIRS`。
+
+    知道 backend（运行时的 ``--backend``）时只有 ``ros2`` 才是。不知道 backend（库调用、
+    ``--check_mode``）时看本机：装了 ROS 2（找得到 ``rclpy``）就照常导入、照常校验，没装就静默跳过。
+    """
+    if backend is not None:
+        return str(backend) == "ros2"
+    return _ros2_installed()
+
+
+def _is_ros2_core_module(module: Any) -> bool:
+    from unilabos.registry.package_layout import module_in_prefix
+
+    return any(module_in_prefix(module, prefix) for prefix in ROS2_ONLY_CORE_MODULES)
+
 
 _DICT_LIKE_TYPE_NAMES = frozenset({"dict", "mapping", "mutablemapping", "ordereddict", "typeddict"})
 def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
@@ -401,6 +437,14 @@ class Registry:
         self.verify_errors: List[str] = []
         #: 当前 backend 不支持、导入失败只记跳过的设备："<id>: <错误>"
         self.verify_skipped: List[str] = []
+        #: 是否导入、校验 ROS 2 专用核心代码（见 :func:`ros2_core_enabled`）。``setup(backend=...)`` 按 backend
+        #: 决定；``None`` 表示到第一次用到时按「不知道 backend」决定（导入本模块时不探测 ROS）
+        self.include_ros2_core: Optional[bool] = None
+
+    def _uses_ros2_core(self) -> bool:
+        if self.include_ros2_core is None:
+            self.include_ros2_core = ros2_core_enabled(None)
+        return self.include_ros2_core
 
     # ------------------------------------------------------------------
     # 统一入口
@@ -413,12 +457,18 @@ class Registry:
         complete_registry=False,
         external_only=False,
         community_namespaces=None,
+        backend: Optional[str] = None,
     ):
-        """统一构建注册表入口。"""
+        """统一构建注册表入口。
+
+        *backend* 是本进程要启动的通信 backend；``None`` 表示不知道（库调用、``--check_mode``），
+        建注册表时是否导入 ROS 2 专用核心代码见 :func:`ros2_core_enabled`。
+        """
         if self._setup_called:
             logger.critical("[Uni-Lab-OS Registry] setup方法已被调用过，不允许多次调用")
             return
 
+        self.include_ros2_core = ros2_core_enabled(backend)
         self._startup_executor = ThreadPoolExecutor(
             max_workers=8, thread_name_prefix="RegistryStartup"
         )
@@ -587,9 +637,15 @@ class Registry:
             exclude_files = {"host_services.py"}
             if not BasicConfig.extra_resource:
                 exclude_files.add("lab_resources.py")
+            # backend 不是 ros2：devices/ros_dev 整个不扫描（不报错，也不提示）
+            exclude_dirs = (
+                set()
+                if self._uses_ros2_core()
+                else {pkg_root.joinpath(*relative.split("/")) for relative in ROS2_ONLY_SCAN_SKIPPED_DIRS}
+            )
             scan_result = scan_directory(
                 scan_root, python_path=python_path, executor=self._startup_executor,
-                exclude_files=exclude_files, cache=ast_cache,
+                exclude_files=exclude_files, cache=ast_cache, exclude_dirs=exclude_dirs,
             )
             logger.info(f"[Uni-Lab-OS Registry] 排除扫描文件: {sorted(exclude_files)} ")
 
@@ -682,6 +738,7 @@ class Registry:
                 # 命令行顺序就是合并顺序：换了顺序的同一组目录不能复用另一种顺序的结果
                 "devices_dirs": [str(d) for d in extra_dirs],
                 "namespaces": sorted(community_namespaces.items()),
+                "ros2_core": self._uses_ros2_core(),  # 不导入 ROS 2 专用核心代码时条目按 AST 推断
             },
             sort_keys=True,
         )
@@ -1141,6 +1198,9 @@ class Registry:
         module_str = ast_meta.get("module", "")
         file_path = ast_meta.get("file_path", "")
         imap = ast_meta.get("import_map") or {}
+        if not self._uses_ros2_core():
+            # 不导入 ROS 2 专用核心包：这些名字按 AST 推断（与导入失败时同一兜底），没装 ROS 也不报错
+            imap = {name: ref for name, ref in imap.items() if not _is_ros2_core_module(ref)}
 
         # --- status_types (string version) ---
         status_types_str: Dict[str, str] = {}
@@ -1254,7 +1314,7 @@ class Registry:
             result_override = dict(action_args.get("result", {}))
             goal_default_override = dict(action_args.get("goal_default", {}))
 
-            if action_args.get("parent"):
+            if action_args.get("parent") and (self._uses_ros2_core() or not _is_ros2_core_module(module_str)):
                 # @action(parent=True): 直接通过 import class + MRO 获取父类方法签名
                 goal = resolve_method_params_via_import(module_str, method_name)
             else:
@@ -2047,13 +2107,22 @@ class Registry:
 
         返回导入失败列表（同时记入 ``self.verify_errors``）。``supported_backends`` 不含当前
         backend 的设备（如 HostLink 环境里的 ROS 2 专用节点）导入失败只记入
-        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。
+        ``self.verify_skipped``：该环境本就不能运行它，不算校验失败。不导入 ROS 2 专用核心代码时
+        （见 :func:`ros2_core_enabled`），类在其中的条目不导入、也不计数。
         """
         errors = []
         skipped: List[str] = []
         import_success_count = 0
         resolved_count = 0
-        total_items = len(self.device_type_registry) + len(self.resource_type_registry)
+
+        def _verifiable(entry: Any) -> bool:
+            # backend 不是 ros2：ROS 2 专用核心代码不导入、不校验（没装 ROS 也不报错、不提示）
+            module = (entry.get("class") or {}).get("module") if isinstance(entry, dict) else None
+            return self._uses_ros2_core() or not _is_ros2_core_module(module)
+
+        devices = {did: entry for did, entry in self.device_type_registry.items() if _verifiable(entry)}
+        resources = {rid: entry for rid, entry in self.resource_type_registry.items() if _verifiable(entry)}
+        total_items = len(devices) + len(resources)
         active_backend = str(BasicConfig.backend or "hostlink")
 
         lock = threading.Lock()
@@ -2132,11 +2201,11 @@ class Registry:
             device_futures = {}
             resource_futures = {}
 
-            for device_id, entry in list(self.device_type_registry.items()):
+            for device_id, entry in devices.items():
                 fut = executor.submit(_verify_device, device_id, entry)
                 device_futures[fut] = device_id
 
-            for resource_id, entry in list(self.resource_type_registry.items()):
+            for resource_id, entry in resources.items():
                 fut = executor.submit(_verify_resource, resource_id, entry)
                 resource_futures[fut] = resource_id
 
@@ -3358,9 +3427,13 @@ def build_registry(
     complete_registry=False,
     external_only=False,
     community_namespaces=None,
+    backend=None,
 ):
     """
     构建或获取Registry单例实例
+
+    *backend* 是本进程要启动的通信 backend（``hostlink`` / ``ros2``）；不知道时传 ``None``
+    （库调用、``--check_mode``）。建注册表时是否导入 ROS 2 专用核心代码见 :func:`ros2_core_enabled`。
     """
     logger.info("[Uni-Lab-OS Registry] 构建注册表实例")
 
@@ -3378,6 +3451,7 @@ def build_registry(
         complete_registry=complete_registry,
         external_only=external_only,
         community_namespaces=community_namespaces,
+        backend=backend,
     )
 
     # 将 AST 扫描的字符串类型替换为实际 ROS2 消息类（仅查找 ROS2 类型，不 import 设备模块）

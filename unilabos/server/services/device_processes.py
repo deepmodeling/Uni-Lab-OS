@@ -351,8 +351,8 @@ def _unavailable_reason(spec: DeviceProcessSpec, runtime: DeviceProcessRuntime, 
 
 #: Windows 上请受管 Slave 有序退出的控制台事件（拉起时建了独立进程组，Ctrl+Break 只发给它那一组）
 _CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", None) if os.name == "nt" else None
-#: 用户自己配置了 Fast DDS 传输的提示只打一次
-_kept_user_transport_reported = False
+#: 受管 Slave 没改成只走网络传输的原因（``network_only_transport_env`` 的返回值），每种只提示一次
+_reported_transport_outcomes: set[str] = set()
 
 
 def _command_backend(command: List[str]) -> str:
@@ -371,10 +371,10 @@ def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
       （:func:`unilabos.client.host.hostlink.network.env_before_host_policy`）；
     - ROS 2：Fast DDS 只用 UDPv4，不与 Host、其他 Slave 共享内存
       （:func:`unilabos.client.host.hostlink.ros_assist.network_only_transport_env`）；用户自己配置了
-      Fast DDS 传输或默认配置文件时照用户的来。
+      Fast DDS 传输或默认配置文件时照用户的来；本机回环 UDP 送不了超过 MTU 的数据报（WSL2 的镜像网络）
+      时保留 Fast DDS 默认传输并告警，否则较大的消息两个方向都送不到。
     """
 
-    global _kept_user_transport_reported
     env = dict(os.environ)
     env.setdefault("PYTHONUNBUFFERED", "1")
     env.setdefault("NO_COLOR", "1")
@@ -392,10 +392,17 @@ def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
             env.pop(name, None)
         else:
             env[name] = value
-    if network_only_transport_env(env, directory) is None and not _kept_user_transport_reported:
-        _kept_user_transport_reported = True
-        configured = ", ".join(name for name in FASTDDS_USER_TRANSPORT_ENV if str(env.get(name) or "").strip())
-        logger.info(f"[DeviceProcesses] 已设置 {configured}：受管 Slave 沿用这份 Fast DDS 传输配置")
+    outcome = network_only_transport_env(env, directory)
+    if outcome != "applied" and outcome not in _reported_transport_outcomes:
+        _reported_transport_outcomes.add(outcome)
+        if outcome == "user":
+            configured = ", ".join(name for name in FASTDDS_USER_TRANSPORT_ENV if str(env.get(name) or "").strip())
+            logger.info(f"[DeviceProcesses] 已设置 {configured}：受管 Slave 沿用这份 Fast DDS 传输配置")
+        else:
+            logger.warning(
+                "[DeviceProcesses] 本机回环 UDP 收不到超过以太网 MTU 的数据报（常见于 WSL2 的镜像网络），"
+                "只走 UDP 的 ROS 2 Slave 会丢掉较大的消息：受管 Slave 保留 Fast DDS 默认传输（含共享内存）"
+            )
     return env
 
 

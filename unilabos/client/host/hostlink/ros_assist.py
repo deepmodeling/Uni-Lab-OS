@@ -7,6 +7,7 @@ both processes join the same ROS graph.
 
 from __future__ import annotations
 
+import functools
 import ipaddress
 import os
 import shutil
@@ -61,10 +62,42 @@ NETWORK_ONLY_PROFILE = """\
 """
 
 
-def network_only_transport_env(
-    env: MutableMapping[str, str], profile_dir: Path
-) -> Optional[str]:
-    """让 ``env`` 启动的 ROS 2 进程只走网络传输（UDPv4，不用共享内存），返回生效的配置文件路径。
+#: 回环自检的数据报大小：大于以太网 MTU，要拆 IP 分片才能送达
+LOOPBACK_PROBE_BYTES = 8192
+
+
+def udp_loopback_delivers(size: int, timeout: float = 0.5) -> bool:
+    """往 127.0.0.1 发一个 ``size`` 字节的 UDP 数据报，本机原样收到时返回 True。"""
+
+    receiver = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        receiver.bind(("127.0.0.1", 0))
+        receiver.settimeout(timeout)
+        sender.sendto(b"\0" * size, receiver.getsockname())
+        data, _address = receiver.recvfrom(size + 1)
+        return len(data) == size
+    except OSError:
+        return False
+    finally:
+        receiver.close()
+        sender.close()
+
+
+@functools.lru_cache(maxsize=1)
+def loopback_carries_fragmented_udp() -> bool:
+    """本机回环 UDP 能否送达超过以太网 MTU（要拆 IP 分片）的数据报；每个进程只测一次。
+
+    不用共享内存的同机 Fast DDS 参与者经 127.0.0.1 通信，超过 MTU 的消息靠 IP 分片。WSL2 的镜像网络
+    把 127.0.0.1 的流量经 MTU 1500 的虚拟网卡转发并丢掉分片：只走 UDP 的参与者两个方向都收不到超过
+    约 1.4 KB 的消息（例如设备多的 Slave 的 ROS 图信息）。
+    """
+
+    return udp_loopback_delivers(LOOPBACK_PROBE_BYTES)
+
+
+def network_only_transport_env(env: MutableMapping[str, str], profile_dir: Path) -> str:
+    """让 ``env`` 启动的 ROS 2 进程只走网络传输（UDPv4，不用共享内存）。
 
     同一台机器上的 Fast DDS 参与者默认经共享内存通信；被强制结束的进程会留下没解开的进程间锁，
     其他进程随后报 ``RTPS_TRANSPORT_SHM ... owner died``，甚至崩溃。受管 Slave 因此与另一台机器上的
@@ -72,18 +105,21 @@ def network_only_transport_env(
     ``FASTRTPS_DEFAULT_PROFILES_FILE`` 交给子进程。``FASTDDS_BUILTIN_TRANSPORTS=UDPv4`` 要 Fast DDS
     2.13 起才认，覆盖不了 Humble，所以不用它。
 
-    ``env`` 里已经有 :data:`FASTDDS_USER_TRANSPORT_ENV` 中的任一变量（用户自己配置了传输）时不改动，
-    返回 None。
+    返回 ``"applied"``（已改为只走 UDPv4）、``"user"``（``env`` 里已有 :data:`FASTDDS_USER_TRANSPORT_ENV`
+    中的变量，即用户自己配置了传输，不改动）或 ``"loopback"``（本机回环 UDP 送不了超过 MTU 的数据报，
+    见 :func:`loopback_carries_fragmented_udp`，保留 Fast DDS 默认传输）。
     """
 
     if any(str(env.get(name) or "").strip() for name in FASTDDS_USER_TRANSPORT_ENV):
-        return None
+        return "user"
+    if not loopback_carries_fragmented_udp():
+        return "loopback"
     profile_dir.mkdir(parents=True, exist_ok=True)
     profile = profile_dir / NETWORK_ONLY_PROFILE_FILENAME
     if not profile.is_file() or profile.read_text(encoding="utf-8") != NETWORK_ONLY_PROFILE:
         profile.write_text(NETWORK_ONLY_PROFILE, encoding="utf-8")
     env["FASTRTPS_DEFAULT_PROFILES_FILE"] = str(profile)
-    return str(profile)
+    return "applied"
 
 
 @dataclass
@@ -405,6 +441,7 @@ def suggestable_host_ip(address: str) -> bool:
 __all__ = [
     "FASTDDS_USER_TRANSPORT_ENV",
     "FastDDSDiscoveryServer",
+    "LOOPBACK_PROBE_BYTES",
     "NETWORK_ONLY_PROFILE",
     "NETWORK_ONLY_PROFILE_FILENAME",
     "RosNetworkInfo",
@@ -413,10 +450,12 @@ __all__ = [
     "build_host_ros_info",
     "detect_local_ip",
     "format_host_port",
+    "loopback_carries_fragmented_udp",
     "network_only_transport_env",
     "parse_host_port",
     "parse_host_target",
     "suggestable_host_ip",
+    "udp_loopback_delivers",
     "use_connected_host",
     "validate_domain_id",
 ]

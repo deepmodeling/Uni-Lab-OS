@@ -1,7 +1,8 @@
 """受管 Slave 的启动环境与停止方式：本机拉起的 Slave 与另一台机器上的 Slave 一样只走通信协议。
 
 - ROS 2 受管 Slave 的 Fast DDS 只用 UDPv4，不用共享内存（被强制结束的 Slave 不会留下进程间锁，
-  拖垮 Host 与其它 Slave）；用户自己配置的 Fast DDS 传输 / 配置文件原样保留；
+  拖垮 Host 与其它 Slave）；用户自己配置的 Fast DDS 传输 / 配置文件原样保留；本机回环 UDP 送不了
+  超过 MTU 的数据报（WSL2 镜像网络）时保留默认传输；
 - Host 为自己的 ROS 节点改写的组网变量不传给 Slave，组网参数由 Slave 经 HostLink 握手领取；
 - Windows 上先发 Ctrl+Break 请 Slave 有序退出，限时后才强制结束。
 """
@@ -17,7 +18,7 @@ from xml.etree import ElementTree
 
 import pytest
 
-from unilabos.client.host.hostlink import network
+from unilabos.client.host.hostlink import network, ros_assist
 from unilabos.client.host.hostlink.ros_assist import (
     FASTDDS_USER_TRANSPORT_ENV,
     NETWORK_ONLY_PROFILE_FILENAME,
@@ -67,7 +68,9 @@ def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dpx.DeviceProces
     RecordingPopen.instances.clear()
     monkeypatch.setattr(dpx.subprocess, "Popen", RecordingPopen)
     monkeypatch.setattr(dpx, "STOP_GRACE_S", 0.01)
-    monkeypatch.setattr(dpx, "_kept_user_transport_reported", False)
+    monkeypatch.setattr(dpx, "_reported_transport_outcomes", set())
+    # 回环 UDP 能送超过 MTU 的数据报（普通 Linux / Windows）；WSL2 镜像网络的情形单独覆盖
+    monkeypatch.setattr(ros_assist, "loopback_carries_fragmented_udp", lambda: True)
     monkeypatch.setattr(network, "_env_before_host_policy", {})
     for name in (*FASTDDS_USER_TRANSPORT_ENV, *network.HOST_POLICY_ENV):
         monkeypatch.delenv(name, raising=False)
@@ -118,6 +121,26 @@ def test_user_fast_dds_transport_settings_are_kept(service, monkeypatch, tmp_pat
         assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
     assert not list(tmp_path.rglob(NETWORK_ONLY_PROFILE_FILENAME))
 
+
+
+def test_loopback_that_drops_fragments_keeps_fast_dds_defaults(service, monkeypatch, tmp_path) -> None:
+    """WSL2 的镜像网络丢掉 127.0.0.1 上的 IP 分片：只走 UDP 时较大的消息两个方向都送不到，
+    受管 Slave 保留 Fast DDS 默认传输（含共享内存）并告警；Host 自己的 ROS 组网设置照样不传下去。"""
+
+    monkeypatch.setattr(ros_assist, "loopback_carries_fragmented_udp", lambda: False)
+    monkeypatch.setenv("ROS_SUPER_CLIENT", "TRUE")
+    monkeypatch.setattr(network, "_env_before_host_policy", {"ROS_SUPER_CLIENT": None})
+    proc = _start(service, monkeypatch, "ros2")
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
+    assert "ROS_SUPER_CLIENT" not in proc.env
+    assert not list(tmp_path.rglob(NETWORK_ONLY_PROFILE_FILENAME))
+    assert dpx._reported_transport_outcomes == {"loopback"}
+
+
+def test_udp_loopback_probe() -> None:
+    assert ros_assist.udp_loopback_delivers(512) is True
+    # 超过 UDP 数据报上限：发不出去，按送不到处理
+    assert ros_assist.udp_loopback_delivers(70000) is False
 
 def test_hostlink_managed_slave_environment_has_no_dds_settings(service, monkeypatch) -> None:
     proc = _start(service, monkeypatch, "hostlink")

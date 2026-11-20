@@ -423,7 +423,10 @@ Host 退出。每个 Slave 经本机 HostLink 接回 Host，与手动启动的 S
   问题。用户已设置 `FASTRTPS_DEFAULT_PROFILES_FILE`、`FASTDDS_DEFAULT_PROFILES_FILE` 或
   `FASTDDS_BUILTIN_TRANSPORTS` 时不改动。发现范围是仅本机（Humble 的 `ROS_LOCALHOST_ONLY=1`、Jazzy 的
   `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`）时 rmw_fastrtps 会自己再加一个共享内存传输；托管 Discovery
-  Server 下 Host 下发的是 `SYSTEM_DEFAULT`，不受影响；
+  Server 下 Host 下发的是 `SYSTEM_DEFAULT`，不受影响。只走 UDP 时同机流量经 127.0.0.1，超过 MTU 的消息
+  靠 IP 分片；WSL2 的镜像网络把 127.0.0.1 的流量经 MTU 1500 的虚拟网卡转发并丢掉分片，Slave 的 ROS
+  图信息、较大的目标与结果两个方向都送不到。Host 拉起受管 Slave 前往回环发一个 8 KB 的数据报自检
+  （`ros_assist.loopback_carries_fragmented_udp`），收不到时保留 Fast DDS 默认传输（含共享内存）并告警；
 - 停止时先请 Slave 有序退出：POSIX 发 SIGTERM，Windows 向它的进程组发 Ctrl+Break（ROS 2 Slave 当作
   SIGBREAK 有序退出），`STOP_GRACE_S`（8 秒）后仍在才强制结束。
 

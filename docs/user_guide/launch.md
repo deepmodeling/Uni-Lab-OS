@@ -301,6 +301,9 @@ unilab -g lab.json --root_devices_as_slaves
   Fast DDS 配置（`FASTRTPS_DEFAULT_PROFILES_FILE`，写在该 Slave 的进程目录里），托管的 Discovery
   Server 照常工作。启动 Host 的环境里已经设置了 `FASTRTPS_DEFAULT_PROFILES_FILE`、
   `FASTDDS_DEFAULT_PROFILES_FILE` 或 `FASTDDS_BUILTIN_TRANSPORTS` 时，受管 Slave 照用户的配置运行。
+  只走 UDP 要求本机回环能送超过以太网 MTU 的数据报：WSL2 的镜像网络会丢掉 127.0.0.1 上的 IP 分片，
+  Slave 的较大消息两个方向都送不到。Host 拉起受管 Slave 前自检一次，回环不行时保留 Fast DDS 默认传输
+  （含共享内存）并告警。
 - **规格**：每个 Slave 是一条受管设备进程，id 为 `root-<设备 id>`（含路径或 URL 不安全字符的 id 净化后
   加一段由 id 派生的后缀），在 `GET /api/v1/device-processes` 里可见（`generated_by: root_devices_as_slaves`），
   可以启动 / 停止 / 重启，不能编辑或删除。每次 Host 启动按当前设备图重建：同一设备复用同一条规格，

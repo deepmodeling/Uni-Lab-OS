@@ -38,6 +38,7 @@ def test_hello_discovers_slave_devices_and_returns_ros_policy() -> None:
         heartbeat_interval=0.05,
         request_timeout=0.5,
     )
+    client.ros_transport = "shm"
     try:
         assert client.connect_blocking(timeout=2)
         assert client.hello_info["host_id"] == "host-a"
@@ -49,6 +50,7 @@ def test_hello_discovers_slave_devices_and_returns_ros_policy() -> None:
         assert peer["node_id"] == "slave-a"
         assert peer["device_ids"] == ["pump-1", "pump-2"]
         assert peer["online"] is True
+        assert peer["ros_transport"] == "shm"
     finally:
         client.close()
         server.stop()
@@ -60,12 +62,16 @@ def test_same_device_set_keeps_logical_identity_after_reconnect() -> None:
     second = HostLinkClient("127.0.0.1", server.port, machine_name="robot-worker", device_ids=["robot-1"])
     try:
         assert first.connect_blocking(timeout=2)
+        first.ros_transport = "network"
+        first.heartbeat_now()
+        assert server.peers()[0]["ros_transport"] == "network"
         first.close()
         assert _wait_until(lambda: not server.peers()[0]["connected"])
         assert second.connect_blocking(timeout=2)
         assert _wait_until(lambda: len(server.peers()) == 1)
         assert server.peers()[0]["node_id"] == "robot-worker"
         assert server.peers()[0]["online"] is True
+        assert server.peers()[0].get("ros_transport") is None
     finally:
         first.close()
         second.close()

@@ -8,7 +8,7 @@ Host 本体、物料权威和调度都不受影响；改驱动、改配置也只
 
 本机拉起的受管 Slave 与另一台机器上的 Slave 同等对待：它需要的 Host 状态（ROS 组网参数、完整物理
 拓扑图、物料、跨设备动作）只经 HostLink / DDS 获取，不继承 Host 进程自己的设置；ROS 2 Slave 的 Fast DDS
-只走网络传输（UDPv4），不与 Host、其他 Slave 共享内存（:func:`slave_environment`）。停止时先请它有序
+默认由 Slave 自己选择只走网络传输（UDPv4）；Host 的 ``--ros_shm`` 允许使用共享内存。停止时先请它有序
 退出（Windows 上发 Ctrl+Break），限时后再强制结束（:func:`request_slave_exit`）。
 
 受管 Slave 跟随拉起它的 Host：拉起时写入 Host 的 pid（``app/lifetime.py``），Host 无论怎么没了
@@ -351,8 +351,6 @@ def _unavailable_reason(spec: DeviceProcessSpec, runtime: DeviceProcessRuntime, 
 
 #: Windows 上请受管 Slave 有序退出的控制台事件（拉起时建了独立进程组，Ctrl+Break 只发给它那一组）
 _CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", None) if os.name == "nt" else None
-#: 受管 Slave 没改成只走网络传输的原因（``network_only_transport_env`` 的返回值），每种只提示一次
-_reported_transport_outcomes: set[str] = set()
 
 
 def _command_backend(command: List[str]) -> str:
@@ -362,17 +360,13 @@ def _command_backend(command: List[str]) -> str:
         return ""
 
 
-def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
+def slave_environment(command: List[str]) -> Dict[str, str]:
     """受管 Slave 子进程的环境：本机拉起的 Slave 与另一台机器上的 Slave 同样只经通信协议拿东西。
 
     - 以 Host 的环境为底，输出不着色（进的是文件 / API，不是终端）；
     - ROS 2：Host 为自己的 ROS 节点改写过的组网变量（如只有 Host 需要的 ``ROS_SUPER_CLIENT``）
       恢复成改写前的值，组网参数由 Slave 经 HostLink 握手领取
-      （:func:`unilabos.client.host.hostlink.network.env_before_host_policy`）；
-    - ROS 2：Fast DDS 只用 UDPv4，不与 Host、其他 Slave 共享内存
-      （:func:`unilabos.client.host.hostlink.ros_assist.network_only_transport_env`）；用户自己配置了
-      Fast DDS 传输或默认配置文件时照用户的来；本机回环 UDP 送不了超过 MTU 的数据报（WSL2 的镜像网络）
-      时保留 Fast DDS 默认传输并告警，否则较大的消息两个方向都送不到。
+      （:func:`unilabos.client.host.hostlink.network.env_before_host_policy`）。传输配置由 Slave 在 DDS 初始化前选择。
     """
 
     env = dict(os.environ)
@@ -382,27 +376,12 @@ def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
     if _command_backend(command) != "ros2":
         return env
     from unilabos.client.host.hostlink.network import env_before_host_policy
-    from unilabos.client.host.hostlink.ros_assist import (
-        FASTDDS_USER_TRANSPORT_ENV,
-        network_only_transport_env,
-    )
 
     for name, value in env_before_host_policy().items():
         if value is None:
             env.pop(name, None)
         else:
             env[name] = value
-    outcome = network_only_transport_env(env, directory)
-    if outcome != "applied" and outcome not in _reported_transport_outcomes:
-        _reported_transport_outcomes.add(outcome)
-        if outcome == "user":
-            configured = ", ".join(name for name in FASTDDS_USER_TRANSPORT_ENV if str(env.get(name) or "").strip())
-            logger.info(f"[DeviceProcesses] 已设置 {configured}：受管 Slave 沿用这份 Fast DDS 传输配置")
-        else:
-            logger.warning(
-                "[DeviceProcesses] 本机回环 UDP 收不到超过以太网 MTU 的数据报（常见于 WSL2 的镜像网络），"
-                "只走 UDP 的 ROS 2 Slave 会丢掉较大的消息：受管 Slave 保留 Fast DDS 默认传输（含共享内存）"
-            )
     return env
 
 
@@ -504,6 +483,8 @@ class DeviceProcessService:
         if spec.external_only:
             command.append("--external_devices_only")
         command.extend(str(item) for item in spec.extra_args if str(item).strip())
+        if backend == "ros2" and BasicConfig.ros_shm and not {"--ros_shm", "--ros-shm", "--rosmem"}.intersection(command):
+            command.append("--ros_shm")
         return command
 
     def _register_source_watch(self, spec: DeviceProcessSpec, command: List[str]) -> None:
@@ -757,7 +738,7 @@ class DeviceProcessService:
         runtime.last_error = None
         if reset_restart_count:
             runtime.restart_count = 0
-        env = slave_environment(command, directory)
+        env = slave_environment(command)
         # Slave 跟随本 Host 进程：Host 消失（含强制结束）时 Slave 自行退出。这里可能在 API 工作线程、
         # 重启定时器线程里执行，拉起线程不常驻，所以不用 Linux 死亡信号（它跟随的是线程）。
         follow_parent_env(env)

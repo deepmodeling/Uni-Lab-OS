@@ -71,6 +71,9 @@ class BasicConfig:
     server_database_paths = None
     config_path = ""
     is_host_mode = True
+    ros_shm = False
+    # ROS 2 Slave 在进程启动时（导入 rclpy 之前）选定的 Fast DDS 传输：network / shm / user / fallback
+    ros_transport = ""
     slave_no_host = False  # 是否跳过rclient.wait_for_service()
     # 可重命名的 HostNode 运行时实例；注册表类型仍固定为 host_node。
     host_node_name = "host_node"

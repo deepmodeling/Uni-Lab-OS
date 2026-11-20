@@ -103,6 +103,7 @@ class HostLinkClient:
         self.last_error = ""
         self.on_status_change = on_status_change
         self.heartbeat_payload_provider = heartbeat_payload_provider
+        self.ros_transport: Optional[str] = None
         # 节点身份由 machine_name 指定，不能由设备列表推导或随设备增删改变。
         self.node_id = self.machine_name
         self.device_ids: List[str] = []
@@ -306,6 +307,7 @@ class HostLinkClient:
             "role": "slave",
             "protocol_version": PROTOCOL_VERSION,
             "capabilities": list(self.capabilities),
+            **({"ros_transport": self.ros_transport} if self.ros_transport else {}),
             "devices": [dict(item) for item in self.device_descriptors],
         }
 
@@ -563,6 +565,8 @@ class HostLinkClient:
                 payload = self.heartbeat_payload_provider()
             except Exception:  # noqa: BLE001 - 状态采集不能中断重连
                 logger.exception("[HostLink] heartbeat payload collection failed")
+        if self.ros_transport:
+            payload = {**(payload or {}), "ros_transport": self.ros_transport}
         response = self.request(
             ActionType.PING,
             data=payload,

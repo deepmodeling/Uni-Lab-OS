@@ -261,7 +261,24 @@ def slave(
     _hostlink_client, domain_id = setup_slave_network_client(
         device_ids=require_slave_startup_device_ids(devices_config)
     )
+    from unilabos.client.host.hostlink.ros_assist import configure_slave_transport, localhost_discovery_only
+
+    transport = BasicConfig.ros_transport
+    if not transport:
+        # 没经过 app.main（直接调用 slave() 的场景）：这里补选；正常启动时已在导入 rclpy 之前选好
+        from rclpy.utilities import get_rmw_implementation_identifier
+
+        transport = configure_slave_transport(
+            os.environ, allow_shm=BasicConfig.ros_shm, rmw=get_rmw_implementation_identifier()
+        )
+    elif transport == "network" and localhost_discovery_only(os.environ):
+        # Host 下发了只在本机发现：rmw 按 localhost 配传输，网络配置文件不起作用，如实上报
+        transport = "user"
+    if transport == "fallback":
+        logger.warning("本机回环无法传送 8 KiB UDP 数据报，ROS 2 Slave 保留 Fast DDS 默认传输（可用共享内存）")
     _init_rclpy(rclpy_init_args, domain_id)
+    if _hostlink_client is not None:
+        _hostlink_client.ros_transport = transport
     executor = rclpy.__executor
     if not executor:
         executor = rclpy.__executor = MultiThreadedExecutor(num_threads=max(os.cpu_count() * 4, 48))

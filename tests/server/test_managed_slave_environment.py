@@ -1,8 +1,9 @@
-"""受管 Slave 的启动环境：本机拉起的 Slave 与另一台机器上的 Slave 一样只走通信协议。
+"""受管 Slave 的启动环境与停止方式：本机拉起的 Slave 与另一台机器上的 Slave 一样只走通信协议。
 
 - ROS 2 受管 Slave 的 Fast DDS 只用 UDPv4，不用共享内存（被强制结束的 Slave 不会留下进程间锁，
   拖垮 Host 与其它 Slave）；用户自己配置的 Fast DDS 传输 / 配置文件原样保留；
 - Host 为自己的 ROS 节点改写的组网变量不传给 Slave，组网参数由 Slave 经 HostLink 握手领取；
+- Windows 上先发 Ctrl+Break 请 Slave 有序退出，限时后才强制结束。
 """
 
 from __future__ import annotations
@@ -148,3 +149,41 @@ def test_managed_slave_does_not_inherit_the_host_ros_policy(service, monkeypatch
         set_hostlink_server(previous)
     assert "ROS_SUPER_CLIENT" not in proc.env and "ROS_DISCOVERY_SERVER" not in proc.env
     assert proc.env["ROS_STATIC_PEERS"] == "10.0.0.9" and proc.env["ROS_DOMAIN_ID"] == "83"
+
+
+def test_windows_stop_asks_the_slave_to_exit_before_killing(service, monkeypatch) -> None:
+    monkeypatch.setattr(dpx, "_CTRL_BREAK_EVENT", "CTRL_BREAK")
+    proc = _start(service, monkeypatch, "ros2")
+    process_id = service.list()[0]["id"]
+    # 不理会 Ctrl+Break 的 Slave：宽限期过后强制结束
+    service.stop(process_id, wait=True)
+    assert proc.signals == ["CTRL_BREAK", "kill"]
+
+    # Ctrl+Break 发不出去（例如 Host 没有控制台）：直接结束进程
+    failing = RecordingPopen(["slave"])
+
+    def no_console(_sig: Any) -> None:
+        raise OSError("no console")
+
+    failing.send_signal = no_console  # type: ignore[method-assign]
+    dpx.request_slave_exit(failing)
+    assert failing.signals == ["terminate"]
+
+    # 只有 terminate 的进程对象（测试替身等）同样退回直接结束
+    class TerminateOnly:
+        def __init__(self) -> None:
+            self.signals: list[str] = []
+
+        def terminate(self) -> None:
+            self.signals.append("terminate")
+
+    bare = TerminateOnly()
+    dpx.request_slave_exit(bare)  # type: ignore[arg-type]
+    assert bare.signals == ["terminate"]
+
+
+def test_posix_stop_sends_sigterm_first(service, monkeypatch) -> None:
+    monkeypatch.setattr(dpx, "_CTRL_BREAK_EVENT", None)
+    proc = _start(service, monkeypatch, "hostlink")
+    service.stop(service.list()[0]["id"], wait=True)
+    assert proc.signals == ["terminate"]

@@ -8,7 +8,8 @@ Host 本体、物料权威和调度都不受影响；改驱动、改配置也只
 
 本机拉起的受管 Slave 与另一台机器上的 Slave 同等对待：它需要的 Host 状态（ROS 组网参数、完整物理
 拓扑图、物料、跨设备动作）只经 HostLink / DDS 获取，不继承 Host 进程自己的设置；ROS 2 Slave 的 Fast DDS
-只走网络传输（UDPv4），不与 Host、其他 Slave 共享内存（:func:`slave_environment`）。
+只走网络传输（UDPv4），不与 Host、其他 Slave 共享内存（:func:`slave_environment`）。停止时先请它有序
+退出（Windows 上发 Ctrl+Break），限时后再强制结束（:func:`request_slave_exit`）。
 
 受管 Slave 跟随拉起它的 Host：拉起时写入 Host 的 pid（``app/lifetime.py``），Host 无论怎么没了
 （含 ``kill -9``、崩溃），Slave 都察觉并退出，不留下来占着各自的数据库根目录与 HostLink 连接；
@@ -36,6 +37,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -347,6 +349,8 @@ def _unavailable_reason(spec: DeviceProcessSpec, runtime: DeviceProcessRuntime, 
     return f"受管设备进程 {name} 重启失败：{runtime.last_error or exited}{error}；日志 {log_path}"
 
 
+#: Windows 上请受管 Slave 有序退出的控制台事件（拉起时建了独立进程组，Ctrl+Break 只发给它那一组）
+_CTRL_BREAK_EVENT = getattr(signal, "CTRL_BREAK_EVENT", None) if os.name == "nt" else None
 #: 用户自己配置了 Fast DDS 传输的提示只打一次
 _kept_user_transport_reported = False
 
@@ -393,6 +397,23 @@ def slave_environment(command: List[str], directory: Path) -> Dict[str, str]:
         configured = ", ".join(name for name in FASTDDS_USER_TRANSPORT_ENV if str(env.get(name) or "").strip())
         logger.info(f"[DeviceProcesses] 已设置 {configured}：受管 Slave 沿用这份 Fast DDS 传输配置")
     return env
+
+
+def request_slave_exit(proc: "subprocess.Popen[bytes]") -> None:
+    """请受管 Slave 有序退出；调用方随后限时等待，超时再强制结束。
+
+    POSIX 发 SIGTERM。Windows 上 ``terminate()`` 就是强制结束（TerminateProcess），Slave 来不及断开 HostLink、
+    销毁 DDS 参与者，所以先向它的进程组发 Ctrl+Break：ROS 2 Slave 把它当 SIGBREAK，与 SIGTERM 一样有序退出
+    （``app/lifetime.install_stop_signal_handlers``）。发不出去（例如 Host 没有控制台）时直接结束进程。
+    """
+
+    if _CTRL_BREAK_EVENT is not None:
+        try:
+            proc.send_signal(_CTRL_BREAK_EVENT)
+            return
+        except (OSError, ValueError, AttributeError):
+            pass
+    proc.terminate()
 
 
 class DeviceProcessService:
@@ -788,7 +809,7 @@ class DeviceProcessService:
 
     def _terminate(self, proc: subprocess.Popen[bytes], *, wait: bool) -> None:
         try:
-            proc.terminate()
+            request_slave_exit(proc)
         except OSError:
             return
         if not wait:
@@ -991,6 +1012,7 @@ __all__ = [
     "load_specs",
     "managed_device_unavailability",
     "peek_device_process_service",
+    "request_slave_exit",
     "save_specs",
     "slave_environment",
     "sync_generated_specs",

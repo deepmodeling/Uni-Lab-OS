@@ -768,7 +768,8 @@ class HostLinkServer:
             result: List[Dict[str, Any]] = []
             for peer in self._peers.values():
                 snapshot = dict(peer)
-                last_seen = snapshot.get("last_seen_monotonic")
+                # 单调时钟读数只在本进程有意义，只用来算 online，不放进对外的快照
+                last_seen = snapshot.pop("last_seen_monotonic", None)
                 snapshot["online"] = bool(
                     snapshot.get("connected")
                     and last_seen is not None

@@ -55,3 +55,16 @@ def test_heartbeat_after_wall_clock_jump_refreshes_liveness(monkeypatch) -> None
     assert peer["online"] is True
     # 墙钟时间戳仍按当前（已回拨的）墙钟记录，只用于展示
     assert abs(peer["last_seen"] - time.time()) < 5.0
+
+
+def test_peer_snapshot_keeps_the_monotonic_reading_internal() -> None:
+    server = _slave(heartbeat_timeout=5.0)
+
+    peer = server.peers()[0]
+    # 单调时钟读数只在本进程有意义：/api/v1/hostlink/peers 与设备档案只给墙钟时间和 online
+    assert "last_seen_monotonic" not in peer
+    assert peer["online"] is True
+    assert "last_seen" in peer
+    assert "last_seen_monotonic" not in server.devices()["pump"]
+    # 快照不改内部记录：之后的在线判定照常按单调时钟算
+    assert server.peers()[0]["online"] is True

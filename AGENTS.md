@@ -19,6 +19,7 @@ unilab --check_mode                       # CI validation of registry imports
 unilab --skip_env_check                   # skip auto-install of dependencies
 unilab --visual rviz|web|disable          # visualization mode
 unilab --is_slave                         # run as slave node
+unilab --root_devices_as_slaves           # Host runs each root device (with its subtree) in its own managed Slave process
 unilab --role backend                     # scheduler authority and runtime.v1 control plane, without devices or ROS (--port, default 8002)
 
 # Workflow upload subcommand

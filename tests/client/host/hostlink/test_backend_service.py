@@ -14,6 +14,7 @@ from tests.api_envelope import ok_data
 from unilabos.client.host.hostlink.network import (
     SERVICE_OWNER,
     get_host_network_service,
+    mark_slave_devices_ready,
     require_slave_startup_device_ids,
     setup_host_network_service,
     setup_slave_network_client,
@@ -232,6 +233,30 @@ def test_slave_microbackend_applies_host_ros_config_before_ros_init(monkeypatch)
     same_client, same_domain = setup_slave_network_client()
     assert same_client is client
     assert same_domain == domain_id
+
+
+def test_ros_slave_devices_are_announced_ready_only_after_they_are_built(monkeypatch) -> None:
+    """ROS 2 Slave 在 rclpy 之前接入 HostLink：设备先登记为未就绪，设备节点建好后才改为就绪；
+    心跳带同一份描述，即时通告丢了也能补上。"""
+
+    service = setup_host_network_service()
+    assert service is not None
+    HostLinkConfig.host = "127.0.0.1"
+    HostLinkConfig.port = service.server.port
+    monkeypatch.setattr(BasicConfig, "machine_name", "edge-slave-ready")
+
+    client, _ = setup_slave_network_client(device_ids=["sensor-b", "pump-a"])
+    assert client is not None and client.online
+    peer = service.server.peers()[0]
+    assert peer["device_ids"] == ["pump-a", "sensor-b"]
+    assert {key: value["ready"] for key, value in peer["devices"].items()} == {"pump-a": False, "sensor-b": False}
+    assert client.heartbeat_payload_provider() == {"devices": [dict(item) for item in client.device_descriptors]}
+
+    # sensor-b 的设备节点没建起来：只有 pump-a 就绪
+    mark_slave_devices_ready(["pump-a"])
+    peer = service.server.peers()[0]
+    assert peer["device_ids"] == ["pump-a", "sensor-b"]
+    assert {key: value["ready"] for key, value in peer["devices"].items()} == {"pump-a": True, "sensor-b": False}
 
 
 def test_slave_material_create_is_proxied_by_host_authority(

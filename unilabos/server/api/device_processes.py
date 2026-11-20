@@ -15,6 +15,7 @@ from unilabos.server.api.envelope import envelope_router
 from unilabos.server.services.device_processes import (
     DeviceProcessError,
     DeviceProcessBusyError,
+    DeviceProcessGeneratedError,
     build_device_node,
     get_device_process_service,
 )
@@ -65,7 +66,8 @@ def create_device_processes_router() -> APIRouter:
             return function(*args, **kwargs)
         except DeviceProcessError as exc:
             message = str(exc)
-            status = 404 if "not found" in message else 409 if isinstance(exc, DeviceProcessBusyError) or "已在运行" in message else 422
+            conflict = isinstance(exc, (DeviceProcessBusyError, DeviceProcessGeneratedError)) or "已在运行" in message
+            status = 404 if "not found" in message else 409 if conflict else 422
             raise HTTPException(status_code=status, detail=message) from exc
 
     @router.get("")

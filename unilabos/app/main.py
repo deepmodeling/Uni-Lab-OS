@@ -536,6 +536,15 @@ def _run_main():
 
     set_safe_restart_enabled(not bool(args_dict.get("no_safe_restart")))
 
+    # 只对特定角色生效的启动参数：用在别的角色上时告警并忽略，而不是静默不生效
+    from unilabos.app.root_device_slaves import (
+        graph_is_authority_payload_enabled,
+        root_devices_as_slaves_enabled,
+    )
+
+    root_devices_as_slaves_enabled(args_dict)
+    graph_is_authority_payload_enabled(args_dict)
+
     from unilabos.client.host import (
         BackendConfigurationError,
         resolve_backend_selection,
@@ -750,6 +759,16 @@ def _run_main():
                     "error",
                 )
                 os._exit(1)
+        if args_dict.get("graph_is_authority_payload") and graph_file_path is not None:
+            # Host 从自己 Graph Authority 切给受管 Slave 的子图：节点身份已由 Host 的权威发放，按原样启动。
+            # 再登记进 Slave 自己的 Graph Authority 会按「权威优先」沿用上一次的快照，Host 图改了也不生效。
+            from unilabos.app.root_device_slaves import check_authority_payload_file
+
+            problem = check_authority_payload_file(graph_file_path)
+            if problem is not None:
+                print_status(f"--graph_is_authority_payload：-g {graph_file_path} 不能按原样启动：{problem}", "error")
+                os._exit(1)
+            args_dict["_graph_from_authority"] = True
         args_dict["_graph_file_path"] = graph_file_path
         graph_preview = _load_graph_json_preview(graph_file_path)
 
@@ -922,9 +941,19 @@ def _run_main():
             resource_edge_info.pop(edge_info - ind - 1)
             continue
 
+    # --root_devices_as_slaves：根设备连同子树交给各自的受管 Slave（Host 就绪后拉起），Host 自己的设备
+    # runtime 不再启动它们；开机物料对齐、拓扑边与物理拓扑图仍用完整的图。不带该参数时移除上次生成的规格。
+    runtime_tree_set = resource_tree_set
+    if BasicConfig.is_host_mode:
+        from unilabos.app.root_device_slaves import prepare_root_device_slaves
+
+        runtime_tree_set = prepare_root_device_slaves(
+            args_dict, resource_tree_set, working_dir=working_dir, config_path=config_path
+        )
+
     # 使用 ResourceTreeSet 代替 list
-    args_dict["resources_config"] = resource_tree_set
-    args_dict["devices_config"] = resource_tree_set
+    args_dict["resources_config"] = runtime_tree_set
+    args_dict["devices_config"] = runtime_tree_set
     args_dict["graph"] = loaded_graph.physical_setup_graph
 
     if args_dict["controllers"] is not None:

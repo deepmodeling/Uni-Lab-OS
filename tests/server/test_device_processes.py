@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import json
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -245,3 +247,142 @@ def test_managed_slave_follows_its_host_and_shutdown_stops_all_at_once(
     service.shutdown()
     pids = [proc.pid for proc in RecordingPopen.instances[-2:]]
     assert events == [f"terminate {pids[0]}", f"terminate {pids[1]}", f"wait {pids[0]}", f"wait {pids[1]}"]
+
+
+# ── --root_devices_as_slaves 生成的规格 ─────────────────────────────────────
+
+
+def _root_device_spec(tmp_path: Path, **overrides: Any) -> dpx.DeviceProcessSpec:
+    """Host 按 --root_devices_as_slaves 为一个根工作站生成的规格（节点取自 Graph Authority payload）。"""
+
+    nodes = [
+        {"id": "station", "uuid": "00000000-0000-4000-8000-000000000002", "parent": None, "type": "device",
+         "template_name": "acme_station", "config": {"protocol_type": []}, "data": {}},
+        {"id": "pump", "uuid": "00000000-0000-4000-8000-000000000003", "parent": "station", "type": "device",
+         "template_name": "acme_pump", "config": {"port": "COM3"}, "data": {}},
+        {"id": "vial", "uuid": "00000000-0000-4000-8000-000000000004", "parent": "station", "type": "container",
+         "config": {"type": "RegularContainer"}, "data": {}},
+    ]
+    links = [{"id": "inner", "source": "pump", "target": "station", "type": "fluid",
+              "sourceHandle": "out", "targetHandle": "in"}]
+    spec = dpx.DeviceProcessSpec(
+        id="root-station",
+        name="station",
+        graph_nodes=nodes,
+        graph_links=links,
+        devices_dirs=[str(tmp_path / "acme_devices")],
+        external_only=True,
+        extra_args=["--graph_is_authority_payload", "--working_dir", str(tmp_path), "--test_mode"],
+        generated_by="root_devices_as_slaves",
+    )
+    for key, value in overrides.items():
+        setattr(spec, key, value)
+    return spec
+
+
+def test_generated_slave_command_line(service: dpx.DeviceProcessService, tmp_path: Path, monkeypatch) -> None:
+    from unilabos.app.cli.parser import build_parser
+    from unilabos.config.config import BasicConfig, HostLinkConfig
+
+    monkeypatch.setattr(BasicConfig, "backend", "ros2")
+    monkeypatch.setattr(BasicConfig, "machine_name", "lab_host")
+    monkeypatch.setattr(HostLinkConfig, "bind", "0.0.0.0")
+    monkeypatch.setattr(HostLinkConfig, "port", 18511)
+    spec = _root_device_spec(tmp_path)
+    dpx.sync_generated_specs(tmp_path, "root_devices_as_slaves", [spec])
+
+    command = service.build_command(dpx.load_specs(tmp_path)["root-station"])
+    assert command[:3] == [sys.executable, "-m", "unilabos"]
+    args = build_parser().parse_args(command[3:])
+    # 与 Host 同一 backend，接回本机 HostLink；Slave 自己不再拆分
+    assert args.backend == "ros2" and args.is_slave and not args.root_devices_as_slaves
+    assert (args.host_node_ip, args.hostlink_port) == ("127.0.0.1", 18511)
+    assert args.machine_name == "lab_host_managed_root_station"
+    assert args.server_database_root == str(dpx.process_dir(tmp_path, "root-station") / "database")
+    assert args.devices == [str(tmp_path / "acme_devices")] and args.external_devices_only
+    # 图按 Host 权威 payload 原样启动；工作目录与运行开关继承自 Host
+    assert args.graph_is_authority_payload and args.working_dir == str(tmp_path) and args.test_mode
+    assert args.visual == "disable" and args.skip_env_check and args.disable_browser
+    graph = json.loads(Path(args.graph).read_text(encoding="utf-8"))
+    assert graph == {"nodes": spec.graph_nodes, "links": spec.graph_links}
+
+
+def test_generated_specs_are_listed_and_controllable_but_not_editable(
+    service: dpx.DeviceProcessService, tmp_path: Path
+) -> None:
+    dpx.sync_generated_specs(tmp_path, "root_devices_as_slaves", [_root_device_spec(tmp_path)])
+    app = FastAPI()
+    app.include_router(create_device_processes_router())
+    client = TestClient(app)
+
+    [item] = ok_data(client.get("/api/v1/device-processes"))["processes"]
+    assert item["id"] == "root-station" and item["generated_by"] == "root_devices_as_slaves"
+    # 子树里的物料节点不算设备
+    assert item["device_ids"] == ["station", "pump"]
+    assert item["graph_links"][0]["id"] == "inner"
+
+    body = {"name": "改名", "devices": [{"id": "pump", "class": "acme_pump"}]}
+    message = error_of(client.put("/api/v1/device-processes/root-station", json=body), 3003)
+    assert "--root_devices_as_slaves" in str(message)
+    error_of(client.delete("/api/v1/device-processes/root-station"), 3003)
+    assert ok_data(client.post("/api/v1/device-processes/root-station/start"))["status"] == "running"
+    assert ok_data(client.post("/api/v1/device-processes/root-station/restart"))["status"] == "running"
+    assert ok_data(client.post("/api/v1/device-processes/root-station/stop"))["status"] == "stopped"
+    assert dpx.load_specs(tmp_path)["root-station"].name == "station"
+
+
+def test_unavailable_devices_explain_why_a_managed_process_is_down(
+    service: dpx.DeviceProcessService, tmp_path: Path, monkeypatch
+) -> None:
+    class FailingPopen(FakePopen):
+        def __init__(self, command: list[str], **kwargs: Any) -> None:
+            super().__init__(command, **kwargs)
+            self.stdout = io.BytesIO(
+                b"[INFO] HostLink connected\n\x1b[31mRuntimeError: acme_station \xe6\x9e\x84\xe9\x80\xa0\xe5\xa4\xb1\xe8\xb4\xa5\x1b[0m\n"
+                b"[INFO] bye\n"
+            )
+
+    monkeypatch.setattr(dpx.subprocess, "Popen", FailingPopen)
+    dpx.sync_generated_specs(tmp_path, "root_devices_as_slaves", [_root_device_spec(tmp_path, max_restarts=1)])
+    # 从未拉起过的进程不登记原因（设备照旧只是还没上线）
+    assert service.unavailable_devices() == {}
+
+    service.start("root-station")
+    assert service.unavailable_devices() == {}
+
+    def wait_status(status: str) -> dict:
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            records = service.unavailable_devices()
+            if records and records["station"]["managed_process"]["status"] == status:
+                return records
+            time.sleep(0.02)
+        raise AssertionError(f"没有等到 {status}: {service.unavailable_devices()}")
+
+    FakePopen.instances[-1].exit_code = 1
+    records = wait_status("restarting")
+    assert set(records) == {"station", "pump"}  # 物料节点 vial 不是设备
+    station, pump = records["station"], records["pump"]
+    assert pump["parent_device_id"] == "station" and "parent_device_id" not in station
+    assert station["registry_name"] == "acme_station" and station["backend"]
+    managed = station["managed_process"]
+    log_path = str(dpx.process_dir(tmp_path, "root-station") / "process.log")
+    assert managed["id"] == "root-station" and managed["log_path"] == log_path
+    assert "RuntimeError: acme_station 构造失败" in managed["log_tail"]  # 着色已剥掉
+    assert "意外退出（退出码 1）" in station["reason"] and "重启中" in station["reason"] and log_path in station["reason"]
+    assert "日志最后的错误：RuntimeError: acme_station 构造失败" in station["reason"]
+
+    # 拉起后：进程在跑就不再登记
+    deadline = time.time() + 5
+    while time.time() < deadline and (len(FakePopen.instances) < 2 or service.unavailable_devices()):
+        time.sleep(0.02)
+    assert service.unavailable_devices() == {}
+
+    FakePopen.instances[-1].exit_code = 1
+    records = wait_status("crashed")
+    assert "已自动重启 1 次仍退出，停止看护" in records["station"]["reason"]
+    assert "修复后在设备进程页重启它" in records["station"]["reason"]
+
+    service.stop("root-station")
+    assert "已停止" in service.unavailable_devices()["station"]["reason"]
+    assert dpx.managed_device_unavailability() == service.unavailable_devices()

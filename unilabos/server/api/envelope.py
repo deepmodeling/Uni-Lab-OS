@@ -502,6 +502,7 @@ DOMAIN_ERRORS: Dict[str, Callable[[Any], ApiError]] = {
     f"{_SERVICES}.driver_packages.DriverPackageBusyError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.driver_packages.DriverPackageError": _message_not_found(INVALID_PARAMETER),
     f"{_SERVICES}.device_processes.DeviceProcessBusyError": _fixed(STATE_CONFLICT),
+    f"{_SERVICES}.device_processes.DeviceProcessGeneratedError": _fixed(STATE_CONFLICT),
     f"{_SERVICES}.device_processes.DeviceProcessError": _message_not_found(INVALID_PARAMETER),
     # 调度权威生命周期
     f"{_LIFECYCLE}.drain.SchedulerUnavailable": _fixed(SERVICE_UNAVAILABLE),

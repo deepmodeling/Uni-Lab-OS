@@ -91,6 +91,25 @@ def _register_runtime_arguments(parser: argparse.ArgumentParser) -> None:
     )
     _add(
         group,
+        "--root_devices_as_slaves",
+        action="store_true",
+        help=(
+            "Host 启动时把设备图里每个根设备（host_node 除外）连同其子树放进各自的受管 Slave 子进程运行"
+            "（自动启动、按 on-failure 策略看护重启，可在 /api/v1/device-processes 单独重启）；"
+            "Host 只负责组网与调度对接。--is_slave / --role backend 下忽略。"
+        ),
+    )
+    _add(
+        group,
+        "--graph_is_authority_payload",
+        action="store_true",
+        help=(
+            "Slave 用：-g 文件已是 Graph Authority 的 payload（节点都带 uuid，例如 Host 为受管 Slave 切出的"
+            "子图），按原样启动，不再登记进本机 Graph Authority。"
+        ),
+    )
+    _add(
+        group,
         "--role",
         choices=["auto", "backend"],
         default="auto",

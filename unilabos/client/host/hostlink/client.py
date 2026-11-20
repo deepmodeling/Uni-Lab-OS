@@ -119,6 +119,9 @@ class HostLinkClient:
             "process-logs",
         ]
         self.hello_info: Dict[str, Any] = {}
+        #: HELLO / 心跳应答的观察者 ``listener(应答, hello)``，见 :meth:`add_host_info_listener`
+        self._host_info_listeners: List[Callable[[Dict[str, Any], bool], None]] = []
+        self._host_info_lock = threading.Lock()
         self.handlers: Dict[str, Callable[[Dict[str, Any]], Any]] = {}
         # 组网控制层即可读取日志，HostLink 与 ROS2 Slave 共用；不要求设备已初始化。
         from unilabos.utils.runtime_logs import read_current_log
@@ -169,6 +172,43 @@ class HostLinkClient:
                     break
                 self._status_condition.wait(remaining)
         return self._online.is_set()
+
+    def wait_online(self, timeout: Optional[float]) -> bool:
+        """等连接在线（HELLO 已完成），最多 ``timeout`` 秒；不启动连接管理线程。"""
+
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        with self._status_condition:
+            while not self._online.is_set() and not self._stop.is_set():
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    break
+                self._status_condition.wait(remaining)
+        return self._online.is_set()
+
+    def add_host_info_listener(self, listener: Callable[[Dict[str, Any], bool], None]) -> None:
+        """每次 HELLO（``hello=True``）与心跳应答（``hello=False``）后回调 ``listener(应答, hello)``。
+
+        HELLO 的回调在连接标记为在线之前，心跳的回调在应答到达之后；都在调用方线程里同步执行，
+        必须很快返回，也不能在回调里同步发请求（耗时工作交给自己的线程）。
+        """
+
+        with self._host_info_lock:
+            if listener not in self._host_info_listeners:
+                self._host_info_listeners.append(listener)
+
+    def remove_host_info_listener(self, listener: Callable[[Dict[str, Any], bool], None]) -> None:
+        with self._host_info_lock:
+            if listener in self._host_info_listeners:
+                self._host_info_listeners.remove(listener)
+
+    def _notify_host_info(self, info: Dict[str, Any], *, hello: bool) -> None:
+        with self._host_info_lock:
+            listeners = list(self._host_info_listeners)
+        for listener in listeners:
+            try:
+                listener(dict(info), hello)
+            except Exception:  # noqa: BLE001 - 观察者故障不能中断握手与心跳
+                logger.exception("[HostLink] Host 应答回调失败")
 
     def close(self) -> None:
         self._stop.set()
@@ -495,6 +535,8 @@ class HostLinkClient:
         )
         self.hello_info = dict(data or {})
         self.last_error = ""
+        # 观察者先于「在线」看到握手应答：connect_blocking 返回时，它们据此开始的工作已经登记
+        self._notify_host_info(self.hello_info, hello=True)
         self._set_online(True)
         logger.info(
             f"[HostLink] connected to {self.host}:{self.port}; "
@@ -534,6 +576,8 @@ class HostLinkClient:
                 for item in response["devices"]
                 if isinstance(item, dict)
             ]
+        if isinstance(response, dict):
+            self._notify_host_info(response, hello=False)
 
     def _heartbeat_loop(self) -> None:
         while not self._stop.wait(self.heartbeat_interval):

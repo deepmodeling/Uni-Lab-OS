@@ -7,6 +7,7 @@ import errno
 import os
 import socket
 import socketserver
+import sys
 import threading
 import time
 from concurrent.futures import (
@@ -15,13 +16,14 @@ from concurrent.futures import (
     ThreadPoolExecutor,
     TimeoutError as FutureTimeoutError,
 )
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from unilabos.client.host.hostlink.protocol import (
     ActionType,
     exception_error_info,
     LineReader,
     LinkError,
+    PHYSICAL_GRAPH_REVISION,
     PROTOCOL_VERSION,
     new_not_ready_response,
     new_request,
@@ -324,11 +326,15 @@ class HostLinkServer:
         self._gate_lock = threading.Lock()
         self._stage_ready: Dict[str, bool] = {}
         self._action_stages: Dict[str, str] = {}
+        #: Slave 经 ``graph.physical.get`` 取的物理拓扑图：``() -> (图, 版本标记)``；
+        #: None 时是本进程启动图（``workstation_protocol.local_physical_setup_graph``）
+        self.physical_graph_source: Optional[Callable[[], Tuple[Any, Optional[str]]]] = None
         self.register_handler(ActionType.HELLO, self._handle_hello)
         self.register_handler(ActionType.PING, self._handle_ping)
         self.register_handler(ActionType.LOG_CHANGED, self._handle_log_changed)
         self.register_handler(ActionType.ROS_INFO, self._handle_ros_info)
         self.register_handler(ActionType.DEVICE_STATE, self._handle_device_state)
+        self.register_handler(ActionType.PHYSICAL_GRAPH_GET, self._handle_physical_graph_get)
 
     def start(self) -> "HostLinkServer":
         if self._thread is not None and self._thread.is_alive():
@@ -835,6 +841,8 @@ class HostLinkServer:
             "device_ids": list(peer.get("device_ids") or []),
             # 附加字段：Host 仍在启动时列出未就绪阶段，Slave 据此提示而不是当作故障
             "pending_stages": self.pending_stages(),
+            # 附加字段：物理拓扑图的版本标记，Slave 据此经 graph.physical.get 取图
+            PHYSICAL_GRAPH_REVISION: self.physical_graph()[1],
         }
 
     def _handle_log_changed(self, data: Dict[str, Any], peer: Dict[str, Any]) -> Dict[str, Any]:
@@ -855,7 +863,28 @@ class HostLinkServer:
             "server_time": time.time(),
             "devices": list(self.hello_payload.get("devices") or []),
             "pending_stages": self.pending_stages(),
+            PHYSICAL_GRAPH_REVISION: self.physical_graph()[1],
         }
+
+    def physical_graph(self) -> Tuple[Any, Optional[str]]:
+        """提供给 Slave 的物理拓扑图与版本标记（没有图时为 ``(None, None)``）。"""
+
+        source = self.physical_graph_source or _process_physical_graph
+        try:
+            return source()
+        except Exception:  # noqa: BLE001 - 取不到图只是不提供，不能让握手 / 心跳失败
+            logger.exception("[HostLink] 读取本进程物理拓扑图失败")
+            return None, None
+
+    def _handle_physical_graph_get(
+        self,
+        _data: Dict[str, Any],
+        _peer: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        from unilabos.client.host.hostlink.physical_graph import physical_graph_payload
+
+        graph, revision = self.physical_graph()
+        return physical_graph_payload(graph, revision)
 
     def _handle_ros_info(
         self,
@@ -873,6 +902,20 @@ class HostLinkServer:
             "accepted": True,
             "device_id": str(data.get("device_id") or ""),
         }
+
+
+def _process_physical_graph() -> Tuple[Any, Optional[str]]:
+    """本进程启动图的物理拓扑图（``app.main`` 装配设备图时登记）。
+
+    HostLink 端口在 Host 进程启动之初就打开，握手可能早于设备图装配；登记图的模块那时还没导入，
+    也就没有图。这里不替它导入：在 RPC 线程里加载运行时会和主线程正在进行的导入互相等。
+    """
+
+    module = sys.modules.get("unilabos.client.host.runtime.workstation_protocol")
+    local_graph = getattr(module, "local_physical_setup_graph", None)
+    if local_graph is None:
+        return None, None
+    return local_graph()
 
 
 _server_lock = threading.Lock()

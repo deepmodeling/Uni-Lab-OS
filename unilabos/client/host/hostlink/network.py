@@ -18,6 +18,10 @@ from unilabos.client.host.hostlink.client import (
     get_hostlink_client,
     set_hostlink_client,
 )
+from unilabos.client.host.hostlink.physical_graph import (
+    PhysicalGraphSync,
+    attach_physical_graph_sync,
+)
 from unilabos.client.host.hostlink.protocol import ActionType, PROTOCOL_VERSION
 from unilabos.client.host.hostlink.ros_assist import (
     FastDDSDiscoveryServer,
@@ -475,6 +479,7 @@ class HostNetworkService:
 _host_service_lock = threading.Lock()
 _host_service: Optional[HostNetworkService] = None
 _slave_setup_lock = threading.Lock()
+_slave_physical_graph: Optional[PhysicalGraphSync] = None
 _cleanup_registration_lock = threading.Lock()
 _cleanup_registered = False
 
@@ -591,10 +596,12 @@ def setup_slave_network_client(
     the behavior from :class:`BasicConfig`.
     """
 
+    global _slave_physical_graph
     if not HostLinkConfig.enable or not HostLinkConfig.host:
         return None, None
     if wait_for_host is None:
         wait_for_host = not BasicConfig.slave_no_host
+    physical_graph = None
     with _slave_setup_lock:
         client = get_hostlink_client()
         if client is None:
@@ -613,6 +620,8 @@ def setup_slave_network_client(
             # HostLink 时 Action server 还不存在，这时发出的 goal 没有接收方，会丢。
             client.configure_device_descriptors({"id": device_id, "ready": False} for device_id in client.device_ids)
             client.heartbeat_payload_provider = _descriptor_heartbeat(client)
+            # 协议编译用 Host 的完整物理拓扑图：ROS 2 Slave 同样经 HostLink 取，不经 DDS
+            physical_graph = _slave_physical_graph = attach_physical_graph_sync(client)
             set_hostlink_client(client)
             _register_process_cleanup()
         elif device_ids:
@@ -651,6 +660,9 @@ def setup_slave_network_client(
             )
         return client, None
 
+    if physical_graph is not None:
+        # 首次连上 Host：建设备节点之前取到完整图（最多等一个请求超时，取不到先用本机图）
+        physical_graph.wait(HostLinkConfig.request_timeout)
     ros_info = client.hello_ros_info()
     if not HostLinkConfig.ros_assist_apply:
         logger.info(
@@ -672,9 +684,13 @@ def setup_slave_network_client(
 
 
 def shutdown_slave_network_client() -> None:
+    global _slave_physical_graph
     with _slave_setup_lock:
         client = get_hostlink_client()
         set_hostlink_client(None)
+        physical_graph, _slave_physical_graph = _slave_physical_graph, None
+    if physical_graph is not None:
+        physical_graph.close()
     if client is not None:
         client.close()
 

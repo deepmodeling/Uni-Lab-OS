@@ -194,7 +194,10 @@ def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
                 for key, value in hints.items()
                 if key != RETURN_UNILABOS_SAMPLES
             }
-            required = [key for key in getattr(tp, "__required_keys__", hints) if key in properties]
+            # ``__required_keys__`` 是 frozenset，遍历顺序随 PYTHONHASHSEED 变；按字段声明顺序列出，
+            # 同一个动作在每个进程里生成的 schema 与内容哈希才一致
+            required_keys = getattr(tp, "__required_keys__", None)
+            required = [key for key in properties if required_keys is None or key in required_keys]
             return {"type": "object", "properties": properties, "required": required}
         return {"type": "object"}
     return {}

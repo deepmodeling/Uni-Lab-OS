@@ -56,6 +56,11 @@
 | file_path         | string | 否       | 文件路径，系统自动设置            |
 | registry_type     | string | 否       | 注册表类型，自动设为 "device"     |
 
+PLR 资源条目的 `config_info` 由注册表在上报模式下生成：实例化一次资源，把整棵树按节点展开。它是**模板**，不带实例身份：
+节点没有 `uuid` / `parent_uuid` / `name`，父子关系写在 `parent_id`（父节点的 `id`，根为 `null`）；库位（`sites`）也没有
+`uuid` / `material_uuid`。同一份资源定义每次生成的结果相同，物料权威的模板不会因 Host 重启或缓存重建而变版本；
+实例的 uuid 由物料权威在建物料时分配。旧云端后端仍要每个节点带 uuid，旧协议适配层上报时按（模板 id, 节点 id）派生稳定 uuid 补上。
+
 ### class 字段详解
 
 class 是核心部分，包含这些内容：

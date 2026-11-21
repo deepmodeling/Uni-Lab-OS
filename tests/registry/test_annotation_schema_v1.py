@@ -24,6 +24,8 @@ _STANDARD_RENDER_IMPORTS = {
     "JSONValue": "unilabos.registry.annotations:JSONValue",
     "Literal": "typing:Literal",
     "ResourceSlot": "unilabos.registry.placeholder_type:ResourceSlot",
+    "DeviceSlot": "unilabos.registry.placeholder_type:DeviceSlot",
+    "SiteSlot": "unilabos.registry.placeholder_type:SiteSlot",
 }
 
 
@@ -216,6 +218,20 @@ _ACCEPTED_TYPES = [
         {"$slot": "ResourceSlot"},
         "ResourceSlot",
         id="resource-slot",
+    ),
+    pytest.param(
+        "DeviceSlot",
+        ("from unilabos.registry.placeholder_type import DeviceSlot",),
+        {"$slot": "DeviceSlot"},
+        "DeviceSlot",
+        id="device-slot",
+    ),
+    pytest.param(
+        "SiteSlot",
+        ("from unilabos.registry.placeholder_type import SiteSlot",),
+        {"$slot": "SiteSlot"},
+        "SiteSlot",
+        id="site-slot",
     ),
     pytest.param(
         "list[str]",
@@ -789,7 +805,7 @@ _ALLOWED_IMPORTS = (
     "from typing import Annotated",
     "from pydantic import Field",
     "from unilabos.registry.annotations import AllowedResourceTemplates",
-    "from unilabos.registry.placeholder_type import ResourceSlot",
+    "from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot",
     "from lab.resources import plate_96 as plate, tube_rack",
 )
 
@@ -905,6 +921,14 @@ def test_allowed_resource_templates_are_static_ordered_import_identities(
             id="non-slot",
         ),
         pytest.param(
+            "Annotated[DeviceSlot, AllowedResourceTemplates(plate)]",
+            id="device-slot",
+        ),
+        pytest.param(
+            "Annotated[SiteSlot, AllowedResourceTemplates(plate)]",
+            id="site-slot",
+        ),
+        pytest.param(
             (
                 "Annotated[ResourceSlot, AllowedResourceTemplates(plate), "
                 "AllowedResourceTemplates(tube_rack)]"
@@ -949,6 +973,14 @@ def test_allowed_resource_templates_reject_invalid_static_shapes(
             id="empty-slot-list",
         ),
         pytest.param(
+            "DeviceSlot",
+            "'pump-1'",
+            {"$slot": "DeviceSlot"},
+            False,
+            "pump-1",
+            id="device-slot",
+        ),
+        pytest.param(
             "dict[str, JSONValue]",
             "{'nested': [1, True, None]}",
             {"type": "object"},
@@ -970,7 +1002,7 @@ def test_default_accepts_only_the_three_contract_shapes(
         default=default,
         imports=(
             "from unilabos.registry.annotations import JSONValue",
-            "from unilabos.registry.placeholder_type import ResourceSlot",
+            "from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot",
         ),
     )
     parameter = _parse(source)
@@ -1004,6 +1036,13 @@ def test_default_accepts_only_the_three_contract_shapes(
         pytest.param("list[int]", "[item for item in values]", id="comprehension"),
         pytest.param("float", "1e309", id="non-finite"),
         pytest.param("int", "True", id="bool-is-not-int"),
+        pytest.param(
+            "SiteSlot",
+            "'00000000-0000-0000-0000-000000000001'",
+            id="site-slot-is-an-instance",
+        ),
+        pytest.param("DeviceSlot", "''", id="empty-device"),
+        pytest.param("DeviceSlot", "1", id="non-string-device"),
     ],
 )
 def test_default_rejects_slot_values_and_non_json_or_executable_ast(
@@ -1013,7 +1052,7 @@ def test_default_rejects_slot_values_and_non_json_or_executable_ast(
     source = _source(
         annotation,
         default=default,
-        imports=("from unilabos.registry.placeholder_type import ResourceSlot",),
+        imports=("from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot",),
     )
     _assert_stable_error(source)
 

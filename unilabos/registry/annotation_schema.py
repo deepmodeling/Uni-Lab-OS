@@ -32,6 +32,11 @@ _LITERAL = "typing:Literal"
 _MATERIAL_LOCK = "unilabos.registry.annotations:MaterialLock"
 _OPTIONAL = "typing:Optional"
 _RESOURCE_SLOT = "unilabos.registry.placeholder_type:ResourceSlot"
+#: 与节点参数同样可用作工作流输入的设备 / 库位槽位（值是设备 id / ResourceSite uuid 字符串）
+_STRING_SLOTS = {
+    "unilabos.registry.placeholder_type:DeviceSlot": "DeviceSlot",
+    "unilabos.registry.placeholder_type:SiteSlot": "SiteSlot",
+}
 _RESOURCE_TEMPLATES = "unilabos.registry.annotations:AllowedResourceTemplates"
 _ERROR_MESSAGE = "参数注解不符合 Workflow 版本 1 合同"
 _AUTHORING_INTEGER_DIGITS = 4096
@@ -299,6 +304,9 @@ def _parse_type(
 
     if _is_import(node, _RESOURCE_SLOT, imports):
         return {"$slot": "ResourceSlot"}
+    for qualified_name, slot in _STRING_SLOTS.items():
+        if _is_import(node, qualified_name, imports):
+            return {"$slot": slot}
 
     if not isinstance(node, ast.Subscript):
         _fail(path)
@@ -348,10 +356,12 @@ def _schema_base(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def _slot_shape(schema: dict[str, Any]) -> bool:
+    """物料槽位（单个或数组）：资源模板筛选与物料锁元数据只对它有意义，设备 / 库位槽位不接受。"""
+
     base = _schema_base(schema)
-    if "$slot" in base:
+    if base.get("$slot") == "ResourceSlot":
         return True
-    return base.get("type") == "array" and "$slot" in base.get("items", {})
+    return base.get("type") == "array" and base.get("items", {}).get("$slot") == "ResourceSlot"
 
 
 def _trim_presentation(value: Any, *, path: str) -> str:

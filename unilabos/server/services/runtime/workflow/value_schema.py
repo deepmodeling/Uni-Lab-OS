@@ -15,6 +15,12 @@ from unilabos.server.services.runtime.workflow.handle_projection import resource
 from unilabos.protocol.runtime.workflow import validate_uuid
 
 
+#: 工作流边界可用的槽位，与节点参数一致
+SLOT_KINDS = frozenset({"ResourceSlot", "DeviceSlot", "SiteSlot"})
+#: 值形状就是字符串的槽位：设备 id / ResourceSite uuid（节点参数上渲染为 ``{"type": "string"}``）
+STRING_SLOT_KINDS = frozenset({"DeviceSlot", "SiteSlot"})
+
+
 class WorkflowValueSchemaError(ValueError):
     """值 Schema 或边界约束不能安全解释。"""
 
@@ -31,7 +37,7 @@ def normalize_value_schema(raw: Any, *, path: str = "/schema") -> dict[str, Any]
         raise WorkflowValueSchemaError("workflow_schema_invalid", path)
     schema = _plain(raw)
     if "$slot" in schema:
-        if schema.get("$slot") != "ResourceSlot":
+        if schema.get("$slot") not in SLOT_KINDS:
             raise WorkflowValueSchemaError("workflow_schema_invalid", path)
         # 模板 UUID allowlist 只供前端提示，不参与后端 Schema 判定。
         return schema
@@ -144,6 +150,17 @@ def validate_value(
         normalized_value = _plain(value)
         normalized_value["uuid"] = identity
         return normalized_value
+    if normalized.get("$slot") == "DeviceSlot":
+        if not isinstance(value, str) or not value.strip():
+            raise WorkflowValueSchemaError("workflow_value_invalid", path)
+        return value.strip()
+    if normalized.get("$slot") == "SiteSlot":
+        if not isinstance(value, str):
+            raise WorkflowValueSchemaError("workflow_value_invalid", path)
+        try:
+            return validate_uuid(value)
+        except (TypeError, ValueError):
+            raise WorkflowValueSchemaError("workflow_value_invalid", path) from None
     if "anyOf" in normalized:
         for member in normalized["anyOf"]:
             try:
@@ -229,6 +246,16 @@ def schema_is_assignable(
     target_slot = target.get("$slot") == "ResourceSlot"
     if source_slot or target_slot:
         return source_slot and target_slot
+    # 设备 / 库位槽位的值就是字符串（节点参数上渲染为 string）：同种槽位互相可赋值，
+    # 与普通字符串之间按字符串比较；不同种槽位之间不可赋值。
+    source_kind = source.get("$slot")
+    target_kind = target.get("$slot")
+    if source_kind in STRING_SLOT_KINDS and target_kind in STRING_SLOT_KINDS:
+        return source_kind == target_kind
+    if source_kind in STRING_SLOT_KINDS:
+        source = {"type": "string"}
+    if target_kind in STRING_SLOT_KINDS:
+        target = {"type": "string"}
     source_type = source.get("type")
     target_type = target.get("type")
     if "enum" in source:

@@ -331,7 +331,12 @@ def _handle_schema(handle: Mapping[str, Any]) -> dict[str, Any]:
     raw = unilab.get("value_schema")
     if raw is None:
         kind = str(handle.get("type") or "object")
-        aliases = {"ResourceSlot": {"$slot": "ResourceSlot"}, "default": {"type": "object"}}
+        aliases = {
+            "ResourceSlot": {"$slot": "ResourceSlot"},
+            "DeviceSlot": {"$slot": "DeviceSlot"},
+            "SiteSlot": {"$slot": "SiteSlot"},
+            "default": {"type": "object"},
+        }
         raw = aliases.get(kind, {"type": kind})
     try:
         return normalize_value_schema(raw)

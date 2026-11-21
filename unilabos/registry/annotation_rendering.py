@@ -59,7 +59,7 @@ def _render_schema(schema: dict[str, Any]) -> ast.expr:
     """把规范工作流值模式渲染为 Python 类型注解。
 
     参数说明：``schema`` 是规范值模式的分离副本。返回：标量、枚举、数组、对象、
-    可空或物料占位符（ResourceSlot）类型 AST；未知类型表示内部不变量破坏并抛出
+    可空或槽位占位符（ResourceSlot / DeviceSlot / SiteSlot）类型 AST；未知类型表示内部不变量破坏并抛出
     ``AssertionError``。
     """
 
@@ -70,7 +70,8 @@ def _render_schema(schema: dict[str, Any]) -> ast.expr:
             right=_constant(None),
         )
     if "$slot" in schema:
-        return ast.Name(id="ResourceSlot", ctx=ast.Load())
+        # ResourceSlot / DeviceSlot / SiteSlot 原样回写为同名占位类型
+        return ast.Name(id=str(schema["$slot"]), ctx=ast.Load())
     kind = schema["type"]
     if "enum" in schema:
         values = [_constant(value) for value in schema["enum"]]

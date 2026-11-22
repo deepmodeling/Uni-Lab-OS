@@ -183,8 +183,9 @@ def authority(tmp_path, monkeypatch):
     tree = mat.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[
         MaterialNodeCreate(client_ref="bench", identity=MaterialIdentityWrite(
             resource_id="bench", name="bench", template_name="bench", resource_type="device")),
+        # 设备子树只收 PLR 物料：台面带 PLR 类型名（config.type）
         MaterialNodeCreate(client_ref="deck", parent_client_ref="bench", identity=MaterialIdentityWrite(
-            resource_id="deck", name="deck", template_name="deck"),
+            resource_id="deck", name="deck", template_name="deck", config={"type": "Resource"}),
             sites=[SiteCreate(template_name="deck", site_index=0, label="T1")]),
     ])).data
     template = {"id": "test:site", "uuid": str(uuid4()), "registry_type": "workflow", "display_name": "Site demo",

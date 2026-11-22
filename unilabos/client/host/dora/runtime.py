@@ -102,6 +102,8 @@ def _run_cli(args: List[str], timeout: float = 120.0) -> subprocess.CompletedPro
         capture_output=True,
         text=True,
         timeout=timeout,
+        encoding="utf-8",
+        errors="replace",
     )
 
 

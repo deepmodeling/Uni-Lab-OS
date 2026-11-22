@@ -42,7 +42,7 @@ def _has_uv() -> bool:
             _USE_UV = False
         else:
             try:
-                result = subprocess.run([uv_path, "--version"], capture_output=True, text=True, timeout=10)
+                result = subprocess.run([uv_path, "--version"], capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace")
                 _USE_UV = result.returncode == 0
             except Exception:
                 _USE_UV = False

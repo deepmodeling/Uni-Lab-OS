@@ -846,7 +846,7 @@ class DriverPackageService:
             command = _dependency_install_command(installer, dependencies, upgrade)
             log("$ " + " ".join(command))
             try:
-                proc = subprocess.run(command, capture_output=True, text=True, timeout=DEPENDENCY_INSTALL_TIMEOUT_S)
+                proc = subprocess.run(command, capture_output=True, text=True, timeout=DEPENDENCY_INSTALL_TIMEOUT_S, encoding="utf-8", errors="replace")
             except FileNotFoundError:
                 log(f"[deps] {installer} 不可用，换下一个安装器")
                 continue

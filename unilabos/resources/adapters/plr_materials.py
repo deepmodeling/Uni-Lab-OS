@@ -23,6 +23,7 @@ from unilabos.protocol.materials import (
     MaterialMove,
     MaterialNodeCreate,
     MaterialNodeDelta,
+    MaterialPlacement,
     MaterialPosition,
     MaterialSnapshot,
     MaterialSnapshotDiff,
@@ -626,18 +627,28 @@ def create_plr_materials(
     resources: Sequence[Any],
     *,
     root_extra: dict[str, Any] | None = None,
+    placement: MaterialPlacement | None = None,
+    display_name: str = "",
 ) -> CreatedPLRMaterials:
     """把 PLR 草稿发给权威创建；``root_extra`` 合并进根节点 identity.extra。
 
     根 extra 是树级元数据的落点（如所属设备 ``unilabos_bound_device_id``）；
     在 create 请求上合并可保证入库即带元数据，且不修改调用方的输入实例。
+    ``placement`` 让权威在建树的同一事务里把根物料落到父物料 / 库位上（原子）。
+    ``display_name`` 是根物料的人读标签（省略时取 PLR 名）；PLR 运行时不承载展示名，
+    之后的快照也不会改写它。
     """
 
     request = plr_resources_to_create(resources)
-    if root_extra:
-        for node in request.nodes:
-            if node.parent_client_ref is None:
-                node.identity.extra = {**node.identity.extra, **root_extra}
+    for node in request.nodes:
+        if node.parent_client_ref is not None:
+            continue
+        if root_extra:
+            node.identity.extra = {**node.identity.extra, **root_extra}
+        if display_name.strip():
+            node.identity.display_name = display_name.strip()
+    if placement is not None:
+        request.placement = placement
     result = gateway.create_tree(mutation, request)
     tree = material_tree_to_resource_tree(result.data)
     return CreatedPLRMaterials(

@@ -824,6 +824,29 @@ class DeviceNode(ABC):
         except Exception as exc:  # noqa: BLE001 - 设备不是权威物料时（未登记）保持原样
             self.lab_logger().debug(f"[AR:{material_uuid}] 设备挂载未落 parent（{exc}），按根树保留")
 
+    async def _device_site_uuid(self, selector: Any | None) -> Optional[str]:
+        """设备自身库位的选择器解析成权威 Site uuid。
+
+        与 ``materials.create(site=...)`` 同一套规则：按 Site uuid、label 或 Site 自己的
+        ``index``（设备库位声明里的编号，不是列表序号）匹配，必须唯一命中。
+        未指定返回 None；指定了却找不到（或不唯一）直接报错，不退回「只落父子关系」。
+        """
+
+        if selector is None or str(selector).strip() == "":
+            return None
+        normalized = str(selector).strip()
+        tree_set = await self.get_resource(resources_uuid=[self.resource_uuid], with_children=False)
+        sites = list(tree_set.trees[0].root_node.res_content.sites or []) if tree_set.trees else []
+        matches = [
+            site for site in sites if normalized in {str(site.uuid), str(site.label), str(site.index)}
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"设备 {self.device_id!r} 的库位 {selector!r} {'不存在' if not matches else '不唯一'}；"
+                f"可用: {[site.label for site in sites]}"
+            )
+        return str(matches[0].uuid)
+
     @staticmethod
     def _occupied_site_uuid(
         tree_set: Any, owner_uuid: str, occupant_uuid: str
@@ -932,6 +955,13 @@ class DeviceNode(ABC):
                 parent_uuid = bind_parent_id
             else:
                 parent_uuid = self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
+            device_site_uuid: Optional[str] = None
+            if parent_uuid == self.resource_uuid and self.resource_uuid:
+                # 设备自身的库位在提交点之前解析：选择器无效时什么都不改
+                stage = "解析设备库位"
+                device_site_uuid = site_uuid or await self._device_site_uuid(additional_params.get("slot"))
+                if device_site_uuid is not None and len(resource_uuids) != 1:
+                    raise ValueError("一个库位只能放一个物料：指定设备库位时一次只能挂一个物料")
             drafts = tree_set.to_plr_resources()
             # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
             if commit_point is not None and not commit_point.enter():
@@ -997,8 +1027,17 @@ class DeviceNode(ABC):
                         ),
                     )
             elif self.resource_uuid:
+                # 设备自身的库位：给了 site/slot 就经权威 move 占用设备库位；否则只落父子关系
                 for material_uuid in resource_uuids:
-                    await self._attach_root_to_device(material_uuid)
+                    if device_site_uuid is None:
+                        await self._attach_root_to_device(material_uuid)
+                        continue
+                    await self._require_resource_service().move_resource(
+                        self.device_id,
+                        self.resource_uuid,
+                        material_uuid,
+                        destination_site_uuid=device_site_uuid,
+                    )
             # 4. 同步：挂载后的父树经 update_resource 直连权威（权威已有 create 记录，严禁 add）
             stage = "快照回报"
             for tree in report_tree_set.trees:

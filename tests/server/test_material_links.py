@@ -48,6 +48,8 @@ def _create_root(service: MaterialsService, ref: str) -> str:
                         resource_type="container",
                         class_name="Container",
                         template_name="tube",
+                        # PLR 类型名：设备子树只收 PLR 物料
+                        config={"type": "Container"},
                     ),
                     data=MaterialDataWrite(),
                 )

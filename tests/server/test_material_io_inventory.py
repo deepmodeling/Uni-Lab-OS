@@ -46,8 +46,10 @@ RESERVOIR_MODULE = "pylabrobot.resources.opentrons.reservoirs:agilent_1_reservoi
 
 
 def _identity(template: str, name: str) -> MaterialIdentityWrite:
+    # config.type 是 PLR 类型名：这些容器 / 台面会挂进设备子树（设备子树只收 PLR 物料）
     return MaterialIdentityWrite(resource_id=f"{name}-{uuid4().hex[:6]}", name=f"{name}-{uuid4().hex[:6]}",
-                                 template_name=template, resource_type="container", class_name="Container")
+                                 template_name=template, resource_type="container", class_name="Container",
+                                 config={"type": "Container"})
 
 
 def _ensure_template(materials: MaterialsService, template_uuid: str, name: str) -> None:

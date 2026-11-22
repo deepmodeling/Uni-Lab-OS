@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import UUID, uuid4
@@ -42,6 +43,7 @@ from unilabos.protocol.materials import (
     ACTOR_DEVICE,
     ACTOR_EDGE,
     MaterialMove,
+    MaterialPlacement,
     MaterialTransfer,
     MaterialTransferItem,
     MaterialTreeRead,
@@ -666,11 +668,106 @@ def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
     return draft
 
 
+def _parent_material_uuid(node: Any | None, parent: Any | None) -> str:
+    """落位的父物料归一成权威 uuid。
+
+    ``parent`` 省略或就是设备节点本身时表示「设备自身」（设备物料，需要 ``node``）；
+    否则接受 PLR 实例、资源 dict 或 uuid 字符串。
+    """
+
+    if parent is None or parent is node:
+        if node is None:
+            raise ValueError("落位需要 parent，或传入 node 表示放到设备自身")
+        device_uuid = str(getattr(node, "resource_uuid", "") or "").strip()
+        if not device_uuid:
+            raise ValueError(
+                f"设备 {getattr(node, 'device_id', node)!r} 在物料权威里没有设备物料，不能放到设备自身"
+            )
+        return device_uuid
+    return material_uuid(parent, "父")
+
+
+def _site_instance_uuid(site: Any) -> str | None:
+    """库位实例的 uuid（``ResourceSite.uuid`` / ``SiteRead.site_uuid``）；不是库位实例时返回 None。"""
+
+    for attribute in ("site_uuid", "uuid"):
+        value = getattr(site, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _site_uuid(site: Any, parent_uuid: str, gateway: MaterialGateway) -> str:
+    """库位参数归一成权威 Site uuid。
+
+    库位实例（``ResourceSite.uuid`` / ``SiteRead.site_uuid``）直接取 uuid；字符串或数字按父物料的
+    库位解析（uuid、label 或 ``site_index``，必须唯一命中）。
+    """
+
+    direct = _site_instance_uuid(site)
+    if direct is not None:
+        return direct
+    selector = str(site).strip()
+    if not selector:
+        raise ValueError("库位不能为空")
+    sites = list(gateway.get_material(parent_uuid).sites)
+    matches = [
+        item
+        for item in sites
+        if selector in {str(item.site_uuid), str(item.label), str(item.site_index)}
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"父物料 {parent_uuid} 上的库位 {site!r} "
+            f"{'不存在' if not matches else '不唯一'}；可用: {[item.label for item in sites]}"
+        )
+    return str(matches[0].site_uuid)
+
+
+def _attach_placed(
+    node: Any,
+    created: CreatedPLRMaterials,
+    site_uuid: str | None,
+    command_uuid: str,
+    timeout: float,
+) -> CreatedPLRMaterials:
+    """权威已在同一事务里建好并落位：本地按 transfer 的 load 投影挂上，返回 tracker 里的实例。
+
+    与跨设备转运落到目标设备走同一条投影（``node.material_sync``），本地不另起一条挂载
+    逻辑；投影期间不回写快照。返回值里的实例就是设备 tracker 登记的那一份（uuid → 实例唯一）。
+    """
+
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+    root_uuid = str(created.tree.trees[0].root_node.res_content.uuid)
+    run_node_coroutine(
+        node,
+        node.material_sync(
+            {
+                "transfer_uuid": f"create:{command_uuid}",
+                "device_id": str(node.device_id),
+                "action": "load",
+                "material_uuids": [root_uuid],
+                "destination_site_uuids": [site_uuid],
+            }
+        ),
+        timeout,
+    )
+    instance = node.resource_tracker.uuid_to_resources.get(root_uuid)
+    if instance is None:
+        raise RuntimeError(f"物料 {root_uuid} 已在权威创建并落位，但本地挂载后 tracker 里没有它")
+    return dataclasses.replace(created, resources=[instance])
+
+
 def create(
     plr_resource: Any | Sequence[Any] | str,
     *,
     name: str = "",
+    display_name: str = "",
     node: Any | None = None,
+    parent: Any | None = None,
+    site: Any | None = None,
+    timeout: float = 30.0,
     unwrap_single: bool = True,
     mutation: InventoryMutation | None = None,
     gateway: MaterialGateway | None = None,
@@ -695,6 +792,18 @@ def create(
     :class:`CreatedPLRMaterials`。
 
     一次 create 只允许一个根；根的所有 children 仍属于同一棵创建树。
+
+    ``display_name`` 是根物料的人读标签（前端展示名，省略时取 PLR 名）。PLR 名是物料的
+    业务键（根物料的 ``resource_id``，要全局唯一），展示名可以重名、可以是中文。
+
+    落位（原子）：给 ``parent`` / ``site`` 时，权威在建树的同一事务里把根物料挂到父物料、
+    占用库位，任何一步不满足（库位已占、类别不符、设备子树只收 PLR 物料……）整体回滚，
+    不会留下没落位的根物料。
+
+    - ``parent``：父物料（PLR 实例或 uuid）；省略或传设备节点本身表示设备自身；
+    - ``site``：库位实例（``post_init`` 给的 ``ResourceSite``）、Site uuid、label 或数字索引；
+    - 落位成功后本地按 transfer 的 load 投影挂上（需要 ``node``，且不能在节点执行器线程里
+      调用，同 :func:`assign`），返回 tracker 里的那一份实例；``timeout`` 约束本地挂载。
 
     变更来源（账本 ``actor_type`` / ``actor_uuid``，前端据此渲染来源 tag）：
     未显式给出时，带 ``node=`` 视为设备创建（``device`` + 设备 id），否则
@@ -736,8 +845,18 @@ def create(
             actor_uuid=resolved_actor_uuid or None,
         )
     request = mutation
+    resolved_gateway = gateway or resolve_materials_gateway()
+    placement: MaterialPlacement | None = None
+    site_uuid: str | None = None
+    if parent is not None or site is not None:
+        if node is None:
+            raise ValueError("带落位的 create 需要 node：落位后要在设备本地挂上同一份实例")
+        parent_uuid = _parent_material_uuid(node, parent)
+        if site is not None:
+            site_uuid = _site_uuid(site, parent_uuid, resolved_gateway)
+        placement = MaterialPlacement(parent_material_uuid=parent_uuid, site=site_uuid)
     created = create_plr_materials(
-        gateway or resolve_materials_gateway(),
+        resolved_gateway,
         request,
         resources,
         root_extra=(
@@ -745,10 +864,15 @@ def create(
             if node is not None
             else None
         ),
+        placement=placement,
+        display_name=display_name,
     )
     if node is not None:
-        for resource in created.resources:
-            node.resource_tracker.add_resource(resource)
+        if placement is None:
+            for resource in created.resources:
+                node.resource_tracker.add_resource(resource)
+        else:
+            created = _attach_placed(node, created, site_uuid, request.command_uuid, timeout)
     if not unwrap_single:
         return created
     if len(created.resources) != 1:
@@ -765,7 +889,7 @@ def assign(
     *,
     parent: Any | None = None,
     slot: Any | None = None,
-    site: str | None = None,
+    site: Any | None = None,
     location: Optional[Dict[str, float]] = None,
     timeout: float = 30.0,
 ) -> Dict[str, Any]:
@@ -777,10 +901,14 @@ def assign(
     执行并阻塞等待完成。
 
     - ``resources``：PLR 实例（带权威 uuid）或 uuid 字符串，单个或列表；
-    - ``parent``：目标父物料（实例、uuid 或 PLR 键）；None 表示挂到设备自身
-      （只登记进 tracker，不做 assign）；
+    - ``parent``：目标父物料（实例、uuid 或 PLR 键）；省略或传设备节点本身表示挂到设备自身
+      （本地是 tracker 根物料，不做 PLR assign；权威 parent 落设备物料）；
+    - ``site``：库位实例（``post_init`` 给的 ``ResourceSite``）或权威 Site uuid；
+      label / 数字索引按 ``slot`` 处理；
     - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
-    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
+    - 设备自身的库位同样适用：``assign(node, sample, site=sites["site_1"])`` 或
+      ``slot="site_1"``，权威 move 占用设备库位；不给库位时只落父子关系；
+    - 一个库位只放一个物料：给了 ``site`` / ``slot`` 时一次只能挂一个物料；
     - ``timeout``：只约束提交点之前（等锁、从权威拉取物料），超时取消挂载、什么都不改；
       本地挂上之后，权威 move 与快照回报一定走完再返回（大台面的整树快照要几十秒），
       不会在提交之后被取消（见 ``DeviceNode.append_resource_blocking``）。
@@ -791,7 +919,7 @@ def assign(
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
     resource_uuids = [material_uuid(item) for item in items]
-    if parent is None:
+    if parent is None or parent is node:
         bind_parent_id = str(node.device_id)
     else:
         bind_parent_id = str(
@@ -799,9 +927,22 @@ def assign(
         )
     other: Dict[str, Any] = {}
     if slot is not None and str(slot).strip() != "":
-        other["slot"] = str(slot)
-    if site:
-        other["site"] = str(site)
+        other["slot"] = str(slot).strip()
+    if site is not None:
+        site_uuid = _site_instance_uuid(site)
+        selector = str(site).strip()
+        if site_uuid is None and _looks_like_uuid(selector):
+            site_uuid = selector
+        if site_uuid is not None:
+            other["site"] = site_uuid
+        elif selector:
+            if other.get("slot", selector) != selector:
+                raise ValueError(f"site={site!r} 与 slot={slot!r} 指向不同库位")
+            other["slot"] = selector
+    if ("site" in other or "slot" in other) and len(resource_uuids) != 1:
+        raise ValueError(
+            f"一个库位只能放一个物料：指定库位时一次只能挂一个物料，实际 {len(resource_uuids)} 个"
+        )
     payload: Dict[str, Any] = {
         "device_id": str(node.device_id),
         "resource_uuid": resource_uuids,

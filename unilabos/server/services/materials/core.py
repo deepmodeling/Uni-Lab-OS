@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -54,6 +55,7 @@ from unilabos.protocol.materials import (
     MaterialDeviceSync,
     MaterialIdentityRead,
     MaterialMove,
+    MaterialPlacement,
     MaterialNodeCreate,
     MaterialPatch,
     MaterialDelta,
@@ -2706,11 +2708,44 @@ class MaterialsService(MaterialsRepository):
                 for node in value.nodes
                 if node.parent_client_ref is None
             )
+            # 设备连同下挂物料一起建（开机图对齐）：与挂进设备子树同一条规则
+            self._assert_device_subtree_accepts(client_map[root_ref], client_map[root_ref])
+            if value.placement is not None:
+                placed = self._place_created_root(
+                    mutation, client_map[root_ref], value.placement, timestamp
+                )
+                affected.extend(placed.affected)
+                sequences.extend(placed.sequences)
             tree = self.get_tree(client_map[root_ref], client_ref_map=client_map)
             return _Applied(data=tree, affected=affected, sequences=sequences)
 
         return self._run_mutation(
             mutation, value, MutationResult[MaterialTreeRead], apply
+        )
+
+    def _place_created_root(
+        self,
+        mutation: InventoryMutation,
+        root_uuid: str,
+        placement: MaterialPlacement,
+        timestamp: int,
+    ) -> _Applied[MaterialAggregateRead]:
+        """建树事务里把新根物料落到 ``placement``：解析库位后按 move 的同一套规则提交。
+
+        库位选择器按父物料解析（uuid / label / 数字索引，与 transfer 一致）；落位失败时抛出，
+        由外层事务把整棵新树一起回滚。
+        """
+
+        parent = self._aggregate(placement.parent_material_uuid)
+        site = self._transfer_destination_site(parent, placement.site)
+        return self._apply_material_move(
+            mutation,
+            MaterialMove(
+                material_uuid=root_uuid,
+                destination_site_uuid=site.site_uuid if site is not None else None,
+                parent_material_uuid=None if site is not None else placement.parent_material_uuid,
+            ),
+            timestamp,
         )
 
     def _new_substance_records(
@@ -3190,6 +3225,65 @@ class MaterialsService(MaterialsRepository):
                 conflict="site_template",
             )
 
+    def _device_ancestor(self, material_uuid: Optional[str]) -> Optional[MaterialRecord]:
+        """``material_uuid`` 自身或沿权威 parent 链最近的设备物料；不在任何设备子树里返回 None。"""
+
+        cursor, seen = material_uuid, set()
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            record = MaterialsRepository.get_material(self, cursor)
+            if record is None:
+                return None
+            if record.resource_type == "device":
+                return record
+            cursor = record.parent_material_uuid
+        return None
+
+    def _assert_device_subtree_accepts(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
+        """设备子树只收 PLR 物料：设备启动时按 ``ResourceTreeSet`` 把整棵子树反序列化成 PLR 实例。
+
+        新父物料是设备或设备的后代时，挂进来的整棵树里每个物料节点都要有 ``config.type``
+        （PLR 自己的类型名，反序列化靠它找类）；子设备本身不受限。只有身份的物料（网关手写、
+        模板实例化不了）在这里被拒绝，而不是等设备重启时整台设备起不来。
+        """
+
+        device = self._device_ancestor(parent_uuid)
+        if device is None:
+            return
+        rows = self.connection.execute(
+            """
+            WITH RECURSIVE subtree(material_uuid) AS (
+                SELECT ?
+                UNION ALL
+                SELECT m.material_uuid FROM material m
+                JOIN subtree s ON m.parent_material_uuid = s.material_uuid
+                WHERE m.deleted_at_ms IS NULL
+            )
+            SELECT m.resource_id, m.resource_type, m.config_json
+            FROM material m JOIN subtree s ON m.material_uuid = s.material_uuid
+            """,
+            (material_uuid,),
+        ).fetchall()
+        missing: list[str] = []
+        for resource_id, resource_type, config_json in rows:
+            if resource_type == "device":
+                continue
+            try:
+                config = json.loads(config_json or "{}")
+            except (TypeError, ValueError):
+                config = {}
+            plr_type = config.get("type") if isinstance(config, dict) else None
+            if not isinstance(plr_type, str) or not plr_type.strip():
+                missing.append(str(resource_id))
+        if missing:
+            shown = "、".join(missing[:5]) + (f" 等 {len(missing)} 个" if len(missing) > 5 else "")
+            raise MaterialValidationError(
+                f"设备 {device.resource_id} 的子树只收 PLR 物料：{shown} 没有 config.type"
+                "（PLR 类型名），设备启动时无法反序列化。请按注册表资源类经 materials.create"
+                "（ResourceTreeSet）创建物料再放上设备",
+                subject="material",
+            )
+
     def _assert_no_parent_cycle(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
         """新父物料不能是物料自己或它的后代（V1 6004）；库位所属物料是新父物料时同样适用。"""
 
@@ -3295,6 +3389,7 @@ class MaterialsService(MaterialsRepository):
             and material.parent_material_uuid == parent_uuid
         ):
             raise MaterialNoChangeError("material is already at destination")
+        self._assert_device_subtree_accepts(value.material_uuid, parent_uuid)
 
         affected: list[AggregateVersion] = []
         sequences: list[int] = []

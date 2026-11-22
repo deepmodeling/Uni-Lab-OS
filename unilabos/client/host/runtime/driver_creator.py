@@ -20,6 +20,7 @@ from unilabos.resources.resource_tracker import (
     ResourceDictInstance,
     ResourceTreeInstance,
     ResourceTreeSet,
+    split_plr_material_tree,
 )
 from unilabos.utils import logger
 from unilabos.utils.cls_creator import create_instance_from_config
@@ -34,6 +35,36 @@ class ClassCreator(Generic[T]):
         raise NotImplementedError
 
 
+def _plr_children(
+    device_cls: Type[Any], children: List[ResourceDictInstance]
+) -> List[ResourceDictInstance]:
+    """设备初始化拿到的子树先拆一遍：每棵物料子树只留能按 PLR 反序列化的部分。
+
+    挂载用的物料、构造设备要一起带上的物料（液体工作站的台面、工作站的 deck）都从这里取，
+    同一套拆法。拆下来的非 PLR 物料（升级前遗留，没有 ``config.type``）连同挂在它下面的物料
+    不挂到设备本地，逐个点名报错；整台设备照常初始化。子设备由它自己的构造器处理，不在这里拆。
+    """
+
+    device_name = getattr(device_cls, "__name__", str(device_cls))
+    result: List[ResourceDictInstance] = []
+    for child in children:
+        if child.res_content.type == "device":
+            result.append(child)
+            continue
+        tree, pruned = split_plr_material_tree(child)
+        for content in pruned:
+            logger.error(
+                "设备 %s 下的物料 %s（%s）不是 PLR 物料（没有 config.type），连同挂在它下面的物料"
+                "没有挂到设备本地；请移走或删除它，再按注册表资源类经 materials.create 重新创建",
+                device_name,
+                content.id,
+                content.uuid,
+            )
+        if tree is not None:
+            result.append(tree)
+    return result
+
+
 class DeviceClassCreator(Generic[T]):
     """Create a Python driver and attach its non-device child resources."""
 
@@ -45,7 +76,7 @@ class DeviceClassCreator(Generic[T]):
     ) -> None:
         self.device_cls = cls
         self.device_instance: Optional[T] = None
-        self.children = list(children)
+        self.children = _plr_children(cls, children)
         self.resource_tracker = resource_tracker
 
     def attach_resource(self) -> None:
@@ -58,25 +89,7 @@ class DeviceClassCreator(Generic[T]):
             # 再实例化一份会让同一权威物料有两个实例，uuid 索引指向驱动手里没有的副本。
             if str(child.res_content.uuid or "") in self.resource_tracker.uuid_to_resources:
                 continue
-            tree = ResourceTreeInstance(child)
-            missing = [
-                node.res_content.id
-                for node in tree.get_all_nodes()
-                if node.res_content.type != "device"
-                and not str((node.res_content.config or {}).get("type") or "").strip()
-            ]
-            if missing:
-                # 设备子树只收 PLR 物料（权威在落位时拒绝新的）；旧数据里遗留的非 PLR 物料
-                # 反序列化不了：不挂到本地，整台设备照常启动，日志点名让人处理。
-                logger.error(
-                    "设备 %s 下的物料 %s 不是 PLR 物料（%s 没有 config.type），没有挂到设备本地；"
-                    "请移走或删除它，再按注册表资源类经 materials.create 重新创建",
-                    getattr(self.device_cls, "__name__", self.device_cls),
-                    child.res_content.id,
-                    "、".join(missing[:5]),
-                )
-                continue
-            resource = ResourceTreeSet([tree]).to_plr_resources()[0]
+            resource = ResourceTreeSet([ResourceTreeInstance(child)]).to_plr_resources()[0]
             self.resource_tracker.add_resource(resource)
 
     def create_instance(self, data: Dict[str, Any]) -> T:

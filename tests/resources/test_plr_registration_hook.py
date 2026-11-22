@@ -149,3 +149,82 @@ def test_core_preset_classes_deserialize_in_a_fresh_process(tmp_path):
     assert completed.returncode == 0, completed.stderr[-3000:]
     classes = set(json.loads(completed.stdout.strip().splitlines()[-1]))
     assert {"BottleCarrier", "Bottle", "WareHouse", "RegularContainer"} <= classes
+
+
+@pytest.fixture()
+def registry_pkg(tmp_path, monkeypatch):
+    """注册表里登记了工厂函数、自己不主动登记的驱动包：类只有 import 工厂所在的模块后才可见。"""
+
+    from unilabos.registry.registry import lab_registry
+
+    pkg = tmp_path / "fake_registry_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "labware.py").write_text(
+        "from pylabrobot.resources import Resource\n"
+        "class FakeRegistryPlate(Resource):\n"
+        "    def __init__(self, name, size_x=10.0, size_y=10.0, size_z=10.0, category=None, model=None, **kwargs):\n"
+        "        super().__init__(name=name, size_x=size_x, size_y=size_y, size_z=size_z, category=category, model=model)\n"
+        "def make_fake_plate(name):\n"
+        "    return FakeRegistryPlate(name)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    for name in ("fake_registry_pkg", "fake_registry_pkg.labware"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.setitem(
+        lab_registry.resource_type_registry,
+        "fake_registry_plate",
+        {"class": {"module": "fake_registry_pkg.labware:make_fake_plate", "type": "pylabrobot"}},
+    )
+    yield "fake_registry_plate"
+    for name in ("fake_registry_pkg", "fake_registry_pkg.labware"):
+        sys.modules.pop(name, None)
+
+
+def test_registry_name_registers_the_module_its_factory_lives_in(isolated_hook, registry_pkg):
+    from pylabrobot.resources import Resource
+    from pylabrobot.utils.object_parsing import find_subclass
+
+    # 注册表名 → class.module 的模块部分；PLR 类名（孔位）与空名字跳过
+    assert isolated_hook.register_registry_resources(registry_pkg, "Well", "") == ("fake_registry_pkg.labware",)
+    assert isolated_hook.register_registry_resources(registry_pkg) == ()
+    assert "fake_registry_pkg.labware" not in sys.modules
+
+    isolated_hook.register()
+
+    assert "fake_registry_pkg.labware" in sys.modules
+    assert find_subclass("FakeRegistryPlate", Resource) is not None
+
+
+def test_rebuild_registers_the_tree_classes_and_deserializes_by_config_type(isolated_hook, registry_pkg):
+    from uuid import uuid4
+
+    from unilabos.resources.resource_tracker import (
+        ResourceDict,
+        ResourceDictInstance,
+        ResourceTreeInstance,
+        ResourceTreeSet,
+    )
+
+    node = ResourceDictInstance(
+        ResourceDict.model_validate(
+            {
+                "id": "plate_1",
+                "uuid": str(uuid4()),
+                "name": "plate_1",
+                "type": "plate",
+                "class": registry_pkg,
+                "template_name": registry_pkg,
+                "config": {"type": "FakeRegistryPlate", "name": "plate_1"},
+                "data": {},
+                "extra": {},
+                "pose": {"size": {"width": 10, "height": 10, "depth": 10}},
+            }
+        )
+    )
+
+    (plate,) = ResourceTreeSet([ResourceTreeInstance(node)]).to_plr_resources()
+
+    assert type(plate).__name__ == "FakeRegistryPlate"
+    assert "fake_registry_pkg.labware" in isolated_hook.registered_plr_modules()

@@ -5,27 +5,31 @@ PLR 反序列化（``Resource.deserialize`` / ``LiquidHandler.deserialize`` 等�
 PLR 资源类、后端类必须在反序列化前被导入，否则报"找不到类型"。
 
 框架在 :meth:`ResourceTreeSet.to_plr_resources` 和构造 PyLabRobot 风格驱动之前调用
-:func:`register`，把登记过的模块全部导入（幂等，只导入一次）。
+:func:`register`，把登记过的模块全部导入（幂等，只导入一次）。反序列化本身只按 ``type``
+（物料的 ``config.type``）找类，登记只负责让类所在的模块先 import 进来。
 
-使用方式：
+两种登记方式：
 
-- 外部驱动包在包导入时（如 ``__init__.py``）登记自己的资源/后端模块，可只写模块路径，
-  从而延迟导入重模块::
+1. 主动登记：外部驱动包在包导入时（如 ``__init__.py``）登记自己的资源/后端模块，可只写模块路径，
+   从而延迟导入重模块::
 
-      from unilabos.resources.plr_additional_res_reg import register_plr_module
+       from unilabos.resources.plr_additional_res_reg import register_plr_module
 
-      register_plr_module("my_driver_pkg.labware", "my_driver_pkg.backends")
+       register_plr_module("my_driver_pkg.labware", "my_driver_pkg.backends")
 
-- 已导入的类也可直接登记（记录其所在模块，可用作类装饰器）::
+   已导入的类也可直接登记（记录其所在模块，可用作类装饰器）::
 
-      from unilabos.resources.plr_additional_res_reg import register_plr_class
+       from unilabos.resources.plr_additional_res_reg import register_plr_class
 
-      @register_plr_class
-      class MyDeck(Deck): ...
+       @register_plr_class
+       class MyDeck(Deck): ...
 
-- 注册表条目（``class.type: pylabrobot`` + ``module: pkg.mod:Name``）里的资源类由
-  :func:`unilabos.resources.resource_tracker.find_plr_resource_class` 按需懒加载，
-  不必额外登记；本钩子覆盖不在注册表里的类（如自定义 Deck 子类、液体处理后端）。
+2. 按注册表自动登记（:func:`register_registry_resources`）：物料的 ``class`` 是初始化它用的注册表名，
+   注册表条目的 ``class.module``（``pkg.labware:make_plate``）多半指向模块里的工厂函数，函数返回的类
+   定义在（或 import 进）这个模块。登记模块部分（``pkg.labware``）并 import，类就进了 PLR 的子类表。
+   ``to_plr_resources`` 反序列化之前对树里出现的注册表名自动做这一步，不必手写。
+
+不在注册表里、也不在注册表条目模块里的类（如单独文件里的自定义 Deck 子类、液体处理后端）用方式 1。
 
 内置的 ``WorkStationContainer``、``UniLiquidHandlerRvizBackend`` 与 ``unilabos.resources.presets``
 里的预设类（``RegularContainer``、``Bottle``、``ItemizedCarrier``、``BottleCarrier``、``WareHouse``）
@@ -76,6 +80,30 @@ def register_plr_class(cls: T) -> T:
     return cls
 
 
+def register_registry_resources(*names: str) -> Tuple[str, ...]:
+    """按注册表资源名登记实现模块（下一次 :func:`register` 时导入），返回这次新登记的模块。
+
+    名字是物料的 ``class``（初始化它用的注册表名）或模板名；查到条目后取 ``class.module`` 的
+    模块部分——条目多半是模块里的工厂函数，import 函数所在的文件，它返回的类随之登记。
+    不是注册表资源名（如孔位的 PLR 类名）、条目没有声明实现的名字跳过。
+    """
+
+    from unilabos.resources.material_class import registry_resource_module
+
+    added: list[str] = []
+    for name in dict.fromkeys(str(item or "").strip() for item in names):
+        module_path = registry_resource_module(name) if name else None
+        if module_path is None:
+            continue
+        module = module_path.partition(":")[0]
+        with _lock:
+            if module in _registered:
+                continue
+            _registered[module] = None
+        added.append(module)
+    return tuple(added)
+
+
 def registered_plr_modules() -> Tuple[str, ...]:
     """当前登记的全部模块（含内置），按登记顺序。"""
 
@@ -110,5 +138,6 @@ __all__ = [
     "register",
     "register_plr_class",
     "register_plr_module",
+    "register_registry_resources",
     "registered_plr_modules",
 ]

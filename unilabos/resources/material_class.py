@@ -9,8 +9,9 @@
   PLR 资源）：``class`` 退回 PLR 类名；
 - 设备：注册表设备名（不变）。
 
-``config.type`` 是 PLR 类名：设备重启重建 PLR 实例就是按它直接反序列化，``class`` 只是记录，
-不参与重建。
+``config.type`` 是 PLR 类名：设备重启重建 PLR 实例就是按它直接反序列化。反序列化之前按 ``class``
+把注册表条目 ``class.module`` 所在的模块 import 进来，让类可见（见
+:func:`unilabos.resources.plr_additional_res_reg.register_registry_resources`），不用 ``class`` 找类。
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from unilabos.resources.material_class import material_class
 from unilabos.resources.objects.naming import PLR_KEY_FIELD, plr_key
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
-from unilabos.resources.plr_additional_res_reg import register
+from unilabos.resources.plr_additional_res_reg import register, register_registry_resources
 from unilabos.resources.plr_identity import (
     material_children,
     material_serialization,
@@ -1257,6 +1257,17 @@ class ResourceTreeSet(object):
         Returns:
             List[PLRResource]: PLR 资源实例列表
         """
+        # 只按 config.type 反序列化；先把类所在的模块 import 进来：物料的 class（初始化它用的
+        # 注册表名，旧数据里退到模板名）对应注册表条目的 class.module 所在文件，连同主动登记的模块
+        register_registry_resources(
+            *{
+                name
+                for tree in self.trees
+                for node in tree.get_all_nodes()
+                if node.res_content.type != "device"
+                for name in (node.res_content.klass, node.res_content.template_name)
+            }
+        )
         register()
 
         def collect_node_data(

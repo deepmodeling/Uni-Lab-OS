@@ -499,6 +499,8 @@ def subprocess_env(extra: dict[str, str]) -> dict[str, str]:
         if not key.startswith("UNILABOS_") and not any(key.startswith(spec.package.upper() + "_") for spec in DEMOS)
     }
     environment.update({"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    # 子进程跑本仓库的代码，不用环境里装过的旧版 unilabos（与 test_process_lifetime 同一做法）
+    environment["PYTHONPATH"] = os.pathsep.join(filter(None, [str(REPO_ROOT), environment.get("PYTHONPATH")]))
     environment.update(extra)
     return environment
 

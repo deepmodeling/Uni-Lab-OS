@@ -16,6 +16,7 @@ from unilabos.client.host.telemetry import TelemetryDeviceStateProjection
 from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
 from unilabos.server.services.telemetry import TelemetryService
+from tests.heating_fixtures import heating_device_config
 
 
 class PhysicalHeater:
@@ -80,6 +81,10 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
             action_names=("heat",),
         )
     )
+    # 设备物料按注册表 available_sites 在权威里装配（与启动时 definition 同一步）
+    heater_config = heating_device_config(
+        "virtual-heater", LocalMaterialsClient(material_service)
+    )
     local.add_driver(
         HostLinkDriverSpec(
             device_id="virtual-heater",
@@ -87,6 +92,8 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
             # 按真实时长加热：遥测里要留下升温过程的多个点
             config={"update_interval_s": 0.05, "time_scale": 1.0},
             registry_name="virtual_heating_platform",
+            resource_uuid=heater_config.res_content.uuid,
+            device_config=heater_config,
             action_names=("heat_site",),
             status_names=(
                 "status",
@@ -180,7 +187,9 @@ def test_test_mode_executes_only_explicit_virtual_simulator_and_records_status_h
             "device_id": "virtual-heater",
             "property": "site_1_temperature_c",
         }
-        assert material.data.source_job_uuid == virtual.job_id
+        # 样品是设备上的 PLR 物料：温度经设备的物料回报写入（来源是设备，不是手写的数据写入）
+        assert material.material.parent_material_uuid == heater_config.res_content.uuid
+        assert material.material.config["type"] == "VirtualHeatingSample"
     finally:
         backend.stop()
         if adapter is not None:

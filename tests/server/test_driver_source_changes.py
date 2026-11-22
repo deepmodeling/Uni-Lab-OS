@@ -31,21 +31,21 @@ def test_content_changes_additions_deletions_and_noise(tmp_path):
     root = tmp_path / "unilabos_data" / "driver_packages" / "pump" / "1.0"
     root.mkdir(parents=True)
     code = root / "pump.py"
-    code.write_text("version = 1\n")
+    code.write_text("version = 1\n", encoding="utf-8")
     definition = root / "device.yaml"
-    definition.write_text("class: pump\n")
+    definition.write_text("class: pump\n", encoding="utf-8")
     monitor = DriverSourceChanges()
     register(monitor, root)
     previous = code.stat()
-    code.write_text("version = 2\n")
+    code.write_text("version = 2\n", encoding="utf-8")
     os.utime(code, ns=(previous.st_atime_ns, previous.st_mtime_ns))
     definition.unlink()
-    (root / "new.py").write_text("pass\n")
-    (root / "run.log").write_text("log")
+    (root / "new.py").write_text("pass\n", encoding="utf-8")
+    (root / "run.log").write_text("log", encoding="utf-8")
     (root / "database.db").write_bytes(b"sqlite")
     for directory in [".git", "__pycache__", ".staging"]:
         (root / directory).mkdir()
-        (root / directory / "ignored.py").write_text("ignored")
+        (root / directory / "ignored.py").write_text("ignored", encoding="utf-8")
     monitor.poll()
     assert not monitor.status()["restart_required"]
     notice = settled(monitor)["notices"][0]
@@ -64,14 +64,14 @@ def test_only_loaded_targets_and_host_cascade_are_reported(tmp_path):
     shared = tmp_path / "shared"
     shared.mkdir()
     code = shared / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     other = tmp_path / "other"
     other.mkdir()
     monitor = DriverSourceChanges()
     register(monitor, shared, "host", "host")
     register(monitor, shared, "pump")
     register(monitor, other, "balance", auto_start=False)
-    code.write_text("new")
+    code.write_text("new", encoding="utf-8")
     notices = settled(monitor)["notices"]
     assert {n["process_id"] for n in notices} == {"host", "pump"}
     host = next(n for n in notices if n["target"] == "host")
@@ -81,7 +81,7 @@ def test_only_loaded_targets_and_host_cascade_are_reported(tmp_path):
     host = next(n for n in monitor.status()["notices"] if n["target"] == "host")
     assert next(s for s in host["affected_slaves"] if s["id"] == "balance")["auto_start"]
     # 已检测的变化不会因读提示或代码改回去而假装已经重启。
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     assert len(settled(monitor)["notices"]) == 2
     register(monitor, shared, "pump")
     assert [n["process_id"] for n in monitor.status()["notices"]] == ["host"]
@@ -91,19 +91,19 @@ def test_only_loaded_targets_and_host_cascade_are_reported(tmp_path):
 
 def test_saving_and_failed_package_transaction_do_not_publish_transient_files(tmp_path):
     code = tmp_path / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     monitor = DriverSourceChanges()
     register(monitor, tmp_path)
-    code.write_text("partial")
+    code.write_text("partial", encoding="utf-8")
     monitor.poll()
-    code.write_text("finished")
+    code.write_text("finished", encoding="utf-8")
     monitor.poll()
     assert not monitor.status()["restart_required"]
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     monitor.mutation(True)
     code.unlink()
     settled(monitor)
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     monitor.mutation(False)
     assert not settled(monitor)["restart_required"]
 
@@ -111,10 +111,10 @@ def test_saving_and_failed_package_transaction_do_not_publish_transient_files(tm
 def test_unreadable_source_is_visible_and_does_not_clear_notices(tmp_path, monkeypatch):
     from unilabos.server.services import driver_source_changes as module
     code = tmp_path / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     monitor = DriverSourceChanges()
     register(monitor, tmp_path)
-    code.write_text("new")
+    code.write_text("new", encoding="utf-8")
     settled(monitor)
 
     def denied(roots):
@@ -127,7 +127,7 @@ def test_unreadable_source_is_visible_and_does_not_clear_notices(tmp_path, monke
 
 
 def test_source_scan_does_not_follow_directory_symlink_loops(tmp_path):
-    (tmp_path / "driver.py").write_text("pass")
+    (tmp_path / "driver.py").write_text("pass", encoding="utf-8")
     (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
     assert len(source_snapshot([str(tmp_path)])) == 1
 
@@ -194,7 +194,7 @@ def test_slave_restart_clears_only_its_notice_and_api_returns_impact(services, t
     root = tmp_path / "driver_packages" / "pump" / "1.0"
     root.mkdir(parents=True)
     code = root / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     dp.save_ledger(tmp_path, {"pump": dp.DriverPackageRecord(name="pump", package_root=str(root),
                    package_dirs=[str(root)], enabled=False)})
     packages.configure([], external_only=True)
@@ -202,7 +202,7 @@ def test_slave_restart_clears_only_its_notice_and_api_returns_impact(services, t
                              "package_names": ["pump"], "external_only": True,
                              "extra_args": ["--working_dir", str(tmp_path)]})
     processes.start(view["id"])
-    code.write_text("new")
+    code.write_text("new", encoding="utf-8")
     settled(packages.source_changes)
     app = FastAPI()
     app.include_router(create_driver_packages_router())
@@ -218,7 +218,7 @@ def test_slave_restart_clears_only_its_notice_and_api_returns_impact(services, t
         assert processes._procs[view["id"]].poll() is None
         processes.restart(view["id"])
         assert ok_data(client.get("/api/v1/driver-packages/changes"))["notices"] == []
-        code.write_text("again")
+        code.write_text("again", encoding="utf-8")
         settled(packages.source_changes)
         processes.stop(view["id"])
         assert not packages.source_changes.status()["restart_required"]
@@ -229,12 +229,12 @@ def test_slave_baseline_precedes_popen(services, tmp_path, monkeypatch):
     root = tmp_path / "external"
     root.mkdir()
     code = root / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     view = processes.create({"name": "外部驱动", "graph_nodes": [{"id": "pump", "class": "pump"}],
                              "devices_dirs": [str(root)], "external_only": True})
 
     def launching(*args, **kwargs):
-        code.write_text("changed during child startup")
+        code.write_text("changed during child startup", encoding="utf-8")
         return FakeProcess()
 
     monkeypatch.setattr(dpx.subprocess, "Popen", launching)
@@ -248,11 +248,11 @@ def test_package_root_metadata_outside_python_directory_is_watched(services, tmp
     code = root / "src" / "pump"
     code.mkdir(parents=True)
     metadata = root / "pyproject.toml"
-    metadata.write_text('[project]\nname="pump"\nversion="1"\n')
+    metadata.write_text('[project]\nname="pump"\nversion="1"\n', encoding="utf-8")
     dp.save_ledger(tmp_path, {"pump": dp.DriverPackageRecord(name="pump", package_root=str(root),
                    package_dirs=[str(code)], enabled=True)})
     packages.configure([str(code)], external_only=True)
-    metadata.write_text('[project]\nname="pump"\nversion="2"\n')
+    metadata.write_text('[project]\nname="pump"\nversion="2"\n', encoding="utf-8")
     notice = settled(packages.source_changes)["notices"][0]
     assert notice["changed_files"] == [{"path": str(metadata), "change": "modified"}]
 
@@ -262,8 +262,8 @@ def test_dependency_installer_failure_still_warns_shared_processes(services, tmp
     source = tmp_path / "new_package"
     code = source / "pump"
     code.mkdir(parents=True)
-    (code / "__init__.py").write_text("")
-    (source / "pyproject.toml").write_text('[project]\nname="pump"\nversion="1"\ndependencies=["pyserial"]\n')
+    (code / "__init__.py").write_text("", encoding="utf-8")
+    (source / "pyproject.toml").write_text('[project]\nname="pump"\nversion="1"\ndependencies=["pyserial"]\n', encoding="utf-8")
     packages.configure([], external_only=True)
     register(packages.source_changes, tmp_path / "other", "balance")
 

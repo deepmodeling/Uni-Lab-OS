@@ -211,7 +211,7 @@ def test_flag_moves_each_root_device_into_its_own_spec(host: Path, tmp_path: Pat
     specs = dpx.load_specs(host)
     assert set(specs) == {"root-station", "root-valve"}
     assert all(spec.generated_by == "root_devices_as_slaves" and spec.auto_start for spec in specs.values())
-    graph = json.loads((dpx.process_dir(host, "root-station") / dpx.graph_filename(specs["root-station"])).read_text("utf-8"))
+    graph = json.loads((dpx.process_dir(host, "root-station") / dpx.graph_filename(specs["root-station"])).read_text(encoding="utf-8"))
     assert [node["id"] for node in graph["nodes"]] == ["station", "pump", "vial"]
     assert [link["id"] for link in graph["links"]] == ["inner", "inner_by_uuid"]
 

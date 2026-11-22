@@ -466,7 +466,7 @@ def test_full_profile_contains_all_python_development_dependencies(monkeypatch):
     assert {"pytest", "pytest-asyncio", "build", "ruff", "ipython", "jupyterlab", "pandas", "opcua"} <= names
     docs = (root / "unilabos/utils/requirements-docs.txt").read_text(encoding="utf-8")
     assert {line.strip() for line in docs.splitlines() if line.strip() and not line.startswith("#")} <= set(extras["full"])
-    assert "-r ../unilabos/utils/requirements-docs.txt" in (root / "docs/requirements.txt").read_text()
+    assert "-r ../unilabos/utils/requirements-docs.txt" in (root / "docs/requirements.txt").read_text(encoding="utf-8")
     assert not any("ros-" in raw or "rclpy" in raw for raw in captured["install_requires"])
     for raw in extras["full"]:
         requirement = Requirement(raw)
@@ -492,8 +492,8 @@ def test_full_conda_profiles_cover_python_extras(monkeypatch):
     for distro, suffix in (("jazzy", ""), ("humble", "-humble")):
         # 厂商驱动 SDK（pprp / pylibftdi / pyautogui）随驱动包声明，不再进入 full
         assert ("pprp", []) not in recipes(distro, full=True)
-        full = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text())
-        ros2 = yaml.safe_load((root / f".conda/ros2{suffix}/recipe.yaml").read_text())
+        full = yaml.safe_load((root / f".conda/full{suffix}/recipe.yaml").read_text(encoding="utf-8"))
+        ros2 = yaml.safe_load((root / f".conda/ros2{suffix}/recipe.yaml").read_text(encoding="utf-8"))
         # Windows SDK 的选择使 full 成为平台包，不能把它发布成同名不同内容的 noarch。
         assert "noarch" not in full["build"]
         dependencies = full["requirements"]["run"] + ros2["requirements"]["run"]

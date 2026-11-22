@@ -97,7 +97,7 @@ def test_authority_retries_pending_writeback_on_restart_and_watches_external_edi
                                    expected_workflow_revision=workflow["revision"])
         registration = service._registration(workflow["uuid"])
         target = Path(registration["package_root"]) / registration["relative_path"]
-        assert target.read_text() == SOURCE
+        assert target.read_text(encoding="utf-8") == SOURCE
 
         # Apply 已提交，但这一次（以及进程退出前的每次重试）写回源码都失败
         def failing_write(*_args, **_kwargs):
@@ -124,7 +124,7 @@ def test_authority_retries_pending_writeback_on_restart_and_watches_external_edi
         service = _start_authority(paths)
         record = service.get_authoring_record(workflow["uuid"])
         assert record["writeback_status"] == "settled"
-        assert target.read_text() == SOURCE
+        assert target.read_text(encoding="utf-8") == SOURCE
 
         # 外部编辑器改了源码：监视线程重新编译出对应的新候选
         edited = SOURCE.replace("amount: float = 2.0", "amount: float = 3.0")
@@ -168,7 +168,7 @@ def test_running_monitor_settles_a_pending_writeback(tmp_path, monkeypatch) -> N
         assert [item["code"] for item in applied["apply_result"]["warnings"]] == ["draft_writeback_pending"]
         target.unlink()
         _wait_for(lambda: service.get_authoring_record(workflow["uuid"])["writeback_status"] == "settled")
-        assert target.read_text() == SOURCE
+        assert target.read_text(encoding="utf-8") == SOURCE
     finally:
         reset_for_test()
 

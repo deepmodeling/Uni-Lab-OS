@@ -59,7 +59,7 @@ raise RuntimeError('expected a hard process exit')
 @pytest.mark.parametrize('phase,committed', [('before_move', False), ('before_ledger', False), ('after_ledger', True), ('uninstall', False)])
 def test_process_crash_reconciles_source_and_ledger_once_and_requires_confirmation(tmp_path, monkeypatch, phase, committed):
     process = subprocess.run([sys.executable, '-c', CRASH_SCRIPT, str(tmp_path), phase],
-                             capture_output=True, text=True, timeout=30)
+                             capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace")
     assert process.returncode == 73, process.stdout + process.stderr
     service = dp.DriverPackageService(tmp_path)
     operation = service.operations()[0]
@@ -68,7 +68,7 @@ def test_process_crash_reconciles_source_and_ledger_once_and_requires_confirmati
     assert operation['recovery']['outcome'] == ('committed' if committed else 'rolled_back')
     record = dp.load_ledger(tmp_path)['demo']
     assert record.device_ids == (['new'] if committed else ['old'])
-    assert ('new' if committed else 'old') in (Path(record.package_root) / 'demo/pump.py').read_text()
+    assert ('new' if committed else 'old') in (Path(record.package_root) / 'demo/pump.py').read_text(encoding="utf-8")
     gate = get_host_mutation_gate(tmp_path)
     with pytest.raises(HostMutationBusy):
         gate.acquire('slave_start')

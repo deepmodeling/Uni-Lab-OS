@@ -34,7 +34,7 @@ class Driver:
     @action()
     def legacy(self, anything):
         return anything
-''')
+''', encoding="utf-8")
     devices, _, _ = _parse_file(path, tmp_path)
     return Registry()._build_device_entry_from_ast("typed_test", devices[0])["class"]["action_value_mappings"]
 

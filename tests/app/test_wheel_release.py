@@ -254,7 +254,7 @@ def test_bundle_rejects_unlisted_wheels(bundle):
 
 def test_bundle_rejects_wrong_platform(bundle):
     path = bundle / "manifest.json"
-    manifest = json.loads(path.read_text())
+    manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["platform"] = "wrong-platform"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     with pytest.raises(RuntimeError, match="平台不匹配"):
@@ -267,10 +267,10 @@ def test_installer_preserves_existing_environment(bundle, monkeypatch):
     prefix = bundle / ".venv"
     prefix.mkdir()
     sentinel = prefix / "keep.txt"
-    sentinel.write_text("user data")
+    sentinel.write_text("user data", encoding="utf-8")
     with pytest.raises(RuntimeError, match="不会覆盖"):
         installer.main()
-    assert sentinel.read_text() == "user data"
+    assert sentinel.read_text(encoding="utf-8") == "user data"
 
 
 def test_installer_is_offline_hash_locked_and_outside_checkout(bundle, monkeypatch):

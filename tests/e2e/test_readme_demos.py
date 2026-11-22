@@ -168,7 +168,7 @@ class _DemoProcesses:
             stdout=handle,
             stderr=subprocess.STDOUT,
             text=True,
-            start_new_session=os.name != "nt",
+            start_new_session=os.name != "nt", encoding="utf-8", errors="replace",
         )
 
     def any_exited(self) -> bool:

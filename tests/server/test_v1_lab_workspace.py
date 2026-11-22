@@ -64,7 +64,7 @@ def test_package_mounts_and_file_browser(tmp_path) -> None:
     package_dir = tmp_path / "pkgs" / "acme_driver"
     package_dir.mkdir(parents=True)
     (tmp_path / "work" / "sub").mkdir(parents=True)
-    (tmp_path / "work" / "run.py").write_text("print(1)\n")
+    (tmp_path / "work" / "run.py").write_text("print(1)\n", encoding="utf-8")
     packages = SimpleNamespace(inventory=lambda: {"packages": [
         {"name": "acme", "version": "1.2.0", "enabled": True, "dirs_exist": True, "source_kind": "local",
          "package_dirs": [str(package_dir)], "device_ids": ["acme.pump"], "sha256": "abc"},

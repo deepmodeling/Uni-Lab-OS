@@ -205,7 +205,7 @@ def test_virtual_drivers_import_without_ros() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=20, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr
 
@@ -223,7 +223,7 @@ def test_liquid_handling_package_keeps_optional_rviz_ros_import_lazy() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=20, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr
 
@@ -247,6 +247,6 @@ def test_liquid_handler_drivers_import_in_hostlink_without_ros_runtime() -> None
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=30, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr

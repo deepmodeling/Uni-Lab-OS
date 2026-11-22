@@ -62,7 +62,7 @@ def _pid_alive(pid: int) -> bool:
             return kernel32.WaitForSingleObject(handle, 0) == 0x102  # WAIT_TIMEOUT：仍在运行
         finally:
             kernel32.CloseHandle(handle)
-    result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    result = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     state = result.stdout.strip()
     return bool(state) and not state.startswith("Z")
 

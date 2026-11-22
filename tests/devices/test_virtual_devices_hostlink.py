@@ -971,7 +971,7 @@ def test_protocol_vessel_lock_queues_other_tasks_without_locking_its_own_steps(t
     from tests.app.test_process_lifetime import _Unilab
 
     # 搅拌器按 0.05 倍跑：编译出的搅拌步（60 s 搅拌 + 30 s 沉降）约 4.5 秒，足够观察排队
-    payload = json.loads((EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json").read_text())
+    payload = json.loads((EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json").read_text(encoding="utf-8"))
     for node in payload["nodes"]:
         if node["id"] == "stirrer_1":
             node.setdefault("config", {})["time_scale"] = 0.05

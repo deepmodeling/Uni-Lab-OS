@@ -45,7 +45,7 @@ class DemoProcesses(_DemoProcesses):
         self._handles.append(handle)
         process = subprocess.Popen(command, cwd=self.repo_root, env=self.env, stdout=handle,
                                    stderr=subprocess.STDOUT, text=True,
-                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+                                   creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0, encoding="utf-8", errors="replace")
         save(self.work_root / f"{role}-process.json", {"pid": process.pid, "command": command})
         return process
 

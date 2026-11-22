@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
+
+# Windows 中文系统的默认编码是 GBK：用例起的子进程（python -c / python -m unilabos）一律跑 UTF-8 模式，
+# 与 CI（PYTHONUTF8=1、PYTHONIOENCODING=utf-8）一致；测试进程自己的文本读写都显式写 encoding="utf-8"。
+os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 
 @pytest.fixture(autouse=True)

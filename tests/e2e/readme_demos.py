@@ -313,7 +313,7 @@ def _git(*args: str, cwd: Path) -> str:
         check=True,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=300, encoding="utf-8", errors="replace",
     ).stdout.strip()
 
 
@@ -389,7 +389,7 @@ def _parse_windows_tcp_range(output: str) -> tuple[int, int]:
 def _windows_tcp_range() -> tuple[int, int]:
     result = subprocess.run(
         ["netsh", "interface", "ipv4", "show", "dynamicport", "tcp"],
-        capture_output=True, check=True, text=True, errors="replace", timeout=10,
+        capture_output=True, check=True, text=True, errors="replace", timeout=10, encoding="utf-8",
     )
     return _parse_windows_tcp_range(result.stdout)
 

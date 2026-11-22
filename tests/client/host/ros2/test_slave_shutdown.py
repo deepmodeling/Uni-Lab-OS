@@ -90,7 +90,7 @@ def test_stop_signal_exits_cleanly_with_code_zero(tmp_path, signum) -> None:
     env = {key: value for key, value in os.environ.items() if key != "ROS_DISCOVERY_SERVER"}
     env.update({"ROS_DOMAIN_ID": "117", "ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST", "PYTHONUNBUFFERED": "1"})
     process = subprocess.Popen(
-        [sys.executable, str(script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env
+        [sys.executable, str(script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env, encoding="utf-8", errors="replace"
     )
     try:
         deadline = time.monotonic() + 30

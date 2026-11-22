@@ -44,15 +44,15 @@ def test_archives_only_explicit_targets_and_keeps_packages(tmp_path):
     edge = reset.paths.root / "edge"
     edge.mkdir()
     (edge / "history.db").write_bytes(b"edge-history")
-    (tmp_path / "device_processes.json").write_text("{}")
+    (tmp_path / "device_processes.json").write_text("{}", encoding="utf-8")
     packages = tmp_path / "driver_packages.json"
-    packages.write_text("keep")
+    packages.write_text("keep", encoding="utf-8")
     reset.request(reset.token, "清空全部数据")
     assert reset.paths.runtime_db.exists()  # 请求只登记；必须停机后才执行。
     reset.finish()
     assert not reset.paths.runtime_db.exists()
     assert not (edge / "history.db").exists()
-    assert packages.read_text() == "keep"
+    assert packages.read_text(encoding="utf-8") == "keep"
     assert (reset.backup / "manifest.json").exists()
     assert not (reset.paths.root / "reset-pending.json").exists()
 

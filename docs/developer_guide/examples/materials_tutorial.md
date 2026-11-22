@@ -336,7 +336,7 @@ plate = materials.create("my_plate_class", name="plate_1")
 
 - **children 形态不一致**：`ResourceTreeSet` 只按 `parent_uuid` / `parent` 建立层级，`children` 列表会被忽略；旧格式图（`children` id 列表、根级 `position` 等）在 `-g` / `unilab graph upload` 读取边界由 legacy 适配层统一转换。
 - **UUID**：`from_raw_dict_list` / `load` / `from_plr_resources` 都要求每个节点带权威 UUID（或 `data.unilabos_uuid`），不会随机生成。
-- **PLR 类型**：`to_plr_resources` 只按 `config.type` 查找 PLR 类，不回退到 `class` / `template_name`。
+- **PLR 类型**：`to_plr_resources` 只按 `config.type`（PLR 类名）反序列化；物料的 `class` 是初始化它用的注册表名，只做记录，不参与反序列化。
 - **按注册表创建**：`materials.instantiate_registry_resource` 只支持 `class.type == "pylabrobot"` 的注册表资源类。
 
 参考代码：

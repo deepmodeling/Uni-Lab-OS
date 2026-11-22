@@ -94,7 +94,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 100,
@@ -115,7 +115,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 250,
@@ -136,7 +136,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 400,
@@ -157,7 +157,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 698.1111111111111,
@@ -178,7 +178,7 @@
             "children": [],
             "parent": "FilterTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 950,

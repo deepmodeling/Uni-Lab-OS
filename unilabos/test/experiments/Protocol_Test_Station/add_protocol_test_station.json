@@ -169,7 +169,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 50,
@@ -195,7 +195,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 150,
@@ -221,7 +221,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 250,
@@ -247,7 +247,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 350,
@@ -273,7 +273,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 450,
@@ -299,7 +299,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 550,
@@ -320,7 +320,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -341,7 +341,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 900,
@@ -362,7 +362,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,
@@ -383,7 +383,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,
@@ -404,7 +404,7 @@
             "children": [],
             "parent": "AddProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 900,

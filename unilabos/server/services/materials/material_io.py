@@ -278,7 +278,7 @@ class MaterialIO:
                     resource_id=ResourceContract(self.materials)._resource_id(name),
                     display_name=name,
                     resource_type=template.resource_type,
-                    class_name=template.class_name or template.resource_type or "Resource",
+                    class_name=template.class_name or template.name,
                     barcode=barcode,
                     template_name=template.name,
                     meta_data=meta_data,
@@ -316,6 +316,7 @@ class MaterialIO:
         ``resource_id`` 是根的路径前缀，根换了不重名的 ID 时一起换。
         """
 
+        from unilabos.resources.material_class import material_class
         from unilabos.server.services.materials.resource_contract import ResourceContract
 
         root = next(node for node in tree.nodes if node.parent_client_ref is None)
@@ -332,6 +333,13 @@ class MaterialIO:
             "display_name": name,
             "barcode": barcode,
             "template_name": template_name,
+            # 换成注册表模板后 class 跟着换成它的注册表名（与模板登记的 class 一致）
+            "class_name": material_class(
+                resource_type=root.identity.resource_type,
+                klass=root.identity.class_name,
+                template_name=template_name,
+                plr_type=root.identity.config.get("type"),
+            ),
             "meta_data": {**root.identity.meta_data, **meta_data},
         })
 

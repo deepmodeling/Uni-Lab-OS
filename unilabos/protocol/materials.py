@@ -147,6 +147,7 @@ class ResourceTemplateWrite(ServerObject):
     name: NonEmptyStr
     display_name: Optional[NonEmptyStr] = None
     resource_type: NonEmptyStr = "resource"
+    #: 按这个模板初始化的物料的 class：注册表模板是注册表资源名（即模板名），实现模块在 ``module_name``
     class_name: Optional[str] = None
     module_name: Optional[str] = None
     template_version: NonEmptyStr = "1"
@@ -295,6 +296,8 @@ class MaterialIdentityWrite(ServerObject):
     display_name: str = ""
     description: str = ""
     resource_type: NonEmptyStr = "resource"
+    #: 初始化它用的注册表名（注册表资源名，与模板名相同；没有注册表条目的孩子是 PLR 类名；
+    #: 设备是注册表设备名）。PLR 类名在 ``config.type``，见 unilabos.resources.material_class。
     class_name: NonEmptyStr = "Resource"
     machine_name: str = ""
     barcode: str = ""

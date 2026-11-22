@@ -30,7 +30,7 @@ from uuid import UUID, uuid4
 from pylabrobot.resources import ItemizedResource
 from pylabrobot.resources import Resource as PLRResource
 
-from unilabos.resources.resource_tracker import ResourceTreeInstance, ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeInstance, ResourceTreeSet, set_plr_template_name
 from unilabos.resources.adapters.plr_materials import (
     CreatedPLRMaterials,
     MaterialGateway,
@@ -48,7 +48,7 @@ from unilabos.protocol.materials import (
     MaterialTransferItem,
     MaterialTreeRead,
 )
-from unilabos.resources.objects.resource import EXTRA_BOUND_DEVICE
+from unilabos.resources.objects.resource import EXTRA_BOUND_DEVICE, EXTRA_RESOURCE_CLASS
 from unilabos.utils.log import trace
 
 
@@ -665,6 +665,11 @@ def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
         raise ValueError(f"registry 资源类 {class_name!r} 无法实例化（{module}）：{exc}") from exc
     if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
+    # 物料记下初始化它用的注册表名：模板名就是它，入库后 class 也是它（见
+    # unilabos.resources.material_class）。资源类自己登记了模板名的（按库位快照建的台面等）不覆盖。
+    extra = getattr(draft, "unilabos_extra", None)
+    if not (isinstance(extra, dict) and extra.get(EXTRA_RESOURCE_CLASS)):
+        set_plr_template_name(draft, class_name)
     return draft
 
 

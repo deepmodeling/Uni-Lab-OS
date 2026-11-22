@@ -78,7 +78,7 @@
             "children": [],
             "parent": "SimpleStirHeatChillTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 500,
@@ -104,7 +104,7 @@
             "children": [],
             "parent": "SimpleStirHeatChillTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,

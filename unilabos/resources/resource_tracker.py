@@ -15,6 +15,7 @@ from unilabos.resources.objects.resource import (
     ResourceDictType,
     assemble_tracker_state,
 )
+from unilabos.resources.material_class import material_class
 from unilabos.resources.objects.naming import PLR_KEY_FIELD, plr_key
 from unilabos.resources.objects.site import ResourceSite
 from unilabos.resources.objects.state import TRACKER_STATE_KEYS
@@ -1037,6 +1038,9 @@ class ResourceTreeSet(object):
             for child, child_data in iter_serialized_plr_children(res, serialized):
                 build_uuid_mapping(child, child_data, uuid_list, uid)
 
+        #: (模板名, PLR 类名, 序列化里的 class) → 物料 class；本次转换内复用
+        class_paths: Dict[Tuple[str, Any, Any], str] = {}
+
         def resource_plr_inner(
             plr_resource: "PLRResource",
             d: dict,
@@ -1121,6 +1125,18 @@ class ResourceTreeSet(object):
 
             # 先构建当前节点的字典（不包含children）。物料 name 等于 uuid，PLR 名作为
             # PLR 键存进 config.name（不改 PLR 对象本身），人读标签进 display_name。
+            template_name = get_plr_template_name(plr_resource, d)
+            class_key = (template_name, d.get("type"), d.get("class", ""))
+            klass = class_paths.get(class_key)
+            if klass is None:
+                # class 是初始化它用的注册表名（注册表资源取模板名，没有注册表条目的孩子取
+                # PLR 类名），config.type 是 PLR 类名，见 unilabos.resources.material_class。
+                # 同一棵树里同模板同类的节点（板上的孔位）只查一次目录。
+                klass = class_paths[class_key] = material_class(
+                    klass=d.get("class", ""),
+                    template_name=template_name,
+                    plr_type=d.get("type"),
+                )
             r_dict = {
                 "id": d["name"],
                 "uuid": current_uuid,
@@ -1129,8 +1145,8 @@ class ResourceTreeSet(object):
                 "parent": parent_resource,  # 直接传入 ResourceDict 对象
                 "parent_uuid": parent_uuid,  # 使用 parent_uuid 而不是 parent 对象
                 "type": replace_plr_type(d.get("category", "")),
-                "class": d.get("class", ""),
-                "template_name": get_plr_template_name(plr_resource, d),
+                "class": klass,
+                "template_name": template_name,
                 "pose": static_pose,
                 "joint_state": joint_state,
                 "config": {

@@ -780,7 +780,7 @@ class InventoryCommands:
             identity=MaterialIdentityWrite(
                 resource_id=ResourceContract(self.materials)._resource_id(name), display_name=name,
                 lot_uuid=lot_uuid, resource_type=template.resource_type,
-                class_name=template.class_name or template.resource_type or "Resource",
+                class_name=template.class_name or template.name,
                 barcode=barcode, template_name=template.name,
                 extra={"legacy_cloud_id": legacy} if legacy else {},
             ),

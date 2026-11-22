@@ -105,7 +105,14 @@ class ResourceDict(BaseModel):
         description="Parent resource object", default=None, exclude=True
     )
     type: Union[Literal["device"], str] = Field(description="Resource type")
-    klass: str = Field(alias="class", description="Resource class name")
+    klass: str = Field(
+        alias="class",
+        description=(
+            "Registry name the resource was initialized from (registry resource / device id); "
+            "PLR class name for children without a registry entry. The PLR class used for "
+            "deserialization is config.type"
+        ),
+    )
     pose: ResourceDictPosition = Field(
         description="Resource pose relative to its parent, plus geometry/layout metadata",
         default_factory=ResourceDictPosition,

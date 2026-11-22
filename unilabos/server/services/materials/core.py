@@ -82,6 +82,7 @@ from unilabos.resources.objects.naming import (
     plr_key,
     rekey_bare_label_items,
 )
+from unilabos.resources.material_class import registry_resource_module, resolve_material_class
 from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
@@ -2286,7 +2287,8 @@ class MaterialsService(MaterialsRepository):
     @staticmethod
     def _validate_template_identity(
         template: ResourceTemplateRecord, identity: Any
-    ) -> None:
+    ) -> str:
+        """物料身份与模板对得上时返回入库用的 class（初始化它用的注册表名），否则抛错。"""
         if template.status != "active":
             raise MaterialValidationError(
                 f"template is not active: {template.template_uuid}"
@@ -2300,11 +2302,20 @@ class MaterialsService(MaterialsRepository):
         # 子节点按类名共用组件模板（如所有 ``Well`` 都是模板 ``Well``），同一个类的
         # 实例可以是 well / tube 等不同类型；模板上的 resource_type 只是按模板新建
         # 物料时的默认值，物料自己的 resource_type 才是它的类型（建树后不可变）。
-        if template.class_name and identity.class_name != template.class_name:
+        # class 是初始化物料用的注册表名，注册表模板的 class 就是模板名；两种过渡情形（模板还没
+        # 按注册表同步、带来物料的一方查不到注册表）按模板归一，见 resolve_material_class。
+        resolved = resolve_material_class(
+            template_name=template.name,
+            template_class=template.class_name,
+            identity_class=identity.class_name,
+            plr_type=(identity.config or {}).get("type"),
+        )
+        if resolved is None:
             raise MaterialValidationError(
                 f"class_name {identity.class_name!r} does not match template "
                 f"{template.name!r} class_name {template.class_name!r}"
             )
+        return resolved
 
     @staticmethod
     def _site_from_template(
@@ -2411,6 +2422,7 @@ class MaterialsService(MaterialsRepository):
                 node_ordinals[node.client_ref] = ordinal
             templates: dict[str, ResourceTemplateRecord] = {}
             resolved_templates: dict[str, ResourceTemplateRecord] = {}
+            resolved_classes: dict[str, str] = {}
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
             node_sites: dict[str, list[SiteCreate]] = {}
@@ -2431,6 +2443,8 @@ class MaterialsService(MaterialsRepository):
                             display_name=node.identity.template_name,
                             resource_type=node.identity.resource_type,
                             class_name=node.identity.class_name,
+                            # 模板名是注册表资源名时记下实现模块（与注册表同步的模板一致）
+                            module_name=registry_resource_module(node.identity.template_name),
                             available_sites=[
                                 site.model_dump(
                                     mode="json",
@@ -2499,7 +2513,9 @@ class MaterialsService(MaterialsRepository):
                         )
                     templates[template_key] = template
                 resolved_templates[node.client_ref] = template
-                self._validate_template_identity(template, node.identity)
+                resolved_classes[node.client_ref] = self._validate_template_identity(
+                    template, node.identity
+                )
                 explicit_sites = list(node.sites)
                 if not explicit_sites:
                     explicit_sites = [
@@ -2562,7 +2578,7 @@ class MaterialsService(MaterialsRepository):
                     display_name=display_name,
                     description=identity.description,
                     resource_type=identity.resource_type,
-                    class_name=identity.class_name,
+                    class_name=resolved_classes[node.client_ref],
                     machine_name=identity.machine_name,
                     barcode=identity.barcode,
                     barcode_symbology=identity.barcode_symbology,

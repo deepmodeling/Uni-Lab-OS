@@ -208,7 +208,9 @@ def test_load_instantiates_the_registry_class_with_its_default_children(material
     assert root.config["name"] == "新吸头盒"
     assert (root.template_name, root.template_uuid) == (template, plan["template_uuid"])
     assert root.meta_data["material_io"] == {"task_uuid": TASK, "job_uuid": job}
-    assert root.config["type"] == root.class_name and root.resource_type == "tip_rack"
+    # class 是初始化它用的注册表名（即模板名）；config.type 是 PLR 类名（反序列化靠它）
+    assert root.class_name == template and root.config["type"] == "StandingTipRack"
+    assert root.resource_type == "tip_rack"
     spots = [node.material for node in tree.nodes if node.material.parent_material_uuid == new]
     tips = [node.material for node in tree.nodes if node.material.resource_type == "tip"]
     assert (len(spots), len(tips), len(tree.nodes)) == (96, 96, 1 + 96 + 96)

@@ -96,7 +96,8 @@ class ResourceVisualization:
             if (node['type'] in self.resource_type and node['class'] != '') or (node['type'] == 'device' and node['class'] != ''):
                 model_config = {}
                 if node['type'] in self.resource_type:
-                    resource_class = node['class']
+                    # 注册表资源 id 是物料的 template_name；class 是完整类路径（旧图里才写资源 id）
+                    resource_class = node.get('template_name') or node['class']
                     if resource_class not in registry.resource_type_registry.keys():
                         raise ValueError(f"{node['id']}资源类型 {resource_class} 未在注册表中注册")
                     elif "model" in registry.resource_type_registry[resource_class].keys():

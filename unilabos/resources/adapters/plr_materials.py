@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Collection, Mapping, Optional, Protocol, Sequence
 
+from unilabos.resources.material_class import material_class
 from unilabos.resources.objects.naming import PLR_KEY_FIELD, canonical_uuid, plr_key
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -257,9 +258,13 @@ def resource_tree_to_create(
                     display_name=resource.display_name,
                     description=resource.description,
                     resource_type=resource.type,
-                    class_name=(
-                        resource.klass
-                        or str(resource.config.get("type") or "Resource")
+                    # 初始化它用的注册表名（没有注册表条目时是 PLR 类名；设备不变），
+                    # 见 unilabos.resources.material_class
+                    class_name=material_class(
+                        resource_type=resource.type,
+                        klass=resource.klass,
+                        template_name=resource.template_name,
+                        plr_type=resource.config.get("type"),
                     ),
                     machine_name=resource.machine_name,
                     barcode=resource.barcode,

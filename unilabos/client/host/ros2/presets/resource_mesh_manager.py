@@ -160,8 +160,10 @@ class ResourceMeshManager(BaseROS2DeviceNode):
         if any(item['id'] == resource_config['id'] for item in self.resource_config_dict.values()):
             self.get_logger().info(f'资源 {resource_config["id"]} 已存在')
             return
-        if resource_config['class'] in registry.resource_type_registry.keys():
-            model_config = registry.resource_type_registry[resource_config['class']]['model']
+        # 注册表资源 id 是物料的 template_name；class 是完整类路径（旧图里才写资源 id）
+        registry_key = resource_config.get('template_name') or resource_config.get('class')
+        if registry_key in registry.resource_type_registry.keys():
+            model_config = registry.resource_type_registry[registry_key]['model']
             if model_config['type'] == 'resource':
                 self.resource_model[resource_config['id']] = {
                     'mesh': f"{str(self.mesh_path)}/device_mesh/resources/{model_config['mesh']}",
@@ -172,12 +174,12 @@ class ResourceMeshManager(BaseROS2DeviceNode):
                         'mesh_tf': model_config['children_mesh_tf']
                     }
         resources = [resource_config]
-        if resource_config.get('class') in registry.resource_type_registry:
+        if registry_key in registry.resource_type_registry:
             # registry 资源类：实例化 PLR 草稿，经 ResourceTreeSet 展开为带父子 uuid 的扁平节点
             from unilabos.resources.materials import instantiate_registry_resource
             from unilabos.resources.resource_tracker import ResourceTreeSet
 
-            draft = instantiate_registry_resource(resource_config['class'], resource_config['name'])
+            draft = instantiate_registry_resource(registry_key, resource_config['name'])
             tree_set = ResourceTreeSet.from_plr_resources([draft], known_random_uuid=True)
             resources = [node for tree in tree_set.dump() for node in tree]
         # 与 __init__ 一致按 uuid 建索引：resource_mesh_setup 按 parent_uuid 查父节点

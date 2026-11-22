@@ -19,8 +19,9 @@ download``、``/edge/material/query``）以及 dev 时代的示例图长着另�
 - dev 时代的物料节点（容器最常见）没有 PLR 类：``class`` 为空或写成注册表模板名
   （``"container"``），``config`` 里没有 ``type``，``config`` 里还可能混着 PLR 构造器
   不认的业务字段（``filter_type``）。当前契约是 ``template_name`` = 注册表模板、
-  ``class`` = ``config.type`` = 该模板的 PLR 类名（物料权威按模板校验 ``class``，PLR 按
-  ``config.type`` 构造）。
+  ``class`` = 初始化它用的注册表名（即该模板，物料权威按模板校验 ``class``）、
+  ``config.type`` = 该模板的 PLR 类名（PLR 按它反序列化）。写成 PLR 类名的 ``class``
+  在物料入库时按模板换成注册表名（:mod:`unilabos.resources.material_class`）。
 
 这些形状只在**接收旧数据的边界**被识别并一次性转换：``-g`` 启动文件与
 ``unilab graph upload`` 的读取入口（:func:`upgrade_legacy_graph_payload`）、旧后端
@@ -464,7 +465,8 @@ def _fill_material_plr_class(
             f"的 PLR 类 {class_name!r} 不一致：图里是旧版 PLR 序列化，需按当前模板重新创建该物料"
         )
     node["template_name"] = template
-    node["class"] = class_name
+    # class 是初始化它用的注册表名（即模板名）；config.type 是 PLR 类名
+    node["class"] = template
     if not plr_type:
         node["config"] = {**config, "type": class_name}
         _move_foreign_config_to_data(node, class_name, entry, label)

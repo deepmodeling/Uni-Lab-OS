@@ -33,7 +33,7 @@
                 "type": "RegularContainer"
             },
             "template_name": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "name": "模拟容器",
             "type": "container",
             "parent": "MockChiller1",

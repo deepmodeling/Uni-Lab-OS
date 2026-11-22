@@ -102,7 +102,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 100,
@@ -129,7 +129,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 200,
@@ -156,7 +156,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 300,
@@ -183,7 +183,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 400,
@@ -210,7 +210,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -231,7 +231,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,
@@ -252,7 +252,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,
@@ -273,7 +273,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 900,
@@ -294,7 +294,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 1000,
@@ -315,7 +315,7 @@
             "children": [],
             "parent": "RunColumnTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,

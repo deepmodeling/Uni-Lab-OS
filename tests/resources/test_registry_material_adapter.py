@@ -38,7 +38,8 @@ def test_registry_definition_is_registered_once_with_promoted_fields(tmp_path) -
 
         assert second == first
         assert template.resource_type == "container"
-        assert template.class_name == "RegularContainer"
+        # 模板的 class 是初始化物料用的注册表名（条目 id），实现模块在 module_name
+        assert template.class_name == "lab_beaker"
         assert template.category == ["container"]
         assert template.available_sites[0]["label"] == "slot"
         assert "category" not in template.definition

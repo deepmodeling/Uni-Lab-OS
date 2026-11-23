@@ -957,15 +957,28 @@ class DeviceNode(ABC):
                 parent_uuid = self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
             device_site_uuid: Optional[str] = None
             if parent_uuid == self.resource_uuid and self.resource_uuid:
-                # 设备自身的库位在提交点之前解析：选择器无效时什么都不改
+                # 设备自身的库位在提交点之前解析：选择器无效、或给的 Site uuid 不是本设备的库位时
+                # 什么都不改（site 与 slot 走同一套匹配，别的设备的 Site 不会被当成本设备的）
                 stage = "解析设备库位"
-                device_site_uuid = site_uuid or await self._device_site_uuid(additional_params.get("slot"))
+                device_site_uuid = await self._device_site_uuid(
+                    site_uuid if site_uuid is not None else additional_params.get("slot")
+                )
                 if device_site_uuid is not None and len(resource_uuids) != 1:
                     raise ValueError("一个库位只能放一个物料：指定设备库位时一次只能挂一个物料")
             drafts = tree_set.to_plr_resources()
             # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
             if commit_point is not None and not commit_point.enter():
                 raise TimeoutError("等待方已超时放弃，挂载未执行")
+            if device_site_uuid is not None:
+                # 设备库位先在权威落占用：库位被占、类别不符、入口预留、设备子树只收 PLR 物料都由
+                # 权威校验。被拒时本地还没动，不会留下「本地已挂、权威没放」的物料。
+                stage = "权威 move"
+                await self._require_resource_service().move_resource(
+                    self.device_id,
+                    self.resource_uuid,
+                    resource_uuids[0],
+                    destination_site_uuid=device_site_uuid,
+                )
             stage = "本地挂载"
             plr_instances: List[Any] = []
             added_instances: List[Any] = []
@@ -993,6 +1006,18 @@ class DeviceNode(ABC):
                         extra = getattr(plr_instance, "unilabos_extra", None) or {}
                         extra[EXTRA_BOUND_DEVICE] = self._short_device_id()
                         plr_instance.unilabos_extra = extra
+                        old_parent = getattr(plr_instance, "parent", None)
+                        if device_site_uuid is not None and old_parent is not None:
+                            # 权威已把它放到设备库位、父物料是设备：本地也从原 PLR 父物料卸下，
+                            # 作为本设备的根树登记。原父树少了这个孩子，随第 4 步一起快照。
+                            old_root = old_parent
+                            while getattr(old_root, "parent", None) is not None:
+                                old_root = old_root.parent
+                            self.lab_logger().info(f"[AR:{tag}] 物料 {root_uuid} 从 {old_parent} 卸下，放到设备库位")
+                            old_parent.unassign_child_resource(plr_instance)
+                            self.resource_tracker.add_resource(plr_instance)
+                            if all(id(old_root) != id(existing) for existing in report_roots):
+                                report_roots.append(old_root)
                     plr_instances.append(plr_instance)
                     parent = self.transfer_to_new_resource(plr_instance, tree, dict(additional_params))
                     if parent is None and parent_uuid != self.resource_uuid:
@@ -1026,18 +1051,10 @@ class DeviceNode(ABC):
                             report_tree_set, parent_uuid, material_uuid
                         ),
                     )
-            elif self.resource_uuid:
-                # 设备自身的库位：给了 site/slot 就经权威 move 占用设备库位；否则只落父子关系
+            elif self.resource_uuid and device_site_uuid is None:
+                # 挂到设备自身、没指定库位：只落父子关系（指定了库位的已在本地挂载前 move 过）
                 for material_uuid in resource_uuids:
-                    if device_site_uuid is None:
-                        await self._attach_root_to_device(material_uuid)
-                        continue
-                    await self._require_resource_service().move_resource(
-                        self.device_id,
-                        self.resource_uuid,
-                        material_uuid,
-                        destination_site_uuid=device_site_uuid,
-                    )
+                    await self._attach_root_to_device(material_uuid)
             # 4. 同步：挂载后的父树经 update_resource 直连权威（权威已有 create 记录，严禁 add）
             stage = "快照回报"
             for tree in report_tree_set.trees:

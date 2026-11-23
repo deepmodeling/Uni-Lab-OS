@@ -222,3 +222,63 @@ def test_assign_puts_at_most_one_material_on_a_site(device) -> None:
 
     with pytest.raises(ValueError, match="一个库位只能放一个物料"):
         materials.assign(device["node"], [first, second], slot="slot_a")
+
+
+def test_assign_onto_an_occupied_device_site_leaves_nothing_mounted(device) -> None:
+    """权威拒绝（库位被占）时本地还没动：物料不进设备 tracker，权威父物料不变。"""
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    first = materials.create(plate("first"), node=node, site="slot_a", gateway=gateway)
+    loose = materials.create(plate("loose"), gateway=gateway)
+
+    with pytest.raises(Exception, match="occupied"):
+        materials.assign(node, loose, slot="slot_a")
+
+    assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
+    assert [res.name for res in node.resource_tracker.resources] == ["first"]
+    assert service.get_material(loose.unilabos_uuid).material.parent_material_uuid is None
+    assert _site(service, device["device_uuid"], "slot_a").occupied_material_uuid == first.unilabos_uuid
+
+
+def test_assign_moves_a_nested_material_off_its_plr_parent_onto_a_device_site(device) -> None:
+    """本地 PLR 父物料下的孩子放到设备库位：本地也从原父物料卸下，原父树之后照常快照。"""
+
+    from pylabrobot.resources import Coordinate, Resource
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    holder = Resource("holder", size_x=200, size_y=200, size_z=10, category="container")
+    holder.assign_child_resource(plate("inner"), location=Coordinate(0, 0, 0))
+    created = materials.create(holder, node=node, site="slot_a", gateway=gateway)
+    inner = next(child for child in created.children if child.name == "inner")
+
+    materials.assign(node, inner, slot="slot_b")
+
+    assert service.get_material(inner.unilabos_uuid).material.parent_material_uuid == device["device_uuid"]
+    assert _site(service, device["device_uuid"], "slot_b").occupied_material_uuid == inner.unilabos_uuid
+    assert inner.parent is None and created.children == []
+    assert {res.name for res in node.resource_tracker.resources} == {"holder", "inner"}
+    assert node.resource_tracker.parent_resource(inner) is None
+    # 原父树与权威一致：严格快照不再因为「本地多一个孩子」被拒
+    materials.update(node, created)
+    materials.update(node, inner)
+
+
+def test_assign_rejects_another_devices_site_uuid(device) -> None:
+    """``site`` 给的 uuid 必须是本设备的库位；别的设备的 Site 不会被当成本设备的。"""
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    other_uuid = str(uuid4())
+    other = ResourceDictInstance(ResourceDict.model_validate({
+        **_device_config(other_uuid).res_content.model_dump(by_alias=True), "id": "other", "name": "other",
+    }))
+    apply_device_authority_state(other, {"available_sites": [{"index": 1, "label": "o1"}]}, DEVICE_TEMPLATE,
+                                 gateway=gateway)
+    foreign = _site(service, other_uuid, "o1")
+    loose = materials.create(plate("wanderer"), gateway=gateway)
+
+    with pytest.raises(ValueError, match="不存在"):
+        materials.assign(node, loose, site=foreign.site_uuid)
+
+    assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
+    assert service.get_material(loose.unilabos_uuid).material.parent_material_uuid is None
+    assert _site(service, other_uuid, "o1").occupied_material_uuid is None

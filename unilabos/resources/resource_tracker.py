@@ -2108,6 +2108,8 @@ class DeviceNodeResourceTracker(object):
                 logger.warning(f"资源{resource}已存在，旧资源: {duplicate}")
         self.resources.append(resource)
         self._index(resource)
+        # 登记成根树：它此前若是某棵树的孩子（已从 PLR 父物料卸下），父索引作废
+        self._parents.pop(id(resource), None)
         observer = getattr(self, "_material_snapshot_observer", None)
         if observer is not None:
             observer.observe(resource)

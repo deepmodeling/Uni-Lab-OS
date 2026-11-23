@@ -4,8 +4,8 @@
 
 | 使用者 | 通道 | 内容 |
 | --- | --- | --- |
-| 浏览器工作流页、日志页 | SSE `/api/v1/events` | 持久工作流变更 + 瞬时日志失效通知 |
-| 浏览器物料库、地图 | SSE `/api/v1/materials/events` | 物料账本变更通知 |
+| 浏览器（每个工站一条） | SSE `/api/v1/events` | 持久工作流变更 + 瞬时日志失效通知 + 瞬时物料失效通知（`material.changed`） |
+| 需要按账本续传 / 精确失效的客户端 | SSE `/api/v1/materials/events` | 物料账本变更通知（`materials.changed`，带 sequence 游标） |
 | Host ↔ 微后端/上游 Backend | WS `/api/v1/ws/schedule` + HTTP | runtime.v1 控制、命令正文与事件回收 |
 | Host ↔ Slave | HostLink TCP，默认 7302 | 握手、路由、RPC、topic、物料投影、日志 |
 | 本机 AI 客户端 | Streamable HTTP `/mcp` | 工具调用，不是上述浏览器事件流 |
@@ -31,6 +31,11 @@
 | 无事件时 | keepalive 注释；工作流检查约 1 秒，心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
 
 三个游标相互独立：工作流 id、物料 sequence、日志 stream:offset。不能混用，也不能以最后日志通知替换工作流游标。
+
+`/api/v1/events` 上的 `material.changed` 与日志通知一样**不带 id**：本进程持有物料权威时，后端约每秒比较一次
+账本末尾序号，变了就推 `event: material.changed` + `data: {"sequence": <账本末尾>}`。它只说明"物料变了、请重读"，
+不回放、不占工作流游标；断线期间的物料变化由重连后的 REST 补读覆盖。浏览器因此每个工站只需维持
+`/api/v1/events` 一条长连接（HTTP/1.1 下每个源最多约 6 条连接，多开标签页时第二条流会挤占 REST）。
 后端内部检查账本不等于要求浏览器每秒 GET 全量数据；前端维持事件流，仅在失效时拉取。
 
 ### 物料通知

@@ -86,6 +86,42 @@ def test_ledger_advance_lists_the_changed_materials_without_an_id(monkeypatch):
     assert _data(frame) == {"sequence": 7, "material_uuids": ["deck", "plate"]}
 
 
+def test_a_slow_ledger_read_does_not_stall_the_event_loop(monkeypatch):
+    """读账本要拿物料库的锁，写事务持锁时读会等；这段等待在工作线程里，不卡住事件循环上的其它连接。"""
+
+    import time
+
+    _quiet(monkeypatch)
+
+    class _SlowLedger(_Ledger):
+        def latest_ledger_sequence(self) -> int:
+            time.sleep(0.6)
+            return self.tail
+
+    async def scenario():
+        stream = events.runtime_event_stream(
+            _Request(), _workflow(), cursor=41,
+            materials=events.MaterialNotices(_SlowLedger(3, rows=[(3, "material", "m")])), material_cursor=2,
+        )
+        assert "connected" in await anext(stream)
+        ticks: list[float] = []
+
+        async def ticker():
+            for _ in range(30):
+                ticks.append(time.monotonic())
+                await asyncio.sleep(0.02)
+
+        beat = asyncio.create_task(ticker())
+        frame = await asyncio.wait_for(anext(stream), 3)
+        await beat
+        await stream.aclose()
+        return frame, max(later - earlier for earlier, later in zip(ticks, ticks[1:]))
+
+    frame, worst_gap = asyncio.run(scenario())
+    assert _data(frame) == {"sequence": 3, "material_uuids": ["m"]}
+    assert worst_gap < 0.3
+
+
 def test_template_change_asks_for_a_full_reload(monkeypatch):
     _quiet(monkeypatch)
     ledger = _Ledger(9, rows=[(8, "material", "plate"), (9, "resource_template", "tpl")])

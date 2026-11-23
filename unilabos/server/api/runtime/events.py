@@ -98,16 +98,20 @@ class MaterialNotices:
         if len(rows) > MATERIAL_NOTICE_WINDOW:
             return None
         changed: set[str] = set()
+        sites: set[str] = set()
         for row in rows:
             if row.aggregate_type == "material":
                 changed.add(row.aggregate_uuid)
             elif row.aggregate_type == "site":
-                site = self._service.get_site(row.aggregate_uuid, include_deleted=True)
-                if site is not None:
-                    changed.add(site.owner_material_uuid)
+                sites.add(row.aggregate_uuid)
             elif row.aggregate_type == "resource_template":
                 # 模板变化可能改变很多物料的展示，不逐个列
                 return None
+        # 同一个 Site 在一段账本里常出现多次（占用、释放），每个只查一次所属物料
+        for site_uuid in sorted(sites):
+            site = self._service.get_site(site_uuid, include_deleted=True)
+            if site is not None:
+                changed.add(site.owner_material_uuid)
         return sorted(changed)
 
 
@@ -136,6 +140,19 @@ def _changed_materials(materials: MaterialNotices, after: int, upto: int) -> lis
         return materials.changed_materials(after, upto)
     except Exception:  # noqa: BLE001 - 列不出来就让客户端整体重读
         return None
+
+
+def _poll_materials(materials: MaterialNotices, cursor: int) -> tuple[int, list[str] | None]:
+    """账本末尾，以及 ``(cursor, 末尾]`` 里变了的物料；末尾变小（库被重置）时不列。
+
+    在工作线程里跑（``asyncio.to_thread``）：读账本要拿物料库的锁，写事务持锁期间读会等，
+    放在事件循环上会卡住这个进程的全部连接。
+    """
+
+    latest = _latest_material_sequence(materials, cursor)
+    if latest <= cursor:
+        return latest, None
+    return latest, _changed_materials(materials, cursor, latest)
 
 
 def material_changed_frame(sequence: int, material_uuids: list[str] | None = None) -> str:
@@ -192,13 +209,8 @@ async def runtime_event_stream(
                 next_workflow = now + 1
                 if materials is not None:
                     # 账本末尾变了就发一次失效，列出这段区间里变了的物料；库被重置（末尾变小）时不列，整体重读。
-                    latest_material = _latest_material_sequence(materials, material_cursor)
+                    latest_material, changed = await asyncio.to_thread(_poll_materials, materials, material_cursor)
                     if latest_material != material_cursor:
-                        changed = (
-                            _changed_materials(materials, material_cursor, latest_material)
-                            if latest_material > material_cursor
-                            else None
-                        )
                         material_cursor = latest_material
                         yield material_changed_frame(latest_material, changed)
                 if service is not None:
@@ -264,7 +276,9 @@ def create_runtime_events_router(service=None) -> APIRouter:
             cursor = service.latest_event_sequence() if service is not None else 0
         # 物料账本基线同样在响应头之前固定：onopen 后的 REST 补读覆盖此前的物料变化。
         materials = material_notices()
-        material_cursor = _latest_material_sequence(materials, 0) if materials is not None else 0
+        material_cursor = (
+            await asyncio.to_thread(_latest_material_sequence, materials, 0) if materials is not None else 0
+        )
         return StreamingResponse(
             runtime_event_stream(
                 request,

@@ -172,6 +172,81 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
     error_of(client.get(f"/api/v1/materials/{bottle['uuid']}"), 6000)
 
 
+def test_v1_material_records_carry_inventory_facts(client) -> None:
+    """V1 物料 DTO 带 inventory_status / inventory_presence / disposition，由生命周期派生。"""
+
+    from unilabos.server.services.materials.resource_contract import inventory_facts
+
+    identities = _templates(client)
+    bottle = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-1"}), status=201)
+    in_stock = {"inventory_status": "warehouse", "inventory_presence": "current", "disposition": "active"}
+    assert {key: bottle[key] for key in in_stock} == in_stock
+    listed = ok_data(client.get("/api/v1/materials"))["items"][0]
+    assert {key: listed[key] for key in in_stock} == in_stock
+    node = ok_data(client.get("/api/v1/materials/graph"))["nodes"][0]["material"]
+    assert {key: node[key] for key in in_stock} == in_stock
+
+    # 只有在库（active）能被新任务预留；设备不是库存物料；软删记为废弃
+    assert inventory_facts("plate", "reserved", None)["inventory_status"] == "reserved"
+    assert inventory_facts("plate", "in_use", None)["inventory_status"] == "in_use"
+    assert inventory_facts("plate", "quarantined", None)["inventory_status"] == "quarantined"
+    assert inventory_facts("plate", "consumed", None)["inventory_status"] == "consumed"
+    assert inventory_facts("plate", "retired", None)["inventory_status"] == "used"
+    assert inventory_facts("device", "active", None) == {
+        "inventory_status": None, "inventory_presence": None, "disposition": None,
+    }
+    assert inventory_facts("plate", "retired", 123)["disposition"] == "discarded"
+
+
+def test_material_list_filters_by_category_scope_and_empty_containers(client) -> None:
+    identities = _templates(client)
+    empty = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "空瓶"}), status=201)
+    filled = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "样品瓶"}), status=201)
+    ok_data(client.post("/api/v1/samples", json={
+        "material_uuid": filled["uuid"], "code": "S-01", "name": "血清", "quantity": 0, "quantity_unit": "ml"}), status=201)
+
+    def uuids(**params) -> set[str]:
+        return {item["uuid"] for item in ok_data(client.get("/api/v1/materials", params=params))["items"]}
+
+    assert uuids(category="material") == {empty["uuid"], filled["uuid"]}
+    assert uuids(category="device") == set()
+    # 数量为 0 的有效登记仍算非空
+    assert uuids(empty_containers_only="true") == {empty["uuid"]}
+    history = ok_data(client.get("/api/v1/materials", params={"inventory_scope": "history"}))
+    assert history["items"] == [] and history["total"] == 0
+    assert uuids(inventory_scope="current") == {empty["uuid"], filled["uuid"]}
+    error_of(client.get("/api/v1/materials", params={"inventory_scope": "bogus"}), 1000)
+    error_of(client.get("/api/v1/materials", params={"category": "bogus"}), 1000)
+
+
+def test_material_graph_rereads_only_the_named_materials_and_their_site_owners(client) -> None:
+    identities = _templates(client)
+    rack = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["tube_rack_2"], "name": "架-1"}), status=201)
+    bottle = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-1",
+        "site_placement": {"action": "place", "site_uuid": rack["site_uuids"][0]},
+    }), status=201)
+    ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "旁边的瓶"}), status=201)
+
+    def graph(**params) -> dict:
+        return ok_data(client.get("/api/v1/materials/graph", params=params))
+
+    assert len(graph()["nodes"]) == 3
+    # 瓶在架的库位上：客户端要在同一响应里解析 current_site_uuid，架也一起回来
+    partial = graph(material_uuid=[bottle["uuid"]])
+    assert {node["material"]["uuid"] for node in partial["nodes"]} == {bottle["uuid"], rack["uuid"]}
+    assert all(link["source_uuid"] in {bottle["uuid"], rack["uuid"]} for link in partial["links"])
+    # 不存在 / 已删除的物料不返回：客户端据此从图里移除
+    assert graph(material_uuid=["00000000-0000-4000-8000-000000000000"])["nodes"] == []
+    assert graph(inventory_scope="history") == {"nodes": [], "links": []}
+    error_of(client.get("/api/v1/materials/graph", params={"inventory_scope": "bogus"}), 1000)
+
+
 def test_literal_dev_routes_are_not_captured_by_material_uuid_route(client) -> None:
     # dev 独有的字面量路由先于 V1 的 /materials/{material_uuid} 注册
     assert isinstance(ok_data(client.get("/api/v1/materials/registry-classes")), list)

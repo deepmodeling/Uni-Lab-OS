@@ -3373,7 +3373,10 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
     def import_legacy_workflow(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
         """V1 ``POST /workflows/import``：旧版 JSON 图（直接或 ``data`` 包装）重建身份后原子导入。"""
 
-        from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
+        from unilabos.server.services.runtime.workflow.definition_edit import (
+            duplicate_graph,
+            is_derived_inventory_requirements,
+        )
 
         definition = payload.get("data") if isinstance(payload.get("data"), dict) else payload
         name = definition.get("name") or definition.get("workflow_name")
@@ -3383,8 +3386,14 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         edges = definition.get("edges") or []
         if not isinstance(nodes, list) or not nodes or not isinstance(edges, list):
             raise WorkflowError("invalid_input", detail="nodes 必须是至少包含一个节点的数组，edges 必须是数组")
-        if definition.get("inventory_requirements") not in (None, []):
-            raise WorkflowError("invalid_input", detail="暂不支持在导入图中携带 inventory_requirements")
+        requirements = definition.get("inventory_requirements")
+        # 读图返回的图根列表是从节点派生的只读投影：导出后原样导入时它是回声，忽略即可（导入后照样从
+        # 节点派生）；与节点对不上的列表是手写的图根需求，仍不支持——需求写在节点 meta_data 上。
+        if requirements not in (None, []) and not is_derived_inventory_requirements(definition, requirements):
+            raise WorkflowError(
+                "invalid_input",
+                detail="暂不支持在导入图中携带与节点不一致的 inventory_requirements（需求写在节点 meta_data.inventory_requirements）",
+            )
         try:
             for index, node in enumerate(nodes):
                 if not isinstance(node, dict):

@@ -387,6 +387,22 @@ def project_inventory_requirements(graph: Mapping[str, Any]) -> list[dict[str, A
     return projected
 
 
+def is_derived_inventory_requirements(graph: Mapping[str, Any], requirements: Any) -> bool:
+    """图根 ``inventory_requirements`` 是不是读图时从节点派生的那份（导出后原样导入的回声）。
+
+    比较时不看 ``uuid`` / ``workflow_uuid``：它们按工作流身份生成，导入会换身份。别的任何不同
+    （改了数量、多一条、手写一条）都不是回声。
+    """
+
+    if not isinstance(requirements, list) or not all(isinstance(item, Mapping) for item in requirements):
+        return False
+
+    def essence(items: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        return [{key: value for key, value in item.items() if key not in ("uuid", "workflow_uuid")} for item in items]
+
+    return essence(requirements) == essence(project_inventory_requirements(graph))
+
+
 def definition_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
     """返回本层节点和边，保留子操作合同 pin、具名实参及外部输出接线。"""
     owners = private_node_owners(graph["nodes"])
@@ -481,7 +497,9 @@ __all__ = [
     "create_node",
     "duplicate_graph",
     "duplicate_node",
+    "is_derived_inventory_requirements",
     "patch_node",
     "private_node_owners",
+    "project_inventory_requirements",
     "restore_private_subgraphs",
 ]

@@ -142,3 +142,40 @@ def test_saved_node_requirements_come_back_in_the_v1_graph(api) -> None:
         )
     # 节点上的原条目保持不变（调度据此预留）
     assert graph["nodes"][0]["meta_data"]["inventory_requirements"][0]["key"] == "water"
+
+
+def test_an_exported_graph_imports_again_and_a_handwritten_root_list_is_still_refused(api) -> None:
+    """读图带回派生的图根列表；原样导入时它只是回声，导入后从新节点重新派生。改过的列表不是回声，照旧拒绝。"""
+
+    client, _service = api
+    workflow = _ok(client.post("/api/v1/workflows", json={"name": "导出", "workflow_type": "experiment_operation"}), 201)
+    node = {
+        "uuid": str(uuid4()), "name": "加液", "type": "device_action", "material_uuid": str(uuid4()),
+        "action_name": "fill_well", "action_type": "UniLabJsonCommand", "param": {"slot": "T1"},
+        "pose": {"x": 0, "y": 0}, "execution_policy": {"depends_on": []},
+        "meta_data": {
+            "target_device_id": "material_bench",
+            "inventory_requirements": [
+                {"key": "water", "kind": "lot", "template_uuid": WATER_TEMPLATE, "quantity": 1200.0, "unit": "ul"}
+            ],
+        },
+    }
+    _ok(client.put(f"/api/v1/workflows/{workflow['uuid']}/graph", json={
+        "revision": workflow["revision"], "nodes": [node], "edges": [],
+    }))
+    exported = _ok(client.get(f"/api/v1/workflows/{workflow['uuid']}/graph"))
+    assert len(exported["inventory_requirements"]) == 1
+
+    response = client.post("/api/v1/workflows/import", json={**exported, "name": "导出副本"})
+    assert response.status_code in (200, 201) and response.json()["code"] == 0, response.text
+    imported = response.json()["data"]
+    copy_uuid = (imported.get("workflow") or imported)["uuid"]
+    copy = _ok(client.get(f"/api/v1/workflows/{copy_uuid}/graph"))
+    [item] = copy["inventory_requirements"]
+    assert item["workflow_uuid"] == copy_uuid and item["consume_node_uuid"] == copy["nodes"][0]["uuid"]
+    assert (item["requirement_key"], item["required_quantity"]) == ("water", 1200.0)
+
+    edited = [{**exported["inventory_requirements"][0], "required_quantity": 5.0}]
+    refused = client.post("/api/v1/workflows/import", json={**exported, "name": "手写", "inventory_requirements": edited})
+    assert refused.status_code == 200 and refused.json()["code"] == 1000
+    assert "inventory_requirements" in refused.json()["error"]["msg"]

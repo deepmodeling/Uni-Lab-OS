@@ -162,6 +162,33 @@ class DeviceNode(ABC):
             observer.set_service(service)
         self.__dict__["_material_snapshot_observer"] = observer
         observer.observe_all(list(tracker.resources))
+        self._detach_legacy_materials(service, tracker)
+
+    def _detach_legacy_materials(self, service: Any, tracker: Any) -> None:
+        """初始化时拆下的非 PLR 物料在权威里移出设备子树（移成独立根物料，释放占着的库位）。
+
+        本地树已经没有它们；权威那棵树里若还挂着，两边永远对不上，这棵树的严格快照全被拒。
+        移成功的从待办里去掉；失败的留着报错，下次拿到物料服务时再试。设备构造期就可能走到这里
+        （ROS 2 节点在 ``Node.__init__`` 之前设物料服务），所以用模块 logger。
+        """
+
+        from unilabos.utils import logger
+
+        pending = getattr(tracker, "legacy_material_uuids", None)
+        move = getattr(service, "move_resource_sync", None)
+        if not pending or not callable(move):
+            return
+        for material_uuid in list(pending):
+            try:
+                move(str(self.device_id), str(self.resource_uuid or ""), material_uuid, parent_material_uuid=None)
+            except Exception as exc:  # noqa: BLE001 - 失败只影响这棵树的快照，设备照常运行
+                logger.error(
+                    f"设备 {self.device_id} 的非 PLR 物料 {material_uuid} 没能移出设备子树（{exc}）；"
+                    "在它被移走或删除之前，它所在那棵树的快照会被权威拒绝"
+                )
+                continue
+            pending.remove(material_uuid)
+            logger.warning(f"设备 {self.device_id} 的非 PLR 物料 {material_uuid} 已在权威里移出设备子树，成为独立根物料")
 
     def _invalidate_material_baselines(self) -> None:
         """权威侧结构已变（下行投影 / 挂载）：本地缓存的根树基线作废，下次 flush 重拉一次。"""

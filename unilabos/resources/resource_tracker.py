@@ -2056,6 +2056,9 @@ class DeviceNodeResourceTracker(object):
         self.uuid_to_resources: Dict[str, Any] = {}
         self._names: Dict[str, List[Any]] = {}
         self._parents: Dict[int, Any] = {}
+        #: 设备初始化时从子树拆下、还没在权威里移出设备子树的非 PLR 物料（各枝的根 uuid）；
+        #: 节点拿到物料服务时逐个移出（见 ``DeviceNode.set_resource_service``）
+        self.legacy_material_uuids: List[str] = []
 
     # ── 索引维护 ──────────────────────────────────────────────
 

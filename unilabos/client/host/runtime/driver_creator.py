@@ -36,13 +36,19 @@ class ClassCreator(Generic[T]):
 
 
 def _plr_children(
-    device_cls: Type[Any], children: List[ResourceDictInstance]
+    device_cls: Type[Any],
+    children: List[ResourceDictInstance],
+    resource_tracker: Optional[DeviceNodeResourceTracker] = None,
 ) -> List[ResourceDictInstance]:
     """设备初始化拿到的子树先拆一遍：每棵物料子树只留能按 PLR 反序列化的部分。
 
     挂载用的物料、构造设备要一起带上的物料（液体工作站的台面、工作站的 deck）都从这里取，
     同一套拆法。拆下来的非 PLR 物料（升级前遗留，没有 ``config.type``）连同挂在它下面的物料
     不挂到设备本地，逐个点名报错；整台设备照常初始化。子设备由它自己的构造器处理，不在这里拆。
+
+    拆下的各枝记在 ``resource_tracker.legacy_material_uuids``：节点拿到物料服务时把它们在权威里
+    移出设备子树（成为独立根物料）。否则权威的树里还挂着它们，与本地树永远对不上，这棵树的
+    严格快照全被拒，设备运行中的状态变化（体积、枪头……）都会丢。
     """
 
     device_name = getattr(device_cls, "__name__", str(device_cls))
@@ -55,11 +61,14 @@ def _plr_children(
         for content in pruned:
             logger.error(
                 "设备 %s 下的物料 %s（%s）不是 PLR 物料（没有 config.type），连同挂在它下面的物料"
-                "没有挂到设备本地；请移走或删除它，再按注册表资源类经 materials.create 重新创建",
+                "没有挂到设备本地，并会在权威里移出设备子树（成为独立根物料）；请按注册表资源类经 "
+                "materials.create 重新创建它，再删除这条旧物料",
                 device_name,
                 content.id,
                 content.uuid,
             )
+            if resource_tracker is not None and content.uuid:
+                resource_tracker.legacy_material_uuids.append(str(content.uuid))
         if tree is not None:
             result.append(tree)
     return result
@@ -76,8 +85,8 @@ class DeviceClassCreator(Generic[T]):
     ) -> None:
         self.device_cls = cls
         self.device_instance: Optional[T] = None
-        self.children = _plr_children(cls, children)
         self.resource_tracker = resource_tracker
+        self.children = _plr_children(cls, children, resource_tracker)
 
     def attach_resource(self) -> None:
         if self.device_instance is None:

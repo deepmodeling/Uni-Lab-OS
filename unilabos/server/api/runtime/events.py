@@ -21,9 +21,10 @@ REST 读取当前状态，不需要回放历史。
 ``graph_saved`` / ``published``），都与变更同一事务写入。游标与 ``stream.reset`` 协议不变。
 
 物料失效：本进程持有物料权威时，物料账本前进就推一条**不带 id** 的 ``material.changed``
-（``data: {"sequence": <账本末尾序号>}``），与日志通知一样不动工作流游标。只维持这一条事件流的
-前端据此重读物料；要按账本 sequence 续传、按 aggregate 精确失效的客户端仍用
-``/api/v1/materials/events``（``materials.changed``）。
+（``data: {"sequence": <账本末尾序号>, "material_uuids": [...]}``），与日志通知一样不动工作流游标。
+``material_uuids`` 是这段账本里变了的物料（Site 的变化归到所属物料）；列不准时（条目过多、模板变化、
+库被重置）省略它，表示整体重读。只维持这一条事件流的前端据此重读物料；要按账本 sequence 续传的
+客户端仍用 ``/api/v1/materials/events``（``materials.changed``）。
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Callable
 
 from typing import Any, Dict
 
@@ -74,28 +74,80 @@ def to_v1_event(event: Dict[str, Any]) -> Dict[str, Any]:
     return {**event, "event": name, "data": data}
 
 
-def material_sequence_reader() -> Callable[[], int] | None:
-    """本进程持有物料权威时返回"账本末尾序号"读取函数；Host 子进程等没有权威的进程返回 None。"""
+#: 一次通知最多列出的账本条目；超过就不列物料，让客户端整体重读
+MATERIAL_NOTICE_WINDOW = 500
+
+
+class MaterialNotices:
+    """本进程物料权威的账本视图：末尾序号，以及一段区间里哪些物料变了。"""
+
+    def __init__(self, service: Any):
+        self._service = service
+
+    def latest(self) -> int:
+        return int(self._service.latest_ledger_sequence())
+
+    def changed_materials(self, after: int, upto: int) -> list[str] | None:
+        """``(after, upto]`` 里变了的物料 uuid（Site 的变化归到它的所属物料）。
+
+        返回 None 表示列不准（条目超过窗口、模板变了），客户端应整体重读。
+        """
+
+        rows = self._service.changes(after_sequence=after, limit=MATERIAL_NOTICE_WINDOW + 1)
+        rows = [row for row in rows if row.sequence <= upto]
+        if len(rows) > MATERIAL_NOTICE_WINDOW:
+            return None
+        changed: set[str] = set()
+        for row in rows:
+            if row.aggregate_type == "material":
+                changed.add(row.aggregate_uuid)
+            elif row.aggregate_type == "site":
+                site = self._service.get_site(row.aggregate_uuid, include_deleted=True)
+                if site is not None:
+                    changed.add(site.owner_material_uuid)
+            elif row.aggregate_type == "resource_template":
+                # 模板变化可能改变很多物料的展示，不逐个列
+                return None
+        return sorted(changed)
+
+
+def material_notices() -> MaterialNotices | None:
+    """本进程持有物料权威时返回账本视图；Host 子进程等没有权威的进程返回 None。"""
 
     try:
         from unilabos.server.execution_composition import get_materials_service
     except ImportError:
         return None
-    reader = getattr(get_materials_service(), "latest_ledger_sequence", None)
-    return reader if callable(reader) else None
+    service = get_materials_service()
+    if service is None or not callable(getattr(service, "latest_ledger_sequence", None)):
+        return None
+    return MaterialNotices(service)
 
 
-def _read_material_sequence(reader: Callable[[], int], fallback: int) -> int:
+def _latest_material_sequence(materials: MaterialNotices, fallback: int) -> int:
     try:
-        return int(reader())
+        return materials.latest()
     except Exception:  # noqa: BLE001 - 读不到账本只是这一轮不发失效，不能断开工作流事件流
         return fallback
 
 
-def material_changed_frame(sequence: int) -> str:
-    """不写 SSE id：Last-Event-ID 只表示工作流持久事件的序号。"""
+def _changed_materials(materials: MaterialNotices, after: int, upto: int) -> list[str] | None:
+    try:
+        return materials.changed_materials(after, upto)
+    except Exception:  # noqa: BLE001 - 列不出来就让客户端整体重读
+        return None
 
-    data = json.dumps({"sequence": sequence}, separators=(",", ":"))
+
+def material_changed_frame(sequence: int, material_uuids: list[str] | None = None) -> str:
+    """不写 SSE id：Last-Event-ID 只表示工作流持久事件的序号。
+
+    ``material_uuids`` 缺省表示"列不准，整体重读"；给出时客户端只重读这些物料。
+    """
+
+    payload: Dict[str, Any] = {"sequence": sequence}
+    if material_uuids is not None:
+        payload["material_uuids"] = material_uuids
+    data = json.dumps(payload, separators=(",", ":"))
     return f"event: {MATERIAL_CHANGED_EVENT}\ndata: {data}\n\n"
 
 
@@ -106,7 +158,7 @@ async def runtime_event_stream(
     *,
     watermark: bool = False,
     replay: bool = False,
-    material_sequence: Callable[[], int] | None = None,
+    materials: MaterialNotices | None = None,
     material_cursor: int = 0,
 ):
     from unilabos.server.api.runtime.workflow import format_sse_event
@@ -138,12 +190,17 @@ async def runtime_event_stream(
             now = time.monotonic()
             if now >= next_workflow:
                 next_workflow = now + 1
-                if material_sequence is not None:
-                    # 账本末尾变了（前进，或库被重置后变小）就发一次失效；只比较末尾，不回放账本。
-                    latest_material = _read_material_sequence(material_sequence, material_cursor)
+                if materials is not None:
+                    # 账本末尾变了就发一次失效，列出这段区间里变了的物料；库被重置（末尾变小）时不列，整体重读。
+                    latest_material = _latest_material_sequence(materials, material_cursor)
                     if latest_material != material_cursor:
+                        changed = (
+                            _changed_materials(materials, material_cursor, latest_material)
+                            if latest_material > material_cursor
+                            else None
+                        )
                         material_cursor = latest_material
-                        yield material_changed_frame(latest_material)
+                        yield material_changed_frame(latest_material, changed)
                 if service is not None:
                     oldest, latest, events = service.read_event_window(after_id=cursor, limit=101)
                     reason = None
@@ -206,8 +263,8 @@ def create_runtime_events_router(service=None) -> APIRouter:
             # “快照 → 订阅”之间的变化。纯执行面的 Host 没有 Workflow Authority。
             cursor = service.latest_event_sequence() if service is not None else 0
         # 物料账本基线同样在响应头之前固定：onopen 后的 REST 补读覆盖此前的物料变化。
-        material_sequence = material_sequence_reader()
-        material_cursor = _read_material_sequence(material_sequence, 0) if material_sequence is not None else 0
+        materials = material_notices()
+        material_cursor = _latest_material_sequence(materials, 0) if materials is not None else 0
         return StreamingResponse(
             runtime_event_stream(
                 request,
@@ -215,7 +272,7 @@ def create_runtime_events_router(service=None) -> APIRouter:
                 cursor,
                 watermark=fresh and service is not None,
                 replay=bool(value) and cursor == 0,
-                material_sequence=material_sequence,
+                materials=materials,
                 material_cursor=material_cursor,
             ),
             media_type="text/event-stream",

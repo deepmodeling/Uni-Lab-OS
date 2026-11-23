@@ -149,8 +149,9 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   （`task` / `node_run` / `node_job` / `manual_confirmation` / `resource`）放进 V1 事件，不再单独发事件名；
   原载荷字段保留。换名在 API 层（`api/runtime/events.py:to_v1_event`）做，`frontend_event` 表仍存 dev 名。
   `runtime.logs.changed`（无 id 的日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
-  V1 合同里，暂保持原名。物料失效另以 V1 名 `material.changed`（无 id，`data.sequence` 为账本末尾）随
-  `/api/v1/events` 推送，前端每个工站只维持这一条事件流。CLI `workflow watch` 同步修改。
+  V1 合同里，暂保持原名。物料失效另以 V1 名 `material.changed`（无 id，`data.sequence` 为账本末尾，
+  `data.material_uuids` 列出这段账本里变了的物料，Site 的变化归到所属物料；超过 500 条、涉及模板或账本重置时
+  省略，表示整体重读）随 `/api/v1/events` 推送，前端每个工站只维持这一条事件流。CLI `workflow watch` 同步修改。
 
 ## 库存与工作区（p7-c 落地）
 

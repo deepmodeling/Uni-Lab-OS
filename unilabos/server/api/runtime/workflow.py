@@ -518,7 +518,10 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
     def with_workflow_status(payload: Any) -> Any:
         """V1 图投影：工作流补派生状态与类别，节点 / 连线只呈现当前层（组合调用私有子图隐藏）。"""
 
-        from unilabos.server.services.runtime.workflow.definition_edit import definition_graph
+        from unilabos.server.services.runtime.workflow.definition_edit import (
+            definition_graph,
+            project_inventory_requirements,
+        )
 
         if not isinstance(payload, dict):
             return payload
@@ -527,7 +530,9 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             return payload
         projected = dict(payload)
         projected["workflow"] = public_workflow(workflow)
-        projected.setdefault("inventory_requirements", [])
+        # 库存需求只存在节点 meta_data 里（调度唯一来源）；V1 图根列表每次从节点派生，供客户端查看。
+        if not projected.get("inventory_requirements"):
+            projected["inventory_requirements"] = project_inventory_requirements(projected)
         return definition_graph(projected)
 
     def write_payload(body: BaseModel) -> Dict[str, Any]:

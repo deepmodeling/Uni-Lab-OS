@@ -1014,6 +1014,8 @@ class ResourceContract:
         if inventory_scope == INVENTORY_SCOPE_HISTORY:
             return {"nodes": [], "links": []}
         connection = self.materials.connection
+        # 空值（``?material_uuid=``）不算点名：只剩空值时按全量读，不返回空图
+        material_uuids = [item.strip() for item in material_uuids if item and item.strip()]
         if material_uuids:
             wanted = self._graph_closure(material_uuids)
             placeholders = ",".join("?" for _ in wanted)

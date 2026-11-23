@@ -243,6 +243,11 @@ def test_material_graph_rereads_only_the_named_materials_and_their_site_owners(c
     assert all(link["source_uuid"] in {bottle["uuid"], rack["uuid"]} for link in partial["links"])
     # 不存在 / 已删除的物料不返回：客户端据此从图里移除
     assert graph(material_uuid=["00000000-0000-4000-8000-000000000000"])["nodes"] == []
+    # 空值不算点名（``?material_uuid=``）：仍是全量
+    assert len(graph(material_uuid=[""])["nodes"]) == 3
+    assert {node["material"]["uuid"] for node in graph(material_uuid=["", bottle["uuid"]])["nodes"]} == {
+        bottle["uuid"], rack["uuid"],
+    }
     assert graph(inventory_scope="history") == {"nodes": [], "links": []}
     error_of(client.get("/api/v1/materials/graph", params={"inventory_scope": "bogus"}), 1000)
 

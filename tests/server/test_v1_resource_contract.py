@@ -172,6 +172,35 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
     error_of(client.get(f"/api/v1/materials/{bottle['uuid']}"), 6000)
 
 
+def test_v1_create_places_and_fills_in_one_transaction(client) -> None:
+    """建物料、放入库位与装液是同一个事务：装液失败时物料与落位一起回滚，库位仍空、不留半成品。"""
+
+    identities = _templates(client)
+    rack = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["tube_rack_2"], "name": "架-T"}), status=201)
+    site_uuid = rack["site_uuids"][0]
+
+    def total() -> int:
+        return ok_data(client.get("/api/v1/materials", params={"page": 1, "page_size": 100}))["total"]
+
+    before = total()
+    failed = client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-坏",
+        "site_placement": {"action": "place", "site_uuid": site_uuid},
+        "reagent": {"quantity": 5},  # 缺 quantity_unit：装液被拒
+    })
+    assert failed.json()["code"] == 1000, failed.text
+    assert total() == before
+    assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] is None
+
+    placed = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-好",
+        "site_placement": {"action": "place", "site_uuid": site_uuid},
+    }), status=201)
+    assert placed["current_site"]["uuid"] == site_uuid and placed["parent_uuid"] == rack["uuid"]
+    assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] == placed["uuid"]
+
+
 def test_v1_material_records_carry_inventory_facts(client) -> None:
     """V1 物料 DTO 带 inventory_status / inventory_presence / disposition，由生命周期派生。"""
 

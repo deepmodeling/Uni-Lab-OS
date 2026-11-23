@@ -22,6 +22,7 @@ from unilabos.protocol.materials import (
     MaterialMove,
     MaterialNodeCreate,
     MaterialPatch,
+    MaterialPlacement,
     MaterialPosition,
     MaterialTreeCreate,
     ResourceTemplateRead,
@@ -616,7 +617,13 @@ class ResourceContract:
         if isinstance(relative, Mapping):
             position = self._position_from_v1(relative)
         material_uuid = str(uuid4())
-        tree = MaterialTreeCreate(nodes=[MaterialNodeCreate(
+        # 放入库位 = 挂到库位的所属物料并占用它；只给父物料 = 只落父子关系。与建树同一事务（MaterialPlacement）
+        tree_placement: Optional[MaterialPlacement] = None
+        if site_uuid:
+            tree_placement = MaterialPlacement(parent_material_uuid=site.owner_material_uuid, site=site_uuid)
+        elif parent_uuid:
+            tree_placement = MaterialPlacement(parent_material_uuid=parent_uuid)
+        tree = MaterialTreeCreate(placement=tree_placement, nodes=[MaterialNodeCreate(
             client_ref="material",
             material_uuid=material_uuid,
             identity=MaterialIdentityWrite(
@@ -633,38 +640,27 @@ class ResourceContract:
             ),
             position=position,
         )])
+        reagent = values.get("reagent")
+        content: Optional[dict[str, Any]] = None
         try:
-            self.materials.create_tree(
-                new_mutation("create_material_tree", payload=tree.model_dump(mode="json", exclude_none=False)), tree
-            )
+            # 建树、落位与装液在同一个外层事务里（写入口可重入，内层不提交）：任一步失败整体回滚，
+            # 不留下建了一半、没落位或没装液的物料，也不需要事后补偿删除
+            with self.materials.write():
+                self.materials.create_tree(
+                    new_mutation("create_material_tree", payload=tree.model_dump(mode="json", exclude_none=False)),
+                    tree,
+                )
+                if isinstance(reagent, Mapping):
+                    from unilabos.server.services.materials.contents import ContentContract
+
+                    content = ContentContract(self.materials).create_reagent(
+                        {**reagent, "material_uuid": material_uuid}
+                    )
         except MaterialConflictError as exc:
             if exc.conflict is None:
                 raise MaterialConflictError(
                     "Material barcode or sibling name conflicts with an existing material", conflict="identity"
                 ) from None
-            raise
-        try:
-            if site_uuid or parent_uuid:
-                move = MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid,
-                                    parent_material_uuid=None if site_uuid else parent_uuid)
-                self.materials.move_material(
-                    new_mutation("move_material", payload=move.model_dump(mode="json", exclude_none=False)), move
-                )
-            reagent = values.get("reagent")
-            content: Optional[dict[str, Any]] = None
-            if isinstance(reagent, Mapping):
-                from unilabos.server.services.materials.contents import ContentContract
-
-                content = ContentContract(self.materials).create_reagent({**reagent, "material_uuid": material_uuid})
-        except Exception:
-            # 物料与放置 / 装液不是同一事务：后续步骤失败时撤销刚创建的空物料，不留半成品
-            delete = MaterialDelete(material_uuid=material_uuid, recursive=True)
-            try:
-                self.materials.delete_material(
-                    new_mutation("delete_material", payload=delete.model_dump(mode="json")), delete
-                )
-            except Exception:  # noqa: BLE001 - 补偿失败不掩盖原错误
-                pass
             raise
         result = self.material_detail(material_uuid)
         aggregate = self.materials.get_material(material_uuid)

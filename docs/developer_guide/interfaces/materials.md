@@ -56,6 +56,10 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 2. `POST /trees`：payload 为 `MaterialTreeCreate`。适合驱动/图同步提交已经序列化的完整草稿。
    `nodes` 必须非空、仅一个根、父节点在前、`client_ref` 唯一。
    Site 初始占用用 `occupied_client_ref` 引用树内节点，不携带自行分配的 site_uuid。
+   可选的树级 `placement`（`MaterialPlacement`：`parent_material_uuid` + 可选 `site`，即父物料上的 Site uuid、
+   label 或数字索引）让根物料在建树的同一事务里落到父物料的库位上。落位规则与 move 相同（库位占用、模板类别、
+   入口预留、环检测、设备子树只收 PLR 物料），不满足时整棵树一起回滚。命令入口按完整 dump 比对 payload，
+   不落位也要显式带 `placement: null`。
 
 `MaterialNodeCreate.material_uuid` 默认不填，由权威分配；开机图等需保留外部身份的场景可显式填写，
 这表示**有条件创建**，不是覆盖已存在同 UUID 的记录。

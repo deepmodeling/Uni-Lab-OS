@@ -393,13 +393,34 @@ class VirtualHeatingPlatform:
                 )
 
     @not_action
+    def _sample_identity(self, site_id: int) -> tuple[str, str]:
+        """新样品的 resource_id 与条码，两者在未删除的物料里都要唯一。
+
+        按设备与工位区分（同一实验室的第二台加热平台不和第一台撞条码）。工位原来的样品被移走
+        但还在（或升级时被移出设备子树的旧样品）时，``<设备>-sample-<工位>`` 已被占用：加序号
+        ``-2``、``-3``……建一个新样品，不去动那一个。
+        """
+
+        resource_id = f"{self.device_id}-sample-{site_id}"
+        barcode = f"OPENLAB-HEAT-{self.device_id}-{site_id}"
+        gateway = self._gateway()
+        for attempt in range(1, 100):
+            suffix = "" if attempt == 1 else f"-{attempt}"
+            try:
+                gateway.get_material_by_resource_id(resource_id + suffix)
+            except Exception:  # noqa: BLE001 - 查不到即可用；权威读不到时交给建树报错
+                return resource_id + suffix, barcode + suffix
+        raise RuntimeError(f"{self.device_id} 工位 {site_id} 找不到可用的样品 resource_id")
+
+    @not_action
     def _new_sample(self, site_id: int) -> VirtualHeatingSample:
         from unilabos.resources.resource_tracker import set_plr_template_name
 
+        resource_id, barcode = self._sample_identity(site_id)
         sample = VirtualHeatingSample(
-            f"{self.device_id}-sample-{site_id}",
+            resource_id,
             barcode=Barcode(
-                data=f"OPENLAB-HEAT-{site_id}",
+                data=barcode,
                 symbology="CODE128",
                 position_on_resource="front",
             ),

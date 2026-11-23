@@ -155,7 +155,7 @@ def test_heater_creates_plr_samples_on_its_own_sites_and_heats_them(heater) -> N
         assert sample.material.template_name == SAMPLE_TEMPLATE
         assert sample.material.resource_id == f"heater-demo-sample-{index}"
         assert sample.material.display_name == f"加热样品 {index}"
-        assert sample.material.barcode == f"OPENLAB-HEAT-{index}"
+        assert sample.material.barcode == f"OPENLAB-HEAT-heater-demo-{index}"
         assert sample.material.meta_data["display_color"] == SAMPLE_DISPLAY_COLORS[index - 1]
         # uuid → 实例唯一：驱动拿着的就是设备 tracker 登记的那一份
         instance = tracker.uuid_to_resources[sample.material.material_uuid]
@@ -244,6 +244,54 @@ def test_material_temperature_is_latest_passive_device_projection(heater) -> Non
     assert "temperature_history" not in material.data.data
     assert material.data.data["temperature_observed_at_ms"] > 0
     assert platform.site_1_temperature_c == 27.0
+
+
+def test_an_emptied_site_gets_a_new_sample_without_touching_the_one_that_left(heater) -> None:
+    """样品被移走后（还在别处），工位再用时放一个新样品：身份加序号，不和移走的那个撞。"""
+
+    from unilabos.protocol.materials import InventoryMutation, MaterialMove
+
+    platform = heater.start()
+    moved = heater.sites()["site_1"].occupied_material_uuid
+    command = str(uuid4())
+    heater.service.move_material(
+        InventoryMutation(command_uuid=command, effect_key=f"move_material:{command}", operation="move_material",
+                          actor_type="human", actor_uuid="test"),
+        MaterialMove(material_uuid=moved, parent_material_uuid=None),
+    )
+
+    result = platform.heat_site(
+        site_id=1, target_temperature_c=50.0, duration_seconds=0.1, action_context=ActionContext(action_id="refill")
+    )
+
+    fresh = heater.sites()["site_1"].occupied_material_uuid
+    assert fresh and fresh != moved and result["material_uuid"] == fresh
+    sample = heater.service.get_material(fresh).material
+    assert (sample.resource_id, sample.barcode) == ("heater-demo-sample-1-2", "OPENLAB-HEAT-heater-demo-1-2")
+    assert heater.service.get_material(fresh).data.data["temperature_c"] == 50.0
+    # 移走的那个原样留着
+    left = heater.service.get_material(moved).material
+    assert (left.resource_id, left.parent_material_uuid) == ("heater-demo-sample-1", None)
+
+
+def test_two_heaters_in_one_lab_each_get_their_samples(tmp_path, monkeypatch) -> None:
+    service = MaterialsService(tmp_path / "materials.db")
+    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
+    set_materials_gateway(LocalMaterialsClient(service))
+    first, second = _Heater(service, "heater-a"), _Heater(service, "heater-b")
+    try:
+        first.start()
+        second.start()
+        for rig in (first, second):
+            occupants = [site.occupied_material_uuid for site in rig.sites().values()]
+            assert len(occupants) == 3 and all(occupants)
+        barcodes = {item.material.barcode for item in service.list_materials() if item.material.barcode}
+        assert len(barcodes) == 6
+    finally:
+        second.stop()
+        first.stop()
+        set_materials_gateway(None)
+        service.close()
 
 
 def test_heater_needs_its_device_node() -> None:

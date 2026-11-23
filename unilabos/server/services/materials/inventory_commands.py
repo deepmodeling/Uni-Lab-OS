@@ -227,8 +227,16 @@ class InventoryCommands:
                     return self._replay(existing)
                 if handler is None:
                     raise UnsupportedCommand(f"unsupported inventory command type: {command_type}")
-                result = handler(dict(body.get("payload") or {}), command_id=command_id, actor=actor,
-                                 expected_version=body.get("expected_version"))
+                payload = body.get("payload")
+                if payload is not None and not isinstance(payload, Mapping):
+                    raise MaterialValidationError("payload must be an object")
+                try:
+                    result = handler(dict(payload or {}), command_id=command_id, actor=actor,
+                                     expected_version=body.get("expected_version"))
+                except (ValueError, TypeError) as exc:
+                    # 处理器就地解析载荷（int() / float() / dict()、构造 pydantic 模型）：字段类型不对是参数错误，
+                    # 与业务拒绝一样记账并回 1000，不当未知异常变成不带信封的 500。
+                    raise MaterialValidationError(f"invalid {command_type} payload: {exc}") from exc
                 connection.execute(
                     "INSERT INTO inventory_processed_command(command_id, command_type, request_hash, status, result_json, "
                     "actor, processed_at_ms) VALUES (?,?,?,'completed',?,?,?)",

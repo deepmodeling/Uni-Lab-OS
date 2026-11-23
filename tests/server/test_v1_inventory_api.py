@@ -108,6 +108,35 @@ def test_command_entry_runs_materials_v1_mutations_idempotently(stack) -> None:
     error_of(client.get("/api/v1/inventory/instances/missing"), 6000)
 
 
+@pytest.mark.parametrize(
+    ("command_type", "payload"),
+    [
+        ("inventory.template.upsert", {"template_id": "probe", "spec": "not-an-object"}),
+        ("inventory.reserve", {"workflow_id": "wf-1", "node_requirements": [{"quantity": "lots"}]}),
+        ("inventory.reconcile_count", {"lot_id": "lot-x", "measured_count": "many"}),
+        ("material.move", [1, 2]),
+    ],
+)
+def test_typed_command_with_malformed_payload_is_a_recorded_rejection(stack, command_type, payload) -> None:
+    """载荷字段类型不对（处理器里 dict() / int() / pydantic 校验失败）是参数错误：失败信封 1000、记账可重放，
+    不是不带信封的 500。"""
+
+    _service, client = stack
+    if command_type == "inventory.reconcile_count":
+        template = ResourceTemplateWrite(template_uuid="tip-template", name="tip", resource_type="consumable", class_name="Tip")
+        assert command_body(client.post("/api/v1/inventory/commands", json=_command("put_template", template)))["status"] == "completed"
+        lot = InventoryLotInbound(lot_uuid="lot-x", template_uuid="tip-template", unit="count", quantity=5)
+        assert command_body(client.post("/api/v1/inventory/commands", json=_command("inbound_inventory_lot", lot)))["status"] == "completed"
+    body = {"command_id": f"bad-{command_type}", "type": command_type, "payload": payload}
+    first = command_body(client.post("/api/v1/inventory/commands", json=body))
+    assert first["status"] == "rejected" and first["code"] == 1000 and first["replayed"] is False, first
+    assert first["error_code"] == "invalid_material"
+    replay = command_body(client.post("/api/v1/inventory/commands", json=body))
+    assert replay["status"] == "rejected" and replay["code"] == 1000 and replay["replayed"] is True
+    processed = ok_data(client.get("/api/v1/inventory/commands/processed"))["commands"]
+    assert [item["status"] for item in processed if item["command_id"] == body["command_id"]] == ["rejected"]
+
+
 def test_typed_lot_commands_inbound_correct_reconcile_and_reads(stack) -> None:
     service, client = stack
     _seed(client)

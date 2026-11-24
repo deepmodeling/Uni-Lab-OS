@@ -155,7 +155,7 @@ def test_heater_creates_plr_samples_on_its_own_sites_and_heats_them(heater) -> N
         assert sample.material.template_name == SAMPLE_TEMPLATE
         assert sample.material.resource_id == f"heater-demo-sample-{index}"
         assert sample.material.display_name == f"加热样品 {index}"
-        assert sample.material.barcode == f"OPENLAB-HEAT-heater-demo-{index}"
+        assert sample.material.barcode == f"OPENLAB-HEAT-heater-demo-sample-{index}"
         assert sample.material.meta_data["display_color"] == SAMPLE_DISPLAY_COLORS[index - 1]
         # uuid → 实例唯一：驱动拿着的就是设备 tracker 登记的那一份
         instance = tracker.uuid_to_resources[sample.material.material_uuid]
@@ -267,7 +267,7 @@ def test_an_emptied_site_gets_a_new_sample_without_touching_the_one_that_left(he
     fresh = heater.sites()["site_1"].occupied_material_uuid
     assert fresh and fresh != moved and result["material_uuid"] == fresh
     sample = heater.service.get_material(fresh).material
-    assert (sample.resource_id, sample.barcode) == ("heater-demo-sample-1-2", "OPENLAB-HEAT-heater-demo-1-2")
+    assert (sample.resource_id, sample.barcode) == ("heater-demo-sample-1-2", "OPENLAB-HEAT-heater-demo-sample-1-2")
     assert heater.service.get_material(fresh).data.data["temperature_c"] == 50.0
     # 移走的那个原样留着
     left = heater.service.get_material(moved).material
@@ -292,6 +292,66 @@ def test_two_heaters_in_one_lab_each_get_their_samples(tmp_path, monkeypatch) ->
         first.stop()
         set_materials_gateway(None)
         service.close()
+
+
+def _move_off(service: MaterialsService, material_uuid: str) -> None:
+    from unilabos.protocol.materials import InventoryMutation, MaterialMove
+
+    command = str(uuid4())
+    service.move_material(
+        InventoryMutation(command_uuid=command, effect_key=f"move_material:{command}", operation="move_material",
+                          actor_type="human", actor_uuid="test"),
+        MaterialMove(material_uuid=material_uuid, parent_material_uuid=None),
+    )
+
+
+def test_heaters_whose_ids_extend_each_other_never_share_a_barcode(tmp_path, monkeypatch) -> None:
+    """``heater`` 工位 1 补的第 2 个样品与 ``heater-1`` 工位 2 的样品，旧格式下条码都是 ``…-heater-1-2``。"""
+
+    service = MaterialsService(tmp_path / "materials.db")
+    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
+    set_materials_gateway(LocalMaterialsClient(service))
+    plain, suffixed = _Heater(service, "heater"), _Heater(service, "heater-1")
+    try:
+        platform = plain.start()
+        suffixed.start()
+        _move_off(service, plain.sites()["site_1"].occupied_material_uuid)
+
+        result = platform.heat_site(
+            site_id=1, target_temperature_c=50.0, duration_seconds=0.1, action_context=ActionContext(action_id="refill")
+        )
+
+        refill = service.get_material(result["material_uuid"]).material
+        assert refill.resource_id == "heater-sample-1-2"
+        barcodes = [item.material.barcode for item in service.list_materials() if item.material.barcode]
+        assert len(barcodes) == len(set(barcodes)) == 7
+    finally:
+        suffixed.stop()
+        plain.stop()
+        set_materials_gateway(None)
+        service.close()
+
+
+def test_a_taken_barcode_moves_the_new_sample_to_the_next_number(heater) -> None:
+    """权威拒绝新样品的身份（条码已被别的物料用了）时换下一个序号，而不是工位一直空着。"""
+
+    from pylabrobot.resources.barcode import Barcode
+
+    from unilabos.resources import materials
+    from tests.plr_fixtures import plate
+
+    platform = heater.start()
+    _move_off(heater.service, heater.sites()["site_1"].occupied_material_uuid)
+    squatter = plate("squatter")
+    squatter.barcode = Barcode(data="OPENLAB-HEAT-heater-demo-sample-1-2", symbology="CODE128", position_on_resource="front")
+    materials.create(squatter, gateway=heater.gateway)
+
+    result = platform.heat_site(
+        site_id=1, target_temperature_c=40.0, duration_seconds=0.1, action_context=ActionContext(action_id="next")
+    )
+
+    sample = heater.service.get_material(result["material_uuid"]).material
+    assert (sample.resource_id, sample.barcode) == ("heater-demo-sample-1-3", "OPENLAB-HEAT-heater-demo-sample-1-3")
 
 
 def test_heater_needs_its_device_node() -> None:

@@ -95,6 +95,10 @@ def _site_label(site_id: int) -> str:
     return f"site_{site_id}"
 
 
+#: 新样品身份被占用时最多换几次序号
+_IDENTITY_ATTEMPTS = 10
+
+
 @resource(
     # 注册表 AST 扫描只认字面量：与 SAMPLE_TEMPLATE 保持一致
     id="virtual_heating_sample",
@@ -393,30 +397,32 @@ class VirtualHeatingPlatform:
                 )
 
     @not_action
-    def _sample_identity(self, site_id: int) -> tuple[str, str]:
-        """新样品的 resource_id 与条码，两者在未删除的物料里都要唯一。
+    def _sample_identity(self, site_id: int, *, after: int = 0) -> tuple[str, str, int]:
+        """新样品的 resource_id、条码与序号；两者在未删除的物料里都要唯一。
 
-        按设备与工位区分（同一实验室的第二台加热平台不和第一台撞条码）。工位原来的样品被移走
-        但还在（或升级时被移出设备子树的旧样品）时，``<设备>-sample-<工位>`` 已被占用：加序号
-        ``-2``、``-3``……建一个新样品，不去动那一个。
+        resource_id 是 ``<设备>-sample-<工位>``，第 2 个起加序号 ``-2``、``-3``……；条码是
+        ``OPENLAB-HEAT-<resource_id>``。``-sample-`` 之后只有工位号与序号两段数字，从最后一个
+        ``-sample-`` 切开就能还原设备 id，所以不同设备拼不出同一个条码（``heater`` 工位 1 的第 2 个是
+        ``OPENLAB-HEAT-heater-sample-1-2``，``heater-1`` 工位 2 是 ``OPENLAB-HEAT-heater-1-sample-2``）。
+        工位原来的样品被移走但还在时它的 resource_id 已被占用：从 ``after`` 之后取第一个空着的序号，
+        建一个新样品，不去动那一个。
         """
 
-        resource_id = f"{self.device_id}-sample-{site_id}"
-        barcode = f"OPENLAB-HEAT-{self.device_id}-{site_id}"
+        base = f"{self.device_id}-sample-{site_id}"
         gateway = self._gateway()
-        for attempt in range(1, 100):
-            suffix = "" if attempt == 1 else f"-{attempt}"
+        for number in range(after + 1, after + 100):
+            resource_id = base if number == 1 else f"{base}-{number}"
             try:
-                gateway.get_material_by_resource_id(resource_id + suffix)
+                gateway.get_material_by_resource_id(resource_id)
             except Exception:  # noqa: BLE001 - 查不到即可用；权威读不到时交给建树报错
-                return resource_id + suffix, barcode + suffix
+                return resource_id, f"OPENLAB-HEAT-{resource_id}", number
         raise RuntimeError(f"{self.device_id} 工位 {site_id} 找不到可用的样品 resource_id")
 
     @not_action
-    def _new_sample(self, site_id: int) -> VirtualHeatingSample:
+    def _new_sample(self, site_id: int, *, after: int = 0) -> tuple[VirtualHeatingSample, int]:
         from unilabos.resources.resource_tracker import set_plr_template_name
 
-        resource_id, barcode = self._sample_identity(site_id)
+        resource_id, barcode, number = self._sample_identity(site_id, after=after)
         sample = VirtualHeatingSample(
             resource_id,
             barcode=Barcode(
@@ -435,12 +441,16 @@ class VirtualHeatingPlatform:
             },
         }
         sample.temperature_source = self._temperature_source(site_id)
-        return sample
+        return sample, number
 
     @not_action
     def _provision_materials(self) -> None:
-        """空工位放上演示样品：建树与占用工位在权威的同一事务里完成（失败整体回滚）。"""
+        """空工位放上演示样品：建树与占用工位在权威的同一事务里完成（失败整体回滚）。
 
+        权威拒绝样品身份（条码 / resource_id / PLR 键已被别的物料用了）时换下一个序号再建。
+        """
+
+        from unilabos.client.host.runtime.resource import _is_conflict_error
         from unilabos.resources import materials
 
         with self._provision_lock:
@@ -451,21 +461,27 @@ class VirtualHeatingPlatform:
                     continue
                 site = self._device_sites.get(index) or _site_label(index)
                 display_name = f"加热样品 {index}"
-                try:
-                    created = materials.create(
-                        self._new_sample(index),
-                        node=node,
-                        site=site,
-                        display_name=display_name,
-                    )
-                except LinkError:
-                    raise
-                except Exception as exc:  # noqa: BLE001 - 一个工位放不上不影响其它工位与设备启动
-                    logger.warning(
-                        "[HeatingDemo] %s 工位 %s 放置演示样品失败：%s", self.device_id, index, exc
-                    )
-                    continue
-                self._adopt(index, created, display_name=display_name)
+                created, after = None, 0
+                for _attempt in range(_IDENTITY_ATTEMPTS):
+                    sample, after = self._new_sample(index, after=after)
+                    try:
+                        created = materials.create(sample, node=node, site=site, display_name=display_name)
+                        break
+                    except LinkError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - 一个工位放不上不影响其它工位与设备启动
+                        if _is_conflict_error(exc):
+                            logger.info(
+                                "[HeatingDemo] %s 工位 %s 的样品身份 %s 已被占用，换下一个序号：%s",
+                                self.device_id, index, sample.name, exc,
+                            )
+                            continue
+                        logger.warning(
+                            "[HeatingDemo] %s 工位 %s 放置演示样品失败：%s", self.device_id, index, exc
+                        )
+                        break
+                if created is not None:
+                    self._adopt(index, created, display_name=display_name)
 
     # ------------------------------------------------------------------
     # 加热

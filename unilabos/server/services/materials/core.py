@@ -34,6 +34,8 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
+    ACTOR_GRAPH,
+    ACTOR_HUMAN,
     ChemicalSummary,
     InventoryAllocation,
     InventoryLotCorrection,
@@ -2145,6 +2147,45 @@ class MaterialsService(MaterialsRepository):
             )
         ]
 
+    def _ledger_link(
+        self,
+        record: MaterialLinkRecord,
+        *,
+        operation: str,
+        previous_version: int,
+        version: int,
+        actor_type: str,
+        timestamp: int,
+    ) -> int:
+        """拓扑边的变化也进账本（``aggregate_type="link"``）：物料通知随账本前进，不再靠轮询。
+
+        delta 带两端物料，``material.changed`` 据此列出要重读的物料。
+        """
+
+        return self.append_ledger(
+            InventoryLedgerRecord(
+                event_uuid=str(uuid4()),
+                aggregate_type="link",
+                aggregate_uuid=record.link_uuid,
+                operation=operation,
+                previous_version=previous_version,
+                aggregate_version=version,
+                state_hash=canonical_hash(
+                    {"deleted": True} if operation == "delete"
+                    else {key: value for key, value in self._link_read(record).items()
+                          if key not in ("created_at_ms", "updated_at_ms")}
+                ),
+                delta_json={
+                    "source_material_uuid": record.source_material_uuid,
+                    "target_material_uuid": record.target_material_uuid,
+                    "link_type": record.link_type,
+                },
+                actor_type=actor_type,
+                occurred_at_ms=timestamp,
+                available_at_ms=timestamp,
+            )
+        )
+
     def _apply_link(
         self,
         *,
@@ -2155,8 +2196,9 @@ class MaterialsService(MaterialsRepository):
         target_handle: str,
         extra: Mapping[str, Any],
         timestamp: int,
+        actor_type: str,
     ) -> tuple[str, MaterialLinkRecord]:
-        """写事务内 upsert 一条边；uuid5 身份稳定，内容一致则不动版本。"""
+        """写事务内 upsert 一条边；uuid5 身份稳定，内容一致则不动版本，有变化记一条账本。"""
 
         link_uuid = material_link_uuid(
             source_material_uuid,
@@ -2167,6 +2209,13 @@ class MaterialsService(MaterialsRepository):
         )
         existing = self.get_link(link_uuid)
         if existing is None:
+            # 同一条边删掉后再建：版本接着账本里上一次的往下数（账本按 (类型, uuid, 版本) 唯一）
+            row = self.connection.execute(
+                "SELECT MAX(aggregate_version) FROM inventory_ledger "
+                "WHERE aggregate_type = 'link' AND aggregate_uuid = ?",
+                (link_uuid,),
+            ).fetchone()
+            previous = int(row[0] or 0)
             record = MaterialLinkRecord(
                 link_uuid=link_uuid,
                 source_material_uuid=source_material_uuid,
@@ -2177,9 +2226,11 @@ class MaterialsService(MaterialsRepository):
                 extra_json=dict(extra),
                 created_at_ms=timestamp,
                 updated_at_ms=timestamp,
-                version=1,
+                version=previous + 1,
             )
             self.insert_link(record)
+            self._ledger_link(record, operation="create", previous_version=previous, version=record.version,
+                              actor_type=actor_type, timestamp=timestamp)
             return "created", record
         if existing.extra_json == dict(extra):
             return "unchanged", existing
@@ -2191,6 +2242,8 @@ class MaterialsService(MaterialsRepository):
             }
         )
         self.update_link(record)
+        self._ledger_link(record, operation="update", previous_version=existing.version, version=record.version,
+                          actor_type=actor_type, timestamp=timestamp)
         return "updated", record
 
     def upsert_link(
@@ -2202,6 +2255,7 @@ class MaterialsService(MaterialsRepository):
         source_handle: str = "",
         target_handle: str = "",
         extra: Optional[Mapping[str, Any]] = None,
+        actor_type: str = ACTOR_HUMAN,
     ) -> dict[str, Any]:
         source_material_uuid = (source_material_uuid or "").strip()
         target_material_uuid = (target_material_uuid or "").strip()
@@ -2219,12 +2273,18 @@ class MaterialsService(MaterialsRepository):
                 target_handle=target_handle or "",
                 extra=extra or {},
                 timestamp=self._now_ms(),
+                actor_type=actor_type,
             )
         return self._link_read(record)
 
-    def delete_link_record(self, link_uuid: str) -> bool:
+    def delete_link_record(self, link_uuid: str, *, actor_type: str = ACTOR_HUMAN) -> bool:
         with self.write():
-            return self.delete_link(link_uuid)
+            existing = self.get_link(link_uuid)
+            if existing is None or not self.delete_link(link_uuid):
+                return False
+            self._ledger_link(existing, operation="delete", previous_version=existing.version,
+                              version=existing.version + 1, actor_type=actor_type, timestamp=self._now_ms())
+            return True
 
     def ensure_links(
         self, links: Sequence[Mapping[str, Any]]
@@ -2277,6 +2337,7 @@ class MaterialsService(MaterialsRepository):
                         if key not in _RESERVED
                     },
                     timestamp=timestamp,
+                    actor_type=ACTOR_GRAPH,
                 )
                 stats[outcome] += 1
         return stats
@@ -3954,7 +4015,7 @@ class MaterialsService(MaterialsRepository):
                 for site in self.sites_occupied_by(material_uuids)
             }
             changed_sites = {**occupied_sites, **owned_sites}
-            # 拓扑边随节点退场：边不是 ledger 聚合，事务内物理清理即可。
+            # 拓扑边随节点退场：事务内物理清理，物料自己的账本行已经让客户端重读。
             self.delete_links_for_materials(material_uuids)
 
             affected: list[AggregateVersion] = []

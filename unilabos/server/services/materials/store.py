@@ -910,7 +910,7 @@ class MaterialsRepository:
         return cursor.rowcount > 0
 
     def delete_links_for_materials(self, material_uuids: Sequence[str]) -> int:
-        """物料（软）删除时物理清边；边不是 ledger 聚合，不留版本。"""
+        """物料（软）删除时物理清边：物料自己的账本行已经让客户端重读，不再给每条边记账本。"""
 
         uuids = [uuid for uuid in material_uuids if uuid]
         if not uuids:

@@ -541,7 +541,7 @@ class InventoryLedgerRecord(TableObject, table=True):
     sequence: Optional[int] = Field(default=None, ge=1, primary_key=True)
     event_uuid: NonEmptyStr
     aggregate_type: Literal[
-        "resource_template", "material", "site", "lot", "reservation"
+        "resource_template", "material", "site", "lot", "reservation", "link"
     ] = Field(sa_type=Text)
     aggregate_uuid: NonEmptyStr
     operation: NonEmptyStr
@@ -1373,7 +1373,7 @@ MATERIALS_TABLES = (
             sequence INTEGER PRIMARY KEY AUTOINCREMENT,
             event_uuid TEXT NOT NULL UNIQUE CHECK (TRIM(event_uuid) <> ''),
             aggregate_type TEXT NOT NULL CHECK (aggregate_type IN (
-                'resource_template','material','site','lot','reservation'
+                'resource_template','material','site','lot','reservation','link'
             )),
             aggregate_uuid TEXT NOT NULL CHECK (TRIM(aggregate_uuid) <> ''),
             operation TEXT NOT NULL CHECK (TRIM(operation) <> ''),

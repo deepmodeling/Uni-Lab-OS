@@ -26,7 +26,7 @@ PROTOCOL_VERSION = "materials.v1"
 
 
 AggregateType = Literal[
-    "resource_template", "material", "site", "lot", "reservation"
+    "resource_template", "material", "site", "lot", "reservation", "link"
 ]
 
 

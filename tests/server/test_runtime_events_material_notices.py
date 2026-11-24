@@ -1,7 +1,7 @@
 """/api/v1/events 的物料失效：账本前进就推一条无 id 的 material.changed，不动工作流游标。
 
 前端每个工站只维持这一条事件流（HTTP/1.1 连接数有限），物料失效与工作流、日志通知走同一条。
-通知列出这段账本里变了的物料，前端只重读这些；列不准时省略，前端整体重读。
+通知列出这段账本里变了的物料，前端只重读这些（空列表：没有物料变化）；列不准时省略，前端整体重读。
 账本由一个物料权威一条的共享轮询线程读，所有连接共用，不占默认线程池。
 """
 
@@ -214,6 +214,12 @@ def test_real_authority_names_the_placed_material_and_the_site_owner(tmp_path):
         after = notices.latest()
         assert after > before
         assert set(notices.read(before, after).changed) == {sample_uuid, device_uuid}
+
+        # 拓扑边也进账本：通知列出两端物料
+        service.upsert_link(source_material_uuid=sample_uuid, target_material_uuid=device_uuid, link_type="fluid")
+        linked = notices.latest()
+        assert linked == after + 1
+        assert notices.read(after, linked).changed == sorted({sample_uuid, device_uuid})
     finally:
         service.close()
 
@@ -227,6 +233,20 @@ def test_notices_exist_only_where_the_materials_authority_lives(monkeypatch):
     monkeypatch.setattr(execution_composition, "get_materials_service", lambda: _Ledger(12))
     notices = events.material_notices()
     assert notices is not None and notices.latest() == 12
+
+
+def test_a_ledger_window_without_material_changes_lists_none(monkeypatch):
+    """只动了批次 / 预留：带一个空列表（没有物料要重读），不是省略（整体重读）。"""
+
+    _quiet(monkeypatch)
+    ledger = _Ledger(9, rows=[(8, "lot", "lot-1"), (9, "reservation", "r-1")])
+    assert _data(_first_frame(ledger, cursor=7)) == {"sequence": 9, "material_uuids": []}
+
+
+def test_link_changes_name_both_endpoints(monkeypatch):
+    _quiet(monkeypatch)
+    ledger = _Ledger(4, rows=[(4, "link", "l-1", {"source_material_uuid": "pump", "target_material_uuid": "flask"})])
+    assert _data(_first_frame(ledger, cursor=3)) == {"sequence": 4, "material_uuids": ["flask", "pump"]}
 
 
 def test_material_notices_never_use_the_shared_thread_pool(monkeypatch):

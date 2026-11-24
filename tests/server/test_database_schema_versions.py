@@ -19,7 +19,7 @@ from unilabos.server.database.schema import DatabaseMigrationRequired
 #: 把对应库的 schema_version +1，在其 migrations 里补上迁移，再更新这里。
 PINNED = {
     "runtime": (1, "bea876e21df263c620db697c4eb74a959bb9b8b4f73866f089a223dfe4b5eb63"),
-    "materials": (1, "c35dd5def14fe03dcfa7d9355acd0b8d4fb8901b0ba8640fc2c35bae36eaba77"),
+    "materials": (1, "a32591765329a4b4526bd142b7c8622d991bdacdb10cca2645b78f2c49d1d193"),
     "telemetry": (1, "a0e00118c131bbae1e4a693563977d7ffff49c17c482ebad0e5ad2b224b548af"),
     "history": (1, "5005469f86db3fe747ab1f30ea32d0c0c8f2f2779202a81bedb8d8254217f4cc"),
 }

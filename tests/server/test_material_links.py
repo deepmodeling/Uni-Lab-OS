@@ -213,6 +213,30 @@ class TestLinkCrud:
         assert service.delete_link_record(created["link_uuid"]) is False
         assert service.list_links() == []
 
+    def test_link_changes_go_through_the_ledger(self, service) -> None:
+        """边的增删改都记账本：物料通知随账本前进；同一条边删了再建，版本接着往下数。"""
+
+        source = _create_root(service, "pump")
+        target = _create_root(service, "reactor")
+
+        def link_rows() -> list[tuple[str, int, int]]:
+            return [
+                (row.operation, row.previous_version, row.aggregate_version)
+                for row in service.changes(limit=10_000)
+                if row.aggregate_type == "link"
+            ]
+
+        first = service.upsert_link(source_material_uuid=source, target_material_uuid=target, extra={"baud": 9600})
+        service.upsert_link(source_material_uuid=source, target_material_uuid=target, extra={"baud": 9600})
+        service.upsert_link(source_material_uuid=source, target_material_uuid=target, extra={"baud": 19200})
+        service.delete_link_record(first["link_uuid"])
+        again = service.upsert_link(source_material_uuid=source, target_material_uuid=target)
+
+        assert link_rows() == [("create", 0, 1), ("update", 1, 2), ("delete", 2, 3), ("create", 3, 4)]
+        assert again["link_uuid"] == first["link_uuid"] and again["version"] == 4
+        [row] = [row for row in service.changes(limit=10_000) if row.aggregate_type == "link"][:1]
+        assert row.delta == {"source_material_uuid": source, "target_material_uuid": target, "link_type": ""}
+
     def test_delete_material_clears_touching_links(self, service) -> None:
         source = _create_root(service, "pump")
         target = _create_root(service, "reactor")

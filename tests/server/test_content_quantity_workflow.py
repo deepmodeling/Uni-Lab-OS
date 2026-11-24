@@ -30,7 +30,7 @@ def lab(tmp_path):
     materials = MaterialsService(tmp_path / "materials.db")
     contents = ContentContract(materials, compound_source=None)
     contract = ResourceContract(materials)
-    template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource"}])["templates"][0]
+    template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource", "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}])["templates"][0]
     bottle = contract.create_material({"resource_template_uuid": template["uuid"], "name": "缓冲液瓶"})
     info = contents.create_reagent_info({"name": "PBS", "physical_state": "liquid"})
     reagent = contents.create_reagent({"material_uuid": bottle["uuid"], "reagent_info_uuid": info["uuid"],

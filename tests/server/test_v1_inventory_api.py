@@ -187,7 +187,7 @@ def test_typed_lot_commands_inbound_correct_reconcile_and_reads(stack) -> None:
 def test_reagent_dispense_command_matches_v1_console_contract(stack) -> None:
     _service, client = stack
     identities = {item["name"]: item["uuid"] for item in ok_data(client.post("/api/v1/resource-templates", json={
-        "resources": [{"id": "bottle", "registry_type": "resource", "category": ["container"]}]}))["templates"]}
+        "resources": [{"id": "bottle", "registry_type": "resource", "category": ["container"], "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}]}))["templates"]}
     source, *targets = (
         ok_data(client.post("/api/v1/materials", json={"resource_template_uuid": identities["bottle"], "name": name}), status=201)
         for name in ("源瓶", "分装-1", "分装-2")
@@ -218,7 +218,7 @@ def test_reagent_dispense_command_matches_v1_console_contract(stack) -> None:
 def test_content_reservations_prevent_overdrawing_a_bottle(stack) -> None:
     _service, client = stack
     identities = {item["name"]: item["uuid"] for item in ok_data(client.post("/api/v1/resource-templates", json={
-        "resources": [{"id": "bottle", "registry_type": "resource"}]}))["templates"]}
+        "resources": [{"id": "bottle", "registry_type": "resource", "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}]}))["templates"]}
     bottle = ok_data(client.post("/api/v1/materials", json={"resource_template_uuid": identities["bottle"], "name": "瓶"}), status=201)
     info = ok_data(client.post("/api/v1/reagent-infos", json={"name": "水", "cas": "7732-18-5"}), status=201)
     reagent = ok_data(client.post("/api/v1/reagents", json={
@@ -249,7 +249,7 @@ def test_content_reservations_prevent_overdrawing_a_bottle(stack) -> None:
 def test_material_source_bindings_share_or_exclude_and_block_delete(stack) -> None:
     _service, client = stack
     identities = {item["name"]: item["uuid"] for item in ok_data(client.post("/api/v1/resource-templates", json={
-        "resources": [{"id": "bottle", "registry_type": "resource"}]}))["templates"]}
+        "resources": [{"id": "bottle", "registry_type": "resource", "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}]}))["templates"]}
     bottle = ok_data(client.post("/api/v1/materials", json={"resource_template_uuid": identities["bottle"], "name": "瓶"}), status=201)
 
     def bind(command_id, task, policy):

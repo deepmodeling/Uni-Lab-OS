@@ -201,6 +201,61 @@ def test_v1_create_places_and_fills_in_one_transaction(client) -> None:
     assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] == placed["uuid"]
 
 
+def test_v1_create_initializes_a_plr_material_that_a_device_site_accepts(tmp_path) -> None:
+    """V1 POST /materials 先初始化出 PLR 实例（config.type 或模板的 PLR 类），能放上设备库位、能反序列化。"""
+
+    from uuid import uuid4
+
+    from unilabos.client.materials import LocalMaterialsClient
+    from unilabos.resources import materials
+    from unilabos.resources.adapters.device_site import apply_device_authority_state
+    from unilabos.resources.resource_tracker import ResourceDict, ResourceDictInstance
+
+    service = MaterialsService(tmp_path / "materials.db")
+    device_uuid = str(uuid4())
+    device = ResourceDictInstance(ResourceDict.model_validate({
+        "id": "v1-device", "uuid": device_uuid, "name": "v1-device", "type": "device", "class": "v1_device",
+        "template_name": "v1_device", "config": {}, "data": {}, "extra": {}, "sites": None, "sites_initialized": False,
+    }))
+    apply_device_authority_state(device, {"available_sites": [{"index": 1, "label": "s1"}, {"index": 2, "label": "s2"}]},
+                                 "v1_device", gateway=LocalMaterialsClient(service))
+    sites = {site.label: site.site_uuid for site in service.get_material(device_uuid).sites}
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app) as client:
+            identities = _templates(client)
+            placed = ok_data(client.post("/api/v1/materials", json={
+                "resource_template_uuid": identities["bottle_500ml"], "name": "设备上的瓶",
+                "config": {"max_volume": 500},
+                "site_placement": {"action": "place", "site_uuid": sites["s1"]},
+            }), status=201)
+            assert placed["parent_uuid"] == device_uuid and placed["current_site"]["uuid"] == sites["s1"]
+            assert placed["config"]["type"] == "Container" and placed["config"]["max_volume"] == 500
+            restored = materials.get(placed["uuid"], gateway=LocalMaterialsClient(service)).to_plr_resources()[0]
+            assert type(restored).__name__ == "Container" and restored.max_volume == 500
+
+            # 显式 config.type 优先于模板的实现类
+            typed = ok_data(client.post("/api/v1/materials", json={
+                "resource_template_uuid": identities["tube_rack_2"], "name": "显式类型",
+                "config": {"type": "Container"},
+                "site_placement": {"action": "place", "site_uuid": sites["s2"]},
+            }), status=201)
+            assert typed["config"]["type"] == "Container"
+
+            # 实例化不出来：说明原因（1000），不建任何东西
+            odd = ok_data(client.post("/api/v1/resource-templates", json={"resources": [{
+                "id": "odd_thing", "registry_type": "resource", "class": {"module": "lab.custom:Thing", "type": "python"},
+                "category": ["thing"],
+            }]}))["templates"][0]["uuid"]
+            before = ok_data(client.get("/api/v1/materials", params={"page_size": 100}))["total"]
+            failed = client.post("/api/v1/materials", json={"resource_template_uuid": odd, "name": "怪东西"}).json()
+            assert failed["code"] == 1000 and "config.type" in str(failed)
+            assert ok_data(client.get("/api/v1/materials", params={"page_size": 100}))["total"] == before
+    finally:
+        service.close()
+
+
 def test_v1_material_records_carry_inventory_facts(client) -> None:
     """V1 物料 DTO 带 inventory_status / inventory_presence / disposition，由生命周期派生。"""
 

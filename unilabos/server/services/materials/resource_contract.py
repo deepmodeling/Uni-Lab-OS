@@ -18,9 +18,7 @@ from unilabos.protocol.materials import (
     InventoryMutation,
     MaterialDataWrite,
     MaterialDelete,
-    MaterialIdentityWrite,
     MaterialMove,
-    MaterialNodeCreate,
     MaterialPatch,
     MaterialPlacement,
     MaterialPosition,
@@ -35,6 +33,7 @@ from unilabos.server.services.materials.core import (
     MaterialNoChangeError,
     MaterialNotFoundError,
     MaterialsService,
+    MaterialsServiceError,
     MaterialValidationError,
 )
 
@@ -623,9 +622,6 @@ class ResourceContract:
                 "Material barcode or sibling name conflicts with an existing material", conflict="identity"
             )
         relative = values.get("relative_position")
-        position = MaterialPosition()
-        if isinstance(relative, Mapping):
-            position = self._position_from_v1(relative)
         material_uuid = str(uuid4())
         # 放入库位 = 挂到库位的所属物料并占用它；只给父物料 = 只落父子关系。与建树同一事务（MaterialPlacement）
         tree_placement: Optional[MaterialPlacement] = None
@@ -633,23 +629,20 @@ class ResourceContract:
             tree_placement = MaterialPlacement(parent_material_uuid=site.owner_material_uuid, site=site_uuid)
         elif parent_uuid:
             tree_placement = MaterialPlacement(parent_material_uuid=parent_uuid)
-        tree = MaterialTreeCreate(placement=tree_placement, nodes=[MaterialNodeCreate(
-            client_ref="material",
-            material_uuid=material_uuid,
-            identity=MaterialIdentityWrite(
-                # 物料 name 由权威写成 uuid；PLR 键取全局唯一的 resource_id
-                resource_id=self._resource_id(name),
-                display_name=display_name,
-                description=str(values.get("description") or ""),
-                resource_type=template.resource_type,
-                class_name=template.class_name or template.name,
-                barcode=barcode,
-                template_name=template.name,
-                config=_mapping(values.get("config")),
-                meta_data=_mapping(values.get("meta_data")),
-            ),
-            position=position,
-        )])
+        tree = self._instantiated_tree(template, values, resource_id=self._resource_id(name))
+        tree.placement = tree_placement
+        root = next(node for node in tree.nodes if node.parent_client_ref is None)
+        root.material_uuid = material_uuid
+        identity = root.identity
+        identity.display_name = display_name
+        identity.description = str(values.get("description") or "")
+        identity.resource_type = template.resource_type
+        identity.class_name = template.class_name or template.name
+        identity.template_name = template.name
+        identity.barcode = barcode
+        identity.meta_data = _mapping(values.get("meta_data"))
+        if isinstance(relative, Mapping):
+            root.position = self._position_from_v1(relative)
         reagent = values.get("reagent")
         content: Optional[dict[str, Any]] = None
         try:
@@ -680,6 +673,66 @@ class ResourceContract:
         if content is not None:
             result["reagent"] = content
         return result
+
+    @staticmethod
+    def _instantiated_tree(
+        template: ResourceTemplateRead, values: Mapping[str, Any], *, resource_id: str
+    ) -> MaterialTreeCreate:
+        """V1 新建物料先初始化出 PLR 实例，再按 instantiate 同一条转换（``plr_resources_to_create``）变成建树请求。
+
+        这样的物料带完整的 ``config.type`` 与 PLR 字段，能放上设备库位，设备重启时也反序列化得了。实例来源：
+
+        - 请求的 config 给了 ``type``（PLR 类名）：用模板定义里的 config、请求的 config / data 按
+          ``ResourceTreeSet`` 反序列化出来；
+        - 否则模板是注册表里的 PLR 资源类：按注册表实例化（带默认孩子，与 ``instantiate_material`` 相同）；
+        - 否则模板的实现（``module_name`` 的类名，或 ``class_name``）是已知的 PLR 类：同第一条。
+
+        都不满足、或反序列化失败时报 1000，说明哪里不能实例化。PLR 名（PLR 键）是 ``resource_id``。
+        """
+
+        from unilabos.resources.adapters.plr_materials import plr_resources_to_create
+        from unilabos.resources.material_class import registry_resource_entry
+        from unilabos.resources.materials import instantiate_registry_resource
+        from unilabos.resources.resource_tracker import (
+            ResourceTreeSet,
+            find_plr_resource_class,
+            set_resource_uuid,
+            walk_resources,
+        )
+
+        definition_config = _mapping((template.definition or {}).get("config"))
+        config = {**definition_config, **_mapping(values.get("config"))}
+        plr_type = str(_mapping(values.get("config")).get("type") or "").strip()
+        entry = registry_resource_entry(template.name)
+        registry_class = isinstance(entry, Mapping) and _mapping(entry.get("class")).get("type") == "pylabrobot"
+        try:
+            if not plr_type and registry_class:
+                draft = instantiate_registry_resource(template.name, resource_id)
+            else:
+                if not plr_type:
+                    implementation = str(template.module_name or "").partition(":")[2] or str(template.class_name or "")
+                    known = str(config.get("type") or "").strip() or implementation
+                    plr_type = known if known and find_plr_resource_class(known) is not None else ""
+                if not plr_type:
+                    raise ValueError(
+                        f"模板 {template.name} 不是注册表里的 PLR 资源类，实现 {template.module_name or template.class_name!r} "
+                        "也不是已知的 PLR 类；请在 config.type 里给出 PLR 类名"
+                    )
+                node = {
+                    "id": resource_id, "uuid": str(uuid4()), "name": resource_id, "type": template.resource_type,
+                    "class": template.class_name or template.name, "template_name": template.name,
+                    "config": {**config, "type": plr_type}, "data": dict(_mapping(values.get("data"))),
+                    "parent_uuid": None,
+                }
+                draft = ResourceTreeSet.from_raw_dict_list([node]).to_plr_resources()[0]
+                # 只是建树用的草稿：去掉临时 uuid，由权威发号
+                for item in walk_resources(draft):
+                    set_resource_uuid(item, "")
+            return plr_resources_to_create([draft])
+        except MaterialsServiceError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 实例化失败一律是请求不合法
+            raise MaterialValidationError(f"无法按模板 {template.name} 初始化 PLR 物料：{exc}") from None
 
     def find_by_barcode(self, barcode: str) -> Optional[str]:
         row = self.materials.connection.execute(

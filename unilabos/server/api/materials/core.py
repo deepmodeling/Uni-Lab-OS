@@ -15,6 +15,7 @@ V1 已覆盖的能力改由 V1 路径提供，dev 旧路径删除（不保留双
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Literal, Optional
@@ -29,6 +30,7 @@ from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 from unilabos.server.lifecycle import shutting_down, sleep_unless_shutting_down
 from unilabos.protocol.materials import InventoryRequirement, MaterialSnapshot
 from unilabos.server.services.materials import MaterialsService
+from unilabos.server.services.materials.ledger_watch import LedgerBatch, ledger_watch
 
 
 class InventoryPreviewRequest(ServerObject):
@@ -242,9 +244,11 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             raise HTTPException(status_code=422, detail="invalid Last-Event-ID")
 
         # 必须在发出响应头/onopen 之前固定基线与新水位。否则浏览器已校准 HTTP 快照后，
-        # 首连再追平账本会吞掉这期间的创建/移动；用 MAX 查询也避免全量扫描历史。
-        latest = service.latest_ledger_sequence()
-        epoch = service.ledger_epoch()
+        # 首连再追平账本会吞掉这期间的创建/移动。基线与纪元在共享账本轮询的线程上读，
+        # 不占默认线程池；之后的变化也由那条线程统一读出、分给所有连接，不按连接重复读。
+        watch = ledger_watch(service)
+        latest = await asyncio.wrap_future(watch.baseline())
+        epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
         fresh = cursor is None
         if cursor is None:
             cursor = latest
@@ -268,28 +272,56 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
             )
             return f"id: {format_materials_cursor(row.sequence, epoch)}\nevent: {MATERIALS_CHANGED_EVENT}\ndata: {data}\n\n"
 
+        def _format_reset(reason: str) -> str:
+            data = json.dumps({"reason": reason}, separators=(",", ":"))
+            return f"id: {format_materials_cursor(cursor, epoch)}\nevent: {STREAM_RESET_EVENT}\ndata: {data}\n\n"
+
         async def stream():
             nonlocal cursor, epoch
-            yield "retry: 3000\n: connected\n\n"
-            if reset_reason is not None:
-                data = json.dumps({"reason": reset_reason}, separators=(",", ":"))
-                yield f"id: {format_materials_cursor(cursor, epoch)}\nevent: {STREAM_RESET_EVENT}\ndata: {data}\n\n"
-            elif fresh:
-                # 只设置浏览器续传水位，不触发业务失效；空闲连接断线后也能从这里续传或被重置。
-                yield f"id: {format_materials_cursor(cursor, epoch)}\n\n"
-            # 停机开始就主动结束：浏览器按 retry 自动重连，uvicorn 不必超时取消
-            while not shutting_down() and not await request.is_disconnected():
-                rows = service.changes(after_sequence=cursor, limit=500)
-                if rows and epoch is None:
-                    # 连接时账本为空：第一条记录写入后纪元才确定
-                    epoch = service.ledger_epoch()
-                for row in rows:
-                    cursor = row.sequence
-                    yield _format_event(row)
-                if not rows:
-                    yield ": keepalive\n\n"
-                if not await sleep_unless_shutting_down(1):
-                    return
+            loop = asyncio.get_running_loop()
+            batches: list[LedgerBatch] = []
+            closed = False
+
+            def receive(batch: LedgerBatch) -> None:
+                # 共享轮询线程上调用：只把这一批交回事件循环
+                if not closed:
+                    loop.call_soon_threadsafe(batches.append, batch)
+
+            release = watch.subscribe(cursor, receive)
+            try:
+                yield "retry: 3000\n: connected\n\n"
+                if reset_reason is not None:
+                    yield _format_reset(reset_reason)
+                elif fresh:
+                    # 只设置浏览器续传水位，不触发业务失效；空闲连接断线后也能从这里续传或被重置。
+                    yield f"id: {format_materials_cursor(cursor, epoch)}\n\n"
+                # 停机开始就主动结束：浏览器按 retry 自动重连，uvicorn 不必超时取消
+                while not shutting_down() and not await request.is_disconnected():
+                    pending, batches[:] = list(batches), []
+                    sent = False
+                    for batch in pending:
+                        if batch.reset:
+                            # 库被重置（账本末尾变小）：给出新水位，客户端整体重读
+                            cursor = batch.upto
+                            epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
+                            yield _format_reset("cursor_ahead")
+                            sent = True
+                            continue
+                        rows = [row for row in batch.rows if row.sequence > cursor]
+                        if rows and epoch is None:
+                            # 连接时账本为空：第一条记录写入后纪元才确定
+                            epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
+                        for row in rows:
+                            cursor = row.sequence
+                            yield _format_event(row)
+                            sent = True
+                    if not sent:
+                        yield ": keepalive\n\n"
+                    if not await sleep_unless_shutting_down(1):
+                        return
+            finally:
+                closed = True
+                release()
 
         return StreamingResponse(
             stream(),

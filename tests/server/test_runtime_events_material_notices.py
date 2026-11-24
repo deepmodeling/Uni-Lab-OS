@@ -2,6 +2,7 @@
 
 前端每个工站只维持这一条事件流（HTTP/1.1 连接数有限），物料失效与工作流、日志通知走同一条。
 通知列出这段账本里变了的物料，前端只重读这些；列不准时省略，前端整体重读。
+账本由一个物料权威一条的共享轮询线程读，所有连接共用，不占默认线程池。
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from unilabos.server.api.runtime import events
+from unilabos.server.services.materials.ledger_watch import LedgerWatch
 
 
 class _Request:
@@ -29,7 +31,11 @@ class _Ledger:
 
     def __init__(self, tail: int, rows=(), sites=None):
         self.tail = tail
-        self.rows = [SimpleNamespace(sequence=s, aggregate_type=t, aggregate_uuid=u) for s, t, u in rows]
+        self.rows = [
+            SimpleNamespace(sequence=row[0], aggregate_type=row[1], aggregate_uuid=row[2],
+                            delta=row[3] if len(row) > 3 else {})
+            for row in rows
+        ]
         self.sites = dict(sites or {})
 
     def latest_ledger_sequence(self) -> int:
@@ -58,7 +64,7 @@ def _first_frame(materials, cursor: int, workflow=None) -> str:
     async def scenario():
         stream = events.runtime_event_stream(
             _Request(), workflow or _workflow(), cursor=41,
-            materials=events.MaterialNotices(materials), material_cursor=cursor,
+            materials=LedgerWatch(materials), material_cursor=cursor,
         )
         assert "connected" in await anext(stream)
         frame = await asyncio.wait_for(anext(stream), 2)
@@ -101,7 +107,7 @@ def test_a_slow_ledger_read_does_not_stall_the_event_loop(monkeypatch):
     async def scenario():
         stream = events.runtime_event_stream(
             _Request(), _workflow(), cursor=41,
-            materials=events.MaterialNotices(_SlowLedger(3, rows=[(3, "material", "m")])), material_cursor=2,
+            materials=LedgerWatch(_SlowLedger(3, rows=[(3, "material", "m")])), material_cursor=2,
         )
         assert "connected" in await anext(stream)
         ticks: list[float] = []
@@ -192,7 +198,7 @@ def test_real_authority_names_the_placed_material_and_the_site_owner(tmp_path):
             gateway=LocalMaterialsClient(service),
         )
         [site] = service.get_material(device_uuid).sites
-        notices = events.MaterialNotices(service)
+        notices = LedgerWatch(service)
         before = notices.latest()
 
         created = service.create_tree(
@@ -207,7 +213,7 @@ def test_real_authority_names_the_placed_material_and_the_site_owner(tmp_path):
         sample_uuid = created.data.root_material_uuid
         after = notices.latest()
         assert after > before
-        assert set(notices.changed_materials(before, after)) == {sample_uuid, device_uuid}
+        assert set(notices.read(before, after).changed) == {sample_uuid, device_uuid}
     finally:
         service.close()
 
@@ -221,3 +227,74 @@ def test_notices_exist_only_where_the_materials_authority_lives(monkeypatch):
     monkeypatch.setattr(execution_composition, "get_materials_service", lambda: _Ledger(12))
     notices = events.material_notices()
     assert notices is not None and notices.latest() == 12
+
+
+def test_material_notices_never_use_the_shared_thread_pool(monkeypatch):
+    """runtime.v1 控制 socket 的出站泵与 edge 代理用默认线程池；SSE 的物料轮询不能和它们抢。"""
+
+    _quiet(monkeypatch)
+
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError("SSE 物料轮询用了默认线程池")
+
+    monkeypatch.setattr(events.asyncio, "to_thread", forbidden)
+    ledger = _Ledger(7, rows=[(6, "material", "plate"), (7, "material", "plate")])
+    assert _data(_first_frame(ledger, cursor=5)) == {"sequence": 7, "material_uuids": ["plate"]}
+
+
+def test_many_connections_share_one_ledger_read_per_tick():
+    """N 个订阅者共用一次读：账本末尾的读取次数与连接数无关。"""
+
+    import threading
+    import time
+
+    class _Counting(_Ledger):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.reads = 0
+            self.lock = threading.Lock()
+
+        def latest_ledger_sequence(self) -> int:
+            with self.lock:
+                self.reads += 1
+            return self.tail
+
+    ledger = _Counting(3)
+    watch = LedgerWatch(ledger, interval=0.1)
+    received: list[list] = [[] for _ in range(20)]
+    releases = [watch.subscribe(3, received[index].append) for index in range(20)]
+    time.sleep(0.3)
+    ledger.rows.append(SimpleNamespace(sequence=4, aggregate_type="material", aggregate_uuid="m", delta={}))
+    ledger.tail = 4
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not all(batches for batches in received):
+        time.sleep(0.02)
+    reads_with_twenty = ledger.reads
+
+    assert all([batch.changed for batch in batches] == [["m"]] for batches in received)
+    # 1 次建立基线 + 每 0.1 秒一轮；20 个连接各读一次的话会远多于这个数
+    assert reads_with_twenty < 20
+    for release in releases:
+        release()
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and watch._thread is not None:
+        time.sleep(0.02)
+    assert watch._thread is None  # 没有订阅者，轮询线程退出
+
+
+def test_a_late_subscriber_catches_up_from_its_own_cursor():
+    import time
+
+    ledger = _Ledger(5, rows=[(4, "material", "a"), (5, "material", "b")])
+    watch = LedgerWatch(ledger, interval=0.05)
+    first: list = []
+    release = watch.subscribe(5, first.append)
+    late: list = []
+    release_late = watch.subscribe(3, late.append)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline and not late:
+        time.sleep(0.02)
+    release()
+    release_late()
+    assert first == []
+    assert [(batch.after, batch.upto, batch.changed) for batch in late] == [(3, 5, ["a", "b"])]

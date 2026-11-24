@@ -22,9 +22,16 @@ REST 读取当前状态，不需要回放历史。
 
 物料失效：本进程持有物料权威时，物料账本前进就推一条**不带 id** 的 ``material.changed``
 （``data: {"sequence": <账本末尾序号>, "material_uuids": [...]}``），与日志通知一样不动工作流游标。
-``material_uuids`` 是这段账本里变了的物料（Site 的变化归到所属物料）；列不准时（条目过多、模板变化、
-库被重置）省略它，表示整体重读。只维持这一条事件流的前端据此重读物料；要按账本 sequence 续传的
-客户端仍用 ``/api/v1/materials/events``（``materials.changed``）。
+``material_uuids`` 的语义：
+
+- 带这个键：恰好是这段账本里变了的物料（Site 的变化归到所属物料，拓扑边的变化归到两端物料），
+  客户端只重读这些；**空列表就是没有物料变化**（这段账本只动了批次 / 预留），什么都不用重读，
+  ``sequence`` 照常前进；
+- 不带这个键：列不准（模板变化、库被重置），整体重读。
+
+账本由进程内唯一的共享轮询读（``server/services/materials/ledger_watch.py``），所有连接共用一份结果，
+不占默认线程池。只维持这一条事件流的前端据此重读物料；要按账本 sequence 续传的客户端仍用
+``/api/v1/materials/events``（``materials.changed``）。
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ from fastapi import APIRouter, Header, Request
 from fastapi.responses import Response, StreamingResponse
 
 from unilabos.protocol.runtime.logs import RuntimeLogNotice
+from unilabos.server.services.materials.ledger_watch import LedgerBatch, LedgerWatch, ledger_watch
 from unilabos.server.api.envelope import WORKFLOW, envelope_router
 from unilabos.server.lifecycle import shutting_down
 from unilabos.utils.log_notices import LOG_NOTICE_EVENT, log_notices, merge_notices
@@ -74,49 +82,8 @@ def to_v1_event(event: Dict[str, Any]) -> Dict[str, Any]:
     return {**event, "event": name, "data": data}
 
 
-#: 一次通知最多列出的账本条目；超过就不列物料，让客户端整体重读
-MATERIAL_NOTICE_WINDOW = 500
-
-
-class MaterialNotices:
-    """本进程物料权威的账本视图：末尾序号，以及一段区间里哪些物料变了。"""
-
-    def __init__(self, service: Any):
-        self._service = service
-
-    def latest(self) -> int:
-        return int(self._service.latest_ledger_sequence())
-
-    def changed_materials(self, after: int, upto: int) -> list[str] | None:
-        """``(after, upto]`` 里变了的物料 uuid（Site 的变化归到它的所属物料）。
-
-        返回 None 表示列不准（条目超过窗口、模板变了），客户端应整体重读。
-        """
-
-        rows = self._service.changes(after_sequence=after, limit=MATERIAL_NOTICE_WINDOW + 1)
-        rows = [row for row in rows if row.sequence <= upto]
-        if len(rows) > MATERIAL_NOTICE_WINDOW:
-            return None
-        changed: set[str] = set()
-        sites: set[str] = set()
-        for row in rows:
-            if row.aggregate_type == "material":
-                changed.add(row.aggregate_uuid)
-            elif row.aggregate_type == "site":
-                sites.add(row.aggregate_uuid)
-            elif row.aggregate_type == "resource_template":
-                # 模板变化可能改变很多物料的展示，不逐个列
-                return None
-        # 同一个 Site 在一段账本里常出现多次（占用、释放），每个只查一次所属物料
-        for site_uuid in sorted(sites):
-            site = self._service.get_site(site_uuid, include_deleted=True)
-            if site is not None:
-                changed.add(site.owner_material_uuid)
-        return sorted(changed)
-
-
-def material_notices() -> MaterialNotices | None:
-    """本进程持有物料权威时返回账本视图；Host 子进程等没有权威的进程返回 None。"""
+def material_notices() -> LedgerWatch | None:
+    """本进程持有物料权威时返回它的共享账本轮询；Host 子进程等没有权威的进程返回 None。"""
 
     try:
         from unilabos.server.execution_composition import get_materials_service
@@ -125,40 +92,13 @@ def material_notices() -> MaterialNotices | None:
     service = get_materials_service()
     if service is None or not callable(getattr(service, "latest_ledger_sequence", None)):
         return None
-    return MaterialNotices(service)
-
-
-def _latest_material_sequence(materials: MaterialNotices, fallback: int) -> int:
-    try:
-        return materials.latest()
-    except Exception:  # noqa: BLE001 - 读不到账本只是这一轮不发失效，不能断开工作流事件流
-        return fallback
-
-
-def _changed_materials(materials: MaterialNotices, after: int, upto: int) -> list[str] | None:
-    try:
-        return materials.changed_materials(after, upto)
-    except Exception:  # noqa: BLE001 - 列不出来就让客户端整体重读
-        return None
-
-
-def _poll_materials(materials: MaterialNotices, cursor: int) -> tuple[int, list[str] | None]:
-    """账本末尾，以及 ``(cursor, 末尾]`` 里变了的物料；末尾变小（库被重置）时不列。
-
-    在工作线程里跑（``asyncio.to_thread``）：读账本要拿物料库的锁，写事务持锁期间读会等，
-    放在事件循环上会卡住这个进程的全部连接。
-    """
-
-    latest = _latest_material_sequence(materials, cursor)
-    if latest <= cursor:
-        return latest, None
-    return latest, _changed_materials(materials, cursor, latest)
+    return ledger_watch(service)
 
 
 def material_changed_frame(sequence: int, material_uuids: list[str] | None = None) -> str:
     """不写 SSE id：Last-Event-ID 只表示工作流持久事件的序号。
 
-    ``material_uuids`` 缺省表示"列不准，整体重读"；给出时客户端只重读这些物料。
+    ``material_uuids`` 为 None 时省略这个键，表示"列不准，整体重读"；空列表表示没有物料变化。
     """
 
     payload: Dict[str, Any] = {"sequence": sequence}
@@ -168,6 +108,19 @@ def material_changed_frame(sequence: int, material_uuids: list[str] | None = Non
     return f"event: {MATERIAL_CHANGED_EVENT}\ndata: {data}\n\n"
 
 
+def _merge_material_batches(current: LedgerBatch | None, batch: LedgerBatch) -> LedgerBatch:
+    """连接来不及发时把多批合成一批：区间取并、物料取并；任一批列不准或重置就整体重读。"""
+
+    if current is None:
+        return batch
+    changed = (
+        None
+        if current.reset or batch.reset or current.changed is None or batch.changed is None
+        else sorted(set(current.changed) | set(batch.changed))
+    )
+    return LedgerBatch(after=current.after, upto=batch.upto, changed=changed, reset=current.reset or batch.reset)
+
+
 async def runtime_event_stream(
     request: Request,
     service=None,
@@ -175,7 +128,7 @@ async def runtime_event_stream(
     *,
     watermark: bool = False,
     replay: bool = False,
-    materials: MaterialNotices | None = None,
+    materials: LedgerWatch | None = None,
     material_cursor: int = 0,
 ):
     from unilabos.server.api.runtime.workflow import format_sse_event
@@ -183,6 +136,17 @@ async def runtime_event_stream(
     loop = asyncio.get_running_loop()
     pending: asyncio.Queue[RuntimeLogNotice] = asyncio.Queue(maxsize=1)
     closed = False
+    material_batch: LedgerBatch | None = None
+
+    def put_material(batch: LedgerBatch) -> None:
+        nonlocal material_batch
+        if not closed:
+            material_batch = _merge_material_batches(material_batch, batch)
+
+    def receive_material(batch: LedgerBatch) -> None:
+        # 共享轮询线程上调用：只把这一批交回事件循环
+        if not closed:
+            loop.call_soon_threadsafe(put_material, batch)
 
     def put(notice: RuntimeLogNotice):
         if closed:
@@ -196,6 +160,8 @@ async def runtime_event_stream(
             loop.call_soon_threadsafe(put, notice)
 
     release = log_notices.subscribe(receive)
+    # 从基线之后订阅共享账本轮询：基线到共享进度之间由轮询线程补读，此后每批都分到这里
+    release_materials = materials.subscribe(material_cursor, receive_material) if materials is not None else None
     next_workflow = 0.0
     heartbeat = time.monotonic() + 15
     try:
@@ -205,14 +171,12 @@ async def runtime_event_stream(
             yield f"id: {cursor}\n\n"
         while not shutting_down() and not await request.is_disconnected():
             now = time.monotonic()
+            if material_batch is not None:
+                # 账本前进了就发一次失效，列出这段区间里变了的物料；库被重置或模板变了不列，整体重读
+                batch, material_batch = material_batch, None
+                yield material_changed_frame(batch.upto, None if batch.reset else batch.changed)
             if now >= next_workflow:
                 next_workflow = now + 1
-                if materials is not None:
-                    # 账本末尾变了就发一次失效，列出这段区间里变了的物料；库被重置（末尾变小）时不列，整体重读。
-                    latest_material, changed = await asyncio.to_thread(_poll_materials, materials, material_cursor)
-                    if latest_material != material_cursor:
-                        material_cursor = latest_material
-                        yield material_changed_frame(latest_material, changed)
                 if service is not None:
                     oldest, latest, events = service.read_event_window(after_id=cursor, limit=101)
                     reason = None
@@ -245,6 +209,8 @@ async def runtime_event_stream(
     finally:
         closed = True
         release()
+        if release_materials is not None:
+            release_materials()
 
 
 def create_runtime_events_router(service=None) -> APIRouter:
@@ -274,11 +240,15 @@ def create_runtime_events_router(service=None) -> APIRouter:
             # 必须在发送响应头之前固定水位，客户端 onopen 后的 REST 补读才能覆盖
             # “快照 → 订阅”之间的变化。纯执行面的 Host 没有 Workflow Authority。
             cursor = service.latest_event_sequence() if service is not None else 0
-        # 物料账本基线同样在响应头之前固定：onopen 后的 REST 补读覆盖此前的物料变化。
+        # 物料账本基线同样在响应头之前固定：onopen 后的 REST 补读覆盖此前的物料变化。基线在共享轮询的
+        # 线程上读，不占默认线程池；读不到时这条连接不订阅物料失效，工作流事件照常
         materials = material_notices()
-        material_cursor = (
-            await asyncio.to_thread(_latest_material_sequence, materials, 0) if materials is not None else 0
-        )
+        material_cursor = 0
+        if materials is not None:
+            try:
+                material_cursor = await asyncio.wrap_future(materials.baseline())
+            except Exception:  # noqa: BLE001 - 物料库读不到不影响工作流事件流
+                materials = None
         return StreamingResponse(
             runtime_event_stream(
                 request,

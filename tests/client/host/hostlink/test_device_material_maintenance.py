@@ -139,3 +139,57 @@ def test_health_lists_the_device_in_maintenance(registry, monkeypatch) -> None:
     [record] = client.get("/api/v1/health").json()["data"]["unavailable_devices"]
     assert record["device_id"] == "heater_bad" and record["maintenance"] is True
     assert record["material_type"] == "NotAPlrClass"
+
+
+def _liquid_handler(deck_children=(), *, break_with=None):
+    """真的 PLR LiquidHandler：构造器走 ``LiquidHandler.deserialize``（to_dict=True），台面按 PLR 键引用。"""
+
+    from pylabrobot.legacy.liquid_handling import LiquidHandler
+    from pylabrobot.legacy.liquid_handling.backends.chatterbox import LiquidHandlerChatterboxBackend
+    from pylabrobot.resources import Coordinate, Deck
+
+    deck = Deck(name="deck", size_x=500, size_y=300, size_z=10)
+    for index, child in enumerate(deck_children):
+        deck.assign_child_resource(child, location=Coordinate(10 + 150 * index, 10, 0))
+    nodes = ResourceTreeSet.from_plr_resources([deck], known_random_uuid=True).dump()[0]
+    if break_with is not None:
+        break_with(nodes)
+    deck_node = ResourceTreeSet.load([nodes]).trees[0].root_node
+    template = LiquidHandler(
+        backend=LiquidHandlerChatterboxBackend(), deck=Deck(name="deck", size_x=500, size_y=300, size_z=10)
+    ).serialize()
+    # LiquidHandler.deserialize 从 children[0] 取台面
+    template["children"] = [{"_resource_child_name": "deck", "_resource_type": "pylabrobot.resources:Deck"}]
+    return LiquidHandler, deck_node, {"data": template}
+
+
+def test_a_liquid_handler_is_deserialized_with_its_deck_and_labware():
+    from unilabos.client.host.runtime.driver_creator import PyLabRobotCreator
+    from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
+
+    handler_class, deck_node, config = _liquid_handler([plate("p1")])
+    plate_uuid = deck_node.children[0].res_content.uuid
+    tracker = DeviceNodeResourceTracker()
+
+    driver = PyLabRobotCreator(handler_class, [deck_node], tracker).create_instance(config)
+
+    assert type(driver) is handler_class
+    assert [child.name for child in driver.deck.children] == ["p1"]
+    assert tracker.uuid_to_resources[deck_node.res_content.uuid] is driver.deck
+    assert tracker.uuid_to_resources[plate_uuid] is driver.deck.get_resource("p1")
+
+
+def test_a_liquid_handler_whose_deck_holds_a_bad_material_enters_maintenance():
+    from unilabos.client.host.runtime.driver_creator import PyLabRobotCreator
+    from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
+
+    def unknown_plate(nodes: list[dict]) -> None:
+        nodes[1]["config"]["type"] = "NotAPlrClass"
+
+    _handler_class, deck_node, _config = _liquid_handler([plate("p1")], break_with=unknown_plate)
+
+    with pytest.raises(DeviceMaterialError) as caught:
+        PyLabRobotCreator(_handler_class, [deck_node], DeviceNodeResourceTracker())
+
+    assert caught.value.material_uuid == deck_node.children[0].res_content.uuid
+    assert caught.value.material_type == "NotAPlrClass"

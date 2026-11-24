@@ -112,7 +112,8 @@ def test_command_entry_runs_materials_v1_mutations_idempotently(stack) -> None:
     ("command_type", "payload"),
     [
         ("inventory.template.upsert", {"template_id": "probe", "spec": "not-an-object"}),
-        ("inventory.reserve", {"workflow_id": "wf-1", "node_requirements": [{"quantity": "lots"}]}),
+        # node_requirements 本身形状正确（节点 -> 需求列表），坏的是数量：失败发生在 float(quantity)
+        ("inventory.reserve", {"workflow_id": "wf-1", "node_requirements": {"node-1": [{"quantity": "lots"}]}}),
         ("inventory.reconcile_count", {"lot_id": "lot-x", "measured_count": "many"}),
         ("material.move", [1, 2]),
     ],
@@ -131,6 +132,8 @@ def test_typed_command_with_malformed_payload_is_a_recorded_rejection(stack, com
     first = command_body(client.post("/api/v1/inventory/commands", json=body))
     assert first["status"] == "rejected" and first["code"] == 1000 and first["replayed"] is False, first
     assert first["error_code"] == "invalid_material"
+    if command_type == "inventory.reserve":
+        assert "lots" in str(first), first
     replay = command_body(client.post("/api/v1/inventory/commands", json=body))
     assert replay["status"] == "rejected" and replay["code"] == 1000 and replay["replayed"] is True
     processed = ok_data(client.get("/api/v1/inventory/commands/processed"))["commands"]

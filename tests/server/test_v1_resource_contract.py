@@ -172,33 +172,56 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
     error_of(client.get(f"/api/v1/materials/{bottle['uuid']}"), 6000)
 
 
-def test_v1_create_places_and_fills_in_one_transaction(client) -> None:
-    """建物料、放入库位与装液是同一个事务：装液失败时物料与落位一起回滚，库位仍空、不留半成品。"""
+def test_v1_create_places_and_fills_in_one_transaction(tmp_path, monkeypatch) -> None:
+    """建物料、放入库位与装液是同一个事务：装液失败时物料与落位一起回滚，库位仍空、不留半成品。
 
-    identities = _templates(client)
-    rack = ok_data(client.post("/api/v1/materials", json={
-        "resource_template_uuid": identities["tube_rack_2"], "name": "架-T"}), status=201)
-    site_uuid = rack["site_uuids"][0]
+    失败必须发生在服务里（建树与落位已经写进事务之后），而不是被请求模型挡在门外。
+    """
 
-    def total() -> int:
-        return ok_data(client.get("/api/v1/materials", params={"page": 1, "page_size": 100}))["total"]
+    from unilabos.server.services.materials.contents import ContentContract
 
-    before = total()
-    failed = client.post("/api/v1/materials", json={
-        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-坏",
-        "site_placement": {"action": "place", "site_uuid": site_uuid},
-        "reagent": {"quantity": 5},  # 缺 quantity_unit：装液被拒
-    })
-    assert failed.json()["code"] == 1000, failed.text
-    assert total() == before
-    assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] is None
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    reached: list[str] = []
+    create_reagent = ContentContract.create_reagent
 
-    placed = ok_data(client.post("/api/v1/materials", json={
-        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-好",
-        "site_placement": {"action": "place", "site_uuid": site_uuid},
-    }), status=201)
-    assert placed["current_site"]["uuid"] == site_uuid and placed["parent_uuid"] == rack["uuid"]
-    assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] == placed["uuid"]
+    def spy(self, values):
+        # 走到这里时建树与落位已经在同一个外层事务里写下
+        reached.append(str(service.connection.execute("SELECT COUNT(*) FROM material").fetchone()[0]))
+        return create_reagent(self, values)
+
+    monkeypatch.setattr(ContentContract, "create_reagent", spy)
+    with TestClient(app) as client:
+        identities = _templates(client)
+        rack = ok_data(client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["tube_rack_2"], "name": "架-T"}), status=201)
+        site_uuid = rack["site_uuids"][0]
+
+        def counts() -> tuple[int, int]:
+            connection = service.connection
+            return (connection.execute("SELECT COUNT(*) FROM material").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM inventory_ledger").fetchone()[0])
+
+        before = counts()
+        failed = client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-坏",
+            "site_placement": {"action": "place", "site_uuid": site_uuid},
+            # 请求模型合法；没有试剂身份（cas / reagent_info_uuid），装液在服务里被拒
+            "reagent": {"quantity": 5, "quantity_unit": "ml"},
+        })
+        assert failed.json()["code"] == 1000, failed.text
+        assert reached == [str(before[0] + 1)]  # 失败前新物料确实已写进事务
+        assert counts() == before
+        assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] is None
+
+        placed = ok_data(client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-好",
+            "site_placement": {"action": "place", "site_uuid": site_uuid},
+        }), status=201)
+        assert placed["current_site"]["uuid"] == site_uuid and placed["parent_uuid"] == rack["uuid"]
+        assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] == placed["uuid"]
+    service.close()
 
 
 def test_v1_create_initializes_a_plr_material_that_a_device_site_accepts(tmp_path) -> None:

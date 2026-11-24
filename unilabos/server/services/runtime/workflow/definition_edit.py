@@ -228,58 +228,52 @@ def create_edge(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def remap_node_references(value: Any, identity: Mapping[str, str]) -> Any:
+    """按身份表改写 ``value`` 里所有指向节点的引用，返回新对象。
+
+    节点身份是 UUID：任何与某个旧节点身份相等的字符串（值或字典键）都是对该节点的引用，
+    不按字段逐个列举形状。图里现有的形状：``parent_uuid``（分组 / 循环体 / 组合调用私有子图）、
+    连线两端、``execution_policy`` 的 ``depends_on`` 与 ``condition_guards[].node_uuid``、条件与循环
+    表达式的 ``{"node_uuid"}``、旧式循环条件 ``condition.node_uuid``、参数 / 循环 ``carry_next`` /
+    库存需求里的结果引用 ``{"kind": "node_output", "workflow_node_uuid"}``、组合调用实参的结果引用，
+    以及组合调用 ``meta_data.unilab.composite`` 的边界映射与资源作用域成员。
+    """
+
+    if isinstance(value, str):
+        return identity.get(value, value)
+    if isinstance(value, Mapping):
+        return {
+            identity.get(key, key) if isinstance(key, str) else key: remap_node_references(item, identity)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [remap_node_references(item, identity) for item in value]
+    return deepcopy(value)
+
+
 def duplicate_graph(
     graph: Mapping[str, Any],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    """复制完整图并重建节点、父子、连线和数量需求身份引用。"""
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+    """复制完整图：节点与连线换新身份，图里所有指向节点的引用随之改写。
 
-    node_identity = {str(node["uuid"]): str(uuid4()) for node in graph["nodes"]}
+    返回 ``(节点, 连线, 旧身份 → 新身份)``；调用方用同一张表改写图外（例如工作流元数据）的引用。
+    """
+
+    identity = {str(node["uuid"]): str(uuid4()) for node in graph["nodes"]}
     nodes: list[dict[str, Any]] = []
     for source in graph["nodes"]:
-        node = deepcopy(dict(source))
-        node["uuid"] = node_identity[str(source["uuid"])]
-        parent_uuid = source.get("parent_uuid")
-        node["parent_uuid"] = node_identity.get(str(parent_uuid)) if parent_uuid else None
+        node = remap_node_references(source, identity)
         for field in ("create_time", "update_time", "deleted_at", "workflow_uuid"):
             node.pop(field, None)
         nodes.append(node)
     edges: list[dict[str, Any]] = []
     for source in graph["edges"]:
-        edge = deepcopy(dict(source))
+        edge = remap_node_references(source, identity)
         edge["uuid"] = str(uuid4())
-        edge["source_node_uuid"] = node_identity[str(source["source_node_uuid"])]
-        edge["target_node_uuid"] = node_identity[str(source["target_node_uuid"])]
         for field in ("create_time", "update_time", "deleted_at"):
             edge.pop(field, None)
         edges.append(edge)
-    requirements: list[dict[str, Any]] = []
-    for source in graph.get("inventory_requirements", []):
-        requirement = deepcopy(dict(source))
-        requirement["uuid"] = str(uuid4())
-        requirement["consume_node_uuid"] = node_identity[
-            str(source["consume_node_uuid"])
-        ]
-        metadata = requirement.get("meta_data")
-        unilab = metadata.get("unilab") if isinstance(metadata, dict) else None
-        source_node_uuid = (
-            unilab.get("material_source_node_uuid")
-            if isinstance(unilab, dict)
-            else None
-        )
-        if source_node_uuid is not None:
-            unilab["material_source_node_uuid"] = node_identity[
-                str(source_node_uuid)
-            ]
-        for field in (
-            "create_time",
-            "update_time",
-            "deleted_at",
-            "workflow_uuid",
-            "sort_order",
-        ):
-            requirement.pop(field, None)
-        requirements.append(requirement)
-    return nodes, edges, requirements
+    return nodes, edges, identity
 
 
 def node_or_ancestor_disabled(node: Mapping[str, Any], nodes: Mapping[str, Mapping[str, Any]]) -> bool:
@@ -530,5 +524,6 @@ __all__ = [
     "patch_node",
     "private_node_owners",
     "project_inventory_requirements",
+    "remap_node_references",
     "restore_private_subgraphs",
 ]

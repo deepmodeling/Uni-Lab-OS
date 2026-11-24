@@ -3380,7 +3380,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 if not isinstance(node, dict):
                     raise ValueError(f"nodes[{index}] 必须是对象")
                 validate_uuid(node.get("uuid"))
-            new_nodes, new_edges, _requirements = duplicate_graph({"nodes": nodes, "edges": edges})
+            new_nodes, new_edges, _identity = duplicate_graph({"nodes": nodes, "edges": edges})
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkflowError("invalid_input", detail=str(exc)) from None
         record = self.create_workflow(

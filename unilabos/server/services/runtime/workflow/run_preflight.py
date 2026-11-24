@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from unilabos.protocol.materials import InventoryRequirement
+from unilabos.protocol.runtime.site_references import owner_reference
 from unilabos.registry.typed_contract import validate_action_values
 from .entry_parameters import declared_input_contract, resolve_task_input
 from .store import utc_now
@@ -24,7 +25,7 @@ class ResourceUnavailableError(ValueError):
 
 
 def deferred_parameters(plan: Mapping[str, Any], node: Mapping[str, Any]) -> list[str]:
-    """上游输出、库存分配和循环变量在派发时才能确定。"""
+    """上游输出、库存分配和循环变量在派发时才能确定；按所属物料选择的库位参数在任务准入时才选定。"""
     names = {
         str(edge.get("target_data_key") or "").split("@@@")[-1]
         for edge in plan.get("edges", [])
@@ -38,6 +39,7 @@ def deferred_parameters(plan: Mapping[str, Any], node: Mapping[str, Any]) -> lis
             return value.get("kind") == "node_output" or any(dynamic(item) for item in value.values())
         return isinstance(value, list) and any(dynamic(item) for item in value)
     names.update(key for key, value in node.get("param", {}).items() if dynamic(value))
+    names.update(key for key, value in node.get("param", {}).items() if owner_reference(value) is not None)
     return sorted(names - {""})
 
 
@@ -120,6 +122,31 @@ def build_run_preflight_report(
             return finalize(report)
         check("resources", "passed", "material_sites_bound", "按库位绑定的物料参数已解析为库位上的物料",
               details={"bindings": site_bindings})
+    # 按所属物料选择的库位参数（{"owner_uuid"}）：任务准入时才选定并预留，这里只读候选
+    from .site_selections import SiteSelectionError, check_owner_sites, owner_site_requests, read_owner_facts
+
+    nodes_by_uuid = {item["uuid"]: item for item in plan["nodes"]}
+    try:
+        selection_requests = owner_site_requests(plan)
+        selection_results = check_owner_sites(selection_requests, read_owner_facts(materials, selection_requests))
+    except SiteSelectionError as error:
+        check("resources", "blocked", "invalid_site_selection", error.message,
+              node=nodes_by_uuid.get(error.details.get("node_uuid")), details=error.details)
+        return finalize(report)
+    except (RuntimeError, OSError) as error:
+        check("resources", "blocked", "site_selection_facts_unavailable", f"无法读取按所属物料选择的库位：{error}")
+        return finalize(report)
+    for request, result in zip(selection_requests, selection_results):
+        details = {"parameter": request.parameter, "owner_uuid": request.owner_uuid,
+                   "occupant_uuid": request.occupant_uuid, **result}
+        if result["available"]:
+            check("resources", "passed", "site_selection_ready",
+                  f"库位参数 {request.parameter} 将在任务准入时按库位序号选定（当前可用 {len(result['available'])} 个）",
+                  node=nodes_by_uuid.get(request.node_uuid), details=details)
+        else:
+            check("resources", "blocked", "site_selection_unavailable",
+                  f"库位参数 {request.parameter}：所属物料下接受放入物料的库位此刻都被占用或已预留（提交后排队，空出后选定）",
+                  node=nodes_by_uuid.get(request.node_uuid), details=details)
     endpoints = None
     if service._preflight_endpoints is not None:
         try:

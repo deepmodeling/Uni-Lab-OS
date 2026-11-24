@@ -376,7 +376,8 @@ class HTTPWorkflowClient:
 
         物料参数（``ResourceSlot``）可以按库位绑定：给 ``{"site_uuid": 库位 uuid}``
         （``unilabos.protocol.runtime.site_references.material_at_site``），表示此刻占着该库位的物料，
-        服务端建任务时解析并冻结。
+        服务端建任务时解析并冻结。库位参数（``SiteSlot``）可以按所属物料选择：给 ``{"owner_uuid": 所属物料 uuid}``
+        （``site_under_owner``），调度器在任务准入时选定库位并冻结。
         """
 
         operation_id = operation_id or str(uuid4())

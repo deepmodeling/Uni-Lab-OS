@@ -174,7 +174,11 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - 工站入站预留（`/inventory/ingress-reservations`）保护它的库位：`reserved`（未过期）或 `in_transit` 期间，
   人工移动（`move_material` 命令、V1 `site_placement`）、transfer 和工作流搬运派发前的预检都以
   `MaterialConflictError(conflict="site_ingress_reserved")` 拒绝（HTTP 6011，库存命令 `error_code`
-  `conflict:site_ingress_reserved`），载体本身也只能经 `receive` 落位；同一载体同时至多一个活动预留（再预留 3003）。
+  `conflict:site_ingress_reserved`），载体本身也只能经 `receive` 落位——例外是 `in_transit` 的载体被直接放进自己预留的库位，
+  等同接收（同一事务里预留置为 `received`）；同一载体同时至多一个活动预留（再预留 3003）。预留可以给
+  `owner_material_uuid` 代替 `candidate_site_uuids`：候选是该物料下接受载体的库位（模板白名单与允许的资源类别，按库位序号），
+  一个都不接受 6008，都被占着 6007；工作流按所属物料选库位用这种写法，任务结束经 `POST .../ingress-reservations/finish-task`
+  收尾（dev 扩展）。
   `site_ingress_reserved` 是临时资源条件：预留接收、取消或过期后自然解除，调度侧应等待而不是判任务失败
   （常量 `services.materials.SITE_INGRESS_RESERVED`）。与 V1 的差别：只锁库位，不锁库位所属设备与载体设备上的
   普通作业；设备快照（`apply_snapshot`）是现场事实，不受预留拦截。

@@ -156,6 +156,7 @@ _ERRORS = {
     ),
     "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
     "material_site_invalid": (422, "物料参数按库位绑定失败"),
+    "site_selection_invalid": (422, "库位参数按所属物料选择失败"),
     "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
     "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
     "local_task_authority_forbidden": (
@@ -1528,6 +1529,9 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             )
             # 按库位绑定的物料参数解析成占用物料，计划、attempt 参数与任务输入一起冻结
             self._bind_material_sites(plan, jobs, resolved["input"], site_facts)
+            # 按所属物料选择的库位参数在任务准入时由调度器选定；写法不对（没有 Material.site 关系、放入物料不确定、
+            # 与所属物料参数不一致）建任务时就拒绝
+            self._check_site_selections(plan)
             try:
                 bind_plan_inventory(plan, bindings, binding_sources)
             except (ValueError, InventoryBindingUnavailable) as exc:
@@ -1604,6 +1608,15 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 bind_jobs(plan, jobs)
         except MaterialSiteError as exc:
             raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None
+
+    @staticmethod
+    def _check_site_selections(plan: Dict[str, Any]) -> None:
+        from .site_selections import SiteSelectionError, owner_site_requests
+
+        try:
+            owner_site_requests(plan)
+        except SiteSelectionError as exc:
+            raise WorkflowError("site_selection_invalid", detail=exc.message, details=exc.details) from None
 
     def create_ad_hoc_device_action_task(
         self,

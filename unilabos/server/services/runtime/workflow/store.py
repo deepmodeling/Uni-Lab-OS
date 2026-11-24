@@ -1667,6 +1667,44 @@ class WorkflowStore:
                                data={"workflow_task_uuid": task_uuid}, now=now)
         return self.get_task(task_uuid)
 
+    def freeze_task_site_selections(self, task_uuid: str, selections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """任务准入时按所属物料选定的库位冻结进任务（``site_selections.py``）。
+
+        一个事务里改计划节点参数（含 ``entry_param_template`` 的静态值）、对应节点运行与其 pending attempt 的参数、
+        任务输入，并在计划里记下选择（``site_selections``）。只在任务还没开始（``pending``）时写。
+        """
+
+        from .site_selections import freeze_site_selections
+
+        now = utc_now()
+        with self.transaction() as conn:
+            task = self.get_task(task_uuid)
+            if task["status"] != "pending":
+                raise StoreConflict("只有尚未开始的任务能冻结库位选择")
+            plan = task["execution_plan"]
+            input_value = dict(task["input"])
+            touched = freeze_site_selections(plan, input_value, selections)
+            params = {str(node["uuid"]): node.get("param") or {} for node in plan.get("nodes") or []}
+            for row in conn.execute(
+                "SELECT uuid, workflow_node_uuid FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL",
+                (task_uuid,),
+            ).fetchall():
+                if row["workflow_node_uuid"] not in touched:
+                    continue
+                param = _json(params[row["workflow_node_uuid"]])
+                conn.execute("UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?", (param, now, row["uuid"]))
+                conn.execute(
+                    "UPDATE workflow_node_job SET param=?, update_time=? WHERE workflow_node_run_uuid=? "
+                    "AND deleted_at IS NULL AND status='pending'",
+                    (param, now, row["uuid"]),
+                )
+            conn.execute(
+                "UPDATE workflow_task SET input=?, execution_plan=?, update_time=? WHERE uuid=?",
+                (_json(input_value), _json(plan), now, task_uuid),
+            )
+            self._append_event(conn, event="workflow.task.changed", data={"workflow_task_uuid": task_uuid}, now=now)
+        return self.get_task(task_uuid)
+
     def mark_job_cancel_requested(self, job_uuid: str) -> bool:
         """已下发的 attempt 收到取消请求：展示为 cancel_requested，直到真实终态回报。"""
 

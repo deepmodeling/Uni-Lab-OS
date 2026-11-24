@@ -63,7 +63,8 @@ Authority，再创建执行层，因此不存在执行器先于库存权威工�
 1. `PUT /api/v1/workflows/{uuid}/graph` 保存节点和边。
 2. `POST /api/v1/workflow-tasks` 固化 `workflow_snapshot` 和 `execution_plan`。按库位绑定的物料参数
    （`{"site_uuid": ...}`，见 [动作标准](action_standard.md)）在这里换成此刻占着该库位的物料并一起冻结；运行预检
-   （`/run-preflight`）走同一条解析路径。
+   （`/run-preflight`）走同一条解析路径。按所属物料选择的库位参数（`{"owner_uuid": ...}`）在调度器准入任务时
+   （`_admit_fresh_task`，先于整任务库存预留）选定、经入口预留占住并冻结；接受的库位都被占着时任务保持 `pending` 排队。
 3. `WorkflowService` 调用已绑定的 `BackendScheduler.submit(task_uuid)`。
 4. Scheduler 从持久化 Task/节点运行构建 `TaskDag`，恢复已完成节点后开始走图。
 

@@ -1389,12 +1389,15 @@ class MaterialsService(MaterialsRepository):
 
         return material_sanity_facts(self, material_uuids, reservation_uuid=reservation_uuid)
 
-    def site_admission_facts(self, *, site_uuids: Sequence[str] = ()) -> dict[str, Any]:
-        """任务准入时按库位绑定物料要的只读库位事实（不写库、不判定），见 ``materials/site_admission.py``。"""
+    def site_admission_facts(
+        self, *, site_uuids: Sequence[str] = (), owners: Sequence[Mapping[str, Any]] = (),
+    ) -> dict[str, Any]:
+        """任务准入时的只读库位事实（按库位绑定物料 / 按所属物料选库位，不写库、不判定），见
+        ``materials/site_admission.py``。"""
 
         from .site_admission import site_admission_facts
 
-        return site_admission_facts(self, site_uuids=site_uuids)
+        return site_admission_facts(self, site_uuids=site_uuids, owners=owners)
 
     def _candidate_inventory_lots(
         self,
@@ -3391,18 +3394,33 @@ class MaterialsService(MaterialsRepository):
             ).fetchone()
             cursor = row[0] if row is not None else None
 
-    def _assert_site_not_ingress_reserved(self, site: SiteRecord) -> None:
+    def _assert_site_not_ingress_reserved(self, site: SiteRecord, *, moving_material_uuid: Optional[str] = None) -> None:
         """活动入口预留（reserved 未过期 / in_transit）期间库位不接受任何放入。
 
         载体本身也只能经预留的 receive 落位（receive 先把预留置为 received 再移动），
         人工移动、工作流搬运预检与 transfer 都走这里，拿到 ``site_ingress_reserved`` 冲突。
+        唯一例外：``in_transit`` 的载体（``moving_material_uuid``）被直接放进自己预留的库位，等同接收——
+        预留在同一事务里置为 ``received``（工作流按所属物料选库位时，放入动作派发前把预留转为 in_transit）。
         """
 
+        now = self._now_ms()
         row = self.connection.execute(
             "SELECT reservation_uuid, carrier_material_uuid, state FROM station_ingress_reservation "
             "WHERE site_uuid=? AND (state='in_transit' OR (state='reserved' AND expires_at_ms > ?)) LIMIT 1",
-            (site.site_uuid, self._now_ms()),
+            (site.site_uuid, now),
         ).fetchone()
+        if (
+            row is not None
+            and row["state"] == "in_transit"
+            and moving_material_uuid is not None
+            and row["carrier_material_uuid"] == moving_material_uuid
+        ):
+            self.connection.execute(
+                "UPDATE station_ingress_reservation SET state='received', received_at_ms=?, "
+                "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), revision=revision+1 WHERE reservation_uuid=?",
+                (now, now, row["reservation_uuid"]),
+            )
+            return
         if row is not None:
             raise MaterialConflictError(
                 f"库位 {site.label}（{site.site_uuid}）已被入口预留 {row['reservation_uuid']}"
@@ -3466,7 +3484,7 @@ class MaterialsService(MaterialsRepository):
         ):
             raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
         if placing:
-            self._assert_site_not_ingress_reserved(destination)
+            self._assert_site_not_ingress_reserved(destination, moving_material_uuid=value.material_uuid)
         self._assert_no_parent_cycle(value.material_uuid, parent_uuid)
         same_site = (
             source is not None

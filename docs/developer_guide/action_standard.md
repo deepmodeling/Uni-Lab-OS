@@ -17,7 +17,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
 | `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串 | 严格 |
-| `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID，带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
+| `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID（或按所属物料选择的 `{"owner_uuid": ...}`，准入时选定），带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -145,6 +145,28 @@ def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = No
 - `show_occupied`（默认 `True`）决定前端是否列出已占用的库位，`allow_occupied`（默认 `False`）决定已占用的库位能否选；
   运行预检与派发前核对所选库位属于 `owner`，且（不允许占用时）没有被 `occupant` 以外的物料占着。
 - 只写 `SiteSlot`、不写 `Material.site` 的参数照旧是库位选择器，只是没有这层关系的核对。
+
+#### 按所属物料选库位：`{"owner_uuid": ...}`
+
+带 `Material.site` 关系的库位参数（以及工作流入口参数里的 `SiteSlot`）可以不给库位 uuid，而给
+`{"owner_uuid": "<所属物料 uuid>"}`，由调度器在**任务准入**时挑一个库位：
+
+- 候选是所属物料下（可见的）库位里，接收规则接受放入物料（`Material.site` 的 `occupant` 参数；它按库位绑定时先解析）的：
+  库位模板白名单（`extra.allowed_resource_template_uuids`，6008 那一条）与 `allowed_resource_categories`（放入物料模板的
+  `category` 要与它相交）都满足，空列表表示不限。按库位序号选第一个空着、没有活动入口预留、没有未结算物理动作占着的。
+- 选中后用物料权威的入口预留占住（`POST /api/v1/inventory/ingress-reservations` 的 `owner_material_uuid` 写法，
+  `backend_task_uuid` 为任务 uuid），再把库位 uuid 冻结进计划节点参数、attempt 参数与任务输入；计划的 `site_selections`
+  记录所属物料、放入物料、选中的库位与预留。同一个工作流入口参数用在多个节点里只选一次。
+- 用到这个库位的动作派发时预留转 `in_transit`：放入物料被直接放进这个库位等同接收（预留置为 `received`），其他物料仍被挡；
+  任务结束时收尾（`POST /api/v1/inventory/ingress-reservations/finish-task`：物料已在库位上记 `received`，否则取消）。
+- 所属物料下没有接受放入物料的库位是预检错误：任务在准入时失败，`error_info[0]` 为 `plan_not_executable`
+  （`stage=preflight`、`reason=no_acceptable_site`，`details` 带参数、节点、所属物料）；运行预检给 `invalid_site_selection`。
+  接受的库位此刻都被占着或已被预留是临时条件：任务保持 `pending` 排队，attempt 的 `wait_reason.code=site_group_unavailable`，
+  有任务结束或 5 秒兜底重算时按创建先后重试；运行预检给 `site_selection_unavailable`（可以提交，提交后排队）。
+- 写法本身不对时建任务就拒绝（`error.code=site_selection_invalid`，`error.details.reason`）：参数没有 `Material.site` 关系
+  （`no_site_relation`）、关系没有声明 `occupant`（`occupant_undeclared`）、放入物料在建任务时不确定（来自上游结果，
+  `occupant_unknown`）、与 `owner` 参数给的物料不一致（`owner_mismatch`）。
+- 给精确的库位 uuid 照旧，不经过选择与预留。
 
 ## 前端选择器：`placeholder_keys`
 

@@ -310,7 +310,14 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 > Dev-only (2026-11-25): `POST /api/v1/inventory/site-admission` (`{"site_uuids": [...]}`) is the one read the workflow
 > service makes at task creation / run preflight to bind material parameters given as `{"site_uuid": ...}`: per Site
 > whether it exists, its label and owner, and the occupying material with its template (`module_name`, category).
-> Read-only, no verdict (see `action_standard.md`).
+> Read-only, no verdict (see `action_standard.md`). With `owners` (`[{"owner_material_uuid", "occupant_material_uuid"}]`)
+> it also lists, per owner, the Sites whose acceptor (template whitelist, allowed categories) takes the occupant, by
+> ordinal, and which of them are free now; the run preflight uses it for SiteSlot parameters given as `{"owner_uuid": ...}`.
+> Dev extension (2026-11-25): `POST /api/v1/inventory/ingress-reservations` takes `owner_material_uuid` instead of
+> `candidate_site_uuids` (candidates = the owner's Sites that accept the carrier; none: 6008, all taken: 6007), an
+> `in_transit` carrier placed straight into its reserved Site completes the reservation (`received`), and
+> `POST /api/v1/inventory/ingress-reservations/finish-task` (`{"backend_task_uuid", "reason"}`) closes a workflow task's
+> active reservations (received when the carrier sits in the Site, canceled otherwise).
 
 | class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
 |---|---|---|---|---|---|

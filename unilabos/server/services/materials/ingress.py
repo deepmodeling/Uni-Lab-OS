@@ -9,6 +9,12 @@ AGV 运输载体前在目标工站的候选入口库位里预留一个空库位�
 活动预留期间库位只留给这次接收：人工移动、transfer、工作流搬运派发前的预检都经
 ``MaterialsService._apply_material_move`` 拿到 ``site_ingress_reserved`` 冲突（HTTP 6011），
 调度侧把它当作临时资源条件等待；``receive`` 先把预留置为 ``received`` 再在同一事务里移动载体。
+``in_transit`` 的载体被直接放进自己预留的库位（工作流动作把它搬进来）等同接收：同一事务里预留置为 ``received``。
+
+调度器按所属物料选库位（库位参数给 ``{"owner_uuid": ...}``）也走这里：请求给 ``owner_material_uuid`` 而不是
+``candidate_site_uuids``，候选是所属物料下接受载体（放入物料）的库位（模板白名单与允许的资源类别，按库位序号）；
+一个都不接受是 ``site_template`` 冲突（6008，合同错误），都被占着或已被预留是 ``site_occupied`` 冲突（6007，
+临时条件，调度器排队等）。预留随任务冻结，派发用到它的动作时转 ``in_transit``，任务结束时 :meth:`finish_task` 收尾。
 """
 
 from __future__ import annotations
@@ -82,15 +88,20 @@ class IngressReservations:
         key = str(values.get("idempotency_key") or "").strip()
         carrier = str(values.get("carrier_material_uuid") or "").strip()
         candidates: Sequence[str] = [str(item).strip() for item in values.get("candidate_site_uuids") or [] if str(item).strip()]
+        owner = str(values.get("owner_material_uuid") or "").strip()
         ttl = values.get("ttl_seconds")
-        if not key or not carrier or not candidates:
-            raise MaterialValidationError("idempotency_key, carrier_material_uuid and candidate_site_uuids are required")
+        if not key or not carrier or bool(candidates) == bool(owner):
+            raise MaterialValidationError(
+                "idempotency_key, carrier_material_uuid and one of candidate_site_uuids / owner_material_uuid are required"
+            )
         if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl <= 0:
             raise MaterialValidationError("ttl_seconds 必须是正整数")
         request = {
             "carrier_material_uuid": carrier, "candidate_site_uuids": list(candidates), "ttl_seconds": ttl,
             "backend_task_uuid": values.get("backend_task_uuid"), "invocation_key": values.get("invocation_key"),
         }
+        if owner:
+            request["owner_material_uuid"] = owner
         request_hash = canonical_hash(request)
         now = self.materials._now_ms()
         with self.materials.write():
@@ -105,6 +116,8 @@ class IngressReservations:
             carrier_record = MaterialsRepository.get_material(self.materials, carrier)
             if carrier_record is None:
                 raise MaterialNotFoundError("可搬运载体尚未同步到目标工站", subject="material")
+            if owner:
+                candidates = self._owner_candidates(owner, carrier)
             # 同一载体同时只能去一个入口库位（到期的 reserved 已在上面置为 expired）
             held = self.connection.execute(
                 "SELECT reservation_uuid, site_uuid, state FROM station_ingress_reservation "
@@ -137,6 +150,10 @@ class IngressReservations:
                 tuple(candidates),
             ).fetchall()
             if not available:
+                if owner:
+                    raise MaterialConflictError(
+                        f"物料 {owner} 下接受载体 {carrier} 的库位都被占用或已被预留", conflict="site_occupied"
+                    )
                 raise MaterialConflictError("逻辑入口当前没有可接收载体的库位", conflict="site_occupied")
             # 只预留接受载体模板的库位，免得载体到站后 receive 才因库位白名单（6008）失败
             accepting = [
@@ -159,6 +176,48 @@ class IngressReservations:
                  carrier, available[0][0], now + ttl * 1000, now, now),
             )
             return self._projection(self._row(reservation_uuid)), True
+
+    def _owner_candidates(self, owner: str, carrier: str) -> list[str]:
+        """所属物料下接受载体的库位（按库位序号）；一个都没有是合同错误（``site_template``，6008）。"""
+
+        from .site_admission import acceptable_owner_sites, occupant_facts
+
+        owner_record = MaterialsRepository.get_material(self.materials, owner)
+        if owner_record is None or owner_record.deleted_at_ms is not None:
+            raise MaterialNotFoundError(f"库位所属物料 {owner} 不存在", subject="material")
+        occupant = occupant_facts(self.materials, carrier) or {}
+        sites = acceptable_owner_sites(self.materials, owner, occupant)
+        if not sites:
+            raise MaterialConflictError(
+                f"物料 {owner_record.display_name}（{owner}）下没有接受 {occupant.get('template_name') or carrier} 的库位"
+                "（库位的模板白名单或允许的资源类别不含它）",
+                conflict="site_template",
+            )
+        return [site.site_uuid for site in sites]
+
+    def finish_task(self, backend_task_uuid: str, *, reason: str) -> list[dict[str, Any]]:
+        """任务结束：收掉它的活动预留。载体已在预留的库位上记 ``received``，否则按 ``reason`` 取消。"""
+
+        task = str(backend_task_uuid or "").strip()
+        reason = str(reason or "").strip()
+        if not task or not reason:
+            raise MaterialValidationError("backend_task_uuid and reason are required")
+        now = self.materials._now_ms()
+        with self.materials.write():
+            self._expire_due(now)
+            rows = self.connection.execute(
+                "SELECT ingress.reservation_uuid, ingress.carrier_material_uuid, site.occupied_material_uuid "
+                "FROM station_ingress_reservation AS ingress LEFT JOIN site ON site.site_uuid = ingress.site_uuid "
+                "WHERE ingress.backend_task_uuid=? AND ingress.state IN ('reserved','in_transit') "
+                "ORDER BY ingress.created_at_ms, ingress.reservation_uuid",
+                (task,),
+            ).fetchall()
+            for row in rows:
+                if row["occupied_material_uuid"] == row["carrier_material_uuid"]:
+                    self._transition(row["reservation_uuid"], "received", now, received_at_ms=now)
+                else:
+                    self._transition(row["reservation_uuid"], "canceled", now, canceled_at_ms=now, cancel_reason=reason)
+            return [self._projection(self._row(row["reservation_uuid"])) for row in rows]
 
     def get(self, reservation_uuid: str) -> dict[str, Any]:
         with self.materials.write():

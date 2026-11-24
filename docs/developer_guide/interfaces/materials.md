@@ -204,7 +204,8 @@ transfer payload：source_device_id、target_device_id、items。
 
 move、transfer 与工作流搬运派发前的预检共用同一组放入检查：目标 Site 有活动的工站入站预留
 （`/api/v1/inventory/ingress-reservations`，`reserved` 未过期或 `in_transit`）时拒绝，冲突类别
-`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位。这是临时条件，
+`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位；唯一例外是 `in_transit` 的载体
+被直接放进自己预留的库位，等同接收（预留在同一事务里置为 `received`，工作流按所属物料选库位时用到）。这是临时条件，
 预留接收、取消或过期后同一请求可以重试。
 
 执行顺序：

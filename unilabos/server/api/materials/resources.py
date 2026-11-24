@@ -233,7 +233,7 @@ def create_v1_resource_router(
         resource_template_uuid: Optional[str] = Query(default=None),
         category: Optional[str] = Query(default=None, description="material = 非设备物料；device = 设备"),
         inventory_scope: str = Query(default="current", description="current | history（离站物料，本后端恒为空）"),
-        empty_containers_only: bool = Query(default=False, description="只要没有任何内容登记的物料"),
+        empty_containers_only: bool = Query(default=False, description="只要空容器：不含设备、台面与载架，且没有内容登记、也没有数量大于 0 的内容物"),
     ) -> Any:
         return contract.list_materials(page=page, page_size=page_size, name=name, barcode=barcode,
                                        resource_template_uuid=resource_template_uuid or None,

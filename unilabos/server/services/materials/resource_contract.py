@@ -502,9 +502,19 @@ class ResourceContract:
         elif category:
             raise MaterialValidationError("category must be material or device")
         if empty_containers_only:
-            # 没有任何内容登记（试剂 / 样品 / 当前内容物）；数量为 0 的有效登记仍算非空
+            # 空容器：只看容器（设备、台面、载架与仓库不是容器），且没有任何内容记录——没有内容登记
+            # （试剂 / 样品 / 当前内容物，数量为 0 的有效登记仍算非空），也没有数量大于 0 的内容物
+            # （material.content.set、设备快照、put_data 写的是内容物行，不一定有登记）
+            where.append(
+                "resource_type NOT IN ('device', 'deck', 'carrier', 'warehouse') "
+                "AND resource_type NOT LIKE '%\\_carrier' ESCAPE '\\'"
+            )
             where.append(
                 "NOT EXISTS (SELECT 1 FROM material_content c WHERE c.material_uuid = material.material_uuid)"
+            )
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM material_substance s "
+                "WHERE s.material_uuid = material.material_uuid AND s.quantity > 0)"
             )
         if name:
             # V1 的 name 筛选按人读标签匹配

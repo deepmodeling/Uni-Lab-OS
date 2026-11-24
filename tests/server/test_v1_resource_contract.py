@@ -251,6 +251,63 @@ def test_material_list_filters_by_category_scope_and_empty_containers(client) ->
     error_of(client.get("/api/v1/materials", params={"category": "bogus"}), 1000)
 
 
+def test_empty_containers_are_containers_without_contents_in_any_form(tmp_path) -> None:
+    """内容物行（content.set / put_data / 设备快照写的）也算内容；设备、台面、载架不是容器。"""
+
+    from uuid import uuid4
+
+    from unilabos.protocol.materials import (
+        InventoryMutation,
+        MaterialDataWrite,
+        MaterialIdentityWrite,
+        MaterialNodeCreate,
+        MaterialSubstance,
+        MaterialTreeCreate,
+    )
+
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+
+    def mutation(operation: str) -> InventoryMutation:
+        command = str(uuid4())
+        return InventoryMutation(command_uuid=command, effect_key=f"{operation}:{command}", operation=operation,
+                                 actor_type="test", actor_uuid="empty-containers")
+
+    def create(resource_type: str) -> str:
+        return service.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
+            client_ref="root", identity=MaterialIdentityWrite(
+                resource_id=f"{resource_type}-{uuid4().hex[:6]}", template_name=f"{resource_type}_tpl",
+                resource_type=resource_type, config={"type": "Resource"}),
+        )])).data.root_material_uuid
+
+    try:
+        with TestClient(app) as client:
+            identities = _templates(client)
+
+            def bottle(name: str) -> str:
+                return ok_data(client.post("/api/v1/materials", json={
+                    "resource_template_uuid": identities["bottle_500ml"], "name": name}), status=201)["uuid"]
+
+            empty, set_by_command, put_by_data, drained = bottle("空瓶"), bottle("命令装液"), bottle("数据装液"), bottle("用空")
+            ok_data(client.post("/api/v1/inventory/commands", json={
+                "command_id": "fill-1", "type": "material.content.set",
+                "payload": {"edge_uuid": set_by_command, "state": {"substances": [
+                    {"name": "水", "quantity": 10, "quantity_unit": "ml"}]}}}))
+            for material_uuid, quantity in ((put_by_data, 5.0), (drained, 0.0)):
+                service.put_data(mutation("put_data"), material_uuid, MaterialDataWrite(substances=[
+                    MaterialSubstance(name="水", quantity=quantity, quantity_unit="ml")]))
+            not_containers = {create("device"), create("deck"), create("plate_carrier"), create("warehouse")}
+
+            listed = {item["uuid"] for item in ok_data(client.get(
+                "/api/v1/materials", params={"empty_containers_only": "true", "page_size": 100}))["items"]}
+
+            assert listed == {empty, drained}
+            assert not listed & not_containers
+    finally:
+        service.close()
+
+
 def test_material_graph_rereads_only_the_named_materials_and_their_site_owners(client) -> None:
     identities = _templates(client)
     rack = ok_data(client.post("/api/v1/materials", json={

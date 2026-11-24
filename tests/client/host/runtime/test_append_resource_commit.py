@@ -1,7 +1,7 @@
 """FRAMEWORK_GAPS #26：大物料树挂载不能在提交之后被等待方超时取消，每次取消都要留日志。
 
-``materials.assign`` / Host 下发 ``RESOURCE_APPEND`` 都经 ``run_node_coroutine`` 阻塞等待
-``node.append_resource``。挂载以一次根树快照收尾，树大时（1873 个物料的扣电台面）要几十秒。
+Host 下发 ``RESOURCE_APPEND`` 经 ``run_node_coroutine`` 阻塞等待 ``node.append_resource``
+（``append_resource_blocking``）。挂载以一次根树快照收尾，树大时（1873 个物料的扣电台面）要几十秒。
 等待方的超时只能约束提交点之前的阶段（等锁、从权威拉取物料）；本地 PLR 挂上、权威 move
 落库之后再取消，本地与权威就各执一词，调用方还拿到一个"失败"。
 """
@@ -21,7 +21,7 @@ from unilabos.client.host.runtime.resource import AuthorityResourceService
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.resources import materials
 from unilabos.server.services.materials import MaterialsService
-from tests.plr_fixtures import site_deck, tip_rack
+from tests.plr_fixtures import device_material, site_deck, tip_rack
 
 
 class _Bench:
@@ -67,8 +67,9 @@ def bench(tmp_path):
     gateway = LocalMaterialsClient(service)
     authority = _SlowAuthority(gateway)
     runtime = HostLinkLocalRuntime()
-    node = runtime.add_driver(HostLinkDriverSpec("bench", _Bench, {}, resource_uuid="bench-uuid"))
+    node = runtime.add_driver(HostLinkDriverSpec("bench", _Bench, {}, resource_uuid=device_material(gateway, "bench")))
     runtime.set_resource_service(authority)
+    service.set_resource_sync_dispatcher(runtime.dispatch_material_sync)
     runtime.start()
     deck_uuid = str(uuid4())
     materials.ensure(site_deck(deck_uuid, "Bench_Deck", ("T1", "T2")), gateway=gateway)
@@ -91,6 +92,16 @@ def bench(tmp_path):
         service.close()
 
 
+def _append(node, tips, *, timeout: float) -> dict:
+    """Host 下发的 RESOURCE_APPEND：挂到台面 T2。"""
+
+    return node.append_resource_blocking(
+        {"resource_uuid": [tips.unilabos_uuid], "bind_parent_id": "Bench_Deck",
+         "other_calling_param": {"slot": "T2"}},
+        timeout,
+    )
+
+
 def test_mount_is_not_cancelled_after_the_move_is_committed(bench) -> None:
     """快照回报比等待方的超时还慢：挂载照常走完，调用方拿到成功结果，不留半截状态。"""
 
@@ -98,7 +109,7 @@ def test_mount_is_not_cancelled_after_the_move_is_committed(bench) -> None:
     tips = bench["tips"]
 
     started = time.monotonic()
-    result = materials.assign(bench["node"], tips, parent="Bench_Deck", slot="T2", timeout=3.0)
+    result = _append(bench["node"], tips, timeout=3.0)
 
     assert time.monotonic() - started >= 6.0  # 越过超时一直等到快照回报完成
 
@@ -119,7 +130,7 @@ def test_mount_cancelled_before_commit_is_logged_and_leaves_nothing_behind(bench
     deck_uuid = bench["deck_uuid"]
 
     with pytest.raises(TimeoutError):
-        materials.assign(bench["node"], tips, parent="Bench_Deck", slot="T2", timeout=0.3)
+        _append(bench["node"], tips, timeout=0.3)
     time.sleep(1.8)  # 让被取消的协程有机会（错误地）继续执行
 
     assert tips.parent is None

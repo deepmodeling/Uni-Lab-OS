@@ -15,7 +15,7 @@ from uuid import uuid4
 import pytest
 
 from tests.client.host.hostlink.test_warehouse_site_placement import DEVICE_ID, _bottle, stocker  # noqa: F401 - fixture
-from tests.plr_fixtures import site_deck
+from tests.plr_fixtures import site_deck, device_material
 from tests.server.test_material_io_inventory import TIP_RACK, registry_template
 from unilabos.client.host.hostlink import downlink, main_hostlink_run
 from unilabos.client.host.hostlink.backend import HostLinkBackend
@@ -59,7 +59,7 @@ def handler(tmp_path, monkeypatch):
     monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
     monkeypatch.setattr(HostLinkConfig, "port", 0)
     local = HostLinkLocalRuntime()
-    node = local.add_driver(HostLinkDriverSpec(HANDLER_ID, _HandlerDriver, {}, resource_uuid=str(uuid4())))
+    node = local.add_driver(HostLinkDriverSpec(HANDLER_ID, _HandlerDriver, {}, resource_uuid=device_material(gateway, HANDLER_ID)))
     backend = HostLinkBackend(local, is_slave=False)
     backend.start()
     monkeypatch.setattr(BasicConfig, "backend", "hostlink")

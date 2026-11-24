@@ -1,7 +1,7 @@
 """设备侧把物料放到仓库（PLR ``ItemizedCarrier`` / ``WareHouse``）库位上（FRAMEWORK_GAPS #29 / #30）。
 
 仓库只接受 ``assign_resource_to_site``：物料挂在库位 holder 下，仓库的 canonical Site
-同时记占用。``materials.assign``（RESOURCE_APPEND）、权威 transfer 的 load、资源树下行
+同时记占用。``materials.assign``（与 transfer 同一条路）、权威 transfer 的 load、资源树下行
 （RESOURCE_TREE_SYNC）都要走这条路径；之后整棵仓库树从权威反序列化（下次启动）不出错，
 观察者的快照也不报错。
 """
@@ -24,6 +24,7 @@ from unilabos.resources.presets.itemized_carrier import Bottle
 from unilabos.resources.presets.warehouse import warehouse_factory
 from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
+from tests.plr_fixtures import device_material
 
 DEVICE_ID = "stocker"
 
@@ -54,14 +55,14 @@ def stocker(tmp_path, monkeypatch):
     monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
     monkeypatch.setattr(HostLinkConfig, "port", 0)
     local = HostLinkLocalRuntime()
-    node = local.add_driver(HostLinkDriverSpec(DEVICE_ID, _StockerDriver, {}, resource_uuid=str(uuid4())))
+    node = local.add_driver(HostLinkDriverSpec(DEVICE_ID, _StockerDriver, {}, resource_uuid=device_material(gateway, DEVICE_ID)))
     backend = HostLinkBackend(local, is_slave=False)
     backend.start()
     try:
         warehouse = materials.create(
             warehouse_factory("stock", num_items_x=3, num_items_y=1, num_items_z=1), node=node
         )
-        materials.assign(node, warehouse)
+        [warehouse] = materials.assign(node, warehouse)["resources"]
         yield service, gateway, node, warehouse
     finally:
         backend.stop()
@@ -101,12 +102,12 @@ def _observer_errors(node) -> tuple:
 
 
 def test_assign_onto_a_warehouse_site(stocker) -> None:
-    """#29：materials.assign / RESOURCE_APPEND 按库位放上仓库。"""
+    """#29：materials.assign 按库位放上仓库（权威提交后本设备 load 重建）。"""
 
     service, gateway, node, warehouse = stocker
     bottle = materials.create(_bottle("assigned"), node=node)
 
-    materials.assign(node, bottle, parent=warehouse, slot="A02")
+    [bottle] = materials.assign(node, bottle, parent=warehouse, slot="A02")["resources"]
 
     assert warehouse["A02"].resource is bottle
     assert _authority_placement(service, warehouse) == {"A02": ("assigned", warehouse["A02"].name)}
@@ -115,7 +116,7 @@ def test_assign_onto_a_warehouse_site(stocker) -> None:
 
     # 不指定库位：仓库只能按库位放物料，明确报错，权威不变
     loose = materials.create(_bottle("loose"), node=node)
-    with pytest.raises(Exception, match="挂载"):
+    with pytest.raises(Exception, match="only holds materials on its Sites"):
         materials.assign(node, loose, parent=warehouse)
     assert _authority_placement(service, warehouse) == {"A02": ("assigned", warehouse["A02"].name)}
 

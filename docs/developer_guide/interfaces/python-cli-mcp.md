@@ -152,14 +152,13 @@ ErrorPolicy 的 options 按异常类名映射到选项列表，`"*"` 是默认�
 from unilabos.resources import materials
 
 def create_and_mount(node, draft, parent_uuid: str, site_uuid: str):
-    # 必须使用返回的新实例，输入 draft 不会被就地改为权威实例。
-    authoritative = materials.create(draft, node=node)
-    materials.assign(node, authoritative, parent=parent_uuid, site=site_uuid)
-    return authoritative
+    # 建树与落位在权威的同一事务里；返回本设备 tracker 里的那一份实例，输入 draft 不会被就地改为权威实例。
+    return materials.create(draft, node=node, parent=parent_uuid, site=site_uuid)
 ```
 
-这是同步驱动/外部线程用法；assign 内部等待 node executor，不能在同一个 executor 的异步动作里同步等待自己。
-异步动作使用 `await node.append_resource(payload)`，具体 payload 见 HostLink 下行章节。
+这是同步驱动/外部线程用法；create（带落位）与 assign 都要等本设备执行器上的 load，不能在同一个执行器的
+异步动作里同步调用（会直接报错，不会等到自己）。已有物料换位用 `materials.assign`（经 transfer 的物料移动，
+返回重建后的实例）。
 
 create 一次只接收一个根（可带 children），`node=` 会自动登记该节点 tracker 和来源设备。
 跨设备用 `await materials.transfer(...)`，由权威移位、来源 unload、目标 load；

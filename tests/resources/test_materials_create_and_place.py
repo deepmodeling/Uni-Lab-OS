@@ -18,6 +18,7 @@ from unilabos.resources import materials
 from unilabos.resources.adapters.device_site import apply_device_authority_state
 from unilabos.resources.resource_tracker import ResourceDict, ResourceDictInstance
 from unilabos.server.services.materials import MaterialsService
+from unilabos.server.services.materials.core import MaterialValidationError
 from tests.plr_fixtures import plate
 
 DEVICE_TEMPLATE = "create_and_place_test_device"
@@ -66,6 +67,8 @@ def device(tmp_path):
         HostLinkDriverSpec("placer", _Device, {}, resource_uuid=device_uuid)
     )
     runtime.set_resource_service(AuthorityResourceService(gateway))
+    # assign 与 transfer 同一条路：权威提交后经物料服务下发 unload / load
+    service.set_resource_sync_dispatcher(runtime.dispatch_material_sync)
     runtime.start()
     try:
         yield {
@@ -181,14 +184,17 @@ def test_assign_moves_between_device_sites(device) -> None:
     service, node = device["service"], device["node"]
     created = materials.create(plate("mover"), node=node, site="slot_a", gateway=device["gateway"])
 
-    materials.assign(node, created, slot="slot_b")
+    result = materials.assign(node, created, slot="slot_b")
 
     assert _site(service, device["device_uuid"], "slot_a").occupied_material_uuid is None
     assert (
         _site(service, device["device_uuid"], "slot_b").occupied_material_uuid
         == created.unilabos_uuid
     )
-    assert node.resource_tracker.uuid_to_resources[created.unilabos_uuid] is created
+    # 同设备换位也是一次 unload + load：本地按权威重建，tracker 里只有新的那一份
+    [moved] = result["resources"]
+    assert node.resource_tracker.uuid_to_resources[created.unilabos_uuid] is moved
+    assert [res.name for res in node.resource_tracker.resources] == ["mover"]
 
 
 def test_assign_to_the_device_without_a_site_only_sets_the_parent(device) -> None:
@@ -208,7 +214,7 @@ def test_assign_rejects_an_unknown_device_site_without_mounting(device) -> None:
     service, node = device["service"], device["node"]
     loose = materials.create(plate("stray"), gateway=device["gateway"])
 
-    with pytest.raises(ValueError, match="slot_z"):
+    with pytest.raises(MaterialValidationError, match="slot_z"):
         materials.assign(node, loose, slot="slot_z")
 
     assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
@@ -251,16 +257,16 @@ def test_assign_moves_a_nested_material_off_its_plr_parent_onto_a_device_site(de
     created = materials.create(holder, node=node, site="slot_a", gateway=gateway)
     inner = next(child for child in created.children if child.name == "inner")
 
-    materials.assign(node, inner, slot="slot_b")
+    [moved] = materials.assign(node, inner, slot="slot_b")["resources"]
 
     assert service.get_material(inner.unilabos_uuid).material.parent_material_uuid == device["device_uuid"]
     assert _site(service, device["device_uuid"], "slot_b").occupied_material_uuid == inner.unilabos_uuid
     assert inner.parent is None and created.children == []
     assert {res.name for res in node.resource_tracker.resources} == {"holder", "inner"}
-    assert node.resource_tracker.parent_resource(inner) is None
+    assert node.resource_tracker.parent_resource(moved) is None
     # 原父树与权威一致：严格快照不再因为「本地多一个孩子」被拒
     materials.update(node, created)
-    materials.update(node, inner)
+    materials.update(node, moved)
 
 
 def test_assign_rejects_another_devices_site_uuid(device) -> None:
@@ -276,7 +282,7 @@ def test_assign_rejects_another_devices_site_uuid(device) -> None:
     foreign = _site(service, other_uuid, "o1")
     loose = materials.create(plate("wanderer"), gateway=gateway)
 
-    with pytest.raises(ValueError, match="不存在"):
+    with pytest.raises(MaterialValidationError, match="has no Site"):
         materials.assign(node, loose, site=foreign.site_uuid)
 
     assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
@@ -312,6 +318,19 @@ def test_create_under_a_parent_without_a_site_gets_the_origin_and_restarts(devic
     assert (stored.position_x, stored.position_y, stored.position_z) == (0, 0, 0)
     restored = _restart(device, holder.unilabos_uuid)
     assert [child.name for child in restored.children] == ["other"]
+
+
+def test_assign_under_a_parent_without_a_site_gets_the_origin_and_restarts(device) -> None:
+    from pylabrobot.resources import Coordinate
+
+    holder = _holder_on(device)
+    loose = materials.create(plate("loose_child"), gateway=device["gateway"])
+
+    [mounted] = materials.assign(device["node"], loose, parent=holder)["resources"]
+
+    assert mounted.parent is device["node"].resource_tracker.uuid_to_resources[holder.unilabos_uuid]
+    assert mounted.location == Coordinate(0, 0, 0)
+    assert [child.name for child in _restart(device, holder.unilabos_uuid).children] == ["loose_child"]
 
 
 # ── 本地加载失败时不留分叉：先查前提，提交后失败就在同一条命令下撤销 ─────────
@@ -384,3 +403,71 @@ def test_a_placed_create_from_the_node_executor_is_refused_before_the_commit(dev
         run_node_coroutine(node, from_the_executor(), 5.0)
 
     assert len(service.list_materials()) == before
+
+
+# ── assign 到库位就是一次物料移动：权威提交 → 原设备卸下 → 新设备重建 ─────────
+
+
+@pytest.fixture
+def second_device(device):
+    service, gateway = device["service"], device["gateway"]
+    device_uuid = str(uuid4())
+    config = ResourceDictInstance(ResourceDict.model_validate({
+        **_device_config(device_uuid).res_content.model_dump(by_alias=True), "id": "receiver", "name": "receiver",
+    }))
+    apply_device_authority_state(config, {"available_sites": DEVICE_SITES}, DEVICE_TEMPLATE, gateway=gateway)
+    runtime = HostLinkLocalRuntime()
+    node = runtime.add_driver(HostLinkDriverSpec("receiver", _Device, {}, resource_uuid=device_uuid))
+    runtime.set_resource_service(AuthorityResourceService(gateway))
+    first_dispatch = device["node"].__dict__["_hostlink_runtime"].dispatch_material_sync
+
+    def dispatch(command):
+        target = runtime if command.device_id == "receiver" else None
+        return target.dispatch_material_sync(command) if target is not None else first_dispatch(command)
+
+    service.set_resource_sync_dispatcher(dispatch)
+    runtime.start()
+    try:
+        yield {"node": node, "device_uuid": device_uuid}
+    finally:
+        runtime.stop()
+
+
+def test_assign_onto_another_devices_site_unloads_it_from_the_holder(device, second_device) -> None:
+    service, source = device["service"], device["node"]
+    sample = materials.create(plate("traveller"), node=source, site="slot_a", gateway=device["gateway"])
+
+    [arrived] = materials.assign(second_device["node"], sample.unilabos_uuid, slot="slot_b")["resources"]
+
+    assert sample.unilabos_uuid not in source.resource_tracker.uuid_to_resources
+    assert source.resource_tracker.resources == []
+    assert second_device["node"].resource_tracker.uuid_to_resources[sample.unilabos_uuid] is arrived
+    assert service.get_material(sample.unilabos_uuid).material.parent_material_uuid == second_device["device_uuid"]
+    assert _site(service, device["device_uuid"], "slot_a").occupied_material_uuid is None
+    # 两边本地树都与权威一致：严格快照照常提交
+    materials.update(second_device["node"], arrived)
+
+
+def test_a_rejected_assign_onto_a_material_changes_nothing_locally(device) -> None:
+    """权威拒绝（库位只收别的模板）时本地不先挂：父物料下不会多出一个权威里没有的孩子。"""
+
+    from tests.plr_fixtures import site_deck
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    deck_uuid = str(uuid4())
+    materials.ensure(site_deck(deck_uuid, "Bench_Deck", ("T1", "T2")), gateway=gateway)
+    materials.assign(node, deck_uuid)
+    t1 = next(site for site in service.get_material(deck_uuid).sites if site.label == "T1")
+    with service.write() as connection:
+        connection.execute(
+            "UPDATE site SET extra_json=? WHERE site_uuid=?",
+            ('{"allowed_resource_template_uuids": ["only_tip_racks"]}', t1.site_uuid),
+        )
+    loose = materials.create(plate("refused"), gateway=gateway)
+
+    with pytest.raises(Exception, match="只接受资源模板"):
+        materials.assign(node, loose, parent=deck_uuid, slot="T1")
+
+    deck = node.resource_tracker.uuid_to_resources[deck_uuid]
+    assert deck.children == [] and loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
+    assert service.get_material(loose.unilabos_uuid).material.parent_material_uuid is None

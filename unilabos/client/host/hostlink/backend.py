@@ -470,9 +470,8 @@ class HostLinkBackend:
 
         data = command.model_dump(mode="json", exclude_none=False)
         device_id = str(data["device_id"])
-        node = self.local.get_device(device_id)
-        if node is not None:
-            result = run_node_coroutine(node, node.material_sync(dict(data)))
+        if self.local.get_device(device_id) is not None:
+            result = self.local.dispatch_material_sync(data)
         elif self.server is not None and self.server.has_device(device_id):
             result = self.server.request_device(
                 device_id, ActionType.MATERIAL_SYNC, data, timeout=30.0

@@ -168,3 +168,22 @@ def site_deck(
     )
     deck.unilabos_uuid = deck_uuid
     return deck
+
+
+def device_material(gateway: Any, device_id: str, *, sites: Sequence[Dict[str, Any]] = ()) -> str:
+    """在权威里登记一台设备的物料行（开机图对齐的结果），返回设备 uuid。
+
+    物料放到设备自身（``materials.assign(node, x)``）就是挂到这一行下面：设备在权威里得有它。
+    """
+
+    from unilabos.resources.adapters.device_site import apply_device_authority_state
+    from unilabos.resources.resource_tracker import ResourceDict, ResourceDictInstance
+
+    device_uuid = str(uuid4())
+    config = ResourceDictInstance(ResourceDict.model_validate({
+        "id": device_id, "uuid": device_uuid, "name": device_id, "type": "device",
+        "class": "test_device", "template_name": "test_device", "config": {}, "data": {}, "extra": {},
+        "sites": None, "sites_initialized": False,
+    }))
+    apply_device_authority_state(config, {"available_sites": list(sites)}, "test_device", gateway=gateway)
+    return device_uuid

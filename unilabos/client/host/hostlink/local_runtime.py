@@ -1516,6 +1516,17 @@ class HostLinkLocalRuntime:
         """按 device_id 取本进程设备节点（容忍 ``/devices/`` 前缀）。"""
         return self.devices.get(self._normalize_device_id(device_id))
 
+    def dispatch_material_sync(self, command: Any) -> dict[str, Any]:
+        """物料服务 transfer 的本机投影（unload / load）：在目标设备自己的执行器上执行并等结果。"""
+
+        from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+        data = command.model_dump(mode="json", exclude_none=False) if hasattr(command, "model_dump") else dict(command)
+        node = self.get_device(str(data["device_id"]))
+        if node is None:
+            raise RuntimeError(f"设备 {data['device_id']!r} 不在本进程，无法同步物料")
+        return run_node_coroutine(node, node.material_sync(dict(data)))
+
     @staticmethod
     def _normalize_device_id(device_id: str) -> str:
         normalized = str(device_id or "").strip()

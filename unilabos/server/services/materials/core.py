@@ -1389,6 +1389,13 @@ class MaterialsService(MaterialsRepository):
 
         return material_sanity_facts(self, material_uuids, reservation_uuid=reservation_uuid)
 
+    def site_admission_facts(self, *, site_uuids: Sequence[str] = ()) -> dict[str, Any]:
+        """任务准入时按库位绑定物料要的只读库位事实（不写库、不判定），见 ``materials/site_admission.py``。"""
+
+        from .site_admission import site_admission_facts
+
+        return site_admission_facts(self, site_uuids=site_uuids)
+
     def _candidate_inventory_lots(
         self,
         requirement: InventoryRequirement,

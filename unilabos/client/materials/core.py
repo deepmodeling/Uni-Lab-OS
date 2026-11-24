@@ -134,6 +134,11 @@ class LocalMaterialsClient:
         return self.service.material_sanity_facts(
             list(payload.get("material_uuids") or []), reservation_uuid=payload.get("reservation_uuid"))
 
+    def site_admission_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """任务准入时的只读库位事实：``{"site_uuids": [...]}``（物料参数按库位绑定引用的库位）。"""
+
+        return self.service.site_admission_facts(site_uuids=list(payload.get("site_uuids") or []))
+
     def validate_material_execution(self, value):
         return self.service.executions.validate(value)
 
@@ -542,6 +547,13 @@ class HTTPMaterialsClient:
         return self._request("POST", "/inventory/material-sanity", {
             "material_uuids": list(payload.get("material_uuids") or []),
             "reservation_uuid": payload.get("reservation_uuid"),
+        }, root=True)
+
+    def site_admission_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """任务准入时的只读库位事实（``POST /inventory/site-admission``，不写库）。"""
+
+        return self._request("POST", "/inventory/site-admission", {
+            "site_uuids": list(payload.get("site_uuids") or []),
         }, root=True)
 
     def _command(self, mutation: InventoryMutation, value: Any, *, target_uuid: Optional[str] = None) -> Any:

@@ -15,7 +15,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Optional[X]`、`X \| None` | 可空 | 严格 |
 | `x: X = None`（默认值是 `None`） | 同 `Optional[X]` | 严格 |
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
-| `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`，加物料锁 | 严格；Host 解析成物料实例 |
+| `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串 | 严格 |
 | `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID，带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
@@ -31,6 +31,15 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
   `{"name": ...}`（派发前由调度器向物料权威解析出 uuid）、上游端口传来的扁平资源树（列表）、uuid 字符串；
   能否解析出权威 uuid 由派发前的物料锁检查保证。不可空的物料参数给空值（`{}` / `""` / `[]`）报
   「物料参数 … 没有给物料」；可空的物料参数留空等于没给。
+- 物料参数还可以**按库位绑定**：`{"site_uuid": "<库位 uuid>"}`（`list[ResourceSlot]` 的每一项也可以），表示「此刻占着这个
+  库位的物料」。工作流入口参数、节点静态参数、单点动作参数都可以这样写。建任务与运行预检走同一条解析路径
+  （`server/services/runtime/workflow/material_sites.py`，物料权威只读事实 `POST /api/v1/inventory/site-admission`）：
+  换成占用物料的 `{"uuid": ...}`，参数写了 `AllowedResourceTemplates(...)` 时核对占用物料的模板，结果冻结进任务
+  （计划节点参数、attempt 参数、任务输入；计划的 `material_site_bindings` 记录哪个参数按哪个库位绑到了哪件物料），
+  之后物料被挪走也不改变任务用的物料；从此它就是普通物料参数（默认共享物料锁、派发前核对照旧）。库位不存在、库位为空、
+  物料模板不符都是预检错误：建任务返回 `error.code=material_site_invalid`（1000），`error.details` 带 `reason`
+  （`site_not_found` / `site_empty` / `template_mismatch`）、`parameter`、`site_uuid`、`node_uuid`；运行预检给
+  `invalid_material_site` 检查，细节相同。
 - 不认识的写法只会让该参数退回推断，**不会让动作注册失败**。
 
 | 返回注解 | schema | 校验 |

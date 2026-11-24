@@ -155,6 +155,7 @@ _ERRORS = {
         "工作流模板的角色未能绑定到设备，请在 bindings 中指定",
     ),
     "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
+    "material_site_invalid": (422, "物料参数按库位绑定失败"),
     "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
     "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
     "local_task_authority_forbidden": (
@@ -367,7 +368,7 @@ class WorkflowError(RuntimeError):
     ``detail`` 追加在稳定文案之后（如具体哪个模板角色没绑到设备），错误码不变。
     """
 
-    def __init__(self, code: str, *, detail: str = ""):
+    def __init__(self, code: str, *, detail: str = "", details: Optional[Dict[str, Any]] = None):
         status, message = _ERRORS[code]
         if detail:
             message = f"{message}：{detail}"
@@ -375,6 +376,8 @@ class WorkflowError(RuntimeError):
         self.status = status
         self.code = code
         self.message = message
+        #: 结构化细节（失败信封的 ``error.details``），如按库位绑定失败的库位与参数
+        self.details = details
 
 
 class WorkflowConflict(WorkflowError):
@@ -1502,6 +1505,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                     raise WorkflowConflict("conflict")
                 return existing
         resolved: Dict[str, Dict[str, Any]] = {}
+        # 按库位绑定的物料参数（{"site_uuid"}）同样在事务外读库位事实，事务内换成占用物料并冻结
+        site_facts = self._material_site_facts(self.get_graph(workflow_uuid), input_value)
         # 绑定指向的库存实例在建任务事务外读取（物料库是另一个权威，不在 runtime 写锁内访问）；
         # 事务内按冻结计划把绑定落到对应需求，不匹配即拒绝建任务。
         binding_sources: Optional[Dict[str, Dict[str, Any]]] = {}
@@ -1521,6 +1526,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 target_node_uuid=target_node_uuid,
                 entry_input=resolved["input"],
             )
+            # 按库位绑定的物料参数解析成占用物料，计划、attempt 参数与任务输入一起冻结
+            self._bind_material_sites(plan, jobs, resolved["input"], site_facts)
             try:
                 bind_plan_inventory(plan, bindings, binding_sources)
             except (ValueError, InventoryBindingUnavailable) as exc:
@@ -1567,6 +1574,36 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         if self._task_submitter is not None:
             self._task_submitter(task["uuid"])
         return task
+
+    def _material_site_facts(
+        self, graph: Optional[Dict[str, Any]], *params: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        """按库位绑定要的库位事实（事务外读一次）；没有 ``{"site_uuid"}`` 时不读。"""
+
+        from .material_sites import graph_site_references, read_site_facts, site_references
+
+        references = site_references(params)
+        if graph is not None:
+            references |= graph_site_references(graph, {})
+        if not references:
+            return {}
+        try:
+            return read_site_facts(self._preflight_materials, references)
+        except (RuntimeError, OSError) as exc:
+            raise WorkflowError("invalid_input", detail=f"无法读取按库位绑定的库位：{exc}") from None
+
+    @staticmethod
+    def _bind_material_sites(
+        plan: Dict[str, Any], jobs: List[Dict[str, Any]], input_value: Optional[Dict[str, Any]],
+        facts: Dict[str, Dict[str, Any]],
+    ) -> None:
+        from .material_sites import MaterialSiteError, bind_jobs, bind_material_sites
+
+        try:
+            if bind_material_sites(plan, input_value, facts):
+                bind_jobs(plan, jobs)
+        except MaterialSiteError as exc:
+            raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None
 
     def create_ad_hoc_device_action_task(
         self,
@@ -1624,6 +1661,20 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             if existing.get("request_fingerprint", "") not in {"", fingerprint}:
                 raise WorkflowConflict("conflict")
             return existing
+        # 按库位绑定的物料参数：建任务时解析成占用物料并冻结（指纹按提交的原参数，重放仍命中同一任务）
+        site_facts = self._material_site_facts(None, param)
+        if site_facts:
+            from copy import deepcopy
+
+            from .material_sites import MaterialSiteError, bind_param_sites
+
+            schema = (self._action_schema_resolver(device_id, action_name)
+                      if self._action_schema_resolver is not None else None)
+            param = deepcopy(param)
+            try:
+                bind_param_sites(param, site_facts, schema=schema)
+            except MaterialSiteError as exc:
+                raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None
         try:
             task = self.create_ad_hoc_task_with_job(
                 task_uuid=str(uuid4()),

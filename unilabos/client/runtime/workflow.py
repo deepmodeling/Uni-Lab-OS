@@ -372,7 +372,12 @@ class HTTPWorkflowClient:
         input_value: Optional[Mapping[str, Any]] = None,
         operation_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。"""
+        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。
+
+        物料参数（``ResourceSlot``）可以按库位绑定：给 ``{"site_uuid": 库位 uuid}``
+        （``unilabos.protocol.runtime.site_references.material_at_site``），表示此刻占着该库位的物料，
+        服务端建任务时解析并冻结。
+        """
 
         operation_id = operation_id or str(uuid4())
         return self._http.post(

@@ -287,6 +287,7 @@ _WORKFLOW_INVALID = frozenset({
     "invalid_material_source",
     "material_flow_fan_out",
     "material_template_mismatch",
+    "material_site_invalid",
 })
 _WORKFLOW_NOT_FOUND = frozenset({"not_found", "workflow_not_found", "workflow_template_not_found"})
 _WORKFLOW_CONFLICT = frozenset({
@@ -324,6 +325,8 @@ _WORKFLOW_SYMBOLS = frozenset({
     "debug_task_conflict",
     "device_action_not_allowed",
     "preflight_failed",
+    # 物料参数按库位绑定失败（库位不存在 / 为空 / 模板不符，细节在 error.details）
+    "material_site_invalid",
 })
 
 

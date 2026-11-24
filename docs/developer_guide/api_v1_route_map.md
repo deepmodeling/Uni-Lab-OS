@@ -307,6 +307,10 @@ Adopting V1's contract on any of these breaks something DEV already relies on.
 > registered, deleted, its lifecycle, site, the job holding it in an unsettled physical action and the reservations
 > claiming it; plus the job's reservation with the current lot / content state of each allocation. Read-only, no verdict
 > (the scheduler classifies; see `scheduling_and_execution.md`).
+> Dev-only (2026-11-25): `POST /api/v1/inventory/site-admission` (`{"site_uuids": [...]}`) is the one read the workflow
+> service makes at task creation / run preflight to bind material parameters given as `{"site_uuid": ...}`: per Site
+> whether it exists, its label and owner, and the occupying material with its template (`module_name`, category).
+> Read-only, no verdict (see `action_standard.md`).
 
 | class | V1 route | V1 handler | DEV counterpart | note | status (p7-c) |
 |---|---|---|---|---|---|

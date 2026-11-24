@@ -104,6 +104,22 @@ def build_run_preflight_report(
             return finalize(report)
         check("inventory", "passed", "inventory_bindings_applied", "库存绑定已对应到计划中的库存需求",
               details={"bindings": bindings})
+    # 按库位绑定的物料参数（{"site_uuid"}）：与建任务同一条解析路径，换成此刻占着库位的物料
+    from .material_sites import MaterialSiteError, bind_material_sites, read_site_facts, site_references
+
+    references = site_references([resolved, *(node.get("param") or {} for node in plan["nodes"])])
+    if references:
+        try:
+            site_bindings = bind_material_sites(plan, dict(resolved), read_site_facts(materials, references))
+        except MaterialSiteError as error:
+            node = next((item for item in plan["nodes"] if item["uuid"] == error.details.get("node_uuid")), None)
+            check("resources", "blocked", "invalid_material_site", error.message, node=node, details=error.details)
+            return finalize(report)
+        except (RuntimeError, OSError) as error:
+            check("resources", "blocked", "material_site_unavailable", f"无法读取按库位绑定的库位：{error}")
+            return finalize(report)
+        check("resources", "passed", "material_sites_bound", "按库位绑定的物料参数已解析为库位上的物料",
+              details={"bindings": site_bindings})
     endpoints = None
     if service._preflight_endpoints is not None:
         try:

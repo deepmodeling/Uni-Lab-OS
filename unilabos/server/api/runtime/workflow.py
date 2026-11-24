@@ -298,12 +298,16 @@ class WorkflowTaskCreateRequest(_StrictModel):
     device_id: str = ""
     action_name: str = ""
     action_type: str = ""
-    param: Dict[str, Any] = Field(default_factory=dict)
+    param: Dict[str, Any] = Field(default_factory=dict, description=(
+        "单点设备动作的参数。物料参数可以给 {\"site_uuid\": 库位 uuid}（此刻占着该库位的物料），建任务时解析并冻结"))
     execution_policy: Dict[str, Any] = Field(default_factory=dict)
     execution_timeout_seconds: int = 0
     idempotency_key: Optional[str] = None
     #: 整图任务的入口参数（工作流 input_contract）；未声明合同的工作流只接受 {}。
-    input: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict, description=(
+        "整图任务的入口参数（工作流 input_contract）。物料参数（ResourceSlot）可以给 {\"site_uuid\": 库位 uuid}，"
+        "表示此刻占着该库位的物料：建任务时解析成占用物料的 {\"uuid\"} 并冻结进任务；库位不存在、为空或物料模板不符时"
+        "拒绝（error.code=material_site_invalid，error.details.reason 为 site_not_found / site_empty / template_mismatch）"))
     #: V1 任务优先级：normal 普通任务，high 高优先级任务（随任务持久化，排序由调度器负责）
     priority: Literal["normal", "high"] = "normal"
     #: V1 库存绑定：建任务时落到冻结计划里对应的库存需求，决定预留哪份试剂 / 当前内容物
@@ -343,7 +347,9 @@ class WorkflowPreflightRequest(_BackendModel):
 
     run_mode: str = "normal"
     target_node_uuid: Optional[str] = None
-    input: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict, description=(
+        "候选入口参数；物料参数按库位绑定（{\"site_uuid\"}）与建任务同一条解析路径，"
+        "解析失败报 invalid_material_site 检查（details.reason 同建任务）"))
     inventory_bindings: List[WorkflowInventoryBindingRequest] = Field(default_factory=list)
     #: dev 扩展：工作流修订乐观锁（V1 无此字段）
     expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)

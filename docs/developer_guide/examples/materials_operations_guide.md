@@ -344,9 +344,7 @@ slave→slave、slave→host、host→host 三种形态完全一致。
 
 目标 Site 属于载架（仓库等 PLR `Carrier`）时，权威把物料挂在该库位的 holder 下（与本地整树
 `create` 同形，见 2.4），目标设备 load 时经载架放到库位上；不给 Site 直接挂到载架下会被权威拒绝。
-旧版本 transfer 曾把物料直接挂在载架下，这样的树设备反序列化不了：权威打开时
-（`ServerServices.open` → `MaterialsService.repair_site_occupant_parents`）一次性把它们改挂到
-对应 holder 下，账本记一次 `move`，并打印 WARNING。
+旧版本写下的坏树不做修复：main 发布前旧库一律重建（见 `databases.md` 第 4.1 节）。
 
 ## 3. 三种创建来源规范
 

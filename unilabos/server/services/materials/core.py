@@ -34,7 +34,6 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
-    ACTOR_BACKEND,
     ChemicalSummary,
     InventoryAllocation,
     InventoryLotCorrection,
@@ -3100,8 +3099,8 @@ class MaterialsService(MaterialsRepository):
         ``holder.location`` 生成 Site 位姿）。权威里按同一结构识别，规则全部满足才算：
 
         - 所属物料不是设备，至少有一个 Site；
-        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下，
-          旧版 transfer 的坏树也是这样）和 ``exclude``（正在移动的物料），剩下的与
+        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下）
+          和 ``exclude``（正在移动的物料），剩下的与
           Site 一一对应：数量相同，按顺序第 k 个子物料对应第 k 个 Site；
         - 每个这样的子物料没有自己的 Site、最多一个子物料，且位置就是对应 Site 的位置。
 
@@ -3172,52 +3171,6 @@ class MaterialsService(MaterialsRepository):
         if holders is not None and site.site_uuid in holders:
             return holders[site.site_uuid]
         return site.owner_material_uuid
-
-    def repair_site_occupant_parents(self) -> list[str]:
-        """一次性修复旧版 transfer 写下的坏树，返回改挂的物料 uuid。
-
-        旧版 move / transfer 把载架型 Site 的占用物料直接挂在载架下（应挂在该 Site 的
-        holder 下）：设备反序列化时载架拒收物料，快照也改不了占用物料的父节点。权威
-        打开时（``ServerServices.open``）把这样的物料原位改挂到 holder 下，Site 占用
-        不变，账本记一次 ``move``。没有坏树时只做一次查询，可重复调用。
-        """
-
-        from unilabos.utils.log import logger
-
-        rows = self.connection.execute(
-            """
-            SELECT site.site_uuid, site.occupied_material_uuid
-            FROM site JOIN material ON material.material_uuid = site.occupied_material_uuid
-            WHERE site.deleted_at_ms IS NULL AND material.deleted_at_ms IS NULL
-                AND material.parent_material_uuid = site.owner_material_uuid
-            ORDER BY site.owner_material_uuid, site.ordinal
-            """
-        ).fetchall()
-        repaired: list[str] = []
-        for site_uuid, material_uuid in rows:
-            site = self.get_site(site_uuid)
-            if site is None:
-                continue
-            parent_uuid = self.site_parent_material_uuid(site, moving_material_uuid=material_uuid)
-            if parent_uuid == site.owner_material_uuid:
-                continue
-            command_uuid = str(uuid4())
-            self.move_material(
-                InventoryMutation(
-                    command_uuid=command_uuid,
-                    effect_key=f"repair_site_occupant_parent:{command_uuid}",
-                    operation="move_material",
-                    actor_type=ACTOR_BACKEND,
-                    actor_uuid="materials-repair",
-                ),
-                MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid),
-            )
-            logger.warning(
-                f"[物料权威] 修复旧版 transfer 的坏树：物料 {material_uuid} 从载架 "
-                f"{site.owner_material_uuid} 改挂到 Site {site.label} 的 holder {parent_uuid}"
-            )
-            repaired.append(material_uuid)
-        return repaired
 
     def assert_site_accepts(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
         """一件该模板的物料能否放进空库位：模板白名单（``site_template``，6008）与活动入口预留。"""
@@ -3397,7 +3350,7 @@ class MaterialsService(MaterialsRepository):
             and destination is not None
             and source.site_uuid == destination.site_uuid
         )
-        if same_site and material.parent_material_uuid == parent_uuid:
+        if same_site:
             raise MaterialNoChangeError("material is already at destination")
         if (
             source is None
@@ -3456,10 +3409,6 @@ class MaterialsService(MaterialsRepository):
                 "version": material.version + 1,
             }
         )
-        if same_site:
-            # 原位换父（修复旧版坏树：物料从载架改挂到 Site 的 holder 下）。触发器要求
-            # 先解除占用再改父；同一事务内随后重新占用，Site 版本照常 +1。
-            self.clear_site_occupants([destination.site_uuid])
         self.update_material(updated_material)
 
         if destination is not None:

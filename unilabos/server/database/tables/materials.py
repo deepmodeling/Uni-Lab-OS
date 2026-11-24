@@ -1729,9 +1729,11 @@ MATERIALS_DATABASE = DatabaseSpec(
     role="resource, material, site, topology link and lab graph authority",
     synchronous="FULL",
     tables=MATERIALS_TABLES,
-    # 0.13 发布线的基线：schema v1、contract v1，没有迁移。之后改 DDL 或行内容契约
+    # 0.13 发布线的基线：schema v1，没有迁移。之后改 DDL 或行内容契约
     # （contract_version）时提升 schema_version 并在 migrations 里补 v2 起的迁移。
-    contract_version=1,
+    # contract 2：main 发布前重置基线（设备子树只收格式合规的 PLR 物料、旧数据不做修复），
+    # 之前的开发库按指纹不符拒绝启动或按 database_rebuild_on_mismatch 重建。
+    contract_version=2,
     schema_version=1,
     migrations=(),
     # 物料是实验室的物理事实：结构或契约变化必须 schema_version +1 并给出迁移。

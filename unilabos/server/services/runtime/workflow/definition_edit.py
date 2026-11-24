@@ -8,12 +8,13 @@ from copy import deepcopy
 from typing import Any, Mapping
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
-from unilabos.protocol.runtime.inventory import inventory_deferred
+from unilabos.protocol.runtime.inventory import inventory_deferred, normalize_inventory
 from unilabos.protocol.runtime.workflow import (
     normalize_json_object,
     normalize_manual_confirmation,
     validate_uuid,
 )
+from unilabos.server.services.runtime.workflow.errors import StoreConflict
 
 
 class WorkflowDefinitionInvalid(ValueError):
@@ -281,6 +282,24 @@ def duplicate_graph(
     return nodes, edges, requirements
 
 
+def node_or_ancestor_disabled(node: Mapping[str, Any], nodes: Mapping[str, Mapping[str, Any]]) -> bool:
+    """节点自己或任一祖先（分组 / 循环 / 组合调用）被禁用：不进执行计划，需求不预留、不列出。"""
+
+    current: Mapping[str, Any] | None = node
+    seen: set[str] = set()
+    while current is not None:
+        if bool(current.get("disabled", False)):
+            return True
+        parent_uuid = current.get("parent_uuid")
+        if parent_uuid is None:
+            return False
+        identity = str(parent_uuid)
+        if identity in seen:
+            raise StoreConflict("workflow node parent hierarchy contains a cycle")
+        seen.add(identity)
+        current = nodes.get(identity)
+    return False
+
 
 def private_node_owners(nodes: list[dict[str, Any]]) -> dict[str, str]:
     """返回私有后代到最外层子操作入口的映射，不跨越当前定义边界。"""
@@ -315,75 +334,92 @@ def _finite_number(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
+def _declared_inventory(node: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    meta = node.get("meta_data") if isinstance(node.get("meta_data"), Mapping) else {}
+    return [item for item in meta.get("inventory_requirements") or [] if isinstance(item, Mapping)]
+
+
+def _listable(item: Mapping[str, Any]) -> bool:
+    """V1 列表能表达的需求条目：kind 已知且 key 非空。"""
+
+    return item.get("kind") in _V1_TARGET_TYPES and bool(str(item.get("key") or ""))
+
+
 def project_inventory_requirements(graph: Mapping[str, Any]) -> list[dict[str, Any]]:
     """节点 ``meta_data.inventory_requirements`` → V1 图根 ``inventory_requirements``（只读投影）。
 
     节点级需求是调度、预检与绑定的唯一来源；V1 图根列表只给客户端看，每次读取都从节点派生，
     不单独存储。V1 形状没有 kind / 模板 / 批次 / 容器身份，原条目原样放进
-    ``meta_data.unilab.inventory``；数量是运行时引用时记 0 并标 ``quantity_dynamic``。
-    同一 key 出现在多个节点时 ``requirement_key`` 写成 ``<node_uuid>/<key>``，与任务绑定的写法一致。
+    ``meta_data.unilab.inventory``；数量先按调度同一规则规范化（``normalize_inventory``），
+    是运行时引用时记 0 并标 ``quantity_dynamic``。
+
+    列哪些条目与执行计划同一规则：禁用节点及其后代不执行，需求不列出；组合调用的私有子图只在子操作
+    定义里查看，本层不列出。``requirement_key`` 在同一 key 出现在执行计划多个节点（含私有子图）时写成
+    ``<node_uuid>/<key>``：任务绑定按执行计划解析 key，列表给出的 key 必须能直接拿去绑定。
     """
 
     workflow = graph.get("workflow") if isinstance(graph.get("workflow"), Mapping) else {}
     workflow_uuid = str(workflow.get("uuid") or "")
-    entries: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = []
-    for node in graph.get("nodes") or []:
-        if not isinstance(node, Mapping):
-            continue
-        meta = node.get("meta_data") if isinstance(node.get("meta_data"), Mapping) else {}
-        for item in meta.get("inventory_requirements") or []:
-            if isinstance(item, Mapping) and item.get("kind") in _V1_TARGET_TYPES and str(item.get("key") or ""):
-                entries.append((node, item))
-    key_counts = Counter(str(item["key"]) for _, item in entries)
+    nodes = [node for node in graph.get("nodes") or [] if isinstance(node, Mapping)]
+    index = {str(node["uuid"]): node for node in nodes}
+    executed = [node for node in nodes if not node_or_ancestor_disabled(node, index)]
+    key_counts = Counter(
+        str(item["key"]) for node in executed for item in _declared_inventory(node) if _listable(item)
+    )
+    private = private_node_owners(nodes)
 
     projected: list[dict[str, Any]] = []
-    for node, item in entries:
-        node_uuid = str(node.get("uuid") or "")
-        if not node_uuid:
+    for node in executed:
+        node_uuid = str(node["uuid"])
+        if node_uuid in private:
             continue
+        declared = _declared_inventory(node)
         meta = node.get("meta_data") if isinstance(node.get("meta_data"), Mapping) else {}
-        node_items = [entry for entry in meta.get("inventory_requirements") or [] if isinstance(entry, Mapping)]
         policy = node.get("execution_policy") if isinstance(node.get("execution_policy"), Mapping) else {}
         mode = str(meta.get("inventory_mode") or "task")
         try:
-            deferred = inventory_deferred([dict(entry) for entry in node_items], policy=policy, mode=mode)
+            normalized = normalize_inventory([dict(item) for item in declared])
+            deferred = inventory_deferred(normalized, policy=policy, mode=mode)
         except ValueError:
-            deferred = True
-        kind = str(item["kind"])
-        key = str(item["key"])
-        if kind == "material":
-            quantity, unit = _MATERIAL_QUANTITY
-            dynamic = False
-        else:
-            number = _finite_number(item.get("quantity"))
-            raw_unit = item.get("unit")
-            dynamic = number is None or not isinstance(raw_unit, str) or not raw_unit.strip()
-            quantity = number if number is not None else 0.0
-            unit = raw_unit.strip() if isinstance(raw_unit, str) and raw_unit.strip() else _DYNAMIC_UNIT
-        unilab: dict[str, Any] = {
-            "inventory": deepcopy(dict(item)),
-            "inventory_mode": mode,
-            "deferred": deferred,
-            "quantity_dynamic": dynamic,
-        }
-        source = item.get("material_uuid")
-        if isinstance(source, Mapping) and source.get("kind") == "node_output":
-            source_node = str(source.get("workflow_node_uuid") or "")
-            if source_node:
-                unilab["material_source_node_uuid"] = source_node
-        projected.append(
-            {
-                "uuid": str(uuid5(NAMESPACE_URL, f"unilabos://workflow/{workflow_uuid}/{node_uuid}/{key}")),
-                "workflow_uuid": workflow_uuid,
-                "consume_node_uuid": node_uuid,
-                "requirement_key": key if key_counts[key] == 1 else f"{node_uuid}/{key}",
-                "target_type": _V1_TARGET_TYPES[kind],
-                "required_quantity": quantity,
-                "quantity_unit": unit,
-                "allow_split": kind == "lot",
-                "meta_data": {"unilab": unilab},
+            normalized, deferred = [dict(item) for item in declared], True
+        for raw, item in zip(declared, normalized):
+            if not _listable(raw):
+                continue
+            kind = str(item["kind"])
+            key = str(item["key"])
+            if kind == "material":
+                quantity, unit = _MATERIAL_QUANTITY
+                dynamic = False
+            else:
+                number = _finite_number(item.get("quantity"))
+                raw_unit = item.get("unit")
+                dynamic = number is None or not isinstance(raw_unit, str) or not raw_unit.strip()
+                quantity = number if number is not None else 0.0
+                unit = raw_unit.strip() if isinstance(raw_unit, str) and raw_unit.strip() else _DYNAMIC_UNIT
+            unilab: dict[str, Any] = {
+                "inventory": deepcopy(dict(raw)),
+                "inventory_mode": mode,
+                "deferred": deferred,
+                "quantity_dynamic": dynamic,
             }
-        )
+            source = raw.get("material_uuid")
+            if isinstance(source, Mapping) and source.get("kind") == "node_output":
+                source_node = str(source.get("workflow_node_uuid") or "")
+                if source_node:
+                    unilab["material_source_node_uuid"] = source_node
+            projected.append(
+                {
+                    "uuid": str(uuid5(NAMESPACE_URL, f"unilabos://workflow/{workflow_uuid}/{node_uuid}/{key}")),
+                    "workflow_uuid": workflow_uuid,
+                    "consume_node_uuid": node_uuid,
+                    "requirement_key": key if key_counts[key] == 1 else f"{node_uuid}/{key}",
+                    "target_type": _V1_TARGET_TYPES[kind],
+                    "required_quantity": quantity,
+                    "quantity_unit": unit,
+                    "allow_split": kind == "lot",
+                    "meta_data": {"unilab": unilab},
+                }
+            )
     return projected
 
 
@@ -414,14 +450,6 @@ def definition_graph(graph: Mapping[str, Any]) -> dict[str, Any]:
         for edge in result["edges"]
         if edge["source_node_uuid"] in visible and edge["target_node_uuid"] in visible
     ]
-    if "inventory_requirements" in result:
-        # 子操作的数量需求在其定义中查看；本层只列自己声明的需求。
-        result["inventory_requirements"] = [
-            item
-            for item in result.get("inventory_requirements") or []
-            if str(item.get("consume_node_uuid") or "") in visible
-            and not ((item.get("meta_data") or {}).get("unilab") or {}).get("composite_origin")
-        ]
     templates = {node.get("workflow_node_template_uuid") for node in result["nodes"]}
     result["node_templates"] = [
         item for item in result.get("node_templates", []) if item["uuid"] in templates
@@ -498,6 +526,7 @@ __all__ = [
     "duplicate_graph",
     "duplicate_node",
     "is_derived_inventory_requirements",
+    "node_or_ancestor_disabled",
     "patch_node",
     "private_node_owners",
     "project_inventory_requirements",

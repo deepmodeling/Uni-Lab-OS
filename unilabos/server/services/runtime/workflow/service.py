@@ -89,6 +89,7 @@ from unilabos.server.services.runtime.workflow.publication import (
     publication_source_hash,
     publication_summary,
 )
+from unilabos.server.services.runtime.workflow.definition_edit import node_or_ancestor_disabled
 from unilabos.server.services.runtime.workflow.definition_service import WorkflowDefinitionEditing
 from unilabos.server.services.runtime.workflow.node_templates import NodeTemplateCatalog
 from unilabos.server.services.runtime.workflow.operation_category import (
@@ -2143,7 +2144,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 continue
             kind = self._executor_kind(raw_kind)
             all_kinds[node["uuid"]] = kind
-            if self._node_or_ancestor_disabled(node, node_index) or kind == "group":
+            if node_or_ancestor_disabled(node, node_index) or kind == "group":
                 continue
             enabled[node["uuid"]] = node
             node_kinds[node["uuid"]] = kind
@@ -2492,26 +2493,6 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         except ValueError as exc:
             raise StoreConflict(str(exc)) from None
         return plan, jobs
-
-    @staticmethod
-    def _node_or_ancestor_disabled(
-        node: Mapping[str, Any],
-        nodes: Mapping[str, Mapping[str, Any]],
-    ) -> bool:
-        current: Mapping[str, Any] | None = node
-        seen: set[str] = set()
-        while current is not None:
-            if bool(current.get("disabled", False)):
-                return True
-            parent_uuid = current.get("parent_uuid")
-            if parent_uuid is None:
-                return False
-            identity = str(parent_uuid)
-            if identity in seen:
-                raise StoreConflict("workflow node parent hierarchy contains a cycle")
-            seen.add(identity)
-            current = nodes.get(identity)
-        return False
 
     @staticmethod
     def _template_param_schema(schema: Any) -> Any:

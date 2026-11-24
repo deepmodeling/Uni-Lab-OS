@@ -530,9 +530,9 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             return payload
         projected = dict(payload)
         projected["workflow"] = public_workflow(workflow)
-        # 库存需求只存在节点 meta_data 里（调度唯一来源）；V1 图根列表每次从节点派生，供客户端查看。
-        if not projected.get("inventory_requirements"):
-            projected["inventory_requirements"] = project_inventory_requirements(projected)
+        # 库存需求只存在节点 meta_data 里（调度唯一来源）；V1 图根列表每次从完整图派生（禁用、私有子图的
+        # 规则在投影里），供客户端查看。
+        projected["inventory_requirements"] = project_inventory_requirements(projected)
         return definition_graph(projected)
 
     def write_payload(body: BaseModel) -> Dict[str, Any]:

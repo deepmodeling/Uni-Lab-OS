@@ -2723,14 +2723,22 @@ class MaterialsService(MaterialsRepository):
                 for node in value.nodes
                 if node.parent_client_ref is None
             )
-            # 设备连同下挂物料一起建（开机图对齐）：与挂进设备子树同一条规则
-            self._assert_device_subtree_accepts(client_map[root_ref], client_map[root_ref])
             if value.placement is not None:
                 placed = self._place_created_root(
                     mutation, client_map[root_ref], value.placement, timestamp
                 )
                 affected.extend(placed.affected)
                 sequences.extend(placed.sequences)
+            # 落位之后按最终位置核对：新树所在的 PLR 树，以及新树里每台设备（开机图对齐时
+            # 设备连同下挂物料一起建）各自持有的那一棵
+            self._assert_plr_tree_rules([
+                client_map[root_ref],
+                *(
+                    client_map[node.client_ref]
+                    for node in value.nodes
+                    if node.identity.resource_type == "device"
+                ),
+            ])
             tree = self.get_tree(client_map[root_ref], client_ref_map=client_map)
             return _Applied(data=tree, affected=affected, sequences=sequences)
 
@@ -2910,6 +2918,8 @@ class MaterialsService(MaterialsRepository):
                 }
             )
             self.update_material(updated)
+            if "config_json" in changes:
+                self._assert_plr_tree_rules([material_uuid])
             aggregate = self.get_material(material_uuid)
             sequence = self._ledger(
                 mutation,
@@ -3208,49 +3218,94 @@ class MaterialsService(MaterialsRepository):
             cursor = record.parent_material_uuid
         return None
 
-    def _assert_device_subtree_accepts(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
-        """设备子树只收 PLR 物料：设备启动时按 ``ResourceTreeSet`` 把整棵子树反序列化成 PLR 实例。
+    def _plr_tree_root(self, material_uuid: str) -> Optional[MaterialRecord]:
+        """物料所在 PLR 树的根：最近的设备（物料自己是设备时就是它），不在设备下时是顶层根物料。"""
 
-        新父物料是设备或设备的后代时，挂进来的整棵树里每个物料节点都要有 ``config.type``
-        （PLR 自己的类型名，反序列化靠它找类）；子设备本身不受限。只有身份的物料（网关手写、
-        模板实例化不了）在这里被拒绝，而不是等设备重启时整台设备起不来。
+        cursor, seen, found = material_uuid, set(), None
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            record = MaterialsRepository.get_material(self, cursor)
+            if record is None:
+                break
+            found = record
+            if record.resource_type == "device":
+                break
+            cursor = record.parent_material_uuid
+        return found
+
+    def _assert_plr_tree_rules(self, material_uuids: Sequence[str]) -> None:
+        """写入改了父物料或 config 之后，按最终状态核对物料所在 PLR 树的两条规则。
+
+        PLR 树是一台设备持有的物料（不含设备本身，子设备各管自己的一棵），或一个不在设备下的根物料的
+        整棵树。设备启动时按 ``ResourceTreeSet`` 把它反序列化成 PLR 实例，所以：
+
+        - 设备持有的物料都要带格式合规的 ``config.type``：Python 标识符形式的 PLR 类名（如 ``Plate``）。
+          权威不判断这个类是否存在（外部驱动包的类权威看不到）；类不存在由 Host 在设备启动时发现，
+          那台设备进入维护模式。缺失、空白或不是类名一律拒绝（1000），而不是等设备重启时才起不来；
+        - 一棵 PLR 树里 PLR 键（``config.name``）不重复：PLR 自己要求整棵树里名字唯一，权威放行了重名，
+          Host 本地加载就会失败，两边从此对不上。物料 ``name`` 是 uuid，本来就唯一，这里查的是 PLR 键。
+
+        建树（含落位）、move / transfer / 实例化 / material.io、patch config（含 V1 PUT）与设备快照都经这里；
+        设备增量（apply_delta）只改内容 / 位姿 / 库位元数据，不改父物料和 config，不受影响。
         """
 
-        device = self._device_ancestor(parent_uuid)
-        if device is None:
-            return
+        roots: dict[str, MaterialRecord] = {}
+        for material_uuid in material_uuids:
+            root = self._plr_tree_root(material_uuid)
+            if root is not None:
+                roots.setdefault(root.material_uuid, root)
+        for root in roots.values():
+            self._check_plr_tree(root)
+
+    def _check_plr_tree(self, root: MaterialRecord) -> None:
         rows = self.connection.execute(
             """
-            WITH RECURSIVE subtree(material_uuid) AS (
-                SELECT ?
+            WITH RECURSIVE tree(material_uuid, resource_type) AS (
+                SELECT material_uuid, resource_type FROM material WHERE material_uuid = ?
                 UNION ALL
-                SELECT m.material_uuid FROM material m
-                JOIN subtree s ON m.parent_material_uuid = s.material_uuid
+                SELECT m.material_uuid, m.resource_type FROM material m
+                JOIN tree t ON m.parent_material_uuid = t.material_uuid
                 WHERE m.deleted_at_ms IS NULL
+                    AND (t.resource_type <> 'device' OR t.material_uuid = ?)
             )
-            SELECT m.resource_id, m.resource_type, m.config_json
-            FROM material m JOIN subtree s ON m.material_uuid = s.material_uuid
+            SELECT m.material_uuid, m.resource_id, m.resource_type, m.config_json
+            FROM material m JOIN tree USING (material_uuid)
             """,
-            (material_uuid,),
+            (root.material_uuid, root.material_uuid),
         ).fetchall()
-        missing: list[str] = []
-        for resource_id, resource_type, config_json in rows:
+        held_by_device = root.resource_type == "device"
+        malformed: list[str] = []
+        keys: dict[str, list[str]] = {}
+        for material_uuid, resource_id, resource_type, config_json in rows:
             if resource_type == "device":
                 continue
             try:
                 config = json.loads(config_json or "{}")
             except (TypeError, ValueError):
                 config = {}
-            plr_type = config.get("type") if isinstance(config, dict) else None
-            if not isinstance(plr_type, str) or not plr_type.strip():
-                missing.append(str(resource_id))
-        if missing:
-            shown = "、".join(missing[:5]) + (f" 等 {len(missing)} 个" if len(missing) > 5 else "")
+            config = config if isinstance(config, dict) else {}
+            plr_type = config.get("type")
+            if held_by_device and not (isinstance(plr_type, str) and plr_type.isidentifier()):
+                shown_type = "缺少 config.type" if plr_type in (None, "") else f"config.type={plr_type!r}"
+                malformed.append(f"{resource_id}（{material_uuid}，{shown_type}）")
+            key = plr_key(config)
+            if key:
+                keys.setdefault(key, []).append(str(material_uuid))
+        if malformed:
+            shown = "、".join(malformed[:5]) + (f" 等 {len(malformed)} 个" if len(malformed) > 5 else "")
             raise MaterialValidationError(
-                f"设备 {device.resource_id} 的子树只收 PLR 物料：{shown} 没有 config.type"
-                "（PLR 类型名），设备启动时无法反序列化。请按注册表资源类经 materials.create"
-                "（ResourceTreeSet）创建物料再放上设备",
-                subject="material",
+                f"设备 {root.resource_id} 持有的物料必须带格式合规的 config.type（PLR 类名，Python 标识符，"
+                f"如 Plate）：{shown}。设备启动时按它反序列化物料；请按注册表资源类经 materials.create"
+                "（ResourceTreeSet）创建物料，或改正 config.type",
+            )
+        duplicated = {key: uuids for key, uuids in keys.items() if len(uuids) > 1}
+        if duplicated:
+            key, uuids = next(iter(sorted(duplicated.items())))
+            owner = f"设备 {root.resource_id}" if held_by_device else f"根物料 {root.resource_id}"
+            raise MaterialConflictError(
+                f"{owner} 的 PLR 树里 PLR 键 config.name={key!r} 重复（物料 {'、'.join(uuids)}）："
+                "PLR 要求一棵树里的名字唯一，请换一个名字",
+                conflict="identity",
             )
 
     def _assert_no_parent_cycle(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
@@ -3358,7 +3413,6 @@ class MaterialsService(MaterialsRepository):
             and material.parent_material_uuid == parent_uuid
         ):
             raise MaterialNoChangeError("material is already at destination")
-        self._assert_device_subtree_accepts(value.material_uuid, parent_uuid)
 
         affected: list[AggregateVersion] = []
         sequences: list[int] = []
@@ -3410,6 +3464,7 @@ class MaterialsService(MaterialsRepository):
             }
         )
         self.update_material(updated_material)
+        self._assert_plr_tree_rules([value.material_uuid])
 
         if destination is not None:
             destination_changed_at = max(timestamp, destination.updated_at_ms)
@@ -4173,6 +4228,13 @@ class MaterialsService(MaterialsRepository):
                     current_record,
                     updated_record,
                 )
+            # 设备快照同样不能去掉 / 写坏 config.type 或造出重名的 PLR 键
+            self._assert_plr_tree_rules([
+                material_uuid
+                for material_uuid, (before, after) in changed_material_records.items()
+                if before.config_json != after.config_json
+                or before.parent_material_uuid != after.parent_material_uuid
+            ])
 
             changed_site_records: dict[str, tuple[SiteRecord, SiteRecord]] = {}
             for site_uuid in sorted(changed_site_uuids):

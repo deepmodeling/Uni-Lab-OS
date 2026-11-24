@@ -44,7 +44,7 @@ from unilabos.client.host.ros2.msgs.message_converter import (
 )
 from unilabos.client.host.ros2.presets.controller_node import ControllerNode
 from unilabos.client.host.runtime.definition import is_host_node_config
-from unilabos.client.host.runtime.exception import DeviceClassInvalid
+from unilabos.client.host.runtime.exception import DeviceClassInvalid, DeviceMaterialError
 from unilabos.client.host.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
@@ -508,7 +508,10 @@ class HostNode(HostAdapterBase, Node):
 
         from unilabos.server.services.device_processes import managed_device_unavailability
 
-        return managed_device_unavailability()
+        records = managed_device_unavailability()
+        # 持有的物料建不成 PLR 实例、进入维护模式的本机设备
+        records.update(self.__dict__.get("_maintenance_devices") or {})
+        return records
 
     def _hostlink_liveness_callback(self) -> None:
         """按 HostLink 连接状态更新 Slave 设备的在线状态。
@@ -684,6 +687,15 @@ class HostNode(HostAdapterBase, Node):
         try:
             d = initialize_device_from_dict(device_id, device_config)
         except DeviceClassInvalid as e:
+            if isinstance(e, DeviceMaterialError):
+                # 维护模式：持有的物料建不成 PLR 实例，设备不启动；与 HostLink 同一份不可用记录
+                e.device_id = device_id
+                self.__dict__.setdefault("_maintenance_devices", {})[device_id] = {
+                    "device_id": device_id,
+                    "registry_name": str(device_config.res_content.template_name or ""),
+                    "backend": "ros2",
+                    **e.unavailable_record(),
+                }
             self.lab_logger().error(f"[Host Node] Device class invalid: {e}")
             d = None
         if d is None:

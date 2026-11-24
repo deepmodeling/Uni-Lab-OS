@@ -1779,55 +1779,6 @@ class ResourceTreeSet(object):
         return cls(trees)
 
 
-def split_plr_material_tree(
-    root: ResourceDictInstance,
-) -> Tuple[Optional[ResourceDictInstance], List[ResourceDict]]:
-    """把一棵物料树拆成能按 PLR 反序列化的部分与拆下来的非 PLR 物料，不改输入。
-
-    设备子树只收 PLR 物料（权威在每次落位时拒绝新的），升级前的旧数据里仍可能挂着没有
-    ``config.type`` 的物料：它连同挂在它下面的物料整枝拆下，其余照常反序列化——比如液体工作站
-    的台面上放着一个旧物料时，台面仍和设备一起初始化。父物料库位上指向被拆物料的占用在副本里
-    清空（权威不动）。设备节点不拆。
-
-    返回 ``(剩下的树, 拆下的各枝的根)``：没有要拆的时原样返回输入；根本身不是 PLR 物料时剩下的树
-    为 None。
-    """
-
-    def is_plr(node: ResourceDictInstance) -> bool:
-        content = node.res_content
-        return content.type == "device" or bool(
-            str((content.config or {}).get("type") or "").strip()
-        )
-
-    pruned: List[ResourceDict] = []
-    dropped: set[str] = set()
-
-    def visit(node: ResourceDictInstance, inside_pruned: bool) -> None:
-        if not inside_pruned and not is_plr(node):
-            pruned.append(node.res_content)
-            inside_pruned = True
-        if inside_pruned:
-            dropped.add(str(node.res_content.uuid))
-        for child in node.children:
-            visit(child, inside_pruned)
-
-    visit(root, False)
-    if not pruned:
-        return root, []
-    if str(root.res_content.uuid) in dropped:
-        return None, pruned
-    kept = []
-    for node in ResourceTreeInstance(root).get_all_nodes():
-        if str(node.res_content.uuid) in dropped:
-            continue
-        dumped = node.res_content.model_dump(by_alias=True)
-        for site in dumped.get("sites") or []:
-            if site.get("occupied_material_uuid") in dropped:
-                site["occupied_material_uuid"] = None
-        kept.append(dumped)
-    return ResourceTreeSet.load([kept]).trees[0].root_node, pruned
-
-
 def prepare_resource_creation_payloads(
     resources: List[Dict[str, Any]],
 ) -> Tuple[ResourceTreeSet, List[Dict[str, Any]]]:
@@ -2056,9 +2007,6 @@ class DeviceNodeResourceTracker(object):
         self.uuid_to_resources: Dict[str, Any] = {}
         self._names: Dict[str, List[Any]] = {}
         self._parents: Dict[int, Any] = {}
-        #: 设备初始化时从子树拆下、还没在权威里移出设备子树的非 PLR 物料（各枝的根 uuid）；
-        #: 节点拿到物料服务时逐个移出（见 ``DeviceNode.set_resource_service``）
-        self.legacy_material_uuids: List[str] = []
 
     # ── 索引维护 ──────────────────────────────────────────────
 

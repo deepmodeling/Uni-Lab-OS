@@ -32,6 +32,43 @@ class DeviceBackendUnsupported(DeviceClassInvalid):
         )
 
 
+class DeviceMaterialError(DeviceClassInvalid):
+    """设备持有的物料建不成 PLR 实例（缺 / 写错 ``config.type``、类不存在、反序列化失败）。
+
+    设备进入维护模式：这台设备不启动，Host 照常运行、其余设备照常启动；原因（设备、物料 uuid、
+    ``config.type``）登记为不可用设备，经能力快照到达 ``GET /api/v1/devices``。构造器不知道设备 id，
+    由启动设备的一方补上 ``device_id``。
+    """
+
+    def __init__(self, *, material_uuid: Any, material_type: Any, reason: str, device_id: str = "") -> None:
+        self.material_uuid = str(material_uuid or "")
+        self.material_type = material_type
+        self.reason = str(reason)
+        self.device_id = str(device_id or "")
+        super().__init__(self.reason)
+
+    def __str__(self) -> str:
+        device = f"设备 {self.device_id} " if self.device_id else "设备"
+        return (
+            f"{device}持有的物料 {self.material_uuid}（config.type={self.material_type!r}）"
+            f"建不成 PLR 实例，设备进入维护模式：{self.reason}"
+        )
+
+    def unavailable_record(self) -> Dict[str, Any]:
+        """不可用设备记录里的维护模式字段（与 backend 不支持等原因同一份记录）。"""
+
+        return {
+            "maintenance": True,
+            "reason": str(self),
+            "material_uuid": self.material_uuid,
+            "material_type": (
+                self.material_type
+                if self.material_type is None or isinstance(self.material_type, str)
+                else repr(self.material_type)
+            ),
+        }
+
+
 class ActionTimeoutBase(RuntimeError):
     """``@action`` 超时闸门触发时由执行面构造的异常基类。
 

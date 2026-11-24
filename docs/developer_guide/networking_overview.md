@@ -198,7 +198,14 @@ ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2
 （`edge_status: "unavailable"`，`unavailable` 字段写明原因与支持的 backend；设备目录与在线列表
 都不把它算作在线）、运行预检、`/api/v1/hostlink/peers` 与 `/api/v1/health` 的
 `unavailable_devices` 中。注册表缺失、模板名非法等配置错误仍让启动失败。Slave 上跳过的设备
-目前只写 Slave 自己的日志。工作站和
+目前只写 Slave 自己的日志。
+
+设备持有的物料建不成 PLR 实例（缺 / 写错 `config.type`、类不存在、反序列化失败）时，这台设备进入
+**维护模式**：同一套不可用记录，只是不启动的原因不同。构造驱动之前先把它持有的每棵物料子树建一遍
+（`runtime/driver_creator.py:build_device_materials`），建不成就抛 `DeviceMaterialError`，这台设备（连同子设备）
+不启动，Host 与其余设备照常运行；记录多出 `maintenance: true`、`material_uuid`、`material_type`，`reason`
+写明设备、物料 uuid 与 `config.type`，客户端从 `/api/v1/devices` 的 `unavailable` 字段与 `/api/v1/health` 看到。
+改正物料（或移走它）后重启 Host 即恢复。权威只核对 `config.type` 的格式，类是否存在只有 Host 知道。工作站和
 普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
 相同的设备初始化路径。
 

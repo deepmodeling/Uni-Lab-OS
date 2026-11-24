@@ -10,7 +10,7 @@ from unilabos.client.host.runtime.definition import (
     iter_device_config_entries,
     resolve_device_definition,
 )
-from unilabos.client.host.runtime.exception import DeviceBackendUnsupported
+from unilabos.client.host.runtime.exception import DeviceBackendUnsupported, DeviceMaterialError
 from unilabos.client.host.hostlink.backend import HostLinkBackend
 from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
@@ -99,22 +99,35 @@ def populate_runtime(
                 parent_device_id=entry.parent_device_id,
             )
             continue
-        runtime.add_driver(
-            HostLinkDriverSpec(
-                device_id=device_id,
-                driver_class=definition.driver_class,
-                config=definition.runtime_config,
-                registry_name=definition.registry_name,
-                display_name=definition.display_name,
-                resource_uuid=definition.resource_uuid,
-                action_names=tuple(definition.action_value_mappings),
-                action_value_mappings=definition.action_value_mappings,
-                status_names=tuple(definition.status_types),
-                device_config=node,
-                parent_device_id=entry.parent_device_id,
-                hardware_interface=definition.hardware_interface,
+        try:
+            runtime.add_driver(
+                HostLinkDriverSpec(
+                    device_id=device_id,
+                    driver_class=definition.driver_class,
+                    config=definition.runtime_config,
+                    registry_name=definition.registry_name,
+                    display_name=definition.display_name,
+                    resource_uuid=definition.resource_uuid,
+                    action_names=tuple(definition.action_value_mappings),
+                    action_value_mappings=definition.action_value_mappings,
+                    status_names=tuple(definition.status_types),
+                    device_config=node,
+                    parent_device_id=entry.parent_device_id,
+                    hardware_interface=definition.hardware_interface,
+                )
             )
-        )
+        except DeviceMaterialError as exc:
+            # 维护模式：持有的物料建不成 PLR 实例，这台设备不启动（子设备随之跳过），其余照常
+            exc.device_id = device_id
+            record = exc.unavailable_record()
+            _mark_unavailable(
+                runtime,
+                device_id,
+                registry_name=definition.registry_name,
+                reason=record.pop("reason"),
+                parent_device_id=entry.parent_device_id,
+                extra=record,
+            )
     return runtime
 
 
@@ -126,12 +139,14 @@ def _mark_unavailable(
     reason: str,
     supported_backends: Optional[list[str]] = None,
     parent_device_id: str = "",
+    extra: Optional[dict[str, Any]] = None,
 ) -> None:
     record: dict[str, Any] = {
         "device_id": device_id,
         "registry_name": registry_name,
         "backend": "hostlink",
         "reason": reason,
+        **(extra or {}),
     }
     if supported_backends is not None:
         record["supported_backends"] = list(supported_backends)
@@ -147,7 +162,7 @@ def _mark_unavailable(
 
 
 def unavailable_devices() -> list[dict[str, Any]]:
-    """本进程 HostLink runtime 因 backend 不支持而跳过的设备（供诊断 / 健康接口）。"""
+    """本进程 HostLink runtime 没有启动的设备（backend 不支持、物料建不成时的维护模式；供诊断 / 健康接口）。"""
 
     runtime = _runtime
     local = getattr(runtime, "local", None)

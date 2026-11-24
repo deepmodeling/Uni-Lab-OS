@@ -1260,7 +1260,8 @@ class HostLinkLocalRuntime:
         #: 图中声明的 host_node 身份（device_id -> 资源 uuid），供内置 host
         #: 服务设备注册时复用，保证图导出与权威身份一致。
         self.graph_host_resource_uuids: dict[str, str] = {}
-        #: 设备图中因 backend 不支持而跳过的设备（device_id -> 原因记录），
+        #: 设备图中没有启动的设备（device_id -> 原因记录）：backend 不支持而跳过的，以及持有的物料
+        #: 建不成 PLR 实例而进入维护模式的（记录带 ``maintenance`` / ``material_uuid`` / ``material_type``）；
         #: 由能力快照、``/api/v1/hostlink/peers`` 与 ``/api/v1/health`` 上报。
         self.unavailable_devices: dict[str, dict[str, Any]] = {}
         self.topic_bus = LocalTopicBus()

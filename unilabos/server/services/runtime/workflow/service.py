@@ -64,6 +64,7 @@ from unilabos.server.services.runtime.workflow.authoring_kernel import (
 )
 from unilabos.server.services.runtime.workflow.composite_expansion import (
     CompositeAuthoring,
+    CompositeExpansion,
 )
 from unilabos.server.services.runtime.workflow.entry_parameters import (
     EntryParameterError,
@@ -1119,31 +1120,15 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             graph = WorkflowStore.get_graph(self, parent)
             if graph["workflow"]["revision"] != revision:
                 raise WorkflowConflict("conflict")
-            selected = self.find_workflow_publication(child, child_revision)
-            if selected is None:
-                raise WorkflowError("not_found", detail="子工作流没有该发布修订")
-            try:
-                authoring, projection = self._composite_authoring(selected)
-            except PublicationError as exc:
-                raise WorkflowError("invalid_input", detail=str(exc)) from None
             parent_unilab = graph["workflow"]["meta_data"].get("unilab") or {}
-            expansion = authoring.compile_invocation(
-                parent_workflow_uuid=parent,
-                invocation_uuid=invocation,
-                module=PUBLICATION_MODULE,
-                symbol=projection.source.symbol,
-                keyword_arguments=arguments,
-                parent_input_contract=(
-                    parent_unilab.get("input_contract")
-                    or {"version": 1, "parameters": []}
-                ),
+            selected, expansion = self._compile_composite_invocation(
+                parent,
+                invocation=invocation,
+                child=child,
+                child_revision=child_revision,
+                arguments=arguments,
+                parent_input_contract=parent_unilab.get("input_contract"),
             )
-            if expansion.diagnostics:
-                diagnostic = expansion.diagnostics[0]
-                raise WorkflowError(
-                    "invalid_input",
-                    detail=f"{diagnostic['code']}（{diagnostic['path']}）",
-                )
             nodes, edges, templates, handles = merged_invocation_entities(
                 expansion,
                 name=selected["name"],
@@ -1180,6 +1165,41 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 "contract_pin": dict(expansion.contract_pin),
                 "graph": saved,
             }
+
+    def _compile_composite_invocation(
+        self,
+        parent: str,
+        *,
+        invocation: str,
+        child: str,
+        child_revision: Optional[int],
+        arguments: Dict[str, Any],
+        parent_input_contract: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Any], CompositeExpansion]:
+        """按子工作流的一次发布展开一次组合调用，返回 ``(发布行, 展开结果)``；展开失败映射成 WorkflowError。"""
+
+        selected = self.find_workflow_publication(child, child_revision)
+        if selected is None:
+            raise WorkflowError("not_found", detail="子工作流没有该发布修订")
+        try:
+            authoring, projection = self._composite_authoring(selected)
+        except PublicationError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        expansion = authoring.compile_invocation(
+            parent_workflow_uuid=parent,
+            invocation_uuid=invocation,
+            module=PUBLICATION_MODULE,
+            symbol=projection.source.symbol,
+            keyword_arguments=arguments,
+            parent_input_contract=parent_input_contract or {"version": 1, "parameters": []},
+        )
+        if expansion.diagnostics:
+            diagnostic = expansion.diagnostics[0]
+            raise WorkflowError(
+                "invalid_input",
+                detail=f"{diagnostic['code']}（{diagnostic['path']}）",
+            )
+        return selected, expansion
 
     # V1 发布合同 / 组合调用 ------------------------------------------------
 
@@ -3391,11 +3411,95 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             workflow_type=str(definition.get("workflow_type") or "normal"),
         )
         try:
-            return self.save_graph(record["uuid"], revision=record["revision"], nodes=new_nodes, edges=new_edges)
+            return self._save_imported_graph(record, new_nodes, new_edges)
         except BaseException:
             with suppress(Exception):
                 self.delete_workflow(record["uuid"])
             raise
+
+    def _save_imported_graph(
+        self,
+        record: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """导入的本层图落库：组合调用按固定的发布修订重新展开私有子图，再整图保存一次。
+
+        与整图保存同一规则，文件里的保留元数据（``meta_data.unilab``）一律不采用；组合调用的保留元数据
+        与私有子图都由展开重新生成，身份按新的调用节点派生。
+        """
+
+        from unilabos.server.scheduler.interval_plan import (
+            graph_declares_resource_scopes, validate_graph_resource_scopes,
+        )
+
+        identity = record["uuid"]
+        for edge in edges:
+            if isinstance(edge.get("meta_data"), dict):
+                edge["meta_data"].pop("unilab", None)
+        pins: Dict[str, Mapping[str, Any]] = {}
+        for node in nodes:
+            meta_data = node.get("meta_data")
+            unilab = meta_data.pop("unilab", None) if isinstance(meta_data, dict) else None
+            if isinstance(unilab, Mapping) and isinstance(unilab.get("composite"), Mapping):
+                pins[node["uuid"]] = unilab["composite"]
+        if any(node.get("workflow_node_template_uuid") for node in nodes):
+            # 引用设备动作模板的节点：先把注册表投影同步进模板表，图校验才能找到模板
+            self._sync_registry_templates_best_effort()
+        private_nodes: List[Dict[str, Any]] = []
+        private_edges: List[Dict[str, Any]] = []
+        templates: Dict[str, Dict[str, Any]] = {}
+        handles: Dict[str, Dict[str, Any]] = {}
+        with self._authoring_lock(identity):
+            for node in nodes:
+                pin = pins.get(node["uuid"])
+                if pin is None:
+                    continue
+                child_revision = pin.get("child_workflow_revision")
+                try:
+                    child = validate_uuid(pin.get("child_workflow_uuid"))
+                    if isinstance(child_revision, bool) or not isinstance(child_revision, int):
+                        raise ValueError
+                except (TypeError, ValueError):
+                    raise WorkflowError("invalid_input", detail=f"组合调用 {node['uuid']} 缺少子工作流发布修订") from None
+                # 与新插入同一规则：子工作流已删除时不能再引用它
+                self.get_workflow(child)
+                _selected, expansion = self._compile_composite_invocation(
+                    identity,
+                    invocation=node["uuid"],
+                    child=child,
+                    child_revision=child_revision,
+                    arguments=node.get("param") or {},
+                    parent_input_contract=None,
+                )
+                expanded, expanded_edges, node_templates, handle_templates = merged_invocation_entities(
+                    expansion, name=str(node.get("name") or ""), pose=node.get("pose"),
+                )
+                invocation, *inner = expanded
+                # 本层字段（名称、位置、分组、依赖、禁用等）以文件为准；实参、模板与保留元数据取展开结果
+                node["param"] = invocation["param"]
+                node["workflow_node_template_uuid"] = invocation["workflow_node_template_uuid"]
+                node["meta_data"] = {**(node.get("meta_data") or {}), "unilab": invocation["meta_data"]["unilab"]}
+                private_nodes.extend(inner)
+                private_edges.extend(expanded_edges)
+                templates.update((item["uuid"], item) for item in node_templates)
+                handles.update((item["uuid"], item) for item in handle_templates)
+            saved = self._save_reserved_graph(
+                identity,
+                revision=record["revision"],
+                workflow_meta_data=record["meta_data"],
+                nodes=[*nodes, *private_nodes],
+                edges=[*edges, *private_edges],
+                node_templates=list(templates.values()),
+                handle_templates=list(handles.values()),
+            )
+        if graph_declares_resource_scopes(saved):
+            # 子操作带来的资源作用域要能在新父图里规划（与插入组合调用同一校验）
+            try:
+                validate_graph_resource_scopes(saved)
+            except (ValueError, TypeError) as exc:
+                raise WorkflowError("invalid_input", detail=str(exc)) from None
+        return saved
 
     def _read_source(
         self,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections import Counter
 from copy import deepcopy
@@ -417,20 +418,38 @@ def project_inventory_requirements(graph: Mapping[str, Any]) -> list[dict[str, A
     return projected
 
 
-def is_derived_inventory_requirements(graph: Mapping[str, Any], requirements: Any) -> bool:
-    """图根 ``inventory_requirements`` 是不是读图时从节点派生的那份（导出后原样导入的回声）。
+def _canonical(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
-    比较时不看 ``uuid`` / ``workflow_uuid``：它们按工作流身份生成，导入会换身份。别的任何不同
-    （改了数量、多一条、手写一条）都不是回声。
+
+def is_derived_inventory_requirements(graph: Mapping[str, Any], requirements: Any) -> bool:
+    """图根 ``inventory_requirements`` 是不是读图时从节点派生的列表（导出后原样导入的回声）。
+
+    派生列表的每一条都是某个节点上声明的需求原条目（``consume_node_uuid`` + ``meta_data.unilab.inventory``），
+    只按这一对比较：``requirement_key``、数量、``deferred`` 等投影字段随投影规则（可见性、禁用、重名、
+    规范化）变化，导入时重新派生会和导出时对不上。对不上任何节点条目（手写、改了需求本身）就不是回声。
+    投影字段只读，改了也不生效。
     """
 
-    if not isinstance(requirements, list) or not all(isinstance(item, Mapping) for item in requirements):
+    if not isinstance(requirements, list):
         return False
-
-    def essence(items: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-        return [{key: value for key, value in item.items() if key not in ("uuid", "workflow_uuid")} for item in items]
-
-    return essence(requirements) == essence(project_inventory_requirements(graph))
+    declared = {
+        (str(node.get("uuid") or ""), _canonical(item))
+        for node in graph.get("nodes") or []
+        if isinstance(node, Mapping)
+        for item in _declared_inventory(node)
+    }
+    for item in requirements:
+        if not isinstance(item, Mapping):
+            return False
+        meta = item.get("meta_data")
+        unilab = meta.get("unilab") if isinstance(meta, Mapping) else None
+        inventory = unilab.get("inventory") if isinstance(unilab, Mapping) else None
+        if not isinstance(inventory, Mapping):
+            return False
+        if (str(item.get("consume_node_uuid") or ""), _canonical(inventory)) not in declared:
+            return False
+    return True
 
 
 def definition_graph(graph: Mapping[str, Any]) -> dict[str, Any]:

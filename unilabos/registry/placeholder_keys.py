@@ -36,8 +36,9 @@ logger = logging.getLogger(__name__)
 
 #: ``PLACEHOLDER_*`` 常量所在模块。
 PLACEHOLDER_MODULE = "unilabos.registry.placeholder_type"
-#: 由框架注入、不属于动作参数的名字（与 ``action_schema.FRAMEWORK_PARAMETERS`` 一致）。
-_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids", "action_context"})
+#: 按名字识别、由框架注入、不属于动作参数的名字（与 ``action_schema.FRAMEWORK_PARAMETERS`` 一致）；
+#: 按类型识别的 ``ActionContext`` 参数由调用方先从 ``parameter_names`` 里去掉。
+_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids"})
 
 _warned: set[tuple[str, str]] = set()
 _warned_lock = threading.Lock()
@@ -94,8 +95,8 @@ def placeholder_parameter_names(
 ) -> Optional[list[str]]:
     """``placeholder_keys`` 可以写的键（装饰器与 AST 扫描同一规则）。
 
-    ``parameter_names`` 是方法的具名参数（不含 ``self`` / ``cls`` 与 ``*args`` / ``**kwargs``）；框架注入的
-    ``sample_uuids`` / ``action_context`` 不算。ROS 动作另加 ``goal=`` 映射的字段名。签名未知时返回 None、
+    ``parameter_names`` 是方法的具名参数（不含 ``self`` / ``cls`` 与 ``*args`` / ``**kwargs``，也不含按类型识别、
+    框架注入的 ``ActionContext`` 参数）；``sample_uuids`` 不算。ROS 动作另加 ``goal=`` 映射的字段名。签名未知时返回 None、
     不核对：``parent=True`` 借父类签名，协议动作（``is_protocol=True``）按 ROS 消息字段。
     """
 

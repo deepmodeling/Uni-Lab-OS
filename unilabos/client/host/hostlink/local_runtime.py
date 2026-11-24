@@ -21,7 +21,7 @@ from typing import (
     Type,
 )
 
-from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.runtime.action import ActionContext, bind_action_context
 from unilabos.client.host.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
 from unilabos.config.config import BasicConfig
 from unilabos.client.host.runtime.exception import TimeoutException
@@ -827,9 +827,9 @@ class HostLinkDeviceNode(DeviceNode):
             mapping = {}
         kwargs = self._map_action_arguments(signature, mapping, kwargs)
         kwargs = self._resolve_action_resources(signature, kwargs)
+        # HostLink 执行总有上下文（取消、超时、反馈都靠它）：调用方没给就现建一个，按类型注入驱动
         context = action_context or ActionContext()
-        if "action_context" in signature.parameters:
-            kwargs.setdefault("action_context", context)
+        kwargs = bind_action_context(action, kwargs, context)
         return action, context, kwargs, mapping
 
     @staticmethod

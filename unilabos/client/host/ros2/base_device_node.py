@@ -31,6 +31,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.service import Service
 from unilabos_msgs.action import StrSingleInput
 from unilabos.client.host.runtime.node import DeviceNode
+from unilabos.client.host.runtime.action import bind_action_context
 from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot, resource_slot_shapes
 from unilabos.client.host.runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
@@ -1285,6 +1286,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
             time_start = time.monotonic()
             time_overall = 100
             future = None
+            if not error_skip and "sequence" not in action_value_mapping:
+                # ROS 2 执行没有框架上下文：驱动方法上可空的 ActionContext 参数得到 None，不可空的现建一个
+                action_kwargs = bind_action_context(ACTION, action_kwargs, None)
             if not error_skip:
                 # 将阻塞操作放入线程池执行
                 if inspect.iscoroutinefunction(ACTION):
@@ -1579,7 +1583,8 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                                 f"转换ResourceSlot列表参数 {arg_name} 失败: {e}\n{traceback.format_exc()}"
                             )
                             raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
-            return function(**function_args)
+            # ROS 2 执行没有框架上下文：可空的 ActionContext 参数得到 None，不可空的现建一个
+            return function(**bind_action_context(function, function_args, None))
         except KeyError as ex:
             raise JsonCommandInitError(
                 f"执行动作时JSON缺少function_name或function_args: {ex}\n原JSON: {string}\n{traceback.format_exc()}"
@@ -1758,7 +1763,8 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
                             )
                             raise JsonCommandInitError(f"ResourceSlot列表参数转换失败: {arg_name}")
 
-            return await function(**function_args)
+            # ROS 2 执行没有框架上下文：可空的 ActionContext 参数得到 None，不可空的现建一个
+            return await function(**bind_action_context(function, function_args, None))
         except KeyError as ex:
             raise JsonCommandInitError(
                 f"执行动作时JSON缺少function_name或function_args: {ex}\n原JSON: {string}\n{traceback.format_exc()}"

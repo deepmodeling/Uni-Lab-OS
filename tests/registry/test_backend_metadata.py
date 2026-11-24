@@ -230,7 +230,7 @@ def test_registry_completion_publishes_backend_site_and_policy_defaults(
 
 
 def test_ast_scanner_skips_runtime_injected_parameters(tmp_path) -> None:
-    """``action_context`` / ``sample_uuids`` 由执行器注入，不得进入动作契约。"""
+    """``ActionContext`` 参数（按类型识别）/ ``sample_uuids`` 由执行器注入，不得进入动作契约。"""
 
     source = tmp_path / "ctx_driver.py"
     source.write_text(
@@ -267,7 +267,7 @@ def test_ast_cache_rejects_previous_metadata_version(tmp_path) -> None:
 
     cache = load_scan_cache(cache_path)
 
-    assert _CACHE_VERSION == 25
+    assert _CACHE_VERSION == 26
     assert cache == {"version": _CACHE_VERSION, "files": {}}
 
 

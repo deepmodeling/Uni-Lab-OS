@@ -73,10 +73,41 @@ class ActionContext:
             raise ActionCancelled(f"action cancelled: {self.action_id}")
 
 
+def bind_action_context(
+    function: Callable[..., Any],
+    kwargs: Dict[str, Any],
+    context: Optional[ActionContext],
+) -> Dict[str, Any]:
+    """按类型给驱动动作注入 :class:`ActionContext`，返回补好参数的新字典（HostLink / ROS 2 / 跨设备调用共用）。
+
+    注解为 ``ActionContext``、``Optional[ActionContext]`` 或 ``ActionContext | None`` 的参数都注入，与参数名无关；
+    goal 里同名的值被框架的上下文覆盖。``context`` 为 ``None`` 表示这次执行没有上下文（如 ROS 2 动作）：
+    可空的参数得到 ``None``，不可空的参数得到框架现建的上下文。
+    """
+
+    from unilabos.registry.action_context import action_context_parameters
+
+    parameters = action_context_parameters(function)
+    if not parameters:
+        return kwargs
+    bound = dict(kwargs)
+    created: Optional[ActionContext] = None
+    for name, optional in parameters.items():
+        if context is not None:
+            bound[name] = context
+        elif optional:
+            bound[name] = None
+        else:
+            created = created or ActionContext()
+            bound[name] = created
+    return bound
+
+
 __all__ = [
     "ActionCancelled",
     "ActionContext",
     "DeviceActionRouter",
     "FeedbackCallback",
     "LateResultCallback",
+    "bind_action_context",
 ]

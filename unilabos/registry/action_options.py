@@ -8,15 +8,19 @@
   （ROS 动作类型的 ``goal`` / ``result`` 字段映射照旧）；
 - 参数注解里的 ``Placeholder(...)``：前端选择器写在 ``@action(placeholder_keys={...})``；
 - 参数注解里的 ``SiteSelector(...)``：库位参数注解为 ``SiteSlot``，库位关系写成
-  ``material=Material.site(...)``。
+  ``material=Material.site(...)``；
+- 按名字注入的动作上下文（参数叫 ``action_context`` 却没有 ``ActionContext`` 注解）：框架按类型注入，
+  注解为 ``Optional[ActionContext]``（见 :mod:`unilabos.registry.action_context`）。
 
 本模块只依赖标准库：AST 扫描在线程池里逐文件调用它。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any, Dict
+
+from unilabos.registry.action_context import LEGACY_ACTION_CONTEXT_NAME, untyped_action_context_message
 
 #: 任何动作都不再接受的选项 → 新写法。
 REMOVED_ACTION_OPTIONS: Dict[str, str] = {
@@ -71,12 +75,22 @@ def check_action_options(options: Mapping[str, Any], *, json_action: bool, defin
                 raise RemovedActionOptionError(f"@action 不再接受 {name}=（{definition}）：{hint}")
 
 
+def check_action_context_parameter(
+    parameter_names: Iterable[str], context_parameters: Iterable[str], *, definition: str
+) -> None:
+    """参数叫 ``action_context`` 却不是按类型识别的上下文参数（没有 ``ActionContext`` 注解）：报错并给出新写法。"""
+
+    if LEGACY_ACTION_CONTEXT_NAME in set(parameter_names) - set(context_parameters):
+        raise RemovedActionOptionError(untyped_action_context_message(definition))
+
+
 __all__ = [
     "REMOVED_ACTION_OPTIONS",
     "REMOVED_ANNOTATIONS",
     "REMOVED_ANNOTATION_IDENTITIES",
     "REMOVED_JSON_ACTION_OPTIONS",
     "RemovedActionOptionError",
+    "check_action_context_parameter",
     "check_action_options",
     "removed_annotation_message",
 ]

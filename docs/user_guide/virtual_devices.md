@@ -33,7 +33,8 @@
   `{"config": {...}}`（编辑器按旧 `init_param_schema` 生成）内层同样生效。
 - 状态用带 `@topic_config` 的属性暴露（`status`、`progress`、`remaining_time`、温度、转速等）。
 - 长动作分步推进：每步检查取消、更新进度与剩余时间，并通过 `ActionContext` 发布动作反馈；
-  停止类动作（如泵的 `auto-stop_operation`）请求取消正在进行的动作。ROS 2 不注入 `ActionContext`，
+  停止类动作（如泵的 `auto-stop_operation`）请求取消正在进行的动作。`ActionContext` 按参数类型注入
+  （见 [动作标准](../developer_guide/action_standard.md#动作上下文actioncontext)）；ROS 2 执行没有框架上下文，可空的参数得到 `None`，
   此时动作照常执行，只是不发布这份反馈、不支持取消。
 - 失败一律抛异常（参数越界、无法识别的命令等），作业进入失败决策，不会把 `success=False` 当成功返回。
   成功时返回字典（`{"success": true, ...}`）。

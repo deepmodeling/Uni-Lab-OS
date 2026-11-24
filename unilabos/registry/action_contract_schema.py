@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Never, Self
 
+from unilabos.registry.action_context import ast_action_context_parameters, ast_import_identity
 from unilabos.registry.action_result_schema import (
     ActionResultSchemaError,
     parse_action_result_declaration,
@@ -34,7 +35,8 @@ from unilabos.registry.contract_value_schema import (
 
 _ERROR_MESSAGE = "Action 定义不符合 Workflow 版本 1 合同"
 _PARSED_ACTION_CONTRACT_TOKEN = object()
-_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids", "action_context"})
+#: 按名字识别、由框架注入的参数；动作上下文按类型（``ActionContext``）识别，见 ``_parse_parameters``。
+_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids"})
 _ANY = "typing:Any"
 _DICT = "typing:Dict"
 _JSON_VALUE = "unilabos.registry.annotations:JSONValue"
@@ -518,7 +520,7 @@ def _fail(
     raise ActionContractError(code, path, message)
 
 
-def _action_context(
+def _is_class_method(
     module: ast.Module,
     action: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> bool:
@@ -721,6 +723,8 @@ def _parse_parameters(
     material_lock_free: list[str] = []
     seen_names: set[str] = set()
     first_positional = all_positional[0] if all_positional else None
+    # 框架注入的动作上下文按类型识别（ActionContext / Optional[ActionContext]），不进输入合同
+    framework = _FRAMEWORK_PARAMETERS | set(ast_action_context_parameters(action, ast_import_identity(imports)))
     for argument, default in scheduled:
         name = getattr(argument, "arg", None)
         if type(name) is not str or not name:
@@ -728,7 +732,7 @@ def _parse_parameters(
         is_receiver = (
             is_method and argument is first_positional and name in {"self", "cls"}
         )
-        if is_receiver or name in _FRAMEWORK_PARAMETERS:
+        if is_receiver or name in framework:
             continue
         parameter_index = len(descriptors)
         if name in seen_names:
@@ -902,7 +906,7 @@ def parse_action_contract(
     except RecursionError:
         _fail("/module")
 
-    is_method = _action_context(module, action)
+    is_method = _is_class_method(module, action)
     (
         input_contract,
         input_templates,

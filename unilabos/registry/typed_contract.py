@@ -13,8 +13,9 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-#: 由框架注入、不属于动作合同的参数：出现在参数里也不算多传字段。
-_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids", "action_context"})
+#: 由框架注入、不属于动作合同的参数：出现在参数里也不算多传字段。``ActionContext`` 参数按类型识别、
+#: 只在 Host 调用驱动时注入，不出现在调度端的参数里。
+_FRAMEWORK_PARAMETERS = frozenset({"sample_uuids"})
 #: Host 剥离到结果外层的保留返回字段。
 _RESERVED_RESULT_FIELDS = frozenset({"unilabos_samples"})
 

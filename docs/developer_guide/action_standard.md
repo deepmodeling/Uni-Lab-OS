@@ -26,7 +26,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 
 - **没有默认值的参数就是必填**：缺了在调度端 / Host 调用前报「动作参数缺少必填字段：…」，不再被补成 0 / 空串。
   `goal_default`（`@action(goal_default=...)`）只是编辑器里的初始参数值，叠加在签名默认值上，不改变参数是否必填。
-- 参数名之外的字段一律拒绝（`**kwargs` 除外）；框架注入的 `sample_uuids`、`action_context` 不算参数。
+- 参数名之外的字段一律拒绝（`**kwargs` 除外）；框架注入的 `sample_uuids` 与动作上下文（见下节）不算参数。
 - 物料参数（`ResourceSlot`）接受框架的几种引用形态：`{"uuid": ...}`（可带 id / name）、只给名字的
   `{"name": ...}`（派发前由调度器向物料权威解析出 uuid）、上游端口传来的扁平资源树（列表）、uuid 字符串；
   能否解析出权威 uuid 由派发前的物料锁检查保证。不可空的物料参数给空值（`{}` / `""` / `[]`）报
@@ -44,6 +44,39 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 
 `unilabos_samples` 是 Host 剥离到结果外层的保留字段，不进返回 schema。`--test_mode` 下没声明 `run_in_test_mode = True`
 的驱动不执行、由 Host 模拟返回值，模拟值不按返回注解校验。
+
+## 动作上下文：`ActionContext`
+
+动作需要发布反馈、检查取消或知道自己是哪一次执行时，加一个注解为 `ActionContext` 的参数，框架按**类型**注入，
+参数名随意：
+
+```python
+from typing import Optional
+from unilabos.client.host.runtime.action import ActionContext
+
+@action(display_name="加热")
+def heat(self, sample: ResourceSlot, seconds: float, ctx: Optional[ActionContext] = None) -> None:
+    for step in range(10):
+        if ctx is not None:
+            ctx.raise_if_cancelled()
+            ctx.publish_feedback({"progress": step * 10})
+```
+
+| 注解 | 有上下文时 | 没有上下文时（ROS 2 执行、作者直接调用） |
+| --- | --- | --- |
+| `Optional[ActionContext]`、`ActionContext \| None`、`ActionContext = None` | 注入 | `None` |
+| `ActionContext` | 注入 | 框架现建一个（`action_id` 随机，没有反馈回调，不会被取消） |
+
+- HostLink 执行（Host 派发、跨设备调用 `node.call_device_action[_async]`、工作站协议子步骤、`--test_mode` 下
+  真实执行的驱动）总有上下文；ROS 2 执行没有框架上下文。HostLink 本地执行、`host_node`、ROS 2 设备节点、
+  跨设备调用都经同一个判定（`client/host/runtime/action.py:bind_action_context`）。
+- 这些参数不属于动作接口：不进 goal schema、必填列表、`placeholder_keys`、生成的端口、物料锁参数与 `goal_default`
+  （AST 扫描、装饰器与运行时签名推断同一规则，`registry/action_context.py`）。goal 里同名的值被框架的上下文覆盖。
+- 字段含义：`action_id` 是**这一次 attempt** 的标识。调度派发的作业里它就是 attempt 的 job uuid（runtime.v1
+  `job_uuid`，`/workflow-node-jobs/{job_uuid}`），每次重试都换一个新值；同一节点的节点运行 uuid（`node_run_uuid`）
+  在重试之间不变，驱动拿不到它，需要跨重试稳定的身份时由调用方作为普通参数传入。没有调度作业的调用（跨设备调用、
+  直接调用）里 `action_id` 是随机值。`publish_feedback(data)` 发布动作反馈；`raise_if_cancelled()` / `is_cancelled`
+  协作式检查取消（硬超时也会请求取消）。
 
 schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输出顺序、资源模板约束和资源语义，建任务时冻结进执行计划。
 手写 YAML 注册表里的 JSON 动作要跑一次 `unilab --complete_registry`，才会按同一标准重新生成 schema；
@@ -158,6 +191,7 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | `Annotated[T, Placeholder(PLACEHOLDER_...)]`（`unilabos.registry.annotations.Placeholder`） | `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，参数照常注解为 `T` |
 | `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material=Material.site("参数名", owner=..., occupant=..., show_occupied=..., allow_occupied=...))`；生成的 schema 扩展与以前相同 |
 | JSON 动作的 `@action(goal={...})` / `result={...}` 重命名 | 去掉：字段名就是参数名 / 返回 TypedDict 的字段名（要改名就改参数名） |
+| 按名字注入的动作上下文：参数叫 `action_context` 但没有 `ActionContext` 注解 | 注解为 `Optional[ActionContext]`（`from unilabos.client.host.runtime.action import ActionContext`），名字随意；没有注解的 `action_context` 参数注册时报错（自动动作同样） |
 
 行为上的变化：
 

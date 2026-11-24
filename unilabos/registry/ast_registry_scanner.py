@@ -34,6 +34,7 @@ from unilabos.registry.action_options import check_action_options
 from unilabos.registry.action_schema import (
     ModuleBindings,
     build_action_schema_draft,
+    framework_parameter_names,
     reject_removed_annotations,
 )
 from unilabos.registry.material_roles import (
@@ -58,7 +59,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 25      # 25：unilabos.backend 与 unilabos.server.backend 拆进 unilabos.client.host / unilabos.server，扫描出的模块路径随之变化
+_CACHE_VERSION = 26      # 26：动作上下文参数按类型（ActionContext）排除，不再按名字 action_context
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1092,10 +1093,13 @@ def _extract_class_body(
             # 已删除的写法（contract= / resource_contract= / JSON 动作的 goal= 与 result=，以及注解里的
             # Placeholder / SiteSelector）与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
             check_action_options(action_args, json_action=json_action, definition=definition)
+            # 框架注入的参数（sample_uuids、按类型识别的 ActionContext）不属于动作接口；
+            # 叫 action_context 却没有 ActionContext 注解的旧写法在这里报错
+            framework = framework_parameter_names(item, bindings, definition=definition)
             # 手写的前端选择器：键必须是参数名，未知种类告警一次；注册表与类型推出的取并集（手写优先）
             action_args["placeholder_keys"] = check_placeholder_keys(
                 action_args.get("placeholder_keys"),
-                parameter_names=_placeholder_parameter_names(item, action_args),
+                parameter_names=_placeholder_parameter_names(item, action_args, framework),
                 definition=definition,
             )
             canonical_schema = None
@@ -1150,7 +1154,7 @@ def _extract_class_body(
                 )
             if ignored_lock_options:
                 warn_ignored_material_lock_override(definition, ignored_lock_options)
-            method_params = _extract_method_params(item, import_map)
+            method_params = _extract_method_params(item, import_map, skip=framework)
             # 超时字段与装饰器同一套校验：硬超时必须是正数秒；软超时可以是秒或只引用
             # 动作入参的四则运算表达式（归一化为规范字符串写入注册表）。
             from unilabos.registry.action_timeout import (
@@ -1225,7 +1229,9 @@ def _extract_class_body(
         if method_name in ("post_init", "__str__", "__repr__"):
             continue
 
-        method_params = _extract_method_params(item, import_map)
+        definition = f"{module_name}.{cls_node.name}.{method_name}"
+        framework = framework_parameter_names(item, bindings, definition=definition)
+        method_params = _extract_method_params(item, import_map, skip=framework)
         return_type = _get_annotation_str(item.returns, import_map)
         is_async = isinstance(item, ast.AsyncFunctionDef)
         method_doc = ast.get_docstring(item)
@@ -1238,7 +1244,6 @@ def _extract_class_body(
         }
         if _has_decorator(item, "always_free") and _is_registry_decorator("always_free", import_map):
             auto_entry["always_free"] = True
-        definition = f"{module_name}.{cls_node.name}.{method_name}"
         draft = build_action_schema_draft(
             item, bindings, action_name=f"auto-{method_name}", definition=definition
         )
@@ -1267,14 +1272,15 @@ def _store_schema_draft(entry: dict, schema: Optional[dict], draft: dict) -> Non
 
 
 def _placeholder_parameter_names(
-    item: Union[ast.FunctionDef, ast.AsyncFunctionDef], action_args: Dict[str, Any]
+    item: Union[ast.FunctionDef, ast.AsyncFunctionDef], action_args: Dict[str, Any], framework: Any = (),
 ) -> Optional[List[str]]:
-    """``placeholder_keys`` 可以写的键（规则见 ``placeholder_keys.placeholder_parameter_names``）。"""
+    """``placeholder_keys`` 可以写的键（规则见 ``placeholder_keys.placeholder_parameter_names``）；
+    ``framework`` 是框架注入、不属于动作接口的参数名。"""
 
     arguments = item.args
     positional = [*arguments.posonlyargs, *arguments.args][1:]
     return placeholder_parameter_names(
-        [argument.arg for argument in [*positional, *arguments.kwonlyargs]],
+        [argument.arg for argument in [*positional, *arguments.kwonlyargs] if argument.arg not in framework],
         goal=action_args.get("goal"),
         ros_action=bool(action_args.get("action_type")),
         parent=bool(action_args.get("parent")),
@@ -1300,20 +1306,23 @@ def _material_lock_free_parameters(item: Union[ast.FunctionDef, ast.AsyncFunctio
     return names
 
 
-#: 由运行时注入、不属于动作契约的参数：``sample_uuids``（样品映射）与
-#: ``action_context``（反馈/取消上下文，HostLink 执行器按签名注入）。
-_PARAM_SKIP_NAMES = frozenset({"sample_uuids", "action_context"})
+#: 按名字识别、由运行时注入的参数：``sample_uuids``（样品映射）。反馈/取消上下文按类型
+#: （``ActionContext``）识别，由调用方经 ``skip`` 传入（见 ``action_schema.framework_parameter_names``）。
+_PARAM_SKIP_NAMES = frozenset({"sample_uuids"})
 
 
 def _extract_method_params(
     func_node: Union[ast.FunctionDef, ast.AsyncFunctionDef],
     import_map: Optional[Dict[str, str]] = None,
+    *,
+    skip: Any = (),
 ) -> List[dict]:
     """
     Extract parameters from a class method definition.
 
-    Automatically skips the first positional argument (self / cls) and any
-    domain-specific names listed in ``_PARAM_SKIP_NAMES``.
+    Automatically skips the first positional argument (self / cls), any
+    domain-specific names listed in ``_PARAM_SKIP_NAMES`` and the names in ``skip``
+    (framework-injected ``ActionContext`` parameters, recognised by type).
 
     Returns:
         [{"name": "position", "type": "str", "default": None, "required": True}, ...]
@@ -1333,9 +1342,10 @@ def _extract_method_params(
     num_defaults = len(args.defaults)
     first_default_idx = num_args - num_defaults
 
+    skipped = _PARAM_SKIP_NAMES | set(skip)
     for i, arg in enumerate(positional_args, start=1):
         name = arg.arg
-        if name in _PARAM_SKIP_NAMES:
+        if name in skipped:
             continue
 
         param_info: dict = {"name": name}
@@ -1361,7 +1371,7 @@ def _extract_method_params(
     # Keyword-only arguments (self/cls never appear here)
     for i, arg in enumerate(args.kwonlyargs):
         name = arg.arg
-        if name in _PARAM_SKIP_NAMES:
+        if name in skipped:
             continue
 
         param_info: dict = {"name": name}

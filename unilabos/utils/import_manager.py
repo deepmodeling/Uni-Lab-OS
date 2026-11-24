@@ -24,6 +24,7 @@ __all__ = [
     "get_enhanced_class_info",
 ]
 
+from unilabos.registry.action_context import action_context_parameters
 from unilabos.resources.resource_tracker import PARAM_SAMPLE_UUIDS
 from unilabos.utils import logger
 
@@ -294,6 +295,8 @@ class ImportManager:
         signature = inspect.signature(method)
         args = []
         num_required = 0
+        # 框架注入的动作上下文按类型识别（ActionContext / Optional[ActionContext]），与参数名无关
+        context_parameters = action_context_parameters(method) if skip_unilabos_params else {}
 
         for param_name, param in signature.parameters.items():
             # 跳过self参数
@@ -306,8 +309,8 @@ class ImportManager:
             if param.kind == param.VAR_KEYWORD:  # **kwargs
                 continue
 
-            # 跳过系统注入参数（sample_uuids / action_context），registry 补全时跳过
-            if skip_unilabos_params and param_name in (PARAM_SAMPLE_UUIDS, "action_context"):
+            # 跳过系统注入参数（sample_uuids、按类型识别的动作上下文），registry 补全时跳过
+            if skip_unilabos_params and (param_name == PARAM_SAMPLE_UUIDS or param_name in context_parameters):
                 continue
 
             is_required = param.default == inspect.Parameter.empty

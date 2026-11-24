@@ -264,6 +264,60 @@ def test_scheduler_holds_manual_node_until_decision_without_device_dispatch() ->
         service.close()
 
 
+def test_rejection_cancels_the_task_and_releases_its_inventory(tmp_path) -> None:
+    """拒绝人工确认按取消处理：确认节点 canceled（原因 manual_confirmation_rejected），下游不派发、canceled，
+    任务 canceled；整任务预留的库存像正常取消一样释放。"""
+
+    from uuid import uuid4
+
+    from tests.server.test_scheduler_inventory_authority import _inbound, _template
+    from tests.server.test_workflow_inventory_recovery import Stack
+    from tests.server.test_workflow_parallel_execution import Executor, wait_for
+    from unilabos.protocol.materials import InventoryRequirement
+    from unilabos.registry.workflows import upsert_workflow
+
+    stack, executor = Stack(tmp_path), Executor()
+    _template(stack.materials, "reagent-template", "reagent")
+    _inbound(stack.materials, lot_uuid="lot-a", quantity=20)
+    scheduler = BackendScheduler(stack.workflow, executor, materials_gateway=stack.client)  # type: ignore[arg-type]
+    stack.workflow.set_task_submitter(scheduler.submit)
+    try:
+        confirm = {"uuid": str(uuid4()), "name": "确认", "type": "device_action", "material_uuid": str(uuid4()),
+                   "action_name": "manual_confirm", "execution_policy": {"always_free": True},
+                   "param": {"assignee_user_ids": [], "timeout_seconds": 3600},
+                   "meta_data": {"target_device_id": "host_node"}}
+        requirement = InventoryRequirement(key="solvent", kind="lot", template_uuid="reagent-template", quantity=5, unit="ul")
+        action = {"uuid": str(uuid4()), "name": "操作", "type": "device_action", "material_uuid": str(uuid4()),
+                  "action_name": "operate", "param": {}, "execution_policy": {"depends_on": [confirm["uuid"]]},
+                  "meta_data": {"target_device_id": "reactor",
+                                "inventory_requirements": [requirement.model_dump(mode="json")]}}
+        record = upsert_workflow(stack.workflow, {"workflow_uuid": str(uuid4()), "name": "拒绝即取消", "description": "",
+                                                  "tags": [], "nodes": [confirm, action], "edges": []})
+        task = stack.workflow.create_workflow_task(workflow_uuid=record["uuid"], run_mode="normal", target_node_uuid=None,
+                                                   input_value={}, description=None, meta_data={})
+        runs = {run["workflow_node_uuid"]: run for run in stack.workflow.list_workflow_node_runs(task["uuid"])}
+        job = runs[confirm["uuid"]]["current_job_uuid"]
+        wait_for(lambda: (stack.workflow.get_manual_confirmation_for_job(job) or {}).get("status") == "pending")
+        assert stack.quantities() == (20, 15, 5)
+
+        stack.workflow.decide_workflow_manual_confirmation(
+            stack.workflow.get_manual_confirmation_for_job(job)["uuid"], action="reject", confirmed_by="operator",
+            decision_idempotency_key="reject-1",
+        )
+        wait_for(lambda: stack.workflow.get_workflow_task(task["uuid"])["status"] == "canceled")
+        finished = stack.workflow.get_workflow_task(task["uuid"])
+        assert finished["error_info"][0]["code"] == "manual_confirmation_rejected"
+        settled = stack.workflow.get_workflow_node_job(job)
+        assert settled["status"] == "canceled" and settled["error_info"] == [{"code": "manual_confirmation_rejected"}]
+        runs = {run["workflow_node_uuid"]: run for run in stack.workflow.list_workflow_node_runs(task["uuid"])}
+        assert runs[action["uuid"]]["status"] == "canceled" and executor.dispatched == []
+        assert stack.quantities() == (20, 20, 0)
+    finally:
+        stack.workflow.set_task_submitter(None)
+        scheduler.stop()
+        stack.close()
+
+
 def test_scheduler_rejects_missing_assignee_key_before_opening_gate() -> None:
     service = WorkflowService(":memory:")
     executor = _Executor()

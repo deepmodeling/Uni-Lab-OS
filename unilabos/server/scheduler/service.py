@@ -2058,7 +2058,8 @@ class BackendScheduler:
             elif status == "approved":
                 job_status = "skipped"
             elif status == "rejected":
-                job_status, errors = "failed", [{"code": "manual_confirmation_rejected"}]
+                # 拒绝按取消处理：节点 canceled、保留拒绝原因，任务随之取消收口；库存不变
+                job_status, errors = "canceled", [{"code": "manual_confirmation_rejected"}]
             elif status == "timed_out":
                 job_status, errors = "timeout", [{"code": "manual_confirmation_timed_out"}]
             else:
@@ -3216,14 +3217,16 @@ class BackendScheduler:
         decision_action = str(
             (confirmation.get("meta_data") or {}).get("decision_action") or ""
         ).strip().lower()
+        errors: list[Dict[str, Any]] = []
         if status == "approved":
             job_status = "skipped" if decision_action == "skip" else "succeeded"
             node_state = NodeState.SUCCESS
         elif status == "rejected":
-            job_status = "failed"
-            node_state = NodeState.FAILED
+            # 拒绝按取消处理：节点 canceled、保留拒绝原因，下游不派发，任务以 canceled 收口
+            job_status, errors = "canceled", [{"code": "manual_confirmation_rejected"}]
+            node_state = NodeState.CANCELLED
         elif status == "timed_out":
-            job_status = "timeout"
+            job_status, errors = "timeout", [{"code": "manual_confirmation_timed_out"}]
             node_state = NodeState.FAILED
         elif status == "canceled":
             job_status = "canceled"
@@ -3251,11 +3254,7 @@ class BackendScheduler:
                         "comment": confirmation.get("comment"),
                     },
                 },
-                error_info=(
-                    []
-                    if job_status in {"succeeded", "skipped", "canceled"}
-                    else [{"code": f"manual_confirmation_{status}"}]
-                ),
+                error_info=errors,
             )
         except Exception:  # noqa: BLE001 - 保留 durable 决策，等待恢复重试
             logger.exception(
@@ -3707,14 +3706,21 @@ class BackendScheduler:
             self._notify_start_failure(node.node_id)
 
     def _task_failure_error(self, task_uuid: str) -> Dict[str, Any]:
-        """任务因节点失败而结束：失败节点都是动作执行前预检未通过的记预检报错，否则记执行报错。"""
+        """任务没有成功结束：失败节点都是动作执行前预检未通过的记预检报错；没有失败节点、因人工确认被拒绝而取消的
+        记拒绝；否则记执行报错。"""
         try:
-            failed = [run for run in self.workflow.list_workflow_node_runs(task_uuid) if run.get("status") == "failed"]
+            runs = self.workflow.list_workflow_node_runs(task_uuid)
         except Exception:  # noqa: BLE001 - 读不到明细时按执行报错记
-            failed = []
-        if failed and all(((run.get("error_info") or [{}])[0] or {}).get("stage") == ERROR_STAGE_PREFLIGHT
-                          for run in failed):
+            runs = []
+
+        def first_error(run: Mapping[str, Any]) -> Mapping[str, Any]:
+            return (run.get("error_info") or [{}])[0] or {}
+
+        failed = [run for run in runs if run.get("status") == "failed"]
+        if failed and all(first_error(run).get("stage") == ERROR_STAGE_PREFLIGHT for run in failed):
             return {"code": "node_preflight_failed", "stage": ERROR_STAGE_PREFLIGHT, "scope": "action"}
+        if not failed and any(first_error(run).get("code") == "manual_confirmation_rejected" for run in runs):
+            return {"code": "manual_confirmation_rejected", "stage": ERROR_STAGE_EXECUTION}
         return {"code": "node_execution_failed", "stage": ERROR_STAGE_EXECUTION}
 
     def _action_max_retries(self, device_id: str, action_name: str) -> int:

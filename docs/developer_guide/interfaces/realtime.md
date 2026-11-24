@@ -22,12 +22,13 @@
 
 | 项目 | `/api/v1/events` | `/api/v1/materials/events` |
 | --- | --- | --- |
-| 无 Last-Event-ID 首连 | 固定当前最新序号，先发只含 `id` 的水位帧，仅推之后变化 | 固定当前账本末尾，仅推之后变化 |
-| 持久 SSE id | 工作流事件 id | inventory ledger sequence |
-| 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放 |
-| 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 无 |
-| 游标早于保留窗口 | `stream.reset`（`reason: cursor_expired`，`id` 为新水位），连接保持 | 无 |
-| 非法游标 | Workflow code=1000，HTTP 200 JSON | HTTP 422 |
+| 无 Last-Event-ID 首连 | 固定当前最新序号，先发只含 `id` 的水位帧，仅推之后变化 | 固定当前账本末尾，先发只含 `id` 的水位帧，仅推之后变化 |
+| 持久 SSE id | 工作流事件 id | `<ledger sequence>:<账本纪元>`；账本为空时只有 `<sequence>` |
+| 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放；旧格式的纯数字游标照常接受 |
+| 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 同左 |
+| 游标来自另一个库 | 无 | `stream.reset`（`reason: epoch_changed`，`id` 为新水位），连接保持；纯数字游标不带纪元，无法判断 |
+| 游标早于保留窗口 | `stream.reset`（`reason: cursor_expired`，`id` 为新水位），连接保持 | 无（账本不清理） |
+| 非法游标 | Workflow code=1000，HTTP 200 JSON | code=1000，HTTP 200 JSON |
 | 无事件时 | keepalive 注释；工作流检查约 1 秒，心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
 
 三个游标相互独立：工作流 id、物料 sequence、日志 stream:offset。不能混用，也不能以最后日志通知替换工作流游标。
@@ -43,13 +44,26 @@
 ### 物料通知
 
 ```text
-id: 42
+id: 42:3f9c0a1b7d2e4c55
 event: materials.changed
 data: {"sequence":42,"operation":"update_position","aggregate_type":"material","aggregate_uuid":"..."}
 
 ```
 
-通知只说明什么发生了变化，不带完整树、液体或模板正文。
+通知只说明什么发生了变化，不带完整树、液体或模板正文。需要账本序号时读 `data.sequence`，
+不要解析 SSE id。
+
+SSE id 冒号后的**账本纪元**是由这个库第一条账本记录派生的 16 位十六进制不透明标识：账本只追加，
+同一个库的纪元不变；换了数据目录或全量重置后重建，纪元随之改变。重连时 Last-Event-ID 的纪元与当前库
+不同（`epoch_changed`）或序号超过账本末尾（`cursor_ahead`），服务端发
+`event: stream.reset` + `data: {"reason": "..."}`，`id` 为新水位，连接保持；客户端必须重读 HTTP，
+之后的变更照常推送。没有这一帧时，换库后旧游标要么超前（之后的变更全被挡住），要么落在新库账本的中间
+（从别人的历史中途续传）。
+
+旧客户端：浏览器的 EventSource 不解析 id，原样回传，所以不用改代码；不监听 `stream.reset` 的页面也会
+在这一帧拿到新水位，之后的 `materials.changed` 照常到达，只是少一次重置触发的重读（重连本身的 `onopen`
+仍会重读）。仍发送纯数字 Last-Event-ID 的客户端照常续传，只做 `cursor_ahead` 检查；续传后收到的 id
+都带纪元。自己把 SSE id 当整数解析的客户端需要改读 `data.sequence`。
 初次应**先建立 SSE，在 onopen 后读取 HTTP 快照**。重连同样重新读快照，
 避免“首次取数据 → 开始订阅”之间的变更遗漏。
 
@@ -83,6 +97,7 @@ function subscribeMaterials(baseUrl, render, reportError) {
 
   events.onopen = refresh;
   events.addEventListener("materials.changed", refresh);
+  events.addEventListener("stream.reset", refresh); // 游标无法续传（换库 / 超前）：整体重读
   events.onerror = () => { if (!closed) reportError(new Error("事件流重连中")); };
   return () => { closed = true; events.close(); };
 }

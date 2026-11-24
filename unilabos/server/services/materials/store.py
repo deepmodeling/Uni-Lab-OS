@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import threading
@@ -1017,6 +1018,20 @@ class MaterialsRepository:
             "SELECT COALESCE(MAX(sequence),0) FROM inventory_ledger"
         ).fetchone()
         return int(row[0])
+
+    def ledger_epoch(self) -> Optional[str]:
+        """账本纪元：由第一条账本记录的 ``event_uuid`` 派生的 16 位十六进制不透明标识。
+
+        账本只追加、从不删除，所以同一个库的纪元恒定；换了库（新的数据目录、全量重置后
+        重建）第一条记录不同，纪元随之改变。账本为空时没有纪元，返回 None。
+        """
+
+        row = self.connection.execute(
+            "SELECT event_uuid FROM inventory_ledger ORDER BY sequence LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        return hashlib.sha256(str(row[0]).encode("utf-8")).hexdigest()[:16]
 
     def list_ledger(
         self, *, after_sequence: int = 0, limit: int = 100

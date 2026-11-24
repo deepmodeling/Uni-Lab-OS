@@ -276,7 +276,7 @@ ResourceTreeNotify 为 device_id、action、resource_uuids，动作值及设备�
 | POST | `/api/v1/materials/snapshots/delta` | B: `M<MaterialDelta>` | 应用差量并产生账本记录 |
 | GET | `/api/v1/materials/changes` | Q: after_sequence=0（>=0）、limit=100（1..1000） | 增量账本，供同步消费者补读 |
 | POST | `/api/v1/materials/changes/ack` | B: LedgerAcknowledge | `{acknowledged:数量}`；through_sequence>=0，普通浏览器不替同步消费者 ACK |
-| GET | `/api/v1/materials/events` | H: Last-Event-ID? | text/event-stream；物料变更提醒，收到后拉取正文 |
+| GET | `/api/v1/materials/events` | H: Last-Event-ID?（`<sequence>:<epoch>` 或旧格式 `<sequence>`） | text/event-stream；物料变更提醒，收到后拉取正文；游标无法续传时 `stream.reset` |
 
 材料写入失败常见 404（目标不存在）、409（幂等/版本/占用等冲突）、422（模型或操作不合法）；
 transfer 还需识别设备投影失败。不要收到错误后直接改数据库或更换幂等键重放物理动作。

@@ -256,7 +256,8 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 
 本地 observer 对 assign/unassign 与状态变化形成快照/diff，然后通过权威写入；普通 Python 属性赋值本身不是远端写入确认。
 
-前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表。
+前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表；
+收到 `stream.reset`（游标来自另一个库或超前于账本）时整体重读。
 创建完成后“API 有物料但地图没有”应依次检查：权威读结果、parent/Site 归属、SSE 通知、前端缓存、设备 load。
 具体重连与首次快照顺序见 [实时通信](realtime.md)，不要刷新页面或重复创建来修补丢失通知。
 

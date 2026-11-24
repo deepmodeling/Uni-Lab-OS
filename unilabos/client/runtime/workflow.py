@@ -102,7 +102,7 @@ def _parse_sse_lines(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
     """把 SSE 文本行解析成 ``{"event", "id", "data"}`` 帧。
 
     注释行与 ``retry`` 忽略；只有 ``id`` 没有 ``data`` 的水位帧照常产出（``data`` 为
-    ``None``）。``id`` 只取本帧自带的值，没有 id 的瞬时通知不会继承上一条的序号。
+    ``None``）。``id`` 只取本帧自带的值，不继承上一条的序号（服务端每帧都带 id，这里不依赖它）。
     """
 
     event_name, event_id, data_lines = "", None, []
@@ -518,7 +518,8 @@ class HTTPWorkflowClient:
         """订阅 SSE 失效通知，并在每次相关通知后经 HTTP 拉取任务与 Job 正文。
 
         ``after`` 为 0 时从服务端当前水位开始，不回放历史通知；大于 0 时作为
-        ``Last-Event-ID`` 从该序号之后续传。``stream.reset`` 表示游标失效，水位
+        ``Last-Event-ID`` 从该序号之后续传。产出的 ``cursor`` 是收到的最后一帧的 id（任何帧都推进它，
+        包括物料、日志通知），可作下一次的 ``after``。``stream.reset`` 表示游标失效，水位
         可能回退，客户端重读 HTTP 校准。快照没有变化的通知不重复产出。
         """
 
@@ -574,15 +575,15 @@ class HTTPWorkflowClient:
                         # 游标过期或超前：采用服务端给出的新水位（可能回退）并重读 HTTP。
                         if sequence is not None:
                             cursor = sequence
-                    elif not self._notice_matches_task(notice, task_uuid):
-                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传；不带 id 的瞬时通知不动游标。
-                        if sequence is not None and sequence > cursor:
+                    else:
+                        if sequence is not None:
+                            # 每一帧（水位、工作流、物料、日志）都带同一序列的 id，都推进游标，调用方用 after 续传；
+                            # 不大于游标的是续传边界上的重复帧。
+                            if sequence <= cursor:
+                                continue
                             cursor = sequence
-                        continue
-                    elif sequence is not None:
-                        if sequence <= cursor:
+                        if not self._notice_matches_task(notice, task_uuid):
                             continue
-                        cursor = sequence
 
                     # 通知内容只触发失效；任务事实固定从 HTTP 重新拉取。
                     refreshed = self.inspect_task(task_uuid)
@@ -662,10 +663,9 @@ class HTTPWorkflowClient:
 
     @staticmethod
     def _notice_sequence(notice: Mapping[str, Any]) -> Optional[int]:
-        """只有带 SSE id 的帧（工作流持久事件、水位帧、``stream.reset``）才有游标序号。
+        """帧的 SSE id，即 ``/api/v1/events`` 那一个序列上的游标；不是非负整数时返回 None。
 
-        ``material.changed``、``runtime.logs.changed`` 等瞬时通知不带 id，``data`` 里的
-        ``sequence`` 属于别的账本（例如物料账本末尾），绝不能拿来推进工作流游标。
+        游标只取 SSE id：``material.changed`` 的 ``data.sequence`` 是物料账本的序号，不能拿来推进游标。
         """
 
         value = notice.get("id")

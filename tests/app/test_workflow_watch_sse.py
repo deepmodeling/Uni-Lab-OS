@@ -183,6 +183,83 @@ def test_watch_cursor_follows_the_frame_id_not_the_material_ledger_sequence() ->
     ]
 
 
+class _Connected:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+def _server_frames(rows: list[tuple[str, dict]], last_id: int) -> list[dict[str, Any]]:
+    """把这些通知写进真实的 frontend_event，按 /api/v1/events 的输出（Last-Event-ID: 0）解析成 watch 的通知。"""
+
+    import asyncio
+
+    from unilabos.server.api.runtime import events
+    from unilabos.server.services.runtime.workflow.service import WorkflowService
+
+    service = WorkflowService(":memory:")
+
+    async def collect() -> str:
+        stream = events.runtime_event_stream(_Connected(), service, 0, replay=True)
+        chunks: list[str] = []
+        try:
+            while not any(chunk.startswith(f"id: {last_id}\n") for chunk in chunks):
+                chunks.append(await asyncio.wait_for(anext(stream), 5))
+        finally:
+            await stream.aclose()
+        return "".join(chunks)
+
+    try:
+        for event, data in rows:
+            service.append_frontend_event(event, data)
+        raw = asyncio.run(collect())
+    finally:
+        service.close()
+    return [json.loads(_sse_frame_notice(frame)) for frame in _parse_sse_lines(_iter_text_lines([raw]))]
+
+
+def test_watch_ends_on_the_task_notice_between_material_and_log_frames(monkeypatch) -> None:
+    from unilabos.server.api.runtime import events
+
+    monkeypatch.setattr(events, "shutting_down", lambda: False)
+    frames = _server_frames([
+        ("material.changed", {"sequence": 5000, "material_uuids": ["m1"]}),
+        ("runtime.logs.changed", {"source_ids": ["host"], "sources_changed": False, "all_sources": False}),
+        ("workflow.task.changed", {"workflow_task_uuid": "task-1", "status": "succeeded"}),
+        ("material.changed", {"sequence": 5001}),
+    ], last_id=4)
+    # 每一帧都带同一序列的 id；物料通知的 data.sequence 是物料账本序号，不是游标
+    assert [(frame["action"], frame["id"]) for frame in frames] == [
+        ("material.changed", 1), ("runtime.logs.changed", 2), (RUNTIME_CHANGED_EVENT, 3), ("material.changed", 4),
+    ]
+    http = _Tasks(["running", "running", "succeeded"])
+    notices = _Notices(frames)
+    client = HTTPWorkflowClient("http://edge:8002", http_client=http, notice_connector=lambda *_: notices)
+    events_seen = list(client.watch_task("task-1", timeout=1))
+
+    assert [(event["kind"], event["task"]["status"], event["cursor"]) for event in events_seen] == [
+        ("task_snapshot", "running", 0),
+        ("task_changed", "succeeded", 3),
+    ]
+    assert json.loads(notices.recv())["id"] == 4  # 任务一到终态就结束，后面的物料帧没被读
+
+
+def test_every_frame_advances_the_watch_cursor_and_replays_are_skipped() -> None:
+    http = _Tasks(["running"])
+    notices = [
+        {"action": "workflow.runtime.changed", "id": 5, "data": {"kind": "task", "workflow_task_uuid": "task-1"}},
+        {"action": "material.changed", "id": 6, "data": {"sequence": 9000, "material_uuids": []}},
+        {"action": "runtime.logs.changed", "id": 7, "data": {"source_ids": ["host"]}},
+        {"action": "workflow.runtime.changed", "id": 7, "data": {"kind": "task", "workflow_task_uuid": "task-1"}},
+    ]
+    client = HTTPWorkflowClient("http://edge:8002", http_client=http, notice_connector=lambda *_: _Notices(notices))
+    with pytest.raises(WorkflowClientError) as caught:
+        list(client.watch_task("task-1", after=5, timeout=0.5))
+    assert caught.value.code == "watch_timeout"
+    # --after 5：续传边界上重放的 5 跳过；物料 / 日志帧照常推进；不大于游标的 7 是重复帧
+    assert caught.value.details == {"cursor": 7}
+    assert http.reads == 2  # 首次快照 + 连接后补读；没有一帧触发重读
+
+
 def test_schedule_addr_is_deprecated_and_not_used_for_watch() -> None:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

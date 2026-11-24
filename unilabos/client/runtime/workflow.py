@@ -136,6 +136,7 @@ def _sse_frame_notice(frame: Mapping[str, Any]) -> str:
         data = json.loads(frame["data"]) if frame["data"] else {}
     except json.JSONDecodeError:
         data = {}
+    # 工作流事件流的 id 是十进制序号；其他形状（例如物料事件流的 ``<sequence>:<epoch>``）不是工作流游标。
     try:
         sequence = int(frame["id"]) if frame["id"] is not None else None
     except ValueError:
@@ -574,7 +575,7 @@ class HTTPWorkflowClient:
                         if sequence is not None:
                             cursor = sequence
                     elif not self._notice_matches_task(notice, task_uuid):
-                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传。
+                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传；不带 id 的瞬时通知不动游标。
                         if sequence is not None and sequence > cursor:
                             cursor = sequence
                         continue
@@ -659,23 +660,17 @@ class HTTPWorkflowClient:
         ).lower()
         return any(token in event_type for token in ("workflow", "task", "job"))
 
-    @classmethod
-    def _notice_sequence(cls, notice: Mapping[str, Any]) -> Optional[int]:
-        # SSE 帧的 id 是持久通知序号，优先于 data 内的业务字段。
-        top = notice.get("id")
-        if isinstance(top, int) and not isinstance(top, bool) and top >= 0:
-            return top
-        data = cls._notice_data(notice)
-        for key in ("event_sequence", "backend_sequence", "sequence", "id"):
-            value = data.get(key)
-            if isinstance(value, bool):
-                continue
-            try:
-                sequence = int(value)
-            except (TypeError, ValueError):
-                continue
-            if sequence >= 0:
-                return sequence
+    @staticmethod
+    def _notice_sequence(notice: Mapping[str, Any]) -> Optional[int]:
+        """只有带 SSE id 的帧（工作流持久事件、水位帧、``stream.reset``）才有游标序号。
+
+        ``material.changed``、``runtime.logs.changed`` 等瞬时通知不带 id，``data`` 里的
+        ``sequence`` 属于别的账本（例如物料账本末尾），绝不能拿来推进工作流游标。
+        """
+
+        value = notice.get("id")
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
         return None
 
 

@@ -3837,6 +3837,25 @@ class WorkflowStore:
             ).fetchone()
         return int(row[0])
 
+    def append_frontend_event(self, event: str, data: Dict[str, Any]) -> int:
+        """在独立事务里追加一条前端失效通知，返回它的序号。
+
+        与工作流事件同一张表、同一个序列：``/api/v1/events`` 的每一帧都按这个序号续传、重置与清理。
+        """
+
+        with self.transaction() as conn:
+            return self._append_event(conn, event=event, data=data, now=utc_now())
+
+    def latest_event_data(self, event: str) -> Optional[Dict[str, Any]]:
+        """某类通知最新一条的 ``data``；保留窗口里没有这类通知时返回 None。"""
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM frontend_event WHERE type = ? ORDER BY sequence DESC LIMIT 1",
+                (event,),
+            ).fetchone()
+        return None if row is None else _load(row["payload"], {})
+
     @staticmethod
     def _append_event(
         conn: sqlite3.Connection,

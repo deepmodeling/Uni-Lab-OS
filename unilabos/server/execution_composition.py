@@ -193,6 +193,7 @@ def setup_local_scheduler(
     execution_backend.result_bridges.append(scheduler)
     scheduler.start(recover=True)
     _start_event_retention(service)
+    _start_frontend_notices(service)
     _start_source_monitor(service)
     _workflow_service = service
     _scheduler = scheduler
@@ -228,6 +229,32 @@ def _stop_event_retention() -> None:
     if _event_retention is not None:
         _event_retention.stop()
         _event_retention = None
+
+
+_frontend_notices: Any = None
+
+
+def _start_frontend_notices(service: Any) -> None:
+    """本机 Workflow Authority 把物料账本与日志的失效通知写进 frontend_event，与工作流事件同一序列。
+
+    物料通知只在本进程持有物料权威时写；日志通知包括经控制面 WS 中继来的 Host 通知。
+    """
+
+    global _frontend_notices
+    if _frontend_notices is not None:
+        return
+    from unilabos.server.services.runtime.workflow.frontend_notices import FrontendNoticeWriter
+
+    writer = FrontendNoticeWriter(service, materials=_materials)
+    writer.start()
+    _frontend_notices = writer
+
+
+def _stop_frontend_notices() -> None:
+    global _frontend_notices
+    if _frontend_notices is not None:
+        _frontend_notices.stop()
+        _frontend_notices = None
 
 
 _source_monitor: Any = None
@@ -475,7 +502,7 @@ def setup_execution_backend(
         from unilabos.utils.log_notices import log_notices
 
         # 复用 runtime.v1 控制连接；旧后端的 legacy result bridge 不订阅此通知。
-        # 不落 durable outbox，避免日志噪声占用四库和调度事件序号。
+        # 不落 Host 的 durable outbox（不占 edge_change 序号）；权威收到后合并、限速写进它的 frontend_event。
         _release_log_notices = log_notices.subscribe(
             lambda notice: control_client._queue_message({
                 "action": "runtime_logs_changed", "data": notice.model_dump(),
@@ -511,8 +538,9 @@ def shutdown_backend_services() -> None:
         _scheduler.stop()
         if _backend is not None and _scheduler in _backend.result_bridges:
             _backend.result_bridges.remove(_scheduler)
-    # 先等后台线程（源码监视、事件清理）结束当前事务，再关闭共享的 runtime.db 连接。
+    # 先等后台线程（源码监视、通知写入、事件清理）结束当前事务，再关闭共享的 runtime.db 连接。
     _stop_source_monitor()
+    _stop_frontend_notices()
     _stop_event_retention()
     if _workflow_service is not None:
         _workflow_service.set_task_submitter(None)

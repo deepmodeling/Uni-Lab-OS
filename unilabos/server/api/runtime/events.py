@@ -1,4 +1,4 @@
-"""复用 /events：持久工作流通知 + 瞬时日志失效通知，不混用游标。
+"""``/api/v1/events``：一个整数序列上的前端失效通知（工作流、物料、日志），每一帧都带 id。
 
 订阅语义对齐 v1.0 ADR 0006（前端事件订阅）：通知只表示 REST 状态失效，新页面经
 REST 读取当前状态，不需要回放历史。
@@ -12,32 +12,27 @@ REST 读取当前状态，不需要回放历史。
 
 保留窗口边界与事件页在同一 SQL 快照内读取，每页都检查，慢连接也不会被清理静默越过。
 
-事件名按 V1 合同输出（:func:`to_v1_event`）：持久库里 dev 的细粒度事件
-``workflow.task|node_run|node_job|manual_confirmation|resource.changed`` 一律发成
-``workflow.runtime.changed``，原事件的种类放进 ``data.kind``（``task`` / ``node_run`` /
-``node_job`` / ``manual_confirmation`` / ``resource``），原载荷字段保留。
-``workflow.authoring.changed`` 在库里就是 V1 名，原样发送：``@workflow`` 源码创作的状态迁移
-（``data.cause``），以及工作流定义的变化（``data.change``：``created`` / ``updated`` / ``deleted`` /
-``graph_saved`` / ``published``），都与变更同一事务写入。游标与 ``stream.reset`` 协议不变。
+所有通知都是 ``frontend_event`` 的行，同一个序列：
 
-物料失效：本进程持有物料权威时，物料账本前进就推一条**不带 id** 的 ``material.changed``
-（``data: {"sequence": <账本末尾序号>, "material_uuids": [...]}``），与日志通知一样不动工作流游标。
-``material_uuids`` 的语义：
+- 事件名按 V1 合同输出（:func:`to_v1_event`）：持久库里 dev 的细粒度事件
+  ``workflow.task|node_run|node_job|manual_confirmation|resource.changed`` 一律发成
+  ``workflow.runtime.changed``，原事件的种类放进 ``data.kind``（``task`` / ``node_run`` /
+  ``node_job`` / ``manual_confirmation`` / ``resource``），原载荷字段保留。
+  ``workflow.authoring.changed`` 在库里就是 V1 名，原样发送：``@workflow`` 源码创作的状态迁移
+  （``data.cause``），以及工作流定义的变化（``data.change``：``created`` / ``updated`` / ``deleted`` /
+  ``graph_saved`` / ``published``），都与变更同一事务写入。
+- ``material.changed``（``data: {"sequence": <物料账本末尾>, "material_uuids": [...]}``）与
+  ``runtime.logs.changed``（``RuntimeLogNotice``）由权威进程的通知写入器合并、限速后写入
+  （``server/services/runtime/workflow/frontend_notices.py``）。``material_uuids`` 带这个键：恰好是这段账本里
+  变了的物料，客户端只重读这些（空列表就是没有物料变化）；不带：列不准，整体重读。``data.sequence`` 是物料账本
+  的序号，不是这条流的游标。
 
-- 带这个键：恰好是这段账本里变了的物料（Site 的变化归到所属物料，拓扑边的变化归到两端物料），
-  客户端只重读这些；**空列表就是没有物料变化**（这段账本只动了批次 / 预留），什么都不用重读，
-  ``sequence`` 照常前进；
-- 不带这个键：列不准（模板变化、库被重置），整体重读。
-
-账本由进程内唯一的共享轮询读（``server/services/materials/ledger_watch.py``），所有连接共用一份结果，
-不占默认线程池。只维持这一条事件流的前端据此重读物料；要按账本 sequence 续传的客户端仍用
-``/api/v1/materials/events``（``materials.changed``）。
+写入器写完一行会唤醒本进程的连接立即读；工作流事件按约 1 秒一轮读取。
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 
 from typing import Any, Dict
@@ -45,19 +40,16 @@ from typing import Any, Dict
 from fastapi import APIRouter, Header, Request
 from fastapi.responses import Response, StreamingResponse
 
-from unilabos.protocol.runtime.logs import RuntimeLogNotice
-from unilabos.server.services.materials.ledger_watch import LedgerBatch, LedgerWatch, ledger_watch
 from unilabos.server.api.envelope import WORKFLOW, envelope_router
 from unilabos.server.lifecycle import shutting_down
-from unilabos.utils.log_notices import LOG_NOTICE_EVENT, log_notices, merge_notices
+from unilabos.server.services.runtime.workflow.frontend_notices import MATERIAL_CHANGED_EVENT, appended
+from unilabos.utils.log_notices import LOG_NOTICE_EVENT
 
 STREAM_RESET_EVENT = "stream.reset"
 #: V1 前端事件名（``/api/v1/events``）
 RUNTIME_CHANGED_EVENT = "workflow.runtime.changed"
 AUTHORING_CHANGED_EVENT = "workflow.authoring.changed"
 ERROR_HANDLING_CHANGED_EVENT = "station.error_handling.changed"
-#: 物料账本前进的瞬时失效通知（无 id，不占工作流游标）
-MATERIAL_CHANGED_EVENT = "material.changed"
 
 #: dev 持久事件名 → (V1 事件名, data.kind)。不在表里的事件名原样发送。
 _V1_EVENTS: Dict[str, tuple[str, str | None]] = {
@@ -82,45 +74,6 @@ def to_v1_event(event: Dict[str, Any]) -> Dict[str, Any]:
     return {**event, "event": name, "data": data}
 
 
-def material_notices() -> LedgerWatch | None:
-    """本进程持有物料权威时返回它的共享账本轮询；Host 子进程等没有权威的进程返回 None。"""
-
-    try:
-        from unilabos.server.execution_composition import get_materials_service
-    except ImportError:
-        return None
-    service = get_materials_service()
-    if service is None or not callable(getattr(service, "latest_ledger_sequence", None)):
-        return None
-    return ledger_watch(service)
-
-
-def material_changed_frame(sequence: int, material_uuids: list[str] | None = None) -> str:
-    """不写 SSE id：Last-Event-ID 只表示工作流持久事件的序号。
-
-    ``material_uuids`` 为 None 时省略这个键，表示"列不准，整体重读"；空列表表示没有物料变化。
-    """
-
-    payload: Dict[str, Any] = {"sequence": sequence}
-    if material_uuids is not None:
-        payload["material_uuids"] = material_uuids
-    data = json.dumps(payload, separators=(",", ":"))
-    return f"event: {MATERIAL_CHANGED_EVENT}\ndata: {data}\n\n"
-
-
-def _merge_material_batches(current: LedgerBatch | None, batch: LedgerBatch) -> LedgerBatch:
-    """连接来不及发时把多批合成一批：区间取并、物料取并；任一批列不准或重置就整体重读。"""
-
-    if current is None:
-        return batch
-    changed = (
-        None
-        if current.reset or batch.reset or current.changed is None or batch.changed is None
-        else sorted(set(current.changed) | set(batch.changed))
-    )
-    return LedgerBatch(after=current.after, upto=batch.upto, changed=changed, reset=current.reset or batch.reset)
-
-
 async def runtime_event_stream(
     request: Request,
     service=None,
@@ -128,41 +81,23 @@ async def runtime_event_stream(
     *,
     watermark: bool = False,
     replay: bool = False,
-    materials: LedgerWatch | None = None,
-    material_cursor: int = 0,
 ):
     from unilabos.server.api.runtime.workflow import format_sse_event
 
     loop = asyncio.get_running_loop()
-    pending: asyncio.Queue[RuntimeLogNotice] = asyncio.Queue(maxsize=1)
+    wake = asyncio.Event()
     closed = False
-    material_batch: LedgerBatch | None = None
 
-    def put_material(batch: LedgerBatch) -> None:
-        nonlocal material_batch
+    def woken() -> None:
+        # 写入器线程上调用：只把唤醒交回事件循环
         if not closed:
-            material_batch = _merge_material_batches(material_batch, batch)
+            try:
+                loop.call_soon_threadsafe(wake.set)
+            except RuntimeError:  # 事件循环已关闭
+                pass
 
-    def receive_material(batch: LedgerBatch) -> None:
-        # 共享轮询线程上调用：只把这一批交回事件循环
-        if not closed:
-            loop.call_soon_threadsafe(put_material, batch)
-
-    def put(notice: RuntimeLogNotice):
-        if closed:
-            return
-        if pending.full():
-            notice = merge_notices(pending.get_nowait(), notice)
-        pending.put_nowait(notice)
-
-    def receive(notice: RuntimeLogNotice):
-        if not closed:
-            loop.call_soon_threadsafe(put, notice)
-
-    release = log_notices.subscribe(receive)
-    # 从基线之后订阅共享账本轮询：基线到共享进度之间由轮询线程补读，此后每批都分到这里
-    release_materials = materials.subscribe(material_cursor, receive_material) if materials is not None else None
-    next_workflow = 0.0
+    release = appended.subscribe(woken)
+    next_poll = 0.0
     heartbeat = time.monotonic() + 15
     try:
         yield "retry: 3000\n: connected\n\n"
@@ -171,12 +106,8 @@ async def runtime_event_stream(
             yield f"id: {cursor}\n\n"
         while not shutting_down() and not await request.is_disconnected():
             now = time.monotonic()
-            if material_batch is not None:
-                # 账本前进了就发一次失效，列出这段区间里变了的物料；库被重置或模板变了不列，整体重读
-                batch, material_batch = material_batch, None
-                yield material_changed_frame(batch.upto, None if batch.reset else batch.changed)
-            if now >= next_workflow:
-                next_workflow = now + 1
+            if now >= next_poll:
+                next_poll = now + 1
                 if service is not None:
                     oldest, latest, events = service.read_event_window(after_id=cursor, limit=101)
                     reason = None
@@ -190,27 +121,26 @@ async def runtime_event_stream(
                         # 无法续传：给出新水位，由客户端重读 REST 校准。
                         cursor = latest
                         yield format_sse_event({"id": cursor, "event": STREAM_RESET_EVENT, "data": {"reason": reason}})
-                        next_workflow = now
+                        next_poll = now
                         continue
                     for event in events[:100]:
                         cursor = event["id"]
                         yield format_sse_event(to_v1_event(event))
                     if len(events) > 100:
-                        next_workflow = now
+                        next_poll = now
             try:
-                notice = await asyncio.wait_for(pending.get(), timeout=max(.01, next_workflow - time.monotonic()))
+                await asyncio.wait_for(wake.wait(), timeout=max(.01, next_poll - time.monotonic()))
             except TimeoutError:
                 if time.monotonic() >= heartbeat:
                     yield ": keepalive\n\n"
                     heartbeat = time.monotonic() + 15
                 continue
-            # 不写 SSE id：Last-Event-ID 继续只表示工作流持久事件的序号。
-            yield f"event: {LOG_NOTICE_EVENT}\ndata: {notice.model_dump_json()}\n\n"
+            # 写入器刚追加了通知：马上读，不等下一轮
+            wake.clear()
+            next_poll = 0.0
     finally:
         closed = True
         release()
-        if release_materials is not None:
-            release_materials()
 
 
 def create_runtime_events_router(service=None) -> APIRouter:
@@ -238,17 +168,8 @@ def create_runtime_events_router(service=None) -> APIRouter:
         fresh = cursor is None
         if fresh:
             # 必须在发送响应头之前固定水位，客户端 onopen 后的 REST 补读才能覆盖
-            # “快照 → 订阅”之间的变化。纯执行面的 Host 没有 Workflow Authority。
+            # “快照 → 订阅”之间的变化。纯执行面的 Host 没有 Workflow Authority，也就没有这条序列。
             cursor = service.latest_event_sequence() if service is not None else 0
-        # 物料账本基线同样在响应头之前固定：onopen 后的 REST 补读覆盖此前的物料变化。基线在共享轮询的
-        # 线程上读，不占默认线程池；读不到时这条连接不订阅物料失效，工作流事件照常
-        materials = material_notices()
-        material_cursor = 0
-        if materials is not None:
-            try:
-                material_cursor = await asyncio.wrap_future(materials.baseline())
-            except Exception:  # noqa: BLE001 - 物料库读不到不影响工作流事件流
-                materials = None
         return StreamingResponse(
             runtime_event_stream(
                 request,
@@ -256,11 +177,22 @@ def create_runtime_events_router(service=None) -> APIRouter:
                 cursor,
                 watermark=fresh and service is not None,
                 replay=bool(value) and cursor == 0,
-                materials=materials,
-                material_cursor=material_cursor,
             ),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     return router
+
+
+__all__ = [
+    "AUTHORING_CHANGED_EVENT",
+    "ERROR_HANDLING_CHANGED_EVENT",
+    "LOG_NOTICE_EVENT",
+    "MATERIAL_CHANGED_EVENT",
+    "RUNTIME_CHANGED_EVENT",
+    "STREAM_RESET_EVENT",
+    "create_runtime_events_router",
+    "runtime_event_stream",
+    "to_v1_event",
+]

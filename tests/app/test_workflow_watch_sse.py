@@ -21,7 +21,6 @@ from unilabos.client.runtime.workflow import (
     _parse_sse_lines,
     _sse_frame_notice,
 )
-from unilabos.server.api.runtime.events import material_changed_frame
 from unilabos.server.api.runtime.workflow import format_sse_event
 
 
@@ -159,20 +158,20 @@ def test_watch_follows_stream_reset_and_skips_unchanged_snapshots() -> None:
     ]
 
 
-def test_watch_cursor_ignores_id_less_material_notice() -> None:
-    # 服务端真实帧：水位帧、物料账本末尾 5000 的 material.changed（无 id）、任务通知 id 42。
-    # material.changed 的 data.sequence 是物料账本序号，不能推进工作流游标，否则 42 会被丢弃。
+def test_watch_cursor_follows_the_frame_id_not_the_material_ledger_sequence() -> None:
+    # 服务端真实帧：水位帧、物料账本末尾 5000 的 material.changed（id 41）、任务通知 id 42。
+    # material.changed 的 data.sequence 是物料账本序号，不能当游标，否则 42 会被当成旧帧丢弃。
     raw = (
         "retry: 3000\n: connected\n\n"
         "id: 40\n\n"
-        + material_changed_frame(5000, ["m1"])
+        + format_sse_event({"id": 41, "event": "material.changed", "data": {"sequence": 5000, "material_uuids": ["m1"]}})
         + format_sse_event(
             {"id": 42, "event": RUNTIME_CHANGED_EVENT, "data": {"kind": "task", "workflow_task_uuid": "task-1"}}
         )
     )
     frames = [json.loads(_sse_frame_notice(frame)) for frame in _parse_sse_lines(_iter_text_lines([raw]))]
     assert [(frame["action"], frame["id"]) for frame in frames] == [
-        ("message", 40), ("material.changed", None), (RUNTIME_CHANGED_EVENT, 42),
+        ("message", 40), ("material.changed", 41), (RUNTIME_CHANGED_EVENT, 42),
     ]
     http = _Tasks(["running", "running", "succeeded"])
     client = HTTPWorkflowClient("http://edge:8002", http_client=http, notice_connector=lambda *_: _Notices(frames))

@@ -1,7 +1,7 @@
 """物料账本的共享轮询：一个物料权威一条专用线程，所有 SSE 连接共用它的结果。
 
-``/api/v1/events``（``material.changed``）与 ``/api/v1/materials/events``（``materials.changed``）都要知道
-账本前进了什么。以前每个连接每秒各读一次账本（还占着默认线程池，与 runtime.v1 控制 socket 的出站泵、
+``/api/v1/events`` 的 ``material.changed``（由权威进程的前端通知写入器订阅，合并后写进 ``frontend_event``）
+与 ``/api/v1/materials/events``（``materials.changed``，按连接订阅）都要知道账本前进了什么。以前每个连接每秒各读一次账本（还占着默认线程池，与 runtime.v1 控制 socket 的出站泵、
 edge 代理抢同一个池），标签页一多、碰上长写入，发往 Host 的消息就被拖慢。现在：
 
 - 只有一条专用线程读账本：有订阅者时每秒读一次末尾，有新条目就读出这一段（每批最多
@@ -200,8 +200,8 @@ class LedgerWatch:
 
         return self.call(read)
 
-    def subscribe(self, after: int, deliver: Deliver) -> Callable[[], None]:
-        """从 ``after`` 之后开始收到每一批账本变化；返回取消订阅的函数。"""
+    def subscribe(self, after: Optional[int], deliver: Deliver) -> Callable[[], None]:
+        """从 ``after`` 之后开始收到每一批账本变化；``after`` 为 None 时从共享进度开始。返回取消订阅的函数。"""
 
         with self._lock:
             self._next_token += 1
@@ -210,7 +210,7 @@ class LedgerWatch:
         def register() -> None:
             if self._latest is None:
                 self._latest = self.latest()
-            self._catch_up(after, deliver)
+            self._catch_up(self._latest if after is None else after, deliver)
             with self._lock:
                 self._subscribers[token] = deliver
 

@@ -729,6 +729,81 @@ def _site_uuid(site: Any, parent_uuid: str, gateway: MaterialGateway) -> str:
     return str(matches[0].site_uuid)
 
 
+def _require_off_node_executor(node: Any, what: str) -> None:
+    """阻塞等待本地挂载的调用不能跑在设备节点自己的事件循环上：挂载要排到那个循环里，会等到自己。"""
+
+    loop = getattr(node, "_loop", None)
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if loop is not None and running is loop:
+        raise RuntimeError(
+            f"{what} 不能在设备 {getattr(node, 'device_id', node)} 的执行器线程里调用（会等到自己）："
+            "请在驱动的普通线程里调用"
+        )
+
+
+def _site_position(
+    gateway: MaterialGateway, parent_uuid: str, site_uuid: str | None
+) -> tuple[float, float, float]:
+    """落位时根物料没有位置要入库的位置：给了库位是那个库位的位置，没给是原点。"""
+
+    if site_uuid is None:
+        return (0.0, 0.0, 0.0)
+    for item in gateway.get_material(parent_uuid).sites:
+        if str(item.site_uuid) == site_uuid:
+            position = (item.pose or {}).get("position") or {}
+            return tuple(float(position.get(axis) or 0.0) for axis in ("x", "y", "z"))  # type: ignore[return-value]
+    return (0.0, 0.0, 0.0)
+
+
+def _undo_placed_create(
+    node: Any,
+    gateway: MaterialGateway,
+    mutation: InventoryMutation,
+    created: CreatedPLRMaterials,
+    timeout: float,
+) -> None:
+    """权威已建好并落位、本地挂载却失败（超时、库位对不上……）：两边都回到 create 之前。
+
+    本地若已挂上就按 transfer 的 unload 卸掉（tracker 不留孤儿），权威在同一条命令下删掉刚建的树、
+    释放库位。撤销本身失败只写日志，原来的错误照常抛给调用方。
+    """
+
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+    from unilabos.protocol.materials import MaterialDelete
+    from unilabos.utils.log import logger
+
+    root_uuid = str(created.tree.trees[0].root_node.res_content.uuid)
+    try:
+        run_node_coroutine(
+            node,
+            node.material_sync({
+                "transfer_uuid": f"undo-create:{mutation.command_uuid}",
+                "device_id": str(node.device_id),
+                "action": "unload",
+                "material_uuids": [root_uuid],
+            }),
+            timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 - 本地卸不掉只能记下，权威照样撤销
+        logger.error(f"[materials.create] 本地挂载失败后卸下物料 {root_uuid} 也失败：{exc}")
+    try:
+        gateway.delete_material(
+            InventoryMutation(
+                command_uuid=mutation.command_uuid,
+                effect_key="undo_create_material_tree",
+                operation="delete_material",
+                actor_type=mutation.actor_type,
+                actor_uuid=mutation.actor_uuid,
+            ),
+            MaterialDelete(material_uuid=root_uuid, recursive=True),
+        )
+    except Exception as exc:  # noqa: BLE001 - 原错误更重要
+        logger.error(f"[materials.create] 本地挂载失败后撤销权威里的物料 {root_uuid} 也失败：{exc}")
+
+
 def _attach_placed(
     node: Any,
     created: CreatedPLRMaterials,
@@ -853,12 +928,24 @@ def create(
     resolved_gateway = gateway or resolve_materials_gateway()
     placement: MaterialPlacement | None = None
     site_uuid: str | None = None
+    root_position: tuple[float, float, float] | None = None
     if parent is not None or site is not None:
         if node is None:
             raise ValueError("带落位的 create 需要 node：落位后要在设备本地挂上同一份实例")
         parent_uuid = _parent_material_uuid(node, parent)
+        # 提交之前先核对本地挂载的前提，不满足时什么都不写
+        _require_off_node_executor(node, "带落位的 materials.create")
+        if parent_uuid != str(getattr(node, "resource_uuid", "") or "") and (
+            parent_uuid not in node.resource_tracker.uuid_to_resources
+        ):
+            raise ValueError(
+                f"父物料 {parent_uuid} 不在设备 {node.device_id} 本地：只能落到本设备持有的物料上"
+            )
         if site is not None:
             site_uuid = _site_uuid(site, parent_uuid, resolved_gateway)
+        # 权威里的位置与本地挂载同一条规则：给了库位是库位的位置，没给是原点；父物料自己排布库位时
+        # 本地挂上后按它算出的位置补报
+        root_position = _site_position(resolved_gateway, parent_uuid, site_uuid)
         placement = MaterialPlacement(parent_material_uuid=parent_uuid, site=site_uuid)
     created = create_plr_materials(
         resolved_gateway,
@@ -871,13 +958,18 @@ def create(
         ),
         placement=placement,
         display_name=display_name,
+        root_position=root_position,
     )
     if node is not None:
         if placement is None:
             for resource in created.resources:
                 node.resource_tracker.add_resource(resource)
         else:
-            created = _attach_placed(node, created, site_uuid, request.command_uuid, timeout)
+            try:
+                created = _attach_placed(node, created, site_uuid, request.command_uuid, timeout)
+            except BaseException:
+                _undo_placed_create(node, resolved_gateway, request, created, timeout)
+                raise
     if not unwrap_single:
         return created
     if len(created.resources) != 1:

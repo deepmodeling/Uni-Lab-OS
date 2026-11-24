@@ -282,3 +282,105 @@ def test_assign_rejects_another_devices_site_uuid(device) -> None:
     assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
     assert service.get_material(loose.unilabos_uuid).material.parent_material_uuid is None
     assert _site(service, other_uuid, "o1").occupied_material_uuid is None
+
+
+# ── 没给库位的落位：位置是原点，权威里也是，重启照样反序列化 ─────────────────
+
+
+def _holder_on(device, name: str = "holder"):
+    from pylabrobot.resources import Resource
+
+    holder = Resource(name, size_x=200, size_y=200, size_z=10, category="container")
+    return materials.create(holder, node=device["node"], site="slot_a", gateway=device["gateway"])
+
+
+def _restart(device, root_uuid: str):
+    """设备重启时持有的物料按权威整棵反序列化。"""
+
+    return materials.get(root_uuid, gateway=device["gateway"]).to_plr_resources()[0]
+
+
+def test_create_under_a_parent_without_a_site_gets_the_origin_and_restarts(device) -> None:
+    from pylabrobot.resources import Coordinate
+
+    holder = _holder_on(device)
+
+    other = materials.create(plate("other"), node=device["node"], parent=holder, gateway=device["gateway"])
+
+    assert other.location == Coordinate(0, 0, 0)
+    stored = device["service"].get_material(other.unilabos_uuid).position
+    assert (stored.position_x, stored.position_y, stored.position_z) == (0, 0, 0)
+    restored = _restart(device, holder.unilabos_uuid)
+    assert [child.name for child in restored.children] == ["other"]
+
+
+# ── 本地加载失败时不留分叉：先查前提，提交后失败就在同一条命令下撤销 ─────────
+
+
+def test_a_plr_key_the_tree_already_uses_is_rejected_before_anything_changes(device) -> None:
+    """PLR 键在这棵树里已经有了（resource_id 不同）：权威拒绝，本地加载根本不会开始。"""
+
+    from pylabrobot.resources import Coordinate, Resource
+
+    service, node = device["service"], device["node"]
+    holder = Resource("holder", size_x=200, size_y=200, size_z=10, category="container")
+    holder.assign_child_resource(plate("other"), location=Coordinate(0, 0, 0))
+    holder = materials.create(holder, node=node, site="slot_a", gateway=device["gateway"])
+    before = len(service.list_materials())
+
+    with pytest.raises(Exception, match="other"):
+        materials.create(plate("other"), node=node, parent=holder, gateway=device["gateway"])
+
+    assert len(service.list_materials()) == before
+    local = node.resource_tracker.uuid_to_resources[holder.unilabos_uuid]
+    assert [child.name for child in local.children] == ["other"]
+    assert len(node.resource_tracker.uuid_to_resources) == 1 + len(local.get_all_children())
+    materials.update(node, local)
+
+
+def test_a_local_load_failure_after_the_commit_is_undone(device, monkeypatch) -> None:
+    """权威已建好并落位、本地挂载失败（库位对不上）：撤销权威里的新树，tracker 里不留孤儿。"""
+
+    from unilabos.client.host.runtime.node import DeviceNode
+
+    service, node = device["service"], device["node"]
+    holder = _holder_on(device)
+    before = {item.material.material_uuid for item in service.list_materials()}
+    indexed = set(node.resource_tracker.uuid_to_resources)
+
+    def mismatch(*_args, **_kwargs):
+        raise ValueError("本地库位对不上")
+
+    monkeypatch.setattr(DeviceNode, "_carrier_placement", classmethod(mismatch))
+    with pytest.raises(ValueError, match="本地库位对不上"):
+        materials.create(plate("stray"), node=node, parent=holder, gateway=device["gateway"])
+
+    assert {item.material.material_uuid for item in service.list_materials()} == before
+    assert set(node.resource_tracker.uuid_to_resources) == indexed
+    assert node.resource_tracker.uuid_to_resources[holder.unilabos_uuid].children == []
+
+
+def test_a_parent_the_device_does_not_hold_is_refused_before_the_commit(device) -> None:
+    service = device["service"]
+    elsewhere = materials.create(plate("elsewhere"), gateway=device["gateway"])
+    before = len(service.list_materials())
+
+    with pytest.raises(ValueError, match="不在设备"):
+        materials.create(plate("orphan_child"), node=device["node"], parent=elsewhere, gateway=device["gateway"])
+
+    assert len(service.list_materials()) == before
+
+
+def test_a_placed_create_from_the_node_executor_is_refused_before_the_commit(device) -> None:
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+    service, node = device["service"], device["node"]
+    before = len(service.list_materials())
+
+    async def from_the_executor():
+        materials.create(plate("blocked"), node=node, site="slot_b", gateway=device["gateway"], timeout=1.0)
+
+    with pytest.raises(RuntimeError, match="执行器线程"):
+        run_node_coroutine(node, from_the_executor(), 5.0)
+
+    assert len(service.list_materials()) == before

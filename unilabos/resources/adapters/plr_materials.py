@@ -634,6 +634,7 @@ def create_plr_materials(
     root_extra: dict[str, Any] | None = None,
     placement: MaterialPlacement | None = None,
     display_name: str = "",
+    root_position: tuple[float, float, float] | None = None,
 ) -> CreatedPLRMaterials:
     """把 PLR 草稿发给权威创建；``root_extra`` 合并进根节点 identity.extra。
 
@@ -641,7 +642,8 @@ def create_plr_materials(
     在 create 请求上合并可保证入库即带元数据，且不修改调用方的输入实例。
     ``placement`` 让权威在建树的同一事务里把根物料落到父物料 / 库位上（原子）。
     ``display_name`` 是根物料的人读标签（省略时取 PLR 名）；PLR 运行时不承载展示名，
-    之后的快照也不会改写它。
+    之后的快照也不会改写它。``root_position`` 是落位时根物料没有位置时入库的位置（库位的位置或原点），
+    权威里不留没有位置的孩子。
     """
 
     request = plr_resources_to_create(resources)
@@ -652,6 +654,9 @@ def create_plr_materials(
             node.identity.extra = {**node.identity.extra, **root_extra}
         if display_name.strip():
             node.identity.display_name = display_name.strip()
+        if root_position is not None and node.position.position_x is None:
+            x, y, z = root_position
+            node.position = node.position.model_copy(update={"position_x": x, "position_y": y, "position_z": z})
     if placement is not None:
         request.placement = placement
     result = gateway.create_tree(mutation, request)

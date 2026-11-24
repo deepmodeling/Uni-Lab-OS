@@ -148,6 +148,8 @@ class LegacyWorkflowImportRequest(_BackendModel):
     nodes: List[Dict[str, Any]] = Field(default_factory=list)
     edges: List[Dict[str, Any]] = Field(default_factory=list)
     inventory_requirements: List[Dict[str, Any]] = Field(default_factory=list)
+    #: 导出（读图）的工作流对象；其 ``meta_data.unilab`` 里的 I/O 合同与资源作用域经校验后随图导入
+    workflow: Optional[Dict[str, Any]] = None
     data: Optional[Dict[str, Any]] = None
 
 

@@ -90,7 +90,10 @@ from unilabos.server.services.runtime.workflow.publication import (
     publication_source_hash,
     publication_summary,
 )
-from unilabos.server.services.runtime.workflow.definition_edit import node_or_ancestor_disabled
+from unilabos.server.services.runtime.workflow.definition_edit import (
+    node_or_ancestor_disabled,
+    remap_node_references,
+)
 from unilabos.server.services.runtime.workflow.definition_service import WorkflowDefinitionEditing
 from unilabos.server.services.runtime.workflow.node_templates import NodeTemplateCatalog
 from unilabos.server.services.runtime.workflow.operation_category import (
@@ -102,6 +105,7 @@ from unilabos.server.services.runtime.workflow.operation_category import (
 )
 from unilabos.server.services.runtime.workflow.workflow_io import (
     WorkflowIOValidationError,
+    normalize_input_contract,
     validate_workflow_graph_io,
 )
 from unilabos.server.database.sqlite_domain import DomainDatabase
@@ -3400,9 +3404,13 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 if not isinstance(node, dict):
                     raise ValueError(f"nodes[{index}] 必须是对象")
                 validate_uuid(node.get("uuid"))
-            new_nodes, new_edges, _identity = duplicate_graph({"nodes": nodes, "edges": edges})
+            new_nodes, new_edges, node_identity = duplicate_graph({"nodes": nodes, "edges": edges})
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkflowError("invalid_input", detail=str(exc)) from None
+        # 导出（读图）的工作流级保留元数据在 workflow.meta_data.unilab：I/O 合同与资源作用域随图导入
+        source_workflow = definition.get("workflow")
+        source_meta = source_workflow.get("meta_data") if isinstance(source_workflow, Mapping) else None
+        workflow_unilab = source_meta.get("unilab") if isinstance(source_meta, Mapping) else None
         record = self.create_workflow(
             name=name,
             tags=list(definition.get("tags") or []),
@@ -3411,7 +3419,13 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             workflow_type=str(definition.get("workflow_type") or "normal"),
         )
         try:
-            return self._save_imported_graph(record, new_nodes, new_edges)
+            return self._save_imported_graph(
+                record,
+                new_nodes,
+                new_edges,
+                workflow_unilab=workflow_unilab if isinstance(workflow_unilab, Mapping) else {},
+                node_identity=node_identity,
+            )
         except BaseException:
             with suppress(Exception):
                 self.delete_workflow(record["uuid"])
@@ -3422,26 +3436,70 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         record: Dict[str, Any],
         nodes: List[Dict[str, Any]],
         edges: List[Dict[str, Any]],
+        *,
+        workflow_unilab: Mapping[str, Any],
+        node_identity: Mapping[str, str],
     ) -> Dict[str, Any]:
-        """导入的本层图落库：组合调用按固定的发布修订重新展开私有子图，再整图保存一次。
+        """导入的本层图落库：保留作者声明的保留元数据，组合调用按固定的发布修订重新展开，再整图保存。
 
-        与整图保存同一规则，文件里的保留元数据（``meta_data.unilab``）一律不采用；组合调用的保留元数据
-        与私有子图都由展开重新生成，身份按新的调用节点派生。
+        文件里的保留元数据（``meta_data.unilab``）只采用作者声明的部分，且不原样信任：
+
+        - 工作流的 I/O 合同（``input_contract`` / ``output_contract`` / ``output_bindings``）与
+          ``resource_scopes``：节点引用按新身份改写，再走保存路径同一套校验（入口参数与节点引用一致、
+          输出绑定与作用域只引用存在的节点），落库规范化后的合同；
+        - 节点的 ``input_bindings`` 与 ``authoring_source_order``：随 I/O 合同一起校验；
+        - 组合调用的保留元数据与私有子图由展开重新生成，身份按新的调用节点派生。
+
+        其余保留元数据（源码登记等）不采用。校验不过整次导入失败，错误指明是哪一项。
         """
 
+        from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
         from unilabos.server.scheduler.interval_plan import (
             graph_declares_resource_scopes, validate_graph_resource_scopes,
         )
 
-        identity = record["uuid"]
+        def io_invalid(exc: WorkflowIOValidationError) -> WorkflowError:
+            return WorkflowError("invalid_input", detail=f"工作流 I/O 无效：{exc.code}（{exc.path}）")
+
+        workflow_uuid = record["uuid"]
+        io_keys = ("input_contract", "output_contract", "output_bindings")
+        declared = remap_node_references(
+            {key: workflow_unilab[key] for key in (*io_keys, "resource_scopes") if key in workflow_unilab},
+            node_identity,
+        )
+        if "resource_scopes" in declared:
+            try:
+                checked_scopes = WorkflowResourceScopesRequest(revision=record["revision"], scopes=declared["resource_scopes"])
+            except ValidationError as exc:
+                error = exc.errors(include_input=False, include_url=False)[0]
+                location = ".".join(map(str, error["loc"]))
+                raise WorkflowError("invalid_input", detail=f"resource_scopes 无效：{location}: {error['msg']}") from None
+            declared["resource_scopes"] = [scope.model_dump(exclude_none=True) for scope in checked_scopes.scopes]
+        try:
+            parent_input_contract = normalize_input_contract(declared.get("input_contract"))
+        except WorkflowIOValidationError as exc:
+            raise io_invalid(exc) from None
+        workflow_meta = {**record["meta_data"], "unilab": declared} if declared else record["meta_data"]
+
         for edge in edges:
             if isinstance(edge.get("meta_data"), dict):
                 edge["meta_data"].pop("unilab", None)
         pins: Dict[str, Mapping[str, Any]] = {}
+        has_input_bindings = False
         for node in nodes:
             meta_data = node.get("meta_data")
             unilab = meta_data.pop("unilab", None) if isinstance(meta_data, dict) else None
-            if isinstance(unilab, Mapping) and isinstance(unilab.get("composite"), Mapping):
+            if not isinstance(unilab, Mapping):
+                continue
+            kept = {key: unilab[key] for key in ("input_bindings", "authoring_source_order") if key in unilab}
+            if "authoring_source_order" in kept and type(kept["authoring_source_order"]) is not int:
+                raise WorkflowError(
+                    "invalid_input", detail=f"节点 {node.get('name') or node['uuid']} 的 authoring_source_order 必须是整数",
+                )
+            if kept:
+                meta_data["unilab"] = kept
+                has_input_bindings = has_input_bindings or "input_bindings" in kept
+            if isinstance(unilab.get("composite"), Mapping):
                 pins[node["uuid"]] = unilab["composite"]
         if any(node.get("workflow_node_template_uuid") for node in nodes):
             # 引用设备动作模板的节点：先把注册表投影同步进模板表，图校验才能找到模板
@@ -3450,7 +3508,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         private_edges: List[Dict[str, Any]] = []
         templates: Dict[str, Dict[str, Any]] = {}
         handles: Dict[str, Dict[str, Any]] = {}
-        with self._authoring_lock(identity):
+        with self._authoring_lock(workflow_uuid):
             for node in nodes:
                 pin = pins.get(node["uuid"])
                 if pin is None:
@@ -3465,40 +3523,63 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 # 与新插入同一规则：子工作流已删除时不能再引用它
                 self.get_workflow(child)
                 _selected, expansion = self._compile_composite_invocation(
-                    identity,
+                    workflow_uuid,
                     invocation=node["uuid"],
                     child=child,
                     child_revision=child_revision,
                     arguments=node.get("param") or {},
-                    parent_input_contract=None,
+                    parent_input_contract=parent_input_contract,
                 )
                 expanded, expanded_edges, node_templates, handle_templates = merged_invocation_entities(
                     expansion, name=str(node.get("name") or ""), pose=node.get("pose"),
                 )
                 invocation, *inner = expanded
-                # 本层字段（名称、位置、分组、依赖、禁用等）以文件为准；实参、模板与保留元数据取展开结果
+                # 本层字段（名称、位置、分组、依赖、禁用等）以文件为准；实参、模板与组合调用元数据取展开结果
                 node["param"] = invocation["param"]
                 node["workflow_node_template_uuid"] = invocation["workflow_node_template_uuid"]
-                node["meta_data"] = {**(node.get("meta_data") or {}), "unilab": invocation["meta_data"]["unilab"]}
+                meta_data = node.get("meta_data") or {}
+                node["meta_data"] = {
+                    **meta_data, "unilab": {**(meta_data.get("unilab") or {}), **invocation["meta_data"]["unilab"]},
+                }
                 private_nodes.extend(inner)
                 private_edges.extend(expanded_edges)
                 templates.update((item["uuid"], item) for item in node_templates)
                 handles.update((item["uuid"], item) for item in handle_templates)
+            # 节点引用的入口参数按 workflow_meta 里的输入合同校验（与整图保存同一校验器）
             saved = self._save_reserved_graph(
-                identity,
+                workflow_uuid,
                 revision=record["revision"],
-                workflow_meta_data=record["meta_data"],
+                workflow_meta_data=workflow_meta,
                 nodes=[*nodes, *private_nodes],
                 edges=[*edges, *private_edges],
                 node_templates=list(templates.values()),
                 handle_templates=list(handles.values()),
             )
-        if graph_declares_resource_scopes(saved):
-            # 子操作带来的资源作用域要能在新父图里规划（与插入组合调用同一校验）
-            try:
-                validate_graph_resource_scopes(saved)
-            except (ValueError, TypeError) as exc:
-                raise WorkflowError("invalid_input", detail=str(exc)) from None
+            if graph_declares_resource_scopes(saved):
+                # 作用域只能引用图里存在的节点；子操作带来的作用域要能在新父图里规划
+                try:
+                    validate_graph_resource_scopes(saved)
+                except (ValueError, TypeError) as exc:
+                    raise WorkflowError("invalid_input", detail=f"resource_scopes 无效：{exc}") from None
+            if has_input_bindings or any(key in declared for key in io_keys):
+                # 输入绑定、输出绑定与合同一致，输出绑定只引用存在的节点；落库规范化后的合同（与保存路径一致）
+                try:
+                    checked = validate_workflow_graph_io(saved)
+                except WorkflowIOValidationError as exc:
+                    raise io_invalid(exc) from None
+                normalized = {
+                    "input_contract": checked.input_contract.to_dict(),
+                    "output_contract": checked.output_contract.to_dict(),
+                    "output_bindings": {name: dict(binding) for name, binding in checked.output_bindings.items()},
+                }
+                if any(declared.get(key) != value for key, value in normalized.items()):
+                    saved = self._save_reserved_graph(
+                        workflow_uuid,
+                        revision=saved["workflow"]["revision"],
+                        workflow_meta_data={**record["meta_data"], "unilab": {**declared, **normalized}},
+                        nodes=saved["nodes"],
+                        edges=saved["edges"],
+                    )
         return saved
 
     def _read_source(

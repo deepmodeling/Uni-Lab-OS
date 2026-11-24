@@ -2,11 +2,13 @@
 
 导出只含本层（组合调用的私有子图隐藏），图根 ``inventory_requirements`` 是从节点派生的只读投影；
 导入换掉全部节点 / 连线身份。覆盖：组合调用父图（子操作与本层同名需求、子操作里的循环与携带）、
-分组、循环、条件分支、禁用节点、以上游结果为来源的库存需求，以及工作流复制。
+分组、循环、条件分支、禁用节点、以上游结果为来源的库存需求、作者声明的 I/O 合同、节点输入绑定、
+资源作用域与创作顺序，以及工作流复制。
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from typing import Any, TypedDict
@@ -26,8 +28,15 @@ from unilabos.registry.workflows import (
 from unilabos.server.api.runtime.workflow import create_workflow_app
 from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
 from unilabos.server.services.runtime.workflow.service import WorkflowService
+from tests.server.test_workflow_publication import (
+    DEVICE_TEMPLATE,
+    NUMBER,
+    VOLUME_SOURCE,
+    VOLUME_TARGET,
+    _install_device_template,
+)
 
-WATER = "33333333-3333-4333-8333-333333333333"
+WATER ="33333333-3333-4333-8333-333333333333"
 DEVICE = "44444444-4444-4444-8444-444444444444"
 
 
@@ -86,7 +95,8 @@ def _canonical(client: TestClient, service: WorkflowService, workflow_uuid: str)
 
     volatile = {"uuid", "create_time", "update_time", "workflow_uuid"}
     payload = {
-        "nodes": [{key: value for key, value in node.items() if key not in volatile - {"uuid"}} for node in exported["nodes"]],
+        "workflow_unilab": [exported["workflow"]["meta_data"].get("unilab") or {}],
+        "nodes":[{key: value for key, value in node.items() if key not in volatile - {"uuid"}} for node in exported["nodes"]],
         "edges": [{key: value for key, value in edge.items() if key not in volatile} for edge in exported["edges"]],
         "inventory_requirements": [
             {key: value for key, value in item.items() if key not in volatile} for item in exported["inventory_requirements"]
@@ -284,6 +294,73 @@ def test_rich_workflow_export_import_export_is_stable(api) -> None:
     # 私有子图（循环、携带）跟着新调用节点重新展开
     stored = service.get_graph(second_copy)["nodes"]
     assert len(stored) == len(service.get_graph(parent_record["uuid"])["nodes"])
+
+
+def test_declared_io_and_resource_scopes_round_trip_and_are_validated(api) -> None:
+    """入口参数、输出绑定、节点输入绑定、资源作用域与创作顺序随导入保留，节点引用换成新身份。
+
+    以前导入丢掉工作流的保留元数据：引用入口参数的节点被拒（1000），其余声明悄悄消失。文件内容不原样
+    信任：输出绑定、作用域指向不存在的节点，或节点引用了没声明的入口参数，整次导入失败并指明哪一项。
+    """
+
+    client, service = api
+    _install_device_template(service)
+    record = _ok(client.post("/api/v1/workflows", json={"name": "带接口"}), 201)
+    path = f"/api/v1/workflows/{record['uuid']}"
+    for name in ("加样一", "加样二"):
+        _ok(client.post(f"{path}/nodes", json={
+            "workflow_node_template_uuid": DEVICE_TEMPLATE, "name": name, "param": {"volume": 1},
+            "material_uuid": DEVICE, "meta_data": {"target_device_id": "pump-1"},
+        }), 201)
+    graph = _ok(client.get(f"{path}/graph"))
+    first, second = (next(node["uuid"] for node in graph["nodes"] if node["name"] == name) for name in ("加样一", "加样二"))
+    declared = _ok(client.put(f"{path}/io", json={
+        "revision": graph["workflow"]["revision"],
+        "input_contract": {"version": 1, "parameters": [{"name": "volume", "schema": NUMBER, "required": True}]},
+        "output_contract": {"version": 1, "outputs": [{"name": "dosed", "schema": NUMBER}]},
+        "output_bindings": {"dosed": {"kind": "node_output", "workflow_node_uuid": second, "source_handle_uuid": VOLUME_SOURCE}},
+        "node_input_bindings": {first: {VOLUME_TARGET: {"parameter": "volume"}}},
+        "node_params": {second: {"volume": {"kind": "workflow_input", "parameter": "volume"}}},
+    }))
+    _ok(client.put(f"{path}/resource-scopes", json={"revision": declared["workflow"]["revision"], "scopes": [
+        {"scope_id": "锁", "kind": "with", "resources": ["pump-1"], "node_uuids": [first, second]},
+    ]}))
+
+    original = _canonical(client, service, record["uuid"])
+    [unilab] = original["workflow_unilab"]
+    assert unilab["output_bindings"]["dosed"]["workflow_node_uuid"] == "<加样二>"
+    assert unilab["resource_scopes"][0]["node_uuids"] == ["<加样一>", "<加样二>"]
+    by_name = {node["name"]: node for node in original["nodes"]}
+    assert by_name["加样一"]["meta_data"]["unilab"] == {
+        "authoring_source_order": 0, "input_bindings": {VOLUME_TARGET: {"parameter": "volume"}}}
+    assert by_name["加样二"]["param"]["volume"] == {"kind": "workflow_input", "parameter": "volume"}
+
+    exported = _ok(client.get(f"{path}/graph"))
+    first_copy = _import(client, exported, "带接口副本")
+    assert _canonical(client, service, first_copy) == original
+    second_copy = _import(client, _ok(client.get(f"/api/v1/workflows/{first_copy}/graph")), "带接口副本二")
+    assert _canonical(client, service, second_copy) == original
+
+    def tampered(change) -> dict[str, Any]:
+        payload = copy.deepcopy(exported)
+        change(payload["workflow"]["meta_data"]["unilab"])
+        return payload
+
+    # 合法但未规范化的合同按保存路径落库规范化后的形状
+    loose = tampered(lambda meta: meta["output_contract"]["outputs"][0].pop("implicit"))
+    normalized_copy = _import(client, loose, "未规范化")
+    assert _canonical(client, service, normalized_copy) == original
+
+    before = service.list_workflows()["total"]
+    for payload, item in (
+        (tampered(lambda meta: meta["output_bindings"]["dosed"].update(workflow_node_uuid=str(uuid.uuid4()))),
+         "output_bindings"),
+        (tampered(lambda meta: meta["resource_scopes"][0]["node_uuids"].append(str(uuid.uuid4()))), "resource_scopes"),
+        (tampered(lambda meta: meta.pop("input_contract")), "input_binding"),
+    ):
+        refused = client.post("/api/v1/workflows/import", json={**payload, "name": "坏文件"}).json()
+        assert refused["code"] == 1000 and item in refused["error"]["msg"], refused
+    assert service.list_workflows()["total"] == before
 
 
 class Result(TypedDict):

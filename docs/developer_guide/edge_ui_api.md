@@ -351,7 +351,8 @@ UI 的恢复基线来自四库 API，而不是进程内事件缓存：
 未结束的短行等待下一次换行，保留多行 traceback 与中文 UTF-8 边界。
 写日志后触发轻通知：Slave 经 HostLink `process.log.changed` 上报，Host 经既有控制 WS 的
 `runtime_logs_changed` 中继；复用 `/api/v1/events` 的 `runtime.logs.changed`，不新增 SSE 连接。
-通知约 200 ms 合并，不写 SSE id/数据库。页面按来源拉增量，空闲无日志查询；恢复可见、暂停或
+通知约 200 ms 合并，权威再合并、限速（每秒至多一行）写进 `frontend_event`，与工作流事件同一个序列、带 SSE id，
+断线期间的通知重连后补发。页面按来源拉增量，空闲无日志查询；恢复可见、暂停或
 重连时读目录并用独立 cursor 补齐。SharedWorker 让两页共用通知连接；窗口限制 2000 行 / 512 Ki 字符。
 日志仅用于可信网络内诊断，可能含设备参数/路径，不应把管理端口直接暴露到公网。
 

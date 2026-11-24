@@ -149,10 +149,17 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   （`workflow.task|node_run|node_job|manual_confirmation|resource.changed`）作为 `data.kind`
   （`task` / `node_run` / `node_job` / `manual_confirmation` / `resource`）放进 V1 事件，不再单独发事件名；
   原载荷字段保留。换名在 API 层（`api/runtime/events.py:to_v1_event`）做，`frontend_event` 表仍存 dev 名。
-  `runtime.logs.changed`（无 id 的日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
-  V1 合同里，暂保持原名。物料失效另以 V1 名 `material.changed`（无 id，`data.sequence` 为账本末尾，
+  `runtime.logs.changed`（日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
+  V1 合同里，暂保持原名。物料失效另以 V1 名 `material.changed`（`data.sequence` 为物料账本末尾，
   `data.material_uuids` 列出这段账本里变了的物料，Site 的变化归到所属物料、拓扑边归到两端；空列表表示没有物料变化，
-  涉及模板或账本重置时省略这个键，表示整体重读）随 `/api/v1/events` 推送，前端每个工站只维持这一条事件流。CLI `workflow watch` 同步修改。
+  涉及模板、账本重置或超过 500 个物料时省略这个键，表示整体重读）随 `/api/v1/events` 推送，前端每个工站只维持这一条事件流。
+  **单一序列**：物料与日志通知由权威进程合并、限速（各自每秒至多一行）后写进 `frontend_event`，与工作流事件同一个序列，
+  `/api/v1/events` 的每一帧都带整数 id，断线续传、`stream.reset` 与保留清理一视同仁（见
+  [实时协议](interfaces/realtime.md)）。uni-lab-fe 须知：`material.changed` 现在带 id；不带 `material_uuids` 的通知必须整体重读物料。
+  CLI `workflow watch` 的游标随任何带 id 的帧前进。
+- **监控流**：`/api/v1/monitor/events` 按 `frontend_event` 序号续传：重连带 `Last-Event-ID` 不再回放最近 40 条，
+  过期 / 超前游标发 `stream.reset`，按页扫描、游标只推进到实际扫过的最大序号，每帧都带 id。
+- **MCP**：`GET /mcp` 回 405（不开 Streamable HTTP 的独立 SSE 流）；`POST /mcp` 的 JSON 响应不变。
 
 ## 库存与工作区（p7-c 落地）
 

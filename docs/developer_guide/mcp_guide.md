@@ -6,7 +6,7 @@
 
 ## 1. 连接与权限
 
-微后端在现有管理端口提供 Streamable HTTP `/mcp`，无需额外 MCP 进程。
+微后端在现有管理端口提供 Streamable HTTP `/mcp`（POST，JSON 响应；GET 回 405，没有独立 SSE 流），无需额外 MCP 进程。
 默认双进程部署连接调度权威端口，不连接 HostLink TCP 端口，也不要求 Host 监听 HTTP。
 例如微后端启动在 8003，则 MCP 地址为 `http://127.0.0.1:8003/mcp`。
 

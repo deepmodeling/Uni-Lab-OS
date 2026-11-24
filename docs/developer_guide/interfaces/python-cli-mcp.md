@@ -225,8 +225,9 @@ session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 
 
 ## MCP：复用 HTTP 合同的本机工具
 
-服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP，
-GET/POST/DELETE；当前 stateless、JSON 响应模式。它独立于 SSE 观察端与设备 WS。
+服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP 的 POST；当前 stateless、JSON 响应模式。
+GET 回 405（不开独立 SSE 流：无状态模式下服务端不主动推送，那条流也没有 id），DELETE 由 SDK 回 405（没有会话可终止）。
+它独立于 SSE 观察端与设备 WS。
 仅 loopback 对端且无 Origin 请求可访问；浏览器/远端会得到 403，尚未就绪 503。
 工具在进程内经 ASGI 调用管理 API（管理 API 不鉴权，见 HTTP 文档「认证与网络边界」）。
 不要把本机开放工具等同于用户已授权执行硬件。

@@ -59,7 +59,7 @@ def run_one(n: int, out_dir: str, bench_params: Dict[str, Any], device_tick_ms: 
 
     log_path = os.path.join(out_dir, f"run_n{n}.log")
     print(f"[run] N={n} 启动 dataflow -> {df_path}")
-    with open(log_path, "w") as logf:
+    with open(log_path, "w", encoding="utf-8") as logf:
         proc = runtime.run_dataflow(df_path, stdout=logf, stderr=logf)
         deadline = time.monotonic() + bench_params.get("timeout_s", 30.0) + 30.0
         while time.monotonic() < deadline:

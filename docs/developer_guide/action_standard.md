@@ -15,9 +15,9 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Optional[X]`、`X \| None` | 可空 | 严格 |
 | `x: X = None`（默认值是 `None`） | 同 `Optional[X]` | 严格 |
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
-| `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`，加物料锁 | 严格；Host 解析成物料实例 |
+| `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串 | 严格 |
-| `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID，带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
+| `SiteSlot` 且写了 `material=Material.site("site", owner=...)` | 库位 UUID（或按所属物料选择的 `{"owner_uuid": ...}`，准入时选定），带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -26,11 +26,20 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 
 - **没有默认值的参数就是必填**：缺了在调度端 / Host 调用前报「动作参数缺少必填字段：…」，不再被补成 0 / 空串。
   `goal_default`（`@action(goal_default=...)`）只是编辑器里的初始参数值，叠加在签名默认值上，不改变参数是否必填。
-- 参数名之外的字段一律拒绝（`**kwargs` 除外）；框架注入的 `sample_uuids`、`action_context` 不算参数。
+- 参数名之外的字段一律拒绝（`**kwargs` 除外）；框架注入的 `sample_uuids` 与动作上下文（见下节）不算参数。
 - 物料参数（`ResourceSlot`）接受框架的几种引用形态：`{"uuid": ...}`（可带 id / name）、只给名字的
   `{"name": ...}`（派发前由调度器向物料权威解析出 uuid）、上游端口传来的扁平资源树（列表）、uuid 字符串；
   能否解析出权威 uuid 由派发前的物料锁检查保证。不可空的物料参数给空值（`{}` / `""` / `[]`）报
   「物料参数 … 没有给物料」；可空的物料参数留空等于没给。
+- 物料参数还可以**按库位绑定**：`{"site_uuid": "<库位 uuid>"}`（`list[ResourceSlot]` 的每一项也可以），表示「此刻占着这个
+  库位的物料」。工作流入口参数、节点静态参数、单点动作参数都可以这样写。建任务与运行预检走同一条解析路径
+  （`server/services/runtime/workflow/material_sites.py`，物料权威只读事实 `POST /api/v1/inventory/site-admission`）：
+  换成占用物料的 `{"uuid": ...}`，参数写了 `AllowedResourceTemplates(...)` 时核对占用物料的模板，结果冻结进任务
+  （计划节点参数、attempt 参数、任务输入；计划的 `material_site_bindings` 记录哪个参数按哪个库位绑到了哪件物料），
+  之后物料被挪走也不改变任务用的物料；从此它就是普通物料参数（默认共享物料锁、派发前核对照旧）。库位不存在、库位为空、
+  物料模板不符都是预检错误：建任务返回 `error.code=material_site_invalid`（1000），`error.details` 带 `reason`
+  （`site_not_found` / `site_empty` / `template_mismatch`）、`parameter`、`site_uuid`、`node_uuid`；运行预检给
+  `invalid_material_site` 检查，细节相同。
 - 不认识的写法只会让该参数退回推断，**不会让动作注册失败**。
 
 | 返回注解 | schema | 校验 |
@@ -44,6 +53,39 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 
 `unilabos_samples` 是 Host 剥离到结果外层的保留字段，不进返回 schema。`--test_mode` 下没声明 `run_in_test_mode = True`
 的驱动不执行、由 Host 模拟返回值，模拟值不按返回注解校验。
+
+## 动作上下文：`ActionContext`
+
+动作需要发布反馈、检查取消或知道自己是哪一次执行时，加一个注解为 `ActionContext` 的参数，框架按**类型**注入，
+参数名随意：
+
+```python
+from typing import Optional
+from unilabos.client.host.runtime.action import ActionContext
+
+@action(display_name="加热")
+def heat(self, sample: ResourceSlot, seconds: float, ctx: Optional[ActionContext] = None) -> None:
+    for step in range(10):
+        if ctx is not None:
+            ctx.raise_if_cancelled()
+            ctx.publish_feedback({"progress": step * 10})
+```
+
+| 注解 | 有上下文时 | 没有上下文时（ROS 2 执行、作者直接调用） |
+| --- | --- | --- |
+| `Optional[ActionContext]`、`ActionContext \| None`、`ActionContext = None` | 注入 | `None` |
+| `ActionContext` | 注入 | 框架现建一个（`action_id` 随机，没有反馈回调，不会被取消） |
+
+- HostLink 执行（Host 派发、跨设备调用 `node.call_device_action[_async]`、工作站协议子步骤、`--test_mode` 下
+  真实执行的驱动）总有上下文；ROS 2 执行没有框架上下文。HostLink 本地执行、`host_node`、ROS 2 设备节点、
+  跨设备调用都经同一个判定（`client/host/runtime/action.py:bind_action_context`）。
+- 这些参数不属于动作接口：不进 goal schema、必填列表、`placeholder_keys`、生成的端口、物料锁参数与 `goal_default`
+  （AST 扫描、装饰器与运行时签名推断同一规则，`registry/action_context.py`）。goal 里同名的值被框架的上下文覆盖。
+- 字段含义：`action_id` 是**这一次 attempt** 的标识。调度派发的作业里它就是 attempt 的 job uuid（runtime.v1
+  `job_uuid`，`/workflow-node-jobs/{job_uuid}`），每次重试都换一个新值；同一节点的节点运行 uuid（`node_run_uuid`）
+  在重试之间不变，驱动拿不到它，需要跨重试稳定的身份时由调用方作为普通参数传入。没有调度作业的调用（跨设备调用、
+  直接调用）里 `action_id` 是随机值。`publish_feedback(data)` 发布动作反馈；`raise_if_cancelled()` / `is_cancelled`
+  协作式检查取消（硬超时也会请求取消）。
 
 schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输出顺序、资源模板约束和资源语义，建任务时冻结进执行计划。
 手写 YAML 注册表里的 JSON 动作要跑一次 `unilab --complete_registry`，才会按同一标准重新生成 schema；
@@ -104,6 +146,28 @@ def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = No
   运行预检与派发前核对所选库位属于 `owner`，且（不允许占用时）没有被 `occupant` 以外的物料占着。
 - 只写 `SiteSlot`、不写 `Material.site` 的参数照旧是库位选择器，只是没有这层关系的核对。
 
+#### 按所属物料选库位：`{"owner_uuid": ...}`
+
+带 `Material.site` 关系的库位参数（以及工作流入口参数里的 `SiteSlot`）可以不给库位 uuid，而给
+`{"owner_uuid": "<所属物料 uuid>"}`，由调度器在**任务准入**时挑一个库位：
+
+- 候选是所属物料下（可见的）库位里，接收规则接受放入物料（`Material.site` 的 `occupant` 参数；它按库位绑定时先解析）的：
+  库位模板白名单（`extra.allowed_resource_template_uuids`，6008 那一条）与 `allowed_resource_categories`（放入物料模板的
+  `category` 要与它相交）都满足，空列表表示不限。按库位序号选第一个空着、没有活动入口预留、没有未结算物理动作占着的。
+- 选中后用物料权威的入口预留占住（`POST /api/v1/inventory/ingress-reservations` 的 `owner_material_uuid` 写法，
+  `backend_task_uuid` 为任务 uuid），再把库位 uuid 冻结进计划节点参数、attempt 参数与任务输入；计划的 `site_selections`
+  记录所属物料、放入物料、选中的库位与预留。同一个工作流入口参数用在多个节点里只选一次。
+- 用到这个库位的动作派发时预留转 `in_transit`：放入物料被直接放进这个库位等同接收（预留置为 `received`），其他物料仍被挡；
+  任务结束时收尾（`POST /api/v1/inventory/ingress-reservations/finish-task`：物料已在库位上记 `received`，否则取消）。
+- 所属物料下没有接受放入物料的库位是预检错误：任务在准入时失败，`error_info[0]` 为 `plan_not_executable`
+  （`stage=preflight`、`reason=no_acceptable_site`，`details` 带参数、节点、所属物料）；运行预检给 `invalid_site_selection`。
+  接受的库位此刻都被占着或已被预留是临时条件：任务保持 `pending` 排队，attempt 的 `wait_reason.code=site_group_unavailable`，
+  有任务结束或 5 秒兜底重算时按创建先后重试；运行预检给 `site_selection_unavailable`（可以提交，提交后排队）。
+- 写法本身不对时建任务就拒绝（`error.code=site_selection_invalid`，`error.details.reason`）：参数没有 `Material.site` 关系
+  （`no_site_relation`）、关系没有声明 `occupant`（`occupant_undeclared`）、放入物料在建任务时不确定（来自上游结果，
+  `occupant_unknown`）、与 `owner` 参数给的物料不一致（`owner_mismatch`）。
+- 给精确的库位 uuid 照旧，不经过选择与预留。
+
 ## 前端选择器：`placeholder_keys`
 
 `placeholder_keys` 只决定前端用哪种选择器填写一个参数（`unilabos.registry.placeholder_type` 的 `PLACEHOLDER_*`）。
@@ -158,6 +222,7 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | `Annotated[T, Placeholder(PLACEHOLDER_...)]`（`unilabos.registry.annotations.Placeholder`） | `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，参数照常注解为 `T` |
 | `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material=Material.site("参数名", owner=..., occupant=..., show_occupied=..., allow_occupied=...))`；生成的 schema 扩展与以前相同 |
 | JSON 动作的 `@action(goal={...})` / `result={...}` 重命名 | 去掉：字段名就是参数名 / 返回 TypedDict 的字段名（要改名就改参数名） |
+| 按名字注入的动作上下文：参数叫 `action_context` 但没有 `ActionContext` 注解 | 注解为 `Optional[ActionContext]`（`from unilabos.client.host.runtime.action import ActionContext`），名字随意；没有注解的 `action_context` 参数注册时报错（自动动作同样） |
 
 行为上的变化：
 

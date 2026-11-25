@@ -9,6 +9,10 @@ from collections.abc import Callable
 from unilabos.protocol.runtime.logs import RuntimeLogNotice
 
 LOG_NOTICE_EVENT = "runtime.logs.changed"
+#: 权威进程把通知写进 frontend_event 的线程（``server/services/runtime/workflow/frontend_notices.py``）
+NOTICE_WRITER_THREAD = "FrontendNotices"
+#: 这些线程自己的日志不再触发通知，否则「通知 → 写失败日志 → 再通知」会形成自激循环
+_QUIET_THREADS = frozenset({"RuntimeLogNotices", NOTICE_WRITER_THREAD})
 
 
 def merge_notices(left: RuntimeLogNotice, right: RuntimeLogNotice) -> RuntimeLogNotice:
@@ -95,7 +99,7 @@ class LogAppendHandler(logging.Handler):
     """在 FileHandler 写完后标记本进程；通知/读取自身的传输日志不再触发通知。"""
 
     def emit(self, record: logging.LogRecord) -> None:
-        if _local_source is None or record.threadName == "RuntimeLogNotices":
+        if _local_source is None or record.threadName in _QUIET_THREADS:
             return
         if record.name.startswith(("uvicorn", "websockets", "httpx", "httpcore", "urllib3", "unilabos.comm")):
             return

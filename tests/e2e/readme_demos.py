@@ -216,7 +216,7 @@ DEMOS: tuple[DemoSpec, ...] = (
         url="https://github.com/Xuwznln/LabDeviceMaterialsDemo",
         # 四条 @workflow 后继续经 API 上传阶段三「出库装板并加液」，验证缺料回滚与补料后出库。
         # 默认启动先准备台面，让 API 导入时能把 T1-T4 绑定到已存在的权威 Site。
-        ref="99666ad64bd17c6e8ba6865e3176c56af9b1ad11",
+        ref="5bd0fe3b6717516c0ae709184bc5054b886153bd",
         package="materials_demo",
         host_graph="graph/host.json",
         slave_graph="graph/slave.json",
@@ -313,7 +313,7 @@ def _git(*args: str, cwd: Path) -> str:
         check=True,
         capture_output=True,
         text=True,
-        timeout=300,
+        timeout=300, encoding="utf-8", errors="replace",
     ).stdout.strip()
 
 
@@ -389,7 +389,7 @@ def _parse_windows_tcp_range(output: str) -> tuple[int, int]:
 def _windows_tcp_range() -> tuple[int, int]:
     result = subprocess.run(
         ["netsh", "interface", "ipv4", "show", "dynamicport", "tcp"],
-        capture_output=True, check=True, text=True, errors="replace", timeout=10,
+        capture_output=True, check=True, text=True, errors="replace", timeout=10, encoding="utf-8",
     )
     return _parse_windows_tcp_range(result.stdout)
 
@@ -499,6 +499,8 @@ def subprocess_env(extra: dict[str, str]) -> dict[str, str]:
         if not key.startswith("UNILABOS_") and not any(key.startswith(spec.package.upper() + "_") for spec in DEMOS)
     }
     environment.update({"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"})
+    # 子进程跑本仓库的代码，不用环境里装过的旧版 unilabos（与 test_process_lifetime 同一做法）
+    environment["PYTHONPATH"] = os.pathsep.join(filter(None, [str(REPO_ROOT), environment.get("PYTHONPATH")]))
     environment.update(extra)
     return environment
 

@@ -298,12 +298,18 @@ class WorkflowTaskCreateRequest(_StrictModel):
     device_id: str = ""
     action_name: str = ""
     action_type: str = ""
-    param: Dict[str, Any] = Field(default_factory=dict)
+    param: Dict[str, Any] = Field(default_factory=dict, description=(
+        "单点设备动作的参数。物料参数可以给 {\"site_uuid\": 库位 uuid}（此刻占着该库位的物料），建任务时解析并冻结"))
     execution_policy: Dict[str, Any] = Field(default_factory=dict)
     execution_timeout_seconds: int = 0
     idempotency_key: Optional[str] = None
     #: 整图任务的入口参数（工作流 input_contract）；未声明合同的工作流只接受 {}。
-    input: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict, description=(
+        "整图任务的入口参数（工作流 input_contract）。物料参数（ResourceSlot）可以给 {\"site_uuid\": 库位 uuid}，"
+        "表示此刻占着该库位的物料：建任务时解析成占用物料的 {\"uuid\"} 并冻结进任务；库位不存在、为空或物料模板不符时"
+        "拒绝（error.code=material_site_invalid，error.details.reason 为 site_not_found / site_empty / template_mismatch）。"
+        "库位参数（SiteSlot）可以给 {\"owner_uuid\": 所属物料 uuid}：调度器在任务准入时按库位序号选一个接受放入物料的空库位、"
+        "经入口预留占住并冻结（写法不对时 error.code=site_selection_invalid）"))
     #: V1 任务优先级：normal 普通任务，high 高优先级任务（随任务持久化，排序由调度器负责）
     priority: Literal["normal", "high"] = "normal"
     #: V1 库存绑定：建任务时落到冻结计划里对应的库存需求，决定预留哪份试剂 / 当前内容物
@@ -343,7 +349,10 @@ class WorkflowPreflightRequest(_BackendModel):
 
     run_mode: str = "normal"
     target_node_uuid: Optional[str] = None
-    input: Dict[str, Any] = Field(default_factory=dict)
+    input: Dict[str, Any] = Field(default_factory=dict, description=(
+        "候选入口参数；物料参数按库位绑定（{\"site_uuid\"}）与建任务同一条解析路径，"
+        "解析失败报 invalid_material_site 检查（details.reason 同建任务）；库位参数按所属物料选择（{\"owner_uuid\"}）"
+        "只读候选：没有接受的库位报 invalid_site_selection，都被占着报 site_selection_unavailable"))
     inventory_bindings: List[WorkflowInventoryBindingRequest] = Field(default_factory=list)
     #: dev 扩展：工作流修订乐观锁（V1 无此字段）
     expected_revision: Optional[int] = Field(default=None, ge=1, strict=True)
@@ -518,7 +527,10 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
     def with_workflow_status(payload: Any) -> Any:
         """V1 图投影：工作流补派生状态与类别，节点 / 连线只呈现当前层（组合调用私有子图隐藏）。"""
 
-        from unilabos.server.services.runtime.workflow.definition_edit import definition_graph
+        from unilabos.server.services.runtime.workflow.definition_edit import (
+            definition_graph,
+            project_inventory_requirements,
+        )
 
         if not isinstance(payload, dict):
             return payload
@@ -527,7 +539,9 @@ def create_workflow_router(service: WorkflowService) -> APIRouter:
             return payload
         projected = dict(payload)
         projected["workflow"] = public_workflow(workflow)
-        projected.setdefault("inventory_requirements", [])
+        # 库存需求只存在节点 meta_data 里（调度唯一来源）；V1 图根列表每次从完整图派生（禁用、私有子图的
+        # 规则在投影里），供客户端查看。
+        projected["inventory_requirements"] = project_inventory_requirements(projected)
         return definition_graph(projected)
 
     def write_payload(body: BaseModel) -> Dict[str, Any]:

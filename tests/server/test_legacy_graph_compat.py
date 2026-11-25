@@ -324,8 +324,9 @@ def test_legacy_graph_markers_and_upgrade_report():
     assert "根级 position ×6" in reports[0]
     assert legacy_graph_markers(upgraded) == {}
     plate, well = upgraded["nodes"][2], upgraded["nodes"][4]
-    assert (plate["template_name"], plate["class"], plate["config"]["type"]) == ("plate", "Plate", "Plate")
-    assert (well["template_name"], well["class"], well["config"]["type"]) == ("well", "Well", "Well")
+    # class 是初始化它用的注册表名（即模板名），config.type 是 PLR 类名
+    assert (plate["template_name"], plate["class"], plate["config"]["type"]) == ("plate", "plate", "Plate")
+    assert (well["template_name"], well["class"], well["config"]["type"]) == ("well", "well", "Well")
 
     # 当前契约的图：不转换、不提示
     reports.clear()

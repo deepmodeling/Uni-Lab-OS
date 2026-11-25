@@ -83,6 +83,15 @@ from unilabos.server.scheduler.resource_wait_policy import temporary_resource_co
 from unilabos.server.services.runtime.workflow.service import WorkflowError, WorkflowService
 from unilabos.server.services.runtime.workflow.store import PROCESS_RESTART_UNCERTAINTY_REASON
 from unilabos.server.services.runtime.workflow.task_lifecycle import TERMINAL_TASK
+from unilabos.server.services.runtime.workflow.site_selections import (
+    NO_ACCEPTABLE_SITE,
+    WAIT_SITE_SELECTION,
+    SiteSelectionError,
+    has_owner_selections,
+    node_reservations,
+    owner_site_requests,
+    reservation_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,11 +200,15 @@ _PREFLIGHT_MAX_RETRIES = 50
 
 
 def preflight_error(error: Exception) -> Dict[str, Any]:
-    """任务启动前不可执行：库存不足另标 ``reason``，其余（设备 / 动作缺失、计划非法）只有消息。"""
+    """任务启动前不可执行：库存不足另标 ``reason``；按所属物料选不出库位标 ``reason`` 并带 ``details``
+    （参数、节点、所属物料）；其余（设备 / 动作缺失、计划非法）只有消息。"""
     item: Dict[str, Any] = {"code": "plan_not_executable", "stage": ERROR_STAGE_PREFLIGHT, "scope": "task",
                             "message": str(error)}
     if getattr(error, "code", None) == "insufficient_inventory":
         item["reason"] = "inventory_shortage"
+    if isinstance(error, SiteSelectionError):
+        item["reason"] = error.reason
+        item["details"] = dict(error.details)
     return item
 
 
@@ -397,6 +410,9 @@ class BackendScheduler:
         self._inventory_waiting_tasks: Dict[str, tuple[str, list[str]]] = {}
         # 等库存任务已被拒的次数：重试换新的预留命令身份（被拒的命令按幂等会原样重放拒绝）
         self._inventory_wait_attempts: Dict[str, int] = {}
+        # 尚未开始、按所属物料选库位时接受的库位都被占着 / 已被预留的任务：task -> 创建时间。
+        # 保持 pending 排队，库位空出（任务结束）或兜底重算时按创建先后重新提交。
+        self._site_waiting_tasks: Dict[str, str] = {}
         # 运行任务容量已满、保持 pending 排队的任务：task -> (创建时间, 工作流)；按创建先后放行
         self._capacity_waiting_tasks: Dict[str, tuple[str, str]] = {}
         self._dispatched_jobs: set[str] = set()
@@ -602,6 +618,9 @@ class BackendScheduler:
         # waiting_reconciliation：任务可接管，但上一进程在飞的 attempt 要由人裁决；
         # DAG 照常构建，这些节点在起跑时改为开决策（见 _start_node），不重放。
         if prepared["state"] not in {"ready", "waiting_reconciliation"}:
+            # 起跑前就结束的任务（如排队时被取消）：收掉准入时预留的库位
+            if self.workflow.get_workflow_task(task_uuid).get("status") in TERMINAL_TASK:
+                self._finish_task_sites(task_uuid)
             return {}
         task = prepared["task"]
         runs = prepared["runs"]
@@ -696,6 +715,7 @@ class BackendScheduler:
             if not self._stopping:
                 self._cleanup_task_resources(task_uuid)
                 self._release_unconsumed_task_inventory(task_uuid)
+                self._finish_task_sites(task_uuid, task)
             with self._guard:
                 self._runners.pop(task_uuid, None)
                 for run_uuid in specs:
@@ -718,9 +738,10 @@ class BackendScheduler:
             # 任务终结（含取消）后不再有待裁决 attempt，控制态不能停留在 waiting_reconciliation
             self._settle_task_reconciliation(task_uuid)
             if not self._stopping:
-                # 它让出了运行容量、预留已释放或结算：排队的任务按先后再试
+                # 它让出了运行容量、预留已释放或结算、库位可能空出：排队的任务按先后再试
                 self._retry_capacity_waiting_tasks()
                 self._retry_inventory_waiting_tasks()
+                self._retry_site_waiting_tasks()
 
     def _admit_fresh_task(self, task_uuid: str) -> bool:
         """尚未开始的任务先整任务预留库存，再转 ``running``；返回 False 表示这次不起跑。
@@ -737,12 +758,30 @@ class BackendScheduler:
             with self._guard:
                 self._inventory_waiting_tasks.pop(task_uuid, None)
                 self._capacity_waiting_tasks.pop(task_uuid, None)
+                self._site_waiting_tasks.pop(task_uuid, None)
             return True
         runs = self.workflow.list_workflow_node_runs(task_uuid)
         if any(run["status"] != "pending" for run in runs):
             return True
         if not self._admit_task_capacity(task):
             return False
+        # 按所属物料选择的库位参数：选定并经入口预留占住，冻结进任务；接受的库位都被占着时排队
+        try:
+            selected = self._select_task_sites(task, runs)
+        except Exception as exc:
+            self._fail_unstarted_task(task_uuid, runs, exc)
+            self._settle_task_reconciliation(task_uuid)
+            if isinstance(exc, (SiteSelectionError, BackendSchedulingError, MaterialsServiceError, MaterialsHTTPError)):
+                logger.warning("workflow task %s cannot start: %s", task_uuid, exc)
+            else:
+                logger.exception("workflow task %s failed while selecting sites", task_uuid)
+            return False
+        if selected is None:
+            return False
+        if selected:
+            # 选定的库位已冻结进任务：按冻结后的计划与节点参数继续准入
+            task = self.workflow.get_workflow_task(task_uuid)
+            runs = self.workflow.list_workflow_node_runs(task_uuid)
         specs: Optional[Dict[str, Dict[str, Any]]] = None
         with self._guard:
             attempt = self._inventory_wait_attempts.get(task_uuid, 0)
@@ -772,6 +811,121 @@ class BackendScheduler:
             self._inventory_wait_attempts.pop(task_uuid, None)
         self._clear_task_inventory_wait(task_uuid, waited)
         return True
+
+    def _select_task_sites(self, task: Dict[str, Any], runs: list[Dict[str, Any]]) -> Optional[bool]:
+        """任务准入：按所属物料选择的库位参数（``{"owner_uuid"}``）选定库位、经入口预留占住并冻结进任务。
+
+        返回 True 表示选定并冻结了库位，False 表示没有要选的；``None`` 表示接受的库位此刻都被占着或已被预留，
+        任务保持 ``pending`` 排队（已选定的预留按幂等键保留，重试时原样取回）。写法不对、所属物料下没有接受放入
+        物料的库位抛 :class:`SiteSelectionError`（任务按 ``plan_not_executable`` 失败）。
+        """
+
+        task_uuid = str(task["uuid"])
+        requests = owner_site_requests(task.get("execution_plan") or {})
+        if not requests:
+            return False
+        reserve = getattr(self.materials_gateway, "reserve_ingress", None)
+        if not callable(reserve):
+            raise BackendSchedulingError("物料权威尚未接入，不能按所属物料选择库位")
+        selections: list[Dict[str, Any]] = []
+        for request in requests:
+            try:
+                reservation = reserve(reservation_payload(task_uuid, request))
+            except Exception as error:
+                if temporary_resource_condition(error) is not None:
+                    self._wait_task_sites(task, runs, request.targets, str(error))
+                    return None
+                if getattr(error, "conflict", None) == "site_template" or getattr(error, "business_code", None) == 6008:
+                    raise SiteSelectionError(
+                        NO_ACCEPTABLE_SITE,
+                        f"库位参数 {request.parameter}（节点 {request.node_uuid}）按所属物料选库位：{error}",
+                        parameter=request.parameter, owner_uuid=request.owner_uuid, node_uuid=request.node_uuid,
+                    ) from error
+                raise
+            selections.append({**request.record(), "site_uuid": str(reservation["site_uuid"]),
+                               "reservation_uuid": str(reservation["uuid"])})
+        self.workflow.freeze_task_site_selections(task_uuid, selections)
+        logger.info("任务 %s 按所属物料选定库位：%s", task_uuid,
+                    "、".join(f"{item['key']} → {item['site_uuid']}" for item in selections))
+        with self._guard:
+            self._site_waiting_tasks.pop(task_uuid, None)
+        self._clear_task_site_wait(task_uuid)
+        return True
+
+    def _wait_task_sites(self, task: Dict[str, Any], runs: list[Dict[str, Any]],
+                         targets: Iterable[tuple[str, str]], message: str) -> None:
+        from .attempt_inventory import attempt_wait
+
+        task_uuid = str(task["uuid"])
+        with self._guard:
+            first = task_uuid not in self._site_waiting_tasks
+            self._site_waiting_tasks[task_uuid] = str(task.get("create_time") or "")
+        if first:
+            logger.info("任务 %s 按所属物料选库位时接受的库位都被占用或已预留，排队等待：%s", task_uuid, message)
+        nodes = {node_uuid for node_uuid, _name in targets}
+        for run in runs:
+            if str(run.get("workflow_node_uuid")) not in nodes:
+                continue
+            try:
+                attempt_wait(self.workflow, self._authority_epoch, str(run["current_job_uuid"]),
+                             {"code": WAIT_SITE_SELECTION, "message": f"按所属物料选库位：{message}"})
+            except Exception:  # noqa: BLE001 - 排队原因只是观测
+                logger.warning("任务 %s 的排队原因写入失败", task_uuid, exc_info=True)
+
+    def _clear_task_site_wait(self, task_uuid: str) -> None:
+        from .attempt_inventory import attempt_wait
+
+        lister = getattr(self.workflow, "list_workflow_node_jobs", None)
+        if not callable(lister):
+            return
+        try:
+            jobs = [str(job["uuid"]) for job in lister(task_uuid)
+                    if ((job.get("control_data") or {}).get("wait_reason") or {}).get("code") == WAIT_SITE_SELECTION]
+        except Exception:  # noqa: BLE001
+            logger.debug("读取任务 %s 的 attempt 失败", task_uuid, exc_info=True)
+            return
+        for job_uuid in jobs:
+            try:
+                attempt_wait(self.workflow, self._authority_epoch, job_uuid, None)
+            except Exception:  # noqa: BLE001
+                logger.warning("任务 %s 的排队原因清除失败", task_uuid, exc_info=True)
+
+    def _retry_site_waiting_tasks(self) -> None:
+        """按创建先后重新提交等库位的任务；接受的库位仍被占着的会再次排队。"""
+        with self._guard:
+            if self._stopping or not self._site_waiting_tasks:
+                return
+            waiting = sorted(self._site_waiting_tasks.items(), key=lambda item: (item[1], item[0]))
+        for task_uuid, _created in waiting:
+            self.submit(task_uuid)
+
+    def _start_site_reservations(self, task: Dict[str, Any], spec: Dict[str, Any]) -> None:
+        """派发用到选定库位的动作前，把它的入口预留转为 in_transit：放入物料直接放进来等同接收。"""
+
+        mark = getattr(self.materials_gateway, "mark_ingress_in_transit", None)
+        if not callable(mark):
+            return
+        for reservation_uuid in node_reservations(task.get("execution_plan"), str(spec["workflow_node_uuid"])):
+            try:
+                mark(reservation_uuid)
+            except Exception as error:  # noqa: BLE001 - 预留已接收 / 过期：库位核对照旧保护
+                logger.debug("入口预留 %s 转运输中失败：%s", reservation_uuid, error)
+
+    def _finish_task_sites(self, task_uuid: str, task: Optional[Dict[str, Any]] = None) -> None:
+        """任务结束：收掉准入时为它预留的库位（物料已在库位上记 received，否则取消）。"""
+
+        with self._guard:
+            self._site_waiting_tasks.pop(task_uuid, None)
+        finish = getattr(self.materials_gateway, "finish_task_ingress", None)
+        if not callable(finish):
+            return
+        try:
+            task = task or self.workflow.get_workflow_task(task_uuid)
+            if not has_owner_selections(task.get("execution_plan")):
+                return
+            finish(task_uuid, reason=f"工作流任务 {task_uuid} 已结束")
+        except Exception:  # noqa: BLE001 - 收尾失败不影响任务终态，预留按有效期自然过期
+            logger.warning("任务 %s 的库位预留收尾失败", task_uuid, exc_info=True)
 
     def _admit_task_capacity(self, task: Dict[str, Any]) -> bool:
         """运行任务容量（全局 / 每工作流）还有余量、且没有更早排队又能走的任务时放行；否则保持 pending 排队。
@@ -969,6 +1123,7 @@ class BackendScheduler:
                 self._reconcile_resources()
                 self._retry_capacity_waiting_tasks()
                 self._retry_inventory_waiting_tasks()
+                self._retry_site_waiting_tasks()
 
     def _expire_manual_confirmations(self) -> None:
         """到期仍待决的人工确认（含人工物料步骤）收敛为超时；决策经 resolver 回到本调度器。"""
@@ -1740,6 +1895,7 @@ class BackendScheduler:
         dispatch_invoked = False
         try:
             self._execution_claims.reserve(spec["resource_request"], authority_epoch=self._authority_epoch)
+            self._start_site_reservations(task, spec)
             material_execution = None
             if spec.get("physical_contract") or spec.get("inventory_reservation_uuid"):
                 from .physical_contract import resolve_physical_contract
@@ -2058,7 +2214,8 @@ class BackendScheduler:
             elif status == "approved":
                 job_status = "skipped"
             elif status == "rejected":
-                job_status, errors = "failed", [{"code": "manual_confirmation_rejected"}]
+                # 拒绝按取消处理：节点 canceled、保留拒绝原因，任务随之取消收口；库存不变
+                job_status, errors = "canceled", [{"code": "manual_confirmation_rejected"}]
             elif status == "timed_out":
                 job_status, errors = "timeout", [{"code": "manual_confirmation_timed_out"}]
             else:
@@ -3216,14 +3373,16 @@ class BackendScheduler:
         decision_action = str(
             (confirmation.get("meta_data") or {}).get("decision_action") or ""
         ).strip().lower()
+        errors: list[Dict[str, Any]] = []
         if status == "approved":
             job_status = "skipped" if decision_action == "skip" else "succeeded"
             node_state = NodeState.SUCCESS
         elif status == "rejected":
-            job_status = "failed"
-            node_state = NodeState.FAILED
+            # 拒绝按取消处理：节点 canceled、保留拒绝原因，下游不派发，任务以 canceled 收口
+            job_status, errors = "canceled", [{"code": "manual_confirmation_rejected"}]
+            node_state = NodeState.CANCELLED
         elif status == "timed_out":
-            job_status = "timeout"
+            job_status, errors = "timeout", [{"code": "manual_confirmation_timed_out"}]
             node_state = NodeState.FAILED
         elif status == "canceled":
             job_status = "canceled"
@@ -3251,11 +3410,7 @@ class BackendScheduler:
                         "comment": confirmation.get("comment"),
                     },
                 },
-                error_info=(
-                    []
-                    if job_status in {"succeeded", "skipped", "canceled"}
-                    else [{"code": f"manual_confirmation_{status}"}]
-                ),
+                error_info=errors,
             )
         except Exception:  # noqa: BLE001 - 保留 durable 决策，等待恢复重试
             logger.exception(
@@ -3707,14 +3862,21 @@ class BackendScheduler:
             self._notify_start_failure(node.node_id)
 
     def _task_failure_error(self, task_uuid: str) -> Dict[str, Any]:
-        """任务因节点失败而结束：失败节点都是动作执行前预检未通过的记预检报错，否则记执行报错。"""
+        """任务没有成功结束：失败节点都是动作执行前预检未通过的记预检报错；没有失败节点、因人工确认被拒绝而取消的
+        记拒绝；否则记执行报错。"""
         try:
-            failed = [run for run in self.workflow.list_workflow_node_runs(task_uuid) if run.get("status") == "failed"]
+            runs = self.workflow.list_workflow_node_runs(task_uuid)
         except Exception:  # noqa: BLE001 - 读不到明细时按执行报错记
-            failed = []
-        if failed and all(((run.get("error_info") or [{}])[0] or {}).get("stage") == ERROR_STAGE_PREFLIGHT
-                          for run in failed):
+            runs = []
+
+        def first_error(run: Mapping[str, Any]) -> Mapping[str, Any]:
+            return (run.get("error_info") or [{}])[0] or {}
+
+        failed = [run for run in runs if run.get("status") == "failed"]
+        if failed and all(first_error(run).get("stage") == ERROR_STAGE_PREFLIGHT for run in failed):
             return {"code": "node_preflight_failed", "stage": ERROR_STAGE_PREFLIGHT, "scope": "action"}
+        if not failed and any(first_error(run).get("code") == "manual_confirmation_rejected" for run in runs):
+            return {"code": "manual_confirmation_rejected", "stage": ERROR_STAGE_EXECUTION}
         return {"code": "node_execution_failed", "stage": ERROR_STAGE_EXECUTION}
 
     def _action_max_retries(self, device_id: str, action_name: str) -> int:
@@ -3894,6 +4056,7 @@ class BackendScheduler:
             status="failed",
             error_info=[preflight_error(error)],
         )
+        self._finish_task_sites(task_uuid)
 
 
 __all__ = [

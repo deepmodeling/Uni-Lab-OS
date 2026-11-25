@@ -1,7 +1,7 @@
 # 本机 MCP 接入
 
-微后端在同一个管理端口提供 Streamable HTTP `POST /mcp`，实现位于
-`unilabos.server.mcp`。不需要额外运行一个 MCP 进程，也不需要 ROS 2。
+微后端在同一个管理端口提供 Streamable HTTP `POST /mcp`（无状态、JSON 响应；`GET /mcp` 回 405，不开独立 SSE 流），
+实现位于 `unilabos.server.mcp`。不需要额外运行一个 MCP 进程，也不需要 ROS 2。
 
 详细操作见 [MCP Guide](mcp_guide.md)，
 覆盖工具发现、工作流建图/执行、异常、物料、锁、日志与可复用 prompt。

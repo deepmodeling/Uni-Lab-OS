@@ -64,6 +64,7 @@ from unilabos.server.services.runtime.workflow.authoring_kernel import (
 )
 from unilabos.server.services.runtime.workflow.composite_expansion import (
     CompositeAuthoring,
+    CompositeExpansion,
 )
 from unilabos.server.services.runtime.workflow.entry_parameters import (
     EntryParameterError,
@@ -89,6 +90,10 @@ from unilabos.server.services.runtime.workflow.publication import (
     publication_source_hash,
     publication_summary,
 )
+from unilabos.server.services.runtime.workflow.definition_edit import (
+    node_or_ancestor_disabled,
+    remap_node_references,
+)
 from unilabos.server.services.runtime.workflow.definition_service import WorkflowDefinitionEditing
 from unilabos.server.services.runtime.workflow.node_templates import NodeTemplateCatalog
 from unilabos.server.services.runtime.workflow.operation_category import (
@@ -100,6 +105,7 @@ from unilabos.server.services.runtime.workflow.operation_category import (
 )
 from unilabos.server.services.runtime.workflow.workflow_io import (
     WorkflowIOValidationError,
+    normalize_input_contract,
     validate_workflow_graph_io,
 )
 from unilabos.server.database.sqlite_domain import DomainDatabase
@@ -149,6 +155,8 @@ _ERRORS = {
         "工作流模板的角色未能绑定到设备，请在 bindings 中指定",
     ),
     "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
+    "material_site_invalid": (422, "物料参数按库位绑定失败"),
+    "site_selection_invalid": (422, "库位参数按所属物料选择失败"),
     "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
     "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
     "local_task_authority_forbidden": (
@@ -361,7 +369,7 @@ class WorkflowError(RuntimeError):
     ``detail`` 追加在稳定文案之后（如具体哪个模板角色没绑到设备），错误码不变。
     """
 
-    def __init__(self, code: str, *, detail: str = ""):
+    def __init__(self, code: str, *, detail: str = "", details: Optional[Dict[str, Any]] = None):
         status, message = _ERRORS[code]
         if detail:
             message = f"{message}：{detail}"
@@ -369,6 +377,8 @@ class WorkflowError(RuntimeError):
         self.status = status
         self.code = code
         self.message = message
+        #: 结构化细节（失败信封的 ``error.details``），如按库位绑定失败的库位与参数
+        self.details = details
 
 
 class WorkflowConflict(WorkflowError):
@@ -1118,31 +1128,15 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             graph = WorkflowStore.get_graph(self, parent)
             if graph["workflow"]["revision"] != revision:
                 raise WorkflowConflict("conflict")
-            selected = self.find_workflow_publication(child, child_revision)
-            if selected is None:
-                raise WorkflowError("not_found", detail="子工作流没有该发布修订")
-            try:
-                authoring, projection = self._composite_authoring(selected)
-            except PublicationError as exc:
-                raise WorkflowError("invalid_input", detail=str(exc)) from None
             parent_unilab = graph["workflow"]["meta_data"].get("unilab") or {}
-            expansion = authoring.compile_invocation(
-                parent_workflow_uuid=parent,
-                invocation_uuid=invocation,
-                module=PUBLICATION_MODULE,
-                symbol=projection.source.symbol,
-                keyword_arguments=arguments,
-                parent_input_contract=(
-                    parent_unilab.get("input_contract")
-                    or {"version": 1, "parameters": []}
-                ),
+            selected, expansion = self._compile_composite_invocation(
+                parent,
+                invocation=invocation,
+                child=child,
+                child_revision=child_revision,
+                arguments=arguments,
+                parent_input_contract=parent_unilab.get("input_contract"),
             )
-            if expansion.diagnostics:
-                diagnostic = expansion.diagnostics[0]
-                raise WorkflowError(
-                    "invalid_input",
-                    detail=f"{diagnostic['code']}（{diagnostic['path']}）",
-                )
             nodes, edges, templates, handles = merged_invocation_entities(
                 expansion,
                 name=selected["name"],
@@ -1179,6 +1173,41 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 "contract_pin": dict(expansion.contract_pin),
                 "graph": saved,
             }
+
+    def _compile_composite_invocation(
+        self,
+        parent: str,
+        *,
+        invocation: str,
+        child: str,
+        child_revision: Optional[int],
+        arguments: Dict[str, Any],
+        parent_input_contract: Optional[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Any], CompositeExpansion]:
+        """按子工作流的一次发布展开一次组合调用，返回 ``(发布行, 展开结果)``；展开失败映射成 WorkflowError。"""
+
+        selected = self.find_workflow_publication(child, child_revision)
+        if selected is None:
+            raise WorkflowError("not_found", detail="子工作流没有该发布修订")
+        try:
+            authoring, projection = self._composite_authoring(selected)
+        except PublicationError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        expansion = authoring.compile_invocation(
+            parent_workflow_uuid=parent,
+            invocation_uuid=invocation,
+            module=PUBLICATION_MODULE,
+            symbol=projection.source.symbol,
+            keyword_arguments=arguments,
+            parent_input_contract=parent_input_contract or {"version": 1, "parameters": []},
+        )
+        if expansion.diagnostics:
+            diagnostic = expansion.diagnostics[0]
+            raise WorkflowError(
+                "invalid_input",
+                detail=f"{diagnostic['code']}（{diagnostic['path']}）",
+            )
+        return selected, expansion
 
     # V1 发布合同 / 组合调用 ------------------------------------------------
 
@@ -1477,6 +1506,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                     raise WorkflowConflict("conflict")
                 return existing
         resolved: Dict[str, Dict[str, Any]] = {}
+        # 按库位绑定的物料参数（{"site_uuid"}）同样在事务外读库位事实，事务内换成占用物料并冻结
+        site_facts = self._material_site_facts(self.get_graph(workflow_uuid), input_value)
         # 绑定指向的库存实例在建任务事务外读取（物料库是另一个权威，不在 runtime 写锁内访问）；
         # 事务内按冻结计划把绑定落到对应需求，不匹配即拒绝建任务。
         binding_sources: Optional[Dict[str, Dict[str, Any]]] = {}
@@ -1496,6 +1527,11 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 target_node_uuid=target_node_uuid,
                 entry_input=resolved["input"],
             )
+            # 按库位绑定的物料参数解析成占用物料，计划、attempt 参数与任务输入一起冻结
+            self._bind_material_sites(plan, jobs, resolved["input"], site_facts)
+            # 按所属物料选择的库位参数在任务准入时由调度器选定；写法不对（没有 Material.site 关系、放入物料不确定、
+            # 与所属物料参数不一致）建任务时就拒绝
+            self._check_site_selections(plan)
             try:
                 bind_plan_inventory(plan, bindings, binding_sources)
             except (ValueError, InventoryBindingUnavailable) as exc:
@@ -1542,6 +1578,45 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         if self._task_submitter is not None:
             self._task_submitter(task["uuid"])
         return task
+
+    def _material_site_facts(
+        self, graph: Optional[Dict[str, Any]], *params: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        """按库位绑定要的库位事实（事务外读一次）；没有 ``{"site_uuid"}`` 时不读。"""
+
+        from .material_sites import graph_site_references, read_site_facts, site_references
+
+        references = site_references(params)
+        if graph is not None:
+            references |= graph_site_references(graph, {})
+        if not references:
+            return {}
+        try:
+            return read_site_facts(self._preflight_materials, references)
+        except (RuntimeError, OSError) as exc:
+            raise WorkflowError("invalid_input", detail=f"无法读取按库位绑定的库位：{exc}") from None
+
+    @staticmethod
+    def _bind_material_sites(
+        plan: Dict[str, Any], jobs: List[Dict[str, Any]], input_value: Optional[Dict[str, Any]],
+        facts: Dict[str, Dict[str, Any]],
+    ) -> None:
+        from .material_sites import MaterialSiteError, bind_jobs, bind_material_sites
+
+        try:
+            if bind_material_sites(plan, input_value, facts):
+                bind_jobs(plan, jobs)
+        except MaterialSiteError as exc:
+            raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None
+
+    @staticmethod
+    def _check_site_selections(plan: Dict[str, Any]) -> None:
+        from .site_selections import SiteSelectionError, owner_site_requests
+
+        try:
+            owner_site_requests(plan)
+        except SiteSelectionError as exc:
+            raise WorkflowError("site_selection_invalid", detail=exc.message, details=exc.details) from None
 
     def create_ad_hoc_device_action_task(
         self,
@@ -1599,6 +1674,20 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             if existing.get("request_fingerprint", "") not in {"", fingerprint}:
                 raise WorkflowConflict("conflict")
             return existing
+        # 按库位绑定的物料参数：建任务时解析成占用物料并冻结（指纹按提交的原参数，重放仍命中同一任务）
+        site_facts = self._material_site_facts(None, param)
+        if site_facts:
+            from copy import deepcopy
+
+            from .material_sites import MaterialSiteError, bind_param_sites
+
+            schema = (self._action_schema_resolver(device_id, action_name)
+                      if self._action_schema_resolver is not None else None)
+            param = deepcopy(param)
+            try:
+                bind_param_sites(param, site_facts, schema=schema)
+            except MaterialSiteError as exc:
+                raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None
         try:
             task = self.create_ad_hoc_task_with_job(
                 task_uuid=str(uuid4()),
@@ -2143,7 +2232,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 continue
             kind = self._executor_kind(raw_kind)
             all_kinds[node["uuid"]] = kind
-            if self._node_or_ancestor_disabled(node, node_index) or kind == "group":
+            if node_or_ancestor_disabled(node, node_index) or kind == "group":
                 continue
             enabled[node["uuid"]] = node
             node_kinds[node["uuid"]] = kind
@@ -2492,26 +2581,6 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         except ValueError as exc:
             raise StoreConflict(str(exc)) from None
         return plan, jobs
-
-    @staticmethod
-    def _node_or_ancestor_disabled(
-        node: Mapping[str, Any],
-        nodes: Mapping[str, Mapping[str, Any]],
-    ) -> bool:
-        current: Mapping[str, Any] | None = node
-        seen: set[str] = set()
-        while current is not None:
-            if bool(current.get("disabled", False)):
-                return True
-            parent_uuid = current.get("parent_uuid")
-            if parent_uuid is None:
-                return False
-            identity = str(parent_uuid)
-            if identity in seen:
-                raise StoreConflict("workflow node parent hierarchy contains a cycle")
-            seen.add(identity)
-            current = nodes.get(identity)
-        return False
 
     @staticmethod
     def _template_param_schema(schema: Any) -> Any:
@@ -3373,7 +3442,10 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
     def import_legacy_workflow(self, *, payload: Dict[str, Any]) -> Dict[str, Any]:
         """V1 ``POST /workflows/import``：旧版 JSON 图（直接或 ``data`` 包装）重建身份后原子导入。"""
 
-        from unilabos.server.services.runtime.workflow.definition_edit import duplicate_graph
+        from unilabos.server.services.runtime.workflow.definition_edit import (
+            duplicate_graph,
+            is_derived_inventory_requirements,
+        )
 
         definition = payload.get("data") if isinstance(payload.get("data"), dict) else payload
         name = definition.get("name") or definition.get("workflow_name")
@@ -3383,16 +3455,26 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         edges = definition.get("edges") or []
         if not isinstance(nodes, list) or not nodes or not isinstance(edges, list):
             raise WorkflowError("invalid_input", detail="nodes 必须是至少包含一个节点的数组，edges 必须是数组")
-        if definition.get("inventory_requirements") not in (None, []):
-            raise WorkflowError("invalid_input", detail="暂不支持在导入图中携带 inventory_requirements")
+        requirements = definition.get("inventory_requirements")
+        # 读图返回的图根列表是从节点派生的只读投影：导出后原样导入时它是回声，忽略即可（导入后照样从
+        # 节点派生）；与节点对不上的列表是手写的图根需求，仍不支持——需求写在节点 meta_data 上。
+        if requirements not in (None, []) and not is_derived_inventory_requirements(definition, requirements):
+            raise WorkflowError(
+                "invalid_input",
+                detail="暂不支持在导入图中携带与节点不一致的 inventory_requirements（需求写在节点 meta_data.inventory_requirements）",
+            )
         try:
             for index, node in enumerate(nodes):
                 if not isinstance(node, dict):
                     raise ValueError(f"nodes[{index}] 必须是对象")
                 validate_uuid(node.get("uuid"))
-            new_nodes, new_edges, _requirements = duplicate_graph({"nodes": nodes, "edges": edges})
+            new_nodes, new_edges, node_identity = duplicate_graph({"nodes": nodes, "edges": edges})
         except (KeyError, TypeError, ValueError) as exc:
             raise WorkflowError("invalid_input", detail=str(exc)) from None
+        # 导出（读图）的工作流级保留元数据在 workflow.meta_data.unilab：I/O 合同与资源作用域随图导入
+        source_workflow = definition.get("workflow")
+        source_meta = source_workflow.get("meta_data") if isinstance(source_workflow, Mapping) else None
+        workflow_unilab = source_meta.get("unilab") if isinstance(source_meta, Mapping) else None
         record = self.create_workflow(
             name=name,
             tags=list(definition.get("tags") or []),
@@ -3401,11 +3483,168 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             workflow_type=str(definition.get("workflow_type") or "normal"),
         )
         try:
-            return self.save_graph(record["uuid"], revision=record["revision"], nodes=new_nodes, edges=new_edges)
+            return self._save_imported_graph(
+                record,
+                new_nodes,
+                new_edges,
+                workflow_unilab=workflow_unilab if isinstance(workflow_unilab, Mapping) else {},
+                node_identity=node_identity,
+            )
         except BaseException:
             with suppress(Exception):
                 self.delete_workflow(record["uuid"])
             raise
+
+    def _save_imported_graph(
+        self,
+        record: Dict[str, Any],
+        nodes: List[Dict[str, Any]],
+        edges: List[Dict[str, Any]],
+        *,
+        workflow_unilab: Mapping[str, Any],
+        node_identity: Mapping[str, str],
+    ) -> Dict[str, Any]:
+        """导入的本层图落库：保留作者声明的保留元数据，组合调用按固定的发布修订重新展开，再整图保存。
+
+        文件里的保留元数据（``meta_data.unilab``）只采用作者声明的部分，且不原样信任：
+
+        - 工作流的 I/O 合同（``input_contract`` / ``output_contract`` / ``output_bindings``）与
+          ``resource_scopes``：节点引用按新身份改写，再走保存路径同一套校验（入口参数与节点引用一致、
+          输出绑定与作用域只引用存在的节点），落库规范化后的合同；
+        - 节点的 ``input_bindings`` 与 ``authoring_source_order``：随 I/O 合同一起校验；
+        - 组合调用的保留元数据与私有子图由展开重新生成，身份按新的调用节点派生。
+
+        其余保留元数据（源码登记等）不采用。校验不过整次导入失败，错误指明是哪一项。
+        """
+
+        from unilabos.protocol.runtime.resource_intervals import WorkflowResourceScopesRequest
+        from unilabos.server.scheduler.interval_plan import (
+            graph_declares_resource_scopes, validate_graph_resource_scopes,
+        )
+
+        def io_invalid(exc: WorkflowIOValidationError) -> WorkflowError:
+            return WorkflowError("invalid_input", detail=f"工作流 I/O 无效：{exc.code}（{exc.path}）")
+
+        workflow_uuid = record["uuid"]
+        io_keys = ("input_contract", "output_contract", "output_bindings")
+        declared = remap_node_references(
+            {key: workflow_unilab[key] for key in (*io_keys, "resource_scopes") if key in workflow_unilab},
+            node_identity,
+        )
+        if "resource_scopes" in declared:
+            try:
+                checked_scopes = WorkflowResourceScopesRequest(revision=record["revision"], scopes=declared["resource_scopes"])
+            except ValidationError as exc:
+                error = exc.errors(include_input=False, include_url=False)[0]
+                location = ".".join(map(str, error["loc"]))
+                raise WorkflowError("invalid_input", detail=f"resource_scopes 无效：{location}: {error['msg']}") from None
+            declared["resource_scopes"] = [scope.model_dump(exclude_none=True) for scope in checked_scopes.scopes]
+        try:
+            parent_input_contract = normalize_input_contract(declared.get("input_contract"))
+        except WorkflowIOValidationError as exc:
+            raise io_invalid(exc) from None
+        workflow_meta = {**record["meta_data"], "unilab": declared} if declared else record["meta_data"]
+
+        for edge in edges:
+            if isinstance(edge.get("meta_data"), dict):
+                edge["meta_data"].pop("unilab", None)
+        pins: Dict[str, Mapping[str, Any]] = {}
+        has_input_bindings = False
+        for node in nodes:
+            meta_data = node.get("meta_data")
+            unilab = meta_data.pop("unilab", None) if isinstance(meta_data, dict) else None
+            if not isinstance(unilab, Mapping):
+                continue
+            kept = {key: unilab[key] for key in ("input_bindings", "authoring_source_order") if key in unilab}
+            if "authoring_source_order" in kept and type(kept["authoring_source_order"]) is not int:
+                raise WorkflowError(
+                    "invalid_input", detail=f"节点 {node.get('name') or node['uuid']} 的 authoring_source_order 必须是整数",
+                )
+            if kept:
+                meta_data["unilab"] = kept
+                has_input_bindings = has_input_bindings or "input_bindings" in kept
+            if isinstance(unilab.get("composite"), Mapping):
+                pins[node["uuid"]] = unilab["composite"]
+        if any(node.get("workflow_node_template_uuid") for node in nodes):
+            # 引用设备动作模板的节点：先把注册表投影同步进模板表，图校验才能找到模板
+            self._sync_registry_templates_best_effort()
+        private_nodes: List[Dict[str, Any]] = []
+        private_edges: List[Dict[str, Any]] = []
+        templates: Dict[str, Dict[str, Any]] = {}
+        handles: Dict[str, Dict[str, Any]] = {}
+        with self._authoring_lock(workflow_uuid):
+            for node in nodes:
+                pin = pins.get(node["uuid"])
+                if pin is None:
+                    continue
+                child_revision = pin.get("child_workflow_revision")
+                try:
+                    child = validate_uuid(pin.get("child_workflow_uuid"))
+                    if isinstance(child_revision, bool) or not isinstance(child_revision, int):
+                        raise ValueError
+                except (TypeError, ValueError):
+                    raise WorkflowError("invalid_input", detail=f"组合调用 {node['uuid']} 缺少子工作流发布修订") from None
+                # 与新插入同一规则：子工作流已删除时不能再引用它
+                self.get_workflow(child)
+                _selected, expansion = self._compile_composite_invocation(
+                    workflow_uuid,
+                    invocation=node["uuid"],
+                    child=child,
+                    child_revision=child_revision,
+                    arguments=node.get("param") or {},
+                    parent_input_contract=parent_input_contract,
+                )
+                expanded, expanded_edges, node_templates, handle_templates = merged_invocation_entities(
+                    expansion, name=str(node.get("name") or ""), pose=node.get("pose"),
+                )
+                invocation, *inner = expanded
+                # 本层字段（名称、位置、分组、依赖、禁用等）以文件为准；实参、模板与组合调用元数据取展开结果
+                node["param"] = invocation["param"]
+                node["workflow_node_template_uuid"] = invocation["workflow_node_template_uuid"]
+                meta_data = node.get("meta_data") or {}
+                node["meta_data"] = {
+                    **meta_data, "unilab": {**(meta_data.get("unilab") or {}), **invocation["meta_data"]["unilab"]},
+                }
+                private_nodes.extend(inner)
+                private_edges.extend(expanded_edges)
+                templates.update((item["uuid"], item) for item in node_templates)
+                handles.update((item["uuid"], item) for item in handle_templates)
+            # 节点引用的入口参数按 workflow_meta 里的输入合同校验（与整图保存同一校验器）
+            saved = self._save_reserved_graph(
+                workflow_uuid,
+                revision=record["revision"],
+                workflow_meta_data=workflow_meta,
+                nodes=[*nodes, *private_nodes],
+                edges=[*edges, *private_edges],
+                node_templates=list(templates.values()),
+                handle_templates=list(handles.values()),
+            )
+            if graph_declares_resource_scopes(saved):
+                # 作用域只能引用图里存在的节点；子操作带来的作用域要能在新父图里规划
+                try:
+                    validate_graph_resource_scopes(saved)
+                except (ValueError, TypeError) as exc:
+                    raise WorkflowError("invalid_input", detail=f"resource_scopes 无效：{exc}") from None
+            if has_input_bindings or any(key in declared for key in io_keys):
+                # 输入绑定、输出绑定与合同一致，输出绑定只引用存在的节点；落库规范化后的合同（与保存路径一致）
+                try:
+                    checked = validate_workflow_graph_io(saved)
+                except WorkflowIOValidationError as exc:
+                    raise io_invalid(exc) from None
+                normalized = {
+                    "input_contract": checked.input_contract.to_dict(),
+                    "output_contract": checked.output_contract.to_dict(),
+                    "output_bindings": {name: dict(binding) for name, binding in checked.output_bindings.items()},
+                }
+                if any(declared.get(key) != value for key, value in normalized.items()):
+                    saved = self._save_reserved_graph(
+                        workflow_uuid,
+                        revision=saved["workflow"]["revision"],
+                        workflow_meta_data={**record["meta_data"], "unilab": {**declared, **normalized}},
+                        nodes=saved["nodes"],
+                        edges=saved["edges"],
+                    )
+        return saved
 
     def _read_source(
         self,

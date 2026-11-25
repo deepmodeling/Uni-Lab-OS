@@ -18,10 +18,9 @@ from unilabos.protocol.materials import (
     InventoryMutation,
     MaterialDataWrite,
     MaterialDelete,
-    MaterialIdentityWrite,
     MaterialMove,
-    MaterialNodeCreate,
     MaterialPatch,
+    MaterialPlacement,
     MaterialPosition,
     MaterialTreeCreate,
     ResourceTemplateRead,
@@ -34,6 +33,7 @@ from unilabos.server.services.materials.core import (
     MaterialNoChangeError,
     MaterialNotFoundError,
     MaterialsService,
+    MaterialsServiceError,
     MaterialValidationError,
 )
 
@@ -41,6 +41,48 @@ from unilabos.server.services.materials.core import (
 MAX_SITE_IDENTITY_RESOLUTION_IDS = 500
 _HANDLE_NAMESPACE = uuid5(NAMESPACE_URL, "unilabos://resource-template-handles")
 _NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+#: V1 ``inventory_scope``：current = 仍在本站；history = 已物理离站（Uni-Lab-OS 没有离站概念，恒为空）
+INVENTORY_SCOPE_CURRENT = "current"
+INVENTORY_SCOPE_HISTORY = "history"
+INVENTORY_SCOPES = (INVENTORY_SCOPE_CURRENT, INVENTORY_SCOPE_HISTORY)
+
+#: 物料生命周期 → V1 ``inventory_status``（V1 InstanceState 词表；退役记为已使用，同 ``material.mark_used``）
+_V1_INVENTORY_STATUS = {
+    "active": "warehouse",
+    "reserved": "reserved",
+    "in_use": "in_use",
+    "quarantined": "quarantined",
+    "consumed": "consumed",
+    "retired": "used",
+}
+
+
+def _check_inventory_scope(scope: str) -> None:
+    if scope not in INVENTORY_SCOPES:
+        raise MaterialValidationError("inventory_scope must be current or history")
+
+
+def inventory_facts(
+    resource_type: str, lifecycle_status: str, deleted_at_ms: Optional[int]
+) -> dict[str, Optional[str]]:
+    """V1 物料 DTO 的库存事实：``inventory_status`` / ``inventory_presence`` / ``disposition``。
+
+    - 设备不是库存物料：三项都为 null；
+    - 在册物料 ``inventory_presence`` 恒为 ``current``（没有离站），``disposition`` 为 ``active``；
+      只有 ``warehouse``（生命周期 active）能被新任务预留，与 ``_select_inventory_material`` 一致；
+    - 已删除（软删）物料 ``disposition`` 为 ``discarded``。
+    """
+
+    if resource_type == "device":
+        return {"inventory_status": None, "inventory_presence": None, "disposition": None}
+    if deleted_at_ms is not None:
+        return {"inventory_status": "discarded", "inventory_presence": "current", "disposition": "discarded"}
+    return {
+        "inventory_status": _V1_INVENTORY_STATUS.get(lifecycle_status, lifecycle_status),
+        "inventory_presence": "current",
+        "disposition": "active",
+    }
 
 
 def new_mutation(operation: str, *, actor_type: str = ACTOR_HUMAN, actor_uuid: Optional[str] = None,
@@ -390,6 +432,7 @@ class ResourceContract:
 
     def material_row(self, aggregate: Any, *, template: Optional[ResourceTemplateRead] = None) -> dict[str, Any]:
         material = aggregate.material
+        facts = inventory_facts(material.resource_type, material.lifecycle_status, material.deleted_at_ms)
         template = template or self._template_meta(material.template_uuid)
         result: dict[str, Any] = {
             "uuid": material.material_uuid,
@@ -406,6 +449,7 @@ class ResourceContract:
             "config": dict(material.config),
             "data": dict(aggregate.data.data),
             "revision": material.version,
+            **facts,
             # dev 超集
             "resource_id": material.resource_id,
             "display_name": material.display_name,
@@ -438,11 +482,39 @@ class ResourceContract:
     def list_materials(
         self, *, page: int, page_size: int, name: str = "", barcode: str = "",
         resource_template_uuid: Optional[str] = None,
+        category: Optional[str] = None,
+        inventory_scope: str = INVENTORY_SCOPE_CURRENT,
+        empty_containers_only: bool = False,
     ) -> dict[str, Any]:
         page = max(page, 1)
         page_size = 20 if page_size <= 0 else min(page_size, 100)
+        _check_inventory_scope(inventory_scope)
+        if inventory_scope == INVENTORY_SCOPE_HISTORY:
+            # 历史范围是已物理离站的物料；Uni-Lab-OS 没有离站概念，恒为空
+            return {"items": [], "total": 0, "page": page, "page_size": page_size, "has_more": False}
         where = ["deleted_at_ms IS NULL"]
         params: list[Any] = []
+        if category == "device":
+            where.append("resource_type = 'device'")
+        elif category == "material":
+            where.append("resource_type <> 'device'")
+        elif category:
+            raise MaterialValidationError("category must be material or device")
+        if empty_containers_only:
+            # 空容器：只看容器（设备、台面、载架与仓库不是容器），且没有任何内容记录——没有内容登记
+            # （试剂 / 样品 / 当前内容物，数量为 0 的有效登记仍算非空），也没有数量大于 0 的内容物
+            # （material.content.set、设备快照、put_data 写的是内容物行，不一定有登记）
+            where.append(
+                "resource_type NOT IN ('device', 'deck', 'carrier', 'warehouse') "
+                "AND resource_type NOT LIKE '%\\_carrier' ESCAPE '\\'"
+            )
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM material_content c WHERE c.material_uuid = material.material_uuid)"
+            )
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM material_substance s "
+                "WHERE s.material_uuid = material.material_uuid AND s.quantity > 0)"
+            )
         if name:
             # V1 的 name 筛选按人读标签匹配
             where.append("display_name LIKE ?")
@@ -550,59 +622,48 @@ class ResourceContract:
                 "Material barcode or sibling name conflicts with an existing material", conflict="identity"
             )
         relative = values.get("relative_position")
-        position = MaterialPosition()
-        if isinstance(relative, Mapping):
-            position = self._position_from_v1(relative)
         material_uuid = str(uuid4())
-        tree = MaterialTreeCreate(nodes=[MaterialNodeCreate(
-            client_ref="material",
-            material_uuid=material_uuid,
-            identity=MaterialIdentityWrite(
-                # 物料 name 由权威写成 uuid；PLR 键取全局唯一的 resource_id
-                resource_id=self._resource_id(name),
-                display_name=display_name,
-                description=str(values.get("description") or ""),
-                resource_type=template.resource_type,
-                class_name=template.class_name or template.resource_type or "Resource",
-                barcode=barcode,
-                template_name=template.name,
-                config=_mapping(values.get("config")),
-                meta_data=_mapping(values.get("meta_data")),
-            ),
-            position=position,
-        )])
+        # 放入库位 = 挂到库位的所属物料并占用它；只给父物料 = 只落父子关系。与建树同一事务（MaterialPlacement）
+        tree_placement: Optional[MaterialPlacement] = None
+        if site_uuid:
+            tree_placement = MaterialPlacement(parent_material_uuid=site.owner_material_uuid, site=site_uuid)
+        elif parent_uuid:
+            tree_placement = MaterialPlacement(parent_material_uuid=parent_uuid)
+        tree = self._instantiated_tree(template, values, resource_id=self._resource_id(name))
+        tree.placement = tree_placement
+        root = next(node for node in tree.nodes if node.parent_client_ref is None)
+        root.material_uuid = material_uuid
+        identity = root.identity
+        identity.display_name = display_name
+        identity.description = str(values.get("description") or "")
+        identity.resource_type = template.resource_type
+        identity.class_name = template.class_name or template.name
+        identity.template_name = template.name
+        identity.barcode = barcode
+        identity.meta_data = _mapping(values.get("meta_data"))
+        if isinstance(relative, Mapping):
+            root.position = self._position_from_v1(relative)
+        reagent = values.get("reagent")
+        content: Optional[dict[str, Any]] = None
         try:
-            self.materials.create_tree(
-                new_mutation("create_material_tree", payload=tree.model_dump(mode="json", exclude_none=False)), tree
-            )
+            # 建树、落位与装液在同一个外层事务里（写入口可重入，内层不提交）：任一步失败整体回滚，
+            # 不留下建了一半、没落位或没装液的物料，也不需要事后补偿删除
+            with self.materials.write():
+                self.materials.create_tree(
+                    new_mutation("create_material_tree", payload=tree.model_dump(mode="json", exclude_none=False)),
+                    tree,
+                )
+                if isinstance(reagent, Mapping):
+                    from unilabos.server.services.materials.contents import ContentContract
+
+                    content = ContentContract(self.materials).create_reagent(
+                        {**reagent, "material_uuid": material_uuid}
+                    )
         except MaterialConflictError as exc:
             if exc.conflict is None:
                 raise MaterialConflictError(
                     "Material barcode or sibling name conflicts with an existing material", conflict="identity"
                 ) from None
-            raise
-        try:
-            if site_uuid or parent_uuid:
-                move = MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid,
-                                    parent_material_uuid=None if site_uuid else parent_uuid)
-                self.materials.move_material(
-                    new_mutation("move_material", payload=move.model_dump(mode="json", exclude_none=False)), move
-                )
-            reagent = values.get("reagent")
-            content: Optional[dict[str, Any]] = None
-            if isinstance(reagent, Mapping):
-                from unilabos.server.services.materials.contents import ContentContract
-
-                content = ContentContract(self.materials).create_reagent({**reagent, "material_uuid": material_uuid})
-        except Exception:
-            # 物料与放置 / 装液不是同一事务：后续步骤失败时撤销刚创建的空物料，不留半成品
-            delete = MaterialDelete(material_uuid=material_uuid, recursive=True)
-            try:
-                self.materials.delete_material(
-                    new_mutation("delete_material", payload=delete.model_dump(mode="json")), delete
-                )
-            except Exception:  # noqa: BLE001 - 补偿失败不掩盖原错误
-                pass
             raise
         result = self.material_detail(material_uuid)
         aggregate = self.materials.get_material(material_uuid)
@@ -612,6 +673,66 @@ class ResourceContract:
         if content is not None:
             result["reagent"] = content
         return result
+
+    @staticmethod
+    def _instantiated_tree(
+        template: ResourceTemplateRead, values: Mapping[str, Any], *, resource_id: str
+    ) -> MaterialTreeCreate:
+        """V1 新建物料先初始化出 PLR 实例，再按 instantiate 同一条转换（``plr_resources_to_create``）变成建树请求。
+
+        这样的物料带完整的 ``config.type`` 与 PLR 字段，能放上设备库位，设备重启时也反序列化得了。实例来源：
+
+        - 请求的 config 给了 ``type``（PLR 类名）：用模板定义里的 config、请求的 config / data 按
+          ``ResourceTreeSet`` 反序列化出来；
+        - 否则模板是注册表里的 PLR 资源类：按注册表实例化（带默认孩子，与 ``instantiate_material`` 相同）；
+        - 否则模板的实现（``module_name`` 的类名，或 ``class_name``）是已知的 PLR 类：同第一条。
+
+        都不满足、或反序列化失败时报 1000，说明哪里不能实例化。PLR 名（PLR 键）是 ``resource_id``。
+        """
+
+        from unilabos.resources.adapters.plr_materials import plr_resources_to_create
+        from unilabos.resources.material_class import registry_resource_entry
+        from unilabos.resources.materials import instantiate_registry_resource
+        from unilabos.resources.resource_tracker import (
+            ResourceTreeSet,
+            find_plr_resource_class,
+            set_resource_uuid,
+            walk_resources,
+        )
+
+        definition_config = _mapping((template.definition or {}).get("config"))
+        config = {**definition_config, **_mapping(values.get("config"))}
+        plr_type = str(_mapping(values.get("config")).get("type") or "").strip()
+        entry = registry_resource_entry(template.name)
+        registry_class = isinstance(entry, Mapping) and _mapping(entry.get("class")).get("type") == "pylabrobot"
+        try:
+            if not plr_type and registry_class:
+                draft = instantiate_registry_resource(template.name, resource_id)
+            else:
+                if not plr_type:
+                    implementation = str(template.module_name or "").partition(":")[2] or str(template.class_name or "")
+                    known = str(config.get("type") or "").strip() or implementation
+                    plr_type = known if known and find_plr_resource_class(known) is not None else ""
+                if not plr_type:
+                    raise ValueError(
+                        f"模板 {template.name} 不是注册表里的 PLR 资源类，实现 {template.module_name or template.class_name!r} "
+                        "也不是已知的 PLR 类；请在 config.type 里给出 PLR 类名"
+                    )
+                node = {
+                    "id": resource_id, "uuid": str(uuid4()), "name": resource_id, "type": template.resource_type,
+                    "class": template.class_name or template.name, "template_name": template.name,
+                    "config": {**config, "type": plr_type}, "data": dict(_mapping(values.get("data"))),
+                    "parent_uuid": None,
+                }
+                draft = ResourceTreeSet.from_raw_dict_list([node]).to_plr_resources()[0]
+                # 只是建树用的草稿：去掉临时 uuid，由权威发号
+                for item in walk_resources(draft):
+                    set_resource_uuid(item, "")
+            return plr_resources_to_create([draft])
+        except MaterialsServiceError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - 实例化失败一律是请求不合法
+            raise MaterialValidationError(f"无法按模板 {template.name} 初始化 PLR 物料：{exc}") from None
 
     def find_by_barcode(self, barcode: str) -> Optional[str]:
         row = self.materials.connection.execute(
@@ -911,13 +1032,61 @@ class ResourceContract:
 
     # -- 物料图 ----------------------------------------------------
 
-    def material_graph(self) -> dict[str, Any]:
-        """V1 ``GET /materials/graph``：全部活动物料 + 相对位置 + 库位 + 模板摘要 + handle。"""
+    def _graph_closure(self, material_uuids: Sequence[str]) -> list[str]:
+        """请求的物料 + 沿"当前库位的所属物料"补齐的祖先（客户端按同一响应解析 current_site_uuid）。
+
+        已删除或不存在的物料不返回：客户端把响应里缺的 uuid 当作已删除 / 离站。
+        """
 
         connection = self.materials.connection
-        rows = connection.execute(
-            "SELECT material_uuid FROM material WHERE deleted_at_ms IS NULL ORDER BY created_at_ms, material_uuid"
-        ).fetchall()
+        selected: list[str] = []
+        seen: set[str] = set()
+        queue = list(dict.fromkeys(str(uuid) for uuid in material_uuids if str(uuid or "").strip()))
+        while queue:
+            uuid = queue.pop(0)
+            if uuid in seen:
+                continue
+            seen.add(uuid)
+            alive = connection.execute(
+                "SELECT 1 FROM material WHERE material_uuid=? AND deleted_at_ms IS NULL", (uuid,)
+            ).fetchone()
+            if alive is None:
+                continue
+            selected.append(uuid)
+            site = self.materials.occupied_site(uuid)
+            if site is not None and site.owner_material_uuid not in seen:
+                queue.append(site.owner_material_uuid)
+        return selected
+
+    def material_graph(
+        self,
+        *,
+        inventory_scope: str = INVENTORY_SCOPE_CURRENT,
+        material_uuids: Sequence[str] = (),
+    ) -> dict[str, Any]:
+        """V1 ``GET /materials/graph``：活动物料 + 相对位置 + 库位 + 模板摘要 + handle。
+
+        给了 ``material_uuids`` 是增量重读：只返回这些物料及其库位所属祖先，连线只留两端都在其中的。
+        """
+
+        _check_inventory_scope(inventory_scope)
+        if inventory_scope == INVENTORY_SCOPE_HISTORY:
+            return {"nodes": [], "links": []}
+        connection = self.materials.connection
+        # 空值（``?material_uuid=``）不算点名：只剩空值时按全量读，不返回空图
+        material_uuids = [item.strip() for item in material_uuids if item and item.strip()]
+        if material_uuids:
+            wanted = self._graph_closure(material_uuids)
+            placeholders = ",".join("?" for _ in wanted)
+            rows = connection.execute(
+                f"SELECT material_uuid FROM material WHERE material_uuid IN ({placeholders}) "
+                "ORDER BY created_at_ms, material_uuid",
+                tuple(wanted),
+            ).fetchall() if wanted else []
+        else:
+            rows = connection.execute(
+                "SELECT material_uuid FROM material WHERE deleted_at_ms IS NULL ORDER BY created_at_ms, material_uuid"
+            ).fetchall()
         templates: dict[str, Optional[ResourceTemplateRead]] = {}
         nodes = []
         for row in rows:
@@ -948,6 +1117,9 @@ class ResourceContract:
             }
             for link in self.materials.list_links()
         ]
+        if material_uuids:
+            returned = {node["material"]["uuid"] for node in nodes}
+            links = [link for link in links if link["source_uuid"] in returned and link["target_uuid"] in returned]
         return {"nodes": nodes, "links": links}
 
 

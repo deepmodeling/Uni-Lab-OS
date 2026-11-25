@@ -177,65 +177,6 @@ def test_deck_sites_without_holders_keep_the_occupant_under_the_deck(authority) 
     assert _site(service, deck_uuid, "T2").occupied_material_uuid == bottle.unilabos_uuid
 
 
-def _break_like_the_old_transfer(service: MaterialsService, material_uuid: str, site) -> None:
-    """复现旧版 transfer 写下的坏树：物料直接挂在仓库下，并占用仓库的 Site。"""
-
-    with service.write():
-        service.connection.execute(
-            "UPDATE material SET parent_material_uuid=? WHERE material_uuid=?",
-            (site.owner_material_uuid, material_uuid),
-        )
-        service.connection.execute(
-            "UPDATE site SET occupied_material_uuid=? WHERE site_uuid=?",
-            (material_uuid, site.site_uuid),
-        )
-
-
-def test_existing_bad_trees_are_repaired_once_when_the_authority_opens(tmp_path) -> None:
-    from unilabos.server.composition import ServerServices
-    from unilabos.server.database import ServerDatabasePaths
-
-    paths = ServerDatabasePaths.resolve(tmp_path)
-    service = MaterialsService(paths.materials_db)
-    gateway = LocalMaterialsClient(service)
-    try:
-        warehouse = _warehouse(gateway)
-        deck_uuid = str(uuid4())
-        materials.ensure(site_deck(deck_uuid, "Bench_Deck", ("T1",)), gateway=gateway)
-        bottle = materials.create(_bottle("broken"), gateway=gateway)
-        on_deck = materials.create(_bottle("deck_bottle"), gateway=gateway)
-        service.move_material(
-            _mutation("move_material"),
-            MaterialMove(material_uuid=on_deck.unilabos_uuid, destination_site_uuid=_site(service, deck_uuid, "T1").site_uuid),
-        )
-        _break_like_the_old_transfer(service, bottle.unilabos_uuid, _site(service, warehouse.unilabos_uuid, "A02"))
-        with pytest.raises(TypeError, match="ResourceHolder"):
-            materials.get(warehouse.unilabos_uuid, gateway=gateway).to_plr_resources()
-        holder_name = warehouse["A02"].name
-        deck_version = service.get_material(on_deck.unilabos_uuid).material.version
-    finally:
-        service.close()
-
-    services = ServerServices.open(paths)
-    try:
-        service = services.materials
-        assert _shape(service, warehouse.unilabos_uuid) == {
-            "A01": ("wh_local", warehouse["A01"].name),
-            "A02": ("broken", holder_name),
-        }
-        assert [change.operation for change in service.changes(limit=10_000)
-                if change.aggregate_uuid == bottle.unilabos_uuid][-1] == "move"
-        restored = materials.get(warehouse.unilabos_uuid, gateway=LocalMaterialsClient(service)).to_plr_resources()[0]
-        assert restored["A02"].resource.name == "broken"
-        # 台面型 Site 的占用物料不是坏树，不动
-        assert service.get_material(on_deck.unilabos_uuid).material.version == deck_version
-        assert service.get_material(on_deck.unilabos_uuid).material.parent_material_uuid == deck_uuid
-        # 幂等：再修一次什么也不做
-        assert service.repair_site_occupant_parents() == []
-    finally:
-        services.close()
-
-
 def test_physical_move_off_a_warehouse_site_finds_the_site_through_the_holder(authority) -> None:
     """调度的物理搬运合同：来源库位在载架上、物料挂在 holder 下，也要找到来源并结算。"""
 

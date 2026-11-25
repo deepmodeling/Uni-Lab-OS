@@ -207,7 +207,7 @@ def test_content_reservation_reconcile_and_reagent_lineage(seam) -> None:
     stack, materials = seam
     contents = ContentContract(materials, compound_source=None)
     contract = ResourceContract(materials)
-    template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource"}])["templates"][0]
+    template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource", "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}])["templates"][0]
     bottle = contract.create_material({"resource_template_uuid": template["uuid"], "name": "试剂瓶"})
     info = contents.create_reagent_info({"name": "乙醇", "cas": "64-17-5", "physical_state": "liquid"})
     reagent = contents.create_reagent({"material_uuid": bottle["uuid"], "reagent_info_uuid": info["uuid"],
@@ -320,7 +320,7 @@ def test_settled_aliquot_is_a_consumption_of_the_source_contents(tmp_path) -> No
     try:
         contents = ContentContract(materials, compound_source=None)
         contract = ResourceContract(materials)
-        template = contract.sync_resource_templates([{"id": "tube", "registry_type": "resource"}])["templates"][0]
+        template = contract.sync_resource_templates([{"id": "tube", "registry_type": "resource", "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}])["templates"][0]
         source, target = (contract.create_material({"resource_template_uuid": template["uuid"], "name": name})
                           for name in ("母液", "子管"))
         info = contents.create_reagent_info({"name": "乙醇", "cas": "64-17-5", "physical_state": "liquid"})

@@ -1,9 +1,10 @@
-"""日志轻通知：空闲静默、突发合并、来源鉴别、SSE 游标及 WS 快速通道。"""
+"""日志轻通知：空闲静默、突发合并、来源鉴别及 WS 快速通道。
+
+写进 frontend_event、在 /api/v1/events 上带 id 发出的部分见 ``test_runtime_events_material_notices.py``。
+"""
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import threading
 from unittest.mock import Mock
@@ -12,7 +13,6 @@ import pytest
 from pydantic import ValidationError
 
 from unilabos.protocol.runtime.logs import RuntimeLogNotice
-from unilabos.server.api.runtime import events
 from unilabos.utils import log_notices as notices
 
 
@@ -127,43 +127,13 @@ def test_edge_control_notice_is_ephemeral_and_resyncs_on_attach_detach(monkeypat
     assert hub.changed.call_count == 2
 
 
-def test_sse_notice_merges_slow_reader_without_changing_workflow_cursor(monkeypatch):
-    class Hub:
-        listener = None
+def test_notice_writer_logs_do_not_trigger_notices(monkeypatch):
+    """权威把通知写进 frontend_event 的线程写失败会记日志；这些日志再触发通知就成了自激循环。"""
 
-        def subscribe(self, listener):
-            self.listener = listener
-            return lambda: setattr(self, "listener", None)
-
-    hub = Hub()
-    monkeypatch.setattr(events, "log_notices", hub)
-    monkeypatch.setattr(events, "shutting_down", lambda: False)
-
-    class Request:
-        async def is_disconnected(self):
-            return False
-
-    workflow = Mock()
-    workflow.read_event_window.return_value = (1, 42, [{"id": 42, "event": "workflow.task.changed", "data": {"uuid": "t"}}])
-
-    async def scenario():
-        stream = events.runtime_event_stream(Request(), workflow, cursor=41)
-        assert "connected" in await anext(stream)
-        durable = await anext(stream)
-        # 库里存 dev 事件名，SSE 按 V1 发 workflow.runtime.changed，种类放进 data.kind
-        assert durable.startswith("id: 42\nevent: workflow.runtime.changed\n")
-        assert json.loads(durable.split("data: ")[1]) == {"uuid": "t", "kind": "task"}
-        # 慢读者停在 yield 期间，重复通知只保留合并后的一个槽位。
-        for _ in range(100):
-            hub.listener(RuntimeLogNotice(source_ids=["host"]))
-            hub.listener(RuntimeLogNotice(source_ids=["slave:a"], sources_changed=True))
-        await asyncio.sleep(0)
-        frame = await asyncio.wait_for(anext(stream), 1)
-        assert "event: runtime.logs.changed\n" in frame and "id:" not in frame
-        payload = json.loads(frame.split("data: ")[1])
-        assert payload["source_ids"] == ["host", "slave:a"] and payload["sources_changed"]
-        workflow.read_event_window.assert_called_once_with(after_id=41, limit=101)
-        await stream.aclose()
-        assert hub.listener is None
-
-    asyncio.run(scenario())
+    hub = Mock()
+    monkeypatch.setattr(notices, "log_notices", hub)
+    handler = notices.LogAppendHandler()
+    record = logging.LogRecord("frontend_notices", logging.WARNING, "", 0, "写前端通知失败", (), None)
+    record.threadName = notices.NOTICE_WRITER_THREAD
+    handler.emit(record)
+    hub.changed.assert_not_called()

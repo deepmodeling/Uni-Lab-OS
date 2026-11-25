@@ -138,6 +138,12 @@ Uni-Lab-OS 的持久状态放在四个**相互独立的 SQLite 文件**里。本
 
 0.13 发布线是基线：四个库都是 schema v1、`migrations=()`。`tests/server/test_database_schema_versions.py` 把每个库的
 `(schema_version, checksum)` 固定在 `PINNED` 里：改了 DDL 或 `contract_version` 而不提升版本，测试失败。
+
+**main 发布之前旧库一律重建，不迁移也不修复。** runtime / materials 的 `contract_version` 提到 2 重置了基线
+（设备子树只收格式合规的 PLR 物料等新规则不为旧数据补救）：之前的开发库按「库内版本与代码版本相同，但结构指纹不同」
+拒绝启动，设 `database_rebuild_on_mismatch = True` 则备份后重建。只为旧数据存在的修复代码随之删除。
+之后的结构升级改为版本化、Flyway 式的迁移（下面的步骤），在 main 发布后启用。
+
 发布后改结构的步骤：
 
 1. 该库 `schema_version` +1；

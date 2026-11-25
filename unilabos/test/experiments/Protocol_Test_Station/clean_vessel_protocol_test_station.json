@@ -148,7 +148,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 50,
@@ -174,7 +174,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 150,
@@ -200,7 +200,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 250,
@@ -226,7 +226,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 350,
@@ -247,7 +247,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -273,7 +273,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,
@@ -299,7 +299,7 @@
             "children": [],
             "parent": "CleanVesselProtocolTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,

@@ -152,14 +152,13 @@ ErrorPolicy 的 options 按异常类名映射到选项列表，`"*"` 是默认�
 from unilabos.resources import materials
 
 def create_and_mount(node, draft, parent_uuid: str, site_uuid: str):
-    # 必须使用返回的新实例，输入 draft 不会被就地改为权威实例。
-    authoritative = materials.create(draft, node=node)
-    materials.assign(node, authoritative, parent=parent_uuid, site=site_uuid)
-    return authoritative
+    # 建树与落位在权威的同一事务里；返回本设备 tracker 里的那一份实例，输入 draft 不会被就地改为权威实例。
+    return materials.create(draft, node=node, parent=parent_uuid, site=site_uuid)
 ```
 
-这是同步驱动/外部线程用法；assign 内部等待 node executor，不能在同一个 executor 的异步动作里同步等待自己。
-异步动作使用 `await node.append_resource(payload)`，具体 payload 见 HostLink 下行章节。
+这是同步驱动/外部线程用法；create（带落位）与 assign 都要等本设备执行器上的 load，不能在同一个执行器的
+异步动作里同步调用（会直接报错，不会等到自己）。已有物料换位用 `materials.assign`（经 transfer 的物料移动，
+返回重建后的实例）。
 
 create 一次只接收一个根（可带 children），`node=` 会自动登记该节点 tracker 和来源设备。
 跨设备用 `await materials.transfer(...)`，由权威移位、来源 unload、目标 load；
@@ -226,8 +225,9 @@ session.py 负责本地会话/凭据/上下文，utils/envelope.py 负责响应 
 
 ## MCP：复用 HTTP 合同的本机工具
 
-服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP，
-GET/POST/DELETE；当前 stateless、JSON 响应模式。它独立于 SSE 观察端与设备 WS。
+服务启动后 MCP 地址为 `http://127.0.0.1:8003/mcp`，使用 Streamable HTTP 的 POST；当前 stateless、JSON 响应模式。
+GET 回 405（不开独立 SSE 流：无状态模式下服务端不主动推送，那条流也没有 id），DELETE 由 SDK 回 405（没有会话可终止）。
+它独立于 SSE 观察端与设备 WS。
 仅 loopback 对端且无 Origin 请求可访问；浏览器/远端会得到 403，尚未就绪 503。
 工具在进程内经 ASGI 调用管理 API（管理 API 不鉴权，见 HTTP 文档「认证与网络边界」）。
 不要把本机开放工具等同于用户已授权执行硬件。

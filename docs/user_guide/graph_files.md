@@ -69,7 +69,7 @@ JSON 顶层包含 `nodes` 和可选的 `links`：
 | `name` | 物料名，恒等于 `uuid`（见下文「物料命名」）。可以省略 |
 | `display_name` | 面向界面的人读标签，可重名、可编辑 |
 | `type` | 节点类型；图导入缺省值为 `device` |
-| `class` | 设备填 Registry 设备名；物料填 PLR 类名（如 `RegularContainer`），须与模板的类名一致 |
+| `class` | 初始化它用的 Registry 名：设备填 Registry 设备名；物料填 Registry 资源名（如 `container`，与 `template_name` 相同，实现模块按这个名字在 Registry 里查）；没有 Registry 条目的 PLR 物料（孔位等）填 PLR 类名 |
 | `parent` | 父节点的 `id` |
 | `parent_uuid` | 父节点 UUID；同时提供时优先按 UUID 建立关系 |
 | `config` | 驱动构造参数和设备配置；非设备物料的 `config.name` 是 PLR 键 |
@@ -109,16 +109,20 @@ ordering 标识。
 
 ### 物料节点的类与模板
 
-物料节点（`type` 不是 `device`）要同时写清三处：`template_name` 是 Registry 资源名，`class` 与
-`config.type` 是该模板实例化出的 PLR 类名。开机时 Host 把图中物料对齐到物料权威，权威按模板校验
-`class`，PLR 按 `config.type` 反序列化；`config` 里只能放 PLR 构造参数，其他业务字段放 `data`。
+物料节点（`type` 不是 `device`）要同时写清三处：`template_name` 是 Registry 资源名；`class` 是初始化它
+用的 Registry 名——按 Registry 资源初始化的物料就是这个资源名（与 `template_name` 相同，实现模块即条目的
+`class.module` 按名字在 Registry 里查，不另写），没有 Registry 条目的 PLR 物料（孔位、枪头位等随父物料
+一起建出来的孩子）是 PLR 类名；`config.type` 是 PLR 类名。开机时 Host 把图中物料对齐到物料权威，权威
+按模板校验 `class`，重建 PLR 实例时直接按 `config.type` 反序列化（`class` 只做记录）；
+`config` 里只能放 PLR 构造参数，其他业务字段放 `data`。`class` 写成 PLR 类名的旧写法在入库时按模板
+换成 Registry 名。
 最常见的通用容器写法（与 `/api/v1/graphs/live/payload` 导出的形状一致）：
 
 ```json
 {
   "id": "flask_DMF",
   "type": "container",
-  "class": "RegularContainer",
+  "class": "container",
   "template_name": "container",
   "parent": "workstation_1",
   "config": {"type": "RegularContainer", "max_volume": 1000.0},
@@ -126,11 +130,10 @@ ordering 标识。
 }
 ```
 
-旧图里容器常写成 `"class": null` 或 `"class": "container"`、没有 `config.type`，`config` 里还可能混着
+旧图里容器常写成 `"class": null`、没有 `config.type`，`config` 里还可能混着
 `filter_type` 这类业务字段。这样的图不用手改：`-g` 与 `unilab graph upload` 读图时按注册表补齐
 （见下文「规范化与校验」第 1 步），文件本身不动。不经读图边界、直接交给 Graph Authority 的
-payload 不做这一步，权威会按模板拒绝（`class_name ... does not match template 'container'
-class_name 'RegularContainer'`）。
+payload 不做这一步，缺 `config.type` 的物料没法按 PLR 反序列化，设备子树里的物料权威直接拒绝。
 
 `children` 是资源树的递归容器，不属于 `ResourceDict` 领域字段。平铺 JSON 图应在
 子节点上使用 `parent_uuid`，必要时同时提供便于阅读的 `parent`。
@@ -206,9 +209,9 @@ I/O 和 PLC 等通信适配器；物理流路使用 `fluid`。
 
    - 模板依次取 `template_name`、`class`、`type`（`class` 为空的 dev 时代容器写
      `"type": "container"`，即同名注册表模板），写回 `template_name`；
-   - PLR 类名只从注册表查：该模板注册表条目的 `config_info[0].config.type`（物料权威登记模板时
-     用的同一规则；条目没有 `config_info` 时按条目的 `class.module` 实例化一次取类名），写进
-     `class`，`config.type` 缺失时一并补上；
+   - PLR 类名只从注册表查：该模板注册表条目的 `config_info[0].config.type`（条目没有
+     `config_info` 时按条目的 `class.module` 实例化一次取类名），`config.type` 缺失时补上；
+     `class` 写成模板名（初始化它用的 Registry 名）；
    - 补上 `config.type` 的节点，`config` 里该 PLR 类构造器不接受的键（如 `filter_type`）挪进
      `data`；
    - 模板不在注册表、条目不是 PLR 资源类、或节点已有的 `config.type` 与注册表的类不一致时报错，

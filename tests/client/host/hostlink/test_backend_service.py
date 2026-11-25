@@ -259,6 +259,40 @@ def test_ros_slave_devices_are_announced_ready_only_after_they_are_built(monkeyp
     assert {key: value["ready"] for key, value in peer["devices"].items()} == {"pump-a": True, "sensor-b": False}
 
 
+def test_ros_slave_link_answers_material_downlink_before_any_device_is_built(monkeypatch) -> None:
+    """ROS 2 Slave 的链路一建好就承接物料 / 设备管理下行，先于任何设备节点。
+
+    设备 post_init 里的 materials.assign 会让权威经 HostLink 回调本进程的 material.sync，
+    那时设备还在初始化；Slave 必须认得这个动作，而不是回 ``unknown action``。
+    """
+
+    service = setup_host_network_service()
+    assert service is not None
+    HostLinkConfig.host = "127.0.0.1"
+    HostLinkConfig.port = service.server.port
+    monkeypatch.setattr(BasicConfig, "machine_name", "edge-slave-downlink")
+
+    client, _ = setup_slave_network_client(device_ids=["bench"])
+    assert client is not None and client.online
+    for action in (
+        ActionType.MATERIAL_SYNC,
+        ActionType.RESOURCE_TREE_SYNC,
+        ActionType.RESOURCE_APPEND,
+        ActionType.DEVICE_MANAGE,
+    ):
+        assert action in client.handlers, action
+
+    # 设备节点还没建：Slave 认得 material.sync，只是本进程还没有这台设备
+    with pytest.raises(Exception) as raised:
+        service.server.request_device(
+            "bench",
+            ActionType.MATERIAL_SYNC,
+            {"device_id": "bench", "action": "unload", "material_uuids": []},
+            2.0,
+        )
+    assert "unknown action" not in str(raised.value)
+
+
 def test_slave_material_create_is_proxied_by_host_authority(
     tmp_path, monkeypatch
 ) -> None:

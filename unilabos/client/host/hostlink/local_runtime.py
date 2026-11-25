@@ -21,7 +21,7 @@ from typing import (
     Type,
 )
 
-from unilabos.client.host.runtime.action import ActionContext
+from unilabos.client.host.runtime.action import ActionContext, bind_action_context
 from unilabos.client.host.runtime.test_mode import build_test_mode_return, driver_runs_in_test_mode
 from unilabos.config.config import BasicConfig
 from unilabos.client.host.runtime.exception import TimeoutException
@@ -827,9 +827,9 @@ class HostLinkDeviceNode(DeviceNode):
             mapping = {}
         kwargs = self._map_action_arguments(signature, mapping, kwargs)
         kwargs = self._resolve_action_resources(signature, kwargs)
+        # HostLink 执行总有上下文（取消、超时、反馈都靠它）：调用方没给就现建一个，按类型注入驱动
         context = action_context or ActionContext()
-        if "action_context" in signature.parameters:
-            kwargs.setdefault("action_context", context)
+        kwargs = bind_action_context(action, kwargs, context)
         return action, context, kwargs, mapping
 
     @staticmethod
@@ -1260,7 +1260,8 @@ class HostLinkLocalRuntime:
         #: 图中声明的 host_node 身份（device_id -> 资源 uuid），供内置 host
         #: 服务设备注册时复用，保证图导出与权威身份一致。
         self.graph_host_resource_uuids: dict[str, str] = {}
-        #: 设备图中因 backend 不支持而跳过的设备（device_id -> 原因记录），
+        #: 设备图中没有启动的设备（device_id -> 原因记录）：backend 不支持而跳过的，以及持有的物料
+        #: 建不成 PLR 实例而进入维护模式的（记录带 ``maintenance`` / ``material_uuid`` / ``material_type``）；
         #: 由能力快照、``/api/v1/hostlink/peers`` 与 ``/api/v1/health`` 上报。
         self.unavailable_devices: dict[str, dict[str, Any]] = {}
         self.topic_bus = LocalTopicBus()
@@ -1514,6 +1515,17 @@ class HostLinkLocalRuntime:
     def get_device(self, device_id: str) -> Optional["HostLinkDeviceNode"]:
         """按 device_id 取本进程设备节点（容忍 ``/devices/`` 前缀）。"""
         return self.devices.get(self._normalize_device_id(device_id))
+
+    def dispatch_material_sync(self, command: Any) -> dict[str, Any]:
+        """物料服务 transfer 的本机投影（unload / load）：在目标设备自己的执行器上执行并等结果。"""
+
+        from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+        data = command.model_dump(mode="json", exclude_none=False) if hasattr(command, "model_dump") else dict(command)
+        node = self.get_device(str(data["device_id"]))
+        if node is None:
+            raise RuntimeError(f"设备 {data['device_id']!r} 不在本进程，无法同步物料")
+        return run_node_coroutine(node, node.material_sync(dict(data)))
 
     @staticmethod
     def _normalize_device_id(device_id: str) -> str:

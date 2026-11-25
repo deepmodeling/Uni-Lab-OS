@@ -930,10 +930,13 @@ def test_goal_accepted_after_inflight_cancel_is_canceled_immediately():
 
     class _RosExecutionAdapter:
         _request_goal_cancel = HostNode._request_goal_cancel
+        _take_settled = HostNode._take_settled
 
         def __init__(self):
             self._goals = {}
             self._inflight_goal_jobs = set()
+            # 设备离线时已收尾的作业（goal_response_callback 先查它，忽略迟到的受理）
+            self._settled_jobs = set()
             self._canceled_jobs = {"job-1"}
             self._goal_state_lock = threading.RLock()
 

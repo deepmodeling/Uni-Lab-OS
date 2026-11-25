@@ -531,6 +531,13 @@ def action(
             "parent": parent,
         }
         signature_parameters = _inspect.signature(func).parameters
+        # 框架按类型注入动作上下文（ActionContext / Optional[ActionContext]）：这些参数不属于动作接口；
+        # 叫 action_context 却没有这个注解的旧写法直接报错
+        from unilabos.registry.action_context import action_context_parameters
+        from unilabos.registry.action_options import check_action_context_parameter
+
+        context_parameters = action_context_parameters(func)
+        check_action_context_parameter(signature_parameters, context_parameters, definition=definition)
         if resource_contract or site_selectors:
             from unilabos.registry.material_roles import (
                 MaterialRoleError,
@@ -559,7 +566,7 @@ def action(
                 [
                     name
                     for name, parameter in signature_parameters.items()
-                    if name not in {"self", "cls"}
+                    if name not in {"self", "cls"} and name not in context_parameters
                     and parameter.kind not in (_inspect.Parameter.VAR_POSITIONAL, _inspect.Parameter.VAR_KEYWORD)
                 ],
                 goal=goal,

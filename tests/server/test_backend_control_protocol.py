@@ -97,7 +97,9 @@ def test_reconnect_failures_are_not_logged_as_errors_each_time(caplog) -> None:
 
     comm_logger = logging.getLogger("unilabos.comm")
     previous_propagate = comm_logger.propagate
-    comm_logger.propagate = True  # 通信日志独立成文件时不向上传播，caplog 需要它传播
+    # 通信日志独立成文件时不向上传播。pytest 9 起直接把捕获 handler 挂到不传播的 logger 上，再打开传播
+    # 会让同一条记录被捕获两次；旧版只在根 logger 上捕获，才需要打开传播。
+    comm_logger.propagate = caplog.handler not in comm_logger.handlers
     client = BackendWebSocketClient("ws://127.0.0.1:1/api/v1/ws/schedule")
     client._running = True
     refused = ConnectionRefusedError(1225, "远程计算机拒绝网络连接")

@@ -15,7 +15,9 @@ V1 已覆盖的能力改由 V1 路径提供，dev 旧路径删除（不保留双
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from typing import Literal, Optional
 
 from fastapi import APIRouter, FastAPI, Header, HTTPException, Query, Request
@@ -28,6 +30,7 @@ from unilabos.server.database.tables.base import NonEmptyStr, ServerObject
 from unilabos.server.lifecycle import shutting_down, sleep_unless_shutting_down
 from unilabos.protocol.materials import InventoryRequirement, MaterialSnapshot
 from unilabos.server.services.materials import MaterialsService
+from unilabos.server.services.materials.ledger_watch import LedgerBatch, ledger_watch
 
 
 class InventoryPreviewRequest(ServerObject):
@@ -67,6 +70,36 @@ class MaterialLinksEnsure(ServerObject):
     """开机图拓扑边对齐：node-link link 对象原样提交（端点按 ``source_uuid`` / ``target_uuid``）。"""
 
     links: list[dict] = Field(default_factory=list)
+
+
+#: 物料账本前进的失效通知（不在 V1 合同里，保持原名）
+MATERIALS_CHANGED_EVENT = "materials.changed"
+#: 游标无法续传：与 ``/api/v1/events`` 的重置帧同名同形（``id`` 为新水位，``data.reason`` 为原因）
+STREAM_RESET_EVENT = "stream.reset"
+
+_MATERIALS_CURSOR = re.compile(r"(\d{1,19})(?::([0-9A-Za-z_-]{1,64}))?")
+
+
+def format_materials_cursor(sequence: int, epoch: Optional[str]) -> str:
+    """物料 SSE id：``<sequence>:<epoch>``；账本为空、还没有纪元时只有 ``<sequence>``。"""
+
+    return f"{sequence}:{epoch}" if epoch else str(sequence)
+
+
+def parse_materials_cursor(value: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+    """解析 Last-Event-ID，返回 ``(sequence, epoch)``；缺省或空白返回 ``(None, None)``。
+
+    接受 ``<sequence>:<epoch>`` 与旧格式的纯数字 ``<sequence>``（epoch 为 None，不做纪元检查）；
+    其他形式抛 ``ValueError``。
+    """
+
+    text = (value or "").strip()
+    if not text:
+        return None, None
+    match = _MATERIALS_CURSOR.fullmatch(text)
+    if match is None:
+        raise ValueError(f"invalid materials cursor: {text!r}")
+    return int(match.group(1)), match.group(2)
 
 
 def _call(function, *args, **kwargs):
@@ -179,30 +212,52 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
     @router.get("/events")
     async def events(
         request: Request,
-        last_event_id: Optional[str] = Header(default=None, alias="Last-Event-ID"),
+        last_event_id: Optional[str] = Header(
+            default=None,
+            alias="Last-Event-ID",
+            description=(
+                "不填时只接收新通知；填上次收到的 id（`<sequence>:<epoch>`，或旧格式 `<sequence>`）"
+                "从其之后续传，无法续传时收到 stream.reset。"
+            ),
+        ),
     ) -> StreamingResponse:
         """物料变更 SSE 失效通知（与 workflow ``/api/v1/events`` 同范式）。
 
         以 inventory_ledger 的 sequence 为游标推送 ``materials.changed``；
         浏览器只把事件当失效信号并回 HTTP 重取，payload 不承载业务正文。
-        首连（无 Last-Event-ID）静默追平账本尾部，只推送此后的增量；
-        重连带 Last-Event-ID 时从该游标续传，补齐离线期间的变更。
-        """
-        replay = False
-        cursor = 0
-        if last_event_id is not None and last_event_id.strip():
-            try:
-                cursor = int(last_event_id.strip())
-                if cursor < 0:
-                    raise ValueError
-                replay = True
-            except ValueError:
-                raise HTTPException(status_code=422, detail="invalid Last-Event-ID")
 
-        if not replay:
-            # 必须在发出响应头/onopen 之前固定基线。否则浏览器已校准 HTTP 快照后，
-            # 首连再追平账本会吞掉这期间的创建/移动；用 MAX 查询也避免全量扫描历史。
-            cursor = service.latest_ledger_sequence()
+        - 首连（无 Last-Event-ID）在响应头之前固定账本尾部，先发一个只含 ``id`` 的水位帧，
+          只推送此后的增量；
+        - 重连带 Last-Event-ID 时从该游标续传，补齐离线期间的变更；
+        - 游标无法续传时发 ``stream.reset``（``id`` 为新水位，连接保持，客户端必须重读 HTTP）：
+          游标大于账本尾部为 ``cursor_ahead``；游标带的账本纪元与当前库不同（换了数据目录、
+          库被重置）为 ``epoch_changed``。
+
+        SSE id 是 ``<sequence>:<epoch>``（纪元见 ``MaterialsRepository.ledger_epoch``），账本为空时只有
+        ``<sequence>``。旧格式的纯数字游标照常接受，只做 ``cursor_ahead`` 检查；续传后发出的 id
+        都带纪元，浏览器的 EventSource 自动换成新格式。
+        """
+        reset_reason: Optional[str] = None
+        try:
+            cursor, cursor_epoch = parse_materials_cursor(last_event_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="invalid Last-Event-ID")
+
+        # 必须在发出响应头/onopen 之前固定基线与新水位。否则浏览器已校准 HTTP 快照后，
+        # 首连再追平账本会吞掉这期间的创建/移动。基线与纪元在共享账本轮询的线程上读，
+        # 不占默认线程池；之后的变化也由那条线程统一读出、分给所有连接，不按连接重复读。
+        watch = ledger_watch(service)
+        latest = await asyncio.wrap_future(watch.baseline())
+        epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
+        fresh = cursor is None
+        if cursor is None:
+            cursor = latest
+        elif cursor_epoch is not None and cursor_epoch != epoch:
+            reset_reason = "epoch_changed"
+        elif cursor > latest:
+            reset_reason = "cursor_ahead"
+        if reset_reason is not None:
+            cursor = latest
 
         def _format_event(row) -> str:
             data = json.dumps(
@@ -215,21 +270,58 @@ def create_materials_router(service: MaterialsService) -> APIRouter:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            return f"id: {row.sequence}\nevent: materials.changed\ndata: {data}\n\n"
+            return f"id: {format_materials_cursor(row.sequence, epoch)}\nevent: {MATERIALS_CHANGED_EVENT}\ndata: {data}\n\n"
+
+        def _format_reset(reason: str) -> str:
+            data = json.dumps({"reason": reason}, separators=(",", ":"))
+            return f"id: {format_materials_cursor(cursor, epoch)}\nevent: {STREAM_RESET_EVENT}\ndata: {data}\n\n"
 
         async def stream():
-            nonlocal cursor
-            yield "retry: 3000\n: connected\n\n"
-            # 停机开始就主动结束：浏览器按 retry 自动重连，uvicorn 不必超时取消
-            while not shutting_down() and not await request.is_disconnected():
-                rows = service.changes(after_sequence=cursor, limit=500)
-                for row in rows:
-                    cursor = row.sequence
-                    yield _format_event(row)
-                if not rows:
-                    yield ": keepalive\n\n"
-                if not await sleep_unless_shutting_down(1):
-                    return
+            nonlocal cursor, epoch
+            loop = asyncio.get_running_loop()
+            batches: list[LedgerBatch] = []
+            closed = False
+
+            def receive(batch: LedgerBatch) -> None:
+                # 共享轮询线程上调用：只把这一批交回事件循环
+                if not closed:
+                    loop.call_soon_threadsafe(batches.append, batch)
+
+            release = watch.subscribe(cursor, receive)
+            try:
+                yield "retry: 3000\n: connected\n\n"
+                if reset_reason is not None:
+                    yield _format_reset(reset_reason)
+                elif fresh:
+                    # 只设置浏览器续传水位，不触发业务失效；空闲连接断线后也能从这里续传或被重置。
+                    yield f"id: {format_materials_cursor(cursor, epoch)}\n\n"
+                # 停机开始就主动结束：浏览器按 retry 自动重连，uvicorn 不必超时取消
+                while not shutting_down() and not await request.is_disconnected():
+                    pending, batches[:] = list(batches), []
+                    sent = False
+                    for batch in pending:
+                        if batch.reset:
+                            # 库被重置（账本末尾变小）：给出新水位，客户端整体重读
+                            cursor = batch.upto
+                            epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
+                            yield _format_reset("cursor_ahead")
+                            sent = True
+                            continue
+                        rows = [row for row in batch.rows if row.sequence > cursor]
+                        if rows and epoch is None:
+                            # 连接时账本为空：第一条记录写入后纪元才确定
+                            epoch = await asyncio.wrap_future(watch.call(service.ledger_epoch))
+                        for row in rows:
+                            cursor = row.sequence
+                            yield _format_event(row)
+                            sent = True
+                    if not sent:
+                        yield ": keepalive\n\n"
+                    if not await sleep_unless_shutting_down(1):
+                        return
+            finally:
+                closed = True
+                release()
 
         return StreamingResponse(
             stream(),

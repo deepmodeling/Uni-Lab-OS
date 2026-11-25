@@ -536,7 +536,8 @@ def test_device_created_with_held_materials_subtree(authority):
                 "class": "Deck",
                 "template_name": "Deck",
                 "parent_uuid": owner_uuid,
-                "config": {},
+                # 设备子树只收 PLR 物料：config.type 是 PLR 类型名
+                "config": {"type": "Deck"},
                 "data": {},
                 "extra": {},
             }
@@ -917,7 +918,7 @@ def test_registry_site_template_whitelist_takes_effect_in_authority(authority):
         created = service.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
             client_ref="m", identity=MaterialIdentityWrite(
                 resource_id=f"{template_name}-{uuid4().hex[:6]}", name=template_name, resource_type="container",
-                class_name="Container", template_name=template_name),
+                class_name="Container", template_name=template_name, config={"type": "Container"}),
         )]))
         return created.data.root_material_uuid
 

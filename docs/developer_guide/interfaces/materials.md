@@ -56,6 +56,10 @@ Site 的 category 匹配由画布提示/拦截；权威仍校验身份、父子�
 2. `POST /trees`：payload 为 `MaterialTreeCreate`。适合驱动/图同步提交已经序列化的完整草稿。
    `nodes` 必须非空、仅一个根、父节点在前、`client_ref` 唯一。
    Site 初始占用用 `occupied_client_ref` 引用树内节点，不携带自行分配的 site_uuid。
+   可选的树级 `placement`（`MaterialPlacement`：`parent_material_uuid` + 可选 `site`，即父物料上的 Site uuid、
+   label 或数字索引）让根物料在建树的同一事务里落到父物料的库位上。落位规则与 move 相同（库位占用、模板类别、
+   入口预留、环检测、设备子树只收 PLR 物料），不满足时整棵树一起回滚。命令入口按完整 dump 比对 payload，
+   不落位也要显式带 `placement: null`。
 
 `MaterialNodeCreate.material_uuid` 默认不填，由权威分配；开机图等需保留外部身份的场景可显式填写，
 这表示**有条件创建**，不是覆盖已存在同 UUID 的记录。
@@ -200,7 +204,8 @@ transfer payload：source_device_id、target_device_id、items。
 
 move、transfer 与工作流搬运派发前的预检共用同一组放入检查：目标 Site 有活动的工站入站预留
 （`/api/v1/inventory/ingress-reservations`，`reserved` 未过期或 `in_transit`）时拒绝，冲突类别
-`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位。这是临时条件，
+`site_ingress_reserved`（6011），连预留的载体本身也只能经该预留的 receive 落位；唯一例外是 `in_transit` 的载体
+被直接放进自己预留的库位，等同接收（预留在同一事务里置为 `received`，工作流按所属物料选库位时用到）。这是临时条件，
 预留接收、取消或过期后同一请求可以重试。
 
 执行顺序：
@@ -252,7 +257,8 @@ delta 用 MaterialDelta 描述允许变化的片段；不能把任意 JSON patch
 
 本地 observer 对 assign/unassign 与状态变化形成快照/diff，然后通过权威写入；普通 Python 属性赋值本身不是远端写入确认。
 
-前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表。
+前端订阅 `/materials/events` 的 `materials.changed`，收到通知后 HTTP 拉实例/树/列表；
+收到 `stream.reset`（游标来自另一个库或超前于账本）时整体重读。
 创建完成后“API 有物料但地图没有”应依次检查：权威读结果、parent/Site 归属、SSE 通知、前端缓存、设备 load。
 具体重连与首次快照顺序见 [实时通信](realtime.md)，不要刷新页面或重复创建来修补丢失通知。
 

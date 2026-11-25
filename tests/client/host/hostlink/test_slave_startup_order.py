@@ -161,3 +161,98 @@ def test_slave_connects_then_aligns_then_assembles_devices_from_authority(
         host.stop()
         set_materials_gateway(None)
         service.close()
+
+
+class _AssigningBench:
+    """post_init 里把台面挂到自身，再把自己持有的板换到台面库位（来源与目标都是自己）。"""
+
+    deck_uuid = ""
+
+    def __init__(self, **_kwargs: Any) -> None:
+        self.deck: Any = None
+        self.placed: Any = None
+
+    def post_init(self, node: Any) -> None:
+        from tests.plr_fixtures import plate
+        from unilabos.resources import materials
+
+        [self.deck] = materials.assign(node, self.deck_uuid)["resources"]
+        held = materials.create(plate("bench_plate"), node=node)
+        [self.placed] = materials.assign(node, held, parent=self.deck_uuid, slot="T1")["resources"]
+
+
+def _resolve_bench(device_id: str, device_config: ResourceDictInstance, *, backend_name=None):
+    assert backend_name == "hostlink"
+    apply_device_authority_state(device_config, {"available_sites": []}, REGISTRY_NAME)
+    return SimpleNamespace(
+        driver_class=_AssigningBench,
+        runtime_config={},
+        registry_name=REGISTRY_NAME,
+        display_name=device_id,
+        action_value_mappings={},
+        status_types={},
+        hardware_interface={},
+        resource_uuid=device_config.res_content.uuid,
+    )
+
+
+def test_a_device_assigns_from_its_post_init_on_a_hostlink_slave(tmp_path, monkeypatch) -> None:
+    """设备在 post_init 里 materials.assign：权威经 HostLink 回调这台还在初始化的设备做 unload / load。
+
+    Slave 的物料下行 handler 在装配设备之前就挂上，设备节点在 post_init 之前已在本地运行时里；
+    assign 阻塞在设备自己的 post_init 里也不会等到自己。
+    """
+
+    from tests.plr_fixtures import site_deck
+    from unilabos.resources import materials
+
+    service = MaterialsService(tmp_path / "host-materials.db")
+    gateway = LocalMaterialsClient(service)
+    set_materials_gateway(gateway)
+    monkeypatch.setattr(HostLinkConfig, "enable", True)
+    monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
+    monkeypatch.setattr(HostLinkConfig, "port", 0)
+    monkeypatch.setattr(HostLinkConfig, "host", "")
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_interval", 60.0)
+    monkeypatch.setattr(HostLinkConfig, "heartbeat_timeout", 120.0)
+    monkeypatch.setattr(HostLinkConfig, "connect_timeout", 2.0)
+    monkeypatch.setattr(HostLinkConfig, "request_timeout", 15.0)
+    monkeypatch.setattr(BasicConfig, "is_host_mode", True)
+    monkeypatch.setattr(BasicConfig, "slave_no_host", False)
+    monkeypatch.setattr(BasicConfig, "machine_name", "slave-post-init-assign")
+    monkeypatch.setattr(main_hostlink_run, "resolve_device_definition", _resolve_bench)
+    monkeypatch.setattr(device_site, "registry_device_site_templates", lambda: {REGISTRY_NAME: []})
+    deck_uuid = str(uuid4())
+    materials.ensure(site_deck(deck_uuid, "Bench_Deck", ("T1", "T2")), gateway=gateway)
+    _AssigningBench.deck_uuid = deck_uuid
+
+    host = HostLinkBackend(HostLinkLocalRuntime(), is_slave=False)
+    slave = None
+    try:
+        host.start()
+        assert host.server is not None
+        HostLinkConfig.host = "127.0.0.1"
+        HostLinkConfig.port = host.server.port
+        BasicConfig.is_host_mode = False
+
+        device_uuid = str(uuid4())
+        graph = _slave_graph(device_uuid, str(uuid4()))
+        graph.root_nodes[0].children.clear()
+        slave = HostLinkBackend(HostLinkLocalRuntime(), is_slave=True)
+        slave.start(populate=main_hostlink_run.startup_populate(graph, graph, is_slave=True))
+
+        node = slave.local.devices["slave-heater"]
+        driver = node.driver
+        tracker = node.resource_tracker
+        assert tracker.uuid_to_resources[deck_uuid] is driver.deck
+        assert driver.placed.parent is driver.deck
+        assert service.get_material(deck_uuid).material.parent_material_uuid == device_uuid
+        t1 = next(site for site in service.get_material(deck_uuid).sites if site.label == "T1")
+        assert t1.occupied_material_uuid == driver.placed.unilabos_uuid
+        assert [res.name for res in tracker.resources] == ["Bench_Deck"]
+    finally:
+        if slave is not None:
+            slave.stop()
+        host.stop()
+        set_materials_gateway(None)
+        service.close()

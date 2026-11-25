@@ -8,7 +8,7 @@
 - ``get``：按 uuid 或 resource id 取物料树（未命中抛错）；
 - ``search``：按人读标签 ``display_name`` 精确搜索物料树（未命中返回 []）；
 - ``resolve``：把单个 ResourceSlot 原始入参解析成带 uuid 的 PLR 实例；
-- ``assign``：把权威已创建的物料挂载到设备的目标父物料下（append 门面）；
+- ``assign``：把权威已创建的物料放到本设备的父物料 / 库位上（经 transfer 的物料移动）；
 - ``update``：把带权威 uuid 的（部分）物料树 diff/apply 回 authority；
 - ``remove``：按 uuid 或 resource id 删除权威物料树；
 - ``snapshot``：把整棵已登记 PLR 根树原子 diff/apply 到 authority；
@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from uuid import UUID, uuid4
@@ -29,7 +30,7 @@ from uuid import UUID, uuid4
 from pylabrobot.resources import ItemizedResource
 from pylabrobot.resources import Resource as PLRResource
 
-from unilabos.resources.resource_tracker import ResourceTreeInstance, ResourceTreeSet
+from unilabos.resources.resource_tracker import ResourceTreeInstance, ResourceTreeSet, set_plr_template_name
 from unilabos.resources.adapters.plr_materials import (
     CreatedPLRMaterials,
     MaterialGateway,
@@ -42,11 +43,12 @@ from unilabos.protocol.materials import (
     ACTOR_DEVICE,
     ACTOR_EDGE,
     MaterialMove,
+    MaterialPlacement,
     MaterialTransfer,
     MaterialTransferItem,
     MaterialTreeRead,
 )
-from unilabos.resources.objects.resource import EXTRA_BOUND_DEVICE
+from unilabos.resources.objects.resource import EXTRA_BOUND_DEVICE, EXTRA_RESOURCE_CLASS
 from unilabos.utils.log import trace
 
 
@@ -663,14 +665,212 @@ def instantiate_registry_resource(class_name: str, name: str) -> PLRResource:
         raise ValueError(f"registry 资源类 {class_name!r} 无法实例化（{module}）：{exc}") from exc
     if not isinstance(draft, PLRResource):
         raise ValueError(f"registry 资源类不可实例化: {class_name!r}")
+    # 物料记下初始化它用的注册表名：模板名就是它，入库后 class 也是它（见
+    # unilabos.resources.material_class）。资源类自己登记了模板名的（按库位快照建的台面等）不覆盖。
+    extra = getattr(draft, "unilabos_extra", None)
+    if not (isinstance(extra, dict) and extra.get(EXTRA_RESOURCE_CLASS)):
+        set_plr_template_name(draft, class_name)
     return draft
+
+
+def _parent_material_uuid(node: Any | None, parent: Any | None) -> str:
+    """落位的父物料归一成权威 uuid。
+
+    ``parent`` 省略或就是设备节点本身时表示「设备自身」（设备物料，需要 ``node``）；
+    否则接受 PLR 实例、资源 dict 或 uuid 字符串。
+    """
+
+    if parent is None or parent is node:
+        if node is None:
+            raise ValueError("落位需要 parent，或传入 node 表示放到设备自身")
+        device_uuid = str(getattr(node, "resource_uuid", "") or "").strip()
+        if not device_uuid:
+            raise ValueError(
+                f"设备 {getattr(node, 'device_id', node)!r} 在物料权威里没有设备物料，不能放到设备自身"
+            )
+        return device_uuid
+    return material_uuid(parent, "父")
+
+
+def _site_instance_uuid(site: Any) -> str | None:
+    """库位实例的 uuid（``ResourceSite.uuid`` / ``SiteRead.site_uuid``）；不是库位实例时返回 None。"""
+
+    for attribute in ("site_uuid", "uuid"):
+        value = getattr(site, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _site_uuid(site: Any, parent_uuid: str, gateway: MaterialGateway) -> str:
+    """库位参数归一成权威 Site uuid。
+
+    库位实例（``ResourceSite.uuid`` / ``SiteRead.site_uuid``）直接取 uuid；字符串或数字按父物料的
+    库位解析（uuid、label 或 ``site_index``，必须唯一命中）。
+    """
+
+    direct = _site_instance_uuid(site)
+    if direct is not None:
+        return direct
+    selector = str(site).strip()
+    if not selector:
+        raise ValueError("库位不能为空")
+    sites = list(gateway.get_material(parent_uuid).sites)
+    matches = [
+        item
+        for item in sites
+        if selector in {str(item.site_uuid), str(item.label), str(item.site_index)}
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"父物料 {parent_uuid} 上的库位 {site!r} "
+            f"{'不存在' if not matches else '不唯一'}；可用: {[item.label for item in sites]}"
+        )
+    return str(matches[0].site_uuid)
+
+
+def _node_gateway(node: Any) -> MaterialGateway:
+    """设备节点接入的物料权威（与它的快照、load / unload 同一个）；节点没接入时按进程角色解析。"""
+
+    service = node.__dict__.get("_device_resource_service")
+    gateway = getattr(service, "gateway", None)
+    return gateway() if callable(gateway) else resolve_materials_gateway()
+
+
+def _require_off_node_executor(node: Any, what: str) -> None:
+    """阻塞等待本地挂载的调用不能跑在设备节点自己的事件循环上：挂载要排到那个循环里，会等到自己。"""
+
+    loop = getattr(node, "_loop", None)
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if loop is not None and running is loop:
+        raise RuntimeError(
+            f"{what} 不能在设备 {getattr(node, 'device_id', node)} 的执行器线程里调用（会等到自己）："
+            "请在驱动的普通线程里调用"
+        )
+
+
+def _site_position(
+    gateway: MaterialGateway, parent_uuid: str, site_uuid: str | None
+) -> tuple[float, float, float]:
+    """落位时根物料没有位置要入库的位置：给了库位是那个库位的位置，没给是原点。"""
+
+    if site_uuid is None:
+        return (0.0, 0.0, 0.0)
+    for item in gateway.get_material(parent_uuid).sites:
+        if str(item.site_uuid) == site_uuid:
+            position = (item.pose or {}).get("position") or {}
+            return tuple(float(position.get(axis) or 0.0) for axis in ("x", "y", "z"))  # type: ignore[return-value]
+    return (0.0, 0.0, 0.0)
+
+
+def _undo_placed_create(
+    node: Any,
+    gateway: MaterialGateway,
+    mutation: InventoryMutation,
+    created: CreatedPLRMaterials,
+    timeout: float,
+) -> None:
+    """权威已建好并落位、本地挂载却失败（超时、库位对不上……）：两边都回到 create 之前。
+
+    本地若已挂上就按 transfer 的 unload 卸掉（tracker 不留孤儿），权威在同一条命令下删掉刚建的树、
+    释放库位。撤销本身失败只写日志，原来的错误照常抛给调用方。
+    """
+
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+    from unilabos.protocol.materials import MaterialDelete
+    from unilabos.utils.log import logger
+
+    root_uuid = str(created.tree.trees[0].root_node.res_content.uuid)
+    try:
+        run_node_coroutine(
+            node,
+            node.material_sync({
+                "transfer_uuid": f"undo-create:{mutation.command_uuid}",
+                "device_id": str(node.device_id),
+                "action": "unload",
+                "material_uuids": [root_uuid],
+            }),
+            timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 - 本地卸不掉只能记下，权威照样撤销
+        logger.error(f"[materials.create] 本地挂载失败后卸下物料 {root_uuid} 也失败：{exc}")
+    try:
+        gateway.delete_material(
+            InventoryMutation(
+                command_uuid=mutation.command_uuid,
+                effect_key="undo_create_material_tree",
+                operation="delete_material",
+                actor_type=mutation.actor_type,
+                actor_uuid=mutation.actor_uuid,
+            ),
+            MaterialDelete(material_uuid=root_uuid, recursive=True),
+        )
+    except Exception as exc:  # noqa: BLE001 - 原错误更重要
+        logger.error(f"[materials.create] 本地挂载失败后撤销权威里的物料 {root_uuid} 也失败：{exc}")
+
+
+def _load_on_node(
+    node: Any,
+    material_uuids: Sequence[str],
+    site_uuids: Sequence[str | None],
+    transfer_uuid: str,
+    timeout: float = 30.0,
+) -> None:
+    """按 transfer 的 load 投影把权威里的物料子树挂到本设备：在设备自己的执行器上跑，阻塞等它完成。
+
+    与跨设备转运落到目标设备同一条投影（``node.material_sync``），本地不另起一条挂载逻辑；
+    投影期间不回写快照。``transfer_uuid`` 是设备侧的幂等键。
+    """
+
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+    run_node_coroutine(
+        node,
+        node.material_sync(
+            {
+                "transfer_uuid": transfer_uuid,
+                "device_id": str(node.device_id),
+                "action": "load",
+                "material_uuids": list(material_uuids),
+                "destination_site_uuids": list(site_uuids),
+            }
+        ),
+        timeout,
+    )
+
+
+def _attach_placed(
+    node: Any,
+    created: CreatedPLRMaterials,
+    site_uuid: str | None,
+    command_uuid: str,
+    timeout: float,
+) -> CreatedPLRMaterials:
+    """权威已在同一事务里建好并落位：本地按 transfer 的 load 投影挂上，返回 tracker 里的实例。
+
+    返回值里的实例就是设备 tracker 登记的那一份（uuid → 实例唯一）。
+    """
+
+    root_uuid = str(created.tree.trees[0].root_node.res_content.uuid)
+    _load_on_node(node, [root_uuid], [site_uuid], f"create:{command_uuid}", timeout)
+    instance = node.resource_tracker.uuid_to_resources.get(root_uuid)
+    if instance is None:
+        raise RuntimeError(f"物料 {root_uuid} 已在权威创建并落位，但本地挂载后 tracker 里没有它")
+    return dataclasses.replace(created, resources=[instance])
 
 
 def create(
     plr_resource: Any | Sequence[Any] | str,
     *,
     name: str = "",
+    display_name: str = "",
     node: Any | None = None,
+    parent: Any | None = None,
+    site: Any | None = None,
+    timeout: float = 30.0,
     unwrap_single: bool = True,
     mutation: InventoryMutation | None = None,
     gateway: MaterialGateway | None = None,
@@ -695,6 +895,18 @@ def create(
     :class:`CreatedPLRMaterials`。
 
     一次 create 只允许一个根；根的所有 children 仍属于同一棵创建树。
+
+    ``display_name`` 是根物料的人读标签（前端展示名，省略时取 PLR 名）。PLR 名是物料的
+    业务键（根物料的 ``resource_id``，要全局唯一），展示名可以重名、可以是中文。
+
+    落位（原子）：给 ``parent`` / ``site`` 时，权威在建树的同一事务里把根物料挂到父物料、
+    占用库位，任何一步不满足（库位已占、类别不符、设备子树只收 PLR 物料……）整体回滚，
+    不会留下没落位的根物料。
+
+    - ``parent``：父物料（PLR 实例或 uuid）；省略或传设备节点本身表示设备自身；
+    - ``site``：库位实例（``post_init`` 给的 ``ResourceSite``）、Site uuid、label 或数字索引；
+    - 落位成功后本地按 transfer 的 load 投影挂上（需要 ``node``，且不能在节点执行器线程里
+      调用，同 :func:`assign`），返回 tracker 里的那一份实例；``timeout`` 约束本地挂载。
 
     变更来源（账本 ``actor_type`` / ``actor_uuid``，前端据此渲染来源 tag）：
     未显式给出时，带 ``node=`` 视为设备创建（``device`` + 设备 id），否则
@@ -736,8 +948,30 @@ def create(
             actor_uuid=resolved_actor_uuid or None,
         )
     request = mutation
+    resolved_gateway = gateway or resolve_materials_gateway()
+    placement: MaterialPlacement | None = None
+    site_uuid: str | None = None
+    root_position: tuple[float, float, float] | None = None
+    if parent is not None or site is not None:
+        if node is None:
+            raise ValueError("带落位的 create 需要 node：落位后要在设备本地挂上同一份实例")
+        parent_uuid = _parent_material_uuid(node, parent)
+        # 提交之前先核对本地挂载的前提，不满足时什么都不写
+        _require_off_node_executor(node, "带落位的 materials.create")
+        if parent_uuid != str(getattr(node, "resource_uuid", "") or "") and (
+            parent_uuid not in node.resource_tracker.uuid_to_resources
+        ):
+            raise ValueError(
+                f"父物料 {parent_uuid} 不在设备 {node.device_id} 本地：只能落到本设备持有的物料上"
+            )
+        if site is not None:
+            site_uuid = _site_uuid(site, parent_uuid, resolved_gateway)
+        # 权威里的位置与本地挂载同一条规则：给了库位是库位的位置，没给是原点；父物料自己排布库位时
+        # 本地挂上后按它算出的位置补报
+        root_position = _site_position(resolved_gateway, parent_uuid, site_uuid)
+        placement = MaterialPlacement(parent_material_uuid=parent_uuid, site=site_uuid)
     created = create_plr_materials(
-        gateway or resolve_materials_gateway(),
+        resolved_gateway,
         request,
         resources,
         root_extra=(
@@ -745,10 +979,20 @@ def create(
             if node is not None
             else None
         ),
+        placement=placement,
+        display_name=display_name,
+        root_position=root_position,
     )
     if node is not None:
-        for resource in created.resources:
-            node.resource_tracker.add_resource(resource)
+        if placement is None:
+            for resource in created.resources:
+                node.resource_tracker.add_resource(resource)
+        else:
+            try:
+                created = _attach_placed(node, created, site_uuid, request.command_uuid, timeout)
+            except BaseException:
+                _undo_placed_create(node, resolved_gateway, request, created, timeout)
+                raise
     if not unwrap_single:
         return created
     if len(created.resources) != 1:
@@ -765,52 +1009,109 @@ def assign(
     *,
     parent: Any | None = None,
     slot: Any | None = None,
-    site: str | None = None,
-    location: Optional[Dict[str, float]] = None,
-    timeout: float = 30.0,
+    site: Any | None = None,
+    gateway: MaterialGateway | None = None,
 ) -> Dict[str, Any]:
-    """把权威已创建的物料挂载到本设备的目标父物料下（append 门面）。
+    """把权威已创建的物料放到本设备的目标父物料 / 库位上：一次经物料服务的物料移动（transfer）。
 
-    与 Host 下发 RESOURCE_APPEND 完全同语义：内部即
-    ``node.append_resource``（按 uuid 拉取/复用实例 -> 物理 assign ->
-    权威 move 落父子与 Site 占用 -> 快照回写），在节点自己的执行器上
-    执行并阻塞等待完成。
+    与 :func:`transfer` 同一条路（``MaterialsService.transfer_material``）：权威校验并提交移动 →
+    原来持有它的设备 unload → 本设备 load（按权威重建这棵子树挂上）。同设备换位与跨设备一样走这条路；
+    权威拒绝（库位被占、类别不符、设备只收 PLR 物料、PLR 键重名……）时本地什么都不改。
 
     - ``resources``：PLR 实例（带权威 uuid）或 uuid 字符串，单个或列表；
-    - ``parent``：目标父物料（实例、uuid 或 PLR 键）；None 表示挂到设备自身
-      （只登记进 tracker，不做 assign）；
-    - ``slot``：label 或 0-based 数字字符串（如 ``"A1"`` / ``"0"``）；
-    - ``site``：权威 ``ResourceSite`` uuid（与 slot 二选一，机器路径直传）；
-    - ``timeout``：只约束提交点之前（等锁、从权威拉取物料），超时取消挂载、什么都不改；
-      本地挂上之后，权威 move 与快照回报一定走完再返回（大台面的整树快照要几十秒），
-      不会在提交之后被取消（见 ``DeviceNode.append_resource_blocking``）。
+    - ``parent``：目标父物料（实例、uuid 或本设备持有的 PLR 键）；省略或传设备节点本身表示设备自身；
+    - ``site``：库位实例（``post_init`` 给的 ``ResourceSite``）、Site uuid、label 或库位自己的 index；
+    - ``slot``：同 ``site``（label 或 index），两者都给时必须指向同一个库位；
+    - 一个库位只放一个物料：给了库位时一次只能放一个物料；不给库位时只落父子关系，位置是原点
+      （父物料自己排布库位时按它算）。
 
-    本函数为阻塞式，供驱动线程 / 脚本调用；已在节点执行器内的异步代码
-    请直接 ``await node.append_resource(payload)``。
+    原持有设备按权威的归属推断（最近的设备祖先，或根物料登记的所属设备）；不属于任何设备的物料
+    没有要卸下的地方。返回 ``resources``：本设备 tracker 里重建后的实例（与传入的不是同一个对象）。
+    阻塞式，不能在本设备的执行器线程里调用（load 要排到那个执行器上）。
+
+    权威答「已在目标位置」时它已经在要放的地方：本设备持有它就什么都不做；没有它（上一次移动在
+    权威里提交了、设备侧投影没做完）就按同一条 load 从权威重建挂上并成功返回，所以重试一次失败的
+    assign 会收敛。其它错误照常抛出。
     """
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
     resource_uuids = [material_uuid(item) for item in items]
-    if parent is None:
-        bind_parent_id = str(node.device_id)
+    gw = gateway or _node_gateway(node)
+    _require_off_node_executor(node, "materials.assign")
+    if parent is None or parent is node:
+        target_uuid = _parent_material_uuid(node, None)
+    elif isinstance(parent, str) and not _looks_like_uuid(parent.strip()):
+        target_uuid = material_uuid(node.resource_tracker.figure_resource({"name": parent.strip()}), "父")
     else:
-        bind_parent_id = str(
-            getattr(parent, "unilabos_uuid", None) or getattr(parent, "name", parent)
-        )
-    other: Dict[str, Any] = {}
-    if slot is not None and str(slot).strip() != "":
-        other["slot"] = str(slot)
-    if site:
-        other["site"] = str(site)
-    payload: Dict[str, Any] = {
-        "device_id": str(node.device_id),
-        "resource_uuid": resource_uuids,
-        "bind_parent_id": bind_parent_id,
-        "bind_location": dict(location or {"x": 0.0, "y": 0.0, "z": 0.0}),
+        target_uuid = material_uuid(parent, "父")
+    selectors = {
+        str(_site_instance_uuid(value) or value).strip()
+        for value in (site, slot)
+        if value is not None and str(value).strip() != ""
     }
-    if other:
-        payload["other_calling_param"] = other
-    return node.append_resource_blocking(payload, timeout)
+    if len(selectors) > 1:
+        raise ValueError(f"site={site!r} 与 slot={slot!r} 指向不同库位")
+    selector = next(iter(selectors), None)
+    if selector is not None and len(resource_uuids) != 1:
+        raise ValueError(
+            f"一个库位只能放一个物料：指定库位时一次只能挂一个物料，实际 {len(resource_uuids)} 个"
+        )
+    target_device = str(node.device_id).split("/")[-1]
+    by_source: Dict[str, List[str]] = {}
+    for item_uuid in resource_uuids:
+        source = find_owner_device(item_uuid, gateway=gw) or target_device
+        by_source.setdefault(source, []).append(item_uuid)
+    from unilabos.client.host.runtime.resource import _is_no_change_error
+
+    tracker = node.resource_tracker
+    moves: List[Dict[str, Any]] = []
+
+    def move(source: str, group: List[str]) -> None:
+        command_uuid = str(uuid4())
+        try:
+            result = gw.transfer_material(
+                InventoryMutation(
+                    command_uuid=command_uuid,
+                    effect_key=f"transfer_material:{command_uuid}",
+                    operation="transfer_material",
+                    actor_type=ACTOR_DEVICE,
+                    actor_uuid=str(getattr(node, "resource_uuid", "") or "") or target_device,
+                ),
+                MaterialTransfer(
+                    source_device_id=source,
+                    target_device_id=target_device,
+                    items=[
+                        MaterialTransferItem(
+                            material_uuid=item_uuid, target_material_uuid=target_uuid, target_site=selector
+                        )
+                        for item_uuid in group
+                    ],
+                ),
+            )
+        except Exception as exc:
+            if not _is_no_change_error(exc):
+                raise
+            if len(group) > 1:
+                # 一条命令里只要有一个物料已在目标位置，权威就整条答「没有变化」：逐个再移，其余的照常移动
+                for item_uuid in group:
+                    move(source, [item_uuid])
+                return
+            if group[0] not in tracker.uuid_to_resources:
+                # 权威里已在目标位置、本设备却没有它：从权威重建挂上（本设备持有它时什么都不做）
+                site_uuid = _site_uuid(selector, target_uuid, gw) if selector is not None else None
+                _load_on_node(node, group, [site_uuid], f"assign:{command_uuid}")
+            return
+        moves.extend(value.model_dump(mode="json", exclude_none=False) for value in result.data.materials)
+
+    for source, group in by_source.items():
+        move(source, group)
+    return {
+        "success": True,
+        "material_uuids": resource_uuids,
+        "target_material_uuid": target_uuid,
+        "resources": [tracker.uuid_to_resources[item_uuid] for item_uuid in resource_uuids],
+        "moves": moves,
+    }
 
 
 async def snapshot(

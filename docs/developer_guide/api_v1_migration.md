@@ -55,8 +55,9 @@
   `starting` / `failed`）、`capabilities`、`phase`、`workflowRuntime`、可选 `observability`；dev 的探针摘要
   `scheduler`（`local` / `remote`）、`execution`、`reasons` 作为扩展字段保留，dev 原来的 `not_ready` 状态改为 V1 的
   `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端归属改名 `scheduler_mode`，
-  `execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但当前 backend 跑不了而没有启动的设备
-  （`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），分进程时经控制面读 Host。
+  `execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但没有启动的设备：当前 backend 跑不了的
+  （`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），以及持有的物料建不成 PLR 实例而
+  进入维护模式的（另有 `maintenance: true` / `material_uuid` / `material_type`），分进程时经控制面读 Host。
 - V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、
   `/v1/logs/{component}`）路径按 V1 不带 `/api` 前缀，响应是信封：成功 `data` 为快照 / 操作文档 / 日志尾部（提交操作
   HTTP 202），失败 HTTP 200 + 业务码，V1 的符号码（`operation_not_found`、`operation_conflict`、`revision_conflict`、
@@ -148,8 +149,17 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
   （`workflow.task|node_run|node_job|manual_confirmation|resource.changed`）作为 `data.kind`
   （`task` / `node_run` / `node_job` / `manual_confirmation` / `resource`）放进 V1 事件，不再单独发事件名；
   原载荷字段保留。换名在 API 层（`api/runtime/events.py:to_v1_event`）做，`frontend_event` 表仍存 dev 名。
-  `runtime.logs.changed`（无 id 的日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
-  V1 合同里，暂保持原名。CLI `workflow watch` 同步修改。
+  `runtime.logs.changed`（日志通知）与物料的 `/api/v1/materials/events`（`materials.changed`）不在
+  V1 合同里，暂保持原名。物料失效另以 V1 名 `material.changed`（`data.sequence` 为物料账本末尾，
+  `data.material_uuids` 列出这段账本里变了的物料，Site 的变化归到所属物料、拓扑边归到两端；空列表表示没有物料变化，
+  涉及模板、账本重置或超过 500 个物料时省略这个键，表示整体重读）随 `/api/v1/events` 推送，前端每个工站只维持这一条事件流。
+  **单一序列**：物料与日志通知由权威进程合并、限速（各自每秒至多一行）后写进 `frontend_event`，与工作流事件同一个序列，
+  `/api/v1/events` 的每一帧都带整数 id，断线续传、`stream.reset` 与保留清理一视同仁（见
+  [实时协议](interfaces/realtime.md)）。uni-lab-fe 须知：`material.changed` 现在带 id；不带 `material_uuids` 的通知必须整体重读物料。
+  CLI `workflow watch` 的游标随任何带 id 的帧前进。
+- **监控流**：`/api/v1/monitor/events` 按 `frontend_event` 序号续传：重连带 `Last-Event-ID` 不再回放最近 40 条，
+  过期 / 超前游标发 `stream.reset`，按页扫描、游标只推进到实际扫过的最大序号，每帧都带 id。
+- **MCP**：`GET /mcp` 回 405（不开 Streamable HTTP 的独立 SSE 流）；`POST /mcp` 的 JSON 响应不变。
 
 ## 库存与工作区（p7-c 落地）
 
@@ -164,7 +174,11 @@ dev 内部异常到业务码的映射集中在 `envelope.py`，不在各路由�
 - 工站入站预留（`/inventory/ingress-reservations`）保护它的库位：`reserved`（未过期）或 `in_transit` 期间，
   人工移动（`move_material` 命令、V1 `site_placement`）、transfer 和工作流搬运派发前的预检都以
   `MaterialConflictError(conflict="site_ingress_reserved")` 拒绝（HTTP 6011，库存命令 `error_code`
-  `conflict:site_ingress_reserved`），载体本身也只能经 `receive` 落位；同一载体同时至多一个活动预留（再预留 3003）。
+  `conflict:site_ingress_reserved`），载体本身也只能经 `receive` 落位——例外是 `in_transit` 的载体被直接放进自己预留的库位，
+  等同接收（同一事务里预留置为 `received`）；同一载体同时至多一个活动预留（再预留 3003）。预留可以给
+  `owner_material_uuid` 代替 `candidate_site_uuids`：候选是该物料下接受载体的库位（模板白名单与允许的资源类别，按库位序号），
+  一个都不接受 6008，都被占着 6007；工作流按所属物料选库位用这种写法，任务结束经 `POST .../ingress-reservations/finish-task`
+  收尾（dev 扩展）。
   `site_ingress_reserved` 是临时资源条件：预留接收、取消或过期后自然解除，调度侧应等待而不是判任务失败
   （常量 `services.materials.SITE_INGRESS_RESERVED`）。与 V1 的差别：只锁库位，不锁库位所属设备与载体设备上的
   普通作业；设备快照（`apply_snapshot`）是现场事实，不受预留拦截。

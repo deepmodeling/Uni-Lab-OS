@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -33,7 +34,8 @@ from unilabos.server.database.tables.materials import (
 from unilabos.protocol.base import canonical_hash
 from unilabos.protocol.materials import AggregatePrecondition, AggregateVersion, InventoryChange, InventoryMutation, MutationResult
 from unilabos.protocol.materials import (
-    ACTOR_BACKEND,
+    ACTOR_GRAPH,
+    ACTOR_HUMAN,
     ChemicalSummary,
     InventoryAllocation,
     InventoryLotCorrection,
@@ -54,6 +56,7 @@ from unilabos.protocol.materials import (
     MaterialDeviceSync,
     MaterialIdentityRead,
     MaterialMove,
+    MaterialPlacement,
     MaterialNodeCreate,
     MaterialPatch,
     MaterialDelta,
@@ -80,6 +83,7 @@ from unilabos.resources.objects.naming import (
     plr_key,
     rekey_bare_label_items,
 )
+from unilabos.resources.material_class import registry_resource_module, resolve_material_class
 from unilabos.resources.objects.site import site_template_whitelist
 from unilabos.server.services.materials.snapshot import (
     compare_material_snapshot,
@@ -1385,6 +1389,16 @@ class MaterialsService(MaterialsRepository):
 
         return material_sanity_facts(self, material_uuids, reservation_uuid=reservation_uuid)
 
+    def site_admission_facts(
+        self, *, site_uuids: Sequence[str] = (), owners: Sequence[Mapping[str, Any]] = (),
+    ) -> dict[str, Any]:
+        """任务准入时的只读库位事实（按库位绑定物料 / 按所属物料选库位，不写库、不判定），见
+        ``materials/site_admission.py``。"""
+
+        from .site_admission import site_admission_facts
+
+        return site_admission_facts(self, site_uuids=site_uuids, owners=owners)
+
     def _candidate_inventory_lots(
         self,
         requirement: InventoryRequirement,
@@ -2143,6 +2157,45 @@ class MaterialsService(MaterialsRepository):
             )
         ]
 
+    def _ledger_link(
+        self,
+        record: MaterialLinkRecord,
+        *,
+        operation: str,
+        previous_version: int,
+        version: int,
+        actor_type: str,
+        timestamp: int,
+    ) -> int:
+        """拓扑边的变化也进账本（``aggregate_type="link"``）：物料通知随账本前进，不再靠轮询。
+
+        delta 带两端物料，``material.changed`` 据此列出要重读的物料。
+        """
+
+        return self.append_ledger(
+            InventoryLedgerRecord(
+                event_uuid=str(uuid4()),
+                aggregate_type="link",
+                aggregate_uuid=record.link_uuid,
+                operation=operation,
+                previous_version=previous_version,
+                aggregate_version=version,
+                state_hash=canonical_hash(
+                    {"deleted": True} if operation == "delete"
+                    else {key: value for key, value in self._link_read(record).items()
+                          if key not in ("created_at_ms", "updated_at_ms")}
+                ),
+                delta_json={
+                    "source_material_uuid": record.source_material_uuid,
+                    "target_material_uuid": record.target_material_uuid,
+                    "link_type": record.link_type,
+                },
+                actor_type=actor_type,
+                occurred_at_ms=timestamp,
+                available_at_ms=timestamp,
+            )
+        )
+
     def _apply_link(
         self,
         *,
@@ -2153,8 +2206,9 @@ class MaterialsService(MaterialsRepository):
         target_handle: str,
         extra: Mapping[str, Any],
         timestamp: int,
+        actor_type: str,
     ) -> tuple[str, MaterialLinkRecord]:
-        """写事务内 upsert 一条边；uuid5 身份稳定，内容一致则不动版本。"""
+        """写事务内 upsert 一条边；uuid5 身份稳定，内容一致则不动版本，有变化记一条账本。"""
 
         link_uuid = material_link_uuid(
             source_material_uuid,
@@ -2165,6 +2219,13 @@ class MaterialsService(MaterialsRepository):
         )
         existing = self.get_link(link_uuid)
         if existing is None:
+            # 同一条边删掉后再建：版本接着账本里上一次的往下数（账本按 (类型, uuid, 版本) 唯一）
+            row = self.connection.execute(
+                "SELECT MAX(aggregate_version) FROM inventory_ledger "
+                "WHERE aggregate_type = 'link' AND aggregate_uuid = ?",
+                (link_uuid,),
+            ).fetchone()
+            previous = int(row[0] or 0)
             record = MaterialLinkRecord(
                 link_uuid=link_uuid,
                 source_material_uuid=source_material_uuid,
@@ -2175,9 +2236,11 @@ class MaterialsService(MaterialsRepository):
                 extra_json=dict(extra),
                 created_at_ms=timestamp,
                 updated_at_ms=timestamp,
-                version=1,
+                version=previous + 1,
             )
             self.insert_link(record)
+            self._ledger_link(record, operation="create", previous_version=previous, version=record.version,
+                              actor_type=actor_type, timestamp=timestamp)
             return "created", record
         if existing.extra_json == dict(extra):
             return "unchanged", existing
@@ -2189,6 +2252,8 @@ class MaterialsService(MaterialsRepository):
             }
         )
         self.update_link(record)
+        self._ledger_link(record, operation="update", previous_version=existing.version, version=record.version,
+                          actor_type=actor_type, timestamp=timestamp)
         return "updated", record
 
     def upsert_link(
@@ -2200,6 +2265,7 @@ class MaterialsService(MaterialsRepository):
         source_handle: str = "",
         target_handle: str = "",
         extra: Optional[Mapping[str, Any]] = None,
+        actor_type: str = ACTOR_HUMAN,
     ) -> dict[str, Any]:
         source_material_uuid = (source_material_uuid or "").strip()
         target_material_uuid = (target_material_uuid or "").strip()
@@ -2217,12 +2283,18 @@ class MaterialsService(MaterialsRepository):
                 target_handle=target_handle or "",
                 extra=extra or {},
                 timestamp=self._now_ms(),
+                actor_type=actor_type,
             )
         return self._link_read(record)
 
-    def delete_link_record(self, link_uuid: str) -> bool:
+    def delete_link_record(self, link_uuid: str, *, actor_type: str = ACTOR_HUMAN) -> bool:
         with self.write():
-            return self.delete_link(link_uuid)
+            existing = self.get_link(link_uuid)
+            if existing is None or not self.delete_link(link_uuid):
+                return False
+            self._ledger_link(existing, operation="delete", previous_version=existing.version,
+                              version=existing.version + 1, actor_type=actor_type, timestamp=self._now_ms())
+            return True
 
     def ensure_links(
         self, links: Sequence[Mapping[str, Any]]
@@ -2275,6 +2347,7 @@ class MaterialsService(MaterialsRepository):
                         if key not in _RESERVED
                     },
                     timestamp=timestamp,
+                    actor_type=ACTOR_GRAPH,
                 )
                 stats[outcome] += 1
         return stats
@@ -2284,7 +2357,8 @@ class MaterialsService(MaterialsRepository):
     @staticmethod
     def _validate_template_identity(
         template: ResourceTemplateRecord, identity: Any
-    ) -> None:
+    ) -> str:
+        """物料身份与模板对得上时返回入库用的 class（初始化它用的注册表名），否则抛错。"""
         if template.status != "active":
             raise MaterialValidationError(
                 f"template is not active: {template.template_uuid}"
@@ -2298,11 +2372,20 @@ class MaterialsService(MaterialsRepository):
         # 子节点按类名共用组件模板（如所有 ``Well`` 都是模板 ``Well``），同一个类的
         # 实例可以是 well / tube 等不同类型；模板上的 resource_type 只是按模板新建
         # 物料时的默认值，物料自己的 resource_type 才是它的类型（建树后不可变）。
-        if template.class_name and identity.class_name != template.class_name:
+        # class 是初始化物料用的注册表名，注册表模板的 class 就是模板名；两种过渡情形（模板还没
+        # 按注册表同步、带来物料的一方查不到注册表）按模板归一，见 resolve_material_class。
+        resolved = resolve_material_class(
+            template_name=template.name,
+            template_class=template.class_name,
+            identity_class=identity.class_name,
+            plr_type=(identity.config or {}).get("type"),
+        )
+        if resolved is None:
             raise MaterialValidationError(
                 f"class_name {identity.class_name!r} does not match template "
                 f"{template.name!r} class_name {template.class_name!r}"
             )
+        return resolved
 
     @staticmethod
     def _site_from_template(
@@ -2409,6 +2492,7 @@ class MaterialsService(MaterialsRepository):
                 node_ordinals[node.client_ref] = ordinal
             templates: dict[str, ResourceTemplateRecord] = {}
             resolved_templates: dict[str, ResourceTemplateRecord] = {}
+            resolved_classes: dict[str, str] = {}
             affected: list[AggregateVersion] = []
             sequences: list[int] = []
             node_sites: dict[str, list[SiteCreate]] = {}
@@ -2429,6 +2513,8 @@ class MaterialsService(MaterialsRepository):
                             display_name=node.identity.template_name,
                             resource_type=node.identity.resource_type,
                             class_name=node.identity.class_name,
+                            # 模板名是注册表资源名时记下实现模块（与注册表同步的模板一致）
+                            module_name=registry_resource_module(node.identity.template_name),
                             available_sites=[
                                 site.model_dump(
                                     mode="json",
@@ -2497,7 +2583,9 @@ class MaterialsService(MaterialsRepository):
                         )
                     templates[template_key] = template
                 resolved_templates[node.client_ref] = template
-                self._validate_template_identity(template, node.identity)
+                resolved_classes[node.client_ref] = self._validate_template_identity(
+                    template, node.identity
+                )
                 explicit_sites = list(node.sites)
                 if not explicit_sites:
                     explicit_sites = [
@@ -2560,7 +2648,7 @@ class MaterialsService(MaterialsRepository):
                     display_name=display_name,
                     description=identity.description,
                     resource_type=identity.resource_type,
-                    class_name=identity.class_name,
+                    class_name=resolved_classes[node.client_ref],
                     machine_name=identity.machine_name,
                     barcode=identity.barcode,
                     barcode_symbology=identity.barcode_symbology,
@@ -2706,11 +2794,52 @@ class MaterialsService(MaterialsRepository):
                 for node in value.nodes
                 if node.parent_client_ref is None
             )
+            if value.placement is not None:
+                placed = self._place_created_root(
+                    mutation, client_map[root_ref], value.placement, timestamp
+                )
+                affected.extend(placed.affected)
+                sequences.extend(placed.sequences)
+            # 落位之后按最终位置核对：新树所在的 PLR 树，以及新树里每台设备（开机图对齐时
+            # 设备连同下挂物料一起建）各自持有的那一棵
+            self._assert_plr_tree_rules([
+                client_map[root_ref],
+                *(
+                    client_map[node.client_ref]
+                    for node in value.nodes
+                    if node.identity.resource_type == "device"
+                ),
+            ])
             tree = self.get_tree(client_map[root_ref], client_ref_map=client_map)
             return _Applied(data=tree, affected=affected, sequences=sequences)
 
         return self._run_mutation(
             mutation, value, MutationResult[MaterialTreeRead], apply
+        )
+
+    def _place_created_root(
+        self,
+        mutation: InventoryMutation,
+        root_uuid: str,
+        placement: MaterialPlacement,
+        timestamp: int,
+    ) -> _Applied[MaterialAggregateRead]:
+        """建树事务里把新根物料落到 ``placement``：解析库位后按 move 的同一套规则提交。
+
+        库位选择器按父物料解析（uuid / label / 数字索引，与 transfer 一致）；落位失败时抛出，
+        由外层事务把整棵新树一起回滚。
+        """
+
+        parent = self._aggregate(placement.parent_material_uuid)
+        site = self._transfer_destination_site(parent, placement.site)
+        return self._apply_material_move(
+            mutation,
+            MaterialMove(
+                material_uuid=root_uuid,
+                destination_site_uuid=site.site_uuid if site is not None else None,
+                parent_material_uuid=None if site is not None else placement.parent_material_uuid,
+            ),
+            timestamp,
         )
 
     def _new_substance_records(
@@ -2860,6 +2989,8 @@ class MaterialsService(MaterialsRepository):
                 }
             )
             self.update_material(updated)
+            if "config_json" in changes:
+                self._assert_plr_tree_rules([material_uuid])
             aggregate = self.get_material(material_uuid)
             sequence = self._ledger(
                 mutation,
@@ -3049,8 +3180,8 @@ class MaterialsService(MaterialsRepository):
         ``holder.location`` 生成 Site 位姿）。权威里按同一结构识别，规则全部满足才算：
 
         - 所属物料不是设备，至少有一个 Site；
-        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下，
-          旧版 transfer 的坏树也是这样）和 ``exclude``（正在移动的物料），剩下的与
+        - 直接子物料里，除去占着它自己 Site 的（台面型 Site 的物料直接挂在台面下）
+          和 ``exclude``（正在移动的物料），剩下的与
           Site 一一对应：数量相同，按顺序第 k 个子物料对应第 k 个 Site；
         - 每个这样的子物料没有自己的 Site、最多一个子物料，且位置就是对应 Site 的位置。
 
@@ -3122,52 +3253,6 @@ class MaterialsService(MaterialsRepository):
             return holders[site.site_uuid]
         return site.owner_material_uuid
 
-    def repair_site_occupant_parents(self) -> list[str]:
-        """一次性修复旧版 transfer 写下的坏树，返回改挂的物料 uuid。
-
-        旧版 move / transfer 把载架型 Site 的占用物料直接挂在载架下（应挂在该 Site 的
-        holder 下）：设备反序列化时载架拒收物料，快照也改不了占用物料的父节点。权威
-        打开时（``ServerServices.open``）把这样的物料原位改挂到 holder 下，Site 占用
-        不变，账本记一次 ``move``。没有坏树时只做一次查询，可重复调用。
-        """
-
-        from unilabos.utils.log import logger
-
-        rows = self.connection.execute(
-            """
-            SELECT site.site_uuid, site.occupied_material_uuid
-            FROM site JOIN material ON material.material_uuid = site.occupied_material_uuid
-            WHERE site.deleted_at_ms IS NULL AND material.deleted_at_ms IS NULL
-                AND material.parent_material_uuid = site.owner_material_uuid
-            ORDER BY site.owner_material_uuid, site.ordinal
-            """
-        ).fetchall()
-        repaired: list[str] = []
-        for site_uuid, material_uuid in rows:
-            site = self.get_site(site_uuid)
-            if site is None:
-                continue
-            parent_uuid = self.site_parent_material_uuid(site, moving_material_uuid=material_uuid)
-            if parent_uuid == site.owner_material_uuid:
-                continue
-            command_uuid = str(uuid4())
-            self.move_material(
-                InventoryMutation(
-                    command_uuid=command_uuid,
-                    effect_key=f"repair_site_occupant_parent:{command_uuid}",
-                    operation="move_material",
-                    actor_type=ACTOR_BACKEND,
-                    actor_uuid="materials-repair",
-                ),
-                MaterialMove(material_uuid=material_uuid, destination_site_uuid=site_uuid),
-            )
-            logger.warning(
-                f"[物料权威] 修复旧版 transfer 的坏树：物料 {material_uuid} 从载架 "
-                f"{site.owner_material_uuid} 改挂到 Site {site.label} 的 holder {parent_uuid}"
-            )
-            repaired.append(material_uuid)
-        return repaired
-
     def assert_site_accepts(self, site: SiteRecord, *, template_uuid: str, template_name: str) -> None:
         """一件该模板的物料能否放进空库位：模板白名单（``site_template``，6008）与活动入口预留。"""
 
@@ -3190,6 +3275,110 @@ class MaterialsService(MaterialsRepository):
                 conflict="site_template",
             )
 
+    def _device_ancestor(self, material_uuid: Optional[str]) -> Optional[MaterialRecord]:
+        """``material_uuid`` 自身或沿权威 parent 链最近的设备物料；不在任何设备子树里返回 None。"""
+
+        cursor, seen = material_uuid, set()
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            record = MaterialsRepository.get_material(self, cursor)
+            if record is None:
+                return None
+            if record.resource_type == "device":
+                return record
+            cursor = record.parent_material_uuid
+        return None
+
+    def _plr_tree_root(self, material_uuid: str) -> Optional[MaterialRecord]:
+        """物料所在 PLR 树的根：最近的设备（物料自己是设备时就是它），不在设备下时是顶层根物料。"""
+
+        cursor, seen, found = material_uuid, set(), None
+        while cursor is not None and cursor not in seen:
+            seen.add(cursor)
+            record = MaterialsRepository.get_material(self, cursor)
+            if record is None:
+                break
+            found = record
+            if record.resource_type == "device":
+                break
+            cursor = record.parent_material_uuid
+        return found
+
+    def _assert_plr_tree_rules(self, material_uuids: Sequence[str]) -> None:
+        """写入改了父物料或 config 之后，按最终状态核对物料所在 PLR 树的两条规则。
+
+        PLR 树是一台设备持有的物料（不含设备本身，子设备各管自己的一棵），或一个不在设备下的根物料的
+        整棵树。设备启动时按 ``ResourceTreeSet`` 把它反序列化成 PLR 实例，所以：
+
+        - 设备持有的物料都要带格式合规的 ``config.type``：Python 标识符形式的 PLR 类名（如 ``Plate``）。
+          权威不判断这个类是否存在（外部驱动包的类权威看不到）；类不存在由 Host 在设备启动时发现，
+          那台设备进入维护模式。缺失、空白或不是类名一律拒绝（1000），而不是等设备重启时才起不来；
+        - 一棵 PLR 树里 PLR 键（``config.name``）不重复：PLR 自己要求整棵树里名字唯一，权威放行了重名，
+          Host 本地加载就会失败，两边从此对不上。物料 ``name`` 是 uuid，本来就唯一，这里查的是 PLR 键。
+
+        建树（含落位）、move / transfer / 实例化 / material.io、patch config（含 V1 PUT）与设备快照都经这里；
+        设备增量（apply_delta）只改内容 / 位姿 / 库位元数据，不改父物料和 config，不受影响。
+        """
+
+        roots: dict[str, MaterialRecord] = {}
+        for material_uuid in material_uuids:
+            root = self._plr_tree_root(material_uuid)
+            if root is not None:
+                roots.setdefault(root.material_uuid, root)
+        for root in roots.values():
+            self._check_plr_tree(root)
+
+    def _check_plr_tree(self, root: MaterialRecord) -> None:
+        rows = self.connection.execute(
+            """
+            WITH RECURSIVE tree(material_uuid, resource_type) AS (
+                SELECT material_uuid, resource_type FROM material WHERE material_uuid = ?
+                UNION ALL
+                SELECT m.material_uuid, m.resource_type FROM material m
+                JOIN tree t ON m.parent_material_uuid = t.material_uuid
+                WHERE m.deleted_at_ms IS NULL
+                    AND (t.resource_type <> 'device' OR t.material_uuid = ?)
+            )
+            SELECT m.material_uuid, m.resource_id, m.resource_type, m.config_json
+            FROM material m JOIN tree USING (material_uuid)
+            """,
+            (root.material_uuid, root.material_uuid),
+        ).fetchall()
+        held_by_device = root.resource_type == "device"
+        malformed: list[str] = []
+        keys: dict[str, list[str]] = {}
+        for material_uuid, resource_id, resource_type, config_json in rows:
+            if resource_type == "device":
+                continue
+            try:
+                config = json.loads(config_json or "{}")
+            except (TypeError, ValueError):
+                config = {}
+            config = config if isinstance(config, dict) else {}
+            plr_type = config.get("type")
+            if held_by_device and not (isinstance(plr_type, str) and plr_type.isidentifier()):
+                shown_type = "缺少 config.type" if plr_type in (None, "") else f"config.type={plr_type!r}"
+                malformed.append(f"{resource_id}（{material_uuid}，{shown_type}）")
+            key = plr_key(config)
+            if key:
+                keys.setdefault(key, []).append(str(material_uuid))
+        if malformed:
+            shown = "、".join(malformed[:5]) + (f" 等 {len(malformed)} 个" if len(malformed) > 5 else "")
+            raise MaterialValidationError(
+                f"设备 {root.resource_id} 持有的物料必须带格式合规的 config.type（PLR 类名，Python 标识符，"
+                f"如 Plate）：{shown}。设备启动时按它反序列化物料；请按注册表资源类经 materials.create"
+                "（ResourceTreeSet）创建物料，或改正 config.type",
+            )
+        duplicated = {key: uuids for key, uuids in keys.items() if len(uuids) > 1}
+        if duplicated:
+            key, uuids = next(iter(sorted(duplicated.items())))
+            owner = f"设备 {root.resource_id}" if held_by_device else f"根物料 {root.resource_id}"
+            raise MaterialConflictError(
+                f"{owner} 的 PLR 树里 PLR 键 config.name={key!r} 重复（物料 {'、'.join(uuids)}）："
+                "PLR 要求一棵树里的名字唯一，请换一个名字",
+                conflict="identity",
+            )
+
     def _assert_no_parent_cycle(self, material_uuid: str, parent_uuid: Optional[str]) -> None:
         """新父物料不能是物料自己或它的后代（V1 6004）；库位所属物料是新父物料时同样适用。"""
 
@@ -3205,18 +3394,33 @@ class MaterialsService(MaterialsRepository):
             ).fetchone()
             cursor = row[0] if row is not None else None
 
-    def _assert_site_not_ingress_reserved(self, site: SiteRecord) -> None:
+    def _assert_site_not_ingress_reserved(self, site: SiteRecord, *, moving_material_uuid: Optional[str] = None) -> None:
         """活动入口预留（reserved 未过期 / in_transit）期间库位不接受任何放入。
 
         载体本身也只能经预留的 receive 落位（receive 先把预留置为 received 再移动），
         人工移动、工作流搬运预检与 transfer 都走这里，拿到 ``site_ingress_reserved`` 冲突。
+        唯一例外：``in_transit`` 的载体（``moving_material_uuid``）被直接放进自己预留的库位，等同接收——
+        预留在同一事务里置为 ``received``（工作流按所属物料选库位时，放入动作派发前把预留转为 in_transit）。
         """
 
+        now = self._now_ms()
         row = self.connection.execute(
             "SELECT reservation_uuid, carrier_material_uuid, state FROM station_ingress_reservation "
             "WHERE site_uuid=? AND (state='in_transit' OR (state='reserved' AND expires_at_ms > ?)) LIMIT 1",
-            (site.site_uuid, self._now_ms()),
+            (site.site_uuid, now),
         ).fetchone()
+        if (
+            row is not None
+            and row["state"] == "in_transit"
+            and moving_material_uuid is not None
+            and row["carrier_material_uuid"] == moving_material_uuid
+        ):
+            self.connection.execute(
+                "UPDATE station_ingress_reservation SET state='received', received_at_ms=?, "
+                "updated_at_ms=MAX(?, created_at_ms, updated_at_ms), revision=revision+1 WHERE reservation_uuid=?",
+                (now, now, row["reservation_uuid"]),
+            )
+            return
         if row is not None:
             raise MaterialConflictError(
                 f"库位 {site.label}（{site.site_uuid}）已被入口预留 {row['reservation_uuid']}"
@@ -3280,14 +3484,14 @@ class MaterialsService(MaterialsRepository):
         ):
             raise MaterialConflictError("destination site is occupied", conflict="site_occupied")
         if placing:
-            self._assert_site_not_ingress_reserved(destination)
+            self._assert_site_not_ingress_reserved(destination, moving_material_uuid=value.material_uuid)
         self._assert_no_parent_cycle(value.material_uuid, parent_uuid)
         same_site = (
             source is not None
             and destination is not None
             and source.site_uuid == destination.site_uuid
         )
-        if same_site and material.parent_material_uuid == parent_uuid:
+        if same_site:
             raise MaterialNoChangeError("material is already at destination")
         if (
             source is None
@@ -3345,11 +3549,8 @@ class MaterialsService(MaterialsRepository):
                 "version": material.version + 1,
             }
         )
-        if same_site:
-            # 原位换父（修复旧版坏树：物料从载架改挂到 Site 的 holder 下）。触发器要求
-            # 先解除占用再改父；同一事务内随后重新占用，Site 版本照常 +1。
-            self.clear_site_occupants([destination.site_uuid])
         self.update_material(updated_material)
+        self._assert_plr_tree_rules([value.material_uuid])
 
         if destination is not None:
             destination_changed_at = max(timestamp, destination.updated_at_ms)
@@ -3521,6 +3722,11 @@ class MaterialsService(MaterialsRepository):
         同一个幂等命令在设备同步阶段失败后可以安全重试：数据库 mutation
         会 replay，但 unload/load 仍会使用相同 ``transfer_uuid`` 重放。目标
         load 失败时不回滚权威位置，也不会重新挂回来源端，因此不会产生双挂载。
+
+        设备投影（来源 unload / 目标 load）在提交之后失败时，权威位置保持已提交，调用方收到
+        ``MaterialTransferSyncError``。提交前不探测设备是否可达（探测与下发之间设备照样可能掉线），
+        也不做补偿回滚；靠重试收敛：重放同一命令会重放 unload/load；另发一条命令时权威答
+        「已在目标位置」，由目标设备从权威加载（``materials.assign`` 即如此）。
         """
 
         if mutation.operation != "transfer_material":
@@ -3839,7 +4045,7 @@ class MaterialsService(MaterialsRepository):
                 for site in self.sites_occupied_by(material_uuids)
             }
             changed_sites = {**occupied_sites, **owned_sites}
-            # 拓扑边随节点退场：边不是 ledger 聚合，事务内物理清理即可。
+            # 拓扑边随节点退场：事务内物理清理，物料自己的账本行已经让客户端重读。
             self.delete_links_for_materials(material_uuids)
 
             affected: list[AggregateVersion] = []
@@ -4113,6 +4319,13 @@ class MaterialsService(MaterialsRepository):
                     current_record,
                     updated_record,
                 )
+            # 设备快照同样不能去掉 / 写坏 config.type 或造出重名的 PLR 键
+            self._assert_plr_tree_rules([
+                material_uuid
+                for material_uuid, (before, after) in changed_material_records.items()
+                if before.config_json != after.config_json
+                or before.parent_material_uuid != after.parent_material_uuid
+            ])
 
             changed_site_records: dict[str, tuple[SiteRecord, SiteRecord]] = {}
             for site_uuid in sorted(changed_site_uuids):

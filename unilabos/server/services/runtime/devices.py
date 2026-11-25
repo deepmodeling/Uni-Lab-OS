@@ -104,7 +104,7 @@ class DeviceDirectory:
         return None
 
     def unavailable(self, material: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
-        """Host 因 backend 不支持而跳过的设备：停用 route 上的原因记录；正常设备为 None。"""
+        """Host 没有启动的设备（backend 不支持、物料建不成时的维护模式）：停用 route 上的原因记录；正常设备为 None。"""
 
         identities = self._identities(material)
         for endpoint in self.endpoints:

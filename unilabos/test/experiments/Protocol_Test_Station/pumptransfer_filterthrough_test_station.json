@@ -134,7 +134,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 100,
@@ -160,7 +160,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 200,
@@ -186,7 +186,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -208,7 +208,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,
@@ -230,7 +230,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,
@@ -252,7 +252,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 900,
@@ -273,7 +273,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -294,7 +294,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,
@@ -315,7 +315,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,
@@ -336,7 +336,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 300,
@@ -357,7 +357,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 400,
@@ -378,7 +378,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 100,
@@ -404,7 +404,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 200,
@@ -430,7 +430,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 300,
@@ -456,7 +456,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 400,
@@ -482,7 +482,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 500,
@@ -508,7 +508,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 600,
@@ -534,7 +534,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 700,
@@ -555,7 +555,7 @@
             "children": [],
             "parent": "PumpTransferFilterThroughTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 800,

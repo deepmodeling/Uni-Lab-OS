@@ -276,7 +276,7 @@ ResourceTreeNotify 为 device_id、action、resource_uuids，动作值及设备�
 | POST | `/api/v1/materials/snapshots/delta` | B: `M<MaterialDelta>` | 应用差量并产生账本记录 |
 | GET | `/api/v1/materials/changes` | Q: after_sequence=0（>=0）、limit=100（1..1000） | 增量账本，供同步消费者补读 |
 | POST | `/api/v1/materials/changes/ack` | B: LedgerAcknowledge | `{acknowledged:数量}`；through_sequence>=0，普通浏览器不替同步消费者 ACK |
-| GET | `/api/v1/materials/events` | H: Last-Event-ID? | text/event-stream；物料变更提醒，收到后拉取正文 |
+| GET | `/api/v1/materials/events` | H: Last-Event-ID?（`<sequence>:<epoch>` 或旧格式 `<sequence>`） | text/event-stream；物料变更提醒，收到后拉取正文；游标无法续传时 `stream.reset` |
 
 材料写入失败常见 404（目标不存在）、409（幂等/版本/占用等冲突）、422（模型或操作不合法）；
 transfer 还需识别设备投影失败。不要收到错误后直接改数据库或更换幂等键重放物理动作。
@@ -416,13 +416,14 @@ inline 的 HTTP JSON 正文是 Base64，解码后最多 262144 字节；external
 
 | 方法 | 路径 | 输入 | 返回与使用约束 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/events` | H: Last-Event-ID? | text/event-stream；工作流持久事件和 runtime.logs.changed 轻通知，不是 WS |
+| GET | `/api/v1/events` | H: Last-Event-ID? | text/event-stream；工作流事件、material.changed 与 runtime.logs.changed 通知同一个序列，每帧带整数 id，不是 WS |
 | GET | `/api/v1/hostlink/peers` | — | role、peers、client 及已协商的 Host 信息；设备列表与进程台账不同 |
 | GET | `/api/v1/hostlink/log-sources` | — | Host/Slave 日志源目录，选源后读取日志 |
 | GET | `/api/v1/hostlink/logs` | Q: source_id（必填，1..512 字符）、cursor=""、limit=300（1..1000） | 有界日志批次及游标；处理 reset/truncated/has_more，直到追平 |
 
 非空日志 cursor 为 24 位小写十六进制、冒号、1..16 位十进制序号，不要自行拼接或与 SSE 事件 ID 混用。
-日志轻通知未必有持久事件 ID；重连后重新读源与快照，不能承诺日志无限历史可重放。
+日志通知在 `/api/v1/events` 上带 id（合并、每秒至多一条），断线期间的通知重连后补发；但通知按保留目标清理，
+重连后仍重新读源与快照，不能承诺日志无限历史可重放。
 
 ## 内部 HTTP 与非 HTTP 通道
 
@@ -439,7 +440,7 @@ inline 的 HTTP JSON 正文是 Base64，解码后最多 262144 字节；external
 内部 HTTP 来源：[控制入口](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/runtime/control.py)、
 [设备下行中继](https://github.com/deepmodeling/Uni-Lab-OS/blob/862ce87a38222ac2d51739f2f89e5daecd3cd907/unilabos/server/api/host_relay.py)。
 
-另有 `/api/v1/ws/schedule` 控制 WebSocket、HostLink TCP RPC，以及 `/mcp` 的 Streamable HTTP/JSON-RPC。
+另有 `/api/v1/ws/schedule` 控制 WebSocket、HostLink TCP RPC，以及 `POST /mcp` 的 Streamable HTTP/JSON-RPC（GET 回 405）。
 它们不是新增几条普通业务 CRUD；消息类型、握手和超时见 [实时协议](realtime.md)，
 MCP 的会话、工具分类与权限见 [MCP 接入](python-cli-mcp.md)。
 管理站还有 `/api/docs`、`/api/redoc`、`/api/openapi.json` 文档端点，不纳入上述业务数量。

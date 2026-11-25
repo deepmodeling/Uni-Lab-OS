@@ -123,7 +123,7 @@ class SessionManager:
     def _load_state(self) -> SessionState:
         if self.session_file.exists():
             try:
-                with open(self.session_file, "r") as f:
+                with open(self.session_file, "r", encoding="utf-8") as f:
                     return SessionState.from_dict(json.load(f))
             except (json.JSONDecodeError, KeyError):
                 pass
@@ -133,7 +133,7 @@ class SessionManager:
         if self._state is None:
             return
         self.working_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.session_file, "w") as f:
+        with open(self.session_file, "w", encoding="utf-8") as f:
             json.dump(self._state.to_dict(), f, indent=2)
 
     def get_state(self) -> SessionState:

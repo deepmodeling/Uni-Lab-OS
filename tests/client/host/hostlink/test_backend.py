@@ -801,7 +801,7 @@ def test_hostlink_backend_import_does_not_load_ros() -> None:
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        timeout=20,
+        timeout=20, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr
 

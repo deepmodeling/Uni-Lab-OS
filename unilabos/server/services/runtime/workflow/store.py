@@ -1667,6 +1667,44 @@ class WorkflowStore:
                                data={"workflow_task_uuid": task_uuid}, now=now)
         return self.get_task(task_uuid)
 
+    def freeze_task_site_selections(self, task_uuid: str, selections: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """任务准入时按所属物料选定的库位冻结进任务（``site_selections.py``）。
+
+        一个事务里改计划节点参数（含 ``entry_param_template`` 的静态值）、对应节点运行与其 pending attempt 的参数、
+        任务输入，并在计划里记下选择（``site_selections``）。只在任务还没开始（``pending``）时写。
+        """
+
+        from .site_selections import freeze_site_selections
+
+        now = utc_now()
+        with self.transaction() as conn:
+            task = self.get_task(task_uuid)
+            if task["status"] != "pending":
+                raise StoreConflict("只有尚未开始的任务能冻结库位选择")
+            plan = task["execution_plan"]
+            input_value = dict(task["input"])
+            touched = freeze_site_selections(plan, input_value, selections)
+            params = {str(node["uuid"]): node.get("param") or {} for node in plan.get("nodes") or []}
+            for row in conn.execute(
+                "SELECT uuid, workflow_node_uuid FROM workflow_node_run WHERE workflow_task_uuid=? AND deleted_at IS NULL",
+                (task_uuid,),
+            ).fetchall():
+                if row["workflow_node_uuid"] not in touched:
+                    continue
+                param = _json(params[row["workflow_node_uuid"]])
+                conn.execute("UPDATE workflow_node_run SET param=?, update_time=? WHERE uuid=?", (param, now, row["uuid"]))
+                conn.execute(
+                    "UPDATE workflow_node_job SET param=?, update_time=? WHERE workflow_node_run_uuid=? "
+                    "AND deleted_at IS NULL AND status='pending'",
+                    (param, now, row["uuid"]),
+                )
+            conn.execute(
+                "UPDATE workflow_task SET input=?, execution_plan=?, update_time=? WHERE uuid=?",
+                (_json(input_value), _json(plan), now, task_uuid),
+            )
+            self._append_event(conn, event="workflow.task.changed", data={"workflow_task_uuid": task_uuid}, now=now)
+        return self.get_task(task_uuid)
+
     def mark_job_cancel_requested(self, job_uuid: str) -> bool:
         """已下发的 attempt 收到取消请求：展示为 cancel_requested，直到真实终态回报。"""
 
@@ -3836,6 +3874,25 @@ class WorkflowStore:
                 "SELECT COALESCE(MAX(sequence), 0) FROM frontend_event"
             ).fetchone()
         return int(row[0])
+
+    def append_frontend_event(self, event: str, data: Dict[str, Any]) -> int:
+        """在独立事务里追加一条前端失效通知，返回它的序号。
+
+        与工作流事件同一张表、同一个序列：``/api/v1/events`` 的每一帧都按这个序号续传、重置与清理。
+        """
+
+        with self.transaction() as conn:
+            return self._append_event(conn, event=event, data=data, now=utc_now())
+
+    def latest_event_data(self, event: str) -> Optional[Dict[str, Any]]:
+        """某类通知最新一条的 ``data``；保留窗口里没有这类通知时返回 None。"""
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT payload FROM frontend_event WHERE type = ? ORDER BY sequence DESC LIMIT 1",
+                (event,),
+            ).fetchone()
+        return None if row is None else _load(row["payload"], {})
 
     @staticmethod
     def _append_event(

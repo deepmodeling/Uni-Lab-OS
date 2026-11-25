@@ -20,6 +20,7 @@ from unilabos.server.services.runtime.workflow.definition_edit import (
     duplicate_graph,
     duplicate_node,
     patch_node,
+    remap_node_references,
     restore_private_subgraphs,
 )
 
@@ -288,7 +289,7 @@ class WorkflowDefinitionEditing:
         copied_name = name.strip() if isinstance(name, str) else f"{source['workflow']['name']} copy"
         if not copied_name:
             raise WorkflowError("invalid_input")
-        nodes, edges, _requirements = duplicate_graph(source)
+        nodes, edges, identity = duplicate_graph(source)
         workflow_type, category = self.operation_categories.workflow_kind(source["workflow"]["uuid"])  # type: ignore[attr-defined]
         record = self.create_workflow(  # type: ignore[attr-defined]
             workflow_uuid=str(uuid4()),
@@ -303,7 +304,8 @@ class WorkflowDefinitionEditing:
             return self._save_reserved_graph(  # type: ignore[attr-defined]
                 record["uuid"],
                 revision=record["revision"],
-                workflow_meta_data=dict(source["workflow"].get("meta_data", {})),
+                # 输出绑定、资源作用域等工作流级保留元数据也引用节点，按同一张身份表改写
+                workflow_meta_data=remap_node_references(source["workflow"].get("meta_data", {}), identity),
                 nodes=nodes,
                 edges=edges,
             )

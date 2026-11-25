@@ -231,9 +231,14 @@ def create_v1_resource_router(
         name: str = Query(default=""),
         barcode: str = Query(default=""),
         resource_template_uuid: Optional[str] = Query(default=None),
+        category: Optional[str] = Query(default=None, description="material = 非设备物料；device = 设备"),
+        inventory_scope: str = Query(default="current", description="current | history（离站物料，本后端恒为空）"),
+        empty_containers_only: bool = Query(default=False, description="只要空容器：不含设备、台面与载架，且没有内容登记、也没有数量大于 0 的内容物"),
     ) -> Any:
         return contract.list_materials(page=page, page_size=page_size, name=name, barcode=barcode,
-                                       resource_template_uuid=resource_template_uuid or None)
+                                       resource_template_uuid=resource_template_uuid or None,
+                                       category=category or None, inventory_scope=inventory_scope,
+                                       empty_containers_only=empty_containers_only)
 
     @router.get("/resources")
     def list_resources(page: int = Query(default=0), page_size: int = Query(default=0)) -> Any:
@@ -242,8 +247,11 @@ def create_v1_resource_router(
         return contract.list_resources(page=page, page_size=page_size)
 
     @router.get("/materials/graph")
-    def material_graph() -> Any:
-        return contract.material_graph()
+    def material_graph(
+        inventory_scope: str = Query(default="current", description="current | history（本后端恒为空）"),
+        material_uuid: list[str] = Query(default=[], description="增量重读：只要这些物料（连同库位所属祖先）"),
+    ) -> Any:
+        return contract.material_graph(inventory_scope=inventory_scope, material_uuids=material_uuid)
 
     @router.post("/materials/sites/resolve-identities")
     def resolve_site_identities(body: SiteIdentityResolveRequest) -> Any:

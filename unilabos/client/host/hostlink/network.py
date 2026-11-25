@@ -649,6 +649,12 @@ def setup_slave_network_client(
             # HostLink 时 Action server 还不存在，这时发出的 goal 没有接收方，会丢。
             client.configure_device_descriptors({"id": device_id, "ready": False} for device_id in client.device_ids)
             client.heartbeat_payload_provider = _descriptor_heartbeat(client)
+            # 物料 / 设备管理下行 handler 随链路一起挂上，先于任何设备节点：设备在 post_init 里调
+            # materials.assign / transfer 时，权威会经 HostLink 回调本进程的 material.sync（unload / load），
+            # 那时设备还没初始化完。handler 收到请求时才按 device_id 找设备节点，找不到时回明确的错误。
+            from unilabos.client.host.hostlink.downlink import register_hostlink_resource_handlers
+
+            register_hostlink_resource_handlers(client)
             # 协议编译用 Host 的完整物理拓扑图：ROS 2 Slave 同样经 HostLink 取，不经 DDS
             physical_graph = _slave_physical_graph = attach_physical_graph_sync(client)
             set_hostlink_client(client)

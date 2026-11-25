@@ -638,6 +638,11 @@ class AuthorityResourceService:
             raise RuntimeError("微后端 Materials Authority 尚未配置")
         return gateway
 
+    def gateway(self) -> MaterialGateway:
+        """设备节点接入的物料权威网关（快照、load / unload 用的同一个）。"""
+
+        return self._gateway()
+
     # ── 权威基线缓存与版本表 ─────────────────────────────────────
 
     def remember_baseline(self, tree: Any) -> None:

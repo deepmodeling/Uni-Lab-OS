@@ -227,8 +227,16 @@ class InventoryCommands:
                     return self._replay(existing)
                 if handler is None:
                     raise UnsupportedCommand(f"unsupported inventory command type: {command_type}")
-                result = handler(dict(body.get("payload") or {}), command_id=command_id, actor=actor,
-                                 expected_version=body.get("expected_version"))
+                payload = body.get("payload")
+                if payload is not None and not isinstance(payload, Mapping):
+                    raise MaterialValidationError("payload must be an object")
+                try:
+                    result = handler(dict(payload or {}), command_id=command_id, actor=actor,
+                                     expected_version=body.get("expected_version"))
+                except (ValueError, TypeError) as exc:
+                    # 处理器就地解析载荷（int() / float() / dict()、构造 pydantic 模型）：字段类型不对是参数错误，
+                    # 与业务拒绝一样记账并回 1000，不当未知异常变成不带信封的 500。
+                    raise MaterialValidationError(f"invalid {command_type} payload: {exc}") from exc
                 connection.execute(
                     "INSERT INTO inventory_processed_command(command_id, command_type, request_hash, status, result_json, "
                     "actor, processed_at_ms) VALUES (?,?,?,'completed',?,?,?)",
@@ -780,7 +788,7 @@ class InventoryCommands:
             identity=MaterialIdentityWrite(
                 resource_id=ResourceContract(self.materials)._resource_id(name), display_name=name,
                 lot_uuid=lot_uuid, resource_type=template.resource_type,
-                class_name=template.class_name or template.resource_type or "Resource",
+                class_name=template.class_name or template.name,
                 barcode=barcode, template_name=template.name,
                 extra={"legacy_cloud_id": legacy} if legacy else {},
             ),

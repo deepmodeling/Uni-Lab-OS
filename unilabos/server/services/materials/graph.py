@@ -423,6 +423,10 @@ def reconcile_graph_payload(
                     continue
             elif str(child.get("parent") or "") != node_id:
                 continue
+            if str(child.get("type") or "") == "resource_holder":
+                # 载架的槽位 holder 是 Site 本身的结构节点，按构造就在 Site 的位置上；
+                # 占用物料挂在 holder 下，holder 自己不占用 Site。
+                continue
             child_position = ((child.get("pose") or {}).get("position")) or {}
             child_key = tuple(
                 float(child_position.get(axis, 0.0) or 0.0) for axis in ("x", "y", "z")

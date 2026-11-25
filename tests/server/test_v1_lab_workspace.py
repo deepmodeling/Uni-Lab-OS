@@ -39,8 +39,10 @@ def test_profile_layout_zones_and_placements_are_gone(lab) -> None:
 def test_warehouse_assembly_and_demo_seed(lab) -> None:
     _service, client = lab
     identities = {item["name"]: item["uuid"] for item in ok_data(client.post("/api/v1/resource-templates", json={
-        "resources": [{"id": "deck", "registry_type": "resource", "available_sites": [{"id": "A1", "label": "A1"}]},
-                      {"id": "tube", "registry_type": "resource"}]}))["templates"]}
+        "resources": [{"id": "deck", "registry_type": "resource", "available_sites": [{"id": "A1", "label": "A1"}],
+                       "class": {"module": "pylabrobot.resources:Resource", "type": "pylabrobot"}},
+                      {"id": "tube", "registry_type": "resource",
+                       "class": {"module": "pylabrobot.resources:Container", "type": "pylabrobot"}}]}))["templates"]}
     deck = ok_data(client.post("/api/v1/materials", json={"resource_template_uuid": identities["deck"], "name": "台面-1"}), status=201)
     ok_data(client.post("/api/v1/materials", json={
         "resource_template_uuid": identities["tube"], "name": "管-1",
@@ -64,7 +66,7 @@ def test_package_mounts_and_file_browser(tmp_path) -> None:
     package_dir = tmp_path / "pkgs" / "acme_driver"
     package_dir.mkdir(parents=True)
     (tmp_path / "work" / "sub").mkdir(parents=True)
-    (tmp_path / "work" / "run.py").write_text("print(1)\n")
+    (tmp_path / "work" / "run.py").write_text("print(1)\n", encoding="utf-8")
     packages = SimpleNamespace(inventory=lambda: {"packages": [
         {"name": "acme", "version": "1.2.0", "enabled": True, "dirs_exist": True, "source_kind": "local",
          "package_dirs": [str(package_dir)], "device_ids": ["acme.pump"], "sha256": "abc"},

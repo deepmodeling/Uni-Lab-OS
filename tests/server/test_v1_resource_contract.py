@@ -172,6 +172,250 @@ def test_material_create_place_update_ledger_and_delete(client) -> None:
     error_of(client.get(f"/api/v1/materials/{bottle['uuid']}"), 6000)
 
 
+def test_v1_create_places_and_fills_in_one_transaction(tmp_path, monkeypatch) -> None:
+    """建物料、放入库位与装液是同一个事务：装液失败时物料与落位一起回滚，库位仍空、不留半成品。
+
+    失败必须发生在服务里（建树与落位已经写进事务之后），而不是被请求模型挡在门外。
+    """
+
+    from unilabos.server.services.materials.contents import ContentContract
+
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+    reached: list[str] = []
+    create_reagent = ContentContract.create_reagent
+
+    def spy(self, values):
+        # 走到这里时建树与落位已经在同一个外层事务里写下
+        reached.append(str(service.connection.execute("SELECT COUNT(*) FROM material").fetchone()[0]))
+        return create_reagent(self, values)
+
+    monkeypatch.setattr(ContentContract, "create_reagent", spy)
+    with TestClient(app) as client:
+        identities = _templates(client)
+        rack = ok_data(client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["tube_rack_2"], "name": "架-T"}), status=201)
+        site_uuid = rack["site_uuids"][0]
+
+        def counts() -> tuple[int, int]:
+            connection = service.connection
+            return (connection.execute("SELECT COUNT(*) FROM material").fetchone()[0],
+                    connection.execute("SELECT COUNT(*) FROM inventory_ledger").fetchone()[0])
+
+        before = counts()
+        failed = client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-坏",
+            "site_placement": {"action": "place", "site_uuid": site_uuid},
+            # 请求模型合法；没有试剂身份（cas / reagent_info_uuid），装液在服务里被拒
+            "reagent": {"quantity": 5, "quantity_unit": "ml"},
+        })
+        assert failed.json()["code"] == 1000, failed.text
+        assert reached == [str(before[0] + 1)]  # 失败前新物料确实已写进事务
+        assert counts() == before
+        assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] is None
+
+        placed = ok_data(client.post("/api/v1/materials", json={
+            "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-好",
+            "site_placement": {"action": "place", "site_uuid": site_uuid},
+        }), status=201)
+        assert placed["current_site"]["uuid"] == site_uuid and placed["parent_uuid"] == rack["uuid"]
+        assert ok_data(client.get(f"/api/v1/sites/{site_uuid}"))["occupied_material_uuid"] == placed["uuid"]
+    service.close()
+
+
+def test_v1_create_initializes_a_plr_material_that_a_device_site_accepts(tmp_path) -> None:
+    """V1 POST /materials 先初始化出 PLR 实例（config.type 或模板的 PLR 类），能放上设备库位、能反序列化。"""
+
+    from uuid import uuid4
+
+    from unilabos.client.materials import LocalMaterialsClient
+    from unilabos.resources import materials
+    from unilabos.resources.adapters.device_site import apply_device_authority_state
+    from unilabos.resources.resource_tracker import ResourceDict, ResourceDictInstance
+
+    service = MaterialsService(tmp_path / "materials.db")
+    device_uuid = str(uuid4())
+    device = ResourceDictInstance(ResourceDict.model_validate({
+        "id": "v1-device", "uuid": device_uuid, "name": "v1-device", "type": "device", "class": "v1_device",
+        "template_name": "v1_device", "config": {}, "data": {}, "extra": {}, "sites": None, "sites_initialized": False,
+    }))
+    apply_device_authority_state(device, {"available_sites": [{"index": 1, "label": "s1"}, {"index": 2, "label": "s2"}]},
+                                 "v1_device", gateway=LocalMaterialsClient(service))
+    sites = {site.label: site.site_uuid for site in service.get_material(device_uuid).sites}
+    app = FastAPI()
+    install_materials_api(app, service)
+    try:
+        with TestClient(app) as client:
+            identities = _templates(client)
+            placed = ok_data(client.post("/api/v1/materials", json={
+                "resource_template_uuid": identities["bottle_500ml"], "name": "设备上的瓶",
+                "config": {"max_volume": 500},
+                "site_placement": {"action": "place", "site_uuid": sites["s1"]},
+            }), status=201)
+            assert placed["parent_uuid"] == device_uuid and placed["current_site"]["uuid"] == sites["s1"]
+            assert placed["config"]["type"] == "Container" and placed["config"]["max_volume"] == 500
+            restored = materials.get(placed["uuid"], gateway=LocalMaterialsClient(service)).to_plr_resources()[0]
+            assert type(restored).__name__ == "Container" and restored.max_volume == 500
+
+            # 显式 config.type 优先于模板的实现类
+            typed = ok_data(client.post("/api/v1/materials", json={
+                "resource_template_uuid": identities["tube_rack_2"], "name": "显式类型",
+                "config": {"type": "Container"},
+                "site_placement": {"action": "place", "site_uuid": sites["s2"]},
+            }), status=201)
+            assert typed["config"]["type"] == "Container"
+
+            # 实例化不出来：说明原因（1000），不建任何东西
+            odd = ok_data(client.post("/api/v1/resource-templates", json={"resources": [{
+                "id": "odd_thing", "registry_type": "resource", "class": {"module": "lab.custom:Thing", "type": "python"},
+                "category": ["thing"],
+            }]}))["templates"][0]["uuid"]
+            before = ok_data(client.get("/api/v1/materials", params={"page_size": 100}))["total"]
+            failed = client.post("/api/v1/materials", json={"resource_template_uuid": odd, "name": "怪东西"}).json()
+            assert failed["code"] == 1000 and "config.type" in str(failed)
+            assert ok_data(client.get("/api/v1/materials", params={"page_size": 100}))["total"] == before
+    finally:
+        service.close()
+
+
+def test_v1_material_records_carry_inventory_facts(client) -> None:
+    """V1 物料 DTO 带 inventory_status / inventory_presence / disposition，由生命周期派生。"""
+
+    from unilabos.server.services.materials.resource_contract import inventory_facts
+
+    identities = _templates(client)
+    bottle = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-1"}), status=201)
+    in_stock = {"inventory_status": "warehouse", "inventory_presence": "current", "disposition": "active"}
+    assert {key: bottle[key] for key in in_stock} == in_stock
+    listed = ok_data(client.get("/api/v1/materials"))["items"][0]
+    assert {key: listed[key] for key in in_stock} == in_stock
+    node = ok_data(client.get("/api/v1/materials/graph"))["nodes"][0]["material"]
+    assert {key: node[key] for key in in_stock} == in_stock
+
+    # 只有在库（active）能被新任务预留；设备不是库存物料；软删记为废弃
+    assert inventory_facts("plate", "reserved", None)["inventory_status"] == "reserved"
+    assert inventory_facts("plate", "in_use", None)["inventory_status"] == "in_use"
+    assert inventory_facts("plate", "quarantined", None)["inventory_status"] == "quarantined"
+    assert inventory_facts("plate", "consumed", None)["inventory_status"] == "consumed"
+    assert inventory_facts("plate", "retired", None)["inventory_status"] == "used"
+    assert inventory_facts("device", "active", None) == {
+        "inventory_status": None, "inventory_presence": None, "disposition": None,
+    }
+    assert inventory_facts("plate", "retired", 123)["disposition"] == "discarded"
+
+
+def test_material_list_filters_by_category_scope_and_empty_containers(client) -> None:
+    identities = _templates(client)
+    empty = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "空瓶"}), status=201)
+    filled = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "样品瓶"}), status=201)
+    ok_data(client.post("/api/v1/samples", json={
+        "material_uuid": filled["uuid"], "code": "S-01", "name": "血清", "quantity": 0, "quantity_unit": "ml"}), status=201)
+
+    def uuids(**params) -> set[str]:
+        return {item["uuid"] for item in ok_data(client.get("/api/v1/materials", params=params))["items"]}
+
+    assert uuids(category="material") == {empty["uuid"], filled["uuid"]}
+    assert uuids(category="device") == set()
+    # 数量为 0 的有效登记仍算非空
+    assert uuids(empty_containers_only="true") == {empty["uuid"]}
+    history = ok_data(client.get("/api/v1/materials", params={"inventory_scope": "history"}))
+    assert history["items"] == [] and history["total"] == 0
+    assert uuids(inventory_scope="current") == {empty["uuid"], filled["uuid"]}
+    error_of(client.get("/api/v1/materials", params={"inventory_scope": "bogus"}), 1000)
+    error_of(client.get("/api/v1/materials", params={"category": "bogus"}), 1000)
+
+
+def test_empty_containers_are_containers_without_contents_in_any_form(tmp_path) -> None:
+    """内容物行（content.set / put_data / 设备快照写的）也算内容；设备、台面、载架不是容器。"""
+
+    from uuid import uuid4
+
+    from unilabos.protocol.materials import (
+        InventoryMutation,
+        MaterialDataWrite,
+        MaterialIdentityWrite,
+        MaterialNodeCreate,
+        MaterialSubstance,
+        MaterialTreeCreate,
+    )
+
+    service = MaterialsService(tmp_path / "materials.db")
+    app = FastAPI()
+    install_materials_api(app, service)
+
+    def mutation(operation: str) -> InventoryMutation:
+        command = str(uuid4())
+        return InventoryMutation(command_uuid=command, effect_key=f"{operation}:{command}", operation=operation,
+                                 actor_type="test", actor_uuid="empty-containers")
+
+    def create(resource_type: str) -> str:
+        return service.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
+            client_ref="root", identity=MaterialIdentityWrite(
+                resource_id=f"{resource_type}-{uuid4().hex[:6]}", template_name=f"{resource_type}_tpl",
+                resource_type=resource_type, config={"type": "Resource"}),
+        )])).data.root_material_uuid
+
+    try:
+        with TestClient(app) as client:
+            identities = _templates(client)
+
+            def bottle(name: str) -> str:
+                return ok_data(client.post("/api/v1/materials", json={
+                    "resource_template_uuid": identities["bottle_500ml"], "name": name}), status=201)["uuid"]
+
+            empty, set_by_command, put_by_data, drained = bottle("空瓶"), bottle("命令装液"), bottle("数据装液"), bottle("用空")
+            ok_data(client.post("/api/v1/inventory/commands", json={
+                "command_id": "fill-1", "type": "material.content.set",
+                "payload": {"edge_uuid": set_by_command, "state": {"substances": [
+                    {"name": "水", "quantity": 10, "quantity_unit": "ml"}]}}}))
+            for material_uuid, quantity in ((put_by_data, 5.0), (drained, 0.0)):
+                service.put_data(mutation("put_data"), material_uuid, MaterialDataWrite(substances=[
+                    MaterialSubstance(name="水", quantity=quantity, quantity_unit="ml")]))
+            not_containers = {create("device"), create("deck"), create("plate_carrier"), create("warehouse")}
+
+            listed = {item["uuid"] for item in ok_data(client.get(
+                "/api/v1/materials", params={"empty_containers_only": "true", "page_size": 100}))["items"]}
+
+            assert listed == {empty, drained}
+            assert not listed & not_containers
+    finally:
+        service.close()
+
+
+def test_material_graph_rereads_only_the_named_materials_and_their_site_owners(client) -> None:
+    identities = _templates(client)
+    rack = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["tube_rack_2"], "name": "架-1"}), status=201)
+    bottle = ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "瓶-1",
+        "site_placement": {"action": "place", "site_uuid": rack["site_uuids"][0]},
+    }), status=201)
+    ok_data(client.post("/api/v1/materials", json={
+        "resource_template_uuid": identities["bottle_500ml"], "name": "旁边的瓶"}), status=201)
+
+    def graph(**params) -> dict:
+        return ok_data(client.get("/api/v1/materials/graph", params=params))
+
+    assert len(graph()["nodes"]) == 3
+    # 瓶在架的库位上：客户端要在同一响应里解析 current_site_uuid，架也一起回来
+    partial = graph(material_uuid=[bottle["uuid"]])
+    assert {node["material"]["uuid"] for node in partial["nodes"]} == {bottle["uuid"], rack["uuid"]}
+    assert all(link["source_uuid"] in {bottle["uuid"], rack["uuid"]} for link in partial["links"])
+    # 不存在 / 已删除的物料不返回：客户端据此从图里移除
+    assert graph(material_uuid=["00000000-0000-4000-8000-000000000000"])["nodes"] == []
+    # 空值不算点名（``?material_uuid=``）：仍是全量
+    assert len(graph(material_uuid=[""])["nodes"]) == 3
+    assert {node["material"]["uuid"] for node in graph(material_uuid=["", bottle["uuid"]])["nodes"]} == {
+        bottle["uuid"], rack["uuid"],
+    }
+    assert graph(inventory_scope="history") == {"nodes": [], "links": []}
+    error_of(client.get("/api/v1/materials/graph", params={"inventory_scope": "bogus"}), 1000)
+
+
 def test_literal_dev_routes_are_not_captured_by_material_uuid_route(client) -> None:
     # dev 独有的字面量路由先于 V1 的 /materials/{material_uuid} 注册
     assert isinstance(ok_data(client.get("/api/v1/materials/registry-classes")), list)

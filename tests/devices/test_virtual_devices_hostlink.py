@@ -735,7 +735,9 @@ def test_example_graph_materials_build_as_their_template_class(graph: Path, tmp_
     ]
     for node in materials:
         (resource,) = ResourceTreeSet([ResourceTreeInstance(node)]).to_plr_resources()
-        assert node.res_content.klass == type(resource).__name__, node.res_content.id
+        # class 是初始化它用的注册表名（即模板名），config.type 是 PLR 类名：建出来的就是它的类
+        assert node.res_content.klass == node.res_content.template_name, node.res_content.id
+        assert type(resource).__name__ == node.res_content.config["type"], node.res_content.id
         if node.res_content.type == "container":
             assert node.res_content.template_name == "container", node.res_content.id
     for node in loaded.resource_tree_set.all_nodes:
@@ -969,7 +971,7 @@ def test_protocol_vessel_lock_queues_other_tasks_without_locking_its_own_steps(t
     from tests.app.test_process_lifetime import _Unilab
 
     # 搅拌器按 0.05 倍跑：编译出的搅拌步（60 s 搅拌 + 30 s 沉降）约 4.5 秒，足够观察排队
-    payload = json.loads((EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json").read_text())
+    payload = json.loads((EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json").read_text(encoding="utf-8"))
     for node in payload["nodes"]:
         if node["id"] == "stirrer_1":
             node.setdefault("config", {})["time_scale"] = 0.05

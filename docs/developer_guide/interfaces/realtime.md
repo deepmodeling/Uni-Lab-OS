@@ -4,11 +4,12 @@
 
 | 使用者 | 通道 | 内容 |
 | --- | --- | --- |
-| 浏览器工作流页、日志页 | SSE `/api/v1/events` | 持久工作流变更 + 瞬时日志失效通知 |
-| 浏览器物料库、地图 | SSE `/api/v1/materials/events` | 物料账本变更通知 |
+| 浏览器（每个工站一条） | SSE `/api/v1/events` | 工作流变更 + 日志失效通知 + 物料失效通知（`material.changed`），同一个序列，每帧都带 id |
+| 需要按账本续传 / 精确失效的客户端 | SSE `/api/v1/materials/events` | 物料账本变更通知（`materials.changed`，带 sequence 游标） |
+| V1 监控面板 | SSE `/api/v1/monitor/events` | 四通道监控事件（由 `frontend_event` 投影），按同一个序列续传 |
 | Host ↔ 微后端/上游 Backend | WS `/api/v1/ws/schedule` + HTTP | runtime.v1 控制、命令正文与事件回收 |
 | Host ↔ Slave | HostLink TCP，默认 7302 | 握手、路由、RPC、topic、物料投影、日志 |
-| 本机 AI 客户端 | Streamable HTTP `/mcp` | 工具调用，不是上述浏览器事件流 |
+| 本机 AI 客户端 | Streamable HTTP `POST /mcp` | 工具调用（JSON 响应）；GET 回 405，没有事件流 |
 
 管理 HTTP 示例端口为 8003；HostLink 端口独立，不能把 TCP 地址交给 WebSocket 客户端。
 **浏览器不要连接 `/ws/schedule`**：本版 EdgeControlService 只有一个活动执行控制连接，
@@ -22,27 +23,88 @@
 
 | 项目 | `/api/v1/events` | `/api/v1/materials/events` |
 | --- | --- | --- |
-| 无 Last-Event-ID 首连 | 固定当前最新序号，先发只含 `id` 的水位帧，仅推之后变化 | 固定当前账本末尾，仅推之后变化 |
-| 持久 SSE id | 工作流事件 id | inventory ledger sequence |
-| 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放 |
-| 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 无 |
-| 游标早于保留窗口 | `stream.reset`（`reason: cursor_expired`，`id` 为新水位），连接保持 | 无 |
-| 非法游标 | Workflow code=1000，HTTP 200 JSON | HTTP 422 |
-| 无事件时 | keepalive 注释；工作流检查约 1 秒，心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
+| 无 Last-Event-ID 首连 | 固定当前最新序号，先发只含 `id` 的水位帧，仅推之后变化 | 固定当前账本末尾，先发只含 `id` 的水位帧，仅推之后变化 |
+| SSE id | `frontend_event` 序号（整数）；工作流、物料、日志通知与重置帧都在这一个序列上，每帧都带 | `<ledger sequence>:<账本纪元>`；账本为空时只有 `<sequence>` |
+| 恢复方式 | Last-Event-ID，从该 id 之后重放；显式 `0` 回放全部保留历史 | Last-Event-ID，从该 sequence 之后重放；旧格式的纯数字游标照常接受 |
+| 游标大于最新序号 | `stream.reset`（`reason: cursor_ahead`，`id` 为新水位），连接保持 | 同左 |
+| 游标来自另一个库 | 无 | `stream.reset`（`reason: epoch_changed`，`id` 为新水位），连接保持；纯数字游标不带纪元，无法判断 |
+| 游标早于保留窗口 | `stream.reset`（`reason: cursor_expired`，`id` 为新水位），连接保持 | 无（账本不清理） |
+| 非法游标 | Workflow code=1000，HTTP 200 JSON | code=1000，HTTP 200 JSON |
+| 无事件时 | keepalive 注释；约 1 秒读一次，权威写入物料 / 日志通知时立即唤醒；心跳约 15 秒 | keepalive 注释；约 1 秒检查账本 |
 
-三个游标相互独立：工作流 id、物料 sequence、日志 stream:offset。不能混用，也不能以最后日志通知替换工作流游标。
+三个游标相互独立：`/api/v1/events` 的 SSE id、物料账本 sequence、日志 stream:offset。不能混用。
+`material.changed` 的 `data.sequence` 是物料账本序号，不是 `/api/v1/events` 的游标。
+
+### `/api/v1/events`：一个序列，每帧都有 id
+
+`/api/v1/events` 的每一帧（水位帧、工作流事件、`material.changed`、`runtime.logs.changed`、`stream.reset`）都带
+`frontend_event` 这一个序列上的整数 id。物料与日志通知也是 `frontend_event` 的行，所以：
+
+- 断线期间的物料 / 日志通知在重连（浏览器自动带 `Last-Event-ID`）后补发，不靠 REST 补读兜底；
+- 超前（`cursor_ahead`）/ 早于保留窗口（`cursor_expired`）的游标照常收到 `stream.reset`；
+- 保留清理按同一套目标（见下面「工作流通知」）一并清理这些行。
+
+**谁写、怎么合并。** 写入器（`server/services/runtime/workflow/frontend_notices.py`）只在持有 Workflow Authority
+的进程里运行：默认拓扑的权威进程、`--role backend`；单进程模式（`--no-safe-restart`）下就是这个进程。
+
+- 物料：写入器是物料权威共享账本轮询（`server/services/materials/ledger_watch.py`：一个物料权威一条专用线程，
+  约每秒读一次账本末尾，每批最多 500 条，多了马上接着读）的常驻订阅者，账本每前进一次合并写**一行**
+  `material.changed`，`data: {"sequence": <账本末尾>, "material_uuids": [<这段账本里变了的物料>]}`。
+  物料权威不在本进程（Host 经 `--material_microbackend_addr` 用远端物料权威）时不写物料通知。
+- 日志：写入器订阅进程内日志通知中心。Host 子进程（及 `--address` 接入的 Host）的通知经 runtime.v1
+  `runtime_logs_changed` 到达权威，由 `EdgeControlService` 发布到这个通知中心；Host 上下线时权威自己也发一条。
+  合并写一行 `runtime.logs.changed`，`data` 为 `RuntimeLogNotice`。
+- 限速：两类通知**各自每秒至多一行**（`NOTICE_INTERVAL_S = 1.0`）。空闲后的第一条立即写；一秒内后到的并进下一行
+  （物料取并集，日志合并来源），所以一阵日志刷屏、一次大批量物料写入都只产生少量行。
+- 写完一行立即唤醒本进程的 SSE 连接去读，不等约 1 秒一轮的轮询。
+- 权威重启：写入器从最新一条 `material.changed` 记下的账本序号之后续读，停机前没来得及写的那段账本也补写一行；
+  账本比记下的还短（库被重置）写一行不带 `material_uuids` 的整体重读。
+
+`material_uuids` 的语义（与之前相同）：
+
+- **带这个键**：恰好是这段账本里变了的物料（Site 的占用变化归到所属物料，拓扑边的增删改归到两端物料），
+  客户端只重读这些；**空列表 `[]` 表示没有物料变化**（这段账本只动了批次 / 预留），什么都不用重读；
+- **不带这个键**：列不准（资源模板变化、库被重置，或一行里超过 500 个物料），**整体重读**。
+
+浏览器因此每个工站只需维持 `/api/v1/events` 一条长连接（HTTP/1.1 下每个源最多约 6 条连接，多开标签页时第二条流会挤占 REST）。
 后端内部检查账本不等于要求浏览器每秒 GET 全量数据；前端维持事件流，仅在失效时拉取。
 
-### 物料通知
+**前端须知（uni-lab-fe）。**
+
+- `material.changed` 现在带 id，与工作流事件同一个序列；EventSource 自动维护与回传，不用改连接代码。
+  不要把 `data.sequence` 当游标。
+- 收到**不带 `material_uuids`** 的 `material.changed` 必须整体重读物料（树、仓储与相关 Site），不能忽略；
+  `[]` 什么都不用重读。
+- 重连后会补发断线期间的物料 / 日志通知（以前要靠 `onopen` 的 REST 补读）；`onopen` 的校准照常保留。
+- `stream.reset` 照常：整体重读。
+
+OpenLabSite 物料走 `/api/v1/materials/events`，`/api/v1/events` 只订阅工作流、人工决策、日志通知与 `stream.reset`，
+不读这条流的 id，不受影响。
+
+### 物料账本流 `/api/v1/materials/events`
 
 ```text
-id: 42
+id: 42:3f9c0a1b7d2e4c55
 event: materials.changed
 data: {"sequence":42,"operation":"update_position","aggregate_type":"material","aggregate_uuid":"..."}
 
 ```
 
-通知只说明什么发生了变化，不带完整树、液体或模板正文。
+通知只说明什么发生了变化，不带完整树、液体或模板正文。需要账本序号时读 `data.sequence`，
+不要解析 SSE id。账本由上面那条共享轮询读（与 `material.changed` 的写入器共用），每个连接从自己的游标补读，
+之后共用同一份结果，不按连接重复读，也不占默认线程池（runtime.v1 控制 socket 的出站泵、edge 代理用它）。
+
+SSE id 冒号后的**账本纪元**是由这个库第一条账本记录派生的 16 位十六进制不透明标识：账本只追加，
+同一个库的纪元不变；换了数据目录或全量重置后重建，纪元随之改变。重连时 Last-Event-ID 的纪元与当前库
+不同（`epoch_changed`）或序号超过账本末尾（`cursor_ahead`），服务端发
+`event: stream.reset` + `data: {"reason": "..."}`，`id` 为新水位，连接保持；客户端必须重读 HTTP，
+之后的变更照常推送。没有这一帧时，换库后旧游标要么超前（之后的变更全被挡住），要么落在新库账本的中间
+（从别人的历史中途续传）。
+
+旧客户端：浏览器的 EventSource 不解析 id，原样回传，所以不用改代码；不监听 `stream.reset` 的页面也会
+在这一帧拿到新水位，之后的 `materials.changed` 照常到达，只是少一次重置触发的重读（重连本身的 `onopen`
+仍会重读）。仍发送纯数字 Last-Event-ID 的客户端照常续传，只做 `cursor_ahead` 检查；续传后收到的 id
+都带纪元。自己把 SSE id 当整数解析的客户端需要改读 `data.sequence`。
 初次应**先建立 SSE，在 onopen 后读取 HTTP 快照**。重连同样重新读快照，
 避免“首次取数据 → 开始订阅”之间的变更遗漏。
 
@@ -76,6 +138,7 @@ function subscribeMaterials(baseUrl, render, reportError) {
 
   events.onopen = refresh;
   events.addEventListener("materials.changed", refresh);
+  events.addEventListener("stream.reset", refresh); // 游标无法续传（换库 / 超前）：整体重读
   events.onerror = () => { if (!closed) reportError(new Error("事件流重连中")); };
   return () => { closed = true; events.close(); };
 }
@@ -97,6 +160,8 @@ function subscribeMaterials(baseUrl, render, reportError) {
 通知按 `BasicConfig` 的保留目标定期清理（默认最近 24 小时、最多 10,000 条，每 60 秒检查，
 每个事务最多删 1,000 条）。只删连续的旧前缀，始终保留最新一条作为水位；这些是清理目标，
 不是每次插入后的硬上限。慢连接的游标被清理越过时收到 `cursor_expired`。
+物料、日志通知也计入条数：日志持续刷新时每秒最多一行，10,000 条约覆盖 2.8 小时；物料与日志同时持续变化时
+约 1.4 小时。需要更长的断线续传窗口时调大 `frontend_event_max_count`。
 
 持久事件按 V1 事件名发送：任务、节点运行、节点作业、人工确认与资源区间 / 借还 / 托管的变化一律为
 `workflow.runtime.changed`，`data.kind` 区分种类（`task` / `node_run` / `node_job` /
@@ -107,6 +172,21 @@ function subscribeMaterials(baseUrl, render, reportError) {
 data 为相应对象身份、状态等失效信息（库里存的 dev 载荷原样保留）；例如 node job 事件带
 `kind:"node_job"`、workflow_node_job_uuid、workflow_node_run_uuid、attempt_no、status。未知事件名应安全忽略或触发相关 HTTP 校准，不能让整个流崩溃。
 有 `event:` 名称的 SSE 必须用 addEventListener 注册；仅设置 onmessage 接不到这些命名事件。
+
+### 监控流 `/api/v1/monitor/events`
+
+V1 四通道监控面板（`material` / `device` / `action` / `scheduler`）的事件由 `frontend_event` 投影
+（作业 → action，任务 / 工站 → scheduler，资源占用 → device；物料 / 日志失效通知不投影，material 通道为空），
+SSE id 就是 `frontend_event` 的序号，每帧都带。查询参数 `channels`（逗号分隔，缺省全部）、`backlog`（默认 40，最多 200）、
+`follow`（默认 true）。
+
+- 首连（无 `Last-Event-ID`）：回放最近 `backlog` 条，跟随时再发一个只含 `id` 的水位帧（回放时的最新序号）；
+- 重连带 `Last-Event-ID`：从该序号之后续传，**不再回放最近 40 条**，不重复也不漏；
+- 游标大于最新序号（`cursor_ahead`）或早于保留窗口（`cursor_expired`）：`stream.reset`，`id` 为新水位，连接保持，
+  客户端重读 `/api/v1/monitor/snapshot`；非法游标回 code=1000（HTTP 200 JSON）；
+- 每轮按页扫描（每页 200 行，读满马上读下一页），游标只推进到实际扫过的最大序号：扫描期间提交的、超过一页的事件都不会跳过；
+  扫过的其他通知（不属于所选通道）只推进水位，发一个只含 `id` 的帧；
+- 无事件时约 0.4 秒读一次，15 秒心跳注释；服务端开始停机时结束流。
 
 ## Host / 本机和远端 Slave 日志
 
@@ -128,11 +208,12 @@ limit 默认 300，范围 1–1000。offset 不是时间，也不能跨文件排
 reset 表示文件轮转/进程重启等导致游标重新定位；truncated 表示历史缺口，应在界面提示，不能伪装日志连续。
 无此源返回业务码 4001，暂不可用返回 5001（HTTP 200，可带 Retry-After）。
 
-日志通知**没有 SSE id、没有日志正文、不落持久工作流事件表**。
-突发追加会合并通知，所以通知数量不等于新增行数。日志读取不消费数据，两个页面应各自持有 cursor。
+日志通知**没有日志正文**。权威进程把它合并、限速后写进 `frontend_event`（每秒至多一行），在 `/api/v1/events`
+上带 id 发出，断线期间的通知重连后补发。突发追加会合并通知，所以通知数量不等于新增行数。
+日志读取不消费数据，两个页面应各自持有 cursor。
 
-传递链路：Slave 文件追加 → `process.log.changed` 空通知 → Host → runtime.v1
-`runtime_logs_changed` → 权威 SSE `runtime.logs.changed` → 浏览器 HTTP 拉正文。
+传递链路：Slave 文件追加 → `process.log.changed` 空通知 → Host（约 200 ms 合并）→ runtime.v1
+`runtime_logs_changed` → 权威合并、限速写进 `frontend_event` → SSE `runtime.logs.changed`（带 id）→ 浏览器 HTTP 拉正文。
 远端日志由 Host 经 `process.log.read` 读取；source_id 指定逻辑源，浏览器不能传任意文件路径。
 控制台中 EdgeControl 的调度日志不能代替 Slave 的驱动日志。
 

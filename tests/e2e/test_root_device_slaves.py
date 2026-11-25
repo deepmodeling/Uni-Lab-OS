@@ -308,7 +308,7 @@ def test_failing_constructor_and_hung_action_stay_inside_their_slave(tmp_path: P
         stdout=handle,
         stderr=subprocess.STDOUT,
         text=True,
-        start_new_session=os.name != "nt",
+        start_new_session=os.name != "nt", encoding="utf-8", errors="replace",
     )
     host_exited = lambda: host.poll() is not None  # noqa: E731
     sampler: Optional[_OnlineSampler] = None
@@ -522,7 +522,7 @@ def test_root_device_slaves_compile_against_the_host_graph(tmp_path: Path) -> No
         stdout=handle,
         stderr=subprocess.STDOUT,
         text=True,
-        start_new_session=os.name != "nt",
+        start_new_session=os.name != "nt", encoding="utf-8", errors="replace",
     )
     host_exited = lambda: host.poll() is not None  # noqa: E731
     try:

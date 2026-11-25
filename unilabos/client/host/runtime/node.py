@@ -455,11 +455,77 @@ class DeviceNode(ABC):
                 )
         return carrier, holder_spot
 
+    @staticmethod
+    def _site_position(sites: Any, selector: Any | None) -> Any | None:
+        """库位列表（``ResourceSite`` 或其 dict）里按 uuid / label / index 命中的那个库位的位置；没给库位返回 None。"""
+
+        from pylabrobot.resources import Coordinate
+
+        if selector is None or str(selector).strip() == "":
+            return None
+        normalized = str(selector).strip()
+        for site in sites or []:
+            dumped = site if isinstance(site, dict) else site.model_dump()
+            if normalized in {str(dumped.get("uuid") or ""), str(dumped.get("label") or ""), str(dumped.get("index", ""))}:
+                position = (dumped.get("pose") or {}).get("position") or {}
+                return Coordinate(*(float(position.get(axis) or 0.0) for axis in ("x", "y", "z")))
+        raise ValueError(f"找不到库位 {selector!r}")
+
+    def _device_site_location(self, selector: Any | None) -> Any | None:
+        """本设备自身库位的位置（库位来自设备节点的图配置）；没给库位返回 None。"""
+
+        config = getattr(self, "device_config", None)
+        sites = getattr(getattr(config, "res_content", None), "sites", None)
+        return self._site_position(sites, selector) if sites else None
+
+    @classmethod
+    def _mount_on_parent(
+        cls, parent: Any, resource: Any, selector: Any | None, *, default_location: Any | None = None
+    ) -> Any:
+        """把 ``resource`` 挂到本地 PLR 父物料 ``parent`` 下；create / assign / transfer 落到本设备都经这里。
+
+        父物料自己会排布库位时交给它算位置：PLR 载架（或载架某个库位的 holder）经
+        ``assign_resource_to_site`` 放到库位上，``assign_child_resource`` 接受 ``spot`` 的按库位挂，
+        ``ResourceHolder`` 用它的默认子位置。其余父物料不会自己算：给了库位用那个库位的位置，没给就是
+        ``default_location``（Host 下发挂载时给的挂载坐标），缺省 ``(0, 0, 0)``。挂上之后位置一定不是 None——设备重启时整棵树按 PLR 反序列化，没有位置的孩子会让
+        它失败。返回实际承载它的父物料（经载架放时是载架）。
+        """
+
+        from pylabrobot.resources import Coordinate, ResourceHolder
+
+        from unilabos.resources.objects.resource import EXTRA_SITES
+
+        placement = cls._carrier_placement(parent, selector)
+        if placement is not None:
+            carrier, spot = placement
+            carrier.assign_resource_to_site(resource, spot)
+            return carrier
+        assign_site = getattr(parent, "assign_resource_to_site", None)
+        takes_spot = "spot" in inspect.signature(parent.assign_child_resource).parameters
+        spot = cls._site_spot(parent, selector) if callable(assign_site) or takes_spot else None
+        if callable(assign_site) and spot is not None:
+            assign_site(resource, spot)
+        elif takes_spot:
+            parent.assign_child_resource(resource, location=None, spot=spot)
+        elif isinstance(parent, ResourceHolder):
+            parent.assign_child_resource(resource, location=None)
+        else:
+            extra = getattr(parent, "unilabos_extra", None)
+            sidecar = extra.get(EXTRA_SITES) if isinstance(extra, dict) else None
+            sites = list(sidecar.values()) if isinstance(sidecar, dict) else []
+            location = cls._site_position(sites, selector) if selector is not None else None
+            parent.assign_child_resource(resource, location=location or default_location or Coordinate(0, 0, 0))
+        if resource.location is None:
+            resource.location = default_location or Coordinate(0, 0, 0)
+        return parent
+
     async def _attach_local_materials(
         self,
         material_uuids: list[str],
         sites: list[Any | None],
     ) -> list[Any]:
+        from pylabrobot.resources import Coordinate
+
         tracker = getattr(self, "resource_tracker", None)
         if tracker is None:
             raise BackendCapabilityError(
@@ -483,16 +549,17 @@ class DeviceNode(ABC):
             existing = tracker.uuid_to_resources.get(material_uuid)
             if existing is not None:
                 await self._remove_local_materials([material_uuid])
-            tracker.add_resource(resource)
             parent_uuid = str(tree.root_node.res_content.uuid_parent or "")
             parent = None
             if parent_uuid and parent_uuid != self.resource_uuid:
                 parent = tracker.uuid_to_resources.get(parent_uuid)
                 if parent is None:
-                    tracker.remove_resource(resource)
                     raise ValueError(
                         f"目标设备 {self.device_id!r} 找不到挂载物料 {parent_uuid}"
                     )
+                # 先挂上再登记：挂不上（库位对不上等）时 tracker 里不留孤儿
+                parent = self._mount_on_parent(parent, resource, site)
+                tracker.add_resource(resource)
                 tracker.resources = [
                     item for item in tracker.resources if item is not resource
                 ]
@@ -501,27 +568,11 @@ class DeviceNode(ABC):
                 )
                 if observer is not None:
                     observer.unobserve(resource)
-                placement = self._carrier_placement(parent, site)
-                spot = (
-                    placement[1]
-                    if placement is not None
-                    else self._site_spot(parent, site)
-                )
-                assign_site = getattr(
-                    placement[0] if placement is not None else parent,
-                    "assign_resource_to_site",
-                    None,
-                )
-                if callable(assign_site) and spot is not None:
-                    # 载架 Site：经载架放到 holder 上（权威父节点可能是载架或其 holder）
-                    assign_site(resource, spot)
-                else:
-                    assign = parent.assign_child_resource
-                    parameters = inspect.signature(assign).parameters
-                    kwargs: dict[str, Any] = {}
-                    if "spot" in parameters:
-                        kwargs["spot"] = spot
-                    assign(resource, location=None, **kwargs)
+            else:
+                # 设备自身持有的根物料：没有位置时按库位的位置，没给库位是原点
+                if resource.location is None:
+                    resource.location = self._device_site_location(site) or Coordinate(0, 0, 0)
+                tracker.add_resource(resource)
             if parent is not None:
                 await self._invoke_resource_hook(
                     "resource_tree_transfer",
@@ -707,7 +758,12 @@ class DeviceNode(ABC):
             lock.release(self)
 
     def transfer_to_new_resource(
-        self, plr_resource: Any, tree: Any, additional_add_params: Dict[str, Any]
+        self,
+        plr_resource: Any,
+        tree: Any,
+        additional_add_params: Dict[str, Any],
+        *,
+        location: Any | None = None,
     ) -> Optional[Any]:
         """把（已实例化的）物料挂载到 tree 指定的父物料下，返回父物料。
 
@@ -736,7 +792,6 @@ class DeviceNode(ABC):
             return None
         try:
             # 将 Uni-Lab-OS 的 site/slot 元数据转换为 PLR 挂载参数。
-            additional_params: Dict[str, Any] = {}
             extra = getattr(plr_resource, "unilabos_extra", {})
             if len(extra):
                 self.lab_logger().info(f"发现物料{plr_resource}额外参数: " + str(extra))
@@ -745,20 +800,19 @@ class DeviceNode(ABC):
                 additional_add_params["slot"] = extra["update_resource_site"]
             # site 只承载权威 Site uuid；slot 承载 label / 0-based 索引
             selector = additional_add_params.get("site") or additional_add_params.get("slot")
-            # PLR 载架（仓库等）只能经 Site 放物料；目标也可能是载架 Site 的 holder
+            # 卸下原父物料之前先核对库位能解析（PLR 载架只能经 Site 放物料，目标也可能是载架
+            # Site 的 holder；按 spot 排布的父物料解析 uuid、label 或索引）：选择器无效时什么都不改
             placement = self._carrier_placement(parent_resource, selector)
             spec = inspect.signature(parent_resource.assign_child_resource)
             if placement is None and "spot" in spec.parameters:
-                # _site_spot 解析 uuid、label 或索引；未指定时由父级选择默认位置，
-                # 无法解析的显式选择器直接报错。
-                additional_params["spot"] = self._site_spot(parent_resource, selector)
+                self._site_spot(parent_resource, selector)
             old_parent = plr_resource.parent
             if old_parent is not None:
                 # PLR 资源在重新挂载前必须先从当前父资源解除。
                 self.lab_logger().info(f"物料{plr_resource}从{old_parent}卸载")
                 old_parent.unassign_child_resource(plr_resource)
             self.lab_logger().info(
-                f"物料{plr_resource}挂载到{parent_resource}，额外参数：{additional_params}"
+                f"物料{plr_resource}挂载到{parent_resource}，库位：{selector}"
             )
 
             # 挂载后资源属于 parent_resource；先从顶级列表移除可避免
@@ -777,14 +831,10 @@ class DeviceNode(ABC):
             if observer is not None:
                 observer.unobserve(plr_resource)
 
-            if placement is not None:
-                carrier, spot = placement
-                self.lab_logger().info(f"物料{plr_resource}经载架{carrier}放到 Site[{spot}]")
-                carrier.assign_resource_to_site(plr_resource, spot)
-                # 上报从载架起：它的 Site 占用随同一棵树回报
-                parent_resource = carrier
-            else:
-                parent_resource.assign_child_resource(plr_resource, location=None, **additional_params)
+            # 与 create / transfer 落到本设备同一条挂载规则；经载架放时上报从载架起（Site 占用随同一棵树回报）
+            parent_resource = self._mount_on_parent(
+                parent_resource, plr_resource, selector, default_location=location
+            )
 
             func = getattr(self._resource_driver(), "resource_tree_transfer", None)
             if callable(func):
@@ -823,6 +873,29 @@ class DeviceNode(ABC):
             )
         except Exception as exc:  # noqa: BLE001 - 设备不是权威物料时（未登记）保持原样
             self.lab_logger().debug(f"[AR:{material_uuid}] 设备挂载未落 parent（{exc}），按根树保留")
+
+    async def _device_site_uuid(self, selector: Any | None) -> Optional[str]:
+        """设备自身库位的选择器解析成权威 Site uuid。
+
+        与 ``materials.create(site=...)`` 同一套规则：按 Site uuid、label 或 Site 自己的
+        ``index``（设备库位声明里的编号，不是列表序号）匹配，必须唯一命中。
+        未指定返回 None；指定了却找不到（或不唯一）直接报错，不退回「只落父子关系」。
+        """
+
+        if selector is None or str(selector).strip() == "":
+            return None
+        normalized = str(selector).strip()
+        tree_set = await self.get_resource(resources_uuid=[self.resource_uuid], with_children=False)
+        sites = list(tree_set.trees[0].root_node.res_content.sites or []) if tree_set.trees else []
+        matches = [
+            site for site in sites if normalized in {str(site.uuid), str(site.label), str(site.index)}
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"设备 {self.device_id!r} 的库位 {selector!r} {'不存在' if not matches else '不唯一'}；"
+                f"可用: {[site.label for site in sites]}"
+            )
+        return str(matches[0].uuid)
 
     @staticmethod
     def _occupied_site_uuid(
@@ -932,10 +1005,30 @@ class DeviceNode(ABC):
                 parent_uuid = bind_parent_id
             else:
                 parent_uuid = self.resource_tracker.figure_resource({"name": bind_parent_id}).unilabos_uuid
+            device_site_uuid: Optional[str] = None
+            if parent_uuid == self.resource_uuid and self.resource_uuid:
+                # 设备自身的库位在提交点之前解析：选择器无效、或给的 Site uuid 不是本设备的库位时
+                # 什么都不改（site 与 slot 走同一套匹配，别的设备的 Site 不会被当成本设备的）
+                stage = "解析设备库位"
+                device_site_uuid = await self._device_site_uuid(
+                    site_uuid if site_uuid is not None else additional_params.get("slot")
+                )
+                if device_site_uuid is not None and len(resource_uuids) != 1:
+                    raise ValueError("一个库位只能放一个物料：指定设备库位时一次只能挂一个物料")
             drafts = tree_set.to_plr_resources()
             # 提交点：此后本地 PLR 挂载、权威 move 与快照回报必须一起走完
             if commit_point is not None and not commit_point.enter():
                 raise TimeoutError("等待方已超时放弃，挂载未执行")
+            if device_site_uuid is not None:
+                # 设备库位先在权威落占用：库位被占、类别不符、入口预留、设备子树只收 PLR 物料都由
+                # 权威校验。被拒时本地还没动，不会留下「本地已挂、权威没放」的物料。
+                stage = "权威 move"
+                await self._require_resource_service().move_resource(
+                    self.device_id,
+                    self.resource_uuid,
+                    resource_uuids[0],
+                    destination_site_uuid=device_site_uuid,
+                )
             stage = "本地挂载"
             plr_instances: List[Any] = []
             added_instances: List[Any] = []
@@ -963,8 +1056,22 @@ class DeviceNode(ABC):
                         extra = getattr(plr_instance, "unilabos_extra", None) or {}
                         extra[EXTRA_BOUND_DEVICE] = self._short_device_id()
                         plr_instance.unilabos_extra = extra
+                        old_parent = getattr(plr_instance, "parent", None)
+                        if device_site_uuid is not None and old_parent is not None:
+                            # 权威已把它放到设备库位、父物料是设备：本地也从原 PLR 父物料卸下，
+                            # 作为本设备的根树登记。原父树少了这个孩子，随第 4 步一起快照。
+                            old_root = old_parent
+                            while getattr(old_root, "parent", None) is not None:
+                                old_root = old_root.parent
+                            self.lab_logger().info(f"[AR:{tag}] 物料 {root_uuid} 从 {old_parent} 卸下，放到设备库位")
+                            old_parent.unassign_child_resource(plr_instance)
+                            self.resource_tracker.add_resource(plr_instance)
+                            if all(id(old_root) != id(existing) for existing in report_roots):
+                                report_roots.append(old_root)
                     plr_instances.append(plr_instance)
-                    parent = self.transfer_to_new_resource(plr_instance, tree, dict(additional_params))
+                    parent = self.transfer_to_new_resource(
+                        plr_instance, tree, dict(additional_params), location=bind_location
+                    )
                     if parent is None and parent_uuid != self.resource_uuid:
                         raise ValueError(f"物料 {plr_instance.name} 挂载到 {bind_parent_id} 失败（详见设备日志）")
                     if plr_instance.location is None:
@@ -996,7 +1103,8 @@ class DeviceNode(ABC):
                             report_tree_set, parent_uuid, material_uuid
                         ),
                     )
-            elif self.resource_uuid:
+            elif self.resource_uuid and device_site_uuid is None:
+                # 挂到设备自身、没指定库位：只落父子关系（指定了库位的已在本地挂载前 move 过）
                 for material_uuid in resource_uuids:
                     await self._attach_root_to_device(material_uuid)
             # 4. 同步：挂载后的父树经 update_resource 直连权威（权威已有 create 记录，严禁 add）

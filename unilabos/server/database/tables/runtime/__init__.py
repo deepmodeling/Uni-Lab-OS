@@ -116,6 +116,9 @@ RUNTIME_DATABASE = DatabaseSpec(
     # 0.13 发布线的基线：schema v1，没有迁移。发布前的结构变化直接并进 v1 基线；发布后改 DDL /
     # contract_version 时提升 schema_version、在 migrations 里补 v2 起的迁移，并把 v1 的结构指纹
     # 登记进 released_checksums。
+    # contract 2：main 发布前重置基线（设备子树只收格式合规的 PLR 物料、旧数据不做修复），
+    # 之前的开发库按指纹不符拒绝启动或按 database_rebuild_on_mismatch 重建。
+    contract_version=2,
     schema_version=1,
     migrations=(),
     # 工作流定义、任务与注册表记录：结构变化必须带迁移。没有迁移路径时拒绝启动、保留旧库；

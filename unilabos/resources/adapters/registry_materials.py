@@ -81,10 +81,11 @@ def _resource_type(definition: Mapping[str, Any]) -> str:
 
 
 def registry_resource_class_name(definition: Mapping[str, Any]) -> str | None:
-    """注册表资源条目的 PLR 类名：``config_info`` 里序列化的 ``config.type``，其次非通用的 ``class.type``。
+    """注册表资源条目的 PLR 短类型名：``config_info`` 里序列化的 ``config.type``，其次非通用的 ``class.type``。
 
-    物料权威登记模板时用它填 ``class_name``，并按它校验物料的 ``class``；旧格式图在读图边界按
-    同一规则补齐 PLR 类名。条目没有 ``config_info``、``class.type`` 又是通用后端名时返回 None。
+    它是物料 ``config.type`` 的来源（PLR 反序列化靠它找类）；旧格式图在读图边界按同一规则补齐。
+    物料与模板的 ``class`` 是注册表资源名本身（见 :mod:`unilabos.resources.material_class`）。
+    条目没有 ``config_info``、``class.type`` 又是通用后端名时返回 None。
     """
 
     components = [
@@ -173,7 +174,9 @@ def registry_definition_to_template(
         name=name,
         display_name=str(definition.get("display_name") or name),
         resource_type=_resource_type(definition),
-        class_name=registry_resource_class_name(definition),
+        # class 是初始化物料用的注册表名，即条目 id；实现模块在 module_name（class.module）。
+        # 条目没有声明实现（没有 class.module）时没法按它初始化，模板不约束物料的 class。
+        class_name=name if class_definition.get("module") else None,
         module_name=str(class_definition.get("module") or "") or None,
         template_version=str(definition.get("version") or "registry-v1"),
         category=category,

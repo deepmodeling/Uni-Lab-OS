@@ -12,12 +12,15 @@ V1 的候选时间计划来自商用 CP-SAT 引擎，开源树里已经剥离；
   ``estimator`` 给出实测统计与兜底秒数。
 - ``/monitor/*``：V1 进程内四通道总线（material / device / action / scheduler）在 dev 上以持久
   前端通知（``frontend_event``）为唯一来源投影：作业变化 → action，任务 / 工站变化 → scheduler，
-  资源占用变化 → device；物料变化在 materials.db 的独立事件流里，这里不复制（material 通道为空）。
+  资源占用变化 → device。``frontend_event`` 里的物料 / 日志失效通知（``material.changed`` /
+  ``runtime.logs.changed``）不是 V1 material 通道的库存领域事件，不投影（material 通道为空），只算扫过。
+  监控流按 ``frontend_event`` 的序号续传（:meth:`ExecutionTimeline.monitor_window`）。
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
@@ -27,6 +30,19 @@ from unilabos.server.services.runtime.workflow.store import _load
 CHANNELS = ("material", "device", "action", "scheduler")
 NO_ENGINE_TIME_PLAN = {"enabled": False, "algorithm": "stable-ready-order"}
 _IN_FLIGHT = ("dispatched", "running", "cancel_requested")
+#: 监控流一次扫描最多读的通知行数（任何通道都算）；读满就马上读下一页
+MONITOR_PAGE = 200
+
+
+@dataclass(frozen=True)
+class MonitorWindow:
+    """一次扫描：保留窗口边界、实际扫到的最大序号、其中属于所选通道的事件、后面是否还有。"""
+
+    oldest: int
+    latest: int
+    scanned: int
+    events: List[Dict[str, Any]] = field(default_factory=list)
+    more: bool = False
 
 
 def _epoch(value: Optional[str]) -> Optional[float]:
@@ -149,17 +165,48 @@ class ExecutionTimeline:
         return {"seq": row["sequence"], "ts": _epoch(row["create_time"]) or 0.0, "channel": channel,
                 "type": kind, "data": data}
 
-    def monitor_events(self, *, after: int = 0, channels: Optional[Iterable[str]] = None,
-                       limit: int = 200) -> List[Dict[str, Any]]:
+    def monitor_window(self, *, after: int, channels: Optional[Iterable[str]] = None,
+                       limit: int = MONITOR_PAGE) -> MonitorWindow:
+        """同一条 SQL 快照内读保留窗口边界与 ``after`` 之后的一页通知（按行数分页，不按事件数）。
+
+        ``scanned`` 是这一页实际扫到的最大序号（没有行时为 ``after``），游标只推进到它：扫描与“最新序号”
+        不分两次读，扫描期间提交的通知留给下一页；页里不属于所选通道的通知也算扫过。
+        """
+
         wanted = set(channels or CHANNELS)
         with self._store.write_lock:
             rows = self._store.connection.execute(
-                "SELECT sequence, type, payload, create_time FROM frontend_event WHERE sequence > ? "
-                "ORDER BY sequence LIMIT ?",
-                (after, max(1, limit) * 4),
+                """
+                WITH bounds AS (
+                    SELECT
+                        COALESCE((SELECT MIN(sequence) FROM frontend_event), 0) AS window_oldest,
+                        COALESCE((SELECT MAX(sequence) FROM frontend_event), 0) AS window_latest
+                ), page AS (
+                    SELECT sequence, type, payload, create_time FROM frontend_event
+                    WHERE sequence > ? ORDER BY sequence LIMIT ?
+                )
+                SELECT bounds.window_oldest, bounds.window_latest, page.*
+                FROM bounds LEFT JOIN page ON 1 = 1
+                ORDER BY page.sequence
+                """,
+                (after, max(1, limit)),
             ).fetchall()
-        events = [event for row in rows if (event := self.monitor_event(row)) and event["channel"] in wanted]
-        return events[:limit]
+        page = [row for row in rows if row["sequence"] is not None]
+        return MonitorWindow(
+            oldest=int(rows[0]["window_oldest"]),
+            latest=int(rows[0]["window_latest"]),
+            scanned=int(page[-1]["sequence"]) if page else after,
+            events=[event for row in page if (event := self.monitor_event(row)) and event["channel"] in wanted],
+            more=len(page) >= max(1, limit),
+        )
+
+    def monitor_backlog(self, channels: Sequence[str], count: int) -> tuple[int, List[Dict[str, Any]]]:
+        """首连：当前最新序号与最近 ``count`` 条事件，在同一把写锁内读出，两次读之间不会插进提交。"""
+
+        with self._store.write_lock:
+            latest = int(self._store.connection.execute(
+                "SELECT COALESCE(MAX(sequence), 0) FROM frontend_event").fetchone()[0])
+            return latest, self.backlog(channels, count)
 
     def recent(self, channel: str, count: int = 40) -> List[Dict[str, Any]]:
         with self._store.write_lock:
@@ -230,4 +277,4 @@ class ExecutionTimeline:
         }
 
 
-__all__ = ["CHANNELS", "ExecutionTimeline", "NO_ENGINE_TIME_PLAN"]
+__all__ = ["CHANNELS", "ExecutionTimeline", "MONITOR_PAGE", "MonitorWindow", "NO_ENGINE_TIME_PLAN"]

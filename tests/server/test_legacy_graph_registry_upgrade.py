@@ -37,6 +37,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).parent / "fixtures" / "legacy_graphs"
 EXPERIMENTS = REPO_ROOT / "unilabos" / "test" / "experiments"
 CONTAINER_YAML = REPO_ROOT / "unilabos" / "registry" / "resources" / "organic" / "container.yaml"
+#: 物料 / 模板的 class：初始化它用的注册表名
+CONTAINER_CLASS = "container"
 
 #: 旧夹具 → 手工改成当前写法的示例图
 LEGACY_FIXTURES = {
@@ -117,7 +119,9 @@ def test_legacy_fixture_upgrades_to_the_hand_fixed_example(fixture, registry_loo
     for node in upgraded["nodes"]:
         if node.get("type") == "container":
             assert node["template_name"] == "container", node["id"]
-            assert node["class"] == node["config"]["type"] == "RegularContainer", node["id"]
+            # class 是初始化它用的注册表名，config.type 是 PLR 类名
+            assert node["class"] == CONTAINER_CLASS, node["id"]
+            assert node["config"]["type"] == "RegularContainer", node["id"]
     # 幂等：升级结果不再带旧字段，再升级不变
     assert legacy_graph_markers(upgraded) == {}
     again: list[str] = []
@@ -145,7 +149,8 @@ def test_registry_entry_without_config_info_uses_the_declared_class() -> None:
     assert registry_resource_class_name(entry) is None
     upgraded = _upgrade(_read(FIXTURES / "mock_reactor.json"), _Lookup({"container": entry}))
     reactor = _by_id(upgraded)["reactor"]
-    assert reactor["class"] == reactor["config"]["type"] == "RegularContainer"
+    assert reactor["class"] == CONTAINER_CLASS
+    assert reactor["config"]["type"] == "RegularContainer"
 
 
 def test_unknown_template_names_the_node_and_the_template(registry_lookup) -> None:
@@ -188,7 +193,7 @@ def test_current_format_graph_is_left_alone() -> None:
     # 手工改好的示例图：只做形状转换（根级 position、name 等），物料节点不查注册表
     current = _read(EXPERIMENTS / "Protocol_Test_Station" / "simple_stir_heatchill_test_station.json")
     upgraded = _upgrade(current, no_lookup)
-    assert _by_id(upgraded)["main_reactor"]["class"] == "RegularContainer"
+    assert _by_id(upgraded)["main_reactor"]["class"] == CONTAINER_CLASS
 
     # 完全当前契约的图：原样返回、不提示；class 为空而 config.type 已有也是合法写法
     payload = {
@@ -268,7 +273,9 @@ def test_legacy_fixture_boots_like_the_hand_fixed_example(fixture, host_registry
         if content.type == "device" or (content.parent is not None and content.parent.type != "device"):
             continue
         (resource,) = ResourceTreeSet([ResourceTreeInstance(node)]).to_plr_resources()
-        assert content.klass == type(resource).__name__ == entry_class, content.id
+        # class 是初始化它用的注册表名；建出来的 PLR 类就是 config.type 指的那个
+        assert content.klass == CONTAINER_CLASS, content.id
+        assert type(resource).__name__ == entry_class == content.config["type"], content.id
 
 
 def test_unknown_template_refuses_to_start(host_registry, tmp_path, monkeypatch, capsys) -> None:
@@ -379,7 +386,7 @@ def test_legacy_workstation_graph_runs_on_a_real_hostlink_backend(tmp_path: Path
         for container in ("main_reactor", "secondary_reactor"):
             node = live[container]
             assert (node["template_name"], node["class"], node["config"]["type"]) == (
-                "container", "RegularContainer", "RegularContainer"
+                "container", CONTAINER_CLASS, "RegularContainer"
             ), node
         # 文件本身没被改写
         assert _read(graph) == _read(FIXTURES / "simple_stir_heatchill_test_station.json")

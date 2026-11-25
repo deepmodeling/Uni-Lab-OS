@@ -907,7 +907,7 @@ async def long_operation(self, duration: float) -> Dict[str, Any]:
     # 使用通用 DeviceNode，驱动无需判断当前 backend
     await self._node.sleep(duration)
 
-    # ActionContext 可在 ROS 和 HostLink 中发送 feedback、接收取消
+    # 需要发布反馈、检查取消时加一个 Optional[ActionContext] 参数（按类型注入，见 action_standard.md）
 
     self._status = "idle"
     return {"success": True, "duration": duration}

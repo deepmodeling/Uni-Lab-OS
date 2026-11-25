@@ -102,7 +102,7 @@ def _parse_sse_lines(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
     """把 SSE 文本行解析成 ``{"event", "id", "data"}`` 帧。
 
     注释行与 ``retry`` 忽略；只有 ``id`` 没有 ``data`` 的水位帧照常产出（``data`` 为
-    ``None``）。``id`` 只取本帧自带的值，没有 id 的瞬时通知不会继承上一条的序号。
+    ``None``）。``id`` 只取本帧自带的值，不继承上一条的序号（服务端每帧都带 id，这里不依赖它）。
     """
 
     event_name, event_id, data_lines = "", None, []
@@ -136,6 +136,7 @@ def _sse_frame_notice(frame: Mapping[str, Any]) -> str:
         data = json.loads(frame["data"]) if frame["data"] else {}
     except json.JSONDecodeError:
         data = {}
+    # 工作流事件流的 id 是十进制序号；其他形状（例如物料事件流的 ``<sequence>:<epoch>``）不是工作流游标。
     try:
         sequence = int(frame["id"]) if frame["id"] is not None else None
     except ValueError:
@@ -371,7 +372,13 @@ class HTTPWorkflowClient:
         input_value: Optional[Mapping[str, Any]] = None,
         operation_id: Optional[str] = None,
     ) -> dict[str, Any]:
-        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。"""
+        """创建整图任务；``input_value`` 是工作流入口参数（按 input_contract 校验，未声明合同只接受 ``{}``）。
+
+        物料参数（``ResourceSlot``）可以按库位绑定：给 ``{"site_uuid": 库位 uuid}``
+        （``unilabos.protocol.runtime.site_references.material_at_site``），表示此刻占着该库位的物料，
+        服务端建任务时解析并冻结。库位参数（``SiteSlot``）可以按所属物料选择：给 ``{"owner_uuid": 所属物料 uuid}``
+        （``site_under_owner``），调度器在任务准入时选定库位并冻结。
+        """
 
         operation_id = operation_id or str(uuid4())
         return self._http.post(
@@ -517,7 +524,8 @@ class HTTPWorkflowClient:
         """订阅 SSE 失效通知，并在每次相关通知后经 HTTP 拉取任务与 Job 正文。
 
         ``after`` 为 0 时从服务端当前水位开始，不回放历史通知；大于 0 时作为
-        ``Last-Event-ID`` 从该序号之后续传。``stream.reset`` 表示游标失效，水位
+        ``Last-Event-ID`` 从该序号之后续传。产出的 ``cursor`` 是收到的最后一帧的 id（任何帧都推进它，
+        包括物料、日志通知），可作下一次的 ``after``。``stream.reset`` 表示游标失效，水位
         可能回退，客户端重读 HTTP 校准。快照没有变化的通知不重复产出。
         """
 
@@ -573,15 +581,15 @@ class HTTPWorkflowClient:
                         # 游标过期或超前：采用服务端给出的新水位（可能回退）并重读 HTTP。
                         if sequence is not None:
                             cursor = sequence
-                    elif not self._notice_matches_task(notice, task_uuid):
-                        # 水位帧与其他任务的通知只推进游标，便于调用方用 after 续传。
-                        if sequence is not None and sequence > cursor:
+                    else:
+                        if sequence is not None:
+                            # 每一帧（水位、工作流、物料、日志）都带同一序列的 id，都推进游标，调用方用 after 续传；
+                            # 不大于游标的是续传边界上的重复帧。
+                            if sequence <= cursor:
+                                continue
                             cursor = sequence
-                        continue
-                    elif sequence is not None:
-                        if sequence <= cursor:
+                        if not self._notice_matches_task(notice, task_uuid):
                             continue
-                        cursor = sequence
 
                     # 通知内容只触发失效；任务事实固定从 HTTP 重新拉取。
                     refreshed = self.inspect_task(task_uuid)
@@ -659,23 +667,16 @@ class HTTPWorkflowClient:
         ).lower()
         return any(token in event_type for token in ("workflow", "task", "job"))
 
-    @classmethod
-    def _notice_sequence(cls, notice: Mapping[str, Any]) -> Optional[int]:
-        # SSE 帧的 id 是持久通知序号，优先于 data 内的业务字段。
-        top = notice.get("id")
-        if isinstance(top, int) and not isinstance(top, bool) and top >= 0:
-            return top
-        data = cls._notice_data(notice)
-        for key in ("event_sequence", "backend_sequence", "sequence", "id"):
-            value = data.get(key)
-            if isinstance(value, bool):
-                continue
-            try:
-                sequence = int(value)
-            except (TypeError, ValueError):
-                continue
-            if sequence >= 0:
-                return sequence
+    @staticmethod
+    def _notice_sequence(notice: Mapping[str, Any]) -> Optional[int]:
+        """帧的 SSE id，即 ``/api/v1/events`` 那一个序列上的游标；不是非负整数时返回 None。
+
+        游标只取 SSE id：``material.changed`` 的 ``data.sequence`` 是物料账本的序号，不能拿来推进游标。
+        """
+
+        value = notice.get("id")
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
         return None
 
 

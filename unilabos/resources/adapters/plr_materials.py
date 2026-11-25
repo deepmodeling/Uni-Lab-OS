@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Collection, Mapping, Optional, Protocol, Sequence
 
+from unilabos.resources.material_class import material_class
 from unilabos.resources.objects.naming import PLR_KEY_FIELD, canonical_uuid, plr_key
 from unilabos.resources.objects.resource import ResourceDict
 from unilabos.resources.resource_tracker import ResourceTreeSet
@@ -23,6 +24,7 @@ from unilabos.protocol.materials import (
     MaterialMove,
     MaterialNodeCreate,
     MaterialNodeDelta,
+    MaterialPlacement,
     MaterialPosition,
     MaterialSnapshot,
     MaterialSnapshotDiff,
@@ -256,9 +258,13 @@ def resource_tree_to_create(
                     display_name=resource.display_name,
                     description=resource.description,
                     resource_type=resource.type,
-                    class_name=(
-                        resource.klass
-                        or str(resource.config.get("type") or "Resource")
+                    # 初始化它用的注册表名（没有注册表条目时是 PLR 类名；设备不变），
+                    # 见 unilabos.resources.material_class
+                    class_name=material_class(
+                        resource_type=resource.type,
+                        klass=resource.klass,
+                        template_name=resource.template_name,
+                        plr_type=resource.config.get("type"),
                     ),
                     machine_name=resource.machine_name,
                     barcode=resource.barcode,
@@ -626,18 +632,33 @@ def create_plr_materials(
     resources: Sequence[Any],
     *,
     root_extra: dict[str, Any] | None = None,
+    placement: MaterialPlacement | None = None,
+    display_name: str = "",
+    root_position: tuple[float, float, float] | None = None,
 ) -> CreatedPLRMaterials:
     """把 PLR 草稿发给权威创建；``root_extra`` 合并进根节点 identity.extra。
 
     根 extra 是树级元数据的落点（如所属设备 ``unilabos_bound_device_id``）；
     在 create 请求上合并可保证入库即带元数据，且不修改调用方的输入实例。
+    ``placement`` 让权威在建树的同一事务里把根物料落到父物料 / 库位上（原子）。
+    ``display_name`` 是根物料的人读标签（省略时取 PLR 名）；PLR 运行时不承载展示名，
+    之后的快照也不会改写它。``root_position`` 是落位时根物料没有位置时入库的位置（库位的位置或原点），
+    权威里不留没有位置的孩子。
     """
 
     request = plr_resources_to_create(resources)
-    if root_extra:
-        for node in request.nodes:
-            if node.parent_client_ref is None:
-                node.identity.extra = {**node.identity.extra, **root_extra}
+    for node in request.nodes:
+        if node.parent_client_ref is not None:
+            continue
+        if root_extra:
+            node.identity.extra = {**node.identity.extra, **root_extra}
+        if display_name.strip():
+            node.identity.display_name = display_name.strip()
+        if root_position is not None and node.position.position_x is None:
+            x, y, z = root_position
+            node.position = node.position.model_copy(update={"position_x": x, "position_y": y, "position_z": z})
+    if placement is not None:
+        request.placement = placement
     result = gateway.create_tree(mutation, request)
     tree = material_tree_to_resource_tree(result.data)
     return CreatedPLRMaterials(

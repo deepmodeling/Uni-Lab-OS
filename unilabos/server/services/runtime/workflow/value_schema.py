@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Any
 
 from unilabos.server.services.runtime.workflow.handle_projection import resource_slot_schema
+from unilabos.protocol.runtime.site_references import OWNER_UUID_KEY, SITE_UUID_KEY, owner_reference, site_reference
 from unilabos.protocol.runtime.workflow import validate_uuid
 
 
@@ -141,6 +142,13 @@ def validate_value(
     ):
         raise WorkflowValueSchemaError("workflow_value_invalid", path)
     if normalized.get("$slot") == "ResourceSlot":
+        site = site_reference(value)
+        if site is not None:
+            # 按库位绑定（占着这个库位的物料）：建任务 / 预检时解析成占用物料并冻结
+            try:
+                return {SITE_UUID_KEY: validate_uuid(site)}
+            except (TypeError, ValueError):
+                raise WorkflowValueSchemaError("workflow_value_invalid", path) from None
         if not isinstance(value, Mapping) or not isinstance(value.get("uuid"), str):
             raise WorkflowValueSchemaError("workflow_value_invalid", path)
         try:
@@ -155,6 +163,13 @@ def validate_value(
             raise WorkflowValueSchemaError("workflow_value_invalid", path)
         return value.strip()
     if normalized.get("$slot") == "SiteSlot":
+        owner = owner_reference(value)
+        if owner is not None:
+            # 按所属物料选择：任务准入时调度器选一个接受放入物料的空库位并冻结
+            try:
+                return {OWNER_UUID_KEY: validate_uuid(owner)}
+            except (TypeError, ValueError):
+                raise WorkflowValueSchemaError("workflow_value_invalid", path) from None
         if not isinstance(value, str):
             raise WorkflowValueSchemaError("workflow_value_invalid", path)
         try:

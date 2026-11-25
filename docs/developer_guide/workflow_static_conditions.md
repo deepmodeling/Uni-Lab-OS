@@ -309,7 +309,7 @@ node-runs 查询验证完整链路，同时运行原来的定次加样、等待�
 
 任务详情从 dev 的 NodeRun 读取全部 attempts，为每次执行补上逻辑节点的执行类型和拓扑序。每次执行的 ID、参数和返回值保持原值，循环中的成功及 skipped 记录都保留。进度仅使用各逻辑节点的当前 attempt；时间线注明第几次执行，设备 ID 来自任务冻结快照中的绑定。
 
-`/api/v1/events` 只用于失效通知，页面重读 REST 权威状态。支持 dev 的 task / node_run / node_job / manual_confirmation / authoring 事件及 stream.reset；节点事件缺少任务 ID 时做全局失效，连接建立和重连后补读快照。反馈读取 `/workflow-node-jobs/{uuid}/feedback-history`，按 sequence 续读。
+`/api/v1/events` 只用于失效通知，页面重读 REST 权威状态。支持 dev 的 task / node_run / node_job / manual_confirmation / authoring 事件及 stream.reset；节点事件缺少任务 ID 时做全局失效，连接建立和重连后补读快照。同一条流上的 `material.changed`、`runtime.logs.changed` 与工作流事件共用一个序列，每帧都带整数 id；工作流页面不处理它们，但它们的 id 同样推进续传游标。反馈读取 `/workflow-node-jobs/{uuid}/feedback-history`，按 sequence 续读。
 
 当前运行入口不支持额外库存换绑或高优先级调度；适配器明确拒绝非空换绑和高优先级请求，提交体不发送未支持字段。后端任务创建 DTO 拒绝额外字段，避免调用方误以为配置已生效。后续若新增优先级或库存业务，应先定义 dev 合同再开放界面选项。
 

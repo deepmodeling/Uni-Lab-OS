@@ -49,14 +49,13 @@ class _QuietTimeline:
     def __init__(self, _service) -> None:
         pass
 
-    def backlog(self, _channels, _count):
-        return []
+    def monitor_backlog(self, _channels, _count):
+        return 0, []
 
-    def latest_sequence(self) -> int:
-        return 0
+    def monitor_window(self, *, after, channels):
+        from unilabos.server.services.runtime.workflow.timeline import MonitorWindow
 
-    def monitor_events(self, *, after, channels):
-        return []
+        return MonitorWindow(oldest=0, latest=0, scanned=after)
 
 
 class _Request:
@@ -70,7 +69,7 @@ def test_monitor_stream_keepalive_ignores_forward_wall_clock_jump(monkeypatch) -
     endpoint = next(route.endpoint for route in router.routes if route.path.endswith("/monitor/events"))
 
     async def next_chunk_after_jump():
-        response = await endpoint(_Request(), channels="", backlog=0, follow=True)
+        response = await endpoint(_Request(), channels="", backlog=0, follow=True, last_event_id=None)
         stream = response.body_iterator
 
         async def next_chunk():
@@ -78,6 +77,7 @@ def test_monitor_stream_keepalive_ignores_forward_wall_clock_jump(monkeypatch) -
 
         try:
             assert (await next_chunk()).startswith("retry:")
+            assert await next_chunk() == "id: 0\n\n"  # 首连的水位帧
             pending = asyncio.get_running_loop().create_task(next_chunk())
             # 先让事件流进入轮询循环、记下上次保活时间，再让墙钟前跳超过 15 s 的保活间隔；
             # 单调时钟此时才过去不到 2 s

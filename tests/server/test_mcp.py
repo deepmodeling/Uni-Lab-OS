@@ -137,6 +137,56 @@ def test_invalid_input_never_reaches_http(application):
             assert result["isError"], (name, result)
 
 
+def test_get_opens_no_stream_and_answers_405(application):
+    """GET /mcp 不开 Streamable HTTP 的独立 SSE 流（那条流没有 id、也没有事件存储，断线即丢）：回 405。
+
+    直接驱动 ASGI：旧行为是一条不会结束的 SSE 流，TestClient 会一直缓冲下去；这里只看响应头。
+    """
+
+    async def scenario():
+        async with application.router.lifespan_context(application):
+            started: asyncio.Future = asyncio.get_running_loop().create_future()
+            disconnect = asyncio.Event()
+
+            async def receive():
+                await disconnect.wait()
+                return {"type": "http.disconnect"}
+
+            async def send(message):
+                if message["type"] == "http.response.start" and not started.done():
+                    started.set_result(message)
+
+            scope = {
+                "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+                "scheme": "http", "path": "/mcp", "raw_path": b"/mcp", "query_string": b"", "root_path": "",
+                "headers": [(b"host", b"127.0.0.1"), (b"accept", b"application/json, text/event-stream")],
+                "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 80),
+            }
+            task = asyncio.create_task(application(scope, receive, send))
+            try:
+                return await asyncio.wait_for(started, 5.0)
+            finally:
+                disconnect.set()
+                try:
+                    await asyncio.wait_for(task, 5.0)
+                except (TimeoutError, asyncio.CancelledError):
+                    task.cancel()
+
+    start = asyncio.run(scenario())
+    headers = {key.decode().lower(): value.decode() for key, value in start["headers"]}
+    assert start["status"] == 405
+    assert headers["allow"] == "POST"
+    assert not headers.get("content-type", "").startswith("text/event-stream")
+
+
+def test_post_json_responses_are_unchanged(application):
+    with TestClient(application, base_url="http://127.0.0.1", client=("127.0.0.1", 50000)) as client:
+        response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 7, "method": "tools/list"},
+                               headers={"Accept": "application/json, text/event-stream"})
+    assert response.status_code == 200 and response.headers["content-type"].startswith("application/json")
+    assert response.json()["id"] == 7 and response.json()["result"]["tools"]
+
+
 @pytest.mark.parametrize("peer,headers,expected", [
     ("192.0.2.10", {}, 403),
     ("127.0.0.1", {"Origin": "https://evil.invalid"}, 403),

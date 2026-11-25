@@ -91,9 +91,9 @@ def test_changes_cli_returns_process_and_changed_file(package_stack, tmp_path, c
     source = tmp_path / "external"
     source.mkdir()
     code = source / "driver.py"
-    code.write_text("old")
+    code.write_text("old", encoding="utf-8")
     service.configure([str(source)], external_only=True)
-    code.write_text("new")
+    code.write_text("new", encoding="utf-8")
     service.source_changes.poll()
     service.source_changes.poll()
     capsys.readouterr()

@@ -19,6 +19,7 @@ from unilabos.protocol.materials import (
 )
 from unilabos.server.execution_composition import set_materials_gateway
 from unilabos.server.services.materials import MaterialsService
+from tests.heating_fixtures import heating_device_config
 
 
 def _mutation(operation: str) -> InventoryMutation:
@@ -213,6 +214,10 @@ def test_remote_heating_demo_provisions_after_connect_and_writes_host_materials(
         HostLinkConfig.port = host.server.port
         BasicConfig.is_host_mode = False
 
+        # Slave 启动时 Host 可达：设备物料在 Host 权威里装配好（与启动时 definition 同一步）
+        heater_config = heating_device_config(
+            "remote-virtual-heater", LocalMaterialsClient(service)
+        )
         local = HostLinkLocalRuntime()
         local.add_driver(
             HostLinkDriverSpec(
@@ -220,6 +225,8 @@ def test_remote_heating_demo_provisions_after_connect_and_writes_host_materials(
                 driver_class=VirtualHeatingPlatform,
                 config={"update_interval_s": 0.05},
                 registry_name="virtual_heating_platform",
+                resource_uuid=heater_config.res_content.uuid,
+                device_config=heater_config,
                 action_names=("heat_site",),
                 status_names=(
                     "site_1_temperature_c",

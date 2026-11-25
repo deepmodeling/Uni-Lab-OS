@@ -70,7 +70,7 @@ def _inspect_backend(backend: str) -> dict:
         cwd=ROOT,
         capture_output=True,
         text=True,
-        timeout=30,
+        timeout=30, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stderr
     prefix = "HOST_INSPECTION="

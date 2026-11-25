@@ -4,7 +4,7 @@ import json
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Optional
 from unittest.mock import Mock
 
 import pytest
@@ -73,12 +73,16 @@ class AdapterDriver:
         self.calls += 1
         raise CommunicationError("device offline")
 
-    def wait_until_cancelled(self, action_context: ActionContext) -> None:
+    def wait_until_cancelled(self, job: ActionContext) -> None:
+        # 参数名随意：框架按 ActionContext 类型注入，取消经它传到驱动
         self.calls += 1
         self.started.set()
         while True:
-            action_context.raise_if_cancelled()
+            job.raise_if_cancelled()
             time.sleep(0.01)
+
+    def observe(self, value: int, attempt: Optional[ActionContext] = None) -> dict[str, Any]:
+        return {"value": value, "action_id": attempt.action_id if attempt is not None else None}
 
     def ignores_cancel(self) -> dict[str, bool]:
         """同步驱动、不检查取消：取消请求之后仍要跑完。"""
@@ -143,6 +147,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
             "ignores_cancel",
             "samples",
             "overruns",
+            "observe",
         ),
         action_value_mappings={
             "succeed": {"type": "NativeAction"},
@@ -176,6 +181,7 @@ def _runtime() -> tuple[HostLinkBackend, AdapterDriver]:
             "ignores_cancel": {"type": "NativeAction"},
             "samples": {"type": "UniLabJsonCommand"},
             "overruns": {"type": "NativeAction", "timeout": 0.1},
+            "observe": {"type": "UniLabJsonCommand"},
         },
     )
     node = local.add_driver(spec)
@@ -592,6 +598,28 @@ def test_hostlink_operator_intervention_replaces_failure_result(
     assert bridge.statuses[-1][1] == "success"
     assert bridge.statuses[-1][3]["return_value"] == {"confirmed": True}
     assert bridge.statuses[-1][2]["raw_return_info"]["suc"] is False
+
+
+def test_scheduled_job_injects_its_attempt_context_by_type(execution_stack) -> None:
+    """调度作业：可空的 ActionContext 参数（名字随意）拿到 action_id 就是这次 attempt 的 job uuid。"""
+
+    _adapter, microbackend, _driver, bridge = execution_stack
+    item = _item("observe")
+    microbackend.dispatch(
+        {
+            "job_id": item.job_id,
+            "task_id": item.task_id,
+            "node_id": item.node_id,
+            "device_id": item.device_id,
+            "action": item.action_name,
+            "action_type": "UniLabJsonCommand",
+            "action_args": {"value": 3},
+        }
+    )
+    assert bridge.status_event.wait(2), bridge.statuses
+    job_id, status, _data, return_info = bridge.statuses[-1]
+    assert (job_id, status) == (item.job_id, "success")
+    assert return_info["return_value"] == {"value": 3, "action_id": item.job_id}
 
 
 def test_microbackend_cancels_running_hostlink_action(execution_stack) -> None:

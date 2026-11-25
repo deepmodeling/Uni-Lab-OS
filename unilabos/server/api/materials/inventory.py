@@ -11,6 +11,7 @@
 - ``POST /inventory/material-io/check`` 是工作流人工装入 / 取走 / 补量步骤确认前的试运行（不写库）；确认后的写入
   走统一命令入口的 ``material.io`` 类型化命令。
 - ``POST /inventory/material-sanity`` 是调度器派发前物料健全性检查的一次只读事实（不写库，不做判定）。
+- ``POST /inventory/site-admission`` 是建任务 / 运行预检时按库位绑定物料参数的一次只读库位事实（不写库，不做判定）。
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, FastAPI, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from unilabos.server.api.envelope import (
     INTERNAL_ERROR,
@@ -38,13 +39,31 @@ _LIMIT = Query(default=500, ge=1, le=500)
 
 
 class IngressReserveRequest(BaseModel):
+    """入口预留：在候选库位（``candidate_site_uuids``）或所属物料下接受载体的库位（``owner_material_uuid``，
+    按库位序号；工作流按所属物料选库位用）里预留一个空库位，两者给且只给一个。"""
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     idempotency_key: str = Field(min_length=1)
     carrier_material_uuid: str = Field(min_length=1)
-    candidate_site_uuids: List[str] = Field(min_length=1)
+    candidate_site_uuids: List[str] = Field(default_factory=list)
+    owner_material_uuid: Optional[str] = Field(default=None, min_length=1)
     ttl_seconds: int = Field(strict=True, gt=0)
     backend_task_uuid: Optional[str] = None
     invocation_key: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _one_candidate_source(self) -> "IngressReserveRequest":
+        if bool(self.candidate_site_uuids) == bool(self.owner_material_uuid):
+            raise ValueError("candidate_site_uuids 与 owner_material_uuid 必须给且只给一个")
+        return self
+
+
+class IngressFinishTaskRequest(BaseModel):
+    """任务结束：收掉它的活动入口预留（载体已在库位上记 received，否则按 reason 取消）。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    backend_task_uuid: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
 
 
 class IngressCancelRequest(BaseModel):
@@ -67,6 +86,21 @@ class MaterialSanityRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     material_uuids: List[str] = Field(default_factory=list, max_length=2000)
     reservation_uuid: Optional[str] = None
+
+
+class SiteAdmissionOwner(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    owner_material_uuid: str = Field(min_length=1)
+    occupant_material_uuid: str = Field(min_length=1)
+
+
+class SiteAdmissionRequest(BaseModel):
+    """任务准入时要读的库位：物料参数按库位绑定（``{"site_uuid"}``）引用的库位，以及库位参数按所属物料选择
+    （``{"owner_uuid"}``）时的所属物料与放入物料。"""
+
+    model_config = ConfigDict(extra="forbid")
+    site_uuids: List[str] = Field(default_factory=list, max_length=2000)
+    owners: List[SiteAdmissionOwner] = Field(default_factory=list, max_length=2000)
 
 
 def _code_of(exc: BaseException) -> int:
@@ -147,6 +181,15 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
         库存预留，以及本作业预留的各条分配现状。只读不写；等待还是预检报错由调度器判定。"""
 
         return service.material_sanity_facts(body.material_uuids, reservation_uuid=body.reservation_uuid)
+
+    @router.post("/site-admission")
+    def site_admission(body: SiteAdmissionRequest) -> Any:
+        """建任务 / 运行预检时读一次：物料参数按库位绑定（``{"site_uuid"}``）引用的库位是否存在、此刻被哪件物料
+        占着（模板、``module_name``、类别）；库位参数按所属物料选择（``owners``）时所属物料下接受放入物料的库位
+        与此刻能用的库位。只读不写；绑定 / 选择成功与否由工作流服务与调度器判定。"""
+
+        return service.site_admission_facts(
+            site_uuids=body.site_uuids, owners=[item.model_dump() for item in body.owners])
 
     @router.get("/commands/processed")
     def processed_commands(limit: int = Query(default=200, ge=1, le=500)) -> Any:
@@ -315,6 +358,12 @@ def create_inventory_router(service: MaterialsService) -> APIRouter:
     def reserve_ingress(body: IngressReserveRequest) -> Any:
         projection, _created = ingress.reserve(body.model_dump())
         return projection
+
+    @router.post("/ingress-reservations/finish-task")
+    def ingress_finish_task(body: IngressFinishTaskRequest) -> Any:
+        """工作流任务结束时收掉它的活动入口预留（按所属物料选库位时调度器预留的库位）。"""
+
+        return {"reservations": ingress.finish_task(body.backend_task_uuid, reason=body.reason)}
 
     @router.get("/ingress-reservations")
     def list_ingress(state: Optional[str] = Query(default=None), limit: int = Query(default=200, ge=1, le=500)) -> Any:

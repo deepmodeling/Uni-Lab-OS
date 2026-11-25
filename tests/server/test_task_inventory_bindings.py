@@ -27,7 +27,9 @@ class Lab:
         self.stack = Stack(tmp_path)
         self.contents = ContentContract(self.stack.materials, compound_source=None)
         contract = ResourceContract(self.stack.materials)
-        template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource"}])["templates"][0]
+        template = contract.sync_resource_templates([{"id": "bottle", "registry_type": "resource",
+                                                      "class": {"module": "pylabrobot.resources:Container",
+                                                                "type": "pylabrobot"}}])["templates"][0]
         info = self.contents.create_reagent_info({"name": "PBS", "physical_state": "liquid"})
         self.bottles, self.reagents = [], []
         for name, quantity in (("瓶 A", quantity_a), ("瓶 B", quantity_b)):

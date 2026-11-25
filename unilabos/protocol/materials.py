@@ -26,7 +26,7 @@ PROTOCOL_VERSION = "materials.v1"
 
 
 AggregateType = Literal[
-    "resource_template", "material", "site", "lot", "reservation"
+    "resource_template", "material", "site", "lot", "reservation", "link"
 ]
 
 
@@ -147,6 +147,7 @@ class ResourceTemplateWrite(ServerObject):
     name: NonEmptyStr
     display_name: Optional[NonEmptyStr] = None
     resource_type: NonEmptyStr = "resource"
+    #: 按这个模板初始化的物料的 class：注册表模板是注册表资源名（即模板名），实现模块在 ``module_name``
     class_name: Optional[str] = None
     module_name: Optional[str] = None
     template_version: NonEmptyStr = "1"
@@ -295,6 +296,8 @@ class MaterialIdentityWrite(ServerObject):
     display_name: str = ""
     description: str = ""
     resource_type: NonEmptyStr = "resource"
+    #: 初始化它用的注册表名（注册表资源名，与模板名相同；没有注册表条目的孩子是 PLR 类名；
+    #: 设备是注册表设备名）。PLR 类名在 ``config.type``，见 unilabos.resources.material_class。
     class_name: NonEmptyStr = "Resource"
     machine_name: str = ""
     barcode: str = ""
@@ -386,8 +389,23 @@ class MaterialNodeCreate(ServerObject):
     sites: list[SiteCreate] = Field(default_factory=list)
 
 
+class MaterialPlacement(ServerObject):
+    """新建根物料的落位：挂到哪个父物料、占哪个库位，在建树的同一事务里提交。
+
+    与 ``MaterialTransferItem`` 同形：``site`` 是父物料上的库位选择器（Site uuid、label 或
+    数字索引），由权威按父物料解析；省略时只落父子关系、不占库位。落位规则与 move 完全一致
+    （库位占用、模板类别、入口预留、环检测、设备子树只收 PLR 物料），任何一条不满足时
+    整棵树连同落位一起回滚，不留下没有落位的根物料。
+    """
+
+    parent_material_uuid: NonEmptyStr
+    site: Optional[Union[int, NonEmptyStr]] = None
+
+
 class MaterialTreeCreate(ServerObject):
     nodes: list[MaterialNodeCreate]
+    #: 根物料建好后在同一事务里落位；省略时根物料不挂任何父物料。
+    placement: Optional[MaterialPlacement] = None
 
     @model_validator(mode="after")
     def _validate_tree(self) -> "MaterialTreeCreate":
@@ -963,6 +981,7 @@ __all__ = [
     "MaterialIdentityRead",
     "MaterialIdentityWrite",
     "MaterialMove",
+    "MaterialPlacement",
     "MaterialNodeCreate",
     "MaterialPatch",
     "MaterialPosition",

@@ -61,7 +61,10 @@ Authority，再创建执行层，因此不存在执行器先于库存权威工�
 默认 Host 通过本机 Workflow API（edge UI 的写入口）接收定义和 Graph：
 
 1. `PUT /api/v1/workflows/{uuid}/graph` 保存节点和边。
-2. `POST /api/v1/workflow-tasks` 固化 `workflow_snapshot` 和 `execution_plan`。
+2. `POST /api/v1/workflow-tasks` 固化 `workflow_snapshot` 和 `execution_plan`。按库位绑定的物料参数
+   （`{"site_uuid": ...}`，见 [动作标准](action_standard.md)）在这里换成此刻占着该库位的物料并一起冻结；运行预检
+   （`/run-preflight`）走同一条解析路径。按所属物料选择的库位参数（`{"owner_uuid": ...}`）在调度器准入任务时
+   （`_admit_fresh_task`，先于整任务库存预留）选定、经入口预留占住并冻结；接受的库位都被占着时任务保持 `pending` 排队。
 3. `WorkflowService` 调用已绑定的 `BackendScheduler.submit(task_uuid)`。
 4. Scheduler 从持久化 Task/节点运行构建 `TaskDag`，恢复已完成节点后开始走图。
 
@@ -257,7 +260,8 @@ edge、不占设备动作锁，执行器永远收不到它。作者写法见
 | 批准，unload 完成 | succeeded，`affected_material_uuids`、`device_sync` | `detach`：解除挂载，物料留在库存；`soft_delete`：软删除（`material_with_contents` 连同子物料与内容物） |
 | 批准，refill 完成 | succeeded，`quantity_added` / `quantity`、`device_sync` | 原位容器唯一试剂加量（单位可换算），记一条 `add` 内容物历史；位置不变、不新建物料 |
 | 批准但写库被拒（如确认期间有人手工占了库位） | failed，`material_io_rejected` + `material_error_code`（`conflict:site_occupied`）+ `business_code`（6007） | 不变 |
-| 拒绝 / 超时 | failed（`manual_confirmation_rejected`）/ timeout（`manual_confirmation_timed_out`） | 不变 |
+| 拒绝 | canceled（`manual_confirmation_rejected`）；按取消收口：下游不派发、canceled，任务 canceled（`error_info[0].code=manual_confirmation_rejected`），整任务预留的库存与正常取消一样释放。普通人工确认（`manual_confirm`）被拒绝同样如此 | 不变 |
+| 超时 | timeout（`manual_confirmation_timed_out`），任务 failed | 不变 |
 | 批准、写库完成，台面同步失败 | 仍是 running（attempt `pending`），按同一命令身份重提直到设备确认，之后同上 | 已写入，不回滚，重提不再写 |
 | 取消任务 | 确认单收为 `canceled`，节点 canceled；等台面同步时取消也是 canceled（`material_io_device_sync_failed`） | 确认前取消：不变；写库后取消：保持已写入 |
 

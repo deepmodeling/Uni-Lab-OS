@@ -3913,7 +3913,10 @@ liquid_handler:
                       title: Barcode Symbology
                       type: string
                     class:
-                      description: Resource class name
+                      description: Registry name the resource was initialized from
+                        (registry resource / device id); PLR class name for children
+                        without a registry entry. The PLR class used for deserialization
+                        is config.type
                       title: Class
                       type: string
                     config:

@@ -169,26 +169,31 @@ tree_set = await node.get_resource_by_id("PRCXI_Deck/plate_1")
 
 ### 2.4 挂载到台面（materials.assign）
 
-把权威已创建的物料 assign 到本设备的目标父物料下，一个调用完成
-"拉取/复用实例 → 物理 assign → 权威 move 落父子与 Site 占用 → 快照回写"：
+把权威已创建的物料放到本设备的目标父物料 / 库位上。`assign` 就是一次物料移动，与
+`materials.transfer` 同一条路（`MaterialsService.transfer_material`）："权威校验并提交 move（父子与
+Site 占用）→ 原来持有它的设备 unload → 本设备 load（按权威重建这棵子树挂上，并把位姿补报给权威）"。
+同设备换位与跨设备一样；权威拒绝（库位被占、类别不符、设备只收 PLR 物料、PLR 键重名……）时本地什么都不改：
 
 ```python
-# 物料实例 + 目标父物料名 + slot
-materials.assign(node, plate, parent="PRCXI_Deck", slot="T2")
+# 物料实例 + 目标父物料（本设备持有的 PLR 键 / uuid / 实例）+ 库位；返回本设备重建后的实例
+[plate] = materials.assign(node, plate, parent="PRCXI_Deck", slot="T2")["resources"]
 
-# 裸 uuid 在本地未命中时会从权威加载并实例化
+# 裸 uuid：不属于任何设备的物料没有要卸下的地方，直接按权威加载
 materials.assign(node, plate_uuid, parent="PRCXI_Deck", slot="T2")
 
-# site= 传权威 ResourceSite 的 uuid（机器路径，与 slot 二选一）
+# site= 传库位实例或权威 ResourceSite 的 uuid（也接受 label / index，与 slot 同一套匹配）
 materials.assign(node, plate, parent="PRCXI_Deck", site=site_uuid)
 
-# parent=None：挂到设备自身（台面 Deck、驻留在设备上的顶级物料）——本地登记 tracker，
-# 权威里该物料的 parent 落为设备物料，前端设备卡片下即可看到它和它的 sites
+# parent=None：放到设备自身（台面 Deck、驻留在设备上的顶级物料）；权威里该物料的 parent 落为设备物料
 materials.assign(node, deck)
 
 # 仓库 / 载架（PLR Carrier、ItemizedCarrier、WareHouse）同样按库位挂载，必须给 slot 或 site
 materials.assign(node, bottle_carrier, parent=warehouse, slot="A04")
 ```
+
+权威答「已在目标位置」时：本设备持有它，`assign` 什么都不做；本设备没有它（例如上一次 `assign`
+在权威里已提交，设备侧 unload / load 没做完而报错），`assign` 按同一条 load 从权威重建挂上并成功返回。
+所以一次失败的 `assign` 重试即收敛；其它错误照常抛出。
 
 **载架型目标（仓库、瓶架等 PLR `Carrier`）**：载架的直接子节点只能是库位 holder
 （`ResourceHolder`），物料只能经 `assign_resource_to_site` 放到 holder 上。`assign`、
@@ -211,30 +216,26 @@ def _ensure_bench(self):
     return node.resource_tracker.uuid_to_resources[self.deck_uuid]
 ```
 
-`assign` 的 `timeout`（默认 30 s，Host 下发 `RESOURCE_APPEND` 同此）只约束提交点之前：等挂载锁、
-从权威拉取物料。超时就取消，本地与权威都不变，抛 `TimeoutError`。本地 PLR 挂上之后（提交点），
-权威 move 与快照回报一定走完再返回：快照按物料所在的整棵根树做，上千个物料的台面要几十秒，
-期间每过一个 `timeout` 记一条 WARNING，不会在提交之后取消。每次取消都在设备日志里记 ERROR，
-写明取消发生在哪一阶段。跨机（Slave 上的设备）时 Host 的 HostLink 请求仍以 30 s 为限：
-Slave 照样把挂载做完，但 Host 侧调用方会先收到超时。
+Host 下发的 `RESOURCE_APPEND`（出库并挂载）仍由设备节点的 `append_resource` 执行；它的 `timeout`
+（默认 30 s）只约束提交点之前：等挂载锁、从权威拉取物料。超时就取消，本地与权威都不变，抛 `TimeoutError`。
+本地 PLR 挂上之后（提交点），权威 move 与快照回报一定走完再返回：快照按物料所在的整棵根树做，上千个物料的
+台面要几十秒，期间每过一个 `timeout` 记一条 WARNING，不会在提交之后取消。
 
-创建多件耗材再逐件 `assign` 时，先校验目标位点空闲；挂载失败要 `materials.remove` 掉本轮已经
-发号的物料，否则权威里会留下不挂在任何台面上的孤儿。
+目标位参数（`site` 与 `slot` 都给时必须指向同一个库位），由权威按父物料的库位解析：
 
-目标位参数（二选一）：
+| 参数     | 承载                                   | 示例                         |
+| ------ | ------------------------------------ | -------------------------- |
+| `site` | 库位实例、权威 `ResourceSite.uuid`、label 或 index | `site_instance` / `"26da5442-…"` |
+| `slot` | label 或库位自己的 index                  | `"A1"` / `"T2"`            |
 
-| 参数     | 承载                     | 示例                      | 适用                        |
-| ------ | ---------------------- | ----------------------- | ------------------------- |
-| `site` | 权威 `ResourceSite.uuid` | `"26da5442-…"`          | 机器路径（前端/微后端下发），move 直传免反查 |
-| `slot` | label 或 0-based 数字字符串  | `"A1"` / `"T2"` / `"0"` | 人类/脚本路径；label 优先于数字解释     |
+行为细节：
 
-行为细节（自动完成，无需干预）：
-
-- 本地已持有该 uuid 时**复用现有实例**（换位场景），不重复触发
-  `resource_tree_add` 回调；
-- Host 对远端设备下发挂载走 `RESOURCE_APPEND`（跨机 RPC），与本函数完全同语义；
-- 本函数为阻塞式（驱动线程/脚本直接调）；已在节点执行器内的异步代码
-  用 `await node.append_resource(payload)`。
+- 同设备换位也是 unload + load：tracker 里换成按权威重建的实例，旧实例作废，回调是
+  `resource_tree_remove`（旧）+ `resource_tree_add`（新）；用返回值里的 `resources` 继续操作；
+- 已经在目标位置、本设备也持有它时幂等（什么都不做）；
+- 不给库位时位置是原点，父物料自己排布库位（载架、按 `spot` 挂的台面、`ResourceHolder`）时按它算，
+  权威里存的位姿与本地一致，重启照样反序列化；
+- 阻塞式（驱动线程 / 脚本直接调），不能在本设备的执行器线程里调用（load 要排到那个执行器上，会等到自己）。
 
 ### 2.5 内容物与状态同步
 
@@ -344,9 +345,7 @@ slave→slave、slave→host、host→host 三种形态完全一致。
 
 目标 Site 属于载架（仓库等 PLR `Carrier`）时，权威把物料挂在该库位的 holder 下（与本地整树
 `create` 同形，见 2.4），目标设备 load 时经载架放到库位上；不给 Site 直接挂到载架下会被权威拒绝。
-旧版本 transfer 曾把物料直接挂在载架下，这样的树设备反序列化不了：权威打开时
-（`ServerServices.open` → `MaterialsService.repair_site_occupant_parents`）一次性把它们改挂到
-对应 holder 下，账本记一次 `move`，并打印 WARNING。
+旧版本写下的坏树不做修复：main 发布前旧库一律重建（见 `databases.md` 第 4.1 节）。
 
 ## 3. 三种创建来源规范
 
@@ -368,8 +367,8 @@ created.get_well("A2").tracker.commit()      # 观察者自动快照到权威
 ```python
 # 按类名创建（或传草稿实例），node= 自动登记
 tips = materials.create("PRCXI_300ul_Tips", name="local_tips", node=node)
-# 挂上台面：复用本实例 -> assign -> 权威 move -> 快照
-materials.assign(node, tips, parent="PRCXI_Deck", slot="T2")
+# 挂上台面：权威 move -> 本设备 unload 旧实例、load 重建
+[tips] = materials.assign(node, tips, parent="PRCXI_Deck", slot="T2")["resources"]
 ```
 
 ### 来源 C：微后端仓储扣减（`apply_deduct_resource` 语义）
@@ -470,8 +469,7 @@ transfer_resource`，与机械臂 pick/place 流使用同一转移语义。
 | `adopt` 时只给根 uuid、后代缺失            | 全树每个节点都带 uuid                                         |
 | tracker 操作后不 `commit()`           | `add_liquid`/`empty` 等之后 `commit()`（观察者靠它触发）          |
 | 绕过 tracker 改状态后不同步               | `await node.update_resource(物料)` 或 `materials.update` |
-| 用 1-based slot 数字                 | `slot` 是 label 或 0-based 数字字符串（`"A1"` / `"0"`）        |
-| `site` 参数传 label                  | `site` 只承载权威 `ResourceSite.uuid`，label 走 `slot`       |
+| assign 之后继续用传入的旧实例                | 用返回值里 `resources` 的重建实例                              |
 
 ## 6. 模块速查
 

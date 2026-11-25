@@ -55,7 +55,7 @@ def test_tail_incremental_two_readers_and_utf8(tmp_path: Path):
 @pytest.mark.parametrize("change", ["replace", "truncate", "source"])
 def test_reset_on_file_or_source_change(tmp_path: Path, change: str):
     path = tmp_path / "host.log"
-    path.write_text("old line\n" * 20)
+    path.write_text("old line\n" * 20, encoding="utf-8")
     old = reader.read_log_file(path, source_id="host")
     source = "host"
     if change == "replace":

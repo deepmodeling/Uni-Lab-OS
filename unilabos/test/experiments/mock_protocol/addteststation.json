@@ -98,7 +98,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 100,
@@ -125,7 +125,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 180,
@@ -152,7 +152,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 260,
@@ -179,7 +179,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 340,
@@ -206,7 +206,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 720,
@@ -227,7 +227,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 850,
@@ -248,7 +248,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 950,
@@ -275,7 +275,7 @@
             "children": [],
             "parent": "AddTestStation",
             "type": "container",
-            "class": "RegularContainer",
+            "class": "container",
             "template_name": "container",
             "position": {
                 "x": 950,

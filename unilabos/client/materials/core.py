@@ -134,6 +134,32 @@ class LocalMaterialsClient:
         return self.service.material_sanity_facts(
             list(payload.get("material_uuids") or []), reservation_uuid=payload.get("reservation_uuid"))
 
+    def site_admission_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """任务准入时的只读库位事实：``{"site_uuids": [...], "owners": [{"owner_material_uuid",
+        "occupant_material_uuid"}]}``（物料参数按库位绑定、库位参数按所属物料选择）。"""
+
+        return self.service.site_admission_facts(
+            site_uuids=list(payload.get("site_uuids") or []), owners=list(payload.get("owners") or []))
+
+    def reserve_ingress(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """入口预留（``candidate_site_uuids`` 或 ``owner_material_uuid``），返回预留投影；同一幂等键重放返回原预留。"""
+
+        from unilabos.server.services.materials.ingress import IngressReservations
+
+        return IngressReservations(self.service).reserve(payload)[0]
+
+    def mark_ingress_in_transit(self, reservation_uuid: str) -> dict[str, Any]:
+        from unilabos.server.services.materials.ingress import IngressReservations
+
+        return IngressReservations(self.service).mark_in_transit(reservation_uuid)
+
+    def finish_task_ingress(self, backend_task_uuid: str, *, reason: str) -> list[dict[str, Any]]:
+        """任务结束：收掉它的活动入口预留（载体已在库位上记 received，否则取消）。"""
+
+        from unilabos.server.services.materials.ingress import IngressReservations
+
+        return IngressReservations(self.service).finish_task(backend_task_uuid, reason=reason)
+
     def validate_material_execution(self, value):
         return self.service.executions.validate(value)
 
@@ -543,6 +569,27 @@ class HTTPMaterialsClient:
             "material_uuids": list(payload.get("material_uuids") or []),
             "reservation_uuid": payload.get("reservation_uuid"),
         }, root=True)
+
+    def site_admission_facts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """任务准入时的只读库位事实（``POST /inventory/site-admission``，不写库）。"""
+
+        return self._request("POST", "/inventory/site-admission", {
+            "site_uuids": list(payload.get("site_uuids") or []),
+            "owners": list(payload.get("owners") or []),
+        }, root=True)
+
+    def reserve_ingress(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """入口预留（``POST /inventory/ingress-reservations``）；库位都被占 6007、没有接受的库位 6008 按业务码抛错。"""
+
+        return self._request("POST", "/inventory/ingress-reservations", dict(payload), root=True)
+
+    def mark_ingress_in_transit(self, reservation_uuid: str) -> dict[str, Any]:
+        return self._request("POST", f"/inventory/ingress-reservations/{reservation_uuid}/in-transit", root=True)
+
+    def finish_task_ingress(self, backend_task_uuid: str, *, reason: str) -> list[dict[str, Any]]:
+        response = self._request("POST", "/inventory/ingress-reservations/finish-task",
+                                 {"backend_task_uuid": backend_task_uuid, "reason": reason}, root=True)
+        return list((response or {}).get("reservations") or [])
 
     def _command(self, mutation: InventoryMutation, value: Any, *, target_uuid: Optional[str] = None) -> Any:
         """``materials.v1`` 变更经统一命令入口；拒绝结果按业务码还原成 HTTP 语义的异常。"""

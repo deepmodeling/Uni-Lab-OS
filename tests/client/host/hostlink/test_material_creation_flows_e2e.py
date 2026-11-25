@@ -18,9 +18,8 @@
         materials.create("类名", name=..., node=node, gateway=...)
           -> registry 实例化草稿 -> 权威发 uuid -> node= 自动登记 tracker
         materials.assign(node, tips, parent="Bench_Deck", slot="T2")
-          -> node.append_resource：uuid 已在 tracker -> 复用本地实例
-             （不重复触发 resource_tree_add）-> transfer_to_new_resource assign
-          -> 权威 move（parent_material_uuid + Site 占用）-> update_resource 快照
+          -> 与 transfer 同一条路：权威先提交 move（parent + Site 占用）
+          -> 原持有设备 unload（resource_tree_remove）-> 本设备 load 按权威重建（resource_tree_add）
 
     [3] 微后端仓储系统扣减创建（host_node.apply_deduct_resource 同语义）
         分支 A  库存已在权威：materials.ensure(带 uuid 实体) -> gw.get_material
@@ -28,8 +27,8 @@
                 挂载走 Host 下发 RESOURCE_APPEND（跨机 RPC 与 assign 同语义）
         分支 B  扣减产物权威缺失：materials.ensure -> resource_tree_to_create(
                 adopt_uuid=True) -> create_tree（显式 uuid，带条件创建=adopt）
-                挂载走 materials.assign(node, uuid 字符串, ...)：本地未命中
-                实例 -> get_resource 按 uuid 从权威加载 -> resource_tree_add
+                挂载走 materials.assign(node, uuid 字符串, ...)：不属于任何设备，
+                没有要卸下的地方 -> 本设备 load 按 uuid 从权威加载 -> resource_tree_add
 
     [4] materials.transfer 换位（同设备 source==target，跨设备编排一致）
         materials.transfer(uuid, DEVICE_ID, deck_uuid, "T4", source_device_id=...)
@@ -106,6 +105,33 @@ def _append_via_hostlink(
     return host.server.request_device(
         DEVICE_ID, ActionType.RESOURCE_APPEND, payload, timeout=10.0
     )
+
+
+def _register_device(service: MaterialsService, device_uuid: str, device_id: str) -> None:
+    """开机图对齐会落的设备物料行：物料放到设备自身时权威要有这台设备。"""
+
+    from unilabos.protocol.materials import (
+        InventoryMutation,
+        MaterialDataWrite,
+        MaterialIdentityWrite,
+        MaterialNodeCreate,
+        MaterialTreeCreate,
+        ResourceTemplateWrite,
+    )
+
+    def mutation(operation: str) -> InventoryMutation:
+        return InventoryMutation(command_uuid=str(uuid4()), effect_key=operation, operation=operation,
+                                 actor_type="graph", actor_uuid="test")
+
+    service.put_template(mutation("put_template"), ResourceTemplateWrite(
+        name="bench_demo", display_name="bench", resource_type="device", class_name="bench_demo",
+    ))
+    service.create_tree(mutation("create_material_tree"), MaterialTreeCreate(nodes=[MaterialNodeCreate(
+        client_ref="dev", material_uuid=device_uuid,
+        identity=MaterialIdentityWrite(resource_id=device_id, resource_type="device",
+                                       class_name="bench_demo", template_name="bench_demo"),
+        data=MaterialDataWrite(data={}, sites_initialized=True, state_status="ready"),
+    )]))
 
 
 def _site_by_label(service: MaterialsService, root_uuid: str, label: str):
@@ -246,12 +272,14 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         tips_uuid = local_tips.unilabos_uuid
         assert node.resource_tracker.uuid_to_resources[tips_uuid] is local_tips
 
-        # 挂载门面：与 Host 下发 RESOURCE_APPEND 同语义（node.append_resource）
-        materials.assign(node, local_tips, parent="Bench_Deck", slot="T2")
-        # 本地已持有 -> append_resource 复用同一实例，不重复 resource_tree_add
-        assert node.resource_tracker.uuid_to_resources[tips_uuid] is local_tips
-        assert local_tips.parent is deck_inst
-        assert len(node.driver.added_batches) == 1
+        # assign 就是一次物料移动：权威提交 -> 原持有设备（就是本设备）unload -> load 重建
+        [placed_tips] = materials.assign(node, local_tips, parent="Bench_Deck", slot="T2")["resources"]
+        assert placed_tips is not local_tips
+        assert node.resource_tracker.uuid_to_resources[tips_uuid] is placed_tips
+        assert placed_tips.parent is deck_inst
+        assert node.driver.removed_batches[-1] == [local_tips]
+        assert node.driver.added_batches[-1] == [placed_tips]
+        assert len(node.driver.added_batches) == 2
         # 权威：move 落父子 + Site 占用
         assert (
             service.get_material(tips_uuid).material.parent_material_uuid == deck_uuid
@@ -265,7 +293,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         # node.update_resource 即本调用的 async 包装）。挂载后的物料按其
         # 所在根树（deck）投影提交并返回；快照幂等，与 observer 并发冲突
         # 时自动重拉基线重试，重复提交无害。
-        updated = materials.update(node, local_tips)
+        updated = materials.update(node, placed_tips)
         assert {
             tree.root_node.res_content.uuid for tree in updated.trees
         } == {deck_uuid}
@@ -295,7 +323,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         _append_via_hostlink(host, stock_uuid, bind_parent_id=deck_uuid, slot="T3")
         stock_inst = node.resource_tracker.uuid_to_resources[stock_uuid]
         assert stock_inst.parent is deck_inst
-        assert len(node.driver.added_batches) == 2  # 新实例 -> resource_tree_add
+        assert len(node.driver.added_batches) == 3  # 新实例 -> resource_tree_add
         # 库存液体随权威 round-trip 恢复到台面实例
         assert _normalize_liquids(stock_inst.get_well("A1").tracker.liquids) == [
             ("Water", 80.0, "ul")
@@ -325,7 +353,7 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         )
         deducted_inst = node.resource_tracker.uuid_to_resources[deducted_uuid]
         assert deducted_inst.parent is deck_inst
-        assert len(node.driver.added_batches) == 3
+        assert len(node.driver.added_batches) == 4
         assert (
             service.get_material(deducted_uuid).material.parent_material_uuid
             == deck_uuid
@@ -360,9 +388,9 @@ def test_material_creation_flows_host_plus_slave(tmp_path, monkeypatch) -> None:
         )
         # 设备投影：unload 卸载旧实例（resource_tree_remove），load 权威拉取重建
         moved_tips = node.resource_tracker.uuid_to_resources[tips_uuid]
-        assert moved_tips is not local_tips
+        assert moved_tips is not placed_tips
         assert moved_tips.parent is deck_inst
-        assert node.driver.removed_batches[-1] == [local_tips]
+        assert node.driver.removed_batches[-1] == [placed_tips]
         assert node.driver.added_batches[-1] == [moved_tips]
 
         # ---- 终局：三种来源的物料在权威/台面上共存且互不串扰 ----
@@ -451,7 +479,7 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
             lab_registry.resource_type_registry, "test_tip_rack_300ul", registry_entry(TIP_RACK_MODULE)
         )
         tips = materials.create("test_tip_rack_300ul", name="tips_r1", node=node)
-        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+        [tips] = materials.assign(node, tips, parent="Bench_Deck", slot="T1")["resources"]
         assert service.get_material(tips.unilabos_uuid).material.parent_material_uuid == deck_uuid
         assert _site_by_label(service, deck_uuid, "T1").occupied_material_uuid == tips.unilabos_uuid
 
@@ -464,7 +492,7 @@ def test_deck_mounted_on_device_by_action_becomes_child_of_device_material(tmp_p
         # 观察者自动快照（孔位加液同款：本地 state 变化 + commit -> 自动上报）在台面挂设备后
         # 照常到达权威：hydrate_well 之前卡死就是因为根被解析成设备、快照集合对不上
         plate_r1 = materials.create(plate("plate_r1"), node=node)
-        materials.assign(node, plate_r1, parent="Bench_Deck", slot="T2")
+        [plate_r1] = materials.assign(node, plate_r1, parent="Bench_Deck", slot="T2")["resources"]
         well = plate_r1.get_well("A1")
         well.tracker.add_liquid("Buffer", 25.0)
         well.tracker.commit()
@@ -498,8 +526,10 @@ def test_discarded_tip_is_removed_from_authority(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(HostLinkConfig, "bind", "127.0.0.1")
     monkeypatch.setattr(HostLinkConfig, "port", 0)
 
+    device_uuid = str(uuid4())
+    _register_device(service, device_uuid, "bench")
     local = HostLinkLocalRuntime()
-    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=str(uuid4())))
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=device_uuid))
     backend = HostLinkBackend(local, is_slave=False)
     backend.start()
     try:
@@ -509,7 +539,7 @@ def test_discarded_tip_is_removed_from_authority(tmp_path, monkeypatch) -> None:
         deck = node.resource_tracker.uuid_to_resources[deck_uuid]
 
         tips = materials.create(tip_rack("tips_discard"), node=node)
-        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+        [tips] = materials.assign(node, tips, parent="Bench_Deck", slot="T1")["resources"]
 
         spot = tips.get_item("A1")
         other = tips.get_item("A2")
@@ -594,7 +624,7 @@ def test_slave_observer_retires_discarded_tip_over_hostlink(tmp_path, monkeypatc
         materials.ensure(_build_deck(deck_uuid), gateway=gateway)
         _append_via_hostlink(host, deck_uuid, bind_parent_id=DEVICE_ID)
         tips = materials.create(tip_rack("tips_slave"), node=node, gateway=slave_gateway)
-        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+        [tips] = materials.assign(node, tips, parent="Bench_Deck", slot="T1")["resources"]
         observer = node.resource_tracker._material_snapshot_observer
         assert observer is not None
 
@@ -633,8 +663,10 @@ def test_retired_tip_does_not_come_back_on_restore(tmp_path, monkeypatch) -> Non
     monkeypatch.setattr(HostLinkConfig, "port", 0)
     monkeypatch.setattr(BasicConfig, "is_host_mode", True)
 
+    device_uuid = str(uuid4())
+    _register_device(service, device_uuid, "bench")
     local = HostLinkLocalRuntime()
-    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=str(uuid4())))
+    node = local.add_driver(HostLinkDriverSpec("bench", _BenchDriver, {}, resource_uuid=device_uuid))
     backend = HostLinkBackend(local, is_slave=False)
     backend.start()
     try:
@@ -643,7 +675,7 @@ def test_retired_tip_does_not_come_back_on_restore(tmp_path, monkeypatch) -> Non
         materials.assign(node, deck_uuid)
         deck = node.resource_tracker.uuid_to_resources[deck_uuid]
         tips = materials.create(tip_rack("tips_restore"), node=node)
-        materials.assign(node, tips, parent="Bench_Deck", slot="T1")
+        [tips] = materials.assign(node, tips, parent="Bench_Deck", slot="T1")["resources"]
 
         spot = tips.get_item("A1")
         discarded = spot.tip

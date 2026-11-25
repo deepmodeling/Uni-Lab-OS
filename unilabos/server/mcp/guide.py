@@ -59,7 +59,8 @@ GUIDE = """# 本机 MCP / protocol
   retry 由调度产生新 attempt，旧失败记录保留；operator_intervention 才可替换结果。
 - 材料 UUID 由物料权威分配；物料 name 恒等于 uuid，人读标签是 display_name（按名字搜索 / 筛选都匹配它），
   业务 id 是 resource_id，PLR 树里的名字在 config.name；引用物料用 uuid 或 resource_id。
-  template_name 是注册表模板；PLR 类只取 config.type，绝不回退外层 type/klass。材料位置与 substances 内容分开。
+  template_name 是注册表模板；class 是初始化它用的注册表名（没有注册表条目的孩子是 PLR 类名），
+  PLR 类名只取 config.type，绝不回退外层 type/klass。材料位置与 substances 内容分开。
 - materials 写入口保持 InventoryMutation 信封与原有事务校验；移交由服务端变更权威，
   源设备卸载、目标设备 service load，不在 MCP 本地改树。
 - 动作锁和物料锁交给调度（物料入参默认都加锁，驱动不能按动作豁免）；复现竞争要先提交同组多个任务，再等待，

@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Generic, List, Optional, Type, TypeVar
 
 from unilabos.client.host.runtime.async_utils import schedule_async_func
+from unilabos.client.host.runtime.exception import DeviceMaterialError
 from unilabos.resources.resource_tracker import (
     DeviceNodeResourceTracker,
     ResourceDictInstance,
     ResourceTreeInstance,
     ResourceTreeSet,
+    require_plr_config_type,
 )
 from unilabos.utils import logger
 from unilabos.utils.cls_creator import create_instance_from_config
@@ -34,6 +36,43 @@ class ClassCreator(Generic[T]):
         raise NotImplementedError
 
 
+def build_device_materials(children: List[ResourceDictInstance]) -> Dict[str, Any]:
+    """把设备持有的每棵物料子树建成 PLR 实例，返回 ``{子树根 uuid: 实例}``；建不成就抛错。
+
+    设备持有的物料只收 PLR 物料（权威核对 ``config.type`` 的格式）；类是否存在、能否反序列化只有
+    Host 知道。任何一棵建不成（缺 / 写错 ``config.type``、类不存在、反序列化失败）都抛
+    :class:`DeviceMaterialError`：这台设备进入维护模式、不启动，Host 与其余设备照常运行。没有
+    「跳过建不成的物料、设备照常启动」的退路。``config.type`` 的问题指名到那个物料；反序列化失败
+    指名到那棵子树的根，附 PLR 的报错。子设备由它自己的构造器处理。
+    """
+
+    built: Dict[str, Any] = {}
+    for child in children:
+        if child.res_content.type == "device":
+            continue
+        for node in ResourceTreeInstance(child).get_all_nodes():
+            content = node.res_content
+            if content.type == "device":
+                continue
+            config = content.config if isinstance(content.config, dict) else {}
+            try:
+                require_plr_config_type(config, uuid=content.uuid, template_name=content.template_name)
+            except ValueError as exc:
+                raise DeviceMaterialError(
+                    material_uuid=content.uuid, material_type=config.get("type"), reason=str(exc)
+                ) from exc
+        root = child.res_content
+        try:
+            built[str(root.uuid or "")] = ResourceTreeSet([ResourceTreeInstance(child)]).to_plr_resources()[0]
+        except Exception as exc:  # noqa: BLE001 - 任何反序列化错误都让设备进入维护模式
+            raise DeviceMaterialError(
+                material_uuid=root.uuid,
+                material_type=(root.config or {}).get("type"),
+                reason=f"{type(exc).__name__}: {exc}",
+            ) from exc
+    return built
+
+
 class DeviceClassCreator(Generic[T]):
     """Create a Python driver and attach its non-device child resources."""
 
@@ -42,11 +81,24 @@ class DeviceClassCreator(Generic[T]):
         cls: Type[T],
         children: List[ResourceDictInstance],
         resource_tracker: DeviceNodeResourceTracker,
+        *,
+        built: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.device_cls = cls
         self.device_instance: Optional[T] = None
-        self.children = list(children)
         self.resource_tracker = resource_tracker
+        self.children = list(children)
+        # 构造驱动之前先把持有的物料整棵建一遍：建不成时设备不启动（维护模式）。建好的实例
+        # 挂载时直接用，不再建第二份；``built`` 是外层构造器（工作站建 deck）已经建好的那一份。
+        self._built = built if built is not None else build_device_materials(self.children)
+
+    def _plr_instance(self, child: ResourceDictInstance) -> Any:
+        """子树根的 PLR 实例：构造时建好的那一份（只用一次），用过之后再要就现建。"""
+
+        instance = self._built.pop(str(child.res_content.uuid or ""), None)
+        if instance is None:
+            instance = ResourceTreeSet([ResourceTreeInstance(child)]).to_plr_resources()[0]
+        return instance
 
     def attach_resource(self) -> None:
         if self.device_instance is None:
@@ -58,10 +110,7 @@ class DeviceClassCreator(Generic[T]):
             # 再实例化一份会让同一权威物料有两个实例，uuid 索引指向驱动手里没有的副本。
             if str(child.res_content.uuid or "") in self.resource_tracker.uuid_to_resources:
                 continue
-            resource = ResourceTreeSet(
-                [ResourceTreeInstance(child)]
-            ).to_plr_resources()[0]
-            self.resource_tracker.add_resource(resource)
+            self.resource_tracker.add_resource(self._plr_instance(child))
 
     def create_instance(self, data: Dict[str, Any]) -> T:
         self.device_instance = create_instance_from_config(
@@ -91,8 +140,9 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
         resource_tracker: DeviceNodeResourceTracker,
         *,
         task_scheduler: Optional[TaskScheduler] = None,
+        built: Optional[Dict[str, Any]] = None,
     ) -> None:
-        super().__init__(cls, children, resource_tracker)
+        super().__init__(cls, children, resource_tracker, built=built)
         self.task_scheduler = task_scheduler
         self.has_deserialize = hasattr(cls, "deserialize") and callable(
             getattr(cls, "deserialize")
@@ -143,9 +193,7 @@ class PyLabRobotCreator(DeviceClassCreator[T]):
                     )
                     return resource
                 try:
-                    resource_instance: Resource = ResourceTreeSet(
-                        [ResourceTreeInstance(resource)]
-                    ).to_plr_resources()[0]
+                    resource_instance: Resource = self._plr_instance(resource)
                     states[prefix_path] = resource_instance.serialize_all_state()
                     if to_dict:
                         return resource_instance.serialize()
@@ -352,6 +400,7 @@ class WorkstationNodeCreator(DeviceClassCreator[T]):
                 self.children,
                 self.resource_tracker,
                 task_scheduler=self.task_scheduler,
+                built=self._built,
             ).create_instance(deck_data)
         else:
             params["deck"] = None

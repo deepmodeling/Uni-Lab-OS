@@ -161,11 +161,14 @@ def test_reject_and_timeout_leave_the_inventory_as_it_was(tmp_path) -> None:
     scheduler = _scheduler(stack, executor)
     body = f'ctx.material_io(mode="load", mount="{mount}", site="A1", resource_template="tip_box", timeout_seconds=60)'
     try:
+        # 拒绝按取消处理：步骤 canceled（保留拒绝原因），任务 canceled；超时仍是 timeout，任务 failed
         rejected = _task(stack, body)
         _decide(stack, _pending(stack, rejected), "reject")
-        wait_for(lambda: _status(stack, rejected) == "failed")
+        wait_for(lambda: _status(stack, rejected) == "canceled")
         [job] = _material_io_jobs(stack, rejected)
-        assert job["status"] == "failed" and job["error_info"] == [{"code": "manual_confirmation_rejected"}]
+        assert job["status"] == "canceled" and job["error_info"] == [{"code": "manual_confirmation_rejected"}]
+        assert stack.workflow.get_workflow_task(rejected["uuid"])["error_info"][0]["code"] == "manual_confirmation_rejected"
+        assert _tip_boxes(stack) == [] and not scheduler.resources.held_by(job["uuid"])
 
         timed_out = _task(stack, body)
         _pending(stack, timed_out)

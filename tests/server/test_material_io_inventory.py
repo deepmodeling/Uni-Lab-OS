@@ -46,8 +46,10 @@ RESERVOIR_MODULE = "pylabrobot.resources.opentrons.reservoirs:agilent_1_reservoi
 
 
 def _identity(template: str, name: str) -> MaterialIdentityWrite:
+    # config.type 是 PLR 类型名：这些容器 / 台面会挂进设备子树（设备子树只收 PLR 物料）
     return MaterialIdentityWrite(resource_id=f"{name}-{uuid4().hex[:6]}", name=f"{name}-{uuid4().hex[:6]}",
-                                 template_name=template, resource_type="container", class_name="Container")
+                                 template_name=template, resource_type="container", class_name="Container",
+                                 config={"type": "Container"})
 
 
 def _ensure_template(materials: MaterialsService, template_uuid: str, name: str) -> None:
@@ -206,7 +208,9 @@ def test_load_instantiates_the_registry_class_with_its_default_children(material
     assert root.config["name"] == "新吸头盒"
     assert (root.template_name, root.template_uuid) == (template, plan["template_uuid"])
     assert root.meta_data["material_io"] == {"task_uuid": TASK, "job_uuid": job}
-    assert root.config["type"] == root.class_name and root.resource_type == "tip_rack"
+    # class 是初始化它用的注册表名（即模板名）；config.type 是 PLR 类名（反序列化靠它）
+    assert root.class_name == template and root.config["type"] == "StandingTipRack"
+    assert root.resource_type == "tip_rack"
     spots = [node.material for node in tree.nodes if node.material.parent_material_uuid == new]
     tips = [node.material for node in tree.nodes if node.material.resource_type == "tip"]
     assert (len(spots), len(tips), len(tree.nodes)) == (96, 96, 1 + 96 + 96)

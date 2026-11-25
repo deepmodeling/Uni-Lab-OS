@@ -1,4 +1,4 @@
-"""本机 MCP 接入：Streamable HTTP /mcp，复用既有 protocol 与管理端口。"""
+"""本机 MCP 接入：Streamable HTTP /mcp（无状态、POST 返回 JSON；GET 不开 SSE 流，回 405），复用既有 protocol 与管理端口。"""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ class _LocalEndpoint:
         self.app = app
 
     async def __call__(self, scope, receive, send) -> None:
+        if scope.get("method") == "GET":
+            # 不提供 Streamable HTTP 的独立 SSE 流：无状态模式下服务端没有主动推送，那条流也没有 id 和事件存储，
+            # 断线即丢。按 MCP 规范回 405，客户端只用 POST（JSON 响应）。
+            await error_response(
+                OPERATION_NOT_ALLOWED, "MCP 不提供 SSE 流，请用 POST", symbol="method_not_allowed",
+                http_status=405, headers={"Allow": "POST"},
+            )(scope, receive, send)
+            return
         peer = (scope.get("client") or ("", 0))[0]
         try:
             address = ipaddress.ip_address(peer)

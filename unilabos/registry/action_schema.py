@@ -12,6 +12,8 @@
 - 严格解析器不认识的注解：该参数退回注册表原来的签名类型推断。本模块只放一个
   ``x-unilabos-infer`` 占位（AST 扫描在线程池里运行，不导入作者模块），由注册表补全；
 - ``**kwargs``：goal 允许多传字段；``*args``：无法表示，忽略并按定义告警一次；
+- 框架注入的参数不进 schema：``sample_uuids``，以及注解为 ``ActionContext`` / ``Optional[ActionContext]`` /
+  ``ActionContext | None`` 的参数（按类型识别，与名字无关；没有这个注解却叫 ``action_context`` 的是注册错误）；
 - 没有默认值的参数必填，缺了在调度端 / Host 调用前报错，不再补 0 / 空串；
 - 返回注解：没写不校验（``{}``）；``None`` 只接受空返回；``dict`` / ``Dict[str, Any]`` 接受任意对象；
   同模块的 ``TypedDict`` / frozen ``dataclass``：具名输出（每个字段一个输出端口，逐字段严格解析，
@@ -31,8 +33,13 @@ import threading
 from collections.abc import Mapping
 from typing import Any, Dict, List, Optional, Tuple
 
+from unilabos.registry.action_context import ast_action_context_parameters
 from unilabos.registry.action_contract_schema import _action_value_schema, _has_resource_slot
-from unilabos.registry.action_options import REMOVED_ANNOTATION_IDENTITIES, removed_annotation_message
+from unilabos.registry.action_options import (
+    REMOVED_ANNOTATION_IDENTITIES,
+    check_action_context_parameter,
+    removed_annotation_message,
+)
 from unilabos.registry.action_result_schema import (
     ActionResultSchemaError,
     parse_action_result_declaration,
@@ -53,8 +60,9 @@ logger = logging.getLogger(__name__)
 
 #: 退回推断的字段占位：``{"x-unilabos-infer": {"annotation": "<注解源码>"}}``，注册表补全后移除。
 INFER_KEY = "x-unilabos-infer"
-#: 由框架注入、不属于动作合同的参数（与 AST 扫描的参数跳过名单一致）。
-FRAMEWORK_PARAMETERS = frozenset({"sample_uuids", "action_context"})
+#: 按名字识别、由框架注入的参数（与 AST 扫描的参数跳过名单一致）。动作上下文按类型识别，见
+#: :func:`framework_parameter_names`。
+FRAMEWORK_PARAMETERS = frozenset({"sample_uuids"})
 #: 运行时由 Host 剥离到结果外层的保留返回字段。
 RESERVED_RESULT_FIELDS = frozenset({"unilabos_samples"})
 
@@ -403,6 +411,27 @@ def _strict_field(
     return field, descriptor, symbols
 
 
+def framework_parameter_names(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    bindings: ModuleBindings,
+    *,
+    definition: str,
+) -> set[str]:
+    """不属于动作接口、由框架注入的参数名：``sample_uuids``，加上按类型识别的 ``ActionContext`` 参数。
+
+    参数叫 ``action_context`` 却没有 ``ActionContext`` 注解（已删除的按名字注入写法）时报错并给出新写法。
+    """
+
+    context = ast_action_context_parameters(function, bindings.identity)
+    arguments = function.args
+    check_action_context_parameter(
+        (argument.arg for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]),
+        context,
+        definition=definition,
+    )
+    return set(FRAMEWORK_PARAMETERS) | set(context)
+
+
 def _parameters(function: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool):
     arguments = function.args
     positional = [*arguments.posonlyargs, *arguments.args]
@@ -442,6 +471,7 @@ def build_action_schema_draft(
 
     definition = definition or action_name
     reject_removed_annotations(function, bindings, definition=definition)
+    framework = framework_parameter_names(function, bindings, definition=definition)
     titles, descriptions, doc_description = _docstring(function)
     goal: Dict[str, Any] = {}
     required: List[str] = []
@@ -454,7 +484,7 @@ def build_action_schema_draft(
 
     for argument, default_node in _parameters(function, is_method):
         name = argument.arg
-        if name in FRAMEWORK_PARAMETERS:
+        if name in framework:
             continue
         has_default = default_node is not NO_DEFAULT
         default_known, default_value = _literal(default_node) if has_default else (False, None)
@@ -782,6 +812,7 @@ __all__ = [
     "ModuleBindings",
     "build_action_schema_draft",
     "finalize_action_schema",
+    "framework_parameter_names",
     "reject_removed_annotations",
     "warn_once",
 ]

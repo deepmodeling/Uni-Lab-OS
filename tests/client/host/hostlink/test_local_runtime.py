@@ -17,7 +17,7 @@ from unilabos.client.host.hostlink.local_runtime import (
 from unilabos.client.host.runtime import BackendCapabilityError
 from unilabos.client.host.runtime.action import ActionContext
 from unilabos.registry.decorators import topic_config
-from unilabos.registry.placeholder_type import ResourceSlot
+from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot
 from unilabos.resources.resource_tracker import DeviceNodeResourceTracker
 
 
@@ -611,6 +611,9 @@ class TransferDriver:
     def pick_material(self, material: ResourceSlot, target_owner: ResourceSlot) -> dict:
         return {"material": material.name, "target_owner": target_owner}
 
+    def pick_into_gripper(self, material: ResourceSlot, target_owner: DeviceSlot) -> dict:
+        return {"material": material.name, "target_owner": target_owner}
+
 
 class _AuthorityTrees:
     """物料权威的最小替身：按 uuid 返回整棵子树（with_children）。"""
@@ -645,7 +648,9 @@ def _transfer_runtime():
     graph = graph_resource_tree([device("robot", ROBOT_UUID), device("workdeck", WORKDECK_DEVICE_UUID), *deck_nodes])
 
     runtime = HostLinkLocalRuntime()
-    runtime.add_driver(HostLinkDriverSpec("robot", TransferDriver, {}, action_names=("pick_material",)))
+    runtime.add_driver(
+        HostLinkDriverSpec("robot", TransferDriver, {}, action_names=("pick_material", "pick_into_gripper"))
+    )
     runtime.start()
     node = runtime.devices["robot"]
     node.__dict__["_device_resource_service"] = _AuthorityTrees(graph)
@@ -658,41 +663,56 @@ def _transfer_runtime():
 
 
 @pytest.mark.parametrize("owner_uuid, owner_id", [(ROBOT_UUID, "robot"), (WORKDECK_DEVICE_UUID, "workdeck")])
-def test_resource_slot_pointing_at_a_device_gets_a_device_reference(owner_uuid, owner_id) -> None:
-    """搬运动作的所属物料是设备本身（机械臂夹爪库位挂在设备上；台面设备下挂着 PLR 物料）。
+def test_resource_slot_pointing_at_a_device_is_rejected_before_the_driver(owner_uuid, owner_id) -> None:
+    """ResourceSlot 只指物料：传进来的是设备（机械臂本身；台面设备下挂着 PLR 物料也一样）时明确报错。
 
-    设备不是 PLR 物料，本地快照里没有它，权威取回的是设备树：不能当 PLR 树转换（以前
-    ``to_plr_resources()[0]`` 越界，动作在调用驱动前失败），驱动拿到设备引用。
+    以前权威取回设备树后 ``to_plr_resources()[0]`` 越界，报 "list index out of range"；现在指出参数与设备，
+    并说明设备参数用 DeviceSlot。
     """
 
     runtime, _graph = _transfer_runtime()
     try:
-        result = runtime.call_action(
-            "robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner={"uuid": owner_uuid}
-        )
+        with pytest.raises(ValueError) as caught:
+            runtime.call_action(
+                "robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner={"uuid": owner_uuid}
+            )
     finally:
         runtime.stop()
 
-    assert result["material"] == "held_plate"
-    owner = result["target_owner"]
-    assert owner["uuid"] == owner_uuid and owner["id"] == owner_id and owner["type"] == "device"
-    assert isinstance(owner["name"], str) and owner["name"]
+    message = str(caught.value)
+    assert "target_owner" in message and owner_id in message and owner_uuid in message
+    assert "DeviceSlot" in message and "设备不是物料" in message
 
 
-def test_resource_slot_tree_rooted_at_a_device_gets_a_device_reference() -> None:
-    """上游端口传来的扁平树以设备为根时同样不走 PLR 转换。"""
+def test_resource_slot_tree_rooted_at_a_device_is_rejected() -> None:
+    """上游端口传来的扁平树以设备为根时同样报错，不转 PLR。"""
 
     runtime, graph = _transfer_runtime()
     robot_tree = next(tree for tree in graph.dump() if tree[0]["uuid"] == ROBOT_UUID)
     try:
+        with pytest.raises(ValueError, match="DeviceSlot"):
+            runtime.call_action("robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner=robot_tree)
+    finally:
+        runtime.stop()
+
+
+def test_device_slot_reaches_the_driver_as_the_device_id() -> None:
+    """DeviceSlot 原样交给驱动（设备 id 字符串），不做物料转换、不回权威查询。"""
+
+    runtime, _graph = _transfer_runtime()
+    node = runtime.devices["robot"]
+    authority = node.__dict__["_device_resource_service"]
+    queried: list = []
+    authority.get_resources_sync = lambda uuids, with_children=True: queried.append(uuids)
+    try:
         result = runtime.call_action(
-            "robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner=robot_tree
+            "robot", "pick_into_gripper", material={"uuid": "held-plate-uuid"}, target_owner="robot"
         )
     finally:
         runtime.stop()
 
-    assert result["target_owner"]["uuid"] == ROBOT_UUID
-    assert result["target_owner"]["type"] == "device"
+    assert result == {"material": "held_plate", "target_owner": "robot"}
+    assert type(result["target_owner"]) is str and queried == []
 
 
 def test_hostlink_runtime_honors_topic_config_period_and_name() -> None:

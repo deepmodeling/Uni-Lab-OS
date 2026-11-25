@@ -250,11 +250,14 @@ def test_ros2_node_registers_both_subscribe_decorator_forms() -> None:
     }
 
 
-def test_ros2_resource_slot_pointing_at_a_device_gets_a_device_reference() -> None:
-    """与 HostLink 同一规则：设备不是 PLR 物料，ResourceSlot 指向设备时驱动拿到设备引用。"""
+def test_ros2_resource_slot_pointing_at_a_device_is_rejected() -> None:
+    """与 HostLink 同一规则：ResourceSlot 只指物料，指向设备时明确报错（设备参数用 DeviceSlot）。"""
 
     import logging
 
+    import pytest
+
+    from unilabos.client.host.runtime.resource_slot import DeviceResourceSlotError
     from unilabos.resources.resource_tracker import (
         DeviceNodeResourceTracker,
         ResourceTreeInstance,
@@ -293,16 +296,16 @@ def test_ros2_resource_slot_pointing_at_a_device_gets_a_device_reference() -> No
             return logging.getLogger(__name__)
 
     node = Node()
-    expected = {"uuid": robot_uuid, "id": "robot", "type": "device"}
-
-    def subset(value):
-        return {key: value[key] for key in expected}
-
-    assert subset(node._resolve_slot_value_sync({"uuid": robot_uuid})) == expected
-    assert subset(asyncio.run(node._convert_resource_async({"uuid": robot_uuid}))) == expected
     robot_tree = next(tree for tree in graph.dump() if tree[0]["uuid"] == robot_uuid)
-    assert subset(node._assemble_single_resource(ResourceTreeSet.load([robot_tree]))) == expected
-    # 设备与 PLR 物料一起查：顺序与输入一致，PLR 物料照常装配
-    device, loose = node._convert_resources_sync(robot_uuid, plate_nodes[0]["uuid"])
-    assert subset(device) == expected
+    for resolve in (
+        lambda: node._resolve_slot_value_sync({"uuid": robot_uuid}),
+        lambda: asyncio.run(node._convert_resource_async({"uuid": robot_uuid})),
+        lambda: node._assemble_single_resource(ResourceTreeSet.load([robot_tree])),
+        lambda: node._convert_resources_sync(robot_uuid, plate_nodes[0]["uuid"]),
+    ):
+        with pytest.raises(DeviceResourceSlotError, match="DeviceSlot") as caught:
+            resolve()
+        assert "robot" in str(caught.value) and robot_uuid in str(caught.value)
+    # 物料照常装配
+    (loose,) = node._convert_resources_sync(plate_nodes[0]["uuid"])
     assert loose.name == "loose_plate"

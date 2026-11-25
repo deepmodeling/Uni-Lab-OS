@@ -34,7 +34,6 @@ from unilabos.client.host.runtime.driver_creator import (
 from unilabos.client.host.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.client.host.runtime.resource import ResourceService
 from unilabos.client.host.runtime.resource_slot import (
-    device_slot_reference,
     first_plr_resource,
     is_unset_resource_slot,
 )
@@ -869,10 +868,10 @@ class HostLinkDeviceNode(DeviceNode):
             mapped[target_name] = value
         return mapped
 
-    def _resolve_resource_slot(self, value: Any) -> Any:
+    def _resolve_resource_slot(self, value: Any, parameter: str = "") -> Any:
         """Resolve one ResourceSlot from this device's authoritative snapshot.
 
-        指向设备本身（设备不是 PLR 物料）时交给驱动设备引用，见 ``device_slot_reference``。
+        ResourceSlot 只指物料：解析到设备时报错并指出参数（设备参数用 ``DeviceSlot``）。
         """
 
         kind, payload = parse_resource_slot(value)
@@ -887,10 +886,9 @@ class HostLinkDeviceNode(DeviceNode):
                     "单个 ResourceSlot 必须恰好包含一棵资源树，"
                     f"实际为 {len(tree_set.trees)} 棵"
                 )
-            device = device_slot_reference(tree_set)
-            if device is not None:
-                return device
-            resource = first_plr_resource(tree_set, tree_set.trees[0].root_node.res_content.uuid)
+            resource = first_plr_resource(
+                tree_set, tree_set.trees[0].root_node.res_content.uuid, parameter
+            )
             matches = self.resource_tracker.figure_resource(resource, try_mode=True)
             if len(matches) > 1:
                 raise ValueError(f"ResourceSlot 匹配到多个本地资源：{matches}")
@@ -905,11 +903,8 @@ class HostLinkDeviceNode(DeviceNode):
             identity = payload.get("uuid") or payload.get("id") or payload.get("name")
             tree_set = self._fetch_reference_from_authority(payload)
             if tree_set is not None and len(tree_set.trees):
-                # 设备节点不在本地 PLR 快照里，权威取回的是设备树：设备本身不转 PLR
-                device = device_slot_reference(tree_set)
-                if device is not None:
-                    return device
-                resource = first_plr_resource(tree_set, identity)
+                # 设备节点不在本地 PLR 快照里：权威取回设备树时明确报错，不越界
+                resource = first_plr_resource(tree_set, identity, parameter)
                 refigured = self.resource_tracker.figure_resource(resource, try_mode=True)
                 if len(refigured) == 1:
                     return refigured[0]
@@ -970,13 +965,13 @@ class HostLinkDeviceNode(DeviceNode):
                 if is_unset_resource_slot(value):
                     resolved[name] = None
                 else:
-                    resolved[name] = self._resolve_resource_slot(value)
+                    resolved[name] = self._resolve_resource_slot(value, name)
             elif shape == "list":
                 values = resolved[name]
                 if not isinstance(values, list):
                     raise TypeError(f"ResourceSlot 列表参数 {name!r} 必须是列表")
                 resolved[name] = [
-                    self._resolve_resource_slot(value) for value in values
+                    self._resolve_resource_slot(value, name) for value in values
                 ]
 
         if PARAM_SAMPLE_UUIDS in signature.parameters:

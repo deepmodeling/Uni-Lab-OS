@@ -100,33 +100,33 @@ def _device_node(device_id: str, uuid: str) -> dict:
             "template_name": "test_device", "parent": None, "config": {}}
 
 
-def test_device_slot_reference_only_for_a_device_root():
+def test_a_slot_tree_rooted_at_a_device_names_the_parameter_and_the_device():
     from unilabos.resources.resource_tracker import ResourceTreeSet
     from unilabos.server.services.materials.graph import graph_resource_tree
-    from unilabos.client.host.runtime.resource_slot import device_slot_reference
+    from unilabos.client.host.runtime.resource_slot import (
+        DeviceResourceSlotError,
+        first_plr_resource,
+        reject_device_slot,
+    )
     from tests.plr_fixtures import plate
 
     robot = graph_resource_tree([_device_node("robot", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f61")])
-    assert device_slot_reference(robot) == {
-        "uuid": "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f61",
-        "id": "robot",
-        "name": robot.trees[0].root_node.res_content.name,
-        "type": "device",
-    }
+    with pytest.raises(DeviceResourceSlotError) as caught:
+        first_plr_resource(robot, "slot-ref", "target_owner")
+    message = str(caught.value)
+    assert "参数 target_owner" in message and "robot" in message and "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f61" in message
+    assert "设备不是物料" in message and "DeviceSlot" in message
     plates = ResourceTreeSet.from_plr_resources([plate("p")], known_random_uuid=True)
-    assert device_slot_reference(plates) is None
+    reject_device_slot(plates, "sample")
+    assert first_plr_resource(plates, "slot-ref").name == "p"
 
 
 def test_a_slot_tree_without_plr_materials_fails_with_a_clear_error():
-    """``to_plr_resources`` 跳过设备树：一个 PLR 物料都转不出时说清是哪个引用，不再 IndexError。"""
+    """一个 PLR 物料都转不出（空树）时说清是哪个引用，不再 IndexError。"""
 
-    from unilabos.server.services.materials.graph import graph_resource_tree
+    from unilabos.resources.resource_tracker import ResourceTreeSet
     from unilabos.client.host.runtime.resource_slot import first_plr_resource
 
-    devices = graph_resource_tree([
-        _device_node("left", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f62"),
-        _device_node("right", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f63"),
-    ])
     with pytest.raises(ValueError, match="没有 PLR 物料") as caught:
-        first_plr_resource(devices, "slot-ref")
-    assert "slot-ref" in str(caught.value) and "left" in str(caught.value)
+        first_plr_resource(ResourceTreeSet([]), "slot-ref")
+    assert "slot-ref" in str(caught.value) and "空树" in str(caught.value)

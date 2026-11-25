@@ -31,8 +31,8 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
   `{"name": ...}`（派发前由调度器向物料权威解析出 uuid）、上游端口传来的扁平资源树（列表）、uuid 字符串；
   能否解析出权威 uuid 由派发前的物料锁检查保证。不可空的物料参数给空值（`{}` / `""` / `[]`）报
   「物料参数 … 没有给物料」；可空的物料参数留空等于没给。
-- 物料参数指向设备本身时（例如搬运动作的所属物料是机械臂，夹爪库位挂在设备上），驱动拿到的不是 PLR 实例，
-  而是设备引用 `{"uuid", "id", "name", "type": "device"}`：设备子树里只放 PLR 物料，设备本身不是 PLR 物料。
+- `ResourceSlot` 只指物料。设备不是物料：给物料参数传设备（或它解析到设备）时 Host 在调用驱动前报错，指出参数与设备。
+  参数要的是设备时注解为 `DeviceSlot`（值是设备 id，原样交给驱动，不做物料转换）。
 - 物料参数还可以**按库位绑定**：`{"site_uuid": "<库位 uuid>"}`（`list[ResourceSlot]` 的每一项也可以），表示「此刻占着这个
   库位的物料」。工作流入口参数、节点静态参数、单点动作参数都可以这样写。建任务与运行预检走同一条解析路径
   （`server/services/runtime/workflow/material_sites.py`，物料权威只读事实 `POST /api/v1/inventory/site-admission`）：

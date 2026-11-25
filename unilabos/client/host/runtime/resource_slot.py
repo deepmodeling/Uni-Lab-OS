@@ -67,36 +67,32 @@ def is_unset_resource_slot(value: Any) -> bool:
     return False
 
 
-def device_slot_reference(tree_set: Any) -> Optional[dict[str, str]]:
-    """ResourceSlot 解析到的是设备本身时，返回交给驱动的设备引用；否则返回 ``None``。
+class DeviceResourceSlotError(ValueError):
+    """ResourceSlot 指向了设备：设备不是物料，设备参数用 ``DeviceSlot``（值是设备 id）。"""
 
-    设备不是 PLR 物料：设备子树里只放 PLR 物料，设备节点本身不反序列化（``to_plr_resources``
-    跳过设备树），没有 PLR 实例可给。搬运动作把设备当所属物料时（例如机械臂的夹爪库位挂在设备上），
-    驱动拿到 ``{"uuid", "id", "name", "type": "device"}``，与 ``{"uuid": ...}`` 引用同形。
-    ``tree_set`` 是权威取回或上游传来的单棵 ``ResourceTreeSet``。
+
+def reject_device_slot(tree_set: Any, parameter: str = "") -> None:
+    """ResourceSlot 解析到的树以设备为根时报错，指出参数与设备。
+
+    ResourceSlot 只指物料：设备子树里放的是 PLR 物料，设备本身不是物料，不转 PLR（``to_plr_resources``
+    跳过设备树）。动作要的是设备（例如搬运的目标是机械臂自己的夹爪库位）时，参数应注解为 ``DeviceSlot``。
     """
 
-    trees = getattr(tree_set, "trees", None) or []
-    if len(trees) != 1:
-        return None
-    root = trees[0].root_node.res_content
-    if str(getattr(root, "type", "") or "") != "device":
-        return None
-    return {
-        "uuid": str(root.uuid or ""),
-        "id": str(root.id or ""),
-        "name": str(root.name or root.id or ""),
-        "type": "device",
-    }
+    for tree in getattr(tree_set, "trees", None) or []:
+        root = tree.root_node.res_content
+        if str(getattr(root, "type", "") or "") != "device":
+            continue
+        where = f"参数 {parameter} " if parameter else "ResourceSlot "
+        raise DeviceResourceSlotError(
+            f"{where}指向设备 {root.id}（{root.uuid}）：设备不是物料，ResourceSlot 只接受物料；"
+            "设备参数请注解为 DeviceSlot（值是设备 id）"
+        )
 
 
-def first_plr_resource(tree_set: Any, identity: Any) -> Any:
-    """单个 ResourceSlot 的资源树转成 PLR 后的根实例；一个 PLR 物料都转不出时明确报错（而不是越界）。
+def first_plr_resource(tree_set: Any, identity: Any, parameter: str = "") -> Any:
+    """单个 ResourceSlot 的资源树转成 PLR 后的根实例；指向设备或一个 PLR 物料都转不出时明确报错（而不是越界）。"""
 
-    调用方先用 :func:`device_slot_reference` 处理设备本身；``to_plr_resources`` 只会在树里全是设备时
-    返回空列表，这里兜底说清是哪个引用。
-    """
-
+    reject_device_slot(tree_set, parameter)
     resources = tree_set.to_plr_resources()
     if not resources:
         roots = [

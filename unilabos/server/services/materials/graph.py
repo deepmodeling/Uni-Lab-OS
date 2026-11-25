@@ -407,40 +407,10 @@ def reconcile_graph_payload(
                 [(str(child["uuid"]), child.get("type"), child["config"]) for child in children],
             )
 
-    # ── 占用关系对账：子物料按 parent + 位置匹配写入 Site 占用。──
-    # 权威快照必须自带占用（树重建/deserialize 时 child 尚未注入 uuid，
-    # 依赖 Site 的 expected_occupant 回填），创建入口是唯一发号边界。
-    for node in nodes:
-        sites = node.get("sites")
-        if not isinstance(sites, list) or not sites:
-            continue
-        node_id = _node_id(node)
-        node_uuid = str(node["uuid"])
-        for child in nodes:
-            child_parent_uuid = str(child.get("parent_uuid") or "")
-            if child_parent_uuid:
-                if child_parent_uuid != node_uuid:
-                    continue
-            elif str(child.get("parent") or "") != node_id:
-                continue
-            if str(child.get("type") or "") == "resource_holder":
-                # 载架的槽位 holder 是 Site 本身的结构节点，按构造就在 Site 的位置上；
-                # 占用物料挂在 holder 下，holder 自己不占用 Site。
-                continue
-            child_position = ((child.get("pose") or {}).get("position")) or {}
-            child_key = tuple(
-                float(child_position.get(axis, 0.0) or 0.0) for axis in ("x", "y", "z")
-            )
-            for site in sites:
-                if site.get("occupied_material_uuid"):
-                    continue
-                site_position = ((site.get("pose") or {}).get("position")) or {}
-                site_key = tuple(
-                    float(site_position.get(axis, 0.0) or 0.0) for axis in ("x", "y", "z")
-                )
-                if site_key == child_key:
-                    site["occupied_material_uuid"] = child["uuid"]
-                    break
+    # ── 占用关系只认显式声明：Site 的 occupied_material_uuid（旧图的 occupied_by 在 legacy
+    # 读图边界换成 uuid），以及 PLR 结构本身（载架槽位 holder 下的子物料、PLR 序列化时由
+    # 原生 Site 写出的占用）。子物料坐标恰好等于某个 Site 坐标不代表它占着这个 Site：
+    # 设备的夹爪 Site 常是原点占位，挂在设备原点的台面 / 堆栈库会被当成夹爪上的物料。──
 
     # ── diff 分类（发号与占用全部就绪后计算）──
     matched_previous_uuids: set[str] = set()

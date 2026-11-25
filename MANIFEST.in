@@ -3,5 +3,6 @@ recursive-include unilabos/utils *
 recursive-include unilabos/registry *.yaml
 recursive-exclude * __pycache__ *.pyc
 include unilabos/devices/ros_dev/lh_joint_config.json
+include unilabos/client/host/hostlink/fastdds_network_only.xml
 recursive-include unilabos/device_mesh/devices *
 recursive-include unilabos/device_mesh/resources *

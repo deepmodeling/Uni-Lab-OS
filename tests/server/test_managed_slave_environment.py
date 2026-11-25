@@ -19,6 +19,7 @@ from xml.etree import ElementTree
 
 import pytest
 
+from unilabos.app.cli.parser import build_parser
 from unilabos.client.host.hostlink import network, ros_assist
 from unilabos.client.host.hostlink.ros_assist import (
     FASTDDS_USER_TRANSPORT_ENV,
@@ -69,11 +70,10 @@ def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dpx.DeviceProces
     RecordingPopen.instances.clear()
     monkeypatch.setattr(dpx.subprocess, "Popen", RecordingPopen)
     monkeypatch.setattr(dpx, "STOP_GRACE_S", 0.01)
-    monkeypatch.setattr(dpx, "_reported_transport_outcomes", set())
     # 回环 UDP 能送超过 MTU 的数据报（普通 Linux / Windows）；WSL2 镜像网络的情形单独覆盖
     monkeypatch.setattr(ros_assist, "loopback_carries_fragmented_udp", lambda: True)
     monkeypatch.setattr(network, "_env_before_host_policy", {})
-    for name in (*FASTDDS_USER_TRANSPORT_ENV, *network.HOST_POLICY_ENV):
+    for name in (*FASTDDS_USER_TRANSPORT_ENV, *network.HOST_POLICY_ENV, "ROS_LOCALHOST_ONLY", "RMW_FASTRTPS_USE_QOS_FROM_XML"):
         monkeypatch.delenv(name, raising=False)
     svc = dpx.DeviceProcessService(tmp_path)
     monkeypatch.setattr(dpx, "_service", svc)
@@ -93,9 +93,11 @@ def _start(service: dpx.DeviceProcessService, monkeypatch: pytest.MonkeyPatch, b
 def test_ros2_managed_slave_runs_network_only_transport(service, monkeypatch, tmp_path) -> None:
     proc = _start(service, monkeypatch, "ros2")
     assert proc.command[proc.command.index("--backend") + 1] == "ros2"
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
+    assert not build_parser().parse_args(proc.command[3:]).ros_shm
+    assert ros_assist.configure_slave_transport(proc.env, allow_shm=False, rmw="rmw_fastrtps_cpp") == "network"
     profile = Path(proc.env["FASTRTPS_DEFAULT_PROFILES_FILE"])
-    # 配置文件在该 Slave 自己的进程目录里，重启时原样复用
-    assert profile.parent == dpx.process_dir(tmp_path, service.list()[0]["id"])
+    assert profile.is_absolute() and profile.is_file()
     assert profile.name == NETWORK_ONLY_PROFILE_FILENAME
     root = ElementTree.parse(profile).getroot()
     namespace = {"p": "http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles"}
@@ -117,11 +119,36 @@ def test_ros2_managed_slave_runs_network_only_transport(service, monkeypatch, tm
 def test_user_fast_dds_transport_settings_are_kept(service, monkeypatch, tmp_path, name) -> None:
     monkeypatch.setenv(name, "SHM" if name == "FASTDDS_BUILTIN_TRANSPORTS" else str(tmp_path / "mine.xml"))
     proc = _start(service, monkeypatch, "ros2")
+    assert ros_assist.configure_slave_transport(proc.env, allow_shm=True, rmw="rmw_fastrtps_cpp") == "user"
     assert proc.env[name] == os.environ[name]
     if name != "FASTRTPS_DEFAULT_PROFILES_FILE":
         assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
     assert not list(tmp_path.rglob(NETWORK_ONLY_PROFILE_FILENAME))
 
+
+
+@pytest.mark.parametrize("flag", ["--ros_shm", "--ros-shm", "--rosmem"])
+def test_ros_shm_is_inherited_by_managed_slaves(service, monkeypatch, flag) -> None:
+    args = build_parser().parse_args([flag])
+    assert args.ros_shm
+    monkeypatch.setattr(BasicConfig, "ros_shm", args.ros_shm)
+    proc = _start(service, monkeypatch, "ros2")
+    child = build_parser().parse_args(proc.command[3:])
+    assert child.ros_shm
+    assert ros_assist.configure_slave_transport(proc.env, allow_shm=child.ros_shm, rmw="rmw_fastrtps_cpp") == "shm"
+    assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
+
+
+@pytest.mark.parametrize(("rmw", "env"), [
+    ("rmw_cyclonedds_cpp", {}),
+    ("rmw_fastrtps_cpp", {"ROS_LOCALHOST_ONLY": "1"}),
+    ("rmw_fastrtps_cpp", {"ROS_AUTOMATIC_DISCOVERY_RANGE": "LOCALHOST"}),
+    ("rmw_fastrtps_cpp", {"RMW_FASTRTPS_USE_QOS_FROM_XML": "1"}),
+])
+def test_nonstandard_middleware_or_discovery_is_not_reported_as_network(rmw, env) -> None:
+    original = env.copy()
+    assert ros_assist.configure_slave_transport(env, allow_shm=False, rmw=rmw) == "user"
+    assert env == original
 
 
 def test_loopback_that_drops_fragments_keeps_fast_dds_defaults(service, monkeypatch, tmp_path) -> None:
@@ -132,10 +159,10 @@ def test_loopback_that_drops_fragments_keeps_fast_dds_defaults(service, monkeypa
     monkeypatch.setenv("ROS_SUPER_CLIENT", "TRUE")
     monkeypatch.setattr(network, "_env_before_host_policy", {"ROS_SUPER_CLIENT": None})
     proc = _start(service, monkeypatch, "ros2")
+    assert ros_assist.configure_slave_transport(proc.env, allow_shm=False, rmw="rmw_fastrtps_cpp") == "fallback"
     assert "FASTRTPS_DEFAULT_PROFILES_FILE" not in proc.env
     assert "ROS_SUPER_CLIENT" not in proc.env
     assert not list(tmp_path.rglob(NETWORK_ONLY_PROFILE_FILENAME))
-    assert dpx._reported_transport_outcomes == {"loopback"}
 
 
 def test_udp_loopback_probe(monkeypatch) -> None:

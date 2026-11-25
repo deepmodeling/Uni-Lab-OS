@@ -301,14 +301,12 @@ unilab -g lab.json --root_devices_as_slaves
   `ROS_SUPER_CLIENT`）。因此不同根设备的驱动之间只能经框架交互（`call_device_action`、`@subscribe`、
   物料 API），不能共享 Python 对象或模块级全局变量，见
   [添加设备](../developer_guide/add_device.md)「设备之间只经框架交互」。
-- **ROS 2 只走网络传输**：ROS 2 受管 Slave 的 Fast DDS 只用 UDPv4（同机经回环），不用共享内存，与
-  Host、其他 Slave 不共享进程间锁，一个 Slave 被强制结束不会拖垮别的进程。做法是给 Slave 一份默认
-  Fast DDS 配置（`FASTRTPS_DEFAULT_PROFILES_FILE`，写在该 Slave 的进程目录里），托管的 Discovery
-  Server 照常工作。启动 Host 的环境里已经设置了 `FASTRTPS_DEFAULT_PROFILES_FILE`、
-  `FASTDDS_DEFAULT_PROFILES_FILE` 或 `FASTDDS_BUILTIN_TRANSPORTS` 时，受管 Slave 照用户的配置运行。
-  只走 UDP 要求本机回环能送超过以太网 MTU 的数据报：WSL2 的镜像网络会丢掉 127.0.0.1 上的 IP 分片，
-  Slave 的较大消息两个方向都送不到。Host 拉起受管 Slave 前自检一次，回环不行时保留 Fast DDS 默认传输
-  （含共享内存）并告警。
+- **ROS 2 传输**：手动启动的 Slave 和受管 Slave 都默认只用 UDPv4，同机测试也走网络。
+  若希望同机通信可用 Fast DDS 共享内存，给手动 Slave 加 `--ros_shm`（也可写 `--rosmem`）；
+  给 Host 加此开关会传给它拉起的所有 ROS 2 Slave，不改变 Host 自身的传输。
+  显式 DDS 配置优先。本机回环不能传送 8 KiB UDP 数据报时，Slave 告警并保留默认传输。
+  在 `GET /api/v1/hostlink/peers` 查看 `ros_transport`；跨机路径测试只接受 `network`，
+  不把共享内存或回退算作通过。
 - **规格**：每个 Slave 是一条受管设备进程，id 为 `root-<设备 id>`（含路径或 URL 不安全字符的 id 净化后
   加一段由 id 派生的后缀），在 `GET /api/v1/device-processes` 里可见（`generated_by: root_devices_as_slaves`），
   可以启动 / 停止 / 重启，不能编辑或删除。每次 Host 启动按当前设备图重建：同一设备复用同一条规格，

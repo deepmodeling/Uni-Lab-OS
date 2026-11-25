@@ -270,6 +270,12 @@ def _register_hostlink_arguments(parser: argparse.ArgumentParser) -> None:
     )
     _add(
         group,
+        "--ros_shm", "--rosmem",
+        action="store_true",
+        help="允许 ROS 2 Slave 使用 Fast DDS 默认共享内存；Host 上的开关传给受管 Slave。",
+    )
+    _add(
+        group,
         "--ros_domain_id",
         type=int,
         default=None,

@@ -276,6 +276,7 @@ HostLink 是面向可信实验室局域网的明文 TCP 协议，不提供 TLS �
 | `--hostlink-host-wait-timeout` | Slave | `120` 秒 | 等 Host 的上限：启动时退避重连直到端口可连，以及 Host 启动中「未就绪」请求的重试，各自计时 |
 | `--hostlink-request-timeout` | Host + Slave | `10` 秒 | 控制请求/设备 RPC 超时 |
 | `--ros-domain-id` | Host + Slave | 环境值 | Host 下发给 Slave；Slave 本地值仅作连接前兜底 |
+| `--ros-shm`（`--ros_shm`、`--rosmem`） | Host + Slave | 否 | 允许 ROS 2 Slave 使用共享内存；Host 只向受管 Slave 传递此开关 |
 | `--ros-discovery-range` | Host | 环境值 | `SYSTEM_DEFAULT/SUBNET/LOCALHOST/OFF` |
 | `--ros-static-peers` | Host | 自动加入 Host IP | 分号分隔的静态发现对端 |
 | `--ros-discovery-server` | Host | 空 | 外部 Fast DDS `host:port`；`off` 禁用；空值由微后端托管 |
@@ -421,24 +422,18 @@ Host 退出。每个 Slave 经本机 HostLink 接回 Host，与手动启动的 S
 - Host 为自己的 ROS 节点改写的组网环境变量（`ROS_DOMAIN_ID`、`ROS_AUTOMATIC_DISCOVERY_RANGE`、
   `ROS_STATIC_PEERS`、`ROS_DISCOVERY_SERVER`、`ROS_SUPER_CLIENT`）恢复成改写前的值再交给 Slave，
   组网参数与别处的 Slave 一样经 HELLO 下发；
-- ROS 2 Slave 的 Fast DDS 只走网络：环境里带 `FASTRTPS_DEFAULT_PROFILES_FILE`，指向进程目录里的
-  `fastdds_network_only.xml`（默认参与者配置 `useBuiltinTransports=false` 加一个 UDPv4 传输；Humble 的
-  Fast DDS 2.6 与 Jazzy 的 2.14 都认，`FASTDDS_BUILTIN_TRANSPORTS` 要 2.13 起才有，所以不用它）。配置里
-  不设发现方式，`ROS_DISCOVERY_SERVER` 照常把参与者转成托管 Discovery Server 的客户端。同机的参与者
-  默认经共享内存通信，被强制结束的 Slave 会留下没解开的进程间锁（Host 报
-  `RTPS_TRANSPORT_SHM ... owner died`，其他 Slave 随后可能崩溃）；只走 UDPv4 后同机流量经回环，没有这个
-  问题。用户已设置 `FASTRTPS_DEFAULT_PROFILES_FILE`、`FASTDDS_DEFAULT_PROFILES_FILE` 或
-  `FASTDDS_BUILTIN_TRANSPORTS` 时不改动。发现范围是仅本机（Humble 的 `ROS_LOCALHOST_ONLY=1`、Jazzy 的
-  `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`）时 rmw_fastrtps 会自己再加一个共享内存传输；托管 Discovery
-  Server 下 Host 下发的是 `SYSTEM_DEFAULT`，不受影响。只走 UDP 时同机流量经 127.0.0.1，超过 MTU 的消息
-  靠 IP 分片；WSL2 的镜像网络把 127.0.0.1 的流量经 MTU 1500 的虚拟网卡转发并丢掉分片，Slave 的 ROS
-  图信息、较大的目标与结果两个方向都送不到。Host 拉起受管 Slave 前往回环发一个 8 KB 的数据报自检
-  （`ros_assist.loopback_carries_fragmented_udp`），收不到时保留 Fast DDS 默认传输（含共享内存）并告警；
+- 手动与受管 ROS 2 Slave 都在 HostLink 握手之后、DDS 初始化之前选择传输（纯 DDS 模式也适用）。
+  默认使用安装包内只含 UDPv4 的参与者配置，不更改发现服务器设置。给 Slave 加 `--ros_shm`
+  或 `--rosmem` 就保留 Fast DDS 默认传输、允许同机共享内存；给 Host 加则对它拉起的 Slave 生效。
+  显式 Fast DDS 配置文件或传输变量、非 Fast DDS 中间件、仅本机发现、由 XML 控制 QoS 时都保留用户设置。
+  Slave 自检发现本机回环不能传送 8 KiB UDP 数据报时会告警并回退，而不是丢弃较大的设备消息；
 - 停止时先请 Slave 有序退出：POSIX 发 SIGTERM，Windows 向它的进程组发 Ctrl+Break（ROS 2 Slave 当作
   SIGBREAK 有序退出），`STOP_GRACE_S`（8 秒）后仍在才强制结束。
 
-手动在 Host 那台机器上启动的 Slave 不经过这一步，Fast DDS 用默认传输（含共享内存）；需要同样只走网络时，
-自己设置上述任一变量（例如 Jazzy 上 `FASTDDS_BUILTIN_TRANSPORTS=UDPv4`）。
+启用 HostLink 时，`GET /api/v1/hostlink/peers` 中每个 ROS 2 Slave 的 `ros_transport` 来自该进程：
+`network` 是只开 UDPv4，`shm` 是允许共享内存（不代表每个包都经共享内存），`user` 是用户配置，
+`fallback` 是回环自检未通过。旧 Slave 或尚未初始化 DDS 的 Slave 可能没有这个字段。
+跨机路径 e2e 要求相关 Slave 上报 `network`；仅在报告回退且测试端也测到回环不支持时标记跳过。
 
 ### 云端集成模式
 

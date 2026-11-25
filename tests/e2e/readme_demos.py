@@ -620,6 +620,30 @@ def wait_until(
     )
 
 
+def assert_ros_network_transport(port: int, expected_ids: set[str], *, abort=None) -> None:
+    if E2E_BACKEND != "ros2":
+        return
+    assert expected_ids, "跨机路径断言需要至少一台 Slave 设备"
+
+    def reported():
+        peers = [
+            peer for peer in api_request(port, "/hostlink/peers")["peers"]
+            if peer["online"] and expected_ids.intersection(peer["device_ids"])
+        ]
+        covered = {device_id for peer in peers for device_id in peer["device_ids"]}
+        modes = {peer["machine_name"]: peer.get("ros_transport") for peer in peers}
+        return modes if expected_ids <= covered and all(modes.values()) else None
+
+    modes = wait_until(reported, timeout=15, abort=abort, description=f"Slave 上报 DDS 传输：{sorted(expected_ids)}")
+    if set(modes.values()) == {"fallback"}:
+        import pytest
+        from unilabos.client.host.hostlink.ros_assist import loopback_carries_fragmented_udp
+
+        if not loopback_carries_fragmented_udp():
+            pytest.skip("本机回环无法传送 8 KiB UDP 数据报；Slave 已回退，未验证跨机网络路径")
+    assert set(modes.values()) == {"network"}, f"跨机路径必须只走 UDPv4，实际传输：{modes}"
+
+
 def hostlink_port_open(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.2):

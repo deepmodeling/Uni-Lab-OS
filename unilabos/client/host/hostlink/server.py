@@ -749,6 +749,12 @@ class HostLinkServer:
                     state = data.get("state")
                     if device_id and isinstance(state, dict):
                         states[device_id] = dict(state)
+            if action == ActionType.HELLO or (action == ActionType.PING and "ros_transport" in data):
+                transport = data.get("ros_transport")
+                if transport in ("network", "shm", "user", "fallback"):
+                    peer["ros_transport"] = transport
+                else:
+                    peer.pop("ros_transport", None)
             peer["last_seen"] = now
             peer["last_seen_monotonic"] = now_monotonic
             peer["connected"] = True

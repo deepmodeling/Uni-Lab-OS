@@ -42,6 +42,7 @@ from tests.e2e.readme_demos import (
     DemoSpec,
     WorkflowExpectation,
     api_request,
+    assert_ros_network_transport,
     free_port,
     hostlink_port_open,
     resolve_demo_source,
@@ -198,6 +199,9 @@ class _DemoProcesses:
         if spec.slave_graph is not None:
             self._start_slave()
         self._wait_devices()
+        if spec.slave_graph is not None and E2E_BACKEND == "ros2":
+            roots = _root_device_subtrees(_load_graph(self.repo_root / spec.slave_graph))
+            assert_ros_network_transport(self.management_port, set(roots), abort=self.any_exited)
         if self.root_devices_as_slaves:
             self.assert_root_device_slaves()
 
@@ -213,6 +217,7 @@ class _DemoProcesses:
             if item.get("generated_by") == "root_devices_as_slaves"
         ]
         assert {item["name"]: set(item["device_ids"]) for item in processes} == expected, processes
+        assert_ros_network_transport(port, set(expected), abort=self.any_exited)
         peers = {peer["machine_name"]: peer for peer in api_request(port, "/hostlink/peers")["peers"]}
         for item in processes:
             assert item["id"] == f"root-{item['name']}", item

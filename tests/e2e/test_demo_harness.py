@@ -13,6 +13,38 @@ from tests.e2e import demo_contracts
 from tests.e2e.demo_contracts import DemoContracts, demo_smoke
 
 
+@pytest.mark.parametrize(("mode", "loopback", "outcome"), [
+    ("network", True, None),
+    ("shm", False, AssertionError),
+    ("user", True, AssertionError),
+    ("fallback", True, AssertionError),
+    ("fallback", False, pytest.skip.Exception),
+])
+def test_cross_machine_oracle_requires_network(monkeypatch, mode, loopback, outcome):
+    from unilabos.client.host.hostlink import ros_assist
+
+    monkeypatch.setattr(harness, "E2E_BACKEND", "ros2")
+    monkeypatch.setattr(ros_assist, "loopback_carries_fragmented_udp", lambda: loopback)
+    monkeypatch.setattr(harness, "api_request", lambda *_: {
+        "peers": [{"machine_name": "worker", "online": True, "device_ids": ["pump"], "ros_transport": mode}]
+    })
+    if outcome is None:
+        harness.assert_ros_network_transport(0, {"pump"})
+    else:
+        with pytest.raises(outcome, match="跨机"):
+            harness.assert_ros_network_transport(0, {"pump"})
+
+
+def test_cross_machine_oracle_checks_each_peer_that_claims_the_device(monkeypatch):
+    monkeypatch.setattr(harness, "E2E_BACKEND", "ros2")
+    monkeypatch.setattr(harness, "api_request", lambda *_: {"peers": [
+        {"machine_name": mode, "online": True, "device_ids": ["pump"], "ros_transport": mode}
+        for mode in ("shm", "network")
+    ]})
+    with pytest.raises(AssertionError, match="只走 UDPv4"):
+        harness.assert_ros_network_transport(0, {"pump"})
+
+
 @pytest.mark.parametrize(("text", "expected"), [
     ("Start Port : 1024\nNumber of Ports : 13977", (1024, 15001)),
     ("开始端口：49152\n端口数：16384", (49152, 65536)),

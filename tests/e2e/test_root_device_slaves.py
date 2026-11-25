@@ -35,6 +35,7 @@ import pytest
 from tests.e2e.readme_demos import (
     E2E_BACKEND,
     api_request,
+    assert_ros_network_transport,
     free_port,
     hostlink_port_open,
     ros_domain_id,
@@ -281,6 +282,7 @@ def _restart_and_wait_online(port: int, process_id: str, device_id: str, *, abor
         return device_id in api_request(port, "/online-devices")["online_devices"]
 
     wait_until(back_online, timeout=STEP_TIMEOUT, abort=abort, description=f"{device_id} 在重启后的新 Slave 里重新上线")
+    assert_ros_network_transport(port, {device_id}, abort=abort)
     return restarted
 
 
@@ -327,6 +329,7 @@ def test_failing_constructor_and_hung_action_stay_inside_their_slave(tmp_path: P
         )
         processes = {item["id"]: item for item in api_request(port, "/device-processes")["processes"]}
         assert set(processes) == {"root-fault_ok", "root-fault_steady", "root-fault_boom"}, sorted(processes)
+        assert_ros_network_transport(port, {"fault_ok", "fault_steady"}, abort=host_exited)
         sampler = _OnlineSampler(port, "fault_steady")
         sampler.start()
 
@@ -534,6 +537,7 @@ def test_root_device_slaves_compile_against_the_host_graph(tmp_path: Path) -> No
         )
         processes = {item["id"] for item in api_request(port, "/device-processes")["processes"]}
         assert processes == {"root-probe_a", "root-probe_b"}, sorted(processes)
+        assert_ros_network_transport(port, {"probe_a", "probe_b"}, abort=host_exited)
         expected = {"probe_a": ["probe_b", "waste"], "probe_b": ["probe_a", "waste"]}
         for device_id, linked in expected.items():
             task = _start_action(port, device_id, "linked", {"node_id": device_id})

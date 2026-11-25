@@ -32,7 +32,12 @@ from rclpy.service import Service
 from unilabos_msgs.action import StrSingleInput
 from unilabos.client.host.runtime.node import DeviceNode
 from unilabos.client.host.runtime.action import bind_action_context
-from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot, resource_slot_shapes
+from unilabos.client.host.runtime.resource_slot import (
+    device_slot_reference,
+    first_plr_resource,
+    is_unset_resource_slot,
+    resource_slot_shapes,
+)
 from unilabos.client.host.runtime.async_utils import schedule_async_func
 from unilabos.registry.decorators import get_topic_config
 from unilabos.registry.action_policy import (
@@ -1607,11 +1612,20 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         tree_set = self._require_resource_service().get_resources_sync(uuids_list, with_children=True)
         if not len(tree_set.trees):
             raise Exception(f"资源查询返回空树: {uuids_list}")
+        # 设备本身不是 PLR 物料（to_plr_resources 跳过设备树）：按 uuid 交给驱动设备引用
+        devices: Dict[str, Dict[str, str]] = {}
+        plr_trees = []
+        for tree in tree_set.trees:
+            reference = device_slot_reference(ResourceTreeSet([tree]))
+            if reference is None:
+                plr_trees.append(tree)
+            else:
+                devices[reference["uuid"]] = reference
         plr_resources = tree_set.to_plr_resources()
 
         # 通过资源跟踪器获取本地实例
         figured_resources: List[ResourcePLR] = []
-        for plr_resource, tree in zip(plr_resources, tree_set.trees):
+        for plr_resource, tree in zip(plr_resources, plr_trees):
             res = self.resource_tracker.figure_resource(plr_resource, try_mode=True)
             if len(res) == 0:
                 self.lab_logger().warning(f"资源转换未能索引到实例: {tree.root_node.res_content}，返回新建实例")
@@ -1623,6 +1637,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         mapped_plr_resources = []
         for uuid in uuids_list:
+            if uuid in devices:
+                mapped_plr_resources.append(devices[uuid])
+                continue
             found = None
             for plr_resource in figured_resources:
                 r = find_resource_by_uuid(plr_resource, uuid)
@@ -1645,7 +1662,10 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
         if len(tree_set.trees) != 1:
             names = [t.root_node.res_content.name for t in tree_set.trees]
             raise ValueError(f"单物料输入要求恰好一个根物料，实际得到 {len(tree_set.trees)} 个根：{names}")
-        plr = tree_set.to_plr_resources()[0]
+        device = device_slot_reference(tree_set)
+        if device is not None:
+            return device
+        plr = first_plr_resource(tree_set, tree_set.trees[0].root_node.res_content.uuid)
         res = self.resource_tracker.figure_resource(plr, try_mode=True)
         if len(res) == 1:
             return res[0]
@@ -1779,6 +1799,9 @@ class BaseROS2DeviceNode(Node, DeviceNode, Generic[T]):
 
         if unilabos_uuid:
             resource_tree = await self.get_resource([unilabos_uuid], with_children=True)
+            device = device_slot_reference(resource_tree)
+            if device is not None:
+                return device
             plr_resources = resource_tree.to_plr_resources()
             if plr_resources:
                 plr_resource = plr_resources[0]

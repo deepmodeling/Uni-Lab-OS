@@ -67,6 +67,46 @@ def is_unset_resource_slot(value: Any) -> bool:
     return False
 
 
+def device_slot_reference(tree_set: Any) -> Optional[dict[str, str]]:
+    """ResourceSlot 解析到的是设备本身时，返回交给驱动的设备引用；否则返回 ``None``。
+
+    设备不是 PLR 物料：设备子树里只放 PLR 物料，设备节点本身不反序列化（``to_plr_resources``
+    跳过设备树），没有 PLR 实例可给。搬运动作把设备当所属物料时（例如机械臂的夹爪库位挂在设备上），
+    驱动拿到 ``{"uuid", "id", "name", "type": "device"}``，与 ``{"uuid": ...}`` 引用同形。
+    ``tree_set`` 是权威取回或上游传来的单棵 ``ResourceTreeSet``。
+    """
+
+    trees = getattr(tree_set, "trees", None) or []
+    if len(trees) != 1:
+        return None
+    root = trees[0].root_node.res_content
+    if str(getattr(root, "type", "") or "") != "device":
+        return None
+    return {
+        "uuid": str(root.uuid or ""),
+        "id": str(root.id or ""),
+        "name": str(root.name or root.id or ""),
+        "type": "device",
+    }
+
+
+def first_plr_resource(tree_set: Any, identity: Any) -> Any:
+    """单个 ResourceSlot 的资源树转成 PLR 后的根实例；一个 PLR 物料都转不出时明确报错（而不是越界）。
+
+    调用方先用 :func:`device_slot_reference` 处理设备本身；``to_plr_resources`` 只会在树里全是设备时
+    返回空列表，这里兜底说清是哪个引用。
+    """
+
+    resources = tree_set.to_plr_resources()
+    if not resources:
+        roots = [
+            f"{tree.root_node.res_content.id}（type={tree.root_node.res_content.type}）"
+            for tree in getattr(tree_set, "trees", None) or []
+        ]
+        raise ValueError(f"ResourceSlot {identity!r} 的资源树里没有 PLR 物料：{', '.join(roots) or '空树'}")
+    return resources[0]
+
+
 def resource_slot_shapes(function: Any) -> dict[str, str]:
     """函数各参数中 ResourceSlot 的形态：``{参数名: "single" | "list"}``。"""
 

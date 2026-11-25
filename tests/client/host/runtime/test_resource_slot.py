@@ -93,3 +93,40 @@ def test_hostlink_hands_an_unset_optional_slot_to_the_driver_as_none(empty):
         assert runtime.call_action("heater", "heat", temp=40.0, vessel=empty) == {"vessel": None, "temp": 40.0}
     finally:
         runtime.stop()
+
+
+def _device_node(device_id: str, uuid: str) -> dict:
+    return {"id": device_id, "uuid": uuid, "type": "device", "class": "test_device",
+            "template_name": "test_device", "parent": None, "config": {}}
+
+
+def test_device_slot_reference_only_for_a_device_root():
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+    from unilabos.server.services.materials.graph import graph_resource_tree
+    from unilabos.client.host.runtime.resource_slot import device_slot_reference
+    from tests.plr_fixtures import plate
+
+    robot = graph_resource_tree([_device_node("robot", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f61")])
+    assert device_slot_reference(robot) == {
+        "uuid": "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f61",
+        "id": "robot",
+        "name": robot.trees[0].root_node.res_content.name,
+        "type": "device",
+    }
+    plates = ResourceTreeSet.from_plr_resources([plate("p")], known_random_uuid=True)
+    assert device_slot_reference(plates) is None
+
+
+def test_a_slot_tree_without_plr_materials_fails_with_a_clear_error():
+    """``to_plr_resources`` 跳过设备树：一个 PLR 物料都转不出时说清是哪个引用，不再 IndexError。"""
+
+    from unilabos.server.services.materials.graph import graph_resource_tree
+    from unilabos.client.host.runtime.resource_slot import first_plr_resource
+
+    devices = graph_resource_tree([
+        _device_node("left", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f62"),
+        _device_node("right", "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f63"),
+    ])
+    with pytest.raises(ValueError, match="没有 PLR 物料") as caught:
+        first_plr_resource(devices, "slot-ref")
+    assert "slot-ref" in str(caught.value) and "left" in str(caught.value)

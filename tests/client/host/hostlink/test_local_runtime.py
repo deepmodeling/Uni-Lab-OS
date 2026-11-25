@@ -604,6 +604,97 @@ def test_hostlink_runtime_resolves_resource_slot_before_driver_call() -> None:
         runtime.stop()
 
 
+class TransferDriver:
+    def __init__(self, device_id=None, config=None):
+        self.device_id = device_id
+
+    def pick_material(self, material: ResourceSlot, target_owner: ResourceSlot) -> dict:
+        return {"material": material.name, "target_owner": target_owner}
+
+
+class _AuthorityTrees:
+    """物料权威的最小替身：按 uuid 返回整棵子树（with_children）。"""
+
+    def __init__(self, tree_set) -> None:
+        self.trees = {node.res_content.uuid: node for node in tree_set.all_nodes}
+
+    def get_resources_sync(self, uuids, with_children=True):
+        from unilabos.resources.resource_tracker import ResourceTreeInstance, ResourceTreeSet
+
+        return ResourceTreeSet([ResourceTreeInstance(self.trees[uuid]) for uuid in uuids if uuid in self.trees])
+
+    def get_resource_by_id_sync(self, resource_id, with_children=True):
+        raise KeyError(resource_id)
+
+
+ROBOT_UUID = "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f60"
+WORKDECK_DEVICE_UUID = "0b9e8d7c-6a5f-4e3d-8c2b-1a0f9e8d7c6b"
+
+
+def _transfer_runtime():
+    from unilabos.resources.resource_tracker import ResourceTreeSet
+    from unilabos.server.services.materials.graph import graph_resource_tree
+    from tests.plr_fixtures import plate
+
+    def device(device_id: str, uuid: str) -> dict:
+        return {"id": device_id, "uuid": uuid, "type": "device", "class": "test_device",
+                "template_name": "test_device", "parent": None, "config": {}}
+
+    deck_nodes = ResourceTreeSet.from_plr_resources([plate("deck_plate")], known_random_uuid=True).dump()[0]
+    deck_nodes[0]["parent_uuid"] = WORKDECK_DEVICE_UUID
+    graph = graph_resource_tree([device("robot", ROBOT_UUID), device("workdeck", WORKDECK_DEVICE_UUID), *deck_nodes])
+
+    runtime = HostLinkLocalRuntime()
+    runtime.add_driver(HostLinkDriverSpec("robot", TransferDriver, {}, action_names=("pick_material",)))
+    runtime.start()
+    node = runtime.devices["robot"]
+    node.__dict__["_device_resource_service"] = _AuthorityTrees(graph)
+    from pylabrobot.resources import Resource
+
+    held = Resource("held_plate", size_x=1, size_y=1, size_z=1)
+    held.unilabos_uuid = "held-plate-uuid"
+    node.resource_tracker.add_resource(held)
+    return runtime, graph
+
+
+@pytest.mark.parametrize("owner_uuid, owner_id", [(ROBOT_UUID, "robot"), (WORKDECK_DEVICE_UUID, "workdeck")])
+def test_resource_slot_pointing_at_a_device_gets_a_device_reference(owner_uuid, owner_id) -> None:
+    """搬运动作的所属物料是设备本身（机械臂夹爪库位挂在设备上；台面设备下挂着 PLR 物料）。
+
+    设备不是 PLR 物料，本地快照里没有它，权威取回的是设备树：不能当 PLR 树转换（以前
+    ``to_plr_resources()[0]`` 越界，动作在调用驱动前失败），驱动拿到设备引用。
+    """
+
+    runtime, _graph = _transfer_runtime()
+    try:
+        result = runtime.call_action(
+            "robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner={"uuid": owner_uuid}
+        )
+    finally:
+        runtime.stop()
+
+    assert result["material"] == "held_plate"
+    owner = result["target_owner"]
+    assert owner["uuid"] == owner_uuid and owner["id"] == owner_id and owner["type"] == "device"
+    assert isinstance(owner["name"], str) and owner["name"]
+
+
+def test_resource_slot_tree_rooted_at_a_device_gets_a_device_reference() -> None:
+    """上游端口传来的扁平树以设备为根时同样不走 PLR 转换。"""
+
+    runtime, graph = _transfer_runtime()
+    robot_tree = next(tree for tree in graph.dump() if tree[0]["uuid"] == ROBOT_UUID)
+    try:
+        result = runtime.call_action(
+            "robot", "pick_material", material={"uuid": "held-plate-uuid"}, target_owner=robot_tree
+        )
+    finally:
+        runtime.stop()
+
+    assert result["target_owner"]["uuid"] == ROBOT_UUID
+    assert result["target_owner"]["type"] == "device"
+
+
 def test_hostlink_runtime_honors_topic_config_period_and_name() -> None:
     runtime = _decorated_runtime()
     received: list[int] = []

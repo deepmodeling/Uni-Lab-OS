@@ -8,7 +8,8 @@ class ResourceSlot(Resource):
 
     1. 作为 @action 函数参数类型（**暴露给外部调用的契约**）：表示「**一个完整的物料**」。
        框架已在 send_goal 把原始入参解析为单个 PLR ``Resource`` 实例，函数体内拿到的就是它，
-       直接当普通 Resource 用即可，无需关心 list/dict。
+       直接当普通 Resource 用即可，无需关心 list/dict。例外：指向设备本身时（设备不是 PLR 物料），
+       拿到的是设备引用 ``{"uuid", "id", "name", "type": "device"}``。
     2. 作为原始入参（**仅框架内部解析阶段**）：见 ``ResourceSlotRawInput``，可能是
        list（一棵树的扁平节点组，handle ``@flatten`` 运行期形态）或 dict（资源引用，前端 schema 填写形态）。
 

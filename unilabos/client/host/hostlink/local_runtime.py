@@ -33,7 +33,11 @@ from unilabos.client.host.runtime.driver_creator import (
 )
 from unilabos.client.host.runtime.node import BackendCapabilityError, DeviceNode
 from unilabos.client.host.runtime.resource import ResourceService
-from unilabos.client.host.runtime.resource_slot import is_unset_resource_slot
+from unilabos.client.host.runtime.resource_slot import (
+    device_slot_reference,
+    first_plr_resource,
+    is_unset_resource_slot,
+)
 from unilabos.client.host.runtime.resource_slot import resource_slot_shape as _resource_slot_shape
 from unilabos.client.host.hostlink.service import (
     DeviceService,
@@ -866,7 +870,10 @@ class HostLinkDeviceNode(DeviceNode):
         return mapped
 
     def _resolve_resource_slot(self, value: Any) -> Any:
-        """Resolve one ResourceSlot from this device's authoritative snapshot."""
+        """Resolve one ResourceSlot from this device's authoritative snapshot.
+
+        指向设备本身（设备不是 PLR 物料）时交给驱动设备引用，见 ``device_slot_reference``。
+        """
 
         kind, payload = parse_resource_slot(value)
 
@@ -880,7 +887,10 @@ class HostLinkDeviceNode(DeviceNode):
                     "单个 ResourceSlot 必须恰好包含一棵资源树，"
                     f"实际为 {len(tree_set.trees)} 棵"
                 )
-            resource = tree_set.to_plr_resources()[0]
+            device = device_slot_reference(tree_set)
+            if device is not None:
+                return device
+            resource = first_plr_resource(tree_set, tree_set.trees[0].root_node.res_content.uuid)
             matches = self.resource_tracker.figure_resource(resource, try_mode=True)
             if len(matches) > 1:
                 raise ValueError(f"ResourceSlot 匹配到多个本地资源：{matches}")
@@ -895,7 +905,11 @@ class HostLinkDeviceNode(DeviceNode):
             identity = payload.get("uuid") or payload.get("id") or payload.get("name")
             tree_set = self._fetch_reference_from_authority(payload)
             if tree_set is not None and len(tree_set.trees):
-                resource = tree_set.to_plr_resources()[0]
+                # 设备节点不在本地 PLR 快照里，权威取回的是设备树：设备本身不转 PLR
+                device = device_slot_reference(tree_set)
+                if device is not None:
+                    return device
+                resource = first_plr_resource(tree_set, identity)
                 refigured = self.resource_tracker.figure_resource(resource, try_mode=True)
                 if len(refigured) == 1:
                     return refigured[0]

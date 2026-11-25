@@ -248,3 +248,61 @@ def test_ros2_node_registers_both_subscribe_decorator_forms() -> None:
         "/devices/source/absolute",
         "/devices/source/split",
     }
+
+
+def test_ros2_resource_slot_pointing_at_a_device_gets_a_device_reference() -> None:
+    """与 HostLink 同一规则：设备不是 PLR 物料，ResourceSlot 指向设备时驱动拿到设备引用。"""
+
+    import logging
+
+    from unilabos.resources.resource_tracker import (
+        DeviceNodeResourceTracker,
+        ResourceTreeInstance,
+        ResourceTreeSet,
+    )
+    from unilabos.server.services.materials.graph import graph_resource_tree
+    from tests.plr_fixtures import plate
+
+    robot_uuid = "6f0d1f3e-0c7a-4a55-9b7e-1d2c3b4a5f64"
+    plate_nodes = ResourceTreeSet.from_plr_resources([plate("loose_plate")], known_random_uuid=True).dump()[0]
+    graph = graph_resource_tree([
+        {"id": "robot", "uuid": robot_uuid, "type": "device", "class": "test_device",
+         "template_name": "test_device", "parent": None, "config": {}},
+        *plate_nodes,
+    ])
+    nodes = {node.res_content.uuid: node for node in graph.all_nodes}
+
+    class Service:
+        def get_resources_sync(self, uuids, with_children=True):
+            return ResourceTreeSet([ResourceTreeInstance(nodes[uuid]) for uuid in uuids])
+
+    class Node:
+        _convert_resources_sync = BaseROS2DeviceNode._convert_resources_sync
+        _assemble_single_resource = BaseROS2DeviceNode._assemble_single_resource
+        _convert_resource_async = BaseROS2DeviceNode._convert_resource_async
+        _resolve_slot_value_sync = BaseROS2DeviceNode._resolve_slot_value_sync
+        resource_tracker = DeviceNodeResourceTracker()
+
+        def _require_resource_service(self):
+            return Service()
+
+        async def get_resource(self, uuids, with_children=True):
+            return Service().get_resources_sync(uuids, with_children)
+
+        def lab_logger(self):
+            return logging.getLogger(__name__)
+
+    node = Node()
+    expected = {"uuid": robot_uuid, "id": "robot", "type": "device"}
+
+    def subset(value):
+        return {key: value[key] for key in expected}
+
+    assert subset(node._resolve_slot_value_sync({"uuid": robot_uuid})) == expected
+    assert subset(asyncio.run(node._convert_resource_async({"uuid": robot_uuid}))) == expected
+    robot_tree = next(tree for tree in graph.dump() if tree[0]["uuid"] == robot_uuid)
+    assert subset(node._assemble_single_resource(ResourceTreeSet.load([robot_tree]))) == expected
+    # 设备与 PLR 物料一起查：顺序与输入一致，PLR 物料照常装配
+    device, loose = node._convert_resources_sync(robot_uuid, plate_nodes[0]["uuid"])
+    assert subset(device) == expected
+    assert loose.name == "loose_plate"

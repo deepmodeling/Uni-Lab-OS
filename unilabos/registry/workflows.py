@@ -205,6 +205,8 @@ class WorkflowDefinition:
     tags: List[str]
     fn: Callable[["WorkflowBuildContext"], Any]
     guide: Optional[WorkflowGuide] = None
+    #: ``@workflow(allowed_templates=...)``：输入名 → 允许的注册表资源 id（发布时解析成资源模板 uuid）
+    allowed_templates: Dict[str, List[str]] = field(default_factory=dict)
 
     def collect(self) -> "WorkflowBuildContext":
         """按源码静态编译出步骤及输入输出声明，不调用作者函数。"""
@@ -614,6 +616,7 @@ def workflow(
     description: str = "",
     tags: Optional[Sequence[str]] = None,
     guide: Optional[Any] = None,
+    allowed_templates: Optional[Mapping[str, Any]] = None,
     **removed_options: Any,
 ):
     """把模块级函数注册为设备包自带的工作流模板。
@@ -628,6 +631,10 @@ def workflow(
         guide: 操作指引（``WorkflowGuide`` 或同形 dict）：``preparation`` 运行前要在前端做的
             准备（出库、挂到哪台设备哪个位点、确认设备在线……）、``expected`` 预期效果、
             ``notes`` 注意事项。配合每步的 ``description`` 组成前端的"全流程"说明。
+        allowed_templates: 物料输入允许的资源模板 ``{输入名: [注册表资源 id, ...]}``；输入本身照常注解为
+            ``ResourceSlot`` / ``List[ResourceSlot]``（键不是这样的输入时注册失败）。发布时按注册表解析成资源
+            模板 uuid（未知 id 发布失败），写进输入 schema 的 ``allowed_resource_template_uuids``：前端据此筛选，
+            预检与建任务拒绝模板不符的物料。社区包资源 id 的 ``community.<包>.`` 前缀可省略（唯一时）。
         removed_options: 只接受已移除的 ``compiler``，让旧驱动包照常加载：``compiler="ast"`` 的值被忽略，
             按定义告警一次；其他取值报错并提示去掉参数（规则见 ``registry/workflow_options.py``）。
     """
@@ -639,9 +646,16 @@ def workflow(
         raise ValueError("@workflow 必须提供非空 display_name")
     ignored_options = ignored_workflow_options(removed_options)
     normalized_guide = _normalize_guide(guide)
+    from unilabos.registry.workflow_contract import normalize_allowed_templates
+
+    normalized_templates = normalize_allowed_templates(
+        dict(allowed_templates) if isinstance(allowed_templates, Mapping) else allowed_templates
+    )
 
     def decorator(fn: Callable[[WorkflowBuildContext], Any]):
         source_path = f"{fn.__module__}:{fn.__qualname__}"
+        if normalized_templates:
+            _check_allowed_template_inputs(fn, normalized_templates)
         definition = WorkflowDefinition(
             uuid=workflow_uuid_for(source_path),
             source_path=source_path,
@@ -655,6 +669,7 @@ def workflow(
             ),
             fn=fn,
             guide=normalized_guide,
+            allowed_templates=normalized_templates,
         )
         if ignored_options:
             # 与 AST 扫描同一身份（模块:函数）：同一定义在一个进程里只告警一次
@@ -669,6 +684,55 @@ def workflow(
         return fn
 
     return decorator
+
+
+def _check_allowed_template_inputs(fn: Callable[..., Any], allowed: Dict[str, List[str]]) -> None:
+    """``allowed_templates`` 的键必须是 ResourceSlot / List[ResourceSlot] 输入：在装饰时就失败（注册失败）。"""
+
+    import ast
+    import inspect
+    import textwrap
+
+    from unilabos.registry.workflow_contract import apply_allowed_templates, parse_workflow_contract
+
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    except (OSError, TypeError, SyntaxError) as exc:
+        raise ValueError(f"@workflow {fn.__qualname__}：allowed_templates 需要可读取的函数源码") from exc
+    function = next(item for item in tree.body if isinstance(item, ast.FunctionDef))
+    input_contract, _outputs = parse_workflow_contract(fn, function)
+    try:
+        apply_allowed_templates(input_contract, allowed)
+    except ValueError as exc:
+        raise ValueError(f"@workflow {fn.__qualname__}：{exc}") from None
+
+
+def resource_template_resolver(gateway: Any = None) -> Callable[[str], str]:
+    """注册表资源 id → 物料权威里的资源模板 uuid（模板名就是注册表资源 id）。
+
+    社区包的资源 id 带 ``community.<包>.`` 前缀：精确匹配不到时按 ``.<id>`` 结尾唯一匹配。没有物料权威、
+    id 不存在或匹配到多个时抛 ``ValueError``（发布失败）。
+    """
+
+    if gateway is None:
+        from unilabos.server.execution_composition import get_materials_gateway
+
+        gateway = get_materials_gateway()
+    if gateway is None:
+        raise ValueError("工作流输入的资源模板筛选要按物料权威解析资源模板 uuid，当前进程没有物料权威")
+    templates = {str(item.name): str(item.template_uuid) for item in gateway.list_templates()}
+
+    def resolve(identity: str) -> str:
+        if identity in templates:
+            return templates[identity]
+        matches = sorted(name for name in templates if name.endswith(f".{identity}"))
+        if len(matches) == 1:
+            return templates[matches[0]]
+        if not matches:
+            raise ValueError(f"allowed_templates 引用了注册表里没有的资源 {identity!r}")
+        raise ValueError(f"allowed_templates 的 {identity!r} 匹配到多个注册表资源 {matches}，请写完整 id")
+
+    return resolve
 
 
 def get_registered_workflows() -> Dict[str, WorkflowDefinition]:
@@ -853,6 +917,15 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
 
     collected = definition.collect()
     steps = collected.steps
+    input_contract, output_contract = collected.input_contract, collected.output_contract
+    allowed_templates = dict(getattr(definition, "allowed_templates", None) or {})
+    if allowed_templates:
+        from unilabos.registry.workflow_contract import apply_allowed_templates
+
+        resolve = getattr(definition, "resolve_template", None) or resource_template_resolver()
+        input_contract, output_contract = apply_allowed_templates(
+            input_contract, allowed_templates, output_contract=output_contract, resolve=resolve
+        )
     roles: Dict[str, Dict[str, Any]] = {}
     nodes: List[Dict[str, Any]] = []
     for index, step in enumerate(steps):
@@ -947,9 +1020,9 @@ def build_workflow_template_payload(definition: WorkflowDefinition) -> Dict[str,
         if unknown_resources:
             raise ValueError(f"资源作用域引用未声明的设备角色：{sorted(unknown_resources)}")
     payload["resource_scopes"] = collected.resource_scopes
-    if collected.input_contract["parameters"] or collected.output_contract["outputs"]:
-        payload["io"] = {"input_contract": collected.input_contract,
-                         "output_contract": collected.output_contract, "output_bindings": collected.output_bindings}
+    if input_contract["parameters"] or output_contract["outputs"]:
+        payload["io"] = {"input_contract": input_contract,
+                         "output_contract": output_contract, "output_bindings": collected.output_bindings}
     return payload
 
 

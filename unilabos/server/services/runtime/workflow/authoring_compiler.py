@@ -210,6 +210,7 @@ class WorkflowAuthoringCompiler:
             description=program.description,
             tags=program.tags,
             guide=None,
+            allowed_templates=program.allowed_templates,
         )
         try:
             template = build_workflow_template_payload(definition)  # type: ignore[arg-type]

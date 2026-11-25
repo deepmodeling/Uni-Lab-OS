@@ -328,6 +328,8 @@ _WORKFLOW_SYMBOLS = frozenset({
     "preflight_failed",
     # 物料参数按库位绑定失败（库位不存在 / 为空 / 模板不符，细节在 error.details）
     "material_site_invalid",
+    # 工作流物料输入直接给的物料不是 @workflow(allowed_templates=...) 允许的模板（细节在 error.details）
+    "material_template_mismatch",
     # 库位参数按所属物料选择的写法不对（没有 Material.site 关系、放入物料不确定……，细节在 error.details）
     "site_selection_invalid",
 })

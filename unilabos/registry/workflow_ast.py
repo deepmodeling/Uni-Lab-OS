@@ -88,6 +88,8 @@ class StaticWorkflowSource:
     display_name: str = ""
     description: str = ""
     tags: list[str] = field(default_factory=list)
+    #: ``@workflow(allowed_templates=...)``：输入名 → 允许的注册表资源 id（发布时解析成资源模板 uuid）
+    allowed_templates: dict[str, list[str]] = field(default_factory=dict)
     #: 步骤 key → (起始行, 起始列, 结束行, 结束列)，行列从 1 开始，列按 UTF-8 字节计
     step_ranges: dict[str, tuple[int, int, int, int]] = field(default_factory=dict)
     #: 步骤 key → 锚点声明的节点 UUID
@@ -172,6 +174,7 @@ def compile_workflow_source(python_source: str, *, function_name: Optional[str] 
         output_contract=output_contract, constants=constants, source_lines=lines,
     )
     decorator = next((dec for dec in function.decorator_list if _is_workflow_decorator(dec)), None)
+    allowed_literal: Any = None
     if isinstance(decorator, ast.Call):
         try:
             if decorator.args:
@@ -183,8 +186,21 @@ def compile_workflow_source(python_source: str, *, function_name: Optional[str] 
                     result.description = str(ast.literal_eval(keyword.value))
                 elif keyword.arg == "tags":
                     result.tags = [str(tag) for tag in ast.literal_eval(keyword.value)]
+                elif keyword.arg == "allowed_templates":
+                    allowed_node = keyword.value
+                    allowed_literal = ast.literal_eval(keyword.value)
         except (ValueError, TypeError, SyntaxError):
             raise WorkflowSourceError("@workflow 参数必须是字面量", line=decorator.lineno) from None
+        if allowed_literal is not None:
+            from unilabos.registry.workflow_contract import apply_allowed_templates, normalize_allowed_templates
+
+            try:
+                result.allowed_templates = normalize_allowed_templates(allowed_literal)
+                apply_allowed_templates(input_contract, result.allowed_templates)
+            except ValueError as exc:
+                raise WorkflowSourceError(
+                    f"{function.name}：{exc}", line=allowed_node.lineno, column=allowed_node.col_offset,
+                ) from None
     return result
 
 

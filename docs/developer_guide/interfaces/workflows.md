@@ -93,7 +93,27 @@ node.param = {"volume": {"kind": "workflow_input", "parameter": "volume"}, "spee
 | `DeviceSlot` | `{"$slot": "DeviceSlot"}` | 设备 id 字符串 | 可以（设备 id 是图里的稳定名字） |
 | `SiteSlot` | `{"$slot": "SiteSlot"}` | ResourceSite uuid 字符串 | 不可以（库位是具体实例） |
 
-`DeviceSlot` / `SiteSlot` 不是物料：不加物料锁、不成为隐式输出，`AllowedResourceTemplates` 只能用在 `ResourceSlot` 上。
+`DeviceSlot` / `SiteSlot` 不是物料：不加物料锁、不成为隐式输出。
+
+物料输入允许哪些资源模板写在装饰器上，输入本身仍是 `ResourceSlot` / `list[ResourceSlot]`：
+
+```python
+@workflow("Cyclize plates", allowed_templates={
+    "plate_1": ["deep_well_plate_96", "collection_plate_96"],
+})
+def cyclize_plates(ctx, *, plate_1: ResourceSlot, ...): ...
+```
+
+- 键必须是 `ResourceSlot` / `list[ResourceSlot]` 输入，否则注册失败；值是注册表资源 id（社区包的 `community.<包>.`
+  前缀可省略，省略后要唯一）。源码静态编译读这个字面量。
+- 发布时（设备包模板随注册表上报、作者编译）按物料权威把 id 解析成资源模板 uuid，未知 id 发布失败；解析结果写进该输入
+  （与同名隐式输出）schema 的 `allowed_resource_template_uuids`，即 `{"$slot": "ResourceSlot", "allowed_resource_template_uuids": [...]}`，
+  工作流详情与模板目录的输入 schema 都带它，前端按它筛选。
+- 运行预检与建任务按它核对：按库位绑定（`{"site_uuid"}`）的占用物料不符报 `material_site_invalid`（预检
+  `invalid_material_site`，`details.reason=template_mismatch`）；直接给的 `{"uuid"}` 物料不符报 `material_template_mismatch`
+  （预检 `invalid_material_template`）。
+- 旧写法 `plate_1: Annotated[ResourceSlot, AllowedResourceTemplates(...)]` 写在工作流输入上照旧报错，错误信息指向
+  `@workflow(allowed_templates=...)`；动作参数上的 `Annotated` 写法不变。
 它们的值形状就是字符串，可以接到节点上同名类型的参数或普通字符串参数（节点参数里 `DeviceSlot` / `SiteSlot` 渲染为
 `{"type": "string"}`）；`DeviceSlot` 与 `SiteSlot` 之间、它们与 `ResourceSlot` 之间不能互接。
 

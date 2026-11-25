@@ -263,3 +263,77 @@ def test_resource_slot_input_schema_accepts_the_site_form() -> None:
     assert validate_value({"$slot": "ResourceSlot"}, {"site_uuid": site.upper()}) == {"site_uuid": site}
     with pytest.raises(WorkflowValueSchemaError):
         validate_value({"$slot": "ResourceSlot"}, {"site_uuid": "A1"})
+
+
+def _typed_carrier(stack: Stack) -> tuple[dict[str, str], dict[str, str]]:
+    """一个两位载架：A 位是深孔板，B 位是试剂槽；模板 uuid 由物料权威登记（工作流输入的允许模板按 uuid 核对）。"""
+
+    templates = {name: str(uuid4()) for name in ("deep_well_plate", "reagent_trough")}
+    for name, identity in templates.items():
+        stack.materials.put_template(_mutation("put_template"), ResourceTemplateWrite(
+            template_uuid=identity, name=name, display_name=name, resource_type="container", class_name="Container"))
+    _template(stack, "carrier")
+
+    def identity(name: str, template: str) -> MaterialIdentityWrite:
+        return MaterialIdentityWrite(resource_id=f"{name}-{uuid4()}", name=f"{name}-{uuid4()}", template_name=template,
+                                     resource_type="container", class_name="Container")
+
+    tree = stack.materials.create_tree(_mutation("create_material_tree"), MaterialTreeCreate(nodes=[
+        MaterialNodeCreate(client_ref="carrier", identity=identity("carrier", "carrier"), sites=[
+            SiteCreate(template_name="slot", site_index=0, label="A", occupied_client_ref="plate"),
+            SiteCreate(template_name="slot", site_index=1, label="B", occupied_client_ref="trough")]),
+        MaterialNodeCreate(client_ref="plate", parent_client_ref="carrier", identity=identity("plate", "deep_well_plate")),
+        MaterialNodeCreate(client_ref="trough", parent_client_ref="carrier", identity=identity("trough", "reagent_trough")),
+    ])).data
+    carrier = tree.client_ref_map["carrier"]
+    sites = {site.label: site.site_uuid for site in stack.materials.get_material(carrier).sites}
+    return templates, {**sites, "plate": tree.client_ref_map["plate"], "trough": tree.client_ref_map["trough"]}
+
+
+def _allowlisted_input(template_uuids: list[str]) -> dict:
+    slot = {"$slot": "ResourceSlot", "allowed_resource_template_uuids": template_uuids}
+    return {"input_contract": {"version": 1, "parameters": [{"name": "plate_1", "schema": slot, "required": True}]},
+            "output_contract": {"version": 1, "outputs": [{"name": "plate_1", "schema": slot, "implicit": True}]},
+            "output_bindings": {"plate_1": {"kind": "workflow_input", "parameter": "plate_1"}}}
+
+
+@pytest.mark.parametrize("form", ["site", "uuid"])
+def test_workflow_input_outside_its_allowed_templates_is_rejected_at_preflight_and_submission(tmp_path, form) -> None:
+    """``@workflow(allowed_templates=...)`` 写进输入 schema 的允许模板：按库位绑定与直接给 ``{"uuid"}`` 都核对。"""
+
+    stack = Stack(tmp_path)
+    try:
+        templates, refs = _typed_carrier(stack)
+        node = _node({"sample": {"kind": "workflow_input", "parameter": "plate_1"}})
+        record = _workflow(stack, [node], io=_allowlisted_input([templates["deep_well_plate"]]))
+        wrong = {"plate_1": {"site_uuid": refs["B"]} if form == "site" else {"uuid": refs["trough"]}}
+        right = {"plate_1": {"site_uuid": refs["A"]} if form == "site" else {"uuid": refs["plate"]}}
+        code = "material_site_invalid" if form == "site" else "material_template_mismatch"
+
+        with pytest.raises(WorkflowError) as caught:
+            _create(stack, record, wrong)
+        assert caught.value.code == code
+        assert caught.value.details["reason"] == "template_mismatch" and caught.value.details["parameter"] == "plate_1"
+        assert "plate_1" in caught.value.message and "reagent_trough" in caught.value.message
+        assert stack.workflow.list_tasks(page=1, page_size=10)["items"] == []
+
+        client = TestClient(create_workflow_app(stack.workflow))
+        response = client.post("/api/v1/workflow-tasks", json={"workflow_uuid": record["uuid"], "input": wrong}).json()
+        assert response["code"] == 1000 and response["error"]["code"] == code
+        report = client.post(f"/api/v1/workflows/{record['uuid']}/run-preflight", json={"input": wrong}).json()["data"]
+        assert report["status"] == "invalid"
+        [blocked] = [item for item in report["checks"] if item["blocking"]]
+        assert blocked["code"] == ("invalid_material_site" if form == "site" else "invalid_material_template")
+        assert blocked["details"]["reason"] == "template_mismatch"
+
+        ok = client.post(f"/api/v1/workflows/{record['uuid']}/run-preflight", json={"input": right}).json()["data"]
+        # 这里没有在线设备（device_action_unavailable 照常阻塞），只看物料这一项
+        assert not [item for item in ok["checks"] if item["blocking"] and item["type"] == "resources"]
+        task = _create(stack, record, right)
+        assert task["input"] == {"plate_1": {"uuid": refs["plate"]}}
+
+        # 工作流详情的输入 schema 带着前端筛选要用的允许模板
+        detail = client.get(f"/api/v1/workflows/{record['uuid']}").json()["data"]
+        assert templates["deep_well_plate"] in str(detail) and "allowed_resource_template_uuids" in str(detail)
+    finally:
+        stack.close()

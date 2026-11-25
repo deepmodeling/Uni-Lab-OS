@@ -8,6 +8,10 @@
 3. :func:`bind_material_sites` 把计划节点参数（含暂停改参时重新代入用的 ``entry_param_template``）与任务输入里的
    ``{"site_uuid"}`` 换成占用物料的 ``{"uuid": ...}``。参数写了 ``AllowedResourceTemplates(...)`` 时核对占用物料的模板。
 
+工作流输入的允许模板来自 ``@workflow(allowed_templates=...)``，发布时写进输入 schema 的
+``allowed_resource_template_uuids``（:func:`input_template_allowlists`）；按库位绑定与直接给 ``{"uuid"}`` 的输入都按它核对
+（后者见 :func:`check_input_material_templates`）。
+
 之后它就是普通物料参数：默认共享物料锁、派发前的物料核对照旧。库位不存在、库位是空的、占用物料不是参数允许的模板
 都是预检错误（:class:`MaterialSiteError`，``reason`` 分别为 ``site_not_found`` / ``site_empty`` /
 ``template_mismatch``），消息里写明库位与参数。
@@ -15,7 +19,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, Optional
 
 from unilabos.protocol.runtime.site_references import site_reference
@@ -86,9 +90,53 @@ def _template_symbols(schema: Any, parameter: str) -> list[str]:
     return list(symbols.get(parameter) or [])
 
 
+def input_template_allowlists(contract: Optional[Mapping[str, Any]]) -> dict[str, list[str]]:
+    """工作流输入合同里各物料输入允许的资源模板 uuid（ResourceSlot schema 的 ``allowed_resource_template_uuids``）。"""
+
+    from .handle_projection import resource_slot_schema
+
+    allowlists: dict[str, list[str]] = {}
+    for descriptor in (contract or {}).get("parameters") or []:
+        slot = resource_slot_schema(descriptor.get("schema") or {})
+        uuids = (slot or {}).get("allowed_resource_template_uuids")
+        if uuids:
+            allowlists[str(descriptor["name"])] = [str(item) for item in uuids]
+    return allowlists
+
+
+def _template_mismatch(where: str, material: str, template_name: Any, allowed: Iterable[str]) -> str:
+    return (f"{where}：物料 {material}（模板 {template_name}）不是允许的资源模板"
+            f"（{'、'.join(str(item) for item in allowed)}）")
+
+
+def check_input_material_templates(
+    input_value: Optional[Mapping[str, Any]], allowlists: Mapping[str, Sequence[str]],
+    template_of: Callable[[str], Mapping[str, Any]],
+) -> None:
+    """直接给 ``{"uuid"}`` 的工作流物料输入按允许模板核对；``template_of(物料 uuid)`` 给 ``template_uuid`` / ``template_name``。
+
+    按库位绑定的输入在 :func:`bind_material_sites` 里按同一份允许模板核对；不符抛 :class:`MaterialSiteError`
+    （``reason=template_mismatch``，``site_uuid`` 为空，``details`` 带 ``material_uuid``）。
+    """
+
+    for name, allowed in allowlists.items():
+        for item in _values((input_value or {}).get(name)):
+            if not isinstance(item, Mapping) or not isinstance(item.get("uuid"), str) or site_reference(item):
+                continue
+            facts = template_of(item["uuid"])
+            if str(facts.get("template_uuid") or "") not in allowed:
+                error = MaterialSiteError(
+                    TEMPLATE_MISMATCH,
+                    _template_mismatch(f"工作流输入 {name}", item["uuid"], facts.get("template_name"), allowed),
+                    parameter=name, site_uuid="",
+                )
+                error.details["material_uuid"] = item["uuid"]
+                raise error
+
+
 def resolve_site_material(
     facts: Mapping[str, Any], site_uuid: str, *, parameter: str, node_uuid: Optional[str] = None,
-    template_symbols: Iterable[str] = (),
+    template_symbols: Iterable[str] = (), template_uuids: Iterable[str] = (),
 ) -> dict[str, str]:
     """一个 ``{"site_uuid"}`` → 占用物料的 ``{"uuid"}``；库位不存在 / 为空 / 模板不符时抛 :class:`MaterialSiteError`。"""
 
@@ -114,22 +162,31 @@ def resolve_site_material(
             f"（模板 {occupant.get('template_name')}）不是参数允许的资源模板（{'、'.join(symbols)}）",
             parameter=parameter, site_uuid=site_uuid, node_uuid=node_uuid,
         )
+    allowed = list(template_uuids)
+    if allowed and str(occupant.get("template_uuid") or "") not in allowed:
+        raise MaterialSiteError(
+            TEMPLATE_MISMATCH,
+            _template_mismatch(f"{where} 按库位 {label} 绑定物料", occupant.get("material_uuid"),
+                               occupant.get("template_name"), allowed),
+            parameter=parameter, site_uuid=site_uuid, node_uuid=node_uuid,
+        )
     return {"uuid": str(occupant["material_uuid"])}
 
 
 def _bind_param(
     param: dict[str, Any], facts: Mapping[str, Any], *, node_uuid: Optional[str], schema: Any,
-    bindings: list[dict[str, Any]],
+    bindings: list[dict[str, Any]], allowlists: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> None:
     for name, value in list(param.items()):
         symbols = _template_symbols(schema, name)
+        uuids = list((allowlists or {}).get(name) or [])
 
         def bind(item: Any) -> Any:
             site = site_reference(item)
             if site is None:
                 return item
             material = resolve_site_material(facts, site, parameter=name, node_uuid=node_uuid,
-                                             template_symbols=symbols)
+                                             template_symbols=symbols, template_uuids=uuids)
             record = {"parameter": name, "site_uuid": site, "material_uuid": material["uuid"]}
             if node_uuid is not None:
                 record["node_uuid"] = node_uuid
@@ -154,11 +211,13 @@ def bind_param_sites(
 
 def bind_material_sites(
     plan: Optional[dict[str, Any]], input_value: Optional[dict[str, Any]], facts: Mapping[str, Any],
+    *, input_contract: Optional[Mapping[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     """就地把计划与任务输入里的 ``{"site_uuid"}`` 换成占用物料 ``{"uuid"}``，返回绑定记录。
 
     计划节点的 ``param`` 与 ``entry_param_template``（暂停改参时按它重新代入）一起换；任务输入里的同形值也换，
     改参后重新代入的仍是冻结的物料。绑定记录写进计划的 ``material_site_bindings``（追溯用）。
+    ``input_contract`` 给了时任务输入按其中的允许模板（:func:`input_template_allowlists`）核对占用物料。
     """
 
     bindings: list[dict[str, Any]] = []
@@ -169,7 +228,8 @@ def bind_material_sites(
         if isinstance(template, dict):
             _bind_param(template, facts, node_uuid=node["uuid"], schema=schema, bindings=[])
     if input_value is not None:
-        _bind_param(input_value, facts, node_uuid=None, schema=None, bindings=bindings)
+        _bind_param(input_value, facts, node_uuid=None, schema=None, bindings=bindings,
+                    allowlists=input_template_allowlists(input_contract))
     if plan is not None and bindings:
         plan["material_site_bindings"] = bindings
     return bindings
@@ -186,6 +246,8 @@ def bind_jobs(plan: Mapping[str, Any], jobs: Iterable[dict[str, Any]]) -> None:
 
 __all__ = [
     "MaterialSiteError",
+    "check_input_material_templates",
+    "input_template_allowlists",
     "SITE_EMPTY",
     "SITE_NOT_FOUND",
     "TEMPLATE_MISMATCH",

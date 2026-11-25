@@ -79,7 +79,8 @@ def build_run_preflight_report(
             raise ValueError("运行模式无效")
         if expected_revision is not None and expected_revision != graph["workflow"]["revision"]:
             raise ValueError("工作流修订已变化，请刷新后重新预检")
-        resolved = resolve_task_input(declared_input_contract(graph["workflow"]), input_value)
+        input_contract = declared_input_contract(graph["workflow"])
+        resolved = resolve_task_input(input_contract, input_value)
         plan, _jobs = service._build_execution_plan(
             graph, run_mode=run_mode, target_node_uuid=target_node_uuid, entry_input=resolved,
         )
@@ -107,12 +108,20 @@ def build_run_preflight_report(
         check("inventory", "passed", "inventory_bindings_applied", "库存绑定已对应到计划中的库存需求",
               details={"bindings": bindings})
     # 按库位绑定的物料参数（{"site_uuid"}）：与建任务同一条解析路径，换成此刻占着库位的物料
-    from .material_sites import MaterialSiteError, bind_material_sites, read_site_facts, site_references
+    from .material_sites import (
+        MaterialSiteError,
+        bind_material_sites,
+        check_input_material_templates,
+        input_template_allowlists,
+        read_site_facts,
+        site_references,
+    )
 
     references = site_references([resolved, *(node.get("param") or {} for node in plan["nodes"])])
     if references:
         try:
-            site_bindings = bind_material_sites(plan, dict(resolved), read_site_facts(materials, references))
+            site_bindings = bind_material_sites(plan, dict(resolved), read_site_facts(materials, references),
+                                                input_contract=input_contract)
         except MaterialSiteError as error:
             node = next((item for item in plan["nodes"] if item["uuid"] == error.details.get("node_uuid")), None)
             check("resources", "blocked", "invalid_material_site", error.message, node=node, details=error.details)
@@ -122,6 +131,17 @@ def build_run_preflight_report(
             return finalize(report)
         check("resources", "passed", "material_sites_bound", "按库位绑定的物料参数已解析为库位上的物料",
               details={"bindings": site_bindings})
+    # 直接给 {"uuid"} 的工作流物料输入：按 @workflow(allowed_templates=...) 核对模板（按库位绑定的已在上面核对）
+    allowlists = input_template_allowlists(input_contract)
+    if allowlists and materials is not None:
+        try:
+            check_input_material_templates(resolved, allowlists, lambda identity: material_template_facts(materials, identity))
+        except MaterialSiteError as error:
+            check("resources", "blocked", "invalid_material_template", error.message, details=error.details)
+            return finalize(report)
+        except (RuntimeError, OSError) as error:
+            check("resources", "blocked", "material_template_unavailable", f"无法读取工作流物料输入的模板：{error}")
+            return finalize(report)
     # 按所属物料选择的库位参数（{"owner_uuid"}）：任务准入时才选定并预留，这里只读候选
     from .site_selections import SiteSelectionError, check_owner_sites, owner_site_requests, read_owner_facts
 
@@ -238,6 +258,14 @@ def build_run_preflight_report(
                 check("inventory", "blocked", "inventory_unavailable", str(error))
     check("dispatch", "deferred", "dispatch_recheck_required", "派发时重新确认在线状态、库存、资源锁及暂停状态；预检不占用资源")
     return finalize(report)
+
+
+def material_template_facts(materials: Any, identity: str) -> dict[str, Any]:
+    """物料的模板事实（``template_uuid`` / ``template_name``），供工作流物料输入的模板核对。"""
+
+    material = materials.get_material(identity).material
+    template_uuid = str(material.template_uuid or "")
+    return {"template_uuid": template_uuid, "template_name": getattr(material, "template_name", None) or template_uuid}
 
 
 def finalize(report: dict[str, Any]) -> dict[str, Any]:

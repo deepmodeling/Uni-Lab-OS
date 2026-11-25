@@ -156,6 +156,7 @@ _ERRORS = {
     ),
     "site_binding_invalid": (422, "工作流 Site 绑定未完成"),
     "material_site_invalid": (422, "物料参数按库位绑定失败"),
+    "material_template_mismatch": (422, "工作流物料输入不是允许的资源模板"),
     "site_selection_invalid": (422, "库位参数按所属物料选择失败"),
     "invalid_composite_child_type": (400, "只有实验操作可以作为子工作流被引用"),
     "invalid_composite_child_status": (409, "被引用的实验操作当前修订尚未发布"),
@@ -1507,7 +1508,10 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 return existing
         resolved: Dict[str, Dict[str, Any]] = {}
         # 按库位绑定的物料参数（{"site_uuid"}）同样在事务外读库位事实，事务内换成占用物料并冻结
-        site_facts = self._material_site_facts(self.get_graph(workflow_uuid), input_value)
+        current_graph = self.get_graph(workflow_uuid)
+        site_facts = self._material_site_facts(current_graph, input_value)
+        # 直接给 {"uuid"} 的工作流物料输入按 @workflow(allowed_templates=...) 核对模板（同样在事务外读物料库）
+        self._check_input_material_templates(current_graph, input_value)
         # 绑定指向的库存实例在建任务事务外读取（物料库是另一个权威，不在 runtime 写锁内访问）；
         # 事务内按冻结计划把绑定落到对应需求，不匹配即拒绝建任务。
         binding_sources: Optional[Dict[str, Dict[str, Any]]] = {}
@@ -1528,7 +1532,8 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
                 entry_input=resolved["input"],
             )
             # 按库位绑定的物料参数解析成占用物料，计划、attempt 参数与任务输入一起冻结
-            self._bind_material_sites(plan, jobs, resolved["input"], site_facts)
+            self._bind_material_sites(plan, jobs, resolved["input"], site_facts,
+                                      input_contract=declared_input_contract(graph["workflow"]))
             # 按所属物料选择的库位参数在任务准入时由调度器选定；写法不对（没有 Material.site 关系、放入物料不确定、
             # 与所属物料参数不一致）建任务时就拒绝
             self._check_site_selections(plan)
@@ -1596,15 +1601,40 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
         except (RuntimeError, OSError) as exc:
             raise WorkflowError("invalid_input", detail=f"无法读取按库位绑定的库位：{exc}") from None
 
+    def _check_input_material_templates(
+        self, graph: Optional[Dict[str, Any]], input_value: Optional[Dict[str, Any]],
+    ) -> None:
+        """工作流物料输入直接给 ``{"uuid"}`` 时按允许模板核对；按库位绑定的在 :meth:`_bind_material_sites` 里核对。"""
+
+        from .material_sites import MaterialSiteError, check_input_material_templates, input_template_allowlists
+        from .run_preflight import material_template_facts
+
+        if graph is None or not input_value:
+            return
+        try:
+            allowlists = input_template_allowlists(declared_input_contract(graph["workflow"]))
+        except EntryParameterError as exc:
+            raise WorkflowError("invalid_input", detail=str(exc)) from None
+        if not allowlists or self._preflight_materials is None:
+            return
+        try:
+            check_input_material_templates(
+                input_value, allowlists, lambda identity: material_template_facts(self._preflight_materials, identity)
+            )
+        except MaterialSiteError as exc:
+            raise WorkflowError("material_template_mismatch", detail=exc.message, details=exc.details) from None
+        except (RuntimeError, OSError) as exc:
+            raise WorkflowError("invalid_input", detail=f"无法读取工作流物料输入的模板：{exc}") from None
+
     @staticmethod
     def _bind_material_sites(
         plan: Dict[str, Any], jobs: List[Dict[str, Any]], input_value: Optional[Dict[str, Any]],
-        facts: Dict[str, Dict[str, Any]],
+        facts: Dict[str, Dict[str, Any]], *, input_contract: Optional[Dict[str, Any]] = None,
     ) -> None:
         from .material_sites import MaterialSiteError, bind_jobs, bind_material_sites
 
         try:
-            if bind_material_sites(plan, input_value, facts):
+            if bind_material_sites(plan, input_value, facts, input_contract=input_contract):
                 bind_jobs(plan, jobs)
         except MaterialSiteError as exc:
             raise WorkflowError("material_site_invalid", detail=exc.message, details=exc.details) from None

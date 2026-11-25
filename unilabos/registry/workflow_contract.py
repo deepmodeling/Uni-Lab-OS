@@ -75,7 +75,11 @@ def parse_workflow_contract_symbols(
         parsed = parse_parameter_annotation(arg.arg, arg.annotation,
             default=NO_DEFAULT if default is None else default, imports=imports)
         if parsed.resource_templates:
-            raise ValueError("工作流输入的资源模板筛选尚未绑定注册表；不能丢弃 AllowedResourceTemplates 声明")
+            raise ValueError(
+                f"工作流输入 {arg.arg!r} 不能用 Annotated[ResourceSlot, AllowedResourceTemplates(...)] 限定资源模板；"
+                f"输入写成 {arg.arg}: ResourceSlot，模板写在装饰器上："
+                f"@workflow(..., allowed_templates={{{arg.arg!r}: [\"<注册表资源 id>\", ...]}})"
+            )
         parameters.append(parsed.to_dict())
     declaration = function.returns
     if isinstance(declaration, ast.Constant) and isinstance(declaration.value, str):
@@ -98,3 +102,91 @@ def parse_workflow_contract_symbols(
         if resource_schema(parameter["schema"]) and parameter["name"] not in explicit:
             outputs["outputs"].append({"name": parameter["name"], "schema": parameter["schema"], "implicit": True})
     return {"version": 1, "parameters": parameters}, outputs
+
+
+def normalize_allowed_templates(value: Any) -> dict[str, list[str]]:
+    """``@workflow(allowed_templates=...)`` 的字面量 → ``{输入名: [注册表资源 id, ...]}``（去重、保序）。
+
+    键是工作流输入名；值是一个或多个注册表资源 id（字符串）。写法不对抛 ``ValueError``。
+    """
+
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("@workflow 的 allowed_templates 必须是 {输入名: [注册表资源 id, ...]} 字典")
+    result: dict[str, list[str]] = {}
+    for key, raw in value.items():
+        if not isinstance(key, str) or not key.isidentifier():
+            raise ValueError(f"@workflow 的 allowed_templates 键 {key!r} 必须是工作流输入名")
+        items = [raw] if isinstance(raw, str) else raw
+        if not isinstance(items, (list, tuple)) or not items:
+            raise ValueError(f"@workflow 的 allowed_templates[{key!r}] 必须是非空的注册表资源 id 列表")
+        ids: list[str] = []
+        for item in items:
+            if not isinstance(item, str) or not item.strip() or item != item.strip():
+                raise ValueError(f"@workflow 的 allowed_templates[{key!r}] 里 {item!r} 不是注册表资源 id")
+            if item not in ids:
+                ids.append(item)
+        result[key] = ids
+    return result
+
+
+def _resource_slot_schemas(schema: Any) -> list[dict[str, Any]]:
+    """输入 schema 里承载模板筛选的 ResourceSlot 槽位：单个、列表元素或可空成员。"""
+
+    if not isinstance(schema, dict):
+        return []
+    if schema.get("$slot") == "ResourceSlot":
+        return [schema]
+    found = _resource_slot_schemas(schema.get("items"))
+    for member in schema.get("anyOf") or []:
+        found.extend(_resource_slot_schemas(member))
+    return found
+
+
+def apply_allowed_templates(
+    input_contract: dict[str, Any],
+    allowed_templates: dict[str, list[str]],
+    *,
+    output_contract: dict[str, Any] | None = None,
+    resolve: Callable[[str], str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """校验并落实 ``@workflow(allowed_templates=...)``。
+
+    键必须是注解为 ``ResourceSlot`` / ``List[ResourceSlot]`` 的工作流输入，否则抛 ``ValueError``（注册失败）。
+    给了 ``resolve``（注册表资源 id → 资源模板 uuid，未知 id 抛 ``ValueError``）时，把解析出的 uuid 写进该输入
+    （及同名隐式输出）的 ResourceSlot schema 扩展 ``allowed_resource_template_uuids``：前端按它筛选，
+    预检 / 建任务按它拒绝模板不符的物料。返回新的 ``(input_contract, output_contract)``，不改入参。
+    """
+
+    import copy
+
+    inputs = copy.deepcopy(input_contract)
+    outputs = copy.deepcopy(output_contract) if output_contract is not None else None
+    by_name = {item["name"]: item for item in inputs.get("parameters", [])}
+    for name in allowed_templates:
+        descriptor = by_name.get(name)
+        if descriptor is None:
+            raise ValueError(f"@workflow 的 allowed_templates 键 {name!r} 不是工作流输入")
+        if not _resource_slot_schemas(descriptor.get("schema")):
+            raise ValueError(
+                f"@workflow 的 allowed_templates 键 {name!r} 必须是 ResourceSlot / List[ResourceSlot] 输入"
+            )
+    if resolve is None:
+        return inputs, outputs
+    implicit = {
+        item["name"]: item for item in (outputs or {}).get("outputs", []) if item.get("implicit") is True
+    }
+    for name, ids in allowed_templates.items():
+        uuids: list[str] = []
+        for identity in ids:
+            template_uuid = resolve(identity)
+            if template_uuid not in uuids:
+                uuids.append(template_uuid)
+        for descriptor in (by_name[name], implicit.get(name)):
+            if descriptor is None:
+                continue
+            descriptor["schema"] = copy.deepcopy(descriptor["schema"])
+            for slot in _resource_slot_schemas(descriptor["schema"]):
+                slot["allowed_resource_template_uuids"] = list(uuids)
+    return inputs, outputs

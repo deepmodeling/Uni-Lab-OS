@@ -154,6 +154,6 @@
 | `unilabos/workflow/wf_utils.py` | 151 | PORTED | server/services/runtime/workflow/upload.py + app/cli/workflow.py（`unilab workflow upload`） |  |
 | `unilabos/workflow/workflow_boundary.py` | 247 | PORTED | entry_parameters.py `resolve_declared_output`（声明输出缺失/类型不符即任务失败） |  |
 | `unilabos/workflow/workflow_boundary_binding.py` | 280 | PORTED | entry_parameters.py `_OutputResolver` |  |
-| `unilabos/workflow/workflow_io.py` | 1028 | PARTIAL | server/services/runtime/workflow/workflow_io.py + value_schema.py `schema_is_assignable` + entry_parameters.py | 工作流输入不支持 `AllowedResourceTemplates`（registry/workflow_contract.py 直接报「资源模板筛选尚未绑定注册表」）；ResourceSlot 透传/连线的模板兼容不校验（见 material_graph_validation） |
+| `unilabos/workflow/workflow_io.py` | 1028 | PARTIAL | server/services/runtime/workflow/workflow_io.py + value_schema.py `schema_is_assignable` + entry_parameters.py | 工作流输入的模板筛选改写在 `@workflow(allowed_templates=...)`（发布时解析成 `allowed_resource_template_uuids`，预检 / 建任务核对；输入上的 `AllowedResourceTemplates` 报错并指向新写法）；ResourceSlot 透传/连线的模板兼容不校验（见 material_graph_validation） |
 | `unilabos/workflow/workflow_spec_compiler.py` | 1238 | DROPPED | #4（执行计划→旧 EdgeScheduler 规格；dev `_build_dag` 直接消费计划） |  |
 | `unilabos/workflow/workflow_type.py` | 35 | PORTED | operation_category.py `normalize_workflow_type` |  |

@@ -311,7 +311,8 @@ def test_rejection_cancels_the_task_and_releases_its_inventory(tmp_path) -> None
         assert settled["status"] == "canceled" and settled["error_info"] == [{"code": "manual_confirmation_rejected"}]
         runs = {run["workflow_node_uuid"]: run for run in stack.workflow.list_workflow_node_runs(task["uuid"])}
         assert runs[action["uuid"]]["status"] == "canceled" and executor.dispatched == []
-        assert stack.quantities() == (20, 20, 0)
+        # 任务先落 canceled，库存在同一收尾流程随后释放（与普通取消一致），所以等释放而不是立即断言。
+        wait_for(lambda: stack.quantities() == (20, 20, 0))
     finally:
         stack.workflow.set_task_submitter(None)
         scheduler.stop()

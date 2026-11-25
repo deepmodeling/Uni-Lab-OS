@@ -151,6 +151,33 @@ def test_core_preset_classes_deserialize_in_a_fresh_process(tmp_path):
     assert {"BottleCarrier", "Bottle", "WareHouse", "RegularContainer"} <= classes
 
 
+def test_class_check_finds_core_presets_before_any_tree_is_rebuilt():
+    """Host 重启后先逐台核对设备物料的 config.type（``require_plr_config_type``），再建 PLR 实例。
+
+    核对本身也要先导入登记的模块：否则新进程里第一台持有 ``BottleCarrier`` / ``WareHouse`` 的设备
+    在任何 ``to_plr_resources`` 之前被核对，类「不存在」，设备误进维护模式（是否出错取决于设备启动顺序）。
+    """
+
+    import os
+    import subprocess
+
+    script = (
+        "import sys\n"
+        "from unilabos.resources.resource_tracker import find_plr_resource_class, require_plr_config_type\n"
+        "assert not [m for m in sys.modules if m.startswith('unilabos.resources.presets')]\n"
+        "for name in ('BottleCarrier', 'Bottle', 'WareHouse', 'RegularContainer'):\n"
+        "    require_plr_config_type({'type': name}, uuid='u-' + name, template_name='t')\n"
+        "    assert find_plr_resource_class(name).__name__ == name\n"
+        "print('ok')\n"
+    )
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [os.getcwd(), os.environ.get("PYTHONPATH")]))}
+    completed = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, encoding="utf-8", env=env, timeout=300
+    )
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    assert completed.stdout.strip().splitlines()[-1] == "ok"
+
+
 @pytest.fixture()
 def registry_pkg(tmp_path, monkeypatch):
     """注册表里登记了工厂函数、自己不主动登记的驱动包：类只有 import 工厂所在的模块后才可见。"""

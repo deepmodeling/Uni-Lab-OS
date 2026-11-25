@@ -212,6 +212,24 @@ def test_result_info_distinguishes_three_success_types(suc_type, return_value):
     assert serialized["return_value"] == return_value
 
 
+def test_plr_material_in_result_is_returned_as_its_uuid_reference():
+    """驱动直接返回 PLR 实例（单个、嵌在 dict / list 里）时，结果里是 ``{"uuid"}``，不是整个对象。"""
+
+    from pylabrobot.resources import Resource
+
+    beaker = Resource("beaker", size_x=10, size_y=10, size_z=10)
+    beaker.unilabos_uuid = "b-uuid"
+    plain = Resource("plain", size_x=1, size_y=1, size_z=1)
+
+    result = serialize_result_info("", True, {"beaker": beaker, "all": [beaker], "site": "S061"})
+    assert result["return_value"] == {"beaker": {"uuid": "b-uuid"}, "all": [{"uuid": "b-uuid"}], "site": "S061"}
+    assert serialize_result_info("", True, beaker)["return_value"] == {"uuid": "b-uuid"}
+    # 没有权威 uuid 的 PLR 对象不当作物料引用
+    from unilabos.utils.serialization import _material_reference
+
+    assert _material_reference(plain) is None
+
+
 def test_failed_result_does_not_claim_success_type():
     result = serialize_result_info("failed", False, None)
 

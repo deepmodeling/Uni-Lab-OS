@@ -51,12 +51,31 @@ def represent_ordereddict(dumper, data):
 NoAliasDumper.add_representer(OrderedDict, represent_ordereddict)
 
 
+def _material_reference(obj) -> Optional[dict]:
+    """动作结果里的 PLR 物料实例按物料引用 ``{"uuid"}`` 返回（与 ResourceSlot 的结果形状一致）。
+
+    驱动直接返回 PLR 实例时不必自己转换；没有权威 uuid 的 PLR 对象不在此处理。
+    """
+
+    uuid = getattr(obj, "unilabos_uuid", None)
+    if not uuid:
+        return None
+    try:
+        from pylabrobot.resources import Resource
+    except ImportError:  # pragma: no cover - 核心总带 PLR
+        return None
+    return {"uuid": str(uuid)} if isinstance(obj, Resource) else None
+
+
 class ResultInfoEncoder(json.JSONEncoder):
     """专门用于处理任务执行结果信息的JSON编码器"""
 
     def default(self, obj):
         if isinstance(obj, type):
             return json_default(obj)
+        reference = _material_reference(obj)
+        if reference is not None:
+            return reference
 
         try:
             if hasattr(obj, "__dict__"):

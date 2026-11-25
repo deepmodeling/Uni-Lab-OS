@@ -151,6 +151,49 @@ def test_core_preset_classes_deserialize_in_a_fresh_process(tmp_path):
     assert {"BottleCarrier", "Bottle", "WareHouse", "RegularContainer"} <= classes
 
 
+def test_class_check_finds_core_presets_before_any_tree_is_rebuilt(tmp_path):
+    """Host 在已有数据库上重启：先逐台核对设备物料的 config.type（``require_plr_config_type``），再建 PLR 实例。
+
+    核对找不到类时只会懒加载注册表条目所在的模块。驱动包的工厂函数常在函数体里才 import 它返回的类
+    （这里返回核心预设 ``BottleCarrier``），条目模块被导入后类仍不可见，设备误进维护模式。全新数据库不出现，
+    因为建图时会调用工厂。核对前要先导入登记的模块（含内置预设），不能指望驱动包在模块顶层 import。
+    """
+
+    import os
+    import subprocess
+
+    pkg = tmp_path / "lazy_carrier_pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "warehouses.py").write_text(
+        "def process_warehouse(name='wh'):\n"
+        "    from unilabos.resources.presets.itemized_carrier import BottleCarrier\n"
+        "    return BottleCarrier(name, size_x=10, size_y=10, size_z=10, sites={})\n",
+        encoding="utf-8",
+    )
+    script = (
+        "import sys\n"
+        "from unilabos.registry.registry import lab_registry\n"
+        "from unilabos.resources.resource_tracker import find_plr_resource_class, require_plr_config_type\n"
+        "lab_registry.resource_type_registry['pkg.process_warehouse'] = "
+        "{'class': {'module': 'lazy_carrier_pkg.warehouses:process_warehouse', 'type': 'pylabrobot'}}\n"
+        "assert not [m for m in sys.modules if m.startswith('unilabos.resources.presets')]\n"
+        "for name in ('BottleCarrier', 'Bottle', 'WareHouse', 'RegularContainer'):\n"
+        "    require_plr_config_type({'type': name}, uuid='u-' + name, template_name='pkg.process_warehouse')\n"
+        "    assert find_plr_resource_class(name).__name__ == name\n"
+        "print('ok')\n"
+    )
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join(filter(None, [str(tmp_path), os.getcwd(), os.environ.get("PYTHONPATH")])),
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, encoding="utf-8", env=env, timeout=300
+    )
+    assert completed.returncode == 0, completed.stderr[-3000:]
+    assert completed.stdout.strip().splitlines()[-1] == "ok"
+
+
 @pytest.fixture()
 def registry_pkg(tmp_path, monkeypatch):
     """注册表里登记了工厂函数、自己不主动登记的驱动包：类只有 import 工厂所在的模块后才可见。"""

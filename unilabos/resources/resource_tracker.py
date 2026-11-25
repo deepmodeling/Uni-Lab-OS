@@ -96,6 +96,11 @@ def find_plr_resource_class(class_name: str) -> Optional[type]:
     from pylabrobot.resources import Resource as PLRResource
     from pylabrobot.utils.object_parsing import find_subclass
 
+    from unilabos.resources import plr_additional_res_reg
+
+    # 先导入登记过的模块（内置预设 BottleCarrier / WareHouse 等 + 驱动包登记的）：重启后核对设备物料时
+    # 还没有建过图；下面的注册表兜底只导入条目所在模块，工厂函数在函数体里才 import 的类仍不可见。
+    plr_additional_res_reg.register()
     found = find_subclass(class_name, PLRResource)
     if found is not None:
         return found

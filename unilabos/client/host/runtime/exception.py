@@ -32,7 +32,48 @@ class DeviceBackendUnsupported(DeviceClassInvalid):
         )
 
 
-class DeviceMaterialError(DeviceClassInvalid):
+class DeviceMaintenanceError(DeviceClassInvalid):
+    """这台设备起不来、进入维护模式：设备不启动（子设备随之跳过），Host 照常运行、其余设备照常启动。
+
+    原因经 :meth:`unavailable_record` 登记为不可用设备，HostLink 与 ROS 2 同一份记录，经能力快照到达
+    ``GET /api/v1/devices``，并出现在 ``/api/v1/health`` 里。注册表缺失、模板名非法等图配置错误不属于
+    这一类，仍是 :class:`DeviceClassInvalid`。
+    """
+
+    device_id: str = ""
+
+    def unavailable_record(self) -> Dict[str, Any]:
+        return {"maintenance": True, "reason": str(self)}
+
+
+class DeviceStartupError(DeviceMaintenanceError):
+    """设备装配、构造或初始化失败：权威里的设备状态装配不起来（如 Site 与注册表对不上）、驱动导入失败、
+    构造器或 ``post_init`` / ``setup`` / ``initialize`` 抛错。``stage`` 是 ``definition`` / ``construct`` /
+    ``initialize`` 之一。
+    """
+
+    STAGES = {"definition": "装配", "construct": "构造", "initialize": "初始化"}
+
+    def __init__(self, *, stage: str, error: BaseException, device_id: str = "") -> None:
+        if stage not in self.STAGES:
+            raise ValueError(f"未知的设备启动阶段: {stage!r}")
+        self.stage = stage
+        self.error_type = type(error).__name__
+        self.detail = str(error)
+        self.device_id = str(device_id or "")
+        super().__init__(self.detail)
+        # 原始异常（带 traceback）留给日志
+        self.__cause__ = error
+
+    def __str__(self) -> str:
+        device = f"设备 {self.device_id} " if self.device_id else "设备"
+        return f"{device}{self.STAGES[self.stage]}失败，设备进入维护模式：{self.error_type}: {self.detail}"
+
+    def unavailable_record(self) -> Dict[str, Any]:
+        return {**super().unavailable_record(), "stage": self.stage, "error_type": self.error_type}
+
+
+class DeviceMaterialError(DeviceMaintenanceError):
     """设备持有的物料建不成 PLR 实例（缺 / 写错 ``config.type``、类不存在、反序列化失败）。
 
     设备进入维护模式：这台设备不启动，Host 照常运行、其余设备照常启动；原因（设备、物料 uuid、
@@ -58,8 +99,7 @@ class DeviceMaterialError(DeviceClassInvalid):
         """不可用设备记录里的维护模式字段（与 backend 不支持等原因同一份记录）。"""
 
         return {
-            "maintenance": True,
-            "reason": str(self),
+            **super().unavailable_record(),
             "material_uuid": self.material_uuid,
             "material_type": (
                 self.material_type

@@ -44,7 +44,7 @@ from unilabos.client.host.ros2.msgs.message_converter import (
 )
 from unilabos.client.host.ros2.presets.controller_node import ControllerNode
 from unilabos.client.host.runtime.definition import is_host_node_config
-from unilabos.client.host.runtime.exception import DeviceClassInvalid, DeviceMaterialError
+from unilabos.client.host.runtime.exception import DeviceClassInvalid, DeviceMaintenanceError, DeviceStartupError
 from unilabos.client.host.runtime.host_adapter import (
     HostAdapterBase,
     execution_result_bridges,
@@ -509,7 +509,7 @@ class HostNode(HostAdapterBase, Node):
         from unilabos.server.services.device_processes import managed_device_unavailability
 
         records = managed_device_unavailability()
-        # 持有的物料建不成 PLR 实例、进入维护模式的本机设备
+        # 进入维护模式的本机设备（持有的物料建不成 PLR 实例、装配 / 构造失败）
         records.update(self.__dict__.get("_maintenance_devices") or {})
         return records
 
@@ -680,24 +680,51 @@ class HostNode(HostAdapterBase, Node):
 
     def initialize_device(self, device_id: str, device_config: ResourceDictInstance) -> None:
         """根据配置初始化本机设备（经 ROS2 通用管线），并创建动作客户端。"""
-        from unilabos.client.host.ros2.initialize_device import initialize_device_from_dict
+        from unilabos.client.host.ros2 import initialize_device as initializer
 
         self.lab_logger().info(f"[Host Node] Initializing device: {device_id}")
 
-        try:
-            d = initialize_device_from_dict(device_id, device_config)
-        except DeviceClassInvalid as e:
-            if isinstance(e, DeviceMaterialError):
-                # 维护模式：持有的物料建不成 PLR 实例，设备不启动；与 HostLink 同一份不可用记录
-                e.device_id = device_id
-                self.__dict__.setdefault("_maintenance_devices", {})[device_id] = {
-                    "device_id": device_id,
-                    "registry_name": str(device_config.res_content.template_name or ""),
-                    "backend": "ros2",
-                    **e.unavailable_record(),
-                }
-            self.lab_logger().error(f"[Host Node] Device class invalid: {e}")
-            d = None
+        # Host 进程里的设备：装配 / 构造失败只让这台设备进入维护模式，Host 与其余设备照常。
+        # 自己有 Slave 的设备（--root_devices_as_slaves）不经这里，失败照旧由 Slave 退出与重启策略处理。
+        maintenance: Optional[DeviceMaintenanceError] = None
+        failed = object()
+
+        def attempt(stage: str, step: Any) -> Any:
+            nonlocal maintenance
+            try:
+                return step()
+            except DeviceMaintenanceError as e:
+                maintenance = e
+            except DeviceClassInvalid as e:
+                self.lab_logger().error(f"[Host Node] Device class invalid: {e}")
+            except Exception as e:  # noqa: BLE001 - 见上
+                self.lab_logger().error(f"[Host Node] 设备 {device_id} 启动失败: {e}\n{traceback.format_exc()}")
+                maintenance = DeviceStartupError(stage=stage, error=e)
+            return failed
+
+        d = None
+        definition = attempt(
+            "definition", lambda: initializer.resolve_device_definition(device_id, device_config, backend_name="ros2")
+        )
+        if definition is not failed:
+            d = attempt(
+                "construct", lambda: initializer.initialize_device_from_definition(device_id, device_config, definition)
+            )
+            if d is failed:
+                d = None
+            elif d is None:
+                # 驱动实例创建返回空（DeviceInitError）
+                maintenance = DeviceStartupError(stage="construct", error=RuntimeError("设备实例创建失败"))
+        if maintenance is not None:
+            # 维护模式：设备不启动；与 HostLink 同一份不可用记录
+            maintenance.device_id = device_id
+            self.__dict__.setdefault("_maintenance_devices", {})[device_id] = {
+                "device_id": device_id,
+                "registry_name": str(device_config.res_content.template_name or ""),
+                "backend": "ros2",
+                **maintenance.unavailable_record(),
+            }
+            self.lab_logger().error(f"[Host Node] {maintenance}")
         if d is None:
             return
         self._register_local_device(device_id, d)

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from unilabos.client.host.runtime.definition import resolve_device_definition
+from unilabos.client.host.runtime.definition import DeviceDefinition, resolve_device_definition
 from unilabos.registry.registry import lab_registry  # noqa: F401 - 兼容嵌入方/测试
 from unilabos.client.host.ros2.device_node_wrapper import ros2_device_node
 from unilabos.client.host.ros2.base_device_node import ROS2DeviceNode, DeviceInitError
@@ -27,6 +27,14 @@ def initialize_device_from_dict(device_id, device_config: ResourceDictInstance) 
         device_config,
         backend_name="ros2",
     )
+    return initialize_device_from_definition(device_id, device_config, definition)
+
+
+def initialize_device_from_definition(
+    device_id, device_config: ResourceDictInstance, definition: DeviceDefinition
+) -> Optional[ROS2DeviceNode]:
+    """按已解析的设备定义构造设备节点（Host 据此分清装配失败与构造失败）。"""
+
     # 不管是 ROS2 驱动还是 Python 驱动，都统一包装为设备节点（HostNode 除外）。
     device_node_type = ros2_device_node(
         definition.driver_class,

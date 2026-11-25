@@ -205,9 +205,17 @@ ActionClient、规划场景、RViz、依赖 ROS graph/TF 的功能，以及 ROS2
 （`runtime/driver_creator.py:build_device_materials`），建不成就抛 `DeviceMaterialError`，这台设备（连同子设备）
 不启动，Host 与其余设备照常运行；记录多出 `maintenance: true`、`material_uuid`、`material_type`，`reason`
 写明设备、物料 uuid 与 `config.type`，客户端从 `/api/v1/devices` 的 `unavailable` 字段与 `/api/v1/health` 看到。
-改正物料（或移走它）后重启 Host 即恢复。权威只核对 `config.type` 的格式，类是否存在只有 Host 知道。工作站和
-普通 sub-device 本身不属于这个例外，应通过通用节点接口在 HostLink 与 ROS2 下使用
-相同的设备初始化路径。
+改正物料（或移走它）后重启 Host 即恢复。权威只核对 `config.type` 的格式，类是否存在只有 Host 知道。
+
+设备装配、构造或初始化失败同样进入维护模式（`runtime/exception.py:DeviceStartupError`）：权威里的设备状态装配不起来
+（例如设备 Site 不在注册表 `available_sites` 里）、驱动模块导入失败、驱动构造器抛错，以及 HostLink 上
+`post_init` / `setup` / `initialize` 抛错。这台设备连同子设备不启动（已经启动的子设备随之停下），Host 与其余设备照常
+运行；记录多出 `maintenance: true`、`stage`（`definition` / `construct` / `initialize`）与 `error_type`，`reason` 写明
+设备与原始错误。ROS 2 Host 对装配与构造失败同样处理；ROS 2 驱动的 `post_init` 抛错仍只记日志、设备照常注册。
+这条只管直接跑在 Host 进程里的设备：Slave 进程（含 `--root_devices_as_slaves` 的受管 Slave）里设备起不来仍让
+Slave 退出，由受管进程的重启策略处理。
+注册表缺失、模板名非法等图配置错误不在此列，仍让 HostLink 启动失败。工作站和普通 sub-device 本身不属于这个例外，
+应通过通用节点接口在 HostLink 与 ROS2 下使用相同的设备初始化路径。
 
 HostLink 构造驱动与 ROS2 同一套构造器（`client/host/runtime/driver_creator.py`）：
 

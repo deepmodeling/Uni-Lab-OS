@@ -57,7 +57,7 @@
   `starting`。health 的 `scheduler` 按 V1 为 `ready` / `disabled`，dev 的本机 / 远端归属改名 `scheduler_mode`，
   `execution` 保留；dev 扩展 `unavailable_devices` 列出设备图里有、但没有启动的设备：当前 backend 跑不了的
   （`device_id` / `registry_name` / `backend` / `reason` / `supported_backends`），以及持有的物料建不成 PLR 实例而
-  进入维护模式的（另有 `maintenance: true` / `material_uuid` / `material_type`），分进程时经控制面读 Host。
+  进入维护模式的（另有 `maintenance: true` / `material_uuid` / `material_type`），以及装配 / 构造 / 初始化失败而进入维护模式的（另有 `maintenance: true` / `stage` / `error_type`），分进程时经控制面读 Host。
 - V1 进程管理的四个路由（原 V1 Workspace Host 路由：`/v1/snapshot`、`/v1/operations`、`/v1/operations/{id}`、
   `/v1/logs/{component}`）路径按 V1 不带 `/api` 前缀，响应是信封：成功 `data` 为快照 / 操作文档 / 日志尾部（提交操作
   HTTP 202），失败 HTTP 200 + 业务码，V1 的符号码（`operation_not_found`、`operation_conflict`、`revision_conflict`、

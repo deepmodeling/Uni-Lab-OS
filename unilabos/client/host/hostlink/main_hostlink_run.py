@@ -10,7 +10,12 @@ from unilabos.client.host.runtime.definition import (
     iter_device_config_entries,
     resolve_device_definition,
 )
-from unilabos.client.host.runtime.exception import DeviceBackendUnsupported, DeviceMaterialError
+from unilabos.client.host.runtime.exception import (
+    DeviceBackendUnsupported,
+    DeviceClassInvalid,
+    DeviceMaintenanceError,
+    DeviceStartupError,
+)
 from unilabos.client.host.hostlink.backend import HostLinkBackend
 from unilabos.client.host.hostlink.local_runtime import (
     HostLinkDriverSpec,
@@ -44,6 +49,9 @@ def populate_runtime(
 
     每台设备经 ``resolve_device_definition`` 装配：物料权威可达时按权威优先取回
     Site 快照与持有的物料，所以 Slave 要在 HostLink 连上之后再调用。
+
+    持有的物料建不成时这台设备进入维护模式；``runtime.isolate_device_failures``（Host 进程）
+    时装配 / 构造失败同样只让这台设备进入维护模式，否则（Slave 进程）照旧抛出。
     """
 
     if devices_config is None:
@@ -99,6 +107,23 @@ def populate_runtime(
                 parent_device_id=entry.parent_device_id,
             )
             continue
+        except DeviceMaintenanceError as exc:
+            _enter_maintenance(runtime, entry, exc, registry_name=str(node.res_content.template_name or ""))
+            continue
+        except DeviceClassInvalid:
+            # 图配置错误（模板名非法、注册表里没有这个设备）照旧让启动失败
+            raise
+        except Exception as exc:
+            if not runtime.isolate_device_failures:
+                raise
+            # Host 进程：权威状态装配不起来、驱动导入失败，只让这台设备进入维护模式
+            _enter_maintenance(
+                runtime,
+                entry,
+                DeviceStartupError(stage="definition", error=exc),
+                registry_name=str(node.res_content.template_name or ""),
+            )
+            continue
         try:
             runtime.add_driver(
                 HostLinkDriverSpec(
@@ -116,19 +141,47 @@ def populate_runtime(
                     hardware_interface=definition.hardware_interface,
                 )
             )
-        except DeviceMaterialError as exc:
+        except DeviceMaintenanceError as exc:
             # 维护模式：持有的物料建不成 PLR 实例，这台设备不启动（子设备随之跳过），其余照常
-            exc.device_id = device_id
-            record = exc.unavailable_record()
-            _mark_unavailable(
+            _enter_maintenance(runtime, entry, exc, registry_name=definition.registry_name)
+        except Exception as exc:
+            if not runtime.isolate_device_failures:
+                raise
+            # Host 进程：驱动构造失败只让这台设备进入维护模式
+            _enter_maintenance(
                 runtime,
-                device_id,
+                entry,
+                DeviceStartupError(stage="construct", error=exc),
                 registry_name=definition.registry_name,
-                reason=record.pop("reason"),
-                parent_device_id=entry.parent_device_id,
-                extra=record,
             )
     return runtime
+
+
+def _enter_maintenance(
+    runtime: HostLinkLocalRuntime,
+    entry: Any,
+    error: DeviceMaintenanceError,
+    *,
+    registry_name: str,
+) -> None:
+    """这台设备不启动（子设备随之跳过），原因登记为不可用设备；Host 与其余设备照常。"""
+
+    cause = error.__cause__ or error
+    logger.error(
+        "[HostLink] 设备 %s 启动失败的原始异常",
+        entry.device_id,
+        exc_info=(type(cause), cause, cause.__traceback__),
+    )
+    error.device_id = entry.device_id
+    record = error.unavailable_record()
+    _mark_unavailable(
+        runtime,
+        entry.device_id,
+        registry_name=registry_name,
+        reason=record.pop("reason"),
+        parent_device_id=entry.parent_device_id,
+        extra=record,
+    )
 
 
 def _mark_unavailable(
@@ -141,28 +194,18 @@ def _mark_unavailable(
     parent_device_id: str = "",
     extra: Optional[dict[str, Any]] = None,
 ) -> None:
-    record: dict[str, Any] = {
-        "device_id": device_id,
-        "registry_name": registry_name,
-        "backend": "hostlink",
-        "reason": reason,
-        **(extra or {}),
-    }
-    if supported_backends is not None:
-        record["supported_backends"] = list(supported_backends)
-    if parent_device_id:
-        record["parent_device_id"] = parent_device_id
-    runtime.unavailable_devices[device_id] = record
-    logger.error(
-        "[HostLink] 设备 %s（%s）不可用，未启动：%s；其余设备照常启动",
+    runtime.mark_unavailable(
         device_id,
-        registry_name or "-",
-        reason,
+        registry_name=registry_name,
+        reason=reason,
+        supported_backends=supported_backends,
+        parent_device_id=parent_device_id,
+        extra=extra,
     )
 
 
 def unavailable_devices() -> list[dict[str, Any]]:
-    """本进程 HostLink runtime 没有启动的设备（backend 不支持、物料建不成时的维护模式；供诊断 / 健康接口）。"""
+    """本进程 HostLink runtime 没有启动的设备（backend 不支持、维护模式；供诊断 / 健康接口）。"""
 
     runtime = _runtime
     local = getattr(runtime, "local", None)
@@ -220,7 +263,8 @@ def _run(
     bridges: Optional[list[Any]] = None,
 ) -> None:
     global _host_node, _runtime
-    runtime = HostLinkBackend(HostLinkLocalRuntime(), is_slave=is_slave)
+    # 设备失败的隔离只在 Host 进程：Slave 失败即退出，由受管进程按重启策略处理
+    runtime = HostLinkBackend(HostLinkLocalRuntime(isolate_device_failures=not is_slave), is_slave=is_slave)
     _runtime = runtime
     try:
         runtime.start(

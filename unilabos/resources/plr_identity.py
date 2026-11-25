@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import inspect
+import json
 from typing import Any
 
 TIP_CHILDREN = "unilabos_tip_children"
@@ -165,10 +166,34 @@ def material_serialization(resource: Any) -> tuple[dict, dict]:
         return data
 
     try:
-        return visit(resource), states
+        return json_object_keys(visit(resource)), json_object_keys(states)
     finally:
         for node, counter in counters.values():
             node._tip_counter = counter
+
+
+def json_object_keys(value: Any) -> Any:
+    """字典键按 JSON 规则转成字符串：PLR 序列化进入物料 config / data 的边界。
+
+    PyLabRobot 1.0 孔的 ``height_volume_data`` 是 ``{float: float}``，旧式液体处理器的通道状态以 int
+    为键。物料 config / data 要能经任何 JSON 编码器（含拒绝非字符串键的严格编码器）编码，入库读回
+    后键本来就是字符串；读回时 PLR 自己还原（``Container`` 构造时 ``float(h)``，通道按 ``int(channel)``）。
+    """
+
+    if isinstance(value, dict):
+        return {
+            key if isinstance(key, str) else _json_key(key): json_object_keys(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [json_object_keys(item) for item in value]
+    return value
+
+
+def _json_key(key: Any) -> str:
+    if key is None or isinstance(key, (bool, int, float)):
+        return json.dumps(key)
+    return str(key)
 
 
 def restore_tip_counters(resource: Any, states: dict) -> None:

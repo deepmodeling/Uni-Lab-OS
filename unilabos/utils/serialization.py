@@ -30,8 +30,12 @@ try:
     import orjson
 
     def normalize_json(info: dict) -> dict:
-        """经 JSON 序列化/反序列化一轮来清理非标准类型。"""
-        return orjson.loads(orjson.dumps(info, default=json_default))
+        """经 JSON 序列化/反序列化一轮来清理非标准类型。
+
+        非字符串键（PyLabRobot 1.0 孔的 ``height_volume_data`` 是 ``{float: float}``）按 JSON 规则
+        转成字符串，与下面标准库 json 的回退实现一致；PLR 反序列化时自己把键还原成 float。
+        """
+        return orjson.loads(orjson.dumps(info, default=json_default, option=orjson.OPT_NON_STR_KEYS))
 
 except ImportError:
 

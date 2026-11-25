@@ -1,8 +1,67 @@
 """Registry 生成定义与微后端模板模型的映射测试。"""
 
+from uuid import uuid4
+
 from unilabos.resources.adapters.registry_materials import register_resource_definitions
+from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.server.services.materials import MaterialsService
+
+
+def test_plr_definition_with_float_keys_is_registered_and_reads_back(tmp_path) -> None:
+    """PyLabRobot 1.0 的孔把 ``height_volume_data`` 序列化成 ``{float: float}``（PLR 库里的 Corning 96 孔板）。
+
+    物料边界已把键转成字符串，但注册表条目不一定经过那里：上一版写下的 config_info 缓存（按资源模块
+    源码哈希复用）、注册表 YAML 里的数字键。模板同步把定义规范成 JSON 时同样按 JSON 规则转成字符串，
+    不能报 "Dict key must be str" 让 Host 起不来；读回的模板交给 PLR 反序列化，孔的
+    ``height_volume_data`` 还原成 float 键，按液面高度算出的体积不变。
+    """
+
+    from pylabrobot.resources import cor_96_wellplate_360uL_Fb
+
+    nodes = ResourceTreeSet.from_plr_resources(
+        [cor_96_wellplate_360uL_Fb(name="corning_plate")], known_random_uuid=True, old_size=True
+    ).dump_templates()[0]
+    # 旧缓存里的 config_info：键还是 PLR 原样的 float
+    for node in nodes:
+        volumes = node["config"].get("height_volume_data")
+        if volumes:
+            node["config"]["height_volume_data"] = {float(key): value for key, value in volumes.items()}
+    assert all(isinstance(key, float) for key in nodes[1]["config"]["height_volume_data"])
+    definition = {
+        "id": "corning_plate",
+        "display_name": "Corning 96",
+        "class": {"module": "pylabrobot.resources:cor_96_wellplate_360uL_Fb", "type": "pylabrobot"},
+        "category": ["plate"],
+        "config_info": nodes,
+        "handles": [],
+    }
+    service = MaterialsService(tmp_path / "materials.db")
+    client = LocalMaterialsClient(service)
+    try:
+        report = register_resource_definitions([definition], client)
+        stored = client.get_template(report.template_uuids["corning_plate"]).definition["config_info"]
+        # 再同步一次：同一份定义的哈希稳定，不因键的形态变化而反复更新
+        assert register_resource_definitions([definition], client) == report
+    finally:
+        service.close()
+
+    assert all(isinstance(key, str) for key in stored[1]["config"]["height_volume_data"])
+    uuids = {node["id"]: str(uuid4()) for node in stored}
+    flat = [
+        {
+            **{key: value for key, value in node.items() if key != "parent_id"},
+            "uuid": uuids[node["id"]],
+            "parent_uuid": uuids[node["parent_id"]] if node["parent_id"] else None,
+        }
+        for node in stored
+    ]
+    plate = ResourceTreeSet.load([flat]).to_plr_resources()[0]
+    original = cor_96_wellplate_360uL_Fb(name="reference").children[0]
+    well = plate.children[0]
+    assert well.height_volume_data == original.height_volume_data
+    assert all(isinstance(key, float) for key in well.height_volume_data)
+    assert well.compute_volume_from_height(3.3) == original.compute_volume_from_height(3.3)
 
 
 def test_registry_definition_is_registered_once_with_promoted_fields(tmp_path) -> None:

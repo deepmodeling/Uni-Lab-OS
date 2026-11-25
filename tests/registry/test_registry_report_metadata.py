@@ -143,6 +143,43 @@ class TestReportCarriesAcceptanceInputs:
         assert devices[0]["available_sites"] == [{"id": "slot", "name": "slot"}]
         assert "file_path" not in devices[0]
 
+    def test_local_report_accepts_plr_float_keys(self, tmp_path) -> None:
+        """PyLabRobot 1.0 孔的 ``height_volume_data`` 是 ``{float: float}``：本机注册表上报照常完成。
+
+        上报失败只记一条警告（fail-open），但结果是注册表没有上报、工作流作者编译报
+        ``registry_not_reported``；键按 JSON 规则转成字符串。
+        """
+
+        from pylabrobot.resources import cor_96_wellplate_360uL_Fb
+
+        from unilabos.client.host.legacy_adaptor.sync.templates import report_registry_snapshot_local
+        from unilabos.resources.resource_tracker import ResourceTreeSet
+
+        nodes = ResourceTreeSet.from_plr_resources(
+            [cor_96_wellplate_360uL_Fb(name="corning_plate")], known_random_uuid=True, old_size=True
+        ).dump_templates()[0]
+        # 上一版写下的 config_info 缓存（按资源模块源码哈希复用）：键还是 PLR 原样的 float
+        for node in nodes:
+            volumes = node["config"].get("height_volume_data")
+            if volumes:
+                node["config"]["height_volume_data"] = {float(key): value for key, value in volumes.items()}
+        registry = _Registry({"arm": _device("arm", str(tmp_path / "arm.py"))})
+        registry.obtain_registry_resource_info = lambda: [{
+            "id": "corning_plate",
+            "class": {"module": "pylabrobot.resources:cor_96_wellplate_360uL_Fb", "type": "pylabrobot"},
+            "config_info": nodes,
+        }]
+        service = RegistryService(tmp_path / "runtime.db", machine_id=AUTHORITY_MACHINE)
+        try:
+            report = report_registry_snapshot_local(registry, service)
+            assert report is not None
+            assert report.resource_count == 1
+            payload = service.entry_detail("corning_plate")["active_payload"]
+        finally:
+            service.close()
+        volumes = payload["config_info"][1]["config"]["height_volume_data"]
+        assert volumes and all(isinstance(key, str) for key in volumes)
+
     def test_package_upgrade_on_a_remote_host_is_accepted_and_an_edit_is_not(self, stack, tmp_path, monkeypatch) -> None:
         """规则 A 端到端：另一台机器上的 Host 升级驱动包 → 自动接受；同版本里改动 → 挂起。"""
 

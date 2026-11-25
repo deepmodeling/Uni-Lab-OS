@@ -117,3 +117,33 @@ def test_parse_resource_slot_rejects_invalid():
         materials.parse_resource_slot({"foo": "bar"})
     with pytest.raises(TypeError):
         materials.parse_resource_slot(123)
+
+
+def test_plr_float_keys_become_json_keys_at_the_material_boundary():
+    """PyLabRobot 1.0 孔的 ``height_volume_data`` 是 ``{float: float}``（PLR 库里的 Corning 96 孔板）。
+
+    PLR 序列化进入物料 config / data 时键按 JSON 规则转成字符串：两套 JSON 编码器（``normalize_json``
+    的 orjson、拒绝非字符串键的严格编码器 ``encode_json``）都能编码；读回 PLR 后孔的键还原成 float，值不变。
+    """
+
+    from pylabrobot.resources import Cor_96_wellplate_360ul_Fb
+
+    from unilabos.protocol.utils.json_codec import decode_json_bytes, encode_json
+    from unilabos.utils.serialization import normalize_json
+
+    plate = Cor_96_wellplate_360ul_Fb(name="corning_plate")
+    original = plate.children[0].height_volume_data
+    assert original and all(isinstance(key, float) for key in original)
+
+    dumped = ResourceTreeSet.from_plr_resources([plate], known_random_uuid=True).dump()
+    well = next(node for node in dumped[0] if node["config"].get("height_volume_data"))
+    assert all(isinstance(key, str) for key in well["config"]["height_volume_data"])
+
+    via_orjson = normalize_json({"trees": dumped})["trees"]
+    via_strict = decode_json_bytes(encode_json(dumped, sort_keys=True))
+    for payload in (via_orjson, via_strict):
+        restored = ResourceTreeSet.load(payload).to_plr_resources()[0]
+        volumes = restored.children[0].height_volume_data
+        assert all(isinstance(key, float) for key in volumes)
+        assert volumes == original
+        assert restored.children[0].compute_volume_from_height(3.3) == plate.children[0].compute_volume_from_height(3.3)

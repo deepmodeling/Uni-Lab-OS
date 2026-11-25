@@ -191,6 +191,10 @@ materials.assign(node, deck)
 materials.assign(node, bottle_carrier, parent=warehouse, slot="A04")
 ```
 
+权威答「已在目标位置」时：本设备持有它，`assign` 什么都不做；本设备没有它（例如上一次 `assign`
+在权威里已提交，设备侧 unload / load 没做完而报错），`assign` 按同一条 load 从权威重建挂上并成功返回。
+所以一次失败的 `assign` 重试即收敛；其它错误照常抛出。
+
 **载架型目标（仓库、瓶架等 PLR `Carrier`）**：载架的直接子节点只能是库位 holder
 （`ResourceHolder`），物料只能经 `assign_resource_to_site` 放到 holder 上。`assign`、
 `RESOURCE_APPEND`、资源树下行（`RESOURCE_TREE_SYNC`）和 `transfer` 的 load 都按这条路径放置，

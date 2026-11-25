@@ -812,6 +812,36 @@ def _undo_placed_create(
         logger.error(f"[materials.create] 本地挂载失败后撤销权威里的物料 {root_uuid} 也失败：{exc}")
 
 
+def _load_on_node(
+    node: Any,
+    material_uuids: Sequence[str],
+    site_uuids: Sequence[str | None],
+    transfer_uuid: str,
+    timeout: float = 30.0,
+) -> None:
+    """按 transfer 的 load 投影把权威里的物料子树挂到本设备：在设备自己的执行器上跑，阻塞等它完成。
+
+    与跨设备转运落到目标设备同一条投影（``node.material_sync``），本地不另起一条挂载逻辑；
+    投影期间不回写快照。``transfer_uuid`` 是设备侧的幂等键。
+    """
+
+    from unilabos.client.host.runtime.async_utils import run_node_coroutine
+
+    run_node_coroutine(
+        node,
+        node.material_sync(
+            {
+                "transfer_uuid": transfer_uuid,
+                "device_id": str(node.device_id),
+                "action": "load",
+                "material_uuids": list(material_uuids),
+                "destination_site_uuids": list(site_uuids),
+            }
+        ),
+        timeout,
+    )
+
+
 def _attach_placed(
     node: Any,
     created: CreatedPLRMaterials,
@@ -821,26 +851,11 @@ def _attach_placed(
 ) -> CreatedPLRMaterials:
     """权威已在同一事务里建好并落位：本地按 transfer 的 load 投影挂上，返回 tracker 里的实例。
 
-    与跨设备转运落到目标设备走同一条投影（``node.material_sync``），本地不另起一条挂载
-    逻辑；投影期间不回写快照。返回值里的实例就是设备 tracker 登记的那一份（uuid → 实例唯一）。
+    返回值里的实例就是设备 tracker 登记的那一份（uuid → 实例唯一）。
     """
 
-    from unilabos.client.host.runtime.async_utils import run_node_coroutine
-
     root_uuid = str(created.tree.trees[0].root_node.res_content.uuid)
-    run_node_coroutine(
-        node,
-        node.material_sync(
-            {
-                "transfer_uuid": f"create:{command_uuid}",
-                "device_id": str(node.device_id),
-                "action": "load",
-                "material_uuids": [root_uuid],
-                "destination_site_uuids": [site_uuid],
-            }
-        ),
-        timeout,
-    )
+    _load_on_node(node, [root_uuid], [site_uuid], f"create:{command_uuid}", timeout)
     instance = node.resource_tracker.uuid_to_resources.get(root_uuid)
     if instance is None:
         raise RuntimeError(f"物料 {root_uuid} 已在权威创建并落位，但本地挂载后 tracker 里没有它")
@@ -1013,6 +1028,10 @@ def assign(
     原持有设备按权威的归属推断（最近的设备祖先，或根物料登记的所属设备）；不属于任何设备的物料
     没有要卸下的地方。返回 ``resources``：本设备 tracker 里重建后的实例（与传入的不是同一个对象）。
     阻塞式，不能在本设备的执行器线程里调用（load 要排到那个执行器上）。
+
+    权威答「已在目标位置」时它已经在要放的地方：本设备持有它就什么都不做；没有它（上一次移动在
+    权威里提交了、设备侧投影没做完）就按同一条 load 从权威重建挂上并成功返回，所以重试一次失败的
+    assign 会收敛。其它错误照常抛出。
     """
 
     items = resources if isinstance(resources, (list, tuple)) else [resources]
@@ -1046,7 +1065,8 @@ def assign(
 
     tracker = node.resource_tracker
     moves: List[Dict[str, Any]] = []
-    for source, group in by_source.items():
+
+    def move(source: str, group: List[str]) -> None:
         command_uuid = str(uuid4())
         try:
             result = gw.transfer_material(
@@ -1069,11 +1089,22 @@ def assign(
                 ),
             )
         except Exception as exc:
-            # 已经在目标位置、本设备也持有它：幂等，什么都不做
-            if _is_no_change_error(exc) and all(item in tracker.uuid_to_resources for item in group):
-                continue
-            raise
+            if not _is_no_change_error(exc):
+                raise
+            if len(group) > 1:
+                # 一条命令里只要有一个物料已在目标位置，权威就整条答「没有变化」：逐个再移，其余的照常移动
+                for item_uuid in group:
+                    move(source, [item_uuid])
+                return
+            if group[0] not in tracker.uuid_to_resources:
+                # 权威里已在目标位置、本设备却没有它：从权威重建挂上（本设备持有它时什么都不做）
+                site_uuid = _site_uuid(selector, target_uuid, gw) if selector is not None else None
+                _load_on_node(node, group, [site_uuid], f"assign:{command_uuid}")
+            return
         moves.extend(value.model_dump(mode="json", exclude_none=False) for value in result.data.materials)
+
+    for source, group in by_source.items():
+        move(source, group)
     return {
         "success": True,
         "material_uuids": resource_uuids,

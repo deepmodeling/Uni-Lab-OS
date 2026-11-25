@@ -3722,6 +3722,11 @@ class MaterialsService(MaterialsRepository):
         同一个幂等命令在设备同步阶段失败后可以安全重试：数据库 mutation
         会 replay，但 unload/load 仍会使用相同 ``transfer_uuid`` 重放。目标
         load 失败时不回滚权威位置，也不会重新挂回来源端，因此不会产生双挂载。
+
+        设备投影（来源 unload / 目标 load）在提交之后失败时，权威位置保持已提交，调用方收到
+        ``MaterialTransferSyncError``。提交前不探测设备是否可达（探测与下发之间设备照样可能掉线），
+        也不做补偿回滚；靠重试收敛：重放同一命令会重放 unload/load；另发一条命令时权威答
+        「已在目标位置」，由目标设备从权威加载（``materials.assign`` 即如此）。
         """
 
         if mutation.operation != "transfer_material":

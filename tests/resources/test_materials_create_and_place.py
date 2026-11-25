@@ -210,6 +210,97 @@ def test_assign_to_the_device_without_a_site_only_sets_the_parent(device) -> Non
     )
 
 
+def test_assign_loads_a_material_the_authority_already_put_on_this_device(device) -> None:
+    """权威里它已在目标库位、本设备却没有它：assign 从权威重建挂上并成功，不把「没有变化」当错误。"""
+
+    from unilabos.protocol.materials import MaterialMove
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    loose = materials.create(plate("committed"), gateway=gateway)
+    slot_a = _site(service, device["device_uuid"], "slot_a")
+    # 只改权威、不做设备侧投影（等同一次提交了、material.sync 却没做完的移动）
+    service.move_material(
+        _move_mutation(),
+        MaterialMove(material_uuid=loose.unilabos_uuid, destination_site_uuid=slot_a.site_uuid),
+    )
+    assert loose.unilabos_uuid not in node.resource_tracker.uuid_to_resources
+
+    result = materials.assign(node, loose.unilabos_uuid, slot="slot_a")
+
+    [mounted] = result["resources"]
+    assert node.resource_tracker.uuid_to_resources[loose.unilabos_uuid] is mounted
+    assert result["moves"] == []
+    assert _site(service, device["device_uuid"], "slot_a").occupied_material_uuid == loose.unilabos_uuid
+    # 本设备已持有它：再来一次什么都不做，仍是同一份实例
+    again = materials.assign(node, loose.unilabos_uuid, slot="slot_a")
+    assert again["resources"] == [mounted]
+
+
+def test_assign_converges_after_the_device_projection_failed_once(device) -> None:
+    """权威已提交、设备侧 unload 失败（例如当时还没有 material.sync handler）：调用方收到错误，
+    再 assign 一次就收敛——权威答「已在目标位置」，本设备从权威加载。来源与目标都是调用方自己。"""
+
+    from tests.plr_fixtures import site_deck
+    from unilabos.server.services.materials import MaterialTransferSyncError
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    deck_uuid = str(uuid4())
+    materials.ensure(site_deck(deck_uuid, "Bench_Deck", ("T1", "T2")), gateway=gateway)
+    dispatch = node.__dict__["_hostlink_runtime"].dispatch_material_sync
+    failures = []
+
+    def unload_fails_once(command):
+        if command.action == "unload" and not failures:
+            failures.append(command)
+            raise RuntimeError("unknown action: material.sync")
+        return dispatch(command)
+
+    service.set_resource_sync_dispatcher(unload_fails_once)
+
+    with pytest.raises(MaterialTransferSyncError, match="unload failed"):
+        materials.assign(node, deck_uuid)
+    assert failures[0].device_id == "placer"
+    assert service.get_material(deck_uuid).material.parent_material_uuid == device["device_uuid"]
+    assert deck_uuid not in node.resource_tracker.uuid_to_resources
+
+    [deck] = materials.assign(node, deck_uuid)["resources"]
+
+    assert node.resource_tracker.uuid_to_resources[deck_uuid] is deck
+    # 收敛后与权威一致：后续挂到台面库位、严格快照照常进行
+    loose = materials.create(plate("after_retry"), gateway=gateway)
+    [placed] = materials.assign(node, loose, parent=deck_uuid, slot="T1")["resources"]
+    assert placed.parent is deck
+    materials.update(node, deck)
+
+
+def test_assign_of_several_materials_moves_the_rest_when_one_is_already_there(device) -> None:
+    """一条命令里有一个物料已在目标位置时，其余的照常移动，已在的那个不报错。"""
+
+    service, node, gateway = device["service"], device["node"], device["gateway"]
+    first = materials.create(plate("first_of_two"), gateway=gateway)
+    second = materials.create(plate("second_of_two"), gateway=gateway)
+    materials.assign(node, first)
+
+    result = materials.assign(node, [first, second])
+
+    assert {res.unilabos_uuid for res in result["resources"]} == {first.unilabos_uuid, second.unilabos_uuid}
+    assert service.get_material(second.unilabos_uuid).material.parent_material_uuid == device["device_uuid"]
+    assert second.unilabos_uuid in node.resource_tracker.uuid_to_resources
+
+
+def _move_mutation():
+    from unilabos.protocol.materials import InventoryMutation
+
+    command_uuid = str(uuid4())
+    return InventoryMutation(
+        command_uuid=command_uuid,
+        effect_key=f"move_material:{command_uuid}",
+        operation="move_material",
+        actor_type="test",
+        actor_uuid="create-and-place-test",
+    )
+
+
 def test_assign_rejects_an_unknown_device_site_without_mounting(device) -> None:
     service, node = device["service"], device["node"]
     loose = materials.create(plate("stray"), gateway=device["gateway"])

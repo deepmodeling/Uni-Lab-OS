@@ -324,7 +324,10 @@ def slave(
         else:
             logger.info("No resources to add.")
 
-    # 4. 初始化所有设备实例（resources_config 的 uuid 与权威一致）
+    # 4. 初始化所有设备实例（resources_config 的 uuid 与权威一致）。
+    #    物料下行（material.sync / 资源树同步 / 物料挂载 / 设备管理）走 HostLink，不建 ROS service；
+    #    handler 在 setup_slave_network_client 建链时就已挂上：设备 post_init 里的 materials.assign
+    #    会让权威回调本进程的 material.sync，设备节点在 post_init 之前已登记进 registered_devices。
     devices_instances = {}
     for device_config in devices_config.root_nodes:
         device_id = device_config.res_content.id
@@ -336,15 +339,8 @@ def slave(
             else:
                 logger.warning(f"Device {device_id} initialization failed.")
 
-    # 4.5 物料下行链路（append_resource / 资源树同步）走 HostLink，不建 ROS service：
-    # 把下行 handler 挂到 HostLink client，Host 的分发经此调用本进程设备节点实例。
     if _hostlink_client is not None:
-        from unilabos.client.host.hostlink.downlink import register_hostlink_resource_handlers
-
-        register_hostlink_resource_handlers(_hostlink_client)
-        logger.info("HostLink 物料下行 handler 已注册（资源树同步 / 物料挂载）。")
-
-        # 4.6 设备节点（含 Action server）已建好：告诉 Host 它们就绪。Host 只把就绪的设备当在线，
+        # 4.5 设备节点（含 Action server）已建好：告诉 Host 它们就绪。Host 只把就绪的设备当在线，
         #     重启后的 Slave 刚接回 HostLink 时派发的 goal 不会落到还不存在的 Action server 上；
         #     初始化失败的根设备连同其子设备保持未就绪（离线）。
         from unilabos.client.host.hostlink.network import mark_slave_devices_ready, startup_device_ids

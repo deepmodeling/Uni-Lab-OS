@@ -325,7 +325,9 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | `Material.load("sample", device="vessel")`（`vessel` 是 `str` / `ResourceSlot`） | `vessel` 注解为 `DeviceSlot`；装进执行设备本身时省略 `device=` |
 
 行为上的变化：`DeviceSlot` / `SiteSlot` 参数现在默认加设备锁 / 库位锁；`load` / `unload` / `in_place` / `site_picker` /
-`order_sensitive` 注册时告警一次「实验性功能」。
+`order_sensitive` 注册时告警一次「实验性功能」；搬运设备的夹爪库位角色统一为 `gripper`，已部署的物料权威里旧角色名
+（如 `robot.gripper`）不会随设备声明自动更新，需要重建或改写这些库位的 `meta_data.role`；声明的搬运在动作成功后可以不交
+搬运回执（核心按冻结计划结算）；`site_picker` 的库位参数不再限定 uuid 格式（也可以给所属方下的库位名）。
 
 行为上的变化：
 

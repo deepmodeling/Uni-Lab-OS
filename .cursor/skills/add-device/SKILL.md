@@ -159,17 +159,21 @@ from unilabos.registry.decorators import action
     auto_prefix=True,                # 强制使用 auto- 前缀
     parent=True,                     # 从父类 MRO 获取参数签名
 )
-@action(material=Material.load("sample", device="vessel"))   # 资源语义：一个字段，见下
+@action(material=Material.move("plate", to_site="target_site"))   # 资源语义：一个字段，见下
 ```
 
 JSON 动作（不写 `action_type`）的参数与返回值只有一个标准：注册表按签名生成 schema，调度端与 Host 调用前按它校验参数，
 调用后按返回注解校验返回值。写了类型的参数严格校验；没写类型或 `Any` 接受任意 JSON 值；没有默认值的参数必填。
-资源语义用 `material=Material.load / unload / in_place / pick / place / transfer / aliquot / uses / order_sensitive / site(...)`，
-多个写成列表；库位参数注解为 `SiteSlot`，它属于哪个物料参数写 `Material.site("site", owner="carrier", occupant="sample")`。
+资源语义用 `material=`，声明动作真实的物料动作 `Material.move / pick / place / dispense(...)`，多个写成列表；
+不代表物料动作的 `Material.load / unload / in_place / site_picker / order_sensitive(...)` 也写在这里，但属于实验性（注册时告警一次）。
+字符串都是参数名：物料 `ResourceSlot`、库位 `SiteSlot`（库位 uuid，所属方由库位决定）、设备 `DeviceSlot`（省略即执行设备）。
+库位选择器列出哪个所属方的库位写 `Material.site_picker("site", of="carrier", for_material="sample")`。
+`DeviceSlot` 参数加设备锁、`SiteSlot` 参数加库位锁，不需要额外声明。
 前端选择器：物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot` 自动推出，其他（节点、人工确认指派人、扣减……）或想换一种
 显示时写 `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，两者取并集、同一参数以手写为准，只改显示不改类型。
-`contract=`、`resource_contract=`、JSON 动作的 `goal=` / `result=`，以及注解里的 `Placeholder(...)` / `SiteSelector(...)` 已删除，
-写了报错。完整规则见 `docs/developer_guide/action_standard.md`。
+`contract=`、`resource_contract=`、JSON 动作的 `goal=` / `result=`，注解里的 `Placeholder(...)` / `SiteSelector(...)`，
+以及 `Material.transfer / aliquot / site / uses` 和带 `owner` / `site` / `carriers` 的 `Material.pick / place` 已删除，
+写了报错并给出新写法。完整规则见 `docs/developer_guide/action_standard.md`。
 
 **自动识别规则：**
 - 带 `@action` 的公开方法 → 注册为动作（方法名即动作名）

@@ -117,13 +117,14 @@ class <ClassName>:
 - `always_free=True`：动作不占用设备 busy 队列，适合 `get_status`、`query_*`、`ping`、连接测试等轻量查询动作；会在 `action_value_mappings.<action>.always_free` 中写入 `true`。
 - `feedback_interval`：动作反馈发布间隔，单位秒；AST 扫描默认补 `1.0`，长任务可调大，例如 `5.0`、`30.0`。
 - `goal_default`：编辑器里的初始参数值，叠加在签名默认值上；它不让参数变成可选，没有签名默认值的参数仍然必填。
-- `material`：资源语义（装载托管、原位处理、搬运、分装、顺序敏感、库位关系），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
+- `material`：资源语义（搬运、两步搬运、分装；实验性的装载托管、原位处理、库位选择器提示、顺序敏感），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
 - `placeholder_keys`：前端选择器 `{参数名: PLACEHOLDER_...}`。物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot` 由类型自动推出；
   节点、人工确认指派人、扣减等没有专门类型的选择器，或想把某个参数换一种显示，就在这里手写。两者取并集，同一参数以手写为准；
   只改前端显示，参数类型与校验不变（兼容规则：手写成 `unilabos_resources` 的参数也加物料锁）。键必须是参数名。
 - `handles`：动作级输入/输出端口，使用 `ActionInputHandle`、`ActionOutputHandle`；不写时按 schema 生成。
 - 已删除、写了会报错的写法：`contract=`、`resource_contract=`、JSON 动作的 `goal=` / `result=` 重命名（参数名就是字段名），
-  以及注解里的 `Placeholder(...)`（改成 `placeholder_keys=`）与 `SiteSelector(...)`（改成 `SiteSlot` + `Material.site(...)`）。
+  注解里的 `Placeholder(...)`（改成 `placeholder_keys=`）与 `SiteSelector(...)`（改成 `SiteSlot` + `Material.site_picker(...)`），
+  以及 `Material.transfer / aliquot / site / uses`、带 `owner` / `site` / `carriers` 的 `Material.pick / place`（新写法见下文「资源语义」）。
 
 参数与返回值只有一个标准，注册表按签名生成 schema，调度端与 Host 调用前校验参数，调用后按返回注解校验返回值：
 
@@ -147,29 +148,47 @@ class <ClassName>:
 
 ```python
 from unilabos.registry.decorators import Material, action
-from unilabos.registry.placeholder_type import ResourceSlot
+from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 
-@action(display_name="装载样品", material=Material.load("sample", device="vessel"))
-def load_sample(self, sample: ResourceSlot, vessel: str) -> LoadResult: ...
+@action(display_name="搬运板", material=Material.move("plate", to_site="target_site"))
+def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
+
+@action(display_name="抓取", material=Material.pick("plate"))
+def pick_plate(self, plate: ResourceSlot) -> dict: ...
+
+@action(display_name="放下", material=Material.place("plate", to_site="target_site"))
+def place_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
 @action(display_name="原位搅拌", material=[Material.in_place("sample"), Material.order_sensitive()])
 def stir(self, sample: ResourceSlot, rpm: int = 300) -> None: ...
 ```
 
+物料动作（稳定）：
+
 | 写法 | 含义 |
 | --- | --- |
-| `Material.load("sample", device="vessel")` / `Material.unload(...)` | 装进 / 取出设备，期间任务托管设备 |
-| `Material.load("sample", device="b", from_device="a")` | 设备间转移 |
-| `Material.in_place("sample")` | 物料必须仍在执行设备内 |
-| `Material.pick(...)` / `Material.place("sample", owner=, site=, carriers=[...])` | 两步搬运 |
-| `Material.transfer("plate", to=, site=, gripper=, ...)` | 一次完成的机械臂搬运 |
-| `Material.aliquot(source=, targets=[...])` | 按实测量分装 |
-| `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 额外占用的资源参数 |
-| `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序 |
-| `Material.site("site", owner="carrier", occupant="sample", show_occupied=True, allow_occupied=False)` | 库位参数 `site`（`SiteSlot`）属于 `carrier`，放进去的是 `sample`；已占用库位是否列出 / 能否选 |
+| `Material.move("plate", to_site="site", from_site=None, carrier_device=None)` | 一个动作把容器搬到 `to_site`；所属方由库位决定，搬运途中在搬运设备的 `gripper` 夹爪库位上 |
+| `Material.pick("plate", from_site=None, carrier_device=None)` | 两步搬运第一步：抓到搬运设备的夹爪库位，任务托管搬运设备 |
+| `Material.place("plate", to_site="site", carrier_device=None)` | 两步搬运第二步：从夹爪库位放到 `to_site`，结束托管 |
+| `Material.dispense(from_material="source", to_materials=["target", ...])` | 按实测量在容器之间转移内容物 |
 
-字符串都是参数名，注册时对照签名检查；物料参数必须是 `ResourceSlot`，设备参数可以是 `ResourceSlot` 或设备 ID 字符串；
-`Material.site` 的库位参数必须是 `SiteSlot`，`owner` / `occupant` 必须是单个 `ResourceSlot`。
+实验性（注册时告警一次）：
+
+| 写法 | 含义 |
+| --- | --- |
+| `Material.load("sample", device=None, from_device=None)` / `Material.unload("sample", device=None)` | 装进 / 取出设备，期间任务托管设备；`device` 省略即执行设备，`from_device` 表示设备间转移 |
+| `Material.in_place("sample")` | 物料必须仍在执行设备内 |
+| `Material.site_picker("site", of=None, for_material=None, occupied="show")` | 库位选择器提示：`site` 列出 `of`（省略即执行设备根节点）的库位，放进去的是 `for_material`；`occupied` 取 `"hide"` / `"show"` / `"allow"` |
+| `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序 |
+
+字符串都是参数名，注册时对照签名检查：物料（`material`、`from_material`、`to_materials`、`for_material`）必须是单个 `ResourceSlot`；
+库位（`to_site`、`from_site`、`site_picker` 的库位参数）必须是 `SiteSlot`（值是库位 uuid）；设备（`carrier_device`、`device`、
+`from_device`）必须是 `DeviceSlot`（值是设备 id），省略就是执行设备；`site_picker` 的 `of` 是 `ResourceSlot` 或 `DeviceSlot`。
+搬运设备的夹爪库位 `meta_data.role` 统一为 `gripper`（有且只有一个）。参数按类型加锁：`ResourceSlot` 物料锁、`DeviceSlot` 设备锁、
+`SiteSlot` 库位锁。
+
+用 `Material.move / pick / place` 声明了的搬运由核心按回执结算物料位置，驱动不要再对同一物料调用 `materials.transfer` /
+`materials.assign`；`materials.*` 只用于没有声明的运行时变化（新建、写内容物、删除、启动对齐等）。
 
 ### 3.2 `@topic_config` 规则
 

@@ -1,6 +1,6 @@
 """库位参数按所属物料选择：``{"owner_uuid": ...}`` 在任务准入时选定、经入口预留占住并冻结进任务。
 
-候选是所属物料下接受放入物料（``Material.site`` 的 occupant）的库位（模板白名单 / 允许的资源类别），按库位序号选第一个
+候选是所属物料下接受放入物料（``Material.site_picker`` 的 for_material）的库位（模板白名单 / 允许的资源类别），按库位序号选第一个
 空着且没被预留的；没有接受的库位是预检错误（``reason=no_acceptable_site``），接受的都被占着时任务排队
 （``wait_reason.code=site_group_unavailable``）。精确库位 uuid 照旧。
 """

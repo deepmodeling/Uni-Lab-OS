@@ -285,3 +285,45 @@ def test_load_without_a_device_holds_the_executing_device(authority) -> None:
     assert (tenancy["device_tenancy"].acquire_device_id, tenancy["device_tenancy"].release_device_id) == (
         "reactor", "shelf")
     assert set(tenancy["device_claims"]) == {"reactor", "shelf"}
+
+
+def test_site_picker_owned_by_a_device_is_checked_against_the_device_root(authority) -> None:
+    """site_picker 省略 of 时库位属于执行设备根节点，of 是 DeviceSlot 时属于该设备；DeviceSlot 值必须是已登记设备。"""
+
+    from unilabos.registry.material_roles import material_site_selectors
+    from unilabos.server.services.runtime.workflow.run_preflight import (
+        ResourceUnavailableError,
+        validate_resource_values,
+    )
+
+    service, gateway = authority
+    warehouse = _warehouse(gateway, "wh")
+    reader = _device(service, "reader", [("S1", {}), ("S2", {})])
+    other = _device(service, "other", [("T1", {})])
+    vial = materials.create(_bottle("vial"), gateway=gateway)
+
+    def schema(picker, fields):
+        site_field = {**_SITE, "x-unilabos-site-selector": material_site_selectors(picker)["site"]}
+        return {"properties": {"goal": {"properties": {**fields, "site": site_field}}},
+                "x-unilabos-action-contract": {"version": 2}}
+
+    own = schema(Material.site_picker("site", for_material="sample"), {"sample": _MATERIAL})
+    values = {"sample": {"uuid": vial.unilabos_uuid}}
+    validate_resource_values(own, {**values, "site": _site(service, reader, "S1").site_uuid}, gateway, device_id="reader")
+    with pytest.raises(ValueError, match="不属于所选容器"):
+        validate_resource_values(own, {**values, "site": _site(service, other, "T1").site_uuid}, gateway,
+                                 device_id="reader")
+    with pytest.raises(ValueError, match="不属于所选容器"):
+        validate_resource_values(own, {**values, "site": _site(service, warehouse.unilabos_uuid, "A02").site_uuid},
+                                 gateway, device_id="reader")
+
+    of_device = schema(Material.site_picker("site", of="target_device", for_material="sample"),
+                       {"sample": _MATERIAL, "target_device": _DEVICE})
+    validate_resource_values(of_device, {**values, "target_device": "other",
+                                         "site": _site(service, other, "T1").site_uuid}, gateway, device_id="reader")
+    with pytest.raises(ValueError, match="不属于所选容器"):
+        validate_resource_values(of_device, {**values, "target_device": "other",
+                                             "site": _site(service, reader, "S2").site_uuid}, gateway, device_id="reader")
+    with pytest.raises((ValueError, ResourceUnavailableError)):
+        validate_resource_values(of_device, {**values, "target_device": "nowhere",
+                                             "site": _site(service, other, "T1").site_uuid}, gateway, device_id="reader")

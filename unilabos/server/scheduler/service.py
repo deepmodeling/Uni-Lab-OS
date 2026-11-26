@@ -1590,7 +1590,7 @@ class BackendScheduler:
         if spec.get("param_schema"):
             from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
 
-            validate_resource_values(spec["param_schema"], args, self.materials_gateway)
+            validate_resource_values(spec["param_schema"], args, self.materials_gateway, device_id=node.device_id)
         from .physical_contract import resolve_physical_contract
         physical = resolve_physical_contract(spec.get("param_schema"), args, node.device_id, self.materials_gateway)
         material_uuids.update(physical.get("material_ids", []))

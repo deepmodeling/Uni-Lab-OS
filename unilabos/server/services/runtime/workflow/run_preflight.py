@@ -229,7 +229,7 @@ def build_run_preflight_report(
         if schema and "x-unilabos-action-contract" in schema:
             try:
                 values = validate_action_values(schema, node["param"], deferred=pending, managed_resources=True)
-                validate_resource_values(schema, values, materials, deferred=pending)
+                validate_resource_values(schema, values, materials, deferred=pending, device_id=device or None)
                 check("action_contract", "passed", "action_contract_ready", "静态动作参数符合合同", node=node)
             except ResourceUnavailableError as error:
                 check("resources", "blocked", "resource_unavailable", str(error), node=node)
@@ -283,9 +283,14 @@ def finalize(report: dict[str, Any]) -> dict[str, Any]:
 
 def validate_resource_values(
     schema: Mapping[str, Any], values: Mapping[str, Any], materials: Any,
-    *, deferred: Sequence[str] = (),
+    *, deferred: Sequence[str] = (), device_id: str | None = None,
 ) -> None:
-    """校验已知物料身份及库位参数（Material.site 声明的库位关系）的归属／占用；预检与派发共用。"""
+    """校验已知物料身份、设备参数及库位参数（Material.site_picker 声明的库位关系）的归属／占用；预检与派发共用。
+
+    ``device_id`` 是执行设备：``site_picker`` 省略 ``of`` 时库位属于它的根节点（不给时跳过这条核对）。
+    """
+    from unilabos.registry.action_resource_contract import EXECUTING_DEVICE
+    from unilabos.server.scheduler.tenancy_contract import slot_parameters
     fields = schema.get("properties", {}).get("goal", {}).get("properties", {})
 
     def material(identity: str | None, name: str) -> Any:
@@ -315,21 +320,34 @@ def validate_resource_values(
     device_parameters.update(item["param"] for item in contract.get("resource_params", []) if item["role"] in {"device","motion"})
     tenancy = contract.get("device_tenancy") or {}
     device_parameters.update(tenancy[field] for field in ("acquire_device_param","release_device_param") if tenancy.get(field))
-    for name in device_parameters:
-        if name in deferred or name not in values or not isinstance(values[name], str):
-            continue
+    device_parameters.discard(EXECUTING_DEVICE)
+    # 按类型：DeviceSlot 参数（含列表）都要指向已登记设备（派发时按它加设备锁）；没有物料权威时（如 Host 本地）不核对
+    if materials is not None:
+        device_parameters.update(slot_parameters(schema, "device"))
+
+    def device_aggregate(name: str, value: str) -> Any:
         if materials is None:
             raise ResourceUnavailableError("物料权威尚未接入，无法校验设备 ID")
         try:
-            aggregate = materials.get_material_by_resource_id(values[name])
+            aggregate = materials.get_material_by_resource_id(value)
         except (RuntimeError, OSError) as error:
             if getattr(error,"code",None) == "not_found":
-                raise ValueError(f"设备参数 {name} 指向不存在的设备 {values[name]}") from None
+                raise ValueError(f"设备参数 {name} 指向不存在的设备 {value}") from None
             raise ResourceUnavailableError(f"无法读取设备参数 {name}：{error}") from error
-        if aggregate.material.resource_type != "device" or aggregate.material.resource_id != values[name]:
+        if aggregate.material.resource_type != "device" or aggregate.material.resource_id != value:
             raise ValueError(f"设备参数 {name} 不是有效的设备 ID")
-        if aggregate.material.lifecycle_status in {"quarantined","consumed","disposed","deleted","retired"}:
-            raise ResourceUnavailableError(f"设备参数 {name} 当前不可用")
+        return aggregate
+
+    for name in device_parameters:
+        if name in deferred or name not in values:
+            continue
+        raw = values[name]
+        for value in ([raw] if isinstance(raw, str) else raw if isinstance(raw, list) else []):
+            if not isinstance(value, str) or not value.strip():
+                continue
+            aggregate = device_aggregate(name, value)
+            if aggregate.material.lifecycle_status in {"quarantined","consumed","disposed","deleted","retired"}:
+                raise ResourceUnavailableError(f"设备参数 {name} 当前不可用")
     for name, field in fields.items():
         if name in deferred or name not in values:
             continue
@@ -356,7 +374,16 @@ def validate_resource_values(
         if selector and values[name] is not None:
             if selector["owner"] in deferred or selector.get("occupant") in deferred:
                 continue
-            owner = (values.get(selector["owner"]) or {}).get("uuid")
+            owner_value = values.get(selector["owner"]) if selector.get("owner") else device_id
+            if isinstance(owner_value, str):
+                # 所属方是设备（DeviceSlot 参数，或省略 of 时的执行设备）：库位属于设备根节点
+                if not owner_value.strip():
+                    continue
+                owner = device_aggregate(selector.get("owner") or name, owner_value).material.material_uuid
+            else:
+                owner = (owner_value or {}).get("uuid")
+            if not owner:
+                continue
             occupant = values.get(selector.get("occupant"), {}) or {}
             aggregate = material(owner, name)
             site = next((site for site in aggregate.sites if site.site_uuid == values[name]), None)

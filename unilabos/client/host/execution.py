@@ -2035,7 +2035,7 @@ class JobExecutionBackend:
                 from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
 
                 gateway = self._inventory_authority.gateway if self._inventory_authority is not None else None
-                validate_resource_values(schema, job.action_args, gateway)
+                validate_resource_values(schema, job.action_args, gateway, device_id=job.device_id)
         except ValueError as error:
             self._reject_job(job, str(error), "TypedActionValueError")
             return

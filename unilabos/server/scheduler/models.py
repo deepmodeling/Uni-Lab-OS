@@ -32,6 +32,13 @@ class MaterialLockClaim(ServerObject):
     material_uuid: NonEmptyStr
 
 
+class SiteLockClaim(ServerObject):
+    """一个库位（``SiteSlot`` 参数按类型加的库位锁）：所属物料 + 库位，锁键见 ``resource_keys.site_lock_key``。"""
+
+    owner_material_uuid: NonEmptyStr
+    site_uuid: NonEmptyStr
+
+
 class ResourceLockIdentifier(ServerObject):
     """资源管理器内部和快照使用的规范锁身份。"""
 
@@ -87,6 +94,7 @@ class SchedulerResourceRequest(ServerObject):
     always_free: bool = False
     interval_admission: bool = False
     device_claims: list[NonEmptyStr] = Field(default_factory=list)
+    site_claims: list[SiteLockClaim] = Field(default_factory=list)
     device_tenancy: DeviceTenancyTransition | None = None
     operate_in_place: DeviceTenancyRequirement | None = None
     action_lock_claims: list[ActionLockClaim] = Field(default_factory=list)

@@ -7,7 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from unilabos.protocol.utils.json_codec import encode_json, decode_json_bytes
 from unilabos.server.scheduler.models import SchedulerResourceRequest
-from unilabos.server.scheduler.resource_keys import device_lock_key, material_lock_key
+from unilabos.server.scheduler.resource_keys import device_lock_key, material_lock_key, site_lock_key
 from unilabos.server.scheduler.resource_plan import deserialize_resource_plan, validate_station_resource_plans
 from .errors import StoreConflict
 from .device_tenancy import DeviceTenancies
@@ -37,6 +37,8 @@ def physical_keys(request: SchedulerResourceRequest) -> set[str]:
     if request.current_action and not request.always_free:
         keys.add(device_lock_key(request.current_action.device_id))
     keys.update(device_lock_key(value) for value in request.device_claims)
+    # SiteSlot 参数按类型加的库位锁（所属物料 + 库位）
+    keys.update(site_lock_key(item.owner_material_uuid, item.site_uuid) for item in request.site_claims)
     if request.device_tenancy:
         transition = request.device_tenancy
         keys.update(device_lock_key(value) for value in (transition.acquire_device_id, transition.release_device_id) if value)

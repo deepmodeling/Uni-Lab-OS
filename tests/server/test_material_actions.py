@@ -1,8 +1,9 @@
-"""``Material.move`` / ``pick`` / ``place`` 的调度解析（真实物料权威，不起调度器）。
+"""``Material.move`` / ``pick`` / ``place`` 的调度解析与按类型加锁（真实物料权威，不起调度器）。
 
 - 所属方由库位 uuid 决定：载架（仓库）或设备根节点；
 - 搬运设备省略即执行设备，写了是 ``DeviceSlot``（设备 id 解析成设备物料）；
-- 两步搬运：pick 后物料在夹爪库位、托管搬运设备；place 后在目标库位、夹爪空出、托管释放。
+- 两步搬运：pick 后物料在夹爪库位、托管搬运设备；place 后在目标库位、夹爪空出、托管释放；
+- ``DeviceSlot`` 参数加设备锁，``SiteSlot`` 参数加库位锁，``load`` 省略设备即执行设备。
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from uuid import uuid4
 
 import pytest
 
-from tests.server.test_site_holder_placement import _mutation, _site, _warehouse
+from tests.server.test_site_holder_placement import _bottle, _mutation, _site, _warehouse
 from unilabos.client.materials import LocalMaterialsClient
 from unilabos.protocol.material_execution import MaterialExecutionPrepare, MaterialExecutionReceipt
 from unilabos.protocol.materials import (
@@ -24,9 +25,14 @@ from unilabos.protocol.materials import (
 )
 from unilabos.registry.decorators import Material
 from unilabos.registry.material_roles import material_contract
+from unilabos.resources import materials
+from unilabos.server.scheduler.models import SchedulerResourceRequest
 from unilabos.server.scheduler.physical_contract import resolve_physical_contract
+from unilabos.server.scheduler.resource_keys import device_lock_key, site_lock_key
 from unilabos.server.scheduler.resource_wait_policy import ResourceConditionWait
+from unilabos.server.scheduler.tenancy_contract import resolve_tenancy_contract
 from unilabos.server.services.materials import MaterialsService
+from unilabos.server.services.runtime.workflow.resource_intervals import physical_keys
 
 _DEVICE = {"type": "string", "description": "device reference", "x-unilabos-slot": "device"}
 _SITE = {"type": "string", "description": "site reference (ResourceSite uuid)", "x-unilabos-slot": "site"}
@@ -230,3 +236,52 @@ def test_place_with_a_device_slot_carrier_releases_that_device(authority) -> Non
     }, "executor", gateway)
     assert plan["device_tenancy"].release_device_id == "arm"
     assert plan["moves"][0].source_owner_uuid == arm
+
+
+def test_parameters_are_locked_by_type(authority) -> None:
+    """DeviceSlot（含列表）加设备锁、SiteSlot 加库位锁；空值与不是库位 uuid 的值不加锁。"""
+
+    service, gateway = authority
+    warehouse = _warehouse(gateway, "wh")
+    _device(service, "executor", [])
+    _device(service, "probe_a", [])
+    _device(service, "probe_b", [])
+    site = _site(service, warehouse.unilabos_uuid, "A02").site_uuid
+    schema = {"properties": {"goal": {"properties": {
+        "probe": _DEVICE, "probes": {"type": "array", "items": _DEVICE}, "spare": _DEVICE,
+        "slot": _SITE, "label_slot": _SITE, "name": {"type": "string"},
+    }}}, "x-unilabos-action-contract": {"version": 2}}
+    values = {"probe": "probe_a", "probes": ["probe_b"], "spare": "", "slot": site, "label_slot": "A01", "name": "x"}
+
+    tenancy = resolve_tenancy_contract(schema, values, "executor", gateway)
+
+    assert tenancy["device_claims"] == ["probe_a", "probe_b"]
+    (claim,) = tenancy["site_claims"]
+    assert (claim.owner_material_uuid, claim.site_uuid) == (warehouse.unilabos_uuid, site)
+    request = SchedulerResourceRequest(request_uuid="r", owner_uuid="job", task_uuid="task", **tenancy)
+    assert physical_keys(request) == {
+        device_lock_key("probe_a"), device_lock_key("probe_b"), site_lock_key(warehouse.unilabos_uuid, site),
+    }
+    with pytest.raises(Exception):
+        resolve_tenancy_contract(schema, {**values, "probe": "no_such_device"}, "executor", gateway)
+    assert resolve_tenancy_contract(schema, {"name": "x"}, "executor", gateway) == {}
+
+
+def test_load_without_a_device_holds_the_executing_device(authority) -> None:
+    service, gateway = authority
+    vial = materials.create(_bottle("vial"), gateway=gateway)
+    _device(service, "reactor", [])
+    _device(service, "shelf", [])
+    load = _schema(Material.load("sample"), {"sample": _MATERIAL})
+    tenancy = resolve_tenancy_contract(load, {"sample": {"uuid": vial.unilabos_uuid}}, "reactor", gateway)
+    assert tenancy["device_tenancy"].acquire_device_id == "reactor"
+    assert tenancy["device_tenancy"].release_device_id is None
+    unload = _schema(Material.unload("sample"), {"sample": _MATERIAL})
+    tenancy = resolve_tenancy_contract(unload, {"sample": {"uuid": vial.unilabos_uuid}}, "reactor", gateway)
+    assert tenancy["device_tenancy"].release_device_id == "reactor"
+    moved = _schema(Material.load("sample", from_device="from_device"), {"sample": _MATERIAL, "from_device": _DEVICE})
+    tenancy = resolve_tenancy_contract(
+        moved, {"sample": {"uuid": vial.unilabos_uuid}, "from_device": "shelf"}, "reactor", gateway)
+    assert (tenancy["device_tenancy"].acquire_device_id, tenancy["device_tenancy"].release_device_id) == (
+        "reactor", "shelf")
+    assert set(tenancy["device_claims"]) == {"reactor", "shelf"}

@@ -24,11 +24,11 @@ from unilabos.registry.decorators import Material, action
 from unilabos.registry.material_roles import MaterialRoleError, material_contract, material_site_selectors
 from unilabos.registry.registry import Registry
 
-#: 原 ``Annotated[str | None, SiteSelector(owner="warehouse", occupant="resource")] = None`` 生成的字段扩展。
+#: 原 ``Annotated[str | None, SiteSelector(owner="warehouse", occupant="resource")] = None`` 生成的字段扩展
+#: （不再限定 uuid 格式：值也可以是所属方下的库位名）。
 _SITE_SELECTOR_FIELD = {
     "type": ["string", "null"],
     "default": None,
-    "format": "uuid",
     "x-unilabos-editor-control": "site_selector",
     "x-unilabos-site-selector": {
         "version": 1,

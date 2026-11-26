@@ -595,7 +595,7 @@ def build_action_schema_draft(
         except SiteSelectorSchemaError as error:
             raise ActionSchemaError(f"动作 {definition} 参数 {name}：{error.message}") from None
         field = goal[name]
-        field["format"] = "uuid"
+        # 不限定 uuid 格式：值是库位 uuid，或所属方下的库位名（工作流里写死的工位，派发前在所属方下解析）
         field["x-unilabos-editor-control"] = "site_selector"
         field["x-unilabos-site-selector"] = dict(extension)
 

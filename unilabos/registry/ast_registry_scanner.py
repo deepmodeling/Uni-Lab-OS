@@ -62,7 +62,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 27      # 27：Material 重做（move / pick / place / dispense），DeviceSlot / SiteSlot 字段带 x-unilabos-slot
+_CACHE_VERSION = 28      # 28：Material.site_picker 的库位参数不再限定 uuid 格式（也可以给所属方下的库位名）
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")

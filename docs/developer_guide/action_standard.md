@@ -17,7 +17,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
 | `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串（字段带 `x-unilabos-slot: "device"` / `"site"`），加设备锁 / 库位锁 | 严格 |
-| `SiteSlot` 且写了 `material=Material.site_picker("site", of=...)` | 库位 UUID（或按所属物料选择的 `{"owner_uuid": ...}`，准入时选定），带库位关系（`x-unilabos-site-selector`） | 严格；预检与派发前核对库位归属与占用 |
+| `SiteSlot` 且写了 `material=Material.site_picker("site", of=...)` | 库位 UUID、所属方下的库位名（工作流里写死的工位，派发前解析成库位 uuid），或按所属物料选择的 `{"owner_uuid": ...}`（准入时选定）；带库位关系（`x-unilabos-site-selector`），不限定 uuid 格式 | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -106,7 +106,7 @@ schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输�
 | 角色 | 参数类型 | 值 |
 | --- | --- | --- |
 | 物料（`material`、`from_material`、`to_materials`、`for_material`） | `ResourceSlot`（`to_materials` 可以是多个参数） | 物料引用；`ResourceSlot` 不能指向设备 |
-| 库位（`to_site`、`from_site`、`site_picker` 的库位参数） | `SiteSlot` | 库位 uuid |
+| 库位（`to_site`、`from_site`、`site_picker` 的库位参数） | `SiteSlot` | 库位 uuid（带 `site_picker(of=...)` 关系时也可以是所属方下的库位名） |
 | 设备（`carrier_device`、`device`、`from_device`） | `DeviceSlot` | 设备 id；省略就是**执行设备** |
 
 ```python

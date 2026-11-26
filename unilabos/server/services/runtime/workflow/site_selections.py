@@ -1,9 +1,9 @@
 """库位参数按所属物料选择：``{"owner_uuid": ...}`` 在任务准入时选定一个库位、经入口预留占住并冻结进任务。
 
-``SiteSlot`` 参数（带 ``Material.site("site", owner=..., occupant=...)`` 关系）可以给
+``SiteSlot`` 参数（带 ``Material.site_picker("site", of=..., for_material=...)`` 关系）可以给
 ``{"owner_uuid": "<所属物料 uuid>"}`` 而不是库位 uuid，工作流入口参数（``SiteSlot``）也可以。规则：
 
-- 候选是所属物料下接受放入物料（``Material.site`` 的 ``occupant`` 参数，按库位绑定的已先解析）的库位：
+- 候选是所属物料下接受放入物料（``Material.site_picker`` 的 ``for_material`` 参数，按库位绑定的已先解析）的库位：
   库位的接收规则（模板白名单与允许的资源类别）要接受它；按库位序号选第一个空着、没有被别的任务预留的；
 - 调度器在任务准入时（``BackendScheduler._admit_fresh_task``）用物料权威的入口预留占住选中的库位
   （``owner_material_uuid`` 写法，预留随任务：``backend_task_uuid`` = 任务 uuid），再把库位 uuid 冻结进计划节点参数、
@@ -126,12 +126,12 @@ def owner_site_requests(plan: Mapping[str, Any]) -> list[SiteSelectionRequest]:
             selector = (fields.get(name) or {}).get("x-unilabos-site-selector")
             if not isinstance(selector, Mapping):
                 raise SiteSelectionError(
-                    NO_SITE_RELATION, f"{where} 按所属物料 {owner} 选库位：动作没有用 Material.site 声明这个库位参数的关系，"
+                    NO_SITE_RELATION, f"{where} 按所属物料 {owner} 选库位：动作没有用 Material.site_picker 声明这个库位参数的关系，"
                     "选不出接受放入物料的库位；请给库位 uuid", parameter=name, owner_uuid=owner, node_uuid=node_uuid)
             occupant_param = selector.get("occupant")
             if not occupant_param:
                 raise SiteSelectionError(
-                    OCCUPANT_UNDECLARED, f"{where} 按所属物料 {owner} 选库位：Material.site 没有声明 occupant（放进去的物料），"
+                    OCCUPANT_UNDECLARED, f"{where} 按所属物料 {owner} 选库位：Material.site_picker 没有声明 for_material（放进去的物料），"
                     "无法按库位的接收规则挑选", parameter=name, owner_uuid=owner, node_uuid=node_uuid)
             upstream = _upstream_parameters(plan, node_uuid)
             occupant = None if occupant_param in upstream else _material_uuid(param.get(occupant_param))

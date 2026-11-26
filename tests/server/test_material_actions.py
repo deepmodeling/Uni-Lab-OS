@@ -327,3 +327,27 @@ def test_site_picker_owned_by_a_device_is_checked_against_the_device_root(author
     with pytest.raises((ValueError, ResourceUnavailableError)):
         validate_resource_values(of_device, {**values, "target_device": "nowhere",
                                              "site": _site(service, other, "T1").site_uuid}, gateway, device_id="reader")
+
+
+def test_a_declared_move_settles_from_the_frozen_plan_without_a_driver_receipt() -> None:
+    """动作成功：没回报搬运回执时按冻结计划结算；回报了就必须一致。人工补记与分装照旧要求回执。"""
+
+    from unilabos.server.scheduler.physical_recovery import PhysicalRecovery
+
+    move = {"material_uuid": "m", "source_owner_uuid": "a", "source_site_uuid": "a1",
+            "target_owner_uuid": "b", "target_site_uuid": "b1"}
+    record = {"job_uuid": "job", "claim_uuid": "claim", "plan_hash": "sha256:x", "request": {"moves": [move]}}
+
+    for result in (None, {}, {"success": True}):
+        receipt = PhysicalRecovery._receipt(record, result, planned_moves=True)
+        assert [item.model_dump() for item in receipt.material_transfer_receipts] == [move]
+    other = {"material_uuid": "m", "target_owner_uuid": "c", "target_site_uuid": "c1"}
+    receipt = PhysicalRecovery._receipt(record, {"material_transfer_receipts": [other]}, planned_moves=True)
+    assert receipt.material_transfer_receipts[0].target_site_uuid == "c1"  # 不一致由物料权威结算时拒绝
+    assert PhysicalRecovery._receipt(record, {}).material_transfer_receipts == []
+    with pytest.raises(ValueError, match="具名回执"):
+        PhysicalRecovery._receipt(record, "done")
+    assert PhysicalRecovery._receipt(record, "done", planned_moves=True).material_transfer_receipts[0].target_site_uuid == "b1"
+    aliquot = {**record, "request": {"moves": [], "aliquot": {"source_material_uuid": "s", "target_material_uuids": ["t"]}}}
+    with pytest.raises(ValueError, match="具名回执"):
+        PhysicalRecovery._receipt(aliquot, "done", planned_moves=True)

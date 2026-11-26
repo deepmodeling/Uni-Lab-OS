@@ -102,7 +102,7 @@ class PhysicalRecovery:
             }
             self._save(job_uuid, outcome)
             try:
-                receipt = self._receipt(record, return_info.get("return_value"))
+                receipt = self._receipt(record, return_info.get("return_value"), planned_moves=True)
                 self.gateway.settle_material_execution(receipt)
                 outcome["settled"] = True
                 self._save(job_uuid, outcome)
@@ -112,15 +112,27 @@ class PhysicalRecovery:
                 raise PhysicalSettlementPending(f"设备结果已保存，物理结算待核实：{error}") from error
 
     @staticmethod
-    def _receipt(record, value):
-        physical = bool(record["request"].get("moves") or record["request"].get("aliquot"))
+    def _receipt(record, value, *, planned_moves=False):
+        """设备结果 → 结算回执。
+
+        ``planned_moves``：动作成功时，声明的搬运（``Material.move`` / ``pick`` / ``place``）由核心按冻结计划结算——
+        结果里没有 ``material_transfer_receipts`` 就用冻结的搬运；给了就必须与冻结计划完全一致。人工补记结算不按计划补。
+        分装（``Material.dispense``）的实际量只能由驱动回报，始终要求 ``material_aliquot_receipts``。
+        """
+
+        request = record["request"]
         value = value or {}
         if not isinstance(value, dict):
-            if physical:
+            if request.get("aliquot") or (request.get("moves") and not planned_moves):
                 raise ValueError("物理动作结果必须包含具名回执")
             value = {}
+        if planned_moves and "material_transfer_receipts" not in value:
+            value = {**value, "material_transfer_receipts": [
+                {key: item[key] for key in ("material_uuid", "target_owner_uuid", "target_site_uuid")}
+                for item in request.get("moves", [])
+            ]}
         moves = []
-        expected = {item["material_uuid"]: item for item in record["request"].get("moves", [])}
+        expected = {item["material_uuid"]: item for item in request.get("moves", [])}
         for item in value.get("material_transfer_receipts", []):
             if not isinstance(item, dict):
                 raise ValueError("搬运回执必须是对象")

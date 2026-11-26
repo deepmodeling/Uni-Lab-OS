@@ -163,8 +163,10 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 规则：
 
-- 用 `Material.move` / `pick` / `place` 声明了的搬运，物料位置由核心按搬运回执结算；驱动**不能**再对同一件物料调用
-  `materials.transfer` / `materials.assign`（会重复写位置，与核心的结算冲突）。驱动只负责物理动作并按需返回回执。
+- 用 `Material.move` / `pick` / `place` 声明了的搬运，物料位置由核心结算；驱动**不能**再对同一件物料调用
+  `materials.transfer` / `materials.assign`（会重复写位置，与核心的结算冲突）。驱动只负责物理动作：动作成功而结果里
+  没有 `material_transfer_receipts` 时，核心按派发前冻结的来源 / 目标结算；驱动给了搬运回执，就必须与冻结计划完全一致
+  （否则结算被拒绝，转人工核实）。人工补记结算（任务终止后）仍要逐条给出实际位置。
 - `dispense` 声明了的内容物转移由核心按 `AliquotReceipt` 结算；驱动不再对同一来源 / 目标手动写内容物。
 - `materials.*` 只用于**没有声明**的运行时变化：新建物料（`create`）、写内容物（`apply_substances`，用于没有 `dispense` 的动作）、
   删除（`remove`）、启动时对齐（`ensure`）、查询（`get` / `search` / `resolve` / `snapshot`）等。

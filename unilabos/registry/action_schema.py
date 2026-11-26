@@ -5,7 +5,7 @@
 - 严格解析器认识的注解（``str`` / ``int`` / ``float`` / ``bool``、``Literal``、``Optional`` 与
   ``X | None``、``ResourceSlot`` / ``list[ResourceSlot]``、``list[X]``、``dict[str, JSONValue]``，以及
   ``Annotated[..., Field(...)]`` / ``AllowedResourceTemplates``）：严格 schema；
-- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material=Material.site(...))`` 声明的
+- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material=Material.site_picker(...))`` 声明的
   库位关系写进该 ``SiteSlot`` 参数的 ``x-unilabos-site-selector`` 扩展（前端库位选择器、预检与派发门禁用）；
 - 没写注解、``Any``、``object``：接受任意 JSON 值（``{}``）；
 - 默认值是 ``None`` 的参数按可空处理（``x: str = None`` 与 ``x: Optional[str] = None`` 相同）；
@@ -20,7 +20,7 @@
   不认识的字段退回推断）；其他注解整体退回推断。
 
 参数注解里已删除的 ``Placeholder(...)`` / ``SiteSelector(...)`` 是注册错误，报错信息给出新写法
-（前端选择器写 ``@action(placeholder_keys=...)``，库位关系写 ``Material.site(...)``）。
+（前端选择器写 ``@action(placeholder_keys=...)``，库位关系写 ``Material.site_picker(...)``）。
 
 ROS 动作类型（``@action(action_type=...)``）不经过这里，照旧按 ROS 消息生成 schema。
 """
@@ -82,6 +82,9 @@ _STRING_SLOTS = {
     f"{_PLACEHOLDER_MODULE}:DeviceSlot": "device reference",
     _SITE_SLOT: "site reference (ResourceSite uuid)",
 }
+#: 字段 schema 上标出槽位类型的扩展：调度器按它给 DeviceSlot 加设备锁、给 SiteSlot 加库位锁。
+SLOT_KEY = "x-unilabos-slot"
+_SLOT_KINDS = {f"{_PLACEHOLDER_MODULE}:DeviceSlot": "device", _SITE_SLOT: "site"}
 
 _warned: set[str] = set()
 _warned_lock = threading.Lock()
@@ -258,7 +261,7 @@ def reject_removed_annotations(
 
 
 def _is_site_slot(node: ast.AST, bindings: ModuleBindings) -> bool:
-    """单个 ``SiteSlot``（可带 ``Optional`` / ``| None`` / ``Annotated``）：``Material.site`` 的库位参数只能是它。"""
+    """单个 ``SiteSlot``（可带 ``Optional`` / ``| None`` / ``Annotated``）：``Material.site_picker`` 的库位参数只能是它。"""
 
     if bindings.identity(node) == _SITE_SLOT:
         return True
@@ -285,7 +288,7 @@ def _string_slot(node: ast.AST, bindings: ModuleBindings) -> Optional[Dict[str, 
 
     identity = bindings.identity(node)
     if identity in _STRING_SLOTS:
-        return {"type": "string", "description": _STRING_SLOTS[identity]}
+        return {"type": "string", "description": _STRING_SLOTS[identity], SLOT_KEY: _SLOT_KINDS[identity]}
     if isinstance(node, ast.Subscript):
         origin = bindings.identity(node.value)
         members = _subscript_members(node)
@@ -304,6 +307,31 @@ def _string_slot(node: ast.AST, bindings: ModuleBindings) -> Optional[Dict[str, 
             return None
         return _with_null(base) if base is not None else None
     return None
+
+
+def slot_kind(field: Any) -> str:
+    """字段 schema 的槽位类型：``"resource"`` / ``"resource_list"`` / ``"device"`` / ``"device_list"`` / ``"site"`` / ``""``。
+
+    认 ``ResourceSlot`` 的物料引用形状（``x-unilabos-material-lock`` 或 ``{"uuid"}`` 对象）与
+    ``DeviceSlot`` / ``SiteSlot`` 的 ``x-unilabos-slot`` 扩展，可空 / ``anyOf`` 形态同样识别。
+    """
+
+    if not isinstance(field, Mapping):
+        return ""
+    marker = field.get(SLOT_KEY)
+    if marker in {"device", "site"}:
+        return str(marker)
+    if "x-unilabos-material-lock" in field:
+        return "resource"
+    kinds = field.get("type")
+    kinds = set(kinds) if isinstance(kinds, list) else {kinds}
+    if "array" in kinds:
+        item = slot_kind(field.get("items"))
+        return f"{item}_list" if item in {"resource", "device"} else ""
+    members = [item for item in field.get("anyOf") or [] if isinstance(item, Mapping) and item.get("type") != "null"]
+    if len(members) == 1:
+        return slot_kind(members[0])
+    return ""
 
 
 def _with_null(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -463,7 +491,7 @@ def build_action_schema_draft(
     由注册表 ``finalize_action_schema`` 补全；``inferred`` / ``result_inferred`` 列出退回推断的参数与
     返回字段；``skipped`` 是无法表示、被忽略的参数写法。
 
-    ``site_selectors`` 是 ``Material.site(...)`` 给出的 ``{库位参数名: x-unilabos-site-selector 扩展}``：
+    ``site_selectors`` 是 ``Material.site_picker(...)`` 给出的 ``{库位参数名: x-unilabos-site-selector 扩展}``：
     库位参数必须注解为 ``SiteSlot``，owner / occupant 必须是单个 ``ResourceSlot`` 参数，扩展写进该参数的
     schema。动作声明写错（库位关系不对、注解里写了已删除的 ``Placeholder`` / ``SiteSelector``）抛
     :class:`ActionSchemaError`。
@@ -555,11 +583,15 @@ def build_action_schema_draft(
 
     for name, extension in (site_selectors or {}).items():
         if name not in goal:
-            raise ActionSchemaError(f"动作 {definition}：Material.site 引用了签名里没有的参数 {name}")
+            raise ActionSchemaError(f"动作 {definition}：Material.site_picker 引用了签名里没有的参数 {name}")
         if name not in site_slots:
-            raise ActionSchemaError(f"动作 {definition}：Material.site 的库位参数 {name} 必须注解为 SiteSlot")
+            raise ActionSchemaError(f"动作 {definition}：Material.site_picker 的库位参数 {name} 必须注解为 SiteSlot")
         try:
-            validate_site_selector_relations(strict_descriptors, [(name, extension)])
+            validate_site_selector_relations(
+                strict_descriptors,
+                [(name, extension)],
+                device_parameters={key for key, value in goal.items() if slot_kind(value) == "device"},
+            )
         except SiteSelectorSchemaError as error:
             raise ActionSchemaError(f"动作 {definition} 参数 {name}：{error.message}") from None
         field = goal[name]
@@ -808,6 +840,8 @@ def _strip_reserved(schema: Dict[str, Any]) -> None:
 
 __all__ = [
     "INFER_KEY",
+    "SLOT_KEY",
+    "slot_kind",
     "ActionSchemaError",
     "ModuleBindings",
     "build_action_schema_draft",

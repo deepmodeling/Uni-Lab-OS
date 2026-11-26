@@ -207,7 +207,7 @@ def _runtime_type_schema(tp: Any, *, depth: int = 0) -> Dict[str, Any]:
         if name == "ResourceSlot":
             return _material_reference_schema()
         if name in {"DeviceSlot", "SiteSlot"}:
-            return {"type": "string"}
+            return {"type": "string", "x-unilabos-slot": "device" if name == "DeviceSlot" else "site"}
         if issubclass(tp, _enum.Enum):
             values = [member.value for member in tp]
             return {"type": "string", "enum": values} if values and all(isinstance(v, str) for v in values) else {}

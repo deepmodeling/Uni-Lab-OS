@@ -3,27 +3,30 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 
 import pytest
 
 from unilabos.registry.action_options import RemovedActionOptionError
-from unilabos.registry.action_resource_contract import ActionResourceContractError
+from unilabos.registry.action_resource_contract import EXECUTING_DEVICE
 from unilabos.registry.ast_registry_scanner import _parse_file
 from unilabos.registry.decorators import Material, action
-from unilabos.registry.material_roles import MaterialRoleError, material_contract
+from unilabos.registry.material_roles import MaterialRoleError, material_contract, material_site_selectors
+
+_SIGNATURE = (
+    "self, material: ResourceSlot, target_site: SiteSlot, source_site: SiteSlot, "
+    "arm_device: DeviceSlot, vessel_device: DeviceSlot, other: ResourceSlot, label: str"
+)
 
 
 def _source(material: str, *, signature: str | None = None) -> str:
-    signature = signature or (
-        "self, material: ResourceSlot, source_device: ResourceSlot, source_site: str, "
-        "target_device: ResourceSlot, target_site_uuid: str"
-    )
+    signature = signature or _SIGNATURE
     return f'''
 from typing import TypedDict
 from unilabos.registry.decorators import Material, action, device
-from unilabos.registry.placeholder_type import ResourceSlot
+from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 
 class Result(TypedDict):
     material: ResourceSlot
@@ -32,7 +35,7 @@ class Result(TypedDict):
 class Robot:
     @action(material={material})
     def move({signature}) -> Result:
-        """执行一次设备间物料转运。"""
+        """执行一次物料动作。"""
         raise NotImplementedError
 '''
 
@@ -59,130 +62,204 @@ def _import(tmp_path: Path, source: str, name: str = "robot_runtime"):
     return module
 
 
-def test_material_roles_freeze_into_the_canonical_action_schema(tmp_path: Path) -> None:
-    """设备间托管、完整搬运与资源参数合成一个字段，规范化成第 2 版合同冻结进 schema。"""
+def _contract(entry: dict) -> dict:
+    return entry["canonical_schema"]["x-unilabos-action-contract"]["resource_contract"]
 
-    action_entry = _scan_action(
-        tmp_path,
-        """[
-            Material.load("material", device="target_device", from_device="source_device"),
-            Material.transfer(
-                "material", to="target_device", site="target_site_uuid",
-                source="source_device", source_site_name="source_site", gripper="robot.gripper",
-            ),
-            Material.uses(device=["source_device", "target_device"]),
-        ]""",
-    )
 
-    contract = action_entry["canonical_schema"]["x-unilabos-action-contract"]["resource_contract"]
-    assert contract["version"] == 2
-    assert contract["resource_params"] == [
-        {"param": "source_device", "role": "device"},
-        {"param": "target_device", "role": "device"},
-    ]
-    assert contract["device_tenancy"] == {
-        "mode": "task_while_loaded",
-        "material_param": "material",
-        "acquire_device_param": "target_device",
-        "release_device_param": "source_device",
+def test_move_freezes_into_the_transfer_contract_with_site_derived_owner(tmp_path: Path) -> None:
+    """Material.move：所属方由库位决定（不写所属物料参数），搬运设备省略即执行设备。"""
+
+    contract = _contract(_scan_action(tmp_path, 'Material.move("material", to_site="target_site")'))
+    assert contract == {
+        "version": 2,
+        "transfer": {
+            "material_param": "material",
+            "source_owner_param": "",
+            "source_site_uuid_param": "",
+            "source_site_name_param": "",
+            "target_owner_param": "",
+            "target_site_uuid_param": "target_site",
+            "target_site_name_param": "",
+            "gripper_site_role": "gripper",
+        },
     }
-    assert contract["transfer"] == {
-        "material_param": "material",
-        "source_owner_param": "source_device",
-        "source_site_uuid_param": "",
-        "source_site_name_param": "source_site",
-        "target_owner_param": "target_device",
-        "target_site_uuid_param": "target_site_uuid",
-        "target_site_name_param": "",
-        "gripper_site_role": "robot.gripper",
-    }
+    explicit = _contract(_scan_action(
+        tmp_path, 'Material.move("material", to_site="target_site", from_site="source_site", carrier_device="arm_device")'
+    ))
+    assert explicit["transfer"]["source_site_uuid_param"] == "source_site"
+    assert explicit["transfer"]["carrier_device_param"] == "arm_device"
 
 
 def test_decorator_and_ast_scan_produce_the_same_contract(tmp_path: Path) -> None:
-    material = '[Material.in_place("material"), Material.order_sensitive()]'
-    scanned = _scan_action(tmp_path, material)["canonical_schema"]["x-unilabos-action-contract"]["resource_contract"]
+    material = '[Material.pick("material", from_site="source_site", carrier_device="arm_device")]'
+    scanned = _contract(_scan_action(tmp_path, material))
     module = _import(tmp_path, _source(material))
     assert module.Robot.move._action_registry_meta["resource_contract"] == scanned
-    assert scanned == {"version": 2, "operate_in_place": {"material_param": "material"}, "order_sensitive": True}
+    assert scanned == {"version": 2, "transfer_step": {
+        "operation": "pick", "material_param": "material", "owner_param": "",
+        "site_param": "source_site", "carrier_params": ["arm_device"],
+    }}
 
 
 @pytest.mark.parametrize(
     ("role", "expected"),
     [
         (
-            Material.load("s", device="v"),
+            Material.load("s"),
             {"device_tenancy": {"mode": "task_while_loaded", "material_param": "s",
-                                "acquire_device_param": "v", "release_device_param": ""}},
+                                "acquire_device_param": EXECUTING_DEVICE, "release_device_param": ""}},
+        ),
+        (
+            Material.load("s", device="b", from_device="a"),
+            {"device_tenancy": {"mode": "task_while_loaded", "material_param": "s",
+                                "acquire_device_param": "b", "release_device_param": "a"}},
         ),
         (
             Material.unload("s", device="v"),
             {"device_tenancy": {"mode": "task_while_loaded", "material_param": "s",
                                 "acquire_device_param": "", "release_device_param": "v"}},
         ),
+        (
+            Material.unload("s"),
+            {"device_tenancy": {"mode": "task_while_loaded", "material_param": "s",
+                                "acquire_device_param": "", "release_device_param": EXECUTING_DEVICE}},
+        ),
         (Material.in_place("s"), {"operate_in_place": {"material_param": "s"}}),
         (
-            Material.pick("s", owner="o", site="t", carriers=["c"]),
-            {"transfer_step": {"operation": "pick", "material_param": "s", "owner_param": "o",
+            Material.pick("s"),
+            {"transfer_step": {"operation": "pick", "material_param": "s", "owner_param": "",
+                               "site_param": "", "carrier_params": []}},
+        ),
+        (
+            Material.place("s", to_site="t", carrier_device="c"),
+            {"transfer_step": {"operation": "place", "material_param": "s", "owner_param": "",
                                "site_param": "t", "carrier_params": ["c"]}},
         ),
         (
-            Material.place("s", owner="o", site="t", carriers="c"),
-            {"transfer_step": {"operation": "place", "material_param": "s", "owner_param": "o",
-                               "site_param": "t", "carrier_params": ["c"]}},
-        ),
-        (
-            Material.aliquot(source="a", targets=["b", "c"]),
+            Material.dispense(from_material="a", to_materials=["b", "c"]),
             {"aliquot": {"source_material_param": "a", "target_material_params": ["b", "c"]}},
         ),
+        (
+            Material.dispense(from_material="a", to_materials="b"),
+            {"aliquot": {"source_material_param": "a", "target_material_params": ["b"]}},
+        ),
         (Material.order_sensitive(), {"order_sensitive": True}),
-        (
-            Material.uses(device="d", tool=["t"], motion="m", site="s", material="x"),
-            {"resource_params": [
-                {"param": "d", "role": "device"}, {"param": "t", "role": "tool"}, {"param": "m", "role": "motion"},
-                {"param": "s", "role": "site"}, {"param": "x", "role": "material"},
-            ]},
-        ),
-        (
-            Material.transfer("s", to="o", site_name="n", gripper="g", motion=["arm"], tools="hand"),
-            {"transfer": {"material_param": "s", "source_owner_param": "", "source_site_uuid_param": "",
-                          "source_site_name_param": "", "target_owner_param": "o", "target_site_uuid_param": "",
-                          "target_site_name_param": "n", "gripper_site_role": "g",
-                          "motion_resource_roles": ["arm"], "tool_resource_roles": ["hand"]}},
-        ),
     ],
 )
 def test_every_role_maps_to_the_existing_contract_field(role, expected) -> None:
     assert material_contract(role) == {"version": 2, **expected}
 
 
+def test_site_picker_keeps_the_site_selector_shape() -> None:
+    assert material_site_selectors(Material.site_picker("site", of="carrier", for_material="s")) == {
+        "site": {"version": 1, "owner": "carrier", "occupant": "s", "show_occupied": True, "allow_occupied": False}
+    }
+    assert material_site_selectors(Material.site_picker("site", occupied="hide"))["site"] == {
+        "version": 1, "owner": None, "occupant": None, "show_occupied": False, "allow_occupied": False,
+    }
+    assert material_site_selectors(Material.site_picker("site", of="o", occupied="allow"))["site"]["allow_occupied"]
+    with pytest.raises(MaterialRoleError, match="hide"):
+        Material.site_picker("site", occupied="never")
+
+
 def test_conflicting_or_invalid_roles_are_rejected() -> None:
     with pytest.raises(MaterialRoleError, match="不能写在同一个动作上"):
         material_contract([Material.load("s", device="a"), Material.unload("s", device="b")])
+    with pytest.raises(MaterialRoleError, match="不能写在同一个动作上"):
+        material_contract([Material.move("s", to_site="t"), Material.pick("s")])
     with pytest.raises(MaterialRoleError):
         material_contract({"device_tenancy": {}})
-    with pytest.raises(MaterialRoleError):
-        Material.pick("s", owner="o", site="t", carriers=[])
-    with pytest.raises(MaterialRoleError, match="写法无效"):
-        material_contract(Material.load("s", device="v", from_device="v"))
+    with pytest.raises(MaterialRoleError, match="不能是同一个参数"):
+        Material.load("s", device="v", from_device="v")
+    with pytest.raises(MaterialRoleError, match="不同的参数"):
+        Material.dispense(from_material="a", to_materials=["a"])
 
 
-def test_unknown_parameter_is_a_registration_error(tmp_path: Path) -> None:
-    with pytest.raises(ActionResourceContractError) as caught:
-        _scan_action(tmp_path, 'Material.in_place("missing")')
-    assert caught.value.code == "unknown_action_resource_parameter"
-    with pytest.raises(MaterialRoleError, match="missing"):
-        _import(tmp_path, _source('Material.in_place("missing")'), name="robot_unknown")
+@pytest.mark.parametrize(
+    ("call", "hint"),
+    [
+        ('Material.transfer("material", to="other", site="target_site", gripper="robot.gripper")', "Material.move"),
+        ('Material.aliquot(source="material", targets=["other"])', "Material.dispense"),
+        ('Material.site("target_site", owner="other", occupant="material")', "Material.site_picker"),
+        ('Material.uses(device=["arm_device"])', "按类型加锁"),
+        ('Material.pick("material", owner="other", site="source_site", carriers=["other"])', "carrier_device"),
+        ('Material.place("material", owner="other", site="target_site", carriers=["other"])', "to_site"),
+    ],
+)
+def test_legacy_spellings_fail_in_the_decorator_and_in_the_scan(tmp_path: Path, call: str, hint: str) -> None:
+    """旧写法：装饰器（导入时）与 AST 扫描都直接报错，错误信息给出新写法。"""
+
+    with pytest.raises(MaterialRoleError, match=hint):
+        _scan_action(tmp_path, call)
+    with pytest.raises(MaterialRoleError, match=hint):
+        _import(tmp_path, _source(call), name="robot_legacy")
 
 
-def test_tenancy_device_parameter_accepts_readable_id_but_material_stays_resource_slot(tmp_path: Path) -> None:
-    signature = "self, material: ResourceSlot, target_device: str"
-    action_entry = _scan_action(tmp_path, 'Material.load("material", device="target_device")', signature=signature)
-    schema = action_entry["canonical_schema"]
-    assert schema["properties"]["goal"]["properties"]["target_device"]["type"] == "string"
-    with pytest.raises(ActionResourceContractError):
-        _scan_action(
-            tmp_path, 'Material.load("material", device="target_device")', signature="self, material: str, target_device: str"
-        )
+@pytest.mark.parametrize(
+    ("call", "hint"),
+    [
+        ('Material.move("material", to_site="label")', "必须注解为 SiteSlot"),
+        ('Material.move("material", to_site="target_site", carrier_device="other")', "必须注解为 DeviceSlot"),
+        ('Material.pick("label")', "必须注解为单个 ResourceSlot"),
+        ('Material.load("material", device="other")', "必须注解为 DeviceSlot"),
+        ('Material.site_picker("label")', "SiteSlot"),
+        ('Material.site_picker("target_site", of="label")', "ResourceSlot 或 DeviceSlot"),
+        ('Material.dispense(from_material="material", to_materials=["arm_device"])', "必须注解为单个 ResourceSlot"),
+        ('Material.in_place("missing")', "签名里没有的参数.*missing"),
+    ],
+)
+def test_parameter_types_are_checked_against_the_signature(tmp_path: Path, call: str, hint: str) -> None:
+    """字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；装饰器与 AST 扫描同一口径。"""
+
+    with pytest.raises(ValueError, match=hint):
+        _scan_action(tmp_path, call)
+    with pytest.raises(ValueError, match=hint):
+        _import(tmp_path, _source(call), name="robot_types")
+
+
+def test_device_owner_and_omitted_owner_are_accepted_by_the_site_picker(tmp_path: Path) -> None:
+    entry = _scan_action(tmp_path, '[Material.site_picker("target_site", of="arm_device", for_material="material")]')
+    field = entry["canonical_schema"]["properties"]["goal"]["properties"]["target_site"]
+    assert field["x-unilabos-site-selector"]["owner"] == "arm_device"
+    assert field["x-unilabos-editor-control"] == "site_selector"
+    entry = _scan_action(tmp_path, '[Material.site_picker("target_site", occupied="allow")]')
+    selector = entry["canonical_schema"]["properties"]["goal"]["properties"]["target_site"]["x-unilabos-site-selector"]
+    assert selector == {"version": 1, "owner": None, "occupant": None, "show_occupied": True, "allow_occupied": True}
+
+
+def test_slot_parameters_carry_their_kind_in_the_schema(tmp_path: Path) -> None:
+    """DeviceSlot / SiteSlot 字段带 x-unilabos-slot：调度器按它给设备 / 库位加锁。"""
+
+    goal = _scan_action(tmp_path, 'Material.pick("material")')["canonical_schema"]["properties"]["goal"]["properties"]
+    assert goal["arm_device"]["x-unilabos-slot"] == "device"
+    assert goal["target_site"]["x-unilabos-slot"] == "site"
+    assert "x-unilabos-slot" not in goal["label"]
+
+
+def test_experimental_roles_warn_once_per_definition(tmp_path: Path, caplog) -> None:
+    caplog.set_level(logging.WARNING)
+    material = '[Material.load("material", device="vessel_device"), Material.order_sensitive()]'
+    _scan_action(tmp_path, material)
+    _scan_action(tmp_path, material)
+    warnings = [record.getMessage() for record in caplog.records if "实验性功能" in record.getMessage()]
+    assert len(warnings) == 1
+    assert "Material.load" in warnings[0] and "Material.order_sensitive" in warnings[0]
+    caplog.clear()
+    _scan_action(tmp_path, 'Material.move("material", to_site="target_site")', signature=_SIGNATURE + ", extra: str = ''")
+    assert not [record for record in caplog.records if "实验性功能" in record.getMessage()]
+
+
+def test_experimental_warning_from_the_decorator(caplog) -> None:
+    from unilabos.registry.placeholder_type import ResourceSlot
+
+    caplog.set_level(logging.WARNING)
+
+    class Driver:
+        @action(material=Material.in_place("sample"))
+        def stir_experimental(self, sample: ResourceSlot) -> None:
+            pass
+
+    assert any("实验性功能 Material.in_place" in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.parametrize(

@@ -235,6 +235,72 @@ def _device_handles_to_list(
     return [h.to_registry_dict() for h in handles]
 
 
+_SLOT_NAMES = {"ResourceSlot": "resource", "DeviceSlot": "device", "SiteSlot": "site"}
+
+
+def _slot_kind_of_annotation(annotation: Any) -> str:
+    """运行时注解的槽位类型（与 AST 扫描的 ``action_schema.slot_kind`` 同一口径）。
+
+    返回 ``"resource"`` / ``"resource_list"`` / ``"device"`` / ``"device_list"`` / ``"site"`` / ``""``；
+    认 ``Optional`` / ``X | None`` / ``Annotated`` / ``list`` 形态，注解是字符串（延迟求值）时按名字识别。
+    """
+
+    import typing
+
+    if isinstance(annotation, str):
+        text = annotation.replace(" ", "")
+        for prefix in ("Optional[", "typing.Optional["):
+            if text.startswith(prefix) and text.endswith("]"):
+                return _slot_kind_of_annotation(text[len(prefix):-1])
+        if text.startswith("Annotated[") and text.endswith("]"):
+            return _slot_kind_of_annotation(text[len("Annotated["):-1].split(",", 1)[0])
+        for suffix in ("|None",):
+            if text.endswith(suffix):
+                return _slot_kind_of_annotation(text[: -len(suffix)])
+        if text.startswith("None|"):
+            return _slot_kind_of_annotation(text[len("None|"):])
+        for prefix in ("List[", "list[", "typing.List["):
+            if text.startswith(prefix) and text.endswith("]"):
+                inner = _slot_kind_of_annotation(text[len(prefix):-1])
+                return f"{inner}_list" if inner in {"resource", "device"} else ""
+        return _SLOT_NAMES.get(text.rsplit(".", 1)[-1], "")
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+    if origin is typing.Annotated and args:
+        return _slot_kind_of_annotation(args[0])
+    if origin in (list, List) and len(args) == 1:
+        inner = _slot_kind_of_annotation(args[0])
+        return f"{inner}_list" if inner in {"resource", "device"} else ""
+    if args and type(None) in args:
+        rest = [item for item in args if item is not type(None)]
+        return _slot_kind_of_annotation(rest[0]) if len(rest) == 1 else ""
+    if isinstance(annotation, type):
+        return _SLOT_NAMES.get(annotation.__name__, "")
+    return ""
+
+
+def _runtime_slot_kinds(func: Callable[..., Any], parameters: Any) -> Dict[str, str]:
+    """签名里每个参数（不含 self / cls / 可变参数）的槽位类型；用于对照 ``material=`` 引用的参数。"""
+
+    import inspect
+    import typing
+
+    try:
+        hints = typing.get_type_hints(func, include_extras=True)
+    except Exception:  # noqa: BLE001 - 延迟注解解析不了时按名字识别
+        hints = {}
+    kinds: Dict[str, str] = {}
+    for name, parameter in parameters.items():
+        if name in {"self", "cls"} or parameter.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+        annotation = hints.get(name, parameter.annotation)
+        kinds[name] = "" if annotation is inspect.Parameter.empty else _slot_kind_of_annotation(annotation)
+    return kinds
+
+
 def _action_handles_to_dict(
     handles: Optional[List[_ActionHandleBase]],
 ) -> Dict[str, Any]:
@@ -451,10 +517,10 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
-        material: 动作的资源语义：``Material.load / unload / in_place / pick / place / transfer /
-                  aliquot / uses / order_sensitive / site`` 的一条，或多条组成的列表（见
-                  ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查。
-                  ``Material.site`` 声明 ``SiteSlot`` 库位参数属于哪个物料参数、放进去的是哪个物料参数。
+        material: 动作的资源语义：物料动作 ``Material.move / pick / place / dispense``，以及实验性的
+                  ``Material.load / unload / in_place / site_picker / order_sensitive``，一条或多条组成的列表
+                  （见 ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查
+                  （物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot）；实验性声明按定义告警一次。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
@@ -554,6 +620,13 @@ def action(
                 raise MaterialRoleError(
                     f"{func.__qualname__} 的 material= 引用了签名里没有的参数：{'、'.join(unknown)}"
                 )
+        if material is not None:
+            # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；实验性声明按定义告警一次
+            from unilabos.registry.material_roles import check_material_parameter_types, warn_experimental
+
+            slots = _runtime_slot_kinds(func, signature_parameters)
+            check_material_parameter_types(material, slots.get, definition=definition)
+            warn_experimental(material, definition)
             if resource_contract:
                 meta["resource_contract"] = resource_contract
             if site_selectors:

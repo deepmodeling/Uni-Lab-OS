@@ -267,7 +267,7 @@ def test_ast_cache_rejects_previous_metadata_version(tmp_path) -> None:
 
     cache = load_scan_cache(cache_path)
 
-    assert _CACHE_VERSION == 26
+    assert _CACHE_VERSION == 27
     assert cache == {"version": _CACHE_VERSION, "files": {}}
 
 

@@ -97,10 +97,16 @@ def parse_site_selector_extension(
             _pointer(selector_path, "version"),
             "库位选择合同版本无效",
         )
-    # ``owner`` 是提供库位集合的物料占位符（ResourceSlot）连接点字段名。
-    owner = _required_relation_name(
-        raw_selector["owner"],
-        path=_pointer(selector_path, "owner"),
+    # ``owner`` 是提供库位集合的所属方连接点字段名（ResourceSlot 物料或 DeviceSlot 设备）；
+    # ``None`` 表示执行设备的根节点（``Material.site_picker`` 省略 ``of``）。
+    raw_owner = raw_selector["owner"]
+    owner = (
+        None
+        if raw_owner is None
+        else _required_relation_name(
+            raw_owner,
+            path=_pointer(selector_path, "owner"),
+        )
     )
     # ``occupant`` 可选指向准备放入目标库位（Site）的物料字段。
     raw_occupant = raw_selector["occupant"]

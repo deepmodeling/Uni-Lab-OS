@@ -226,9 +226,9 @@ def _action_value_schema(
         return rendered
     # 设备 / 库位槽位在动作参数上就是字符串（与 action_schema 的 DeviceSlot / SiteSlot 渲染一致）
     if value.get("$slot") == "DeviceSlot":
-        return {"type": "string", "description": "device reference"}
+        return {"type": "string", "description": "device reference", "x-unilabos-slot": "device"}
     if value.get("$slot") == "SiteSlot":
-        return {"type": "string", "description": "site reference (ResourceSite uuid)"}
+        return {"type": "string", "description": "site reference (ResourceSite uuid)", "x-unilabos-slot": "site"}
 
     nullable_members = value.get("anyOf")
     if isinstance(nullable_members, list) and len(nullable_members) == 2:

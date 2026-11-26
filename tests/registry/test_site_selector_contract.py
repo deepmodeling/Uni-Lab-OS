@@ -1,7 +1,7 @@
-"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material=Material.site(...))``。
+"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material=Material.site_picker(...))``。
 
 ``SiteSelector`` 已与 ``SiteSlot`` 合一：库位参数只有一个类型 ``SiteSlot``，库位属于哪个物料参数、放进去的是
-哪个物料参数、已占用库位的显示 / 可选策略写在 ``Material.site``。生成的 ``x-unilabos-site-selector`` 扩展与
+哪个物料参数、已占用库位的显示 / 可选策略写在 ``Material.site_picker``。生成的 ``x-unilabos-site-selector`` 扩展与
 原 ``SiteSelector`` 相同，连接点投影、运行预检与派发前的库位门禁照旧按它工作。
 """
 
@@ -67,7 +67,7 @@ def _scan(tmp_path: Path, material: str, signature: str, *, header: str = "") ->
     return entry["class"]["action_value_mappings"]["action"]
 
 
-_FULL = 'Material.site("site", owner="warehouse", occupant="resource", show_occupied=True, allow_occupied=False)'
+_FULL = 'Material.site_picker("site", of="warehouse", for_material="resource", occupied="show")'
 _FULL_SIGNATURE = "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot = None"
 
 
@@ -76,7 +76,7 @@ def _without_description(field: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_material_site_builds_the_same_extension_as_the_removed_site_selector() -> None:
-    role = Material.site("site", owner="warehouse", occupant="resource", show_occupied=True, allow_occupied=False)
+    role = Material.site_picker("site", of="warehouse", for_material="resource", occupied="show")
     assert material_site_selectors(role) == {"site": _SITE_SELECTOR_FIELD["x-unilabos-site-selector"]}
     # 库位关系不进资源合同：只写库位关系的动作没有资源合同，与其他语义写在一起时互不影响
     assert material_contract(role) == {}
@@ -85,17 +85,18 @@ def test_material_site_builds_the_same_extension_as_the_removed_site_selector() 
         "operate_in_place": {"material_param": "resource"},
     }
     with pytest.raises(MaterialRoleError):
-        Material.site("site", owner="warehouse", show_occupied="yes")
+        Material.site_picker("site", of="warehouse", occupied="yes")
     with pytest.raises(MaterialRoleError, match="自身"):
-        Material.site("site", owner="site")
+        Material.site_picker("site", of="site")
     with pytest.raises(MaterialRoleError, match="多条"):
-        material_site_selectors([Material.site("site", owner="a"), Material.site("site", owner="b")])
+        material_site_selectors([Material.site_picker("site", of="a"), Material.site_picker("site", of="b")])
 
 
 def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Path) -> None:
     action_entry = _scan(tmp_path, _FULL, _FULL_SIGNATURE)
     site = action_entry["schema"]["properties"]["goal"]["properties"]["site"]
-    assert _without_description(site) == _SITE_SELECTOR_FIELD
+    # 选择器扩展与原 SiteSelector 相同；另外标出槽位类型（调度器按它加库位锁）
+    assert _without_description(site) == {**_SITE_SELECTOR_FIELD, "x-unilabos-slot": "site"}
     assert action_entry["placeholder_keys"]["site"] == "unilabos_sites"
     assert action_entry["materials_need_lock"] == ["warehouse", "resource"]
     assert "resource_contract" not in action_entry["schema"]["x-unilabos-action-contract"]
@@ -104,7 +105,7 @@ def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Pat
 def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
-    @action(material=Material.site("site", owner="warehouse"))
+    @action(material=Material.site_picker("site", of="warehouse"))
     def place(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
         pass
 
@@ -113,7 +114,7 @@ def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     }
     with pytest.raises(MaterialRoleError, match="missing"):
 
-        @action(material=Material.site("site", owner="missing"))
+        @action(material=Material.site_picker("site", of="missing"))
         def bad(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
             pass
 
@@ -123,43 +124,43 @@ def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     [
         pytest.param(
             "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot",
-            'Material.site("site", owner="missing", occupant="resource")',
-            "owner='missing'",
+            'Material.site_picker("site", of="missing", for_material="resource")',
+            "of='missing'",
             id="missing-owner",
         ),
         pytest.param(
             "warehouse: str, resource: ResourceSlot, site: SiteSlot",
-            'Material.site("site", owner="warehouse", occupant="resource")',
-            "owner='warehouse'",
+            'Material.site_picker("site", of="warehouse", for_material="resource")',
+            "of='warehouse'",
             id="scalar-owner",
         ),
         pytest.param(
             "warehouse: ResourceSlot, resource: str, site: SiteSlot",
-            'Material.site("site", owner="warehouse", occupant="resource")',
-            "occupant='resource'",
+            'Material.site_picker("site", of="warehouse", for_material="resource")',
+            "for_material='resource'",
             id="scalar-occupant",
         ),
         pytest.param(
             "warehouse: list[ResourceSlot], site: SiteSlot",
-            'Material.site("site", owner="warehouse")',
+            'Material.site_picker("site", of="warehouse")',
             "单个 ResourceSlot",
             id="list-owner",
         ),
         pytest.param(
             "warehouse: ResourceSlot, site: str",
-            'Material.site("site", owner="warehouse")',
+            'Material.site_picker("site", of="warehouse")',
             "必须注解为 SiteSlot",
             id="plain-string-site",
         ),
         pytest.param(
             "warehouse: ResourceSlot, site: list[SiteSlot]",
-            'Material.site("site", owner="warehouse")',
+            'Material.site_picker("site", of="warehouse")',
             "必须注解为 SiteSlot",
             id="site-list",
         ),
         pytest.param(
             "warehouse: ResourceSlot",
-            'Material.site("site", owner="warehouse")',
+            'Material.site_picker("site", of="warehouse")',
             "签名里没有",
             id="missing-site",
         ),
@@ -214,7 +215,7 @@ def test_removed_site_selector_points_to_material_site(tmp_path: Path) -> None:
 
 def test_material_site_allows_omitting_the_optional_occupant(tmp_path: Path) -> None:
     action_entry = _scan(
-        tmp_path, 'Material.site("site", owner="warehouse")', "warehouse: ResourceSlot, site: SiteSlot"
+        tmp_path, 'Material.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot"
     )
     site = action_entry["schema"]["properties"]["goal"]["properties"]["site"]
     assert site["type"] == "string"
@@ -275,7 +276,7 @@ _RELATION = {"version": 1, "owner": "warehouse", "occupant": None, "show_occupie
 def test_action_template_projection_rejects_invalid_site_selector_extensions(
     tmp_path: Path, field_name: str, schema_change: dict[str, object], message: str
 ) -> None:
-    schema = _scan(tmp_path, 'Material.site("site", owner="warehouse")', "warehouse: ResourceSlot, site: SiteSlot")[
+    schema = _scan(tmp_path, 'Material.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot")[
         "schema"
     ]
     field_schema = schema["properties"]["goal"]["properties"][field_name]
@@ -308,7 +309,7 @@ class _Materials:
 
 @pytest.mark.parametrize("allow_occupied", [False, True])
 def test_preflight_and_dispatch_gate_follow_the_material_site_relation(tmp_path: Path, allow_occupied: bool) -> None:
-    """运行预检与派发前共用的库位门禁按 Material.site 生成的扩展核对归属与占用，行为与原 SiteSelector 相同。"""
+    """运行预检与派发前共用的库位门禁按 Material.site_picker 生成的扩展核对归属与占用，行为与原 SiteSelector 相同。"""
 
     from unilabos.server.services.runtime.workflow.run_preflight import (
         ResourceUnavailableError,
@@ -316,7 +317,7 @@ def test_preflight_and_dispatch_gate_follow_the_material_site_relation(tmp_path:
     )
 
     material = (
-        f'Material.site("site", owner="warehouse", occupant="resource", allow_occupied={allow_occupied})'
+        f'Material.site_picker("site", of="warehouse", for_material="resource", occupied={'"allow"' if allow_occupied else '"show"'})'
     )
     schema = _scan(tmp_path, material, "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot")["schema"]
     materials = _Materials()

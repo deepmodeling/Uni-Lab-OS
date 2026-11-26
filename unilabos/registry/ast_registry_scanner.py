@@ -36,11 +36,14 @@ from unilabos.registry.action_schema import (
     build_action_schema_draft,
     framework_parameter_names,
     reject_removed_annotations,
+    slot_kind,
 )
 from unilabos.registry.material_roles import (
+    check_material_parameter_types,
     material_contract,
     material_roles_from_ast,
     material_site_selectors,
+    warn_experimental,
 )
 from unilabos.registry.placeholder_keys import (
     check_placeholder_keys,
@@ -59,7 +62,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 26      # 26：动作上下文参数按类型（ActionContext）排除，不再按名字 action_context
+_CACHE_VERSION = 27      # 27：Material 重做（move / pick / place / dispense），DeviceSlot / SiteSlot 字段带 x-unilabos-slot
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1123,6 +1126,15 @@ def _extract_class_body(
                     site_selectors=site_selectors,
                 )
                 canonical_schema = draft["schema"]
+                if material_value is not None:
+                    # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；实验性声明告警一次
+                    goal_fields = canonical_schema["properties"]["goal"]["properties"]
+                    check_material_parameter_types(
+                        roles,
+                        lambda name: slot_kind(goal_fields[name]) if name in goal_fields else None,
+                        definition=definition,
+                    )
+                    warn_experimental(roles, definition)
                 if resource_contract:
                     from unilabos.registry.action_resource_contract import validate_action_resource_contract_schema
 

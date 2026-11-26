@@ -351,3 +351,33 @@ def test_a_declared_move_settles_from_the_frozen_plan_without_a_driver_receipt()
     aliquot = {**record, "request": {"moves": [], "aliquot": {"source_material_uuid": "s", "target_material_uuids": ["t"]}}}
     with pytest.raises(ValueError, match="具名回执"):
         PhysicalRecovery._receipt(aliquot, "done", planned_moves=True)
+
+
+def test_a_site_label_resolves_under_the_site_picker_owner(authority) -> None:
+    """库位 uuid 由物料权威发号，工作流只能写死库位名：带 site_picker(of=...) 关系时在所属方下解析、加锁、搬运。"""
+
+    from unilabos.registry.material_roles import material_site_selectors
+    from unilabos.server.services.runtime.workflow.run_preflight import validate_resource_values
+
+    service, gateway = authority
+    source, target = _warehouse(gateway, "src"), _warehouse(gateway, "dst")
+    _device(service, "arm", [("grip", {"role": "gripper"})])
+    sample = source["A01"].resource.unilabos_uuid
+    declared = [Material.move("plate", to_site="target_site"),
+                Material.site_picker("target_site", of="target", for_material="plate")]
+    site_field = {**_SITE, "x-unilabos-site-selector": material_site_selectors(declared)["target_site"]}
+    schema = _schema(declared, {"plate": _MATERIAL, "target": _MATERIAL, "target_site": site_field})
+    values = {"plate": {"uuid": sample}, "target": {"uuid": target.unilabos_uuid}, "target_site": "A03"}
+    target_site = _site(service, target.unilabos_uuid, "A03").site_uuid
+
+    validate_resource_values(schema, values, gateway, device_id="arm")
+    plan = resolve_physical_contract(schema, values, "arm", gateway)
+    assert (plan["moves"][0].target_owner_uuid, plan["moves"][0].target_site_uuid) == (target.unilabos_uuid, target_site)
+    (claim,) = resolve_tenancy_contract(schema, values, "arm", gateway)["site_claims"]
+    assert (claim.owner_material_uuid, claim.site_uuid) == (target.unilabos_uuid, target_site)
+    # 没有 site_picker 关系的库位名无从解析：派发前报错，也不加库位锁
+    bare = _schema(Material.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
+    with pytest.raises(ValueError, match="site_picker"):
+        resolve_physical_contract(bare, {"plate": {"uuid": sample}, "target_site": "A03"}, "arm", gateway)
+    assert "site_claims" not in resolve_tenancy_contract(bare, {"plate": {"uuid": sample}, "target_site": "A03"},
+                                                        "arm", gateway)

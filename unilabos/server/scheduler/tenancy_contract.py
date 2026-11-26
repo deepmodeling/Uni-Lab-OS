@@ -3,8 +3,8 @@
 - 设备托管（``Material.load`` / ``unload``，实验性）：设备参数是 ``DeviceSlot``，省略时（合同里的
   ``EXECUTING_DEVICE`` 记号）是执行设备；
 - 按类型加锁：``DeviceSlot`` / ``list[DeviceSlot]`` 参数加设备锁（``device_claims``），``SiteSlot`` 参数加库位锁
-  （``site_claims``，按「所属物料 + 库位」）；字段由注册表标出 ``x-unilabos-slot``。空值不加锁，库位参数的值不是
-  已登记的库位 uuid（例如库位名）时不加库位锁。
+  （``site_claims``，按「所属物料 + 库位」）；字段由注册表标出 ``x-unilabos-slot``。空值不加锁；库位参数的值是
+  ``Material.site_picker`` 所属方下的库位名时按解析出的库位加锁，解析不出时不加库位锁。
 """
 from unilabos.registry.action_resource_contract import EXECUTING_DEVICE
 from unilabos.server.scheduler.models import DeviceTenancyTransition, DeviceTenancyRequirement, SiteLockClaim
@@ -27,20 +27,31 @@ def _slot_values(value) -> list[str]:
     return []
 
 
-def resolve_site_claims(schema: dict | None, values: dict, materials) -> list[SiteLockClaim]:
-    """``SiteSlot`` 参数 → 库位锁（所属物料 + 库位）；值不是已登记的库位 uuid 时不加锁。"""
+def resolve_site_claims(schema: dict | None, values: dict, materials, device_id: str | None = None) -> list[SiteLockClaim]:
+    """``SiteSlot`` 参数 → 库位锁（所属物料 + 库位）。
+
+    值是库位 uuid 时所属方由库位决定；是 ``Material.site_picker`` 所属方下的库位名时按解析出的库位加锁；
+    两者都解析不出时不加锁（派发前的物料 / 物理合同会报错）。
+    """
 
     names = slot_parameters(schema, "site")
     if not names or materials is None:
         return []
-    from .physical_contract import site_owner_material_uuid
+    from .physical_contract import site_by_label, site_owner_material_uuid
 
     claims: dict[tuple[str, str], SiteLockClaim] = {}
     for name in names:
         for site_uuid in _slot_values(values.get(name)):
             owner = site_owner_material_uuid(materials, site_uuid)
-            if owner:
-                claims[(owner, site_uuid)] = SiteLockClaim(owner_material_uuid=owner, site_uuid=site_uuid)
+            if owner is None:
+                try:
+                    found = site_by_label(schema, values, name, materials, device_id)
+                except (ValueError, RuntimeError, OSError):
+                    found = None
+                if found is None:
+                    continue
+                owner, site_uuid = found
+            claims[(owner, site_uuid)] = SiteLockClaim(owner_material_uuid=owner, site_uuid=site_uuid)
     return [claims[key] for key in sorted(claims)]
 
 
@@ -54,7 +65,7 @@ def resolve_tenancy_contract(schema: dict | None, values: dict, device_id: str, 
         devices.update(transition[name] for name in ("acquire_device_param","release_device_param") if transition.get(name))
     # 按类型加锁：DeviceSlot 参数（含列表）一律加设备锁，空值不加
     typed_devices = [name for name in slot_parameters(schema, "device") if _slot_values(values.get(name))]
-    site_claims = resolve_site_claims(schema, values, materials)
+    site_claims = resolve_site_claims(schema, values, materials, device_id)
     if not (transition or in_place or devices or typed_devices or site_claims):
         return {}
 

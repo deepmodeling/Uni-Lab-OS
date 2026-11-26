@@ -386,7 +386,12 @@ def validate_resource_values(
                 continue
             occupant = values.get(selector.get("occupant"), {}) or {}
             aggregate = material(owner, name)
-            site = next((site for site in aggregate.sites if site.site_uuid == values[name]), None)
+            # 库位 uuid；或所属方下唯一的库位名 / 序号（工作流里写死的工位，派发前解析成库位 uuid）
+            matches = [site for site in aggregate.sites if site.site_uuid == values[name]] or [
+                site for site in aggregate.sites
+                if isinstance(values[name], str)
+                and values[name] in (getattr(site, "label", None), str(getattr(site, "site_index", None)))]
+            site = matches[0] if len(matches) == 1 else None
             if site is None:
                 raise ValueError(f"库位参数 {name} 不属于所选容器或已失效")
             if not selector["allow_occupied"] and site.occupied_material_uuid not in {None, occupant.get("uuid")}:

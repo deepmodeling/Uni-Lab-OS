@@ -196,7 +196,7 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 | --- | --- |
 | `ResourceSlot` / `list[ResourceSlot]`（以及选择器为 `unilabos_resources` 的参数） | 物料锁（现状） |
 | `DeviceSlot` / `list[DeviceSlot]` | 设备锁：值是设备 id，派发前核对它是已登记的设备，与该设备上正在执行的动作互斥 |
-| `SiteSlot` | 库位锁：值是库位 uuid，按「所属物料 + 库位」加锁；值不是已登记的库位 uuid（例如库位名）时不加锁 |
+| `SiteSlot` | 库位锁：值是库位 uuid，按「所属物料 + 库位」加锁；值是 `Material.site_picker` 所属方下的库位名时按解析出的库位加锁；两者都解析不出时不加锁 |
 
 空值（`None` / `""` / `[]`）不加锁。`always_free` 只免除执行设备自身的动作锁，按类型加的设备锁 / 库位锁照旧。
 
@@ -225,6 +225,11 @@ def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = No
   "show_occupied": ..., "allow_occupied": ...}`；`of` 省略时 `owner` 为 `null`（执行设备根节点），`of` 是 `DeviceSlot`
   参数时它的值是设备 id。
 - 只写 `SiteSlot`、不写 `Material.site_picker` 的参数照旧是库位选择器，只是没有这层关系的核对。
+- **工作流里写死的工位**：库位 uuid 由物料权威在建树时发号，同一个设备图在不同部署里的库位 uuid 不同，工作流源码
+  不能写死库位 uuid。带 `Material.site_picker(of=...)` 关系的库位参数可以改给所属方下的**库位名**（或序号），例如
+  `{"target_owner": {"uuid": <载架 uuid>}, "target_site": "position_x15_y01"}`：运行预检与派发前在 `of` 所属方下唯一
+  匹配，解析出的库位用于归属 / 占用核对、库位锁和 `Material.move` / `place` 的目标（`from_site` 同样）。所属方下匹配不到
+  或不唯一时报错；没有 `site_picker` 关系的库位名无从解析，派发前报错。
 
 #### 按所属物料选库位：`{"owner_uuid": ...}`
 

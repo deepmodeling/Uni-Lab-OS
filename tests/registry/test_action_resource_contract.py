@@ -1,4 +1,4 @@
-"""动作资源语义：``@action(material=Material.xxx(...))`` 从装饰器 / AST 到注册表 Schema 的行为合同。"""
+"""动作资源语义：``@action(materials=Material.xxx(...))`` 从装饰器 / AST 到注册表 Schema 的行为合同。"""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class Result(TypedDict):
 
 @device(id="robot", category=["test"])
 class Robot:
-    @action(material={material})
+    @action(materials={material})
     def move({signature}) -> Result:
         """执行一次物料动作。"""
         raise NotImplementedError
@@ -236,30 +236,72 @@ def test_slot_parameters_carry_their_kind_in_the_schema(tmp_path: Path) -> None:
     assert "x-unilabos-slot" not in goal["label"]
 
 
-def test_experimental_roles_warn_once_per_definition(tmp_path: Path, caplog) -> None:
+def test_materials_field_warns_experimental_once_per_definition(tmp_path: Path, caplog) -> None:
+    """整个 materials= 字段是实验性功能：写了就按定义告警一次（列出用到的声明），重复扫描不再告警。"""
+
     caplog.set_level(logging.WARNING)
     material = '[Material.load("material", device="vessel_device"), Material.order_sensitive()]'
     _scan_action(tmp_path, material)
     _scan_action(tmp_path, material)
     warnings = [record.getMessage() for record in caplog.records if "实验性功能" in record.getMessage()]
     assert len(warnings) == 1
+    assert "materials= 是实验性功能" in warnings[0]
     assert "Material.load" in warnings[0] and "Material.order_sensitive" in warnings[0]
-    caplog.clear()
-    _scan_action(tmp_path, 'Material.move("material", to_site="target_site")', signature=_SIGNATURE + ", extra: str = ''")
-    assert not [record for record in caplog.records if "实验性功能" in record.getMessage()]
+
+
+def test_material_actions_alone_also_warn_experimental(tmp_path: Path, caplog) -> None:
+    """move / pick / place / dispense 不再单独算稳定：只写一条 Material.move 也告警一次。"""
+
+    caplog.set_level(logging.WARNING)
+    # 独立的模块名：告警按「定义 + 原因」进程内去重，不能与其他用例扫描过的 robot.Robot.move 同一身份
+    path = tmp_path / "move_only_experimental.py"
+    path.write_text(_source('Material.move("material", to_site="target_site")'), encoding="utf-8")
+    _parse_file(path, tmp_path)
+    _parse_file(path, tmp_path)
+    warnings = [record.getMessage() for record in caplog.records if "实验性功能" in record.getMessage()]
+    assert len(warnings) == 1
+    assert "move_only_experimental.Robot.move" in warnings[0]
+    assert "materials= 是实验性功能（Material.move）" in warnings[0]
 
 
 def test_experimental_warning_from_the_decorator(caplog) -> None:
-    from unilabos.registry.placeholder_type import ResourceSlot
+    from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
     caplog.set_level(logging.WARNING)
 
     class Driver:
-        @action(material=Material.in_place("sample"))
+        @action(materials=Material.in_place("sample"))
         def stir_experimental(self, sample: ResourceSlot) -> None:
             pass
 
-    assert any("实验性功能 Material.in_place" in record.getMessage() for record in caplog.records)
+        @action(materials=Material.move("plate", to_site="target_site"))
+        def move_experimental(self, plate: ResourceSlot, target_site: SiteSlot) -> None:
+            pass
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("materials= 是实验性功能（Material.in_place）" in message for message in messages)
+    assert any("move_experimental" in message and "materials= 是实验性功能（Material.move）" in message for message in messages)
+
+
+def test_old_material_field_name_fails_with_the_new_name(tmp_path: Path) -> None:
+    """改名前的 material= 在装饰器与 AST 扫描里都直接报错，提示改成 materials=（值不变）。"""
+
+    source = '''
+from unilabos.registry.decorators import Material, action, device
+from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
+
+@device(id="old_material_field", category=["test"])
+class Driver:
+    @action(material=Material.move("plate", to_site="target_site"))
+    def run(self, plate: ResourceSlot, target_site: SiteSlot) -> None:
+        pass
+'''
+    path = tmp_path / "old_material_field.py"
+    path.write_text(source, encoding="utf-8")
+    with pytest.raises(RemovedActionOptionError, match="material=.*字段改名为 materials="):
+        _parse_file(path, tmp_path)
+    with pytest.raises(RemovedActionOptionError, match="material=.*字段改名为 materials="):
+        _import(tmp_path, source, name="old_material_field_runtime")
 
 
 @pytest.mark.parametrize(
@@ -295,5 +337,5 @@ def test_ros_actions_keep_goal_and_result_mappings() -> None:
         pass
 
     assert send._action_registry_meta["goal"] == {"command": "cmd"}
-    with pytest.raises(ValueError, match="material="):
-        action(action_type="unilabos_msgs.action:SendCmd", material=Material.in_place("cmd"))(send)
+    with pytest.raises(ValueError, match="materials= 只用于 JSON 动作"):
+        action(action_type="unilabos_msgs.action:SendCmd", materials=Material.in_place("cmd"))(send)

@@ -62,7 +62,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 28      # 28：Material.site_picker 的库位参数不再限定 uuid 格式（也可以给所属方下的库位名）
+_CACHE_VERSION = 29      # 29：@action(material=) 改名为 materials=（旧名报错）；整个字段告警「实验性功能」
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
@@ -1093,8 +1093,8 @@ def _extract_class_body(
             for name in REMOVED_MATERIAL_LOCK_OPTIONS:
                 action_args.pop(name, None)
             json_action = not action_args.get("action_type")
-            # 已删除的写法（contract= / resource_contract= / JSON 动作的 goal= 与 result=，以及注解里的
-            # Placeholder / SiteSelector）与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
+            # 已删除的写法（contract= / resource_contract= / 改名前的 material= / JSON 动作的 goal= 与 result=，
+            # 以及注解里的 Placeholder / SiteSelector）与装饰器同一套报错：整个文件记为扫描错误，错误信息指出新写法。
             check_action_options(action_args, json_action=json_action, definition=definition)
             # 框架注入的参数（sample_uuids、按类型识别的 ActionContext）不属于动作接口；
             # 叫 action_context 却没有 ActionContext 注解的旧写法在这里报错
@@ -1109,10 +1109,10 @@ def _extract_class_body(
             draft: Dict[str, Any] = {}
             resource_contract: Dict[str, Any] = {}
             site_selectors: Dict[str, Any] = {}
-            material_value = action_args.pop("material", None)
+            material_value = action_args.pop("materials", None)
             if material_value is not None:
                 if not json_action:
-                    raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
+                    raise ValueError(f"{definition}：materials= 只用于 JSON 动作（不写 action_type）")
                 roles = material_roles_from_ast(material_value)
                 resource_contract = material_contract(roles)
                 site_selectors = material_site_selectors(roles)
@@ -1127,7 +1127,7 @@ def _extract_class_body(
                 )
                 canonical_schema = draft["schema"]
                 if material_value is not None:
-                    # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；实验性声明告警一次
+                    # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；materials= 是实验性功能，告警一次
                     goal_fields = canonical_schema["properties"]["goal"]["properties"]
                     check_material_parameter_types(
                         roles,

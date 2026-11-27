@@ -1,4 +1,4 @@
-"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material=Material.site_picker(...))``。
+"""库位参数（``SiteSlot``）与物料参数的关系：``@action(materials=Material.site_picker(...))``。
 
 ``SiteSelector`` 已与 ``SiteSlot`` 合一：库位参数只有一个类型 ``SiteSlot``，库位属于哪个物料参数、放进去的是
 哪个物料参数、已占用库位的显示 / 可选策略写在 ``Material.site_picker``。生成的 ``x-unilabos-site-selector`` 扩展与
@@ -50,7 +50,7 @@ def _source(material: str, signature: str, *, header: str = "") -> str:
 
         @device(id="site_driver", category=["test"])
         class Driver:
-            @action(material={material})
+            @action(materials={material})
             def action(self, {signature}) -> None:
                 pass
         '''
@@ -105,7 +105,7 @@ def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Pat
 def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
-    @action(material=Material.site_picker("site", of="warehouse"))
+    @action(materials=Material.site_picker("site", of="warehouse"))
     def place(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
         pass
 
@@ -114,7 +114,7 @@ def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     }
     with pytest.raises(MaterialRoleError, match="missing"):
 
-        @action(material=Material.site_picker("site", of="missing"))
+        @action(materials=Material.site_picker("site", of="missing"))
         def bad(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
             pass
 

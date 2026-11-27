@@ -40,8 +40,8 @@ Usage:
         def set_valve_position(self, position):
             ...
 
-        # 资源语义：一个字段，Material 的一条或多条
-        @action(material=Material.in_place("vessel"))
+        # 资源语义（实验性）：一个字段，Material 的一条或多条
+        @action(materials=Material.in_place("vessel"))
         def flush(self, vessel: ResourceSlot) -> None:
             ...
 
@@ -280,7 +280,7 @@ def _slot_kind_of_annotation(annotation: Any) -> str:
 
 
 def _runtime_slot_kinds(func: Callable[..., Any], parameters: Any) -> Dict[str, str]:
-    """签名里每个参数（不含 self / cls / 可变参数）的槽位类型；用于对照 ``material=`` 引用的参数。"""
+    """签名里每个参数（不含 self / cls / 可变参数）的槽位类型；用于对照 ``materials=`` 引用的参数。"""
 
     import inspect
     import typing
@@ -475,7 +475,7 @@ def action(
     execution_timeout: Optional[Union[float, str]] = None,
     estimate_duration_fixed: Any = _ESTIMATE_UNSET,
     estimate_duration_express: str = "",
-    material: Any = None,
+    materials: Any = None,
     **removed_options: Any,
 ):
     """
@@ -517,10 +517,11 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
-        material: 动作的资源语义：物料动作 ``Material.move / pick / place / dispense``，以及实验性的
-                  ``Material.load / unload / in_place / site_picker / order_sensitive``，一条或多条组成的列表
-                  （见 ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查
-                  （物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot）；实验性声明按定义告警一次。
+        materials: （实验性）动作的资源语义：物料动作 ``Material.move / pick / place / dispense``，以及
+                   ``Material.load / unload / in_place / site_picker / order_sensitive``，一条或多条组成的列表
+                   （见 ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查
+                   （物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot）；写了就按定义告警一次「实验性功能」。
+                   旧字段名 ``material=`` 直接报错并提示改成 ``materials=``。
         error_policy: 按异常类名匹配审批选项的策略。结构见
                       unilabos.registry.action_policy.ErrorPolicy。
         timeout: 硬超时（秒，正数）。到期后执行面协作式取消动作，并以
@@ -536,7 +537,7 @@ def action(
                                    同一语法（"cycles * 2"，也认 V1 的 "{cycles} * 2"）；派发时
                                    按真实 action_args 求值，失败时退回兜底。
                                    详见 unilabos.registry.action_duration。
-        removed_options: 已删除的 ``contract`` / ``resource_contract`` 直接报错并指出新写法
+        removed_options: 已删除的 ``contract`` / ``resource_contract`` / ``material`` 直接报错并指出新写法
                          （``unilabos.registry.action_options``）。已移除的 ``materials_need_lock`` /
                          ``materials_free`` 照常加载：值被忽略，按定义告警一次。物料锁不再按动作改写：
                          每个物料入参（ResourceSlot / List[ResourceSlot]，或 placeholder_keys 标为
@@ -561,13 +562,13 @@ def action(
         )
         resource_contract: Dict[str, Any] = {}
         site_selectors: Dict[str, Any] = {}
-        if material is not None:
+        if materials is not None:
             from unilabos.registry.material_roles import material_contract, material_site_selectors
 
             if not json_action:
-                raise ValueError(f"{definition}：material= 只用于 JSON 动作（不写 action_type）")
-            resource_contract = material_contract(material)
-            site_selectors = material_site_selectors(material)
+                raise ValueError(f"{definition}：materials= 只用于 JSON 动作（不写 action_type）")
+            resource_contract = material_contract(materials)
+            site_selectors = material_site_selectors(materials)
 
         if _inspect.iscoroutinefunction(func):
             @wraps(func)
@@ -618,15 +619,15 @@ def action(
             unknown = [name for name in dict.fromkeys(referenced) if name not in signature_parameters]
             if unknown:
                 raise MaterialRoleError(
-                    f"{func.__qualname__} 的 material= 引用了签名里没有的参数：{'、'.join(unknown)}"
+                    f"{func.__qualname__} 的 materials= 引用了签名里没有的参数：{'、'.join(unknown)}"
                 )
-        if material is not None:
-            # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；实验性声明按定义告警一次
+        if materials is not None:
+            # 字符串参数对照签名：物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot；materials= 是实验性功能，按定义告警一次
             from unilabos.registry.material_roles import check_material_parameter_types, warn_experimental
 
             slots = _runtime_slot_kinds(func, signature_parameters)
-            check_material_parameter_types(material, slots.get, definition=definition)
-            warn_experimental(material, definition)
+            check_material_parameter_types(materials, slots.get, definition=definition)
+            warn_experimental(materials, definition)
             if resource_contract:
                 meta["resource_contract"] = resource_contract
             if site_selectors:

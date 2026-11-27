@@ -17,7 +17,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
 | `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串（字段带 `x-unilabos-slot: "device"` / `"site"`），加设备锁 / 库位锁 | 严格 |
-| `SiteSlot` 且写了 `materials=Material.site_picker("site", of=...)` | 库位 UUID、所属方下的库位名（工作流里写死的工位，派发前解析成库位 uuid），或按所属物料选择的 `{"owner_uuid": ...}`（准入时选定）；带库位关系（`x-unilabos-site-selector`），不限定 uuid 格式 | 严格；预检与派发前核对库位归属与占用 |
+| `SiteSlot` 且写了 `material_contract=Material.site_picker("site", of=...)` | 库位 UUID、所属方下的库位名（工作流里写死的工位，派发前解析成库位 uuid），或按所属物料选择的 `{"owner_uuid": ...}`（准入时选定）；带库位关系（`x-unilabos-site-selector`），不限定 uuid 格式 | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -93,14 +93,15 @@ schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输�
 手写 YAML 注册表里的 JSON 动作要跑一次 `unilab --complete_registry`，才会按同一标准重新生成 schema；
 没有这个扩展的 schema（ROS 动作类型，或还没补全的手写 YAML）不做上面的校验。
 
-## 资源语义：`materials=`（实验性）
+## 资源语义：`material_contract=`（实验性）
 
-**整个 `materials=` 字段都是实验性功能**：写了就在注册时按定义告警一次「materials= 是实验性功能（用到的声明）：语义与写法
-以后可能调整」，装饰器（导入时）与注册表 AST 扫描共用同一身份，同一定义只告警一次。
+**整个 `material_contract=` 字段都是实验性功能**：写了就在注册时按定义告警一次「material_contract= 是实验性功能（用到的声明）：语义与写法
+以后可能调整」，装饰器（导入时）与注册表 AST 扫描共用同一身份，同一定义只告警一次。改名前的 `material=`（见「不兼容变更」）
+与短暂出现过的 `materials=` 注册时都直接报错并提示改成 `material_contract=`，不会被静默忽略。
 
 `Material` 声明的是动作**真实的物料动作**：搬运一件容器、两步搬运、在容器之间转移内容物。调度器在派发前按它解析
 来源、目标与搬运设备，动作成功后由核心一次结算物料位置 / 内容物（`PhysicalMove` / 搬运回执、`AliquotReceipt`）。
-不代表物料动作的声明（跨动作的设备独占、原位检查、库位选择器提示、顺序约束）也写在 `materials=` 里。
+不代表物料动作的声明（跨动作的设备独占、原位检查、库位选择器提示、顺序约束）也写在 `material_contract=` 里。
 
 一个动作的语义只用 `@action` 的这一个字段声明，值是 `Material` 的一个方法调用，多个语义写成列表。
 字符串参数都是动作的参数名，注册时对照签名检查参数存在、类型正确：
@@ -115,16 +116,16 @@ schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输�
 from unilabos.registry.decorators import Material, action
 from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 
-@action(display_name="搬运板", materials=Material.move("plate", to_site="target_site"))
+@action(display_name="搬运板", material_contract=Material.move("plate", to_site="target_site"))
 def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="抓取", materials=Material.pick("plate"))
+@action(display_name="抓取", material_contract=Material.pick("plate"))
 def pick_plate(self, plate: ResourceSlot) -> dict: ...
 
-@action(display_name="放下", materials=Material.place("plate", to_site="target_site"))
+@action(display_name="放下", material_contract=Material.place("plate", to_site="target_site"))
 def place_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="移液", materials=Material.dispense(from_material="source", to_materials=["target"]))
+@action(display_name="移液", material_contract=Material.dispense(from_material="source", to_materials=["target"]))
 def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: float) -> dict: ...
 ```
 
@@ -159,7 +160,7 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 | | 声明式 `Material`（`registry/material_roles.py`） | 运行时 `materials`（`unilabos.resources.materials`） |
 | --- | --- | --- |
-| 写在哪里 | `@action(materials=...)` | 驱动代码里，动作执行时调用 |
+| 写在哪里 | `@action(material_contract=...)` | 驱动代码里，动作执行时调用 |
 | 谁读 / 谁执行 | 调度器派发前读：解析来源、目标、搬运设备，加锁、预留库位；动作成功后**核心**结算 | 驱动直接调用，立即改权威 |
 | 典型操作 | `move` / `pick` / `place`（`PhysicalMove` / 搬运回执）、`dispense`（`AliquotReceipt`） | `create` / `ensure` / `get` / `search` / `resolve` / `assign` / `update` / `remove` / `snapshot` / `transfer` / `apply_substances` …… |
 
@@ -176,7 +177,7 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 ### 不代表物料动作的声明
 
-同样写在 `materials=` 里（与整个字段一样是实验性功能）。
+同样写在 `material_contract=` 里（与整个字段一样是实验性功能）。
 
 | 写法 | 含义 | 内部合同字段 |
 | --- | --- | --- |
@@ -213,7 +214,7 @@ from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
 @action(
     display_name="放到库位",
-    materials=Material.site_picker("site", of="carrier", for_material="sample", occupied="show"),
+    material_contract=Material.site_picker("site", of="carrier", for_material="sample", occupied="show"),
 )
 def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = None) -> None: ...
 ```
@@ -305,10 +306,10 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | 删除的写法 | 新写法 |
 | --- | --- |
 | `@action(contract="typed")` / `contract="legacy"` | 去掉：所有 JSON 动作同一标准 |
-| `@action(resource_contract={...})` | `@action(materials=Material.xxx(...))`，对照表见上 |
-| `@action(material=Material.xxx(...))` / `material=[...]`（字段改名前的写法） | `@action(materials=Material.xxx(...))` / `materials=[...]`：只改字段名，值不变；`materials=` 是实验性功能，写了就按定义告警一次 |
+| `@action(resource_contract={...})` | `@action(material_contract=Material.xxx(...))`，对照表见上 |
+| `@action(material=Material.xxx(...))` / `material=[...]`（字段改名前的写法） | `@action(material_contract=Material.xxx(...))` / `material_contract=[...]`：只改字段名，值不变；`material_contract=` 是实验性功能，写了就按定义告警一次 |
 | `Annotated[T, Placeholder(PLACEHOLDER_...)]`（`unilabos.registry.annotations.Placeholder`） | `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，参数照常注解为 `T` |
-| `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(materials=Material.site_picker("参数名", of=..., for_material=..., occupied=...))`；生成的 schema 扩展与以前相同 |
+| `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material_contract=Material.site_picker("参数名", of=..., for_material=..., occupied=...))`；生成的 schema 扩展与以前相同 |
 | JSON 动作的 `@action(goal={...})` / `result={...}` 重命名 | 去掉：字段名就是参数名 / 返回 TypedDict 的字段名（要改名就改参数名） |
 | 按名字注入的动作上下文：参数叫 `action_context` 但没有 `ActionContext` 注解 | 注解为 `Optional[ActionContext]`（`from unilabos.client.host.runtime.action import ActionContext`），名字随意；没有注解的 `action_context` 参数注册时报错（自动动作同样） |
 
@@ -327,7 +328,7 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 删除：参数按类型加锁（`ResourceSlot` 物料锁、`DeviceSlot` 设备锁、`SiteSlot` 库位锁），把参数注解成对应类型即可 |
 | `Material.load("sample", device="vessel")`（`vessel` 是 `str` / `ResourceSlot`） | `vessel` 注解为 `DeviceSlot`；装进执行设备本身时省略 `device=` |
 
-行为上的变化：`DeviceSlot` / `SiteSlot` 参数现在默认加设备锁 / 库位锁；字段改名为 `materials=`，整个字段（包括
+行为上的变化：`DeviceSlot` / `SiteSlot` 参数现在默认加设备锁 / 库位锁；字段改名为 `material_contract=`，整个字段（包括
 `move` / `pick` / `place` / `dispense`）注册时按定义告警一次「实验性功能」；搬运设备的夹爪库位角色统一为 `gripper`，已部署的物料权威里旧角色名
 （如 `robot.gripper`）不会随设备声明自动更新，需要重建或改写这些库位的 `meta_data.role`；声明的搬运在动作成功后可以不交
 搬运回执（核心按冻结计划结算）；`site_picker` 的库位参数不再限定 uuid 格式（也可以给所属方下的库位名）。

@@ -1,0 +1,14 @@
+{
+    "arm":
+    {
+        "joint_names": [ 
+            "arm_base_joint",
+            "arm_link_1_joint",
+            "arm_link_2_joint",
+            "arm_link_3_joint",
+            "gripper_base_joint"
+            ],
+        "base_link_name": "device_link",
+        "end_effector_name": "gripper_base"
+    }
+}

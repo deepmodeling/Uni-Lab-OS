@@ -1,0 +1,22 @@
+{
+    "fileName": "generic_labware_tube_10_75",
+    "related": [
+        "generic_labware_0.5ml_screw_cap_tube",
+        "generic_labware_0.5ml_tube_rack",
+        "generic_labware_12_well_plate",
+        "sarstedt_14x200mm_tube",
+        "sarstedt_18x200mm_tube",
+        "generic_labware_1ml_tube_rack",
+        "generic_labware_24_well_plate",
+        "generic_labware_2ml_screw_cap_tube",
+        "generic_labware_5ml_screw_cap_tube",
+        "generic_labware_6_well_plate",
+        "generic_labware_96_well_square",
+        "generic_labware_96_well_pcr_plate_round",
+        "generic_labware_framedtiprack",
+        "generic_labware_plate_lid",
+        "generic_labware_reservoir",
+        "generic_labware_tip_box",
+        "generic_labware_tube_10_75"
+    ]
+}

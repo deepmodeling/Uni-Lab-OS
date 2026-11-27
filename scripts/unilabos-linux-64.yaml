@@ -1,0 +1,72 @@
+name: unilab
+channels:
+  - unilab
+  - robostack
+  - robostack-staging
+  - conda-forge
+dependencies:
+  # Basics
+  - python=3.11.11
+  - compilers
+  - cmake
+  - make
+  - ninja
+  - sphinx
+  - sphinx_rtd_theme
+  # Data Visualization
+  - numpy
+  - scipy
+  - pandas
+  - networkx
+  - matplotlib
+  - pint
+  # Device communication
+  - pyserial
+  - pyusb
+  - pylibftdi
+  - pymodbus
+  - python-can
+  - pyvisa
+  - opencv
+  # Service
+  - pydantic
+  - fastapi
+  - uvicorn
+  - gradio
+  - flask
+  - websockets
+  # Notebook
+  - ipython
+  - jupyter
+  - jupyros
+  # ros
+  - colcon-common-extensions
+  - ros-humble-desktop-full
+  - ros-humble-control-msgs
+  - ros-humble-sensor-msgs
+  - ros-humble-trajectory-msgs
+  - ros-humble-navigation2
+  - ros-humble-ros2-control
+  - ros-humble-robot-state-publisher
+  - ros-humble-joint-state-publisher
+  # web and visualization
+  - ros-humble-rosbridge-server
+  - ros-humble-cv-bridge
+  # geometry & motion planning
+  - ros-humble-tf2
+  - ros-humble-moveit
+  - ros-humble-moveit-servo
+  # simulation
+  - ros-humble-simulation
+  - ros-humble-tf-transformations
+  - transforms3d
+  # ros-humble-gazebo-ros // ignored because of the conflict with ign-gazebo
+  # ilab equipments
+  - uni-lab::ros-humble-unilabos-msgs
+  - zeep
+  - jinja2
+  - pprp
+  - pip:
+      - paho-mqtt
+      - opentrons_shared_data
+      - git+https://github.com/Xuwznln/pylabrobot

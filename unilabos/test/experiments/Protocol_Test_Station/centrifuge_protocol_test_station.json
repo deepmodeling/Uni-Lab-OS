@@ -1,0 +1,438 @@
+{
+    "nodes": [
+        {
+            "id": "CentrifugeProtocolTestStation",
+            "name": "离心协议测试站",
+            "children": [
+                "transfer_pump_1",
+                "transfer_pump_2",
+                "multiway_valve_1",
+                "multiway_valve_2",
+                "centrifuge_1",
+                "reaction_mixture",
+                "centrifuge_tube",
+                "collection_bottle_1",
+                "flask_water",
+                "flask_ethanol",
+                "flask_acetone",
+                "flask_air",
+                "waste_workup"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": [
+                    "CentrifugeProtocol",
+                    "PumpTransferProtocol"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "主转移泵",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 200,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP1",
+                "max_volume": 25.0,
+                "transfer_rate": 2.0
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "transfer_pump_2",
+            "name": "副转移泵",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 400,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP2",
+                "max_volume": 25.0,
+                "transfer_rate": 2.0
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "溶剂分配阀",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 200,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE1",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "multiway_valve_2",
+            "name": "样品分配阀",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 400,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE2",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "centrifuge_1",
+            "name": "离心机",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "device",
+            "class": "virtual_centrifuge",
+            "position": {
+                "x": 600,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_CENTRIFUGE1",
+                "max_speed": 15000.0,
+                "max_temp": 40.0,
+                "min_temp": 4.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "reaction_mixture",
+            "name": "反应混合物",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "cell_suspension",
+                        "liquid_volume": 200.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "centrifuge_tube",
+            "name": "离心管",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 600,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 15.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "collection_bottle_1",
+            "name": "上清液收集瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 700,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_water",
+            "name": "蒸馏水瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 200,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "water",
+                        "liquid_volume": 900.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_ethanol",
+            "name": "乙醇清洗瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 300,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "ethanol",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_acetone",
+            "name": "丙酮清洗瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "acetone",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "废液瓶",
+            "children": [],
+            "parent": "CentrifugeProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 800,
+                "y": 550,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_pump1_valve1",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump",
+                "multiway_valve_1": "transferpump"
+            }
+        },
+        {
+            "id": "link_pump2_valve2",
+            "source": "transfer_pump_2",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_2": "transferpump",
+                "multiway_valve_2": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve1_air",
+            "source": "multiway_valve_1",
+            "target": "flask_air",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "flask_air": "top"
+            }
+        },
+        {
+            "id": "link_valve1_water",
+            "source": "multiway_valve_1",
+            "target": "flask_water",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "flask_water": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_ethanol",
+            "source": "multiway_valve_1",
+            "target": "flask_ethanol",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "flask_ethanol": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_acetone",
+            "source": "multiway_valve_1",
+            "target": "flask_acetone",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "4",
+                "flask_acetone": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_valve2",
+            "source": "multiway_valve_1",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "5",
+                "multiway_valve_2": "1"
+            }
+        },
+        {
+            "id": "link_valve2_reaction_mixture",
+            "source": "multiway_valve_2",
+            "target": "reaction_mixture",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "2",
+                "reaction_mixture": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_centrifuge_tube",
+            "source": "multiway_valve_2",
+            "target": "centrifuge_tube",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "3",
+                "centrifuge_tube": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_collection",
+            "source": "multiway_valve_2",
+            "target": "collection_bottle_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "4",
+                "collection_bottle_1": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_waste",
+            "source": "multiway_valve_2",
+            "target": "waste_workup",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "5",
+                "waste_workup": "inlet"
+            }
+        },
+        {
+            "id": "link_centrifuge1_centrifuge_tube",
+            "source": "centrifuge_1",
+            "target": "centrifuge_tube",
+            "type": "transport",
+            "port": {
+                "centrifuge_1": "centrifuge",
+                "centrifuge_tube": "centrifuge_port"
+            }
+        }
+    ]
+}

@@ -1,0 +1,6 @@
+{
+    "slider_joint": {
+        "child":"slider",
+        "axis" : "x"
+    }
+}

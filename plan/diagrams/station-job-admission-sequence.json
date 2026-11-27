@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "工站节点作业：九道门禁到物理结算",
+    "subtitle": "同一 job_uuid 从待处理、原子 Claim/Fence、持久派发意图到明确回执；临时受阻只重试准入",
+    "output": "plan/diagrams/station-job-admission-sequence.html",
+    "viewBox": [1320, 1260],
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "accept_task",
+        "label": "接收工站任务",
+        "focus": ["backend", "gateway", "runtime_store"],
+        "note": "Backend 只发送工作流入口参数；Edge 冻结 revision 并创建本地 Task/Jobs。"
+      },
+      {
+        "id": "admit_job",
+        "label": "九道准入门禁",
+        "focus": ["runtime_store", "scheduler", "inventory", "inventory_store", "execution"],
+        "note": "前六门只判断，门七一次性取得完整资源 Claim/Fence，门八先持久再派发。"
+      },
+      {
+        "id": "settle_truth",
+        "label": "提交物理事实",
+        "focus": ["device", "execution", "inventory", "inventory_store", "runtime_store", "gateway", "backend"],
+        "note": "明确回执才提交 ChangeSet；结果未知则保留占用并进入人工关注。"
+      }
+    ]
+  },
+  "participants": [
+    {"id": "backend", "type": "backend", "label": "Backend", "sublabel": "全局任务 + AGV"},
+    {"id": "gateway", "type": "security", "label": "协议网关", "sublabel": "EdgeSync / 幂等"},
+    {"id": "runtime_store", "type": "database", "label": "任务运行库", "sublabel": "Task / Job / Intent"},
+    {"id": "scheduler", "type": "backend", "label": "调度内核", "sublabel": "唯一决策循环"},
+    {"id": "inventory", "type": "backend", "label": "库存权威", "sublabel": "Reservation / Claim"},
+    {"id": "inventory_store", "type": "database", "label": "inventory.db", "sublabel": "Occupancy / Fence / ChangeSet"},
+    {"id": "execution", "type": "backend", "label": "执行内核", "sublabel": "Intent / Receipt"},
+    {"id": "device", "type": "external", "label": "机械臂/设备", "sublabel": "物理动作"}
+  ],
+  "segments": [
+    {"from": 150, "to": 330, "label": "接收与冻结"},
+    {"from": 350, "to": 750, "label": "九道门禁与派发"},
+    {"from": 770, "to": 1110, "label": "执行、结算与上报"}
+  ],
+  "messages": [
+    {"id": "submit_station_task", "from": "backend", "to": "gateway", "y": 180, "label": "SubmitStationTask(task_uuid, station_task_uuid, revision, input)", "variant": "security"},
+    {"id": "create_runtime", "from": "gateway", "to": "runtime_store", "y": 225, "label": "幂等创建 WorkflowTask + WorkflowNodeJobs + ExecutionPlan", "variant": "emphasis"},
+    {"id": "created_runtime", "from": "runtime_store", "to": "gateway", "y": 270, "label": "accepted + stable job_uuids", "variant": "return"},
+    {"id": "accepted_task", "from": "gateway", "to": "backend", "y": 315, "label": "Accepted(station_task_uuid)", "variant": "return"},
+
+    {"id": "wakeup", "from": "runtime_store", "to": "scheduler", "y": 380, "label": "Wakeup(task/job changed)", "variant": "dashed"},
+    {"id": "load_candidates", "from": "scheduler", "to": "runtime_store", "y": 425, "label": "读取持久候选：① DAG ready ② control allows", "variant": "default"},
+    {"id": "runtime_snapshot", "from": "runtime_store", "to": "scheduler", "y": 470, "label": "候选快照 + frozen params + attempt", "variant": "return"},
+    {"id": "prepare_claim", "from": "scheduler", "to": "inventory", "y": 515, "label": "③ material resolved ⑤ capacity safe ⑥ complete resource set", "variant": "emphasis"},
+    {"id": "check_device", "from": "scheduler", "to": "execution", "y": 560, "label": "④ device online + action executable", "variant": "default"},
+    {"id": "device_ready", "from": "execution", "to": "scheduler", "y": 605, "label": "DeviceCapabilitySnapshot", "variant": "return"},
+    {"id": "claim_tx", "from": "inventory", "to": "inventory_store", "y": 650, "label": "⑦ BEGIN IMMEDIATE：校验并取得完整 Claim + Fence", "variant": "emphasis"},
+    {"id": "claim_granted", "from": "inventory_store", "to": "inventory", "y": 695, "label": "claim_uuid + fence_tokens", "variant": "return"},
+    {"id": "claim_to_scheduler", "from": "inventory", "to": "scheduler", "y": 740, "label": "GRANTED；若 BLOCKED 则保持同一 job_uuid 等待重试", "variant": "return"},
+    {"id": "dispatch_intent", "from": "scheduler", "to": "runtime_store", "y": 785, "label": "⑧ 持久化 DispatchIntent(effect_uuid, claim_uuid, fence)", "variant": "emphasis"},
+    {"id": "dispatch_command", "from": "scheduler", "to": "execution", "y": 830, "label": "⑨ submit ExecutionCommand(effect_uuid)", "variant": "security"},
+    {"id": "physical_action", "from": "execution", "to": "device", "y": 875, "label": "执行不可原子确认的物理动作", "variant": "emphasis"},
+    {"id": "device_receipt", "from": "device", "to": "execution", "y": 920, "label": "explicit success / failure / unknown", "variant": "return"},
+    {"id": "settle", "from": "execution", "to": "inventory", "y": 965, "label": "PhysicalSettlement(receipt, ChangeSet, fence)", "variant": "emphasis"},
+    {"id": "settle_tx", "from": "inventory", "to": "inventory_store", "y": 1010, "label": "同事务：校验 Fence、提交 Occupancy/Material、关闭 Claim、写 Outbox", "variant": "emphasis"},
+    {"id": "project_result", "from": "execution", "to": "runtime_store", "y": 1055, "label": "提交 Job 结果；推进 DAG/Task 或 requires_attention", "variant": "emphasis"},
+    {"id": "result_outbox", "from": "runtime_store", "to": "gateway", "y": 1100, "label": "Task/Job result event", "variant": "dashed"},
+    {"id": "report_backend", "from": "gateway", "to": "backend", "y": 1145, "label": "幂等上报节点数据与工站输出", "variant": "security"}
+  ],
+  "activations": [
+    {"participant": "gateway", "from": 174, "to": 322, "type": "security"},
+    {"participant": "runtime_store", "from": 219, "to": 1110, "type": "database"},
+    {"participant": "scheduler", "from": 374, "to": 842, "type": "backend"},
+    {"participant": "inventory", "from": 509, "to": 1020, "type": "backend"},
+    {"participant": "inventory_store", "from": 644, "to": 1020, "type": "database"},
+    {"participant": "execution", "from": 554, "to": 1065, "type": "backend"},
+    {"participant": "device", "from": 869, "to": 930, "type": "external"},
+    {"participant": "gateway", "from": 1094, "to": 1155, "type": "security"}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "临时受阻",
+      "items": ["记录 waiting_reason 与 next_retry_at", "不创建新 Task、Job 或 attempt", "资源/设备/库位变化只负责唤醒同一准入流程"]
+    },
+    {
+      "dot": "amber",
+      "title": "取消与结果未知",
+      "items": ["取消只写控制意图，不强制打断已运行设备动作", "无明确终止回执不得释放 Claim", "unknown 冻结关联物料、库位与设备并转人工关注"]
+    },
+    {
+      "dot": "emerald",
+      "title": "分装 / 拆板",
+      "items": ["不可逆动作前冻结输出 Manifest 与目标库位", "输出 material_uuid 预分配", "成功结算一次性提交所有输出与位置变化"]
+    }
+  ]
+}

@@ -1,0 +1,249 @@
+{
+    "nodes": [
+        {
+            "id": "TransferTestStation",
+            "name": "液体转移测试工作站",
+            "children": [
+                "transfer_pump",
+                "flask_source1",
+                "flask_source2",
+                "flask_target1",
+                "flask_target2",
+                "reactor",
+                "flask_waste",
+                "flask_rinsing"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["TransferProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump",
+            "name": "转移泵",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 520.6111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 50.0,
+                "transfer_rate": 5.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_source1",
+            "name": "源容器1",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_source2",
+            "name": "源容器2",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_target1",
+            "name": "目标容器1",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_target2",
+            "name": "目标容器2",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 550,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "反应器",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_waste",
+            "name": "废液瓶",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 850,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_rinsing",
+            "name": "冲洗液瓶",
+            "children": [],
+            "parent": "TransferTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 950,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "transfer_pump",
+            "target": "flask_source1",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "inlet",
+                "flask_source1": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "flask_source2",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "inlet",
+                "flask_source2": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "flask_target1",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "outlet",
+                "flask_target1": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "flask_target2",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "outlet",
+                "flask_target2": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "outlet",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "flask_waste",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "outlet",
+                "flask_waste": "top"
+            }
+        },
+        {
+            "source": "transfer_pump",
+            "target": "flask_rinsing",
+            "type": "physical",
+            "port": {
+                "transfer_pump": "inlet",
+                "flask_rinsing": "top"
+            }
+        }
+    ]
+}

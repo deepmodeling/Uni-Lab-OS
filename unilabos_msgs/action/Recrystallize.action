@@ -1,0 +1,15 @@
+# Request
+string ratio                     # 溶剂比例（如"1:1","3:7"）
+string solvent1                  # 第一种溶剂
+string solvent2                  # 第二种溶剂
+Resource vessel                    # 目标容器
+string volume                    # 🔧 总体积（支持带单位，如"100 mL","50"，默认mL）
+---
+# Result
+bool success
+string message
+string return_info
+---
+# Feedback
+string status
+float64 progress

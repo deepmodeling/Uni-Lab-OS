@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="full_dev">
+    <xacro:arg name="device_name" default=""/>
+    <xacro:arg name="mesh_path" default="/home/z43/git_pj/Uni-Lab-OS/unilabos/device_mesh" />
+
+    <xacro:include filename="macro.ros2_control.xacro" />
+
+    <xacro:toyo_xyz_ros2_control device_name="$(arg device_name)" mesh_path="$(arg mesh_path)" />
+
+</robot>

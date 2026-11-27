@@ -1,0 +1,12 @@
+# Goal - 反应器取出操作参数
+# 反应器取出操作不需要任何参数
+---
+# Result - 操作结果
+# 反应器取出操作的结果
+bool success         # 要求必须包含success，以便回传执行结果
+string return_info   # 要求必须包含return_info，以便回传执行结果
+int32 code           # 操作结果代码（1表示成功，0表示失败）
+---
+# Feedback - 实时反馈
+# 反应器取出操作的反馈
+string feedback      # 操作过程中的反馈信息

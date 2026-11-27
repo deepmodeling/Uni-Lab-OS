@@ -1,0 +1,6 @@
+schema_version = 2
+package_id = "example-lab"
+display_name = "通用设备包示例"
+
+[runtime]
+file = "unilab-app.json"

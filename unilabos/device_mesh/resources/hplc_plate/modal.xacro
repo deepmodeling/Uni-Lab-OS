@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="hplc_plate">
+    <link name='plate_link'>
+      <visual name='visual'>
+        <geometry>
+          <mesh filename="meshes/hplc_plate.stl"/>
+        </geometry>
+        <material name="clay" />
+      </visual>
+    </link>
+</robot>

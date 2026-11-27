@@ -1,0 +1,31 @@
+{
+  "name": "可导入实验操作示例-9f3866c1",
+  "workflow_name": "可导入实验操作示例-9f3866c1",
+  "description": "当前环境有效结构",
+  "tags": [
+    "import-test"
+  ],
+  "workflow_type": "experiment_operation",
+  "meta_data": {},
+  "nodes": [
+    {
+      "uuid": "2d2e70af-84c3-476d-94ce-1f80e287b668",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "get_command",
+          "authoring_source_order": 0,
+          "input_bindings": {}
+        }
+      },
+      "name": "get_command",
+      "pose": {},
+      "param": {
+        "command_id": "110"
+      },
+      "execution_policy": {},
+      "workflow_node_template_uuid": "e28fa36f-4e9e-59f0-b408-8364a9f6cd07"
+    }
+  ],
+  "edges": [],
+  "inventory_requirements": []
+}

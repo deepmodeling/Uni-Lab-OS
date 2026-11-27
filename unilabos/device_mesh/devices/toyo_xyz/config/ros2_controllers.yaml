@@ -1,0 +1,34 @@
+# This config file is used by ros2_control
+controller_manager:
+
+  ros__parameters:
+    update_rate: 100  # Hz
+  
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    # action_ns: $(var device_id)
+    toyo_xyz_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+# joint_state_broadcaster:
+#   ros__parameters: {}
+
+toyo_xyz_controller:
+  ros__parameters:
+    joints:
+      - slider1_joint
+      - slider2_joint
+      - slider3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: false
+    open_loop_control: true
+    allow_integration_in_goal_trajectories: true
+    action_monitor_rate: 20.0
+    # goal_time: 0.0
+    # constraints:
+    #   stopped_velocity_tolerance: 0.01
+    #   goal_time: 0.0

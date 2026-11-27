@@ -1,0 +1,30 @@
+{
+    "register_node_list_from_csv_path": {
+        "path": "opcua_nodes_example.csv"
+    },
+    "create_flow": [
+        {
+            "name": "name",
+            "description": "description",
+            "parameters": ["parameter1", "parameter2"],
+            "action": [
+                {
+                    "init_function": {
+                        "func_name": "init_grab_params",
+                        "write_nodes": ["parameter1", "parameter2"]
+                    },
+                    "start_function": {
+                        "func_name": "start_grab",
+                        "write_nodes": {"parameter_start": true},
+                        "condition_nodes": ["parameter_condition"],
+                        "stop_condition_expression": "parameter_condition == True"
+                    },
+                    "stop_function": {
+                        "func_name": "stop_grab",
+                        "write_nodes": {"parameter_start": false}
+                    }
+                }
+            ]
+        }       
+    ]
+} 

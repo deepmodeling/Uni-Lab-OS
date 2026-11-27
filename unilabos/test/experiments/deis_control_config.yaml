@@ -1,0 +1,21 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 1.0  # 更新频率，单位 Hz. 20s 更新一次
+
+    # 控制器列表
+    controllers:
+      deis_current_controller:
+        type: EISModelBasedController  # PID 控制器类型
+        inputs: 
+          eis:  # 环境输入（电化学阻抗谱）
+            topic: /devices/BioLogic/EISdata  # 输入话题
+            type: list[float]  # 输入数据类型
+        outputs: 
+          current_control:  # 控制输出（充电电流）
+            topic: /devices/BioLogic/current_control  # 输出话题
+            type: float  # 输出数据类型
+        parameters:
+          # set_point: 22.0  # 目标温度（可以动态更新）
+          # kp: 1.0         # PID 参数
+          # ki: 0.1
+          # kd: 0.05

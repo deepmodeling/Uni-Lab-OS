@@ -1,0 +1,98 @@
+{
+    "register_node_list_from_csv_path": {
+        "path": "simple_opcua_nodes.csv"
+    },
+    "create_flow": [
+        {
+            "name": "温度控制流程",
+            "action": [
+                {
+                    "name": "温度控制动作",
+                    "node_function_to_create": [
+                        {
+                            "func_name": "read_temperature",
+                            "node_name": "Temperature",
+                            "mode": "read"
+                        },
+                        {
+                            "func_name": "read_heating_status",
+                            "node_name": "HeatingStatus",
+                            "mode": "read"
+                        },
+                        {
+                            "func_name": "set_heating",
+                            "node_name": "HeatingEnabled",
+                            "mode": "write",
+                            "value": true
+                        }
+                    ],
+                    "create_init_function": {
+                        "func_name": "init_setpoint",
+                        "node_name": "Setpoint",
+                        "mode": "write",
+                        "value": 25.0
+                    },
+                    "create_start_function": {
+                        "func_name": "start_heating_control",
+                        "node_name": "HeatingEnabled",
+                        "mode": "write",
+                        "write_functions": [
+                            "set_heating"
+                        ],
+                        "condition_functions": [
+                            "read_temperature",
+                            "read_heating_status"
+                        ],
+                        "stop_condition_expression": "read_temperature >= 25.0 and read_heating_status"
+                    },
+                    "create_stop_function": {
+                        "func_name": "stop_heating",
+                        "node_name": "HeatingEnabled",
+                        "mode": "write",
+                        "value": false
+                    },
+                    "create_cleanup_function": null
+                }
+            ]
+        },
+        {
+            "name": "报警重置流程",
+            "action": [
+                {
+                    "name": "报警重置动作",
+                    "node_function_to_create": [
+                        {
+                            "func_name": "reset_alarm",
+                            "node_name": "ResetAlarm",
+                            "mode": "call",
+                            "value": []
+                        }
+                    ],
+                    "create_init_function": null,
+                    "create_start_function": {
+                        "func_name": "start_reset_alarm",
+                        "node_name": "ResetAlarm",
+                        "mode": "call",
+                        "write_functions": [],
+                        "condition_functions": [
+                            "reset_alarm"
+                        ],
+                        "stop_condition_expression": "True"
+                    },
+                    "create_stop_function": null,
+                    "create_cleanup_function": null
+                }
+            ]
+        },
+        {
+            "name": "完整控制流程",
+            "action": [
+                "温度控制流程",
+                "报警重置流程"
+            ]
+        }
+    ],
+    "execute_flow": [
+        "完整控制流程"
+    ]
+}

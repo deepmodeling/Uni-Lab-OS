@@ -1,0 +1,33 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockStirrer1",  
+            "name": "模拟搅拌器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_stirrer",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",   
+                "stir_speed": 0.0,  
+                "target_stir_speed": 0.0,  
+                "stir_state": "Stopped",  
+                "temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "heating_state": "Off",  
+                "heating_power": 0.0,  
+                "max_stir_speed": 2000.0,  
+                "max_temperature": 300.0  
+            }  
+        }  
+    ],  
+    "links": []  
+}

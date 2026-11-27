@@ -1,0 +1,14 @@
+# Organic
+Resource vessel  # Vessel to clean.
+string solvent # Solvent to clean vessel with.
+float64 volume # Optional. Volume of solvent to clean vessel with.
+float64 temp   # Optional. Temperature to heat vessel to while cleaning.
+int32 repeats  # Optional. Number of cleaning cycles to perform.
+---
+string return_info
+bool success
+---
+string status
+string current_device
+builtin_interfaces/Duration time_spent
+builtin_interfaces/Duration time_remaining

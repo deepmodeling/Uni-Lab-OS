@@ -1,0 +1,15 @@
+# Goal - （二胺）溶液配置  
+string order_name                 # 任务名称
+string material_name              #固体物料名称
+string target_weigh               #固体重量
+string volume                     #液体体积
+string liquid_material_name       # 溶剂名称
+string speed                      #磁力转动速度
+string temperature                #温度
+string delay_time                 #等待时间
+string hold_m_name                #样品名称
+---
+# Result - 操作结果  
+string return_info                    # 结果消息
+---
+# Feedback - 实时反馈  

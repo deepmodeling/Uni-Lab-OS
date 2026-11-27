@@ -1,0 +1,8 @@
+string group_name
+Resource[] wells
+float64[] volumes
+---
+string return_info
+bool success
+---
+# 反馈

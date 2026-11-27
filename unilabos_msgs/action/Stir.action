@@ -1,0 +1,16 @@
+# Goal - 搅拌操作的目标参数
+Resource vessel                    # 搅拌容器名称（必需）
+string time                      # 🔧 搅拌时间（如 "0.5 h", "30 min", "300"，默认秒）
+string event                     # 事件标识（如 "A", "B"）
+string time_spec                 # 时间规格（如 "several minutes"）
+float64 stir_time               # 解析后的搅拌时间（秒）
+float64 stir_speed              # 搅拌速度（默认200.0）
+string settling_time            # 🔧 沉降时间（支持带单位，默认秒）
+---
+# Result - 操作结果
+bool success                     # 操作是否成功
+string message                   # 结果消息
+string return_info
+---
+# Feedback - 实时反馈
+string status                    # 当前状态描述

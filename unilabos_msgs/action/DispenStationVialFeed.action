@@ -1,0 +1,29 @@
+# Goal - 小瓶投料  
+string order_name                 # 任务名称
+string percent_90_1_assign_material_name          
+string percent_90_1_target_weigh
+string percent_90_2_assign_material_name
+string percent_90_2_target_weigh
+string percent_90_3_assign_material_name
+string percent_90_3_target_weigh
+string percent_10_1_assign_material_name
+string percent_10_1_target_weigh
+string percent_10_1_volume
+string percent_10_1_liquid_material_name
+string percent_10_2_assign_material_name
+string percent_10_2_target_weigh
+string percent_10_2_volume
+string percent_10_2_liquid_material_name
+string percent_10_3_assign_material_name
+string percent_10_3_target_weigh
+string percent_10_3_volume
+string percent_10_3_liquid_material_name
+string speed
+string temperature
+string delay_time
+string hold_m_name
+---
+# Result - 操作结果  
+string return_info                    # 结果消息
+---
+# Feedback - 实时反馈  

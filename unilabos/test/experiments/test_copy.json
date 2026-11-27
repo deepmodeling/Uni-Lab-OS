@@ -1,0 +1,135 @@
+{
+    "nodes": [
+        {
+            "id": "PLR_STATION",
+            "name": "PLR_LH_TEST",
+            "parent": null,
+            "type": "device",
+            "class": "liquid_handler",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "data": {
+                    "children": [
+                        {
+                            "_resource_child_name": "deck",
+                            "_resource_type": "pylabrobot.resources.opentrons.deck:OTDeck"
+                        }
+                    ],
+                    "backend": {
+                        "type": "LiquidHandlerRvizBackend"
+                    }
+                }
+            },
+            "data": {},
+            "children": [
+                "deck"
+            ]
+        },
+        {
+            "id": "deck",
+            "name": "deck",
+            "sample_id": null,
+            "children": [
+                "teaching_carrier"
+            ],
+            "parent": "PLR_STATION",
+            "type": "deck",
+            "class": "OTDeck",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "OTDeck",
+                "with_trash": false,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        },
+
+        {
+            "id": "teaching_carrier",
+            "name": "teaching_carrier",
+            "sample_id": null,
+            "children": [
+                "teaching_carrier_A1"
+            ],
+            "parent": "deck",
+            "type": "plate",
+            "class": "opentrons_96_filtertiprack_1000ul",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 69
+            },
+            "config": {
+                "type": "Resource",
+                "size_x": 127,
+                "size_y": 85,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": null,
+                "model": null
+            },
+            "data": {}
+        },
+        {
+            "id": "teaching_carrier_A1",
+            "name": "teaching_carrier_A1",
+            "sample_id": null,
+            "children": [],
+            "parent": "teaching_carrier",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 70.77,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        }
+    ],
+    "links": [
+        
+    ]
+}

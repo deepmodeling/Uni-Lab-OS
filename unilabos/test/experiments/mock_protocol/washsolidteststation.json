@@ -1,0 +1,494 @@
+{
+    "nodes": [
+        {
+            "id": "WashSolidTestStation",
+            "name": "固体清洗测试工作站",
+            "children": [
+                "transfer_pump_1",
+                "heatchill_1",
+                "stirrer_1",
+                "filter_1",
+                "flask_ethanol",
+                "flask_water",
+                "flask_acetone",
+                "flask_methanol",
+                "reactor",
+                "collection_flask",
+                "waste_flask",
+                "flask_sample",
+                "filtrate_flask"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["WashSolidProtocol", "TransferProtocol", "FilterProtocol", "HeatChillProtocol", "StirProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "转移泵",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 520.6111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 50.0,
+                "transfer_rate": 10.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_volume": 0.0,
+                "max_volume": 50.0,
+                "transfer_rate": 10.0,
+                "from_vessel": "",
+                "to_vessel": "",
+                "progress": 0.0,
+                "transferred_volume": 0.0,
+                "current_status": "Ready"
+            }
+        },
+        {
+            "id": "heatchill_1",
+            "name": "加热冷却器",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 650.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 150.0,
+                "min_temp": -20.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_temp": 25.0,
+                "target_temp": 25.0,
+                "vessel": "",
+                "purpose": "",
+                "progress": 0.0,
+                "current_status": "Ready"
+            }
+        },
+        {
+            "id": "stirrer_1",
+            "name": "搅拌器",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 750.1111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "filter_1",
+            "name": "过滤器",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "device",
+            "class": "virtual_filter",
+            "position": {
+                "x": 850.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 100.0,
+                "max_stir_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle",
+                "filter_state": "Ready",
+                "current_temp": 25.0,
+                "target_temp": 25.0,
+                "max_temp": 100.0,
+                "stir_speed": 0.0,
+                "max_stir_speed": 1000.0,
+                "filtered_volume": 0.0,
+                "progress": 0.0,
+                "message": ""
+            }
+        },
+        {
+            "id": "flask_ethanol",
+            "name": "乙醇清洗剂",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "ethanol",
+                        "volume": 1500.0,
+                        "concentration": 99.5
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_water",
+            "name": "水清洗剂",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "water",
+                        "volume": 1800.0,
+                        "concentration": 100.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_acetone",
+            "name": "丙酮清洗剂",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "acetone",
+                        "volume": 800.0,
+                        "concentration": 99.8
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_methanol",
+            "name": "甲醇清洗剂",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 550,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "methanol",
+                        "volume": 800.0,
+                        "concentration": 99.9
+                    }
+                ]
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "反应器",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "solid_product",
+                        "volume": 50.0,
+                        "concentration": 100.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "collection_flask",
+            "name": "收集瓶",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 850,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "waste_flask",
+            "name": "废液瓶",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1000,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_sample",
+            "name": "样品瓶",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1150,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "crude_solid",
+                        "volume": 30.0,
+                        "concentration": 80.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "filtrate_flask",
+            "name": "滤液收集瓶",
+            "children": [],
+            "parent": "WashSolidTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1000,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1500.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_ethanol",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "1",
+                "flask_ethanol": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_water",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "2",
+                "flask_water": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_acetone",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "3",
+                "flask_acetone": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_methanol",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "4",
+                "flask_methanol": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "5",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "collection_flask",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "6",
+                "collection_flask": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "waste_flask",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "7",
+                "waste_flask": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "8",
+                "flask_sample": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "filtrate_flask",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "9",
+                "filtrate_flask": "top"
+            }
+        },
+        {
+            "source": "heatchill_1",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "heatchill_1": "heating_element",
+                "reactor": "bottom"
+            }
+        },
+        {
+            "source": "heatchill_1",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "heatchill_1": "heating_element",
+                "flask_sample": "bottom"
+            }
+        },
+        {
+            "source": "stirrer_1",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "stirrer_1": "stir_rod",
+                "reactor": "center"
+            }
+        },
+        {
+            "source": "stirrer_1",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "stirrer_1": "stir_rod",
+                "flask_sample": "center"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "filter_1": "filter_element",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "filter_1": "filter_element",
+                "flask_sample": "top"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "filtrate_flask",
+            "type": "physical",
+            "port": {
+                "filter_1": "filter_element",
+                "filtrate_flask": "top"
+            }
+        }
+    ]
+}

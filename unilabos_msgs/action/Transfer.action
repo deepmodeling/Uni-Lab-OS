@@ -1,0 +1,20 @@
+string from_vessel               # 源容器  
+string to_vessel                 # 目标容器  
+float64 volume                   # 转移体积 (可选)  
+string amount                    # 数量描述 (可选)  
+float64 time                     # 转移时间 (可选，秒)  
+bool viscous                     # 是否为粘性液体  
+string rinsing_solvent          # 冲洗溶剂 (可选)  
+float64 rinsing_volume          # 冲洗体积 (可选)  
+int32 rinsing_repeats           # 冲洗重复次数  
+bool solid                       # 是否涉及固体  
+---
+# Result - 操作结果  
+bool success                     # 操作是否成功  
+string message                   # 结果消息
+string return_info
+---
+# Feedback - 实时反馈  
+float64 progress                 # 进度百分比 (0-100)  
+float64 transferred_volume      # 已转移体积  
+string current_status           # 当前状态描述

@@ -1,0 +1,949 @@
+{
+    "nodes": [
+        {
+            "id": "simple_station",
+            "name": "愚公常量合成工作站",
+            "children": [
+                "serial_pump",
+                "pump_reagents",
+                "pump_workup",
+                "flask_CH2Cl2",
+                "waste_workup",
+                "separator_controller",
+                "flask_separator",
+                "flask_air"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["PumpTransferProtocol", "CleanProtocol", "SeparateProtocol", "EvaporateProtocol"]
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "serial_pump",
+            "name": "serial_pump",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "serial",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "port": "COM7",
+                "baudrate": 9600
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "pump_reagents",
+            "name": "pump_reagents",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "syringepump.runze",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "1",
+                "max_volume": 25.0
+            },
+            "data": {
+                "max_velocity": 1.0,
+                "position": 0.0,
+                "status": "Idle",
+                "valve_position": "0"
+            }
+        },
+        {
+            "id": "flask_CH2Cl2",
+            "name": "flask_CH2Cl2",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 430.4087301587302,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CH2Cl2",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_acetone",
+            "name": "flask_acetone",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 295.36944444444447,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "acetone",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_NH4Cl",
+            "name": "flask_NH4Cl",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 165.36944444444444,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "NH4Cl",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_grignard",
+            "name": "flask_grignard",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 165.36944444444444,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "grignard",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_THF",
+            "name": "flask_THF",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 35,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "THF",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "reactor",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 5000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "stirrer",
+            "name": "stirrer",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "heaterstirrer.dalong",
+            "position": {
+                "x": 698.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "COM43",
+                "temp_warning": 60.0
+            },
+            "data": {
+                "status": "Idle",
+                "temp": 0.0,
+                "stir_speed": 0.0
+            }
+        },
+        {
+            "id": "pump_workup",
+            "name": "pump_workup",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "syringepump.runze",
+            "position": {
+                "x": 1195.611507936508,
+                "y": 686,
+                "z": 0
+            },
+            "config": {
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "2",
+                "max_volume": 25.0
+            },
+            "data": {
+                "max_velocity": 1.0,
+                "position": 0.0,
+                "status": "Idle",
+                "valve_position": "0"
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "waste_workup",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1587.703373015873,
+                "y": 1172.5,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "separator_controller",
+            "name": "separator_controller",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "separator.homemade",
+            "position": {
+                "x": 1624.4027777777778,
+                "y": 665.5,
+                "z": 0
+            },
+            "config": {
+                "port_executor": "/dev/tty.usbserial-11140",
+                "port_sensor": "/dev/tty.usbserial-11130"
+            },
+            "data": {
+                "sensordata": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_separator",
+            "name": "flask_separator",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1614.404365079365,
+                "y": 948,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "flask_holding",
+            "name": "flask_holding",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1915.7035714285714,
+                "y": 665.5,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "flask_H2O",
+            "name": "flask_H2O",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1785.7035714285714,
+                "y": 665.5,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "H2O",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_NaHCO3",
+            "name": "flask_NaHCO3",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 2054.0650793650793,
+                "y": 665.5,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "NaHCO3",
+                        "liquid_volume": 1500.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "pump_column",
+            "name": "pump_column",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "syringepump.runze",
+            "position": {
+                "x": 1630.6527777777778,
+                "y": 448.5,
+                "z": 0
+            },
+            "config": {
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "3",
+                "max_volume": 25.0
+            },
+            "data": {
+                "max_velocity": 1.0,
+                "position": 0.0,
+                "status": "Idle",
+                "valve_position": "0"
+            }
+        },
+        {
+            "id": "rotavap",
+            "name": "rotavap",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "rotavap",
+            "position": {
+                "x": 1339.7031746031746,
+                "y": 968.5,
+                "z": 0
+            },
+            "config": {
+                "port": "COM15"
+            },
+            "data": {
+                "temperature": 0.0,
+                "rotate_time": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_rv",
+            "name": "flask_rv",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1339.7031746031746,
+                "y": 1152,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "column",
+            "name": "column",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 909.722619047619,
+                "y": 948,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 200.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "flask_column",
+            "name": "flask_column",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 867.972619047619,
+                "y": 1152,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "flask_air",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 742.722619047619,
+                "y": 948,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "dry_column",
+            "name": "dry_column",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1206.722619047619,
+                "y": 948,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 200.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "flask_dry_column",
+            "name": "flask_dry_column",
+            "children": [],
+            "parent": "simple_station",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1148.222619047619,
+                "y": 1152,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                ]
+            }
+        },
+        {
+            "id": "pump_ext",
+            "name": "pump_ext",
+            "children": [],
+            "parent": "simple_station",
+            "type": "device",
+            "class": "syringepump.runze",
+            "position": {
+                "x": 1469.7031746031746,
+                "y": 968.5,
+                "z": 0
+            },
+            "config": {
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "4",
+                "max_volume": 25.0
+            },
+            "data": {
+                "max_velocity": 1.0,
+                "position": 0.0,
+                "status": "Idle",
+                "valve_position": "0"
+            }
+        },
+        {
+            "id": "AGV",
+            "name": "AGV",
+            "children": ["zhixing_agv", "zhixing_ur_arm"],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 698.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["AGVTransferProtocol"]
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "zhixing_agv",
+            "name": "zhixing_agv",
+            "children": [],
+            "parent": "AGV",
+            "type": "device",
+            "class": "zhixing_agv",
+            "position": {
+                "x": 698.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "host": "192.168.1.42"
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "zhixing_ur_arm",
+            "name": "zhixing_ur_arm",
+            "children": [],
+            "parent": "AGV",
+            "type": "device",
+            "class": "zhixing_ur_arm",
+            "position": {
+                "x": 698.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "host": "192.168.1.178"
+            },
+            "data": {
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "pump_reagents",
+            "target": "serial_pump",
+            "type": "communication",
+            "port": {
+                "pump_reagents": "port",
+                "serial_pump": "port"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "serial_pump",
+            "type": "communication",
+            "port": {
+                "pump_reagents": "port",
+                "serial_pump": "port"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "serial_pump",
+            "type": "communication",
+            "port": {
+                "pump_reagents": "port",
+                "serial_pump": "port"
+            }
+        },
+        {
+            "source": "pump_ext",
+            "target": "serial_pump",
+            "type": "communication",
+            "port": {
+                "pump_reagents": "port",
+                "serial_pump": "port"
+            }
+        },
+        {
+            "source": "reactor",
+            "target": "pump_reagents",
+            "type": "physical",
+            "port": {
+                "reactor": "top",
+                "pump_reagents": "5"
+            }
+        },
+        {
+            "source": "rotavap",
+            "target": "flask_rv",
+            "type": "physical",
+            "port": {
+                "rotavap": "bottom",
+                "flask_rv": "top"
+            }
+        },
+        {
+            "source": "separator_controller",
+            "target": "flask_separator",
+            "type": "physical",
+            "port": {
+                "separator_controller": "bottom",
+                "flask_separator": "top"
+            }
+        },
+        {
+            "source": "column",
+            "target": "flask_column",
+            "type": "physical",
+            "port": {
+                "column": "bottom",
+                "flask_column": "top"
+            }
+        },
+        {
+            "source": "dry_column",
+            "target": "flask_dry_column",
+            "type": "physical",
+            "port": {
+                "dry_column": "bottom",
+                "flask_dry_column": "top"
+            }
+        },
+        {
+            "source": "pump_ext",
+            "target": "pump_column",
+            "type": "physical",
+            "port": {
+                "pump_ext": "8",
+                "pump_column": "1"
+            }
+        },
+        {
+            "source": "pump_ext",
+            "target": "waste_workup",
+            "type": "physical",
+            "port": {
+                "pump_ext": "2",
+                "waste_workup": "-1"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_THF",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "7",
+                "flask_THF": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_NH4Cl",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "4",
+                "flask_NH4Cl": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_CH2Cl2",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "2",
+                "flask_CH2Cl2": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_acetone",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "3",
+                "flask_acetone": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "pump_workup",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "1",
+                "pump_workup": "8"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_grignard",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "6",
+                "flask_grignard": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "5",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "pump_reagents",
+            "target": "flask_air",
+            "type": "physical",
+            "port": {
+                "pump_reagents": "8",
+                "flask_air": "-1"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "waste_workup",
+            "type": "physical",
+            "port": {
+                "pump_workup": "2",
+                "waste_workup": "-1"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "flask_H2O",
+            "type": "physical",
+            "port": {
+                "pump_workup": "7",
+                "flask_H2O": "top"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "flask_NaHCO3",
+            "type": "physical",
+            "port": {
+                "pump_workup": "6",
+                "flask_NaHCO3": "top"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "pump_reagents",
+            "type": "physical",
+            "port": {
+                "pump_workup": "8",
+                "pump_reagents": "1"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "flask_holding",
+            "type": "physical",
+            "port": {
+                "pump_workup": "5",
+                "flask_holding": "top"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "separator_controller",
+            "type": "physical",
+            "port": {
+                "pump_workup": "4",
+                "separator_controller": "top"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "flask_separator",
+            "type": "physical",
+            "port": {
+                "pump_workup": "3",
+                "flask_separator": "top"
+            }
+        },
+        {
+            "source": "pump_workup",
+            "target": "pump_column",
+            "type": "physical",
+            "port": {
+                "pump_workup": "1",
+                "pump_column": "8"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "column",
+            "type": "physical",
+            "port": {
+                "pump_column": "4",
+                "column": "top"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "flask_column",
+            "type": "physical",
+            "port": {
+                "pump_column": "3",
+                "flask_column": "top"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "rotavap",
+            "type": "physical",
+            "port": {
+                "pump_column": "2",
+                "rotavap": "-1"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "pump_workup",
+            "type": "physical",
+            "port": {
+                "pump_column": "8",
+                "pump_workup": "1"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "flask_air",
+            "type": "physical",
+            "port": {
+                "pump_column": "5",
+                "flask_air": "-1"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "dry_column",
+            "type": "physical",
+            "port": {
+                "pump_column": "7",
+                "dry_column": "top"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "flask_dry_column",
+            "type": "physical",
+            "port": {
+                "pump_column": "6",
+                "flask_dry_column": "top"
+            }
+        },
+        {
+            "source": "pump_column",
+            "target": "pump_ext",
+            "type": "physical",
+            "port": {
+                "pump_column": "1",
+                "pump_ext": "8"
+            }
+        }
+    ]
+}

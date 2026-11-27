@@ -1,0 +1,262 @@
+{
+    "nodes": [
+        {
+            "id": "HeatChillTestStation",
+            "name": "加热冷却测试工作站",
+            "children": [
+                "pump_add",
+                "flask_sample",
+                "flask_buffer1", 
+                "flask_buffer2",
+                "reactor",
+                "stirrer",
+                "heatchill_1",
+                "flask_air"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["AddProtocol", "PumpTransferProtocol", "CleanProtocol", "HeatChillProtocol", "HeatChillStartProtocol", "HeatChillStopProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "pump_add",
+            "name": "pump_add",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 520.6111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 25.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "stirrer",
+            "name": "stirrer",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 650.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 100.0,
+                "max_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "heatchill_1",
+            "name": "加热冷却器",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 800,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 200.0,
+                "min_temp": -80.0,
+                "max_stir_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_sample",
+            "name": "样品瓶",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_buffer1",
+            "name": "缓冲液瓶1",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_buffer2",
+            "name": "缓冲液瓶2",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "反应器",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 5000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "HeatChillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 950,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "stirrer",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "stirrer": "top",
+                "reactor": "bottom"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "pump_add": "outlet",
+                "flask_sample": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_buffer1",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_buffer1": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_buffer2",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_buffer2": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "pump_add": "outlet",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_air",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_air": "top"
+            }
+        },
+        {
+            "source": "heatchill_1",
+            "target": "reactor",
+            "type": "logical",
+            "port": {
+                "heatchill_1": "heating_element",
+                "reactor": "vessel"
+            }
+        },
+        {
+            "source": "heatchill_1",
+            "target": "flask_sample",
+            "type": "logical",
+            "port": {
+                "heatchill_1": "heating_element",
+                "flask_sample": "vessel"
+            }
+        }
+    ]
+}

@@ -1,0 +1,14 @@
+{
+    "z_joint": {
+        "child":"z_link",
+        "axis" : "-z"
+    },
+    "x_joint": {
+        "child":"x_link",
+        "axis" : "x"
+    },
+    "y_joint": {
+        "child":"y_link",
+        "axis" : "y"
+    }   
+}

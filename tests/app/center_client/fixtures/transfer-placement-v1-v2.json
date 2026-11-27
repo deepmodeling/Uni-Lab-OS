@@ -1,0 +1,80 @@
+{
+  "transfer_definition_uuid": "00000000-0000-4000-8000-000000000090",
+  "selection": {
+    "schema_version": 1,
+    "items": [
+      {
+        "selection_uuid": "00000000-0000-4000-8000-000000000001",
+        "source_site_uuid": "00000000-0000-4000-8000-000000000011",
+        "source_material_uuid": "00000000-0000-4000-8000-000000000021",
+        "source_material_revision": 7,
+        "container_uuid": "00000000-0000-4000-8000-000000000031",
+        "expected_container_state_version": 4,
+        "target_site_uuid": "00000000-0000-4000-8000-000000000041",
+        "target_resource_template_uuid": "00000000-0000-4000-8000-000000000051"
+      },
+      {
+        "selection_uuid": "00000000-0000-4000-8000-000000000002",
+        "source_site_uuid": "00000000-0000-4000-8000-000000000012",
+        "source_material_uuid": "00000000-0000-4000-8000-000000000022",
+        "source_material_revision": 8,
+        "container_uuid": "00000000-0000-4000-8000-000000000032",
+        "expected_container_state_version": 5,
+        "target_site_uuid": "00000000-0000-4000-8000-000000000042",
+        "target_resource_template_uuid": "00000000-0000-4000-8000-000000000051"
+      }
+    ]
+  },
+  "selection_digest": "sha256:67346d2f64b0fe33bc95dee7e6ddc2df4702364882aa4089882ed6159735d7d4",
+  "execution_plan": {
+    "schema_version": 1,
+    "transfer_definition_uuid": "00000000-0000-4000-8000-000000000090",
+    "selection": {
+      "schema_version": 1,
+      "items": [
+        {
+          "selection_uuid": "00000000-0000-4000-8000-000000000001",
+          "source_site_uuid": "00000000-0000-4000-8000-000000000011",
+          "source_material_uuid": "00000000-0000-4000-8000-000000000021",
+          "source_material_revision": 7,
+          "container_uuid": "00000000-0000-4000-8000-000000000031",
+          "expected_container_state_version": 4,
+          "target_site_uuid": "00000000-0000-4000-8000-000000000041",
+          "target_resource_template_uuid": "00000000-0000-4000-8000-000000000051"
+        },
+        {
+          "selection_uuid": "00000000-0000-4000-8000-000000000002",
+          "source_site_uuid": "00000000-0000-4000-8000-000000000012",
+          "source_material_uuid": "00000000-0000-4000-8000-000000000022",
+          "source_material_revision": 8,
+          "container_uuid": "00000000-0000-4000-8000-000000000032",
+          "expected_container_state_version": 5,
+          "target_site_uuid": "00000000-0000-4000-8000-000000000042",
+          "target_resource_template_uuid": "00000000-0000-4000-8000-000000000051"
+        }
+      ]
+    },
+    "prepared": {
+      "selection_digest": "sha256:67346d2f64b0fe33bc95dee7e6ddc2df4702364882aa4089882ed6159735d7d4",
+      "items": [
+        {
+          "selection_uuid": "00000000-0000-4000-8000-000000000001",
+          "handoff_item_uuid": "00000000-0000-4000-8000-000000000061",
+          "container_uuid": "00000000-0000-4000-8000-000000000031",
+          "target_site_uuid": "00000000-0000-4000-8000-000000000041",
+          "reservation_uuid": "00000000-0000-4000-8000-000000000071",
+          "reservation_revision": 2
+        },
+        {
+          "selection_uuid": "00000000-0000-4000-8000-000000000002",
+          "handoff_item_uuid": "00000000-0000-4000-8000-000000000062",
+          "container_uuid": "00000000-0000-4000-8000-000000000032",
+          "target_site_uuid": "00000000-0000-4000-8000-000000000042",
+          "reservation_uuid": "00000000-0000-4000-8000-000000000072",
+          "reservation_revision": 2
+        }
+      ]
+    },
+    "execution_plan_digest": "sha256:4feca97e2913175dbb552ef5e190d55e4f2ab9c77d84fbc759a86f80ceb5d877"
+  }
+}

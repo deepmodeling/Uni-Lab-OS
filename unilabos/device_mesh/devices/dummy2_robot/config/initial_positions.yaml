@@ -1,0 +1,9 @@
+# Default initial positions for dummy2's ros2_control fake system
+
+initial_positions:
+  Joint1: 0
+  Joint2: 0
+  Joint3: 0
+  Joint4: 0
+  Joint5: 0
+  Joint6: 0

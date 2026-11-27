@@ -1,0 +1,18 @@
+float64[] vols
+Resource[] sources
+Resource waste_liquid
+int32[] use_channels
+float64[] flow_rates
+geometry_msgs/Point[] offsets
+float64[] liquid_height
+float64[] blow_out_air_volume
+string spread
+int32[] delays
+bool is_96_well
+float64[] top
+string[] none_keys
+---
+string return_info
+bool success
+---
+# 反馈

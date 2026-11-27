@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 2,
+  "startup": {
+    "graph": "devices.json", "backend": "ros", "actionMode": "simulate", "extraArgs": ["--external_devices_only", "--ros_discovery_server", "off"]
+  }
+}

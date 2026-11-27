@@ -1,0 +1,18 @@
+{
+    "first_joint": {
+        "child":"first_link",
+        "axis" : "-y"
+    },
+    "second_joint": {
+        "child":"second_link",
+        "axis" : "-x"
+    },
+    "third_joint": {
+        "child":"third_link",
+        "axis" : "-z"
+    },
+    "fourth_joint": {
+        "child":"fourth_link",
+        "axis" : "-z"
+    }
+}

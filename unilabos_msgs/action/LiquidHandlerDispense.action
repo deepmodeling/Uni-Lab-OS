@@ -1,0 +1,14 @@
+# 请求字段
+Resource[] resources
+float64[] vols
+int32[] use_channels
+float64[] flow_rates
+geometry_msgs/Point[] offsets
+int32[] blow_out_air_volume
+string spread
+---
+# 结果字段
+string return_info
+bool success
+---
+# 反馈字段 

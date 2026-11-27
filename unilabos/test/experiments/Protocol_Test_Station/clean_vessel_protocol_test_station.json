@@ -1,0 +1,446 @@
+{
+    "nodes": [
+        {
+            "id": "CleanVesselProtocolTestStation",
+            "name": "容器清洗协议测试站",
+            "children": [
+                "transfer_pump_1",
+                "transfer_pump_2",
+                "multiway_valve_1",
+                "multiway_valve_2",
+                "heatchill_1",
+                "flask_water",
+                "flask_acetone",
+                "flask_ethanol",
+                "flask_air",
+                "main_reactor",
+                "secondary_reactor",
+                "waste_workup"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": [
+                    "CleanVesselProtocol",
+                    "PumpTransferProtocol",
+                    "HeatChillProtocol",
+                    "HeatChillStartProtocol",
+                    "HeatChillStopProtocol"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "主清洗泵",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 250,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP1",
+                "max_volume": 25.0,
+                "transfer_rate": 2.5
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "transfer_pump_2",
+            "name": "副清洗泵",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 450,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP2",
+                "max_volume": 25.0,
+                "transfer_rate": 2.5
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "溶剂分配阀",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 250,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE1",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "multiway_valve_2",
+            "name": "容器分配阀",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 450,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE2",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "heatchill_1",
+            "name": "加热清洗器",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 600,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_HEATCHILL1",
+                "max_temp": 100.0,
+                "min_temp": 10.0,
+                "max_stir_speed": 500.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_water",
+            "name": "蒸馏水瓶",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 50,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "water",
+                        "liquid_volume": 900.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_acetone",
+            "name": "丙酮清洗瓶",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 150,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "acetone",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_ethanol",
+            "name": "乙醇清洗瓶",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 250,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "ethanol",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 350,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "main_reactor",
+            "name": "主反应器",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 600,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "residue",
+                        "liquid_volume": 50.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "secondary_reactor",
+            "name": "副反应器",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 800,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "organic_residue",
+                        "liquid_volume": 30.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "清洗废液瓶",
+            "children": [],
+            "parent": "CleanVesselProtocolTestStation",
+            "type": "container",
+            "class": "container",
+            "position": {
+                "x": 700,
+                "y": 550,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 3000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+        "links": [
+        {
+            "id": "link_pump1_to_valve1",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump",
+                "multiway_valve_1": "transferpump"
+            }
+        },
+        {
+            "id": "link_pump2_to_valve2",
+            "source": "transfer_pump_2",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_2": "transferpump",
+                "multiway_valve_2": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve1_to_water",
+            "source": "multiway_valve_1",
+            "target": "flask_water",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "flask_water": "top"
+            }
+        },
+        {
+            "id": "link_valve1_to_acetone",
+            "source": "multiway_valve_1",
+            "target": "flask_acetone",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "flask_acetone": "top"
+            }
+        },
+        {
+            "id": "link_valve1_to_ethanol",
+            "source": "multiway_valve_1",
+            "target": "flask_ethanol",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "4",
+                "flask_ethanol": "top"
+            }
+        },
+        {
+            "id": "link_valve1_to_air",
+            "source": "multiway_valve_1",
+            "target": "flask_air",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "6",
+                "flask_air": "top"
+            }
+        },
+        {
+            "id": "link_valve1_to_valve2_for_cleaning",
+            "source": "multiway_valve_1",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "multiway_valve_2": "8"
+            }
+        },
+        {
+            "id": "link_valve2_to_main_reactor_in",
+            "source": "multiway_valve_2",
+            "target": "main_reactor",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "2",
+                "main_reactor": "top"
+            }
+        },
+        {
+            "id": "link_valve2_to_secondary_reactor_in",
+            "source": "multiway_valve_2",
+            "target": "secondary_reactor",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "3",
+                "secondary_reactor": "top"
+            }
+        },
+        {
+            "id": "link_main_reactor_out_to_valve2",
+            "source": "main_reactor",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "main_reactor": "bottom",
+                "multiway_valve_2": "6"
+            }
+        },
+        {
+            "id": "link_secondary_reactor_out_to_valve2",
+            "source": "secondary_reactor",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "secondary_reactor": "bottom",
+                "multiway_valve_2": "7"
+            }
+        },
+        {
+            "id": "link_valve2_to_waste",
+            "source": "multiway_valve_2",
+            "target": "waste_workup",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "4",
+                "waste_workup": "top"
+            }
+        },
+        {
+            "id": "link_heatchill1_to_main_reactor",
+            "source": "heatchill_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "heatchill_1": "heatchill",
+                "main_reactor": "bind"
+            }
+        },
+        {
+            "id": "link_heatchill1_to_secondary_reactor",
+            "source": "heatchill_1",
+            "target": "secondary_reactor",
+            "type": "mechanical",
+            "port": {
+                "heatchill_1": "heatchill",
+                "secondary_reactor": "bind"
+            }
+        }
+    ]
+}

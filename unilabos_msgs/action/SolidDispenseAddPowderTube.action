@@ -1,0 +1,8 @@
+int32 powder_tube_number
+string target_tube_position
+float64 compound_mass
+---
+string return_info
+float64 actual_mass_mg
+bool success
+---

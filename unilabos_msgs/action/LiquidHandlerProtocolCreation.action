@@ -1,0 +1,10 @@
+string protocol_name
+string protocol_description
+string protocol_version
+string protocol_author
+string protocol_date
+string protocol_type
+string[] none_keys
+---
+string return_info
+---

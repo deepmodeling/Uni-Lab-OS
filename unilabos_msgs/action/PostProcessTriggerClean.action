@@ -1,0 +1,46 @@
+# Goal - 清洗参数  
+float64 nmp_outer_wall_cleaning_injection
+int32 nmp_outer_wall_cleaning_count
+int32 nmp_outer_wall_cleaning_wait_time
+int32 nmp_outer_wall_cleaning_waste_time
+float64 nmp_inner_wall_cleaning_injection
+int32 nmp_inner_wall_cleaning_count
+int32 nmp_pump_cleaning_suction_count
+int32 nmp_inner_wall_cleaning_waste_time
+float64 nmp_stirrer_cleaning_injection
+int32 nmp_stirrer_cleaning_count
+int32 nmp_stirrer_cleaning_wait_time
+int32 nmp_stirrer_cleaning_waste_time
+float64 water_outer_wall_cleaning_injection
+int32 water_outer_wall_cleaning_count
+int32 water_outer_wall_cleaning_wait_time 
+int32 water_outer_wall_cleaning_waste_time
+float64 water_inner_wall_cleaning_injection
+int32 water_inner_wall_cleaning_count
+int32 water_pump_cleaning_suction_count
+int32 water_inner_wall_cleaning_waste_time
+float64 water_stirrer_cleaning_injection
+int32 water_stirrer_cleaning_count
+int32 water_stirrer_cleaning_wait_time
+int32 water_stirrer_cleaning_waste_time
+float64 acetone_outer_wall_cleaning_injection
+int32 acetone_outer_wall_cleaning_count
+int32 acetone_outer_wall_cleaning_wait_time 
+int32 acetone_outer_wall_cleaning_waste_time 
+float64 acetone_inner_wall_cleaning_injection
+int32 acetone_inner_wall_cleaning_count
+int32 acetone_pump_cleaning_suction_count 
+int32 acetone_inner_wall_cleaning_waste_time
+float64 acetone_stirrer_cleaning_injection
+int32 acetone_stirrer_cleaning_count
+int32 acetone_stirrer_cleaning_wait_time
+int32 acetone_stirrer_cleaning_waste_time
+int32 pipe_blowing_time
+int32 injection_pump_forward_empty_suction_count
+int32 injection_pump_reverse_empty_suction_count
+int32 filtration_liquid_selection
+---
+# Result - 操作结果  
+string return_info                     # 操作是否成功  
+---
+# Feedback - 实时反馈  

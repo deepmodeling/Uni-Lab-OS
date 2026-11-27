@@ -1,0 +1,255 @@
+{
+  "type": "UniLabJsonCommandAsync",
+  "goal": {
+    "resource": "resource",
+    "target_device": "target_device",
+    "mount_resource": "mount_resource"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "resource": {
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position",
+                  "additionalProperties": false
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "w": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation",
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose",
+              "additionalProperties": false
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "title": "resource"
+        },
+        "type": "array"
+      },
+      "target_device": {
+        "type": "string",
+        "description": "device reference"
+      },
+      "mount_resource": {
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "sample_id": {
+              "type": "string"
+            },
+            "children": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "parent": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "category": {
+              "type": "string"
+            },
+            "pose": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z"
+                  ],
+                  "title": "position",
+                  "additionalProperties": false
+                },
+                "orientation": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "z": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    },
+                    "w": {
+                      "type": "number",
+                      "minimum": -1.7976931348623157e+308,
+                      "maximum": 1.7976931348623157e+308
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "z",
+                    "w"
+                  ],
+                  "title": "orientation",
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "position",
+                "orientation"
+              ],
+              "title": "pose",
+              "additionalProperties": false
+            },
+            "config": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "title": "mount_resource"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "resource",
+      "target_device",
+      "mount_resource"
+    ],
+    "_unilabos_placeholder_info": {
+      "resource": "unilabos_resources",
+      "target_device": "unilabos_devices",
+      "mount_resource": "unilabos_resources"
+    }
+  },
+  "goal_default": {},
+  "placeholder_keys": {
+    "resource": "unilabos_resources",
+    "target_device": "unilabos_devices",
+    "mount_resource": "unilabos_resources"
+  }
+}

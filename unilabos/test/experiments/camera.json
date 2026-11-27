@@ -1,0 +1,45 @@
+{
+    "nodes": [
+        {
+            "id": "Camera",
+            "name": "摄像头",
+            "children": [
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "camera",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "camera_index": 0,
+                "period": 0.05
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "Gripper1",
+            "name": "假夹爪",
+            "children": [
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "gripper.mock",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+            },
+            "data": {
+            }
+        }
+    ],
+    "links": [
+        
+    ]
+}

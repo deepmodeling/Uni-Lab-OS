@@ -1,0 +1,34 @@
+{
+    "nodes": [
+        {
+            "id": "ChinWeStation",
+            "name": "分液工作站",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "separator.chinwe",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "port": "192.168.31.13:8899",
+                "baudrate": 9600,
+                "pump_ids": [
+                    1,
+                    2,
+                    3
+                ],
+                "motor_ids": [
+                    4,
+                    5
+                ],
+                "sensor_id": 6,
+                "sensor_threshold": 300
+            },
+            "data": {}
+        }
+    ],
+    "links": []
+}

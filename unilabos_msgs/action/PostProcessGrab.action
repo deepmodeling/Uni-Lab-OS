@@ -1,0 +1,8 @@
+# Goal - 抓取参数  
+int32 reaction_tank_number       #反应罐号码
+int32 raw_tank_number            #原料罐号码 
+---
+# Result - 操作结果
+string return_info  
+---
+# Feedback - 实时反馈  

@@ -1,0 +1,12 @@
+# Goal - 反应器放入操作参数
+string cutoff                   # 黏度设置
+string temperature              # 温度设置
+string assign_material_name     # 分液类型
+---
+# Result - 操作结果
+bool success                    # 操作是否成功
+string return_info              # 结果消息
+int32 code                      # 操作结果代码（1表示成功，0表示失败）
+---
+# Feedback - 实时反馈
+string feedback                 # 操作过程中的反馈信息

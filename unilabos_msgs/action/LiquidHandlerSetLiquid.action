@@ -1,0 +1,6 @@
+Resource[] wells
+string[] liquid_names
+float64[] volumes
+---
+string return_info
+---

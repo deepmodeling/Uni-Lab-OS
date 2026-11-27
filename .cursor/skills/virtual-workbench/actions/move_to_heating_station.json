@@ -1,0 +1,19 @@
+{
+  "type": "UniLabJsonCommand",
+  "goal": {
+    "material_number": "material_number"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "material_number": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "material_number"
+    ]
+  },
+  "goal_default": {},
+  "placeholder_keys": {}
+}

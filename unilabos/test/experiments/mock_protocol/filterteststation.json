@@ -1,0 +1,270 @@
+{
+    "nodes": [
+        {
+            "id": "FilterTestStation",
+            "name": "过滤器测试工作站",
+            "children": [
+                "pump_add",
+                "flask_sample",
+                "flask_filtrate", 
+                "flask_buffer",
+                "reactor",
+                "stirrer",
+                "filter_1",
+                "flask_air"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["AddProtocol", "PumpTransferProtocol", "CleanProtocol", "FilterProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "pump_add",
+            "name": "pump_add",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 520.6111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 25.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "stirrer",
+            "name": "stirrer",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 650.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 100.0,
+                "max_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "filter_1",
+            "name": "过滤器",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "device",
+            "class": "virtual_filter",
+            "position": {
+                "x": 800,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_temp": 100.0,
+                "max_stir_speed": 1000.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "flask_sample",
+            "name": "样品瓶",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_filtrate",
+            "name": "滤液瓶",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_buffer",
+            "name": "缓冲液瓶",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "反应器",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 5000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "FilterTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 950,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "stirrer",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "stirrer": "top",
+                "reactor": "bottom"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "pump_add": "outlet",
+                "flask_sample": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_filtrate",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_filtrate": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_buffer",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_buffer": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "pump_add": "outlet",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "pump_add",
+            "target": "flask_air",
+            "type": "physical",
+            "port": {
+                "pump_add": "inlet",
+                "flask_air": "top"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "reactor",
+            "type": "logical",
+            "port": {
+                "filter_1": "input",
+                "reactor": "vessel"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "flask_sample",
+            "type": "logical",
+            "port": {
+                "filter_1": "input",
+                "flask_sample": "vessel"
+            }
+        },
+        {
+            "source": "filter_1",
+            "target": "flask_filtrate",
+            "type": "logical",
+            "port": {
+                "filter_1": "output",
+                "flask_filtrate": "vessel"
+            }
+        }
+    ]
+}

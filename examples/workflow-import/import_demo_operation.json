@@ -1,0 +1,24 @@
+{
+  "name": "导入测试实验操作(JSON)",
+  "workflow_name": "导入测试实验操作(JSON)",
+  "description": "用于验证 JSON 工作流导入。",
+  "tags": ["import-test"],
+  "workflow_type": "experiment_operation",
+  "meta_data": {},
+  "nodes": [
+    {
+      "uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "workflow_node_template_uuid": "e28fa36f-4e9e-59f0-b408-8364a9f6cd07",
+      "material_uuid": "60f712c6-b1a9-58df-8548-9ca411425486",
+      "name": "导入测试节点",
+      "param": {
+        "command_id": "110"
+      },
+      "pose": {},
+      "execution_policy": {},
+      "meta_data": {"unilab": {"executor_binding": {"mode": "fixed", "device_id": "host_node"}}}
+    }
+  ],
+  "edges": [],
+  "inventory_requirements": []
+}

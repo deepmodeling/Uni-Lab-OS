@@ -1,0 +1,4 @@
+string device_id
+string command
+---
+bool success

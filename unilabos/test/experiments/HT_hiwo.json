@@ -1,0 +1,4806 @@
+{
+    "nodes": [
+        {
+            "id": "AiChemEcoHiWo",
+            "name": "标智移液工作站",
+            "parent": null,
+            "type": "device",
+            "class": "work_station.aichemeco_hiwo",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "schema": {
+                "type": "object",
+                "properties": {}
+            },
+            "children": [
+                "test-ZZ-B02",
+                "test-FY96-B01",
+                "test-GL96-2A01"
+            ]
+        },
+        {
+            "id": "test-ZZ-B02",
+            "name": "96孔中转板",
+            "type": "plate",
+            "data": {
+                "layout": {
+                    "gridCount": 96,
+                    "gridColumnNumber": 12
+                }
+            },
+            "parent": "AiChemEcoHiWo",
+            "children": [
+                "test-ZZ-B02-01",
+                "test-ZZ-B02-02",
+                "test-ZZ-B02-03",
+                "test-ZZ-B02-04",
+                "test-ZZ-B02-05",
+                "test-ZZ-B02-06",
+                "test-ZZ-B02-07",
+                "test-ZZ-B02-08",
+                "test-ZZ-B02-09",
+                "test-ZZ-B02-10",
+                "test-ZZ-B02-11",
+                "test-ZZ-B02-12",
+                "test-ZZ-B02-13",
+                "test-ZZ-B02-14",
+                "test-ZZ-B02-15",
+                "test-ZZ-B02-16",
+                "test-ZZ-B02-17",
+                "test-ZZ-B02-18",
+                "test-ZZ-B02-19",
+                "test-ZZ-B02-20",
+                "test-ZZ-B02-21",
+                "test-ZZ-B02-22",
+                "test-ZZ-B02-23",
+                "test-ZZ-B02-24",
+                "test-ZZ-B02-25",
+                "test-ZZ-B02-26",
+                "test-ZZ-B02-27",
+                "test-ZZ-B02-28",
+                "test-ZZ-B02-29",
+                "test-ZZ-B02-30",
+                "test-ZZ-B02-31",
+                "test-ZZ-B02-32",
+                "test-ZZ-B02-33",
+                "test-ZZ-B02-34",
+                "test-ZZ-B02-35",
+                "test-ZZ-B02-36",
+                "test-ZZ-B02-37",
+                "test-ZZ-B02-38",
+                "test-ZZ-B02-39",
+                "test-ZZ-B02-40",
+                "test-ZZ-B02-41",
+                "test-ZZ-B02-42",
+                "test-ZZ-B02-43",
+                "test-ZZ-B02-44",
+                "test-ZZ-B02-45",
+                "test-ZZ-B02-46",
+                "test-ZZ-B02-47",
+                "test-ZZ-B02-48",
+                "test-ZZ-B02-49",
+                "test-ZZ-B02-50",
+                "test-ZZ-B02-51",
+                "test-ZZ-B02-52",
+                "test-ZZ-B02-53",
+                "test-ZZ-B02-54",
+                "test-ZZ-B02-55",
+                "test-ZZ-B02-56",
+                "test-ZZ-B02-57",
+                "test-ZZ-B02-58",
+                "test-ZZ-B02-59",
+                "test-ZZ-B02-60",
+                "test-ZZ-B02-61",
+                "test-ZZ-B02-62",
+                "test-ZZ-B02-63",
+                "test-ZZ-B02-64",
+                "test-ZZ-B02-65",
+                "test-ZZ-B02-66",
+                "test-ZZ-B02-67",
+                "test-ZZ-B02-68",
+                "test-ZZ-B02-69",
+                "test-ZZ-B02-70",
+                "test-ZZ-B02-71",
+                "test-ZZ-B02-72",
+                "test-ZZ-B02-73",
+                "test-ZZ-B02-74",
+                "test-ZZ-B02-75",
+                "test-ZZ-B02-76",
+                "test-ZZ-B02-77",
+                "test-ZZ-B02-78",
+                "test-ZZ-B02-79",
+                "test-ZZ-B02-80",
+                "test-ZZ-B02-81",
+                "test-ZZ-B02-82",
+                "test-ZZ-B02-83",
+                "test-ZZ-B02-84",
+                "test-ZZ-B02-85",
+                "test-ZZ-B02-86",
+                "test-ZZ-B02-87",
+                "test-ZZ-B02-88",
+                "test-ZZ-B02-89",
+                "test-ZZ-B02-90",
+                "test-ZZ-B02-91",
+                "test-ZZ-B02-92",
+                "test-ZZ-B02-93",
+                "test-ZZ-B02-94",
+                "test-ZZ-B02-95",
+                "test-ZZ-B02-96"
+            ]
+        },
+        {
+            "id": "test-ZZ-B02-01",
+            "name": "test-ZZ-B02-01",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CuBr2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-02",
+            "name": "test-ZZ-B02-02",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CuBr-SMe2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-03",
+            "name": "test-ZZ-B02-03",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "IPrCuCl",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-04",
+            "name": "test-ZZ-B02-04",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "Cu(MeCN)4PF6",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-05",
+            "name": "test-ZZ-B02-05",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "[CuI2NBu4]2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-06",
+            "name": "test-ZZ-B02-06",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CuCl2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-07",
+            "name": "test-ZZ-B02-07",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CuCl2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-08",
+            "name": "test-ZZ-B02-08",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "[CuI2NBu4]2",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-09",
+            "name": "test-ZZ-B02-09",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-10",
+            "name": "test-ZZ-B02-10",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC1=CC=CC=C1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-11",
+            "name": "test-ZZ-B02-11",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-12",
+            "name": "test-ZZ-B02-12",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-13",
+            "name": "test-ZZ-B02-13",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "O=C(C)OCC",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-14",
+            "name": "test-ZZ-B02-14",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-15",
+            "name": "test-ZZ-B02-15",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-16",
+            "name": "test-ZZ-B02-16",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC#N",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-17",
+            "name": "test-ZZ-B02-17",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC(C)([O-])C",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-18",
+            "name": "test-ZZ-B02-18",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CCN",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-19",
+            "name": "test-ZZ-B02-19",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "C1COCCN1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-20",
+            "name": "test-ZZ-B02-20",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "C1CCN2CCCN=C2CC1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-21",
+            "name": "test-ZZ-B02-21",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CC(C)([O-])C",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-22",
+            "name": "test-ZZ-B02-22",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "C1COCCN1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-23",
+            "name": "test-ZZ-B02-23",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "C1CCCCN1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-24",
+            "name": "test-ZZ-B02-24",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "CN(C)C1=CC=NC=C1",
+                        "liquid_volume": "100"
+                    }
+                ]
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-25",
+            "name": "test-ZZ-B02-25",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-26",
+            "name": "test-ZZ-B02-26",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-27",
+            "name": "test-ZZ-B02-27",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-28",
+            "name": "test-ZZ-B02-28",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-29",
+            "name": "test-ZZ-B02-29",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-30",
+            "name": "test-ZZ-B02-30",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-31",
+            "name": "test-ZZ-B02-31",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-32",
+            "name": "test-ZZ-B02-32",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-33",
+            "name": "test-ZZ-B02-33",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-34",
+            "name": "test-ZZ-B02-34",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-35",
+            "name": "test-ZZ-B02-35",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-36",
+            "name": "test-ZZ-B02-36",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-37",
+            "name": "test-ZZ-B02-37",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-38",
+            "name": "test-ZZ-B02-38",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-39",
+            "name": "test-ZZ-B02-39",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-40",
+            "name": "test-ZZ-B02-40",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-41",
+            "name": "test-ZZ-B02-41",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-42",
+            "name": "test-ZZ-B02-42",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-43",
+            "name": "test-ZZ-B02-43",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-44",
+            "name": "test-ZZ-B02-44",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-45",
+            "name": "test-ZZ-B02-45",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-46",
+            "name": "test-ZZ-B02-46",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-47",
+            "name": "test-ZZ-B02-47",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-48",
+            "name": "test-ZZ-B02-48",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-49",
+            "name": "test-ZZ-B02-49",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-50",
+            "name": "test-ZZ-B02-50",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-51",
+            "name": "test-ZZ-B02-51",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-52",
+            "name": "test-ZZ-B02-52",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-53",
+            "name": "test-ZZ-B02-53",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-54",
+            "name": "test-ZZ-B02-54",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-55",
+            "name": "test-ZZ-B02-55",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-56",
+            "name": "test-ZZ-B02-56",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-57",
+            "name": "test-ZZ-B02-57",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-58",
+            "name": "test-ZZ-B02-58",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-59",
+            "name": "test-ZZ-B02-59",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-60",
+            "name": "test-ZZ-B02-60",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-61",
+            "name": "test-ZZ-B02-61",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-62",
+            "name": "test-ZZ-B02-62",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-63",
+            "name": "test-ZZ-B02-63",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-64",
+            "name": "test-ZZ-B02-64",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-65",
+            "name": "test-ZZ-B02-65",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-66",
+            "name": "test-ZZ-B02-66",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-67",
+            "name": "test-ZZ-B02-67",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-68",
+            "name": "test-ZZ-B02-68",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-69",
+            "name": "test-ZZ-B02-69",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-70",
+            "name": "test-ZZ-B02-70",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-71",
+            "name": "test-ZZ-B02-71",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-72",
+            "name": "test-ZZ-B02-72",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-73",
+            "name": "test-ZZ-B02-73",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-74",
+            "name": "test-ZZ-B02-74",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-75",
+            "name": "test-ZZ-B02-75",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-76",
+            "name": "test-ZZ-B02-76",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-77",
+            "name": "test-ZZ-B02-77",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-78",
+            "name": "test-ZZ-B02-78",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-79",
+            "name": "test-ZZ-B02-79",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-80",
+            "name": "test-ZZ-B02-80",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-81",
+            "name": "test-ZZ-B02-81",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-82",
+            "name": "test-ZZ-B02-82",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-83",
+            "name": "test-ZZ-B02-83",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-84",
+            "name": "test-ZZ-B02-84",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-85",
+            "name": "test-ZZ-B02-85",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-86",
+            "name": "test-ZZ-B02-86",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-87",
+            "name": "test-ZZ-B02-87",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-88",
+            "name": "test-ZZ-B02-88",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-89",
+            "name": "test-ZZ-B02-89",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 0,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-90",
+            "name": "test-ZZ-B02-90",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 1,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-91",
+            "name": "test-ZZ-B02-91",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 2,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-92",
+            "name": "test-ZZ-B02-92",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 3,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-93",
+            "name": "test-ZZ-B02-93",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 4,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-94",
+            "name": "test-ZZ-B02-94",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 5,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-95",
+            "name": "test-ZZ-B02-95",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 6,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-ZZ-B02-96",
+            "name": "test-ZZ-B02-96",
+            "type": "container",
+            "parent": "test-ZZ-B02",
+            "position": {
+                "x": 7,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01",
+            "name": "96孔反应板",
+            "type": "plate",
+            "parent": "AiChemEcoHiWo",
+            "data": {
+                "layout": {
+                    "gridCount": 96,
+                    "gridColumnNumber": 12
+                }
+            },
+            "children": [
+                "test-FY96-B01-01",
+                "test-FY96-B01-02",
+                "test-FY96-B01-03",
+                "test-FY96-B01-04",
+                "test-FY96-B01-05",
+                "test-FY96-B01-06",
+                "test-FY96-B01-07",
+                "test-FY96-B01-08",
+                "test-FY96-B01-09",
+                "test-FY96-B01-10",
+                "test-FY96-B01-11",
+                "test-FY96-B01-12",
+                "test-FY96-B01-13",
+                "test-FY96-B01-14",
+                "test-FY96-B01-15",
+                "test-FY96-B01-16",
+                "test-FY96-B01-17",
+                "test-FY96-B01-18",
+                "test-FY96-B01-19",
+                "test-FY96-B01-20",
+                "test-FY96-B01-21",
+                "test-FY96-B01-22",
+                "test-FY96-B01-23",
+                "test-FY96-B01-24",
+                "test-FY96-B01-25",
+                "test-FY96-B01-26",
+                "test-FY96-B01-27",
+                "test-FY96-B01-28",
+                "test-FY96-B01-29",
+                "test-FY96-B01-30",
+                "test-FY96-B01-31",
+                "test-FY96-B01-32",
+                "test-FY96-B01-33",
+                "test-FY96-B01-34",
+                "test-FY96-B01-35",
+                "test-FY96-B01-36",
+                "test-FY96-B01-37",
+                "test-FY96-B01-38",
+                "test-FY96-B01-39",
+                "test-FY96-B01-40",
+                "test-FY96-B01-41",
+                "test-FY96-B01-42",
+                "test-FY96-B01-43",
+                "test-FY96-B01-44",
+                "test-FY96-B01-45",
+                "test-FY96-B01-46",
+                "test-FY96-B01-47",
+                "test-FY96-B01-48",
+                "test-FY96-B01-49",
+                "test-FY96-B01-50",
+                "test-FY96-B01-51",
+                "test-FY96-B01-52",
+                "test-FY96-B01-53",
+                "test-FY96-B01-54",
+                "test-FY96-B01-55",
+                "test-FY96-B01-56",
+                "test-FY96-B01-57",
+                "test-FY96-B01-58",
+                "test-FY96-B01-59",
+                "test-FY96-B01-60",
+                "test-FY96-B01-61",
+                "test-FY96-B01-62",
+                "test-FY96-B01-63",
+                "test-FY96-B01-64",
+                "test-FY96-B01-65",
+                "test-FY96-B01-66",
+                "test-FY96-B01-67",
+                "test-FY96-B01-68",
+                "test-FY96-B01-69",
+                "test-FY96-B01-70",
+                "test-FY96-B01-71",
+                "test-FY96-B01-72",
+                "test-FY96-B01-73",
+                "test-FY96-B01-74",
+                "test-FY96-B01-75",
+                "test-FY96-B01-76",
+                "test-FY96-B01-77",
+                "test-FY96-B01-78",
+                "test-FY96-B01-79",
+                "test-FY96-B01-80",
+                "test-FY96-B01-81",
+                "test-FY96-B01-82",
+                "test-FY96-B01-83",
+                "test-FY96-B01-84",
+                "test-FY96-B01-85",
+                "test-FY96-B01-86",
+                "test-FY96-B01-87",
+                "test-FY96-B01-88",
+                "test-FY96-B01-89",
+                "test-FY96-B01-90",
+                "test-FY96-B01-91",
+                "test-FY96-B01-92",
+                "test-FY96-B01-93",
+                "test-FY96-B01-94",
+                "test-FY96-B01-95",
+                "test-FY96-B01-96"
+            ]
+        },
+        {
+            "id": "test-FY96-B01-01",
+            "name": "test-FY96-B01-01",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-01",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-02",
+            "name": "test-FY96-B01-02",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-02",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-03",
+            "name": "test-FY96-B01-03",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-03",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-04",
+            "name": "test-FY96-B01-04",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-04",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-05",
+            "name": "test-FY96-B01-05",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-05",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-06",
+            "name": "test-FY96-B01-06",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-06",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-07",
+            "name": "test-FY96-B01-07",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-07",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-08",
+            "name": "test-FY96-B01-08",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "sample_id": "20250123-rxn-08",
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-09",
+            "name": "test-FY96-B01-09",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-10",
+            "name": "test-FY96-B01-10",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-11",
+            "name": "test-FY96-B01-11",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-12",
+            "name": "test-FY96-B01-12",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-13",
+            "name": "test-FY96-B01-13",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-14",
+            "name": "test-FY96-B01-14",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-15",
+            "name": "test-FY96-B01-15",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-16",
+            "name": "test-FY96-B01-16",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-17",
+            "name": "test-FY96-B01-17",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-18",
+            "name": "test-FY96-B01-18",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-19",
+            "name": "test-FY96-B01-19",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-20",
+            "name": "test-FY96-B01-20",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-21",
+            "name": "test-FY96-B01-21",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-22",
+            "name": "test-FY96-B01-22",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-23",
+            "name": "test-FY96-B01-23",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-24",
+            "name": "test-FY96-B01-24",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-25",
+            "name": "test-FY96-B01-25",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-26",
+            "name": "test-FY96-B01-26",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-27",
+            "name": "test-FY96-B01-27",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-28",
+            "name": "test-FY96-B01-28",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-29",
+            "name": "test-FY96-B01-29",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-30",
+            "name": "test-FY96-B01-30",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-31",
+            "name": "test-FY96-B01-31",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-32",
+            "name": "test-FY96-B01-32",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-33",
+            "name": "test-FY96-B01-33",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-34",
+            "name": "test-FY96-B01-34",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-35",
+            "name": "test-FY96-B01-35",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-36",
+            "name": "test-FY96-B01-36",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-37",
+            "name": "test-FY96-B01-37",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-38",
+            "name": "test-FY96-B01-38",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-39",
+            "name": "test-FY96-B01-39",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-40",
+            "name": "test-FY96-B01-40",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-41",
+            "name": "test-FY96-B01-41",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-42",
+            "name": "test-FY96-B01-42",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-43",
+            "name": "test-FY96-B01-43",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-44",
+            "name": "test-FY96-B01-44",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-45",
+            "name": "test-FY96-B01-45",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-46",
+            "name": "test-FY96-B01-46",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-47",
+            "name": "test-FY96-B01-47",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-48",
+            "name": "test-FY96-B01-48",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-49",
+            "name": "test-FY96-B01-49",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-50",
+            "name": "test-FY96-B01-50",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-51",
+            "name": "test-FY96-B01-51",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-52",
+            "name": "test-FY96-B01-52",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-53",
+            "name": "test-FY96-B01-53",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-54",
+            "name": "test-FY96-B01-54",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-55",
+            "name": "test-FY96-B01-55",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-56",
+            "name": "test-FY96-B01-56",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-57",
+            "name": "test-FY96-B01-57",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-58",
+            "name": "test-FY96-B01-58",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-59",
+            "name": "test-FY96-B01-59",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-60",
+            "name": "test-FY96-B01-60",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-61",
+            "name": "test-FY96-B01-61",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-62",
+            "name": "test-FY96-B01-62",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-63",
+            "name": "test-FY96-B01-63",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-64",
+            "name": "test-FY96-B01-64",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-65",
+            "name": "test-FY96-B01-65",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-66",
+            "name": "test-FY96-B01-66",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-67",
+            "name": "test-FY96-B01-67",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-68",
+            "name": "test-FY96-B01-68",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-69",
+            "name": "test-FY96-B01-69",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-70",
+            "name": "test-FY96-B01-70",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-71",
+            "name": "test-FY96-B01-71",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-72",
+            "name": "test-FY96-B01-72",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-73",
+            "name": "test-FY96-B01-73",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-74",
+            "name": "test-FY96-B01-74",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-75",
+            "name": "test-FY96-B01-75",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-76",
+            "name": "test-FY96-B01-76",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-77",
+            "name": "test-FY96-B01-77",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-78",
+            "name": "test-FY96-B01-78",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-79",
+            "name": "test-FY96-B01-79",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-80",
+            "name": "test-FY96-B01-80",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-81",
+            "name": "test-FY96-B01-81",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-82",
+            "name": "test-FY96-B01-82",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-83",
+            "name": "test-FY96-B01-83",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-84",
+            "name": "test-FY96-B01-84",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-85",
+            "name": "test-FY96-B01-85",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-86",
+            "name": "test-FY96-B01-86",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-87",
+            "name": "test-FY96-B01-87",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-88",
+            "name": "test-FY96-B01-88",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-89",
+            "name": "test-FY96-B01-89",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 0,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-90",
+            "name": "test-FY96-B01-90",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 1,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-91",
+            "name": "test-FY96-B01-91",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 2,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-92",
+            "name": "test-FY96-B01-92",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 3,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-93",
+            "name": "test-FY96-B01-93",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 4,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-94",
+            "name": "test-FY96-B01-94",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 5,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-95",
+            "name": "test-FY96-B01-95",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 6,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-FY96-B01-96",
+            "name": "test-FY96-B01-96",
+            "type": "container",
+            "parent": "test-FY96-B01",
+            "position": {
+                "x": 7,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01",
+            "name": "96孔过滤板",
+            "type": "plate",
+            "parent": "AiChemEcoHiWo",
+            "data": {
+                "layout": {
+                    "gridCount": 96,
+                    "gridColumnNumber": 12
+                }
+            },
+            "children": [
+                "test-GL96-2A01-01",
+                "test-GL96-2A01-02",
+                "test-GL96-2A01-03",
+                "test-GL96-2A01-04",
+                "test-GL96-2A01-05",
+                "test-GL96-2A01-06",
+                "test-GL96-2A01-07",
+                "test-GL96-2A01-08",
+                "test-GL96-2A01-09",
+                "test-GL96-2A01-10",
+                "test-GL96-2A01-11",
+                "test-GL96-2A01-12",
+                "test-GL96-2A01-13",
+                "test-GL96-2A01-14",
+                "test-GL96-2A01-15",
+                "test-GL96-2A01-16",
+                "test-GL96-2A01-17",
+                "test-GL96-2A01-18",
+                "test-GL96-2A01-19",
+                "test-GL96-2A01-20",
+                "test-GL96-2A01-21",
+                "test-GL96-2A01-22",
+                "test-GL96-2A01-23",
+                "test-GL96-2A01-24",
+                "test-GL96-2A01-25",
+                "test-GL96-2A01-26",
+                "test-GL96-2A01-27",
+                "test-GL96-2A01-28",
+                "test-GL96-2A01-29",
+                "test-GL96-2A01-30",
+                "test-GL96-2A01-31",
+                "test-GL96-2A01-32",
+                "test-GL96-2A01-33",
+                "test-GL96-2A01-34",
+                "test-GL96-2A01-35",
+                "test-GL96-2A01-36",
+                "test-GL96-2A01-37",
+                "test-GL96-2A01-38",
+                "test-GL96-2A01-39",
+                "test-GL96-2A01-40",
+                "test-GL96-2A01-41",
+                "test-GL96-2A01-42",
+                "test-GL96-2A01-43",
+                "test-GL96-2A01-44",
+                "test-GL96-2A01-45",
+                "test-GL96-2A01-46",
+                "test-GL96-2A01-47",
+                "test-GL96-2A01-48",
+                "test-GL96-2A01-49",
+                "test-GL96-2A01-50",
+                "test-GL96-2A01-51",
+                "test-GL96-2A01-52",
+                "test-GL96-2A01-53",
+                "test-GL96-2A01-54",
+                "test-GL96-2A01-55",
+                "test-GL96-2A01-56",
+                "test-GL96-2A01-57",
+                "test-GL96-2A01-58",
+                "test-GL96-2A01-59",
+                "test-GL96-2A01-60",
+                "test-GL96-2A01-61",
+                "test-GL96-2A01-62",
+                "test-GL96-2A01-63",
+                "test-GL96-2A01-64",
+                "test-GL96-2A01-65",
+                "test-GL96-2A01-66",
+                "test-GL96-2A01-67",
+                "test-GL96-2A01-68",
+                "test-GL96-2A01-69",
+                "test-GL96-2A01-70",
+                "test-GL96-2A01-71",
+                "test-GL96-2A01-72",
+                "test-GL96-2A01-73",
+                "test-GL96-2A01-74",
+                "test-GL96-2A01-75",
+                "test-GL96-2A01-76",
+                "test-GL96-2A01-77",
+                "test-GL96-2A01-78",
+                "test-GL96-2A01-79",
+                "test-GL96-2A01-80",
+                "test-GL96-2A01-81",
+                "test-GL96-2A01-82",
+                "test-GL96-2A01-83",
+                "test-GL96-2A01-84",
+                "test-GL96-2A01-85",
+                "test-GL96-2A01-86",
+                "test-GL96-2A01-87",
+                "test-GL96-2A01-88",
+                "test-GL96-2A01-89",
+                "test-GL96-2A01-90",
+                "test-GL96-2A01-91",
+                "test-GL96-2A01-92",
+                "test-GL96-2A01-93",
+                "test-GL96-2A01-94",
+                "test-GL96-2A01-95",
+                "test-GL96-2A01-96"
+            ]
+        },
+        {
+            "id": "test-GL96-2A01-01",
+            "name": "test-GL96-2A01-01",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-02",
+            "name": "test-GL96-2A01-02",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-03",
+            "name": "test-GL96-2A01-03",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-04",
+            "name": "test-GL96-2A01-04",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-05",
+            "name": "test-GL96-2A01-05",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-06",
+            "name": "test-GL96-2A01-06",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-07",
+            "name": "test-GL96-2A01-07",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-08",
+            "name": "test-GL96-2A01-08",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-09",
+            "name": "test-GL96-2A01-09",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-10",
+            "name": "test-GL96-2A01-10",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-11",
+            "name": "test-GL96-2A01-11",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-12",
+            "name": "test-GL96-2A01-12",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-13",
+            "name": "test-GL96-2A01-13",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-14",
+            "name": "test-GL96-2A01-14",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-15",
+            "name": "test-GL96-2A01-15",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-16",
+            "name": "test-GL96-2A01-16",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 1,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-17",
+            "name": "test-GL96-2A01-17",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-18",
+            "name": "test-GL96-2A01-18",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-19",
+            "name": "test-GL96-2A01-19",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-20",
+            "name": "test-GL96-2A01-20",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-21",
+            "name": "test-GL96-2A01-21",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-22",
+            "name": "test-GL96-2A01-22",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-23",
+            "name": "test-GL96-2A01-23",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-24",
+            "name": "test-GL96-2A01-24",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 2,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-25",
+            "name": "test-GL96-2A01-25",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-26",
+            "name": "test-GL96-2A01-26",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-27",
+            "name": "test-GL96-2A01-27",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-28",
+            "name": "test-GL96-2A01-28",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-29",
+            "name": "test-GL96-2A01-29",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-30",
+            "name": "test-GL96-2A01-30",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-31",
+            "name": "test-GL96-2A01-31",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-32",
+            "name": "test-GL96-2A01-32",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 3,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-33",
+            "name": "test-GL96-2A01-33",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-34",
+            "name": "test-GL96-2A01-34",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-35",
+            "name": "test-GL96-2A01-35",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-36",
+            "name": "test-GL96-2A01-36",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-37",
+            "name": "test-GL96-2A01-37",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-38",
+            "name": "test-GL96-2A01-38",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-39",
+            "name": "test-GL96-2A01-39",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-40",
+            "name": "test-GL96-2A01-40",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 4,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-41",
+            "name": "test-GL96-2A01-41",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-42",
+            "name": "test-GL96-2A01-42",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-43",
+            "name": "test-GL96-2A01-43",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-44",
+            "name": "test-GL96-2A01-44",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-45",
+            "name": "test-GL96-2A01-45",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-46",
+            "name": "test-GL96-2A01-46",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-47",
+            "name": "test-GL96-2A01-47",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-48",
+            "name": "test-GL96-2A01-48",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 5,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-49",
+            "name": "test-GL96-2A01-49",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-50",
+            "name": "test-GL96-2A01-50",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-51",
+            "name": "test-GL96-2A01-51",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-52",
+            "name": "test-GL96-2A01-52",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-53",
+            "name": "test-GL96-2A01-53",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-54",
+            "name": "test-GL96-2A01-54",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-55",
+            "name": "test-GL96-2A01-55",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-56",
+            "name": "test-GL96-2A01-56",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 6,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-57",
+            "name": "test-GL96-2A01-57",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-58",
+            "name": "test-GL96-2A01-58",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-59",
+            "name": "test-GL96-2A01-59",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-60",
+            "name": "test-GL96-2A01-60",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-61",
+            "name": "test-GL96-2A01-61",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-62",
+            "name": "test-GL96-2A01-62",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-63",
+            "name": "test-GL96-2A01-63",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-64",
+            "name": "test-GL96-2A01-64",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 7,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-65",
+            "name": "test-GL96-2A01-65",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-66",
+            "name": "test-GL96-2A01-66",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-67",
+            "name": "test-GL96-2A01-67",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-68",
+            "name": "test-GL96-2A01-68",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-69",
+            "name": "test-GL96-2A01-69",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-70",
+            "name": "test-GL96-2A01-70",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-71",
+            "name": "test-GL96-2A01-71",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-72",
+            "name": "test-GL96-2A01-72",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 8,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-73",
+            "name": "test-GL96-2A01-73",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-74",
+            "name": "test-GL96-2A01-74",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-75",
+            "name": "test-GL96-2A01-75",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-76",
+            "name": "test-GL96-2A01-76",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-77",
+            "name": "test-GL96-2A01-77",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-78",
+            "name": "test-GL96-2A01-78",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-79",
+            "name": "test-GL96-2A01-79",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-80",
+            "name": "test-GL96-2A01-80",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 9,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-81",
+            "name": "test-GL96-2A01-81",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-82",
+            "name": "test-GL96-2A01-82",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-83",
+            "name": "test-GL96-2A01-83",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-84",
+            "name": "test-GL96-2A01-84",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-85",
+            "name": "test-GL96-2A01-85",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-86",
+            "name": "test-GL96-2A01-86",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-87",
+            "name": "test-GL96-2A01-87",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-88",
+            "name": "test-GL96-2A01-88",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 10,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-89",
+            "name": "test-GL96-2A01-89",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 0,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-90",
+            "name": "test-GL96-2A01-90",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 1,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-91",
+            "name": "test-GL96-2A01-91",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 2,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-92",
+            "name": "test-GL96-2A01-92",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 3,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-93",
+            "name": "test-GL96-2A01-93",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 4,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-94",
+            "name": "test-GL96-2A01-94",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 5,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-95",
+            "name": "test-GL96-2A01-95",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 6,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        },
+        {
+            "id": "test-GL96-2A01-96",
+            "name": "test-GL96-2A01-96",
+            "type": "container",
+            "parent": "test-GL96-2A01",
+            "position": {
+                "x": 7,
+                "y": 11,
+                "z": 0
+            },
+            "data": {
+                "liquid": []
+            },
+            "children": []
+        }
+    ],
+    "links": []
+}

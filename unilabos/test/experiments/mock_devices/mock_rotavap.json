@@ -1,0 +1,33 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockRotavap1",  
+            "name": "模拟旋转蒸发器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_rotavap",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "rotate_state": "Stopped",  
+                "rotate_time": 0.0,  
+                "rotate_speed": 0.0,  
+                "pump_state": "Stopped",  
+                "pump_time": 0.0,  
+                "vacuum_level": 1013.25,  
+                "temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "success": "True"  
+            }  
+        }  
+    ],  
+    "links": []  
+}

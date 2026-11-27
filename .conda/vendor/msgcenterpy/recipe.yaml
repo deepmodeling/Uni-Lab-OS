@@ -1,0 +1,39 @@
+context:
+  version: 0.1.8
+
+package:
+  name: msgcenterpy
+  version: ${{ version }}
+
+source:
+  - url: https://files.pythonhosted.org/packages/source/m/msgcenterpy/msgcenterpy-${{ version }}.tar.gz
+    sha256: 802aba5767298de43218b329b7a1fd3ccfe67904ecf6bab1905409caf75dae86
+
+build:
+  number: 0
+  noarch: python
+  script: ${{ PYTHON }} -m pip install . --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python >=3.10
+    - setuptools >=61
+    - wheel
+    - pip
+  run:
+    - python >=3.10
+    - pydantic >=2
+    - jsonschema >=4.25
+    - pyyaml >=6
+
+tests:
+  - python:
+      imports:
+        - msgcenterpy
+      pip_check: true
+
+about:
+  summary: Unified message conversion system used by Uni-Lab Runtime
+  license: Apache-2.0
+  license_file: LICENSE
+  repository: https://github.com/ZGCA-Forge/MsgCenterPy

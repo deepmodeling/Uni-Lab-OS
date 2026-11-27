@@ -1,0 +1,10 @@
+# MobileRobot
+Resource from_repo
+string from_repo_position
+Resource to_repo
+string to_repo_position
+---
+string return_info
+bool success
+---
+string status

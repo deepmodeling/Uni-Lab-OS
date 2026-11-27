@@ -1,0 +1,339 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <!--
+    Base ELITE CS robot series xacro macro.
+
+    NOTE this is NOT a URDF. It cannot directly be loaded by consumers
+    expecting a flattened '.urdf' file. See the top-level '.xacro' for that
+    (but note that .xacro must still be processed by the xacro command).
+
+    This file models the base kinematic chain of a CS robot, which then gets
+    parameterised by various configuration files to convert it into a CS63,
+    CS66, CS612, CS616, CS620 or CS625.
+
+    NOTE the default kinematic parameters (i.e., link lengths, frame locations,
+    offsets, etc) do not correspond to any particular robot. They are defaults
+    only. 
+
+    For accurate (and robot-specific) transforms, the 'kinematics_parameters_file'
+    parameter MUST point to a .yaml file containing the appropriate values for
+    the targeted robot.
+
+     - Chen Shichao
+  -->
+
+  <xacro:include filename="${mesh_path}/devices/elite_robot/urdf/inc/cs_transmissions.xacro" />
+  <xacro:include filename="${mesh_path}/devices/elite_robot/urdf/inc/cs_common.xacro" />
+
+  <xacro:macro name="cs_robot" params="
+    name
+    tf_prefix
+    parent
+    *origin
+    joint_limits_parameters_file
+    kinematics_parameters_file
+    physical_parameters_file
+    visual_parameters_file
+    generate_ros2_control_tag:=true
+    transmission_hw_interface:=hardware_interface/PositionJointInterface
+    safety_limits:=false
+    safety_pos_margin:=0.15
+    safety_k_position:=20
+    use_fake_hardware:=false
+    fake_sensor_commands:=false
+    sim_gazebo:=false
+    sim_ignition:=false
+    headless_mode:=false
+    initial_positions:=${dict(shoulder_pan_joint=0.0,shoulder_lift_joint=-1.57,elbow_joint=0.0,wrist_1_joint=-1.57,wrist_2_joint=0.0,wrist_3_joint=0.0)}
+    use_tool_communication:=false
+    tool_voltage:=0
+    tool_parity:=0
+    tool_baud_rate:=115200
+    tool_stop_bits:=1
+    tool_tcp_port:=54321
+    robot_ip:=0.0.0.0
+    script_filename:=to_be_filled_by_cs_robot_driver
+    output_recipe_filename:=to_be_filled_by_cs_robot_driver
+    input_recipe_filename:=to_be_filled_by_cs_robot_driver
+    reverse_port:=50001
+    script_sender_port:=50002
+    local_ip:=0.0.0.0
+    script_command_port:=50004
+    trajectory_port:=50003
+    mesh_path"
+    
+    >
+
+    <!-- Load configuration data from the provided .yaml files -->
+    <xacro:read_model_data
+      joint_limits_parameters_file="${joint_limits_parameters_file}"
+      kinematics_parameters_file="${kinematics_parameters_file}"
+      physical_parameters_file="${physical_parameters_file}"
+      visual_parameters_file="${visual_parameters_file}"
+      force_abs_paths="true"
+      mesh_path="${mesh_path}" 
+      />
+
+
+    <xacro:if value="${generate_ros2_control_tag}">
+      <!-- ros2 control include -->
+      <xacro:include filename="${mesh_path}/devices/elite_robot/urdf/cs.ros2_control.xacro" />
+      <!-- ros2 control instance -->
+      <xacro:cs_ros2_control
+        name="${name}"
+        use_fake_hardware="${use_fake_hardware}"
+        initial_positions="${initial_positions}"
+        fake_sensor_commands="${fake_sensor_commands}"
+        headless_mode="${headless_mode}"
+        sim_gazebo="${sim_gazebo}"
+        sim_ignition="${sim_ignition}"
+        script_filename="${script_filename}"
+        output_recipe_filename="${output_recipe_filename}"
+        input_recipe_filename="${input_recipe_filename}"
+        tf_prefix="${tf_prefix}"
+        robot_ip="${robot_ip}"
+        use_tool_communication="${use_tool_communication}"
+        tool_voltage="${tool_voltage}"
+        tool_parity="${tool_parity}"
+        tool_baud_rate="${tool_baud_rate}"
+        tool_stop_bits="${tool_stop_bits}"
+        tool_tcp_port="${tool_tcp_port}"
+        reverse_port="${reverse_port}"
+        script_sender_port="${script_sender_port}"
+        local_ip="${local_ip}"
+        script_command_port="${script_command_port}"
+        trajectory_port="${trajectory_port}"
+        />
+    </xacro:if>
+
+    <!-- Add URDF transmission elements (for ros_control) -->
+    <!--<xacro:cs_arm_transmission prefix="${prefix}" hw_interface="${transmission_hw_interface}" />-->
+    <!-- Placeholder for ros2_control transmission which don't yet exist -->
+
+    <!-- links -  main serial chain -->
+    <link name="${tf_prefix}base_link"/>
+    <link name="${tf_prefix}base_link_inertia">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="base" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="base" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${base_mass}" cog="${prop_base_cog}" inertia="${prop_base_inertia}"/>
+    </link>
+    <link name="${tf_prefix}shoulder_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="shoulder" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="shoulder" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${shoulder_mass}" cog="${prop_shoulder_cog}" inertia="${prop_shoulder_inertia}"/>
+    </link>
+    <link name="${tf_prefix}upperarm_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="upperarm" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="upperarm" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${upperarm_mass}" cog="${prop_upperarm_cog}" inertia="${prop_upperarm_inertia}"/>
+    </link>
+    <link name="${tf_prefix}forearm_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="forearm" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="forearm" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${forearm_mass}" cog="${prop_forearm_cog}" inertia="${prop_forearm_inertia}"/>
+    </link>
+    <link name="${tf_prefix}wrist_1_link">
+      <visual>
+      	<origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_1" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_1" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${wrist_1_mass}" cog="${prop_wrist_1_cog}" inertia="${prop_wrist_1_inertia}"/>
+    </link>
+    <link name="${tf_prefix}wrist_2_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_2" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_2" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${wrist_2_mass}" cog="${prop_wrist_2_cog}" inertia="${prop_wrist_2_inertia}"/>
+    </link>
+    <link name="${tf_prefix}wrist_3_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_3" type="visual"/>
+        </geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <xacro:get_mesh name="wrist_3" type="collision"/>
+        </geometry>
+      </collision>
+      <xacro:build_inertial mass="${wrist_3_mass}" cog="${prop_wrist_3_cog}" inertia="${prop_wrist_3_inertia}"/>
+    </link>
+
+    <!-- base_joint fixes base_link to the environment -->
+    <joint name="${tf_prefix}base_joint" type="fixed">
+      <xacro:insert_block name="origin" />
+      <parent link="${parent}" />
+      <child link="${tf_prefix}base_link" />
+    </joint>
+
+    <!-- joints - main serial chain -->
+    <joint name="${tf_prefix}base_link-base_link_inertia" type="fixed">
+      <parent link="${tf_prefix}base_link" />
+      <child link="${tf_prefix}base_link_inertia" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+    <joint name="${tf_prefix}shoulder_pan_joint" type="revolute">
+      <parent link="${tf_prefix}base_link_inertia" />
+      <child link="${tf_prefix}shoulder_link" />
+      <origin xyz="${shoulder_x} ${shoulder_y} ${shoulder_z}" rpy="${shoulder_roll} ${shoulder_pitch} ${shoulder_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${shoulder_pan_lower_limit}" upper="${shoulder_pan_upper_limit}"
+        effort="${shoulder_pan_effort_limit}" velocity="${shoulder_pan_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${shoulder_pan_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_pan_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+    <joint name="${tf_prefix}shoulder_lift_joint" type="revolute">
+      <parent link="${tf_prefix}shoulder_link" />
+      <child link="${tf_prefix}upperarm_link" />
+      <origin xyz="${upperarm_x} ${upperarm_y} ${upperarm_z}" rpy="${upperarm_roll} ${upperarm_pitch} ${upperarm_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${shoulder_lift_lower_limit}" upper="${shoulder_lift_upper_limit}"
+        effort="${shoulder_lift_effort_limit}" velocity="${shoulder_lift_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${shoulder_lift_lower_limit + safety_pos_margin}" soft_upper_limit="${shoulder_lift_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+    <joint name="${tf_prefix}elbow_joint" type="revolute">
+      <parent link="${tf_prefix}upperarm_link" />
+      <child link="${tf_prefix}forearm_link" />
+      <origin xyz="${forearm_x} ${forearm_y} ${forearm_z}" rpy="${forearm_roll} ${forearm_pitch} ${forearm_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${elbow_joint_lower_limit}" upper="${elbow_joint_upper_limit}"
+        effort="${elbow_joint_effort_limit}" velocity="${elbow_joint_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${elbow_joint_lower_limit + safety_pos_margin}" soft_upper_limit="${elbow_joint_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+    <joint name="${tf_prefix}wrist_1_joint" type="revolute">
+      <parent link="${tf_prefix}forearm_link" />
+      <child link="${tf_prefix}wrist_1_link" />
+      <origin xyz="${wrist_1_x} ${wrist_1_y} ${wrist_1_z}" rpy="${wrist_1_roll} ${wrist_1_pitch} ${wrist_1_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${wrist_1_lower_limit}" upper="${wrist_1_upper_limit}"
+        effort="${wrist_1_effort_limit}" velocity="${wrist_1_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${wrist_1_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_1_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+    <joint name="${tf_prefix}wrist_2_joint" type="revolute">
+      <parent link="${tf_prefix}wrist_1_link" />
+      <child link="${tf_prefix}wrist_2_link" />
+      <origin xyz="${wrist_2_x} ${wrist_2_y} ${wrist_2_z}" rpy="${wrist_2_roll} ${wrist_2_pitch} ${wrist_2_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${wrist_2_lower_limit}" upper="${wrist_2_upper_limit}"
+             effort="${wrist_2_effort_limit}" velocity="${wrist_2_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${wrist_2_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_2_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+    <joint name="${tf_prefix}wrist_3_joint" type="revolute">
+      <parent link="${tf_prefix}wrist_2_link" />
+      <child link="${tf_prefix}wrist_3_link" />
+      <origin xyz="${wrist_3_x} ${wrist_3_y} ${wrist_3_z}" rpy="${wrist_3_roll} ${wrist_3_pitch} ${wrist_3_yaw}" />
+      <axis xyz="0 0 1" />
+      <limit lower="${wrist_3_lower_limit}" upper="${wrist_3_upper_limit}"
+             effort="${wrist_3_effort_limit}" velocity="${wrist_3_velocity_limit}"/>
+      <xacro:if value="${safety_limits}">
+         <safety_controller soft_lower_limit="${wrist_3_lower_limit + safety_pos_margin}" soft_upper_limit="${wrist_3_upper_limit - safety_pos_margin}" k_position="${safety_k_position}" k_velocity="0.0"/>
+      </xacro:if>
+      <dynamics damping="0" friction="0"/>
+    </joint>
+
+    <link name="${tf_prefix}ft_frame"/>
+    <joint name="${tf_prefix}wrist_3_link-ft_frame" type="fixed">
+      <parent link="${tf_prefix}wrist_3_link"/>
+      <child link="${tf_prefix}ft_frame"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <!-- ROS-Industrial 'base' frame - base_link to CS 'Base' Coordinates transform -->
+    <link name="${tf_prefix}base"/>
+    <joint name="${tf_prefix}base_link-base_fixed_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${tf_prefix}base_link"/>
+      <child link="${tf_prefix}base"/>
+    </joint>
+
+    <!-- ROS-Industrial 'flange' frame - attachment point for EEF models -->
+    <link name="${tf_prefix}flange" />
+    <joint name="${tf_prefix}wrist_3-flange" type="fixed">
+      <parent link="${tf_prefix}wrist_3_link" />
+      <child link="${tf_prefix}flange" />
+      <origin xyz="0 0 0" rpy="0 0 0" />
+    </joint>
+
+    <!-- ROS-Industrial 'tool0' frame - all-zeros tool frame -->
+    <link name="${tf_prefix}tool0"/>
+    <joint name="${tf_prefix}flange-tool0" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="${tf_prefix}flange"/>
+      <child link="${tf_prefix}tool0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

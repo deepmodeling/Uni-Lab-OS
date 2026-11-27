@@ -1,0 +1,33 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockStirrer1COPY",  
+            "name": "模拟搅拌器(Copy)",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_stirrer",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",
+                "vessel": "",
+                "purpose": "",
+                "stir_speed": 0.0,  
+                "target_stir_speed": 0.0,  
+                "stir_state": "Stopped",
+                "stir_time": 0.0,
+                "settling_time": 0.0,
+                "progress": 0.0,
+                "max_stir_speed": 2000.0
+            }  
+        }  
+    ],  
+    "links": []  
+}

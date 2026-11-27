@@ -1,0 +1,209 @@
+<?xml version="1.0" ?>
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="opentrons_liquid_handler" 
+  params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0 mesh_path:=''">
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="-0.11565 0.496 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}main_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name='${station_name}${device_name}main_link'>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-0.stl"/>
+        </geometry>
+        <material name="">
+            <color rgba="0.756862745098039 0.768627450980392 0.752941176470588 1"/>
+          </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-0.stl"/>
+        </geometry>
+      </collision>
+    </link>
+    
+    <link name='${station_name}${device_name}first_link'>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-1.stl"/>
+        </geometry>
+        <material name="">
+            <color rgba="0.756862745098039 0.768627450980392 0.752941176470588 1"/>
+          </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-1.stl"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name='${station_name}${device_name}second_link'>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-2.stl"/>
+        </geometry>
+        <material name="">
+            <color rgba="0.756862745098039 0.768627450980392 0.752941176470588 1"/>
+          </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-2.stl"/>
+        </geometry>
+      </collision>
+    </link>
+    
+    <link name='${station_name}${device_name}third_link'>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-3a.stl"/>
+        </geometry>
+        <material name="">
+            <color rgba="0.756862745098039 0.768627450980392 0.752941176470588 1"/>
+          </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-3a.stl"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name='${station_name}${device_name}fourth_link'>
+      <visual>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-3b.stl"/>
+        </geometry>
+        <material name="">
+            <color rgba="0.756862745098039 0.768627450980392 0.752941176470588 1"/>
+          </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/opentrons_liquid_handler/meshes/ot2-3b.stl"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name='${station_name}${device_name}first_joint' type='prismatic'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}first_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="0 -1 0"/>
+      <limit effort="-1" lower="-0.2" upper="0.13" velocity="-1"/>
+      <dynamics damping="0.1"/>
+    </joint>
+    <joint name='${station_name}${device_name}second_joint' type='prismatic'>
+      <parent link="${station_name}${device_name}first_link"/>
+      <child link="${station_name}${device_name}second_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="-1 0 0"/>
+      <limit effort="-1" lower="-0.15" upper="0.15" velocity="-1"/>
+      <dynamics damping="0.1"/>
+    </joint>
+    <joint name='${station_name}${device_name}third_joint' type='prismatic'>
+      <parent link="${station_name}${device_name}second_link"/>
+      <child link="${station_name}${device_name}third_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="-1" lower="0" upper="0.22" velocity="-1"/>
+      <dynamics damping="0.1"/>
+    </joint>
+    <joint name='${station_name}${device_name}fourth_joint' type='prismatic'>
+      <parent link="${station_name}${device_name}second_link"/>
+      <child link="${station_name}${device_name}fourth_link"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="-1" lower="0" upper="0.22" velocity="-1"/>
+      <dynamics damping="0.1"/>
+    </joint>
+
+    <link name='${station_name}${device_name}socketTypeGenericSbsFootprint'/>
+
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_10_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.1795 -0.1825 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_7_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.1795 -0.273 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_4_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.1795 -0.3635 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_1_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.1795 -0.454 0.07"/>
+    </joint>
+
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_11_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.312 -0.1825 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_8_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.312 -0.273 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_5_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.312 -0.3635 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_2_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.312 -0.454 0.07"/>
+    </joint>
+
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_9_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.4445 -0.273 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_6_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.4445 -0.3635 0.07"/>
+    </joint>
+    <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_3_60_1' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+      <origin rpy="0 0 -1.57" xyz="0.4445 -0.454 0.07"/>
+    </joint>
+
+
+    <link name='${station_name}${device_name}socketTypeHEPAModule'/>
+    <joint name='${station_name}${device_name}socketTypeHEPAModule' type='fixed'>
+      <parent link="${station_name}${device_name}main_link"/>
+      <child link="${station_name}${device_name}socketTypeHEPAModule"/>
+      <origin rpy="0 0 0" xyz="0.31 -0.26 0.66"/>
+    </joint>
+  </xacro:macro>
+</robot>

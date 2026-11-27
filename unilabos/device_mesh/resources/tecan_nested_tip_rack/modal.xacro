@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tecan_nested_tip_rack">
+    <link name='plate_link'>
+      <visual name='visual'>
+        <geometry>
+          <mesh filename="meshes/plate.stl"/>
+        </geometry>
+        <material name="clay" />
+      </visual>
+    </link>
+</robot>

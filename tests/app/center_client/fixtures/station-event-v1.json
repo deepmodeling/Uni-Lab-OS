@@ -1,0 +1,31 @@
+{
+  "protocol_version": "1.0",
+  "event_uuid": "33333333-3333-4333-8333-333333333333",
+  "event_epoch_uuid": "22222222-2222-4222-8222-222222222222",
+  "event_sequence": 7,
+  "station_uuid": "44444444-4444-4444-8444-444444444444",
+  "instance_uuid": "55555555-5555-4555-8555-555555555555",
+  "station_invocation_uuid": "66666666-6666-4666-8666-666666666666",
+  "local_task_uuid": "77777777-7777-4777-8777-777777777777",
+  "event_type": "outcome",
+  "payload": {
+    "status": "succeeded",
+    "output": {
+      "temperature": 23.5,
+      "备注": "完成",
+      "ratio": 1e-07,
+      "nested": [
+        true,
+        null,
+        {
+          "z": 1,
+          "a": "é"
+        }
+      ],
+      "large": 1e+20
+    },
+    "task_payload_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "occurred_at": "2023-11-14T22:13:20.123Z",
+  "event_digest": "sha256:dad7b617a50d0036202302768de8a09081e49bf8d1e2073b6d9b73475e06cc7f"
+}

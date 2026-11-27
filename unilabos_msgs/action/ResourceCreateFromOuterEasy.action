@@ -1,0 +1,13 @@
+string res_id
+string device_id
+string class_name
+string parent
+geometry_msgs/Point bind_locations
+int32[] liquid_input_slot
+string[] liquid_type
+float32[] liquid_volume
+string slot_on_deck
+---
+string return_info
+bool success
+---

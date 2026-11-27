@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="tiprack_96_high">
+    <link name='plate_link'>
+      <visual name='visual'>
+        <geometry>
+          <mesh filename="meshes/tiprack_96_high.stl"/>
+        </geometry>
+        <material name="clay" />
+      </visual>
+    </link>
+</robot>

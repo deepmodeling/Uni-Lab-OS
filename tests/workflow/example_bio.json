@@ -1,0 +1,186 @@
+{
+  "workflow": [
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_1",
+        "targets": "Liquid_2",
+        "asp_vol": 66.0,
+        "dis_vol": 66.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_2",
+        "targets": "Liquid_3",
+        "asp_vol": 58.0,
+        "dis_vol": 96.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_4",
+        "targets": "Liquid_2",
+        "asp_vol": 85.0,
+        "dis_vol": 170.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_4",
+        "targets": "Liquid_2",
+        "asp_vol": 63.333333333333336,
+        "dis_vol": 170.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_2",
+        "targets": "Liquid_3",
+        "asp_vol": 72.0,
+        "dis_vol": 150.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_4",
+        "targets": "Liquid_2",
+        "asp_vol": 85.0,
+        "dis_vol": 170.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_4",
+        "targets": "Liquid_2",
+        "asp_vol": 63.333333333333336,
+        "dis_vol": 170.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_2",
+        "targets": "Liquid_3",
+        "asp_vol": 72.0,
+        "dis_vol": 150.0,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 94.0
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_2",
+        "targets": "Liquid_3",
+        "asp_vol": 20.0,
+        "dis_vol": 20.0,
+        "asp_flow_rate": 7.6,
+        "dis_flow_rate": 7.6
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_5",
+        "targets": "Liquid_2",
+        "asp_vol": 6.0,
+        "dis_vol": 12.0,
+        "asp_flow_rate": 7.6,
+        "dis_flow_rate": 7.6
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_5",
+        "targets": "Liquid_2",
+        "asp_vol": 10.666666666666666,
+        "dis_vol": 12.0,
+        "asp_flow_rate": 7.599999999999999,
+        "dis_flow_rate": 7.6
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "Liquid_2",
+        "targets": "Liquid_6",
+        "asp_vol": 12.0,
+        "dis_vol": 10.0,
+        "asp_flow_rate": 7.6,
+        "dis_flow_rate": 7.6
+      }
+    }
+  ],
+  "reagent": {
+    "Liquid_6": {
+      "slot": 1,
+      "well": [
+        "A2"
+      ],
+      "labware": "elution plate"
+    },
+    "Liquid_1": {
+      "slot": 2,
+      "well": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "labware": "reagent reservoir"
+    },
+    "Liquid_4": {
+      "slot": 2,
+      "well": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "labware": "reagent reservoir"
+    },
+    "Liquid_5": {
+      "slot": 2,
+      "well": [
+        "A1",
+        "A2",
+        "A4"
+      ],
+      "labware": "reagent reservoir"
+    },
+    "Liquid_2": {
+      "slot": 4,
+      "well": [
+        "A2"
+      ],
+      "labware": "TAG1 plate on Magnetic Module GEN2"
+    },
+    "Liquid_3": {
+      "slot": 12,
+      "well": [
+        "A1"
+      ],
+      "labware": "Opentrons Fixed Trash"
+    }
+  }
+}

@@ -1,0 +1,287 @@
+{
+  "schema": "unilab.asset-library-usage-bundle/1",
+  "addon_version": "0.3.0",
+  "external_imports_including_optional": [
+    "openpyxl",
+    "oss2",
+    "pxr",
+    "requests"
+  ],
+  "files": [
+    {
+      "path": "assets/runtime/tools/asset-browser/access_guidance.py",
+      "source": "tools/asset-browser/access_guidance.py",
+      "sha256": "e3c32d9074e34baff906c47940edd592e9dfa5bcb1e3b68abbb1e212ea98dde2",
+      "bytes": 2412
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/blender_addon/unilab_asset_browser/__init__.py",
+      "source": "tools/asset-browser/blender_addon/unilab_asset_browser/__init__.py",
+      "sha256": "60681a158a26fc07bc7fb4a6df5eb17d40ffdd4995a187c79aa998c2d2124c35",
+      "bytes": 23278
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/blender_addon/unilab_asset_browser/browser_model.py",
+      "source": "tools/asset-browser/blender_addon/unilab_asset_browser/browser_model.py",
+      "sha256": "d0208a753b05b9429ae33605e6a0a6fc5bf356e89e7a2df662831f17753ad444",
+      "bytes": 4781
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/blender_addon/unilab_asset_browser/native_package.py",
+      "source": "tools/asset-browser/blender_addon/unilab_asset_browser/native_package.py",
+      "sha256": "3c6346190d94929e60e55271e1ce4b6fa236145ba66de66b482eca4b4e73e2a0",
+      "bytes": 6318
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/blender_addon/unilab_asset_browser/placement.py",
+      "source": "tools/asset-browser/blender_addon/unilab_asset_browser/placement.py",
+      "sha256": "8ddff5bcf257123d83ceb565e6123fd73e7233d17464b597b03df3734f444f39",
+      "bytes": 23262
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/blender_addon/unilab_asset_browser/square_model.py",
+      "source": "tools/asset-browser/blender_addon/unilab_asset_browser/square_model.py",
+      "sha256": "67a719002d2ffeddbff16854719b9a751c4503cfc0cbe7bf414624758f178f79",
+      "bytes": 3121
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/catalog_sync.py",
+      "source": "tools/asset-browser/catalog_sync.py",
+      "sha256": "74d4b99b3462f980442f93c4c87d5d20d157d0f027bb2b5b9ab925bc8db529ae",
+      "bytes": 7363
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/credentials.py",
+      "source": "tools/asset-browser/credentials.py",
+      "sha256": "a27747ea53e0301903a81ae91098e8af51a2b6459b71b5f45407d894f1682267",
+      "bytes": 2024
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/evidence.py",
+      "source": "tools/asset-browser/evidence.py",
+      "sha256": "bec7bd1e4b29bca158045cc6a6226ff18421cedb085ce9a023e3a2f8bf9f0a8b",
+      "bytes": 3832
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/library.py",
+      "source": "tools/asset-browser/library.py",
+      "sha256": "5adfc6d4641d6bf0b2b6ee269362374337bc7a785dcd9cbfabc0f6af1b2e5698",
+      "bytes": 14290
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/readiness.py",
+      "source": "tools/asset-browser/readiness.py",
+      "sha256": "b868242d90cdcfd340dc886b65e0da8d1bed65df1b83216157633f41b211eb41",
+      "bytes": 24269
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/readonly_store.py",
+      "source": "tools/asset-browser/readonly_store.py",
+      "sha256": "0435d0138101dbb986253e61ccc6b9e3668af6c31da7e5f10436febf67ad9a81",
+      "bytes": 1517
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/service.py",
+      "source": "tools/asset-browser/service.py",
+      "sha256": "920b0e511f5c3302f658948fc60d490fafe4783d5eae63738bcb2edc57c8f10c",
+      "bytes": 10367
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/web/app.js",
+      "source": "tools/asset-browser/web/app.js",
+      "sha256": "29a82ba994595b2066f1fc2cb7048180d362c242bb4723e6163c0d47750ce548",
+      "bytes": 17510
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/web/index.html",
+      "source": "tools/asset-browser/web/index.html",
+      "sha256": "1e6387b663656d88eaba0746f2d85f1621e3cb3cfbec9617aac565c3d5230f9d",
+      "bytes": 4638
+    },
+    {
+      "path": "assets/runtime/tools/asset-browser/web/style.css",
+      "source": "tools/asset-browser/web/style.css",
+      "sha256": "bde7d90ed534159163aafcc936e5b52018a554eff7949925c2f3207ae7011656",
+      "bytes": 9852
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/catalog.py",
+      "source": "tools/asset-library/catalog.py",
+      "sha256": "ac8c92db4a1a3f41f7ebb4e092e5b5d0ec734944a784087c429c938dc72d1656",
+      "bytes": 14563
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/client.py",
+      "source": "tools/asset-library/client.py",
+      "sha256": "7231958fce033825a9e78db894bbcf0767e19a6463061a59560289c49c33b81b",
+      "bytes": 11394
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/core.py",
+      "source": "tools/asset-library/core.py",
+      "sha256": "c8587d7c5ad9050865f49791c5351e760a9877813826c59447c4bc9bce110b8b",
+      "bytes": 9048
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/local_catalog_overlay.py",
+      "source": "tools/asset-library/local_catalog_overlay.py",
+      "sha256": "7d31c846ed6f1e680156dcc866adbdccfa8c218be244bd824772d370200d70e5",
+      "bytes": 2653
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/minimal_format.py",
+      "source": "tools/asset-library/minimal_format.py",
+      "sha256": "b610981c1a49b402375dd7fd69b3a3487b45fb78939e12beff9670f1a48329cd",
+      "bytes": 17406
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/native_package.py",
+      "source": "tools/asset-library/native_package.py",
+      "sha256": "3c6346190d94929e60e55271e1ce4b6fa236145ba66de66b482eca4b4e73e2a0",
+      "bytes": 6318
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/native_transfer.py",
+      "source": "tools/asset-library/native_transfer.py",
+      "sha256": "35cd3add00f4c4c1c56f1f9364f1ef132d5a41dfa1509e27a8d008f2c5298fbc",
+      "bytes": 3934
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/oss_store.py",
+      "source": "tools/asset-library/oss_store.py",
+      "sha256": "5a889484466efc12e6d6c84b4af9a606db663e19ab651531f605de2df71adfc3",
+      "bytes": 10707
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/profiles.py",
+      "source": "tools/asset-library/profiles.py",
+      "sha256": "dee2c39f094385890db886cf86727bf00863114f46bb722c480f4f372e164521",
+      "bytes": 9636
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/publish_incremental.py",
+      "source": "tools/asset-library/publish_incremental.py",
+      "sha256": "455c6bf33b7b8e3c83bfcce23e1bde7e8d968b50521bb58e7633d450055e03e9",
+      "bytes": 10028
+    },
+    {
+      "path": "assets/runtime/tools/asset-library/readable_library.py",
+      "source": "tools/asset-library/readable_library.py",
+      "sha256": "620e84648a2d5ea82b11d7b59715c2039bd00167bfad02341c5ff505573d8d20",
+      "bytes": 10598
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/catalog.py",
+      "source": "tools/asset-square/catalog.py",
+      "sha256": "385643c636e992fe806603d63857268ac4ed268f26d61d7e9da18becdb6f7b4a",
+      "bytes": 13352
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/catalog_dictionary.py",
+      "source": "tools/asset-square/catalog_dictionary.py",
+      "sha256": "4f932afa60a6c3abcf42945e31b5c930432ea5ac23f723115bf728eb5293f74f",
+      "bytes": 10417
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/deduplicate.py",
+      "source": "tools/asset-square/deduplicate.py",
+      "sha256": "3963901a4b858abfd87cd104222052fda94833d9e49cc0fb25252b2a55b13dca",
+      "bytes": 13483
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/discovery_fields.py",
+      "source": "tools/asset-square/discovery_fields.py",
+      "sha256": "90a75d31d8ebbcfa9f26d4c718b992afc81dd2b517d65181dc7b942155067d6c",
+      "bytes": 2625
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/portal.py",
+      "source": "tools/asset-square/portal.py",
+      "sha256": "6774a7f2917c5061a8394df4c3ac579ed685b879f2b44adf710e0be5d42225b6",
+      "bytes": 19794
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/scene_catalog.py",
+      "source": "tools/asset-square/scene_catalog.py",
+      "sha256": "505af9580e561ac58f2b8cd3c69f2057cdf7bae76624cdbbc025aca195a74527",
+      "bytes": 4139
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/server.py",
+      "source": "tools/asset-square/server.py",
+      "sha256": "af53f1088180c412aa179d47f31ef4b2759be116d69a8fbd74629c0f68ca06bc",
+      "bytes": 7150
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/unified.py",
+      "source": "tools/asset-square/unified.py",
+      "sha256": "cab07014bfaa2e9279f813d0f75e1402f3f40c609b9c4c064ef21e4eb14c16bc",
+      "bytes": 15482
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/app.js",
+      "source": "tools/asset-square/web/app.js",
+      "sha256": "52bd33ddb16bf909b7c31a834ba4233e16292acab83a0c67dd4637afdf9d016b",
+      "bytes": 9737
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/catalog-navigation.js",
+      "source": "tools/asset-square/web/catalog-navigation.js",
+      "sha256": "ff03a7bafc5e7ef6587cbdd5bb891355d7748460ec077144a074d4aa823a76de",
+      "bytes": 1179
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/filter-layout.css",
+      "source": "tools/asset-square/web/filter-layout.css",
+      "sha256": "f77852c5a121005b8d30484ed3790f94ed588bd13e6f19e36011771100aaf514",
+      "bytes": 4622
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/index.html",
+      "source": "tools/asset-square/web/index.html",
+      "sha256": "fb7e4aef4dc870c9217d9f8629610c219e62462e39a58f388a68bd08fe79e81b",
+      "bytes": 139876
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/portal.js",
+      "source": "tools/asset-square/web/portal.js",
+      "sha256": "e4035dcad9e8b79f2bf31cef3e783ba697af171665f8386192d2b5240c80dada",
+      "bytes": 22358
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/reference.css",
+      "source": "tools/asset-square/web/reference.css",
+      "sha256": "ce18184a9d44f92a2e7827c7e22d3a1418ad5fc5aa9abc09dbe57bf52d1d5b6b",
+      "bytes": 137904
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/setup.html",
+      "source": "tools/asset-square/web/setup.html",
+      "sha256": "1133df7482c6907ab06a009c5abd7748cd5a9e5e5f5b3e2b4225dfb6b8be99b5",
+      "bytes": 1869
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/style.css",
+      "source": "tools/asset-square/web/style.css",
+      "sha256": "c6ad195c2eb96b7076b122c2ad818972dc59194ad3372d6434d573ede18d91fe",
+      "bytes": 6856
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/tags.html",
+      "source": "tools/asset-square/web/tags.html",
+      "sha256": "c2aa890af1d729b7bce03965a858e3434a11af9b2aa59abf7745758055fecfb3",
+      "bytes": 138782
+    },
+    {
+      "path": "assets/runtime/tools/asset-square/web/types.html",
+      "source": "tools/asset-square/web/types.html",
+      "sha256": "05a258ca18ca8b04fe7de4eca60b46828e0d2d72241e42fe51d72dc76f3f0c77",
+      "bytes": 139861
+    },
+    {
+      "path": "assets/unilab_asset_browser.zip",
+      "sha256": "9dc146fb708176dfe26ca8eb8e88e769fa4ec473c9fee548a6bbfa7c83424201",
+      "bytes": 21542
+    }
+  ]
+}

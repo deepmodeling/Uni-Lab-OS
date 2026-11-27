@@ -1,0 +1,54 @@
+{
+    "PumpBackbone": {
+        "class": "protocol",
+        "protocol_type": ["PumpTransferProtocol", "CleanProtocol", "SeparateProtocol", "EvaporateProtocol"],
+        "children": {
+            "Serial": {
+                "class": "serial",
+                "port": "COM7",
+                "baudrate": 9600
+            },
+            "pump_reagents": {
+                "class": "syringepump.runze",
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "1"
+            },
+            "pump_workup": {
+                "class": "syringepump.runze",
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "2"
+            },
+            "pump_column": {
+                "class": "syringepump.runze",
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "3"
+            },
+            "pump_ext": {
+                "class": "syringepump.runze",
+                "port": "/devices/PumpBackbone/Serial/serialwrite",
+                "address": "4"
+            },
+            "separator_controller": {
+                "class": "separator_controller",
+                "port_executor": "COM41",
+                "port_sensor": "COM40"
+            },
+            "rotavap_chiller": {
+                "class": "chiller",
+                "port": "COM17"
+            },
+            "rotavap_controller": {
+                "class": "rotavap",
+                "port": "COM15"
+            }
+
+        }
+    },
+    "AichemecoHiWo": {
+        "class": "work_station.aichemeco_hiwo"
+    },
+    "Stirrer": {
+        "class": "heaterstirrer.dalong",
+        "port": "COM43"
+    }
+}

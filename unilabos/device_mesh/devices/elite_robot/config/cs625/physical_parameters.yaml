@@ -1,0 +1,99 @@
+# Physical parameters
+
+dh_parameters:
+  d1: 0.2350
+  a2: -0.7500
+  a3: -0.6220
+  d4: 0.1725
+  d5: 0.1280
+  d6: 0.1250
+
+inertia_parameters:
+  base_mass: 1.50561968754018  # base mass, base inertia, base cog might be incorrect
+  shoulder_mass: 17.04
+  upperarm_mass: 26.543
+  forearm_mass: 7.816
+  wrist_1_mass: 3.095
+  wrist_2_mass: 3.095
+  wrist_3_mass: 0.879
+
+  inertia:
+    base:
+      ixx: 0.00678289120631133
+      ixy: 2.67618063769984E-07
+      ixz: -2.56895564177072E-06
+      iyy: 0.00685230321535615
+      iyz: 9.42628790478668E-05
+      izz: 0.0100437671447022
+    shoulder:
+      ixx: 0.13029
+      ixy: -8.271E-05
+      ixz: 0.0001067
+      iyy: 0.085215
+      iyz: -0.00066335
+      izz: 0.11386
+    upperarm:
+      ixx: 1.197
+      ixy: -0.00083272
+      ixz: -1.5396
+      iyy: 6.1117
+      iyz: -0.00015496
+      izz: 5.022
+    forearm:
+      ixx: 0.067797
+      ixy: 4.4997E-05
+      ixz: -0.12636
+      iyy: 1.3409
+      iyz: 1.45E-05
+      izz: 1.2908
+    wrist_1:
+      ixx: 0.0079584
+      ixy: -3.024E-06
+      ixz: 5.734E-06
+      iyy: 0.0066863
+      iyz: 1.766E-05
+      izz: 0.0048407
+    wrist_2:
+      ixx: 0.007958413
+      ixy: -3.024E-06
+      ixz: 5.734E-06
+      iyy: 0.006686348
+      iyz: 1.766E-05
+      izz: 0.004840671
+    wrist_3:
+      ixx: 0.004065851
+      ixy: 1.5185E-05
+      ixz: -1.1453E-05
+      iyy: 0.004060372
+      iyz: 4.2152E-05
+      izz: 0.001170392
+
+  center_of_mass:
+    base_cog:
+      x: -2.4008693014781E-05
+      y: 0.00117748953656619
+      z: 0.0762927770474629
+    shoulder_cog:
+      x: 9.9E-05
+      y: -0.026311
+      z: -0.026723
+    upperarm_cog:
+      x: -0.27762
+      y: -1.7E-05
+      z: 0.20184
+    forearm_cog:
+      x: -0.30259
+      y: 2.1E-05
+      z: 0.07237
+    wrist_1_cog:
+      x: -3.7E-05
+      y: -0.01051
+      z: -0.014865
+    wrist_2_cog:
+      x: 3.7E-05
+      y: 0.01051
+      z: -0.014865
+    wrist_3_cog:
+      x: 0.000242
+      y: -0.001192
+      z: -0.050422

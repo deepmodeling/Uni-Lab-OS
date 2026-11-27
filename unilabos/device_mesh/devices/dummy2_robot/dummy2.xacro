@@ -1,0 +1,237 @@
+<?xml version="1.0" ?>
+<robot name="dummy2" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:include filename="$(find dummy2_description)/urdf/materials.xacro" />
+<xacro:include filename="$(find dummy2_description)/urdf/dummy2.trans" />
+<xacro:include filename="$(find dummy2_description)/urdf/dummy2.gazebo" />
+<link name="world" />
+<joint name="world_joint" type="fixed">
+  <parent link="world" />
+  <child link = "base_link" />
+  <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0" />
+</joint>
+
+<link name="base_link">
+  <inertial>
+    <origin xyz="0.00010022425916431473 -6.186605493937309e-05 0.05493640543484716" rpy="0 0 0"/>
+    <mass value="1.2152141810431654"/>
+    <inertia ixx="0.002105" iyy="0.002245" izz="0.002436" ixy="-0.0" iyz="-1.1e-05" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/base_link.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J1_1">
+  <inertial>
+    <origin xyz="-0.00617659688932347 0.007029599744830012 0.012866826083045027" rpy="0 0 0"/>
+    <mass value="0.1332774369186824"/>
+    <inertia ixx="6e-05" iyy="5e-05" izz="8.8e-05" ixy="2.1e-05" iyz="-1.4e-05" ixz="8e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.0001 0.000289 -0.097579" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.0001 0.000289 -0.097579" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J1_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J2_1">
+  <inertial>
+    <origin xyz="0.019335709221765855 0.0019392793940843159 0.07795928103332703" rpy="0 0 0"/>
+    <mass value="1.9268013917303417"/>
+    <inertia ixx="0.006165" iyy="0.006538" izz="0.00118" ixy="-3e-06" iyz="4.7e-05" ixz="0.0007"/>
+  </inertial>
+  <visual>
+    <origin xyz="0.011539 -0.034188 -0.12478" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="0.011539 -0.034188 -0.12478" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J2_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J3_1">
+  <inertial>
+    <origin xyz="-0.010672101243726572 -0.02723871972304964 0.04876701375652198" rpy="0 0 0"/>
+    <mass value="0.30531962155452225"/>
+    <inertia ixx="0.00029" iyy="0.000238" izz="0.000191" ixy="-1.3e-05" iyz="4.1e-05" ixz="3e-05"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.023811 -0.034188 -0.28278" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J3_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.023811 -0.034188 -0.28278" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J3_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J4_1">
+  <inertial>
+    <origin xyz="-0.005237398377441591 0.06002028183461833 0.0005891767740203724" rpy="0 0 0"/>
+    <mass value="0.14051172121899885"/>
+    <inertia ixx="0.000245" iyy="7.9e-05" izz="0.00027" ixy="1.6e-05" iyz="-2e-06" ixz="1e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.010649 -0.038288 -0.345246" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J4_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.010649 -0.038288 -0.345246" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J4_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J5_1">
+  <inertial>
+    <origin xyz="-0.014389813882964664 0.07305218143664277 -0.0009243405950149497" rpy="0 0 0"/>
+    <mass value="0.7783315754227634"/>
+    <inertia ixx="0.000879" iyy="0.000339" izz="0.000964" ixy="0.000146" iyz="1e-06" ixz="-5e-06"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.031949 -0.148289 -0.345246" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J5_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.031949 -0.148289 -0.345246" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J5_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="J6_1">
+  <inertial>
+    <origin xyz="3.967160300787087e-07 0.0004995066702210837 1.4402781733924286e-07" rpy="0 0 0"/>
+    <mass value="0.0020561527568204153"/>
+    <inertia ixx="0.0" iyy="0.0" izz="0.0" ixy="0.0" iyz="0.0" ixz="0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.012127 -0.267789 -0.344021" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J6_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.012127 -0.267789 -0.344021" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/J6_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<link name="camera">
+  <inertial>
+    <origin xyz="-0.0006059984983273845 0.0005864706438700462 0.04601775357664567" rpy="0 0 0"/>
+    <mass value="0.21961029019655884"/>
+    <inertia ixx="2.9e-05" iyy="0.000206" izz="0.000198" ixy="-0.0" iyz="2e-06" ixz="-0.0"/>
+  </inertial>
+  <visual>
+    <origin xyz="-0.012661 -0.239774 -0.37985" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/camera_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+    <material name="silver"/>
+  </visual>
+  <collision>
+    <origin xyz="-0.012661 -0.239774 -0.37985" rpy="0 0 0"/>
+    <geometry>
+      <mesh filename="file://$(find dummy2_description)/meshes/camera_1.stl" scale="0.001 0.001 0.001"/>
+    </geometry>
+  </collision>
+</link>
+
+<joint name="Joint1" type="revolute">
+  <origin xyz="0.0001 -0.000289 0.097579" rpy="0 0 0"/>
+  <parent link="base_link"/>
+  <child link="J1_1"/>
+  <axis xyz="-0.0 -0.0 1.0"/>
+  <limit upper="3.054326" lower="-3.054326" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Joint2" type="revolute">
+  <origin xyz="-0.011639 0.034477 0.027201" rpy="0 0 0"/>
+  <parent link="J1_1"/>
+  <child link="J2_1"/>
+  <axis xyz="1.0 0.0 -0.0"/>
+  <limit upper="1.308997" lower="-2.007129" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Joint3" type="revolute">
+  <origin xyz="0.03535 0.0 0.158" rpy="0 0 0"/>
+  <parent link="J2_1"/>
+  <child link="J3_1"/>
+  <axis xyz="-1.0 0.0 -0.0"/>
+  <limit upper="1.570796" lower="-1.047198" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Joint4" type="revolute">
+  <origin xyz="-0.013162 0.0041 0.062466" rpy="0 0 0"/>
+  <parent link="J3_1"/>
+  <child link="J4_1"/>
+  <axis xyz="0.0 1.0 -0.0"/>
+  <limit upper="3.141593" lower="-3.141593" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Joint5" type="revolute">
+  <origin xyz="0.0213 0.110001 0.0" rpy="0 0 0"/>
+  <parent link="J4_1"/>
+  <child link="J5_1"/>
+  <axis xyz="-1.0 -0.0 -0.0"/>
+  <limit upper="2.094395" lower="-1.919862" effort="100" velocity="100"/>
+</joint>
+
+<joint name="Joint6" type="continuous">
+  <origin xyz="-0.019822 0.1195 -0.001225" rpy="0 0 0"/>
+  <parent link="J5_1"/>
+  <child link="J6_1"/>
+  <axis xyz="0.0 -1.0 0.0"/>
+</joint>
+
+<joint name="camera" type="fixed">
+  <origin xyz="-0.019988 0.091197 0.024883" rpy="0 0 0"/>
+  <parent link="J5_1"/>
+  <child link="camera"/>
+  <axis xyz="1.0 -0.0 0.0"/>
+  <limit upper="0.0" lower="0.0" effort="100" velocity="100"/>
+</joint>
+
+</robot>

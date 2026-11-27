@@ -1,0 +1,25 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockSolenoidValve1",  
+            "name": "模拟电磁阀",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_solenoid_valve",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "valve_status": "Closed"  
+            }  
+        }  
+    ],  
+    "links": []  
+}

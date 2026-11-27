@@ -1,0 +1,37 @@
+joint_limits:
+
+  joint_1:
+    effort: 150
+    velocity: 2.0
+    lower: !degrees  -180
+    upper: !degrees  180
+
+  joint_2:
+    effort: 150
+    velocity: 2.0
+    lower: !degrees  -90
+    upper: !degrees  90
+
+  joint_3:
+    effort: 150
+    velocity: 2.0
+    lower: !degrees  -90
+    upper: !degrees  90
+
+  joint_4:
+    effort: 50
+    velocity: 2.0
+    lower: !degrees  -180
+    upper: !degrees  180
+
+  joint_5:
+    effort: 50
+    velocity: 2.0
+    lower: !degrees  -90
+    upper: !degrees  90
+
+  joint_6:
+    effort: 25
+    velocity: 2.0
+    lower: !degrees  -180
+    upper: !degrees  180

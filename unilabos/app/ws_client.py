@@ -1,0 +1,1836 @@
+#!/usr/bin/env python
+# coding=utf-8
+"""
+WebSocket通信客户端重构版本 v2
+
+基于两线程架构的WebSocket客户端实现：
+1. 消息处理线程 - 处理WebSocket消息，划分任务执行和任务队列
+2. 队列处理线程 - 定时给发送队列推送消息，管理任务状态
+"""
+
+import asyncio
+import copy
+import json
+import logging
+import ssl as ssl_module
+import threading
+import time
+import traceback
+import uuid
+from collections import deque
+from dataclasses import dataclass, field
+from queue import Empty, Queue
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
+
+import websockets
+from typing_extensions import TypedDict
+
+from unilabos.app.communication import BaseCommunicationClient
+from unilabos.app.job_queue import (
+    DeviceActionManager,
+    JobInfo,
+    JobStatus,
+    QueueItem,
+    format_job_log,
+)
+from unilabos.app.model import JobAddReq
+from unilabos.config.config import BasicConfig, HTTPConfig, WSConfig
+from unilabos.resources.resource_tracker import ResourceDictType
+from unilabos.ros.nodes.presets.host_node import HostNode
+from unilabos.utils.log import get_comm_logger
+from unilabos.utils.tracing import (
+    capture_context,
+    extract_trace_context,
+    inject_trace_context,
+    span,
+    use_context,
+    wrap_with_current_context,
+)
+from unilabos.utils.type_check import serialize_result_info
+
+# 服务端通信专用 logger：独立成文件(unilabos_data/logs/ws_comm_*.log)，
+# 全量 TRACE 落本地、微秒级时间戳 + 线程名，便于排查通信/queue 时序问题。
+# 未调用 configure_comm_logger 时安全回退到根 logger。
+logger = get_comm_logger()
+
+
+
+
+
+
+
+
+
+
+@dataclass
+class WebSocketMessage:
+    """WebSocket消息数据结构"""
+
+    action: str
+    data: Dict[str, Any]
+    timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class JobStartCacheEntry:
+    """job_start幂等缓存项"""
+
+    request_data: Dict[str, Any]
+    response_message: Optional[Dict[str, Any]] = None
+    response_status: str = ""
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+
+class WSResourceChatData(TypedDict):
+    uuid: str
+    device_uuid: str
+    device_id: str
+    device_old_uuid: str
+    device_old_id: str
+
+
+
+
+class MessageProcessor:
+    """消息处理线程 - 处理WebSocket消息，划分任务执行和任务队列"""
+
+    def __init__(self, websocket_url: str, send_queue: Queue, device_manager: DeviceActionManager):
+        self.websocket_url = websocket_url
+        self.send_queue = send_queue
+        # 已从线程安全队列取出的消息在成功发送前始终留在这里。连接断开或
+        # send task 被取消时 deque 不会丢失当前消息，下一次连接优先补发。
+        self._pending_outbound: deque[Dict[str, Any]] = deque()
+        self.device_manager = device_manager
+        self.queue_processor = None  # 延迟设置
+        self.websocket_client = None  # 延迟设置
+        self.edge_scheduler = None  # 延迟设置(scheduler.integration 注入)：Edge 工作流整图调度器
+        self.inventory_service = None  # 延迟设置(scheduler.integration 注入)：Edge 仓储唯一事实源
+        self.session_id = str(uuid.uuid4())[:6]  # 产生一个随机的session_id
+
+        # WebSocket连接
+        self.websocket = None
+        self.connected = False
+
+        # 线程控制
+        self.is_running = False
+        self.thread = None
+        self._loop = None  # asyncio event loop引用，用于外部关闭websocket
+        self.reconnect_count = 0
+
+        logger.info(f"[MessageProcessor] Initialized for URL: {websocket_url}")
+
+    def set_queue_processor(self, queue_processor: "QueueProcessor"):
+        """设置队列处理器引用"""
+        self.queue_processor = queue_processor
+
+    def set_websocket_client(self, websocket_client: "WebSocketClient"):
+        """设置WebSocket客户端引用"""
+        self.websocket_client = websocket_client
+
+    def start(self) -> None:
+        """启动消息处理线程"""
+        if self.is_running:
+            logger.warning("[MessageProcessor] Already running")
+            return
+
+        self.is_running = True
+        self.thread = threading.Thread(target=self._run, daemon=True, name="MessageProcessor")
+        self.thread.start()
+        logger.trace("[MessageProcessor] Started")
+
+    def stop(self) -> None:
+        """停止消息处理线程"""
+        self.is_running = False
+        # 主动关闭websocket以快速中断消息接收循环
+        ws = self.websocket
+        loop = self._loop
+        if ws and loop and loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(ws.close(), loop)
+            except Exception:
+                pass
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2)
+        logger.info("[MessageProcessor] Stopped")
+
+    def _run(self):
+        """运行消息处理主循环"""
+        self._loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(self._loop)
+            self._loop.run_until_complete(self._connection_handler())
+        except Exception as e:
+            logger.error(f"[MessageProcessor] Thread error: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            if self._loop:
+                self._loop.close()
+            self._loop = None
+
+    async def _connection_handler(self):
+        """处理WebSocket连接和重连逻辑"""
+        while self.is_running:
+            try:
+                # 构建SSL上下文
+                ssl_context = None
+                if self.websocket_url.startswith("wss://"):
+                    ssl_context = ssl_module.create_default_context()
+
+                ws_logger = logging.getLogger("websockets.client")
+                ws_logger.setLevel(logging.INFO)
+
+                async with websockets.connect(
+                    self.websocket_url,
+                    ssl=ssl_context,
+                    open_timeout=20,
+                    ping_interval=WSConfig.ws_ping_interval,
+                    ping_timeout=WSConfig.ws_ping_timeout,
+                    close_timeout=5,
+                    additional_headers={
+                        "Authorization": f"Lab {BasicConfig.auth_secret()}",
+                        "EdgeSession": f"{self.session_id}",
+                    },
+                    logger=ws_logger,
+                ) as websocket:
+                    self.websocket = websocket
+                    self.connected = True
+                    self.reconnect_count = 0
+
+                    logger.info(f"[MessageProcessor] 已连接到 {self.websocket_url}")
+
+                    # 启动发送协程
+                    send_task = asyncio.create_task(self._send_handler(), name="websocket-send_task")
+
+                    # 每次连接（含重连）后尝试向服务端注册，
+                    # 否则服务端不知道客户端已上线，不会推送消息。
+                    # 注意：publish_host_ready 内部带就绪门禁——HostNode 未初始化完成时会自动延后，
+                    # 首连若设备尚未就绪则不会在此发送，待 HostNode 初始化完成后由其回调补发。
+                    if self.websocket_client:
+                        self.websocket_client.publish_host_ready()
+
+                    try:
+                        # 接收消息循环
+                        await self._message_handler()
+                    finally:
+                        # 必须在 async with __aexit__ 之前停止 send_task，
+                        # 否则 send_task 会在关闭握手期间继续发送数据，
+                        # 干扰 websockets 库的内部清理，导致 task 泄漏。
+                        self.connected = False
+                        send_task.cancel()
+                        try:
+                            await send_task
+                        except asyncio.CancelledError:
+                            pass
+
+            except websockets.exceptions.ConnectionClosed:
+                logger.warning("[MessageProcessor] 与服务端连接中断")
+            except TimeoutError:
+                logger.warning(
+                    f"[MessageProcessor] 与服务端连接通信超时 (已尝试 {self.reconnect_count + 1} 次)，请检查您的网络状况"
+                )
+            except websockets.exceptions.InvalidStatus as e:
+                logger.warning(
+                    f"[MessageProcessor] 收到服务端注册码 {e.response.status_code}, 上一进程可能还未退出"
+                )
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                logger.error(f"[MessageProcessor] 尝试重连时出错 {str(e)}")
+            finally:
+                self.connected = False
+                self.websocket = None
+
+            # 重连逻辑
+            if not self.is_running:
+                break
+            if self.reconnect_count < WSConfig.max_reconnect_attempts:
+                self.reconnect_count += 1
+                backoff = WSConfig.reconnect_interval
+                logger.info(
+                    "[MessageProcessor] 即将在 %s 秒后重连 (已尝试 %s/%s)",
+                    backoff,
+                    self.reconnect_count,
+                    WSConfig.max_reconnect_attempts,
+                )
+                await asyncio.sleep(backoff)
+            else:
+                logger.error("[MessageProcessor] Max reconnection attempts reached")
+                break
+
+    async def _message_handler(self):
+        """处理接收到的消息。
+
+        ConnectionClosed 不在此处捕获，让其向上传播到 _connection_handler，
+        以便 async with websockets.connect() 的 __aexit__ 能感知连接已断，
+        正确清理内部 task，避免 task 泄漏。
+        """
+        if not self.websocket:
+            logger.error("[MessageProcessor] WebSocket connection is None")
+            return
+
+        async for message in self.websocket:
+            try:
+                logger.trace(f"[WS_RECV] {message}")
+                data = json.loads(message)
+                message_type = data.get("action", "")
+                message_data = data.get("data")
+                if self.session_id and self.session_id == data.get("edge_session"):
+                    await self._process_message(message_type, message_data, data)
+                else:
+                    if message_type.endswith("_material"):
+                        logger.trace(
+                            f"[MessageProcessor] 收到一条归属 {data.get('edge_session')} 的旧消息：{data}"
+                        )
+                        logger.debug(
+                            f"[MessageProcessor] 跳过了一条归属 {data.get('edge_session')} 的旧消息: {data.get('action')}"
+                        )
+                    else:
+                        await self._process_message(message_type, message_data, data)
+            except json.JSONDecodeError:
+                logger.error(f"[MessageProcessor] Invalid JSON received: {message}")
+            except Exception as e:
+                logger.error(f"[MessageProcessor] Error processing message: {str(e)}")
+                logger.error(traceback.format_exc())
+
+    async def _send_handler(self):
+        """处理发送队列中的消息，成功发送后才从进程内缓冲移除。"""
+        logger.trace("[MessageProcessor] Send handler started")
+
+        try:
+            while self.connected and self.websocket:
+                try:
+                    # 每个新连接都先 drain 上次连接遗留的消息；只在缓冲为空时
+                    # 才从跨线程队列取新消息。
+                    if not self._pending_outbound:
+                        try:
+                            self._pending_outbound.append(self.send_queue.get_nowait())
+                        except Empty:
+                            await asyncio.sleep(0.1)
+                            continue
+
+                    msg = self._pending_outbound[0]
+                    if str(msg.get("action") or "") in ("ping", "pong"):
+                        message_str = json.dumps(msg, ensure_ascii=False)
+                        await self.websocket.send(message_str)
+                        logger.trace(f"[WS_SEND] {message_str}")
+                    else:
+                        parent = extract_trace_context(msg)
+                        with span(
+                            "ws.send",
+                            kind="producer",
+                            parent_context=parent,
+                            attributes={
+                                "messaging.system": "websocket",
+                                "messaging.operation": "send",
+                                "messaging.message.type": str(msg.get("action") or ""),
+                            },
+                        ):
+                            inject_trace_context(msg)
+                            message_str = json.dumps(msg, ensure_ascii=False)
+                            await self.websocket.send(message_str)
+                            logger.trace(f"[WS_SEND] {message_str}")
+
+                    # 仅在 await send 成功返回后删除。CancelledError 和断线异常
+                    # 都会保留队首消息，供下一次连接重试（允许幂等重复投递）。
+                    self._pending_outbound.popleft()
+
+                except Exception as e:
+                    logger.error(f"[MessageProcessor] Error in send handler: {str(e)}")
+                    logger.error(traceback.format_exc())
+                    await asyncio.sleep(0.1)
+
+        except asyncio.CancelledError:
+            logger.debug("[MessageProcessor] Send handler cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"[MessageProcessor] Fatal error in send handler: {str(e)}")
+            logger.error(traceback.format_exc())
+        finally:
+            logger.debug("[MessageProcessor] Send handler stopped")
+
+    async def _process_message(
+        self,
+        message_type: str,
+        message_data: Dict[str, Any],
+        envelope: Optional[Dict[str, Any]] = None,
+    ):
+        if message_type in ("ping", "pong"):
+            await self._process_message_inner(message_type, message_data)
+            return
+        parent = extract_trace_context(envelope or message_data)
+        with span(
+            "ws.receive",
+            kind="consumer",
+            parent_context=parent,
+            attributes={
+                "messaging.system": "websocket",
+                "messaging.operation": "receive",
+                "messaging.message.type": message_type,
+            },
+        ):
+            await self._process_message_inner(message_type, message_data)
+
+    async def _process_message_inner(self, message_type: str, message_data: Dict[str, Any]):
+        """处理收到的消息"""
+        logger.trace(f"[MessageProcessor] Processing message: {message_type}")
+
+        try:
+            if message_type == "pong":
+                self._handle_pong(message_data)
+            elif message_type == "query_action_state":
+                await self._handle_query_action_state(message_data)
+            elif message_type == "query_action_lock":
+                await self._handle_query_action_lock(message_data)
+            elif message_type == "job_start":
+                await self._handle_job_start(message_data)
+            elif message_type == "workflow_start":
+                await self._handle_workflow_start(message_data)
+            elif message_type == "workflow_cancel":
+                await self._handle_workflow_cancel(message_data)
+            elif message_type == "inventory_command":
+                await self._handle_inventory_command(message_data)
+            elif message_type == "cancel_action" or message_type == "cancel_task":
+                await self._handle_cancel_action(message_data)
+            elif message_type == "add_material":
+                # noinspection PyTypeChecker
+                await self._handle_resource_tree_update(message_data, "add")
+            elif message_type == "update_material":
+                # noinspection PyTypeChecker
+                await self._handle_resource_tree_update(message_data, "update")
+            elif message_type == "remove_material":
+                # noinspection PyTypeChecker
+                await self._handle_resource_tree_update(message_data, "remove")
+            # elif message_type == "session_id":
+            #     self.session_id = message_data.get("session_id")
+            #     logger.info(f"[MessageProcessor] Session ID: {self.session_id}")
+            elif message_type == "add_device":
+                await self._handle_device_manage(message_data, "add")
+            elif message_type == "remove_device":
+                await self._handle_device_manage(message_data, "remove")
+            elif message_type == "request_restart":
+                await self._handle_request_restart(message_data)
+            elif message_type == "job_error_decision":
+                await self._handle_job_error_decision(message_data)
+            else:
+                logger.debug(f"[MessageProcessor] Unknown message type: {message_type}")
+
+        except Exception as e:
+            logger.error(f"[MessageProcessor] Error processing message {message_type}: {str(e)}")
+            logger.error(traceback.format_exc())
+
+    def _handle_pong(self, pong_data: Dict[str, Any]):
+        """处理pong响应"""
+        host_node = HostNode.get_instance(0)
+        if host_node:
+            host_node.handle_pong_response(pong_data)
+
+    def _check_action_always_free(self, device_id: str, action_name: str) -> bool:
+        """检查该action是否标记为always_free，通过HostNode统一的_action_value_mappings查找"""
+        try:
+            host_node = HostNode.get_instance(0)
+            if not host_node:
+                return False
+            # noinspection PyProtectedMember
+            action_mappings = host_node._action_value_mappings.get(device_id)
+            if not action_mappings:
+                return False
+            # 尝试直接匹配或 auto- 前缀匹配
+            for key in [action_name, f"auto-{action_name}"]:
+                if key in action_mappings:
+                    return action_mappings[key].get("always_free", False)
+            return False
+        except Exception:
+            return False
+
+    async def _handle_query_action_state(self, data: Dict[str, Any]):
+        """处理query_action_state消息：纯被动查询，只回复当前状态，不入队、无副作用。"""
+        device_id = data.get("device_id", "")
+        action_name = data.get("action_name", "")
+        task_id = data.get("task_id", "")
+        job_id = data.get("job_id", "")
+        notebook_id = data.get("notebook_id", "")
+
+        if not all([device_id, action_name, task_id, job_id]):
+            logger.error("[MessageProcessor] Missing required fields in query_action_state")
+            return
+
+        job_log = format_job_log(job_id, task_id, device_id, action_name)
+
+        # 该 (task_id, job_id) 仍在设备管理器中(QUEUE/STARTED) -> 正在处理，回复 busy。
+        existing_job = self.device_manager.get_job_info(job_id)
+        if existing_job and existing_job.task_id == task_id and existing_job.status in (
+            JobStatus.QUEUE,
+            JobStatus.STARTED,
+        ):
+            await self._send_action_state_response(
+                existing_job.device_id,
+                existing_job.action_name,
+                existing_job.task_id,
+                existing_job.job_id,
+                "query_action_status",
+                False,
+                10,
+                notebook_id=existing_job.notebook_id or notebook_id,
+            )
+            logger.trace(
+                f"[MessageProcessor] query_action_state {job_log} 返回当前状态 {existing_job.status} (busy)"
+            )
+            return
+
+        # 不在管理器中 -> 已完成/未知，回复 free（仅状态回报，不触发任何执行/入队）。
+        if self.websocket_client and self.websocket_client.is_job_cached(job_id, task_id):
+            self.websocket_client.log_cached_job(job_id, task_id, source="query_action_state")
+        await self._send_action_state_response(
+            device_id,
+            action_name,
+            task_id,
+            job_id,
+            "query_action_status",
+            True,
+            0,
+            notebook_id=notebook_id,
+        )
+        logger.trace(f"[MessageProcessor] query_action_state {job_log} 返回当前状态 free")
+
+    async def _handle_query_action_lock(self, data: Dict[str, Any]):
+        """处理 query_action_lock：服务端要求客户端重新上报当前全量锁(每个 device+action 的忙闲)。
+
+        与 query_action_state(查询单个 job) 不同，这里是全量锁快照重传，用于服务端侧状态重新对齐。
+        """
+        if not self.websocket_client:
+            logger.warning("[MessageProcessor] query_action_lock received but websocket_client unavailable")
+            return
+        self.websocket_client.report_all_action_locks()
+        logger.trace("[MessageProcessor] query_action_lock: re-reported all action locks")
+
+    async def _handle_workflow_start(self, data: Dict[str, Any]):
+        """处理workflow_start消息：云端下发整图，交给 Edge 调度器拆解/执行。
+
+        payload 形状（EdgeScheduler spec_from_dict）:
+            workflow_id / task_id（云端 workflow_task.uuid）/ priority / lab_id
+            nodes:   [{id, device_id, action_name, action_type, param, node_type, ...}]
+                     node_type 取值对齐云端枚举
+                     Group/ILab/py_script/tool_call/manual_confirm/Transfer
+            edges:   [{source_node_id, target_node_id,
+                       source_handle_uuid, target_handle_uuid,  # 规范引用（workflow_edge 定稿）
+                       source_handle_key, target_handle_key}]   # 无 uuid 时的兼容寻址
+            handles: [{handle_key, data_source, data_key, node_id, io_type, uuid?}]
+        整图即云端 workflow_task.workflow_snapshot 的展开（任务创建时固化，不随
+        工作流编辑变化）；终态回报词汇同 workflow_task.status（success/failed/canceled）。
+        """
+        workflow_id = str(data.get("workflow_id", "") or "")
+        if self.edge_scheduler is None:
+            logger.error(
+                f"[MessageProcessor] workflow_start {workflow_id} ignored: edge scheduler not attached"
+            )
+            self._send_workflow_status(data, "failed", "edge scheduler not attached")
+            return
+
+        try:
+            from unilabos.app.scheduler.models import spec_from_dict
+
+            spec = spec_from_dict(data)
+            result = self.edge_scheduler.submit_workflow(spec)
+            logger.info(
+                f"[MessageProcessor] workflow_start {workflow_id}: "
+                f"{len(result.get('dispatched', []))} job(s) dispatched"
+            )
+        except ValueError as e:
+            # 重复提交：幂等处理，只打日志不回失败（与 job_start 幂等语义一致）
+            logger.warning(f"[MessageProcessor] workflow_start duplicate ignored: {e}")
+        except Exception as e:
+            logger.error(f"[MessageProcessor] workflow_start {workflow_id} failed: {e}")
+            logger.error(traceback.format_exc())
+            self._send_workflow_status(data, "failed", str(e))
+
+    async def _handle_workflow_cancel(self, data: Dict[str, Any]):
+        """处理workflow_cancel消息：取消 Edge 调度的工作流及其在执行的设备 job。"""
+        workflow_id = str(data.get("workflow_id", "") or "")
+        if self.edge_scheduler is None:
+            logger.error(
+                f"[MessageProcessor] workflow_cancel {workflow_id} ignored: edge scheduler not attached"
+            )
+            return
+
+        # 先取下正在执行的 job 列表，再取消调度器状态
+        snapshot = self.edge_scheduler.snapshot()
+        inflight_job_ids = [
+            job_id
+            for job_id, j in snapshot.get("inflight_jobs", {}).items()
+            if j.get("workflow_id") == workflow_id
+        ]
+        cancelled = self.edge_scheduler.cancel_workflow(workflow_id)
+        if not cancelled:
+            logger.warning(f"[MessageProcessor] workflow_cancel: workflow {workflow_id} not found")
+            return
+
+        # EdgeScheduler 的执行适配器负责区分“尚未发送”与“设备已在执行”，并将
+        # 已执行作业交给 HostNode 请求停止。这里不能再直接清理 DeviceActionManager，
+        # 否则会在设备返回终态前提前释放同一动作的物理占用。
+        logger.info(
+            f"[MessageProcessor] workflow_cancel {workflow_id}: "
+            f"cancel requested for {len(inflight_job_ids)} inflight job(s)"
+        )
+
+    async def _handle_inventory_command(self, data: Dict[str, Any]):
+        """处理inventory_command消息：云端仓储写命令下发 Edge 幂等执行。
+
+        envelope: command_id / expected_version / warehouse_zone_id / type / actor / payload
+        （type ∈ inventory.template.upsert|template.delete|inbound|reserve|release|consume|quarantine,
+          material.deploy|move|detach|set_parent|content.set|content.clear|consume|discard|adjust；
+          set_parent 设父物料（parent_material_uuid ≡ 树父，单一父），slot_id 可选具名位）
+        Edge 回 inventory_command_result（accepted/rejected/completed）；
+        最终状态由领域事件（sync_outbox → 云端 projection）刷新，云端不直接改库存行。
+        """
+        command_id = str(data.get("command_id", "") or "")
+        if self.inventory_service is None:
+            logger.error(
+                f"[MessageProcessor] inventory_command {command_id} ignored: inventory not attached"
+            )
+            self._send_inventory_command_result(
+                {"command_id": command_id, "status": "rejected",
+                 "error": "inventory service not attached"}
+            )
+            return
+        try:
+            from unilabos.app.scheduler.inventory.commands import execute_command
+
+            response = execute_command(self.inventory_service, data)
+        except Exception as e:
+            logger.error(f"[MessageProcessor] inventory_command {command_id} failed: {e}")
+            logger.error(traceback.format_exc())
+            response = {"command_id": command_id, "status": "rejected", "error": str(e)}
+        self._send_inventory_command_result(response)
+
+    def _send_inventory_command_result(self, response: Dict[str, Any]) -> None:
+        """回报命令结果：WS 消息 + HTTP 回调双路（云端权威状态机走 HTTP 接口）。"""
+        from unilabos.app.scheduler.inventory.schemas import (
+            CloudInventoryCommandResult,
+        )
+
+        wire_result = CloudInventoryCommandResult.model_validate(
+            {**response, "timestamp": int(time.time() * 1000)}
+        ).model_dump(mode="json", exclude_none=True)
+        message = {
+            "action": "inventory_command_result",
+            "data": wire_result,
+        }
+        self.send_message(message)
+
+        def _http_callback():
+            try:
+                from unilabos.app.scheduler.integration import (
+                    report_http_inventory_command_result,
+                )
+
+                report_http_inventory_command_result(response)
+            except Exception as e:  # 回调失败不影响本地执行结果（云端可轮询补偿）
+                logger.warning(f"[MessageProcessor] inventory_command_result http callback failed: {e}")
+
+        threading.Thread(
+            target=wrap_with_current_context(_http_callback),
+            daemon=True,
+            name="inv-cmd-result",
+        ).start()
+
+    def _send_workflow_status(self, data: Dict[str, Any], status: str, error: str = "") -> None:
+        """向云端回报工作流状态（workflow_status 消息）。"""
+        message = {
+            "action": "workflow_status",
+            "data": {
+                "workflow_id": data.get("workflow_id", ""),
+                "task_id": data.get("task_id", "") or data.get("workflow_id", ""),
+                "status": status,
+                "error": error,
+                "timestamp": time.time(),
+            },
+        }
+        self.send_message(message)
+
+    async def _handle_job_error_decision(self, data: Dict[str, Any]):
+        """Route one approved error option/result to the exact pending job."""
+
+        decision_id = str(data.get("decision_id") or "")
+        job_id = str(data.get("job_id") or "")
+        device_id = str(data.get("device_id") or "")
+        if not decision_id and not job_id:
+            logger.warning("[MessageProcessor] job_error_decision missing decision_id and job_id")
+            return
+        if not device_id:
+            logger.warning("[MessageProcessor] job_error_decision missing device_id")
+            return
+
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            logger.warning(f"[MessageProcessor] HostNode unavailable, drop error decision job={job_id[:8]}")
+            return
+        wrapper = host_node.devices_instances.get(device_id)
+        base_node = getattr(wrapper, "_ros_node", None) if wrapper is not None else None
+        if base_node is None or not hasattr(base_node, "handle_action_error_decision"):
+            logger.warning(
+                f"[MessageProcessor] Device {device_id} cannot handle error decision job={job_id[:8]}"
+            )
+            return
+        if not base_node.handle_action_error_decision(decision_id, job_id, dict(data)):
+            logger.warning(
+                f"[MessageProcessor] No pending error decision matched "
+                f"decision={decision_id} job={job_id[:8]} device={device_id}"
+            )
+
+    async def _handle_job_start(self, data: Dict[str, Any]):
+        """处理job_start消息：服务端直接下发，本地直跑或排队(不再要求先 query_action_state)。"""
+        try:
+            data = dict(data or {})
+            if not data.get("sample_material"):
+                data["sample_material"] = {}
+            req = JobAddReq(**data)
+
+            job_log = format_job_log(req.job_id, req.task_id, req.device_id, req.action)
+
+            if self.websocket_client:
+                # 幂等缓存：首次 job_start 登记缓存并真正执行；
+                # 重复的 (task_id, job_id) 则假装执行——直接回放之前缓存的结果，不再下发设备动作。
+                is_new_request = self.websocket_client.register_job_start_request(data)
+                if not is_new_request:
+                    self.websocket_client.log_cached_job(req.job_id, req.task_id, source="job_start")
+                    replayed = self.websocket_client.replay_cached_job_start_response(req.job_id, req.task_id)
+                    if replayed:
+                        logger.info(
+                            f"[MessageProcessor] [缓存复用] job_start {job_log} 命中缓存，假装执行并回放缓存结果"
+                        )
+                    else:
+                        logger.info(
+                            f"[MessageProcessor] [缓存复用] job_start {job_log} 命中缓存但暂无结果"
+                            f"(原任务仍在执行)，跳过重复执行"
+                        )
+                    return
+
+            notebook_id = req.notebook_id or ""
+            device_action_key = f"/devices/{req.device_id}/{req.action}"
+            action_always_free = self._check_action_always_free(req.device_id, req.action)
+
+            # 构造 JobInfo 并入队/直发；排队的 job 在出队时由客户端用保存的载荷启动
+            job_info = JobInfo(
+                job_id=req.job_id,
+                task_id=req.task_id,
+                device_id=req.device_id,
+                notebook_id=notebook_id,
+                action_name=req.action,
+                device_action_key=device_action_key,
+                status=JobStatus.QUEUE,
+                start_time=time.time(),
+                always_free=action_always_free,
+                action_type=req.action_type,
+                action_args=req.action_args,
+                sample_material=req.sample_material,
+                server_info=req.server_info,
+                trace_context=None,
+            )
+
+            with span(
+                "action.queue",
+                attributes={
+                    "workflow.job.uuid": req.job_id,
+                    "workflow.task.uuid": req.task_id,
+                    "device.name": req.device_id,
+                    "action.name": req.action,
+                },
+            ):
+                job_info.trace_context = capture_context()
+                should_start_now, lock_became_busy = self.device_manager.enqueue_job(job_info)
+
+            # free->busy 翻转：主动上报该 device+action 的锁被占用
+            if lock_became_busy and self.websocket_client:
+                self.websocket_client.publish_action_lock(req.device_id, req.action, free=False)
+
+            if not should_start_now:
+                logger.info(f"[MessageProcessor] Job {job_log} queued, waiting for device")
+                return
+
+            logger.info(f"[MessageProcessor] Starting job {job_log}")
+
+            # 创建HostNode任务
+            trace_context: Dict[str, Any] = {}
+            inject_trace_context(trace_context, job_info.trace_context)
+            queue_item = QueueItem(
+                task_type="job_call_back_status",
+                device_id=req.device_id,
+                action_name=req.action,
+                task_id=req.task_id,
+                job_id=req.job_id,
+                notebook_id=notebook_id,
+                device_action_key=device_action_key,
+                trace_context=trace_context,
+            )
+
+            # 提交给HostNode执行
+            host_node = HostNode.get_instance(0)
+            if not host_node:
+                logger.error(f"[MessageProcessor] HostNode instance not available for job_id: {req.job_id}")
+                return
+
+            host_node.send_goal(
+                queue_item,
+                action_type=req.action_type,
+                action_kwargs=req.action_args,
+                sample_material=req.sample_material,
+                server_info=req.server_info,
+            )
+
+        except Exception as e:
+            logger.error(f"[MessageProcessor] Error handling job start: {str(e)}")
+            traceback.print_exc()
+
+            # job_start出错时，需要通过正确的publish_job_status方法来处理
+            if "req" in locals() and "queue_item" in locals():
+                job_log = format_job_log(req.job_id, req.task_id, req.device_id, req.action)
+                logger.info(f"[MessageProcessor] Publishing failed status for job {job_log}")
+
+                if self.websocket_client:
+                    # 使用完整的错误信息，与原版本一致
+                    self.websocket_client.publish_job_status(
+                        {}, queue_item, "failed", serialize_result_info(traceback.format_exc(), False, {})
+                    )
+                else:
+                    # 备用方案：直接发送消息，但使用完整的错误信息
+                    message = {
+                        "action": "job_status",
+                        "data": {
+                            "job_id": req.job_id,
+                            "task_id": req.task_id,
+                            "device_id": req.device_id,
+                            "notebook_id": queue_item.notebook_id,
+                            "action_name": req.action,
+                            "status": "failed",
+                            "feedback_data": {},
+                            "return_info": serialize_result_info(traceback.format_exc(), False, {}),
+                            "timestamp": time.time(),
+                        },
+                    }
+                    self.send_message(message)
+
+                    # 手动调用job结束逻辑：出队下一个任务由客户端自行启动
+                    # (该 fallback 分支无 websocket_client，无法上报锁，故忽略 lock_became_free)
+                    next_job, _lock_became_free = self.device_manager.end_job(req.job_id)
+                    if next_job and self.queue_processor:
+                        self.queue_processor.enqueue_pending_start(next_job)
+                        next_job_log = format_job_log(
+                            next_job.job_id, next_job.task_id, next_job.device_id, next_job.action_name
+                        )
+                        logger.info(f"[MessageProcessor] Queued next job {next_job_log} for start after error")
+            else:
+                logger.warning("[MessageProcessor] Failed to publish job error status - missing req or queue_item")
+
+    async def _handle_cancel_action(self, data: Dict[str, Any]):
+        """处理cancel_action/cancel_task消息"""
+        task_id = data.get("task_id")
+        job_id = data.get("job_id")
+
+        logger.info(f"[MessageProcessor] Cancel request - task_id: {task_id}, job_id: {job_id}")
+
+        if job_id:
+            # 获取job信息用于日志
+            job_info = self.device_manager.get_job_info(job_id)
+            job_log = format_job_log(
+                job_id,
+                job_info.task_id if job_info else "",
+                job_info.device_id if job_info else "",
+                job_info.action_name if job_info else "",
+            )
+
+            # 先通知HostNode取消ROS2 action（如果存在）
+            host_node = HostNode.get_instance(0)
+            ros_cancel_success = False
+            if host_node:
+                ros_cancel_success = host_node.cancel_goal(job_id)
+                if ros_cancel_success:
+                    logger.info(f"[MessageProcessor] ROS2 cancel request sent for job {job_log}")
+                else:
+                    logger.debug(
+                        f"[MessageProcessor] Job {job_log} not in ROS2 goals " "(may be queued or already finished)"
+                    )
+
+            # 按job_id取消单个job（清理状态机）
+            success, next_job, lock_became_free = self.device_manager.cancel_job(job_id)
+            if success:
+                logger.info(f"[MessageProcessor] Job {job_log} cancelled from queue/active list")
+
+                # 取消活跃任务后，出队下一个由客户端自行启动
+                if next_job and self.queue_processor:
+                    self.queue_processor.enqueue_pending_start(next_job)
+                # busy->free 翻转，主动上报锁释放
+                elif lock_became_free and self.websocket_client:
+                    self.websocket_client.publish_action_lock(
+                        job_info.device_id if job_info else "",
+                        job_info.action_name if job_info else "",
+                        free=True,
+                    )
+
+                # 通知QueueProcessor有队列更新
+                if self.queue_processor:
+                    self.queue_processor.notify_queue_update()
+            else:
+                logger.warning(f"[MessageProcessor] Failed to cancel job {job_log} from queue")
+
+        elif task_id:
+            # 先通知HostNode取消所有ROS2 actions
+            # 需要先获取所有相关job_ids
+            jobs_to_cancel = []
+            with self.device_manager.lock:
+                jobs_to_cancel = [
+                    job_info for job_info in self.device_manager.all_jobs.values() if job_info.task_id == task_id
+                ]
+
+            host_node = HostNode.get_instance(0)
+            if host_node and jobs_to_cancel:
+                ros_cancelled_count = 0
+                for job_info in jobs_to_cancel:
+                    if host_node.cancel_goal(job_info.job_id):
+                        ros_cancelled_count += 1
+                logger.info(
+                    f"[MessageProcessor] Sent ROS2 cancel for " f"{ros_cancelled_count}/{len(jobs_to_cancel)} jobs"
+                )
+
+            # 按task_id取消所有相关job（清理状态机）
+            cancelled_job_ids, next_jobs_to_start, freed_locks = self.device_manager.cancel_jobs_by_task_id(task_id)
+            if cancelled_job_ids:
+                logger.info(f"[MessageProcessor] Cancelled {len(cancelled_job_ids)} jobs for task_id: {task_id}")
+
+                # 出队被提升的任务由客户端自行启动
+                for next_job in next_jobs_to_start:
+                    if self.queue_processor:
+                        self.queue_processor.enqueue_pending_start(next_job)
+                # busy->free 翻转，主动上报锁释放
+                if self.websocket_client:
+                    for dev_id, act_name in freed_locks:
+                        self.websocket_client.publish_action_lock(dev_id, act_name, free=True)
+
+                # 通知QueueProcessor有队列更新
+                if self.queue_processor:
+                    self.queue_processor.notify_queue_update()
+            else:
+                logger.warning(f"[MessageProcessor] Failed to cancel any jobs for task_id: {task_id}")
+        else:
+            logger.warning("[MessageProcessor] Cancel request missing both task_id and job_id")
+
+    async def _handle_resource_tree_update(self, resource_uuid_list: List[WSResourceChatData], action: str):
+        """处理资源树更新消息（add_material/update_material/remove_material）"""
+        if not resource_uuid_list:
+            return
+
+        # 按device_id和action分组
+        # device_action_groups: {(device_id, action): [uuid_list]}
+        device_action_groups = {}
+
+        for item in resource_uuid_list:
+            device_id = item["device_id"]
+            if not device_id:
+                device_id = "host_node"
+
+            # 特殊处理update action: 检查是否设备迁移
+            if action == "update":
+                device_old_id = item.get("device_old_id", "")
+                if not device_old_id:
+                    device_old_id = "host_node"
+
+                # 设备迁移：device_id != device_old_id
+                if device_id != device_old_id:
+                    # 给旧设备发送remove
+                    key_remove = (device_old_id, "remove")
+                    if key_remove not in device_action_groups:
+                        device_action_groups[key_remove] = []
+                    device_action_groups[key_remove].append(item["uuid"])
+
+                    # 给新设备发送add
+                    key_add = (device_id, "add")
+                    if key_add not in device_action_groups:
+                        device_action_groups[key_add] = []
+                    device_action_groups[key_add].append(item["uuid"])
+
+                    logger.info(f"[资源同步] 跨站Transfer: {item['uuid'][:8]} from {device_old_id} to {device_id}")
+                else:
+                    # 正常update
+                    key = (device_id, "update")
+                    if key not in device_action_groups:
+                        device_action_groups[key] = []
+                    device_action_groups[key].append(item["uuid"])
+            else:
+                # add或remove action，直接分组
+                key = (device_id, action)
+                if key not in device_action_groups:
+                    device_action_groups[key] = []
+                device_action_groups[key].append(item["uuid"])
+
+        logger.trace(
+            f"[资源同步] 动作 {action} 分组数量: {len(device_action_groups)}, 总数量: {len(resource_uuid_list)}"
+        )
+
+        # 为每个(device_id, action)创建独立的更新线程
+        for (device_id, actual_action), items in device_action_groups.items():
+            logger.trace(f"[资源同步] {device_id} 物料动作 {actual_action} 数量: {len(items)}")
+
+            def _notify_resource_tree(dev_id, act, item_list):
+                try:
+                    host_node = HostNode.get_instance(timeout=5)
+                    if not host_node:
+                        logger.error(f"[MessageProcessor] HostNode instance not available for {act}")
+                        return
+
+                    success = host_node.notify_resource_tree_update(dev_id, act, item_list)
+
+                    if success is True:
+                        logger.info(
+                            f"[MessageProcessor] Resource tree {act} completed for device {dev_id}, "
+                            f"items: {len(item_list)}"
+                        )
+                    elif success is None:
+                        logger.info(
+                            f"[MessageProcessor] Resource tree {act} skipped for device {dev_id}: "
+                            "在线增加设备暂不支持"
+                        )
+                    else:
+                        logger.warning(f"[MessageProcessor] Resource tree {act} failed for device {dev_id}")
+
+                except Exception as e:
+                    logger.error(f"[MessageProcessor] Error in resource tree {act} for device {dev_id}: {str(e)}")
+                    logger.error(traceback.format_exc())
+
+            # 在新线程中执行通知
+            thread = threading.Thread(
+                target=_notify_resource_tree,
+                args=(device_id, actual_action, items),
+                daemon=True,
+                name=f"ResourceTreeUpdate-{actual_action}-{device_id}",
+            )
+            thread.start()
+
+    async def _handle_device_manage(self, device_list: list[ResourceDictType], action: str):
+        """Handle add_device / remove_device from LabGo server."""
+        if not device_list:
+            return
+
+        for item in device_list:
+            target_node_id = item.get("target_node_id", "host_node")
+            if action == "add":
+                logger.info(
+                    f"[DeviceManage] 在线增加设备暂不支持，跳过 add_device: {item.get('id', '')}"
+                )
+                continue
+
+            def _notify(target_id: str, act: str, cfg: ResourceDictType):
+                try:
+                    host_node = HostNode.get_instance(timeout=5)
+                    if not host_node:
+                        logger.error(f"[DeviceManage] HostNode not available for {act}_device")
+                        return
+                    success = host_node.notify_device_manage(target_id, act, cfg)
+                    if success:
+                        logger.info(f"[DeviceManage] {act}_device completed on {target_id}")
+                    else:
+                        logger.warning(f"[DeviceManage] {act}_device failed on {target_id}")
+                except Exception as e:
+                    logger.error(f"[DeviceManage] Error in {act}_device: {e}")
+                    logger.error(traceback.format_exc())
+
+            thread = threading.Thread(
+                target=_notify,
+                args=(target_node_id, action, item),
+                daemon=True,
+                name=f"DeviceManage-{action}-{item.get('id', '')}",
+            )
+            thread.start()
+
+    async def _handle_request_restart(self, data: Dict[str, Any]):
+        """
+        处理重启请求
+
+        当LabGo发送request_restart时，执行清理并触发重启
+        """
+        reason = data.get("reason", "unknown")
+        delay = data.get("delay", 2)  # 默认延迟2秒
+        logger.info(f"[MessageProcessor] Received restart request, reason: {reason}, delay: {delay}s")
+
+        # 发送确认消息
+        self.send_message(
+            {"action": "restart_acknowledged", "data": {"reason": reason, "delay": delay}}
+        )
+
+        # 设置全局重启标志
+        import unilabos.app.main as main_module
+
+        main_module._restart_requested = True
+        main_module._restart_reason = reason
+
+        # 延迟后执行清理
+        await asyncio.sleep(delay)
+
+        # 在新线程中执行清理，避免阻塞当前事件循环
+        def do_cleanup():
+            import time
+
+            time.sleep(0.5)  # 给当前消息处理完成的时间
+            logger.info(f"[MessageProcessor] Starting cleanup for restart, reason: {reason}")
+            try:
+                from unilabos.app.utils import cleanup_for_restart
+
+                if cleanup_for_restart():
+                    logger.info("[MessageProcessor] Cleanup successful, main() will restart")
+                else:
+                    logger.error("[MessageProcessor] Cleanup failed")
+            except Exception as e:
+                logger.error(f"[MessageProcessor] Error during cleanup: {e}")
+
+        cleanup_thread = threading.Thread(target=do_cleanup, name="RestartCleanupThread", daemon=True)
+        cleanup_thread.start()
+        logger.info("[MessageProcessor] Restart cleanup scheduled")
+
+    async def _send_action_state_response(
+        self,
+        device_id: str,
+        action_name: str,
+        task_id: str,
+        job_id: str,
+        typ: str,
+        free: bool,
+        need_more: int,
+        notebook_id: str = "",
+    ):
+        """发送动作状态响应"""
+        message = {
+            "action": "report_action_state",
+            "data": {
+                "type": typ,
+                "device_id": device_id,
+                "action_name": action_name,
+                "task_id": task_id,
+                "job_id": job_id,
+                "notebook_id": notebook_id,
+                "free": free,
+                "need_more": need_more + 1,
+            },
+        }
+
+        try:
+            inject_trace_context(message)
+            self.send_queue.put_nowait(message)
+        except Exception:
+            logger.warning("[MessageProcessor] Send queue full, dropping message")
+
+    def send_message(self, message: Dict[str, Any]) -> bool:
+        """发送消息到队列"""
+        try:
+            message = dict(message)
+            inject_trace_context(message)
+            self.send_queue.put_nowait(message)
+            return True
+        except Exception:
+            logger.warning(f"[MessageProcessor] Failed to queue message: {message.get('action', 'unknown')}")
+            return False
+
+    def is_connected(self) -> bool:
+        """检查连接状态"""
+        return self.connected
+
+
+class QueueProcessor:
+    """队列处理线程 - 定时给发送队列推送消息，管理任务状态"""
+
+    def __init__(self, device_manager: DeviceActionManager, message_processor: MessageProcessor):
+        self.device_manager = device_manager
+        self.message_processor = message_processor
+        self.websocket_client = None  # 延迟设置
+
+        # 线程控制
+        self.is_running = False
+        self.thread = None
+
+        # 事件通知机制
+        self.queue_update_event = threading.Event()
+
+        # 待启动队列：出队/取消提升的任务由本线程统一调用 send_goal，
+        # 避免在 ROS 结果回调线程里直接 send_goal(wait_for_server) 阻塞 executor。
+        self.pending_starts: "Queue[JobInfo]" = Queue()
+
+        logger.trace("[QueueProcessor] Initialized")
+
+    def set_websocket_client(self, websocket_client: "WebSocketClient"):
+        """设置WebSocket客户端引用"""
+        self.websocket_client = websocket_client
+
+    def start(self) -> None:
+        """启动队列处理线程"""
+        if self.is_running:
+            logger.warning("[QueueProcessor] Already running")
+            return
+
+        self.is_running = True
+        self.thread = threading.Thread(target=self._run, daemon=True, name="QueueProcessor")
+        self.thread.start()
+        logger.trace("[QueueProcessor] Started")
+
+    def stop(self) -> None:
+        """停止队列处理线程"""
+        self.is_running = False
+        self.queue_update_event.set()  # 立即唤醒等待中的线程
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=2)
+        logger.info("[QueueProcessor] Stopped")
+
+    def _run(self):
+        """运行队列处理主循环：消费待启动队列，由本线程统一启动出队/取消提升的任务。"""
+        logger.trace("[QueueProcessor] Queue processor started")
+
+        while self.is_running:
+            try:
+                self._drain_pending_starts()
+
+                # 无 READY 超时/周期上报负担，事件驱动为主，10s 兜底唤醒
+                self.queue_update_event.wait(timeout=10)
+                self.queue_update_event.clear()  # 清除事件
+
+            except Exception as e:
+                logger.error(f"[QueueProcessor] Error in queue processor: {str(e)}")
+                logger.error(traceback.format_exc())
+                time.sleep(1)
+
+        logger.debug("[QueueProcessor] Queue processor stopped")
+
+    def notify_queue_update(self):
+        """通知队列有更新，触发立即检查"""
+        self.queue_update_event.set()
+
+    def enqueue_pending_start(self, job_info: JobInfo) -> None:
+        """登记一个待启动任务(出队/取消提升)，由 QueueProcessor 线程统一 send_goal。"""
+        try:
+            self.pending_starts.put_nowait(job_info)
+        except Exception:
+            logger.warning("[QueueProcessor] pending_starts queue full, dropping job")
+            return
+        self.notify_queue_update()
+
+    def _drain_pending_starts(self) -> None:
+        """消费待启动队列，逐个启动。"""
+        while True:
+            try:
+                job = self.pending_starts.get_nowait()
+            except Empty:
+                break
+            with use_context(job.trace_context):
+                with span(
+                    "action.worker",
+                    attributes={
+                        "action.worker.event": "start",
+                        "workflow.job.uuid": job.job_id,
+                        "device.name": job.device_id,
+                        "action.name": job.action_name,
+                    },
+                ):
+                    self._start_job_goal(job)
+
+    def _start_job_goal(self, job: JobInfo) -> None:
+        """用 JobInfo 保存的载荷向 HostNode 下发 goal。"""
+        job_log = format_job_log(job.job_id, job.task_id, job.device_id, job.action_name)
+        trace_context: Dict[str, Any] = {}
+        inject_trace_context(trace_context)
+        queue_item = QueueItem(
+            task_type="job_call_back_status",
+            device_id=job.device_id,
+            action_name=job.action_name,
+            task_id=job.task_id,
+            job_id=job.job_id,
+            notebook_id=job.notebook_id,
+            device_action_key=job.device_action_key,
+            trace_context=trace_context,
+        )
+
+        host_node = HostNode.get_instance(0)
+        if not host_node:
+            logger.error(f"[QueueProcessor] HostNode unavailable, fail dequeued job {job_log}")
+            if self.websocket_client:
+                self.websocket_client.publish_job_status(
+                    {}, queue_item, "failed", serialize_result_info("HostNode instance not available", False, {})
+                )
+            return
+
+        try:
+            host_node.send_goal(
+                queue_item,
+                action_type=job.action_type,
+                action_kwargs=job.action_args,
+                sample_material=job.sample_material,
+                server_info=job.server_info,
+            )
+            logger.info(f"[QueueProcessor] Started dequeued job {job_log}")
+        except Exception as e:
+            logger.error(f"[QueueProcessor] Failed to start dequeued job {job_log}: {e}")
+            logger.error(traceback.format_exc())
+            if self.websocket_client:
+                self.websocket_client.publish_job_status(
+                    {}, queue_item, "failed", serialize_result_info(traceback.format_exc(), False, {})
+                )
+
+    def handle_job_completed(self, job_id: str, status: str) -> None:
+        """处理任务完成：出队下一个任务由本类自行启动；队列清空则上报 free 锁。"""
+        # 获取job信息用于日志（end_job 会将其移除，需提前取出 device/action）
+        job_info = self.device_manager.get_job_info(job_id)
+
+        # 如果job不存在，说明可能已被手动取消
+        if not job_info:
+            logger.debug(
+                f"[QueueProcessor] Job {job_id[:8]} not found in manager " "(may have been cancelled manually)"
+            )
+            return
+
+        device_id = job_info.device_id
+        action_name = job_info.action_name
+        job_log = format_job_log(job_id, job_info.task_id, device_id, action_name)
+
+        logger.trace(f"[QueueProcessor] Job {job_log} completed with status: {status}")
+
+        # 结束任务，获取下一个可执行的任务及锁翻转
+        next_job, lock_became_free = self.device_manager.end_job(job_id)
+
+        if next_job:
+            # 锁保持 busy，客户端自行启动下一个任务
+            self.enqueue_pending_start(next_job)
+        elif lock_became_free and self.websocket_client:
+            # busy->free 翻转，主动上报锁释放
+            self.websocket_client.publish_action_lock(device_id, action_name, free=True)
+
+
+class WebSocketClient(BaseCommunicationClient):
+    """
+    重构后的WebSocket客户端 v2
+
+    采用两线程架构：
+    - 消息处理线程：处理WebSocket消息，划分任务执行和任务队列
+    - 队列处理线程：定时给发送队列推送消息，管理任务状态
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.is_disabled = False
+        self.client_id = f"{uuid.uuid4()}"
+
+        # 核心组件
+        self.device_manager = DeviceActionManager()
+        self.send_queue = Queue(maxsize=1000)
+
+        # 构建WebSocket URL
+        self.websocket_url = self._build_websocket_url()
+        if not self.websocket_url:
+            self.websocket_url = ""  # 默认空字符串，避免None
+
+        # 两个核心线程
+        self.message_processor = MessageProcessor(self.websocket_url, self.send_queue, self.device_manager)
+        self.queue_processor = QueueProcessor(self.device_manager, self.message_processor)
+
+        # running状态debounce缓存: {job_id: (last_send_timestamp, last_feedback_data)}
+        self._job_running_last_sent: Dict[str, tuple] = {}
+        self._job_running_debounce_interval: float = 10.0  # 秒
+
+        # job_start幂等缓存: {(task_id, job_id): JobStartCacheEntry}
+        self._job_start_cache: Dict[Tuple[str, str], JobStartCacheEntry] = {}
+        self._job_start_cache_lock = threading.RLock()
+        self._job_start_cache_ttl_seconds: float = 24 * 60 * 60
+        self._job_start_cache_max_entries: int = 1024
+
+        # 设置相互引用
+        self.message_processor.set_queue_processor(self.queue_processor)
+        self.message_processor.set_websocket_client(self)
+        self.queue_processor.set_websocket_client(self)
+
+        logger.info(f"[WebSocketClient] Client_id: {self.client_id}")
+
+    def _build_websocket_url(self) -> Optional[str]:
+        """构建旧云端调度通道的 WebSocket 连接 URL。
+
+        参数：无。返回：优先使用配置文件中的 ``HTTPConfig.schedule_addr``，否则
+        从 ``HTTPConfig.remote_addr`` 派生；没有远端地址时返回 ``None``。异常：无。
+        主启动不再暴露独立 ``schedule_addr`` 参数。
+        """
+        # 1. 显式 schedule 地址
+        if HTTPConfig.schedule_addr:
+            parsed = urlparse(HTTPConfig.schedule_addr)
+            scheme = "wss" if parsed.scheme in ("https", "wss") else "ws"
+            return f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
+
+        # 2. 从 api 地址派生
+        if not HTTPConfig.remote_addr:
+            return None
+
+        parsed = urlparse(HTTPConfig.remote_addr)
+        scheme = "wss" if parsed.scheme == "https" else "ws"
+
+        if ":" in parsed.netloc and parsed.port is not None:
+            return f"{scheme}://{parsed.hostname}:{parsed.port + 1}/api/v1/ws/schedule"
+        return f"{scheme}://{parsed.netloc}/api/v1/ws/schedule"
+
+    @staticmethod
+    def _job_start_cache_key(job_id: str, task_id: str) -> Optional[Tuple[str, str]]:
+        if not job_id or not task_id:
+            return None
+        return task_id, job_id
+
+    def _prune_job_start_cache_locked(self) -> None:
+        now = time.time()
+        expired_keys = [
+            key
+            for key, entry in self._job_start_cache.items()
+            if now - entry.updated_at > self._job_start_cache_ttl_seconds
+        ]
+        for key in expired_keys:
+            self._job_start_cache.pop(key, None)
+
+        overflow = len(self._job_start_cache) - self._job_start_cache_max_entries
+        if overflow <= 0:
+            return
+
+        oldest_keys = sorted(self._job_start_cache, key=lambda key: self._job_start_cache[key].updated_at)[:overflow]
+        for key in oldest_keys:
+            self._job_start_cache.pop(key, None)
+
+    def register_job_start_request(self, request_data: Dict[str, Any]) -> bool:
+        """登记job_start请求；返回False表示同一(task_id, job_id)已处理过。"""
+        key = self._job_start_cache_key(request_data.get("job_id", ""), request_data.get("task_id", ""))
+        if key is None:
+            return True
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is not None:
+                cached.updated_at = time.time()
+                if cached.request_data != request_data:
+                    logger.warning(
+                        "[WebSocketClient] Duplicate job_start has different payload for "
+                        f"job={key[1][:8]}, task={key[0][:8]}"
+                    )
+                return False
+
+            self._job_start_cache[key] = JobStartCacheEntry(request_data=copy.deepcopy(request_data))
+            self._prune_job_start_cache_locked()
+            return True
+
+    def is_job_cached(self, job_id: str, task_id: str) -> bool:
+        """判断同一 (task_id, job_id) 是否已 job_start 过（已登记进幂等缓存）。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return False
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return False
+            cached.updated_at = time.time()
+            return True
+
+    def log_cached_job(self, job_id: str, task_id: str, source: str = "") -> None:
+        """打印命中缓存的 job 内容（请求 + 已缓存结果），便于核对复用的数据。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return
+            request_data = copy.deepcopy(cached.request_data)
+            response_message = copy.deepcopy(cached.response_message)
+            response_status = cached.response_status
+
+        result_repr = json.dumps(response_message, ensure_ascii=False) if response_message else "none"
+        logger.info(
+            f"[WebSocketClient] [缓存复用] 命中缓存 source={source} job={job_id[:8]} task={task_id[:8]} "
+            f"status={response_status or 'none'} "
+            f"request={json.dumps(request_data, ensure_ascii=False)} "
+            f"result={result_repr}"
+        )
+
+    def get_cached_job_start_response_status(self, job_id: str, task_id: str) -> str:
+        """获取同一job_start已缓存的回复状态。"""
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return ""
+
+        with self._job_start_cache_lock:
+            self._prune_job_start_cache_locked()
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                return ""
+            cached.updated_at = time.time()
+            return cached.response_status
+
+    def cache_job_start_response(self, item: QueueItem, message: Dict[str, Any], status: str) -> None:
+        """缓存同一 (task_id, job_id) 的 job 结果(最新 job_status)，供重复请求复用回放。"""
+        key = self._job_start_cache_key(item.job_id, item.task_id)
+        if key is None:
+            return
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None:
+                cached = JobStartCacheEntry(request_data={})
+                self._job_start_cache[key] = cached
+
+            cached.response_message = copy.deepcopy(message)
+            cached.response_status = status
+            cached.updated_at = time.time()
+            self._prune_job_start_cache_locked()
+
+    def replay_cached_job_start_response(self, job_id: str, task_id: str) -> bool:
+        """回放同一 (task_id, job_id) 已缓存的最终结果。
+
+        仅当已缓存到 success/failed 的终态结果时才回放；若原任务仍在执行
+        (只缓存了 running 中间态)，返回 False，由调用方决定如何处理。
+        """
+        key = self._job_start_cache_key(job_id, task_id)
+        if key is None:
+            return False
+
+        with self._job_start_cache_lock:
+            cached = self._job_start_cache.get(key)
+            if cached is None or cached.response_message is None:
+                return False
+            if cached.response_status not in ("success", "failed"):
+                return False
+            message = copy.deepcopy(cached.response_message)
+            status = cached.response_status
+            cached.updated_at = time.time()
+
+        sent = self.message_processor.send_message(message)
+        if sent:
+            logger.info(
+                f"[WebSocketClient] [缓存复用] 回放缓存结果 job={job_id[:8]} task={task_id[:8]} "
+                f"status={status} payload={json.dumps(message, ensure_ascii=False)}"
+            )
+        return sent
+
+    def start(self) -> None:
+        """启动WebSocket客户端"""
+        if self.is_disabled:
+            logger.warning("[WebSocketClient] WebSocket is disabled, skipping connection.")
+            return
+
+        if not self.websocket_url:
+            logger.error("[WebSocketClient] WebSocket URL not configured")
+            return
+
+        # 启动两个核心线程
+        self.message_processor.start()
+        self.queue_processor.start()
+
+        logger.trace("[WebSocketClient] All threads started")
+
+    def stop(self) -> None:
+        """停止WebSocket客户端"""
+        if self.is_disabled:
+            return
+
+        logger.info("[WebSocketClient] Stopping connection")
+
+        # 发送 normal_exit 消息
+        if self.is_connected():
+            try:
+                session_id = self.message_processor.session_id
+                message = {"action": "normal_exit", "data": {"session_id": session_id}}
+                self.message_processor.send_message(message)
+                logger.info(f"[WebSocketClient] Sent normal_exit message with session_id: {session_id}")
+                # send_handler 每100ms检查一次队列，等300ms足以让消息发出
+                time.sleep(0.3)
+            except Exception as e:
+                logger.warning(f"[WebSocketClient] Failed to send normal_exit message: {str(e)}")
+
+        # 停止两个核心线程
+        self.message_processor.stop()
+        self.queue_processor.stop()
+
+        logger.info("[WebSocketClient] All threads stopped")
+
+    # BaseCommunicationClient接口实现
+    def is_connected(self) -> bool:
+        """检查是否已连接"""
+        return self.message_processor.is_connected() and not self.is_disabled
+
+    def publish_device_status(self, device_status: dict, device_id: str, property_name: str) -> None:
+        """发布设备状态"""
+        if self.is_disabled or not self.is_connected():
+            return
+
+        message = {
+            "action": "device_status",
+            "data": {
+                "device_id": device_id,
+                "data": {
+                    "property_name": property_name,
+                    "status": device_status.get(device_id, {}).get(property_name),
+                    "timestamp": time.time(),
+                },
+            },
+        }
+        self.message_processor.send_message(message)
+        # logger.trace(f"[WebSocketClient] Device status published: {device_id}.{property_name}")
+
+    def publish_job_status(
+        self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None
+    ) -> None:
+        parent = extract_trace_context(item.trace_context)
+        with span(
+            "action.status.publish",
+            kind="producer",
+            parent_context=parent,
+            attributes={
+                "workflow.job.uuid": item.job_id,
+                "workflow.task.uuid": item.task_id,
+                "device.name": item.device_id,
+                "action.name": item.action_name,
+                "action.status": status,
+            },
+        ):
+            self._publish_job_status(feedback_data, item, status, return_info)
+
+    def _publish_job_status(
+        self, feedback_data: dict, item: QueueItem, status: str, return_info: Optional[dict] = None
+    ) -> None:
+        """发布作业状态，拦截最终结果（给HostNode调用的接口）"""
+        job_log = format_job_log(item.job_id, item.task_id, item.device_id, item.action_name)
+
+        # 拦截最终结果状态，与原版本逻辑一致
+        if status in ["success", "failed"]:
+            self._job_running_last_sent.pop(item.job_id, None)
+
+            host_node = HostNode.get_instance(0)
+            if host_node:
+                try:
+                    host_node._device_action_status[item.device_action_key].job_ids.pop(item.job_id, None)
+                except (KeyError, AttributeError):
+                    logger.warning(f"[WebSocketClient] Failed to remove job {item.job_id} from HostNode status")
+
+            self.queue_processor.handle_job_completed(item.job_id, status)
+
+            cached_status = self.get_cached_job_start_response_status(item.job_id, item.task_id)
+            if cached_status in ["success", "failed"]:
+                # 断线重连时，旧 READY 占位可能在结果已回放后触发 timeout failed。
+                # 已有终态时不允许重复终态覆盖缓存或再次发送，success 也不允许被 failed 降级。
+                if cached_status == "success" or cached_status == status:
+                    logger.warning(
+                        f"[WebSocketClient] Skipped duplicate terminal job status for {job_log}: "
+                        f"cached={cached_status}, incoming={status}"
+                    )
+                    return
+
+        # running状态按job_id做debounce，内容变化时仍然上报
+        if status == "running":
+            now = time.time()
+            cached = self._job_running_last_sent.get(item.job_id)
+            if cached is not None:
+                last_ts, last_data = cached
+                if now - last_ts < self._job_running_debounce_interval and last_data == feedback_data:
+                    logger.trace(f"[WebSocketClient] Job status debounced (skip): {job_log} - {status}")
+                    return
+            self._job_running_last_sent[item.job_id] = (now, feedback_data)
+
+        message = {
+            "action": "job_status",
+            "data": {
+                "job_id": item.job_id,
+                "task_id": item.task_id,
+                "device_id": item.device_id,
+                "notebook_id": item.notebook_id,
+                "action_name": item.action_name,
+                "status": status,
+                "feedback_data": feedback_data,
+                "return_info": return_info,
+                "timestamp": time.time(),
+            },
+        }
+        self.cache_job_start_response(item, message, status)
+
+        if not self.is_connected():
+            logger.debug(f"[WebSocketClient] Not connected, cached job status for job {job_log} - {status}")
+            return
+
+        self.message_processor.send_message(message)
+
+        logger.trace(f"[WebSocketClient] Job status published: {job_log} - {status}")
+
+    def publish_job_error_decision_required(self, report: Dict[str, Any]) -> bool:
+        """上报动作异常并等待审批；断线时留在发送队列等待重连。
+
+        decision_id 是幂等键。这里刻意不要求此刻 WS 在线：动作已经进入
+        人工决策等待窗口，短暂断线后重连只需把同一请求补发即可达到最终一致。
+        """
+
+        if self.is_disabled:
+            logger.warning(
+                f"[WebSocketClient] Cannot report action error while disabled: "
+                f"job={str(report.get('job_id', ''))[:8]} "
+                f"exception={report.get('exception_type', '')}"
+            )
+            return False
+        message = {"action": "job_error_decision_required", "data": report}
+        queued = self.message_processor.send_message(message)
+        if queued:
+            connection_state = "已发送" if self.is_connected() else "等待重连补发"
+            logger.info(
+                f"[WebSocketClient] Action error {connection_state}: "
+                f"decision={report.get('decision_id')} job={str(report.get('job_id', ''))[:8]}"
+            )
+        return queued
+
+    def send_ping(self, ping_id: str, timestamp: float) -> None:
+        """发送ping消息"""
+        if self.is_disabled or not self.is_connected():
+            logger.warning("[WebSocketClient] Not connected, cannot send ping")
+            return
+
+        message = {"action": "ping", "data": {"ping_id": ping_id, "client_timestamp": timestamp}}
+        self.message_processor.send_message(message)
+        logger.debug(f"[WebSocketClient] Ping sent: {ping_id}")
+
+    def cancel_goal(self, job_id: str) -> None:
+        """取消指定的任务"""
+        # 获取job信息用于日志
+        job_info = self.device_manager.get_job_info(job_id)
+        device_id = job_info.device_id if job_info else ""
+        action_name = job_info.action_name if job_info else ""
+        job_log = format_job_log(
+            job_id,
+            job_info.task_id if job_info else "",
+            device_id,
+            action_name,
+        )
+
+        logger.debug(f"[WebSocketClient] Cancel goal request for job: {job_log}")
+        success, next_job, lock_became_free = self.device_manager.cancel_job(job_id)
+        if success:
+            logger.info(f"[WebSocketClient] Job {job_log} cancelled successfully")
+            if next_job:
+                self.queue_processor.enqueue_pending_start(next_job)
+            elif lock_became_free:
+                self.publish_action_lock(device_id, action_name, free=True)
+        else:
+            logger.warning(f"[WebSocketClient] Failed to cancel job {job_log}")
+
+    def publish_action_lock(self, device_id: str, action_name: str, free: bool) -> None:
+        """主动上报单个 device+action 的锁(可用性)状态。"""
+        self.publish_action_locks([{"device_id": device_id, "action_name": action_name, "free": free}])
+
+    def publish_action_locks(self, locks: List[Dict[str, Any]]) -> None:
+        """批量主动上报 device+action 的锁(可用性)状态。
+
+        report_action_lock 不带 job_id/task_id，仅表达每个 device+action 当前是否空闲。
+        单次锁翻转 locks 长度为 1，host_ready/重连时为全量快照。
+        """
+        if self.is_disabled or not locks:
+            return
+        # 未连接时不发送：重连后由 publish_host_ready 的全量快照重新对齐真实锁状态，
+        # 避免把断链期间产生的中间态当作稳定状态推给服务端。
+        if not self.is_connected():
+            logger.debug(f"[WebSocketClient] Not connected, skip report_action_lock for {len(locks)} action(s)")
+            return
+
+        message = {
+            "action": "report_action_lock",
+            "data": {
+                "locks": locks,
+                "machine_name": BasicConfig.machine_name,
+                "timestamp": time.time(),
+            },
+        }
+        self.message_processor.send_message(message)
+        logger.info(f"[WebSocketClient] report_action_lock sent for {len(locks)} action(s)")
+
+    def report_all_action_locks(self) -> None:
+        """重新上报全量锁快照：遍历所有 device+action，按 DeviceActionManager 的忙闲状态上报 free/busy。
+
+        用于 host_ready/重连后的锁对齐，以及响应服务端主动下发的 query_action_lock。
+        """
+        if self.is_disabled or not self.is_connected():
+            logger.debug("[WebSocketClient] Not connected, skip report_all_action_locks")
+            return
+
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            logger.debug("[WebSocketClient] Host node 尚未就绪，跳过全量锁上报")
+            return
+
+        locks: List[Dict[str, Any]] = []
+        for device_id in host_node.devices_names.keys():
+            action_names = set()
+            # 从全量动作映射(_action_value_mappings)取动作名，而非仅 _action_clients：
+            # 它是设备“可调用动作”的权威清单，需全量上报，包含
+            #   - 建独立 ROS ActionServer 的动作；
+            #   - UniLabJsonCommand 动作(不建 ActionServer、经 _execute_driver_command 调用)；
+            #   - @action(auto_prefix=True) 注册成的 "auto-" 动作(如 workbench 的 prepare_materials 等)。
+            # 仅跳过 _execute_driver_command[_async]：它是上述动作的通用调用通道本身，并非具体业务动作。
+            for action_name in host_node._action_value_mappings.get(device_id, {}).keys():
+                if action_name.startswith("_execute_driver_command"):
+                    continue
+                action_names.add(action_name)
+            for action_name in action_names:
+                device_action_key = f"/devices/{device_id}/{action_name}"
+                free = not self.device_manager.is_action_busy(device_action_key)
+                locks.append({"device_id": device_id, "action_name": action_name, "free": free})
+        self.publish_action_locks(locks)
+
+    def publish_host_ready(self) -> None:
+        """发布host_node ready信号，包含设备和动作信息"""
+        if self.is_disabled or not self.is_connected():
+            logger.debug("[WebSocketClient] Not connected, cannot publish host ready signal")
+            return
+
+        # 仅在 HostNode 初始化完成（设备已就绪）后才向服务端注册。
+        # get_instance(0) 在未就绪时立即返回 None；此时必须延后发送，
+        # 否则会发出 devices=[] 的空 host_ready，令服务端误判节点已就绪而过早调度，
+        # 进而触发 READY 超时与启动期频繁断链重连。
+        host_node = HostNode.get_instance(0)
+        if host_node is None:
+            logger.info("[WebSocketClient] Host node 尚未就绪，延后发送 host_ready（待初始化完成后再注册）")
+            return
+
+        # 收集设备信息
+        devices = []
+        machine_name = BasicConfig.machine_name
+
+        try:
+            # host_node_ready 不再上报 actions：设备可调用动作以 report_action_lock 为准
+            # (来源 _action_value_mappings，覆盖 auto-/UniLabJsonCommand 等全量动作，且借 FIFO
+            # 在本消息之前先行发送)。host_ready 仅声明设备在线与归属，避免与锁口径不一致。
+            for device_id, namespace in host_node.devices_names.items():
+                device_key = (
+                    f"{namespace}/{device_id}" if namespace.startswith("/") else f"/{namespace}/{device_id}"
+                )
+                is_online = device_key in host_node._online_devices
+
+                devices.append(
+                    {
+                        "device_id": device_id,
+                        "namespace": namespace,
+                        "device_key": device_key,
+                        "is_online": is_online,
+                        "machine_name": host_node.device_machine_names.get(device_id, machine_name),
+                    }
+                )
+
+            logger.info(f"[WebSocketClient] Collected {len(devices)} devices for host_ready")
+        except Exception as e:
+            logger.warning(f"[WebSocketClient] Error collecting device info: {e}")
+
+        message = {
+            "action": "host_node_ready",
+            "data": {
+                "status": "ready",
+                "timestamp": time.time(),
+                "machine_name": machine_name,
+                "devices": devices,
+            },
+        }
+        # 先上报全量锁快照，再发 host_ready：借助发送队列 FIFO 顺序，
+        # 服务端会先收到 report_action_lock、再收到 host_node_ready。
+        # 启动时全部 free，重连时按 DeviceActionManager 反映正在运行/排队的 busy，实现锁状态对齐。
+        self.report_all_action_locks()
+        self.message_processor.send_message(message)
+        logger.info(f"[WebSocketClient] Host node ready signal published with {len(devices)} devices")

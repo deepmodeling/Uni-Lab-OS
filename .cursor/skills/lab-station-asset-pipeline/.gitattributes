@@ -1,0 +1,2 @@
+# 保持原始字节：toolkit/manifest.json 按字节摘要校验，部分文件本身是 CRLF
+* -text

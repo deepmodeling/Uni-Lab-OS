@@ -1,0 +1,5 @@
+float64 float_in
+---
+string return_info
+bool success
+---

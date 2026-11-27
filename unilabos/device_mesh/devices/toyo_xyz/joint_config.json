@@ -1,0 +1,14 @@
+{
+    "slider1_joint": {
+        "child":"slider1_link",
+        "axis" : "x"
+    },
+    "slider2_joint": {
+        "child":"slider2_link",
+        "axis" : "x"
+    },
+    "slider3_joint": {
+        "child":"slider3_link",
+        "axis" : "x"
+    }
+}

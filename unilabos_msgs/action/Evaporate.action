@@ -1,0 +1,15 @@
+# Organic Synthesis Station Evaporate Action
+Resource vessel                    # 目标容器
+float64 pressure                 # 真空度
+float64 temp                     # 温度
+string time                      # 🔧 蒸发时间（支持带单位，如"3 min","180"，默认秒）
+float64 stir_speed              # 旋转速度
+string solvent                   # 溶剂名称
+---
+string return_info
+bool success
+---
+string status
+string current_device
+builtin_interfaces/Duration time_spent
+builtin_interfaces/Duration time_remaining

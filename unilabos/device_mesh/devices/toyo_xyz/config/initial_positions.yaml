@@ -1,0 +1,6 @@
+# Default initial positions for full_dev's ros2_control fake system
+
+initial_positions:
+  slider1_joint: 0
+  slider2_joint: 0
+  slider3_joint: 0

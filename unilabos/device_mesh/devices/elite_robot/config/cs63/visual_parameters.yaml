@@ -1,0 +1,92 @@
+mesh_files:
+  base:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/base.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/base.stl
+
+  shoulder:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/shoulder.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/shoulder.stl
+
+  upperarm:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/upperarm.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/upperarm.stl
+      mesh_files:
+
+  forearm:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/forearm.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/forearm.stl
+
+  wrist_1:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/wrist1.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/wrist1.stl
+
+  wrist_2:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/wrist2.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/wrist2.stl
+
+  wrist_3:
+    visual:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/visual/wrist3.dae
+      material:
+        name: "LightGrey"
+        color: "0.7 0.7 0.7 1.0"
+    collision:
+      mesh:
+        package: eli_cs_robot_description
+        path: meshes/cs63/collision/wrist3.stl

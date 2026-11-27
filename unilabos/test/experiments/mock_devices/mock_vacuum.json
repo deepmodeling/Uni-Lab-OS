@@ -1,0 +1,31 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockVacuum1",  
+            "name": "模拟真空泵",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_vacuum_pump",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "power_state": "Off",  
+                "pump_state": "Stopped",  
+                "vacuum_level": 1013.25,  
+                "target_vacuum": 50.0,  
+                "pump_speed": 0.0,  
+                "pump_efficiency": 95.0,  
+                "max_pump_speed": 100.0  
+            }  
+        }  
+    ],  
+    "links": []  
+}

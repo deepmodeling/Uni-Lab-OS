@@ -1,0 +1,304 @@
+{
+    "nodes": [
+        {
+            "id": "SimpleProtocolStation",
+            "name": "简单协议工作站",
+            "children": [
+                "transfer_pump_1",
+                "multiway_valve_1",
+                "flask_DMF",
+                "flask_ethyl_acetate", 
+                "flask_methanol",
+                "main_reactor",
+                "waste_workup",
+                "collection_bottle_1",
+                "flask_air"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["PumpTransferProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "转移泵1",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 500,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 25.0,
+                "transfer_rate": 5.0
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle",
+                "valve_position": "0"
+            }
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "八通阀1",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 500,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "flask_DMF",
+            "name": "DMF试剂瓶",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 200,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "DMF",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_ethyl_acetate",
+            "name": "乙酸乙酯试剂瓶",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 300,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "ethyl_acetate",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_methanol",
+            "name": "甲醇试剂瓶",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "methanol",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "main_reactor",
+            "name": "主反应器",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 600,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "废液处理瓶",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 700,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "collection_bottle_1",
+            "name": "收集瓶1",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 800,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "SimpleProtocolStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_pump_valve",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump", 
+                "multiway_valve_1": "transferpump"  
+            }
+        },
+        {
+            "id": "link_valve_air",
+            "source": "multiway_valve_1",
+            "target": "flask_air",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "flask_air": "top"
+            }
+        },
+        {
+            "id": "link_valve_DMF",
+            "source": "multiway_valve_1",
+            "target": "flask_DMF",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "flask_DMF": "outlet"
+            }
+        },
+        {
+            "id": "link_valve_ethyl_acetate",
+            "source": "multiway_valve_1",
+            "target": "flask_ethyl_acetate",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "flask_ethyl_acetate": "outlet"
+            }
+        },
+        {
+            "id": "link_valve_methanol",
+            "source": "multiway_valve_1",
+            "target": "flask_methanol",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "4",
+                "flask_methanol": "outlet"
+            }
+        },
+        {
+            "id": "link_valve_reactor",
+            "source": "multiway_valve_1",
+            "target": "main_reactor",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "5",
+                "main_reactor": "inlet"
+            }
+        },
+        {
+            "id": "link_valve_waste",
+            "source": "multiway_valve_1",
+            "target": "waste_workup",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "6",
+                "waste_workup": "inlet"
+            }
+        },
+        {
+            "id": "link_valve_collection",
+            "source": "multiway_valve_1",
+            "target": "collection_bottle_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "7",
+                "collection_bottle_1": "inlet"
+            }
+        }
+    ]
+}

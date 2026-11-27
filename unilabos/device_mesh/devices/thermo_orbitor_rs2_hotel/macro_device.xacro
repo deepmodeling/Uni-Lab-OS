@@ -1,0 +1,59 @@
+<?xml version='1.0'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="thermo_orbitor_rs2_hotel" 
+  params="parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0
+          mesh_path:=''">
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+    <link name='${station_name}${device_name}base_link'>
+      <visual name='visual'>
+        <origin rpy="-${pi/2} 0 ${pi}" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/thermo_orbitor_rs2_hotel/meshes/hotel.stl"/>
+        </geometry>
+        <material name="clay">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="-${pi/2} 0 ${pi}" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/thermo_orbitor_rs2_hotel/meshes/hotel.stl"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name='${station_name}${device_name}socketTypeGenericSbsFootprint'/>
+
+    <xacro:property name="delta" value="0.073" />
+    <xacro:macro name='platetargets' params='num'>
+      <joint name='${station_name}${device_name}socketTypeGenericSbsFootprint_${num}_60_1' type='fixed'>
+        <parent link="${station_name}${device_name}base_link"/>
+        <child link="${station_name}${device_name}socketTypeGenericSbsFootprint"/>
+        <origin rpy="0 0 ${pi/2}" xyz="-0.002 0.011 ${(num - 1) * delta + 0.038}"/>
+      </joint>
+    </xacro:macro>
+
+    <xacro:platetargets num='1' />
+    <xacro:platetargets num='2' />
+    <xacro:platetargets num='3' />
+    <xacro:platetargets num='4' />
+    <xacro:platetargets num='5' />
+    <xacro:platetargets num='6' />
+    <xacro:platetargets num='7' />
+    <xacro:platetargets num='8' />
+  </xacro:macro>
+</robot>

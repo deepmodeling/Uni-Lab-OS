@@ -1,0 +1,36 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockFilter1",  
+            "name": "模拟过滤器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_filter",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "is_filtering": false,  
+                "flow_rate": 0.0,
+                "filter_life": 100.0,
+                "vessel": "",
+                "filtrate_vessel": "",
+                "filtered_volume": 0.0,
+                "target_volume": 0.0,
+                "progress": 0.0,
+                "stir": false,
+                "stir_speed": 0.0,
+                "temperature": 25.0,
+                "continue_heatchill": false
+            }  
+        }  
+    ],  
+    "links": []  
+}

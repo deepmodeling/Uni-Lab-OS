@@ -1,0 +1,1710 @@
+{
+    "nodes": [
+        {
+            "id": "PLR_STATION",
+            "name": "PLR_LH_TEST",
+            "parent": null,
+            "type": "device",
+            "class": "liquid_handler",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "data": {
+                    "children": [
+                        {
+                            "_resource_child_name": "deck",
+                            "_resource_type": "pylabrobot.resources.opentrons.deck:OTDeck"
+                        }
+                    ],
+                    "backend": {
+                        "type": "LiquidHandlerChatterboxBackend"
+                    }
+                }
+            },
+            "data": {},
+            "children": [
+                "deck"
+            ]
+        },
+        {
+            "id": "deck",
+            "name": "deck",
+            "sample_id": null,
+            "children": [
+                "tip_rack",
+                "plate_well"
+            ],
+            "parent": "PLR_STATION",
+            "type": "deck",
+            "class": "OTDeck",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "type": "OTDeck",
+                "with_trash": false,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                }
+            },
+            "data": {}
+        },
+        {
+            "id": "tip_rack",
+            "name": "tip_rack",
+            "sample_id": null,
+            "children": [
+                "tip_rack_A1",
+                "tip_rack_B1",
+                "tip_rack_C1",
+                "tip_rack_D1",
+                "tip_rack_E1",
+                "tip_rack_F1",
+                "tip_rack_G1",
+                "tip_rack_H1",
+                "tip_rack_A2",
+                "tip_rack_B2",
+                "tip_rack_C2",
+                "tip_rack_D2",
+                "tip_rack_E2",
+                "tip_rack_F2",
+                "tip_rack_G2",
+                "tip_rack_H2"
+            ],
+            "parent": "deck",
+            "type": "plate",
+            "class": "opentrons_96_filtertiprack_1000ul",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 69
+            },
+            "config": {
+                "type": "TipRack",
+                "size_x": 122.4,
+                "size_y": 82.6,
+                "size_z": 20.0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_rack",
+                "model": "HTF",
+                "ordering": [
+                    "A1",
+                    "B1",
+                    "C1",
+                    "D1",
+                    "E1",
+                    "F1",
+                    "G1",
+                    "H1",
+                    "A2",
+                    "B2",
+                    "C2",
+                    "D2",
+                    "E2",
+                    "F2",
+                    "G2",
+                    "H2"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "tip_rack_A1",
+            "name": "tip_rack_A1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 68.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_B1",
+            "name": "tip_rack_B1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 59.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_C1",
+            "name": "tip_rack_C1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 50.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_D1",
+            "name": "tip_rack_D1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 41.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_E1",
+            "name": "tip_rack_E1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 32.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_F1",
+            "name": "tip_rack_F1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 23.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_G1",
+            "name": "tip_rack_G1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 14.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_H1",
+            "name": "tip_rack_H1",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 7.2,
+                "y": 5.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_A2",
+            "name": "tip_rack_A2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 68.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_B2",
+            "name": "tip_rack_B2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 59.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_C2",
+            "name": "tip_rack_C2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 50.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_D2",
+            "name": "tip_rack_D2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 41.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_E2",
+            "name": "tip_rack_E2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 32.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_F2",
+            "name": "tip_rack_F2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 23.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_G2",
+            "name": "tip_rack_G2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 14.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "tip_rack_H2",
+            "name": "tip_rack_H2",
+            "sample_id": null,
+            "children": [],
+            "parent": "tip_rack",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 16.2,
+                "y": 5.3,
+                "z": 9.47
+            },
+            "config": {
+                "type": "TipSpot",
+                "size_x": 9.0,
+                "size_y": 9.0,
+                "size_z": 0,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "tip_spot",
+                "model": null,
+                "prototype_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            },
+            "data": {
+                "tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                },
+                "tip_state": {
+                    "liquids": [],
+                    "pending_liquids": [],
+                    "liquid_history": []
+                },
+                "pending_tip": {
+                    "type": "Tip",
+                    "total_tip_length": 39.2,
+                    "has_filter": true,
+                    "maximal_volume": 20.0,
+                    "fitting_depth": 3.29
+                }
+            }
+        },
+        {
+            "id": "plate_well",
+            "name": "plate_well",
+            "sample_id": null,
+            "children": [
+                "plate_well_A1",
+                "plate_well_B1",
+                "plate_well_C1",
+                "plate_well_D1",
+                "plate_well_E1",
+                "plate_well_F1",
+                "plate_well_G1",
+                "plate_well_H1",
+                "plate_well_A11",
+                "plate_well_B11",
+                "plate_well_C11",
+                "plate_well_D11",
+                "plate_well_E11",
+                "plate_well_F11",
+                "plate_well_G11",
+                "plate_well_H11"
+            ],
+            "parent": "deck",
+            "type": "plate",
+            "class": "nest_96_wellplate_2ml_deep",
+            "position": {
+                "x": 265.0,
+                "y": 0,
+                "z": 69
+            },
+            "config": {
+                "type": "Plate",
+                "size_x": 127.76,
+                "size_y": 85.48,
+                "size_z": 14.2,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "plate",
+                "model": "Cor_96_wellplate_360ul_Fb",
+                "ordering": [
+                    "A1",
+                    "B1",
+                    "C1",
+                    "D1",
+                    "E1",
+                    "F1",
+                    "G1",
+                    "H1",
+                    "A11",
+                    "B11",
+                    "C11",
+                    "D11",
+                    "E11",
+                    "F11",
+                    "G11",
+                    "H11"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "plate_well_A1",
+            "name": "plate_well_A1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 70.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_B1",
+            "name": "plate_well_B1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 61.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_C1",
+            "name": "plate_well_C1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 52.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_D1",
+            "name": "plate_well_D1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 43.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_E1",
+            "name": "plate_well_E1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 34.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_F1",
+            "name": "plate_well_F1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 25.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_G1",
+            "name": "plate_well_G1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 16.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_H1",
+            "name": "plate_well_H1",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 10.87,
+                "y": 7.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_A11",
+            "name": "plate_well_A11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 70.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_B11",
+            "name": "plate_well_B11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 61.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_C11",
+            "name": "plate_well_C11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 52.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_D11",
+            "name": "plate_well_D11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 43.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_E11",
+            "name": "plate_well_E11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 34.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_F11",
+            "name": "plate_well_F11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 25.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_G11",
+            "name": "plate_well_G11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 16.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        },
+        {
+            "id": "plate_well_H11",
+            "name": "plate_well_H11",
+            "sample_id": null,
+            "children": [],
+            "parent": "plate_well",
+            "type": "device",
+            "class": "",
+            "position": {
+                "x": 100.87,
+                "y": 7.77,
+                "z": 3.03
+            },
+            "config": {
+                "type": "Well",
+                "size_x": 6.86,
+                "size_y": 6.86,
+                "size_z": 10.67,
+                "rotation": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0,
+                    "type": "Rotation"
+                },
+                "category": "well",
+                "model": null,
+                "max_volume": 360,
+                "material_z_thickness": 0.5,
+                "compute_volume_from_height": null,
+                "compute_height_from_volume": null,
+                "bottom_type": "flat",
+                "cross_section_type": "circle"
+            },
+            "data": {
+                "liquids": [],
+                "pending_liquids": [],
+                "liquid_history": []
+            }
+        }
+    ],
+    "links": []
+}

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}UniLab{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+        h1, h2, h3 { color: #333; }
+        .card { background: #f5f5f5; border-radius: 5px; padding: 15px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        tr:hover { background-color: #f5f5f5; }
+        .folder-link { color: #4CAF50; cursor: pointer; margin-left: 5px; }
+        a { color: #2196F3; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .home-link { display: block; background: #2196F3; color: white; padding: 10px 15px; 
+            border-radius: 4px; margin: 20px 0; text-align: center; }
+        .status-link { display: block; background: #4CAF50; color: white; padding: 10px 15px; 
+            border-radius: 4px; margin: 20px 0; text-align: center; }
+        .endpoint { margin-bottom: 10px; padding: 10px; background: #fff; border-radius: 3px; 
+            border-left: 4px solid #2196F3; }
+        .method { font-weight: bold; color: #2196F3; }
+
+        /* 折叠面板样式 */
+        .collapsible { background-color: #f8f8f8; cursor: pointer; padding: 10px; 
+            border: none; text-align: left; outline: none; margin-bottom: 1px; 
+            font-weight: bold; color: #2196F3; width: 100%; border-radius: 4px; }
+        .active, .collapsible:hover { background-color: #e6f2ff; }
+        .content { padding: 0 10px; max-height: 0; overflow: hidden; 
+            transition: max-height 0.2s ease-out; background-color: white; }
+        .content pre { margin: 10px 0; white-space: pre-wrap; max-height: 400px; overflow: auto; }
+        
+        /* 整行折叠样式 */
+        .collapsible-row { transition: background-color 0.3s; }
+        .collapsible-row:hover { background-color: #e6f2ff; }
+        .collapsible-row.active { background-color: #e6f2ff; }
+        .detail-row { background-color: #f8f8f8; }
+        .content-full { padding: 15px; background-color: white; border-radius: 4px; }
+        .content-full pre { margin: 0; white-space: pre-wrap; max-height: 400px; overflow: auto; }
+        .toggle-info { color: #2196F3; font-weight: bold; }
+        
+        /* Registry信息样式 */
+        .registry-info {
+            background-color: #e9f7fe;
+            padding: 10px 15px;
+            margin: 10px 0 20px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .registry-path {
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+        .path {
+            font-family: monospace;
+            color: #555;
+        }
+        .path-list {
+            margin: 5px 0;
+            padding-left: 20px;
+            list-style-type: none;
+        }
+        .path-list li {
+            margin-bottom: 3px;
+            padding: 3px 0;
+        }
+        
+        /* 导航标签样式 */
+        .nav-tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .nav-tab {
+            margin-right: 15px;
+            padding: 8px 16px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            text-decoration: none;
+            color: #555;
+            transition: all 0.2s;
+        }
+        .nav-tab:hover {
+            background-color: #e9ecef;
+            color: #333;
+        }
+        
+        /* 在线状态样式 */
+        .online-status {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+        .offline-status {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+        
+        /* 内部表格样式 */
+        .inner-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        .inner-table th, .inner-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .inner-table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        /* 详情列表样式 */
+        .detail-list {
+            margin: 5px 0 15px 0;
+            padding-left: 20px;
+        }
+        .detail-list li {
+            margin-bottom: 8px;
+        }
+        
+        /* 返回顶部按钮 */
+        #back-to-top {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            z-index: 99;
+            border: none;
+            outline: none;
+            background-color: #2196F3;
+            color: white;
+            cursor: pointer;
+            padding: 15px;
+            border-radius: 50%;
+            font-size: 18px;
+            width: 50px;
+            height: 50px;
+            line-height: 20px;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s;
+        }
+        #back-to-top:hover {
+            background-color: #0b7dda;
+        }
+        
+        .file-path { font-family: monospace; font-size: 0.9em; color: #666; }
+        .classes-count { color: #999; font-size: 0.9em; margin-left: 5px; }
+    </style>
+    {% block scripts %}{% endblock %}
+</head>
+<body>
+    <h1>{% block header %}UniLab{% endblock %}</h1>
+    {% block nav %}
+    {% endblock %}
+
+    {% block top_info %}{% endblock %}
+
+    {% block content %}{% endblock %}
+</body>
+</html> 

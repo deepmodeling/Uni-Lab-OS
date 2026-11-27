@@ -1,0 +1,13 @@
+# Request
+string temp
+string time
+Resource vessel
+---
+# Result
+bool success
+string message
+string return_info
+---
+# Feedback
+string status
+float64 progress

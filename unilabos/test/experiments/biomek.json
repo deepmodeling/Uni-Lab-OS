@@ -1,0 +1,22 @@
+{
+    "nodes": [
+        {
+            "id": "BIOMEK",
+            "name": "BIOMEK",
+            "parent": null,
+            "type": "device",
+            "class": "liquid_handler.biomek",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+            },
+            "data": {},
+            "children": [
+            ]
+        }
+    ],
+    "links": []
+}

@@ -1,0 +1,6 @@
+int32 time
+
+---
+string return_info
+bool success
+---

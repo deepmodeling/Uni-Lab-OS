@@ -1,0 +1,209 @@
+<?xml version="1.0" ?>
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="hplc_station" params="mesh_path:='' parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0" >
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}base_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}base_link">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.016555 0.76648 0.42623"/>
+        <mass value="3345.4"/>
+        <inertia ixx="707.32" ixy="-0.15257" ixz="-0.27572" iyy="740.04" iyz="-0.13481" izz="1091.1"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/base_link.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.79216 0.81961 0.93333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/base_link.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <link name="${station_name}${device_name}arm_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.1335 -0.125 -0.073692"/>
+        <mass value="4.5437"/>
+        <inertia ixx="0.13672" ixy="3.0798E-17" ixz="1.0696E-19" iyy="0.13672" iyz="2.5459E-20" izz="0.27331"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/arm_base.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.79216 0.81961 0.93333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/arm_base.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}arm_base_joint" type="fixed">
+      <origin rpy="0 0 0" xyz="-0.5835 0.575 0.813"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}arm_base"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+    <link name="${station_name}${device_name}ws_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.45395 0.36376 0.22824"/>
+        <mass value="15.878"/>
+        <inertia ixx="0.94748" ixy="3.4968E-05" ixz="4.426E-05" iyy="1.0589" iyz="-0.011663" izz="1.605"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/ws_base.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.79216 0.81961 0.93333 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/ws_base.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}ws_joint" type="fixed">
+      <origin rpy="0 0 0" xyz="-0.75 -0.75 0.8"/>
+      <parent link="${station_name}${device_name}base_link"/>
+      <child link="${station_name}${device_name}ws_base"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    
+    <link name="${station_name}${device_name}z_link">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.76043 1.5021 -0.36124"/>
+        <mass value="3404.5"/>
+        <inertia ixx="2801.7" ixy="-3.2275" ixz="-23.671" iyy="869.48" iyz="55.159" izz="3130.4"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/z_link.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/hplc_station/meshes/z_link.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}x_link">
+    </link>
+    <joint name="${station_name}${device_name}x_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <parent link="${station_name}${device_name}ws_base"/>
+      <child link="${station_name}${device_name}x_link"/>
+      <axis xyz="1 0 0"/>
+      <limit effort="0" lower="0" upper="0.5" velocity="0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}y_link">
+    </link>
+    <joint name="${station_name}${device_name}y_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <parent link="${station_name}${device_name}x_link"/>
+      <child link="${station_name}${device_name}y_link"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="0" lower="0" upper="0.5" velocity="0"/>
+    </joint>
+
+    <joint name="${station_name}${device_name}z_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <parent link="${station_name}${device_name}y_link"/>
+      <child link="${station_name}${device_name}z_link"/>
+      <axis xyz="0 0 -1"/>
+      <limit effort="0" lower="0" upper="0.5" velocity="0"/>
+    </joint>
+
+
+    <link
+      name="${station_name}${device_name}mt_base">
+      <inertial>
+        <origin
+          xyz="0.351023411986924 0.445375400882133 0.128876815206488"
+          rpy="0 0 0" />
+        <mass
+          value="11.1062879385751" />
+        <inertia
+          ixx="0.143866977287068"
+          ixy="0.0137782180671174"
+          ixz="-0.000140346559252494"
+          iyy="0.14345824300898"
+          iyz="-0.000123577300295821"
+          izz="0.279834203406604" />
+      </inertial>
+      <visual>
+        <origin
+          xyz="0 0 0"
+          rpy="0 0 0" />
+        <geometry>
+          <mesh
+            filename="file://${mesh_path}/devices/hplc_station/meshes/mt_base.STL" />
+        </geometry>
+        <material
+          name="">
+          <color
+            rgba="1 1 1 1" />
+        </material>
+      </visual>
+      <collision>
+        <origin
+          xyz="0 0 0"
+          rpy="0 0 0" />
+        <geometry>
+          <mesh
+            filename="file://${mesh_path}/devices/hplc_station/meshes/mt_base.STL" />
+        </geometry>
+      </collision>
+    </link>
+    <joint
+      name="${station_name}${device_name}mt_joint"
+      type="fixed">
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <parent
+        link="${station_name}${device_name}ws_base" />
+      <child
+        link="${station_name}${device_name}mt_base" />
+      <axis
+        xyz="0 0 0" />
+    </joint>
+
+  </xacro:macro>
+</robot>

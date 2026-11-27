@@ -1,0 +1,21 @@
+{
+  "schema_version": "lab-station-task/1",
+  "example_only": true,
+  "station_name": "example_station",
+  "sources": [{"path": "inputs/station.step", "role": "engineering_geometry"}],
+  "output_directory": "outputs/station-run-001",
+  "goals": ["native_asset_library", "editable_assembly", "os_domain_package", "empty_project_reuse"],
+  "target_objects": [{"label": "rack", "source_occurrence": null}, {"label": "vial", "source_occurrence": null}, {"label": "removable_cap", "source_occurrence": null}],
+  "target_consumer": {"name": "Blender + UniLab OS", "version": null},
+  "asset_library": {"root": "outputs/library-staging", "format": "existing_native_library_schema", "publication_authorized": false},
+  "definition_plan": [
+    {"role": "rack", "definition_count": 1, "instance_count": 1, "slot_count": 48},
+    {"role": "vial", "definition_count": 1, "instance_count": 48},
+    {"role": "removable_cap", "definition_count": 1, "instance_count": 48}
+  ],
+  "domain_package": {"name": "example_station", "graph": "example_station/layout.json", "assets_lock": "example_station/assets.lock.json", "os_source": null},
+  "example_scope": "Planning checklist only; use the installed library and OS schemas to generate real packages and graphs. Counts illustrate one rack specification, not all stations.",
+  "appearance": {"mode": "standard_pbr", "meshy": {"upload_authorized": false, "submission_authorized": false, "max_credits": null}},
+  "task_scene": {"mode": "asset_instances_in_os_graph", "robot_or_fixture": null},
+  "qualification": {"native_package": "not_run", "geometry": "not_run", "editing": "not_run", "kinematics": "not_run", "contact": "not_run", "task": "not_run", "os_catalog": "not_run", "inventory_settlement": "not_run", "planning_collision": "not_run", "empty_project_reuse": "not_run", "portability": "not_run"}
+}

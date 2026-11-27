@@ -1,0 +1,11 @@
+Opentrons_96_adapter_Vb:
+  category:
+  - plate_adapters
+  class:
+    module: pylabrobot.resources.opentrons.plate_adapters:Opentrons_96_adapter_Vb
+    type: pylabrobot
+  description: Opentrons 96 adapter Vb
+  handles: []
+  icon: ''
+  init_param_schema: {}
+  version: 1.0.0

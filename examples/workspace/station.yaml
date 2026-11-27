@@ -1,0 +1,28 @@
+# 复制到 unilab workspace init 创建的设备包根目录，然后运行
+# unilab workspace start -f station.yaml
+schemaVersion: 1
+workspace: .
+graphPath: deployment/graphs/dry-run.json
+runtimeMode: dry-run
+
+# 单机运行多个工站时，可以省略端口以便自动分配。
+# backendPort: 18003
+# rosDomainId: 42
+# 调度与设备运行时使用不同 ROS 域时，可单独指定运行时值。
+# runtimeRosDomainId: 43
+
+center:
+  enabled: false
+  # 接入 Center 时设为 true，使用本站登记的身份和挂载的凭据。
+  # endpoint: https://center.example.com:8443
+  # stationUuid: <工站 UUID>
+  # instanceUuid: <工站实例 UUID>
+  # labUuid: <实验室 UUID>
+  # clientCert: credentials/station.crt
+  # clientKey: credentials/station.key
+  # serverCa: credentials/center-ca.crt
+  # machineSecretFile: credentials/machine-secret
+  # httpBaseUrl: http://station-a.example.com:18003
+  # publicHttpBaseUrl: https://station-a.example.com
+  # handoffPolicyFile: policies/handoff.json
+  # transportRouteFile: policies/transport-routes.json

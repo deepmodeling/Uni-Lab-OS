@@ -1,0 +1,54 @@
+{
+  "nodes": [
+    {
+      "id": "channel_a",
+      "name": "并行验收 S06",
+      "children": [],
+      "parent": null,
+      "type": "device",
+      "class": "community.parallel_lab.channel_a",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "config": {
+        "channel": "S06"
+      },
+      "data": {}
+    },
+    {
+      "id": "channel_b",
+      "name": "并行验收 S07",
+      "children": [],
+      "parent": null,
+      "type": "device",
+      "class": "community.parallel_lab.channel_b",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "config": {
+        "channel": "S07"
+      },
+      "data": {}
+    },
+    {
+      "id": "region",
+      "name": "共同资源范围",
+      "children": [],
+      "parent": null,
+      "type": "device",
+      "class": "community.parallel_lab.region",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "config": {},
+      "data": {}
+    }
+  ],
+  "links": []
+}

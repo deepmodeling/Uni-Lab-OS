@@ -1,0 +1,12 @@
+{
+    "private_param":
+    {
+        "min_d": 0.1 ,
+        "max_d": 0.1 ,
+        "slider_d": 0.14 
+    },
+    "public_param": 
+    {
+        "length" :0.1
+    }
+}

@@ -1,0 +1,174 @@
+{
+    "nodes": [
+        {
+            "id": "HPLC",
+            "name": "HPLC",
+            "parent": null,
+            "type": "device",
+            "class": "hplc.agilent",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+                "BottlesRack3"
+            ]
+        },
+        {
+            "id": "BottlesRack3",
+            "name": "上样盘3",
+            "parent": "HPLC",
+            "type": "plate",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+                "Bottle3-1",
+                "Bottle3-2",
+                "Bottle3-3",
+                "Bottle3-4",
+                "Bottle3-5",
+                "Bottle3-6",
+                "Bottle3-7",
+                "Bottle3-8"
+            ]
+        },
+        {
+            "id": "Bottle3-1",
+            "name": "Bottle3-1",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-2",
+            "name": "Bottle3-2",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-3",
+            "name": "Bottle3-3",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-4",
+            "name": "Bottle3-4",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-5",
+            "name": "Bottle3-5",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-6",
+            "name": "Bottle3-6",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-7",
+            "name": "Bottle3-7",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        },
+        {
+            "id": "Bottle3-8",
+            "name": "Bottle3-8",
+            "parent": "BottlesRack3",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {},
+            "data": {},
+            "children": [
+            ]
+        }
+    ],
+    "links": []
+}

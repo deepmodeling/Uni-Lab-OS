@@ -1,0 +1,25 @@
+{% extends "base.html" %} {% block title %}UniLab API{% endblock %} {% block
+header %}UniLab API{% endblock %} {% block nav %}
+<div class="nav-tabs">
+  <a
+    href="/"
+    class="nav-tab"
+    style="background-color: #2196f3; color: white"
+    target="_blank"
+    >主页</a
+  >
+  <a href="/status" class="nav-tab">状态</a>
+  <a href="/registry-editor" class="nav-tab" target="_blank">注册表编辑</a>
+</div>
+{% endblock %} {% block content %}
+<div class="card">
+  <h2>Available Endpoints</h2>
+  {% for route in routes %}
+  <div class="endpoint">
+    <span class="method">{{ route.method }}</span>
+    <a href="{{ route.path }}">{{ route.path }}</a>
+    <p>{{ route.summary }}</p>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

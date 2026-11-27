@@ -1,0 +1,12 @@
+{
+    "toyo_xyz":
+    {
+        "joint_names": [ 
+            "slider1_joint",
+            "slider2_joint",
+            "slider3_joint"
+            ],
+        "base_link_name": "device_link",
+        "end_effector_name": "slider3_link"
+    }
+}

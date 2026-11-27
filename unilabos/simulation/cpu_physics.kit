@@ -1,0 +1,23 @@
+[package]
+title = "UniLab CPU physics worker"
+version = "1.0.0"
+
+[dependencies]
+"omni.usd" = {}
+"omni.physx" = {}
+
+[settings]
+app.name = "unilab-twin-physics"
+app.window.enabled = false
+app.renderer.enabled = false
+app.settings.persistent = false
+app.content.emptyStageOnStart = false
+renderer.enabled = false
+renderer.multiGpu.enabled = false
+renderer.multiGpu.autoEnable = false
+physics.numThreads = 2
+physics.cudaDevice = -1
+exts."omni.kit.registry.nucleus".registries = []
+
+[settings.app.exts]
+folders = ["/isaac-sim/exts", "/isaac-sim/extscache", "/isaac-sim/kit/exts"]

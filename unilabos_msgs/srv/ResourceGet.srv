@@ -1,0 +1,6 @@
+string id
+bool with_children
+---
+bool success
+string message
+Resource[] resources

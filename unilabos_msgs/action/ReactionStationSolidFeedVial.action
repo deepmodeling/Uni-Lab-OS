@@ -1,0 +1,13 @@
+# Goal - 固体投料-小瓶操作参数
+string assign_material_name     # 固体名称
+string material_id              # 固体投料类型
+string time                     # 观察时间（单位min）
+string torque_variation         # 是否观察1否2是
+---
+# Result - 操作结果
+bool success                    # 操作是否成功
+string return_info              # 结果消息
+int32 code                      # 操作结果代码（1表示成功，0表示失败）
+---
+# Feedback - 实时反馈
+string feedback                 # 操作过程中的反馈信息

@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="generic_labware_tube_10_75">
+    <link name='0_base_link'>
+        <visual name='visual'>
+            <geometry>
+                <mesh filename="meshes/0_base.stl"/>
+            </geometry>
+            <material name="clay" />
+        </visual>
+    </link>
+</robot>

@@ -1,0 +1,6 @@
+# Docker Desktop 的 kind 节点按 arm64 节点架构筛选镜像。
+# 下方 ROS 运行时仍为 amd64，由 Docker Desktop 已注册的 amd64 模拟器执行；
+# 此包装层只提供节点兼容的镜像清单，使 kubelet 能选择已导入镜像。
+FROM --platform=linux/amd64 unilabos-szlab:local-amd64
+
+LABEL org.opencontainers.image.description="UniLabOS SZLab amd64 runtime for Docker Desktop arm64 kind"

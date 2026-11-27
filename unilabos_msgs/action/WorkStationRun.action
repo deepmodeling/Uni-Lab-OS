@@ -1,0 +1,10 @@
+# MobileRobot
+string wf_name
+string params
+Resource resource
+---
+string return_info
+bool success
+---
+string status
+string gantt

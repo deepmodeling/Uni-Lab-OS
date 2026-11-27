@@ -1,0 +1,13 @@
+# Goal - 目标参数
+float64 position      # 目标位置 (ml)
+float64 max_velocity  # 最大速度 (ml/s)
+---
+# Result - 结果
+string return_info
+bool success          # 操作是否成功
+string message        # 操作结果消息
+---
+# Feedback - 反馈
+string status         # 当前状态
+float64 current_position  # 当前位置
+float64 progress      # 进度百分比 (0-100)

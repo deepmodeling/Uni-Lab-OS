@@ -1,0 +1,11 @@
+# Organic Synthesis Station EvacuateAndRefill Action
+Resource vessel
+string gas
+---
+string return_info
+bool success
+---
+string status
+string current_device
+builtin_interfaces/Duration time_spent
+builtin_interfaces/Duration time_remaining

@@ -1,0 +1,1411 @@
+{% extends "base.html" %} {% block title %}注册表编辑器 - UniLab{% endblock %}
+{% block header %}注册表编辑器{% endblock %} {% block nav %} {% endblock %} {%
+block scripts %}
+<style>
+  .editor-container {
+    max-width: 100%;
+    margin: 0;
+    padding: 10px;
+    position: relative;
+  }
+  .form-section {
+    background: rgb(212, 226, 243);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 2px rgba(0, 0, 0, 0.1);
+  }
+  .form-group {
+    margin-bottom: 15px;
+  }
+  .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+  }
+  .form-control {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    margin-right: 10px;
+    transition: background-color 0.2s;
+  }
+  .btn-primary {
+    background-color: #2196f3;
+    color: white;
+  }
+  .btn-primary:hover {
+    background-color: #0b7dda;
+  }
+  .btn-secondary {
+    background-color: #6c757d;
+    color: white;
+  }
+  .btn-secondary:hover {
+    background-color: #545b62;
+  }
+  .radio-group {
+    display: flex;
+    gap: 15px;
+    margin-top: 8px;
+  }
+  .radio-option {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .log-container {
+    background: #1e1e1e;
+    color: #ffffff;
+    border-radius: 4px;
+    padding: 15px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid #444;
+  }
+  .status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+  }
+  .status-disconnected {
+    background-color: #f44336;
+  }
+  .status-connected {
+    background-color: #4caf50;
+  }
+  .status-processing {
+    background-color: #ff9800;
+  }
+  .results-section {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  .results-tabs {
+    display: flex;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #ddd;
+  }
+  .result-tab {
+    padding: 10px 20px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .result-tab.active {
+    border-bottom-color: #2196f3;
+    color: #2196f3;
+    font-weight: bold;
+  }
+  .result-tab:hover {
+    background-color: #f5f5f5;
+  }
+  .result-content {
+    display: none;
+  }
+  .result-content.active {
+    display: block;
+  }
+  .schema-viewer {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 15px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 13px;
+    max-height: 500px;
+    overflow: auto;
+    white-space: pre-wrap;
+  }
+  .error-message {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+  }
+  .success-message {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+  }
+  .file-info {
+    background: #e9f7fe;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: #555;
+  }
+  .file-input-group {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .file-browse-btn {
+    white-space: nowrap;
+    min-width: 100px;
+  }
+  .form-text {
+    display: block;
+    margin-top: 5px;
+    font-size: 12px;
+    color: #6c757d;
+  }
+  .file-analysis-status {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .class-info {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  .file-browser-container {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+  }
+  .current-path {
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    font-size: 13px;
+    color: #555;
+  }
+  .file-browser {
+    max-height: 300px;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .file-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.2s;
+  }
+  .file-item:hover {
+    background-color: #f8f9fa;
+  }
+  .file-item.selected {
+    background-color: #e3f2fd;
+    border-left: 3px solid #2196f3;
+  }
+  .file-icon {
+    margin-right: 8px;
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+  }
+  .file-name {
+    flex: 1;
+    font-size: 14px;
+  }
+  .file-size {
+    font-size: 12px;
+    color: #666;
+    margin-left: 8px;
+  }
+  .directory-icon {
+    color: #ff9800;
+  }
+  .python-file-icon {
+    color: #4caf50;
+  }
+  .other-file-icon {
+    color: #666;
+  }
+  .selected-file {
+    padding: 8px 12px;
+    background: #e8f5e8;
+    border-top: 1px solid #ddd;
+    font-size: 13px;
+  }
+  .loading-indicator {
+    padding: 20px;
+    text-align: center;
+    color: #666;
+    font-style: italic;
+  }
+  .yaml-container {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+  }
+  .yaml-header {
+    padding: 10px 12px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .copy-yaml-btn {
+    font-size: 12px;
+    padding: 4px 12px;
+  }
+
+  /* Handle 配置相关样式 */
+  .handle-item {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #f8f9fa;
+    position: relative;
+  }
+
+  .handle-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+  }
+
+  .handle-item-title {
+    font-weight: bold;
+    color: #333;
+  }
+
+  .remove-handle-btn {
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .remove-handle-btn:hover {
+    background-color: #c82333;
+  }
+
+  .handle-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .handle-form-row.full-width {
+    grid-template-columns: 1fr;
+  }
+
+  .handle-form-group {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .handle-form-group label {
+    font-size: 12px;
+    font-weight: bold;
+    color: #555;
+    margin-bottom: 3px;
+  }
+
+  .handle-form-group input,
+  .handle-form-group select {
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+
+  /* 连接状态右上角定位 */
+  .connection-status-fixed {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: white;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    border: 1px solid #ddd;
+  }
+
+  /* 主要内容区域两栏布局 */
+  .main-content {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+
+  .left-column {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .right-column {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 日志区域在底部 */
+  .log-section-bottom {
+    background: white;
+    border-top: 2px solid #e0e0e0;
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 响应式设计 */
+  @media (max-width: 1024px) {
+    .main-content {
+      flex-direction: column;
+    }
+
+    .connection-status-fixed {
+      position: relative;
+      top: auto;
+      right: auto;
+      margin-bottom: 20px;
+    }
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="editor-container">
+  <!-- 连接状态 - 右上角固定 -->
+  <div class="connection-status-fixed">
+    <div id="connection-status">
+      <span class="status-indicator status-disconnected" id="status-dot"></span>
+      <span id="status-text">未连接</span>
+    </div>
+  </div>
+
+  <!-- 主要内容区域 -->
+  <div class="main-content">
+    <!-- 左栏：文件导入配置 -->
+    <div class="left-column">
+      <div class="form-section">
+        <h3>文件导入配置</h3>
+
+        <div class="form-group">
+          <label for="registry-type">注册表类型</label>
+          <div class="radio-group">
+            <div class="radio-option">
+              <input
+                type="radio"
+                id="type-device"
+                name="registry-type"
+                value="device"
+                checked
+              />
+              <label for="type-device">设备 (Device)</label>
+            </div>
+            <div class="radio-option">
+              <input
+                type="radio"
+                id="type-resource"
+                name="registry-type"
+                value="resource"
+              />
+              <label for="type-resource">资源 (Resource)</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="file-browser">选择Python文件</label>
+          <div class="file-browser-container">
+            <!-- 当前路径显示 -->
+            <div class="current-path">
+              <strong>当前路径：</strong>
+              <span id="current-path-display">加载中...</span>
+            </div>
+
+            <!-- 文件浏览器 -->
+            <div class="file-browser" id="file-browser">
+              <div class="loading-indicator">正在加载文件列表...</div>
+            </div>
+
+            <!-- 选择的文件显示 -->
+            <div class="selected-file" id="selected-file" style="display: none">
+              <strong>已选择：</strong>
+              <span id="selected-file-name"></span>
+              <span id="selected-file-size" class="file-size"></span>
+            </div>
+          </div>
+          <small class="form-text">只显示 .py 文件和文件夹</small>
+        </div>
+
+        <div class="form-group">
+          <button
+            class="btn btn-secondary"
+            onclick="analyzeFile()"
+            id="analyze-btn"
+            disabled
+          >
+            分析文件
+          </button>
+          <small class="form-text">首先分析文件以获取可用的类列表</small>
+        </div>
+
+        <div
+          class="form-group"
+          id="class-selection-group"
+          style="display: none"
+        >
+          <label for="class-name" id="class-selection-label">选择类名</label>
+          <select id="class-name" class="form-control">
+            <option value="" id="class-selection-option">请选择类...</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <button
+            class="btn btn-primary"
+            onclick="importFile()"
+            id="import-btn"
+            disabled
+          >
+            生成注册表
+          </button>
+          <button class="btn btn-secondary" onclick="clearResults()">
+            重置
+          </button>
+        </div>
+
+        <div id="workflow-tips" class="class-info">
+          <strong>使用流程:</strong><br />
+          1. 选择注册表类型（设备/资源）<br />
+          2. 在文件浏览器中导航并选择Python文件<br />
+          3. 点击"分析文件"获取可用类列表<br />
+          4. 从下拉列表中选择要注册的类<br />
+          5. 点击"生成注册表"获得YAML配置文件
+        </div>
+
+        <div id="file-info" class="file-info" style="display: none">
+          <strong>文件信息：</strong>
+          <div id="file-details"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右栏：注册表配置结果 -->
+    <div class="right-column">
+      <!-- 配置参数输入区域 -->
+      <div
+        id="config-params-section"
+        class="form-section"
+        style="display: none"
+      >
+        <h3>配置参数</h3>
+
+        <!-- Module Prefix 输入框 -->
+        <div class="form-group">
+          <label for="module-prefix">Module Prefix</label>
+          <input
+            type="text"
+            id="module-prefix"
+            class="form-control"
+            placeholder="例如: unilabos.devices.pumps"
+          />
+          <small class="form-text">模块路径前缀，指定类所在的包位置</small>
+        </div>
+
+        <!-- Safe Class Name 输入框 -->
+        <div class="form-group">
+          <label for="safe-class-name">Safe Class Name</label>
+          <input
+            type="text"
+            id="safe-class-name"
+            class="form-control"
+            placeholder="自动生成，可自定义"
+          />
+          <small class="form-text"
+            >将作为注册表中的ID使用，必须是有效的标识符</small
+          >
+        </div>
+
+        <!-- 设备/资源描述 -->
+        <div class="form-group">
+          <label for="description-input">设备/资源描述</label>
+          <textarea
+            id="description-input"
+            class="form-control"
+            rows="3"
+            placeholder="请输入设备或资源的描述信息..."
+          ></textarea>
+          <small class="form-text"
+            >描述信息将显示在注册表中，帮助用户了解设备功能</small
+          >
+        </div>
+
+        <!-- Icon 输入框 -->
+        <div class="form-group">
+          <label for="icon-input">图标文件名</label>
+          <input
+            type="text"
+            id="icon-input"
+            class="form-control"
+            placeholder="icon_xxx.webp"
+          />
+          <small class="form-text">图标文件名，例如：icon_pump.webp</small>
+        </div>
+
+        <!-- Handles 配置区域 -->
+        <div class="form-group">
+          <label>Handles 配置</label>
+          <div id="handles-container">
+            <!-- 动态添加的handles项目会在这里显示 -->
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            onclick="addHandleItem()"
+          >
+            添加 Handle
+          </button>
+          <small class="form-text">配置设备/资源的输入输出接口</small>
+        </div>
+      </div>
+
+      <!-- YAML结果显示区域 -->
+      <div id="results-section" class="form-section" style="display: none">
+        <h3>注册表配置结果</h3>
+        <div class="yaml-container">
+          <div class="yaml-header">
+            <strong>YAML格式注册表配置</strong>
+            <button
+              class="btn btn-secondary copy-yaml-btn"
+              onclick="copyYamlToClipboard()"
+            >
+              复制YAML
+            </button>
+          </div>
+          <div class="schema-viewer" id="yaml-registry-viewer">等待数据...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 处理日志 - 底部 -->
+  <div class="log-section-bottom">
+    <h3>处理日志</h3>
+    <div id="log-output" class="log-container">等待操作...</div>
+  </div>
+</div>
+
+<script>
+  let ws = null;
+  let isConnected = false;
+  let currentPath = '';
+  let selectedFilePath = null;
+  let handleCounter = 0;
+
+  // 页面加载完成后初始化
+  document.addEventListener('DOMContentLoaded', function () {
+    initWebSocket();
+    loadFileBrowser(''); // 加载根目录
+    initRegistryTypeListener();
+  });
+
+  // 初始化注册表类型监听器
+  function initRegistryTypeListener() {
+    const radioButtons = document.querySelectorAll(
+      'input[name="registry-type"]'
+    );
+    radioButtons.forEach((radio) => {
+      radio.addEventListener('change', function () {
+        updateClassSelectionLabel(this.value);
+      });
+    });
+
+    // 初始化标签文字
+    const checkedRadio = document.querySelector(
+      'input[name="registry-type"]:checked'
+    );
+    if (checkedRadio) {
+      updateClassSelectionLabel(checkedRadio.value);
+    }
+  }
+
+  // 更新类选择标签文字
+  function updateClassSelectionLabel(registryType) {
+    const label = document.getElementById('class-selection-label');
+    const option = document.getElementById('class-selection-option');
+
+    if (registryType === 'resource') {
+      label.textContent = '选择类名/可执行函数';
+      option.textContent = '请选择类或函数...';
+    } else {
+      label.textContent = '选择类名';
+      option.textContent = '请选择类...';
+    }
+  }
+
+  // 初始化WebSocket连接
+  function initWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/registry_editor`;
+
+    ws = new WebSocket(wsUrl);
+
+    ws.onopen = function (event) {
+      isConnected = true;
+      updateConnectionStatus('connected', '已连接');
+      addLog('WebSocket连接已建立', 'info');
+    };
+
+    ws.onmessage = function (event) {
+      try {
+        const data = JSON.parse(event.data);
+        handleWebSocketMessage(data);
+      } catch (e) {
+        addLog(`解析消息失败: ${e.message}`, 'error');
+      }
+    };
+
+    ws.onclose = function (event) {
+      isConnected = false;
+      updateConnectionStatus('disconnected', '连接已断开');
+      addLog('WebSocket连接已断开', 'warning');
+
+      // 5秒后尝试重连
+      setTimeout(initWebSocket, 5000);
+    };
+
+    ws.onerror = function (error) {
+      addLog('WebSocket连接错误', 'error');
+      updateConnectionStatus('disconnected', '连接错误');
+    };
+  }
+
+  // 更新连接状态
+  function updateConnectionStatus(status, text) {
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+
+    statusDot.className = `status-indicator status-${status}`;
+    statusText.textContent = text;
+  }
+
+  // 处理WebSocket消息
+  function handleWebSocketMessage(data) {
+    switch (data.type) {
+      case 'log':
+        addLog(data.message, data.level || 'info');
+        break;
+      case 'progress':
+        updateConnectionStatus('processing', data.message);
+        break;
+      case 'result':
+        handleAnalysisResult(data.data);
+        break;
+      case 'file_analysis_result':
+        handleFileAnalysisResult(data.data);
+        break;
+      case 'error':
+        addLog(data.message, 'error');
+        updateConnectionStatus('connected', '已连接');
+        break;
+      default:
+        addLog(`收到未知消息类型: ${data.type}`, 'warning');
+    }
+  }
+
+  // 处理分析结果
+  function handleAnalysisResult(result) {
+    updateConnectionStatus('connected', '已连接');
+
+    // 显示结果区域
+    document.getElementById('results-section').style.display = 'block';
+
+    // 显示YAML格式的注册表配置
+    if (result.registry_schema) {
+      // 直接显示后端返回的YAML字符串
+      const yamlViewer = document.getElementById('yaml-registry-viewer');
+      yamlViewer.textContent = result.registry_schema;
+
+      // 保存YAML内容供复制使用
+      window.registryYaml = result.registry_schema;
+
+      addLog(
+        `生成的${result.registry_type === 'resource' ? '资源' : '设备'}ID: ${
+          result.item_id || result.device_id
+        }`,
+        'info'
+      );
+    }
+
+    addLog('注册表生成完成！', 'success');
+  }
+
+  // 复制YAML到剪贴板
+  function copyYamlToClipboard() {
+    if (!window.registryYaml) {
+      addLog('没有可复制的YAML内容', 'error');
+      return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(window.registryYaml)
+        .then(() => {
+          addLog('YAML配置已复制到剪贴板', 'success');
+
+          // 视觉反馈
+          const copyBtn = document.querySelector('.copy-yaml-btn');
+          const originalText = copyBtn.textContent;
+          copyBtn.textContent = '已复制!';
+          copyBtn.style.backgroundColor = '#4caf50';
+
+          setTimeout(() => {
+            copyBtn.textContent = originalText;
+            copyBtn.style.backgroundColor = '';
+          }, 2000);
+        })
+        .catch((err) => {
+          addLog('复制失败，请手动复制', 'error');
+        });
+    } else {
+      // 后备方案：选择文本
+      const yamlViewer = document.getElementById('yaml-registry-viewer');
+      const range = document.createRange();
+      range.selectNodeContents(yamlViewer);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      addLog('已选择YAML文本，请按Ctrl+C复制', 'info');
+    }
+  }
+
+  // 添加日志
+  function addLog(message, level = 'info') {
+    const logOutput = document.getElementById('log-output');
+    const timestamp = new Date().toLocaleTimeString();
+
+    let prefix = '';
+    switch (level) {
+      case 'error':
+        prefix = '[ERROR]';
+        break;
+      case 'warning':
+        prefix = '[WARN]';
+        break;
+      case 'success':
+        prefix = '[SUCCESS]';
+        break;
+      case 'info':
+      default:
+        prefix = '[INFO]';
+        break;
+    }
+
+    const logLine = `${timestamp} ${prefix} ${message}\n`;
+    logOutput.textContent += logLine;
+    logOutput.scrollTop = logOutput.scrollHeight;
+  }
+
+  // 加载文件浏览器
+  async function loadFileBrowser(path) {
+    try {
+      const response = await fetch(
+        `/api/v1/file-browser?path=${encodeURIComponent(path)}`
+      );
+      const result = await response.json();
+
+      if (result.code === 0) {
+        const data = result.data;
+        currentPath = data.current_path;
+        renderFileBrowser(data);
+      } else {
+        addLog(`加载目录失败: ${result.message}`, 'error');
+      }
+    } catch (error) {
+      addLog(`加载目录时出错: ${error}`, 'error');
+    }
+  }
+
+  // 渲染文件浏览器
+  function renderFileBrowser(data) {
+    const fileBrowser = document.getElementById('file-browser');
+    const currentPathDisplay = document.getElementById('current-path-display');
+
+    // 更新当前路径显示
+    currentPathDisplay.textContent = data.current_path || data.working_dir;
+
+    // 清空文件浏览器
+    fileBrowser.innerHTML = '';
+
+    if (data.items.length === 0) {
+      if (fileBrowser.children.length === 0) {
+        fileBrowser.innerHTML =
+          '<div class="loading-indicator">此目录为空</div>';
+      }
+      return;
+    }
+
+    // 渲染文件和目录
+    data.items.forEach((item) => {
+      const fileItem = document.createElement('div');
+      fileItem.className = 'file-item';
+      fileItem.dataset.path = item.path;
+      fileItem.dataset.type = item.type;
+
+      let icon = '';
+      let iconClass = '';
+
+      if (item.type === 'directory') {
+        icon = '📁';
+        iconClass = 'directory-icon';
+      } else if (item.is_python) {
+        icon = '🐍';
+        iconClass = 'python-file-icon';
+      } else {
+        return; // 只显示Python文件和目录
+      }
+
+      let sizeText = '';
+      if (item.type === 'file') {
+        sizeText = `<span class="file-size">(${formatFileSize(
+          item.size
+        )})</span>`;
+      }
+
+      fileItem.innerHTML = `
+        <span class="file-icon ${iconClass}">${icon}</span>
+        <span class="file-name">${item.name}</span>
+        ${sizeText}
+      `;
+
+      // 添加点击事件
+      if (item.type === 'directory') {
+        fileItem.onclick = () => loadFileBrowser(item.path);
+      } else if (item.is_python) {
+        fileItem.onclick = () => selectFile(item);
+      }
+
+      fileBrowser.appendChild(fileItem);
+    });
+  }
+
+  // 选择文件
+  function selectFile(fileInfo) {
+    // 清除之前的选择
+    document.querySelectorAll('.file-item').forEach((item) => {
+      item.classList.remove('selected');
+    });
+
+    // 标记当前选择
+    event.target.closest('.file-item').classList.add('selected');
+
+    // 保存选择的文件信息
+    selectedFilePath = fileInfo.path;
+    window.selectedFileInfo = fileInfo;
+
+    // 显示选择的文件信息
+    const selectedFileDiv = document.getElementById('selected-file');
+    const selectedFileName = document.getElementById('selected-file-name');
+    const selectedFileSize = document.getElementById('selected-file-size');
+
+    selectedFileName.textContent = fileInfo.name;
+    selectedFileSize.textContent = `(${formatFileSize(fileInfo.size)})`;
+    selectedFileDiv.style.display = 'block';
+
+    // 启用分析按钮
+    const analyzeBtn = document.getElementById('analyze-btn');
+    analyzeBtn.disabled = false;
+
+    addLog(`已选择文件: ${fileInfo.name}`, 'info');
+    addLog('点击"分析文件"按钮开始分析', 'success');
+  }
+
+  // 判断是否为根路径
+  function isRootPath(path) {
+    if (!path || path === '') return true;
+
+    // Windows根路径（如 C:, D:, C:\, D:\）
+    if (/^[A-Za-z]:?\\?$/.test(path)) return true;
+
+    // Unix根路径
+    if (path === '/') return true;
+
+    // 网络路径根（\\server 或 //server）
+    if (/^[\\\/]{2}[^\\\/]+$/.test(path)) return true;
+
+    return false;
+  }
+
+  // 格式化文件大小
+  function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // 分析文件
+  function analyzeFile() {
+    if (!isConnected) {
+      addLog('WebSocket未连接，请等待连接建立', 'error');
+      return;
+    }
+
+    if (!selectedFilePath) {
+      addLog('请先选择文件', 'error');
+      return;
+    }
+
+    const analyzeBtn = document.getElementById('analyze-btn');
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = '分析中...';
+
+    const request = {
+      type: 'analyze_file',
+      data: {
+        file_path: selectedFilePath,
+      },
+    };
+
+    ws.send(JSON.stringify(request));
+    addLog(`开始分析文件: ${selectedFilePath}`, 'info');
+  }
+
+  // 处理文件分析结果
+  function handleFileAnalysisResult(analysisResult) {
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const classSelectionGroup = document.getElementById(
+      'class-selection-group'
+    );
+    const classSelect = document.getElementById('class-name');
+
+    analyzeBtn.disabled = false;
+    analyzeBtn.textContent = '重新分析';
+
+    if (analysisResult.success) {
+      const classes = analysisResult.classes || [];
+      const registryType = document.querySelector(
+        'input[name="registry-type"]:checked'
+      ).value;
+
+      // 清空现有选项并设置默认选项
+      const defaultText =
+        registryType === 'resource' ? '请选择类或函数...' : '请选择类...';
+      classSelect.innerHTML = `<option value="">${defaultText}</option>`;
+
+      // 添加找到的类
+      classes.forEach((cls) => {
+        const option = document.createElement('option');
+        option.value = cls.name;
+        option.textContent = `${cls.name} - ${cls.docstring || '无描述'}`;
+        classSelect.appendChild(option);
+      });
+
+      if (classes.length > 0) {
+        classSelectionGroup.style.display = 'block';
+        addLog(
+          `找到 ${classes.length} 个类: ${classes
+            .map((c) => c.name)
+            .join(', ')}`,
+          'success'
+        );
+
+        // 显示分析状态
+        showFileAnalysisStatus(analysisResult);
+
+        // 监听类选择变化，启用导入按钮和显示配置参数区域
+        classSelect.onchange = function () {
+          const importBtn = document.getElementById('import-btn');
+          const configParamsSection = document.getElementById(
+            'config-params-section'
+          );
+          const safeClassNameInput = document.getElementById('safe-class-name');
+
+          if (this.value) {
+            importBtn.disabled = false;
+            configParamsSection.style.display = 'block';
+
+            // 自动生成Safe Class Name
+            const registryType = document.querySelector(
+              'input[name="registry-type"]:checked'
+            ).value;
+            const suffix = registryType === 'device' ? '_device' : '';
+            const safeClassName = this.value.toLowerCase() + suffix;
+            safeClassNameInput.value = safeClassName;
+
+            addLog(`选择了类: ${this.value}`, 'info');
+            addLog(`自动生成Safe Class Name: ${safeClassName}`, 'info');
+          } else {
+            importBtn.disabled = true;
+            configParamsSection.style.display = 'none';
+          }
+        };
+      } else {
+        addLog('文件中未找到任何类定义', 'warning');
+        classSelectionGroup.style.display = 'none';
+      }
+    } else {
+      addLog(`文件分析失败: ${analysisResult.error}`, 'error');
+      classSelectionGroup.style.display = 'none';
+    }
+  }
+
+  // 显示文件分析状态
+  function showFileAnalysisStatus(analysisResult) {
+    // 移除现有的分析状态显示
+    const existingStatus = document.getElementById('file-analysis-status');
+    if (existingStatus) {
+      existingStatus.remove();
+    }
+
+    // 创建新的状态显示
+    const statusDiv = document.createElement('div');
+    statusDiv.id = 'file-analysis-status';
+    statusDiv.className = 'file-analysis-status';
+
+    let statusContent = `
+      <strong>文件分析结果:</strong><br>
+      文件路径: ${analysisResult.file_path}<br>
+      模块名: ${analysisResult.module_name}<br>
+      找到类数量: ${analysisResult.classes.length}
+    `;
+
+    if (analysisResult.classes.length > 0) {
+      statusContent += '<br><strong>可用类:</strong>';
+      analysisResult.classes.forEach((cls) => {
+        statusContent += `<br>• ${cls.name}: ${cls.docstring || '无描述'}`;
+      });
+    }
+
+    statusDiv.innerHTML = statusContent;
+
+    // 插入到类选择组前面
+    const classSelectionGroup = document.getElementById(
+      'class-selection-group'
+    );
+    classSelectionGroup.parentNode.insertBefore(statusDiv, classSelectionGroup);
+  }
+
+  // 导入文件
+  function importFile() {
+    if (!isConnected) {
+      addLog('WebSocket未连接，请等待连接建立', 'error');
+      return;
+    }
+
+    if (!selectedFilePath) {
+      addLog('请先选择文件', 'error');
+      return;
+    }
+
+    const classSelect = document.getElementById('class-name');
+    const className = classSelect.value.trim();
+
+    if (!className) {
+      addLog('请先分析文件并选择要导入的类', 'error');
+      return;
+    }
+
+    const registryType = document.querySelector(
+      'input[name="registry-type"]:checked'
+    ).value;
+
+    // 获取用户输入的所有配置参数
+    const description = document
+      .getElementById('description-input')
+      .value.trim();
+    const safeClassName = document
+      .getElementById('safe-class-name')
+      .value.trim();
+    const iconInput = document.getElementById('icon-input').value.trim();
+    const modulePrefix = document.getElementById('module-prefix').value.trim();
+    const handlesConfig = getHandlesConfig();
+
+    updateConnectionStatus('processing', '正在生成注册表...');
+
+    const request = {
+      type: 'import_file',
+      data: {
+        file_path: selectedFilePath,
+        registry_type: registryType,
+        class_name: className,
+        module_name: null, // 模块名自动生成
+        description: description,
+        safe_class_name: safeClassName,
+        icon: iconInput,
+        module_prefix: modulePrefix,
+        handles: handlesConfig,
+      },
+    };
+
+    ws.send(JSON.stringify(request));
+    addLog(`开始导入文件: ${selectedFilePath}`, 'info');
+    addLog(`注册表类型: ${registryType}`, 'info');
+    addLog(`选择的类: ${className}`, 'info');
+
+    // 显示文件信息
+    showFileInfo(
+      selectedFilePath,
+      registryType,
+      className,
+      safeClassName,
+      iconInput,
+      modulePrefix,
+      handlesConfig
+    );
+  }
+
+  // 显示文件信息
+  function showFileInfo(
+    filePath,
+    registryType,
+    className,
+    safeClassName,
+    icon,
+    modulePrefix,
+    handles
+  ) {
+    const fileInfo = document.getElementById('file-info');
+    const fileDetails = document.getElementById('file-details');
+
+    let details = `
+            <div><strong>文件路径:</strong> ${filePath}</div>
+            <div><strong>注册表类型:</strong> ${registryType}</div>
+            <div><strong>选择的类:</strong> ${className}</div>
+            <div><strong>Safe Class Name:</strong> ${
+              safeClassName || '自动生成'
+            }</div>
+            <div><strong>Module Prefix:</strong> ${modulePrefix || '无'}</div>
+            <div><strong>图标:</strong> ${icon || '无'}</div>
+            <div><strong>Handles 数量:</strong> ${handles.length}</div>
+        `;
+
+    if (handles.length > 0) {
+      details += '<div><strong>Handles 配置:</strong><ul>';
+      handles.forEach((handle, index) => {
+        details += `<li>${index + 1}. ${handle.data_key} (${
+          handle.io_type
+        })</li>`;
+      });
+      details += '</ul></div>';
+    }
+
+    fileDetails.innerHTML = details;
+    fileInfo.style.display = 'block';
+  }
+
+  // 清空结果
+  function clearResults() {
+    // 重置文件选择
+    selectedFilePath = null;
+    window.selectedFileInfo = null;
+
+    // 清除文件选择状态
+    document.querySelectorAll('.file-item').forEach((item) => {
+      item.classList.remove('selected');
+    });
+
+    // 隐藏选择的文件显示
+    document.getElementById('selected-file').style.display = 'none';
+
+    // 重置分析按钮
+    const analyzeBtn = document.getElementById('analyze-btn');
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = '分析文件';
+
+    // 重置导入按钮
+    const importBtn = document.getElementById('import-btn');
+    importBtn.disabled = true;
+
+    // 隐藏类选择和配置参数区域
+    document.getElementById('class-selection-group').style.display = 'none';
+    document.getElementById('config-params-section').style.display = 'none';
+
+    // 清空所有输入框
+    document.getElementById('description-input').value = '';
+    document.getElementById('safe-class-name').value = '';
+    document.getElementById('icon-input').value = '';
+    document.getElementById('module-prefix').value = '';
+
+    // 清空handles配置
+    const handlesContainer = document.getElementById('handles-container');
+    handlesContainer.innerHTML = '';
+    handleCounter = 0;
+
+    // 根据当前注册表类型设置默认选项文字
+    const registryType = document.querySelector(
+      'input[name="registry-type"]:checked'
+    ).value;
+    const defaultText =
+      registryType === 'resource' ? '请选择类或函数...' : '请选择类...';
+    document.getElementById(
+      'class-name'
+    ).innerHTML = `<option value="">${defaultText}</option>`;
+
+    // 移除分析状态显示
+    const analysisStatus = document.getElementById('file-analysis-status');
+    if (analysisStatus) {
+      analysisStatus.remove();
+    }
+
+    // 清空其他显示区域
+    document.getElementById('results-section').style.display = 'none';
+    document.getElementById('file-info').style.display = 'none';
+    document.getElementById('log-output').textContent = '等待操作...';
+
+    // 清空YAML查看器
+    document.getElementById('yaml-registry-viewer').textContent = '等待数据...';
+    window.registryYaml = null;
+
+    addLog('已重置所有设置', 'info');
+  }
+
+  // 添加Handle项目
+  function addHandleItem() {
+    handleCounter++;
+    const handlesContainer = document.getElementById('handles-container');
+
+    const handleItem = document.createElement('div');
+    handleItem.className = 'handle-item';
+    handleItem.id = `handle-item-${handleCounter}`;
+
+    handleItem.innerHTML = `
+      <div class="handle-item-header">
+        <span class="handle-item-title">Handle ${handleCounter}</span>
+        <button type="button" class="remove-handle-btn" onclick="removeHandleItem(${handleCounter})" title="删除">×</button>
+      </div>
+      
+      <div class="handle-form-row">
+        <div class="handle-form-group">
+          <label>Data Key</label>
+          <input type="text" placeholder="例如: fluid_port_1" data-field="data_key">
+        </div>
+        <div class="handle-form-group">
+          <label>Handler Key</label>
+          <input type="text" placeholder="例如: port_1" data-field="handler_key">
+        </div>
+      </div>
+      
+      <div class="handle-form-row">
+        <div class="handle-form-group">
+          <label>Data Source</label>
+          <input type="text" placeholder="例如: executor、handle" data-field="data_source">
+        </div>
+        <div class="handle-form-group">
+          <label>Data Type</label>
+          <input type="text" placeholder="例如: fluid" data-field="data_type">
+        </div>
+      </div>
+      
+      <div class="handle-form-row">
+        <div class="handle-form-group">
+          <label>IO Type</label>
+          <select data-field="io_type">
+            <option value="">请选择</option>
+            <option value="source">source（输出，右侧）</option>
+            <option value="target">target（输入，左侧）</option>
+          </select>
+        </div>
+        <div class="handle-form-group">
+          <label>Side</label>
+          <select data-field="side">
+            <option value="">请选择</option>
+            <option value="NORTH">NORTH（上）</option>
+            <option value="SOUTH">SOUTH（下）</option>
+            <option value="EAST">EAST（右）</option>
+            <option value="WEST">WEST（左）</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="handle-form-row">
+        <div class="handle-form-group">
+          <label>Label</label>
+          <input type="text" placeholder="显示名称，例如: port_1" data-field="label">
+        </div>
+      </div>
+      
+      <div class="handle-form-row full-width">
+        <div class="handle-form-group">
+          <label>Description</label>
+          <input type="text" placeholder="例如: 八通阀门端口1" data-field="description">
+        </div>
+      </div>
+    `;
+
+    handlesContainer.appendChild(handleItem);
+    addLog(`添加了 Handle ${handleCounter}`, 'info');
+  }
+
+  // 删除Handle项目
+  function removeHandleItem(id) {
+    const handleItem = document.getElementById(`handle-item-${id}`);
+    if (handleItem) {
+      handleItem.remove();
+      addLog(`删除了 Handle ${id}`, 'info');
+    }
+  }
+
+  // 获取所有Handles配置
+  function getHandlesConfig() {
+    const handles = [];
+    const handleItems = document.querySelectorAll('.handle-item');
+
+    handleItems.forEach((item) => {
+      const handleData = {};
+      const inputs = item.querySelectorAll('[data-field]');
+
+      inputs.forEach((input) => {
+        const field = input.getAttribute('data-field');
+        const value = input.value.trim();
+        if (value) {
+          handleData[field] = value;
+        }
+      });
+
+      // 只有当至少有data_key时才添加
+      if (handleData.data_key) {
+        handles.push(handleData);
+      }
+    });
+
+    return handles;
+  }
+</script>
+{% endblock %}

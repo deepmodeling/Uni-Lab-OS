@@ -1,0 +1,35 @@
+# GitLab MR 静态检查门禁。行宽（E501）与全量风格规则本轮不开。
+target-version = "py311"
+line-length = 120
+
+exclude = [
+    ".git",
+    ".mamba",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    "frontend",
+    "examples",
+    "**/*.ipynb",
+    "tests/registry/fixtures",
+]
+
+[lint]
+select = [
+    "E9",   # 语法级错误
+    "F821", # 未定义名字
+    "E722", # 裸 except
+    "W605", # 非法转义序列
+    "I",    # isort
+]
+ignore = [
+    "E501", # 行宽暂不检查
+]
+
+[lint.isort]
+known-first-party = ["unilabos"]
+
+[lint.per-file-ignores]
+# 半截脚本引用了已移除符号，本轮不补实现。
+"scripts/workflow.py" = ["F821"]

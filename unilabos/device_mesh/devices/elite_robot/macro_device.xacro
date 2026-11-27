@@ -1,0 +1,159 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="elite_robot">
+  <xacro:macro name="elite_robot" params="mesh_path:='' parent_link:='' station_name:='' device_name:='' cs_type:='cs66' fake_dev:='true' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0" >
+   <!-- robot name parameter -->
+   <xacro:arg name="name" default="cs"/>
+   <!-- import main macro -->
+   <xacro:include filename="${mesh_path}/devices/elite_robot/urdf/cs_macro.xacro"/>
+
+   <!-- possible 'cs_type' values: cs63, cs66, cs612, cs616, cs620, cs625 -->
+   <!-- the default value should raise an error in case this was called without defining the type -->
+   <xacro:arg name="cs_type" default="${cs_type}"/>
+
+   <!-- parameters -->
+   <xacro:arg name="tf_prefix" default="${station_name}${device_name}" />
+   <xacro:arg name="joint_limit_params" default="${mesh_path}/devices/elite_robot/config/$(arg cs_type)/joint_limits.yaml"/>
+   <xacro:arg name="kinematics_params" default="${mesh_path}/devices/elite_robot/config/$(arg cs_type)/default_kinematics.yaml"/>
+   <xacro:arg name="physical_params" default="${mesh_path}/devices/elite_robot/config/$(arg cs_type)/physical_parameters.yaml"/>
+   <xacro:arg name="visual_params" default="${mesh_path}/devices/elite_robot/config/$(arg cs_type)/visual_parameters.yaml"/>
+   <xacro:arg name="transmission_hw_interface" default=""/>
+   <xacro:arg name="safety_limits" default="false"/>
+   <xacro:arg name="safety_pos_margin" default="0.15"/>
+   <xacro:arg name="safety_k_position" default="20"/>
+   <!-- ros2_control related parameters -->
+   <xacro:arg name="headless_mode" default="false" />
+   <xacro:arg name="robot_ip" default="0.0.0.0" />
+   <xacro:arg name="script_filename" default=""/>
+   <xacro:arg name="output_recipe_filename" default=""/>
+   <xacro:arg name="input_recipe_filename" default=""/>
+   <xacro:arg name="local_ip" default="0.0.0.0"/>
+   <xacro:arg name="script_command_port" default="50004"/>
+   <xacro:arg name="reverse_port" default="50001"/>
+   <xacro:arg name="script_sender_port" default="50002"/>
+   <xacro:arg name="trajectory_port" default="50003"/>
+   <!--   tool communication related parameters-->
+   <xacro:arg name="use_tool_communication" default="false" />
+   <xacro:arg name="tool_voltage" default="0" />
+   <xacro:arg name="tool_parity" default="0" />
+   <xacro:arg name="tool_baud_rate" default="115200" />
+   <xacro:arg name="tool_stop_bits" default="1" />
+   <xacro:arg name="tool_tcp_port" default="54321" />
+
+     <!-- Simulation parameters -->
+   <xacro:arg name="use_fake_hardware" default="${fake_dev}" />
+   <xacro:arg name="fake_sensor_commands" default="${fake_dev}" />
+   <xacro:arg name="sim_gazebo" default="false" />
+   <xacro:arg name="sim_ignition" default="false" />
+   <xacro:arg name="simulation_controllers" default="" />
+
+   <!-- initial position for simulations (Fake Hardware, Gazebo, Ignition) -->
+   <xacro:arg name="initial_positions_file" default="${mesh_path}/devices/elite_robot/config/initial_positions.yaml"/>
+
+   <!-- convert to property to use substitution in function -->
+   <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
+
+
+
+  <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+    <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+    <parent link="${parent_link}"/>
+    <child link="${station_name}${device_name}device_link"/>
+    <axis xyz="0 0 0"/>
+  </joint>
+
+  <link name="${station_name}${device_name}device_link"/>
+
+   <!-- arm -->
+   <xacro:cs_robot
+     name="$(arg name)"
+     tf_prefix="$(arg tf_prefix)"
+     parent="${station_name}${device_name}device_link"
+     joint_limits_parameters_file="$(arg joint_limit_params)"
+     kinematics_parameters_file="$(arg kinematics_params)"
+     physical_parameters_file="$(arg physical_params)"
+     visual_parameters_file="$(arg visual_params)"
+     transmission_hw_interface="$(arg transmission_hw_interface)"
+     safety_limits="$(arg safety_limits)"
+     safety_pos_margin="$(arg safety_pos_margin)"
+     safety_k_position="$(arg safety_k_position)"
+     use_fake_hardware="$(arg use_fake_hardware)"
+     fake_sensor_commands="$(arg fake_sensor_commands)"
+     sim_gazebo="$(arg sim_gazebo)"
+     sim_ignition="$(arg sim_ignition)"
+     headless_mode="$(arg headless_mode)"
+     initial_positions="${xacro.load_yaml(initial_positions_file)}"
+     use_tool_communication="$(arg use_tool_communication)"
+     tool_voltage="$(arg tool_voltage)"
+     tool_parity="$(arg tool_parity)"
+     tool_baud_rate="$(arg tool_baud_rate)"
+     tool_stop_bits="$(arg tool_stop_bits)"
+     tool_tcp_port="$(arg tool_tcp_port)"
+     robot_ip="$(arg robot_ip)"
+     script_filename="$(arg script_filename)"
+     output_recipe_filename="$(arg output_recipe_filename)"
+     input_recipe_filename="$(arg input_recipe_filename)"
+     local_ip="$(arg local_ip)"
+     script_command_port="$(arg script_command_port)"
+     reverse_port="$(arg reverse_port)"
+     script_sender_port="$(arg script_sender_port)"
+     trajectory_port="$(arg trajectory_port)"
+     mesh_path="${mesh_path}"
+     >
+     <origin xyz="0 0 0" rpy="0 0 0" />          <!-- position robot in the world -->
+   </xacro:cs_robot>
+
+ <link name="${station_name}${device_name}gripper">
+    <inertial>
+      <origin
+        xyz="-2.76718112539598E-05 0.0255270141715087 0.0270559267296449"
+        rpy="0 0 0" />
+      <mass
+        value="0.2571510360664" />
+      <inertia
+        ixx="0.000164806957167171"
+        ixy="1.52519074989277E-08"
+        ixz="9.6332716899636E-08"
+        iyy="8.72759579414916E-05"
+        iyz="-5.40735277087457E-07"
+        izz="0.000196871100878503" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://${mesh_path}/devices/elite_robot/meshes/gripper.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.749019607843137 0.749019607843137 0.749019607843137 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="file://${mesh_path}/devices/elite_robot/meshes/gripper.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="${station_name}${device_name}gripper_joint"
+    type="fixed">
+    <origin
+      xyz="0 0 -0.003"
+      rpy="0 0 -1.570796326589793" />
+    <parent
+      link="${station_name}${device_name}tool0" />
+    <child
+      link="${station_name}${device_name}gripper" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+
+  </xacro:macro>
+
+</robot>

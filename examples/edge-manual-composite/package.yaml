@@ -1,0 +1,7 @@
+package:
+  name: parallel_lab
+workflows:
+  - workflow_uuid: 70000000-0000-4000-8000-000000000001
+    source: parallel_lab/workflows/composite_a.py
+  - workflow_uuid: 70000000-0000-4000-8000-000000000002
+    source: parallel_lab/workflows/composite_b.py

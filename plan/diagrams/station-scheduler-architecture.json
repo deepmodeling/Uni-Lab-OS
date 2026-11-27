@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "UniLabOS 工站自治调度目标架构",
+    "subtitle": "Backend 编排工站调用与 AGV；Edge 独占 DAG、库位、物料与设备调度权威",
+    "output": "plan/diagrams/station-scheduler-architecture.html",
+    "visual_preset": "blueprint",
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "engineering_profile": "deployment-ownership",
+    "repository": {
+      "url": "https://github.com/Uni-Lab-OS/Uni-Lab-OS.git",
+      "revision": "427207408d2d7bb311b0c76902bf0ea50d199900"
+    },
+    "viewBox": [1540, 920],
+    "views": [
+      {
+        "id": "ownership",
+        "label": "权威边界",
+        "focus": ["backend_orchestrator", "agv_manager", "edge_gateway", "scheduler_kernel", "inventory_authority"],
+        "note": "Backend 只管跨工站调用和 AGV；工站内部决策全部由 Edge 做出。"
+      },
+      {
+        "id": "admission",
+        "label": "作业准入",
+        "focus": ["workflow_runtime", "scheduler_kernel", "inventory_authority", "execution_kernel"],
+        "note": "DAG 就绪、动态门禁、原子 Claim/Fence 和持久派发意图形成唯一执行边界。"
+      },
+      {
+        "id": "physical_truth",
+        "label": "物理事实",
+        "focus": ["inventory_authority", "inventory_db", "execution_kernel", "device_adapters", "workstation"],
+        "note": "只有明确执行回执才能提交物料与库位变更；结果不明时冻结相关资源。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "backend_orchestrator",
+      "type": "backend",
+      "label": "Backend 全局编排",
+      "sublabel": "全局任务 / 工站调用 / 参数传递",
+      "tag": "Backend",
+      "pos": [80, 105],
+      "size": [220, 72]
+    },
+    {
+      "id": "agv_manager",
+      "type": "backend",
+      "label": "AGV 调度",
+      "sublabel": "运输与入口交接",
+      "tag": "Backend（暂留）",
+      "pos": [390, 105],
+      "size": [190, 72]
+    },
+    {
+      "id": "backend_result_store",
+      "type": "database",
+      "label": "全局结果库",
+      "sublabel": "工站任务 / 节点 Job / 输出",
+      "tag": "Backend",
+      "pos": [670, 105],
+      "size": [220, 72]
+    },
+    {
+      "id": "edge_gateway",
+      "type": "security",
+      "label": "EdgeSyncGateway",
+      "sublabel": "工站调用、命令、结果 Outbox",
+      "tag": "Interface",
+      "pos": [170, 315],
+      "size": [230, 78],
+      "sources": [
+        {"path": "unilabos/app/edge_control/runtime.py", "label": "现有协议入口"}
+      ]
+    },
+    {
+      "id": "workflow_runtime",
+      "type": "backend",
+      "label": "WorkflowRuntime",
+      "sublabel": "冻结计划 / Task / Job 状态机",
+      "tag": "Deep Module",
+      "pos": [485, 315],
+      "size": [230, 78],
+      "sources": [
+        {"path": "unilabos/workflow/execution_plan.py", "label": "现有计划构建"},
+        {"path": "unilabos/workflow/store.py", "label": "现有任务事实"}
+      ]
+    },
+    {
+      "id": "scheduler_kernel",
+      "type": "backend",
+      "label": "DurableSchedulerKernel",
+      "sublabel": "唯一决策者 / 排序 / 恢复",
+      "tag": "Station Authority",
+      "pos": [800, 315],
+      "size": [250, 78],
+      "sources": [
+        {"path": "unilabos/app/scheduler/service.py", "label": "待替换的内存调度"},
+        {"path": "unilabos/app/scheduler/ordering.py", "label": "现有排序策略"}
+      ]
+    },
+    {
+      "id": "execution_kernel",
+      "type": "backend",
+      "label": "ExecutionKernel",
+      "sublabel": "持久派发意图 / 回执 / 取消",
+      "tag": "Deep Module",
+      "pos": [1125, 315],
+      "size": [235, 78],
+      "sources": [
+        {"path": "unilabos/app/scheduler/dispatch.py", "label": "现有执行接缝"},
+        {"path": "unilabos/app/scheduler/backend.py", "label": "现有串行后端"}
+      ]
+    },
+    {
+      "id": "workflow_db",
+      "type": "database",
+      "label": "workflow_history.db",
+      "sublabel": "Task / Job / Intent / Journal",
+      "tag": "SQLite WAL",
+      "pos": [485, 540],
+      "size": [230, 74],
+      "sources": [
+        {"path": "unilabos/workflow/store.py", "line": 203, "label": "workflow_task"},
+        {"path": "unilabos/workflow/store.py", "line": 305, "label": "workflow_node_job"}
+      ]
+    },
+    {
+      "id": "inventory_authority",
+      "type": "backend",
+      "label": "InventoryAuthority",
+      "sublabel": "库位 / 物料 / Reservation / Claim",
+      "tag": "Physical Authority",
+      "pos": [800, 535],
+      "size": [250, 82],
+      "sources": [
+        {"path": "unilabos/app/scheduler/inventory/service.py", "label": "现有库存服务"}
+      ]
+    },
+    {
+      "id": "inventory_db",
+      "type": "database",
+      "label": "inventory.db",
+      "sublabel": "Occupancy / Fence / ChangeSet / Outbox",
+      "tag": "SQLite WAL",
+      "pos": [800, 720],
+      "size": [250, 74],
+      "sources": [
+        {"path": "unilabos/app/scheduler/inventory/store.py", "line": 320, "label": "site"},
+        {"path": "unilabos/app/scheduler/inventory/store.py", "line": 1057, "label": "单写事务"}
+      ]
+    },
+    {
+      "id": "device_adapters",
+      "type": "backend",
+      "label": "Device Adapters",
+      "sublabel": "robot / instrument / sensor ports",
+      "tag": "Adapter",
+      "pos": [1125, 535],
+      "size": [235, 82]
+    },
+    {
+      "id": "workstation",
+      "type": "external",
+      "label": "实体工站",
+      "sublabel": "有限库位 / 单机械臂 / 独立设备",
+      "tag": "Physical World",
+      "pos": [1125, 720],
+      "size": [235, 74]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Backend：跨工站业务与运输",
+      "wraps": ["backend_orchestrator", "agv_manager", "backend_result_store"],
+      "pad": 28
+    },
+    {
+      "kind": "security-group",
+      "label": "Backend 私有服务区",
+      "wraps": ["backend_orchestrator", "agv_manager", "backend_result_store"],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "工站 Edge 主机",
+      "wraps": ["edge_gateway", "workflow_runtime", "scheduler_kernel", "execution_kernel", "workflow_db", "inventory_authority", "inventory_db", "device_adapters"],
+      "pad": 42
+    },
+    {
+      "kind": "security-group",
+      "label": "Edge / UniLabOS：工站自治权威",
+      "wraps": ["edge_gateway", "workflow_runtime", "scheduler_kernel", "execution_kernel", "workflow_db", "inventory_authority", "inventory_db", "device_adapters"],
+      "pad": 30
+    },
+    {
+      "kind": "region",
+      "label": "物理设备边界",
+      "wraps": ["workstation"],
+      "pad": 20
+    }
+  ],
+  "connections": [
+    {"from": "backend_orchestrator", "to": "edge_gateway", "label": "StationTask + entry input", "variant": "security", "fromSide": "bottom", "toSide": "left", "via": [[190, 235], [130, 235], [130, 354]], "labelAt": [178, 225]},
+    {"from": "agv_manager", "to": "edge_gateway", "label": "入口预留 / 运输交接", "variant": "security", "fromSide": "bottom", "toSide": "top", "via": [[485, 250], [285, 250]], "labelAt": [405, 240]},
+    {"from": "edge_gateway", "to": "workflow_runtime", "label": "幂等创建与控制", "variant": "emphasis", "labelAt": [442, 410]},
+    {"from": "workflow_runtime", "to": "scheduler_kernel", "label": "持久候选快照", "variant": "emphasis"},
+    {"from": "scheduler_kernel", "to": "inventory_authority", "label": "九道门禁 + 原子 Claim/Fence", "variant": "emphasis", "route": "orthogonal-v"},
+    {"from": "scheduler_kernel", "to": "execution_kernel", "label": "Durable Dispatch Intent", "variant": "emphasis", "fromSide": "top", "toSide": "top", "via": [[925, 280], [1242.5, 280]], "labelAt": [1084, 270]},
+    {"from": "execution_kernel", "to": "device_adapters", "label": "ExecutionCommand / Receipt", "variant": "security", "route": "orthogonal-v"},
+    {"from": "device_adapters", "to": "workstation", "label": "ROS2 / RPC / fieldbus", "variant": "security", "route": "orthogonal-v"},
+    {"from": "workflow_runtime", "to": "workflow_db", "label": "BEGIN IMMEDIATE", "route": "orthogonal-v"},
+    {"from": "inventory_authority", "to": "inventory_db", "label": "物理事实同事务提交", "route": "orthogonal-v"},
+    {"from": "execution_kernel", "to": "inventory_authority", "label": "明确回执 → PhysicalSettlement", "variant": "emphasis", "fromSide": "left", "toSide": "right", "via": [[1090, 354], [1090, 576]], "labelAt": [1100, 470]},
+    {"from": "edge_gateway", "to": "backend_result_store", "label": "Task / Job / result outbox", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[285, 260], [930, 260], [930, 220], [780, 220]], "labelAt": [665, 250]}
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "唯一调度权威",
+      "items": ["Backend 不参与工站内部排队、资源选择和节点推进", "DurableSchedulerKernel 是唯一决策循环", "同一 Job 在临时受阻时只做 AdmissionRetry，不换 UUID"]
+    },
+    {
+      "dot": "amber",
+      "title": "不可跨越的执行边界",
+      "items": ["完整资源集合必须一次性取得 Claim 与 Fence", "派发前必须持久化 Dispatch Intent", "取消请求不等于物理停止，也不立即释放资源"]
+    },
+    {
+      "dot": "emerald",
+      "title": "物理事实",
+      "items": ["SiteOccupancy、TaskMaterialReservation、JobExecutionClaim 分离", "分装/拆板先冻结输出清单与目标库位", "结果未知时保留占用并进入 requires_attention"]
+    }
+  ]
+}

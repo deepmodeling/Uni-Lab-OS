@@ -1,0 +1,557 @@
+{
+    "nodes": [
+        {
+            "id": "EvacuateRefillTestStation",
+            "name": "抽真空充气测试站",
+            "children": [
+                "transfer_pump_1",
+                "transfer_pump_2", 
+                "multiway_valve_1",
+                "multiway_valve_2",
+                "flask_DMF",
+                "flask_ethyl_acetate", 
+                "flask_methanol",
+                "flask_air",
+                "vacuum_pump_1",
+                "gas_source_nitrogen",
+                "gas_source_air",
+                "solenoid_valve_vacuum",
+                "solenoid_valve_gas",
+                "main_reactor",
+                "stirrer_1",
+                "waste_workup",
+                "collection_bottle_1"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["PumpTransferProtocol", "EvacuateAndRefillProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "转移泵1",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 300,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP1",
+                "max_volume": 25.0,
+                "transfer_rate": 5.0
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "transfer_pump_2",
+            "name": "转移泵2",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 700,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP2",
+                "max_volume": 25.0,
+                "transfer_rate": 5.0
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "第一个八通阀",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 300,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE1",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "multiway_valve_2",
+            "name": "第二个八通阀",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 700,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE2",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "vacuum_pump_1",
+            "name": "真空泵1",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_vacuum_pump",
+            "position": {
+                "x": 150,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VACUUM1",
+                "max_pressure": -0.9
+            },
+            "data": {
+                "status": "OFF",
+                "pressure": 0.0
+            }
+        },
+        {
+            "id": "gas_source_nitrogen",
+            "name": "氮气源",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_gas_source",
+            "position": {
+                "x": 850,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_GAS_N2",
+                "gas_type": "nitrogen",
+                "max_pressure": 5.0
+            },
+            "data": {
+                "status": "OFF",
+                "flow_rate": 0.0
+            }
+        },
+        {
+            "id": "gas_source_air",
+            "name": "空气源",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_gas_source",
+            "position": {
+                "x": 950,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_GAS_AIR",
+                "gas_type": "air",
+                "max_pressure": 3.0
+            },
+            "data": {
+                "status": "OFF",
+                "flow_rate": 0.0
+            }
+        },
+        {
+            "id": "solenoid_valve_vacuum",
+            "name": "真空电磁阀",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_solenoid_valve",
+            "position": {
+                "x": 225,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_SOLENOID_VACUUM"
+            },
+            "data": {
+                "valve_position": "CLOSED"
+            }
+        },
+        {
+            "id": "solenoid_valve_gas",
+            "name": "气源电磁阀",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_solenoid_valve",
+            "position": {
+                "x": 775,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_SOLENOID_GAS"
+            },
+            "data": {
+                "valve_position": "CLOSED"
+            }
+        },
+        {
+            "id": "flask_DMF",
+            "name": "DMF试剂瓶",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "DMF",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_ethyl_acetate",
+            "name": "乙酸乙酯试剂瓶",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 200,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "ethyl_acetate",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_methanol",
+            "name": "甲醇试剂瓶",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 300,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "methanol",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "main_reactor",
+            "name": "主反应器",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 600,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "stirrer_1",
+            "name": "搅拌器1",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "device",
+            "class": "virtual_stirrer",
+            "position": {
+                "x": 600,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_STIRRER1",
+                "max_speed": 1500.0
+            },
+            "data": {
+                "speed": 0.0,
+                "status": "OFF"
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "废液处理瓶",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 700,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "collection_bottle_1",
+            "name": "收集瓶1",
+            "children": [],
+            "parent": "EvacuateRefillTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 800,
+                "y": 500,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_pump1_valve1",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump",
+                "multiway_valve_1": "transferpump"
+            }
+        },
+        {
+            "id": "link_pump2_valve2",
+            "source": "transfer_pump_2",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_2": "transferpump",
+                "multiway_valve_2": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve1_valve2",
+            "source": "multiway_valve_1",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "8",
+                "multiway_valve_2": "1"
+            }
+        },
+        {
+            "id": "link_vacuum_solenoid",
+            "source": "vacuum_pump_1",
+            "target": "solenoid_valve_vacuum",
+            "type": "fluid",
+            "port": {
+                "vacuum_pump_1": "outlet",
+                "solenoid_valve_vacuum": "inlet"
+            }
+        },
+        {
+            "id": "link_solenoid_vacuum_valve1",
+            "source": "solenoid_valve_vacuum",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "solenoid_valve_vacuum": "outlet",
+                "multiway_valve_1": "7"
+            }
+        },
+        {
+            "id": "link_gas_solenoid",
+            "source": "gas_source_nitrogen",
+            "target": "solenoid_valve_gas",
+            "type": "fluid",
+            "port": {
+                "gas_source_nitrogen": "outlet",
+                "solenoid_valve_gas": "inlet"
+            }
+        },
+        {
+            "id": "link_solenoid_gas_valve2",
+            "source": "solenoid_valve_gas",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "solenoid_valve_gas": "outlet",
+                "multiway_valve_2": "8"
+            }
+        },
+        {
+            "id": "link_air_source_valve2",
+            "source": "gas_source_air",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "gas_source_air": "outlet",
+                "multiway_valve_2": "2"
+            }
+        },
+        {
+            "id": "link_valve1_air",
+            "source": "multiway_valve_1",
+            "target": "flask_air",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "flask_air": "top"
+            }
+        },
+        {
+            "id": "link_valve1_DMF",
+            "source": "multiway_valve_1",
+            "target": "flask_DMF",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "flask_DMF": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_ethyl_acetate",
+            "source": "multiway_valve_1",
+            "target": "flask_ethyl_acetate",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "flask_ethyl_acetate": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_methanol",
+            "source": "multiway_valve_1",
+            "target": "flask_methanol",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "4",
+                "flask_methanol": "outlet"
+            }
+        },
+        {
+            "id": "link_valve2_reactor",
+            "source": "multiway_valve_2",
+            "target": "main_reactor",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "5",
+                "main_reactor": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_waste",
+            "source": "multiway_valve_2",
+            "target": "waste_workup",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "6",
+                "waste_workup": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_collection",
+            "source": "multiway_valve_2",
+            "target": "collection_bottle_1",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "7",
+                "collection_bottle_1": "inlet"
+            }
+        },
+        {
+            "id": "link_stirrer_reactor",
+            "source": "stirrer_1",
+            "target": "main_reactor",
+            "type": "mechanical",
+            "port": {
+                "stirrer_1": "stirrer",
+                "main_reactor": "stirrer"
+            }
+        }
+    ]
+}

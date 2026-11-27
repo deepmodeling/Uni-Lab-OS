@@ -1,0 +1,412 @@
+{
+    "nodes": [
+        {
+            "id": "RunColumnTestStation",
+            "name": "柱层析测试工作站",
+            "children": [
+                "transfer_pump_1",
+                "column_1",
+                "flask_sample",
+                "flask_hexane",
+                "flask_ethyl_acetate",
+                "flask_methanol",
+                "collection_flask_1",
+                "collection_flask_2",
+                "collection_flask_3",
+                "waste_flask",
+                "reactor"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": ["RunColumnProtocol", "TransferProtocol"]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "转移泵",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 520.6111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_volume": 50.0,
+                "transfer_rate": 10.0
+            },
+            "data": {
+                "status": "Idle",
+                "current_volume": 0.0,
+                "max_volume": 50.0,
+                "transfer_rate": 10.0,
+                "from_vessel": "",
+                "to_vessel": "",
+                "progress": 0.0,
+                "transferred_volume": 0.0,
+                "current_status": "Ready"
+            }
+        },
+        {
+            "id": "column_1",
+            "name": "柱层析设备",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "device",
+            "class": "virtual_column",
+            "position": {
+                "x": 650.1111111111111,
+                "y": 478,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL",
+                "max_flow_rate": 5.0,
+                "column_length": 30.0,
+                "column_diameter": 2.5
+            },
+            "data": {
+                "status": "Idle",
+                "column_state": "Ready",
+                "current_flow_rate": 0.0,
+                "max_flow_rate": 5.0,
+                "column_length": 30.0,
+                "column_diameter": 2.5,
+                "processed_volume": 0.0,
+                "progress": 0.0,
+                "current_status": "Ready"
+            }
+        },
+        {
+            "id": "flask_sample",
+            "name": "样品瓶",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "crude_mixture",
+                        "volume": 200.0,
+                        "concentration": 70.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_hexane",
+            "name": "正己烷洗脱剂",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "hexane",
+                        "volume": 1500.0,
+                        "concentration": 99.8
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_ethyl_acetate",
+            "name": "乙酸乙酯洗脱剂",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 400,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "ethyl_acetate",
+                        "volume": 1500.0,
+                        "concentration": 99.5
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_methanol",
+            "name": "甲醇洗脱剂",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 550,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "methanol",
+                        "volume": 800.0,
+                        "concentration": 99.9
+                    }
+                ]
+            }
+        },
+        {
+            "id": "collection_flask_1",
+            "name": "收集瓶1",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 750,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "collection_flask_2",
+            "name": "收集瓶2",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 900,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "collection_flask_3",
+            "name": "收集瓶3",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1050,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "waste_flask",
+            "name": "废液瓶",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 1200,
+                "y": 428,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 2000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "reactor",
+            "name": "反应器",
+            "children": [],
+            "parent": "RunColumnTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 698.1111111111111,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "name": "reaction_mixture",
+                        "volume": 300.0,
+                        "concentration": 85.0
+                    }
+                ]
+            }
+        }
+    ],
+    "links": [
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_sample",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "1",
+                "flask_sample": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_hexane",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "2",
+                "flask_hexane": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_ethyl_acetate",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "3",
+                "flask_ethyl_acetate": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "flask_methanol",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "4",
+                "flask_methanol": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "column_1",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "5",
+                "column_1": "inlet"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "collection_flask_1",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "6",
+                "collection_flask_1": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "collection_flask_2",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "7",
+                "collection_flask_2": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "collection_flask_3",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "8",
+                "collection_flask_3": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "waste_flask",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "9",
+                "waste_flask": "top"
+            }
+        },
+        {
+            "source": "transfer_pump_1",
+            "target": "reactor",
+            "type": "physical",
+            "port": {
+                "transfer_pump_1": "10",
+                "reactor": "top"
+            }
+        },
+        {
+            "source": "column_1",
+            "target": "collection_flask_1",
+            "type": "physical",
+            "port": {
+                "column_1": "outlet",
+                "collection_flask_1": "top"
+            }
+        },
+        {
+            "source": "column_1",
+            "target": "collection_flask_2",
+            "type": "physical",
+            "port": {
+                "column_1": "outlet",
+                "collection_flask_2": "top"
+            }
+        },
+        {
+            "source": "column_1",
+            "target": "collection_flask_3",
+            "type": "physical",
+            "port": {
+                "column_1": "outlet",
+                "collection_flask_3": "top"
+            }
+        }
+    ]
+}

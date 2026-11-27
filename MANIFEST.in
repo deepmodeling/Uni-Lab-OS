@@ -1,0 +1,15 @@
+recursive-include unilabos/test *
+recursive-include skills SKILL.md
+recursive-include unilabos/utils *
+recursive-include unilabos/registry *.yaml
+recursive-include unilabos/app/web/static *
+recursive-include unilabos/app/web/templates *
+prune unilabos/devices
+include unilabos/devices/__init__.py unilabos/devices/workstation/__init__.py unilabos/devices/workstation/workstation_base.py
+prune unilabos/scheduling
+exclude unilabos/app/scheduler/time_planning.py unilabos/app/scheduler/time_scheduling.py
+recursive-include unilabos/device_mesh/devices *
+recursive-include unilabos/device_mesh/resources *
+
+recursive-include unilabos/persistence *.json *.sql
+recursive-include unilabos/simulation *.kit *.cpp *.h CMakeLists.txt

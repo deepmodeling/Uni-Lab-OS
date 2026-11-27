@@ -1,0 +1,293 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro" name="arm_slider">
+
+  <xacro:macro name="arm_slider" params="mesh_path:='' parent_link:='' station_name:='' device_name:='' x:=0 y:=0 z:=0 rx:=0 ry:=0 r:=0">
+    <!-- Read .yaml files from disk, load content into properties -->
+    <xacro:property name= "joint_limit_parameters" value="${xacro.load_yaml(mesh_path + '/devices/arm_slider/joint_limit.yaml')}"/>
+
+    <!-- Extract subsections from yaml dictionaries -->
+    <xacro:property name= "sec_limits" value="${joint_limit_parameters['joint_limits']}"/>
+
+    <joint name="${station_name}${device_name}base_link_joint" type="fixed">
+      <origin xyz="${x} ${y} ${z}" rpy="${rx} ${ry} ${r}" />
+      <parent link="${parent_link}"/>
+      <child link="${station_name}${device_name}device_link"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <link name="${station_name}${device_name}device_link"/>
+    <joint name="${station_name}${device_name}device_link_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <parent link="${station_name}${device_name}device_link"/>
+      <child link="${station_name}${device_name}arm_slideway"/>
+      <axis xyz="0 0 0"/>
+    </joint>
+
+    <!-- JOINTS LIMIT PARAMETERS -->
+    <xacro:property name="limit_arm_base_joint"        value="${sec_limits['arm_base_joint']}" />
+    <xacro:property name="limit_arm_link_1_joint"      value="${sec_limits['arm_link_1_joint']}" />
+    <xacro:property name="limit_arm_link_2_joint"      value="${sec_limits['arm_link_2_joint']}" />
+    <xacro:property name="limit_arm_link_3_joint"      value="${sec_limits['arm_link_3_joint']}" />
+    <xacro:property name="limit_gripper_base_joint"    value="${sec_limits['gripper_base_joint']}" />
+    <xacro:property name="limit_gripper_right_joint"   value="${sec_limits['gripper_right_joint']}"/>
+    <xacro:property name="limit_gripper_left_joint"    value="${sec_limits['gripper_left_joint']}" />
+    <link name="${station_name}${device_name}arm_slideway">
+      <inertial>
+        <origin rpy="0 0 0" xyz="-0.913122246354019 -0.00141851388483838 0.0416079172839272"/>
+        <mass value="13.6578107753627"/>
+        <inertia ixx="0.0507627640890578" ixy="0.0245166532634714" ixz="-0.0112656803168519" iyy="5.2550852314372" iyz="0.000302974193920367" izz="5.26892263696439"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_slideway.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${station_name}${device_name}arm_base_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0.307 0 0.1225"/>
+      <parent link="${station_name}${device_name}arm_slideway"/>
+      <child link="${station_name}${device_name}arm_base"/>
+      <axis xyz="1 0 0"/>
+      <limit 
+        effort="${limit_arm_base_joint['effort']}" 
+        lower="${limit_arm_base_joint['lower']}" 
+        upper="${limit_arm_base_joint['upper']}" 
+        velocity="${limit_arm_base_joint['velocity']}"/>
+    </joint>
+
+    <link name="${station_name}${device_name}arm_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="1.48458338655733E-06 -0.00831873687136486 0.351728466012153"/>
+        <mass value="16.1341586205194"/>
+        <inertia ixx="0.54871651759045" ixy="7.65476367433116E-07" ixz="2.0515139488158E-07" iyy="0.55113098995396" iyz="-5.13261457726806E-07" izz="0.0619081867727048"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_base.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_base.STL"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <link name="${station_name}${device_name}arm_link_1">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0 -0.0102223856758559 0.0348505130779933"/>
+        <mass value="0.828629227096429"/>
+        <inertia ixx="0.00119703598787112" ixy="-2.46083048832131E-19" ixz="1.43864352731199E-19" iyy="0.00108355785790042" iyz="1.88092240278693E-06" izz="0.00160914803816438"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_1.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_1.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}arm_link_1_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0 0.1249 0.15"/>
+      <parent link="${station_name}${device_name}arm_base"/>
+      <child link="${station_name}${device_name}arm_link_1"/>
+      <axis xyz="0 0 1"/>
+      <limit 
+      effort="${limit_arm_link_1_joint['effort']}" 
+      lower="${limit_arm_link_1_joint['lower']}" 
+      upper="${limit_arm_link_1_joint['upper']}" 
+      velocity="${limit_arm_link_1_joint['velocity']}"/>
+    </joint>
+    <link name="${station_name}${device_name}arm_link_2">
+      <inertial>
+        <origin rpy="0 0 0" xyz="-3.33066907387547E-16 0.100000000000003 -0.0325000000000004"/>
+        <mass value="2.04764861029349"/>
+        <inertia ixx="0.0150150059448827" ixy="-1.28113733272213E-17" ixz="6.7561418872754E-19" iyy="0.00262980501315445" iyz="7.44451536320152E-18" izz="0.0162030186138787"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_2.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_2.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}arm_link_2_joint" type="revolute">
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <parent link="${station_name}${device_name}arm_link_1"/>
+      <child link="${station_name}${device_name}arm_link_2"/>
+      <axis xyz="0 0 1"/>
+      <limit 
+        effort="${limit_arm_link_2_joint['effort']}" 
+        lower="${limit_arm_link_2_joint['lower']}" 
+        upper="${limit_arm_link_2_joint['upper']}" 
+        velocity="${limit_arm_link_2_joint['velocity']}"/>
+    </joint>
+    <link name="${station_name}${device_name}arm_link_3">
+      <inertial>
+        <origin rpy="0 0 0" xyz="4.77395900588817E-15 0.0861257730831348 -0.0227999999999999"/>
+        <mass value="1.19870202871083"/>
+        <inertia ixx="0.00780783223764428" ixy="7.26567379579506E-18" ixz="1.02766851352053E-18" iyy="0.00109642607170081" iyz="-9.73775385060067E-18" izz="0.0084997384510058"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_3.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/arm_link_3.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}arm_link_3_joint" type="revolute">
+      <origin rpy="0 0 0" xyz="0 0.2 -0.0647"/>
+      <parent link="${station_name}${device_name}arm_link_2"/>
+      <child link="${station_name}${device_name}arm_link_3"/>
+      <axis xyz="0 0 1"/>
+      <limit 
+        effort="${limit_arm_link_3_joint['effort']}" 
+        lower="${limit_arm_link_3_joint['lower']}" 
+        upper="${limit_arm_link_3_joint['upper']}" 
+        velocity="${limit_arm_link_3_joint['velocity']}"/>
+    </joint>
+    <link name="${station_name}${device_name}gripper_base">
+      <inertial>
+        <origin rpy="0 0 0" xyz="-6.05365748571618E-05 0.0373027483464434 -0.0264392017534612"/>
+        <mass value="0.511925198394943"/>
+        <inertia ixx="0.000640463815051467" ixy="1.08132229596356E-06" ixz="7.165124649009E-07" iyy="0.000552164156414554" iyz="9.80000237347941E-06" izz="0.00103553457812823"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_base.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_base.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}gripper_base_joint" type="revolute">
+      <origin rpy="0 0 0" xyz="0 0.2 -0.045"/>
+      <parent link="${station_name}${device_name}arm_link_3"/>
+      <child link="${station_name}${device_name}gripper_base"/>
+      <axis xyz="0 0 1"/>
+      <limit 
+        effort="${limit_gripper_base_joint['effort']}" 
+        lower="${limit_gripper_base_joint['lower']}" 
+        upper="${limit_gripper_base_joint['upper']}" 
+        velocity="${limit_gripper_base_joint['velocity']}"/>
+    </joint>
+    <link name="${station_name}${device_name}gripper_right">
+      <inertial>
+        <origin rpy="0 0 0" xyz="0.0340005471193899 0.0339655085140826 -0.0325252119823062"/>
+        <mass value="0.013337481136229"/>
+        <inertia ixx="2.02427962974094E-05" ixy="1.78442722292145E-06" ixz="-4.36485961300289E-07" iyy="1.4816483393622E-06" iyz="2.60539468115799E-06" izz="1.96629693098755E-05"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_right.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_right.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}gripper_right_joint" type="prismatic">
+      <origin rpy="0 0 0" xyz="0 0.0942 -0.022277"/>
+      <parent link="${station_name}${device_name}gripper_base"/>
+      <child link="${station_name}${device_name}gripper_right"/>
+      <axis xyz="1 0 0"/>
+      <limit 
+        effort="${limit_gripper_right_joint['effort']}" 
+        lower="${limit_gripper_right_joint['lower']}" 
+        upper="${limit_gripper_right_joint['upper']}" 
+        velocity="${limit_gripper_right_joint['velocity']}"/>
+    </joint>
+    <link name="${station_name}${device_name}gripper_left">
+      <inertial>
+        <origin rpy="0 3.1416 0" xyz="-0.0340005471193521 0.0339655081029604 -0.0325252119827364"/>
+        <mass value="0.0133374811362292"/>
+        <inertia ixx="2.02427962974094E-05" ixy="-1.78442720812615E-06" ixz="4.36485961300305E-07" iyy="1.48164833936224E-06" iyz="2.6053946859901E-06" izz="1.96629693098755E-05"/>
+      </inertial>
+      <visual>
+        <origin rpy="0 3.1416 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_left.STL"/>
+        </geometry>
+        <material name="">
+          <color rgba="1 1 1 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin rpy="0 3.1416 0" xyz="0 0 0"/>
+        <geometry>
+          <mesh filename="file://${mesh_path}/devices/arm_slider/meshes/gripper_left.STL"/>
+        </geometry>
+      </collision>
+    </link>
+    <joint name="${station_name}${device_name}gripper_left_joint" type="prismatic">
+      <origin rpy="0 3.1416 0" xyz="0 0.0942 -0.022277"/>
+      <parent link="${station_name}${device_name}gripper_base"/>
+      <child link="${station_name}${device_name}gripper_left"/>
+      <axis xyz="1 0 0"/>
+      <limit 
+        effort="${limit_gripper_left_joint['effort']}" 
+        lower="${limit_gripper_left_joint['lower']}" 
+        upper="${limit_gripper_left_joint['upper']}" 
+        velocity="${limit_gripper_left_joint['velocity']}"/>
+      <mimic joint="${station_name}${device_name}gripper_right_joint" multiplier="1" />
+    </joint>
+
+  </xacro:macro>
+</robot>

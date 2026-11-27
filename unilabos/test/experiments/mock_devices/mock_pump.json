@@ -1,0 +1,44 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockPump1",  
+            "name": "模拟泵设备",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_transfer_pump",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",
+                "current_device": "MockPump1",
+                "pump_state": "Stopped",  
+                "flow_rate": 0.0,  
+                "target_flow_rate": 0.0,  
+                "pressure": 0.0,  
+                "total_volume": 0.0,  
+                "max_flow_rate": 100.0,  
+                "max_pressure": 10.0,
+                "from_vessel": "",
+                "to_vessel": "",
+                "transfer_volume": 0.0,
+                "amount": "",
+                "transfer_time": 0.0,
+                "is_viscous": false,
+                "rinsing_solvent": "",
+                "rinsing_volume": 0.0,
+                "rinsing_repeats": 0,
+                "is_solid": false,
+                "time_spent": 0.0,
+                "time_remaining": 0.0
+            }  
+        }  
+    ],  
+    "links": []  
+}

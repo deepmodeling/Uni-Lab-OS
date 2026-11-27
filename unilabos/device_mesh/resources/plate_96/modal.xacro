@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="plate_96">
+    <link name='plate_96'>
+        <visual name='visual'>
+            <geometry>
+                <mesh filename="meshes/plate_96.stl"/>
+            </geometry>
+            <material name="clay" />
+        </visual>
+    </link>
+</robot>

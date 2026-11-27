@@ -1,0 +1,44 @@
+joint_limits:
+
+  arm_base_joint:
+    effort: 50
+    velocity: 1.0
+    lower: 0
+    upper: 1.5
+
+  arm_link_1_joint:
+    effort: 50
+    velocity: 1.0
+    lower: 0
+    upper: 0.6
+
+  arm_link_2_joint:
+    effort: 50
+    velocity: 1.0
+    lower: !degrees  -95
+    upper: !degrees  95
+
+  arm_link_3_joint:
+    effort: 50
+    velocity: 1.0
+    lower: !degrees  -195
+    upper: !degrees  195
+
+  gripper_base_joint:
+    effort: 50
+    velocity: 1.0
+    lower: !degrees  -95
+    upper: !degrees  95
+
+
+  gripper_right_joint:
+    effort: 50
+    velocity: 1.0
+    lower: 0
+    upper: 0.03
+
+  gripper_left_joint:
+    effort: 50
+    velocity: 1.0
+    lower: 0
+    upper: 0.03

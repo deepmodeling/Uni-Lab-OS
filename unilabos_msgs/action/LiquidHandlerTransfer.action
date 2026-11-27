@@ -1,0 +1,26 @@
+float64[] asp_vols
+float64[] dis_vols
+Resource[] sources
+Resource[] targets
+Resource[] tip_racks
+int32[] use_channels
+float64[] asp_flow_rates
+float64[] dis_flow_rates
+geometry_msgs/Point[] offsets
+bool touch_tip
+float64[] liquid_height
+float64[] blow_out_air_volume
+string spread
+bool is_96_well
+string mix_stage
+int32 mix_times
+int32 mix_vol
+int32 mix_rate
+float64 mix_liquid_height
+int32[] delays
+string[] none_keys
+---
+string return_info
+bool success
+---
+# 反馈

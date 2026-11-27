@@ -1,0 +1,61 @@
+package:
+  name: ros-humble-unilabos-msgs
+  version: 0.9.7
+source:
+  path: ../../unilabos_msgs
+  folder: ros-humble-unilabos-msgs/src/work
+
+build:
+  script:
+    sel(win): bld_ament_cmake.bat
+    sel(unix): build_ament_cmake.sh
+  number: 5
+about:
+  home: https://www.ros.org/
+  license: BSD-3-Clause
+  summary: |
+    Robot Operating System
+
+extra:
+  recipe-maintainers:
+    - ros-forge
+
+requirements:
+  build:
+    - "{{ compiler('cxx') }}"
+    - "{{ compiler('c') }}"
+    - sel(linux64): sysroot_linux-64 2.17
+    - ninja
+    - setuptools
+    - sel(unix): make
+    - sel(unix): coreutils
+    - sel(osx): tapi
+    - sel(build_platform != target_platform): pkg-config
+    - cmake
+    - cython
+    - sel(win): vs2022_win-64
+    - sel(build_platform != target_platform): python
+    - sel(build_platform != target_platform): cross-python_{{ target_platform }}
+    - sel(build_platform != target_platform): numpy
+  host:
+    - numpy
+    - pip
+    - sel(build_platform == target_platform): pkg-config
+    - robostack-staging::ros-humble-action-msgs
+    - robostack-staging::ros-humble-ament-cmake
+    - robostack-staging::ros-humble-ament-lint-auto
+    - robostack-staging::ros-humble-ament-lint-common
+    - robostack-staging::ros-humble-ros-environment
+    - robostack-staging::ros-humble-ros-workspace
+    - robostack-staging::ros-humble-rosidl-default-generators
+    - robostack-staging::ros-humble-std-msgs
+    - robostack-staging::ros-humble-geometry-msgs
+    - robostack-staging::ros2-distro-mutex=0.5.*
+  run:
+    - robostack-staging::ros-humble-action-msgs
+    - robostack-staging::ros-humble-ros-workspace
+    - robostack-staging::ros-humble-rosidl-default-runtime
+    - robostack-staging::ros-humble-std-msgs
+    - robostack-staging::ros-humble-geometry-msgs
+#    - robostack-staging::ros2-distro-mutex=0.6.*
+    - sel(osx and x86_64): __osx >={{ MACOSX_DEPLOYMENT_TARGET|default('10.14') }}

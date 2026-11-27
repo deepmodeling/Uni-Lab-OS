@@ -1,0 +1,20 @@
+# Goal - 后处理参数  
+float64 atomization_fast_speed
+float64 wash_slow_speed
+int32 injection_pump_suction_speed
+int32 injection_pump_push_speed
+int32 raw_liquid_suction_count
+float64 first_wash_water_amount
+float64 second_wash_water_amount
+int32 first_powder_mixing_tim 
+int32 second_powder_mixing_time
+int32 first_powder_wash_count
+int32 second_powder_wash_count
+float64 initial_water_amount 
+int32 pre_filtration_mixing_time
+int32 atomization_pressure_kpa
+---
+# Result - 操作结果  
+string return_info                      # 操作是否成功  
+---
+# Feedback - 实时反馈  

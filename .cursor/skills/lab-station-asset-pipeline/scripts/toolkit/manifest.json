@@ -1,0 +1,397 @@
+{
+  "schema": "unilab.skill-toolkit/1",
+  "source_repository": "Asset_pipeline",
+  "source_head": "8156868e2f717526f594dd621f12126aa54f55e2",
+  "source_basis": "working-tree file hashes; HEAD alone is not the tested tree",
+  "files": {
+    "asset-browser/credentials.py": {
+      "sha256": "1b20e074877441241b5c6368b35918373bbc07d8b68689c990742f9a4a6a9ef8",
+      "source": "tools/asset-browser/credentials.py"
+    },
+    "asset-browser/evidence.py": {
+      "sha256": "bec7bd1e4b29bca158045cc6a6226ff18421cedb085ce9a023e3a2f8bf9f0a8b",
+      "source": "tools/asset-browser/evidence.py"
+    },
+    "asset-browser/library.py": {
+      "sha256": "57d16d12548509d7165c37e08e34fb263798895a57973b3e2334c07348c25d78",
+      "source": "tools/asset-browser/library.py"
+    },
+    "asset-browser/readiness.py": {
+      "sha256": "b868242d90cdcfd340dc886b65e0da8d1bed65df1b83216157633f41b211eb41",
+      "source": "tools/asset-browser/readiness.py"
+    },
+    "asset-library/audit_minimal_library.py": {
+      "sha256": "17ee6b7906889622ba1c7b2cdde9344756d973d05305aa80462cd4d827f7e5ff",
+      "source": "tools/asset-library/audit_minimal_library.py"
+    },
+    "asset-library/build_minimal_library.py": {
+      "sha256": "3fed11737fe08b53087da2daa047fb83dcb2098d7ec8b84dcdd9b54060f9074c",
+      "source": "tools/asset-library/build_minimal_library.py"
+    },
+    "asset-library/build_native_library.py": {
+      "sha256": "3f2f382378026c1542a8237cb2175e16f32310e97693fa2529a32d9588b12914",
+      "source": "tools/asset-library/build_native_library.py"
+    },
+    "asset-library/cad_composition.py": {
+      "sha256": "9e9b3868c6d3bc939d29990d0131cb2469f19e8263f7943ae614fafd6638f2ab",
+      "source": "tools/asset-library/cad_composition.py"
+    },
+    "asset-library/catalog.py": {
+      "sha256": "ac8c92db4a1a3f41f7ebb4e092e5b5d0ec734944a784087c429c938dc72d1656",
+      "source": "tools/asset-library/catalog.py"
+    },
+    "asset-library/check_native_rules.py": {
+      "sha256": "0ff711b0791e30961474d4746825fb10f251ed6bed6093897aa6d91da54bb441",
+      "source": "tools/asset-library/check_native_rules.py"
+    },
+    "asset-library/client.py": {
+      "sha256": "7231958fce033825a9e78db894bbcf0767e19a6463061a59560289c49c33b81b",
+      "source": "tools/asset-library/client.py"
+    },
+    "asset-library/convert_source.py": {
+      "sha256": "bc58e05efb256d59a8c59ba2b98a83f708dce94e0ed0975277a0305424097aeb",
+      "source": "tools/asset-library/convert_source.py"
+    },
+    "asset-library/core.py": {
+      "sha256": "c8587d7c5ad9050865f49791c5351e760a9877813826c59447c4bc9bce110b8b",
+      "source": "tools/asset-library/core.py"
+    },
+    "asset-library/deliver_conversion.py": {
+      "sha256": "af1a386f72bb3b2c209de4117371f20581ca1c3e088c46d59ba19b034e6217a2",
+      "source": "tools/asset-library/deliver_conversion.py"
+    },
+    "asset-library/enrichment/vc_file_source.py": {
+      "sha256": "17fe4c1da7a7ec0212ed5595eebcab76ff6e54a599ca77d1fb48f2ba93bcd78d",
+      "source": "tools/asset-library/enrichment/vc_file_source.py"
+    },
+    "asset-library/finalize_capture.py": {
+      "sha256": "1f452da86766fa98ad7c1e4e3d084c7352de41290930411d8112a7069def5cfb",
+      "source": "tools/asset-library/finalize_capture.py"
+    },
+    "asset-library/historical_blender.py": {
+      "sha256": "29c8365ad7c5a187ac3270cf401ed95ab86741f37210caa867720eac64ce646d",
+      "source": "tools/asset-library/historical_blender.py"
+    },
+    "asset-library/ingest_usd_set.py": {
+      "sha256": "286e63c9dd513d9916d7f1536827bf57f57c9607fac663a341666cd52f0e8ff7",
+      "source": "tools/asset-library/ingest_usd_set.py"
+    },
+    "asset-library/inspect_usd.py": {
+      "sha256": "6c25f44856146da910dc71a8764c84cfaa9e7052a11ee9e8ba9ccf7bf123d4c5",
+      "source": "tools/asset-library/inspect_usd.py"
+    },
+    "asset-library/minimal_format.py": {
+      "sha256": "0e1737705c22e68b47bd0aef2791b5a736e06534332b2afe7d12ec240347d38b",
+      "source": "tools/asset-library/minimal_format.py"
+    },
+    "asset-library/native_cad_usd.py": {
+      "sha256": "6468e32d4d29f41bdf0cca81902f6c57724189d7a4b076bd6c9ec833915161b7",
+      "source": "tools/asset-library/native_cad_usd.py"
+    },
+    "asset-library/native_capture.py": {
+      "sha256": "5399c0d338c3f776ffa1afc882080598c9282b75749d80499d879586bf2a2e46",
+      "source": "tools/asset-library/native_capture.py"
+    },
+    "asset-library/native_package.py": {
+      "sha256": "8c0933d095edbc794ebc63f2cc128e3a709a7cf5b0e1c7afcd9569c24f1e6a18",
+      "source": "tools/asset-library/native_package.py"
+    },
+    "asset-library/native_transfer.py": {
+      "sha256": "35cd3add00f4c4c1c56f1f9364f1ef132d5a41dfa1509e27a8d008f2c5298fbc",
+      "source": "tools/asset-library/native_transfer.py"
+    },
+    "asset-library/neutral_cad.py": {
+      "sha256": "89da1d8cb7236ef1080381c618338ffc1affc03827e8f3ab2e347538567ae731",
+      "source": "tools/asset-library/neutral_cad.py"
+    },
+    "asset-library/oss_store.py": {
+      "sha256": "5a889484466efc12e6d6c84b4af9a606db663e19ab651531f605de2df71adfc3",
+      "source": "tools/asset-library/oss_store.py"
+    },
+    "asset-library/profiles.py": {
+      "sha256": "dee2c39f094385890db886cf86727bf00863114f46bb722c480f4f372e164521",
+      "source": "tools/asset-library/profiles.py"
+    },
+    "asset-library/publish_incremental.py": {
+      "sha256": "455c6bf33b7b8e3c83bfcce23e1bde7e8d968b50521bb58e7633d450055e03e9",
+      "source": "tools/asset-library/publish_incremental.py"
+    },
+    "asset-library/readable_library.py": {
+      "sha256": "620e84648a2d5ea82b11d7b59715c2039bd00167bfad02341c5ff505573d8d20",
+      "source": "tools/asset-library/readable_library.py"
+    },
+    "asset-library/robodk_joint_converter.py": {
+      "sha256": "34304536966af809c95fdb5340fc6b517747225df7f90ce245617b0e4b075a58",
+      "source": "tools/asset-library/robodk_joint_converter.py"
+    },
+    "asset-library/robodk_offline.py": {
+      "sha256": "007efdf5770f44f904e4de599223b310d916035835576a28474fc52236c064ff",
+      "source": "tools/asset-library/robodk_offline.py"
+    },
+    "asset-library/robot_behavior/__init__.py": {
+      "sha256": "e1ac71075514b35485ea64a353fa1980974567d7d414bca02389f49d8acb3d72",
+      "source": "tools/asset-library/robot_behavior/__init__.py"
+    },
+    "asset-library/robot_behavior/linkage.py": {
+      "sha256": "3d4f7eb28ba63e7eb1b26ca399f53cab88516760a3c75b517b60c196abfdc253",
+      "source": "tools/asset-library/robot_behavior/linkage.py"
+    },
+    "asset-library/simready_audit.py": {
+      "sha256": "6139e8c7cb0e8ed05936b56d4f74b815c86448911053e222561cfc03c236f13f",
+      "source": "tools/asset-library/simready_audit.py"
+    },
+    "asset-library/simready_conformance.py": {
+      "sha256": "396fa8eb914370e0fcc622258446343aeee9e5ded1c1690ce40caae5a43544f8",
+      "source": "tools/asset-library/simready_conformance.py"
+    },
+    "asset-library/solidworks_assembly.py": {
+      "sha256": "d106526e117917eed702198680032798e1bd38793785c44ddde49d8bc4426190",
+      "source": "tools/asset-library/solidworks_assembly.py"
+    },
+    "asset-library/solidworks_asset_files.py": {
+      "sha256": "9bb9c95e9664eee7ddc1033159076e424b7911a9708d12f7261c6640204545c2",
+      "source": "tools/asset-library/solidworks_asset_files.py"
+    },
+    "asset-library/solidworks_native.py": {
+      "sha256": "2d619fb5b7bad233bab48dabebb721e9a6d7db71d6c1b8708fde6b7d9b614df5",
+      "source": "tools/asset-library/solidworks_native.py"
+    },
+    "asset-library/source_semantics.py": {
+      "sha256": "63dffec8a65af040b75bb949f7f98a8d1eeb54789bea228785d2820bac618982",
+      "source": "tools/asset-library/source_semantics.py"
+    },
+    "asset-library/supplier_sw_step.py": {
+      "sha256": "6c21da6d1352ba5f91b58a096cf5d42ffe938a232d6e5a7bdce420c76def32e4",
+      "source": "tools/asset-library/supplier_sw_step.py"
+    },
+    "asset-library/usd_derive.py": {
+      "sha256": "16bc9977cec411a01f0a526edbe62974814f6720622b21235a41a83ae3cf6058",
+      "source": "tools/asset-library/usd_derive.py"
+    },
+    "asset-library/usd_equivalence.py": {
+      "sha256": "1fe9466d9a5d1c2025c2c442d217d0d40ecc3696d1fc0288dcacfee29354fb0f",
+      "source": "tools/asset-library/usd_equivalence.py"
+    },
+    "asset-library/vc_offline_converter.py": {
+      "sha256": "c92b1be6828f5bcc694c4be6aeb3ba1293bf4c17982341512cc0b5f09655ae6b",
+      "source": "tools/asset-library/vc_offline_converter.py"
+    },
+    "asset-library/vc_offline_dependencies.py": {
+      "sha256": "82486de11d71c73bca420231490cd7defd190339310dab4be675e156f9782d1f",
+      "source": "tools/asset-library/vc_offline_dependencies.py"
+    },
+    "asset-library/vc_offline_dof.py": {
+      "sha256": "9d9de998a36f8e01d0afe48e8caf7007f6607318b8366b4c371da0b2e473e812",
+      "source": "tools/asset-library/vc_offline_dof.py"
+    },
+    "asset-library/vc_offline_expression.py": {
+      "sha256": "60d0a43a9f23a9088236ecce6a1080fc57fb43bfb42b52cf897bef5f80ad3ac8",
+      "source": "tools/asset-library/vc_offline_expression.py"
+    },
+    "asset-library/vc_offline_geometry.py": {
+      "sha256": "1e25fad9ff9aba2e7e2083480c07e2b1ea1022e6d70b882a4511481275c04405",
+      "source": "tools/asset-library/vc_offline_geometry.py"
+    },
+    "asset-library/vc_offline_kinematics.py": {
+      "sha256": "51e043a3b32f90507c8398e391d46f157141eabad9436f68948225c346ce0b05",
+      "source": "tools/asset-library/vc_offline_kinematics.py"
+    },
+    "asset-library/vc_offline_mass.py": {
+      "sha256": "674986a4c1ef42a657099f1f8897562148cc3e33ff57e36a03b380efc7dcbadd",
+      "source": "tools/asset-library/vc_offline_mass.py"
+    },
+    "asset-library/vc_offline_materials.py": {
+      "sha256": "a2b07cd807471c7c2022075e3204cb767f2ceb70a4138125934327bac13d62b4",
+      "source": "tools/asset-library/vc_offline_materials.py"
+    },
+    "asset-library/vc_offline_physics.py": {
+      "sha256": "72682b461856e0445788ce59e7a2a5542cc55a4dd5a2ebd6f3bd295a081211d8",
+      "source": "tools/asset-library/vc_offline_physics.py"
+    },
+    "asset-library/vc_offline_source.py": {
+      "sha256": "1af464a12b7a51fa5e5d0af22c7fc918cc42990cf02f1374fb964a5657405828",
+      "source": "tools/asset-library/vc_offline_source.py"
+    },
+    "asset-library/verify_solidworks_assembly.py": {
+      "sha256": "54b83f310056246d863d8ebeace80601724642255a16a96a20e93092bd6329cc",
+      "source": "tools/asset-library/verify_solidworks_assembly.py"
+    },
+    "asset-library/verify_source_geometry.py": {
+      "sha256": "0e36b7bb005c6073569dc6b9ad65df6bdaaa584e00d6450a0f47bf05758e684f",
+      "source": "tools/asset-library/verify_source_geometry.py"
+    },
+    "collision-profiles/build_profile.py": {
+      "sha256": "39427acf438579936a6f14fd1fbd16b7d83f46f8acfbc4568bef6b3fe216bc98",
+      "source": "tools/collision-profiles/build_profile.py"
+    },
+    "collision-profiles/export_asset.py": {
+      "sha256": "88deb817afb564e4048f6ea816053cc22b1808ad44d0a88050109f14d1dd388c",
+      "source": "tools/collision-profiles/export_asset.py"
+    },
+    "collision-profiles/package_profiles.py": {
+      "sha256": "c14d5ba3e0c36b76d1e711e6b66d54b2fbe44dd09e0e4c4138db01c12ccc68d8",
+      "source": "tools/collision-profiles/package_profiles.py"
+    },
+    "collision-profiles/test_profiles.py": {
+      "sha256": "5ce95f81e3968d5454de2f60a6f0537d9bb1bcfa84c0ebac1a00995502dc871f",
+      "source": "tools/collision-profiles/test_profiles.py"
+    },
+    "collision-profiles/verify_exact_profile.py": {
+      "sha256": "0062a6a7fc0f7d4afca001c49d3c79b5ef3e314a24bd1b332b2259e18fcf67df",
+      "source": "tools/collision-profiles/verify_exact_profile.py"
+    },
+    "asset-library/check_identity_evidence.py": {
+      "sha256": "badab9dfd944b0f628ebe158cd934b987c123d14337c3f82fa929e4c38849b75",
+      "source": "tools/asset-library/check_identity_evidence.py"
+    },
+    "asset-library/check_motion_behavior.py": {
+      "sha256": "1723cf22b7497a1d80ba771e59b92ed174f83260ccfbe8e13cbe194d3254faaa",
+      "source": "tools/asset-library/check_motion_behavior.py"
+    },
+    "asset-library/check_replacement.py": {
+      "sha256": "673072d4a13d7aab7dc1d69507013a7a7dad3c85a4f0fe39d1abcf7ab10a8649",
+      "source": "tools/asset-library/check_replacement.py"
+    },
+    "asset-library/p0_common.py": {
+      "sha256": "5f983ea68009050604b33132a769f8d3f15f03823047989d881703c8097378d5",
+      "source": "tools/asset-library/p0_common.py"
+    }
+  },
+  "commands": {
+    "convert": {
+      "path": "asset-library/convert_source.py",
+      "kind": "cli",
+      "scope": "USD / GLB / URDF / STEP / SolidWorks; route-specific Blender/COM"
+    },
+    "ingest": {
+      "path": "asset-library/ingest_usd_set.py",
+      "kind": "cli",
+      "scope": "Explicit definitions to native staging library; OpenUSD"
+    },
+    "inspect-usd": {
+      "path": "asset-library/inspect_usd.py",
+      "kind": "cli",
+      "scope": "USD dependency/geometry checks; OpenUSD, NumPy"
+    },
+    "verify-source": {
+      "path": "asset-library/verify_source_geometry.py",
+      "kind": "cli",
+      "scope": "Source bounds correspondence, not every face; route-specific OCP"
+    },
+    "audit-library": {
+      "path": "asset-library/audit_minimal_library.py",
+      "kind": "cli",
+      "scope": "Native library layout and dependency audit; OpenUSD"
+    },
+    "client": {
+      "path": "asset-library/client.py",
+      "kind": "cli",
+      "scope": "Existing materialize / verify-project / fetch; OpenUSD, optional oss2"
+    },
+    "convert-vc": {
+      "path": "asset-library/vc_offline_converter.py",
+      "kind": "cli",
+      "scope": "Offline VC decoding; no native behavior execution"
+    },
+    "convert-robodk": {
+      "path": "asset-library/robodk_joint_converter.py",
+      "kind": "cli",
+      "scope": "Offline RoboDK decoding; no native solver execution"
+    },
+    "finish-simready": {
+      "path": "asset-library/simready_conformance.py",
+      "kind": "cli",
+      "scope": "Metadata completion; not dynamics certification"
+    },
+    "check-native-rules": {
+      "path": "asset-library/check_native_rules.py",
+      "kind": "cli",
+      "scope": "Installed NVIDIA NP.005/hash rules only; simready SDK"
+    },
+    "audit-simready": {
+      "path": "asset-library/simready_audit.py",
+      "kind": "cli",
+      "scope": "Installed NVIDIA validator and explicit profiles required"
+    },
+    "assemble-solidworks": {
+      "path": "asset-library/solidworks_assembly.py",
+      "kind": "cli",
+      "scope": "Explicit recipe; Windows, SolidWorks COM"
+    },
+    "collision-export": {
+      "path": "collision-profiles/export_asset.py",
+      "kind": "cli",
+      "scope": "Asset-local geometry export; review per-body coverage"
+    },
+    "collision-build": {
+      "path": "collision-profiles/build_profile.py",
+      "kind": "cli",
+      "scope": "Exact/outer generation; caller chooses task-specific protection"
+    },
+    "collision-verify": {
+      "path": "collision-profiles/verify_exact_profile.py",
+      "kind": "cli",
+      "scope": "Pinned source/triangle/frame correspondence"
+    },
+    "collision-package": {
+      "path": "collision-profiles/package_profiles.py",
+      "kind": "cli",
+      "scope": "Append profile revision using native package format"
+    },
+    "native-verify": {
+      "path": "asset-library/native_package.py",
+      "kind": "api",
+      "function": "verify",
+      "scope": "Native BOM and content integrity"
+    },
+    "compare-usd": {
+      "path": "asset-library/usd_equivalence.py",
+      "kind": "api",
+      "function": "compare",
+      "scope": "Exact composed attributes/relations equivalence"
+    },
+    "check-identity": {
+      "path": "asset-library/check_identity_evidence.py",
+      "kind": "cli",
+      "scope": "Scoped identity/parameter evidence; offline snapshots; no semantic identity inference"
+    },
+    "check-replacement": {
+      "path": "asset-library/check_replacement.py",
+      "kind": "cli",
+      "scope": "Pinned closure, geometry/frame invariants and protected JSON; OpenUSD, NumPy, SciPy"
+    },
+    "check-motion": {
+      "path": "asset-library/check_motion_behavior.py",
+      "kind": "cli",
+      "scope": "Observed USD joint behavior; explicit trusted-code opt-in; OpenUSD, NumPy"
+    }
+  },
+  "support_apis": [
+    "asset-library/neutral_cad.py",
+    "asset-library/cad_composition.py",
+    "asset-library/solidworks_asset_files.py",
+    "asset-library/verify_solidworks_assembly.py"
+  ],
+  "extensions": [
+    {
+      "commands": [
+        "check-identity",
+        "check-replacement",
+        "check-motion"
+      ],
+      "source_repository": "Asset_pipeline",
+      "source_head": "68c84bdbeac0bc0b1caa85b6707ccb352bc20907",
+      "source_basis": "new file working-tree hashes; existing tools retained from base manifest",
+      "base_manifest_sha256": "6c976f55d5646af12a4745ef0dbea97aa432b88c124dbce4ba6dfb927d0cda0c"
+    },
+    {
+      "files": [
+        "collision-profiles/test_profiles.py"
+      ],
+      "source_repository": "Asset_pipeline",
+      "source_head": "68c84bdbeac0bc0b1caa85b6707ccb352bc20907",
+      "source_basis": "working-tree file hash; byte-identical to tools/collision-profiles/test_profiles.py on chang 2026-11-22",
+      "base_manifest_sha256": "dacb7e4e3f8a829f8a27adbc8ed79e8b952556a031a0e3660fb028763bee140c"
+    }
+  ]
+}

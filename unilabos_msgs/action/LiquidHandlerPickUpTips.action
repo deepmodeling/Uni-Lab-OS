@@ -1,0 +1,11 @@
+# Bio
+# 请求字段
+Resource[] tip_spots
+int32[] use_channels
+geometry_msgs/Point[] offsets
+---
+# 结果字段
+string return_info
+bool success
+---
+# 反馈字段 

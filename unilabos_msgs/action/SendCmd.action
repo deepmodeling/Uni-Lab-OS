@@ -1,0 +1,7 @@
+# Simple
+string command
+---
+string return_info
+bool success
+---
+string status

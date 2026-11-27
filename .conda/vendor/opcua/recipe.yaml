@@ -1,0 +1,38 @@
+context:
+  version: 0.98.13
+
+package:
+  name: opcua
+  version: ${{ version }}
+
+source:
+  - url: https://files.pythonhosted.org/packages/source/o/opcua/opcua-${{ version }}.tar.gz
+    sha256: 3352f30b5fed863146a82778aaf09faa5feafcb9dd446a4f49ff34c0c3ebbde6
+
+build:
+  number: 0
+  noarch: python
+  script: ${{ PYTHON }} -m pip install . --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python >=3.8
+    - setuptools
+    - pip
+  run:
+    - python >=3.8
+    - lxml
+    - python-dateutil
+    - pytz
+
+tests:
+  - python:
+      imports:
+        - opcua
+        - opcua.ua
+      pip_check: true
+
+about:
+  summary: Pure Python OPC UA client and server library
+  license: LGPL-3.0-or-later
+  repository: https://github.com/FreeOpcUa/python-opcua

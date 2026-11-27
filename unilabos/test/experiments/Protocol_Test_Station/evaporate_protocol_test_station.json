@@ -1,0 +1,503 @@
+{
+    "nodes": [
+        {
+            "id": "EvaporateProtocolTestStation",
+            "name": "蒸发协议测试站",
+            "children": [
+                "transfer_pump_1",
+                "transfer_pump_2", 
+                "multiway_valve_1",
+                "multiway_valve_2",
+                "rotavap_1",
+                "heatchill_1",
+                "reaction_mixture",
+                "rotavap_flask",
+                "rotavap_condenser",
+                "flask_distillate",
+                "flask_ethanol",
+                "flask_acetone",
+                "flask_water",
+                "flask_air",
+                "waste_workup"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "workstation",
+            "position": {
+                "x": 500,
+                "y": 200,
+                "z": 0
+            },
+            "config": {
+                "protocol_type": [
+                    "EvaporateProtocol",
+                    "PumpTransferProtocol",
+                    "HeatChillProtocol",
+                    "HeatChillStartProtocol",
+                    "HeatChillStopProtocol"
+                ]
+            },
+            "data": {}
+        },
+        {
+            "id": "transfer_pump_1",
+            "name": "主转移泵",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 200,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP1",
+                "max_volume": 25.0,
+                "transfer_rate": 2.5
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "transfer_pump_2",
+            "name": "副转移泵",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_transfer_pump",
+            "position": {
+                "x": 400,
+                "y": 300,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_PUMP2",
+                "max_volume": 25.0,
+                "transfer_rate": 2.5
+            },
+            "data": {
+                "position": 0.0,
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "multiway_valve_1",
+            "name": "溶剂分配阀",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 200,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE1",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "multiway_valve_2",
+            "name": "容器分配阀",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_multiway_valve",
+            "position": {
+                "x": 400,
+                "y": 400,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_VALVE2",
+                "positions": 8
+            },
+            "data": {
+                "current_position": 1
+            }
+        },
+        {
+            "id": "rotavap_1",
+            "name": "旋转蒸发仪",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_rotavap",
+            "position": {
+                "x": 700,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_ROTAVAP1",
+                "max_temp": 180.0,
+                "max_rotation_speed": 280.0
+            },
+            "data": {
+                "status": "Ready"
+            }
+        },
+        {
+            "id": "heatchill_1",
+            "name": "预加热器",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "device",
+            "class": "virtual_heatchill",
+            "position": {
+                "x": 100,
+                "y": 550,
+                "z": 0
+            },
+            "config": {
+                "port": "VIRTUAL_HEATCHILL1",
+                "max_temp": 100.0,
+                "min_temp": 10.0,
+                "max_stir_speed": 500.0
+            },
+            "data": {
+                "status": "Idle"
+            }
+        },
+        {
+            "id": "reaction_mixture",
+            "name": "反应混合物",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 100,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "reaction_mixture",
+                        "liquid_volume": 600.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "rotavap_flask",
+            "name": "旋蒸样品瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 700,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "rotavap_condenser",
+            "name": "旋蒸冷凝器",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 800,
+                "y": 350,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 500.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_distillate",
+            "name": "溶剂回收瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 800,
+                "y": 450,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "flask_ethanol",
+            "name": "乙醇清洗瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 50,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "ethanol",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_acetone",
+            "name": "丙酮清洗瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 150,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "acetone",
+                        "liquid_volume": 800.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_water",
+            "name": "蒸馏水瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 250,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": [
+                    {
+                        "liquid_type": "water",
+                        "liquid_volume": 900.0
+                    }
+                ]
+            }
+        },
+        {
+            "id": "flask_air",
+            "name": "空气瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 350,
+                "y": 600,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 1000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        },
+        {
+            "id": "waste_workup",
+            "name": "废液瓶",
+            "children": [],
+            "parent": "EvaporateProtocolTestStation",
+            "type": "container",
+            "class": null,
+            "position": {
+                "x": 600,
+                "y": 550,
+                "z": 0
+            },
+            "config": {
+                "max_volume": 3000.0
+            },
+            "data": {
+                "liquid": []
+            }
+        }
+    ],
+    "links": [
+        {
+            "id": "link_pump1_valve1",
+            "source": "transfer_pump_1",
+            "target": "multiway_valve_1",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_1": "transferpump",
+                "multiway_valve_1": "transferpump"
+            }
+        },
+        {
+            "id": "link_pump2_valve2",
+            "source": "transfer_pump_2",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "transfer_pump_2": "transferpump",
+                "multiway_valve_2": "transferpump"
+            }
+        },
+        {
+            "id": "link_valve1_air",
+            "source": "multiway_valve_1",
+            "target": "flask_air",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "1",
+                "flask_air": "top"
+            }
+        },
+        {
+            "id": "link_valve1_ethanol",
+            "source": "multiway_valve_1",
+            "target": "flask_ethanol",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "2",
+                "flask_ethanol": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_acetone",
+            "source": "multiway_valve_1",
+            "target": "flask_acetone",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "3",
+                "flask_acetone": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_water",
+            "source": "multiway_valve_1",
+            "target": "flask_water",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "4",
+                "flask_water": "outlet"
+            }
+        },
+        {
+            "id": "link_valve1_valve2",
+            "source": "multiway_valve_1",
+            "target": "multiway_valve_2",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_1": "5",
+                "multiway_valve_2": "1"
+            }
+        },
+        {
+            "id": "link_valve2_reaction_mixture",
+            "source": "multiway_valve_2",
+            "target": "reaction_mixture",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "2",
+                "reaction_mixture": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_rotavap_flask",
+            "source": "multiway_valve_2",
+            "target": "rotavap_flask",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "3",
+                "rotavap_flask": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_rotavap_condenser",
+            "source": "multiway_valve_2",
+            "target": "rotavap_condenser",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "4",
+                "rotavap_condenser": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_distillate",
+            "source": "multiway_valve_2",
+            "target": "flask_distillate",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "5",
+                "flask_distillate": "inlet"
+            }
+        },
+        {
+            "id": "link_valve2_waste",
+            "source": "multiway_valve_2",
+            "target": "waste_workup",
+            "type": "fluid",
+            "port": {
+                "multiway_valve_2": "6",
+                "waste_workup": "inlet"
+            }
+        },
+        {
+            "id": "link_rotavap1_rotavap_flask",
+            "source": "rotavap_1",
+            "target": "rotavap_flask",
+            "type": "fluid",
+            "port": {
+                "rotavap_1": "rotavap-sample",
+                "rotavap_flask": "rotavap_port"
+            }
+        },
+        {
+            "id": "link_heatchill1_reaction_mixture",
+            "source": "heatchill_1",
+            "target": "reaction_mixture",
+            "type": "mechanical",
+            "port": {
+                "heatchill_1": "heatchill",
+                "reaction_mixture": "heating_jacket"
+            }
+        }
+    ]
+}

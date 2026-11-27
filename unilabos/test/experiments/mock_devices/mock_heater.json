@@ -1,0 +1,33 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockHeater1",  
+            "name": "模拟加热器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_heatchill",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "current_temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "status": "Idle",  
+                "is_heating": false,  
+                "heating_power": 0.0,  
+                "max_temperature": 300.0,
+                "vessel": "Unknown",
+                "purpose": "Unknown",
+                "stir": false,
+                "stir_speed": 0.0
+            }  
+        }  
+    ],  
+    "links": []  
+}

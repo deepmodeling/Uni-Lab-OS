@@ -1,0 +1,18 @@
+# Bio
+# 请求字段
+Resource resource
+geometry_msgs/Point to
+geometry_msgs/Point[] intermediate_locations
+geometry_msgs/Point resource_offset
+geometry_msgs/Point destination_offset
+float64 pickup_distance_from_top
+string pickup_direction
+string drop_direction
+string get_direction
+string put_direction
+---
+# 结果字段
+string return_info
+bool success
+---
+# 反馈字段 

@@ -1,0 +1,25 @@
+# Goal - 添加试剂的目标参数  
+Resource vessel                    # 目标容器（必需）
+string reagent                   # 试剂名称（必需）
+string volume                    # 体积（如 "2.7 mL"，可选）
+string mass                      # 质量（如 "19.3 g"，可选）
+string amount                    # 数量描述（可选）
+string time                      # 添加时间（如 "1 h", "20 min"，可选）
+bool stir                        # 是否搅拌（可选）
+float64 stir_speed              # 搅拌速度 (RPM，可选)
+bool viscous                     # 是否为粘性液体（可选）
+string purpose                   # 添加目的（可选）
+string event                     # 事件标识（如 'A', 'B'，可选）
+string mol                       # 摩尔数（如 '0.28 mol', '16.2 mmol'，可选）
+string rate_spec                 # 速率规格（如 'portionwise', 'dropwise'，可选）
+string equiv                     # 当量（如 '1.1'，可选）
+string ratio                     # 比例（如 '1:1'，可选）
+---
+# Result - 操作结果  
+bool success                     # 操作是否成功  
+string message                   # 结果消息
+string return_info
+---
+# Feedback - 实时反馈  
+float64 progress                 # 进度百分比 (0-100)  
+string current_status           # 当前状态描述

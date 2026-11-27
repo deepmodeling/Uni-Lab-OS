@@ -1,0 +1,314 @@
+{
+    "nodes": [
+        {  
+            "id": "MockChiller1",  
+            "name": "模拟冷却器",  
+            "children": [
+                "MockContainerForChiller1"
+            ],
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_heatchill",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "current_temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "status": "Idle",  
+                "is_cooling": false,  
+                "is_heating": false,
+                "vessel": "",
+                "purpose": ""
+            }  
+        },
+        {
+            "id": "MockContainerForChiller1",
+            "name": "模拟容器",
+            "type": "container",
+            "parent": "MockChiller1",
+            "position": {
+                "x": 5,
+                "y": 0,
+                "z": 0
+            },
+            "data": {
+                "liquid_type": "CuCl2",
+                "liquid_volume": "100"
+            },
+            "children": []
+        },
+        {  
+            "id": "MockFilter1",  
+            "name": "模拟过滤器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_filter",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "is_filtering": false,  
+                "flow_rate": 0.0,
+                "filter_life": 100.0,
+                "vessel": "",
+                "filtrate_vessel": "",
+                "filtered_volume": 0.0,
+                "target_volume": 0.0,
+                "progress": 0.0,
+                "stir": false,
+                "stir_speed": 0.0,
+                "temperature": 25.0,
+                "continue_heatchill": false
+            }  
+        },
+        {  
+            "id": "MockHeater1",  
+            "name": "模拟加热器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_heatchill",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "current_temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "status": "Idle",  
+                "is_heating": false,  
+                "heating_power": 0.0,  
+                "max_temperature": 300.0,
+                "vessel": "Unknown",
+                "purpose": "Unknown",
+                "stir": false,
+                "stir_speed": 0.0
+            }  
+        },
+        {  
+            "id": "MockPump1",  
+            "name": "模拟泵设备",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_transfer_pump",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",
+                "current_device": "MockPump1",
+                "pump_state": "Stopped",  
+                "flow_rate": 0.0,  
+                "target_flow_rate": 0.0,  
+                "pressure": 0.0,  
+                "total_volume": 0.0,  
+                "max_flow_rate": 100.0,  
+                "max_pressure": 10.0,
+                "from_vessel": "",
+                "to_vessel": "",
+                "transfer_volume": 0.0,
+                "amount": "",
+                "transfer_time": 0.0,
+                "is_viscous": false,
+                "rinsing_solvent": "",
+                "rinsing_volume": 0.0,
+                "rinsing_repeats": 0,
+                "is_solid": false,
+                "time_spent": 0.0,
+                "time_remaining": 0.0
+            }  
+        },
+        {  
+            "id": "MockRotavap1",  
+            "name": "模拟旋转蒸发器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_rotavap",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "rotate_state": "Stopped",  
+                "rotate_time": 0.0,  
+                "rotate_speed": 0.0,  
+                "pump_state": "Stopped",  
+                "pump_time": 0.0,  
+                "vacuum_level": 1013.25,  
+                "temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "success": "True"  
+            }  
+        },
+        {
+            "id": "MockSeparator1",
+            "name": "模拟分离器",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "virtual_separator",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "port": "MOCK"
+            },
+            "data": {
+                "status": "Idle",
+                "settling_time": 0.0,
+                "valve_state": "Closed",
+                "shake_time": 0.0,
+                "shake_status": "Not Shaking",
+                "current_device": "MockSeparator1",
+                "purpose": "",
+                "product_phase": "",
+                "from_vessel": "",
+                "separation_vessel": "",
+                "to_vessel": "",
+                "waste_phase_to_vessel": "",
+                "solvent": "",
+                "solvent_volume": 0.0,
+                "through": "",
+                "repeats": 1,
+                "stir_time": 0.0,
+                "stir_speed": 0.0,
+                "time_spent": 0.0,
+                "time_remaining": 0.0
+            }
+        },
+        {  
+            "id": "MockSolenoidValve1",  
+            "name": "模拟电磁阀",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_solenoid_valve",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "valve_status": "Closed"  
+            }  
+        },
+        {  
+            "id": "MockStirrer1NEW",  
+            "name": "模拟搅拌器(new)",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_stirrer",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",
+                "vessel": "",
+                "purpose": "",
+                "stir_speed": 0.0,  
+                "target_stir_speed": 0.0,  
+                "stir_state": "Stopped",
+                "stir_time": 0.0,
+                "settling_time": 0.0,
+                "progress": 0.0,
+                "max_stir_speed": 2000.0
+            }  
+        },
+        {  
+            "id": "MockStirrer1",  
+            "name": "模拟搅拌器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_stirrer",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",   
+                "stir_speed": 0.0,  
+                "target_stir_speed": 0.0,  
+                "stir_state": "Stopped",  
+                "temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "heating_state": "Off",  
+                "heating_power": 0.0,  
+                "max_stir_speed": 2000.0,  
+                "max_temperature": 300.0  
+            }  
+        },
+        {  
+            "id": "MockVacuum1",  
+            "name": "模拟真空泵",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_vacuum_pump",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "status": "Idle",  
+                "power_state": "Off",  
+                "pump_state": "Stopped",  
+                "vacuum_level": 1013.25,  
+                "target_vacuum": 50.0,  
+                "pump_speed": 0.0,  
+                "pump_efficiency": 95.0,  
+                "max_pump_speed": 100.0  
+            }  
+        }
+    ],
+    "links": []
+}

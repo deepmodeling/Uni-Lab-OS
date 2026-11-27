@@ -1,0 +1,5 @@
+int32 int_input
+---
+string return_info
+bool success
+---

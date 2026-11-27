@@ -1,0 +1,43 @@
+{
+    "nodes": [
+        {
+            "id": "MockSeparator1",
+            "name": "模拟分离器",
+            "children": [],
+            "parent": null,
+            "type": "device",
+            "class": "virtual_separator",
+            "position": {
+                "x": 620.6111111111111,
+                "y": 171,
+                "z": 0
+            },
+            "config": {
+                "port": "MOCK"
+            },
+            "data": {
+                "status": "Idle",
+                "settling_time": 0.0,
+                "valve_state": "Closed",
+                "shake_time": 0.0,
+                "shake_status": "Not Shaking",
+                "current_device": "MockSeparator1",
+                "purpose": "",
+                "product_phase": "",
+                "from_vessel": "",
+                "separation_vessel": "",
+                "to_vessel": "",
+                "waste_phase_to_vessel": "",
+                "solvent": "",
+                "solvent_volume": 0.0,
+                "through": "",
+                "repeats": 1,
+                "stir_time": 0.0,
+                "stir_speed": 0.0,
+                "time_spent": 0.0,
+                "time_remaining": 0.0
+            }
+        }
+    ],
+    "links": []
+}

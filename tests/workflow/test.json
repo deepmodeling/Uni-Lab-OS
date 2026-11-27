@@ -1,0 +1,213 @@
+{
+  "workflow": [
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines",
+        "targets": "Liquid_1",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines",
+        "targets": "Liquid_2",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines",
+        "targets": "Liquid_3",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_2",
+        "targets": "Liquid_4",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_2",
+        "targets": "Liquid_5",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_2",
+        "targets": "Liquid_6",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_3",
+        "targets": "dest_set",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_3",
+        "targets": "dest_set_2",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    },
+    {
+      "action": "transfer_liquid",
+      "action_args": {
+        "sources": "cell_lines_3",
+        "targets": "dest_set_3",
+        "asp_vol": 100.0,
+        "dis_vol": 74.75,
+        "asp_flow_rate": 94.0,
+        "dis_flow_rate": 95.5
+      }
+    }
+  ],
+  "reagent": {
+    "Liquid_1": {
+      "slot": 1,
+      "well": [
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "labware": "rep 1"
+    },
+    "Liquid_4": {
+      "slot": 1,
+      "well": [
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "labware": "rep 1"
+    },
+    "dest_set": {
+      "slot": 1,
+      "well": [
+        "A4",
+        "A7",
+        "A10"
+      ],
+      "labware": "rep 1"
+    },
+    "Liquid_2": {
+      "slot": 2,
+      "well": [
+        "A3",
+        "A5",
+        "A8"
+      ],
+      "labware": "rep 2"
+    },
+    "Liquid_5": {
+      "slot": 2,
+      "well": [
+        "A3",
+        "A5",
+        "A8"
+      ],
+      "labware": "rep 2"
+    },
+    "dest_set_2": {
+      "slot": 2,
+      "well": [
+        "A3",
+        "A5",
+        "A8"
+      ],
+      "labware": "rep 2"
+    },
+    "Liquid_3": {
+      "slot": 3,
+      "well": [
+        "A4",
+        "A6",
+        "A10"
+      ],
+      "labware": "rep 3"
+    },
+    "Liquid_6": {
+      "slot": 3,
+      "well": [
+        "A4",
+        "A6",
+        "A10"
+      ],
+      "labware": "rep 3"
+    },
+    "dest_set_3": {
+      "slot": 3,
+      "well": [
+        "A4",
+        "A6",
+        "A10"
+      ],
+      "labware": "rep 3"
+    },
+    "cell_lines": {
+      "slot": 4,
+      "well": [
+        "A1",
+        "A3",
+        "A5"
+      ],
+      "labware": "DRUG + YOYO-MEDIA"
+    },
+    "cell_lines_2": {
+      "slot": 4,
+      "well": [
+        "A1",
+        "A3",
+        "A5"
+      ],
+      "labware": "DRUG + YOYO-MEDIA"
+    },
+    "cell_lines_3": {
+      "slot": 4,
+      "well": [
+        "A1",
+        "A3",
+        "A5"
+      ],
+      "labware": "DRUG + YOYO-MEDIA"
+    }
+  }
+}

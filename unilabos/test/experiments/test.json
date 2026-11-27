@@ -1,0 +1,146 @@
+{
+    "nodes": [
+        {
+            "id": "Gripper1",
+            "name": "假夹爪",
+            "children": [
+                "Plate1"
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "gripper.mock",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "Plate1",
+            "name": "Plate1",
+            "children": [
+            ],
+            "parent": "Gripper1",
+            "type": "plate",
+            "class": "nest_96_wellplate_100ul_pcr_full_skirt",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 69
+            },
+            "config": {
+            },
+            "data": {
+            }
+        },
+        {
+            "id": "ot_joint_publisher",
+            "name": "ot_joint_publisher",
+            "sample_id": null,
+            "children": [
+                
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "lh_joint_publisher",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "lh_id":"deck",
+                "joint_config":
+                {
+                    "joint_names":[
+                        "first_joint",
+                        "second_joint",
+                        "third_joint",
+                        "fourth_joint"
+                    ],
+                    "y":{
+                        "first_joint":{
+                        "factor":-1,
+                        "offset":0.0
+                        }
+                    },
+                    "x":{
+                        "second_joint":{
+                        "factor":-1,
+                        "offset":0.0
+                        }
+                    },
+                    "z":{
+                        "third_joint":{
+                        "factor":1,
+                        "offset":0.0
+                        },
+                        "fourth_joint":{
+                        "factor":1,
+                        "offset":0.0
+                        }
+                    }
+                }
+            },
+            "data": {}
+        },
+        {
+            "id": "ot_joint_publisher",
+            "name": "ot_joint_publisher",
+            "sample_id": null,
+            "children": [
+                
+            ],
+            "parent": null,
+            "type": "device",
+            "class": "lh_joint_publisher",
+            "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+            },
+            "config": {
+                "lh_id":"deck",
+                "joint_config":
+                {
+                    "joint_names":[
+                        "first_joint",
+                        "second_joint",
+                        "third_joint",
+                        "fourth_joint"
+                    ],
+                    "y":{
+                        "first_joint":{
+                        "factor":-1,
+                        "offset":0.0
+                        }
+                    },
+                    "x":{
+                        "second_joint":{
+                        "factor":-1,
+                        "offset":0.0
+                        }
+                    },
+                    "z":{
+                        "third_joint":{
+                        "factor":1,
+                        "offset":0.0
+                        },
+                        "fourth_joint":{
+                        "factor":1,
+                        "offset":0.0
+                        }
+                    }
+                }
+            },
+            "data": {}
+        }
+    ],
+    "links": [
+        
+    ]
+}

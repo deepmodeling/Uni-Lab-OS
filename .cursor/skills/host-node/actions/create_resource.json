@@ -1,0 +1,93 @@
+{
+  "type": "ResourceCreateFromOuterEasy",
+  "goal": {
+    "res_id": "res_id",
+    "class_name": "class_name",
+    "parent": "parent",
+    "device_id": "device_id",
+    "bind_locations": "bind_locations",
+    "liquid_input_slot": "liquid_input_slot[]",
+    "liquid_type": "liquid_type[]",
+    "liquid_volume": "liquid_volume[]",
+    "slot_on_deck": "slot_on_deck"
+  },
+  "schema": {
+    "type": "object",
+    "properties": {
+      "res_id": {
+        "type": "string"
+      },
+      "device_id": {
+        "type": "string"
+      },
+      "class_name": {
+        "type": "string"
+      },
+      "parent": {
+        "type": "string"
+      },
+      "bind_locations": {
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": -1.7976931348623157e+308,
+            "maximum": 1.7976931348623157e+308
+          },
+          "y": {
+            "type": "number",
+            "minimum": -1.7976931348623157e+308,
+            "maximum": 1.7976931348623157e+308
+          },
+          "z": {
+            "type": "number",
+            "minimum": -1.7976931348623157e+308,
+            "maximum": 1.7976931348623157e+308
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ],
+        "title": "bind_locations",
+        "additionalProperties": false
+      },
+      "liquid_input_slot": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      },
+      "liquid_type": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "liquid_volume": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "slot_on_deck": {
+        "type": "string"
+      }
+    },
+    "required": [],
+    "_unilabos_placeholder_info": {
+      "res_id": "unilabos_resources",
+      "device_id": "unilabos_devices",
+      "parent": "unilabos_nodes",
+      "class_name": "unilabos_class"
+    }
+  },
+  "goal_default": {},
+  "placeholder_keys": {
+    "res_id": "unilabos_resources",
+    "device_id": "unilabos_devices",
+    "parent": "unilabos_nodes",
+    "class_name": "unilabos_class"
+  }
+}

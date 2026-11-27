@@ -1,0 +1,30 @@
+{  
+    "nodes": [  
+        {  
+            "id": "MockChiller1",  
+            "name": "模拟冷却器",  
+            "children": [],  
+            "parent": null,  
+            "type": "device",  
+            "class": "virtual_heatchill",
+            "position": {  
+                "x": 620.6111111111111,  
+                "y": 171,  
+                "z": 0  
+            },  
+            "config": {  
+                "port": "MOCK"  
+            },  
+            "data": {  
+                "current_temperature": 25.0,  
+                "target_temperature": 25.0,  
+                "status": "Idle",  
+                "is_cooling": false,  
+                "is_heating": false,
+                "vessel": "",
+                "purpose": ""
+            }  
+        }  
+    ],  
+    "links": []  
+}

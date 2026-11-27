@@ -1,0 +1,8 @@
+[project]
+name = "example-lab"
+version = "0.1.0"
+
+[tool.unilabos.startup]
+graph = "devices.json"
+config = "deployment/local_config.py"
+ensure_dependencies = false

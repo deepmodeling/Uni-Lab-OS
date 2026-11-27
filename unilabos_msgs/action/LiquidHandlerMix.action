@@ -1,0 +1,12 @@
+Resource[] targets
+int32 mix_time
+int32 mix_vol
+float64 height_to_bottom
+geometry_msgs/Point[] offsets
+float64 mix_rate
+string[] none_keys
+---
+string return_info
+bool success
+---
+# 反馈

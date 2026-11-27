@@ -1,0 +1,39 @@
+dummy2_robot:
+  # Physical properties for each link
+  link_masses:
+    base_link: 5.0
+    link_1: 3.0
+    link_2: 2.5
+    link_3: 2.0
+    link_4: 1.5
+    link_5: 1.0
+    link_6: 0.5
+  
+  # Center of mass for each link (relative to joint frame)
+  link_com:
+    base_link: [0.0, 0.0, 0.05]
+    link_1: [0.0, 0.0, 0.05]
+    link_2: [0.1, 0.0, 0.0]
+    link_3: [0.08, 0.0, 0.0]
+    link_4: [0.0, 0.0, 0.05]
+    link_5: [0.0, 0.0, 0.03]
+    link_6: [0.0, 0.0, 0.02]
+  
+  # Moment of inertia matrices
+  link_inertias:
+    base_link: [0.02, 0.0, 0.0, 0.02, 0.0, 0.02]
+    link_1: [0.01, 0.0, 0.0, 0.01, 0.0, 0.01]
+    link_2: [0.008, 0.0, 0.0, 0.008, 0.0, 0.008]
+    link_3: [0.006, 0.0, 0.0, 0.006, 0.0, 0.006]
+    link_4: [0.004, 0.0, 0.0, 0.004, 0.0, 0.004]
+    link_5: [0.002, 0.0, 0.0, 0.002, 0.0, 0.002]
+    link_6: [0.001, 0.0, 0.0, 0.001, 0.0, 0.001]
+  
+  # Motor specifications
+  motor_specs:
+    joint_1: { max_torque: 150.0, max_speed: 2.0, gear_ratio: 100 }
+    joint_2: { max_torque: 150.0, max_speed: 2.0, gear_ratio: 100 }
+    joint_3: { max_torque: 150.0, max_speed: 2.0, gear_ratio: 100 }
+    joint_4: { max_torque: 50.0, max_speed: 2.0, gear_ratio: 50 }
+    joint_5: { max_torque: 50.0, max_speed: 2.0, gear_ratio: 50 }
+    joint_6: { max_torque: 25.0, max_speed: 2.0, gear_ratio: 25 }

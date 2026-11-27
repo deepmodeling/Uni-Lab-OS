@@ -1,0 +1,99 @@
+# Physical parameters
+
+dh_parameters:
+  d1: 0.1530
+  a2: -0.2700
+  a3: -0.2575
+  d4: 0.1445
+  d5: 0.0965
+  d6: 0.0920
+
+inertia_parameters:
+  base_mass: 0.358193760044688  # base mass, base inertia, base cog might be incorrect
+  shoulder_mass: 3.095
+  upperarm_mass: 5.073
+  forearm_mass: 2.425
+  wrist_1_mass: 1.559
+  wrist_2_mass: 1.447
+  wrist_3_mass: 0.500
+
+  inertia:
+    base:
+      ixx: 0.000549739542527148
+      ixy: 8.03741216179988E-08
+      ixz: -9.14780809458034E-06
+      iyy: 0.000533024165382036
+      iyz: 3.46908903534662E-07
+      izz: 0.000655188839052244
+    shoulder:
+      ixx: 0.007958
+      ixy: 5.734E-06
+      ixz: 3.024E-06
+      iyy: 0.00484
+      iyz: -1.77E-05
+      izz: 0.006686
+    upperarm:
+      ixx: 0.074168
+      ixy: -7.5E-06
+      ixz: -0.065579
+      iyy: 0.21937
+      iyz: -2.19E-05
+      izz: 0.15104
+    forearm:
+      ixx: 0.005082
+      ixy: -2.7E-06
+      ixz: -0.0056236
+      iyy: 0.0924207
+      iyz: -1.726E-06
+      izz: 0.0897559
+    wrist_1:
+      ixx: 0.0045009
+      ixy: 1.96E-06
+      ixz: -2.646E-06
+      iyy: 0.0042164
+      iyz: -3.58E-07
+      izz: 0.0014538
+    wrist_2:
+      ixx: 0.0023787
+      ixy: 1.953E-06
+      ixz: 2.643E-06
+      iyy: 0.0020859
+      iyz: 5.584E-06
+      izz: 0.0013191
+    wrist_3:
+      ixx: 0.001431
+      ixy: -2.32E-07
+      ixz: 7.955E-06
+      iyy: 0.0014299
+      iyz: 1.266E-06
+      izz: 0.0003265
+
+  center_of_mass:
+    base_cog:
+      x: -0.000721181367009438
+      y: 1.78114684963572E-05
+      z: 0.0546249293265112
+    shoulder_cog:
+      x: 3.7E-05
+      y: -0.0149
+      z: -0.0105
+    upperarm_cog:
+      x: -0.11596
+      y: -2.6E-05
+      z: 0.1148
+    forearm_cog:
+      x: -0.1542
+      y: 1.4E-05
+      z: 0.0238
+    wrist_1_cog:
+      x: 1.3E-05
+      y: -0.00479
+      z: -0.02274
+    wrist_2_cog:
+      x: -1.4E-05
+      y: 0.0051
+      z: -0.0127
+    wrist_3_cog:
+      x: -0.000684
+      y: -0.000175
+      z: -0.0423

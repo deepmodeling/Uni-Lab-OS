@@ -1,0 +1,13 @@
+# Bio
+# 请求字段
+Resource source
+Resource target
+float64 volume
+float64 aspiration_flow_rate
+float64 dispense_flow_rate
+---
+# 结果字段
+string return_info
+bool success
+---
+# 反馈字段 

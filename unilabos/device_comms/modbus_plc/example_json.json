@@ -1,0 +1,104 @@
+{
+    "register_node_list_from_csv_path": {
+        "path": "M01.csv"
+    },
+    "create_flow": [
+        {
+            "name": "归位",
+            "action": [
+                {
+                    "address_function_to_create": [
+                        {
+                            "func_name": "pos_tip",
+                            "node_name": "M01_idlepos_coil_w",
+                            "mode": "write",
+                            "value": true
+                        },
+                        {
+                            "func_name": "pos_tip_read",
+                            "node_name": "M01_idlepos_coil_r",
+                            "mode": "read",
+                            "value": 1
+                        },
+                        {
+                            "func_name": "manual_stop",
+                            "node_name": "M01_manual_stop_coil_r",
+                            "mode": "read",
+                            "value": 1
+                        }
+                    ],
+                    "create_init_function": {
+                        "func_name": "idel_init",
+                        "node_name": "M01_idlepos_velocity_rw",
+                        "mode": "write",
+                        "value": 20.0
+                    },  
+                    "create_start_function": {
+                        "func_name": "idel_position",
+                        "write_functions": ["pos_tip"],
+                        "condition_functions": ["pos_tip_read", "manual_stop"],
+                        "stop_condition_expression": "pos_tip_read[0] and manual_stop[0]"
+                    },
+                    "create_stop_function": {
+                        "func_name": "idel_stop",
+                        "node_name": "M01_idlepos_coil_w",
+                        "mode": "write",
+                        "value": false
+                    },
+                    "create_cleanup_function": null
+                }
+            ]
+        },
+        {
+            "name": "测试待机位置",
+            "action": [
+                {
+                    "address_function_to_create": [
+                        {
+                            "func_name": "pipetter_position",
+                            "node_name": "M01_pipette0_coil_w",
+                            "mode": "write",
+                            "value": true
+                        },
+                        {
+                            "func_name": "pipetter_position_read",
+                            "node_name": "M01_pipette0_coil_r",
+                            "mode": "read",
+                            "value": 1
+                        },
+                        {
+                            "func_name": "pipetter_stop_read",
+                            "node_name": "M01_manual_stop_coil_r",
+                            "mode": "read",
+                            "value": 1
+                        }
+                    ],
+                    "create_init_function": null,
+                    "create_start_function": {
+                        "func_name": "pipetter_start",
+                        "write_functions": ["pipetter_position"],
+                        "condition_functions": ["pipetter_position_read", "pipetter_stop_read"],
+                        "stop_condition_expression": "pipetter_position_read[0] and pipetter_stop_read[0]"
+                    },
+                    "create_stop_function": {
+                        "func_name": "pipetter_stop",
+                        "node_name": "M01_pipette0_coil_w",
+                        "mode": "write",
+                        "value": false
+                    },
+                    "create_cleanup_function": null
+                }
+            ]
+        },
+        {
+            "name": "归位并测试待机位置",
+            "action": [
+                "归位",
+                "测试待机位置"
+            ]
+        }
+    ],
+    "execute_flow": [
+        "归位并测试待机位置"
+    ]
+}

@@ -184,7 +184,7 @@ DEMOS: tuple[DemoSpec, ...] = (
     DemoSpec(
         repo="LabDeviceComplexWorkflowDemo",
         url="https://github.com/Xuwznln/LabDeviceComplexWorkflowDemo",
-        ref="d25221c1e11104581dc323bd677bed99ca855c9f",
+        ref="c84ca2a5628d873e40d937527c4ba96484b44db8",
         package="complex_workflow_demo",
         host_graph="graph/complex_workflow_demo.json",
         # 循环容器：循环体节点每轮一个 attempt（trigger=loop_iteration），循环节点自身 1 个 attempt；

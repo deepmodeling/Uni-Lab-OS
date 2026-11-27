@@ -1,5 +1,5 @@
-from typing import List, Any, Dict
 import xml.etree.ElementTree as ET
+from typing import Any, Dict, List
 
 
 def convert_to_type(val: str) -> Any:

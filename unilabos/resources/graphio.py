@@ -3,22 +3,25 @@ import inspect
 import json
 import os.path
 import traceback
-from typing import Union, Any, Dict, List, Tuple
 import uuid
+from typing import Any, Dict, List, Tuple, Union
+
 import networkx as nx
 from pylabrobot.resources import ResourceHolder
-from unilabos_msgs.msg import Resource
 
 from unilabos.config.config import BasicConfig
 from unilabos.resources.container import RegularContainer
-from unilabos.resources.itemized_carrier import ItemizedCarrier, BottleCarrier
-from unilabos.ros.msgs.message_converter import convert_to_ros_msg
+from unilabos.resources.itemized_carrier import BottleCarrier, ItemizedCarrier
 from unilabos.resources.resource_tracker import (
+    RESOURCE_ROOT_FIELDS,
+    TRACKER_STATE_KEYS,
     ResourceDictInstance,
     ResourceTreeSet,
 )
+from unilabos.ros.msgs.message_converter import convert_to_ros_msg
 from unilabos.utils import logger
 from unilabos.utils.banner_print import print_status
+from unilabos_msgs.msg import Resource
 
 try:
     from pylabrobot.resources.resource import Resource as ResourcePLR
@@ -76,7 +79,8 @@ def canonicalize_nodes_data(
             if sample_id:
                 logger.error(f"{node}的sample_id参数已弃用，sample_id: {sample_id}")
         for k in list(node.keys()):
-            if k not in ["id", "uuid", "name", "description", "schema", "model", "icon", "parent_uuid", "parent", "type", "class", "position", "config", "data", "children", "pose", "extra", "machine_name"]:
+            # 根键白名单从 ResourceDict 派生（新增根字段自动生效），position/children 是老形态输入键
+            if k not in RESOURCE_ROOT_FIELDS and k not in ("position", "children"):
                 v = node.pop(k)
                 node["config"][k] = v
     if outer_host_node_id is not None:
@@ -364,8 +368,8 @@ def read_graphml(graphml_file: str) -> tuple[nx.Graph, ResourceTreeSet, List[Dic
     nodes = data.get("nodes", [])
     resource_tree_set = canonicalize_nodes_data(nodes, parent_relation=parent_relation)
 
-    # 标准化边数据
-    links = data.get("links", [])
+    # 标准化边数据（networkx>=3 的 node_link_data 默认输出 "edges" 键）
+    links = data.get("edges", data.get("links", []))
     standardized_links = canonicalize_links_ports(links, resource_tree_set)
 
     # 构建 NetworkX 图（需要转换回 dict 格式）
@@ -378,7 +382,7 @@ def read_graphml(graphml_file: str) -> tuple[nx.Graph, ResourceTreeSet, List[Dic
     with open(dump_json_path, "w", encoding="utf-8") as f:
         f.write(json.dumps(graph_data, indent=4, ensure_ascii=False))
         print_status(f"GraphML converted to JSON and saved to {dump_json_path}", "info")
-    physical_setup_graph = nx.node_link_graph(graph_data, link="links", multigraph=False)
+    physical_setup_graph = nx.node_link_graph(graph_data, edges="links", multigraph=False)
     handle_communications(physical_setup_graph)
 
     # Stamp machine_name on device trees only (resources are cloud-managed)
@@ -581,28 +585,45 @@ def resource_ulab_to_plr(resource: dict, plr_model=False) -> "ResourcePLR":
     if ResourcePLR is None:
         raise ImportError("pylabrobot not found")
 
-    all_states = {resource["id"]: resource["data"]}
+    def state_of(resource: dict) -> dict:
+        # 兼容两种输入形态：老形态 data 完整；新协议形态液体状态在根字段（liquids 等），组装回 data
+        data = dict(resource.get("data") or {})
+        for state_key in TRACKER_STATE_KEYS:
+            if resource.get(state_key) is not None:
+                data[state_key] = resource[state_key]
+        return data
+
+    all_states = {resource["id"]: state_of(resource)}
 
     def resource_ulab_to_plr_inner(resource: dict):
-        all_states[resource["name"]] = resource["data"]
+        all_states[resource["name"]] = state_of(resource)
         extra = resource.pop("extra", {})
+        # 兼容双形态：新协议把 barcode/barcode_symbology 提升到根字段，这里回装回
+        # config（与 ResourceTreeSet.to_plr_resources 的回装方向对称，避免条码丢失）。
+        config = dict(resource.get("config") or {})
+        if resource.get("barcode") and not config.get("barcode"):
+            config["barcode"] = {
+                "data": resource["barcode"],
+                "symbology": resource.get("barcode_symbology") or "",
+                "position_on_resource": "front",
+            }
         d = {
             "name": resource["name"],
             "type": resource["type"],
-            "size_x": resource["config"].get("size_x", 0),
-            "size_y": resource["config"].get("size_y", 0),
-            "size_z": resource["config"].get("size_z", 0),
+            "size_x": config.get("size_x", 0),
+            "size_y": config.get("size_y", 0),
+            "size_z": config.get("size_z", 0),
             "location": {**resource["position"], "type": "Coordinate"},
             "rotation": {"x": 0, "y": 0, "z": 0, "type": "Rotation"},  # Resource如果没有rotation，是plr版本太低
             "category": resource["type"],
-            "model": resource["config"].get("model", None),  # resource中deck没有model
+            "model": config.get("model", None),  # resource中deck没有model
             "children": (
                 [resource_ulab_to_plr_inner(child) for child in resource["children"]]
                 if isinstance(resource["children"], list)
                 else [resource_ulab_to_plr_inner(child) for child_id, child in resource["children"].items()]
             ),
             "parent_name": resource["parent"] if resource["parent"] is not None else None,
-            **resource["config"],
+            **config,
         }
         if not plr_model:
             d.pop("model")
@@ -685,18 +706,23 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
     """
     plr_materials = []
 
-    # 创建反向映射: {显示名称: (model, UUID)} -> 用于从 Bioyond typeName 查找 model
-    # 如果 type_mapping 的 key 已经是显示名称,则直接使用;否则创建反向映射
+    # 统一为 {显示名称: (model, UUID)}，同时兼容历史的正向和反向配置。
+    from unilabos.registry.registry import lab_registry
+
+    known_models = set(lab_registry.resource_type_registry)
     reverse_type_mapping = {}
     for key, value in type_mapping.items():
-        # value 可能是 tuple 或 list: (显示名称, UUID) 或 [显示名称, UUID]
-        display_name = value[0] if isinstance(value, (tuple, list)) and len(value) >= 1 else None
-        if display_name:
-            # 反向映射: {显示名称: (原始key作为model, UUID)}
-            resource_uuid = value[1] if len(value) >= 2 else ""
-            # 如果已存在该显示名称,跳过(保留第一个遇到的映射)
-            if display_name not in reverse_type_mapping:
-                reverse_type_mapping[display_name] = (key, resource_uuid)
+        if not isinstance(value, (tuple, list)) or not value:
+            continue
+        first_value = value[0]
+        if not isinstance(first_value, str) or not first_value:
+            continue
+        resource_uuid = value[1] if len(value) >= 2 else ""
+        if key in known_models and first_value not in known_models:
+            display_name, model = first_value, key
+        else:
+            display_name, model = key, first_value
+        reverse_type_mapping.setdefault(display_name, (model, resource_uuid))
 
     logger.debug(f"[反向映射表] 共 {len(reverse_type_mapping)} 个条目: {list(reverse_type_mapping.keys())}")
 
@@ -707,7 +733,7 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
     for material in bioyond_materials:
         # 从反向映射中查找: typeName(显示名称) -> (model, UUID)
         type_info = reverse_type_mapping.get(material.get("typeName"))
-        className = type_info[0] if type_info else "RegularContainer"
+        className = type_info[0] if type_info else "container"
 
         # 为同名物料添加唯一后缀
         base_name = material["name"]
@@ -852,13 +878,14 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                         continue
 
                 # 特殊处理: Bioyond的"站内Tip盒堆栈"也需要进行拆分映射
+                tip_stack_left = False
                 if wh_name == "站内Tip盒堆栈":
                     y_val = loc.get("y", 1)
                     if y_val == 1:
                         wh_name = "站内Tip盒堆栈(右)"
                     elif y_val in [2, 3]:
                         wh_name = "站内Tip盒堆栈(左)"
-                        y = y - 1  # 调整列号，因为左侧仓库对应的 Bioyond y=2 实际上是它的第1列
+                        tip_stack_left = True  # 左侧仓库 Bioyond y=2 对应第1列，赋值后减 1
 
                 if hasattr(deck, "warehouses") and wh_name in deck.warehouses:
                     warehouse = deck.warehouses[wh_name]
@@ -872,6 +899,8 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
                     # 如果是右侧堆栈，需要调整列号 (5→1, 6→2, 7→3, 8→4)
                     if wh_name == "堆栈1右":
                         y = y - 4  # 将5-8映射到1-4
+                    elif tip_stack_left:
+                        y = y - 1
 
                     # 特殊处理竖向warehouse（站内试剂存放堆栈、测量小瓶仓库）
                     # 这些warehouse使用 vertical-col-major 布局
@@ -926,17 +955,14 @@ def resource_bioyond_to_plr(bioyond_materials: list[dict], type_mapping: Dict[st
 
 
 def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict = {}, warehouse_mapping: dict = {}, material_params: dict = {}) -> list[dict]:
-    """
-    将 PyLabRobot 资源转换为 Bioyond 格式
+    """将 PyLabRobot 资源转换为 Bioyond 物料格式。
 
-    Args:
-        plr_resources: PyLabRobot 资源列表
-        type_mapping: 物料类型映射字典
-        warehouse_mapping: 仓库映射字典
-        material_params: 物料默认参数字典 (格式: {物料名称: {参数字典}})
-
-    Returns:
-        Bioyond 格式的物料列表
+    参数：``plr_resources`` 是 PyLabRobot 资源列表；``type_mapping`` 是物料类型
+    映射；``warehouse_mapping`` 是库位（Site）所属仓库映射；
+    ``material_params`` 是按物料名索引的默认参数字典。
+    返回：保持输入资源语义的 Bioyond 物料字典列表。
+    异常：多位载架缺少 ``type_mapping`` 或库位/资源转换数据无效时抛出
+    ``ValueError``；其他第三方资源访问错误按原异常传播。
     """
     bioyond_materials = []
 
@@ -999,7 +1025,7 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
                             if not site or (site.get("x") == 0 and site.get("y") == 0):
                                 # 找到bottle在children中的索引位置
                                 try:
-                                    # 遍历所有槽位找到bottle的实际位置
+                                    # 遍历所有库位找到 bottle 的实际位置。
                                     for idx in range(resource.num_items_x * resource.num_items_y):
                                         if resource[idx] is bottle:
                                             # 根据载架布局计算行列坐标
@@ -1205,16 +1231,14 @@ def resource_plr_to_bioyond(plr_resources: list[ResourcePLR], type_mapping: dict
 
 
 def initialize_resource(resource_config: dict, resource_type: Any = None) -> Union[list[dict], ResourcePLR]:
-    """Initializes a resource based on its configuration.
+    """根据物理图配置解析并初始化一个选中的资源定义。
 
-    If the config is detailed, then do nothing;
-    If it is a string, then import the appropriate class and create an instance of it.
-
-    Args:
-        resource_config (dict): The configuration dictionary for the resource, which includes the class type and other parameters.
-
-    Returns:
-        None
+    参数：``resource_config`` 是包含资源定义身份、实例名和初始化参数的物理图
+    节点；``resource_type`` 指定调用者是否要求保留原始 ``ResourcePLR`` 对象。
+    返回：初始化后的资源字典列表，或调用者明确要求的 ``ResourcePLR`` 对象；
+    无定义身份及遗留未知非软件包身份继续返回原配置列表。
+    异常：软件包规范身份缺失、短身份歧义、快照与实时注册表代际不一致，或作者
+    资源工厂导入/初始化失败时关闭式传播异常。已知软件包定义不再静默降级。
     """
     from unilabos.registry.registry import lab_registry
 
@@ -1222,16 +1246,30 @@ def initialize_resource(resource_config: dict, resource_type: Any = None) -> Uni
     if resource_class_config is None:
         return [resource_config]
     elif type(resource_class_config) == str:
-        # Allow special resource class names to be used
-        if resource_class_config not in lab_registry.resource_type_registry:
-            logger.warning(f"❌ 类 {resource_class_config} 不在 registry 中，返回原始配置")
-            logger.debug(f"   可用的类: {list(lab_registry.resource_type_registry.keys())[:10]}...")
+        if not resource_class_config:
             return [resource_config]
-        # If the resource class is a string, look up the class in the
-        # resource_type_registry and import it
-        resource_class_config = resource_config["class"] = lab_registry.resource_type_registry[resource_class_config][
-            "class"
-        ]
+        # ``resource_definition_identity`` 是物理图选择的规范 FQID 或兼容短身份。
+        resource_definition_identity = resource_class_config
+        try:
+            registry_entry = lab_registry.resolve_definition(
+                "resource",
+                resource_definition_identity,
+            )
+        except ValueError as error:
+            # 社区规范身份与歧义短名属于已知软件包语义，必须关闭式失败；普通遗留
+            # 图中的未知类仍保留原始配置，避免本轮最小接缝扩大兼容范围。
+            if resource_definition_identity.startswith("community.") or "歧义" in str(error):
+                raise
+            logger.warning(
+                f"❌ 类 {resource_definition_identity} 不在 registry 中，返回原始配置"
+            )
+            return [resource_config]
+        except KeyError:
+            logger.warning(
+                f"❌ 类 {resource_definition_identity} 不在 registry 中，返回原始配置"
+            )
+            return [resource_config]
+        resource_class_config = resource_config["class"] = registry_entry["class"]
     if type(resource_class_config) == dict:
         module = importlib.import_module(resource_class_config["module"].split(":")[0])
         mclass = resource_class_config["module"].split(":")[1]

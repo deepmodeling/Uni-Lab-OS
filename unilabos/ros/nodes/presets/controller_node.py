@@ -1,4 +1,5 @@
 from typing import Callable, Dict
+
 from std_msgs.msg import Float64
 
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker

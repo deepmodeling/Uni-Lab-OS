@@ -1,4 +1,5 @@
 import traceback
+
 from unilabos.utils.log import logger
 
 resource_schema = {

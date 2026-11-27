@@ -15,14 +15,14 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from jinja2 import Environment, FileSystemLoader
 
-from unilabos.config.config import BasicConfig
-from unilabos.registry.registry import lab_registry
-from unilabos.ros.msgs.message_converter import msg_converter_manager
-from unilabos.utils.log import error, debug
-from unilabos.utils.type_check import TypeEncoder
 from unilabos.app.web.utils.device_utils import get_registry_info
 from unilabos.app.web.utils.host_utils import get_host_node_info
 from unilabos.app.web.utils.ros_utils import get_ros_node_info, update_ros_node_info
+from unilabos.config.config import BasicConfig
+from unilabos.registry.registry import lab_registry
+from unilabos.ros.msgs.message_converter import msg_converter_manager
+from unilabos.utils.log import debug, error
+from unilabos.utils.type_check import TypeEncoder
 
 # 设置Jinja2模板环境
 template_dir = Path(__file__).parent / "templates"
@@ -118,7 +118,7 @@ def setup_web_pages(router: APIRouter) -> None:
                 devices=devices,
                 resources=resources,
                 modules=modules,
-                is_host_mode=BasicConfig.is_host_mode,
+                has_local_devices=(BasicConfig.process_role == "edge_runtime"),
                 registry_info=registry_info,
                 ros_node_info=ros_node_info,
                 host_node_info=host_node_info,

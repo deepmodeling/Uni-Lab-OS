@@ -1,0 +1,160 @@
+{
+  "legacy": {
+    "payload": {
+      "protocol_version": "1.0",
+      "adapter_version": "1.0",
+      "global_task_uuid": "10000000-0000-4000-8000-000000000005",
+      "global_workflow_revision_uuid": "10000000-0000-4000-8000-000000000001",
+      "station_invocation_uuid": "10000000-0000-4000-8000-000000000006",
+      "station_uuid": "10000000-0000-4000-8000-000000000002",
+      "contract_uuid": "10000000-0000-4000-8000-000000000007",
+      "workflow_uuid": "10000000-0000-4000-8000-000000000008",
+      "invocation_key": "10000000-0000-4000-8000-000000000001:10000000-0000-4000-8000-000000000009",
+      "publication_version": 1,
+      "revision_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contract_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "projection_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "input": {
+        "source_site": "L1A4"
+      },
+      "handoff_uuids": [],
+      "material_refs": [],
+      "container_refs": [],
+      "artifact_refs": []
+    },
+    "payload_digest": "sha256:a8d2efd011b7a3a443cd94601bf4c38c1c3106aed12530227338107b2a1cf567"
+  },
+  "unseen": {
+    "payload": {
+      "protocol_version": "1.0",
+      "adapter_version": "1.0",
+      "global_task_uuid": "10000000-0000-4000-8000-000000000005",
+      "global_workflow_revision_uuid": "10000000-0000-4000-8000-000000000001",
+      "station_invocation_uuid": "10000000-0000-4000-8000-000000000006",
+      "station_uuid": "10000000-0000-4000-8000-000000000002",
+      "contract_uuid": "10000000-0000-4000-8000-000000000007",
+      "workflow_uuid": "10000000-0000-4000-8000-000000000008",
+      "invocation_key": "10000000-0000-4000-8000-000000000001:10000000-0000-4000-8000-000000000009",
+      "publication_version": 1,
+      "revision_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contract_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "projection_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "input": {
+        "source_site": "L1A4"
+      },
+      "handoff_uuids": [],
+      "material_refs": [],
+      "container_refs": [],
+      "artifact_refs": [],
+      "material_source_bindings": [
+        {
+          "node_uuid": "10000000-0000-4000-8000-000000000010",
+          "selector_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "material_uuid": "10000000-0000-4000-8000-000000000003",
+          "resource_template_uuid": "10000000-0000-4000-8000-000000000004",
+          "local_revision": 3,
+          "inventory_snapshot": {
+            "adapter": "unilab.inventory.v1",
+            "carrier_material_uuid": "10000000-0000-4000-8000-000000000003",
+            "materials": [
+              {
+                "local_material_uuid": "10000000-0000-4000-8000-000000000003",
+                "local_revision": 3,
+                "resource_template_uuid": "10000000-0000-4000-8000-000000000004",
+                "parent_material_uuid": null,
+                "barcode": "复用样品-001",
+                "sites": [],
+                "content": null,
+                "capacity": {
+                  "max_volume_ul": 1000
+                }
+              }
+            ]
+          },
+          "lineage": {
+            "kind": "unseen"
+          }
+        }
+      ]
+    },
+    "payload_digest": "sha256:87004d3bf98ca30a205c5ba07cf3f529cf5a3bbac2c5b2d5ea96a5425dfd59a6"
+  },
+  "retained": {
+    "payload": {
+      "protocol_version": "1.0",
+      "adapter_version": "1.0",
+      "global_task_uuid": "10000000-0000-4000-8000-000000000005",
+      "global_workflow_revision_uuid": "10000000-0000-4000-8000-000000000001",
+      "station_invocation_uuid": "10000000-0000-4000-8000-000000000006",
+      "station_uuid": "10000000-0000-4000-8000-000000000002",
+      "contract_uuid": "10000000-0000-4000-8000-000000000007",
+      "workflow_uuid": "10000000-0000-4000-8000-000000000008",
+      "invocation_key": "10000000-0000-4000-8000-000000000001:10000000-0000-4000-8000-000000000009",
+      "publication_version": 1,
+      "revision_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contract_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "projection_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "input": {
+        "source_site": "L1A4"
+      },
+      "handoff_uuids": [],
+      "material_refs": [
+        {
+          "station_uuid": "10000000-0000-4000-8000-000000000002",
+          "local_material_uuid": "10000000-0000-4000-8000-000000000003",
+          "local_revision": 3,
+          "material_lineage_uuid": "10000000-0000-4000-8000-000000000011",
+          "handoff_item_uuid": null
+        }
+      ],
+      "container_refs": [
+        {
+          "container_uuid": "10000000-0000-4000-8000-000000000012",
+          "state_version": 5
+        }
+      ],
+      "artifact_refs": [],
+      "material_source_bindings": [
+        {
+          "node_uuid": "10000000-0000-4000-8000-000000000010",
+          "selector_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "material_uuid": "10000000-0000-4000-8000-000000000003",
+          "resource_template_uuid": "10000000-0000-4000-8000-000000000004",
+          "local_revision": 3,
+          "inventory_snapshot": {
+            "adapter": "unilab.inventory.v1",
+            "carrier_material_uuid": "10000000-0000-4000-8000-000000000003",
+            "materials": [
+              {
+                "local_material_uuid": "10000000-0000-4000-8000-000000000003",
+                "local_revision": 3,
+                "resource_template_uuid": "10000000-0000-4000-8000-000000000004",
+                "parent_material_uuid": null,
+                "barcode": "复用样品-001",
+                "sites": [],
+                "content": null,
+                "capacity": {
+                  "max_volume_ul": 1000
+                }
+              }
+            ]
+          },
+          "lineage": {
+            "kind": "retained",
+            "container_uuid": "10000000-0000-4000-8000-000000000012",
+            "container_state_version": 5,
+            "material_refs": [
+              {
+                "station_uuid": "10000000-0000-4000-8000-000000000002",
+                "local_material_uuid": "10000000-0000-4000-8000-000000000003",
+                "local_revision": 3,
+                "material_lineage_uuid": "10000000-0000-4000-8000-000000000011"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "payload_digest": "sha256:c7940c04111c36a0ebc2ed74109f6d7845b0b20f2fca06f95235f06c34deeabe"
+  }
+}

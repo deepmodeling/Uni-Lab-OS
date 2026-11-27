@@ -109,10 +109,10 @@ from unilabos.registry.decorators import device
 
 # 单设备
 @device(
-    id="my_device.vendor",           # 注册表唯一标识（必填）
+    id="my_device_vendor",           # 注册表唯一标识（必填，只能包含英文、数字、下划线）
     category=["temperature"],         # 分类标签列表（必填）
     description="设备描述",            # 设备描述
-    display_name="显示名称",           # UI 显示名称（默认用 id）
+    displayname="显示名称",            # UI 显示名称（默认用 id）
     icon="DeviceIcon.webp",           # 图标文件名
     version="1.0.0",                  # 版本号
     device_type="python",             # "python" 或 "ros2"
@@ -123,14 +123,19 @@ from unilabos.registry.decorators import device
 
 # 多设备（同一个类注册多个设备 ID，各自有不同的 handles 等配置）
 @device(
-    ids=["pump.vendor.model_A", "pump.vendor.model_B"],
+    ids=["pump_vendor_model_A", "pump_vendor_model_B"],
     id_meta={
-        "pump.vendor.model_A": {"handles": [...], "description": "型号 A"},
-        "pump.vendor.model_B": {"handles": [...], "description": "型号 B"},
+        "pump_vendor_model_A": {"handles": [...], "description": "型号 A", "displayname": "泵型号 A"},
+        "pump_vendor_model_B": {"handles": [...], "description": "型号 B", "displayname": "泵型号 B"},
     },
     category=["pump_and_valve"],
 )
 ```
+
+**ID 与显示名规则：**
+- `id` / `ids` 是注册表稳定标识，只能包含英文大小写字母、数字、下划线，推荐格式为 `vendor_model` 或 `category_vendor_model`。
+- `id` / `ids` 不能包含中文、空格、短横线、点号或其他符号；不要把中文设备名放进 id。
+- 中文名、品牌型号展示名、UI 友好名称使用 `displayname`，不要塞进 `id`。
 
 ### @action — 动作方法装饰器
 
@@ -224,6 +229,96 @@ from unilabos.registry.decorators import not_action, always_free
 @always_free         # 标记为不受排队限制（查询类操作）
 ```
 
+### @subscribe — 订阅 **其它设备** 的 topic（跨设备状态联动）
+
+让 driver 方法成为某个 topic 的订阅回调，节点初始化时自动扫描并创建订阅者。典型用途：**监听其它设备的状态 → 做判断 → 触发控制**。与 `@topic_config`（发布状态）互为收发两端。
+
+> ⚠️ `@subscribe` **只用于跨设备订阅**（订阅别的设备的状态）。订阅本设备自己的状态没有意义——直接在方法里读 getter 即可（例如派生状态用 `@property @topic_config` getter 当场算出来），不要自订阅自己。
+
+```python
+from unilabos.utils.decorator import subscribe  # 必须从这里导入：AST 扫描据此把它排除出 action
+
+# 订阅目标两种等价写法（仅跨设备）：
+@subscribe("/devices/pump_1/pressure")                   # 1) 绝对路径（必须以 / 开头）
+@subscribe(device_id="pump_1", status_name="pressure")   # 2) 拆分写法（推荐，可读性好；两者都必填）
+
+@subscribe(
+    device_id="sub_reporter",      # 目标设备 id（对端节点 id，必填）
+    status_name="counter",         # 目标状态名（topic 末段，必填）
+    # msg_type=Int32,              # 通常不用写，框架自动识别（见下）
+    qos=10,                        # QoS 深度，默认 10
+    trigger_when_change=True,      # 默认 False；True 时仅值变化才触发回调（去抖 / 边沿触发）
+    retry_interval=10.0,           # 重试周期(秒)，仅自定义间隔用；不写默认 10s（见下）
+)
+def on_counter(self, value) -> None:           # 首参 = 收到的值（经 convert_from_ros_msg 转换）
+    self.logger.info(f"收到 counter={value}")
+```
+
+**回调收到的值**统一经 `convert_from_ros_msg` 转换：`std_msgs` 这类基础消息直接得到原生值（如 `Int32 -> int`），复合消息得到递归转换后的 dict（与 `@topic_config` 发布、`call_device_action` 结果解析等通道一致）。框架不再做额外解包，拿到什么由消息类型决定。
+
+**msg_type 自动识别（通常不用写）**，优先级：显式传入 > 运行时 ROS 图中发布者声明的类型 > 回调首参类型注解。
+
+**重试建立（默认就有，无需 `msg_type`）**：不受 host / slave 启动先后影响：
+
+- 发布者还没起时按周期重试解析类型，**不设上限一直重试直到订上**；周期默认 10s，`retry_interval` 只用于自定义间隔；
+- **一旦订上即停止重试**，之后只管订阅、不再判活 / 轮询（断线重连交给 DDS 自动完成，真出问题等报错暴露）。
+
+要点：
+
+- `@subscribe` 回调**不会**被注册成 action（AST 扫描自动跳过），不需要再加 `@not_action`。
+- 用 `retry_interval` 自动识别类型时，回调首参**不要**加 Python 内置类型注解（如 `value: int`），否则会被当成 `msg_type`。
+- 订阅的 `device_id` 必须与实验图（graph）里对端节点 id 一致。
+- 拆分写法 `device_id` 与 `status_name` 都必填；只想读自己的状态请用 getter，不要 `@subscribe`。
+
+---
+
+## 跨设备调用其它设备的动作（call_device_action）
+
+设备在 `post_init` 拿到 `self._ros_node` 后，可用 `call_device_action` 直接调用**其它设备**的动作并拿到结果（常与 `@subscribe` 配合：监听到条件 → 调用对端动作，形成闭环）。
+
+```python
+import json
+from unilabos.utils.exception import DeviceActionError
+
+@not_action
+def post_init(self, ros_node: BaseROS2DeviceNode) -> None:
+    self._ros_node = ros_node
+
+def _react(self):
+    # 入参永远传 dict；通道自动判定，序列化由 call_device_action 内部完成
+    try:
+        reply = self._ros_node.call_device_action(
+            "sub_reporter",            # 目标设备 id（带不带 /devices/ 前缀都行）
+            "stop_counting",           # 目标动作名（auto- 前缀会自动去掉）
+            {"reason": "reached"},     # 入参 dict（需可 json 序列化）
+            server_wait_timeout=5.0,   # 等目标动作服务就绪超时（秒）
+        )
+        self.logger.info(f"远端返回: {reply}")
+    except DeviceActionError as ex:    # 服务不可用 / 被拒 / 超时 / 远端 success=False 都会抛
+        self.logger.warning(f"调用失败: {ex}")
+
+    # 原生动作（目标声明了 action_type）会被自动探测并走原生通道；也可显式指定强制走原生、跳过探测：
+    from unilabos_msgs.action import SendCmd  # 示例，换成目标动作的真实类型
+    res = self._ros_node.call_device_action(
+        "heater_1", "heat", {"temperature": 60}, action_type=SendCmd
+    )
+
+# 若动作入参是前端传来的 JSON 字符串，自己 json.loads 成 dict 再调用：
+def call_peer(self, target_device: str, function_name: str, function_args: str = "{}") -> dict:
+    kwargs = json.loads(function_args) if function_args else {}
+    return self._ros_node.call_device_action(target_device, function_name, kwargs)
+```
+
+- **同步版** `call_device_action(...)`：阻塞当前线程，适合在**同步 action**（线程池执行）里调用其它设备。
+- **异步版** `await self._ros_node.call_device_action_async(...)`：不阻塞，适合在 **async action**（rclpy executor 上执行）里调用。
+- **通道自动判定（与 host_node `send_goal` 一致）**：框架从 ROS 图探测目标动作——
+  - 目标为该动作暴露了**专用原生 action server**（即声明了 `action_type`、非 `UniLabJsonCommand`/`auto-` 动作）→ 走原生通道 `/devices/<id>/<action_name>`，按 Goal 字段"对应发"（`convert_to_ros_msg`），返回结果消息转的 dict。
+  - 否则 → 走 serial JSON 指令通道 `_execute_driver_command`，把入参包成 json 命令 `str dumps` 过去、结果 json 解析回来，返回远端 `return_value`（通常是 dict）。
+  - 可显式传 `action_type=<某 ROS Action 类型>` 强制走原生通道并跳过探测。
+- 入参 `action_kwargs` **必须是 dict**（`None` 视为 `{}`）；序列化（dump）统一由 `call_device_action` 内部按通道完成——调用方**不要自己 `json.dumps`**。若入参来自前端 JSON 字符串，先 `json.loads` 成 dict 再传。
+- **结果解析两通道统一**（与 host_node `get_result_callback` 一致）：先 `convert_from_ros_msg` 把 ROS 结果消息**转成 dict**，再看是否带 `return_info`——带的（serial / UniLab `@action`）解析出真正的 `return_value` 返回；纯原生 action 返回整份结果 dict。所以**拿到的恒为 dict / python 值**，不用自己再解析 ROS 消息。
+- 失败统一抛 `unilabos.utils.exception.DeviceActionError`，按需 try/except 转成本设备的业务处理。
+
 ---
 
 ## 设备模板
@@ -239,23 +334,34 @@ from unilabos.registry.decorators import action, device, not_action, topic_confi
     id="my_device",
     category=["my_category"],
     description="设备描述",
-    display_name="设备显示名",
+    displayname="设备显示名",
 )
 class MyDevice:
     """设备类说明。"""
 
     _ros_node: BaseROS2DeviceNode
 
-    def __init__(self, device_id: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(
+        self,
+        device_id: Optional[str] = None,
+        port: str = "COM1",
+        baudrate: int = 9600,
+        timeout: float = 1.0,
+        **kwargs,
+    ):
         """
         初始化设备。
 
         Args:
             device_id[设备ID]: 设备实例 ID，默认使用 my_device。
-            config[设备配置]: 设备启动配置。
+            port[串口]: 设备串口号，例如 COM1 或 /dev/ttyUSB0。
+            baudrate[波特率]: 串口波特率。
+            timeout[超时时间(s)]: 通信超时时间，单位秒。
         """
         self.device_id = device_id or "my_device"
-        self.config = config or {}
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
         self.logger = logging.getLogger(f"MyDevice.{self.device_id}")
         self.data: Dict[str, Any] = {"status": "Idle"}
 
@@ -302,7 +408,8 @@ class MyDevice:
 ### 要点
 
 - `_ros_node: BaseROS2DeviceNode` 类型标注放在类体顶部
-- `__init__` 签名固定为 `(self, device_id=None, config=None, **kwargs)`
+- `__init__` 中需要现场配置的参数按基础类型显式展开，例如 `port: str`、`baudrate: int`、`timeout: float`、`enabled: bool`；不要把所有配置塞进单个 `config: dict`
+- `__init__` 保留 `device_id` 和 `**kwargs` 兼容运行时注入，但不要把 `**kwargs` 当成主要配置入口
 - `post_init` 用 `@not_action` 标记，参数类型标注为 `BaseROS2DeviceNode`
 - 运行时状态存储在 `self.data` 字典中
 - 设备文件放在 `unilabos/devices/<category>/` 目录下
@@ -370,9 +477,8 @@ SDK 封装：
 from my_device_sdk import DeviceController
 
 class MyDevice:
-    def __init__(self, device_id=None, config=None, **kwargs):
-        self.config = config or {}
-        self.controller = DeviceController(port=self.config.get("port", "COM1"))
+    def __init__(self, device_id=None, port: str = "COM1", timeout: float = 1.0, **kwargs):
+        self.controller = DeviceController(port=port, timeout=timeout)
 ```
 
 ---
@@ -396,7 +502,7 @@ unilab --check_mode --skip_env_check
 
 ## 图文件节点模板
 
-实验图 JSON 中的 `class` 对应 `@device(id=...)`，`config` 会传入 `__init__` 的 `config` 字典：
+实验图 JSON 中的 `class` 对应 `@device(id=...)`。`config` 中的字段应对应 `__init__` 的同名基础类型参数，不要只定义一个 `config: dict` 参数承载所有配置：
 
 ```json
 {
@@ -449,6 +555,7 @@ unilab --check_mode --skip_env_check
 ## 常见错误清单
 
 - 缺少 `@device`：设备不会被 AST 扫描发现。
+- `@device(id=...)` 使用中文、点号、短横线或空格：id 必须只包含英文、数字、下划线，显示名称用 `displayname`。
 - 只有 `@property` 没有 `@topic_config()`：属性不会稳定广播到 `status_types`。
 - `post_init` 没有 `@not_action`：会被误暴露为动作。
 - `self.data = {}`：空字典会导致属性读取和 schema 初始数据不稳定，必须预填充每个状态键。
@@ -457,3 +564,7 @@ unilab --check_mode --skip_env_check
 - async 方法中使用 `time.sleep()`：应使用 `await self._ros_node.sleep(seconds)`。
 - 硬编码串口响应索引：RS-485 响应前可能有噪声字节，应先定位帧头。
 - 把硬件寄存器单位暴露给用户：对外使用物理单位，驱动内部做 scale 转换。
+- `@subscribe` 从错误模块导入：必须 `from unilabos.utils.decorator import subscribe`，否则 AST 扫描不认、回调会被误注册成 action。
+- 用了 `@subscribe(retry_interval=...)` 自动识别类型，却给回调首参加了 `value: int` 这类注解：会被当成 msg_type，去掉注解即可。
+- 跨设备 `@subscribe` / `call_device_action` 的目标 `device_id` 与实验图里对端节点 id 不一致：订阅订不上、调用找不到服务。
+- 在 `__init__` 里就用 `self._ros_node`：它要到 `post_init` 才注入，`call_device_action` 等只能在 `post_init` 之后调用。

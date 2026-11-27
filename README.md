@@ -1,89 +1,137 @@
-<div align="center">
-  <img src="docs/logo.png" alt="Uni-Lab Logo" width="200"/>
-</div>
-
 # Uni-Lab-OS
 
-<!-- Language switcher -->
+**English** | [中文](README_zh.md) | [Open-source Developer Guide](https://leap-lab.bohrium.com/docs/dev-guide)
 
-**English** | [中文](README_zh.md)
+[![GitHub Stars](https://img.shields.io/github/stars/deepmodeling/Uni-Lab-OS)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
 
-[![GitHub Stars](https://img.shields.io/github/stars/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/issues)
-[![GitHub License](https://img.shields.io/github/license/dptech-corp/Uni-Lab-OS.svg)](https://github.com/deepmodeling/Uni-Lab-OS/blob/main/LICENSE)
+Uni-Lab-OS is an open-source framework for laboratory automation. It loads device drivers from
+separate device packages, runs workflows on a lab station, and provides a browser console to
+manage devices, workflows, tasks, and inventory. The open-source scheduler runs one workflow
+task at a time.
 
-Uni-Lab-OS is a platform for laboratory automation, designed to connect and control various experimental equipment, enabling automation and standardization of experimental workflows.
+## Quick start
 
-## Key Features
+Follow the steps below to install from source and start a sample device package in dry-run mode.
+For more details, see the [installation guide](https://leap-lab.bohrium.com/docs/installation).
 
-- Multi-device integration management
-- Automated experimental workflows
-- Cloud connectivity capabilities
-- Flexible configuration system
-- Support for multiple experimental protocols
+### 1. Set up the environment and install from source
 
-## Documentation
-
-Detailed documentation can be found at:
-
-- [Online Documentation](https://deepmodeling.github.io/Uni-Lab-OS/)
-
-## Quick Start
-
-### 1. Setup Conda Environment
-
-Uni-Lab-OS recommends using `mamba` for environment management. Choose the package that fits your needs:
-
-| Package | Use Case | Contents |
-|---------|----------|----------|
-| `unilabos` | **Recommended for most users** | Complete package, ready to use |
-| `unilabos-env` | Developers (editable install) | Environment only, install unilabos via pip |
-| `unilabos-full` | Simulation/Visualization | unilabos + ROS2 Desktop + Gazebo + MoveIt |
+Allow at least 1 GB of free disk space. Check that Git and Mamba are available with
+`git --version` and `mamba --version`. If Mamba is missing, install
+[Miniforge](https://github.com/conda-forge/miniforge/releases/latest) for your platform and
+reopen the terminal. The `unilabos-env` package provides ROS 2 and the base Python dependencies.
 
 ```bash
-# Create new environment
 mamba create -n unilab python=3.11.14
 mamba activate unilab
-
-# Option A: Standard installation (recommended for most users)
-mamba install uni-lab::unilabos -c robostack-staging -c conda-forge
-
-# Option B: For developers (editable mode development)
 mamba install uni-lab::unilabos-env -c robostack-staging -c conda-forge
-# Then install unilabos and dependencies:
-git clone https://github.com/deepmodeling/Uni-Lab-OS.git && cd Uni-Lab-OS
-pip install -e .
-uv pip install -r unilabos/utils/requirements.txt
-
-# Option C: Full installation (simulation/visualization)
-mamba install uni-lab::unilabos-full -c robostack-staging -c conda-forge
 ```
 
-**When to use which?**
-- **unilabos**: Standard installation for production deployment and general usage (recommended)
-- **unilabos-env**: For developers who need `pip install -e .` editable mode, modify source code
-- **unilabos-full**: For simulation (Gazebo), visualization (rviz2), and Jupyter notebooks
-
-### 2. Clone Repository (Optional, for developers)
+Clone the repository and enter its directory. If you already have a source checkout, open its
+root directory and skip the clone.
 
 ```bash
-# Clone the repository (only needed for development or examples)
 git clone https://github.com/deepmodeling/Uni-Lab-OS.git
 cd Uni-Lab-OS
 ```
 
-3. Start Uni-Lab System
+With the `unilab` environment active, run the installer from the repository root. It downloads
+and verifies the matching browser console, then installs Uni-Lab-OS and its Python dependencies.
 
-Please refer to [Documentation - Boot Examples](https://deepmodeling.github.io/Uni-Lab-OS/boot_examples/index.html)
+```bash
+python scripts/install_public.py
+```
 
-4. Best Practice
+### 2. Verify the installation
 
-See [Best Practice Guide](https://deepmodeling.github.io/Uni-Lab-OS/user_guide/best_practice.html)
+In a new terminal, run `conda activate unilab` first. Check that the Python path points to the
+`unilab` environment and that the CLI help commands work.
 
-## Message Format
+```bash
+python -c "import sys; print(sys.executable)"
+python -c "import unilabos; print(unilabos.__version__)"
+unilab --help
+unilab workspace start --help
+unilab package inspect --help
+```
 
-Uni-Lab-OS uses pre-built `unilabos_msgs` for system communication. You can find the built versions on the [GitHub Releases](https://github.com/deepmodeling/Uni-Lab-OS/releases) page.
+### 3. Generate and check a sample device package
+
+From the directory where you want to keep the package, generate a sample workspace. The target
+directory must not exist yet.
+
+```bash
+unilab workspace init --output ./sample-lab
+```
+
+Install the package with its development dependencies, run its tests, and inspect it.
+
+```bash
+cd ./sample-lab
+export DEVICE_PACKAGE_ROOT="$(pwd)"
+python -m pip install -e '.[dev]'
+python -m pytest -q
+unilab package inspect --path . --out dist/inspect
+```
+
+### 4. Start in dry-run mode
+
+Use the sample package's dry-run graph for the first launch. This verifies startup, package
+discovery, and workflow loading without connecting to lab hardware.
+
+```bash
+unilab workspace start \
+  --workspace "$DEVICE_PACKAGE_ROOT" \
+  --component all \
+  --graph "$DEVICE_PACKAGE_ROOT/deployment/graphs/dry-run.json" \
+  --runtime-mode dry-run \
+  --json
+
+unilab workspace status \
+  --workspace "$DEVICE_PACKAGE_ROOT" \
+  --json
+```
+
+Once the workspace is running, open the URL at `components.backend.address` in the status
+output to load the browser console.
+
+If startup fails, inspect the backend logs.
+
+```bash
+unilab workspace logs \
+  --workspace "$DEVICE_PACKAGE_ROOT" \
+  --component backend \
+  --json
+```
+
+Stop the workspace when you are done.
+
+```bash
+unilab workspace stop \
+  --workspace "$DEVICE_PACKAGE_ROOT" \
+  --component all \
+  --json
+```
+
+To turn the sample into your own device package, see
+[Create a device package](https://leap-lab.bohrium.com/docs/workspace).
+
+## Development
+
+The [Open-source Developer Guide](https://leap-lab.bohrium.com/docs/dev-guide) covers device
+packages, station configuration, workflow authoring, and debugging.
+
+To add a device, use the workspace generated by `unilab workspace init` as a starting point or
+explore these standalone device packages.
+
+| Example | What it shows |
+| --- | --- |
+| [LabDeviceTemplate](https://github.com/Xuwznln/LabDeviceTemplate) | Template for a standalone device package |
+| [LabDeviceLanDemo](https://github.com/Xuwznln/LabDeviceLanDemo) | Cross-device subscriptions with `@subscribe` and remote actions with `call_device_action` |
+| [LabDeviceWorkstationDemo](https://github.com/Xuwznln/LabDeviceWorkstationDemo) | Sharing a serial port or Modbus connection across devices through `hardware_interface` |
+
+Report bugs or suggest improvements in [GitHub Issues](https://github.com/deepmodeling/Uni-Lab-OS/issues).
 
 ## Citation
 
@@ -104,21 +152,5 @@ If you use [Uni-Lab-OS](https://arxiv.org/abs/2512.21766) in academic research, 
 
 ## License
 
-This project uses a dual licensing structure:
-
-- **Main Framework**: GPL-3.0 - see [LICENSE](LICENSE)
-- **Device Drivers** (`unilabos/devices/`): DP Technology Proprietary License
-
-See [NOTICE](NOTICE) for complete licensing details.
-
-## Project Statistics
-
-### Stars Trend
-
-<a href="https://star-history.com/#dptech-corp/Uni-Lab-OS&Date">
-  <img src="https://api.star-history.com/svg?repos=dptech-corp/Uni-Lab-OS&type=Date" alt="Star History Chart" width="600">
-</a>
-
-## Contact Us
-
-- GitHub Issues: [https://github.com/deepmodeling/Uni-Lab-OS/issues](https://github.com/deepmodeling/Uni-Lab-OS/issues)
+The framework is distributed under GPL-3.0. Separately installed device packages are subject to
+their own licenses. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

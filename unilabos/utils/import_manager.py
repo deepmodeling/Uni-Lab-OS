@@ -4,15 +4,15 @@
 该模块提供了一个动态导入和管理模块的系统，避免误删未使用的导入。
 """
 
+import ast
 import builtins
 import importlib
 import inspect
+import os
 import sys
 import traceback
-import ast
-import os
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Callable, Type, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 __all__ = [
     "ImportManager",

@@ -1,7 +1,9 @@
-import networkx as nx
 import logging
 import sys
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
+import networkx as nx
+
 from .pump_protocol import generate_pump_protocol_with_rinsing
 
 # 设置日志
@@ -12,7 +14,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    except:
+    except Exception:
         pass
 
 def debug_print(message):

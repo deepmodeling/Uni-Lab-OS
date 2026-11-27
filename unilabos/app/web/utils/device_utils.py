@@ -5,7 +5,7 @@
 """
 
 import json
-from typing import Dict, Any
+from typing import Any, Dict
 
 # 这里不能循环导入
 # 在函数内部导入process_device_actions
@@ -19,8 +19,9 @@ def get_registry_info() -> Dict[str, Any]:
     Returns:
         包含Registry路径信息的字典
     """
-    from unilabos.registry.registry import lab_registry
     from pathlib import Path
+
+    from unilabos.registry.registry import lab_registry
 
     registry_info = {}
 

@@ -1,0 +1,2403 @@
+/* Styles extracted unchanged from the supplied internal device square, 2026-11-09. */
+
+:root {
+  --bh-space-1: 0.25rem;
+  --bh-space-2: 0.5rem;
+  --bh-space-3: 0.75rem;
+  --bh-space-4: 1rem;
+  --bh-space-5: 1.25rem;
+  --bh-space-6: 1.5rem;
+  --bh-space-8: 2rem;
+  --bh-space-10: 2.5rem;
+  --bh-space-12: 3rem;
+
+  --bh-width-control-sm: 6rem;
+  --bh-width-control-md: 12rem;
+  --bh-width-control-lg: 20rem;
+  --bh-max-width-content: 80rem;
+
+  --bh-border-width-default: 1px;
+  --bh-border-width-strong: 2px;
+  --bh-stroke-width-icon: 1.75px;
+  --bh-opacity-disabled: 0.5;
+  --bh-opacity-muted: 0.7;
+  --bh-breakpoint-sm: 40rem;
+  --bh-breakpoint-md: 48rem;
+  --bh-breakpoint-lg: 64rem;
+  --bh-breakpoint-xl: 80rem;
+}
+
+:root {
+  --bh-radius-sm: 0.25rem;
+  --bh-radius-md: 0.375rem;
+  --bh-radius-lg: 0.5rem;
+  --bh-radius-xl: 0.75rem;
+  --bh-font-family-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --bh-font-family-mono: 'Roboto Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --bh-font-size-xs: 0.75rem;
+  --bh-font-size-sm: 0.875rem;
+  --bh-font-size-md: 1rem;
+  --bh-font-size-lg: 1.125rem;
+  --bh-font-size-xl: 1.25rem;
+  --bh-font-size-2xl: 1.5rem;
+  --bh-font-size-4xl: 2.25rem;
+  --bh-line-height-tight: 1.25;
+  --bh-line-height-normal: 1.5;
+  --bh-line-height-relaxed: 1.625;
+  --bh-font-weight-normal: 400;
+  --bh-font-weight-medium: 500;
+  --bh-font-weight-semibold: 600;
+  --bh-font-weight-bold: 700;
+  --bh-font-weight-extrabold: 800;
+  --bh-shadow-sm: 0 1px 2px rgb(15 23 42 / 8%);
+  --bh-shadow-card: 0 8px 24px rgb(15 23 42 / 10%);
+  --bh-shadow-lg: 0 18px 48px rgb(15 23 42 / 16%);
+  --bh-motion-fast: 120ms;
+  --bh-motion-normal: 180ms;
+}
+
+/* Color mode contract. Concrete values are supplied by a theme preset. */
+:root {
+  color-scheme: light;
+}
+
+:root[data-color-mode='light'] {
+  color-scheme: light;
+}
+
+:root[data-color-mode='dark'] {
+  color-scheme: dark;
+}
+
+:root {
+  --background: var(--bh-color-background);
+  --foreground: var(--bh-color-foreground);
+  --control: var(--bh-color-control);
+  --control-hover: var(--bh-color-control-hover);
+  --control-active: var(--bh-color-control-active);
+  --control-foreground: var(--bh-color-control-foreground);
+  --card: var(--bh-color-card);
+  --card-foreground: var(--bh-color-card-foreground);
+  --popover: var(--bh-color-popover);
+  --popover-foreground: var(--bh-color-popover-foreground);
+  --primary: var(--bh-color-primary);
+  --primary-foreground: var(--bh-color-primary-foreground);
+  --secondary: var(--bh-color-secondary);
+  --secondary-foreground: var(--bh-color-secondary-foreground);
+  --muted: var(--bh-color-muted);
+  --muted-foreground: var(--bh-color-muted-foreground);
+  --accent: var(--bh-color-accent);
+  --accent-foreground: var(--bh-color-accent-foreground);
+  --destructive: var(--bh-color-destructive);
+  --destructive-foreground: var(--bh-color-destructive-foreground);
+  --border: var(--bh-color-border);
+  --input: var(--bh-color-input);
+  --ring: var(--bh-color-ring);
+  --ring-offset: var(--bh-color-ring-offset);
+  --sidebar: var(--bh-color-sidebar);
+  --sidebar-foreground: var(--bh-color-sidebar-foreground);
+  --sidebar-primary: var(--bh-color-sidebar-primary);
+  --sidebar-primary-foreground: var(--bh-color-sidebar-primary-foreground);
+  --sidebar-accent: var(--bh-color-sidebar-accent);
+  --sidebar-accent-foreground: var(--bh-color-sidebar-accent-foreground);
+  --sidebar-border: var(--bh-color-sidebar-border);
+  --sidebar-ring: var(--bh-color-sidebar-ring);
+}
+
+:root {
+  --bh-icon-size-sm: 0.875rem;
+  --bh-icon-size-md: 1rem;
+  --bh-icon-size-lg: 1.25rem;
+  --bh-icon-size-xl: 1.5rem;
+  --bh-icon-stroke-width: 1.75;
+}
+
+/*
+ * Design source variables — 3. Color Modes
+ *
+ * This file deliberately keeps the design source path in every declaration. Values
+ * are the Light / Dark modes read from the Variables panel; component-facing
+ * aliases live in themes/default.css and must not be mistaken for source
+ * variables.
+ */
+
+:root,
+:root[data-design-preset='default'],
+:root:not([data-design-preset]) {
+  /* primary */
+  --bh-source-color-modes-primary-white: #fff;
+  --bh-source-color-modes-primary-neutral-light: #f7fafe;
+  --bh-source-color-modes-primary-background: #f2f3ff;
+  --bh-source-color-modes-primary-background-hover: #d9e1ff;
+  --bh-source-color-modes-primary-border: #c7d2ff;
+  --bh-source-color-modes-primary-hover: #626aea;
+  --bh-source-color-modes-primary-default: #3c49dd;
+  --bh-source-color-modes-primary-pressed: #2f37b7;
+  --bh-source-color-modes-primary-focus: #c7d2ff;
+  --bh-source-color-modes-primary-information-light: #f2f3ff;
+  --bh-source-color-modes-primary-information: #3c49dd;
+  --bh-source-color-modes-primary-disabled: #c9cdd5;
+  --bh-source-color-modes-primary-neutral: #4e5969;
+  --bh-source-color-modes-primary-inverse: #1d2129;
+  --bh-source-color-modes-primary-overlay: #1d2129;
+
+  /* fill / border / text / icon / sidebar */
+  --bh-source-color-modes-fill-0: #f7f8fa;
+  --bh-source-color-modes-fill-1: #f2f3f5;
+  --bh-source-color-modes-fill-2: #e5e6ec;
+  --bh-source-color-modes-fill-3: #c9cdd5;
+  --bh-source-color-modes-fill-4: #4e5969;
+  --bh-source-color-modes-fill-5: #1d2129;
+  --bh-source-color-modes-border-0: #f2f3f5;
+  --bh-source-color-modes-border-1: #e5e6ec;
+  --bh-source-color-modes-border-2: #c9cdd5;
+  --bh-source-color-modes-border-3: #86909c;
+  --bh-source-color-modes-text-placeholder: #86909c;
+  --bh-source-color-modes-text-description: #4e5969;
+  --bh-source-color-modes-text-disabled: #c9cdd5;
+  --bh-source-color-modes-text-default: #1d2129;
+  --bh-source-color-modes-icon-default: #1d2129;
+  --bh-source-color-modes-icon-hover: #4e5969;
+  --bh-source-color-modes-sidebar-default: #f7fafe;
+  --bh-source-color-modes-sidebar-hover: #f2f5f9;
+  --bh-source-color-modes-sidebar-selected: #ebeef3;
+
+  /* warning / success / error */
+  --bh-source-color-modes-warning-default: #ffa114;
+  --bh-source-color-modes-warning-subtle: #fff5e3;
+  --bh-source-color-modes-warning-pressed: #ed7a00;
+  --bh-source-color-modes-warning-focus: #ffe8b2;
+  --bh-source-color-modes-warning-hover: #ffb04f;
+  --bh-source-color-modes-warning-disabled: #fdd78a;
+  --bh-source-color-modes-success-pressed: #008858;
+  --bh-source-color-modes-success-default: #0ab268;
+  --bh-source-color-modes-success-focus: #c6f3d7;
+  --bh-source-color-modes-success-hover: #56c08d;
+  --bh-source-color-modes-success-disabled: #92dab2;
+  --bh-source-color-modes-success-subtle: #e3f9e9;
+  --bh-source-color-modes-error-default: #ff4747;
+  --bh-source-color-modes-error-pressed: #cc3939;
+  --bh-source-color-modes-error-subtle: #ffeded;
+  --bh-source-color-modes-error-disabled: #ff9191;
+  --bh-source-color-modes-error-hover: #ff6c6c;
+  --bh-source-color-modes-error-focus: #ffc7c7;
+
+  /* base — the source paths are base/card, base/popover and base/ring-offset. */
+  --bh-source-color-modes-base-card: #f7f8fa;
+  --bh-source-color-modes-base-popover: #f7f8fa;
+  --bh-source-color-modes-base-ring-offset: #f7f8fa;
+  --bh-source-color-modes-base-chart-1: #fa541c;
+  --bh-source-color-modes-base-chart-2: #08979c;
+  --bh-source-color-modes-base-chart-3: #00474f;
+  --bh-source-color-modes-base-chart-4: #ffc53d;
+  --bh-source-color-modes-base-chart-5: #ffa114;
+
+  /* alpha */
+  --bh-source-color-modes-alpha-5: rgb(255 255 255 / 95%);
+  --bh-source-color-modes-alpha-10: rgb(255 255 255 / 90%);
+  --bh-source-color-modes-alpha-20: rgb(255 255 255 / 80%);
+  --bh-source-color-modes-alpha-30: rgb(255 255 255 / 70%);
+  --bh-source-color-modes-alpha-40: rgb(255 255 255 / 60%);
+  --bh-source-color-modes-alpha-50: rgb(255 255 255 / 50%);
+  --bh-source-color-modes-alpha-60: rgb(255 255 255 / 40%);
+  --bh-source-color-modes-alpha-80: rgb(255 255 255 / 20%);
+  --bh-source-color-modes-alpha-90: rgb(255 255 255 / 10%);
+
+  /* custom */
+  --bh-source-color-modes-custom-background-dark-input-30: #f7f8fa;
+  --bh-source-color-modes-custom-background-dark-calendar-30: #f7f8fa;
+  --bh-source-color-modes-custom-accent-dark-input-50: #f2f3f5;
+  --bh-source-color-modes-custom-accent-dark-calendar-50: #f2f3f5;
+  --bh-source-color-modes-custom-input-dark-input-80: #e5e6ec;
+  --bh-source-color-modes-custom-input-50-dark-input-80: rgb(229 230 236 / 50%);
+  --bh-source-color-modes-custom-input-30-dark-transparent: rgb(229 230 236 / 30%);
+  --bh-source-color-modes-custom-muted-dark-input-50: #f2f3f5;
+  --bh-source-color-modes-custom-destructive-10-dark-destructive-20: rgb(212 56 13 / 10%);
+  --bh-source-color-modes-custom-destructive-20-dark-destructive-30: rgb(212 56 13 / 20%);
+  --bh-source-color-modes-custom-destructive-40-dark-destructive-40: rgb(212 56 13 / 40%);
+  --bh-source-color-modes-custom-dark-input: rgb(255 255 255 / 0%);
+  --bh-source-color-modes-custom-outline: rgb(172 172 172 / 50%);
+  --bh-source-color-modes-custom-blue-500-dark-blue-600: #597ef7;
+  --bh-source-color-modes-custom-ring-dark-input-dark: #c7d2ff;
+  --bh-source-color-modes-custom-popover-70: rgb(255 255 255 / 70%);
+  --bh-source-color-modes-custom-bg-background-20-dark-bg-background-10: rgb(255 255 255 / 20%);
+  --bh-source-color-modes-custom-bg-primary-5-dark-bg-primary-10: rgb(18 18 18 / 5%);
+  /* Alert warning variables read from the Figma Alert selection colors. */
+  --bh-source-color-modes-custom-amber-900-dark-amber-50: #873800;
+  --bh-source-color-modes-custom-amber-200-dark-amber-900: #ffe58f;
+  --bh-source-color-modes-custom-amber-50-dark-amber-950: #fffbe6;
+}
+
+:root[data-color-mode='dark'][data-design-preset='default'],
+:root[data-color-mode='dark']:not([data-design-preset]) {
+  --bh-source-color-modes-primary-white: #121212;
+  --bh-source-color-modes-primary-neutral-light: #232323;
+  --bh-source-color-modes-primary-background: #272e59;
+  --bh-source-color-modes-primary-background-hover: #394580;
+  --bh-source-color-modes-primary-border: #5363a6;
+  --bh-source-color-modes-primary-hover: #7086cc;
+  --bh-source-color-modes-primary-default: #93adf3;
+  --bh-source-color-modes-primary-pressed: #c2d4ff;
+  --bh-source-color-modes-primary-focus: #5363a6;
+  --bh-source-color-modes-primary-information-light: #272e59;
+  --bh-source-color-modes-primary-information: #93adf3;
+  --bh-source-color-modes-primary-disabled: #383838;
+  --bh-source-color-modes-primary-neutral: #acacac;
+  --bh-source-color-modes-primary-inverse: #e0e0e0;
+  --bh-source-color-modes-primary-overlay: #e0e0e0;
+  --bh-source-color-modes-fill-0: #252525;
+  --bh-source-color-modes-fill-1: #2c2c2c;
+  --bh-source-color-modes-fill-2: #2f2f2f;
+  --bh-source-color-modes-fill-3: #383838;
+  --bh-source-color-modes-fill-4: #acacac;
+  --bh-source-color-modes-fill-5: #e0e0e0;
+  --bh-source-color-modes-border-0: #2c2c2c;
+  --bh-source-color-modes-border-1: #2f2f2f;
+  --bh-source-color-modes-border-2: #383838;
+  --bh-source-color-modes-border-3: #7d7d7d;
+  --bh-source-color-modes-text-placeholder: #7d7d7d;
+  --bh-source-color-modes-text-description: #acacac;
+  --bh-source-color-modes-text-disabled: #383838;
+  --bh-source-color-modes-text-default: #e0e0e0;
+  --bh-source-color-modes-icon-default: #e0e0e0;
+  --bh-source-color-modes-icon-hover: #acacac;
+  --bh-source-color-modes-sidebar-default: #1d1f24;
+  --bh-source-color-modes-sidebar-hover: #26282d;
+  --bh-source-color-modes-sidebar-selected: #383a3f;
+  --bh-source-color-modes-warning-default: #db8c14;
+  --bh-source-color-modes-warning-subtle: #593d13;
+  --bh-source-color-modes-warning-pressed: #f3c362;
+  --bh-source-color-modes-warning-focus: #7d5213;
+  --bh-source-color-modes-warning-hover: #e7a739;
+  --bh-source-color-modes-warning-disabled: #232323;
+  --bh-source-color-modes-success-pressed: #4bc387;
+  --bh-source-color-modes-success-default: #0b9a5b;
+  --bh-source-color-modes-success-focus: #0e5a39;
+  --bh-source-color-modes-success-hover: #28ae70;
+  --bh-source-color-modes-success-disabled: #232323;
+  --bh-source-color-modes-success-subtle: #104227;
+  --bh-source-color-modes-error-default: #db3f3f;
+  --bh-source-color-modes-error-pressed: #f39992;
+  --bh-source-color-modes-error-subtle: #592222;
+  --bh-source-color-modes-error-disabled: #232323;
+  --bh-source-color-modes-error-hover: #e76b67;
+  --bh-source-color-modes-error-focus: #7d2a2a;
+  --bh-source-color-modes-base-card: #252525;
+  --bh-source-color-modes-base-popover: #252525;
+  --bh-source-color-modes-base-ring-offset: #252525;
+  --bh-source-color-modes-base-chart-1: #0958d9;
+  --bh-source-color-modes-base-chart-2: #28ae70;
+  --bh-source-color-modes-base-chart-3: #ffa114;
+  --bh-source-color-modes-base-chart-4: #9254de;
+  --bh-source-color-modes-base-chart-5: #ff4747;
+  --bh-source-color-modes-alpha-5: rgb(18 18 18 / 95%);
+  --bh-source-color-modes-alpha-10: rgb(18 18 18 / 90%);
+  --bh-source-color-modes-alpha-20: rgb(18 18 18 / 80%);
+  --bh-source-color-modes-alpha-30: rgb(18 18 18 / 70%);
+  --bh-source-color-modes-alpha-40: rgb(18 18 18 / 60%);
+  --bh-source-color-modes-alpha-50: rgb(18 18 18 / 50%);
+  --bh-source-color-modes-alpha-60: rgb(18 18 18 / 40%);
+  --bh-source-color-modes-alpha-80: rgb(18 18 18 / 20%);
+  --bh-source-color-modes-alpha-90: rgb(18 18 18 / 10%);
+  --bh-source-color-modes-custom-background-dark-input-30: rgb(255 255 255 / 4.5%);
+  --bh-source-color-modes-custom-background-dark-calendar-30: rgb(255 255 255 / 4.5%);
+  --bh-source-color-modes-custom-accent-dark-input-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-accent-dark-calendar-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-input-dark-input-80: rgb(255 255 255 / 12%);
+  --bh-source-color-modes-custom-input-50-dark-input-80: rgb(255 255 255 / 15%);
+  --bh-source-color-modes-custom-input-30-dark-transparent: rgb(255 255 255 / 0.5%);
+  --bh-source-color-modes-custom-muted-dark-input-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-destructive-10-dark-destructive-20: rgb(255 108 108 / 20%);
+  --bh-source-color-modes-custom-destructive-20-dark-destructive-30: rgb(255 108 108 / 30%);
+  --bh-source-color-modes-custom-destructive-40-dark-destructive-40: rgb(255 108 108 / 40%);
+  --bh-source-color-modes-custom-dark-input: #2f2f2f;
+  --bh-source-color-modes-custom-outline: rgb(125 125 125 / 50%);
+  --bh-source-color-modes-custom-blue-500-dark-blue-600: #2f54eb;
+  --bh-source-color-modes-custom-ring-dark-input-dark: rgb(255 255 255 / 15%);
+  --bh-source-color-modes-custom-popover-70: rgb(37 37 37 / 70%);
+  --bh-source-color-modes-custom-bg-background-20-dark-bg-background-10: rgb(18 18 18 / 10%);
+  --bh-source-color-modes-custom-bg-primary-5-dark-bg-primary-10: rgb(255 255 255 / 10%);
+  --bh-source-color-modes-custom-amber-900-dark-amber-50: #fffbe6;
+  --bh-source-color-modes-custom-amber-200-dark-amber-900: #874d00;
+  --bh-source-color-modes-custom-amber-50-dark-amber-950: #3b1e00;
+}
+
+/* Generated from design source Variables — 1. Foundation (420) */
+:root {
+  --bh-source-foundation-spacing-0: 0px;
+  --bh-source-foundation-spacing-px: 1px;
+  --bh-source-foundation-spacing-0-5: 2px;
+  --bh-source-foundation-spacing-1: 4px;
+  --bh-source-foundation-spacing-1-5: 6px;
+  --bh-source-foundation-spacing-2: 8px;
+  --bh-source-foundation-spacing-2-5: 10px;
+  --bh-source-foundation-spacing-3: 12px;
+  --bh-source-foundation-spacing-3-5: 14px;
+  --bh-source-foundation-spacing-4: 16px;
+  --bh-source-foundation-spacing-5: 20px;
+  --bh-source-foundation-spacing-6: 24px;
+  --bh-source-foundation-spacing-7: 28px;
+  --bh-source-foundation-spacing-8: 32px;
+  --bh-source-foundation-spacing-9: 36px;
+  --bh-source-foundation-spacing-10: 40px;
+  --bh-source-foundation-spacing-11: 44px;
+  --bh-source-foundation-spacing-12: 48px;
+  --bh-source-foundation-spacing-14: 56px;
+  --bh-source-foundation-spacing-16: 64px;
+  --bh-source-foundation-spacing-20: 80px;
+  --bh-source-foundation-spacing-24: 96px;
+  --bh-source-foundation-spacing-28: 112px;
+  --bh-source-foundation-spacing-32: 128px;
+  --bh-source-foundation-spacing-36: 144px;
+  --bh-source-foundation-spacing-40: 160px;
+  --bh-source-foundation-spacing-44: 176px;
+  --bh-source-foundation-spacing-48: 192px;
+  --bh-source-foundation-spacing-52: 208px;
+  --bh-source-foundation-spacing-56: 224px;
+  --bh-source-foundation-spacing-60: 240px;
+  --bh-source-foundation-spacing-64: 256px;
+  --bh-source-foundation-spacing-72: 288px;
+  --bh-source-foundation-spacing-80: 320px;
+  --bh-source-foundation-spacing-96: 384px;
+  --bh-source-foundation-width-w-0: 0px;
+  --bh-source-foundation-width-w-px: 1px;
+  --bh-source-foundation-width-w-0-5: 2px;
+  --bh-source-foundation-width-w-1: 4px;
+  --bh-source-foundation-width-w-1-5: 6px;
+  --bh-source-foundation-width-w-2: 8px;
+  --bh-source-foundation-width-w-2-5: 10px;
+  --bh-source-foundation-width-w-3: 12px;
+  --bh-source-foundation-width-w-3-5: 14px;
+  --bh-source-foundation-width-w-4: 16px;
+  --bh-source-foundation-width-w-5: 20px;
+  --bh-source-foundation-width-w-6: 24px;
+  --bh-source-foundation-width-w-7: 28px;
+  --bh-source-foundation-width-w-8: 32px;
+  --bh-source-foundation-width-w-9: 36px;
+  --bh-source-foundation-width-w-10: 40px;
+  --bh-source-foundation-width-w-11: 44px;
+  --bh-source-foundation-width-w-12: 48px;
+  --bh-source-foundation-width-w-14: 56px;
+  --bh-source-foundation-width-w-16: 64px;
+  --bh-source-foundation-width-w-20: 80px;
+  --bh-source-foundation-width-w-24: 96px;
+  --bh-source-foundation-width-w-28: 112px;
+  --bh-source-foundation-width-w-32: 128px;
+  --bh-source-foundation-width-w-36: 144px;
+  --bh-source-foundation-width-w-44: 160px;
+  --bh-source-foundation-width-w-48: 176px;
+  --bh-source-foundation-width-w-52: 192px;
+  --bh-source-foundation-width-w-56: 208px;
+  --bh-source-foundation-width-w-64: 224px;
+  --bh-source-foundation-width-w-72: 240px;
+  --bh-source-foundation-width-w-80: 256px;
+  --bh-source-foundation-width-w-96: 288px;
+  --bh-source-foundation-min-width-min-w-px: 1px;
+  --bh-source-foundation-min-width-min-w-3xs: var(--bh-source-theme-container-3xs);
+  --bh-source-foundation-min-width-min-w-2xs: var(--bh-source-theme-container-2xs);
+  --bh-source-foundation-min-width-min-w-xs: var(--bh-source-theme-container-xs);
+  --bh-source-foundation-min-width-min-w-sm: var(--bh-source-theme-container-sm);
+  --bh-source-foundation-min-width-min-w-md: var(--bh-source-theme-container-md);
+  --bh-source-foundation-min-width-min-w-lg: var(--bh-source-theme-container-lg);
+  --bh-source-foundation-min-width-min-w-xl: var(--bh-source-theme-container-xl);
+  --bh-source-foundation-min-width-min-w-2xl: var(--bh-source-theme-container-2xl);
+  --bh-source-foundation-min-width-min-w-3xl: var(--bh-source-theme-container-3xl);
+  --bh-source-foundation-min-width-min-w-4xl: var(--bh-source-theme-container-4xl);
+  --bh-source-foundation-min-width-min-w-5xl: var(--bh-source-theme-container-5xl);
+  --bh-source-foundation-min-width-min-w-6xl: var(--bh-source-theme-container-6xl);
+  --bh-source-foundation-min-width-min-w-7xl: var(--bh-source-theme-container-7xl);
+  --bh-source-foundation-max-width-max-w-none: none;
+  --bh-source-foundation-max-width-max-w-px: 1px;
+  --bh-source-foundation-max-width-max-w-3xs: var(--bh-source-theme-container-3xs);
+  --bh-source-foundation-max-width-max-w-2xs: var(--bh-source-theme-container-2xs);
+  --bh-source-foundation-max-width-max-w-xs: var(--bh-source-theme-container-xs);
+  --bh-source-foundation-max-width-max-w-sm: var(--bh-source-theme-container-sm);
+  --bh-source-foundation-max-width-max-w-md: var(--bh-source-theme-container-md);
+  --bh-source-foundation-max-width-max-w-lg: var(--bh-source-theme-container-lg);
+  --bh-source-foundation-max-width-max-w-xl: var(--bh-source-theme-container-xl);
+  --bh-source-foundation-max-width-max-w-2xl: var(--bh-source-theme-container-2xl);
+  --bh-source-foundation-max-width-max-w-3xl: var(--bh-source-theme-container-3xl);
+  --bh-source-foundation-max-width-max-w-4xl: var(--bh-source-theme-container-4xl);
+  --bh-source-foundation-max-width-max-w-5xl: var(--bh-source-theme-container-5xl);
+  --bh-source-foundation-max-width-max-w-6xl: var(--bh-source-theme-container-6xl);
+  --bh-source-foundation-max-width-max-w-7xl: var(--bh-source-theme-container-7xl);
+  --bh-source-foundation-height-h-0: 0px;
+  --bh-source-foundation-height-h-px: 1px;
+  --bh-source-foundation-height-h-0-5: 2px;
+  --bh-source-foundation-height-h-1: 4px;
+  --bh-source-foundation-height-h-1-5: 6px;
+  --bh-source-foundation-height-h-2: 8px;
+  --bh-source-foundation-height-h-2-5: 10px;
+  --bh-source-foundation-height-h-3: 12px;
+  --bh-source-foundation-height-h-3-5: 14px;
+  --bh-source-foundation-height-h-4: 16px;
+  --bh-source-foundation-height-h-5: 20px;
+  --bh-source-foundation-height-h-6: 24px;
+  --bh-source-foundation-height-h-7: 28px;
+  --bh-source-foundation-height-h-8: 32px;
+  --bh-source-foundation-height-h-9: 36px;
+  --bh-source-foundation-height-h-10: 40px;
+  --bh-source-foundation-height-h-11: 44px;
+  --bh-source-foundation-height-h-12: 48px;
+  --bh-source-foundation-height-h-14: 56px;
+  --bh-source-foundation-height-h-16: 64px;
+  --bh-source-foundation-height-h-20: 80px;
+  --bh-source-foundation-height-h-24: 96px;
+  --bh-source-foundation-height-h-28: 112px;
+  --bh-source-foundation-height-h-32: 128px;
+  --bh-source-foundation-height-h-36: 144px;
+  --bh-source-foundation-height-h-44: 160px;
+  --bh-source-foundation-height-h-48: 176px;
+  --bh-source-foundation-height-h-52: 192px;
+  --bh-source-foundation-height-h-56: 208px;
+  --bh-source-foundation-height-h-64: 224px;
+  --bh-source-foundation-height-h-72: 240px;
+  --bh-source-foundation-height-h-80: 256px;
+  --bh-source-foundation-height-h-96: 288px;
+  --bh-source-foundation-breakpoint-sm: var(--bh-source-theme-breakpoint-sm);
+  --bh-source-foundation-breakpoint-md: var(--bh-source-theme-breakpoint-md);
+  --bh-source-foundation-breakpoint-lg: var(--bh-source-theme-breakpoint-lg);
+  --bh-source-foundation-breakpoint-xl: var(--bh-source-theme-breakpoint-xl);
+  --bh-source-foundation-breakpoint-2xl: var(--bh-source-theme-breakpoint-2xl);
+  --bh-source-foundation-border-radius-rounded-none: 0px;
+  --bh-source-foundation-border-radius-rounded-xs: 2px;
+  --bh-source-foundation-border-radius-rounded-sm: 4px;
+  --bh-source-foundation-border-radius-rounded-md: 8px;
+  --bh-source-foundation-border-radius-rounded-lg: 12px;
+  --bh-source-foundation-border-radius-rounded-xl: 16px;
+  --bh-source-foundation-border-radius-rounded-2xl: 20px;
+  --bh-source-foundation-border-radius-rounded-3xl: 24px;
+  --bh-source-foundation-border-radius-rounded-4xl: 24px;
+  --bh-source-foundation-border-radius-rounded-full: 9999px;
+  --bh-source-foundation-border-width-border-0: 0px;
+  --bh-source-foundation-border-width-border: 1px;
+  --bh-source-foundation-border-width-border-2: 2px;
+  --bh-source-foundation-border-width-border-3: 3px;
+  --bh-source-foundation-border-width-border-4: 4px;
+  --bh-source-foundation-border-width-border-5: 5px;
+  --bh-source-foundation-border-width-border-6: 6px;
+  --bh-source-foundation-border-width-border-7: 6px;
+  --bh-source-foundation-border-width-border-8: 8px;
+  --bh-source-foundation-stroke-width-stroke-0: 0;
+  --bh-source-foundation-stroke-width-stroke-1: 1;
+  --bh-source-foundation-stroke-width-stroke-1-33: 1.33;
+  --bh-source-foundation-stroke-width-stroke-1-5: 1.5;
+  --bh-source-foundation-stroke-width-stroke-1-67: 1.67;
+  --bh-source-foundation-stroke-width-stroke-2: 2;
+  --bh-source-foundation-stroke-width-stroke-3: 3;
+  --bh-source-foundation-stroke-width-stroke-4: 4;
+  --bh-source-foundation-stroke-width-stroke-5: 5;
+  --bh-source-foundation-stroke-width-stroke-6: 6;
+  --bh-source-foundation-stroke-width-stroke-7: 7;
+  --bh-source-foundation-stroke-width-stroke-8: 8;
+  --bh-source-foundation-opacity-opacity-0: 0%;
+  --bh-source-foundation-opacity-opacity-5: 5%;
+  --bh-source-foundation-opacity-opacity-10: 10%;
+  --bh-source-foundation-opacity-opacity-15: 15%;
+  --bh-source-foundation-opacity-opacity-20: 20%;
+  --bh-source-foundation-opacity-opacity-25: 25%;
+  --bh-source-foundation-opacity-opacity-30: 30%;
+  --bh-source-foundation-opacity-opacity-35: 35%;
+  --bh-source-foundation-opacity-opacity-40: 40%;
+  --bh-source-foundation-opacity-opacity-45: 45%;
+  --bh-source-foundation-opacity-opacity-50: 50%;
+  --bh-source-foundation-opacity-opacity-55: 55%;
+  --bh-source-foundation-opacity-opacity-60: 60%;
+  --bh-source-foundation-opacity-opacity-65: 65%;
+  --bh-source-foundation-opacity-opacity-70: 70%;
+  --bh-source-foundation-opacity-opacity-75: 75%;
+  --bh-source-foundation-opacity-opacity-80: 80%;
+  --bh-source-foundation-opacity-opacity-85: 85%;
+  --bh-source-foundation-opacity-opacity-90: 90%;
+  --bh-source-foundation-opacity-opacity-95: 95%;
+  --bh-source-foundation-opacity-opacity-100: 100%;
+  --bh-source-foundation-line-height-leading-1: 4px;
+  --bh-source-foundation-line-height-leading-2: 8px;
+  --bh-source-foundation-line-height-leading-3: 12px;
+  --bh-source-foundation-line-height-leading-4: 16px;
+  --bh-source-foundation-line-height-leading-5: 20px;
+  --bh-source-foundation-line-height-leading-6: 24px;
+  --bh-source-foundation-line-height-leading-7: 28px;
+  --bh-source-foundation-line-height-leading-8: 32px;
+  --bh-source-foundation-line-height-leading-9: 36px;
+  --bh-source-foundation-line-height-leading-10: 40px;
+  --bh-source-foundation-line-height-leading-11: 44px;
+  --bh-source-foundation-line-height-leading-12: 48px;
+  --bh-source-foundation-line-height-leading-13: 52px;
+  --bh-source-foundation-line-height-leading-14: 56px;
+  --bh-source-foundation-line-height-leading-15: 60px;
+  --bh-source-foundation-line-height-leading-16: 64px;
+  --bh-source-foundation-line-height-leading-17: 68px;
+  --bh-source-foundation-line-height-leading-18: 72px;
+  --bh-source-foundation-line-height-leading-19: 76px;
+  --bh-source-foundation-line-height-leading-20: 80px;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-0: #f8f9ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-1: #f2f3ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-2: #d9e1ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-3: #c2d4ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-4: #c7d2ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-5: #93adf3;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-6: #7086cc;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-7: #626aea;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-8: #3c49dd;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-9: #2f37b7;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-10: #5363a6;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-11: #394580;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-12: #272e59;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-13: #181a3c;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-0: #f7fafe;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-1: #f2f5f9;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-2: #ebeef3;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-3: #383a3f;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-4: #26282d;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-5: #1d1f24;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-0: #ffffff;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-1: #f9fafd;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-2: #f7fafe;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-3: #f7f8fa;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-4: #f2f3f5;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-5: #e5e6ec;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-6: #c9cdd5;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-7: #86909c;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-8: #4e5969;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-9: #1d2129;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-10: #e0e0e0;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-11: #acacac;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-12: #7d7d7d;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-13: #383838;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-14: #2f2f2f;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-15: #2c2c2c;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-16: #252525;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-17: #232323;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-18: #1e1e1e;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-19: #121212;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-0: #e3f9e9;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-1: #c6f3d7;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-2: #92dab2;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-3: #56c08d;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-4: #4bc387;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-5: #0ab268;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-6: #28ae70;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-7: #0b9a5b;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-8: #008858;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-9: #0e5a39;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-10: #104227;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-0: #fcffe6;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-1: #f4ffb8;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-2: #eaff8f;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-3: #d3f261;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-4: #bae637;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-5: #a0d911;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-6: #7cb305;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-7: #5b8c00;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-8: #3f6600;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-9: #254000;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-0: #feffe6;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-1: #ffffb8;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-2: #fffb8f;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-3: #fff566;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-4: #ffec3d;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-5: #fadb14;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-6: #d4b106;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-7: #ad8b00;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-8: #876800;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-9: #614700;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-0: #fffbe6;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-1: #fff1b8;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-2: #ffe58f;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-3: #f3c362;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-4: #ffd666;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-5: #e7a739;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-6: #ffc53d;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-7: #faad14;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-8: #db8c14;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-9: #d48806;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-10: #ad6800;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-11: #7d5213;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-12: #593d13;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-0: #fff2e8;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-1: #ffd8bf;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-2: #ffbb96;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-3: #ff9c6e;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-4: #ff7a45;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-5: #fa541c;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-6: #d4380d;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-7: #ad2102;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-8: #871400;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-9: #610b00;
+  --bh-source-foundation-bohrium-primitive-color-red-red-0: #FFEEDED;
+  --bh-source-foundation-bohrium-primitive-color-red-red-1: #ffc7c7;
+  --bh-source-foundation-bohrium-primitive-color-red-red-2: #ff9191;
+  --bh-source-foundation-bohrium-primitive-color-red-red-3: #f39992;
+  --bh-source-foundation-bohrium-primitive-color-red-red-4: #ff6c6c;
+  --bh-source-foundation-bohrium-primitive-color-red-red-5: #e76b67;
+  --bh-source-foundation-bohrium-primitive-color-red-red-6: #ff4747;
+  --bh-source-foundation-bohrium-primitive-color-red-red-7: #f5222d;
+  --bh-source-foundation-bohrium-primitive-color-red-red-8: #db3f3f;
+  --bh-source-foundation-bohrium-primitive-color-red-red-9: #cc3939;
+  --bh-source-foundation-bohrium-primitive-color-red-red-10: #a8071a;
+  --bh-source-foundation-bohrium-primitive-color-red-red-11: #7d2a2a;
+  --bh-source-foundation-bohrium-primitive-color-red-red-12: #592222;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-0: #fff5e3;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-1: #ffe8b2;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-2: #fdd78a;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-3: #ffb04f;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-4: #ffa114;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-5: #ed7a00;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-6: #d46b08;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-7: #ad4e00;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-8: #873800;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-9: #612500;
+  --bh-source-foundation-bohrium-primitive-color-green-green-0: #f6ffed;
+  --bh-source-foundation-bohrium-primitive-color-green-green-1: #d9f7be;
+  --bh-source-foundation-bohrium-primitive-color-green-green-2: #b7eb8f;
+  --bh-source-foundation-bohrium-primitive-color-green-green-3: #95de64;
+  --bh-source-foundation-bohrium-primitive-color-green-green-4: #73d13d;
+  --bh-source-foundation-bohrium-primitive-color-green-green-5: #52c41a;
+  --bh-source-foundation-bohrium-primitive-color-green-green-6: #389e0d;
+  --bh-source-foundation-bohrium-primitive-color-green-green-7: #237804;
+  --bh-source-foundation-bohrium-primitive-color-green-green-8: #135200;
+  --bh-source-foundation-bohrium-primitive-color-green-green-9: #092b00;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-0: #e6fffb;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-1: #b5f5ec;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-2: #87e8de;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-3: #5cdbd3;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-4: #36cfc9;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-5: #13c2c2;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-6: #08979c;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-7: #006d75;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-8: #00474f;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-9: #002329;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-0: #e6f4ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-1: #bae0ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-2: #91caff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-3: #69b1ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-4: #4096ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-5: #1677ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-6: #0958d9;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-7: #003eb3;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-8: #002c8c;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-9: #001d66;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-0: #f0f5ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-1: #d6e4ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-2: #adc6ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-3: #85a5ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-4: #597ef7;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-5: #2f54eb;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-6: #1d39c4;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-7: #10239e;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-8: #061178;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-9: #030852;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-0: #fff0f6;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-1: #ffd6e7;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-2: #ffadd2;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-3: #ff85c0;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-4: #f759ab;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-5: #eb2f96;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-6: #c41d7f;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-7: #9e1068;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-8: #780650;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-9: #520339;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-0: #f9f0ff;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-1: #efdbff;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-2: #d3adf7;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-3: #b37feb;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-4: #9254de;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-5: #722ed1;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-6: #531dab;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-7: #391085;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-8: #22075e;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-9: #120338;
+  --bh-source-foundation-compatibility-tailwind-base-transparent: #ffffff;
+  --bh-source-foundation-compatibility-tailwind-base-black: #000000;
+  --bh-source-foundation-compatibility-tailwind-blue-500: #3b82f6;
+  --bh-source-foundation-compatibility-tailwind-blue-600: #2563eb;
+  --bh-source-foundation-compatibility-tailwind-sky-50: #f0f9ff;
+  --bh-source-foundation-compatibility-tailwind-sky-400: #38bdf8;
+  --bh-source-foundation-compatibility-tailwind-sky-600: #0284c7;
+  --bh-source-foundation-compatibility-tailwind-sky-900: #0c4a6e;
+  --bh-source-foundation-compatibility-tailwind-green-500: #22c55e;
+  --bh-source-foundation-compatibility-tailwind-green-600: #16a34a;
+  --bh-source-foundation-compatibility-tailwind-green-700: #15803d;
+  --bh-source-foundation-compatibility-tailwind-zinc-900: #18181b;
+  --bh-source-foundation-compatibility-tailwind-zinc-950: #09090b;
+  --bh-source-foundation-compatibility-tailwind-yellow-500: #eab308;
+  --bh-source-foundation-compatibility-tailwind-yellow-600: #ca8a04;
+  --bh-source-foundation-compatibility-tailwind-orange-50: #fff7ed;
+  --bh-source-foundation-compatibility-tailwind-orange-500: #f97316;
+  --bh-source-foundation-compatibility-tailwind-orange-600: #ea580c;
+  --bh-source-foundation-compatibility-tailwind-red-500: #ef4444;
+  --bh-source-foundation-compatibility-tailwind-purple-500: #a855f7;
+  --bh-source-foundation-compatibility-tailwind-purple-600: #9333ea;
+  --bh-source-foundation-compatibility-tailwind-purple-700: #7e22ce;
+  --bh-source-foundation-compatibility-tailwind-neutral-50: #fafafa;
+  --bh-source-foundation-compatibility-tailwind-neutral-500: #737373;
+  --bh-source-foundation-compatibility-tailwind-neutral-950: #0a0a0a;
+  --bh-source-foundation-compatibility-tailwind-indigo-50: #eef2ff;
+  --bh-source-foundation-compatibility-tailwind-indigo-600: #4f46e5;
+  --bh-source-foundation-compatibility-tailwind-pink-50: #fdf2f8;
+  --bh-source-foundation-compatibility-tailwind-pink-500: #ec4899;
+  --bh-source-foundation-compatibility-tailwind-pink-600: #db2777;
+  --bh-source-foundation-compatibility-tailwind-cyan-500: #06b6d4;
+  --bh-source-foundation-compatibility-tailwind-violet-500: #8b5cf6;
+  --bh-source-foundation-compatibility-tailwind-amber-50: #fffbeb;
+  --bh-source-foundation-compatibility-tailwind-amber-600: #d97706;
+  --bh-source-foundation-compatibility-tailwind-lime-300: #bef264;
+  --bh-source-foundation-compatibility-tailwind-slate-950: #020617;
+}
+
+/* Generated from design source Variables — 2. Theme (126) */
+:root {
+  --bh-source-theme-font-font-sans: 'PingFang SC';
+  --bh-source-theme-breakpoint-sm: 640px;
+  --bh-source-theme-breakpoint-md: 768px;
+  --bh-source-theme-breakpoint-lg: 1024px;
+  --bh-source-theme-breakpoint-xl: 1280px;
+  --bh-source-theme-breakpoint-2xl: 1536px;
+  --bh-source-theme-container-3xs: 256px;
+  --bh-source-theme-container-2xs: 288px;
+  --bh-source-theme-container-xs: 320px;
+  --bh-source-theme-container-sm: 384px;
+  --bh-source-theme-container-md: 448px;
+  --bh-source-theme-container-lg: 512px;
+  --bh-source-theme-container-xl: 576px;
+  --bh-source-theme-container-2xl: 672px;
+  --bh-source-theme-container-3xl: 768px;
+  --bh-source-theme-container-4xl: 896px;
+  --bh-source-theme-container-5xl: 1024px;
+  --bh-source-theme-container-6xl: 1152px;
+  --bh-source-theme-container-7xl: 1280px;
+  --bh-source-theme-text-10-font-size: 10px;
+  --bh-source-theme-text-12-font-size: 12px;
+  --bh-source-theme-text-13-font-size: 13px;
+  --bh-source-theme-text-14-font-size: 14px;
+  --bh-source-theme-text-16-font-size: 16px;
+  --bh-source-theme-text-18-font-size: 18px;
+  --bh-source-theme-text-20-font-size: 20px;
+  --bh-source-theme-text-24-font-size: 24px;
+  --bh-source-theme-text-26-font-size: 26px;
+  --bh-source-theme-text-28-font-size: 28px;
+  --bh-source-theme-text-xs-font-size: 12px;
+  --bh-source-theme-text-xs-line-height: 16px;
+  --bh-source-theme-text-sm-font-size: 14px;
+  --bh-source-theme-text-sm-line-height: 20px;
+  --bh-source-theme-text-base-font-size: 16px;
+  --bh-source-theme-text-base-line-height: 24px;
+  --bh-source-theme-text-lg-font-size: 18px;
+  --bh-source-theme-text-lg-line-height: 28px;
+  --bh-source-theme-text-xl-font-size: 20px;
+  --bh-source-theme-text-xl-font-size-2: 24px;
+  --bh-source-theme-text-xl-line-height: 28px;
+  --bh-source-theme-text-2xl-line-height: 32px;
+  --bh-source-theme-text-3xl-font-size: 30px;
+  --bh-source-theme-text-3xl-line-height: 36px;
+  --bh-source-theme-text-4xl-font-size: 36px;
+  --bh-source-theme-text-4xl-line-height: 40px;
+  --bh-source-theme-text-5xl-font-size: 48px;
+  --bh-source-theme-text-5xl-line-height: 48px;
+  --bh-source-theme-text-6xl-font-size: 60px;
+  --bh-source-theme-text-6xl-line-height: 60px;
+  --bh-source-theme-text-7xl-font-size: 72px;
+  --bh-source-theme-text-7xl-line-height: 72px;
+  --bh-source-theme-text-8xl-font-size: 96px;
+  --bh-source-theme-text-8xl-line-height: 96px;
+  --bh-source-theme-text-9xl-font-size: 128px;
+  --bh-source-theme-text-9xl-line-height: 128px;
+  --bh-source-theme-font-weight-thin: 100;
+  --bh-source-theme-font-weight-extralight: 200;
+  --bh-source-theme-font-weight-light: 300;
+  --bh-source-theme-font-weight-normal: 400;
+  --bh-source-theme-font-weight-medium: 500;
+  --bh-source-theme-font-weight-semibold: 600;
+  --bh-source-theme-font-weight-bold: 700;
+  --bh-source-theme-font-weight-extrabold: 800;
+  --bh-source-theme-font-weight-black: 900;
+  --bh-source-theme-radius-xs: 2px;
+  --bh-source-theme-radius-sm: 4px;
+  --bh-source-theme-radius-md: 8px;
+  --bh-source-theme-radius-lg: 12px;
+  --bh-source-theme-radius-xl: 16px;
+  --bh-source-theme-radius-2xl: 20px;
+  --bh-source-theme-radius-3xl: 24px;
+  --bh-source-theme-radius-4xl: 24px;
+  --bh-source-theme-shadow-xs-offset-x: 0px;
+  --bh-source-theme-shadow-xs-offset-y: 2px;
+  --bh-source-theme-shadow-xs-blur-radius: 4px;
+  --bh-source-theme-shadow-xs-spread-radius: 0px;
+  --bh-source-theme-shadow-xs-color: #5363a6;
+  --bh-source-theme-shadow-sm-1-offset-x: 0px;
+  --bh-source-theme-shadow-sm-1-offset-y: 4px;
+  --bh-source-theme-shadow-sm-1-blur-radius: 6px;
+  --bh-source-theme-shadow-sm-1-spread-radius: -1px;
+  --bh-source-theme-shadow-sm-1-color: #5363a6;
+  --bh-source-theme-shadow-sm-2-offset-x: 0px;
+  --bh-source-theme-shadow-sm-2-offset-y: 1px;
+  --bh-source-theme-shadow-sm-2-blur-radius: 2px;
+  --bh-source-theme-shadow-sm-2-spread-radius: -1px;
+  --bh-source-theme-shadow-sm-2-color: #5363a6;
+  --bh-source-theme-shadow-md-1-offset-x: 0px;
+  --bh-source-theme-shadow-md-1-offset-y: 4px;
+  --bh-source-theme-shadow-md-1-blur-radius: 6px;
+  --bh-source-theme-shadow-md-1-spread-radius: -1px;
+  --bh-source-theme-shadow-md-1-color: #5363a6;
+  --bh-source-theme-shadow-md-2-offset-x: 0px;
+  --bh-source-theme-shadow-md-2-offset-y: 2px;
+  --bh-source-theme-shadow-md-2-blur-radius: 4px;
+  --bh-source-theme-shadow-md-2-spread-radius: -2px;
+  --bh-source-theme-shadow-md-2-color: #5363a6;
+  --bh-source-theme-shadow-lg-1-offset-x: 0px;
+  --bh-source-theme-shadow-lg-1-offset-y: 10px;
+  --bh-source-theme-shadow-lg-1-blur-radius: 16px;
+  --bh-source-theme-shadow-lg-1-spread-radius: -3px;
+  --bh-source-theme-shadow-lg-1-color: #5363a6;
+  --bh-source-theme-shadow-lg-2-offset-x: 0px;
+  --bh-source-theme-shadow-lg-2-offset-y: 4px;
+  --bh-source-theme-shadow-lg-2-blur-radius: 6px;
+  --bh-source-theme-shadow-lg-2-spread-radius: -4px;
+  --bh-source-theme-shadow-lg-2-color: #5363a6;
+  --bh-source-theme-shadow-focus-color: #5363a6;
+  --bh-source-theme-shadow-invalid-color: #ff4747;
+  --bh-source-theme-shadow-utility-color: #121212;
+  --bh-source-theme-line-height-16: 16px;
+  --bh-source-theme-line-height-20: 20px;
+  --bh-source-theme-line-height-22: 22px;
+  --bh-source-theme-line-height-24: 24px;
+  --bh-source-theme-line-height-26: 26px;
+  --bh-source-theme-line-height-28: 28px;
+  --bh-source-theme-line-height-32: 32px;
+  --bh-source-theme-line-height-34: 34px;
+  --bh-source-theme-line-height-36: 36px;
+  --bh-source-theme-line-height-38: 38px;
+  --bh-source-theme-line-height-40: 40px;
+  --bh-source-theme-line-height-42: 42px;
+  --bh-source-theme-line-height-44: 44px;
+  --bh-source-theme-letter-spacing-normal: 0px;
+  --bh-source-theme-paragraph-spacing-none: 0px;
+  --bh-source-theme-paragraph-indent-none: 0px;
+}
+
+/* Generated from design source Variables — 4. Pro / Responsive (29) */
+:root {
+  --bh-source-pro-responsive-container-padding-x: 24px;
+  --bh-source-pro-responsive-section-padding-y: 96px;
+  --bh-source-pro-responsive-section-title-gap-sm: 16px;
+  --bh-source-pro-responsive-section-title-gap-md: 20px;
+  --bh-source-pro-responsive-section-title-gap-lg: 20px;
+  --bh-source-pro-responsive-section-title-gap-xl: 24px;
+  --bh-source-pro-responsive-component-padding-sm: 8px;
+  --bh-source-pro-responsive-component-padding-md: 16px;
+  --bh-source-pro-responsive-component-padding-lg: 24px;
+  --bh-source-pro-responsive-heading-xl-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-xl-font-size: 60px;
+  --bh-source-pro-responsive-heading-xl-line-height: 60px;
+  --bh-source-pro-responsive-heading-xl-font-weight: 600;
+  --bh-source-pro-responsive-heading-xl-letter-spacing: -1.5px;
+  --bh-source-pro-responsive-heading-lg-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-lg-font-size: 48px;
+  --bh-source-pro-responsive-heading-lg-line-height: 48px;
+  --bh-source-pro-responsive-heading-lg-font-weight: 600;
+  --bh-source-pro-responsive-heading-lg-letter-spacing: -1.2px;
+  --bh-source-pro-responsive-heading-md-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-md-font-size: 36px;
+  --bh-source-pro-responsive-heading-md-line-height: 40px;
+  --bh-source-pro-responsive-heading-md-font-weight: 600;
+  --bh-source-pro-responsive-heading-md-letter-spacing: -0.9px;
+  --bh-source-pro-responsive-heading-sm-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-sm-font-size: 24px;
+  --bh-source-pro-responsive-heading-sm-line-height: 32px;
+  --bh-source-pro-responsive-heading-sm-font-weight: 600;
+  --bh-source-pro-responsive-heading-sm-letter-spacing: -0.6px;
+}
+
+:root[data-responsive-mode='mobile'] {
+  --bh-source-pro-responsive-container-padding-x: 16px;
+  --bh-source-pro-responsive-section-padding-y: 64px;
+  --bh-source-pro-responsive-section-title-gap-sm: 16px;
+  --bh-source-pro-responsive-section-title-gap-md: 16px;
+  --bh-source-pro-responsive-section-title-gap-lg: 16px;
+  --bh-source-pro-responsive-section-title-gap-xl: 20px;
+  --bh-source-pro-responsive-component-padding-sm: 8px;
+  --bh-source-pro-responsive-component-padding-md: 16px;
+  --bh-source-pro-responsive-component-padding-lg: 24px;
+  --bh-source-pro-responsive-heading-xl-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-xl-font-size: 48px;
+  --bh-source-pro-responsive-heading-xl-line-height: 48px;
+  --bh-source-pro-responsive-heading-xl-font-weight: 600;
+  --bh-source-pro-responsive-heading-xl-letter-spacing: -1.2px;
+  --bh-source-pro-responsive-heading-lg-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-lg-font-size: 36px;
+  --bh-source-pro-responsive-heading-lg-line-height: 40px;
+  --bh-source-pro-responsive-heading-lg-font-weight: 600;
+  --bh-source-pro-responsive-heading-lg-letter-spacing: -0.9px;
+  --bh-source-pro-responsive-heading-md-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-md-font-size: 30px;
+  --bh-source-pro-responsive-heading-md-line-height: 36px;
+  --bh-source-pro-responsive-heading-md-font-weight: 600;
+  --bh-source-pro-responsive-heading-md-letter-spacing: -0.75px;
+  --bh-source-pro-responsive-heading-sm-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-sm-font-size: 20px;
+  --bh-source-pro-responsive-heading-sm-line-height: 28px;
+  --bh-source-pro-responsive-heading-sm-font-weight: 600;
+  --bh-source-pro-responsive-heading-sm-letter-spacing: -0.5px;
+}
+
+/* Generated from design source Variables — 6. Icon Context and 6. Bohr Icon */
+:root {
+  /* Icon Context / context modes */
+  --bh-source-icon-context-context-text-default: var(--bh-source-color-modes-text-default);
+  --bh-source-icon-context-context-primary-white: var(--bh-source-color-modes-primary-white);
+  --bh-source-icon-context-context-error-default: var(--bh-source-color-modes-error-default);
+  --bh-source-icon-context-context-primary-default: var(--bh-source-color-modes-primary-default);
+
+  /* Bohr Icon / stroke-width modes 24, 22, 20, 18, 16, 14, 12, 10, 15, 8 */
+  --bh-source-bohr-icon-default-24: 1.8;
+  --bh-source-bohr-icon-default-22: 1.65;
+  --bh-source-bohr-icon-default-20: 1.5;
+  --bh-source-bohr-icon-default-18: 1.35;
+  --bh-source-bohr-icon-default-16: 1.2;
+  --bh-source-bohr-icon-default-14: 1.05;
+  --bh-source-bohr-icon-default-12: 0.9;
+  --bh-source-bohr-icon-default-10: 0.75;
+  --bh-source-bohr-icon-default-15: 1.13;
+  --bh-source-bohr-icon-default-8: 0.6;
+  --bh-source-bohr-icon-strong-2-24: 2;
+  --bh-source-bohr-icon-strong-2-22: 1.83;
+  --bh-source-bohr-icon-strong-2-20: 1.67;
+  --bh-source-bohr-icon-strong-2-18: 1.5;
+  --bh-source-bohr-icon-strong-2-16: 1.33;
+  --bh-source-bohr-icon-strong-2-14: 1.17;
+  --bh-source-bohr-icon-strong-2-12: 1;
+  --bh-source-bohr-icon-strong-2-10: 0.83;
+  --bh-source-bohr-icon-strong-2-15: 1.25;
+  --bh-source-bohr-icon-strong-2-8: 0.67;
+  --bh-source-bohr-icon-medium-1-5-24: 1.5;
+  --bh-source-bohr-icon-medium-1-5-22: 1.38;
+  --bh-source-bohr-icon-medium-1-5-20: 1.25;
+  --bh-source-bohr-icon-medium-1-5-18: 1.13;
+  --bh-source-bohr-icon-medium-1-5-16: 1;
+  --bh-source-bohr-icon-medium-1-5-14: 0.88;
+  --bh-source-bohr-icon-medium-1-5-12: 0.75;
+  --bh-source-bohr-icon-medium-1-5-10: 0.63;
+  --bh-source-bohr-icon-medium-1-5-15: 0.94;
+  --bh-source-bohr-icon-medium-1-5-8: 0.5;
+  --bh-source-bohr-icon-compact-1-2-24: 1.2;
+  --bh-source-bohr-icon-compact-1-2-22: 1.1;
+  --bh-source-bohr-icon-compact-1-2-20: 1;
+  --bh-source-bohr-icon-compact-1-2-18: 0.9;
+  --bh-source-bohr-icon-compact-1-2-16: 0.8;
+  --bh-source-bohr-icon-compact-1-2-14: 0.7;
+  --bh-source-bohr-icon-compact-1-2-12: 0.6;
+  --bh-source-bohr-icon-compact-1-2-10: 0.5;
+  --bh-source-bohr-icon-compact-1-2-15: 0.75;
+  --bh-source-bohr-icon-compact-1-2-8: 0.4;
+  --bh-source-bohr-icon-detail-0-54-24: 0.54;
+  --bh-source-bohr-icon-detail-0-54-22: 0.5;
+  --bh-source-bohr-icon-detail-0-54-20: 0.45;
+  --bh-source-bohr-icon-detail-0-54-18: 0.41;
+  --bh-source-bohr-icon-detail-0-54-16: 0.36;
+  --bh-source-bohr-icon-detail-0-54-14: 0.31;
+  --bh-source-bohr-icon-detail-0-54-12: 0.27;
+  --bh-source-bohr-icon-detail-0-54-10: 0.22;
+  --bh-source-bohr-icon-detail-0-54-15: 0.34;
+  --bh-source-bohr-icon-detail-0-54-8: 0.18;
+  --bh-source-bohr-icon-hairline-0-2-24: 0.2;
+  --bh-source-bohr-icon-hairline-0-2-22: 0.18;
+  --bh-source-bohr-icon-hairline-0-2-20: 0.17;
+  --bh-source-bohr-icon-hairline-0-2-18: 0.15;
+  --bh-source-bohr-icon-hairline-0-2-16: 0.13;
+  --bh-source-bohr-icon-hairline-0-2-14: 0.12;
+  --bh-source-bohr-icon-hairline-0-2-12: 0.1;
+  --bh-source-bohr-icon-hairline-0-2-10: 0.08;
+  --bh-source-bohr-icon-hairline-0-2-15: 0.13;
+  --bh-source-bohr-icon-hairline-0-2-8: 0.07;
+  --bh-source-bohr-icon-wrapper-source-24: 1.8;
+  --bh-source-bohr-icon-wrapper-source-22: 1.8;
+  --bh-source-bohr-icon-wrapper-source-20: 1.8;
+  --bh-source-bohr-icon-wrapper-source-18: 1.8;
+  --bh-source-bohr-icon-wrapper-source-16: 1.8;
+  --bh-source-bohr-icon-wrapper-source-14: 1.8;
+  --bh-source-bohr-icon-wrapper-source-12: 1.8;
+  --bh-source-bohr-icon-wrapper-source-10: 1.8;
+  --bh-source-bohr-icon-wrapper-source-15: 1.8;
+  --bh-source-bohr-icon-wrapper-source-8: 1.8;
+}
+
+
+
+
+/*
+ * Design source variables — 3. Color Modes
+ *
+ * This file deliberately keeps the design source path in every declaration. Values
+ * are the Light / Dark modes read from the Variables panel; component-facing
+ * aliases live in themes/default.css and must not be mistaken for source
+ * variables.
+ */
+
+:root,
+:root[data-design-preset='default'],
+:root:not([data-design-preset]) {
+  /* primary */
+  --bh-source-color-modes-primary-white: #fff;
+  --bh-source-color-modes-primary-neutral-light: #f7fafe;
+  --bh-source-color-modes-primary-background: #f2f3ff;
+  --bh-source-color-modes-primary-background-hover: #d9e1ff;
+  --bh-source-color-modes-primary-border: #c7d2ff;
+  --bh-source-color-modes-primary-hover: #626aea;
+  --bh-source-color-modes-primary-default: #3c49dd;
+  --bh-source-color-modes-primary-pressed: #2f37b7;
+  --bh-source-color-modes-primary-focus: #c7d2ff;
+  --bh-source-color-modes-primary-information-light: #f2f3ff;
+  --bh-source-color-modes-primary-information: #3c49dd;
+  --bh-source-color-modes-primary-disabled: #c9cdd5;
+  --bh-source-color-modes-primary-neutral: #4e5969;
+  --bh-source-color-modes-primary-inverse: #1d2129;
+  --bh-source-color-modes-primary-overlay: #1d2129;
+
+  /* fill / border / text / icon / sidebar */
+  --bh-source-color-modes-fill-0: #f7f8fa;
+  --bh-source-color-modes-fill-1: #f2f3f5;
+  --bh-source-color-modes-fill-2: #e5e6ec;
+  --bh-source-color-modes-fill-3: #c9cdd5;
+  --bh-source-color-modes-fill-4: #4e5969;
+  --bh-source-color-modes-fill-5: #1d2129;
+  --bh-source-color-modes-border-0: #f2f3f5;
+  --bh-source-color-modes-border-1: #e5e6ec;
+  --bh-source-color-modes-border-2: #c9cdd5;
+  --bh-source-color-modes-border-3: #86909c;
+  --bh-source-color-modes-text-placeholder: #86909c;
+  --bh-source-color-modes-text-description: #4e5969;
+  --bh-source-color-modes-text-disabled: #c9cdd5;
+  --bh-source-color-modes-text-default: #1d2129;
+  --bh-source-color-modes-icon-default: #1d2129;
+  --bh-source-color-modes-icon-hover: #4e5969;
+  --bh-source-color-modes-sidebar-default: #f7fafe;
+  --bh-source-color-modes-sidebar-hover: #f2f5f9;
+  --bh-source-color-modes-sidebar-selected: #ebeef3;
+
+  /* warning / success / error */
+  --bh-source-color-modes-warning-default: #ffa114;
+  --bh-source-color-modes-warning-subtle: #fff5e3;
+  --bh-source-color-modes-warning-pressed: #ed7a00;
+  --bh-source-color-modes-warning-focus: #ffe8b2;
+  --bh-source-color-modes-warning-hover: #ffb04f;
+  --bh-source-color-modes-warning-disabled: #fdd78a;
+  --bh-source-color-modes-success-pressed: #008858;
+  --bh-source-color-modes-success-default: #0ab268;
+  --bh-source-color-modes-success-focus: #c6f3d7;
+  --bh-source-color-modes-success-hover: #56c08d;
+  --bh-source-color-modes-success-disabled: #92dab2;
+  --bh-source-color-modes-success-subtle: #e3f9e9;
+  --bh-source-color-modes-error-default: #ff4747;
+  --bh-source-color-modes-error-pressed: #cc3939;
+  --bh-source-color-modes-error-subtle: #ffeded;
+  --bh-source-color-modes-error-disabled: #ff9191;
+  --bh-source-color-modes-error-hover: #ff6c6c;
+  --bh-source-color-modes-error-focus: #ffc7c7;
+
+  /* base — the source paths are base/card, base/popover and base/ring-offset. */
+  --bh-source-color-modes-base-card: #f7f8fa;
+  --bh-source-color-modes-base-popover: #f7f8fa;
+  --bh-source-color-modes-base-ring-offset: #f7f8fa;
+  --bh-source-color-modes-base-chart-1: #fa541c;
+  --bh-source-color-modes-base-chart-2: #08979c;
+  --bh-source-color-modes-base-chart-3: #00474f;
+  --bh-source-color-modes-base-chart-4: #ffc53d;
+  --bh-source-color-modes-base-chart-5: #ffa114;
+
+  /* alpha */
+  --bh-source-color-modes-alpha-5: rgb(255 255 255 / 95%);
+  --bh-source-color-modes-alpha-10: rgb(255 255 255 / 90%);
+  --bh-source-color-modes-alpha-20: rgb(255 255 255 / 80%);
+  --bh-source-color-modes-alpha-30: rgb(255 255 255 / 70%);
+  --bh-source-color-modes-alpha-40: rgb(255 255 255 / 60%);
+  --bh-source-color-modes-alpha-50: rgb(255 255 255 / 50%);
+  --bh-source-color-modes-alpha-60: rgb(255 255 255 / 40%);
+  --bh-source-color-modes-alpha-80: rgb(255 255 255 / 20%);
+  --bh-source-color-modes-alpha-90: rgb(255 255 255 / 10%);
+
+  /* custom */
+  --bh-source-color-modes-custom-background-dark-input-30: #f7f8fa;
+  --bh-source-color-modes-custom-background-dark-calendar-30: #f7f8fa;
+  --bh-source-color-modes-custom-accent-dark-input-50: #f2f3f5;
+  --bh-source-color-modes-custom-accent-dark-calendar-50: #f2f3f5;
+  --bh-source-color-modes-custom-input-dark-input-80: #e5e6ec;
+  --bh-source-color-modes-custom-input-50-dark-input-80: rgb(229 230 236 / 50%);
+  --bh-source-color-modes-custom-input-30-dark-transparent: rgb(229 230 236 / 30%);
+  --bh-source-color-modes-custom-muted-dark-input-50: #f2f3f5;
+  --bh-source-color-modes-custom-destructive-10-dark-destructive-20: rgb(212 56 13 / 10%);
+  --bh-source-color-modes-custom-destructive-20-dark-destructive-30: rgb(212 56 13 / 20%);
+  --bh-source-color-modes-custom-destructive-40-dark-destructive-40: rgb(212 56 13 / 40%);
+  --bh-source-color-modes-custom-dark-input: rgb(255 255 255 / 0%);
+  --bh-source-color-modes-custom-outline: rgb(172 172 172 / 50%);
+  --bh-source-color-modes-custom-blue-500-dark-blue-600: #597ef7;
+  --bh-source-color-modes-custom-ring-dark-input-dark: #c7d2ff;
+  --bh-source-color-modes-custom-popover-70: rgb(255 255 255 / 70%);
+  --bh-source-color-modes-custom-bg-background-20-dark-bg-background-10: rgb(255 255 255 / 20%);
+  --bh-source-color-modes-custom-bg-primary-5-dark-bg-primary-10: rgb(18 18 18 / 5%);
+  /* Alert warning variables read from the Figma Alert selection colors. */
+  --bh-source-color-modes-custom-amber-900-dark-amber-50: #873800;
+  --bh-source-color-modes-custom-amber-200-dark-amber-900: #ffe58f;
+  --bh-source-color-modes-custom-amber-50-dark-amber-950: #fffbe6;
+}
+
+:root[data-color-mode='dark'][data-design-preset='default'],
+:root[data-color-mode='dark']:not([data-design-preset]) {
+  --bh-source-color-modes-primary-white: #121212;
+  --bh-source-color-modes-primary-neutral-light: #232323;
+  --bh-source-color-modes-primary-background: #272e59;
+  --bh-source-color-modes-primary-background-hover: #394580;
+  --bh-source-color-modes-primary-border: #5363a6;
+  --bh-source-color-modes-primary-hover: #7086cc;
+  --bh-source-color-modes-primary-default: #93adf3;
+  --bh-source-color-modes-primary-pressed: #c2d4ff;
+  --bh-source-color-modes-primary-focus: #5363a6;
+  --bh-source-color-modes-primary-information-light: #272e59;
+  --bh-source-color-modes-primary-information: #93adf3;
+  --bh-source-color-modes-primary-disabled: #383838;
+  --bh-source-color-modes-primary-neutral: #acacac;
+  --bh-source-color-modes-primary-inverse: #e0e0e0;
+  --bh-source-color-modes-primary-overlay: #e0e0e0;
+  --bh-source-color-modes-fill-0: #252525;
+  --bh-source-color-modes-fill-1: #2c2c2c;
+  --bh-source-color-modes-fill-2: #2f2f2f;
+  --bh-source-color-modes-fill-3: #383838;
+  --bh-source-color-modes-fill-4: #acacac;
+  --bh-source-color-modes-fill-5: #e0e0e0;
+  --bh-source-color-modes-border-0: #2c2c2c;
+  --bh-source-color-modes-border-1: #2f2f2f;
+  --bh-source-color-modes-border-2: #383838;
+  --bh-source-color-modes-border-3: #7d7d7d;
+  --bh-source-color-modes-text-placeholder: #7d7d7d;
+  --bh-source-color-modes-text-description: #acacac;
+  --bh-source-color-modes-text-disabled: #383838;
+  --bh-source-color-modes-text-default: #e0e0e0;
+  --bh-source-color-modes-icon-default: #e0e0e0;
+  --bh-source-color-modes-icon-hover: #acacac;
+  --bh-source-color-modes-sidebar-default: #1d1f24;
+  --bh-source-color-modes-sidebar-hover: #26282d;
+  --bh-source-color-modes-sidebar-selected: #383a3f;
+  --bh-source-color-modes-warning-default: #db8c14;
+  --bh-source-color-modes-warning-subtle: #593d13;
+  --bh-source-color-modes-warning-pressed: #f3c362;
+  --bh-source-color-modes-warning-focus: #7d5213;
+  --bh-source-color-modes-warning-hover: #e7a739;
+  --bh-source-color-modes-warning-disabled: #232323;
+  --bh-source-color-modes-success-pressed: #4bc387;
+  --bh-source-color-modes-success-default: #0b9a5b;
+  --bh-source-color-modes-success-focus: #0e5a39;
+  --bh-source-color-modes-success-hover: #28ae70;
+  --bh-source-color-modes-success-disabled: #232323;
+  --bh-source-color-modes-success-subtle: #104227;
+  --bh-source-color-modes-error-default: #db3f3f;
+  --bh-source-color-modes-error-pressed: #f39992;
+  --bh-source-color-modes-error-subtle: #592222;
+  --bh-source-color-modes-error-disabled: #232323;
+  --bh-source-color-modes-error-hover: #e76b67;
+  --bh-source-color-modes-error-focus: #7d2a2a;
+  --bh-source-color-modes-base-card: #252525;
+  --bh-source-color-modes-base-popover: #252525;
+  --bh-source-color-modes-base-ring-offset: #252525;
+  --bh-source-color-modes-base-chart-1: #0958d9;
+  --bh-source-color-modes-base-chart-2: #28ae70;
+  --bh-source-color-modes-base-chart-3: #ffa114;
+  --bh-source-color-modes-base-chart-4: #9254de;
+  --bh-source-color-modes-base-chart-5: #ff4747;
+  --bh-source-color-modes-alpha-5: rgb(18 18 18 / 95%);
+  --bh-source-color-modes-alpha-10: rgb(18 18 18 / 90%);
+  --bh-source-color-modes-alpha-20: rgb(18 18 18 / 80%);
+  --bh-source-color-modes-alpha-30: rgb(18 18 18 / 70%);
+  --bh-source-color-modes-alpha-40: rgb(18 18 18 / 60%);
+  --bh-source-color-modes-alpha-50: rgb(18 18 18 / 50%);
+  --bh-source-color-modes-alpha-60: rgb(18 18 18 / 40%);
+  --bh-source-color-modes-alpha-80: rgb(18 18 18 / 20%);
+  --bh-source-color-modes-alpha-90: rgb(18 18 18 / 10%);
+  --bh-source-color-modes-custom-background-dark-input-30: rgb(255 255 255 / 4.5%);
+  --bh-source-color-modes-custom-background-dark-calendar-30: rgb(255 255 255 / 4.5%);
+  --bh-source-color-modes-custom-accent-dark-input-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-accent-dark-calendar-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-input-dark-input-80: rgb(255 255 255 / 12%);
+  --bh-source-color-modes-custom-input-50-dark-input-80: rgb(255 255 255 / 15%);
+  --bh-source-color-modes-custom-input-30-dark-transparent: rgb(255 255 255 / 0.5%);
+  --bh-source-color-modes-custom-muted-dark-input-50: rgb(255 255 255 / 7.5%);
+  --bh-source-color-modes-custom-destructive-10-dark-destructive-20: rgb(255 108 108 / 20%);
+  --bh-source-color-modes-custom-destructive-20-dark-destructive-30: rgb(255 108 108 / 30%);
+  --bh-source-color-modes-custom-destructive-40-dark-destructive-40: rgb(255 108 108 / 40%);
+  --bh-source-color-modes-custom-dark-input: #2f2f2f;
+  --bh-source-color-modes-custom-outline: rgb(125 125 125 / 50%);
+  --bh-source-color-modes-custom-blue-500-dark-blue-600: #2f54eb;
+  --bh-source-color-modes-custom-ring-dark-input-dark: rgb(255 255 255 / 15%);
+  --bh-source-color-modes-custom-popover-70: rgb(37 37 37 / 70%);
+  --bh-source-color-modes-custom-bg-background-20-dark-bg-background-10: rgb(18 18 18 / 10%);
+  --bh-source-color-modes-custom-bg-primary-5-dark-bg-primary-10: rgb(255 255 255 / 10%);
+  --bh-source-color-modes-custom-amber-900-dark-amber-50: #fffbe6;
+  --bh-source-color-modes-custom-amber-200-dark-amber-900: #874d00;
+  --bh-source-color-modes-custom-amber-50-dark-amber-950: #3b1e00;
+}
+
+/* Generated from design source Variables — 1. Foundation (420) */
+:root {
+  --bh-source-foundation-spacing-0: 0px;
+  --bh-source-foundation-spacing-px: 1px;
+  --bh-source-foundation-spacing-0-5: 2px;
+  --bh-source-foundation-spacing-1: 4px;
+  --bh-source-foundation-spacing-1-5: 6px;
+  --bh-source-foundation-spacing-2: 8px;
+  --bh-source-foundation-spacing-2-5: 10px;
+  --bh-source-foundation-spacing-3: 12px;
+  --bh-source-foundation-spacing-3-5: 14px;
+  --bh-source-foundation-spacing-4: 16px;
+  --bh-source-foundation-spacing-5: 20px;
+  --bh-source-foundation-spacing-6: 24px;
+  --bh-source-foundation-spacing-7: 28px;
+  --bh-source-foundation-spacing-8: 32px;
+  --bh-source-foundation-spacing-9: 36px;
+  --bh-source-foundation-spacing-10: 40px;
+  --bh-source-foundation-spacing-11: 44px;
+  --bh-source-foundation-spacing-12: 48px;
+  --bh-source-foundation-spacing-14: 56px;
+  --bh-source-foundation-spacing-16: 64px;
+  --bh-source-foundation-spacing-20: 80px;
+  --bh-source-foundation-spacing-24: 96px;
+  --bh-source-foundation-spacing-28: 112px;
+  --bh-source-foundation-spacing-32: 128px;
+  --bh-source-foundation-spacing-36: 144px;
+  --bh-source-foundation-spacing-40: 160px;
+  --bh-source-foundation-spacing-44: 176px;
+  --bh-source-foundation-spacing-48: 192px;
+  --bh-source-foundation-spacing-52: 208px;
+  --bh-source-foundation-spacing-56: 224px;
+  --bh-source-foundation-spacing-60: 240px;
+  --bh-source-foundation-spacing-64: 256px;
+  --bh-source-foundation-spacing-72: 288px;
+  --bh-source-foundation-spacing-80: 320px;
+  --bh-source-foundation-spacing-96: 384px;
+  --bh-source-foundation-width-w-0: 0px;
+  --bh-source-foundation-width-w-px: 1px;
+  --bh-source-foundation-width-w-0-5: 2px;
+  --bh-source-foundation-width-w-1: 4px;
+  --bh-source-foundation-width-w-1-5: 6px;
+  --bh-source-foundation-width-w-2: 8px;
+  --bh-source-foundation-width-w-2-5: 10px;
+  --bh-source-foundation-width-w-3: 12px;
+  --bh-source-foundation-width-w-3-5: 14px;
+  --bh-source-foundation-width-w-4: 16px;
+  --bh-source-foundation-width-w-5: 20px;
+  --bh-source-foundation-width-w-6: 24px;
+  --bh-source-foundation-width-w-7: 28px;
+  --bh-source-foundation-width-w-8: 32px;
+  --bh-source-foundation-width-w-9: 36px;
+  --bh-source-foundation-width-w-10: 40px;
+  --bh-source-foundation-width-w-11: 44px;
+  --bh-source-foundation-width-w-12: 48px;
+  --bh-source-foundation-width-w-14: 56px;
+  --bh-source-foundation-width-w-16: 64px;
+  --bh-source-foundation-width-w-20: 80px;
+  --bh-source-foundation-width-w-24: 96px;
+  --bh-source-foundation-width-w-28: 112px;
+  --bh-source-foundation-width-w-32: 128px;
+  --bh-source-foundation-width-w-36: 144px;
+  --bh-source-foundation-width-w-44: 160px;
+  --bh-source-foundation-width-w-48: 176px;
+  --bh-source-foundation-width-w-52: 192px;
+  --bh-source-foundation-width-w-56: 208px;
+  --bh-source-foundation-width-w-64: 224px;
+  --bh-source-foundation-width-w-72: 240px;
+  --bh-source-foundation-width-w-80: 256px;
+  --bh-source-foundation-width-w-96: 288px;
+  --bh-source-foundation-min-width-min-w-px: 1px;
+  --bh-source-foundation-min-width-min-w-3xs: var(--bh-source-theme-container-3xs);
+  --bh-source-foundation-min-width-min-w-2xs: var(--bh-source-theme-container-2xs);
+  --bh-source-foundation-min-width-min-w-xs: var(--bh-source-theme-container-xs);
+  --bh-source-foundation-min-width-min-w-sm: var(--bh-source-theme-container-sm);
+  --bh-source-foundation-min-width-min-w-md: var(--bh-source-theme-container-md);
+  --bh-source-foundation-min-width-min-w-lg: var(--bh-source-theme-container-lg);
+  --bh-source-foundation-min-width-min-w-xl: var(--bh-source-theme-container-xl);
+  --bh-source-foundation-min-width-min-w-2xl: var(--bh-source-theme-container-2xl);
+  --bh-source-foundation-min-width-min-w-3xl: var(--bh-source-theme-container-3xl);
+  --bh-source-foundation-min-width-min-w-4xl: var(--bh-source-theme-container-4xl);
+  --bh-source-foundation-min-width-min-w-5xl: var(--bh-source-theme-container-5xl);
+  --bh-source-foundation-min-width-min-w-6xl: var(--bh-source-theme-container-6xl);
+  --bh-source-foundation-min-width-min-w-7xl: var(--bh-source-theme-container-7xl);
+  --bh-source-foundation-max-width-max-w-none: none;
+  --bh-source-foundation-max-width-max-w-px: 1px;
+  --bh-source-foundation-max-width-max-w-3xs: var(--bh-source-theme-container-3xs);
+  --bh-source-foundation-max-width-max-w-2xs: var(--bh-source-theme-container-2xs);
+  --bh-source-foundation-max-width-max-w-xs: var(--bh-source-theme-container-xs);
+  --bh-source-foundation-max-width-max-w-sm: var(--bh-source-theme-container-sm);
+  --bh-source-foundation-max-width-max-w-md: var(--bh-source-theme-container-md);
+  --bh-source-foundation-max-width-max-w-lg: var(--bh-source-theme-container-lg);
+  --bh-source-foundation-max-width-max-w-xl: var(--bh-source-theme-container-xl);
+  --bh-source-foundation-max-width-max-w-2xl: var(--bh-source-theme-container-2xl);
+  --bh-source-foundation-max-width-max-w-3xl: var(--bh-source-theme-container-3xl);
+  --bh-source-foundation-max-width-max-w-4xl: var(--bh-source-theme-container-4xl);
+  --bh-source-foundation-max-width-max-w-5xl: var(--bh-source-theme-container-5xl);
+  --bh-source-foundation-max-width-max-w-6xl: var(--bh-source-theme-container-6xl);
+  --bh-source-foundation-max-width-max-w-7xl: var(--bh-source-theme-container-7xl);
+  --bh-source-foundation-height-h-0: 0px;
+  --bh-source-foundation-height-h-px: 1px;
+  --bh-source-foundation-height-h-0-5: 2px;
+  --bh-source-foundation-height-h-1: 4px;
+  --bh-source-foundation-height-h-1-5: 6px;
+  --bh-source-foundation-height-h-2: 8px;
+  --bh-source-foundation-height-h-2-5: 10px;
+  --bh-source-foundation-height-h-3: 12px;
+  --bh-source-foundation-height-h-3-5: 14px;
+  --bh-source-foundation-height-h-4: 16px;
+  --bh-source-foundation-height-h-5: 20px;
+  --bh-source-foundation-height-h-6: 24px;
+  --bh-source-foundation-height-h-7: 28px;
+  --bh-source-foundation-height-h-8: 32px;
+  --bh-source-foundation-height-h-9: 36px;
+  --bh-source-foundation-height-h-10: 40px;
+  --bh-source-foundation-height-h-11: 44px;
+  --bh-source-foundation-height-h-12: 48px;
+  --bh-source-foundation-height-h-14: 56px;
+  --bh-source-foundation-height-h-16: 64px;
+  --bh-source-foundation-height-h-20: 80px;
+  --bh-source-foundation-height-h-24: 96px;
+  --bh-source-foundation-height-h-28: 112px;
+  --bh-source-foundation-height-h-32: 128px;
+  --bh-source-foundation-height-h-36: 144px;
+  --bh-source-foundation-height-h-44: 160px;
+  --bh-source-foundation-height-h-48: 176px;
+  --bh-source-foundation-height-h-52: 192px;
+  --bh-source-foundation-height-h-56: 208px;
+  --bh-source-foundation-height-h-64: 224px;
+  --bh-source-foundation-height-h-72: 240px;
+  --bh-source-foundation-height-h-80: 256px;
+  --bh-source-foundation-height-h-96: 288px;
+  --bh-source-foundation-breakpoint-sm: var(--bh-source-theme-breakpoint-sm);
+  --bh-source-foundation-breakpoint-md: var(--bh-source-theme-breakpoint-md);
+  --bh-source-foundation-breakpoint-lg: var(--bh-source-theme-breakpoint-lg);
+  --bh-source-foundation-breakpoint-xl: var(--bh-source-theme-breakpoint-xl);
+  --bh-source-foundation-breakpoint-2xl: var(--bh-source-theme-breakpoint-2xl);
+  --bh-source-foundation-border-radius-rounded-none: 0px;
+  --bh-source-foundation-border-radius-rounded-xs: 2px;
+  --bh-source-foundation-border-radius-rounded-sm: 4px;
+  --bh-source-foundation-border-radius-rounded-md: 8px;
+  --bh-source-foundation-border-radius-rounded-lg: 12px;
+  --bh-source-foundation-border-radius-rounded-xl: 16px;
+  --bh-source-foundation-border-radius-rounded-2xl: 20px;
+  --bh-source-foundation-border-radius-rounded-3xl: 24px;
+  --bh-source-foundation-border-radius-rounded-4xl: 24px;
+  --bh-source-foundation-border-radius-rounded-full: 9999px;
+  --bh-source-foundation-border-width-border-0: 0px;
+  --bh-source-foundation-border-width-border: 1px;
+  --bh-source-foundation-border-width-border-2: 2px;
+  --bh-source-foundation-border-width-border-3: 3px;
+  --bh-source-foundation-border-width-border-4: 4px;
+  --bh-source-foundation-border-width-border-5: 5px;
+  --bh-source-foundation-border-width-border-6: 6px;
+  --bh-source-foundation-border-width-border-7: 6px;
+  --bh-source-foundation-border-width-border-8: 8px;
+  --bh-source-foundation-stroke-width-stroke-0: 0;
+  --bh-source-foundation-stroke-width-stroke-1: 1;
+  --bh-source-foundation-stroke-width-stroke-1-33: 1.33;
+  --bh-source-foundation-stroke-width-stroke-1-5: 1.5;
+  --bh-source-foundation-stroke-width-stroke-1-67: 1.67;
+  --bh-source-foundation-stroke-width-stroke-2: 2;
+  --bh-source-foundation-stroke-width-stroke-3: 3;
+  --bh-source-foundation-stroke-width-stroke-4: 4;
+  --bh-source-foundation-stroke-width-stroke-5: 5;
+  --bh-source-foundation-stroke-width-stroke-6: 6;
+  --bh-source-foundation-stroke-width-stroke-7: 7;
+  --bh-source-foundation-stroke-width-stroke-8: 8;
+  --bh-source-foundation-opacity-opacity-0: 0%;
+  --bh-source-foundation-opacity-opacity-5: 5%;
+  --bh-source-foundation-opacity-opacity-10: 10%;
+  --bh-source-foundation-opacity-opacity-15: 15%;
+  --bh-source-foundation-opacity-opacity-20: 20%;
+  --bh-source-foundation-opacity-opacity-25: 25%;
+  --bh-source-foundation-opacity-opacity-30: 30%;
+  --bh-source-foundation-opacity-opacity-35: 35%;
+  --bh-source-foundation-opacity-opacity-40: 40%;
+  --bh-source-foundation-opacity-opacity-45: 45%;
+  --bh-source-foundation-opacity-opacity-50: 50%;
+  --bh-source-foundation-opacity-opacity-55: 55%;
+  --bh-source-foundation-opacity-opacity-60: 60%;
+  --bh-source-foundation-opacity-opacity-65: 65%;
+  --bh-source-foundation-opacity-opacity-70: 70%;
+  --bh-source-foundation-opacity-opacity-75: 75%;
+  --bh-source-foundation-opacity-opacity-80: 80%;
+  --bh-source-foundation-opacity-opacity-85: 85%;
+  --bh-source-foundation-opacity-opacity-90: 90%;
+  --bh-source-foundation-opacity-opacity-95: 95%;
+  --bh-source-foundation-opacity-opacity-100: 100%;
+  --bh-source-foundation-line-height-leading-1: 4px;
+  --bh-source-foundation-line-height-leading-2: 8px;
+  --bh-source-foundation-line-height-leading-3: 12px;
+  --bh-source-foundation-line-height-leading-4: 16px;
+  --bh-source-foundation-line-height-leading-5: 20px;
+  --bh-source-foundation-line-height-leading-6: 24px;
+  --bh-source-foundation-line-height-leading-7: 28px;
+  --bh-source-foundation-line-height-leading-8: 32px;
+  --bh-source-foundation-line-height-leading-9: 36px;
+  --bh-source-foundation-line-height-leading-10: 40px;
+  --bh-source-foundation-line-height-leading-11: 44px;
+  --bh-source-foundation-line-height-leading-12: 48px;
+  --bh-source-foundation-line-height-leading-13: 52px;
+  --bh-source-foundation-line-height-leading-14: 56px;
+  --bh-source-foundation-line-height-leading-15: 60px;
+  --bh-source-foundation-line-height-leading-16: 64px;
+  --bh-source-foundation-line-height-leading-17: 68px;
+  --bh-source-foundation-line-height-leading-18: 72px;
+  --bh-source-foundation-line-height-leading-19: 76px;
+  --bh-source-foundation-line-height-leading-20: 80px;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-0: #f8f9ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-1: #f2f3ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-2: #d9e1ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-3: #c2d4ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-4: #c7d2ff;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-5: #93adf3;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-6: #7086cc;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-7: #626aea;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-8: #3c49dd;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-9: #2f37b7;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-10: #5363a6;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-11: #394580;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-12: #272e59;
+  --bh-source-foundation-bohrium-primitive-color-primary-primary-13: #181a3c;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-0: #f7fafe;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-1: #f2f5f9;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-2: #ebeef3;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-3: #383a3f;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-4: #26282d;
+  --bh-source-foundation-bohrium-primitive-color-bluegray-bluegray-5: #1d1f24;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-0: #ffffff;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-1: #f9fafd;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-2: #f7fafe;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-3: #f7f8fa;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-4: #f2f3f5;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-5: #e5e6ec;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-6: #c9cdd5;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-7: #86909c;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-8: #4e5969;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-9: #1d2129;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-10: #e0e0e0;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-11: #acacac;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-12: #7d7d7d;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-13: #383838;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-14: #2f2f2f;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-15: #2c2c2c;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-16: #252525;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-17: #232323;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-18: #1e1e1e;
+  --bh-source-foundation-bohrium-primitive-color-gray-gray-19: #121212;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-0: #e3f9e9;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-1: #c6f3d7;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-2: #92dab2;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-3: #56c08d;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-4: #4bc387;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-5: #0ab268;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-6: #28ae70;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-7: #0b9a5b;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-8: #008858;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-9: #0e5a39;
+  --bh-source-foundation-bohrium-primitive-color-mintgreen-mintgreen-10: #104227;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-0: #fcffe6;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-1: #f4ffb8;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-2: #eaff8f;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-3: #d3f261;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-4: #bae637;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-5: #a0d911;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-6: #7cb305;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-7: #5b8c00;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-8: #3f6600;
+  --bh-source-foundation-bohrium-primitive-color-lime-lime-9: #254000;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-0: #feffe6;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-1: #ffffb8;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-2: #fffb8f;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-3: #fff566;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-4: #ffec3d;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-5: #fadb14;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-6: #d4b106;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-7: #ad8b00;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-8: #876800;
+  --bh-source-foundation-bohrium-primitive-color-yellow-yellow-9: #614700;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-0: #fffbe6;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-1: #fff1b8;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-2: #ffe58f;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-3: #f3c362;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-4: #ffd666;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-5: #e7a739;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-6: #ffc53d;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-7: #faad14;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-8: #db8c14;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-9: #d48806;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-10: #ad6800;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-11: #7d5213;
+  --bh-source-foundation-bohrium-primitive-color-gold-gold-12: #593d13;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-0: #fff2e8;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-1: #ffd8bf;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-2: #ffbb96;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-3: #ff9c6e;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-4: #ff7a45;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-5: #fa541c;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-6: #d4380d;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-7: #ad2102;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-8: #871400;
+  --bh-source-foundation-bohrium-primitive-color-volcano-volcano-9: #610b00;
+  --bh-source-foundation-bohrium-primitive-color-red-red-0: #FFEEDED;
+  --bh-source-foundation-bohrium-primitive-color-red-red-1: #ffc7c7;
+  --bh-source-foundation-bohrium-primitive-color-red-red-2: #ff9191;
+  --bh-source-foundation-bohrium-primitive-color-red-red-3: #f39992;
+  --bh-source-foundation-bohrium-primitive-color-red-red-4: #ff6c6c;
+  --bh-source-foundation-bohrium-primitive-color-red-red-5: #e76b67;
+  --bh-source-foundation-bohrium-primitive-color-red-red-6: #ff4747;
+  --bh-source-foundation-bohrium-primitive-color-red-red-7: #f5222d;
+  --bh-source-foundation-bohrium-primitive-color-red-red-8: #db3f3f;
+  --bh-source-foundation-bohrium-primitive-color-red-red-9: #cc3939;
+  --bh-source-foundation-bohrium-primitive-color-red-red-10: #a8071a;
+  --bh-source-foundation-bohrium-primitive-color-red-red-11: #7d2a2a;
+  --bh-source-foundation-bohrium-primitive-color-red-red-12: #592222;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-0: #fff5e3;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-1: #ffe8b2;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-2: #fdd78a;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-3: #ffb04f;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-4: #ffa114;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-5: #ed7a00;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-6: #d46b08;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-7: #ad4e00;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-8: #873800;
+  --bh-source-foundation-bohrium-primitive-color-orange-orange-9: #612500;
+  --bh-source-foundation-bohrium-primitive-color-green-green-0: #f6ffed;
+  --bh-source-foundation-bohrium-primitive-color-green-green-1: #d9f7be;
+  --bh-source-foundation-bohrium-primitive-color-green-green-2: #b7eb8f;
+  --bh-source-foundation-bohrium-primitive-color-green-green-3: #95de64;
+  --bh-source-foundation-bohrium-primitive-color-green-green-4: #73d13d;
+  --bh-source-foundation-bohrium-primitive-color-green-green-5: #52c41a;
+  --bh-source-foundation-bohrium-primitive-color-green-green-6: #389e0d;
+  --bh-source-foundation-bohrium-primitive-color-green-green-7: #237804;
+  --bh-source-foundation-bohrium-primitive-color-green-green-8: #135200;
+  --bh-source-foundation-bohrium-primitive-color-green-green-9: #092b00;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-0: #e6fffb;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-1: #b5f5ec;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-2: #87e8de;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-3: #5cdbd3;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-4: #36cfc9;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-5: #13c2c2;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-6: #08979c;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-7: #006d75;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-8: #00474f;
+  --bh-source-foundation-bohrium-primitive-color-cyan-cyan-9: #002329;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-0: #e6f4ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-1: #bae0ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-2: #91caff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-3: #69b1ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-4: #4096ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-5: #1677ff;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-6: #0958d9;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-7: #003eb3;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-8: #002c8c;
+  --bh-source-foundation-bohrium-primitive-color-blue-blue-9: #001d66;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-0: #f0f5ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-1: #d6e4ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-2: #adc6ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-3: #85a5ff;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-4: #597ef7;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-5: #2f54eb;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-6: #1d39c4;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-7: #10239e;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-8: #061178;
+  --bh-source-foundation-bohrium-primitive-color-geekblue-geekblue-9: #030852;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-0: #fff0f6;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-1: #ffd6e7;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-2: #ffadd2;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-3: #ff85c0;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-4: #f759ab;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-5: #eb2f96;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-6: #c41d7f;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-7: #9e1068;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-8: #780650;
+  --bh-source-foundation-bohrium-primitive-color-magenta-magenta-9: #520339;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-0: #f9f0ff;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-1: #efdbff;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-2: #d3adf7;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-3: #b37feb;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-4: #9254de;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-5: #722ed1;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-6: #531dab;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-7: #391085;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-8: #22075e;
+  --bh-source-foundation-bohrium-primitive-color-purple-purple-9: #120338;
+  --bh-source-foundation-compatibility-tailwind-base-transparent: #ffffff;
+  --bh-source-foundation-compatibility-tailwind-base-black: #000000;
+  --bh-source-foundation-compatibility-tailwind-blue-500: #3b82f6;
+  --bh-source-foundation-compatibility-tailwind-blue-600: #2563eb;
+  --bh-source-foundation-compatibility-tailwind-sky-50: #f0f9ff;
+  --bh-source-foundation-compatibility-tailwind-sky-400: #38bdf8;
+  --bh-source-foundation-compatibility-tailwind-sky-600: #0284c7;
+  --bh-source-foundation-compatibility-tailwind-sky-900: #0c4a6e;
+  --bh-source-foundation-compatibility-tailwind-green-500: #22c55e;
+  --bh-source-foundation-compatibility-tailwind-green-600: #16a34a;
+  --bh-source-foundation-compatibility-tailwind-green-700: #15803d;
+  --bh-source-foundation-compatibility-tailwind-zinc-900: #18181b;
+  --bh-source-foundation-compatibility-tailwind-zinc-950: #09090b;
+  --bh-source-foundation-compatibility-tailwind-yellow-500: #eab308;
+  --bh-source-foundation-compatibility-tailwind-yellow-600: #ca8a04;
+  --bh-source-foundation-compatibility-tailwind-orange-50: #fff7ed;
+  --bh-source-foundation-compatibility-tailwind-orange-500: #f97316;
+  --bh-source-foundation-compatibility-tailwind-orange-600: #ea580c;
+  --bh-source-foundation-compatibility-tailwind-red-500: #ef4444;
+  --bh-source-foundation-compatibility-tailwind-purple-500: #a855f7;
+  --bh-source-foundation-compatibility-tailwind-purple-600: #9333ea;
+  --bh-source-foundation-compatibility-tailwind-purple-700: #7e22ce;
+  --bh-source-foundation-compatibility-tailwind-neutral-50: #fafafa;
+  --bh-source-foundation-compatibility-tailwind-neutral-500: #737373;
+  --bh-source-foundation-compatibility-tailwind-neutral-950: #0a0a0a;
+  --bh-source-foundation-compatibility-tailwind-indigo-50: #eef2ff;
+  --bh-source-foundation-compatibility-tailwind-indigo-600: #4f46e5;
+  --bh-source-foundation-compatibility-tailwind-pink-50: #fdf2f8;
+  --bh-source-foundation-compatibility-tailwind-pink-500: #ec4899;
+  --bh-source-foundation-compatibility-tailwind-pink-600: #db2777;
+  --bh-source-foundation-compatibility-tailwind-cyan-500: #06b6d4;
+  --bh-source-foundation-compatibility-tailwind-violet-500: #8b5cf6;
+  --bh-source-foundation-compatibility-tailwind-amber-50: #fffbeb;
+  --bh-source-foundation-compatibility-tailwind-amber-600: #d97706;
+  --bh-source-foundation-compatibility-tailwind-lime-300: #bef264;
+  --bh-source-foundation-compatibility-tailwind-slate-950: #020617;
+}
+
+/* Generated from design source Variables — 2. Theme (126) */
+:root {
+  --bh-source-theme-font-font-sans: 'PingFang SC';
+  --bh-source-theme-breakpoint-sm: 640px;
+  --bh-source-theme-breakpoint-md: 768px;
+  --bh-source-theme-breakpoint-lg: 1024px;
+  --bh-source-theme-breakpoint-xl: 1280px;
+  --bh-source-theme-breakpoint-2xl: 1536px;
+  --bh-source-theme-container-3xs: 256px;
+  --bh-source-theme-container-2xs: 288px;
+  --bh-source-theme-container-xs: 320px;
+  --bh-source-theme-container-sm: 384px;
+  --bh-source-theme-container-md: 448px;
+  --bh-source-theme-container-lg: 512px;
+  --bh-source-theme-container-xl: 576px;
+  --bh-source-theme-container-2xl: 672px;
+  --bh-source-theme-container-3xl: 768px;
+  --bh-source-theme-container-4xl: 896px;
+  --bh-source-theme-container-5xl: 1024px;
+  --bh-source-theme-container-6xl: 1152px;
+  --bh-source-theme-container-7xl: 1280px;
+  --bh-source-theme-text-10-font-size: 10px;
+  --bh-source-theme-text-12-font-size: 12px;
+  --bh-source-theme-text-13-font-size: 13px;
+  --bh-source-theme-text-14-font-size: 14px;
+  --bh-source-theme-text-16-font-size: 16px;
+  --bh-source-theme-text-18-font-size: 18px;
+  --bh-source-theme-text-20-font-size: 20px;
+  --bh-source-theme-text-24-font-size: 24px;
+  --bh-source-theme-text-26-font-size: 26px;
+  --bh-source-theme-text-28-font-size: 28px;
+  --bh-source-theme-text-xs-font-size: 12px;
+  --bh-source-theme-text-xs-line-height: 16px;
+  --bh-source-theme-text-sm-font-size: 14px;
+  --bh-source-theme-text-sm-line-height: 20px;
+  --bh-source-theme-text-base-font-size: 16px;
+  --bh-source-theme-text-base-line-height: 24px;
+  --bh-source-theme-text-lg-font-size: 18px;
+  --bh-source-theme-text-lg-line-height: 28px;
+  --bh-source-theme-text-xl-font-size: 20px;
+  --bh-source-theme-text-xl-font-size-2: 24px;
+  --bh-source-theme-text-xl-line-height: 28px;
+  --bh-source-theme-text-2xl-line-height: 32px;
+  --bh-source-theme-text-3xl-font-size: 30px;
+  --bh-source-theme-text-3xl-line-height: 36px;
+  --bh-source-theme-text-4xl-font-size: 36px;
+  --bh-source-theme-text-4xl-line-height: 40px;
+  --bh-source-theme-text-5xl-font-size: 48px;
+  --bh-source-theme-text-5xl-line-height: 48px;
+  --bh-source-theme-text-6xl-font-size: 60px;
+  --bh-source-theme-text-6xl-line-height: 60px;
+  --bh-source-theme-text-7xl-font-size: 72px;
+  --bh-source-theme-text-7xl-line-height: 72px;
+  --bh-source-theme-text-8xl-font-size: 96px;
+  --bh-source-theme-text-8xl-line-height: 96px;
+  --bh-source-theme-text-9xl-font-size: 128px;
+  --bh-source-theme-text-9xl-line-height: 128px;
+  --bh-source-theme-font-weight-thin: 100;
+  --bh-source-theme-font-weight-extralight: 200;
+  --bh-source-theme-font-weight-light: 300;
+  --bh-source-theme-font-weight-normal: 400;
+  --bh-source-theme-font-weight-medium: 500;
+  --bh-source-theme-font-weight-semibold: 600;
+  --bh-source-theme-font-weight-bold: 700;
+  --bh-source-theme-font-weight-extrabold: 800;
+  --bh-source-theme-font-weight-black: 900;
+  --bh-source-theme-radius-xs: 2px;
+  --bh-source-theme-radius-sm: 4px;
+  --bh-source-theme-radius-md: 8px;
+  --bh-source-theme-radius-lg: 12px;
+  --bh-source-theme-radius-xl: 16px;
+  --bh-source-theme-radius-2xl: 20px;
+  --bh-source-theme-radius-3xl: 24px;
+  --bh-source-theme-radius-4xl: 24px;
+  --bh-source-theme-shadow-xs-offset-x: 0px;
+  --bh-source-theme-shadow-xs-offset-y: 2px;
+  --bh-source-theme-shadow-xs-blur-radius: 4px;
+  --bh-source-theme-shadow-xs-spread-radius: 0px;
+  --bh-source-theme-shadow-xs-color: #5363a6;
+  --bh-source-theme-shadow-sm-1-offset-x: 0px;
+  --bh-source-theme-shadow-sm-1-offset-y: 4px;
+  --bh-source-theme-shadow-sm-1-blur-radius: 6px;
+  --bh-source-theme-shadow-sm-1-spread-radius: -1px;
+  --bh-source-theme-shadow-sm-1-color: #5363a6;
+  --bh-source-theme-shadow-sm-2-offset-x: 0px;
+  --bh-source-theme-shadow-sm-2-offset-y: 1px;
+  --bh-source-theme-shadow-sm-2-blur-radius: 2px;
+  --bh-source-theme-shadow-sm-2-spread-radius: -1px;
+  --bh-source-theme-shadow-sm-2-color: #5363a6;
+  --bh-source-theme-shadow-md-1-offset-x: 0px;
+  --bh-source-theme-shadow-md-1-offset-y: 4px;
+  --bh-source-theme-shadow-md-1-blur-radius: 6px;
+  --bh-source-theme-shadow-md-1-spread-radius: -1px;
+  --bh-source-theme-shadow-md-1-color: #5363a6;
+  --bh-source-theme-shadow-md-2-offset-x: 0px;
+  --bh-source-theme-shadow-md-2-offset-y: 2px;
+  --bh-source-theme-shadow-md-2-blur-radius: 4px;
+  --bh-source-theme-shadow-md-2-spread-radius: -2px;
+  --bh-source-theme-shadow-md-2-color: #5363a6;
+  --bh-source-theme-shadow-lg-1-offset-x: 0px;
+  --bh-source-theme-shadow-lg-1-offset-y: 10px;
+  --bh-source-theme-shadow-lg-1-blur-radius: 16px;
+  --bh-source-theme-shadow-lg-1-spread-radius: -3px;
+  --bh-source-theme-shadow-lg-1-color: #5363a6;
+  --bh-source-theme-shadow-lg-2-offset-x: 0px;
+  --bh-source-theme-shadow-lg-2-offset-y: 4px;
+  --bh-source-theme-shadow-lg-2-blur-radius: 6px;
+  --bh-source-theme-shadow-lg-2-spread-radius: -4px;
+  --bh-source-theme-shadow-lg-2-color: #5363a6;
+  --bh-source-theme-shadow-focus-color: #5363a6;
+  --bh-source-theme-shadow-invalid-color: #ff4747;
+  --bh-source-theme-shadow-utility-color: #121212;
+  --bh-source-theme-line-height-16: 16px;
+  --bh-source-theme-line-height-20: 20px;
+  --bh-source-theme-line-height-22: 22px;
+  --bh-source-theme-line-height-24: 24px;
+  --bh-source-theme-line-height-26: 26px;
+  --bh-source-theme-line-height-28: 28px;
+  --bh-source-theme-line-height-32: 32px;
+  --bh-source-theme-line-height-34: 34px;
+  --bh-source-theme-line-height-36: 36px;
+  --bh-source-theme-line-height-38: 38px;
+  --bh-source-theme-line-height-40: 40px;
+  --bh-source-theme-line-height-42: 42px;
+  --bh-source-theme-line-height-44: 44px;
+  --bh-source-theme-letter-spacing-normal: 0px;
+  --bh-source-theme-paragraph-spacing-none: 0px;
+  --bh-source-theme-paragraph-indent-none: 0px;
+}
+
+/* Generated from design source Variables — 4. Pro / Responsive (29) */
+:root {
+  --bh-source-pro-responsive-container-padding-x: 24px;
+  --bh-source-pro-responsive-section-padding-y: 96px;
+  --bh-source-pro-responsive-section-title-gap-sm: 16px;
+  --bh-source-pro-responsive-section-title-gap-md: 20px;
+  --bh-source-pro-responsive-section-title-gap-lg: 20px;
+  --bh-source-pro-responsive-section-title-gap-xl: 24px;
+  --bh-source-pro-responsive-component-padding-sm: 8px;
+  --bh-source-pro-responsive-component-padding-md: 16px;
+  --bh-source-pro-responsive-component-padding-lg: 24px;
+  --bh-source-pro-responsive-heading-xl-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-xl-font-size: 60px;
+  --bh-source-pro-responsive-heading-xl-line-height: 60px;
+  --bh-source-pro-responsive-heading-xl-font-weight: 600;
+  --bh-source-pro-responsive-heading-xl-letter-spacing: -1.5px;
+  --bh-source-pro-responsive-heading-lg-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-lg-font-size: 48px;
+  --bh-source-pro-responsive-heading-lg-line-height: 48px;
+  --bh-source-pro-responsive-heading-lg-font-weight: 600;
+  --bh-source-pro-responsive-heading-lg-letter-spacing: -1.2px;
+  --bh-source-pro-responsive-heading-md-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-md-font-size: 36px;
+  --bh-source-pro-responsive-heading-md-line-height: 40px;
+  --bh-source-pro-responsive-heading-md-font-weight: 600;
+  --bh-source-pro-responsive-heading-md-letter-spacing: -0.9px;
+  --bh-source-pro-responsive-heading-sm-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-sm-font-size: 24px;
+  --bh-source-pro-responsive-heading-sm-line-height: 32px;
+  --bh-source-pro-responsive-heading-sm-font-weight: 600;
+  --bh-source-pro-responsive-heading-sm-letter-spacing: -0.6px;
+}
+
+:root[data-responsive-mode='mobile'] {
+  --bh-source-pro-responsive-container-padding-x: 16px;
+  --bh-source-pro-responsive-section-padding-y: 64px;
+  --bh-source-pro-responsive-section-title-gap-sm: 16px;
+  --bh-source-pro-responsive-section-title-gap-md: 16px;
+  --bh-source-pro-responsive-section-title-gap-lg: 16px;
+  --bh-source-pro-responsive-section-title-gap-xl: 20px;
+  --bh-source-pro-responsive-component-padding-sm: 8px;
+  --bh-source-pro-responsive-component-padding-md: 16px;
+  --bh-source-pro-responsive-component-padding-lg: 24px;
+  --bh-source-pro-responsive-heading-xl-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-xl-font-size: 48px;
+  --bh-source-pro-responsive-heading-xl-line-height: 48px;
+  --bh-source-pro-responsive-heading-xl-font-weight: 600;
+  --bh-source-pro-responsive-heading-xl-letter-spacing: -1.2px;
+  --bh-source-pro-responsive-heading-lg-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-lg-font-size: 36px;
+  --bh-source-pro-responsive-heading-lg-line-height: 40px;
+  --bh-source-pro-responsive-heading-lg-font-weight: 600;
+  --bh-source-pro-responsive-heading-lg-letter-spacing: -0.9px;
+  --bh-source-pro-responsive-heading-md-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-md-font-size: 30px;
+  --bh-source-pro-responsive-heading-md-line-height: 36px;
+  --bh-source-pro-responsive-heading-md-font-weight: 600;
+  --bh-source-pro-responsive-heading-md-letter-spacing: -0.75px;
+  --bh-source-pro-responsive-heading-sm-font-family: 'PingFang SC';
+  --bh-source-pro-responsive-heading-sm-font-size: 20px;
+  --bh-source-pro-responsive-heading-sm-line-height: 28px;
+  --bh-source-pro-responsive-heading-sm-font-weight: 600;
+  --bh-source-pro-responsive-heading-sm-letter-spacing: -0.5px;
+}
+
+/* Generated from design source Variables — 6. Icon Context and 6. Bohr Icon */
+:root {
+  /* Icon Context / context modes */
+  --bh-source-icon-context-context-text-default: var(--bh-source-color-modes-text-default);
+  --bh-source-icon-context-context-primary-white: var(--bh-source-color-modes-primary-white);
+  --bh-source-icon-context-context-error-default: var(--bh-source-color-modes-error-default);
+  --bh-source-icon-context-context-primary-default: var(--bh-source-color-modes-primary-default);
+
+  /* Bohr Icon / stroke-width modes 24, 22, 20, 18, 16, 14, 12, 10, 15, 8 */
+  --bh-source-bohr-icon-default-24: 1.8;
+  --bh-source-bohr-icon-default-22: 1.65;
+  --bh-source-bohr-icon-default-20: 1.5;
+  --bh-source-bohr-icon-default-18: 1.35;
+  --bh-source-bohr-icon-default-16: 1.2;
+  --bh-source-bohr-icon-default-14: 1.05;
+  --bh-source-bohr-icon-default-12: 0.9;
+  --bh-source-bohr-icon-default-10: 0.75;
+  --bh-source-bohr-icon-default-15: 1.13;
+  --bh-source-bohr-icon-default-8: 0.6;
+  --bh-source-bohr-icon-strong-2-24: 2;
+  --bh-source-bohr-icon-strong-2-22: 1.83;
+  --bh-source-bohr-icon-strong-2-20: 1.67;
+  --bh-source-bohr-icon-strong-2-18: 1.5;
+  --bh-source-bohr-icon-strong-2-16: 1.33;
+  --bh-source-bohr-icon-strong-2-14: 1.17;
+  --bh-source-bohr-icon-strong-2-12: 1;
+  --bh-source-bohr-icon-strong-2-10: 0.83;
+  --bh-source-bohr-icon-strong-2-15: 1.25;
+  --bh-source-bohr-icon-strong-2-8: 0.67;
+  --bh-source-bohr-icon-medium-1-5-24: 1.5;
+  --bh-source-bohr-icon-medium-1-5-22: 1.38;
+  --bh-source-bohr-icon-medium-1-5-20: 1.25;
+  --bh-source-bohr-icon-medium-1-5-18: 1.13;
+  --bh-source-bohr-icon-medium-1-5-16: 1;
+  --bh-source-bohr-icon-medium-1-5-14: 0.88;
+  --bh-source-bohr-icon-medium-1-5-12: 0.75;
+  --bh-source-bohr-icon-medium-1-5-10: 0.63;
+  --bh-source-bohr-icon-medium-1-5-15: 0.94;
+  --bh-source-bohr-icon-medium-1-5-8: 0.5;
+  --bh-source-bohr-icon-compact-1-2-24: 1.2;
+  --bh-source-bohr-icon-compact-1-2-22: 1.1;
+  --bh-source-bohr-icon-compact-1-2-20: 1;
+  --bh-source-bohr-icon-compact-1-2-18: 0.9;
+  --bh-source-bohr-icon-compact-1-2-16: 0.8;
+  --bh-source-bohr-icon-compact-1-2-14: 0.7;
+  --bh-source-bohr-icon-compact-1-2-12: 0.6;
+  --bh-source-bohr-icon-compact-1-2-10: 0.5;
+  --bh-source-bohr-icon-compact-1-2-15: 0.75;
+  --bh-source-bohr-icon-compact-1-2-8: 0.4;
+  --bh-source-bohr-icon-detail-0-54-24: 0.54;
+  --bh-source-bohr-icon-detail-0-54-22: 0.5;
+  --bh-source-bohr-icon-detail-0-54-20: 0.45;
+  --bh-source-bohr-icon-detail-0-54-18: 0.41;
+  --bh-source-bohr-icon-detail-0-54-16: 0.36;
+  --bh-source-bohr-icon-detail-0-54-14: 0.31;
+  --bh-source-bohr-icon-detail-0-54-12: 0.27;
+  --bh-source-bohr-icon-detail-0-54-10: 0.22;
+  --bh-source-bohr-icon-detail-0-54-15: 0.34;
+  --bh-source-bohr-icon-detail-0-54-8: 0.18;
+  --bh-source-bohr-icon-hairline-0-2-24: 0.2;
+  --bh-source-bohr-icon-hairline-0-2-22: 0.18;
+  --bh-source-bohr-icon-hairline-0-2-20: 0.17;
+  --bh-source-bohr-icon-hairline-0-2-18: 0.15;
+  --bh-source-bohr-icon-hairline-0-2-16: 0.13;
+  --bh-source-bohr-icon-hairline-0-2-14: 0.12;
+  --bh-source-bohr-icon-hairline-0-2-12: 0.1;
+  --bh-source-bohr-icon-hairline-0-2-10: 0.08;
+  --bh-source-bohr-icon-hairline-0-2-15: 0.13;
+  --bh-source-bohr-icon-hairline-0-2-8: 0.07;
+  --bh-source-bohr-icon-wrapper-source-24: 1.8;
+  --bh-source-bohr-icon-wrapper-source-22: 1.8;
+  --bh-source-bohr-icon-wrapper-source-20: 1.8;
+  --bh-source-bohr-icon-wrapper-source-18: 1.8;
+  --bh-source-bohr-icon-wrapper-source-16: 1.8;
+  --bh-source-bohr-icon-wrapper-source-14: 1.8;
+  --bh-source-bohr-icon-wrapper-source-12: 1.8;
+  --bh-source-bohr-icon-wrapper-source-10: 1.8;
+  --bh-source-bohr-icon-wrapper-source-15: 1.8;
+  --bh-source-bohr-icon-wrapper-source-8: 1.8;
+}
+
+
+/*
+ * Default preset
+ *
+ * This file is the semantic bridge. The source files keep the complete
+ * design inventory; this file gives applications stable names. Components
+ * and adapters should consume the --bh-* names below, never --bh-source-*.
+ * Light/dark values are selected by source.colors.css through data-color-mode.
+ */
+:root,
+:root[data-design-preset='default'],
+:root:not([data-design-preset]) {
+  /* Theme and foundation aliases */
+  /* Keep the default preset aligned with the shared foundation token. */
+  --bh-font-family-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --bh-font-family-mono: 'Roboto Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --bh-font-size-xs: 0.75rem;
+  --bh-font-size-sm: 0.875rem;
+  --bh-font-size-md: 1rem;
+  --bh-font-size-lg: 1.125rem;
+  --bh-font-size-xl: 1.25rem;
+  --bh-font-size-2xl: 1.5rem;
+  --bh-font-size-3xl: 1.875rem;
+  --bh-font-size-4xl: 2.25rem;
+  --bh-font-size-5xl: 3rem;
+  --bh-font-size-6xl: 3.75rem;
+  --bh-font-size-7xl: 4.5rem;
+  --bh-font-size-8xl: 6rem;
+  --bh-font-size-9xl: 8rem;
+  --bh-line-height-xs: 1rem;
+  --bh-line-height-sm: 1.25rem;
+  --bh-line-height-md: 1.5rem;
+  --bh-line-height-lg: 1.75rem;
+  --bh-line-height-xl: 1.75rem;
+  --bh-line-height-2xl: 2rem;
+  --bh-line-height-3xl: 2.25rem;
+  --bh-line-height-4xl: 2.5rem;
+  --bh-line-height-5xl: 3rem;
+  --bh-line-height-6xl: 3.75rem;
+  --bh-line-height-7xl: 4.5rem;
+  --bh-line-height-8xl: 6rem;
+  --bh-line-height-9xl: 8rem;
+  --bh-breakpoint-sm: 40rem;
+  --bh-breakpoint-md: 48rem;
+  --bh-breakpoint-lg: 64rem;
+  --bh-breakpoint-xl: 80rem;
+  --bh-container-3xs: 16rem;
+  --bh-container-2xs: 18rem;
+  --bh-container-xs: 20rem;
+  --bh-container-sm: 24rem;
+  --bh-container-md: 28rem;
+  --bh-container-lg: 32rem;
+  --bh-container-xl: 36rem;
+  --bh-container-2xl: 42rem;
+  --bh-container-3xl: 48rem;
+  --bh-container-4xl: 56rem;
+  --bh-container-5xl: 64rem;
+  --bh-container-6xl: 72rem;
+  --bh-container-7xl: 80rem;
+
+  /* Color primitives: source layer owns the light/dark values. */
+  --bh-color-primary-white: var(--bh-source-color-modes-primary-white);
+  --bh-color-primary-neutral-light: var(--bh-source-color-modes-primary-neutral-light);
+  --bh-color-primary-background: var(--bh-source-color-modes-primary-background);
+  --bh-color-primary-background-hover: var(--bh-source-color-modes-primary-background-hover);
+  --bh-color-primary-border: var(--bh-source-color-modes-primary-border);
+  --bh-color-primary-hover: var(--bh-source-color-modes-primary-hover);
+  --bh-color-primary-default: var(--bh-source-color-modes-primary-default);
+  --bh-color-primary-pressed: var(--bh-source-color-modes-primary-pressed);
+  --bh-color-primary-focus: var(--bh-source-color-modes-primary-focus);
+  --bh-color-primary-information-light: var(--bh-source-color-modes-primary-information-light);
+  --bh-color-primary-information: var(--bh-source-color-modes-primary-information);
+  --bh-color-primary-disabled: var(--bh-source-color-modes-primary-disabled);
+  --bh-color-primary-neutral: var(--bh-source-color-modes-primary-neutral);
+  --bh-color-primary-inverse: var(--bh-source-color-modes-primary-inverse);
+  --bh-color-primary-overlay: var(--bh-source-color-modes-primary-overlay);
+  --bh-color-fill-0: var(--bh-source-color-modes-fill-0);
+  --bh-color-fill-1: var(--bh-source-color-modes-fill-1);
+  --bh-color-fill-2: var(--bh-source-color-modes-fill-2);
+  --bh-color-fill-3: var(--bh-source-color-modes-fill-3);
+  --bh-color-fill-4: var(--bh-source-color-modes-fill-4);
+  --bh-color-fill-5: var(--bh-source-color-modes-fill-5);
+  --bh-color-border-0: var(--bh-source-color-modes-border-0);
+  --bh-color-border-1: var(--bh-source-color-modes-border-1);
+  --bh-color-border-2: var(--bh-source-color-modes-border-2);
+  --bh-color-border-3: var(--bh-source-color-modes-border-3);
+  --bh-color-text-placeholder: var(--bh-source-color-modes-text-placeholder);
+  --bh-color-text-description: var(--bh-source-color-modes-text-description);
+  --bh-color-text-disabled: var(--bh-source-color-modes-text-disabled);
+  --bh-color-text-default: var(--bh-source-color-modes-text-default);
+  --bh-color-icon-default: var(--bh-source-color-modes-icon-default);
+  --bh-color-icon-context: var(--bh-source-icon-context-context-text-default);
+  --bh-color-icon-hover: var(--bh-source-color-modes-icon-hover);
+  --bh-color-sidebar-default: var(--bh-source-color-modes-sidebar-default);
+  --bh-color-sidebar-hover: var(--bh-source-color-modes-sidebar-hover);
+  --bh-color-sidebar-selected: var(--bh-source-color-modes-sidebar-selected);
+  --bh-color-warning-default: var(--bh-source-color-modes-warning-default);
+  --bh-color-warning-subtle: var(--bh-source-color-modes-warning-subtle);
+  --bh-color-warning-pressed: var(--bh-source-color-modes-warning-pressed);
+  --bh-color-warning-focus: var(--bh-source-color-modes-warning-focus);
+  --bh-color-warning-hover: var(--bh-source-color-modes-warning-hover);
+  --bh-color-warning-disabled: var(--bh-source-color-modes-warning-disabled);
+  --bh-color-alert-warning-text: var(--bh-source-color-modes-custom-amber-900-dark-amber-50);
+  --bh-color-alert-warning-border: var(--bh-source-color-modes-custom-amber-200-dark-amber-900);
+  --bh-color-alert-warning-background: var(--bh-source-color-modes-custom-amber-50-dark-amber-950);
+  --bh-color-alpha-50: var(--bh-source-color-modes-alpha-50);
+  --bh-color-alpha-10: var(--bh-source-color-modes-alpha-10);
+  --bh-color-custom-destructive-10: var(
+    --bh-source-color-modes-custom-destructive-10-dark-destructive-20
+  );
+  --bh-color-success-pressed: var(--bh-source-color-modes-success-pressed);
+  --bh-color-success-default: var(--bh-source-color-modes-success-default);
+  --bh-color-success-focus: var(--bh-source-color-modes-success-focus);
+  --bh-color-success-hover: var(--bh-source-color-modes-success-hover);
+  --bh-color-success-disabled: var(--bh-source-color-modes-success-disabled);
+  --bh-color-success-subtle: var(--bh-source-color-modes-success-subtle);
+  --bh-color-error-default: var(--bh-source-color-modes-error-default);
+  --bh-color-error-pressed: var(--bh-source-color-modes-error-pressed);
+  --bh-color-error-subtle: var(--bh-source-color-modes-error-subtle);
+  --bh-color-error-disabled: var(--bh-source-color-modes-error-disabled);
+  --bh-color-error-hover: var(--bh-source-color-modes-error-hover);
+  --bh-color-error-focus: var(--bh-source-color-modes-error-focus);
+
+  /* Stable semantic aliases consumed by pages and component adapters. */
+  /*
+   * Surface hierarchy:
+   * - the application canvas is the quiet fill layer;
+   * - cards, controls and overlays sit on the white surface layer.
+   * Keep the source inventory unchanged and express the product semantics here.
+   */
+  --bh-color-background: var(--bh-color-fill-0);
+  --bh-color-foreground: var(--bh-color-text-default);
+  --bh-color-control: var(--bh-color-primary-white);
+  --bh-color-control-hover: var(--bh-color-fill-1);
+  --bh-color-control-active: var(--bh-color-primary-background);
+  --bh-color-control-foreground: var(--bh-color-text-default);
+  --bh-color-card: var(--bh-color-primary-white);
+  --bh-color-card-foreground: var(--bh-color-text-default);
+  --bh-color-popover: var(--bh-color-primary-white);
+  --bh-color-popover-foreground: var(--bh-color-text-default);
+  --bh-color-primary: var(--bh-color-primary-default);
+  --bh-color-primary-foreground: var(--bh-color-primary-white);
+  --bh-color-secondary: var(--bh-color-fill-1);
+  --bh-color-secondary-foreground: var(--bh-color-text-default);
+  --bh-color-muted: var(--bh-color-fill-0);
+  --bh-color-muted-foreground: var(--bh-color-text-description);
+  --bh-color-accent: var(--bh-color-primary-background-hover);
+  --bh-color-accent-foreground: var(--bh-color-text-default);
+  --bh-color-destructive: var(--bh-color-error-default);
+  --bh-color-destructive-foreground: var(--bh-color-primary-white);
+  --bh-color-border: var(--bh-color-border-1);
+  --bh-color-input: var(--bh-color-border-1);
+  --bh-color-ring: var(--bh-color-primary-focus);
+  --bh-color-ring-offset: var(--bh-source-color-modes-base-ring-offset);
+  --bh-color-chart-1: var(--bh-source-color-modes-base-chart-1);
+  --bh-color-chart-2: var(--bh-source-color-modes-base-chart-2);
+  --bh-color-chart-3: var(--bh-source-color-modes-base-chart-3);
+  --bh-color-chart-4: var(--bh-source-color-modes-base-chart-4);
+  --bh-color-chart-5: var(--bh-source-color-modes-base-chart-5);
+  --bh-color-sidebar: var(--bh-color-sidebar-default);
+  --bh-color-sidebar-foreground: var(--bh-color-text-default);
+  --bh-color-sidebar-primary: var(--bh-color-primary-default);
+  --bh-color-sidebar-primary-foreground: var(--bh-color-primary-white);
+  --bh-color-sidebar-accent: var(--bh-color-sidebar-selected);
+  --bh-color-sidebar-accent-foreground: var(--bh-color-text-default);
+  --bh-color-sidebar-border: var(--bh-color-border-1);
+  --bh-color-sidebar-ring: var(--bh-color-primary-focus);
+}
+
+
+
+/*
+ * Lab-OS 语义变量 · 建立在 @unilab/design-v2 的 --bh-* 之上
+ * 引入顺序：antd reset → design-v2 core.css → themes/default.css → adapters/antd.css → 本文件
+ * 规则：业务 CSS 只能引用 --bh-* 与 --lab-*，不写裸色值。
+ * 深浅色：这里只引用 --bh-* 别名，颜色模式由 design-v2 的 data-color-mode 决定；
+ *         状态文字色是本文件唯一直接给值的地方，因为 Bohrium 状态主色作为文字对比度不足。
+ */
+:root {
+  /* ---------- 布局常量（玻尔 sidebar-shell / sider.tsx / theme.scss） ---------- */
+  --lab-sidebar-width: 226px;        /* 玻尔 sider.tsx shrinkWidth expand */
+  --lab-sidebar-width-collapsed: 54px;
+  --lab-shell-gap: 8px;              /* 内容卡与窗口边距（左侧 4px） */
+  --lab-topbar-height: 52px;         /* 玻尔 $header-height */
+  --lab-mobile-boundary: 760px;      /* 玻尔 $mobile-boundary */
+  --lab-page-padding: 24px;
+  --lab-card-gap: 16px;
+  --lab-inspector-width: 360px;      /* 右侧检查器 / 实验记录栏 */
+  --lab-drawer-width: 480px;
+
+  /* ---------- 控件尺寸 ---------- */
+  --lab-control-height: 36px;        /* 玻尔 controlHeight */
+  --lab-control-height-sm: 30px;     /* 玻尔 controlHeightSM：表格工具栏、行内操作 */
+  --lab-control-height-lg: 40px;     /* 玻尔 controlHeightLG */
+  --lab-table-row-height: 44px;
+  --lab-table-header-height: 40px;
+  --lab-nav-item-height: 36px;
+
+  /* ---------- 形状（取自玻尔 global.scss --border-radius* ） ---------- */
+  --lab-radius-sm: 4px;              /* 标签、小按钮 */
+  --lab-radius-control: 8px;         /* 按钮、输入、下拉项：玻尔 --border-radius */
+  --lab-radius-panel: 8px;           /* 内容卡里的分区面板、侧栏项 */
+  --lab-radius-card: 16px;           /* 页面内容卡、抽屉：玻尔 --border-radius-lgx */
+  --lab-radius-overlay: 20px;        /* 弹窗、气泡：玻尔 --border-radius-lgxx / Popover 20 */
+  --lab-radius-pill: 999px;          /* Tab 切换、筛选、搜索、推荐项 */
+  --lab-shadow-overlay: 0 4px 10px rgba(159, 186, 220, 0.2);   /* 玻尔 --box-shadow */
+  --lab-shadow-thumb: 0 2px 6px rgba(0, 0, 0, 0.06);           /* 胶囊滑块 */
+  --lab-focus-ring: 0 0 0 2px var(--bh-color-ring);
+
+  /* ---------- 表面 ----------
+   * 玻尔结构：窗口底 = 侧栏色；主内容是一张白色圆角 16 的内容卡；卡内分区用 fill 面板。
+   */
+  --lab-window: var(--bh-color-sidebar);            /* 窗口底 = 侧栏底 #f7fafe */
+  --lab-surface: var(--bh-color-card);              /* 内容卡、控件 */
+  --lab-panel: var(--bh-color-fill-0);              /* 卡内分区面板底 #f7f8fa */
+  --lab-surface-muted: var(--bh-color-fill-1);      /* 表头、hover、胶囊底 */
+  --lab-button-primary: var(--bh-color-primary);    /* 主按钮：B 端深势蓝；想贴 C 端黑色改这里为 #020c1a */
+  --lab-border: var(--bh-color-border);             /* border-1 */
+  --lab-border-strong: var(--bh-color-border-2);
+  --lab-selection-bg: var(--bh-color-primary-background);
+  --lab-selection-border: var(--bh-color-primary);  /* 选中条 2px */
+
+  /* ---------- 文本 ---------- */
+  /* 字体：玻尔 AntD 主题 PingFang SC 优先、无 Inter。作为别名传给 AntD fontFamily，不改 --bh-font-family-sans。 */
+  --lab-font-family-sans: 'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', 'Microsoft YaHei', sans-serif;
+  --lab-text: var(--bh-color-foreground);
+  --lab-text-secondary: var(--bh-color-text-description);
+  --lab-text-placeholder: var(--bh-color-text-placeholder);
+  --lab-text-disabled: var(--bh-color-text-disabled);
+  --lab-font-mono: var(--bh-font-family-mono);
+
+  /* ---------- 状态语义（五类，固定，不得混用） ----------
+   * running  运行中 / 执行中            → 蓝（主色系）
+   * waiting  等待 / 待确认 / 待核对 / 已暂停 → 琥珀
+   * success  成功 / 已完成 / 可用        → 绿
+   * failed   失败 / 异常 / 已超时 / 受阻  → 红
+   * idle     未开始 / 已取消 / 离线 / 不可调度 → 灰
+   * dot = 圆点与图标色；bg = 标签底色；text = 标签文字色
+   */
+  --lab-status-running-dot: var(--bh-color-primary);
+  --lab-status-running-bg: var(--bh-color-primary-background);
+  --lab-status-running-text: #2f37b7;
+
+  --lab-status-waiting-dot: var(--bh-color-warning-default);
+  --lab-status-waiting-bg: var(--bh-color-warning-subtle);
+  --lab-status-waiting-text: #8a4b00;
+
+  --lab-status-success-dot: var(--bh-color-success-default);
+  --lab-status-success-bg: var(--bh-color-success-subtle);
+  --lab-status-success-text: #087a48;
+
+  --lab-status-failed-dot: var(--bh-color-error-default);
+  --lab-status-failed-bg: var(--bh-color-error-subtle);
+  --lab-status-failed-text: #c42828;
+
+  --lab-status-idle-dot: var(--bh-color-border-3);
+  --lab-status-idle-bg: var(--bh-color-fill-1);
+  --lab-status-idle-text: var(--bh-color-text-description);
+
+  /* ---------- 调试模式 ---------- */
+  --lab-debug-strip-bg: var(--bh-color-warning-subtle);
+  --lab-debug-strip-text: #8a4b00;
+  --lab-debug-strip-border: var(--bh-color-warning-default);
+
+  /* ---------- 动效 ---------- */
+  --lab-motion-fast: 120ms;
+  --lab-motion-base: 150ms;
+  --lab-motion-toast: 200ms;
+}
+
+/* 玻尔科学空间没有深色模式；以下仅为 design-v2 深色取值下的可读性兜底，不作为首版验收项。 */
+:root[data-color-mode='dark'] {
+  --lab-status-running-text: #c2d4ff;
+  --lab-status-waiting-text: #ffd59a;
+  --lab-status-success-text: #9fe3bf;
+  --lab-status-failed-text: #ffb3b3;
+  --lab-debug-strip-text: #ffd59a;
+  --lab-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --lab-motion-fast: 0ms;
+    --lab-motion-base: 0ms;
+    --lab-motion-toast: 0ms;
+  }
+}
+
+
+
+/* 设备接入概览（2026-10-26 合并版）：能力范围三卡 + 设备点亮地图。
+   支持接入设备地图的标签悬停出提示卡，点击进入设备类型二级页（device-type.html）看插画和型号列表。状态只用主色深浅。 */
+
+/* 点亮地图 · 周期表式等格布局 + 侧边固定详情卡。状态只用主色深浅。 */
+:root {
+  --st-verified: var(--bh-color-primary);
+  --st-compatible: color-mix(in srgb, var(--bh-color-primary) 30%, var(--lab-surface)); /* 2026-10-26 由 48% 调浅：深字更清楚，且与已验证的深色拉开 */
+  --st-unknown: var(--lab-surface);
+  --st-unknown-border: var(--bh-color-border-2);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { font-family: var(--lab-font-family-sans); font-size: 14px; line-height: 22px; color: var(--lab-text); background: var(--lab-window); }
+.mono { font-family: var(--lab-font-mono); }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 36px 24px 80px; }
+.note { font-size: 12px; color: var(--lab-text-secondary); margin: 0 0 20px; }
+h1 { font-size: 20px; line-height: 32px; font-weight: 600; margin: 0; }
+.meta { font-size: 12px; line-height: 20px; color: var(--lab-text-secondary); margin: 2px 0 20px; }
+h2 { font-size: 16px; line-height: 26px; font-weight: 500; margin: 32px 0 4px; }
+.sub { font-size: 13px; color: var(--lab-text-secondary); margin: 0 0 14px; }
+
+
+/* 工具栏 */
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--lab-text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend .cap { color: var(--lab-text-placeholder); }
+.sw { width: 18px; height: 10px; border-radius: 3px; border: 1px solid transparent; display: inline-block; flex: none; }
+.sw-verified { background: var(--st-verified); } .sw-compatible { background: var(--st-compatible); } .sw-unknown { background: var(--st-unknown); border-color: var(--st-unknown-border); }
+.sw-sim { width: 10px; height: 10px; border-radius: 50%; background: var(--lab-surface); border: 2px solid var(--bh-color-primary); }
+.toolbar .sp { flex: 1; }
+.select { height: var(--lab-control-height-sm); padding: 0 12px; border-radius: var(--lab-radius-pill); border: 1px solid var(--lab-border); background: var(--lab-surface); display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--lab-text-secondary); }
+.select.is-active { color: var(--bh-color-primary); border-color: var(--bh-color-primary-border); background: var(--bh-color-primary-background); }
+.select select { border: 0; background: none; font: inherit; color: inherit; outline: 0; cursor: pointer; }
+.toolbar .link { color: var(--bh-color-primary); cursor: pointer; font-size: 13px; }
+.toolbar .count { font-size: 12px; color: var(--lab-text-secondary); white-space: nowrap; }
+
+.layout { display: block; }
+.table { background: var(--lab-surface); border: 1px solid var(--lab-border); border-radius: var(--lab-radius-card); padding: 8px 16px 12px; }
+
+/* 悬停提示卡：贴着被悬停的标签出现，点击标签进入二级页 */
+.tip { position: absolute; z-index: 20; width: 320px; background: var(--lab-surface); border: 1px solid var(--lab-border); border-radius: var(--lab-radius-overlay); box-shadow: var(--lab-shadow-overlay); padding: 14px 16px; display: none; pointer-events: none; }
+.tip.show { display: block; }
+.tip h3 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; }
+.tip .st { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin: 2px 0 8px; color: var(--lab-text-secondary); }
+.tip .row2 { font-size: 12px; color: var(--lab-text-secondary); line-height: 18px; }
+.tip .devs-h { margin: 12px 0 4px; padding-top: 8px; border-top: 1px solid var(--bh-color-border-0); font-size: 12px; color: var(--lab-text-secondary); }
+.tip .dev { padding: 8px 10px; border-radius: var(--lab-radius-sm); background: var(--lab-panel); margin-top: 6px; border-left: 3px solid var(--st-verified); }
+.tip .dev.compatible { border-left-color: var(--st-compatible); }
+.tip .dev.unconnected { border-left-color: var(--st-unknown-border); }
+.tip .dev b { font-size: 13px; font-weight: 500; display: block; }
+.tip .dev span { display: block; font-size: 12px; color: var(--lab-text-secondary); }
+.foot-note { font-size: 12px; color: var(--lab-text-placeholder); margin-top: 24px; }
+@media (max-width: 1000px) { .kpis { grid-template-columns: 1fr 1fr; } .row { grid-template-columns: 1fr; } }
+.dev .para { display: block; margin-top: 3px; } .dev .para i { font-style: normal; display: inline-block; font-size: 11px; line-height: 16px; padding: 0 5px; margin: 0 4px 2px 0; border: 1px dashed var(--bh-color-border-2); border-radius: var(--lab-radius-sm); color: var(--lab-text-placeholder); }
+
+.dev { display: flex; gap: 10px; align-items: flex-start; }
+.dev-img { width: 56px; height: 44px; object-fit: contain; border-radius: var(--lab-radius-sm); background: var(--lab-surface); flex: none; }
+.dev-body { min-width: 0; flex: 1; }
+.dev.sample { border-left-color: var(--bh-color-border-2); background: transparent; border: 1px dashed var(--bh-color-border-0); border-left: 3px solid var(--bh-color-border-2); }
+.dev .vendor { font-size: 12px; color: var(--lab-text-secondary); line-height: 18px; margin-bottom: 2px; }
+.dev .kv { display: flex; gap: 8px; font-size: 12px; line-height: 18px; color: var(--lab-text); }
+.dev .kv span { color: var(--lab-text-placeholder); flex: none; width: 52px; display: inline; }
+
+/* 阶段 × 学科 的表格：列是六个阶段，行是学科，格子里是设备类型名的小标签 */
+.table { padding: 0; overflow: auto; }
+table.grid { width: 100%; border-collapse: separate; border-spacing: 0; }
+table.grid thead th { position: sticky; top: 0; z-index: 2; background: var(--lab-text); color: #fff; font-size: 13px; font-weight: 600; text-align: center; padding: 10px 8px; }
+table.grid thead th.corner { text-align: left; font-weight: 500; font-size: 12px; color: rgba(255,255,255,.75); min-width: 110px; }
+table.grid thead th.col em { display: block; font-style: normal; font-family: var(--lab-font-mono); font-size: 10px; font-weight: 400; opacity: .7; line-height: 12px; }
+table.grid thead th.col small { display: block; font-size: 10px; font-weight: 400; opacity: .7; line-height: 14px; }
+table.grid th.dom { text-align: left; vertical-align: top; padding: 12px 12px; font-size: 14px; font-weight: 600; background: var(--lab-panel); border-top: 1px solid var(--bh-color-border-0); white-space: nowrap; }
+table.grid th.dom i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+table.grid th.dom small { display: block; font-size: 11px; font-weight: 400; color: var(--lab-text-secondary); margin-top: 2px; }
+table.grid td { vertical-align: top; padding: 8px 6px; border-top: 1px solid var(--bh-color-border-0); border-left: 1px solid var(--bh-color-border-0); min-width: 118px; width: 16%; }
+.chip { display: block; margin: 0 0 5px; padding: 4px 8px; border-radius: 6px; font-size: 12px; line-height: 16px; cursor: pointer; border: 1px solid transparent; transition: opacity var(--lab-motion-base); }
+.chip.verified { background: var(--st-verified); color: #fff; }
+.chip.compatible { background: var(--st-compatible); color: var(--lab-text); }
+.chip.unknown { background: var(--st-unknown); border-color: var(--st-unknown-border); color: var(--lab-text-secondary); }
+.chip.dim { opacity: .18; }
+.chip.more { background: transparent; border: 1px dashed var(--bh-color-border-2); color: var(--bh-color-primary); text-align: center; }
+.chip.more:hover { outline: 0; border-style: solid; border-color: var(--bh-color-primary-border); background: var(--bh-color-primary-background); }
+.chip:hover, .chip.is-sel { outline: 2px solid var(--lab-text); outline-offset: -1px; }
+
+.search { height: var(--lab-control-height-sm); padding: 0 12px; border-radius: var(--lab-radius-pill); background: color-mix(in srgb, var(--bh-color-fill-1) 50%, transparent); border: 1px solid var(--lab-border); display: inline-flex; align-items: center; gap: 6px; min-width: 220px; font-size: 13px; }
+.search input { border: 0; background: none; outline: 0; font: inherit; color: var(--lab-text); width: 100%; }
+.search input::placeholder { color: var(--lab-text-placeholder); }
+
+a.chip { text-decoration: none; display: block; }
+.chip.unknown { color: var(--lab-text-secondary); }
+
+
+/* ---- 能力范围（来自设备清单版） ---- */
+/* 能力范围 */
+.scope { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 16px; margin-top: 20px; }
+.scard { background: var(--lab-surface); border: 1px solid var(--lab-border); border-radius: var(--lab-radius-card); padding: 18px 20px 16px; }
+.scard h3 { margin: 0 0 12px; font-size: 16px; line-height: 26px; font-weight: 500; display: flex; justify-content: space-between; align-items: baseline; }
+.scard h3 b { font-size: 24px; font-weight: 600; color: var(--bh-color-primary); font-family: var(--lab-font-mono); }
+.scope-list { display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.scope-list div { display: flex; gap: 8px; align-items: flex-start; line-height: 20px; }
+.scope-list i { width: 6px; height: 6px; border-radius: 50%; background: var(--bh-color-primary); margin-top: 7px; flex: none; }
+.scope-list b { font-family: var(--lab-font-mono); font-weight: 600; color: var(--bh-color-primary); }
+.scope-list .dim { color: var(--lab-text-secondary); }
+.scard .foot { margin: 12px 0 0; padding-top: 10px; border-top: 1px dashed var(--bh-color-border-0); font-size: 12px; color: var(--lab-text-placeholder); }
+.bars { display: flex; flex-direction: column; gap: 9px; }
+.bar { display: grid; grid-template-columns: 96px 1fr 32px; align-items: center; gap: 10px; font-size: 13px; cursor: pointer; border-radius: var(--lab-radius-sm); padding: 1px 4px; margin: 0 -4px; }
+.bar:hover { background: var(--lab-panel); }
+.bar.is-cur { background: var(--bh-color-primary-background); }
+.bar .lbl { display: flex; align-items: center; gap: 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .lbl i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.bar .lbl em { font-style: normal; font-family: var(--lab-font-mono); font-size: 11px; color: var(--lab-text-placeholder); width: 18px; }
+.bar .trk { height: 8px; border-radius: 4px; background: var(--bh-color-fill-1); overflow: hidden; }
+.bar .trk b { display: block; height: 100%; border-radius: 4px; background: var(--bh-color-primary); opacity: .85; transition: width .4s; }
+.bar .num { font-family: var(--lab-font-mono); font-size: 13px; text-align: right; color: var(--lab-text-secondary); }
+.bar.is-cur .num { color: var(--lab-text); font-weight: 600; }
+.scope { margin-top: 20px; }
+.scard .foot a { color: var(--bh-color-primary); text-decoration: none; }
+.scope-list .st-line { display: flex; gap: 10px; flex-wrap: wrap; }
+.scope-list .st-line span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- 页尾（来自设备清单版） ---- */
+.btn { height: var(--lab-control-height); padding: 0 16px; border-radius: var(--lab-radius-control); border: 1px solid var(--lab-border); background: var(--lab-surface); color: var(--lab-text); font: inherit; cursor: pointer; white-space: nowrap; }
+.btn-primary { background: var(--lab-button-primary); border-color: var(--lab-button-primary); color: #fff; }
+.cta { margin-top: 48px; background: var(--lab-surface); border: 1px solid var(--lab-border); border-radius: var(--lab-radius-card); padding: 24px 32px; display: flex; align-items: center; gap: 24px; }
+.cta b { font-size: 16px; display: block; }
+.cta p { margin: 2px 0 0; color: var(--lab-text-secondary); font-size: 13px; }
+.cta .sp { flex: 1; }
+.foot-note { font-size: 12px; color: var(--lab-text-placeholder); margin-top: 24px; }
+
+/* 页尾：生态邀请卡 */
+.cta { align-items: flex-start; }
+.cta > div:first-child { max-width: 680px; }
+.cta p.biz { margin-top: 10px; color: var(--lab-text-secondary); }
+.cta p.biz a { color: var(--bh-color-primary); text-decoration: none; }
+.cta-actions { display: flex; gap: 8px; flex: none; align-self: center; }
+@media (max-width: 1000px) { .cta { flex-direction: column; } .cta-actions { align-self: flex-start; } }
+/* 合并版覆盖：地图区块标题与清单版一致；标签可点击进入二级页 */
+h2 { margin-top: 44px; }
+.chip { cursor: pointer; }
+.bar.static { cursor: default; }
+.bar.static:hover { background: transparent; }
+.tip .go { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--bh-color-border-0); font-size: 12px; color: var(--bh-color-primary); }
+
+/* 内部视图：琥珀提醒条 + 项目信息 */
+.internal-strip { height: 40px; display: flex; align-items: center; padding: 0 12px; border-radius: var(--lab-radius-panel); background: var(--lab-debug-strip-bg); color: var(--lab-debug-strip-text); border-left: 3px solid var(--lab-debug-strip-border); font-size: 14px; margin-bottom: 16px; }
+.tip .proj { margin-top: 10px; padding: 8px 10px; border-radius: var(--lab-radius-sm); background: var(--lab-debug-strip-bg); font-size: 12px; }
+.tip .proj-h { display: block; color: var(--lab-debug-strip-text); font-weight: 500; margin-bottom: 2px; }
+.tip .proj em { font-style: normal; color: var(--lab-text-secondary); }
+.tip .proj-row b { font-weight: 500; color: var(--lab-text); }
+.tip .proj-row span { display: block; color: var(--lab-text-secondary); line-height: 18px; }
+
+
+/* 概览表左上角：斜线分隔，右上「阶段 →」左下「学科 ↓」 */
+table.grid thead th.corner { position: relative; min-width: 128px; padding: 0;
+  background-image: linear-gradient(to top right, transparent calc(50% - .5px), rgba(255,255,255,.35) calc(50% - .5px), rgba(255,255,255,.35) calc(50% + .5px), transparent calc(50% + .5px)); }
+th.corner .c-stage { position: absolute; top: 8px; right: 12px; }
+th.corner .c-dom { position: absolute; bottom: 8px; left: 12px; }
+.search .search-ic { flex: none; color: var(--lab-text-placeholder); margin-right: 6px; }
+/* 类型页：顶部信息不做卡片，改为一组属性行 + 分隔线，不配插画 */
+.hero { display: none !important; }
+.head { background: transparent; border: 0; border-radius: 0; padding: 0 0 16px; margin: 0 0 8px; border-bottom: 1px solid var(--lab-border); grid-template-columns: 1fr; gap: 0; overflow: visible; }
+.head::before { display: none; }
+.head .kv { grid-template-columns: 64px 1fr; gap: 8px 12px; font-size: 14px; line-height: 22px; }
+/* 类型页：底部上一个 / 下一个设备类型 */
+.embed-pager { display: flex; justify-content: space-between; gap: 16px; margin: 28px 0 0; padding-top: 16px; border-top: 1px solid var(--lab-border); }
+.embed-pager a { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 8px; text-decoration: none; color: var(--lab-text); }
+.embed-pager a:hover { background: rgba(60, 73, 221, .06); }
+.embed-pager a small { font-size: 12px; color: var(--lab-text-secondary); }
+.embed-pager a b { font-weight: 500; color: #3c49dd; }
+.embed-pager a.next { margin-left: auto; align-items: flex-end; text-align: right; }

@@ -1,6 +1,6 @@
 package:
   name: ros-humble-unilabos-msgs
-  version: 0.11.3
+  version: 0.11.4
 source:
   path: ../../unilabos_msgs
   target_directory: src
@@ -37,6 +37,8 @@ requirements:
   - ninja
   - setuptools
   - cython
+  # ROS Humble rosidl_adapter still requires empy 3.x (BUFFERED_OPT).
+  - empy >=3.3.4,<4
   - cmake
   - if: unix
     then:
@@ -51,6 +53,7 @@ requirements:
   host:
   - numpy
   - pip
+  - empy >=3.3.4,<4
   - if: build_platform == target_platform
     then:
     - pkg-config
@@ -64,8 +67,6 @@ requirements:
   - robostack-staging::ros-humble-std-msgs
   - robostack-staging::ros-humble-geometry-msgs
   - robostack-staging::ros2-distro-mutex=0.7
-  # Humble rosidl_adapter 使用 EmPy 3 API；EmPy 4 移除了 BUFFERED_OPT。
-  - empy ==3.3.4
   run:
   - robostack-staging::ros-humble-action-msgs
   - robostack-staging::ros-humble-ros-workspace

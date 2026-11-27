@@ -1,0 +1,14 @@
+# Ubuntu CI 上不安装 ROS 时要跑的测试目录。
+# 调度矩阵、联网测试和 ROS 运行时各自有独立 job，不要加进这里。
+# 某个包离开开源仓库时，删掉对应目录即可。
+tests/ci
+tests/workflow
+tests/registry
+tests/package_manager
+tests/client
+tests/utils
+tests/resources
+tests/workspace_host
+tests/ros_runtime
+tests/agent_tools
+tests/app

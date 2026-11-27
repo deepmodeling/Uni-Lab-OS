@@ -1,0 +1,4 @@
+interface:
+  display_name: "使用资产库与设备广场"
+  short_description: "从 OSS 拉目录并按需下载模型，部署网页和 Blender 插件"
+  default_prompt: "用 $use-asset-library 从 OSS 初始化资产目录，配置网页与 Blender 插件，并验证所选模型的按需下载和插入。"

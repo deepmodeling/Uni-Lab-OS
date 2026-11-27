@@ -7,16 +7,16 @@
 import unittest
 
 from unilabos.ros.msgs.message_converter import (
-    msg_converter_manager,
-    get_msg_type,
-    get_action_type,
-    get_ros_type_by_msgname,
-    Point3D,
-    Point,
-    Float64,
-    String,
     Bool,
+    Float64,
     Int32,
+    Point,
+    Point3D,
+    String,
+    get_action_type,
+    get_msg_type,
+    get_ros_type_by_msgname,
+    msg_converter_manager,
 )
 
 

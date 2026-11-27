@@ -1,0 +1,41 @@
+context:
+  version: 0.2.1
+  commit: 1317a3eec20cb28757283b1de0edcd2e1b2f252e
+
+package:
+  name: pylabrobot
+  version: ${{ version }}
+
+source:
+  - url: https://github.com/Xuwznln/pylabrobot/archive/${{ commit }}.tar.gz
+    sha256: 4dac1abc3fd4cf3e84141dbd39e18f486749328ff044156fab86011a54bf5649
+
+build:
+  number: 1
+  noarch: python
+  script: ${{ PYTHON }} -m pip install . --no-deps --no-build-isolation
+
+requirements:
+  host:
+    - python >=3.9
+    - setuptools >=68
+    - wheel
+    - pip
+  run:
+    - python >=3.9
+    - typing-extensions
+    - websockets
+
+tests:
+  - python:
+      imports:
+        - pylabrobot
+      pip_check: true
+  - script:
+      - python -c "import inspect; from pylabrobot.resources import VolumeTracker; params = inspect.signature(VolumeTracker.add_liquid).parameters; assert 'liquid_or_volume' in params and 'volume' in params"
+
+about:
+  summary: Uni-Lab compatible PyLabRobot fork
+  license: MIT
+  license_file: LICENSE
+  repository: https://github.com/Xuwznln/pylabrobot

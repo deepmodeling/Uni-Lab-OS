@@ -1,0 +1,32 @@
+flowchart LR
+  subgraph SHARED["共享身份：R0–R4 共同引用同一 reagent_info"]
+    direction LR
+
+    subgraph SOURCE["源端"]
+      direction LR
+      C0["源容器 C0"] ---|绑定| R0["源 reagent R0<br/>500 mL → 100 mL"]
+    end
+
+    subgraph ATOMIC["一次原子命令与库存流水"]
+      direction TB
+      I["reagent_info<br/>同一化学身份"]
+      D["reagent.dispense"]
+      L["inventory_ledger<br/>源事件 × 1：R0 −400 mL<br/>目标事件 × 4：R1–R4 各 +100 mL"]
+      I -.->|原样沿用| D
+      D -->|产生 5 条事件| L
+    end
+
+    subgraph TARGETS["目标端：创建 4 个 reagent（各 100 mL）"]
+      direction LR
+      R1["目标 reagent R1<br/>100 mL"] ---|绑定| C1["目标容器 C1"]
+      R2["目标 reagent R2<br/>100 mL"] ---|绑定| C2["目标容器 C2"]
+      R3["目标 reagent R3<br/>100 mL"] ---|绑定| C3["目标容器 C3"]
+      R4["目标 reagent R4<br/>100 mL"] ---|绑定| C4["目标容器 C4"]
+    end
+
+    R0 -->|扣减 400 mL| D
+    D -->|创建| R1
+    D -->|创建| R2
+    D -->|创建| R3
+    D -->|创建| R4
+  end

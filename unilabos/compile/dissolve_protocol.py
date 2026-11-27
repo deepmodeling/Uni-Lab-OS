@@ -1,13 +1,13 @@
+import logging
+import re
 from functools import partial
+from typing import Any, Dict, List, Union
 
 import networkx as nx
-import re
-import logging
-from typing import List, Dict, Any, Union
 
-from .utils.vessel_parser import get_vessel
-from .utils.logger_util import action_log
 from .pump_protocol import generate_pump_protocol_with_rinsing
+from .utils.logger_util import action_log
+from .utils.vessel_parser import get_vessel
 
 logger = logging.getLogger(__name__)
 

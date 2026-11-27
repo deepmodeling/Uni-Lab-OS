@@ -16,11 +16,11 @@ block header %}UniLab System Status{% endblock %} {% block top_info %}
 <!-- 系统模式显示 -->
 <div class="system-mode-banner">
   <div
-    class="mode-indicator {% if is_host_mode %}host-mode{% else %}slave-mode{% endif %}"
+    class="mode-indicator {% if has_local_devices %}runtime-mode{% else %}backend-mode{% endif %}"
   >
     系统模式:
     <strong
-      >{{ "主机模式 (HOST)" if is_host_mode else "从机模式 (SLAVE)" }}</strong
+      >{{ "设备运行时" if has_local_devices else "工作区后端" }}</strong
     >
   </div>
 </div>
@@ -100,7 +100,7 @@ block header %}UniLab System Status{% endblock %} {% block top_info %}
 {% endif %}
 
 <div class="nav-tabs">
-  {% if is_host_mode and host_node_info.available %}
+  {% if has_local_devices and host_node_info.available %}
   <a href="#host-node-section" class="nav-tab">主机节点</a>
   {% endif %}
   <a href="#online-devices-section" class="nav-tab">本地设备</a>
@@ -110,7 +110,7 @@ block header %}UniLab System Status{% endblock %} {% block top_info %}
 </div>
 {% endblock %} {% block content %}
 <!-- 主机节点信息部分 -->
-{% if is_host_mode and host_node_info.available %}
+{% if has_local_devices and host_node_info.available %}
 <div class="card" id="host-node-section">
   <h2>主机节点信息</h2>
 
@@ -870,13 +870,13 @@ ros2 action send_goal {{ action_info.action_path }} {{ action_info.type_name_con
   }
 
   // 处理主机节点可用性状态变化
-  function handleHostNodeAvailabilityChange(isHostMode, hostNodeInfo) {
+  function handleHostNodeAvailabilityChange(hasLocalDevices, hostNodeInfo) {
     const hostSection = document.getElementById('host-node-section');
     const hostNavLink = document.querySelector('a[href="#host-node-section"]');
 
     // 检查是否需要显示主机节点部分
     const shouldShowHostNode =
-      isHostMode && hostNodeInfo && hostNodeInfo.available;
+      hasLocalDevices && hostNodeInfo && hostNodeInfo.available;
 
     if (shouldShowHostNode && !hostSection) {
       // 主机节点从不可用变为可用，需要创建HTML
@@ -1042,9 +1042,9 @@ ros2 action send_goal {{ action_info.action_path }} {{ action_info.type_name_con
     }
 
     // 初始化主机节点信息（如果是主机模式）
-    if (data.host_node_info && data.is_host_mode) {
-      const isHostMode = data.is_host_mode;
-      handleHostNodeAvailabilityChange(isHostMode, data.host_node_info);
+    if (data.host_node_info && data.has_local_devices) {
+      const hasLocalDevices = data.has_local_devices;
+      handleHostNodeAvailabilityChange(hasLocalDevices, data.host_node_info);
 
       // 初始化主机节点各个部分
       if (data.host_node_info.available) {
@@ -1083,12 +1083,12 @@ ros2 action send_goal {{ action_info.action_path }} {{ action_info.type_name_con
     // 检查并处理主机节点信息变化（只处理包含的字段）
     if (data.host_node_info) {
       // 获取当前是否为主机模式（从页面初始数据获取）
-      const isHostMode =
-        document.querySelector('.mode-indicator.host-mode') !== null;
+      const hasLocalDevices =
+        document.querySelector('.mode-indicator.runtime-mode') !== null;
 
       // 检查可用性变化
       if ('available' in data.host_node_info) {
-        handleHostNodeAvailabilityChange(isHostMode, data.host_node_info);
+        handleHostNodeAvailabilityChange(hasLocalDevices, data.host_node_info);
       }
 
       // 只更新包含的字段，避免不必要的DOM操作

@@ -9,6 +9,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Optional
+
 from unilabos.config.config import BasicConfig
 from unilabos.utils import logger
 
@@ -76,6 +77,26 @@ class BaseCommunicationClient(ABC):
         """
         pass
 
+    def publish_action_lock(self, device_id: str, action_name: str, free: bool) -> None:
+        """
+        主动上报单个 device+action 的锁(可用性)状态(默认空实现)
+
+        Args:
+            device_id: 设备ID
+            action_name: 动作名称
+            free: 是否空闲(True 空闲, False 占用)
+        """
+        pass
+
+    def publish_action_locks(self, locks: list) -> None:
+        """
+        批量主动上报 device+action 的锁(可用性)状态(默认空实现)
+
+        Args:
+            locks: [{"device_id": str, "action_name": str, "free": bool}, ...]
+        """
+        pass
+
     def setup_pong_subscription(self) -> None:
         """
         设置pong消息订阅（可选实现）
@@ -91,6 +112,43 @@ class BaseCommunicationClient(ABC):
             是否已连接
         """
         return not self.is_disabled
+
+
+class LocalCommunicationClient(BaseCommunicationClient):
+    """工站后端的空通信适配器；设备运行时显式使用 Edge 控制客户端。"""
+
+    def start(self) -> None:
+        """启动本地空适配器；不创建网络连接。"""
+
+        self.is_disabled = True
+
+    def stop(self) -> None:
+        """停止本地空适配器；不执行网络关闭。"""
+
+        self.is_disabled = True
+
+    def publish_device_status(
+        self, device_status: dict, device_id: str, property_name: str
+    ) -> None:
+        """丢弃旧云端设备状态通知；本地状态由 Scheduler 持有。"""
+
+        del device_status, device_id, property_name
+
+    def publish_job_status(
+        self,
+        feedback_data: dict,
+        job_id: str,
+        status: str,
+        return_info: Optional[dict] = None,
+    ) -> None:
+        """丢弃旧云端作业通知；本地结果通过 Scheduler 事务保存。"""
+
+        del feedback_data, job_id, status, return_info
+
+    def send_ping(self, ping_id: str, timestamp: float) -> None:
+        """忽略旧云端延迟探测；本地模式不发送网络 Ping。"""
+
+        del ping_id, timestamp
 
 
 class CommunicationClientFactory:
@@ -121,12 +179,14 @@ class CommunicationClientFactory:
 
         protocol = protocol.lower()
 
+        if protocol == "local":
+            return LocalCommunicationClient()
         if protocol == "websocket":
-            return cls._create_websocket_client()
+            raise ValueError("当前 OS 已移除云端 websocket 通信")
+        elif protocol == "edge_control":
+            return cls._create_edge_control_client()
         else:
-            logger.error(f"[CommunicationFactory] Unsupported protocol: {protocol}")
-            logger.warning(f"[CommunicationFactory] Falling back to WebSocket")
-            return cls._create_websocket_client()
+            raise ValueError(f"当前 OS 不支持通信协议: {protocol}")
 
     @classmethod
     def get_client(cls, protocol: Optional[str] = None) -> BaseCommunicationClient:
@@ -157,6 +217,17 @@ class CommunicationClientFactory:
             raise
 
     @classmethod
+    def _create_edge_control_client(cls) -> BaseCommunicationClient:
+        """创建正式 Backend/Scheduler 使用的生产 Edge 客户端。"""
+        try:
+            from unilabos.app.edge_control import EdgeControlClient
+
+            return EdgeControlClient()
+        except Exception as e:
+            logger.error(f"[CommunicationFactory] 创建生产 Edge 客户端失败: {str(e)}")
+            raise
+
+    @classmethod
     def reset_client(cls):
         """重置客户端缓存（用于测试或重新配置）"""
         if cls._client_cache:
@@ -176,7 +247,7 @@ class CommunicationClientFactory:
         Returns:
             支持的协议列表
         """
-        return ["websocket"]
+        return ["local", "edge_control"]
 
 
 def get_communication_client(protocol: Optional[str] = None) -> BaseCommunicationClient:

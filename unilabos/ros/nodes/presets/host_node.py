@@ -1,62 +1,104 @@
 import collections
+import importlib
 import json
 import threading
 import time
 import traceback
 import uuid
-
-from unilabos.utils.tools import fast_dumps_str as _fast_dumps_str, fast_loads as _fast_loads
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Dict, Any, List, ClassVar, Set, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import Point
 from rclpy.action import ActionClient, get_action_server_names_and_types_by_node
 from rclpy.service import Service
 from typing_extensions import TypedDict
-from unilabos_msgs.action import EmptyIn, StrSingleInput, ResourceCreateFromOuterEasy, ResourceCreateFromOuter
+from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
+from unique_identifier_msgs.msg import UUID
+
+from unilabos.config.config import BasicConfig
+from unilabos.registry.decorators import (
+    ActionInputHandle,
+    ActionOutputHandle,
+    DataSource,
+    ExecutorKind,
+    NodeType,
+    action,
+    device,
+    legacy_action,
+)
+from unilabos.registry.placeholder_type import (
+    PLACEHOLDER_DEDUCT_REAGENT,
+    PLACEHOLDER_DEDUCT_RESOURCE,
+    PLACEHOLDER_DEVICES,
+    PLACEHOLDER_MANUAL_CONFIRM,
+    PLACEHOLDER_NODES,
+    DeviceSlot,
+    ResourceSlot,
+)
+from unilabos.registry.registry import lab_registry
+from unilabos.resources.container import RegularContainer
+from unilabos.resources.graphio import initialize_resource
+from unilabos.resources.liquids import apply_substances
+from unilabos.resources.registry import add_schema
+from unilabos.resources.resource_tracker import (
+    JSON_UNILABOS_PARAM,
+    PARAM_SAMPLE_UUIDS,
+    RETURN_UNILABOS_SAMPLES,
+    LabSample,
+    ResourceDict,
+    ResourceDictInstance,
+    ResourceDictType,
+    ResourceTreeInstance,
+    ResourceTreeSet,
+    SampleUUIDsType,
+)
+from unilabos.ros.action_transport import (
+    required_action_endpoint_ids,
+    wait_for_action_endpoints,
+)
+from unilabos.ros.initialize_device import initialize_device_from_dict
+from unilabos.ros.msgs.message_converter import (
+    convert_from_ros_msg,
+    convert_to_ros_msg,
+    get_msg_type,
+    get_ros_type_by_msgname,
+    msg_converter_manager,
+)
+from unilabos.ros.nodes.base_device_node import (
+    BaseROS2DeviceNode,
+    DeviceNodeResourceTracker,
+    ROS2DeviceNode,
+    _stable_resource_uuid,
+)
+from unilabos.ros.nodes.presets.controller_node import ControllerNode
+from unilabos.utils import logger
+from unilabos.utils.exception import DeviceClassInvalid
+from unilabos.utils.log import is_detailed_logging_enabled, warning
+from unilabos.utils.tools import fast_dumps_str as _fast_dumps_str
+from unilabos.utils.tools import fast_loads as _fast_loads
+from unilabos.utils.type_check import serialize_result_info
+from unilabos_msgs.action import EmptyIn, ResourceCreateFromOuter, ResourceCreateFromOuterEasy, StrSingleInput
 from unilabos_msgs.msg import Resource  # type: ignore
 from unilabos_msgs.srv import (
     ResourceAdd,
     ResourceDelete,
-    ResourceUpdate,
     ResourceList,
+    ResourceUpdate,
     SerialCommand,
 )  # type: ignore
-from unilabos_msgs.srv._serial_command import SerialCommand_Request, SerialCommand_Response
-from unique_identifier_msgs.msg import UUID
-
-from unilabos.registry.decorators import device, action, NodeType
-from unilabos.registry.placeholder_type import ResourceSlot, DeviceSlot
-from unilabos.registry.registry import lab_registry
-from unilabos.resources.container import RegularContainer
-from unilabos.resources.graphio import initialize_resource
-from unilabos.resources.registry import add_schema
-from unilabos.resources.resource_tracker import (
-    ResourceDict,
-    ResourceDictType,
-    ResourceDictInstance,
-    ResourceTreeSet,
-    ResourceTreeInstance,
-    RETURN_UNILABOS_SAMPLES,
-    JSON_UNILABOS_PARAM,
-    PARAM_SAMPLE_UUIDS, SampleUUIDsType, LabSample,
-)
-from unilabos.ros.initialize_device import initialize_device_from_dict
-from unilabos.ros.msgs.message_converter import (
-    get_msg_type,
-    get_ros_type_by_msgname,
-    convert_from_ros_msg,
-    convert_to_ros_msg,
-    msg_converter_manager,
-)
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, ROS2DeviceNode, DeviceNodeResourceTracker
-from unilabos.ros.nodes.presets.controller_node import ControllerNode
-from unilabos.utils import logger
-from unilabos.utils.exception import DeviceClassInvalid
-from unilabos.utils.log import warning
-from unilabos.utils.type_check import serialize_result_info
-from unilabos.config.config import BasicConfig
 
 if TYPE_CHECKING:
     from unilabos.app.ws_client import QueueItem
@@ -68,15 +110,64 @@ class DeviceActionStatus:
 
 
 class TestResourceReturn(TypedDict):
-    resources: List[List[ResourceDict]]
-    devices: List[Dict[str, Any]]
-    # unilabos_samples: List[LabSample]
+    resources: List[List[ResourceDictType]]
+    devices: List[DeviceSlot]
+    unilabos_samples: List[LabSample]
 
 
 class CreateResourceReturn(TypedDict):
-    created_resource_tree: List[List[ResourceDict]]
+    created_resource_tree: List[List[ResourceDictType]]
     liquid_input_resource_tree: List[Dict[str, Any]]
-    # unilabos_samples: List[LabSample]
+    unilabos_samples: List[LabSample]
+
+
+class DeductResourceReturn(CreateResourceReturn):
+    """apply_deduct_resource 返回值：在创建结果之外，额外输出实际挂载到的目标物料树。"""
+
+    mount_resource: List[List[ResourceDictType]]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TransferResourceReturn:
+    """转移记账动作的类型化结果合同，同时保留运行时字典返回形状。
+
+    ``resource`` 与 ``mount_resource`` 在工作流创作合同中都是物料占位符
+    （ResourceSlot），从而可以继续连接下游动作；运行时仍返回原有四键字典，
+    不改变旧调用方读取 ``resource/mount_resource/site/result`` 的方式。
+    """
+
+    resource: ResourceSlot
+    mount_resource: ResourceSlot
+    site: str
+    result: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TransferManualReturn:
+    """人工搬运闸门的类型化结果：透传物料、目标设备和库位，不做系统转移。
+
+    ``resource`` 与 ``mount_resource`` 在工作流创作合同中都是物料占位符
+    （ResourceSlot），从而可以继续连接下游动作；运行时返回单物料 UUID 引用。
+    """
+
+    resource: ResourceSlot
+    mount_resource: ResourceSlot
+    target_device: str
+    site: str
+
+
+def _dump_resource_slot(resource: Any) -> Dict[str, str]:
+    """把单个物料序列化为工作流 ``ResourceSlot`` 的规范 UUID 引用。
+
+    ``ResourceSlot`` 在已发布动作合同中是一个对象，而不是资源树数组。设备动作
+    的入参水合仍可在执行边界根据 UUID 取回完整资源树；返回完整树会令下游严格
+    JSON Schema 收到 ``[[resource]]``，从而把合法的单物料连接误判为数组。
+    """
+
+    resource_uuid = _stable_resource_uuid(resource).strip()
+    if not resource_uuid:
+        raise ValueError("物料占位符缺少稳定 UUID")
+    return {"uuid": resource_uuid}
 
 
 class TestLatencyReturn(TypedDict):
@@ -89,6 +180,15 @@ class TestLatencyReturn(TypedDict):
     raw_delay_ms: float
     test_count: int
     status: str
+
+
+def _device_is_simulated(host: Any, device_id: str) -> bool:
+    """整个设备运行时处于模拟动作模式，或机构运行时把这台设备配置为不构造驱动（direct）。"""
+
+    mechanisms = getattr(host, "_mechanisms", None)
+    return BasicConfig.action_mode == "simulate" or (
+        mechanisms is not None and mechanisms.simulated(device_id)
+    )
 
 
 @device(id="host_node", category=[], description="Host Node", icon="icon_device.webp")
@@ -318,9 +418,18 @@ class HostNode(BaseROS2DeviceNode):
         self._action_value_mappings: Dict[str, Dict] = {
             device_id: self._action_value_mappings
         }  # device_id -> action_value_mappings(本地+远程设备统一存储)
-        self._slave_registry_configs: Dict[str, Dict] = {}  # registry_name -> registry_config(含action_value_mappings)
         self._goals: Dict[str, Any] = {}  # 用来存储多个目标的状态
         self._online_devices: Set[str] = {f"{self.namespace}/{device_id}"}  # 用于跟踪在线设备
+        # 托管 dry-run Edge 只投影设备目录，不创建 ROS/硬件端点；这些设备的
+        # 在线事实不能被周期 ROS 图发现误判为离线。
+        self._simulated_device_keys: Set[str] = set()
+        # 可选的工站仿真装配（UNILABOS_SIMULATION_COMPOSITION）：按资产行为类执行或跟随设备动作。
+        # 只在设备运行时进程里打开；未配置时为 None，行为与未启用完全相同。
+        self._mechanisms = None
+        if BasicConfig.process_role != "workspace_backend":
+            from unilabos.simulation.mechanism_runtime import edge_mechanisms
+
+            self._mechanisms = edge_mechanisms(log=lambda message: self.lab_logger().warning(f"[Mechanism] {message}"))
         self._last_discovery_time = 0.0  # 上次设备发现的时间
         self._discovery_lock = threading.Lock()  # 设备发现的互斥锁
         self._subscribed_topics = set()  # 用于跟踪已订阅的话题
@@ -334,26 +443,39 @@ class HostNode(BaseROS2DeviceNode):
         # 首次发现网络中的设备
         self._discover_devices()
 
-        # 初始化所有本机设备节点，多一次过滤，防止重复初始化
-        local_machine = BasicConfig.machine_name
-        for device_config in devices_config.root_nodes:
-            device_id = device_config.res_content.id
-            if device_config.res_content.type != "device":
-                continue
-            dev_machine = device_config.res_content.machine_name
-            if dev_machine and local_machine and dev_machine != local_machine:
-                self.lab_logger().info(
-                    f"[Host Node] Device {device_id} belongs to machine '{dev_machine}', "
-                    f"local is '{local_machine}', skipping initialization."
-                )
-                continue
-            if device_id not in self.devices_names:
-                self.initialize_device(device_id, device_config)
-            else:
-                self.lab_logger().warning(f"[Host Node] Device {device_id} already existed, skipping.")
-        self.update_device_status_subscriptions()
-        # TODO: 需要验证 初始化所有控制器节点
-        if controllers_config:
+        # Workspace Backend 保留完整物理图用于 Authoring/Inventory，但设备驱动只由
+        # 独立 Edge Runtime 初始化设备，工站后端不加载驱动。
+        if BasicConfig.process_role != "workspace_backend":
+            local_machine = BasicConfig.machine_name
+            for device_config in devices_config.root_nodes:
+                device_id = device_config.res_content.id
+                if device_config.res_content.type != "device":
+                    continue
+                dev_machine = device_config.res_content.machine_name
+                if dev_machine and local_machine and dev_machine != local_machine:
+                    self.lab_logger().info(
+                        f"[Host Node] Device {device_id} belongs to machine '{dev_machine}', "
+                        f"local is '{local_machine}', skipping initialization."
+                    )
+                    continue
+                if device_id not in self.devices_names:
+                    self._initialize_configured_device(device_id, device_config)
+                else:
+                    self.lab_logger().warning(f"[Host Node] Device {device_id} already existed, skipping.")
+            self.update_device_status_subscriptions()
+        else:
+            self.lab_logger().info(
+                "[Host Node] Workspace Backend 已就绪，等待独立 Edge Runtime 注册设备"
+            )
+        # 控制器同样属于设备运行时；Workspace Backend 不实例化硬件控制器。
+        if (
+            controllers_config
+            and BasicConfig.process_role != "workspace_backend"
+            and not (
+                BasicConfig.process_role == "edge_runtime"
+                and BasicConfig.action_mode == "simulate"
+            )
+        ):
             update_rate = controllers_config["controller_manager"]["ros__parameters"]["update_rate"]
             for controller_id, controller_config in controllers_config["controller_manager"]["ros__parameters"][
                 "controllers"
@@ -417,13 +539,14 @@ class HostNode(BaseROS2DeviceNode):
         检测ROS2网络中的所有设备节点，并为它们创建ActionClient
         同时检测设备离线情况
         """
-        self.lab_logger().trace("[Host Node] Discovering devices in the network...")
+        if is_detailed_logging_enabled():
+            self.lab_logger().trace("[Host Node] 开始发现网络中的设备。")
 
         # 获取当前所有设备
         nodes_and_names = self.get_node_names_and_namespaces()
 
         # 跟踪本次发现的设备，用于检测离线设备
-        current_devices = set()
+        current_devices = set(self._simulated_device_keys)
 
         for device_id, namespace in nodes_and_names:
             if not namespace.startswith("/devices/"):
@@ -462,6 +585,31 @@ class HostNode(BaseROS2DeviceNode):
                 self._background_threads.append(t)
                 t.start()
 
+        # Discovery Server v2 may withhold the remote node graph while still
+        # matching the Action endpoints we created from Slave registration.
+        # Keep a device online only when at least one of those ROS clients is
+        # 实际 ROS 动作服务必须就绪。
+        for edge_device_id, namespace in self.devices_names.items():
+            if edge_device_id == self.device_id or not namespace.startswith(
+                "/devices/"
+            ):
+                continue
+            device_key = f"{namespace}/{edge_device_id}"
+            if device_key in current_devices:
+                continue
+            action_prefix = f"{namespace}/"
+            action_clients = [
+                client
+                for action_id, client in self._action_clients.items()
+                if action_id.startswith(action_prefix)
+            ]
+            if self._has_ready_action_client(action_clients):
+                current_devices.add(device_key)
+                if device_key not in self._online_devices:
+                    self._report_action_locks_free(
+                        self._routable_reported_action_pairs(edge_device_id)
+                    )
+
         # 检测离线设备
         offline_devices = self._online_devices - current_devices
         for device_key in offline_devices:
@@ -470,7 +618,8 @@ class HostNode(BaseROS2DeviceNode):
 
         # 更新在线设备列表
         self._online_devices = current_devices
-        self.lab_logger().trace(f"[Host Node] Total online devices: {len(self._online_devices)}")
+        if is_detailed_logging_enabled():
+            self.lab_logger().trace(f"[Host Node] 在线设备总数: {len(self._online_devices)}")
 
     def _discovery_devices_callback(self) -> None:
         """
@@ -485,7 +634,32 @@ class HostNode(BaseROS2DeviceNode):
             finally:
                 self._discovery_lock.release()
         else:
-            self.lab_logger().debug("[Host Node] Device discovery already in progress, skipping.")
+            if is_detailed_logging_enabled():
+                self.lab_logger().trace("[Host Node] 设备发现已在进行，跳过本轮。")
+
+    def _report_action_locks_free(self, action_pairs: List[Tuple[str, str]]) -> None:
+        """向所有桥接器主动上报新发现 action 的锁状态为 free(report_action_lock)。
+
+        服务端直接下发 job 模式下，需要在发现新设备/新 action 时主动告知其可用，
+        而不再依赖 query_action_state。
+        """
+        if not action_pairs:
+            return
+        # _execute_driver_command[_async] 是通用驱动命令入口，并非具体业务动作，
+        # 不作为锁上报（与 WebSocketClient.report_all_action_locks 的过滤保持一致）。
+        locks = [
+            {"device_id": dev, "action_name": act, "free": True}
+            for dev, act in action_pairs
+            if not act.startswith("_execute_driver_command")
+        ]
+        if not locks:
+            return
+        for bridge in self.bridges:
+            if hasattr(bridge, "publish_action_locks"):
+                try:
+                    bridge.publish_action_locks(locks)
+                except Exception as e:
+                    self.lab_logger().warning(f"[Host Node] publish_action_locks failed: {e}")
 
     def _create_action_clients_for_device(self, device_id: str, namespace: str) -> None:
         """
@@ -495,6 +669,8 @@ class HostNode(BaseROS2DeviceNode):
             device_id: 设备ID
             namespace: 设备命名空间
         """
+        new_action_pairs: List[Tuple[str, str]] = []
+        edge_device_id = namespace[9:]
         for action_id, action_types in get_action_server_names_and_types_by_node(self, device_id, namespace):
             if action_id not in self._action_clients:
                 try:
@@ -504,18 +680,76 @@ class HostNode(BaseROS2DeviceNode):
                     )
                     self.lab_logger().trace(f"[Host Node] Created ActionClient (Discovery): {action_id}")
                     action_name = action_id[len(namespace) + 1 :]
-                    edge_device_id = namespace[9:]
-                    # from unilabos.app.comm_factory import get_communication_client
-                    # comm_client = get_communication_client()
-                    # info_with_schema = ros_action_to_json_schema(action_type)
-                    # comm_client.publish_actions(action_name, {
-                    #     "device_id": edge_device_id,
-                    #     "device_type": "",
-                    #     "action_name": action_name,
-                    #     "schema": info_with_schema,
-                    # })
+                    new_action_pairs.append((edge_device_id, action_name))
                 except Exception as e:
                     self.lab_logger().error(f"[Host Node] Failed to create ActionClient for {action_id}: {str(e)}")
+
+        # 补充 _action_value_mappings 中其余动作：UniLabJsonCommand 类型动作不建独立
+        # ROS ActionServer，不会出现在 get_action_server_names_and_types_by_node 的结果里；
+        # ``auto_prefix=True`` 注册成的遗留 ``auto-`` 动作（如 workbench.prepare_materials）。
+        # 同理。它们仍是可经 _execute_driver_command 调用的能力，发现新设备时必须全量补报其
+        # free 锁，否则服务端永远感知不到这些动作。_execute_driver_command[_async] 由
+        # _report_action_locks_free 统一过滤，不在此处特判。
+        already = {action_name for _, action_name in new_action_pairs}
+        for action_name in self._action_value_mappings.get(edge_device_id, {}).keys():
+            if action_name in already:
+                continue
+            new_action_pairs.append((edge_device_id, action_name))
+
+        # 发现新 action 后主动上报其 free 锁状态
+        self._report_action_locks_free(new_action_pairs)
+
+    @staticmethod
+    def _has_ready_action_client(
+        clients: Iterable[Any],
+        wait_timeout: float = 0.0,
+    ) -> bool:
+        """Return whether any ROS Action endpoint has actually matched.
+
+        ``server_is_ready`` may raise while an rclpy context is shutting down;
+        discovery polling must treat that as unavailable instead of killing its
+        timer callback.  ``wait_timeout`` is a total budget shared by every
+        client, not a per-action delay.
+        """
+
+        candidates = list(clients)
+        deadline = time.monotonic() + max(float(wait_timeout), 0.0)
+        while candidates:
+            for client in candidates:
+                try:
+                    if client.server_is_ready():
+                        return True
+                except Exception:  # noqa: BLE001 - rclpy teardown/race
+                    continue
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(min(0.05, max(deadline - time.monotonic(), 0.0)))
+        return False
+
+    def _routable_reported_action_pairs(
+        self,
+        device_id: str,
+    ) -> List[Tuple[str, str]]:
+        """Actions with a concrete ROS client, including JSON command multiplexing."""
+
+        namespace = f"/devices/{device_id}"
+        pairs: List[Tuple[str, str]] = []
+        for action_name, mapping in self._action_value_mappings.get(device_id, {}).items():
+            if not isinstance(mapping, dict):
+                continue
+            mapping_type = str(mapping.get("type") or "")
+            if action_name.startswith("auto-") or mapping_type.startswith("UniLabJsonCommand"):
+                generic = (
+                    "_execute_driver_command_async"
+                    if mapping_type.startswith("UniLabJsonCommandAsync")
+                    else "_execute_driver_command"
+                )
+                action_id = f"{namespace}/{generic}"
+            else:
+                action_id = f"{namespace}/{action_name}"
+            if action_id in self._action_clients:
+                pairs.append((device_id, action_name))
+        return pairs
 
     async def create_resource_detailed(
         self,
@@ -589,19 +823,9 @@ class HostNode(BaseROS2DeviceNode):
                 "z": bind_locations.z,
             },
         }
-        if len(liquid_input_slot) and liquid_input_slot[0] == -1:  # 目前container只逐个创建
-            res_creation_input.update(
-                {
-                    "data": {
-                        "liquids": [
-                            {
-                                "liquid_type": liquid_type[0] if liquid_type else None,
-                                "liquid_volume": liquid_volume[0] if liquid_volume else None,
-                            }
-                        ]
-                    }
-                }
-            )
+        # 注: 容器自身液体 (liquid_input_slot == [-1]) 不再通过 data.liquids 预埋
+        # （initialize_resource 仅按 class+name 重建，data 会被丢弃），统一由设备侧
+        # _append_resource_inner 在创建后通过 apply_substances 写入。
         init_new_res = initialize_resource(res_creation_input)  # flatten的格式
         if len(init_new_res) > 1:  # 一个物料，多个子节点
             init_new_res = [init_new_res]
@@ -633,15 +857,13 @@ class HostNode(BaseROS2DeviceNode):
         raise ValueError(f"创建资源时失败！响应为空")
 
     def initialize_device(self, device_id: str, device_config: ResourceDictInstance) -> None:
-        """
-        根据配置初始化设备，
+        """初始化本地设备并在 ROS 动作端点全部就绪后宣告可调度。
 
-        此函数根据提供的设备配置动态导入适当的设备类并创建其实例。
-        同时为设备的动作值映射设置动作客户端。
-
-        Args:
-            device_id: 设备唯一标识符
-            device_config: 设备配置字典，包含类型和其他参数
+        参数：``device_id`` 是设备实例唯一身份；``device_config`` 是包含设备定义、
+        稳定 UUID 与初始化参数的物理资源图（Physical Resource Graph）实例。
+        返回：无；驱动定义非法或既有设备初始化返回空结果时保留原有跳过语义。
+        异常：必需 ROS 动作端点未在共享等待预算内就绪时抛出 ``RuntimeError``，
+        同时禁止把设备加入在线集合或上报动作空闲状态。
         """
         self.lab_logger().info(f"[Host Node] Initializing device: {device_id}")
 
@@ -658,6 +880,9 @@ class HostNode(BaseROS2DeviceNode):
         self.devices_instances[device_id] = d
         # noinspection PyProtectedMember
         self._action_value_mappings[device_id] = d._ros_node._action_value_mappings
+        new_action_pairs: List[Tuple[str, str]] = []
+        # 仅为建独立 ROS ActionServer 的动作创建 ActionClient：
+        # auto-/UniLabJsonCommand 动作无 ROS action server，无法也无需建 ActionClient。
         # noinspection PyProtectedMember
         for action_name, action_value_mapping in d._ros_node._action_value_mappings.items():
             if action_name.startswith("auto-") or str(action_value_mapping.get("type", "")).startswith(
@@ -676,20 +901,42 @@ class HostNode(BaseROS2DeviceNode):
                 self.lab_logger().trace(
                     f"[Host Node] Created ActionClient (Local): {action_id}"
                 )  # 子设备再创建用的是Discover发现的
-                # from unilabos.app.comm_factory import get_communication_client
-                # comm_client = get_communication_client()
-                # info_with_schema = ros_action_to_json_schema(action_type)
-                # comm_client.publish_actions(action_name, {
-                #     "device_id": device_id,
-                #     "device_type": device_config["class"],
-                #     "action_name": action_name,
-                #     "schema": info_with_schema,
-                # })
+                new_action_pairs.append((device_id, action_name))
             else:
                 self.lab_logger().warning(f"[Host Node] ActionClient {action_id} already exists.")
+        # 锁上报需全量：auto-/UniLabJsonCommand 动作虽不建 ActionClient，但仍是可经
+        # _execute_driver_command 调用的能力(如 workbench 的 prepare_materials 等)，必须一并
+        # 上报 free 锁，与 report_all_action_locks 的全量快照保持一致。_execute_driver_command
+        # [_async] 由 _report_action_locks_free 统一过滤。
+        # noinspection PyProtectedMember
+        already = {action_name for _, action_name in new_action_pairs}
+        for action_name in d._ros_node._action_value_mappings.keys():
+            if action_name in already:
+                continue
+            new_action_pairs.append((device_id, action_name))
+        # ``required_endpoint_ids`` 是该设备全部业务动作真正依赖的原生或通用 ROS 端点。
+        required_endpoint_ids = required_action_endpoint_ids(
+            device_id,
+            d._ros_node._action_value_mappings,
+        )
+        # 本地服务端与客户端在同一启动阶段创建；给 DDS 发现一个有界共享预算，
+        # 仍未就绪就按关闭式失败处理，绝不提前宣告设备可调度。
+        if not wait_for_action_endpoints(
+            self._action_clients,
+            required_endpoint_ids,
+            wait_timeout=2.0,
+        ):
+            transport_error = (
+                "device_action_transport_not_ready: "
+                f"device={device_id}, required_endpoints={required_endpoint_ids}"
+            )
+            self.lab_logger().error(transport_error)
+            raise RuntimeError(transport_error)
         device_key = f"{self.devices_names[device_id]}/{device_id}"  # 这里不涉及二级device_id
         # 添加到在线设备列表
         self._online_devices.add(device_key)
+        # 新注册本地设备 action 后主动上报其 free 锁状态
+        self._report_action_locks_free(new_action_pairs)
 
     def update_device_status_subscriptions(self) -> None:
         """
@@ -743,6 +990,82 @@ class HostNode(BaseROS2DeviceNode):
 
     """设备相关"""
 
+    def _initialize_configured_device(
+        self,
+        device_id: str,
+        device_config: ResourceDictInstance,
+    ) -> None:
+        """按当前进程语义初始化真实驱动或注册无 I/O 的模拟设备。
+
+        参数：``device_id`` 是物理图设备身份；``device_config`` 是冻结的设备实例。
+        返回：无；托管 dry-run Edge 只安装动作目录，其他进程继续调用真实初始化。
+        异常：设备定义无法唯一解析或动作目录结构非法时关闭式失败。
+        """
+
+        if BasicConfig.process_role == "edge_runtime" and _device_is_simulated(self, device_id):
+            self._register_simulated_device(device_id, device_config)
+            return
+        self.initialize_device(device_id, device_config)
+
+    def _register_simulated_device(
+        self,
+        device_id: str,
+        device_config: ResourceDictInstance,
+    ) -> None:
+        """从 Registry 投影可调度能力，绝不加载或构造设备驱动。
+
+        参数：``device_id`` 是物理图设备身份；``device_config`` 提供唯一设备定义。
+        返回：无；建立 Edge 注册和模拟动作回执所需的目录与在线事实。
+        异常：定义缺失、歧义或动作目录不是对象时抛出 ``DeviceClassInvalid``。
+        """
+
+        definition_identity = device_config.res_content.klass
+        if not isinstance(definition_identity, str) or not definition_identity.strip():
+            raise DeviceClassInvalid(
+                f"Device [{device_id}] class must be a non-empty string"
+            )
+        try:
+            registry_entry = lab_registry.resolve_definition(
+                "device",
+                definition_identity,
+            )
+        except Exception as error:
+            raise DeviceClassInvalid(
+                f"Device [{device_id}] class {definition_identity} cannot be uniquely resolved"
+            ) from error
+        class_entry = (
+            registry_entry.get("class")
+            if isinstance(registry_entry, dict)
+            else None
+        )
+        action_mappings = (
+            class_entry.get("action_value_mappings")
+            if isinstance(class_entry, dict)
+            else None
+        )
+        if not isinstance(action_mappings, dict):
+            raise DeviceClassInvalid(
+                f"Device [{device_id}] class {definition_identity} has no valid action catalog"
+            )
+
+        namespace = f"/devices/{device_id}"
+        device_key = f"{namespace}/{device_id}"
+        frozen_mappings = deepcopy(action_mappings)
+        self.devices_names[device_id] = namespace
+        self.device_machine_names[device_id] = "dry-run"
+        self._action_value_mappings[device_id] = frozen_mappings
+        self.device_status.setdefault(device_id, {})
+        self.device_status_timestamps.setdefault(device_id, {})
+        self._online_devices.add(device_key)
+        self._simulated_device_keys.add(device_key)
+        self._report_action_locks_free(
+            [(device_id, action_name) for action_name in frozen_mappings]
+        )
+        self.lab_logger().info(
+            f"[Host Node] Dry-run device catalog registered: {device_id} "
+            f"({len(frozen_mappings)} actions); hardware initialization skipped"
+        )
+
     def property_callback(self, msg, device_id: str, property_name: str) -> None:
         """
         更新设备状态字典中的属性值，并发送到桥接器。
@@ -761,7 +1084,10 @@ class HostNode(BaseROS2DeviceNode):
                     bCreate = True
                     bChange = True
                     self.device_status[device_id][property_name] = msg.data
-                elif self.device_status[device_id][property_name] != msg.data:
+                elif (
+                    type(self.device_status[device_id][property_name]) is not type(msg.data)
+                    or self.device_status[device_id][property_name] != msg.data
+                ):
                     bChange = True
                     self.device_status[device_id][property_name] = msg.data
                 # 更新时间戳
@@ -801,15 +1127,35 @@ class HostNode(BaseROS2DeviceNode):
         device_id = item.device_id
         action_name = item.action_name
 
-        if BasicConfig.test_mode:
+        if _device_is_simulated(self, device_id):
             action_id = f"/devices/{device_id}/{action_name}"
             self.lab_logger().info(
-                f"[TEST MODE] 模拟执行: {action_id} (job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"
+                f"[SIMULATE ACTION] 模拟执行: {action_id} "
+                f"(job={item.job_id[:8]}), 参数: {str(action_kwargs)[:500]}"
             )
             # 根据注册表 handles 构建模拟返回值
-            mock_return = self._build_test_mode_return(device_id, action_name, action_kwargs)
-            self._handle_test_mode_result(item, action_id, mock_return)
+            mock_return = self._build_simulated_action_return(
+                device_id, action_name, action_kwargs
+            )
+            from unilabos.app.edge_control.execution_start import confirm_execution_start
+            confirm_execution_start(item)
+            mechanisms = getattr(self, "_mechanisms", None)
+            if mechanisms is not None and mechanisms.has(device_id, action_name):
+                # 资产行为类绑定了这个动作：按机构运动的时长执行到完成，再回报结果。
+                self._publish_job_started(item)
+                mechanisms.execute(
+                    device_id, action_name, action_kwargs,
+                    on_success=lambda evidence: self._handle_simulated_action_result(
+                        item, action_id, {**mock_return, "mechanism": evidence}, started=True),
+                    on_failure=lambda code, reason: self._handle_simulated_action_failure(
+                        item, action_id, code, reason),
+                )
+                return
+            self._handle_simulated_action_result(item, action_id, mock_return)
             return
+        if getattr(self, "_mechanisms", None) is not None:
+            # 由驱动执行的设备：记下动作，开始/结束时让画面按同一资产行为类推演（不影响动作本身）。
+            self._mechanisms.remember(item.job_id, device_id, action_name, action_kwargs)
 
         if action_type.startswith("UniLabJsonCommand"):
             if action_name.startswith("auto-"):
@@ -835,11 +1181,33 @@ class HostNode(BaseROS2DeviceNode):
         action_client: ActionClient = self._action_clients[action_id]
         goal_msg = convert_to_ros_msg(action_client._action_type.Goal(), action_kwargs)
 
+        target_wrapper = self.devices_instances.get(device_id)
+        target_node = getattr(target_wrapper, "_ros_node", None) if target_wrapper is not None else None
+        if target_node is not None and hasattr(target_node, "register_job_context"):
+            target_node.register_job_context(
+                item.job_id,
+                item.task_id,
+                item.action_name,
+                trace_context=item.trace_context,
+                station_controlled=getattr(item, "start_guard", None) is not None,
+                execution_source=getattr(item, "execution_source", "workflow"),
+                start_guard=getattr(item, "start_guard", None),
+            )
+
         # self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {str(goal_msg)[:1000]}")
         self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {action_kwargs}")
         self.lab_logger().trace(f"[Host Node] Sending goal for {action_id}: {goal_msg}")
         action_client.wait_for_server()
         goal_uuid_obj = UUID(uuid=list(u.bytes))
+
+        if getattr(item, "start_guard", None) is not None and target_node is None:
+            # host 自己执行的动作没有独立设备节点，开始屏障由 Host 在发送前确认。
+            if device_id == self.device_id:
+                from unilabos.app.edge_control.execution_start import confirm_execution_start
+
+                confirm_execution_start(item)
+            else:
+                raise RuntimeError("设备适配器未提供实际动作开始屏障")
 
         future = action_client.send_goal_async(
             goal_msg,
@@ -848,16 +1216,124 @@ class HostNode(BaseROS2DeviceNode):
         )
         future.add_done_callback(lambda f: self.goal_response_callback(item, action_id, f))
 
-    def _build_test_mode_return(
+    def resolve_unknown_device_command(
+        self,
+        device_id: str,
+        device_command_id: str,
+        resolution_command_uuid: str,
+        reason: str,
+    ) -> Dict[str, Any]:
+        """处理 Backend UNKNOWN；durable 驱动优先提交其本地命令日志。"""
+
+        driver = self._device_driver(device_id)
+        if driver is None:
+            raise ValueError(f"设备 {device_id} 不存在或驱动尚未就绪，拒绝 UNKNOWN 命令人工对账")
+        resolver = getattr(driver, "resolve_unknown_command", None)
+        if not callable(resolver):
+            dispatch_block_reason = self.device_dispatch_block_reason(device_id)
+            unknown_command_ids = self.device_unknown_command_ids(device_id)
+            if dispatch_block_reason or unknown_command_ids:
+                raise ValueError(f"设备 {device_id} 不支持 UNKNOWN 命令人工对账")
+            return {
+                "command_id": device_command_id,
+                "state": "CANCELED",
+                "previous_state": "UNKNOWN",
+                "resolution_committed": True,
+                "resolution_command_uuid": resolution_command_uuid,
+                "message": reason,
+                "durable_journal": False,
+            }
+        result = resolver(
+            device_command_id,
+            resolution_command_uuid=resolution_command_uuid,
+            reason=reason,
+        )
+        if not isinstance(result, dict):
+            raise TypeError(f"设备 {device_id} 返回了无效的 UNKNOWN 对账结果")
+        return result
+
+    def device_dispatch_block_reason(self, device_id: str) -> str:
+        """读取设备驱动声明的生产派发阻断原因；空字符串表示可派发。"""
+
+        driver = self._device_driver(device_id)
+        reader = getattr(driver, "dispatch_block_reason", None)
+        if not callable(reader):
+            return ""
+        return str(reader() or "").strip()
+
+    def device_unknown_command_ids(self, device_id: str) -> List[str]:
+        """读取设备驱动声明的结构化 UNKNOWN 命令身份。"""
+
+        reader = getattr(self._device_driver(device_id), "unknown_command_ids", None)
+        if not callable(reader):
+            return []
+        return [str(command_id).strip() for command_id in reader() if str(command_id).strip()]
+
+    def retire_settled_device_command(self, device_command_id: str) -> int:
+        """向所有持久设备驱动广播 Backend 已确认的物理结算身份。
+
+        ``device_command_id`` 是工作流节点作业（WorkflowNodeJob）派生的稳定
+        设备命令身份；返回实际退役记录数。重复 ACK 必须保持幂等；驱动拥有
+        自己的账本语义，UNKNOWN 和非终态记录必须拒删，驱动异常原样传播以便
+        上层保留事件并重试。
+        """
+
+        command_id = str(device_command_id).strip()
+        if not command_id:
+            return 0
+        retired = 0
+        for device_id in list(self.devices_instances):
+            retire = getattr(
+                self._device_driver(str(device_id)),
+                "retire_settled_command",
+                None,
+            )
+            if callable(retire) and bool(retire(command_id)):
+                retired += 1
+        return retired
+
+    def _device_driver(self, device_id: str) -> Any:
+        """隐藏 HostNode 设备包装器的内部导航并返回底层驱动实例。"""
+
+        wrapper = self.devices_instances.get(device_id)
+        target_node = getattr(wrapper, "_ros_node", None) if wrapper is not None else None
+        return getattr(target_node, "driver_instance", None)
+
+    def _build_simulated_action_return(
         self, device_id: str, action_name: str, action_kwargs: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        根据注册表 handles 的 output 定义构建测试模式的模拟返回值
+        """按冻结动作合同构建模拟动作回执。
 
-        根据 data_key 中 @flatten 的层数决定嵌套数组层数，叶子值为空字典。
-        例如: "vessel" → {}, "plate.@flatten" → [{}], "a.@flatten.@flatten" → [[{}]]
+        同名输出优先透传输入，保证物料（Material）在动作链中保持
+        UUID；其余字段按 JSON 结果模式生成确定性值。旧 ``handles``
+        合同继续根据 ``@flatten`` 层数构造数组。
         """
-        mock_return: Dict[str, Any] = {"test_mode": True, "action_name": action_name}
+
+        def schema_value(schema: Any) -> Any:
+            if not isinstance(schema, dict):
+                return None
+            enum_values = schema.get("enum")
+            if isinstance(enum_values, list) and enum_values:
+                return "SUCCEEDED" if "SUCCEEDED" in enum_values else deepcopy(enum_values[0])
+            value_type = schema.get("type")
+            if value_type == "boolean":
+                return True
+            if value_type == "string":
+                return ""
+            if value_type == "integer":
+                return 0
+            if value_type == "number":
+                return 0.0
+            if value_type == "array":
+                return []
+            if value_type == "object":
+                return {}
+            return None
+
+        mock_return: Dict[str, Any] = {
+            "action_mode": "simulate",
+            "action_name": action_name,
+        }
         action_mappings = self._action_value_mappings.get(device_id, {})
         action_mapping = action_mappings.get(action_name, {})
         handles = action_mapping.get("handles", {})
@@ -865,28 +1341,82 @@ class HostNode(BaseROS2DeviceNode):
             for output_handle in handles.get("output", []):
                 data_key = output_handle.get("data_key", "")
                 handler_key = output_handle.get("handler_key", "")
+                output_key = handler_key or data_key.split(".@flatten", 1)[0]
+                if not output_key:
+                    continue
+                if output_key in action_kwargs:
+                    mock_return[output_key] = deepcopy(action_kwargs[output_key])
+                    continue
                 # 根据 @flatten 层数构建嵌套数组，叶子为空字典
                 flatten_count = data_key.count("@flatten")
                 value: Any = {}
                 for _ in range(flatten_count):
                     value = [value]
-                mock_return[handler_key] = value
+                mock_return[output_key] = value
+
+        result_schema = action_mapping.get("result", {})
+        if not (
+            isinstance(result_schema, dict)
+            and isinstance(result_schema.get("properties"), dict)
+        ):
+            action_schema = action_mapping.get("schema", {})
+            action_properties = (
+                action_schema.get("properties", {})
+                if isinstance(action_schema, dict)
+                else {}
+            )
+            result_schema = (
+                action_properties.get("result", {})
+                if isinstance(action_properties, dict)
+                else {}
+            )
+        if isinstance(result_schema, dict):
+            properties = result_schema.get("properties", {})
+            if isinstance(properties, dict):
+                for output_key, property_schema in properties.items():
+                    if output_key in action_kwargs:
+                        mock_return[output_key] = deepcopy(action_kwargs[output_key])
+                    else:
+                        mock_return[output_key] = schema_value(property_schema)
         return mock_return
 
-    def _handle_test_mode_result(
-        self, item: "QueueItem", action_id: str, mock_return: Dict[str, Any]
+    def _handle_simulated_action_failure(
+        self, item: "QueueItem", action_id: str, code: str, reason: str
+    ) -> None:
+        """机构动作被资产拒绝或执行出错：按失败作业回报，不伪造成功。"""
+
+        self.lab_logger().warning(
+            f"[SIMULATE ACTION] {action_id} ({item.job_id[:8]}) failed: {reason}"
+        )
+        failure = {"action_mode": "simulate", "action_name": item.action_name, "mechanism_error": code}
+        return_info = serialize_result_info(reason, False, failure)
+        from unilabos.app.web.controller import store_job_result
+        store_job_result(item.job_id, "failed", return_info, failure)
+        for bridge in self.bridges:
+            if hasattr(bridge, "publish_job_status"):
+                bridge.publish_job_status(failure, item, "failed", return_info)
+
+    def _handle_simulated_action_result(
+        self, item: "QueueItem", action_id: str, mock_return: Dict[str, Any], *, started: bool = False
     ) -> None:
         """
-        测试模式下直接构建结果并走正常的结果回调流程（跳过 ROS）
+        模拟动作模式下直接构建结果并走正常的结果回调流程（跳过 ROS）
+
+        ``started`` 为 True 表示开始通知已经发过（按时长执行的机构动作）。
         """
         job_id = item.job_id
         status = "success"
         return_info = serialize_result_info("", True, mock_return)
 
-        self.lab_logger().info(f"[TEST MODE] Result for {action_id} ({job_id[:8]}): {status}")
+        self.lab_logger().info(
+            f"[SIMULATE ACTION] Result for {action_id} ({job_id[:8]}): {status}"
+        )
 
         from unilabos.app.web.controller import store_job_result
         store_job_result(job_id, status, return_info, mock_return)
+
+        if not started:
+            self._publish_job_started(item)
 
         # 发布状态到桥接器
         for bridge in self.bridges:
@@ -898,13 +1428,27 @@ class HostNode(BaseROS2DeviceNode):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.lab_logger().warning(f"[Host Node] Goal {item.action_name} ({item.job_id}) rejected")
+            return_info = serialize_result_info("ROS goal rejected", False, {})
+            for bridge in self.bridges:
+                if hasattr(bridge, "publish_job_status"):
+                    bridge.publish_job_status({}, item, "failed", return_info)
             return
 
         self.lab_logger().info(f"[Host Node] Goal {action_id} ({item.job_id}) accepted")
+        self._publish_job_started(item)
+        if getattr(self, "_mechanisms", None) is not None:
+            self._mechanisms.job_started(item.job_id)
         self._goals[item.job_id] = goal_handle
         goal_future = goal_handle.get_result_async()
         goal_future.add_done_callback(lambda f: self.get_result_callback(item, action_id, f))
         goal_future.result()
+
+    def _publish_job_started(self, item: "QueueItem") -> None:
+        """ROS 接受 Goal 后，通过支持该能力的 Bridge 发送短 started 通知。"""
+
+        for bridge in self.bridges:
+            if hasattr(bridge, "publish_job_started"):
+                bridge.publish_job_started(item)
 
     def feedback_callback(self, item: "QueueItem", action_id: str, feedback_msg) -> None:
         """反馈回调"""
@@ -930,6 +1474,9 @@ class HostNode(BaseROS2DeviceNode):
                 self.lab_logger().info(f"[Host Node] Goal {action_id} ({job_id[:8]}) was cancelled")
                 status = "failed"
                 return_info = serialize_result_info("Job was cancelled", False, {})
+                # ``status=failed`` 保持既有 Bridge wire 兼容；稳定分类让本地调度器
+                # 能区分“设备明确取消”与普通业务失败，并据此安全释放执行占用。
+                return_info["suc_type"] = "canceled"
             else:
                 result_data = convert_from_ros_msg(result_msg)
                 status = "success"
@@ -967,6 +1514,8 @@ class HostNode(BaseROS2DeviceNode):
                         return_info = serialize_result_info("缺少return_info", False, result_data)
 
             self.lab_logger().info(f"[Host Node] Result for {action_id} ({job_id[:8]}): {status}")
+            if getattr(self, "_mechanisms", None) is not None:
+                self._mechanisms.job_finished(job_id, status == "success")
             if goal_status != GoalStatus.STATUS_CANCELED:
                 self.lab_logger().trace(f"[Host Node] Result data: {result_data}")
 
@@ -1014,15 +1563,19 @@ class HostNode(BaseROS2DeviceNode):
                         {}, item, "failed", serialize_result_info(f"Callback error: {str(e)}", False, {})
                     )
 
-    def cancel_goal(self, goal_uuid: str) -> bool:
-        """
-        取消目标
+    def cancel_goal(
+        self,
+        goal_uuid: str,
+        on_response=None,
+    ) -> bool:
+        """异步请求取消一个 ROS Goal。
 
-        Args:
-            goal_uuid: 目标UUID（job_id）
+        参数：``goal_uuid`` 是作业 UUID；``on_response`` 可选地接收执行器是否明确
+        接受取消。返回：找到 Goal 并成功发起异步请求时为真，否则为假。异常：
+        发起请求异常向调用方传播；异步响应异常会记录并通过回调返回假。
 
-        Returns:
-            bool: 如果找到目标并发起取消请求返回True，否则返回False
+        返回真只表示请求已发出；只有 ``on_response(True)`` 表示执行器已受理，
+        最终安全停止仍以 ``get_result_callback`` 的取消终态为准。
         """
         if goal_uuid in self._goals:
             self.lab_logger().info(f"[Host Node] Cancelling goal {goal_uuid[:8]}")
@@ -1032,17 +1585,31 @@ class HostNode(BaseROS2DeviceNode):
             cancel_future = goal_handle.cancel_goal_async()
 
             # 添加取消完成的回调
-            cancel_future.add_done_callback(lambda future: self._cancel_goal_callback(goal_uuid, future))
+            cancel_future.add_done_callback(
+                lambda future: self._cancel_goal_callback(
+                    goal_uuid,
+                    future,
+                    on_response=on_response,
+                )
+            )
             return True
         else:
             self.lab_logger().warning(f"[Host Node] Goal {goal_uuid[:8]} not found in _goals, cannot cancel")
             return False
 
-    def _cancel_goal_callback(self, goal_uuid: str, future) -> None:
-        """取消目标的回调"""
+    def _cancel_goal_callback(self, goal_uuid: str, future, on_response=None) -> None:
+        """记录 ROS 取消响应并回传明确受理事实。
+
+        参数：``goal_uuid`` 是作业 UUID；``future`` 持有 ROS 取消响应；
+        ``on_response`` 可选地接收布尔受理结果。返回无。异常：ROS Future 异常仅
+        记录并回调假，不把“请求已发出”误当成“执行器已接受”。
+        """
+
+        accepted = False
         try:
             cancel_response = future.result()
             if cancel_response.goals_canceling:
+                accepted = True
                 self.lab_logger().info(f"[Host Node] Goal {goal_uuid[:8]} cancel request accepted")
             else:
                 self.lab_logger().warning(f"[Host Node] Goal {goal_uuid[:8]} cancel request rejected")
@@ -1051,6 +1618,15 @@ class HostNode(BaseROS2DeviceNode):
             import traceback
 
             self.lab_logger().error(traceback.format_exc())
+        finally:
+            if callable(on_response):
+                try:
+                    on_response(accepted)
+                except Exception as callback_error:  # noqa: BLE001
+                    self.lab_logger().error(
+                        f"[Host Node] Error reporting cancel response for "
+                        f"{goal_uuid[:8]}: {callback_error}"
+                    )
 
     def get_goal_status(self, job_id: str) -> int:
         """获取目标状态"""
@@ -1114,12 +1690,6 @@ class HostNode(BaseROS2DeviceNode):
             "resource_list": self.create_service(
                 ResourceList, "/resources/list", self._resource_list_callback, callback_group=self.callback_group
             ),
-            "node_info_update": self.create_service(
-                SerialCommand,
-                "/node_info_update",
-                self._node_info_update_callback,
-                callback_group=self.callback_group,
-            ),
             "c2s_update_resource_tree": self.create_service(
                 SerialCommand,
                 "/c2s_update_resource_tree",
@@ -1139,14 +1709,24 @@ class HostNode(BaseROS2DeviceNode):
         )
 
         # 处理资源添加逻辑
-        success = False
+        success = True
         uuid_mapping = {}
-        if len(self.bridges) > 0:
-            from unilabos.app.web.client import HTTPClient, http_client
+        legacy_http_bridge = next(
+            (
+                bridge
+                for bridge in self.bridges
+                if hasattr(bridge, "resource_tree_add")
+            ),
+            None,
+        )
+        if legacy_http_bridge is not None:
 
             resource_start_time = time.time()
-            uuid_mapping = http_client.resource_tree_add(resource_tree_set, mount_uuid, first_add)
-            success = True
+            uuid_mapping = legacy_http_bridge.resource_tree_add(
+                resource_tree_set,
+                mount_uuid,
+                first_add,
+            )
             resource_end_time = time.time()
             self.lab_logger().info(
                 f"[Host Node-Resource] 物料创建上传 {round(resource_end_time - resource_start_time, 5) * 1000} ms"
@@ -1156,6 +1736,7 @@ class HostNode(BaseROS2DeviceNode):
 
         if success:
             from unilabos.resources.graphio import physical_setup_graph
+            from unilabos.resources.resource_tracker import TRACKER_STATE_KEYS
 
             # 将资源添加到本地图中
             for node in resource_tree_set.all_nodes:
@@ -1163,19 +1744,33 @@ class HostNode(BaseROS2DeviceNode):
                 if resource_dict.get("id") not in physical_setup_graph.nodes:
                     physical_setup_graph.add_node(resource_dict["id"], **resource_dict)
                 else:
-                    physical_setup_graph.nodes[resource_dict["id"]]["data"].update(resource_dict.get("data", {}))
+                    graph_node = physical_setup_graph.nodes[resource_dict["id"]]
+                    graph_node["data"].update(resource_dict.get("data", {}))
+                    # 液体状态在根字段（与 dump 形态一致），已存在节点同步刷新，避免与 data 双真相漂移
+                    for state_key in TRACKER_STATE_KEYS:
+                        if resource_dict.get(state_key) is not None:
+                            graph_node[state_key] = resource_dict[state_key]
+                    # 条码同样以根字段为准，同步刷新避免与 config 双真相漂移
+                    if resource_dict.get("barcode"):
+                        graph_node["barcode"] = resource_dict["barcode"]
+                        graph_node["barcode_symbology"] = resource_dict.get("barcode_symbology") or ""
 
         response.response = _fast_dumps_str(uuid_mapping) if success else "FAILED"
         self.lab_logger().info(f"[Host Node-Resource] Resource tree add completed, success: {success}")
 
-    async def _resource_tree_action_get_callback(self, data: dict, response: SerialCommand_Response):  # OK
-        uuid_list: List[str] = data["data"]
-        with_children: bool = data["with_children"]
-        from unilabos.app.web.client import http_client
+    async def _resource_tree_action_get_callback(self, data: dict, response: SerialCommand_Response):
+        """ROS 查询与驱动查询使用同一份 Backend 身份投影，不回落本地配置。"""
+        from unilabos.ros.nodes.resource_slot_hydration import query_production_resource_nodes_sync
 
-        resource_response = http_client.resource_tree_get(uuid_list, with_children)
-        response.response = json.dumps(resource_response)
-        self.lab_logger().trace(f"[Host Node-Resource] Resource tree get request callback {response.response}")
+        response.response = ""
+        try:
+            requested = data["data"]
+            nodes = query_production_resource_nodes_sync(requested)
+            if not data.get("with_children", True):
+                nodes = [node for node in nodes if node.get("uuid") in set(requested)]
+            response.response = json.dumps(nodes)
+        except Exception as error:
+            self.lab_logger().error(f"[Host Node-Resource] Backend 资源投影查询失败: {error}")
 
     async def _resource_tree_action_remove_callback(self, data: dict, response: SerialCommand_Response):
         """
@@ -1196,29 +1791,43 @@ class HostNode(BaseROS2DeviceNode):
             f"{len(resource_tree_set.all_nodes)} total nodes"
         )
 
-        from unilabos.app.web.client import http_client
-
         uuid_to_trees: Dict[str, List[ResourceTreeInstance]] = collections.defaultdict(list)
         for tree in resource_tree_set.trees:
             uuid_to_trees[tree.root_node.res_content.parent_uuid].append(tree)
 
         for uid, trees in uuid_to_trees.items():
             new_tree_set = ResourceTreeSet(trees)
-            resource_start_time = time.time()
             self.lab_logger().info(
                 f"[Host Node-Resource] 物料 {[root_node.res_content.id for root_node in new_tree_set.root_nodes]} {uid} 挂载 {trees[0].root_node.res_content.parent_uuid} 请求更新上传"
             )
-            uuid_mapping = http_client.resource_tree_add(new_tree_set, uid, False)
-            success = bool(uuid_mapping)
-            resource_end_time = time.time()
-            self.lab_logger().info(
-                f"[Host Node-Resource] 物料更新上传 {round(resource_end_time - resource_start_time, 5) * 1000} ms"
+            legacy_http_bridge = next(
+                (
+                    bridge
+                    for bridge in self.bridges
+                    if hasattr(bridge, "resource_tree_add")
+                ),
+                None,
             )
+            uuid_mapping = {}
+            if legacy_http_bridge is not None:
+                resource_start_time = time.time()
+                uuid_mapping = legacy_http_bridge.resource_tree_add(
+                    new_tree_set,
+                    uid,
+                    False,
+                )
+                resource_end_time = time.time()
+                self.lab_logger().info(
+                    f"[Host Node-Resource] 物料更新上传 {round(resource_end_time - resource_start_time, 5) * 1000} ms"
+                )
             if uuid_mapping:
                 self.lab_logger().info(f"[Host Node-Resource] UUID映射: {len(uuid_mapping)} 个节点")
             # 还需要加入到资源图中，暂不实现，考虑资源图新的获取方式
             response.response = json.dumps(uuid_mapping)
-            self.lab_logger().info(f"[Host Node-Resource] Resource tree update completed, success: {success}")
+            self.lab_logger().info(
+                "[Host Node-Resource] Resource tree update completed, "
+                f"legacy_cloud_sync={legacy_http_bridge is not None}"
+            )
 
     async def _resource_tree_update_callback(self, request: SerialCommand_Request, response: SerialCommand_Response):
         """
@@ -1267,90 +1876,6 @@ class HostNode(BaseROS2DeviceNode):
 
         return response
 
-    def _node_info_update_callback(self, request, response):
-        """
-        更新节点信息回调
-
-        处理两种消息:
-        1. 首次上报(main_slave_run): 带 devices_config + registry_config,存储 action_value_mappings
-        2. 设备重注册(SYNC_SLAVE_NODE_INFO): 带 edge_device_id + registry_name,用 registry_name 索引已存储的 mappings
-        """
-        self.lab_logger().trace(f"[Host Node] Node info update request received: {request}")
-        try:
-            from unilabos.app.communication import get_communication_client
-            from unilabos.app.web.client import HTTPClient, http_client
-
-            info = json.loads(request.command)
-            if "SYNC_SLAVE_NODE_INFO" in info:
-                info = info["SYNC_SLAVE_NODE_INFO"]
-                machine_name = info["machine_name"]
-                edge_device_id = info["edge_device_id"]
-                registry_name = info.get("registry_name", "")
-                self.device_machine_names[edge_device_id] = machine_name
-
-                # 用 registry_name 索引已存储的 registry_config,获取 action_value_mappings
-                if registry_name and registry_name in self._slave_registry_configs:
-                    action_mappings = (
-                        self._slave_registry_configs[registry_name].get("class", {}).get("action_value_mappings", {})
-                    )
-                    if action_mappings:
-                        self._action_value_mappings[edge_device_id] = action_mappings
-                        self.lab_logger().info(
-                            f"[Host Node] Loaded {len(action_mappings)} action mappings "
-                            f"for remote device {edge_device_id} (registry: {registry_name})"
-                        )
-            else:
-                devices_config = info.pop("devices_config")
-                registry_config = info.pop("registry_config")
-                if registry_config:
-                    http_client.resource_registry({"resources": registry_config})
-
-                    # 存储 slave 的 registry_config,用于后续 SYNC_SLAVE_NODE_INFO 索引
-                    for reg_name, reg_data in registry_config.items():
-                        if isinstance(reg_data, dict) and "class" in reg_data:
-                            self._slave_registry_configs[reg_name] = reg_data
-
-                # 解析 devices_config,建立 device_id -> action_value_mappings 映射
-                if devices_config:
-                    machine_name = info["machine_name"]
-                    # Stamp machine_name on each device dict before parsing
-                    for device_tree in devices_config:
-                        for device_dict in device_tree:
-                            device_dict["machine_name"] = machine_name
-                            device_id = device_dict.get("id", "")
-                            class_name = device_dict.get("class", "")
-                            if device_id and class_name and class_name in self._slave_registry_configs:
-                                action_mappings = (
-                                    self._slave_registry_configs[class_name]
-                                    .get("class", {})
-                                    .get("action_value_mappings", {})
-                                )
-                                if action_mappings:
-                                    self._action_value_mappings[device_id] = action_mappings
-                                    self.lab_logger().info(
-                                        f"[Host Node] Stored {len(action_mappings)} action mappings "
-                                        f"for remote device {device_id} (class: {class_name})"
-                                    )
-
-                    # Merge slave devices_config into self.devices_config tree
-                    try:
-                        slave_tree_set = ResourceTreeSet.load(devices_config)  # slave一定是根节点的tree
-                        for tree in slave_tree_set.trees:
-                            self.devices_config.trees.append(tree)
-                        self.lab_logger().info(
-                            f"[Host Node] Merged {len(slave_tree_set.trees)} slave device trees "
-                            f"(machine: {machine_name}) into devices_config"
-                        )
-                    except Exception as e:
-                        self.lab_logger().error(f"[Host Node] Failed to merge slave devices_config: {e}")
-
-            self.lab_logger().debug(f"[Host Node] Node info update: {info}")
-            response.response = "OK"
-        except Exception as e:
-            self.lab_logger().error(f"[Host Node] Error updating node info: {e.args}")
-            response.response = "ERROR"
-        return response
-
     def _resource_add_callback(self, request, response):
         """
         添加资源回调
@@ -1367,11 +1892,17 @@ class HostNode(BaseROS2DeviceNode):
         resources = [convert_from_ros_msg(resource) for resource in request.resources]
         self.lab_logger().info(f"[Host Node-Resource] Add request received: {len(resources)} resources")
 
-        success = False
-        if len(self.bridges) > 0:  # 边的提交待定
-            from unilabos.app.web.client import HTTPClient, http_client
-
-            r = http_client.resource_add(add_schema(resources))
+        success = True
+        legacy_resource_bridge = next(
+            (
+                bridge
+                for bridge in self.bridges
+                if hasattr(bridge, "resource_add")
+            ),
+            None,
+        )
+        if legacy_resource_bridge is not None:
+            r = legacy_resource_bridge.resource_add(add_schema(resources))
             success = bool(r)
 
         response.success = success
@@ -1383,7 +1914,19 @@ class HostNode(BaseROS2DeviceNode):
                 if resource.get("id") not in physical_setup_graph.nodes:
                     physical_setup_graph.add_node(resource["id"], **resource)
                 else:
-                    physical_setup_graph.nodes[resource["id"]]["data"].update(resource["data"])
+                    from unilabos.resources.resource_tracker import TRACKER_STATE_KEYS
+                    graph_node = physical_setup_graph.nodes[resource["id"]]
+                    graph_node["data"].update(resource.get("data", {}))
+                    # 已存在节点同步刷新根字段，避免与 data/config 双真相漂移（与
+                    # _resource_tree_add 路径的刷新保持一致）。
+                    data = resource.get("data") or {}
+                    for state_key in TRACKER_STATE_KEYS:
+                        if state_key in data:
+                            graph_node[state_key] = data[state_key]
+                    barcode = (resource.get("config") or {}).get("barcode")
+                    if isinstance(barcode, dict):
+                        graph_node["barcode"] = barcode.get("data", "")
+                        graph_node["barcode_symbology"] = barcode.get("symbology", "")
 
         self.lab_logger().info(f"[Host Node-Resource] Add request completed, success: {success}")
         return response
@@ -1395,29 +1938,26 @@ class HostNode(BaseROS2DeviceNode):
         return resources
 
     def _resource_get_callback(self, request: SerialCommand.Request, response: SerialCommand.Response):
-        """
-        获取资源回调
-        处理获取资源请求，从桥接器或本地查询资源数据
-        Args:
-            request: 包含资源ID的请求对象
-            response: 响应对象
-        Returns:
-            响应对象，包含查询到的资源
-        """
-        try:
-            from unilabos.app.web import http_client
+        """按 UUID 或注册别名读取 Backend 投影；错误时返回空响应，不使用启动图兜底。"""
+        from unilabos.ros.nodes.resource_slot_hydration import (
+            query_production_resource_by_local_id_sync,
+            query_production_resource_nodes_sync,
+        )
 
+        response.response = ""
+        try:
             data = json.loads(request.command)
-            if "uuid" in data and data["uuid"] is not None:
-                http_req = http_client.resource_tree_get([data["uuid"]], data["with_children"])
-            elif "id" in data:
-                http_req = http_client.resource_get(data["id"], data["with_children"])
+            with_children = data.get("with_children", True)
+            if resource_uuid := data.get("uuid"):
+                nodes = query_production_resource_nodes_sync([resource_uuid])
+                if not with_children:
+                    nodes = [node for node in nodes if node.get("uuid") == resource_uuid]
             else:
-                raise ValueError("没有使用正确的物料 id 或 uuid")
-            response.response = json.dumps(http_req["data"])
-            return response
-        except Exception as e:
-            self.lab_logger().error(f"[Host Node-Resource] Error retrieving from bridge: {str(e)}")
+                nodes = query_production_resource_by_local_id_sync(data.get("id") or "", with_children=with_children)
+            response.response = json.dumps(nodes)
+        except Exception as error:
+            # 网络补查失败也必须留在服务边界内，不能终止 ROS 执行器。
+            self.lab_logger().error(f"[Host Node-Resource] Backend 资源投影查询失败: {error}")
         return response
 
     def _resource_delete_callback(self, request, response):
@@ -1435,10 +1975,18 @@ class HostNode(BaseROS2DeviceNode):
         """
         self.lab_logger().info(f"[Host Node-Resource] Delete request for ID: {request.id}")
 
-        success = False
-        if len(self.bridges) > 0:
+        success = True
+        legacy_resource_bridge = next(
+            (
+                bridge
+                for bridge in self.bridges
+                if hasattr(bridge, "resource_delete")
+            ),
+            None,
+        )
+        if legacy_resource_bridge is not None:
             try:
-                r = self.bridges[-1].resource_delete(request.id)
+                r = legacy_resource_bridge.resource_delete(request.id)
                 success = bool(r)
             except Exception as e:
                 self.lab_logger().error(f"[Host Node-Resource] Error deleting resource: {str(e)}")
@@ -1463,10 +2011,18 @@ class HostNode(BaseROS2DeviceNode):
         resources = [convert_from_ros_msg(resource) for resource in request.resources]
         self.lab_logger().info(f"[Host Node-Resource] Update request received: {len(resources)} resources")
 
-        success = False
-        if len(self.bridges) > 0:
+        success = True
+        legacy_resource_bridge = next(
+            (
+                bridge
+                for bridge in self.bridges
+                if hasattr(bridge, "resource_update")
+            ),
+            None,
+        )
+        if legacy_resource_bridge is not None:
             try:
-                r = self.bridges[-1].resource_update(add_schema(resources))
+                r = legacy_resource_bridge.resource_update(add_schema(resources))
                 success = bool(r)
             except Exception as e:
                 self.lab_logger().error(f"[Host Node-Resource] Error updating resources: {str(e)}")
@@ -1638,8 +2194,19 @@ class HostNode(BaseROS2DeviceNode):
         }
         return res
 
-    @action(always_free=True, node_type=NodeType.MANUAL_CONFIRM, placeholder_keys={
-        "assignee_user_ids": "unilabos_manual_confirm"
+    @action(
+        displayname="调试断点",
+        description="工作流就绪标记，执行时立即完成。",
+        always_free=True,
+        node_type=NodeType.ILAB,
+        estimate_duration_fixed=0.0,
+    )
+    def debug_checkpoint(self) -> None:
+        """放行就绪后继，断点暂停由工作流调试配置管理。"""
+        return None
+
+    @legacy_action(always_free=True, node_type=NodeType.MANUAL_CONFIRM, placeholder_keys={
+        "assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM
     }, goal_default={
         "timeout_seconds": 3600,
         "assignee_user_ids": []
@@ -1650,6 +2217,435 @@ class HostNode(BaseROS2DeviceNode):
         修改的结果无效，是只读的
         """
         return kwargs
+
+    @legacy_action(
+        description="申请扣减物料并挂载（接收服务端已扣减的单个根物料，挂载到目标设备的目标物料上）",
+        always_free=True,
+        placeholder_keys={
+            "resource": PLACEHOLDER_DEDUCT_RESOURCE,
+            "device_id": PLACEHOLDER_DEVICES,
+            "mount_resource": PLACEHOLDER_NODES,
+        },
+        handles=[
+            ActionInputHandle(
+                key="device_id",
+                data_type="device_id",
+                label="目标设备",
+                data_key="device_id",
+                data_source=DataSource.HANDLE,
+            ),
+            ActionInputHandle(
+                key="mount_resource",
+                data_type="resource",
+                label="挂载目标",
+                data_key="mount_resource",
+                data_source=DataSource.HANDLE,
+            ),
+            ActionOutputHandle(
+                key="labware",
+                data_type="resource",
+                label="物料创建结果",
+                data_key="created_resource_tree.@flatten",
+                data_source=DataSource.EXECUTOR,
+            ),
+            ActionOutputHandle(
+                key="mount_resource",
+                data_type="resource",
+                label="挂载目标",
+                data_key="mount_resource.@flatten",
+                data_source=DataSource.EXECUTOR,
+            ),
+        ],
+    )
+    async def apply_deduct_resource(
+        self,
+        resource: ResourceSlot,
+        device_id: DeviceSlot = "",
+        mount_resource: ResourceSlot = None,
+        bind_locations: Point = None,
+        slot_on_deck: str = "",
+    ) -> DeductResourceReturn:
+        """
+        申请扣减物料，并可选挂载到目标设备的目标物料上。
+
+        与 transfer_resource / transfer_manual 同构：resource / mount_resource 均为**单个物料**
+        （单 ResourceSlot）。服务端已完成扣减并回传实际物料，框架在 send_goal 把以下两种入参形态
+        解析为单个 PLR 实例：
+        - list：一棵树的扁平节点组（上游 handle 的 @flatten）→ 装配成一个物料（这一组必须只有一个根）。
+        - dict：资源引用 → 按 uuid with_children 拉取一个物料。
+
+        两种用法：
+        - 仅登记/透传（不传 device_id 或 mount_resource）：只校验并把已扣减物料经 labware 输出，
+          方便后续 set_substance 设置内容物、再由 transfer_resource / transfer_manual 派发。
+        - 扣减并挂载（device_id + mount_resource 都给）：复用 create_resource_detailed →
+          append_resource，把该已存在物料挂到所选设备的挂载目标（相当于从仓库放到仓储设备上）。
+
+        与 create_resource 的区别：资源不是按 class+name 新建，而是直接 dump 已扣减实例作为
+        挂载载荷（initialize_full=False，不重建）。
+
+        输出 handle：labware = 已扣减/挂载得到的物料树；mount_resource = 实际挂载到的目标物料树
+        （未挂载时为空），便于下游节点继续引用挂载位置。
+
+        Args:
+            resource[扣减物料]: 已扣减的单个根物料（前端用扣减选择器选择，dict/list 两形态均解析为一个物料）。
+            device_id[目标设备]: 挂载到的边缘设备 id（可选；不传则仅登记/透传，可由图 handle 连入）。
+            mount_resource[挂载目标]: 实际挂载到的单个目标物料/父节点（可选；不传则仅登记/透传，可由图 handle 连入，dict/list 两形态）。
+            bind_locations[挂载位置]: 挂载目标坐标系下的挂载坐标（挂载时使用）。
+            slot_on_deck[Deck库位]: 挂载目标为 Deck 时按库位挂载（可选）。
+        """
+        if resource is None:
+            raise ValueError("申请扣减失败：未接收到已扣减物料")
+        if getattr(resource, "unilabos_uuid", None) is None:
+            raise ValueError(f"物料 {getattr(resource, 'name', resource)} 缺少 unilabos_uuid，无法处理")
+        # 已存在的扣减物料：dump 现有实例（不重新 initialize），单根取 [0] 的扁平节点列表
+        dumped = ResourceTreeSet.from_plr_resources([resource]).dump()
+        if not dumped:
+            raise ValueError(f"物料 {getattr(resource, 'name', resource)} 序列化为空")
+        flatten_nodes: List[Dict[str, Any]] = dumped[0]
+        barcode = flatten_nodes[0].get("barcode", "") if flatten_nodes else ""
+        # 是否执行挂载：device_id 与 mount_resource 都给齐才挂载，否则仅登记/透传
+        do_mount = bool(str(device_id)) and mount_resource is not None and not (
+            isinstance(mount_resource, str) and not mount_resource
+        )
+        if not do_mount:
+            self.lab_logger().info(
+                f"[apply_deduct_resource] 仅登记/透传物料 name={getattr(resource, 'name', '')} "
+                f"barcode={barcode}（未指定 device_id/mount_resource，不挂载）"
+            )
+            return {
+                "created_resource_tree": dumped,
+                "liquid_input_resource_tree": [],
+                "mount_resource": [],
+            }
+        mount_name = mount_resource.name if hasattr(mount_resource, "name") else str(mount_resource).split("/")[-1]
+        self.lab_logger().info(
+            f"[apply_deduct_resource] 挂载物料 name={getattr(resource, 'name', '')} "
+            f"barcode={barcode} -> device={device_id} mount_resource={mount_name}"
+        )
+        # 挂载坐标归一化：动作装饰器路径可能传 dict，ROS 路径为 Point；缺省取原点。
+        if isinstance(bind_locations, dict):
+            point = Point(
+                x=float(bind_locations.get("x", 0.0)),
+                y=float(bind_locations.get("y", 0.0)),
+                z=float(bind_locations.get("z", 0.0)),
+            )
+        elif bind_locations is None:
+            point = Point(x=0.0, y=0.0, z=0.0)
+        else:
+            point = bind_locations
+        other_calling_param = json.dumps({"initialize_full": False, "slot": slot_on_deck})
+        responses = await self.create_resource_detailed(
+            [flatten_nodes],
+            [str(device_id).split("/")[-1]],
+            [mount_name],
+            [point],
+            [other_calling_param],
+        )
+        assert len(responses) == 1, "apply_deduct_resource 应当只返回一个结果"
+        res = json.loads(responses[0])
+        if "suc" in res and not res["suc"]:
+            raise ValueError(res.get("error", "未知错误"))
+        # 额外输出实际挂载到的目标物料树，方便下游 handle 继续引用挂载位置
+        res["mount_resource"] = (
+            ResourceTreeSet.from_plr_resources([mount_resource]).dump()
+            if not isinstance(mount_resource, str)
+            else []
+        )
+        return res
+
+    @legacy_action(
+        description="设置物料内容物（液体/固体，默认单位 微升/微克）；接收单个物料，设置后输出",
+        always_free=True,
+        placeholder_keys={"resource": PLACEHOLDER_DEDUCT_REAGENT},
+        handles=[
+            ActionInputHandle(
+                key="resource",
+                data_type="resource",
+                label="目标物料",
+                data_key="resource",
+                data_source=DataSource.HANDLE,
+            ),
+            ActionOutputHandle(
+                key="resource",
+                data_type="resource",
+                label="目标物料",
+                data_key="resource",
+                data_source=DataSource.EXECUTOR,
+            ),
+        ],
+    )
+    async def set_substance(
+        self,
+        resource: ResourceSlot,
+        substance_names: List[str],
+        amounts: List[float],
+        slots: List[str] = [],
+        is_solid: List[bool] = [],
+    ) -> dict:
+        """
+        设置单个物料的内容物（液体或固体）。
+
+        接收的物料必须是单个，且为以下之一：
+        - container：直接设置在自身的 tracker 上；
+        - well（带标号的容器）：同样设置在自身；
+        - carrier / plate 带 container：按 slots 设置在对应子容器的 tracker 上（支持 tracker 输入）。
+
+        设置目标只有两种：物料自身，或物料下面 children 的孔位。由 slots 区分（空=自身）。
+        单位固定默认：固体=微克(ug)、液体=微升(ul)，由 is_solid 区分（unilab 定制 PLR 的
+        set_liquids 仅支持 ul/ug）。底层走 set_liquids 三元组 (名称, 量, 单位)。
+
+        Args:
+            resource[目标物料]: 单个物料（container / well / 带子容器的 carrier|plate）。
+            substance_names[物质名称]: 每个目标的物质名（液体名或固体名）。
+            amounts[用量]: 每个目标的用量（液体=体积/微升，固体=质量/微克）。
+            slots[子孔位]: 子孔位 id/索引；为空=设在物料自身，非空=设在对应子容器。
+            is_solid[是否固体]: 每个目标是否固体（可选，缺省按液体处理；决定单位 ug/ul）。
+        """
+        if resource is None:
+            raise ValueError("设置内容物失败：未接收到物料")
+        # 统一走 apply_substances：目标解析 + ug/ul 单位 + set_liquids 三元组
+        apply_substances(resource, substance_names, amounts, slots=slots, is_solid=is_solid)
+        # 同步整棵树到云端（含被修改的子孔位）
+        await self.update_resource([resource])
+        dumped = ResourceTreeSet.from_plr_resources([resource]).dump()
+        return {"resource": dumped[0] if dumped else []}
+
+    @legacy_action(
+        description="废弃台面物料（指定设备 + uuid：云端销毁并通知该设备本地移除）",
+        always_free=True,
+        placeholder_keys={
+            "resource": PLACEHOLDER_NODES,
+            "device_id": PLACEHOLDER_DEVICES,
+        },
+        handles=[
+            ActionInputHandle(
+                key="device_id",
+                data_type="device_id",
+                label="所属设备",
+                data_key="device_id",
+                data_source=DataSource.HANDLE,
+            ),
+            ActionInputHandle(
+                key="resource",
+                data_type="resource",
+                label="废弃物料",
+                data_key="resource",
+                data_source=DataSource.HANDLE,
+            ),
+        ],
+    )
+    async def discard_resource(self, resource: ResourceSlot, device_id: DeviceSlot) -> dict:
+        """从 Edge Runtime 的设备资源树移除单个台面物料并返回执行回执。
+
+        与 apply_deduct_resource 对称（扣减→挂载到设备 / 废弃→从设备移除并销毁）：接收单个
+        已存在物料与所属设备，只通知对应边缘设备移除本地资源树。Runtime 不读取或
+        写入 Scheduler Inventory；正式废弃事实必须由 Scheduler 在验证 Claim/Fence
+        与成功回执后通过 PhysicalSettlement 提交。
+
+        说明：设备需显式指定，与 ``apply_deduct_resource`` 对称。
+
+        Args:
+            resource[废弃物料]: 要废弃的单个台面物料（须带 unilabos_uuid）。
+            device_id[所属设备]: 物料所在的边缘设备 id（用于通知该设备本地移除）。
+        """
+        if resource is None:
+            raise ValueError("废弃失败：未接收到物料")
+        res_uuid = getattr(resource, "unilabos_uuid", None)
+        if res_uuid is None:
+            raise ValueError(f"物料 {getattr(resource, 'name', resource)} 缺少 unilabos_uuid，无法废弃")
+        edge_id = str(device_id).split("/")[-1]
+        dumped = ResourceTreeSet.from_plr_resources([resource]).dump()
+        barcode = dumped[0][0].get("barcode", "") if dumped and dumped[0] else ""
+        self.lab_logger().info(
+            f"[discard_resource] 废弃物料 name={getattr(resource, 'name', '')} "
+            f"barcode={barcode} uuid={res_uuid} device={edge_id}"
+        )
+        # Runtime 只执行本地资源树移除；库存结算属于 Scheduler 独占职责。
+        notified = self.notify_resource_tree_update(edge_id, "remove", [res_uuid])
+        if notified is not True:
+            raise RuntimeError(
+                f"废弃执行失败：通知设备 {edge_id} 移除物料 {res_uuid} 未成功"
+            )
+        return {
+            "code": 0,
+            "uuids": [res_uuid],
+            "device_id": edge_id,
+            "status": "runtime_removed",
+        }
+
+    async def _do_transfer_resource(
+        self,
+        resource: "ResourceSlot",
+        target_device: DeviceSlot,
+        mount_resource: "ResourceSlot",
+        site: str = "",
+        site_uuid: str = "",
+    ) -> TransferResourceReturn:
+        """在 Edge Runtime 资源树中执行已经获准的物料挂载动作。
+
+        与 apply_deduct_resource 一致：入参均为「单个物料」（单 ResourceSlot），框架在 send_goal 已把
+        list（一棵树扁平节点组→装配成一个物料）或 dict（资源引用→with_children 拉取）解析为单个 PLR 实例。
+
+        复用 base_device_node.transfer_resource_to_another 完成设备进程内资源树切换并
+        返回执行回执。Runtime 不读取或写入 Scheduler 的 Inventory Authority；正式
+        库存物理事实只允许 Scheduler 在校验 Claim/Fence 后通过 PhysicalSettlement
+        提交。物理搬运由前序节点（manual_confirm/机械臂 pick+place）保证。
+
+        site_uuid：目标库位的稳定身份，仅供派发回执关联。Scheduler 必须在派发前
+        完成 UUID、归属、占用和名称校验，并同时下发规范 ``site``；Runtime 禁止
+        通过 UUID 反查调度库存。
+        site：目标父级（carrier/deck/plate 等带 _ordering 的容器）上的库位名，显式指定物料落在哪个库位；
+        目标端通过 resolve_site_spot（与 set_substance 同一套 slot/site 解析：int 索引 / "A1" 标签 /
+        名称匹配）换算成 assign_child_resource 的 spot。空串视作不指定（由父级默认排布）。
+        若物料 extra 里带了前端隐式写入的 ``update_resource_site``，它只在未显式
+        指定 ``site`` 时作为旧调用兜底，不能覆盖已经按稳定身份校验的目标。
+
+        注意：底层按"运行该动作的节点"作为来源执行本地移除，host 运行时来源即 host（根节点）。
+        若物料此前已被 apply_deduct_resource 挂到某边缘设备，该设备的本地副本不会在此处被移除，
+        需依赖下次同步对齐（详见 cursor_docs 记录的源设备移除限制）。
+
+        Args:
+            resource: 待转移的具体物料（Material）实例。
+            target_device: 接收物料的目标设备身份；可带 ``/devices/`` 前缀。
+            mount_resource: 目标设备上承载该物料的父物料实例。
+            site: 目标父物料中的库位（Site）名称；空串表示使用默认排布。
+            site_uuid: 可选库位稳定身份；非空时优先使用并校验归属、名称与占用。
+
+        Returns:
+            返回四键字典；物料和目标父物料使用规范 ``ResourceSlot`` UUID 引用，
+            ``site`` 回传库位名，``result`` 是底层转移结果的稳定字符串。
+
+        Raises:
+            ValueError: 必需物料缺失、只收到 UUID 而缺少 Scheduler 解析的规范库位
+                名，或底层执行拒绝时抛出。
+        """
+        if resource is None:
+            raise ValueError("转移失败：未接收到待转移物料")
+        if mount_resource is None:
+            raise ValueError("转移失败：未指定挂载目标孔位")
+        target_id = str(target_device).split("/")[-1]
+        if site_uuid and not str(site).strip():
+            raise ValueError(
+                "转移失败：Scheduler 必须随 site_uuid 下发已经校验的规范库位名 site"
+            )
+        result = await self.transfer_resource_to_another(
+            [resource], target_id, [mount_resource], [site if site else None]
+        )
+        return {
+            "resource": _dump_resource_slot(resource),
+            "mount_resource": _dump_resource_slot(mount_resource),
+            "site": site,
+            "result": str(result),
+        }
+
+    @action(
+        description="转移物料（系统派发）：执行设备进程内资源树挂载并返回回执；正式库存由 Scheduler PhysicalSettlement 提交",
+        always_free=True,
+        node_type=NodeType.ILAB,
+        executor_kind=ExecutorKind.MATERIAL_TRANSFER,
+        placeholder_keys={
+            "target_device": PLACEHOLDER_DEVICES,
+            "mount_resource": PLACEHOLDER_NODES,
+        },
+    )
+    async def transfer_resource(
+        self,
+        resource: ResourceSlot,
+        target_device: str,
+        mount_resource: ResourceSlot,
+        site: str = "",
+        site_uuid: str = "",
+    ) -> TransferResourceReturn:
+        """
+        转移物料到目标设备的目标孔位（Runtime 执行回执，不直接修改调度库存）。
+        物理搬运由前序节点保证：
+        - 人工：apply_deduct_resource → transfer_manual → transfer_manual → transfer_resource
+        - 机械臂：apply_deduct_resource → 机械臂 pick → 机械臂 place → transfer_resource
+
+        与 apply_deduct_resource 同构：resource / mount_resource 均为**单个物料**（单 ResourceSlot）。
+        单物料有两种入参形态，框架在 send_goal 自动解析为一个 PLR 实例：
+        - list：一棵树的扁平节点组（上游 handle 的 @flatten）→ 装配成一个物料（这一组必须只有一个根）。
+        - dict：资源引用 → 按 uuid with_children 拉取一个物料。
+
+        Args:
+            resource[待转移物料]: 待转移的单个物料（须带 unilabos_uuid，可由图 handle 连入，list/dict 两形态）。
+            target_device[目标设备]: 接收物料的目标设备 id。
+            mount_resource[目标孔位]: 目标设备上的单个挂载孔位/父物料（list/dict 两形态）。
+            site[目标库位]: 目标父级容器上的库位名，显式指定物料落在哪个库位（carrier/deck/plate 等按
+                _ordering 换算成 spot）；不传则由父级默认排布。
+            site_uuid[目标库位 UUID]: 可选稳定身份；非空时 Scheduler 必须同时下发
+                已校验的规范 ``site``，Runtime 不访问库存反查名称。为兼容旧工作流
+                可继续只传 ``site``。
+
+        Returns:
+            四键运行结果字典；两个物料字段按规范单对象引用返回。静态类型化动作
+            （Typed Action）合同把它们发布为物料占位符（ResourceSlot），供下游
+            工作流节点继续连接。
+
+        Raises:
+            ValueError: 必需物料缺失、目标库位校验失败或转移执行失败时抛出。
+        """
+        return await self._do_transfer_resource(
+            resource,
+            target_device,
+            mount_resource,
+            site,
+            site_uuid,
+        )
+
+    @action(
+        description="人工搬运闸门：到该步暂停等人工确认（人工把物料搬运到位），仅透传物料，不做系统转移（人工工作流中间步，对应机械臂 pick/place）",
+        always_free=True,
+        node_type=NodeType.MANUAL_CONFIRM,
+        placeholder_keys={
+            "assignee_user_ids": PLACEHOLDER_MANUAL_CONFIRM,
+            "target_device": PLACEHOLDER_DEVICES,
+            "mount_resource": PLACEHOLDER_NODES,
+        },
+        goal_default={
+            "timeout_seconds": 3600,
+            "assignee_user_ids": [],
+            "site": "",
+        },
+    )
+    async def transfer_manual(
+        self,
+        resource: ResourceSlot,
+        target_device: str,
+        mount_resource: ResourceSlot,
+        timeout_seconds: int = 3600,
+        assignee_user_ids: list[str] = [],
+        site: str = "",
+    ) -> TransferManualReturn:
+        """
+        人工搬运闸门：工作流执行到本节点时暂停、等待人工确认（确认即表示人工已把物料搬运到位），
+        本身**只透传**物料/目标设备/目标孔位/库位，不做任何系统转移——它是机械臂 pick/place 的人工对应物。
+
+        实际的系统转移（记账）由工作流末步 transfer_resource 统一完成（两条流一致）：
+        - 人工：apply_deduct_resource → transfer_manual → transfer_manual → transfer_resource
+        - 机械臂：apply_deduct_resource → 机械臂 pick → 机械臂 place → transfer_resource
+
+        与 apply_deduct_resource / transfer_resource 同构：resource / mount_resource 均为**单个物料**
+        （单 ResourceSlot），框架在 send_goal 自动把 list（一棵树扁平节点组→装配成一个物料）或
+        dict（资源引用→with_children 拉取）解析为一个 PLR 实例。
+
+        site 在此显式指定/透传，避免只能依赖前端隐式写入物料 extra（update_resource_site）；
+        透传到末步 transfer_resource 后据此把物料落到目标父级的对应库位。
+
+        Args:
+            resource[待搬运物料]: 待人工搬运的单个物料（须带 unilabos_uuid，可由图 handle 连入并透传，list/dict 两形态）。
+            target_device[目标设备]: 物料要搬到的目标设备 id（透传给下游）。
+            mount_resource[目标孔位]: 目标设备上的单个目标孔位/父物料（透传给下游，list/dict 两形态）。
+            timeout_seconds[超时时间]: 人工确认超时时间，单位秒，默认 3600。
+            assignee_user_ids[确认人]: 指定处理人工确认的用户 id 列表。
+            site[目标库位]: 目标父级容器上的库位名，显式指定物料落在哪个库位（透传给下游）。
+        """
+        return {
+            "resource": _dump_resource_slot(resource),
+            "mount_resource": _dump_resource_slot(mount_resource),
+            "target_device": str(target_device) if target_device is not None else "",
+            "site": site,
+        }
 
     def test_resource(
         self,
@@ -1853,7 +2849,7 @@ class HostNode(BaseROS2DeviceNode):
             config.setdefault("machine_name", BasicConfig.machine_name or "本地")
             res_dict = ResourceDictInstance.get_resource_instance_from_dict(config)
 
-            self.initialize_device(device_id, res_dict)
+            self._initialize_configured_device(device_id, res_dict)
 
             if device_id not in self.devices_names:
                 return {"success": False, "error": f"initialize_device failed for {device_id}"}
@@ -1920,9 +2916,12 @@ class HostNode(BaseROS2DeviceNode):
 
             # Clean internal state
             self._online_devices.discard(device_key)
+            self._simulated_device_keys.discard(device_key)
             self.devices_names.pop(device_id, None)
             self.device_machine_names.pop(device_id, None)
             self._action_value_mappings.pop(device_id, None)
+            self.device_status.pop(device_id, None)
+            self.device_status_timestamps.pop(device_id, None)
 
             # Destroy the ROS2 node of the device
             instance = self.devices_instances.pop(device_id, None)

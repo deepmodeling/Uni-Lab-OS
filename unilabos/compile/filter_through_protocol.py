@@ -1,5 +1,7 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import networkx as nx
+
 from .pump_protocol import generate_pump_protocol
 
 

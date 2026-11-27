@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/conda/constructor/3.16.1/constructor/data/construct.schema.json
+"$schema": "https://raw.githubusercontent.com/conda/constructor/3.16.1/constructor/data/construct.schema.json"
+
+{% set installer_version = environ.get("UNILABOS_INSTALLER_VERSION", "0.11.4") %}
+{% set desktop_runtime = environ.get("UNILABOS_DESKTOP_RUNTIME", "0") == "1" %}
+{% set private_runtime = desktop_runtime or environ.get("UNILABOS_PRIVATE_RUNTIME", "0") == "1" %}
+{% set package_name = environ.get("UNILABOS_INSTALLER_PACKAGE", "unilabos-env" if desktop_runtime else "unilabos") %}
+{% set package_build = environ.get("UNILABOS_INSTALLER_BUILD", "") %}
+{% set source_channel = environ.get("UNILABOS_INSTALLER_CHANNEL", "") %}
+
+name: Uni-Lab-OS
+version: {{ installer_version }}
+company: Uni-Lab-OS
+reverse_domain_identifier: org.uni-lab.os
+
+channels:
+{% if source_channel %}
+  # 一键桌面打包会把当前 checkout 先构建为 Conda 包，并优先从该本地 channel 取包。
+  - {{ source_channel }}
+{% endif %}
+  - https://conda.anaconda.org/uni-lab
+  - https://conda.anaconda.org/robostack-staging
+  - https://conda.anaconda.org/conda-forge
+
+specs:
+  - python 3.11.14
+{% if desktop_runtime %}
+  # 启动器的业务代码和依赖只通过锁定 wheel 安装，Conda 只提供基础环境。
+  - pip
+  - numpy 1.26.4
+  - libblas * *openblas  # [win]
+{% endif %}
+{% if not private_runtime %}
+  - conda >=25.5
+{% endif %}
+  - {{ package_name }} =={{ installer_version }}{% if package_build %} {{ package_build }}{% endif %}
+
+user_requested_specs:
+  - python 3.11.14
+{% if not private_runtime %}
+  - conda >=25.5
+{% endif %}
+  - {{ package_name }} =={{ installer_version }}{% if package_build %} {{ package_build }}{% endif %}
+
+# 与 Uni-Lab-OS Conda 包的最低运行平台保持一致。constructor 会在安装前校验。
+virtual_specs:          # [unix]
+  - __glibc >=2.17  # [linux]
+  - __osx >=11.0    # [osx]
+
+installer_type: sh   # [unix]
+installer_type: exe  # [win]
+
+installer_filename: Uni-Lab-OS-{{ installer_version }}-linux-64.sh  # [linux64]
+installer_filename: Uni-Lab-OS-{{ installer_version }}-osx-64.sh  # [osx and x86_64]
+installer_filename: Uni-Lab-OS-{{ installer_version }}-osx-arm64.sh  # [osx and arm64]
+installer_filename: Uni-Lab-OS-{{ installer_version }}-win-64.exe  # [win64]
+
+license_file: ../../LICENSE
+write_condarc: true
+keep_pkgs: false
+initialize_conda: {{ "false" if private_runtime else "condabin" }}
+{% if private_runtime %}
+# 使用内置 standalone 离线安装，私有 Runtime 不含 conda CLI。
+check_path_spaces: false  # [win]
+{% endif %}
+initialize_by_default: false
+register_python: false  # [win]
+register_envs: false
+menu_packages: []
+
+build_outputs:
+  - hash:
+      algorithm: sha256
+  - info.json
+  - lockfile
+  - pkgs_list

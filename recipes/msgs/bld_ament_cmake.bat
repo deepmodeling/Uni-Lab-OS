@@ -13,10 +13,10 @@ rd /s /q build
 mkdir build
 pushd build
 
-:: set "CMAKE_GENERATOR=Ninja"
-
-:: try to fix long paths issues by using default generator
-set "CMAKE_GENERATOR=Visual Studio %VS_MAJOR% %VS_YEAR%"
+:: Respect the generator and toolset selected by the conda-forge compiler
+:: activation script.  The GitHub Windows runner can provide a newer Visual
+:: Studio instance than the VS 2022 generator requested by the recipe.
+:: Passing an explicit generator here bypasses that compatibility selection.
 
 set PYTHON="%PREFIX%\python.exe"
 set PYTHON=%PYTHON:\=/%
@@ -24,7 +24,6 @@ set SP_DIR="..\Lib\site-packages"
 set SP_DIR=%SP_DIR:\=/%
 
 cmake ^
-    -G "%CMAKE_GENERATOR%" ^
     -DCMAKE_INSTALL_PREFIX=%LIBRARY_PREFIX% ^
     -DCMAKE_BUILD_TYPE=Release ^
     -DCMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP=True ^

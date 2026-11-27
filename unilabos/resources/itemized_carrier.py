@@ -5,35 +5,42 @@ Automated Liquid Handling Station Resource Classes - Simplified Version
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, TypeVar, Union, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, TypeVar, Union
+from uuid import UUID
 
 import pylabrobot
-
 from pylabrobot.resources import Resource as ResourcePLR
-from pylabrobot.resources import Well, ResourceHolder
+from pylabrobot.resources import ResourceHolder, Well
 from pylabrobot.resources.coordinate import Coordinate
-
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 class Bottle(Well):
-    """瓶子类 - 简化版，不追踪瓶盖"""
+    """瓶子类 - 简化版，不追踪瓶盖。
+
+    serialize / deserialize 完全交给父类：
+    - barcode（须为 PLR ``Barcode`` 对象）由父类管理：``Resource.__init__`` 默认置 None，
+      反序列化时由 ``Resource.deserialize`` 经 ``Barcode.deserialize`` 还原；本类不自行初始化/赋值。
+    - diameter/height 与 size_x/size_z 等价、缺省互相回填，父类序列化的 size_* 已足够无损重建。
+    """
 
     def __init__(
         self,
         name: str,
-        diameter: float,
-        height: float,
-        max_volume: float,
+        diameter: Optional[float] = None,
+        height: Optional[float] = None,
+        max_volume: Optional[float] = None,
         size_x: float = 0.0,
         size_y: float = 0.0,
         size_z: float = 0.0,
-        barcode: Optional[str] = None,
         category: str = "container",
         model: Optional[str] = None,
         **kwargs,
     ):
+        # 反序列化时父类只回传 size_*（不含 diameter/height）；二者等价，缺一即互相回填
+        diameter = diameter if diameter is not None else size_x
+        height = height if height is not None else size_z
         super().__init__(
             name=name,
             size_x=diameter,
@@ -47,51 +54,58 @@ class Bottle(Well):
         )
         self.diameter = diameter
         self.height = height
-        self.barcode = barcode
-
-    def serialize(self) -> dict:
-        # Pylabrobot expects barcode to be an object with serialize(), but here it is a str.
-        # We temporarily unset it to avoid AttributeError in super().serialize().
-        _barcode = self.barcode
-        self.barcode = None
-        try:
-            data = super().serialize()
-        finally:
-            self.barcode = _barcode
-
-        return {
-            **data,
-            "diameter": self.diameter,
-            "height": self.height,
-        }
-
-    @classmethod
-    def deserialize(cls, data: dict, allow_marshal: bool = False):
-        # Extract barcode before calling parent deserialize to avoid type error
-        barcode_data = data.pop("barcode", None)
-
-        # Call parent deserialize
-        instance = super(Bottle, cls).deserialize(data, allow_marshal=allow_marshal)
-
-        # Set barcode as string (not as Barcode object)
-        if barcode_data:
-            if isinstance(barcode_data, str):
-                instance.barcode = barcode_data
-            elif isinstance(barcode_data, dict):
-                # If it's a dict (Barcode serialized format), extract the data field
-                instance.barcode = barcode_data.get("data", "")
-        else:
-            instance.barcode = ""
-
-        # Set additional attributes
-        instance.diameter = data.get("diameter", instance._size_x)
-        instance.height = data.get("height", instance._size_z)
-
-        return instance
 
 T = TypeVar("T", bound=ResourceHolder)
 
 S = TypeVar("S", bound=ResourceHolder)
+
+
+def _canonical_site_uuid(value: object) -> str:
+  """规范化库存权威分配的稳定库位（Site）UUID。
+
+  参数：``value`` 是 ``sites[]`` 描述中的候选 UUID。返回：小写连字符形式的
+  UUID。异常：空值或非法 UUID 抛出 ``ValueError``，防止设备动作使用模糊身份。
+  """
+
+  try:
+    return str(UUID(str(value).strip()))
+  except (AttributeError, TypeError, ValueError) as error:
+    raise ValueError(f"库位 UUID 非法: {value!r}") from error
+
+
+def _site_identity_maps(
+  sites: Sequence[dict],
+) -> tuple[dict[str, str], dict[str, str]]:
+  """从序列化库位描述建立双向稳定身份索引。
+
+  参数：``sites`` 是离散载架的 ``sites[]`` 一等字段。返回：局部名称到 UUID、
+  UUID 到局部名称的两个独立字典。异常：名称为空、名称重复、UUID 畸形或重复
+  时抛出 ``ValueError``；未分配 UUID 的库位仍可用于本地 PLR 操作。
+  """
+
+  uuid_by_name: dict[str, str] = {}
+  name_by_uuid: dict[str, str] = {}
+  seen_names: set[str] = set()
+  for site in sites:
+    if not isinstance(site, dict):
+      raise ValueError("库位描述必须是对象")
+    # ``site_name`` 是设备驱动使用的局部库位名称，必须在同一载架内唯一。
+    site_name = str(site.get("label") or "").strip()
+    if not site_name:
+      raise ValueError("库位名称不能为空")
+    if site_name in seen_names:
+      raise ValueError(f"库位名称重复: {site_name}")
+    seen_names.add(site_name)
+    site_uuid_value = site.get("uuid")
+    if site_uuid_value in (None, ""):
+      continue
+    # ``site_uuid`` 是库存权威身份；规范化后仍必须在同一载架内唯一。
+    site_uuid = _canonical_site_uuid(site_uuid_value)
+    if site_uuid in name_by_uuid:
+      raise ValueError(f"库位 UUID 重复: {site_uuid}")
+    uuid_by_name[site_name] = site_uuid
+    name_by_uuid[site_uuid] = site_name
+  return uuid_by_name, name_by_uuid
 
 
 class ItemizedCarrier(ResourcePLR):
@@ -142,12 +156,18 @@ class ItemizedCarrier(ResourcePLR):
           self.child_size[spot] = {"width": 0, "height": 0, "depth": 0}
     elif isinstance(sites, list):
       # deserialize时走这里；还需要根据 self.sites 索引children
+      self.site_uuid_by_name, self.site_name_by_uuid = _site_identity_maps(sites)
       self.child_locations = {site["label"]: Coordinate(**site["position"]) for site in sites}
       self.child_size = {site["label"]: site["size"] for site in sites}
       self.sites = [site["occupied_by"] for site in sites]
       self._ordering = {site["label"]: site["position"] for site in sites}
     else:
       print("sites:", sites)
+
+    if isinstance(sites, dict):
+      # 源码工厂只声明设备局部名称；稳定 UUID 会在库存水合后随 ``sites[]`` 注入。
+      self.site_uuid_by_name: dict[str, str] = {}
+      self.site_name_by_uuid: dict[str, str] = {}
 
   @property
   def capacity(self):
@@ -239,6 +259,30 @@ class ItemizedCarrier(ResourcePLR):
 
     # If not found, raise an error
     raise ValueError(f"Resource {child} is not assigned to this carrier")
+
+  def site_name_for_child(self, child: ResourcePLR) -> str:
+    """返回真实子物料当前占用的设备局部库位名称。
+
+    参数：``child`` 是机械臂动作收到的真实 PLR 物料。返回：载架内部唯一的
+    局部库位名称。异常：物料不是该载架当前子物料时抛出 ``ValueError``；不按
+    UUID、名称或条码猜测占用关系。
+    """
+
+    return str(self.get_child_identifier(child)["identifier"])
+
+  def site_name_for_uuid(self, site_uuid: str) -> str:
+    """把稳定库位 UUID 转换为设备局部库位名称。
+
+    参数：``site_uuid`` 是库存权威发布的稳定身份。返回：同一 ``sites[]`` 描述
+    中的局部名称。异常：UUID 非法或不属于该载架时抛出 ``ValueError``，禁止把
+    UUID 原样发送给设备。
+    """
+
+    normalized_uuid = _canonical_site_uuid(site_uuid)
+    try:
+      return self.site_name_by_uuid[normalized_uuid]
+    except KeyError as error:
+      raise ValueError(f"载架不包含库位 UUID: {normalized_uuid}") from error
 
   def _parse_identifier_to_indices(self, identifier: str, idx: int) -> Tuple[int, int, int]:
     """Parse identifier string to get x, y, z indices.
@@ -437,6 +481,12 @@ class ItemizedCarrier(ResourcePLR):
     return [spot for spot, resource in self.sites.items() if resource is None]
 
   def serialize(self):
+    """序列化载架及一等库位身份。
+
+    参数：无。返回：兼容 PLR 的载架字典；已由库存权威分配的 UUID 与局部名称
+    保存在同一 ``sites[]`` 成员，未分配 UUID 的源码模板保持原有形状。
+    """
+
     return {
       **super().serialize(),
       "num_items_x": self.num_items_x,
@@ -445,6 +495,11 @@ class ItemizedCarrier(ResourcePLR):
       "layout": self.layout,
       "sites": [{
         "label": str(identifier),
+        **(
+          {"uuid": self.site_uuid_by_name[str(identifier)]}
+          if str(identifier) in self.site_uuid_by_name
+          else {}
+        ),
         "visible": False if identifier in self.invisible_slots else True,
         "occupied_by": self[identifier].name
                         if isinstance(self[identifier], ResourcePLR) and not isinstance(self[identifier], ResourceHolder) else

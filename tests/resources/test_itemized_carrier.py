@@ -3,8 +3,10 @@
 测试修改后的 get_child_identifier 函数
 """
 
-from unilabos.resources.itemized_carrier import ItemizedCarrier, Bottle
 from pylabrobot.resources.coordinate import Coordinate
+
+from unilabos.resources.itemized_carrier import Bottle, ItemizedCarrier
+
 
 def test_get_child_identifier_with_indices():
     """测试返回x,y,z索引的 get_child_identifier 函数"""

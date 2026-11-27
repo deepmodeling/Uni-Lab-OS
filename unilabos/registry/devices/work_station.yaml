@@ -6534,7 +6534,7 @@ workstation:
           title: WashSolid
           type: object
         type: WashSolid
-    module: unilabos.devices.workstation.workstation_base:ProtocolNode
+    module: unilabos.workstation.base:ProtocolNode
     status_types: {}
     type: python
   config_info: []

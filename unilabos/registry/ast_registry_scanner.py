@@ -20,11 +20,15 @@ Usage:
 import ast
 import hashlib
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from unilabos.registry.utils import resolve_registry_displayname
+from unilabos.resources.site_definition import normalize_available_sites
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -32,10 +36,50 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 2       # 缓存格式版本号，格式变更时递增
+_CACHE_VERSION = 10      # 缓存格式版本号，模板库位合同变化时递增
+_DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 # 合法的装饰器来源模块
 _REGISTRY_DECORATOR_MODULE = "unilabos.registry.decorators"
+# @subscribe 订阅装饰器来源模块（区分于注册表，这是运行时，订阅回调不应被当作 action）
+_SUBSCRIBE_DECORATOR_MODULE = "unilabos.utils.decorator"
+# placeholder_keys 常量来源模块（如 PLACEHOLDER_DEDUCT_RESOURCE），值需解析成字符串字面量
+_PLACEHOLDER_MODULE = "unilabos.registry.placeholder_type"
+
+
+@lru_cache(maxsize=1)
+def _placeholder_constants() -> Dict[str, str]:
+    """静态解析同目录 ``placeholder_type.py``，提取顶层 ``NAME = "str"`` 常量映射。
+
+    让 @action 装饰器里能用 placeholder 常量替代字面量：扫描器把对应 ``ast.Name``
+    解析成常量的字符串值。值由静态 AST 解析得到（不 import 该模块，保持纯文本扫描），
+    与 ``placeholder_type.py`` 单一数据源（DRY）。
+    """
+    consts: Dict[str, str] = {}
+    try:
+        path = Path(__file__).with_name("placeholder_type.py")
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        consts[target.id] = node.value.value
+    except Exception:
+        pass
+    return consts
+
+
+def _validate_device_ids(device_ids: List[str]) -> None:
+    invalid_ids = [device_id for device_id in device_ids if not _DEVICE_ID_RE.fullmatch(device_id)]
+    if invalid_ids:
+        raise ValueError(
+            "@device id 只能包含英文、数字、下划线: "
+            + ", ".join(repr(device_id) for device_id in invalid_ids)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -307,21 +351,30 @@ def _parse_file(
     filepath: Path,
     python_path: Path,
 ) -> Tuple[List[dict], List[dict]]:
-    """
-    Parse a single .py file using ast and extract all @device-decorated classes
-    and @resource-decorated functions/classes.
+    """只通过 AST 解析一个 Python 文件中的设备与资源声明。
+
+    Args:
+        filepath: 需要静态扫描的 Python 源文件。
+        python_path: 用于推导稳定模块路径的 Python 包根目录。
 
     Returns:
-        (devices, resources) -- two lists of metadata dicts.
+        设备元数据列表和资源元数据列表；扫描过程不导入或执行作者源码。
+
+    Raises:
+        SyntaxError: 文件不是有效 Python 源码时抛出。
+        ValueError: 设备身份或库位（Site）模板定义非法时抛出。
     """
+    # ``source`` 和 ``tree`` 只用于静态语法分析，不进入 Python import 机制。
     source = filepath.read_text(encoding="utf-8", errors="replace")
     tree = ast.parse(source, filename=str(filepath))
 
-    # Derive module path from file path
+    # ``module_path`` 是动作合同中解析导入符号所需的稳定模块身份。
     module_path = _filepath_to_module(filepath, python_path)
 
-    # Build import map from the file (includes same-file class defs)
+    # ``import_map`` 同时包含导入符号和同文件定义，仍不执行任何源码。
     import_map = _collect_imports(tree, module_path)
+    # ``literal_constants`` 只收集当前文件根级安全字面量，供较长的库位数组复用。
+    literal_constants = _collect_literal_constants(tree)
 
     devices: List[dict] = []
     resources: List[dict] = []
@@ -332,7 +385,18 @@ def _parse_file(
             device_decorator = _find_decorator(node, "device")
             if device_decorator is not None and _is_registry_decorator("device", import_map):
                 device_args = _extract_decorator_args(device_decorator, import_map)
-                class_body = _extract_class_body(node, import_map)
+                for key in ("available_sites", "id_meta"):
+                    value = device_args.get(key)
+                    if isinstance(value, str):
+                        constant_name = value.rsplit(":", 1)[-1]
+                        if constant_name in literal_constants:
+                            device_args[key] = literal_constants[constant_name]
+                class_body = _extract_class_body(
+                    node,
+                    import_map,
+                    module=tree,
+                    module_name=module_path,
+                )
 
                 # Support ids + id_meta (multi-device) or id (single device)
                 device_ids: List[str] = []
@@ -342,20 +406,26 @@ def _parse_file(
                     did = device_args.get("id") or device_args.get("device_id")
                     device_ids = [did] if did else [f"{module_path}:{node.name}"]
 
+                _validate_device_ids(device_ids)
                 id_meta = device_args.get("id_meta") or {}
+                displayname = device_args.get("displayname", "")
                 base_meta = {
                     "class_name": node.name,
                     "module": f"{module_path}:{node.name}",
                     "file_path": str(filepath).replace("\\", "/"),
                     "category": device_args.get("category", []),
                     "description": device_args.get("description", ""),
-                    "display_name": device_args.get("display_name", ""),
+                    "displayname": displayname,
                     "icon": device_args.get("icon", ""),
                     "version": device_args.get("version", "1.0.0"),
                     "device_type": _detect_class_type(node, import_map),
                     "handles": device_args.get("handles", []),
+                    "available_sites": normalize_available_sites(
+                        device_args.get("available_sites")
+                    ),
                     "model": device_args.get("model"),
                     "hardware_interface": device_args.get("hardware_interface"),
+                    "metadata": device_args.get("metadata") or {},
                     "actions": class_body.get("actions", {}),
                     "status_properties": class_body.get("status_properties", {}),
                     "init_params": class_body.get("init_params", []),
@@ -367,9 +437,24 @@ def _parse_file(
                     meta = dict(base_meta)
                     meta["device_id"] = did
                     overrides = id_meta.get(did, {})
-                    for key in ("handles", "description", "icon", "model", "hardware_interface"):
+                    for key in (
+                        "handles",
+                        "available_sites",
+                        "description",
+                        "displayname",
+                        "icon",
+                        "model",
+                        "hardware_interface",
+                        "metadata",
+                    ):
                         if key in overrides:
-                            meta[key] = overrides[key]
+                            if key == "available_sites":
+                                meta[key] = normalize_available_sites(overrides[key])
+                            elif key == "metadata" and isinstance(overrides[key], dict):
+                                meta[key] = {**(base_meta.get("metadata") or {}), **overrides[key]}
+                            else:
+                                meta[key] = overrides[key]
+                    meta["displayname"] = resolve_registry_displayname(meta.get("displayname"), did)
                     devices.append(meta)
 
             # --- @resource on classes ---
@@ -377,6 +462,7 @@ def _parse_file(
             if resource_decorator is not None and _is_registry_decorator("resource", import_map):
                 res_meta = _extract_resource_meta(
                     resource_decorator, node.name, module_path, filepath, import_map,
+                    literal_constants=literal_constants,
                     is_function=False,
                     init_node=_find_init_in_class(node),
                 )
@@ -388,12 +474,43 @@ def _parse_file(
             if resource_decorator is not None and _is_registry_decorator("resource", import_map):
                 res_meta = _extract_resource_meta(
                     resource_decorator, node.name, module_path, filepath, import_map,
+                    literal_constants=literal_constants,
                     is_function=True,
                     func_node=node,
                 )
                 resources.append(res_meta)
 
     return devices, resources
+
+
+def _collect_literal_constants(tree: ast.Module) -> Dict[str, Any]:
+    """收集当前模块根级的安全字面量常量。
+
+    参数：``tree`` 是已经解析但从未执行的 Python AST。返回：变量名到
+    ``ast.literal_eval`` 结果的映射；动态表达式、导入值和无法安全求值的节点被
+    忽略，绝不执行设备包代码。
+    """
+
+    result: Dict[str, Any] = {}
+    for statement in tree.body:
+        target: Optional[ast.Name] = None
+        value: Optional[ast.expr] = None
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            if isinstance(statement.targets[0], ast.Name):
+                target = statement.targets[0]
+                value = statement.value
+        elif isinstance(statement, ast.AnnAssign) and isinstance(
+            statement.target, ast.Name
+        ):
+            target = statement.target
+            value = statement.value
+        if target is None or value is None:
+            continue
+        try:
+            result[target.id] = ast.literal_eval(value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            continue
+    return result
 
 
 def _find_init_in_class(cls_node: ast.ClassDef) -> Optional[ast.FunctionDef]:
@@ -410,14 +527,24 @@ def _extract_resource_meta(
     module_path: str,
     filepath: Path,
     import_map: Dict[str, str],
+    literal_constants: Optional[Dict[str, Any]] = None,
     is_function: bool = False,
     func_node: Optional[Union[ast.FunctionDef, ast.AsyncFunctionDef]] = None,
     init_node: Optional[ast.FunctionDef] = None,
 ) -> dict:
-    """
-    Extract resource metadata from a @resource decorator on a function or class.
+    """从类或工厂函数的 ``@resource`` 提取静态 Registry 元数据。
+
+    参数：``decorator_node`` 是装饰器 AST，``name`` 是源码对象名，
+    ``module_path`` 和 ``filepath`` 提供稳定源码身份，``import_map`` 解析导入符号，
+    ``literal_constants`` 提供当前模块安全字面量，``is_function`` 区分工厂函数，
+    ``func_node``/``init_node`` 提供初始化参数来源。返回：不执行作者代码即可上传的
+    器材模板定义；库位（Site）定义非法时抛出 ``ValueError``。
     """
     res_args = _extract_decorator_args(decorator_node, import_map)
+    raw_sites = res_args.get("available_sites")
+    if isinstance(raw_sites, str):
+        constant_name = raw_sites.rsplit(":", 1)[-1]
+        raw_sites = (literal_constants or {}).get(constant_name, raw_sites)
 
     resource_id = res_args.get("id") or res_args.get("resource_id")
     if resource_id is None:
@@ -438,11 +565,14 @@ def _extract_resource_meta(
         "is_function": is_function,
         "category": res_args.get("category", []),
         "description": res_args.get("description", ""),
+        "displayname": resolve_registry_displayname(res_args.get("displayname"), resource_id),
         "icon": res_args.get("icon", ""),
         "version": res_args.get("version", "1.0.0"),
         "class_type": res_args.get("class_type", "pylabrobot"),
         "handles": res_args.get("handles", []),
+        "available_sites": normalize_available_sites(raw_sites),
         "model": res_args.get("model"),
+        "metadata": res_args.get("metadata") or {},
         "init_params": init_params,
     }
 
@@ -555,6 +685,12 @@ def _is_registry_decorator(name: str, import_map: Dict[str, str]) -> bool:
     """Check that *name* was imported from ``unilabos.registry.decorators``."""
     source = import_map.get(name, "")
     return _REGISTRY_DECORATOR_MODULE in source
+
+
+def _is_subscribe_decorator(name: str, import_map: Dict[str, str]) -> bool:
+    """Check that *name* was imported from ``unilabos.utils.decorator`` (the @subscribe source)."""
+    source = import_map.get(name, "")
+    return _SUBSCRIBE_DECORATOR_MODULE in source
 
 
 def _extract_decorator_args(
@@ -670,21 +806,31 @@ def _resolve_name(name: str, import_map: Dict[str, str]) -> str:
 
     E.g. "SendCmd" -> "unilabos_msgs.action:SendCmd"
          "True" -> True (handled by ast.Constant in Python 3.8+)
+
+    placeholder_type 常量（如 PLACEHOLDER_DEDUCT_RESOURCE）特殊处理：解析成其字符串值，
+    使装饰器 placeholder_keys 可用常量替代字面量；按导入的原始属性名取值以兼容 as 别名。
     """
-    if name in import_map:
-        return import_map[name]
+    source = import_map.get(name)
+    if source and source.startswith(_PLACEHOLDER_MODULE + ":"):
+        attr = source.split(":", 1)[1]
+        value = _placeholder_constants().get(attr)
+        if value is not None:
+            return value
+    if source is not None:
+        return source
     # Fallback: return the name as-is
     return name
 
 
-_DECORATOR_ENUM_CLASSES = frozenset({"Side", "DataSource", "NodeType"})
+_DECORATOR_ENUM_CLASSES = frozenset({"Side", "DataSource", "NodeType", "ExecutorKind"})
 
 
 def _resolve_attribute(node: ast.Attribute, import_map: Dict[str, str]) -> str:
     """
     Resolve an attribute access like Side.NORTH or DataSource.HANDLE.
 
-    对于来自 ``unilabos.registry.decorators`` 的枚举类 (Side / DataSource / NodeType)，
+    对于来自 ``unilabos.registry.decorators`` 的枚举类
+    (Side / DataSource / NodeType / ExecutorKind)，
     直接返回枚举成员名 (如 ``"NORTH"`` / ``"HANDLE"`` / ``"MANUAL_CONFIRM"``)，
     省去消费端二次 rsplit 解析。其它 import 仍返回完整模块路径。
     """
@@ -753,14 +899,20 @@ def _ast_call_to_value(node: ast.Call, import_map: Dict[str, str]) -> dict:
 def _extract_class_body(
     cls_node: ast.ClassDef,
     import_map: Dict[str, str],
+    *,
+    module: Optional[ast.Module] = None,
+    module_name: str = "",
 ) -> dict:
-    """
-    Walk the class body to extract:
-      - @action-decorated methods
-      - @property with @topic_config (status properties)
-      - get_* methods with @topic_config
-      - __init__ parameters
-      - Public methods without @action (auto-actions)
+    """静态提取设备类中的动作、状态和初始化参数。
+
+    Args:
+        cls_node: 当前设备类的 AST 节点。
+        import_map: 本地符号到完整模块路径的静态导入映射。
+        module: 定义设备类的完整模块 AST，用于编译规范动作合同（ActionContract）。
+        module_name: 定义模块的稳定 Python 路径。
+
+    Returns:
+        不导入或执行作者源码的设备类静态元数据。
     """
     result: dict = {
         "actions": {},          # method_name -> action_info
@@ -786,6 +938,150 @@ def _extract_class_body(
         if method_name.startswith("_"):
             continue
 
+        # --- Skip @subscribe 订阅回调（不是 action）---
+        if _has_decorator(item, "subscribe") and _is_subscribe_decorator("subscribe", import_map):
+            continue
+
+        # 规范动作（Action）和遗留动作都优先于 get_/topic 状态推断。
+        action_dec = _find_method_decorator(item, "action")
+        typed_action = action_dec is not None and _is_registry_decorator(
+            "action", import_map
+        )
+        if not typed_action:
+            action_dec = _find_method_decorator(item, "legacy_action")
+        legacy_action = action_dec is not None and _is_registry_decorator(
+            "legacy_action", import_map
+        )
+        if typed_action or legacy_action:
+            assert action_dec is not None
+            action_args = _extract_decorator_args(action_dec, import_map)
+            # ``canonical_schema`` 是静态编译成功后唯一可进入工作流目录的动作合同。
+            canonical_schema: Optional[dict] = None
+            canonical_defaults: Dict[str, Any] = {}
+            contract_diagnostic: Optional[dict] = None
+            if typed_action and module is not None and module_name:
+                from unilabos.registry import action_contract_schema
+
+                try:
+                    parsed_contract = action_contract_schema.parse_action_contract(
+                        module,
+                        item,
+                        module_name=module_name,
+                    )
+                    canonical_schema = parsed_contract.to_action_schema(
+                        action_name=method_name,
+                        description=str(action_args.get("description") or ""),
+                    )
+                    canonical_defaults = (
+                        action_contract_schema.validate_legacy_action_assertions(
+                            canonical_schema,
+                            action_name=method_name,
+                            goal_default=action_args.get("goal_default"),
+                            handles=action_args.get("handles"),
+                        )
+                    )
+                except (
+                    action_contract_schema.ActionContractError,
+                    action_contract_schema.ActionCompatibilityError,
+                ) as error:
+                    # 诊断保留旧设备启动能力，但失败动作不得获得规范动作权威。
+                    contract_diagnostic = {
+                        "code": error.code,
+                        "path": error.path,
+                        "message": error.message,
+                    }
+            # 补全 @action 装饰器的默认值（与 decorators.py 中 action() 签名一致）
+            action_args.setdefault("action_type", None)
+            action_args.setdefault("action_name", None)
+            action_args.setdefault("displayname", "")
+            action_args.setdefault("goal", {})
+            action_args.setdefault("feedback", {})
+            action_args.setdefault("result", {})
+            action_args.setdefault("handles", {})
+            action_args.setdefault("goal_default", {})
+            action_args.setdefault("placeholder_keys", {})
+            action_args.setdefault("always_free", False)
+            action_args.setdefault("is_protocol", False)
+            action_args.setdefault("feedback_interval", 1.0)
+            action_args.setdefault("description", "")
+            action_args.setdefault("auto_prefix", False)
+            action_args.setdefault("parent", False)
+            action_args.setdefault("estimate_duration_fixed", 60.0)
+            action_args.setdefault("estimate_duration_express", "")
+            action_args.setdefault("exception_handling", True)
+            action_args.setdefault("timeout", None)
+            action_args.setdefault("execution_timeout", None)
+            action_args.setdefault("default_on_user_timeout", "abort")
+            action_args.setdefault("error_policy", None)
+            action_args.setdefault("resource_contract", None)
+            for field_name in ("timeout", "execution_timeout"):
+                value = action_args[field_name]
+                if value is not None and (
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or value <= 0
+                ):
+                    raise ValueError(f"{field_name} 必须是大于 0 的秒数或 None")
+            if not isinstance(action_args["exception_handling"], bool):
+                raise TypeError("exception_handling 必须是布尔值")
+            if action_args["default_on_user_timeout"] not in {"abort", "retry", "skip"}:
+                raise ValueError("default_on_user_timeout 仅支持 abort/retry/skip")
+            if action_args["error_policy"]:
+                from unilabos.registry.action_policy import normalize_error_policy
+
+                action_args["error_policy"] = normalize_error_policy(
+                    action_args["error_policy"],
+                    default_on_user_timeout=action_args["default_on_user_timeout"],
+                )
+            if typed_action and canonical_schema is not None:
+                from unilabos.registry.action_resource_contract import (
+                    ActionResourceContractError,
+                    normalize_action_resource_contract,
+                    validate_action_resource_contract_schema,
+                )
+
+                try:
+                    resource_contract = normalize_action_resource_contract(
+                        action_args["resource_contract"]
+                    )
+                    if resource_contract:
+                        validate_action_resource_contract_schema(
+                            resource_contract,
+                            canonical_schema,
+                        )
+                        extension = canonical_schema[
+                            "x-unilabos-action-contract"
+                        ]
+                        extension["resource_contract"] = resource_contract
+                        action_args["resource_contract"] = resource_contract
+                except ActionResourceContractError as error:
+                    contract_diagnostic = {
+                        "code": error.code,
+                        "path": error.path,
+                        "message": error.message,
+                    }
+                    canonical_schema = None
+            method_params = _extract_method_params(item, import_map)
+            return_type = _get_annotation_str(item.returns, import_map)
+            is_async = isinstance(item, ast.AsyncFunctionDef)
+            method_doc = ast.get_docstring(item)
+
+            action_record = {
+                "action_args": action_args,
+                "params": method_params,
+                "return_type": return_type,
+                "is_async": is_async,
+                "docstring": method_doc,
+                "contract_kind": "typed" if typed_action else "legacy",
+            }
+            if canonical_schema is not None:
+                action_record["schema"] = canonical_schema
+                action_record["goal_default"] = canonical_defaults
+            if contract_diagnostic is not None:
+                action_record["contract_diagnostic"] = contract_diagnostic
+            result["actions"][method_name] = action_record
+            continue
+
         # --- Check for @property or @topic_config → status property ---
         is_property = _has_decorator(item, "property")
         has_topic = (
@@ -800,46 +1096,15 @@ def _extract_class_body(
                 topic_args = _extract_decorator_args(topic_dec, import_map)
 
             return_type = _get_annotation_str(item.returns, import_map)
-            # 非 @property 的 @topic_config 方法，用去掉 get_ 前缀的名称
-            prop_name = method_name[4:] if method_name.startswith("get_") and not is_property else method_name
+            default_name = method_name[4:] if method_name.startswith("get_") and not is_property else method_name
+            prop_name = topic_args.get("name") or default_name
 
             result["status_properties"][prop_name] = {
                 "name": prop_name,
+                "method_name": method_name,
                 "return_type": return_type,
                 "is_property": is_property,
                 "topic_config": topic_args if topic_args else None,
-            }
-            continue
-
-        # --- Check for @action ---
-        action_dec = _find_method_decorator(item, "action")
-        if action_dec is not None and _is_registry_decorator("action", import_map):
-            action_args = _extract_decorator_args(action_dec, import_map)
-            # 补全 @action 装饰器的默认值（与 decorators.py 中 action() 签名一致）
-            action_args.setdefault("action_type", None)
-            action_args.setdefault("goal", {})
-            action_args.setdefault("feedback", {})
-            action_args.setdefault("result", {})
-            action_args.setdefault("handles", {})
-            action_args.setdefault("goal_default", {})
-            action_args.setdefault("placeholder_keys", {})
-            action_args.setdefault("always_free", False)
-            action_args.setdefault("is_protocol", False)
-            action_args.setdefault("feedback_interval", 1.0)
-            action_args.setdefault("description", "")
-            action_args.setdefault("auto_prefix", False)
-            action_args.setdefault("parent", False)
-            method_params = _extract_method_params(item, import_map)
-            return_type = _get_annotation_str(item.returns, import_map)
-            is_async = isinstance(item, ast.AsyncFunctionDef)
-            method_doc = ast.get_docstring(item)
-
-            result["actions"][method_name] = {
-                "action_args": action_args,
-                "params": method_params,
-                "return_type": return_type,
-                "is_async": is_async,
-                "docstring": method_doc,
             }
             continue
 
@@ -856,6 +1121,7 @@ def _extract_class_body(
                 if prop_name not in result["status_properties"]:
                     result["status_properties"][prop_name] = {
                         "name": prop_name,
+                        "method_name": method_name,
                         "return_type": return_type,
                         "is_property": False,
                         "topic_config": None,

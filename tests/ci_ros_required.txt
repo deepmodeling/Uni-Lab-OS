@@ -1,0 +1,35 @@
+# 这些测试在导入或运行时需要 rclpy、rosidl 或 unilabos_msgs。
+# 无 ROS 的 Python 套件不加载它们。联网任务已安装 ROS，会执行本清单。
+# tests/ros_runtime 下的文件由联网任务的 ROS runtime 套件覆盖，避免跑两遍。
+tests/registry/test_action_registry_contract_wiring.py
+tests/registry/test_explicit_action_goal_defaults.py
+tests/registry/test_external_package_full_chain.py
+tests/registry/test_f05_local_template_identity_projection.py
+tests/registry/test_qg01_host_transfer_typed_action.py
+tests/registry/test_registry_external_variant_yaml.py
+tests/package_manager/driver_runtime/test_module_layout.py
+tests/package_manager/test_workspace_product_lifecycle.py
+tests/package_manager/test_workspace_registry_runtime.py
+tests/ros_runtime/test_host_node_directed_actions.py
+tests/ros_runtime/test_host_node_local_actions.py
+tests/ros_runtime/test_host_node_mechanisms.py
+tests/ros_runtime/test_driver_runtime_lifecycle.py
+tests/ros_runtime/test_remote_execution_identity.py
+tests/ros_runtime/test_workstation_public_api.py
+tests/app/test_edge_scheduler_cloud_api.py
+tests/app/test_inventory_commands.py
+tests/app/test_inventory_wire_contract.py
+tests/app/test_material_lock_and_error_decision.py
+tests/app/test_web_resources_api.py
+tests/registry/test_ast_action_and_status_names.py
+tests/registry/test_available_sites_template.py
+tests/registry/test_package_registry_generation.py
+tests/resources/test_tracker_state_promotion.py
+tests/resources/test_warehouse_plr_projection.py
+tests/app/test_inventory_material_compat.py
+tests/app/test_inventory_plr_site_projection.py
+tests/app/test_otel_tracing.py
+tests/app/test_runtime_thread_lifecycle.py
+tests/app/test_workflow_source_production_wiring.py
+tests/ros/test_property_transport.py
+tests/workflow/test_host_checkpoint_action.py

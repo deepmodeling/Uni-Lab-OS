@@ -26,13 +26,13 @@ body {
     font-size: 14px;
 }
 
-.mode-indicator.host-mode {
+.mode-indicator.runtime-mode {
     background-color: #e6f7ff;
     border-left: 4px solid #1890ff;
     color: #0050b3;
 }
 
-.mode-indicator.slave-mode {
+.mode-indicator.backend-mode {
     background-color: #fff7e6;
     border-left: 4px solid #fa8c16;
     color: #873800;

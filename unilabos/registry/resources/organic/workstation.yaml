@@ -2,7 +2,7 @@
 #  category:
 #  - workstation
 #  class:
-#    module: unilabos.devices.workstation.workstation_base:get_workstation_plate_resource
+#    module: unilabos.workstation.base:get_workstation_plate_resource
 #    type: pylabrobot
 #  description: workstation example resource
 #  handles: []

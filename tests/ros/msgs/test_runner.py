@@ -4,9 +4,9 @@
 运行所有消息转换器的测试用例。
 """
 
-import unittest
-import sys
 import os
+import sys
+import unittest
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 # 导入测试模块（统一从 tests 包获取）
 from tests.ros.msgs.test_basic import TestBasicFunctionality
 from tests.ros.msgs.test_conversion import TestBasicConversion, TestMappingConversion
-from tests.ros.msgs.test_mapping import TestTypeMapping, TestFieldMapping
+from tests.ros.msgs.test_mapping import TestFieldMapping, TestTypeMapping
 
 
 def run_tests():

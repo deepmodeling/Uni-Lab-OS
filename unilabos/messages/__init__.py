@@ -1,5 +1,9 @@
-from pydantic import BaseModel, Field
+import logging
+
 import pint
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class Point3D(BaseModel):

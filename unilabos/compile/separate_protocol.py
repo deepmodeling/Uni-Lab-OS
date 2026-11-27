@@ -1,13 +1,14 @@
+import logging
+import re
+import sys
 from functools import partial
+from typing import Any, Dict, List, Union
 
 import networkx as nx
-import re
-import logging
-import sys
-from typing import List, Dict, Any, Union
-from .utils.vessel_parser import get_vessel
-from .utils.logger_util import action_log
+
 from .pump_protocol import generate_pump_protocol_with_rinsing
+from .utils.logger_util import action_log
+from .utils.vessel_parser import get_vessel
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    except:
+    except Exception:
         pass
 
 def debug_print(message):

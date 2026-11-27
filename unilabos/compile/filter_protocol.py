@@ -1,8 +1,10 @@
-from typing import List, Dict, Any, Optional
-import networkx as nx
 import logging
-from .utils.vessel_parser import get_vessel
+from typing import Any, Dict, List, Optional
+
+import networkx as nx
+
 from .pump_protocol import generate_pump_protocol_with_rinsing
+from .utils.vessel_parser import get_vessel
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +137,7 @@ def generate_filter_protocol(
             solid_ratio = float(kwargs["solid_content"])
             liquid_ratio = 1.0 - solid_ratio
             debug_print(f"📋 使用指定的固体含量: {solid_ratio*100:.1f}%")
-        except:
+        except Exception:
             debug_print("⚠️ 固体含量参数无效，使用默认值")
     
     if original_liquid_volume > 0:

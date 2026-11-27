@@ -1,9 +1,9 @@
 from threading import Lock
 
-from unilabos_msgs.srv import SerialCommand
 from serial import Serial, SerialException
 
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
+from unilabos_msgs.srv import SerialCommand
 
 
 class ROS2SerialNode(BaseROS2DeviceNode):

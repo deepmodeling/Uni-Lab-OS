@@ -4,29 +4,39 @@ API模块
 提供API路由和处理函数
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import asyncio
 
 import yaml
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 
-from unilabos.app.web.controller import (
-    devices,
-    job_add,
-    job_info,
-    get_online_devices,
-    get_device_actions,
-    get_action_schema,
-    get_all_available_actions,
-)
 from unilabos.app.model import (
+    JobAddReq,
+    JobAddResp,
+    JobData,
+    JobStatusResp,
     Resp,
     RespCode,
-    JobStatusResp,
-    JobAddResp,
-    JobAddReq,
-    JobData,
+)
+from unilabos.app.web.controller import (
+    devices,
+    get_action_schema,
+    get_all_available_actions,
+    get_device_actions,
+    get_online_devices,
+    job_add,
+    job_info,
+)
+from unilabos.app.web.controller import (
+    get_resources as load_resources,
+)
+from unilabos.app.web.device_catalog import (
+    DEVICE_OVERVIEW_MATERIALS_SQL,
+    project_backend_device_overviews,
+    project_device_catalog,
 )
 from unilabos.app.web.utils.host_utils import get_host_node_info
+from unilabos.config.config import BasicConfig
 from unilabos.registry.registry import lab_registry
 from unilabos.utils.type_check import NoAliasDumper
 
@@ -116,14 +126,15 @@ async def broadcast_status_page_data():
     while True:
         try:
             if status_page_connections:
+                import json
+
+                from unilabos.app.web.utils.device_utils import get_registry_info
                 from unilabos.app.web.utils.host_utils import get_host_node_info
                 from unilabos.app.web.utils.ros_utils import get_ros_node_info
-                from unilabos.app.web.utils.device_utils import get_registry_info
                 from unilabos.config.config import BasicConfig
                 from unilabos.registry.registry import lab_registry
                 from unilabos.ros.msgs.message_converter import msg_converter_manager
                 from unilabos.utils.type_check import TypeEncoder
-                import json
 
                 # 获取当前数据
                 host_node_info = get_host_node_info()
@@ -168,7 +179,7 @@ async def broadcast_status_page_data():
                             "resources": resources,
                             "modules": modules,
                             "registry_info": registry_info,
-                            "is_host_mode": BasicConfig.is_host_mode,
+                            "has_local_devices": (BasicConfig.process_role == "edge_runtime"),
                             "host_node_info": host_node_info,  # 添加主机节点初始信息
                             "ros_node_info": ros_node_info,  # 添加本地设备初始信息
                         },
@@ -243,7 +254,23 @@ async def broadcast_status_page_data():
 @api.websocket("/ws/device_status")
 async def websocket_device_status(websocket: WebSocket):
     """WebSocket端点，用于实时获取设备状态"""
-    await websocket.accept()
+    from unilabos.utils.tracing import extract_trace_context, span
+
+    carrier = {
+        key: value
+        for key in ("trace_id", "traceparent", "tracestate")
+        if (value := websocket.query_params.get(key))
+    }
+    with span(
+        "WS CONNECT /api/v1/ws/device_status",
+        attributes={
+            "http.route": "/api/v1/ws/device_status",
+            "network.protocol.name": "websocket",
+        },
+        kind="server",
+        parent_context=extract_trace_context(carrier),
+    ):
+        await websocket.accept()
     active_connections.add(websocket)
     try:
         while True:
@@ -309,12 +336,13 @@ async def websocket_status_page(websocket: WebSocket):
 
 async def handle_file_analysis(websocket: WebSocket, request_data: dict):
     """处理文件分析请求，获取文件中的类列表"""
+    import inspect
     import json
     import os
     import sys
-    import inspect
     import traceback
     from pathlib import Path
+
     from unilabos.config.config import BasicConfig
 
     file_path = request_data.get("file_path")
@@ -446,12 +474,12 @@ async def handle_file_analysis(websocket: WebSocket, request_data: dict):
 
 async def handle_file_content_analysis(websocket: WebSocket, request_data: dict):
     """处理文件内容分析请求，直接分析上传的文件内容"""
+    import inspect
     import json
     import os
     import sys
-    import inspect
-    import traceback
     import tempfile
+    import traceback
     from pathlib import Path
 
     file_name = request_data.get("file_name")
@@ -604,8 +632,8 @@ async def handle_file_content_import(websocket: WebSocket, request_data: dict):
     import json
     import os
     import sys
-    import traceback
     import tempfile
+    import traceback
     from pathlib import Path
 
     file_name = request_data.get("file_name")
@@ -859,6 +887,7 @@ async def handle_file_import(websocket: WebSocket, request_data: dict):
     import sys
     import traceback
     from pathlib import Path
+
     from unilabos.config.config import BasicConfig
 
     file_path = request_data.get("file_path")
@@ -1158,6 +1187,7 @@ def get_file_browser_data(path: str = ""):
     """获取文件浏览器数据"""
     import os
     from pathlib import Path
+
     from unilabos.config.config import BasicConfig
 
     try:
@@ -1226,21 +1256,82 @@ def get_file_browser_data(path: str = ""):
 @api.get("/resources", summary="Resource list", response_model=Resp)
 def get_resources():
     """获取资源列表"""
+    isok, data = load_resources()
+    if not isok:
+        return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
+
+    return Resp(data=[node for tree in data.dump() for node in tree])
+
+
+@api.get("/health", summary="Process health")
+def api_health() -> dict[str, str]:
+    """返回进程健康状态；未装配本地 Scheduler 时保持 disabled。"""
+
+    scheduler_status = "disabled"
+    if BasicConfig.control_plane == "local":
+        from unilabos.app.scheduler.integration import get_edge_scheduler
+
+        scheduler_status = "ready" if get_edge_scheduler() is not None else "disabled"
+    return {"status": "ok", "scheduler": scheduler_status}
+
+
+@api.get("/authoring/device-catalog", summary="Authoring device catalog", response_model=Resp)
+def get_authoring_device_catalog():
+    """返回 OS 创作工具使用的富设备目录，而不占用共享 Backend 路由。"""
+
     isok, data = devices()
     if not isok:
         return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
 
-    return Resp(data=dict(data))
+    online_ok, online_data = get_online_devices()
+    online_devices = (
+        online_data.get("online_devices", {})
+        if online_ok and isinstance(online_data, dict)
+        else {}
+    )
+    return Resp(
+        data=project_device_catalog(
+            resources=data,
+            registry_devices=lab_registry.obtain_registry_device_info(),
+            online_devices=online_devices,
+        )
+    )
 
 
-@api.get("/devices", summary="Device list", response_model=Resp)
-def get_devices():
-    """获取设备列表"""
-    isok, data = devices()
-    if not isok:
-        return Resp(code=RespCode.ErrorHostNotInit, message=str(data))
+@api.get("/devices", summary="Backend-compatible device list")
+def get_devices() -> JSONResponse:
+    """返回与 Go Backend ``GET /api/v1/devices`` 同形的设备读模型。
 
-    return Resp(data=dict(data))
+    本地运行时只连接已装配的 Local Backend Edge 会话与同进程库存权威；不从
+    注册表或 ROS 图猜测物料身份。未装配或尚未注册时返回成功空数组。
+    """
+
+    from unilabos.app.edge_control.local_authority import LocalEdgeControlAuthority
+    from unilabos.app.scheduler.integration import (
+        get_edge_backend,
+        get_inventory_service,
+    )
+
+    edge_backend = get_edge_backend()
+    inventory_service = get_inventory_service()
+    if (
+        not isinstance(edge_backend, LocalEdgeControlAuthority)
+        or inventory_service is None
+    ):
+        return JSONResponse(content={"code": 0, "data": []})
+    registration = edge_backend.store.latest_registration()
+    # 设备模板权威在内存目录，不在 ``resource_template``。左连接保留已注册设备；
+    # 修订取 material.aggregate_version，库存压缩后不再有 material_inventory。
+    materials = inventory_service.store.query_all(DEVICE_OVERVIEW_MATERIALS_SQL)
+    return JSONResponse(
+        content={
+            "code": 0,
+            "data": project_backend_device_overviews(
+                registration=registration,
+                materials=materials,
+            ),
+        }
+    )
 
 
 @api.get("/online-devices", summary="Online devices list", response_model=Resp)
@@ -1334,6 +1425,9 @@ def post_job_add(req: JobAddReq):
 
 def setup_api_routes(app):
     """设置API路由"""
+    from unilabos.app.web.run_artifacts import router as run_artifacts_router
+
+    app.include_router(run_artifacts_router, prefix="/api/v1")
     app.include_router(admin, prefix="/admin/v1", tags=["admin"])
     app.include_router(api, prefix="/api/v1", tags=["api"])
 

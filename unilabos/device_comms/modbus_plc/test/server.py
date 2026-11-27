@@ -1,5 +1,5 @@
-import modbus_tk.modbus_tcp as modbus_tcp
 import modbus_tk.defines as cst
+import modbus_tk.modbus_tcp as modbus_tcp
 from modbus_tk.modbus import Slave
 
 # 创建一个 Modbus TCP 服务器

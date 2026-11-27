@@ -1,9 +1,23 @@
 import collections.abc
 import json
 from collections import OrderedDict
-from typing import get_origin, get_args
+from typing import Optional, get_args, get_origin
 
 import yaml
+from pylabrobot.resources import Resource
+
+from unilabos.registry.action_policy import SUCCESS_TYPE_NORMAL, SuccessType
+
+UNILABOS_REFERENCE_UUID_ATTR = "unilabos_reference_uuid"
+
+
+def resource_reference_uuid(obj) -> Optional[str]:
+    """返回资源跨动作边界时应使用的权威 UUID。"""
+
+    reference_uuid = getattr(obj, UNILABOS_REFERENCE_UUID_ATTR, None)
+    runtime_uuid = getattr(obj, "unilabos_uuid", None)
+    resolved = reference_uuid or runtime_uuid
+    return str(resolved) if resolved else None
 
 
 def get_type_class(type_hint):
@@ -26,6 +40,10 @@ class TypeEncoder(json.JSONEncoder):
     """自定义JSON编码器处理特殊类型"""
 
     def default(self, obj):
+        if isinstance(obj, Resource):
+            resource_uuid = resource_reference_uuid(obj)
+            if resource_uuid is not None:
+                return {"uuid": resource_uuid}
         try:
             return json_default(obj)
         except Exception:
@@ -52,6 +70,11 @@ class ResultInfoEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, type):
             return json_default(obj)
+        if isinstance(obj, Resource):
+            resource_uuid = resource_reference_uuid(obj)
+            if resource_uuid is not None:
+                return {"uuid": resource_uuid}
+            return obj.serialize()
 
         try:
             if hasattr(obj, "__dict__"):
@@ -68,7 +91,12 @@ class ResultInfoEncoder(json.JSONEncoder):
             return str(obj)
 
 
-def get_result_info_str(error: str, suc: bool, return_value=None) -> str:
+def get_result_info_str(
+    error: str,
+    suc: bool,
+    return_value=None,
+    suc_type: Optional[SuccessType] = None,
+) -> str:
     """
     序列化任务执行结果信息
 
@@ -83,15 +111,25 @@ def get_result_info_str(error: str, suc: bool, return_value=None) -> str:
     # 请在返回的字典中使用 unilabos_samples进行返回
     # samples = None
     # if isinstance(return_value, dict):
-    #     if "samples" in return_value and type(return_value["samples"]) in [list, tuple] and type(return_value["samples"][0]) == dict:
+    #     has_samples = (
+    #         "samples" in return_value
+    #         and type(return_value["samples"]) in [list, tuple]
+    #     )
+    #     if has_samples and type(return_value["samples"][0]) == dict:
     #         samples = return_value.pop("samples")
     result_info = {"error": error, "suc": suc, "return_value": return_value}
+    if suc:
+        result_info["suc_type"] = suc_type or SUCCESS_TYPE_NORMAL
 
     return json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder)
 
 
-
-def serialize_result_info(error: str, suc: bool, return_value=None) -> dict:
+def serialize_result_info(
+    error: str,
+    suc: bool,
+    return_value=None,
+    suc_type: Optional[SuccessType] = None,
+) -> dict:
     """
     序列化任务执行结果信息
 
@@ -104,5 +142,9 @@ def serialize_result_info(error: str, suc: bool, return_value=None) -> dict:
         JSON字符串格式的结果信息
     """
     result_info = {"error": error, "suc": suc, "return_value": return_value}
+    if suc:
+        result_info["suc_type"] = suc_type or SUCCESS_TYPE_NORMAL
 
-    return json.loads(json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder))
+    return json.loads(
+        json.dumps(result_info, ensure_ascii=False, cls=ResultInfoEncoder)
+    )

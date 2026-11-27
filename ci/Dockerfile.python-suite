@@ -1,0 +1,19 @@
+FROM public.ecr.aws/docker/library/python:3.11-slim-bookworm@sha256:0f6686ddd2ccdb042d2b5b15f1cc6f015b2fdf5dc159fcccd9d4ad9d70904898
+
+ENV PATH="/opt/unilab-ci/bin:${PATH}"
+
+RUN apt-get update -qq \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m venv /opt/unilab-ci
+
+RUN --mount=type=bind,target=/build \
+    set -eu; \
+    cd /build; \
+    if [ -d wheelhouse ]; then export PIP_NO_INDEX=1 PIP_FIND_LINKS=/build/wheelhouse; fi; \
+    grep -E '^(pip|setuptools|wheel|packaging)==' ci/python-suite-requirements.lock > /tmp/build-requirements; \
+    python -m pip install --no-cache-dir -r /tmp/build-requirements; \
+    python -m pip install --no-cache-dir --no-build-isolation -r ci/python-suite-requirements.lock; \
+    python -m pip check; \
+    python ci/python-suite-image-key.py --verify > /opt/unilab-ci/dependencies.sha256; \
+    rm /tmp/build-requirements

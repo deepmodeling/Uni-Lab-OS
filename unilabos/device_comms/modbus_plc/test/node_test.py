@@ -1,8 +1,9 @@
 # coding=utf-8
-from pymodbus.client import ModbusTcpClient
-from unilabos.device_comms.modbus_plc.modbus import Coil
 import time
 
+from pymodbus.client import ModbusTcpClient
+
+from unilabos.device_comms.modbus_plc.modbus import Coil
 
 client = ModbusTcpClient('192.168.3.2', port=502)
 client.connect()

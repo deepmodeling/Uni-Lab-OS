@@ -1,13 +1,14 @@
+import logging
+import sys
+import uuid
 from functools import partial
+from typing import Any, Dict, List, Optional
 
 import networkx as nx
-import logging
-import uuid
-import sys
-from typing import List, Dict, Any, Optional
-from .utils.vessel_parser import get_vessel
+
+from .pump_protocol import generate_pump_protocol, generate_pump_protocol_with_rinsing
 from .utils.logger_util import action_log
-from .pump_protocol import generate_pump_protocol_with_rinsing, generate_pump_protocol
+from .utils.vessel_parser import get_vessel
 
 # 设置日志
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     try:
         sys.stdout.reconfigure(encoding='utf-8')
         sys.stderr.reconfigure(encoding='utf-8')
-    except:
+    except Exception:
         pass
 
 def debug_print(message):

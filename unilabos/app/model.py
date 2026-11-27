@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -44,7 +46,7 @@ class PageResp(BaseModel):
 
 class Resp(BaseModel):
     code: int = RespCode.Success
-    data: dict = {}
+    data: Any = Field(default_factory=dict)
     message: str = "success"
 
 

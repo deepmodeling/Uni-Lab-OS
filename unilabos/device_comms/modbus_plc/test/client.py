@@ -1,8 +1,10 @@
 import time
+
 from pymodbus.client import ModbusTcpClient
-from unilabos.device_comms.modbus_plc.modbus import Coil, HoldRegister
-from pymodbus.payload import BinaryPayloadDecoder
 from pymodbus.constants import Endian
+from pymodbus.payload import BinaryPayloadDecoder
+
+from unilabos.device_comms.modbus_plc.modbus import Coil, HoldRegister
 
 # client = ModbusTcpClient('localhost', port=5020)
 client = ModbusTcpClient('192.168.3.2', port=502)

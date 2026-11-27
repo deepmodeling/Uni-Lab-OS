@@ -1,16 +1,17 @@
-from abc import abstractmethod
-from functools import wraps
 import inspect
 import json
 import logging
 import queue
-from socket import socket
 import threading
 import time
 import traceback
+from abc import abstractmethod
+from functools import wraps
+from socket import socket
 from typing import Optional
 
 import serial
+
 
 class SingleRunningExecutor(object):
     """

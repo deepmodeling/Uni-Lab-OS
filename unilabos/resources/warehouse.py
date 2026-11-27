@@ -1,9 +1,9 @@
-from typing import Dict, Optional, List, Union
+from typing import Dict, List, Optional, Union
+
 from pylabrobot.resources import Coordinate
 from pylabrobot.resources.carrier import ResourceHolder, create_homogeneous_resources
 
 from unilabos.resources.itemized_carrier import ItemizedCarrier, ResourcePLR
-
 
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 

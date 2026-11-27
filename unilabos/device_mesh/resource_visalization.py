@@ -1,18 +1,18 @@
 import json
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 
-import yaml
-from launch import LaunchService
-from launch import LaunchDescription
-from launch_ros.actions import Node as nd
 import xacro
-from lxml import etree
-from launch_param_builder import load_yaml
-from launch_ros.parameter_descriptions import ParameterFile
-from unilabos.registry.registry import lab_registry
+import yaml
 from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription, LaunchService
+from launch_param_builder import load_yaml
+from launch_ros.actions import Node as nd
+from launch_ros.parameter_descriptions import ParameterFile
+from lxml import etree
+
+from unilabos.registry.registry import lab_registry
 
 
 def get_pattern_matches(folder, pattern):

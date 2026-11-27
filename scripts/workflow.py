@@ -4,8 +4,8 @@ import traceback
 import uuid
 from typing import Any, Dict, List
 
-import networkx as nx
 import matplotlib.pyplot as plt
+import networkx as nx
 import requests
 
 logger = logging.getLogger(__name__)

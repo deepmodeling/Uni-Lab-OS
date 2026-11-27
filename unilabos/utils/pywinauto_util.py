@@ -1,18 +1,20 @@
 import psutil
 import pywinauto
+
 try:
     from pywinauto_recorder import UIApplication
-    from pywinauto_recorder.player import UIPath, click, focus_on_application, exists, find, get_wrapper_path
+    from pywinauto_recorder.player import UIPath, click, exists, find, focus_on_application, get_wrapper_path
 except ImportError:
     print("未安装pywinauto_recorder，部分功能无法使用，安装时注意enum")
     pass
-from pywinauto.controls.uiawrapper import UIAWrapper
-from pywinauto.application import WindowSpecification
-from pywinauto import findbestmatch
-import sys
 import codecs
-import os
 import locale
+import os
+import sys
+
+from pywinauto import findbestmatch
+from pywinauto.application import WindowSpecification
+from pywinauto.controls.uiawrapper import UIAWrapper
 
 
 def connect_application(backend="uia", **kwargs):

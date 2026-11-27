@@ -1,7 +1,8 @@
-from typing import List, Dict, Any, Union
-import networkx as nx
 import logging
 import re
+from typing import Any, Dict, List, Union
+
+import networkx as nx
 
 from .utils.unit_parser import parse_time_input, parse_volume_input
 

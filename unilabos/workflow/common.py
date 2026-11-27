@@ -101,11 +101,11 @@ transfer_liquid:
 
 import re
 import uuid
+from typing import Any, Dict, List, Optional, Tuple
 
+import matplotlib.pyplot as plt
 import networkx as nx
 from networkx.drawing.nx_agraph import to_agraph
-import matplotlib.pyplot as plt
-from typing import Dict, List, Any, Tuple, Optional
 
 Json = Dict[str, Any]
 

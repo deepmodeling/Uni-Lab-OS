@@ -4,11 +4,11 @@
 提供用于显示彩色横幅、状态信息和其他UI元素的工具函数。
 """
 
+import importlib.metadata
 import os
 import platform
 from datetime import datetime
-import importlib.metadata
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 # ANSI颜色代码

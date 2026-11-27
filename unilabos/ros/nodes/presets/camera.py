@@ -1,10 +1,14 @@
-import rclpy
-from rclpy.node import Node
+import sys
+
 import cv2
-from sensor_msgs.msg import Image
+import rclpy
 from cv_bridge import CvBridge
-from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
+from rclpy.node import Node
+from sensor_msgs.msg import Image
+
 from unilabos.registry.decorators import device
+from unilabos.ros.logging import close_ros_logging, prepare_ros_logging
+from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode, DeviceNodeResourceTracker
 
 
 @device(
@@ -56,7 +60,7 @@ class VideoPublisher(BaseROS2DeviceNode):
         super().destroy_node()
 
 def main(args=None):
-    rclpy.init(args=args)
+    rclpy.init(args=prepare_ros_logging(sys.argv if args is None else args, context_initialized=rclpy.ok()))
     node = VideoPublisher()
     try:
         rclpy.spin(node)
@@ -64,7 +68,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        finally:
+            close_ros_logging()
 
 if __name__ == '__main__':
     main()

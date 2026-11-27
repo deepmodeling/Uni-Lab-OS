@@ -1,0 +1,19 @@
+flowchart LR
+  I["reagent_info：同一化学身份"]
+  S["源容器 C0"] --- R0["源 reagent R0：500 → 100 mL"]
+  D{"reagent.dispense"}
+  D --> R0
+  D --> R1["目标 reagent R1：100 mL"]
+  D --> R2["目标 reagent R2：100 mL"]
+  D --> R3["目标 reagent R3：100 mL"]
+  D --> R4["目标 reagent R4：100 mL"]
+  I -.-> R0
+  I -.-> R1
+  I -.-> R2
+  I -.-> R3
+  I -.-> R4
+  R1 --- C1["目标容器 C1"]
+  R2 --- C2["目标容器 C2"]
+  R3 --- C3["目标容器 C3"]
+  R4 --- C4["目标容器 C4"]
+  D --> L["inventory_ledger：1 条源事件 + 4 条目标事件"]

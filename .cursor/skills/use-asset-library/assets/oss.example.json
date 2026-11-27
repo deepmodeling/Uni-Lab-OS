@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://oss-cn-zhangjiakou.aliyuncs.com",
+  "region": "cn-zhangjiakou",
+  "bucket": "uni-lab-test",
+  "prefix": "asset-library/",
+  "layout": "nvidia-usd/1"
+}

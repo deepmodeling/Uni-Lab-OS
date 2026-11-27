@@ -1,0 +1,3 @@
+# Preserve source bytes verified by runtime-manifest.json
+* -text whitespace=cr-at-eol
+assets/runtime/** whitespace=cr-at-eol,-blank-at-eof

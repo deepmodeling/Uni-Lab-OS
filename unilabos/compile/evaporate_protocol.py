@@ -1,9 +1,11 @@
-from typing import List, Dict, Any, Optional, Union
-import networkx as nx
 import logging
 import re
-from .utils.vessel_parser import get_vessel
+from typing import Any, Dict, List, Optional, Union
+
+import networkx as nx
+
 from .utils.unit_parser import parse_time_input
+from .utils.vessel_parser import get_vessel
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,9 @@
 import threading
 
+from unilabos.app.runtime_thread_lifecycle import (
+    start_runtime_generation,
+    start_runtime_thread,
+)
 from unilabos.resources.resource_tracker import ResourceTreeSet
 from unilabos.utils import logger
 
@@ -13,14 +17,15 @@ def start_backend(
     graph=None,
     controllers_config: dict = {},
     bridges=[],
-    is_slave: bool = False,
     visual: str = "None",
     resources_mesh_config: dict = {},
     **kwargs,
-):
+) -> threading.Thread:
+    if kwargs.get("is_slave"):
+        raise ValueError("Slave 部署已移除，设备必须由 edge_runtime 加载")
     if backend == "ros":
         # 假设 ros_main, simple_main, automancer_main 是不同 backend 的启动函数
-        from unilabos.ros.main_slave_run import main, slave  # 如果选择 'ros' 作为 backend
+        from unilabos.ros.runtime import main  # 如果选择 'ros' 作为 backend
     elif backend == "simple":
         # 这里假设 simple_backend 和 automancer_backend 是你定义的其他两个后端
         # from simple_backend import main as simple_main
@@ -31,8 +36,9 @@ def start_backend(
     else:
         raise ValueError(f"Unsupported backend: {backend}")
 
-    backend_thread = threading.Thread(
-        target=main if not is_slave else slave,
+    start_runtime_generation()
+    backend_thread = start_runtime_thread(
+        target=main,
         args=(
             devices_config,
             resources_config,
@@ -44,7 +50,6 @@ def start_backend(
             resources_mesh_config,
         ),
         name="backend_thread",
-        daemon=True,
     )
-    backend_thread.start()
     logger.info(f"Backend {backend} started.")
+    return backend_thread

@@ -1,5 +1,6 @@
+from typing import Any, Dict, List
+
 import networkx as nx
-from typing import List, Dict, Any
 
 from unilabos.compile.utils.vessel_parser import get_vessel
 

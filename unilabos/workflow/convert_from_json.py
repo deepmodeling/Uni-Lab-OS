@@ -25,9 +25,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from unilabos.workflow.common import WorkflowGraph, build_protocol_graph
 from unilabos.registry.registry import lab_registry
-
+from unilabos.workflow.common import WorkflowGraph, build_protocol_graph
 
 # ==================== 字段映射配置 ====================
 

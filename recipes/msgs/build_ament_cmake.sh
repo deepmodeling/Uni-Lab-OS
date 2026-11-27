@@ -18,6 +18,13 @@ else
   OSX_DEPLOYMENT_TARGET="11.0"
 fi
 
+# Native arm64 builds cannot target macOS 10.15.  Besides being unsupported
+# by the platform, that deployment target disables libc++ localization APIs
+# used by ROS Humble's generated C++ message headers.
+if [[ "$target_platform" == "osx-arm64" ]]; then
+  OSX_DEPLOYMENT_TARGET="11.0"
+fi
+
 echo "USING PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}"
 echo "USING PKG_CONFIG_EXECUTABLE=${PKG_CONFIG_EXECUTABLE}"
 
@@ -40,11 +47,12 @@ if [[ $target_platform =~ linux.* ]]; then
     export CXXFLAGS="${CXXFLAGS} -D__STDC_FORMAT_MACROS=1"
 fi;
 
-# Apple libc++ 21 hides the C++26-removed conversion helpers by default;
-# Humble's generated rosidl_runtime_cpp headers still use wstring_convert and
-# include <codecvt> without the <locale> header that declares the type.
+# ROS 2 Humble's generated message headers include <codecvt> but use the
+# std::wstring_convert declaration supplied by <locale> as a transitive
+# include.  Newer libc++ no longer provides that transitive include, so force
+# <locale> into the macOS compilation unit.
 if [[ $target_platform =~ osx.* ]]; then
-    export CXXFLAGS="${CXXFLAGS} -D_LIBCPP_ENABLE_CXX26_REMOVED_WSTRING_CONVERT -include locale"
+    export CXXFLAGS="${CXXFLAGS} -include locale"
 fi;
 
 # Needed for qt-gui-cpp ..

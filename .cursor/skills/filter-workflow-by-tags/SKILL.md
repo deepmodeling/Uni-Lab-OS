@@ -144,7 +144,6 @@ POST $BASE/api/v1/lab/workflow/<workflow_uuid>/run
 **注意：**
 
 - 该接口会使用 workflow 模板中保存的默认参数直接执行
-- 如果 workflow 需要动态参数（如 CSV 路径、样品 UUID），应使用 `POST /lab/notebook` 创建 notebook 并传入 `node_params`
 - 返回的 `run_uuid` 可直接传入下方「查询任务状态」接口查询实时进度
 
 ### 查询任务状态
@@ -206,7 +205,6 @@ GET $BASE/api/v1/lab/mcp/task/<task_uuid>
 **注意：**
 
 - 此接口的 `task_uuid` **是** `POST /lab/workflow/<uuid>/run` 返回的 `run_uuid`，二者为同一个 ID 的不同称呼
-- **不要**把 notebook UUID（`POST /lab/notebook` 返回）传进来——那条路径用 `GET /lab/notebook/status` 查询
 - `jos_status` 数组按节点执行顺序给出；从 pending 数量可以估算剩余进度
 - 返回体可能较大（`return_info.return_value` 中可能包含完整 resource tree），可在脚本中只提取 `status` + `node_name` + `action_name` 做摘要
 

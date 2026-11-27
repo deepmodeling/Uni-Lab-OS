@@ -12,8 +12,8 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from unilabos.workflow.common import WorkflowGraph, build_protocol_graph
 from unilabos.registry.registry import lab_registry
+from unilabos.workflow.common import WorkflowGraph, build_protocol_graph
 
 
 def get_action_handles(resource_name: str, template_name: str) -> Dict[str, List[str]]:

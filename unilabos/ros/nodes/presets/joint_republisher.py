@@ -1,10 +1,16 @@
+import json
+import sys
 import uuid
-import rclpy,json
-from rclpy.node import Node
-from sensor_msgs.msg import JointState 
-from std_msgs.msg import String
+
+import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.node import Node
+from sensor_msgs.msg import JointState
+from std_msgs.msg import String
+
+from unilabos.ros.logging import close_ros_logging, prepare_ros_logging
 from unilabos.ros.nodes.base_device_node import BaseROS2DeviceNode
+
 
 class JointRepublisher(BaseROS2DeviceNode):
     def __init__(self,device_id, registry_name, resource_tracker, **kwargs):
@@ -52,11 +58,16 @@ class JointRepublisher(BaseROS2DeviceNode):
 
 def main():
 
-    rclpy.init()
+    rclpy.init(args=prepare_ros_logging(sys.argv, context_initialized=rclpy.ok()))
     subscriber = JointRepublisher()
-    rclpy.spin(subscriber)
-    subscriber.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(subscriber)
+    finally:
+        subscriber.destroy_node()
+        try:
+            rclpy.shutdown()
+        finally:
+            close_ros_logging()
 
 
 if __name__ == '__main__':

@@ -1,8 +1,8 @@
 import ast
 import json
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from .common import WorkflowGraph, RegistryAdapter
+from .common import RegistryAdapter, WorkflowGraph
 
 Json = Dict[str, Any]
 

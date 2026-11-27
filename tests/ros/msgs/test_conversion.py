@@ -6,17 +6,18 @@
 
 import unittest
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from unilabos.ros.msgs.message_converter import (
-    convert_to_ros_msg,
-    convert_from_ros_msg,
-    convert_to_ros_msg_with_mapping,
-    convert_from_ros_msg_with_mapping,
-    Point,
     Float64,
-    String,
+    Point,
     Point3D,
     Resource,
+    String,
+    convert_from_ros_msg,
+    convert_from_ros_msg_with_mapping,
+    convert_to_ros_msg,
+    convert_to_ros_msg_with_mapping,
 )
 
 
@@ -125,6 +126,20 @@ class TestMappingConversion(unittest.TestCase):
         self.assertEqual(py_data["position"].x, 1.0)
         self.assertEqual(py_data["position"].y, 2.0)
         self.assertEqual(py_data["position"].z, 3.0)
+
+    def test_missing_ros_source_field_is_skipped(self):
+        """旧 Registry 映射不能把整个 Goal 误当成缺失字段的值。"""
+        goal = SimpleNamespace(volume=1.0, from_vessel="source")
+
+        converted = convert_from_ros_msg_with_mapping(
+            goal,
+            {
+                "volume": "volume",
+                "aspirate_velocity": "aspirate_velocity",
+            },
+        )
+
+        self.assertEqual(converted, {"volume": 1.0})
 
 
 if __name__ == "__main__":

@@ -216,10 +216,10 @@ class ConnectionMonitor:
 
 ### 3.1 ResourceSynchronizer
 
-抽象基类，用于与外部物料系统双向同步。定义在 `workstation_base.py`。
+抽象基类，用于与外部物料系统双向同步。定义在 `unilabos/workstation/base.py`，从 `unilabos.workstation` 导入。
 
 ```python
-from unilabos.devices.workstation.workstation_base import ResourceSynchronizer
+from unilabos.workstation import ResourceSynchronizer
 
 
 class MyResourceSynchronizer(ResourceSynchronizer):

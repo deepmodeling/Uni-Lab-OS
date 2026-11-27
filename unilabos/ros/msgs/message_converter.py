@@ -7,19 +7,18 @@
 
 import json
 import traceback
+from dataclasses import asdict, is_dataclass
 from io import StringIO
-from typing import Iterable, Any, Dict, Type, TypeVar, Union
+from typing import Any, Dict, Iterable, Type, TypeVar, Union
 
 import yaml
 from msgcenterpy.instances.ros2_instance import ROS2MessageInstance
 from pydantic import BaseModel
-from dataclasses import asdict, is_dataclass
+from rosidl_parser.definition import BasicType, NamespacedType, UnboundedSequence, UnboundedString
 
-from rosidl_parser.definition import UnboundedSequence, NamespacedType, BasicType, UnboundedString
-
+from unilabos.config.config import ROSConfig
 from unilabos.utils import logger
 from unilabos.utils.import_manager import ImportManager
-from unilabos.config.config import ROSConfig
 
 # 定义泛型类型
 T = TypeVar("T")
@@ -159,13 +158,33 @@ _msg_converter: Dict[Type, Any] = {
             if x.get("position", None) is not None
             else Pose()
         ),
-        config=json.dumps(x.get("config", {})),
+        config=json.dumps(obtain_config_with_barcode(x)),
         data=json.dumps(obtain_data_with_uuid(x)),
     ),
 }
 
+def obtain_config_with_barcode(x: dict):
+    """Resource msg 无 barcode 字段：根字段形态（ResourceDict dump）的条码归位回 config
+    （PLR Barcode dict），否则结构化 msg 通路丢条码；老形态（config 自带）原样不动。"""
+    config = dict(x.get("config") or {})
+    barcode = x.get("barcode", "")
+    if barcode and not isinstance(barcode, dict) and "barcode" not in config:
+        config["barcode"] = {
+            "data": barcode,
+            "symbology": x.get("barcode_symbology", "") or "",
+            "position_on_resource": "front",
+        }
+    return config
+
 def obtain_data_with_uuid(x: dict):
-    data = x.get("data", {})
+    from unilabos.resources.resource_tracker import TRACKER_STATE_KEYS
+
+    # 液体状态根字段形态（liquids 等）组装回 data，msg 通路保持老完整形态；根字段
+    # 与 data 同名时以根字段为准（与 assemble_tracker_state 的回装方向严格对称）。
+    data = dict(x.get("data") or {})
+    for state_key in TRACKER_STATE_KEYS:
+        if x.get(state_key) is not None:
+            data[state_key] = x[state_key]
     data["unilabos_uuid"] = x.get("uuid", None)
     return data
 
@@ -175,7 +194,7 @@ def json_or_yaml_loads(data: str) -> Any:
     except Exception as e:
         try:
             return yaml.safe_load(StringIO(data))
-        except:
+        except Exception:
             pass
         raise e
 
@@ -536,6 +555,7 @@ def convert_from_ros_msg_with_mapping(ros_msg: Any, value_mapping: Dict[str, str
             if not attr_name.endswith("[]"):
                 # 处理单值映射
                 # print(f"🔍 处理单值映射")
+                field_found = True
                 for i, name in enumerate(msg_path):
                     # print(f"🔍 步骤 {i}: 获取属性 '{name}' 从 {type(current)}")
                     if hasattr(current, name):
@@ -543,7 +563,18 @@ def convert_from_ros_msg_with_mapping(ros_msg: Any, value_mapping: Dict[str, str
                         # print(f"🔍 获取到: {current} (类型: {type(current)})")
                     else:
                         # print(f"❌ 属性 '{name}' 不存在于 {type(current)}")
+                        field_found = False
                         break
+
+                # Registry 可能还保留旧版消息的字段映射。当当前 ROS
+                # Goal 不再包含该字段时必须跳过；如果继续转换 current，
+                # current 仍是整个 Goal，会把整包参数误传给驱动字段。
+                if not field_found:
+                    logger.debug(
+                        f"Mapping source field {msg_name!r} is absent; "
+                        f"skip target {attr_name!r}"
+                    )
+                    continue
 
                 converted_value = convert_from_ros_msg(current)
                 # print(f"🔍 转换后的值: {converted_value} (类型: {type(converted_value)})")
@@ -625,12 +656,13 @@ ROS Action 到 JSON Schema 转换器
 """
 
 import json
-import yaml
-from typing import Any, Dict, Type, Union, Optional
+from typing import Any, Dict, Optional, Type, Union
 
+import yaml
+
+from unilabos.config.config import ROSConfig
 from unilabos.utils import logger
 from unilabos.utils.import_manager import ImportManager
-from unilabos.config.config import ROSConfig
 
 basic_type_map = {
     "bool": {"type": "boolean"},

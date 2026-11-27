@@ -1,0 +1,56 @@
+{
+  "protocol_version": "1.0",
+  "event_uuid": "33333333-3333-4333-8333-333333333333",
+  "event_epoch_uuid": "22222222-2222-4222-8222-222222222222",
+  "event_sequence": 7,
+  "station_uuid": "44444444-4444-4444-8444-444444444444",
+  "instance_uuid": "55555555-5555-4555-8555-555555555555",
+  "station_invocation_uuid": "66666666-6666-4666-8666-666666666666",
+  "local_task_uuid": "77777777-7777-4777-8777-777777777777",
+  "event_type": "outcome",
+  "payload": {
+    "status": "succeeded",
+    "output": {
+      "temperature": 23.5,
+      "备注": "完成",
+      "ratio": 1e-07,
+      "nested": [
+        true,
+        null,
+        {
+          "z": 1,
+          "a": "é"
+        }
+      ],
+      "large": 1e+20
+    },
+    "task_payload_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "material_refs": [
+      {
+        "station_uuid": "44444444-4444-4444-8444-444444444444",
+        "local_material_uuid": "10000000-0000-4000-8000-000000000015",
+        "local_revision": 1,
+        "material_lineage_uuid": "10000000-0000-4000-8000-000000000017",
+        "handoff_item_uuid": null
+      }
+    ],
+    "container_refs": [
+      {
+        "container_uuid": "10000000-0000-4000-8000-000000000019",
+        "state_version": 5
+      }
+    ],
+    "artifact_refs": [
+      {
+        "uri": "urn:artifact:result",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 42,
+        "media_type": "text/plain"
+      }
+    ],
+    "started_at": "2023-11-14T22:00:00.000Z",
+    "finished_at": "2023-11-14T22:13:20.123Z"
+  },
+  "occurred_at": "2023-11-14T22:13:20.123Z",
+  "event_digest": "sha256:ffdaf37ebc437f99c9a3924e54aaeb84d30e2d4fcbd19993c2697d8317f87a50"
+}

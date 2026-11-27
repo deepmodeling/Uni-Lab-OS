@@ -1,0 +1,687 @@
+{
+  "name": "API-AUTO-sample-控制流导入",
+  "workflow_type": "normal",
+  "tags": [
+    "wfcase",
+    "composite",
+    "repeat-until",
+    "condition",
+    "manual-confirmation",
+    "api-auto",
+    "import-regression"
+  ],
+  "description": "AutoTest 控制流 JSON 导入回归，测完即删",
+  "nodes": [
+    {
+      "uuid": "22cc8739-931f-525e-ac39-9b837189ac06",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "true_branch",
+          "authoring_source_order": 2,
+          "executor_binding": {
+            "device_id": "szlab_control_flow_probe",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "记录被调度选择的分支与可选循环轮次",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "记录条件分支",
+      "type": "ILab",
+      "pose": {},
+      "param": {
+        "branch": "true",
+        "iteration": 0
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "45c4dafe-d827-56ff-9528-23eb2241931d",
+      "parent_uuid": "f10feb81-446a-57fb-aee8-54f6d1ad89ea",
+      "material_uuid": "8ff147f2-cf2f-5738-baa9-17bef483764f",
+      "action_name": "record_branch",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "2e00ca04-1e13-512d-bcbf-04f3cde3828e",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "false_after_confirmation",
+          "authoring_source_order": 4,
+          "executor_binding": {
+            "device_id": "szlab_control_flow_probe",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "记录被调度选择的分支与可选循环轮次",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "记录条件分支",
+      "type": "ILab",
+      "pose": {},
+      "param": {
+        "branch": "false_after_confirmation",
+        "iteration": 0
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "45c4dafe-d827-56ff-9528-23eb2241931d",
+      "parent_uuid": "f10feb81-446a-57fb-aee8-54f6d1ad89ea",
+      "material_uuid": "8ff147f2-cf2f-5738-baa9-17bef483764f",
+      "action_name": "record_branch",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "2eab4f27-1d6c-48ae-948d-4449c8222bf7",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "实验操作_重复直到_S04_烧杯搅拌",
+          "authoring_source_order": 0,
+          "composite": {
+            "child_applied_source_hash": "sha256:2006e09221d8f68d2269c0f7e67948fb8b743132c338991d79b42799af7414e8",
+            "child_workflow_revision": 1,
+            "child_workflow_uuid": "c11a0338-c783-463f-bf2a-74637ca829cd",
+            "composition_allow_transparent": false,
+            "contract_compatibility": {
+              "digest": "sha256:d4ee2d8996ac6a72abed4b56918658eaaf10145473adf471460f1a783b3ca0ee",
+              "mode": false,
+              "outputs": [],
+              "parameters": [
+                {
+                  "default": 3,
+                  "handle_uuid": "da7fd3bb-3d34-5eb7-9501-248178f6fdfb",
+                  "has_default": true,
+                  "name": "repeat_count",
+                  "required": false,
+                  "schema": {
+                    "maximum": 10,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                {
+                  "default": 1,
+                  "handle_uuid": "37b65a01-e274-5a5e-a348-c92c7eef5da1",
+                  "has_default": true,
+                  "name": "position",
+                  "required": false,
+                  "schema": {
+                    "maximum": 6,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                {
+                  "default": 3,
+                  "handle_uuid": "ec519a5e-7ed9-57b2-a5cd-efa9a3f3c2ef",
+                  "has_default": true,
+                  "name": "mode",
+                  "required": false,
+                  "schema": {
+                    "maximum": 3,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                {
+                  "default": 300,
+                  "handle_uuid": "10ba36aa-84ef-5dfb-937e-bda271c3abb0",
+                  "has_default": true,
+                  "name": "speed",
+                  "required": false,
+                  "schema": {
+                    "maximum": 1000,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                {
+                  "default": 25,
+                  "handle_uuid": "d107e2f7-daea-5761-abe8-7d2a3f8b73d0",
+                  "has_default": true,
+                  "name": "temperature",
+                  "required": false,
+                  "schema": {
+                    "maximum": 120,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                {
+                  "default": 0.1,
+                  "handle_uuid": "644065a7-f49b-5da9-a7e6-a31be0634572",
+                  "has_default": true,
+                  "name": "duration",
+                  "required": false,
+                  "schema": {
+                    "maximum": 3600,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                {
+                  "default": 80,
+                  "handle_uuid": "8c2e6f34-0cf0-59aa-92ca-eabdaebca297",
+                  "has_default": true,
+                  "name": "safe_temperature",
+                  "required": false,
+                  "schema": {
+                    "maximum": 150,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                }
+              ],
+              "template_uuid": "33c4f3ab-c7ab-4406-9bda-0adc2f4a6ed4",
+              "workflow_uuid": "c11a0338-c783-463f-bf2a-74637ca829cd"
+            },
+            "contract_digest": "sha256:d4ee2d8996ac6a72abed4b56918658eaaf10145473adf471460f1a783b3ca0ee",
+            "executor_requirements": [
+              {
+                "display_name": "执行设备 1",
+                "key": "executor_1",
+                "required": true,
+                "resource_template_uuid": "e00e638f-f728-54be-ab3e-45cbe657adbf"
+              },
+              {
+                "display_name": "执行设备 2",
+                "key": "executor_2",
+                "required": true,
+                "resource_template_uuid": "266ac3f6-837a-54e8-9677-828c8901f769"
+              }
+            ],
+            "source_mappings": {},
+            "structural_mappings": {
+              "completion_sources": [
+                {
+                  "source_handle_uuid": "0b144cc6-858a-5501-91db-adfe13ff5170",
+                  "workflow_node_uuid": "91b87e80-103d-5052-90ae-08e001caf50b"
+                }
+              ],
+              "entry_targets": [
+                {
+                  "target_handle_uuid": "c05f5ecb-f204-589b-ac99-8602dd41c350",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ]
+            },
+            "target_mappings": {
+              "10ba36aa-84ef-5dfb-937e-bda271c3abb0": [
+                {
+                  "target_handle_uuid": "3d783db3-7a7e-51a6-b419-352157f99a73",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ],
+              "37b65a01-e274-5a5e-a348-c92c7eef5da1": [
+                {
+                  "target_handle_uuid": "a4a1a39f-9938-589a-90a0-9517ef522ece",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ],
+              "644065a7-f49b-5da9-a7e6-a31be0634572": [
+                {
+                  "target_handle_uuid": "bce731a4-280a-58f9-b510-92e2bffd4597",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ],
+              "8c2e6f34-0cf0-59aa-92ca-eabdaebca297": [
+                {
+                  "target_handle_uuid": "d478ea5b-315a-506f-8734-85135ae8e56a",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ],
+              "d107e2f7-daea-5761-abe8-7d2a3f8b73d0": [
+                {
+                  "target_handle_uuid": "6010b120-f52c-5a94-b09f-edf6348c00af",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ],
+              "da7fd3bb-3d34-5eb7-9501-248178f6fdfb": [
+                {
+                  "target_handle_uuid": "b75ed06a-e9bb-5175-a2e6-7fe981e7e0a1",
+                  "workflow_node_uuid": "91b87e80-103d-5052-90ae-08e001caf50b"
+                }
+              ],
+              "ec519a5e-7ed9-57b2-a5cd-efa9a3f3c2ef": [
+                {
+                  "target_handle_uuid": "6f19afdb-3187-5881-8f53-beb9ea6c4f2a",
+                  "workflow_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+                }
+              ]
+            },
+            "version": 1
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "引用已发布实验操作；兼容的新发布版本由 OS 自动替换。",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "实验操作：重复直到 + S04 烧杯搅拌",
+      "type": "workflow",
+      "pose": {},
+      "param": {
+        "duration": 0.1,
+        "mode": 3,
+        "position": 1,
+        "repeat_count": 3,
+        "safe_temperature": 80,
+        "speed": 300,
+        "temperature": 25
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "33c4f3ab-c7ab-4406-9bda-0adc2f4a6ed4"
+    },
+    {
+      "uuid": "8d84f7cc-1cf0-4230-8a56-8c04ac4b0b01",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "实验操作_条件判断_False_分支人工确认_wfcase",
+          "authoring_source_order": 1,
+          "composite": {
+            "child_applied_source_hash": "sha256:6360b5afe73462e4167a08dd597a3f237c61bc5dc7be13a90bd1da4922005c0b",
+            "child_workflow_revision": 2,
+            "child_workflow_uuid": "f5a12c4e-8b31-4c26-92b7-1b7c4d9d6f50",
+            "composition_allow_transparent": false,
+            "contract_compatibility": {
+              "digest": "sha256:1ce00161ab09c41fcb195868897ae864bcdf5a923988a391ceb31c5c5d5323d7",
+              "mode": false,
+              "outputs": [],
+              "parameters": [
+                {
+                  "default": false,
+                  "handle_uuid": "521c0f16-2669-57a4-a031-98ae4b5ffb4c",
+                  "has_default": true,
+                  "name": "value",
+                  "required": false,
+                  "schema": {
+                    "type": "boolean"
+                  }
+                }
+              ],
+              "template_uuid": "917c59ca-1f74-451d-a821-d1c23db7e725",
+              "workflow_uuid": "f5a12c4e-8b31-4c26-92b7-1b7c4d9d6f50"
+            },
+            "contract_digest": "sha256:1ce00161ab09c41fcb195868897ae864bcdf5a923988a391ceb31c5c5d5323d7",
+            "executor_requirements": [
+              {
+                "display_name": "执行设备 1",
+                "key": "executor_1",
+                "required": true,
+                "resource_template_uuid": "266ac3f6-837a-54e8-9677-828c8901f769"
+              }
+            ],
+            "source_mappings": {},
+            "structural_mappings": {
+              "completion_sources": [
+                {
+                  "source_handle_uuid": "6a7d9508-7b01-553d-a875-b50f23442300",
+                  "workflow_node_uuid": "22cc8739-931f-525e-ac39-9b837189ac06"
+                },
+                {
+                  "source_handle_uuid": "6a7d9508-7b01-553d-a875-b50f23442300",
+                  "workflow_node_uuid": "2e00ca04-1e13-512d-bcbf-04f3cde3828e"
+                },
+                {
+                  "source_handle_uuid": "470aa0cc-bc7e-569c-af5b-a06cf1d7704f",
+                  "workflow_node_uuid": "9fe71a74-84b8-5c34-b03e-8260677536e5"
+                }
+              ],
+              "entry_targets": [
+                {
+                  "target_handle_uuid": "71b689d5-37c3-5231-af0f-b1cac0d93958",
+                  "workflow_node_uuid": "22cc8739-931f-525e-ac39-9b837189ac06"
+                },
+                {
+                  "target_handle_uuid": "e062992b-0d64-55dd-9ba8-cf30c0d54833",
+                  "workflow_node_uuid": "9fe71a74-84b8-5c34-b03e-8260677536e5"
+                },
+                {
+                  "target_handle_uuid": "af107d6b-27d8-5412-9ba7-885d82068bb8",
+                  "workflow_node_uuid": "b9d8a794-43a8-56a6-801b-fed4d8f37339"
+                }
+              ]
+            },
+            "target_mappings": {
+              "521c0f16-2669-57a4-a031-98ae4b5ffb4c": [
+                {
+                  "target_handle_uuid": "5506ccb5-0e1f-55e3-b336-c66e2143614b",
+                  "workflow_node_uuid": "9fe71a74-84b8-5c34-b03e-8260677536e5"
+                }
+              ]
+            },
+            "version": 1
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "引用已发布实验操作；兼容的新发布版本由 OS 自动替换。",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "实验操作：条件判断 + False 分支人工确认（wfcase）",
+      "type": "workflow",
+      "pose": {},
+      "param": {
+        "value": false
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "917c59ca-1f74-451d-a821-d1c23db7e725"
+    },
+    {
+      "uuid": "91b87e80-103d-5052-90ae-08e001caf50b",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "decision",
+          "authoring_source_order": 2,
+          "carry_bindings": {
+            "c7f65802-6352-581b-b08d-53d99dc1be29": {
+              "control_region_uuid": "c434556b-9633-50b6-bcaa-5b0d7f9ffb2c",
+              "key": "iteration"
+            }
+          },
+          "executor_binding": {
+            "device_id": "szlab_control_flow_probe",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "计算下一轮 carry 和严格布尔退出条件",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "判断循环退出",
+      "type": "ILab",
+      "pose": {},
+      "param": {
+        "stop_after": 3
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "ffd8af1b-44dc-50f0-9b1e-e398226ff584",
+      "parent_uuid": "c434556b-9633-50b6-bcaa-5b0d7f9ffb2c",
+      "material_uuid": "8ff147f2-cf2f-5738-baa9-17bef483764f",
+      "action_name": "evaluate_iteration",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "9fe71a74-84b8-5c34-b03e-8260677536e5",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "observed",
+          "authoring_source_order": 0,
+          "executor_binding": {
+            "device_id": "szlab_control_flow_probe",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "原样返回严格布尔输入，供条件节点判断",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "观察布尔条件",
+      "type": "ILab",
+      "pose": {},
+      "param": {
+        "value": false
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "2a1b5e37-3b02-57f0-88d3-4e6c02e0c657",
+      "parent_uuid": "8d84f7cc-1cf0-4230-8a56-8c04ac4b0b01",
+      "material_uuid": "8ff147f2-cf2f-5738-baa9-17bef483764f",
+      "action_name": "observe_boolean",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "b9d8a794-43a8-56a6-801b-fed4d8f37339",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "false_manual_confirmation_gate",
+          "authoring_source_order": 3,
+          "executor_binding": {
+            "device_id": "szlab_control_flow_probe",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "暂停在人工确认节点，批准后继续执行。",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "人工确认",
+      "type": "manual_confirm",
+      "pose": {},
+      "param": {
+        "assignee_user_ids": [],
+        "timeout_seconds": 300
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "b8723aff-7e78-57a0-968a-65845de139dd",
+      "parent_uuid": "f10feb81-446a-57fb-aee8-54f6d1ad89ea",
+      "material_uuid": "8ff147f2-cf2f-5738-baa9-17bef483764f",
+      "action_name": "manual_confirmation",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "c434556b-9633-50b6-bcaa-5b0d7f9ffb2c",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_source_order": 0,
+          "control_region_kind": "repeat_until"
+        }
+      },
+      "description": "由调度器逐轮执行并在严格布尔条件满足时退出。",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "重复直到",
+      "type": "repeat_until",
+      "pose": {},
+      "param": {
+        "bindings": {
+          "decision": {
+            "kind": "node_result",
+            "node_uuid": "91b87e80-103d-5052-90ae-08e001caf50b"
+          }
+        },
+        "entry_node_uuids": [
+          "e824cf9e-f594-5915-87b9-5a6a3e92128b"
+        ],
+        "exit_node_uuids": [
+          "91b87e80-103d-5052-90ae-08e001caf50b"
+        ],
+        "initial_carry": {
+          "iteration": {
+            "kind": "literal",
+            "value": 1
+          }
+        },
+        "loop_variable": "loop",
+        "max_iterations": 10,
+        "next_carry": {
+          "iteration": {
+            "kind": "node_result",
+            "node_uuid": "91b87e80-103d-5052-90ae-08e001caf50b",
+            "result_path": [
+              "next_iteration"
+            ]
+          }
+        },
+        "node_uuids": [
+          "e824cf9e-f594-5915-87b9-5a6a3e92128b",
+          "91b87e80-103d-5052-90ae-08e001caf50b"
+        ],
+        "predecessor_node_uuids": [],
+        "successor_node_uuids": [],
+        "until": {
+          "field": {
+            "var": "decision"
+          },
+          "name": "done"
+        }
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "092e2f7d-cfb5-59ff-81c6-8486187e6cef",
+      "parent_uuid": "2eab4f27-1d6c-48ae-948d-4449c8222bf7"
+    },
+    {
+      "uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_result_name": "stirred",
+          "authoring_source_order": 1,
+          "executor_binding": {
+            "device_id": "szlab_mixer_stirrer",
+            "mode": "fixed"
+          },
+          "input_bindings": {}
+        }
+      },
+      "description": "执行 S04 磁搅加工",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "run_stirring",
+      "type": "ILab",
+      "pose": {},
+      "param": {
+        "duration": 0.1,
+        "mode": 3,
+        "position": 1,
+        "reset": false,
+        "safe_temperature": 80,
+        "speed": 300,
+        "temperature": 25
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "726b2eb5-c39c-5a72-943c-14cc69e7fd62",
+      "parent_uuid": "c434556b-9633-50b6-bcaa-5b0d7f9ffb2c",
+      "material_uuid": "eb9c8320-d276-5fdf-ac3f-3ec07446f831",
+      "action_name": "run_stirring",
+      "action_type": "UniLabJsonCommand"
+    },
+    {
+      "uuid": "f10feb81-446a-57fb-aee8-54f6d1ad89ea",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {
+        "unilab": {
+          "authoring_source_order": 1,
+          "control_region_kind": "condition"
+        }
+      },
+      "description": "由调度器本地求值并选择唯一分支的结构化控制区域。",
+      "workflow_uuid": "733106bf-f4bd-4831-959f-5e5fb8e4431c",
+      "name": "条件",
+      "type": "condition",
+      "pose": {},
+      "param": {
+        "bindings": {
+          "observed": {
+            "kind": "node_result",
+            "node_uuid": "9fe71a74-84b8-5c34-b03e-8260677536e5"
+          }
+        },
+        "branches": [
+          {
+            "condition": {
+              "field": {
+                "var": "observed"
+              },
+              "name": "value"
+            },
+            "entry_node_uuids": [
+              "22cc8739-931f-525e-ac39-9b837189ac06"
+            ],
+            "exit_node_uuids": [
+              "22cc8739-931f-525e-ac39-9b837189ac06"
+            ],
+            "label": "if",
+            "node_uuids": [
+              "22cc8739-931f-525e-ac39-9b837189ac06"
+            ]
+          },
+          {
+            "condition": null,
+            "entry_node_uuids": [
+              "b9d8a794-43a8-56a6-801b-fed4d8f37339"
+            ],
+            "exit_node_uuids": [
+              "2e00ca04-1e13-512d-bcbf-04f3cde3828e"
+            ],
+            "label": "else",
+            "node_uuids": [
+              "b9d8a794-43a8-56a6-801b-fed4d8f37339",
+              "2e00ca04-1e13-512d-bcbf-04f3cde3828e"
+            ]
+          }
+        ],
+        "predecessor_node_uuids": [
+          "9fe71a74-84b8-5c34-b03e-8260677536e5"
+        ]
+      },
+      "execution_policy": {},
+      "disabled": false,
+      "minimized": false,
+      "workflow_node_template_uuid": "e9a83c84-0723-5f75-b298-2d759e169e42",
+      "parent_uuid": "8d84f7cc-1cf0-4230-8a56-8c04ac4b0b01"
+    }
+  ],
+  "edges": [
+    {
+      "uuid": "1e62233b-f849-5cc0-a88b-40c7ea7d13a4",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {},
+      "source_node_uuid": "e824cf9e-f594-5915-87b9-5a6a3e92128b",
+      "target_node_uuid": "91b87e80-103d-5052-90ae-08e001caf50b",
+      "source_handle_uuid": "58d8d35e-fd13-52a7-8814-90074ae147a8",
+      "target_handle_uuid": "df7ec95a-d617-5674-b30c-10a1fecddd91"
+    },
+    {
+      "uuid": "3e1d1aff-9fdb-5c30-8dfb-07fd5407585b",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {},
+      "source_node_uuid": "2eab4f27-1d6c-48ae-948d-4449c8222bf7",
+      "target_node_uuid": "8d84f7cc-1cf0-4230-8a56-8c04ac4b0b01",
+      "source_handle_uuid": "5ca5ee8d-b2bc-5f66-9851-4b920d86fb51",
+      "target_handle_uuid": "3d6674e4-f84a-55dc-9911-5661dbcbd84d"
+    },
+    {
+      "uuid": "ab92c374-74c8-5055-b058-313166535a91",
+      "create_time": "2026-09-07T07:10:22.390444Z",
+      "update_time": "2026-09-07T07:10:22.390444Z",
+      "meta_data": {},
+      "source_node_uuid": "b9d8a794-43a8-56a6-801b-fed4d8f37339",
+      "target_node_uuid": "2e00ca04-1e13-512d-bcbf-04f3cde3828e",
+      "source_handle_uuid": "779859fc-263e-5d3d-a9f3-8e255aa77542",
+      "target_handle_uuid": "71b689d5-37c3-5231-af0f-b1cac0d93958"
+    }
+  ]
+}

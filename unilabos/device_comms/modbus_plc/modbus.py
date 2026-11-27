@@ -1,10 +1,10 @@
 # coding=utf-8
-from enum import Enum
 from abc import ABC, abstractmethod
+from enum import Enum
+from typing import Optional, Tuple, Union
 
 from pymodbus.client import ModbusBaseSyncClient
-from pymodbus.client.mixin import ModbusClientMixin 
-from typing import Tuple, Union, Optional
+from pymodbus.client.mixin import ModbusClientMixin
 
 DataType = ModbusClientMixin.DATATYPE
 

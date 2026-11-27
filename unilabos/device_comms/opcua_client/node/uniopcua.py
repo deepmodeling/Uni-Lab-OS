@@ -1,10 +1,10 @@
 # coding=utf-8
-from enum import Enum
 from abc import ABC, abstractmethod
-from typing import Tuple, Union, Optional, Any, List
+from enum import Enum
+from typing import Any, List, Optional, Tuple, Union
 
 from opcua import Client, Node, ua
-from opcua.ua import NodeId, NodeClass, VariantType
+from opcua.ua import NodeClass, NodeId, VariantType
 
 
 class DataType(Enum):

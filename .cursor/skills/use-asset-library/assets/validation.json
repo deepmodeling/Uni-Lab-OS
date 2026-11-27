@@ -1,0 +1,211 @@
+{
+  "date": "2026-11-24",
+  "skill_version": "1.2.2",
+  "status": "passed",
+  "change": "Contact chang is defined in SKILL.md; runtime and web point to skill guidance.",
+  "tests_passed": 8,
+  "skill_validation": "passed",
+  "runtime_manifest_files": 46,
+  "previous_validation": {
+    "date": "2026-11-24",
+    "skill_version": "1.2.1",
+    "status": "passed_for_facet_and_onboarding_changes",
+    "runtime_manifest_files": 46,
+    "regressions": {
+      "square": 20,
+      "browser_and_oss": 16,
+      "manage": 3
+    },
+    "browser": {
+      "category_axis_ignores_current_selection": true,
+      "hamilton_reservoir_to_tiprack": [
+        11,
+        32
+      ],
+      "components": {
+        "total": 522,
+        "classified": 42,
+        "unclassified": 480
+      },
+      "setup_link": "passed"
+    },
+    "first_use": {
+      "missing_config_cli": "passed",
+      "missing_credentials": "passed",
+      "access_denied_403": "passed_with_mock_transport",
+      "object_missing_404": "passed_with_mock_transport",
+      "local_only": "passed",
+      "secret_redaction": "passed"
+    },
+    "previous_validation": {
+      "date": "2026-11-23",
+      "skill_version": "1.2.0",
+      "status": "navigation_passed_with_existing_catalog_findings",
+      "runtime_manifest_files": 44,
+      "skill_validation": "passed",
+      "navigation": {
+        "python_tests_passed": 14,
+        "node_tests": "passed",
+        "live_modes": [
+          "device_panorama",
+          "mechanism_hierarchy",
+          "resource_hierarchy",
+          "topics",
+          "project_topic_filter"
+        ],
+        "source_counts_follow_current_filter": true
+      },
+      "existing_catalog_findings": [
+        "test_unified: published targets differ from engineering targets",
+        "test_unified: original-source count is now 2083, old assertion expected 2150",
+        "test_unified: migration assumes nonempty targets"
+      ],
+      "previous_validation": {
+        "date": "2026-11-21",
+        "skill_version": "1.1.0",
+        "status": "passed",
+        "skill_validation": "passed",
+        "runtime_manifest_files": 43,
+        "regressions": {
+          "browser_and_oss": 20,
+          "square_catalog": 9
+        },
+        "oss_empty_mirror": {
+          "status": "passed",
+          "model_payload_files": 0,
+          "bootstrap": {
+            "status": "passed",
+            "mode": "catalog_and_previews",
+            "engineering_records": 3808,
+            "public_entries": 1287,
+            "downloaded_files": 4113,
+            "downloaded_bytes": 221105642,
+            "model_payload_files_downloaded": 0,
+            "snapshot_sha256": "5a4dc02331bbea296e5facd58378a651df001102b3c2d342f0df4dd94aef4a4f",
+            "unified_snapshot_sha256": "ba08d4006b2590a47beb610b293c65f47171d70775460ec6495070f379223e5c"
+          }
+        },
+        "oss_prepare": {
+          "status": "passed",
+          "catalog_id": "7b0248a3-3292-55ad-bff4-4e5b2e232591",
+          "downloaded": true,
+          "package_digest": "8baf3b20ef03e9b0bd70bb618c6e2e41e0a5ac8b34675539f2e7d23b94b5093d"
+        },
+        "oss_resync": {
+          "status": "passed",
+          "mode": "catalog_and_previews",
+          "engineering_records": 3808,
+          "public_entries": 1287,
+          "downloaded_files": 2,
+          "downloaded_bytes": 23169260,
+          "model_payload_files_downloaded": 0,
+          "snapshot_sha256": "5a4dc02331bbea296e5facd58378a651df001102b3c2d342f0df4dd94aef4a4f",
+          "unified_snapshot_sha256": "ba08d4006b2590a47beb610b293c65f47171d70775460ec6495070f379223e5c"
+        },
+        "portable_services": {
+          "status": "passed",
+          "engineering_rows": 3808,
+          "public_entries": 1287,
+          "filtered_rows": 4,
+          "nonempty_category_options": 10,
+          "empty_result_has_no_categories": true,
+          "bridge_prepare_local_hit": true,
+          "both_services_same_root": true
+        },
+        "blender": {
+          "status": "passed",
+          "blender": "5.1.2",
+          "addon_version": [
+            0,
+            3,
+            0
+          ],
+          "asset_id": "7b0248a3-3292-55ad-bff4-4e5b2e232591",
+          "meshes": 42,
+          "instances": 2,
+          "shared_before_editable": true,
+          "independent_instance_ids": true,
+          "editable_draft": true,
+          "save_reopen": true,
+          "external_blend_libraries": 0,
+          "physics_tested": false
+        },
+        "previous_local_mirror_validation": {
+          "skill_version": "1.0.0",
+          "result": {
+            "date": "2026-11-21",
+            "status": "passed",
+            "skill_validation": "passed",
+            "runtime_manifest_files": 41,
+            "portable_services": {
+              "independent_copy": true,
+              "both_healthy": true,
+              "second_start_reuses_services": true,
+              "read_only_catalog_counts": {
+                "engineering": 4103,
+                "square": 7759
+              },
+              "scene_filter": {
+                "rows": 26,
+                "nonempty_category_options": 17
+              },
+              "local_prepare": {
+                "catalog_id": "7b0248a3-3292-55ad-bff4-4e5b2e232591",
+                "downloaded": false
+              }
+            },
+            "upstream_portal_regressions": {
+              "passed": 9
+            },
+            "blender": {
+              "status": "passed",
+              "blender": "5.1.2",
+              "addon_version": [
+                0,
+                3,
+                0
+              ],
+              "asset_id": "7b0248a3-3292-55ad-bff4-4e5b2e232591",
+              "meshes": 42,
+              "instances": 2,
+              "shared_before_editable": true,
+              "independent_instance_ids": true,
+              "editable_draft": true,
+              "save_reopen": true,
+              "external_blend_libraries": 0,
+              "physics_tested": false
+            },
+            "not_tested": [
+              "OSS network download/sync",
+              "other Blender versions",
+              "physics/hardware behavior",
+              "GUI screenshot comparison"
+            ]
+          }
+        },
+        "not_tested": [
+          "all cloud model packages",
+          "other Blender versions",
+          "physics/hardware behavior",
+          "GUI screenshot comparison"
+        ],
+        "cloud_freshness": "Validated published OSS snapshot has 1287 public entries; source local catalog has 7759. This skill update does not publish source catalog changes."
+      },
+      "npx_install": {
+        "local_repository_install": "passed",
+        "installed_manifest_files": 44,
+        "installed_services": "passed",
+        "resource_types_checked": 6,
+        "custom_port_redirect": "passed",
+        "remote_install": "passed",
+        "remote_commit_tested": "7573fd17"
+      }
+    },
+    "npx_install": {
+      "local_repository_install": "passed",
+      "installed_manifest_files": 46,
+      "first_use_doctor": "passed",
+      "remote_command": "unchanged; remote transport verified in previous version"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "实验室工站资产工程"
+  short_description: "保持商业整机、拆分自动化机构与耗材，携带转换验收工具并组装 OS 领域包"
+  default_prompt: "使用 $lab-station-asset-pipeline 处理我的工站资料，保持商业成品设备完整，独立提取并复用耗材，把自动化装置拆到完整模组与采购功能单元，使用随包工具验收后实例化组装 OS graph 和领域设备包，并在空项目中验证。"
+policy:
+  allow_implicit_invocation: true

@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+skills/**/SKILL.md text eol=lf
+/unilabos/app/scheduler/time_planning.py export-ignore
+/unilabos/app/scheduler/time_scheduling.py export-ignore
+/unilabos/scheduling export-ignore

@@ -1,6 +1,7 @@
 import time
 from typing import Callable
-from unilabos.device_comms.modbus_plc.client import TCPClient, ModbusWorkflow, WorkflowAction, load_csv
+
+from unilabos.device_comms.modbus_plc.client import ModbusWorkflow, TCPClient, WorkflowAction, load_csv
 from unilabos.device_comms.modbus_plc.modbus import Base as ModbusNodeBase
 
 ############ 第一种写法 ##############

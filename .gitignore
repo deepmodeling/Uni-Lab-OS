@@ -2,6 +2,7 @@ cursor_docs/
 configs/
 temp/
 output/
+deprecated/
 unilabos_data/
 pyrightconfig.json
 .cursorignore
@@ -151,6 +152,14 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Uni-Lab-OS React frontend
+/frontend/node_modules/
+/frontend/*.tsbuildinfo
+/frontend/coverage/
+/frontend/.env*
+!/frontend/.env.example
+/unilabos/app/web/static/console/
+
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -251,4 +260,18 @@ ros-humble-unilabos-msgs-0.9.13-h6403a04_5.tar.bz2
 *.bz2
 test_config.py
 
+.codegraph/
+.feishu*
+.unilabos/
+.tools/
+unilabos/.ua/
 
+# Python/ROS 的通用 ``lib/`` 忽略规则不能吞掉前端 API 客户端源码。
+!/frontend/src/lib/
+!/frontend/src/lib/**
+
+# 本地验证报告、运行快照、日志和截图不纳入版本控制。
+/docs/validation/
+desktop/
+# 桌面示例的非敏感主线配置必须随源码交付。
+!/packaging/launcher/examples/device-package/deployment/local_config.py

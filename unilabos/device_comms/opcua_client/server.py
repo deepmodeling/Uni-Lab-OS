@@ -5,11 +5,12 @@ OPC UA测试服务器
 用于测试OPC UA客户端功能，特别是temperature_control和valve_control工作流
 """
 
-import sys
-import time
 import logging
-from opcua import Server, ua
+import sys
 import threading
+import time
+
+from opcua import Server, ua
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

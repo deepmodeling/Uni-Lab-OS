@@ -7,7 +7,7 @@ from typing import Dict, Optional, Tuple, Union
 
 import requests
 
-from unilabos.app.web.client import http_client, HTTPClient
+from unilabos.app.web.client import HTTPClient, http_client
 from unilabos.utils import logger
 
 
@@ -42,7 +42,12 @@ def _get_oss_token(
 
     try:
         logger.info(f"[OSS] 请求预签名URL: sub_path={sub_path}, filename={filename}")
-        response = requests.get(url, params=params, headers={"Authorization": f"Lab {client.auth}"}, timeout=10)
+        response = client._session.get(
+            url,
+            params=params,
+            headers={"Authorization": f"Lab {client.auth}"},
+            timeout=10,
+        )
 
         if response.status_code == 200:
             result = response.json()

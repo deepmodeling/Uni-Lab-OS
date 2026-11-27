@@ -16,10 +16,10 @@ Flow:
     4. Special packages (like pylabrobot) are handled by environment_check.py at runtime
 """
 
+import argparse
 import locale
 import subprocess
 import sys
-import argparse
 from pathlib import Path
 
 # Tsinghua mirror URL

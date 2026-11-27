@@ -18,9 +18,9 @@ Usage:
     python verify_installation.py
 """
 
-import sys
-import os
 import argparse
+import os
+import sys
 
 # IMPORTANT: Set UTF-8 encoding BEFORE any other imports
 # This ensures all subsequent imports (including unilabos) can output UTF-8 characters

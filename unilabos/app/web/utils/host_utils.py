@@ -5,11 +5,11 @@
 """
 
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
+from unilabos.app.web.utils.action_utils import get_action_info
 from unilabos.config.config import BasicConfig
 from unilabos.ros.nodes.presets.host_node import HostNode
-from unilabos.app.web.utils.action_utils import get_action_info
 
 
 def get_host_node_info() -> Dict[str, Any]:
@@ -22,7 +22,7 @@ def get_host_node_info() -> Dict[str, Any]:
         Dict: 包含主机节点信息的字典
     """
     host_info = {"available": False, "devices": {}, "subscribed_topics": [], "action_clients": {}}
-    if not BasicConfig.is_host_mode:
+    if BasicConfig.process_role != "edge_runtime":
         return host_info
     # 尝试获取HostNode实例，设置超时为0秒
     host_node = HostNode.get_instance(0)

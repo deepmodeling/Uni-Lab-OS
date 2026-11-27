@@ -1,5 +1,7 @@
+from typing import Any, Dict, List, Optional
+
 import networkx as nx
-from typing import List, Dict, Any, Optional
+
 from .utils.vessel_parser import get_vessel
 
 

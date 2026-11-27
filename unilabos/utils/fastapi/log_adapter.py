@@ -5,8 +5,32 @@
 """
 
 import logging
+from urllib.parse import urlsplit
 
-from unilabos.utils.log import debug, info, warning, error, critical
+from unilabos.utils.log import critical, debug, error, info, is_detailed_logging_enabled, warning
+
+# 仅列出已确认会周期调用的只读端点；精确匹配路径，不能扩展为前缀过滤。
+POLLING_GET_PATHS = frozenset({
+    "/api/v1/health", "/api/v1/readiness", "/api/v1/devices", "/api/v1/online-devices",
+})
+
+
+class PollingAccessFilter(logging.Filter):
+    """普通模式只省略白名单成功 GET，未知格式和异常响应全部保留。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if is_detailed_logging_enabled() or record.name != "uvicorn.access" or record.levelno >= logging.WARNING:
+            return True
+        if not isinstance(record.args, tuple) or len(record.args) != 5:
+            return True
+        _client, method, target, _version, status = record.args
+        if method != "GET" or not isinstance(target, str) or type(status) is not int:
+            return True
+        try:
+            path = urlsplit(target).path
+        except ValueError:
+            return True
+        return not (200 <= status < 300 and path in POLLING_GET_PATHS)
 
 
 class UvicornLogAdapter:
@@ -24,9 +48,15 @@ class UvicornLogAdapter:
         ]
 
         # 清除现有处理器
+        old_handlers = set()
         for logger_instance in uvicorn_loggers:
             for handler in logger_instance.handlers[:]:
+                if getattr(handler, "_unilabos_otel_handler", False):
+                    continue
                 logger_instance.removeHandler(handler)
+                old_handlers.add(handler)
+        for handler in old_handlers:
+            handler.close()
 
         # 添加自定义处理器
         adapter_handler = UvicornToIlabosHandler()
@@ -45,6 +75,7 @@ class UvicornToIlabosHandler(logging.Handler):
 
     def __init__(self):
         super().__init__()
+        self.addFilter(PollingAccessFilter())
         self.level_map = {
             logging.DEBUG: debug,
             logging.INFO: info,
@@ -74,31 +105,8 @@ class UvicornToIlabosHandler(logging.Handler):
 
 
 def setup_fastapi_logging():
-    """设置FastAPI/Uvicorn的日志系统"""
-    # 配置Uvicorn的日志
+    """原地配置 Uvicorn，并禁止其 dictConfig 关闭应用文件和 OTel 出口。"""
     UvicornLogAdapter.configure()
-
-    # 返回适合uvicorn.run()的日志配置
-    return {
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "()": "uvicorn.logging.DefaultFormatter",
-                "fmt": "%(message)s",
-                "use_colors": True,
-            },
-        },
-        "handlers": {
-            "default": {
-                "formatter": "default",
-                "class": "unilabos.utils.fastapi.log_adapter.UvicornToIlabosHandler",
-            }
-        },
-        "loggers": {
-            "uvicorn": {"handlers": ["default"], "level": "INFO"},
-            "uvicorn.error": {"handlers": ["default"], "level": "INFO"},
-            "uvicorn.access": {"handlers": ["default"], "level": "INFO"},
-            "fastapi": {"handlers": ["default"], "level": "INFO"},
-        },
-    }
+    # Uvicorn 支持 log_config=None，直接复用上面的配置。非增量 dictConfig
+    # 会调用 logging.shutdown()，误关闭仍挂在根 logger 上的文件会话锁。
+    return None

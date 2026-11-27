@@ -1,16 +1,16 @@
 import json
+import os
 import time
 import traceback
-from typing import Any, Union, List, Dict, Callable, Optional, Tuple
-from pydantic import BaseModel
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import pandas as pd
 from opcua import Client, ua
 from opcua.ua import NodeClass
-import pandas as pd
-import os
+from pydantic import BaseModel
 
 from unilabos.device_comms.opcua_client.node.uniopcua import Base as OpcUaNodeBase
-from unilabos.device_comms.opcua_client.node.uniopcua import Variable, Method, NodeType, DataType
+from unilabos.device_comms.opcua_client.node.uniopcua import DataType, Method, NodeType, Variable
 from unilabos.device_comms.universal_driver import UniversalDriver
 from unilabos.utils.log import logger
 

@@ -5,7 +5,7 @@
 - 严格解析器认识的注解（``str`` / ``int`` / ``float`` / ``bool``、``Literal``、``Optional`` 与
   ``X | None``、``ResourceSlot`` / ``list[ResourceSlot]``、``list[X]``、``dict[str, JSONValue]``，以及
   ``Annotated[..., Field(...)]`` / ``AllowedResourceTemplates``）：严格 schema；
-- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material_contract=Material.site_picker(...))`` 声明的
+- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material_contract=MaterialRole.site_picker(...))`` 声明的
   库位关系写进该 ``SiteSlot`` 参数的 ``x-unilabos-site-selector`` 扩展（前端库位选择器、预检与派发门禁用）；
 - 没写注解、``Any``、``object``：接受任意 JSON 值（``{}``）；
 - 默认值是 ``None`` 的参数按可空处理（``x: str = None`` 与 ``x: Optional[str] = None`` 相同）；
@@ -20,7 +20,7 @@
   不认识的字段退回推断）；其他注解整体退回推断。
 
 参数注解里已删除的 ``Placeholder(...)`` / ``SiteSelector(...)`` 是注册错误，报错信息给出新写法
-（前端选择器写 ``@action(placeholder_keys=...)``，库位关系写 ``Material.site_picker(...)``）。
+（前端选择器写 ``@action(placeholder_keys=...)``，库位关系写 ``MaterialRole.site_picker(...)``）。
 
 ROS 动作类型（``@action(action_type=...)``）不经过这里，照旧按 ROS 消息生成 schema。
 """
@@ -261,7 +261,7 @@ def reject_removed_annotations(
 
 
 def _is_site_slot(node: ast.AST, bindings: ModuleBindings) -> bool:
-    """单个 ``SiteSlot``（可带 ``Optional`` / ``| None`` / ``Annotated``）：``Material.site_picker`` 的库位参数只能是它。"""
+    """单个 ``SiteSlot``（可带 ``Optional`` / ``| None`` / ``Annotated``）：``MaterialRole.site_picker`` 的库位参数只能是它。"""
 
     if bindings.identity(node) == _SITE_SLOT:
         return True
@@ -491,7 +491,7 @@ def build_action_schema_draft(
     由注册表 ``finalize_action_schema`` 补全；``inferred`` / ``result_inferred`` 列出退回推断的参数与
     返回字段；``skipped`` 是无法表示、被忽略的参数写法。
 
-    ``site_selectors`` 是 ``Material.site_picker(...)`` 给出的 ``{库位参数名: x-unilabos-site-selector 扩展}``：
+    ``site_selectors`` 是 ``MaterialRole.site_picker(...)`` 给出的 ``{库位参数名: x-unilabos-site-selector 扩展}``：
     库位参数必须注解为 ``SiteSlot``，owner / occupant 必须是单个 ``ResourceSlot`` 参数，扩展写进该参数的
     schema。动作声明写错（库位关系不对、注解里写了已删除的 ``Placeholder`` / ``SiteSelector``）抛
     :class:`ActionSchemaError`。
@@ -583,9 +583,9 @@ def build_action_schema_draft(
 
     for name, extension in (site_selectors or {}).items():
         if name not in goal:
-            raise ActionSchemaError(f"动作 {definition}：Material.site_picker 引用了签名里没有的参数 {name}")
+            raise ActionSchemaError(f"动作 {definition}：MaterialRole.site_picker 引用了签名里没有的参数 {name}")
         if name not in site_slots:
-            raise ActionSchemaError(f"动作 {definition}：Material.site_picker 的库位参数 {name} 必须注解为 SiteSlot")
+            raise ActionSchemaError(f"动作 {definition}：MaterialRole.site_picker 的库位参数 {name} 必须注解为 SiteSlot")
         try:
             validate_site_selector_relations(
                 strict_descriptors,

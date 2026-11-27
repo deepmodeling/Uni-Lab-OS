@@ -1,13 +1,13 @@
 """动作的资源语义：``@action(material_contract=...)`` 唯一的写法（实验性）。
 
-``material_contract=`` 的值是 ``Material`` 的一个方法调用，或多个调用组成的列表：
+``material_contract=`` 的值是 ``MaterialRole`` 的一个方法调用，或多个调用组成的列表：
 
-    from unilabos.registry.decorators import action, Material
+    from unilabos.registry.decorators import action, MaterialRole
 
-    @action(material_contract=Material.move("plate", to_site="target_site"))
+    @action(material_contract=MaterialRole.move("plate", to_site="target_site"))
     def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-    @action(material_contract=Material.dispense(from_material="source", to_materials=["target"]))
+    @action(material_contract=MaterialRole.dispense(from_material="source", to_materials=["target"]))
     def pipette(self, source: ResourceSlot, target: ResourceSlot, volume: float) -> dict: ...
 
 物料动作：``move`` / ``pick`` / ``place`` / ``dispense``。不代表物料动作的声明：``load`` / ``unload`` 跨动作
@@ -19,7 +19,8 @@
 （``x-unilabos-action-contract.resource_contract``），调度器照旧按合同执行；``site_picker`` 不进资源合同，
 写进库位参数 schema 的 ``x-unilabos-site-selector`` 扩展。
 
-旧写法（字段名 ``material=`` / ``materials=``，``transfer`` / ``aliquot`` / ``site`` / ``uses``，带 ``owner`` / ``site`` /
+类名是 ``MaterialRole``（区别于运行时的物料操作模块 ``unilabos.resources.materials``）。旧写法（类名 ``Material``，
+字段名 ``material=`` / ``materials=``，``transfer`` / ``aliquot`` / ``site`` / ``uses``，带 ``owner`` / ``site`` /
 ``carriers`` 的 ``pick`` / ``place``）直接报错并给出新写法。
 
 本模块只依赖标准库与纯声明的合同规范化：装饰器（导入期）与 AST 扫描（不导入作者模块）共用。
@@ -54,7 +55,7 @@ _SCHEMA_KINDS = frozenset({"site_picker"})
 GRIPPER_ROLE = "gripper"
 #: ``site_picker`` 的已占用库位策略 → ``(show_occupied, allow_occupied)``。
 _OCCUPIED = {"hide": (False, False), "show": (True, False), "allow": (True, True)}
-#: AST 扫描认可的 ``Material`` 来源模块（``module:Material.method``）。
+#: AST 扫描认可的 ``MaterialRole`` 来源模块（``module:MaterialRole.method``）。
 _MATERIAL_MODULES = ("unilabos.registry.decorators", "unilabos.registry.material_roles")
 
 
@@ -83,12 +84,16 @@ def _optional(value: Any, label: str) -> str:
 
 
 def _legacy(message: str) -> MaterialRoleError:
-    return MaterialRoleError(f"{message}（Material 辅助 API 已重做，见 docs/developer_guide/action_standard.md「不兼容变更」）")
+    return MaterialRoleError(f"{message}（资源语义辅助 API 已重做，见 docs/developer_guide/action_standard.md「不兼容变更」）")
 
 
 @dataclass(frozen=True)
 class MaterialRole:
-    """``Material.xxx(...)`` 的结果：一条资源语义（不可变，按字段规范化成合同片段）。"""
+    """一条资源语义（不可变，按字段规范化成合同片段），也是写资源语义的唯一入口。
+
+    每个工厂方法（``MaterialRole.move(...)`` 等）返回一条语义；``@action(material_contract=...)`` 接收一条或一个列表
+    （实验性）。
+    """
 
     kind: str
     fields: Tuple[Tuple[str, Any], ...] = ()
@@ -146,10 +151,10 @@ class MaterialRole:
         raise MaterialRoleError(f"未知的资源语义 {self.kind}")
 
     def site_selector(self) -> Tuple[str, Dict[str, Any]]:
-        """``Material.site_picker(...)`` → ``(库位参数名, x-unilabos-site-selector 扩展)``。"""
+        """``MaterialRole.site_picker(...)`` → ``(库位参数名, x-unilabos-site-selector 扩展)``。"""
 
         if self.kind != "site_picker":
-            raise MaterialRoleError(f"Material.{self.kind} 不是库位选择器提示")
+            raise MaterialRoleError(f"MaterialRole.{self.kind} 不是库位选择器提示")
         values = self.values()
         show, allow = _OCCUPIED[values["occupied"]]
         return values["site"], {
@@ -167,7 +172,7 @@ class MaterialRole:
         """
 
         values = self.values()
-        label = f"Material.{self.kind}"
+        label = f"MaterialRole.{self.kind}"
         items: List[Tuple[str, str, str]] = []
         if self.kind in {"load", "unload", "in_place", "move", "pick", "place"}:
             items.append((values["material"], "resource", f"{label} 的物料"))
@@ -195,10 +200,6 @@ class MaterialRole:
                 items.append((values["for_material"], "resource", f"{label} 的 for_material"))
         return items
 
-
-class Material:
-    """资源语义的唯一入口：每个方法返回一条语义，``@action(material_contract=...)`` 接收一条或一个列表（实验性）。"""
-
     # ------------------------------------------------------------------ 物料动作
 
     @staticmethod
@@ -217,16 +218,16 @@ class Material:
         """
 
         fields: List[Tuple[str, Any]] = [
-            ("material", _name(material, "Material.move 的物料")),
-            ("to_site", _name(to_site, "Material.move 的 to_site")),
+            ("material", _name(material, "MaterialRole.move 的物料")),
+            ("to_site", _name(to_site, "MaterialRole.move 的 to_site")),
         ]
         if from_site is not None:
-            fields.append(("from_site", _name(from_site, "Material.move 的 from_site")))
+            fields.append(("from_site", _name(from_site, "MaterialRole.move 的 from_site")))
         if carrier_device is not None:
-            fields.append(("carrier_device", _name(carrier_device, "Material.move 的 carrier_device")))
+            fields.append(("carrier_device", _name(carrier_device, "MaterialRole.move 的 carrier_device")))
         names = [value for _, value in fields]
         if len(set(names)) != len(names):
-            raise MaterialRoleError("Material.move 的物料、库位与搬运设备必须是不同的参数")
+            raise MaterialRoleError("MaterialRole.move 的物料、库位与搬运设备必须是不同的参数")
         return MaterialRole("move", tuple(fields))
 
     @staticmethod
@@ -244,10 +245,10 @@ class Material:
 
         if legacy:
             raise _legacy(
-                "Material.pick 不再接受 owner / site / carriers / gripper：写成 "
-                "Material.pick(\"物料参数\", from_site=\"SiteSlot 库位参数\"（可省略）, carrier_device=\"DeviceSlot 设备参数\"（可省略，即执行设备）)"
+                "MaterialRole.pick 不再接受 owner / site / carriers / gripper：写成 "
+                "MaterialRole.pick(\"物料参数\", from_site=\"SiteSlot 库位参数\"（可省略）, carrier_device=\"DeviceSlot 设备参数\"（可省略，即执行设备）)"
             )
-        return Material._step("pick", material, from_site, carrier_device)
+        return MaterialRole._step("pick", material, from_site, carrier_device)
 
     @staticmethod
     def place(
@@ -261,35 +262,35 @@ class Material:
 
         if legacy or to_site is None:
             raise _legacy(
-                "Material.place 写成 Material.place(\"物料参数\", to_site=\"SiteSlot 库位参数\", "
+                "MaterialRole.place 写成 MaterialRole.place(\"物料参数\", to_site=\"SiteSlot 库位参数\", "
                 "carrier_device=\"DeviceSlot 设备参数\"（可省略，即执行设备）)，不再接受 owner / site / carriers / gripper"
             )
-        return Material._step("place", material, to_site, carrier_device)
+        return MaterialRole._step("place", material, to_site, carrier_device)
 
     @staticmethod
     def _step(kind: str, material: str, site: Optional[str], carrier_device: Optional[str]) -> MaterialRole:
         keyword = "from_site" if kind == "pick" else "to_site"
-        fields: List[Tuple[str, Any]] = [("material", _name(material, f"Material.{kind} 的物料"))]
+        fields: List[Tuple[str, Any]] = [("material", _name(material, f"MaterialRole.{kind} 的物料"))]
         if site is not None:
-            fields.append(("site", _name(site, f"Material.{kind} 的 {keyword}")))
+            fields.append(("site", _name(site, f"MaterialRole.{kind} 的 {keyword}")))
         if carrier_device is not None:
-            fields.append(("carrier_device", _name(carrier_device, f"Material.{kind} 的 carrier_device")))
+            fields.append(("carrier_device", _name(carrier_device, f"MaterialRole.{kind} 的 carrier_device")))
         names = [value for _, value in fields]
         if len(set(names)) != len(names):
-            raise MaterialRoleError(f"Material.{kind} 的物料、库位与搬运设备必须是不同的参数")
+            raise MaterialRoleError(f"MaterialRole.{kind} 的物料、库位与搬运设备必须是不同的参数")
         return MaterialRole(kind, tuple(fields))
 
     @staticmethod
     def dispense(*, from_material: str, to_materials: Union[str, Sequence[str]]) -> MaterialRole:
         """按驱动回报的实际量，把内容物从 ``from_material`` 转移到 ``to_materials``（``AliquotReceipt`` 结算）。"""
 
-        names = _names(to_materials, "Material.dispense 的 to_materials")
+        names = _names(to_materials, "MaterialRole.dispense 的 to_materials")
         if not names:
-            raise MaterialRoleError("Material.dispense 至少需要一个 to_materials")
-        source = _name(from_material, "Material.dispense 的 from_material")
-        targets = tuple(_name(item, "Material.dispense 的 to_materials") for item in names)
+            raise MaterialRoleError("MaterialRole.dispense 至少需要一个 to_materials")
+        source = _name(from_material, "MaterialRole.dispense 的 from_material")
+        targets = tuple(_name(item, "MaterialRole.dispense 的 to_materials") for item in names)
         if source in targets or len(set(targets)) != len(targets):
-            raise MaterialRoleError("Material.dispense 的来源与目标必须是不同的参数")
+            raise MaterialRoleError("MaterialRole.dispense 的来源与目标必须是不同的参数")
         return MaterialRole("dispense", (("from_material", source), ("to_materials", targets)))
 
     # ------------------------------------------------------------------ 不代表物料动作的声明
@@ -301,12 +302,12 @@ class Material:
         ``from_device``：同时从另一台设备（``DeviceSlot`` 参数）转出。
         """
 
-        acquire = _optional(device, "Material.load 的 device") or EXECUTING_DEVICE
-        fields = [("material", _name(material, "Material.load 的物料")), ("acquire", acquire)]
+        acquire = _optional(device, "MaterialRole.load 的 device") or EXECUTING_DEVICE
+        fields = [("material", _name(material, "MaterialRole.load 的物料")), ("acquire", acquire)]
         if from_device is not None:
-            release = _name(from_device, "Material.load 的 from_device")
+            release = _name(from_device, "MaterialRole.load 的 from_device")
             if release == acquire:
-                raise MaterialRoleError("Material.load 的 device 与 from_device 不能是同一个参数")
+                raise MaterialRoleError("MaterialRole.load 的 device 与 from_device 不能是同一个参数")
             fields.append(("release", release))
         return MaterialRole("load", tuple(fields))
 
@@ -314,14 +315,14 @@ class Material:
     def unload(material: str, *, device: Optional[str] = None) -> MaterialRole:
         """把物料从设备 ``device``（``DeviceSlot`` 参数，省略即执行设备）取出并结束设备托管。"""
 
-        release = _optional(device, "Material.unload 的 device") or EXECUTING_DEVICE
-        return MaterialRole("unload", (("material", _name(material, "Material.unload 的物料")), ("release", release)))
+        release = _optional(device, "MaterialRole.unload 的 device") or EXECUTING_DEVICE
+        return MaterialRole("unload", (("material", _name(material, "MaterialRole.unload 的物料")), ("release", release)))
 
     @staticmethod
     def in_place(material: str) -> MaterialRole:
         """物料必须仍在执行设备内（原位处理）。"""
 
-        return MaterialRole("in_place", (("material", _name(material, "Material.in_place 的物料")),))
+        return MaterialRole("in_place", (("material", _name(material, "MaterialRole.in_place 的物料")),))
 
     @staticmethod
     def site_picker(
@@ -338,16 +339,16 @@ class Material:
         ``"show"`` 列出但不能选，``"allow"`` 列出且能选。
         """
 
-        fields: List[Tuple[str, Any]] = [("site", _name(site, "Material.site_picker 的库位参数"))]
+        fields: List[Tuple[str, Any]] = [("site", _name(site, "MaterialRole.site_picker 的库位参数"))]
         if of is not None:
-            fields.append(("of", _name(of, "Material.site_picker 的 of")))
+            fields.append(("of", _name(of, "MaterialRole.site_picker 的 of")))
         if for_material is not None:
-            fields.append(("for_material", _name(for_material, "Material.site_picker 的 for_material")))
+            fields.append(("for_material", _name(for_material, "MaterialRole.site_picker 的 for_material")))
         if occupied not in _OCCUPIED:
-            raise MaterialRoleError('Material.site_picker 的 occupied 只能是 "hide"、"show" 或 "allow"')
+            raise MaterialRoleError('MaterialRole.site_picker 的 occupied 只能是 "hide"、"show" 或 "allow"')
         fields.append(("occupied", occupied))
         if site in {of, for_material}:
-            raise MaterialRoleError("Material.site_picker 不能把库位参数自身作为 of / for_material")
+            raise MaterialRoleError("MaterialRole.site_picker 不能把库位参数自身作为 of / for_material")
         return MaterialRole("site_picker", tuple(fields))
 
     @staticmethod
@@ -361,7 +362,7 @@ class Material:
     @staticmethod
     def transfer(*_args: Any, **_kwargs: Any) -> MaterialRole:
         raise _legacy(
-            "Material.transfer 已删除：写成 Material.move(\"物料参数\", to_site=\"SiteSlot 库位参数\", "
+            "MaterialRole.transfer 已删除：写成 MaterialRole.move(\"物料参数\", to_site=\"SiteSlot 库位参数\", "
             "from_site=\"SiteSlot 库位参数\"（可省略）, carrier_device=\"DeviceSlot 设备参数\"（可省略，即执行设备）)；"
             "所属方由库位决定（不写 to / source），库位参数注解为 SiteSlot（值是库位 uuid），"
             "搬运设备的夹爪库位角色统一为 gripper（不写 gripper=）"
@@ -370,31 +371,59 @@ class Material:
     @staticmethod
     def aliquot(*_args: Any, **_kwargs: Any) -> MaterialRole:
         raise _legacy(
-            "Material.aliquot 已改名：写成 Material.dispense(from_material=\"来源物料参数\", to_materials=[\"目标物料参数\", ...])"
+            "MaterialRole.aliquot 已改名：写成 MaterialRole.dispense(from_material=\"来源物料参数\", to_materials=[\"目标物料参数\", ...])"
         )
 
     @staticmethod
     def site(*_args: Any, **_kwargs: Any) -> MaterialRole:
         raise _legacy(
-            "Material.site 已改名：写成 Material.site_picker(\"SiteSlot 库位参数\", of=\"所属物料或设备参数\"（可省略，即执行设备）, "
+            "MaterialRole.site 已改名：写成 MaterialRole.site_picker(\"SiteSlot 库位参数\", of=\"所属物料或设备参数\"（可省略，即执行设备）, "
             "for_material=\"放入物料参数\", occupied=\"hide\" | \"show\" | \"allow\")"
         )
 
     @staticmethod
     def uses(*_args: Any, **_kwargs: Any) -> MaterialRole:
         raise _legacy(
-            "Material.uses 已删除：参数按类型加锁（ResourceSlot 物料锁、DeviceSlot 设备锁、SiteSlot 库位锁），"
-            "把参数注解成对应类型即可，去掉 Material.uses(...)"
+            "MaterialRole.uses 已删除：参数按类型加锁（ResourceSlot 物料锁、DeviceSlot 设备锁、SiteSlot 库位锁），"
+            "把参数注解成对应类型即可，去掉 MaterialRole.uses(...)"
         )
 
+
+#: ``MaterialRole`` 上的声明工厂（AST 扫描只认这些名字，不会调到实例方法）。
+_FACTORY_NAMES = frozenset({
+    "move", "pick", "place", "dispense",
+    "load", "unload", "in_place", "site_picker", "order_sensitive",
+    "transfer", "aliquot", "site", "uses",
+})
+
+
+def _renamed(method: str) -> MaterialRoleError:
+    return MaterialRoleError(
+        f"Material 已改名为 MaterialRole：把 Material.{method}(...) 写成 MaterialRole.{method}(...)，"
+        "从 unilabos.registry.decorators 导入 MaterialRole（声明式资源语义；运行时物料操作是 unilabos.resources.materials）"
+    )
+
+
+class _RenamedMaterialMeta(type):
+    def __getattr__(cls, name: str) -> Any:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        raise _renamed(name)
+
+
+class Material(metaclass=_RenamedMaterialMeta):
+    """已改名为 :class:`MaterialRole`。只为让旧写法 ``Material.xxx(...)`` 在导入时报错并给出新写法而保留。"""
+
+    def __new__(cls, *_args: Any, **_kwargs: Any) -> "Material":
+        raise _renamed("xxx")
 
 def _roles(value: Any) -> List[MaterialRole]:
     roles = list(value) if isinstance(value, (list, tuple)) else [value]
     for role in roles:
         if not isinstance(role, MaterialRole):
-            raise MaterialRoleError("material_contract= 只接受 Material.xxx(...) 或它们组成的列表")
+            raise MaterialRoleError("material_contract= 只接受 MaterialRole.xxx(...) 或它们组成的列表")
     if not roles:
-        raise MaterialRoleError("material_contract= 至少写一条 Material.xxx(...)")
+        raise MaterialRoleError("material_contract= 至少写一条 MaterialRole.xxx(...)")
     return roles
 
 
@@ -420,7 +449,7 @@ def warn_experimental(value: Any, definition: str) -> None:
 
     warn_once(
         definition,
-        "material_contract= 是实验性功能（" + "、".join(f"Material.{kind}" for kind in kinds)
+        "material_contract= 是实验性功能（" + "、".join(f"MaterialRole.{kind}" for kind in kinds)
         + "）：语义与写法以后可能调整",
     )
 
@@ -438,11 +467,11 @@ def material_contract(value: Any) -> Dict[str, Any]:
         part = role.contract_part()
         for key, item in part.items():
             if key in raw:
-                raise MaterialRoleError(f"Material.{seen[key]} 与 Material.{role.kind} 不能写在同一个动作上")
+                raise MaterialRoleError(f"MaterialRole.{seen[key]} 与 MaterialRole.{role.kind} 不能写在同一个动作上")
             raw[key] = item
             seen[key] = role.kind
     if "transfer" in raw and "transfer_step" in raw:
-        raise MaterialRoleError(f"Material.{seen['transfer']} 与 Material.{seen['transfer_step']} 不能写在同一个动作上")
+        raise MaterialRoleError(f"MaterialRole.{seen['transfer']} 与 MaterialRole.{seen['transfer_step']} 不能写在同一个动作上")
     if len(raw) == 1:
         return {}
     try:
@@ -452,7 +481,7 @@ def material_contract(value: Any) -> Dict[str, Any]:
 
 
 def material_site_selectors(value: Any) -> Dict[str, Dict[str, Any]]:
-    """``material_contract=`` 里的 ``Material.site_picker(...)`` → ``{库位参数名: x-unilabos-site-selector 扩展}``。"""
+    """``material_contract=`` 里的 ``MaterialRole.site_picker(...)`` → ``{库位参数名: x-unilabos-site-selector 扩展}``。"""
 
     if value is None:
         return {}
@@ -462,7 +491,7 @@ def material_site_selectors(value: Any) -> Dict[str, Dict[str, Any]]:
             continue
         site, extension = role.site_selector()
         if site in selectors:
-            raise MaterialRoleError(f"库位参数 {site} 写了多条 Material.site_picker")
+            raise MaterialRoleError(f"库位参数 {site} 写了多条 MaterialRole.site_picker")
         selectors[site] = extension
     return selectors
 
@@ -556,23 +585,26 @@ def material_roles_from_ast(value: Any) -> List[MaterialRole]:
     roles: List[MaterialRole] = []
     for item in items:
         if not isinstance(item, Mapping) or "_call" not in item:
-            raise MaterialRoleError("material_contract= 只接受 Material.xxx(...) 或它们组成的列表（参数须是字面量）")
+            raise MaterialRoleError("material_contract= 只接受 MaterialRole.xxx(...) 或它们组成的列表（参数须是字面量）")
         call = str(item["_call"])
         prefix, _, method = call.rpartition(".")
         module, _, owner = prefix.rpartition(":")
-        if owner != "Material" and prefix != "Material":
-            raise MaterialRoleError(f"material_contract= 只接受 Material.xxx(...)，不认识 {call}")
+        if owner == "Material" and (not module or module in _MATERIAL_MODULES):
+            # 改名前的类名：与导入期的 Material 占位类同一句提示
+            raise _renamed(method)
+        if owner != "MaterialRole":
+            raise MaterialRoleError(f"material_contract= 只接受 MaterialRole.xxx(...)，不认识 {call}")
         if module and module not in _MATERIAL_MODULES:
-            raise MaterialRoleError(f"material_contract= 的 Material 必须从 unilabos.registry.decorators 导入，不认识 {call}")
-        factory = getattr(Material, method, None) if not method.startswith("_") else None
-        if factory is None:
-            raise MaterialRoleError(f"Material 没有 {method}(...)")
+            raise MaterialRoleError(f"material_contract= 的 MaterialRole 必须从 unilabos.registry.decorators 导入，不认识 {call}")
+        if method not in _FACTORY_NAMES:
+            raise MaterialRoleError(f"MaterialRole 没有 {method}(...)")
+        factory = getattr(MaterialRole, method)
         positional = [item[key] for key in sorted((k for k in item if k.startswith("_pos_")), key=lambda k: int(k[5:]))]
         keywords = {key: val for key, val in item.items() if not key.startswith("_")}
         try:
             roles.append(factory(*positional, **keywords))
         except TypeError as error:
-            raise MaterialRoleError(f"Material.{method}(...) 参数不对：{error}") from None
+            raise MaterialRoleError(f"MaterialRole.{method}(...) 参数不对：{error}") from None
     return roles
 
 

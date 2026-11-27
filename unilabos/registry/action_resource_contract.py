@@ -22,7 +22,7 @@ TRANSFER_RESOURCE_ROLE_FIELDS: tuple[str, ...] = (
 #: transfer 的可选字段：搬运设备参数（``DeviceSlot``），省略时是执行设备。
 TRANSFER_OPTIONAL_FIELDS: tuple[str, ...] = ("carrier_device_param",)
 RESOURCE_PARAM_ROLES = frozenset({"device", "tool", "motion", "site", "material"})
-#: 设备托管合同里表示「执行设备本身」的记号（``Material.load`` / ``unload`` 省略 ``device`` 时）；
+#: 设备托管合同里表示「执行设备本身」的记号（``MaterialRole.load`` / ``unload`` 省略 ``device`` 时）；
 #: 参数名不可能以 ``$`` 开头，调度器把它解析成执行动作的设备。
 EXECUTING_DEVICE = "$executor"
 

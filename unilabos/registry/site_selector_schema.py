@@ -1,6 +1,6 @@
-"""库位关系（``Material.site_picker(...)``）的静态跨字段校验。
+"""库位关系（``MaterialRole.site_picker(...)``）的静态跨字段校验。
 
-库位参数注解为 ``SiteSlot``，它与物料参数的关系写在 ``@action(material_contract=Material.site_picker(...))``：库位属于
+库位参数注解为 ``SiteSlot``，它与物料参数的关系写在 ``@action(material_contract=MaterialRole.site_picker(...))``：库位属于
 哪个物料参数（``owner``）、放进去的是哪个物料参数（``occupant``）、已占用库位的显示 / 可选策略。注册表
 把它写进库位参数 schema 的 ``x-unilabos-site-selector`` 扩展；本模块在生成 schema 时核对关系指向的参数。
 """
@@ -59,7 +59,7 @@ def validate_site_selector_relations(
             if referenced_name == site_name:
                 raise SiteSelectorSchemaError(
                     relation_path,
-                    "Material.site_picker 不能把库位参数自身作为 of / for_material",
+                    "MaterialRole.site_picker 不能把库位参数自身作为 of / for_material",
                 )
             if relation_name == "owner" and referenced_name in device_parameters:
                 continue
@@ -67,7 +67,7 @@ def validate_site_selector_relations(
             if referenced_entry is None:
                 raise SiteSelectorSchemaError(
                     relation_path,
-                    f"Material.site_picker 的 {keyword}={referenced_name!r} 必须是注解为 ResourceSlot"
+                    f"MaterialRole.site_picker 的 {keyword}={referenced_name!r} 必须是注解为 ResourceSlot"
                     + (" 或 DeviceSlot" if relation_name == "owner" else "") + " 的参数",
                 )
             # ``referenced`` 是 owner/occupant 指向的动作输入合同。
@@ -76,7 +76,7 @@ def validate_site_selector_relations(
             if not isinstance(schema, Mapping) or not _is_single_resource_slot(schema):
                 raise SiteSelectorSchemaError(
                     relation_path,
-                    f"Material.site_picker 的 {keyword}={referenced_name!r} 必须是单个 ResourceSlot"
+                    f"MaterialRole.site_picker 的 {keyword}={referenced_name!r} 必须是单个 ResourceSlot"
                     + (" 或 DeviceSlot" if relation_name == "owner" else "") + " 参数",
                 )
 

@@ -1534,7 +1534,7 @@ class WorkflowService(WorkflowDefinitionEditing, NodeTemplateCatalog, WorkflowSt
             # 按库位绑定的物料参数解析成占用物料，计划、attempt 参数与任务输入一起冻结
             self._bind_material_sites(plan, jobs, resolved["input"], site_facts,
                                       input_contract=declared_input_contract(graph["workflow"]))
-            # 按所属物料选择的库位参数在任务准入时由调度器选定；写法不对（没有 Material.site_picker 关系、放入物料不确定、
+            # 按所属物料选择的库位参数在任务准入时由调度器选定；写法不对（没有 MaterialRole.site_picker 关系、放入物料不确定、
             # 与所属物料参数不一致）建任务时就拒绝
             self._check_site_selections(plan)
             try:

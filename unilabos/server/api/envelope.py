@@ -330,7 +330,7 @@ _WORKFLOW_SYMBOLS = frozenset({
     "material_site_invalid",
     # 工作流物料输入直接给的物料不是 @workflow(allowed_templates=...) 允许的模板（细节在 error.details）
     "material_template_mismatch",
-    # 库位参数按所属物料选择的写法不对（没有 Material.site_picker 关系、放入物料不确定……，细节在 error.details）
+    # 库位参数按所属物料选择的写法不对（没有 MaterialRole.site_picker 关系、放入物料不确定……，细节在 error.details）
     "site_selection_invalid",
 })
 

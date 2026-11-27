@@ -3,7 +3,7 @@
 - 物料参数（``ResourceSlot`` / ``list[ResourceSlot]``）按库位绑定：``{"site_uuid": "<库位 uuid>"}``，
   表示「此刻占着这个库位的物料」。建任务 / 运行预检时解析成占用物料的 ``{"uuid": ...}`` 并冻结进任务，
   之后物料被挪走也不改变任务用的是哪件物料。
-- 库位参数（``SiteSlot``，带 ``Material.site_picker`` 关系）按所属物料选择：``{"owner_uuid": "<所属物料 uuid>"}``，
+- 库位参数（``SiteSlot``，带 ``MaterialRole.site_picker`` 关系）按所属物料选择：``{"owner_uuid": "<所属物料 uuid>"}``，
   表示「这个物料下一个接受放入物料的空库位」。任务准入时调度器按库位序号选一个、经入口预留占住，
   并把选中的库位 uuid 冻结进任务。
 

@@ -1,7 +1,7 @@
 """将动作资源合同解析为权威物料、完整库位和托管范围。
 
-``Material.move`` / ``pick`` / ``place`` 规范化成 ``transfer`` / ``transfer_step``：目标与来源按库位 uuid 给出时，
-所属方（载架或设备根节点）由库位决定；库位参数带 ``Material.site_picker(of=...)`` 关系时，值也可以是所属方下的
+``MaterialRole.move`` / ``pick`` / ``place`` 规范化成 ``transfer`` / ``transfer_step``：目标与来源按库位 uuid 给出时，
+所属方（载架或设备根节点）由库位决定；库位参数带 ``MaterialRole.site_picker(of=...)`` 关系时，值也可以是所属方下的
 库位名（工作流里写死的工位；库位 uuid 由物料权威建树时发号，不能写死）。搬运设备参数（``DeviceSlot``，设备 id）
 解析成该设备的物料，省略时是执行设备。旧合同里显式的所属物料参数（ResourceSlot）照旧可用。
 """
@@ -45,7 +45,7 @@ def device_material_uuid(materials: Any, device_id: str) -> str:
 def site_picker_owner(
     schema: Mapping[str, Any] | None, values: Mapping[str, Any], name: str, materials: Any, device_id: str | None,
 ) -> str | None:
-    """库位参数 ``name`` 的 ``Material.site_picker`` 所属方 → 所属物料 uuid；没有这层关系或所属方未给时为 ``None``。
+    """库位参数 ``name`` 的 ``MaterialRole.site_picker`` 所属方 → 所属物料 uuid；没有这层关系或所属方未给时为 ``None``。
 
     ``of`` 是 ``ResourceSlot`` 时取它的物料 uuid，是 ``DeviceSlot`` 时取设备根节点，省略时是执行设备根节点。
     """
@@ -66,7 +66,7 @@ def site_picker_owner(
 def site_by_label(
     schema: Mapping[str, Any] | None, values: Mapping[str, Any], name: str, materials: Any, device_id: str | None,
 ) -> tuple[str, str] | None:
-    """库位参数的值不是已登记的库位 uuid 时（工作流里写死的库位名或序号）：在 ``Material.site_picker`` 的所属方下
+    """库位参数的值不是已登记的库位 uuid 时（工作流里写死的库位名或序号）：在 ``MaterialRole.site_picker`` 的所属方下
     唯一匹配，返回 ``(所属物料 uuid, 库位 uuid)``；没有 site_picker 关系或匹配不唯一时为 ``None``。"""
 
     selected = values.get(name)
@@ -142,7 +142,7 @@ def resolve_physical_contract(
 
     def site_by_uuid(name):
         """库位参数（``SiteSlot``）→ ``(所属物料, 库位)``：库位 uuid 的所属方由库位决定；
-        带 ``Material.site_picker`` 关系时也可以是所属方下的库位名。"""
+        带 ``MaterialRole.site_picker`` 关系时也可以是所属方下的库位名。"""
 
         selected = values.get(name)
         if not isinstance(selected, str) or not selected.strip():
@@ -152,7 +152,7 @@ def resolve_physical_contract(
             found = site_by_label(schema, values, name, materials, device_id)
             if found is None:
                 raise ValueError(f"库位参数 {name} 指向不存在的库位 {selected}"
-                                 "（不是库位 uuid，也不是 Material.site_picker 所属方下唯一的库位名）")
+                                 "（不是库位 uuid，也不是 MaterialRole.site_picker 所属方下唯一的库位名）")
             owner, selected = found
         return owner, site(owner, selected)
 

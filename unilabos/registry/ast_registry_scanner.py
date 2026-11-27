@@ -62,7 +62,7 @@ from unilabos.resources.objects.site import normalize_available_sites
 
 MAX_SCAN_DEPTH = 10      # 最大目录递归深度
 MAX_SCAN_FILES = 1000    # 最大扫描文件数量
-_CACHE_VERSION = 30      # 30：@action 资源语义字段改名为 material_contract=（material= / materials= 报错）；整个字段告警「实验性功能」
+_CACHE_VERSION = 31      # 31：资源语义声明类改名为 MaterialRole（Material.xxx(...) 报错）
 # 允许点号分段（如 liquid_handler.prcxi），与内置 YAML 注册表的命名先例一致；
 # 点号只用于注册表模板名，设备实例 id（图节点）另有约束。
 _DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")

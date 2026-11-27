@@ -5,7 +5,7 @@
 
 Usage:
     from unilabos.registry.decorators import (
-        device, action, resource, Material,
+        device, action, resource, MaterialRole,
         InputHandle, OutputHandle,
         ActionInputHandle, ActionOutputHandle,
         HardwareInterface, Side, DataSource, NodeType,
@@ -40,8 +40,8 @@ Usage:
         def set_valve_position(self, position):
             ...
 
-        # 资源语义（实验性）：一个字段，Material 的一条或多条
-        @action(material_contract=Material.in_place("vessel"))
+        # 资源语义（实验性）：一个字段，MaterialRole 的一条或多条
+        @action(material_contract=MaterialRole.in_place("vessel"))
         def flush(self, vessel: ResourceSlot) -> None:
             ...
 
@@ -61,7 +61,8 @@ from unilabos.registry.material_locks import (
     REMOVED_MATERIAL_LOCK_OPTIONS,
     warn_ignored_material_lock_override,
 )
-from unilabos.registry.material_roles import Material
+# Material：改名前的类名，只作占位（Material.xxx(...) 直接报错并提示 MaterialRole.xxx(...)）
+from unilabos.registry.material_roles import Material, MaterialRole  # noqa: F401
 from unilabos.registry.utils.backend_metadata import normalize_supported_backends
 from unilabos.resources.objects.site import (
     SiteDefinitionInput,
@@ -517,8 +518,8 @@ def action(
         parent: 若为 True，当方法参数为空 (*args, **kwargs) 时，通过 MRO 从父类获取真实方法参数
         node_type: 动作的节点类型 (NodeType.ILAB / NodeType.MANUAL_CONFIRM)。
                    不填写时不写入注册表。
-        material_contract: （实验性）动作的资源语义：物料动作 ``Material.move / pick / place / dispense``，以及
-                           ``Material.load / unload / in_place / site_picker / order_sensitive``，一条或多条组成的列表
+        material_contract: （实验性）动作的资源语义：物料动作 ``MaterialRole.move / pick / place / dispense``，以及
+                           ``MaterialRole.load / unload / in_place / site_picker / order_sensitive``，一条或多条组成的列表
                            （见 ``unilabos.registry.material_roles``）。字符串都是参数名，注册时对照签名检查
                            （物料 ResourceSlot、库位 SiteSlot、设备 DeviceSlot）；写了就按定义告警一次「实验性功能」。
                            旧字段名 ``material=``（以及短暂出现过的 ``materials=``）直接报错并提示改成 ``material_contract=``。

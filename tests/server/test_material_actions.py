@@ -1,4 +1,4 @@
-"""``Material.move`` / ``pick`` / ``place`` 的调度解析与按类型加锁（真实物料权威，不起调度器）。
+"""``MaterialRole.move`` / ``pick`` / ``place`` 的调度解析与按类型加锁（真实物料权威，不起调度器）。
 
 - 所属方由库位 uuid 决定：载架（仓库）或设备根节点；
 - 搬运设备省略即执行设备，写了是 ``DeviceSlot``（设备 id 解析成设备物料）；
@@ -23,7 +23,7 @@ from unilabos.protocol.materials import (
     ResourceTemplateWrite,
     SiteCreate,
 )
-from unilabos.registry.decorators import Material
+from unilabos.registry.decorators import MaterialRole
 from unilabos.registry.material_roles import material_contract
 from unilabos.resources import materials
 from unilabos.server.scheduler.models import SchedulerResourceRequest
@@ -100,7 +100,7 @@ def test_move_derives_the_owner_from_the_site_and_carries_with_the_executor(auth
     source, target = _warehouse(gateway, "src"), _warehouse(gateway, "dst")
     arm = _device(service, "arm", [("grip", {"role": "gripper"})])
     sample = source["A01"].resource.unilabos_uuid
-    schema = _schema(Material.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
+    schema = _schema(MaterialRole.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
     target_site = _site(service, target.unilabos_uuid, "A02").site_uuid
 
     plan = resolve_physical_contract(schema, {"plate": {"uuid": sample}, "target_site": target_site}, "arm", gateway)
@@ -123,7 +123,7 @@ def test_move_checks_a_given_from_site_against_the_authority(authority) -> None:
     _device(service, "arm", [("grip", {"role": "gripper"})])
     sample = source["A01"].resource.unilabos_uuid
     schema = _schema(
-        Material.move("plate", to_site="target_site", from_site="source_site"),
+        MaterialRole.move("plate", to_site="target_site", from_site="source_site"),
         {"plate": _MATERIAL, "target_site": _SITE, "source_site": _SITE},
     )
     values = {"plate": {"uuid": sample}, "target_site": _site(service, target.unilabos_uuid, "A02").site_uuid}
@@ -146,7 +146,7 @@ def test_move_onto_a_device_root_site_with_a_device_slot_carrier(authority) -> N
     reader = _device(service, "reader", [("S1", {}), ("S2", {})])
     sample = source["A01"].resource.unilabos_uuid
     schema = _schema(
-        Material.move("plate", to_site="target_site", carrier_device="carrier_device"),
+        MaterialRole.move("plate", to_site="target_site", carrier_device="carrier_device"),
         {"plate": _MATERIAL, "target_site": _SITE, "carrier_device": _DEVICE},
     )
     target_site = _site(service, reader, "S2").site_uuid
@@ -166,7 +166,7 @@ def test_move_without_a_gripper_site_is_a_contract_error(authority) -> None:
     service, gateway = authority
     source, target = _warehouse(gateway, "src"), _warehouse(gateway, "dst")
     _device(service, "arm", [("grip", {"role": "robot.gripper"})])
-    schema = _schema(Material.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
+    schema = _schema(MaterialRole.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
     with pytest.raises(ValueError, match="role=gripper"):
         resolve_physical_contract(schema, {
             "plate": {"uuid": source["A01"].resource.unilabos_uuid},
@@ -183,7 +183,7 @@ def test_pick_then_place_hold_the_material_on_the_gripper(authority) -> None:
     sample = source["A01"].resource.unilabos_uuid
     grip = _site(service, arm, "grip").site_uuid
 
-    pick = _schema(Material.pick("plate"), {"plate": _MATERIAL})
+    pick = _schema(MaterialRole.pick("plate"), {"plate": _MATERIAL})
     plan = resolve_physical_contract(pick, {"plate": {"uuid": sample}}, "arm", gateway)
     (move,) = plan["moves"]
     assert (move.target_owner_uuid, move.target_site_uuid) == (arm, grip)
@@ -193,7 +193,7 @@ def test_pick_then_place_hold_the_material_on_the_gripper(authority) -> None:
     assert _occupant(service, arm, "grip") == sample
     assert _occupant(service, source.unilabos_uuid, "A01") is None
 
-    place = _schema(Material.place("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
+    place = _schema(MaterialRole.place("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
     target_site = _site(service, target.unilabos_uuid, "A03").site_uuid
     plan = resolve_physical_contract(place, {"plate": {"uuid": sample}, "target_site": target_site}, "arm", gateway)
     (move,) = plan["moves"]
@@ -209,7 +209,7 @@ def test_pick_with_a_from_site_that_disagrees_waits(authority) -> None:
     service, gateway = authority
     source = _warehouse(gateway, "src")
     _device(service, "arm", [("grip", {"role": "gripper"})])
-    schema = _schema(Material.pick("plate", from_site="from_site"), {"plate": _MATERIAL, "from_site": _SITE})
+    schema = _schema(MaterialRole.pick("plate", from_site="from_site"), {"plate": _MATERIAL, "from_site": _SITE})
     values = {"plate": {"uuid": source["A01"].resource.unilabos_uuid}}
     resolve_physical_contract(schema, {**values, "from_site": _site(service, source.unilabos_uuid, "A01").site_uuid},
                               "arm", gateway)
@@ -224,11 +224,11 @@ def test_place_with_a_device_slot_carrier_releases_that_device(authority) -> Non
     _device(service, "executor", [])
     arm = _device(service, "arm", [("grip", {"role": "gripper"})])
     sample = source["A01"].resource.unilabos_uuid
-    pick = _schema(Material.pick("plate", carrier_device="arm_device"), {"plate": _MATERIAL, "arm_device": _DEVICE})
+    pick = _schema(MaterialRole.pick("plate", carrier_device="arm_device"), {"plate": _MATERIAL, "arm_device": _DEVICE})
     plan = resolve_physical_contract(pick, {"plate": {"uuid": sample}, "arm_device": "arm"}, "executor", gateway)
     assert plan["device_tenancy"].acquire_device_id == "arm"
     _settle(service, plan)
-    place = _schema(Material.place("plate", to_site="to_site", carrier_device="arm_device"),
+    place = _schema(MaterialRole.place("plate", to_site="to_site", carrier_device="arm_device"),
                     {"plate": _MATERIAL, "to_site": _SITE, "arm_device": _DEVICE})
     plan = resolve_physical_contract(place, {
         "plate": {"uuid": sample}, "arm_device": "arm",
@@ -272,14 +272,14 @@ def test_load_without_a_device_holds_the_executing_device(authority) -> None:
     vial = materials.create(_bottle("vial"), gateway=gateway)
     _device(service, "reactor", [])
     _device(service, "shelf", [])
-    load = _schema(Material.load("sample"), {"sample": _MATERIAL})
+    load = _schema(MaterialRole.load("sample"), {"sample": _MATERIAL})
     tenancy = resolve_tenancy_contract(load, {"sample": {"uuid": vial.unilabos_uuid}}, "reactor", gateway)
     assert tenancy["device_tenancy"].acquire_device_id == "reactor"
     assert tenancy["device_tenancy"].release_device_id is None
-    unload = _schema(Material.unload("sample"), {"sample": _MATERIAL})
+    unload = _schema(MaterialRole.unload("sample"), {"sample": _MATERIAL})
     tenancy = resolve_tenancy_contract(unload, {"sample": {"uuid": vial.unilabos_uuid}}, "reactor", gateway)
     assert tenancy["device_tenancy"].release_device_id == "reactor"
-    moved = _schema(Material.load("sample", from_device="from_device"), {"sample": _MATERIAL, "from_device": _DEVICE})
+    moved = _schema(MaterialRole.load("sample", from_device="from_device"), {"sample": _MATERIAL, "from_device": _DEVICE})
     tenancy = resolve_tenancy_contract(
         moved, {"sample": {"uuid": vial.unilabos_uuid}, "from_device": "shelf"}, "reactor", gateway)
     assert (tenancy["device_tenancy"].acquire_device_id, tenancy["device_tenancy"].release_device_id) == (
@@ -307,7 +307,7 @@ def test_site_picker_owned_by_a_device_is_checked_against_the_device_root(author
         return {"properties": {"goal": {"properties": {**fields, "site": site_field}}},
                 "x-unilabos-action-contract": {"version": 2}}
 
-    own = schema(Material.site_picker("site", for_material="sample"), {"sample": _MATERIAL})
+    own = schema(MaterialRole.site_picker("site", for_material="sample"), {"sample": _MATERIAL})
     values = {"sample": {"uuid": vial.unilabos_uuid}}
     validate_resource_values(own, {**values, "site": _site(service, reader, "S1").site_uuid}, gateway, device_id="reader")
     with pytest.raises(ValueError, match="不属于所选容器"):
@@ -317,7 +317,7 @@ def test_site_picker_owned_by_a_device_is_checked_against_the_device_root(author
         validate_resource_values(own, {**values, "site": _site(service, warehouse.unilabos_uuid, "A02").site_uuid},
                                  gateway, device_id="reader")
 
-    of_device = schema(Material.site_picker("site", of="target_device", for_material="sample"),
+    of_device = schema(MaterialRole.site_picker("site", of="target_device", for_material="sample"),
                        {"sample": _MATERIAL, "target_device": _DEVICE})
     validate_resource_values(of_device, {**values, "target_device": "other",
                                          "site": _site(service, other, "T1").site_uuid}, gateway, device_id="reader")
@@ -363,8 +363,8 @@ def test_a_site_label_resolves_under_the_site_picker_owner(authority) -> None:
     source, target = _warehouse(gateway, "src"), _warehouse(gateway, "dst")
     _device(service, "arm", [("grip", {"role": "gripper"})])
     sample = source["A01"].resource.unilabos_uuid
-    declared = [Material.move("plate", to_site="target_site"),
-                Material.site_picker("target_site", of="target", for_material="plate")]
+    declared = [MaterialRole.move("plate", to_site="target_site"),
+                MaterialRole.site_picker("target_site", of="target", for_material="plate")]
     site_field = {**_SITE, "x-unilabos-site-selector": material_site_selectors(declared)["target_site"]}
     schema = _schema(declared, {"plate": _MATERIAL, "target": _MATERIAL, "target_site": site_field})
     values = {"plate": {"uuid": sample}, "target": {"uuid": target.unilabos_uuid}, "target_site": "A03"}
@@ -376,7 +376,7 @@ def test_a_site_label_resolves_under_the_site_picker_owner(authority) -> None:
     (claim,) = resolve_tenancy_contract(schema, values, "arm", gateway)["site_claims"]
     assert (claim.owner_material_uuid, claim.site_uuid) == (target.unilabos_uuid, target_site)
     # 没有 site_picker 关系的库位名无从解析：派发前报错，也不加库位锁
-    bare = _schema(Material.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
+    bare = _schema(MaterialRole.move("plate", to_site="target_site"), {"plate": _MATERIAL, "target_site": _SITE})
     with pytest.raises(ValueError, match="site_picker"):
         resolve_physical_contract(bare, {"plate": {"uuid": sample}, "target_site": "A03"}, "arm", gateway)
     assert "site_claims" not in resolve_tenancy_contract(bare, {"plate": {"uuid": sample}, "target_site": "A03"},

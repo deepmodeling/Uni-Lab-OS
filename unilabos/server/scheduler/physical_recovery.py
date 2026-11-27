@@ -115,9 +115,9 @@ class PhysicalRecovery:
     def _receipt(record, value, *, planned_moves=False):
         """设备结果 → 结算回执。
 
-        ``planned_moves``：动作成功时，声明的搬运（``Material.move`` / ``pick`` / ``place``）由核心按冻结计划结算——
+        ``planned_moves``：动作成功时，声明的搬运（``MaterialRole.move`` / ``pick`` / ``place``）由核心按冻结计划结算——
         结果里没有 ``material_transfer_receipts`` 就用冻结的搬运；给了就必须与冻结计划完全一致。人工补记结算不按计划补。
-        分装（``Material.dispense``）的实际量只能由驱动回报，始终要求 ``material_aliquot_receipts``。
+        分装（``MaterialRole.dispense``）的实际量只能由驱动回报，始终要求 ``material_aliquot_receipts``。
         """
 
         request = record["request"]

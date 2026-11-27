@@ -285,7 +285,7 @@ def validate_resource_values(
     schema: Mapping[str, Any], values: Mapping[str, Any], materials: Any,
     *, deferred: Sequence[str] = (), device_id: str | None = None,
 ) -> None:
-    """校验已知物料身份、设备参数及库位参数（Material.site_picker 声明的库位关系）的归属／占用；预检与派发共用。
+    """校验已知物料身份、设备参数及库位参数（MaterialRole.site_picker 声明的库位关系）的归属／占用；预检与派发共用。
 
     ``device_id`` 是执行设备：``site_picker`` 省略 ``of`` 时库位属于它的根节点（不给时跳过这条核对）。
     """

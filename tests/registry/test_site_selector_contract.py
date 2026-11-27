@@ -1,7 +1,7 @@
-"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material_contract=Material.site_picker(...))``。
+"""库位参数（``SiteSlot``）与物料参数的关系：``@action(material_contract=MaterialRole.site_picker(...))``。
 
 ``SiteSelector`` 已与 ``SiteSlot`` 合一：库位参数只有一个类型 ``SiteSlot``，库位属于哪个物料参数、放进去的是
-哪个物料参数、已占用库位的显示 / 可选策略写在 ``Material.site_picker``。生成的 ``x-unilabos-site-selector`` 扩展与
+哪个物料参数、已占用库位的显示 / 可选策略写在 ``MaterialRole.site_picker``。生成的 ``x-unilabos-site-selector`` 扩展与
 原 ``SiteSelector`` 相同，连接点投影、运行预检与派发前的库位门禁照旧按它工作。
 """
 
@@ -20,7 +20,7 @@ from unilabos.registry.action_template_projection import (
     compile_action_template_handles,
 )
 from unilabos.registry.ast_registry_scanner import _parse_file
-from unilabos.registry.decorators import Material, action
+from unilabos.registry.decorators import MaterialRole, action
 from unilabos.registry.material_roles import MaterialRoleError, material_contract, material_site_selectors
 from unilabos.registry.registry import Registry
 
@@ -44,7 +44,7 @@ def _source(material: str, signature: str, *, header: str = "") -> str:
     return textwrap.dedent(
         f'''
         from typing import Optional
-        from unilabos.registry.decorators import Material, action, device
+        from unilabos.registry.decorators import MaterialRole, action, device
         from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
         {header}
 
@@ -67,7 +67,7 @@ def _scan(tmp_path: Path, material: str, signature: str, *, header: str = "") ->
     return entry["class"]["action_value_mappings"]["action"]
 
 
-_FULL = 'Material.site_picker("site", of="warehouse", for_material="resource", occupied="show")'
+_FULL = 'MaterialRole.site_picker("site", of="warehouse", for_material="resource", occupied="show")'
 _FULL_SIGNATURE = "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot = None"
 
 
@@ -76,20 +76,20 @@ def _without_description(field: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_material_site_builds_the_same_extension_as_the_removed_site_selector() -> None:
-    role = Material.site_picker("site", of="warehouse", for_material="resource", occupied="show")
+    role = MaterialRole.site_picker("site", of="warehouse", for_material="resource", occupied="show")
     assert material_site_selectors(role) == {"site": _SITE_SELECTOR_FIELD["x-unilabos-site-selector"]}
     # 库位关系不进资源合同：只写库位关系的动作没有资源合同，与其他语义写在一起时互不影响
     assert material_contract(role) == {}
-    assert material_contract([Material.in_place("resource"), role]) == {
+    assert material_contract([MaterialRole.in_place("resource"), role]) == {
         "version": 2,
         "operate_in_place": {"material_param": "resource"},
     }
     with pytest.raises(MaterialRoleError):
-        Material.site_picker("site", of="warehouse", occupied="yes")
+        MaterialRole.site_picker("site", of="warehouse", occupied="yes")
     with pytest.raises(MaterialRoleError, match="自身"):
-        Material.site_picker("site", of="site")
+        MaterialRole.site_picker("site", of="site")
     with pytest.raises(MaterialRoleError, match="多条"):
-        material_site_selectors([Material.site_picker("site", of="a"), Material.site_picker("site", of="b")])
+        material_site_selectors([MaterialRole.site_picker("site", of="a"), MaterialRole.site_picker("site", of="b")])
 
 
 def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Path) -> None:
@@ -105,7 +105,7 @@ def test_action_site_parameter_compiles_complete_relation_metadata(tmp_path: Pat
 def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
-    @action(material_contract=Material.site_picker("site", of="warehouse"))
+    @action(material_contract=MaterialRole.site_picker("site", of="warehouse"))
     def place(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
         pass
 
@@ -114,7 +114,7 @@ def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     }
     with pytest.raises(MaterialRoleError, match="missing"):
 
-        @action(material_contract=Material.site_picker("site", of="missing"))
+        @action(material_contract=MaterialRole.site_picker("site", of="missing"))
         def bad(self, warehouse: ResourceSlot, site: SiteSlot) -> None:
             pass
 
@@ -124,43 +124,43 @@ def test_decorator_records_the_same_relation(tmp_path: Path) -> None:
     [
         pytest.param(
             "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot",
-            'Material.site_picker("site", of="missing", for_material="resource")',
+            'MaterialRole.site_picker("site", of="missing", for_material="resource")',
             "of='missing'",
             id="missing-owner",
         ),
         pytest.param(
             "warehouse: str, resource: ResourceSlot, site: SiteSlot",
-            'Material.site_picker("site", of="warehouse", for_material="resource")',
+            'MaterialRole.site_picker("site", of="warehouse", for_material="resource")',
             "of='warehouse'",
             id="scalar-owner",
         ),
         pytest.param(
             "warehouse: ResourceSlot, resource: str, site: SiteSlot",
-            'Material.site_picker("site", of="warehouse", for_material="resource")',
+            'MaterialRole.site_picker("site", of="warehouse", for_material="resource")',
             "for_material='resource'",
             id="scalar-occupant",
         ),
         pytest.param(
             "warehouse: list[ResourceSlot], site: SiteSlot",
-            'Material.site_picker("site", of="warehouse")',
+            'MaterialRole.site_picker("site", of="warehouse")',
             "单个 ResourceSlot",
             id="list-owner",
         ),
         pytest.param(
             "warehouse: ResourceSlot, site: str",
-            'Material.site_picker("site", of="warehouse")',
+            'MaterialRole.site_picker("site", of="warehouse")',
             "必须注解为 SiteSlot",
             id="plain-string-site",
         ),
         pytest.param(
             "warehouse: ResourceSlot, site: list[SiteSlot]",
-            'Material.site_picker("site", of="warehouse")',
+            'MaterialRole.site_picker("site", of="warehouse")',
             "必须注解为 SiteSlot",
             id="site-list",
         ),
         pytest.param(
             "warehouse: ResourceSlot",
-            'Material.site_picker("site", of="warehouse")',
+            'MaterialRole.site_picker("site", of="warehouse")',
             "签名里没有",
             id="missing-site",
         ),
@@ -179,8 +179,8 @@ def test_material_site_rejects_forged_material_import(tmp_path: Path) -> None:
     path = tmp_path / "site_driver.py"
     path.write_text(
         _source(_FULL, _FULL_SIGNATURE).replace(
-            "from unilabos.registry.decorators import Material, action, device",
-            "from unilabos.registry.decorators import action, device\nfrom malicious.roles import Material",
+            "from unilabos.registry.decorators import MaterialRole, action, device",
+            "from unilabos.registry.decorators import action, device\nfrom malicious.roles import MaterialRole",
         ),
         encoding="utf-8",
     )
@@ -189,7 +189,7 @@ def test_material_site_rejects_forged_material_import(tmp_path: Path) -> None:
 
 
 def test_removed_site_selector_points_to_material_site(tmp_path: Path) -> None:
-    with pytest.raises(ImportError, match=r"Material\.site"):
+    with pytest.raises(ImportError, match=r"MaterialRole\.site"):
         from unilabos.registry.annotations import SiteSelector  # noqa: F401
     path = tmp_path / "old_site_driver.py"
     path.write_text(
@@ -209,13 +209,13 @@ def test_removed_site_selector_points_to_material_site(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    with pytest.raises(ActionSchemaError, match=r"SiteSelector 已删除.*SiteSlot.*Material\.site"):
+    with pytest.raises(ActionSchemaError, match=r"SiteSelector 已删除.*SiteSlot.*MaterialRole\.site"):
         _parse_file(path, tmp_path)
 
 
 def test_material_site_allows_omitting_the_optional_occupant(tmp_path: Path) -> None:
     action_entry = _scan(
-        tmp_path, 'Material.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot"
+        tmp_path, 'MaterialRole.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot"
     )
     site = action_entry["schema"]["properties"]["goal"]["properties"]["site"]
     assert site["type"] == "string"
@@ -276,7 +276,7 @@ _RELATION = {"version": 1, "owner": "warehouse", "occupant": None, "show_occupie
 def test_action_template_projection_rejects_invalid_site_selector_extensions(
     tmp_path: Path, field_name: str, schema_change: dict[str, object], message: str
 ) -> None:
-    schema = _scan(tmp_path, 'Material.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot")[
+    schema = _scan(tmp_path, 'MaterialRole.site_picker("site", of="warehouse")', "warehouse: ResourceSlot, site: SiteSlot")[
         "schema"
     ]
     field_schema = schema["properties"]["goal"]["properties"][field_name]
@@ -309,7 +309,7 @@ class _Materials:
 
 @pytest.mark.parametrize("allow_occupied", [False, True])
 def test_preflight_and_dispatch_gate_follow_the_material_site_relation(tmp_path: Path, allow_occupied: bool) -> None:
-    """运行预检与派发前共用的库位门禁按 Material.site_picker 生成的扩展核对归属与占用，行为与原 SiteSelector 相同。"""
+    """运行预检与派发前共用的库位门禁按 MaterialRole.site_picker 生成的扩展核对归属与占用，行为与原 SiteSelector 相同。"""
 
     from unilabos.server.services.runtime.workflow.run_preflight import (
         ResourceUnavailableError,
@@ -317,7 +317,7 @@ def test_preflight_and_dispatch_gate_follow_the_material_site_relation(tmp_path:
     )
 
     material = (
-        f'Material.site_picker("site", of="warehouse", for_material="resource", occupied={'"allow"' if allow_occupied else '"show"'})'
+        f'MaterialRole.site_picker("site", of="warehouse", for_material="resource", occupied={'"allow"' if allow_occupied else '"show"'})'
     )
     schema = _scan(tmp_path, material, "warehouse: ResourceSlot, resource: ResourceSlot, site: SiteSlot")["schema"]
     materials = _Materials()

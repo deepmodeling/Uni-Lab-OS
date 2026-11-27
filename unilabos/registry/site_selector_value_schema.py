@@ -98,7 +98,7 @@ def parse_site_selector_extension(
             "库位选择合同版本无效",
         )
     # ``owner`` 是提供库位集合的所属方连接点字段名（ResourceSlot 物料或 DeviceSlot 设备）；
-    # ``None`` 表示执行设备的根节点（``Material.site_picker`` 省略 ``of``）。
+    # ``None`` 表示执行设备的根节点（``MaterialRole.site_picker`` 省略 ``of``）。
     raw_owner = raw_selector["owner"]
     owner = (
         None

@@ -1,0 +1,39 @@
+station:
+  graph: comprehensive_station.json
+  registry: ../../../registry/devices/work_station.yaml
+  workstation_id: OrganicSynthesisStation
+  resource_name: workstation
+  mode: virtual
+
+hardware:
+  ids:
+    reactor: main_reactor
+    separator: separator_1
+    rotavap: rotavap_1
+    filter: filter_1
+    flask_organic: collection_bottle_1
+    recryst_flask: collection_bottle_2
+    distill_flask: collection_bottle_2
+    flask_product: collection_bottle_3
+    dropping_funnel_a: reagent_bottle_4
+    dropping_funnel_b: reagent_bottle_5
+    waste: waste_bottle_1
+    column: column_1
+    silica_gel: column_1
+  types:
+    reactor: main_reactor
+    separator: separator_1
+    rotavap: rotavap_1
+    filter: filter_1
+    flask: collection_bottle_1
+    column: column_1
+
+operation_overrides:
+  Transfer:
+    template: PumpTransferProtocol
+  FilterThrough:
+    overrides:
+      filter_through: filter_1
+  RunColumn:
+    overrides:
+      column: column_1

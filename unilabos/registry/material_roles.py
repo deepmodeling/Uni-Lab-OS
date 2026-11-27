@@ -1,25 +1,25 @@
-"""动作的资源语义：``@action(materials=...)`` 唯一的写法（实验性）。
+"""动作的资源语义：``@action(material_contract=...)`` 唯一的写法（实验性）。
 
-``materials=`` 的值是 ``Material`` 的一个方法调用，或多个调用组成的列表：
+``material_contract=`` 的值是 ``Material`` 的一个方法调用，或多个调用组成的列表：
 
     from unilabos.registry.decorators import action, Material
 
-    @action(materials=Material.move("plate", to_site="target_site"))
+    @action(material_contract=Material.move("plate", to_site="target_site"))
     def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-    @action(materials=Material.dispense(from_material="source", to_materials=["target"]))
+    @action(material_contract=Material.dispense(from_material="source", to_materials=["target"]))
     def pipette(self, source: ResourceSlot, target: ResourceSlot, volume: float) -> dict: ...
 
 物料动作：``move`` / ``pick`` / ``place`` / ``dispense``。不代表物料动作的声明：``load`` / ``unload`` 跨动作
 设备独占、``in_place`` 原位检查、``site_picker`` 库位选择器提示、``order_sensitive`` 顺序约束。整个
-``materials=`` 字段都是实验性功能：写了就按定义告警一次，语义与写法以后可能调整。
+``material_contract=`` 字段都是实验性功能：写了就按定义告警一次，语义与写法以后可能调整。
 
 字符串参数都是动作的参数名，注册时对照签名检查：物料是 ``ResourceSlot``，库位是 ``SiteSlot``（库位 uuid），
 设备是 ``DeviceSlot``（省略即执行设备）。内部规范化成第 2 版资源合同
 （``x-unilabos-action-contract.resource_contract``），调度器照旧按合同执行；``site_picker`` 不进资源合同，
 写进库位参数 schema 的 ``x-unilabos-site-selector`` 扩展。
 
-旧写法（字段名 ``material=``，``transfer`` / ``aliquot`` / ``site`` / ``uses``，带 ``owner`` / ``site`` /
+旧写法（字段名 ``material=`` / ``materials=``，``transfer`` / ``aliquot`` / ``site`` / ``uses``，带 ``owner`` / ``site`` /
 ``carriers`` 的 ``pick`` / ``place``）直接报错并给出新写法。
 
 本模块只依赖标准库与纯声明的合同规范化：装饰器（导入期）与 AST 扫描（不导入作者模块）共用。
@@ -59,7 +59,7 @@ _MATERIAL_MODULES = ("unilabos.registry.decorators", "unilabos.registry.material
 
 
 class MaterialRoleError(ValueError):
-    """``materials=`` 写法不对：注册失败并指出正确写法。"""
+    """``material_contract=`` 写法不对：注册失败并指出正确写法。"""
 
 
 def _names(value: Union[str, Sequence[str], None], label: str) -> List[str]:
@@ -197,7 +197,7 @@ class MaterialRole:
 
 
 class Material:
-    """资源语义的唯一入口：每个方法返回一条语义，``@action(materials=...)`` 接收一条或一个列表（实验性）。"""
+    """资源语义的唯一入口：每个方法返回一条语义，``@action(material_contract=...)`` 接收一条或一个列表（实验性）。"""
 
     # ------------------------------------------------------------------ 物料动作
 
@@ -392,26 +392,26 @@ def _roles(value: Any) -> List[MaterialRole]:
     roles = list(value) if isinstance(value, (list, tuple)) else [value]
     for role in roles:
         if not isinstance(role, MaterialRole):
-            raise MaterialRoleError("materials= 只接受 Material.xxx(...) 或它们组成的列表")
+            raise MaterialRoleError("material_contract= 只接受 Material.xxx(...) 或它们组成的列表")
     if not roles:
-        raise MaterialRoleError("materials= 至少写一条 Material.xxx(...)")
+        raise MaterialRoleError("material_contract= 至少写一条 Material.xxx(...)")
     return roles
 
 
 def material_roles(value: Any) -> List[MaterialRole]:
-    """``materials=`` 的值（一条语义或列表）→ 语义列表；``None`` 为空列表。"""
+    """``material_contract=`` 的值（一条语义或列表）→ 语义列表；``None`` 为空列表。"""
 
     return [] if value is None else _roles(value)
 
 
 def material_kinds(value: Any) -> List[str]:
-    """``materials=`` 里用到的声明种类（按出现顺序去重）。"""
+    """``material_contract=`` 里用到的声明种类（按出现顺序去重）。"""
 
     return list(dict.fromkeys(role.kind for role in material_roles(value)))
 
 
 def warn_experimental(value: Any, definition: str) -> None:
-    """注册时按定义告警一次：整个 ``materials=`` 字段是实验性功能（装饰器与 AST 扫描共用同一身份）。"""
+    """注册时按定义告警一次：整个 ``material_contract=`` 字段是实验性功能（装饰器与 AST 扫描共用同一身份）。"""
 
     kinds = material_kinds(value)
     if not kinds:
@@ -420,13 +420,13 @@ def warn_experimental(value: Any, definition: str) -> None:
 
     warn_once(
         definition,
-        "materials= 是实验性功能（" + "、".join(f"Material.{kind}" for kind in kinds)
+        "material_contract= 是实验性功能（" + "、".join(f"Material.{kind}" for kind in kinds)
         + "）：语义与写法以后可能调整",
     )
 
 
 def material_contract(value: Any) -> Dict[str, Any]:
-    """``materials=`` 的值（一条语义或列表）→ 规范化的第 2 版资源合同；``None`` 或只有 ``site_picker`` 时返回空字典。"""
+    """``material_contract=`` 的值（一条语义或列表）→ 规范化的第 2 版资源合同；``None`` 或只有 ``site_picker`` 时返回空字典。"""
 
     if value is None:
         return {}
@@ -448,11 +448,11 @@ def material_contract(value: Any) -> Dict[str, Any]:
     try:
         return normalize_action_resource_contract(raw)
     except ActionResourceContractError as error:
-        raise MaterialRoleError(f"materials= 写法无效：{error.message}") from None
+        raise MaterialRoleError(f"material_contract= 写法无效：{error.message}") from None
 
 
 def material_site_selectors(value: Any) -> Dict[str, Dict[str, Any]]:
-    """``materials=`` 里的 ``Material.site_picker(...)`` → ``{库位参数名: x-unilabos-site-selector 扩展}``。"""
+    """``material_contract=`` 里的 ``Material.site_picker(...)`` → ``{库位参数名: x-unilabos-site-selector 扩展}``。"""
 
     if value is None:
         return {}
@@ -468,7 +468,7 @@ def material_site_selectors(value: Any) -> Dict[str, Dict[str, Any]]:
 
 
 def material_parameter_types(value: Any) -> List[Tuple[str, str, str]]:
-    """``materials=`` 引用的全部参数与要求的类型（见 :meth:`MaterialRole.parameter_types`）。"""
+    """``material_contract=`` 引用的全部参数与要求的类型（见 :meth:`MaterialRole.parameter_types`）。"""
 
     items: List[Tuple[str, str, str]] = []
     for role in material_roles(value):
@@ -477,7 +477,7 @@ def material_parameter_types(value: Any) -> List[Tuple[str, str, str]]:
 
 
 def check_material_parameter_types(value: Any, slot_of, *, definition: str) -> None:
-    """对照签名检查 ``materials=`` 引用的参数存在且类型正确。
+    """对照签名检查 ``material_contract=`` 引用的参数存在且类型正确。
 
     ``slot_of(name)`` 返回参数的槽位类型：``"resource"``（单个 ``ResourceSlot``）、``"resource_list"``、
     ``"site"``、``"device"``、``"device_list"``、``""``（其他类型）；参数不存在返回 ``None``。
@@ -550,20 +550,20 @@ def contract_parameter_names(contract: Mapping[str, Any]) -> List[str]:
 
 
 def material_roles_from_ast(value: Any) -> List[MaterialRole]:
-    """AST 扫描提取的 ``materials=`` 值（``{"_call": ..., "_pos_0": ...}`` 或其列表）→ 语义列表。"""
+    """AST 扫描提取的 ``material_contract=`` 值（``{"_call": ..., "_pos_0": ...}`` 或其列表）→ 语义列表。"""
 
     items = value if isinstance(value, list) else [value]
     roles: List[MaterialRole] = []
     for item in items:
         if not isinstance(item, Mapping) or "_call" not in item:
-            raise MaterialRoleError("materials= 只接受 Material.xxx(...) 或它们组成的列表（参数须是字面量）")
+            raise MaterialRoleError("material_contract= 只接受 Material.xxx(...) 或它们组成的列表（参数须是字面量）")
         call = str(item["_call"])
         prefix, _, method = call.rpartition(".")
         module, _, owner = prefix.rpartition(":")
         if owner != "Material" and prefix != "Material":
-            raise MaterialRoleError(f"materials= 只接受 Material.xxx(...)，不认识 {call}")
+            raise MaterialRoleError(f"material_contract= 只接受 Material.xxx(...)，不认识 {call}")
         if module and module not in _MATERIAL_MODULES:
-            raise MaterialRoleError(f"materials= 的 Material 必须从 unilabos.registry.decorators 导入，不认识 {call}")
+            raise MaterialRoleError(f"material_contract= 的 Material 必须从 unilabos.registry.decorators 导入，不认识 {call}")
         factory = getattr(Material, method, None) if not method.startswith("_") else None
         if factory is None:
             raise MaterialRoleError(f"Material 没有 {method}(...)")

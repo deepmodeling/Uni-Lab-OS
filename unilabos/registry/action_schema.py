@@ -5,7 +5,7 @@
 - 严格解析器认识的注解（``str`` / ``int`` / ``float`` / ``bool``、``Literal``、``Optional`` 与
   ``X | None``、``ResourceSlot`` / ``list[ResourceSlot]``、``list[X]``、``dict[str, JSONValue]``，以及
   ``Annotated[..., Field(...)]`` / ``AllowedResourceTemplates``）：严格 schema；
-- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(materials=Material.site_picker(...))`` 声明的
+- ``DeviceSlot`` / ``SiteSlot``：设备 ID / 库位 UUID 字符串；``@action(material_contract=Material.site_picker(...))`` 声明的
   库位关系写进该 ``SiteSlot`` 参数的 ``x-unilabos-site-selector`` 扩展（前端库位选择器、预检与派发门禁用）；
 - 没写注解、``Any``、``object``：接受任意 JSON 值（``{}``）；
 - 默认值是 ``None`` 的参数按可空处理（``x: str = None`` 与 ``x: Optional[str] = None`` 相同）；

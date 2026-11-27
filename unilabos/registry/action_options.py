@@ -3,13 +3,14 @@
 这些写法不再接受，写了就报错并指出新写法（见 ``docs/developer_guide/action_standard.md`` 的「不兼容变更」）：
 
 - ``contract=``：所有 JSON 动作统一按签名生成并校验 schema，没有 opt-in 开关；
-- ``resource_contract={...}``：资源语义改用 ``materials=Material.xxx(...)``；
-- ``material=``：字段改名为 ``materials=``，值不变（一条 ``Material.xxx(...)`` 或它们组成的列表）；
+- ``resource_contract={...}``：资源语义改用 ``material_contract=Material.xxx(...)``；
+- ``material=``（以及短暂出现过的 ``materials=``）：字段改名为 ``material_contract=``，值不变
+  （一条 ``Material.xxx(...)`` 或它们组成的列表）；
 - JSON 动作的 ``goal=`` / ``result=`` 重命名：字段名就是参数名 / 返回 TypedDict 的字段名
   （ROS 动作类型的 ``goal`` / ``result`` 字段映射照旧）；
 - 参数注解里的 ``Placeholder(...)``：前端选择器写在 ``@action(placeholder_keys={...})``；
 - 参数注解里的 ``SiteSelector(...)``：库位参数注解为 ``SiteSlot``，库位选择器提示写成
-  ``materials=Material.site_picker(...)``；
+  ``material_contract=Material.site_picker(...)``；
 - 按名字注入的动作上下文（参数叫 ``action_context`` 却没有 ``ActionContext`` 注解）：框架按类型注入，
   注解为 ``Optional[ActionContext]``（见 :mod:`unilabos.registry.action_context`）。
 
@@ -23,18 +24,23 @@ from typing import Any, Dict
 
 from unilabos.registry.action_context import LEGACY_ACTION_CONTEXT_NAME, untyped_action_context_message
 
+#: 资源语义字段改名的提示：``material=``（dev 上的旧名）与 ``materials=``（短暂出现过）都改成 ``material_contract=``。
+_MATERIAL_CONTRACT_RENAME = (
+    "字段改名为 material_contract=，值不变：写成 material_contract=Material.xxx(...)"
+    "（多条照旧写成列表）；material_contract= 是实验性功能"
+)
+
 #: 任何动作都不再接受的选项 → 新写法。
 REMOVED_ACTION_OPTIONS: Dict[str, str] = {
     "contract": "所有 JSON 动作统一按签名生成并校验 schema，去掉 contract= 即可",
     "resource_contract": (
-        "资源语义改用 materials=Material.xxx(...)，例如 materials=Material.move(\"plate\", to_site=\"target_site\")、"
-        "materials=Material.dispense(from_material=\"source\", to_materials=[\"target\"])、"
-        "materials=[Material.in_place(\"sample\"), Material.order_sensitive()]"
+        "资源语义改用 material_contract=Material.xxx(...)，例如 "
+        "material_contract=Material.move(\"plate\", to_site=\"target_site\")、"
+        "material_contract=Material.dispense(from_material=\"source\", to_materials=[\"target\"])、"
+        "material_contract=[Material.in_place(\"sample\"), Material.order_sensitive()]"
     ),
-    "material": (
-        "字段改名为 materials=，值不变：把 material=Material.xxx(...) 写成 materials=Material.xxx(...)"
-        "（多条照旧写成列表）；materials= 是实验性功能"
-    ),
+    "material": _MATERIAL_CONTRACT_RENAME,
+    "materials": _MATERIAL_CONTRACT_RENAME,
 }
 #: 只对 JSON 动作（没写 action_type）删除的选项 → 新写法。
 REMOVED_JSON_ACTION_OPTIONS: Dict[str, str] = {
@@ -49,7 +55,7 @@ REMOVED_ANNOTATIONS: Dict[str, str] = {
         "参数类型照常写，去掉 Annotated[..., Placeholder(...)] 外壳"
     ),
     "SiteSelector": (
-        "库位参数注解为 SiteSlot，库位选择器提示写成 @action(materials=Material.site_picker(\"库位参数\", "
+        "库位参数注解为 SiteSlot，库位选择器提示写成 @action(material_contract=Material.site_picker(\"库位参数\", "
         "of=\"拥有库位的物料或设备参数\", for_material=\"放进去的物料参数\", occupied=\"show\"))"
     ),
 }

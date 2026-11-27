@@ -1,6 +1,6 @@
 """库位关系（``Material.site_picker(...)``）的静态跨字段校验。
 
-库位参数注解为 ``SiteSlot``，它与物料参数的关系写在 ``@action(materials=Material.site_picker(...))``：库位属于
+库位参数注解为 ``SiteSlot``，它与物料参数的关系写在 ``@action(material_contract=Material.site_picker(...))``：库位属于
 哪个物料参数（``owner``）、放进去的是哪个物料参数（``occupant``）、已占用库位的显示 / 可选策略。注册表
 把它写进库位参数 schema 的 ``x-unilabos-site-selector`` 扩展；本模块在生成 schema 时核对关系指向的参数。
 """

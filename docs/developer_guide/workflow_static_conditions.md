@@ -336,7 +336,7 @@ def parallel_check(ctx):
 计划的拓扑序先按它排）；用同一台设备的成员因此按书写顺序依次执行。这只是同时就绪时的先后，
 不是顺序保证：分支里前面有别的步骤、某个成员在等库存或另一项资源、失败重试时，后写的成员可能先做。
 `parallel` 的意思是「顺序无所谓」，先后有影响就写成顺序执行。动作可以声明
-`@action(material=Material.order_sensitive())`（V1 同名合同 `order_sensitive`）：
+`@action(materials=Material.order_sensitive())`（V1 同名合同 `order_sensitive`）：
 同一资源上没有先后关系的两个兄弟动作只要有一方声明，就在发布和创建任务时被拒绝，
 报错指出是哪两步，提示改成顺序执行或用依赖明确先后。这里的「同一资源」只有两类：动作节点自己的设备
 （`execution_policy.always_free` 的动作不算），以及工作流 `meta_data.unilab.resource_scopes` 显式声明的资源作用域；

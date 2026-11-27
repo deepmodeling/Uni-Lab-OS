@@ -339,7 +339,7 @@ async def async_operation(self, duration: float) -> Dict[str, Any]:
 
 参数与返回值只有一个标准：注册表按方法签名生成 schema，调度端与 Host 调用前按它校验参数（没有默认值的参数必填，
 缺了直接报错），调用后按返回注解校验返回值（注解 `-> bool` 却返回字典会按失败处理）。没写类型的参数接受任意值。
-物料托管、搬运、分装等资源语义写在 `@action(material=Material.xxx(...))` 一个字段里。完整规则、资源语义写法和
+物料托管、搬运、分装等资源语义写在 `@action(materials=Material.xxx(...))` 一个字段里（实验性：写了就按定义告警一次）。完整规则、资源语义写法和
 已删除的旧写法见 [动作的参数、返回值与资源语义](action_standard.md)。
 
 ### 超时：`timeout` 与 `execution_timeout`

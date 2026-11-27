@@ -117,12 +117,12 @@ class <ClassName>:
 - `always_free=True`：动作不占用设备 busy 队列，适合 `get_status`、`query_*`、`ping`、连接测试等轻量查询动作；会在 `action_value_mappings.<action>.always_free` 中写入 `true`。
 - `feedback_interval`：动作反馈发布间隔，单位秒；AST 扫描默认补 `1.0`，长任务可调大，例如 `5.0`、`30.0`。
 - `goal_default`：编辑器里的初始参数值，叠加在签名默认值上；它不让参数变成可选，没有签名默认值的参数仍然必填。
-- `material`：资源语义（搬运、两步搬运、分装；实验性的装载托管、原位处理、库位选择器提示、顺序敏感），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
+- `materials`（实验性，写了就按定义告警一次）：资源语义（搬运、两步搬运、分装；以及装载托管、原位处理、库位选择器提示、顺序敏感），一个字段，值是 `Material` 的一个方法或列表，见下文「资源语义」。
 - `placeholder_keys`：前端选择器 `{参数名: PLACEHOLDER_...}`。物料 `ResourceSlot`、设备 `DeviceSlot`、库位 `SiteSlot` 由类型自动推出；
   节点、人工确认指派人、扣减等没有专门类型的选择器，或想把某个参数换一种显示，就在这里手写。两者取并集，同一参数以手写为准；
   只改前端显示，参数类型与校验不变（兼容规则：手写成 `unilabos_resources` 的参数也加物料锁）。键必须是参数名。
 - `handles`：动作级输入/输出端口，使用 `ActionInputHandle`、`ActionOutputHandle`；不写时按 schema 生成。
-- 已删除、写了会报错的写法：`contract=`、`resource_contract=`、JSON 动作的 `goal=` / `result=` 重命名（参数名就是字段名），
+- 已删除、写了会报错的写法：`contract=`、`resource_contract=`、改名前的 `material=`（改成 `materials=`，值不变）、JSON 动作的 `goal=` / `result=` 重命名（参数名就是字段名），
   注解里的 `Placeholder(...)`（改成 `placeholder_keys=`）与 `SiteSelector(...)`（改成 `SiteSlot` + `Material.site_picker(...)`），
   以及 `Material.transfer / aliquot / site / uses`、带 `owner` / `site` / `carriers` 的 `Material.pick / place`（新写法见下文「资源语义」）。
 
@@ -144,26 +144,26 @@ class <ClassName>:
 
 旧的 `@always_free` 仍可被 AST 扫描识别，但新设备包优先使用 `@action(always_free=True)`，把动作元数据集中在一个装饰器里。
 
-#### 资源语义：`material=`
+#### 资源语义：`materials=`（实验性）
 
 ```python
 from unilabos.registry.decorators import Material, action
 from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 
-@action(display_name="搬运板", material=Material.move("plate", to_site="target_site"))
+@action(display_name="搬运板", materials=Material.move("plate", to_site="target_site"))
 def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="抓取", material=Material.pick("plate"))
+@action(display_name="抓取", materials=Material.pick("plate"))
 def pick_plate(self, plate: ResourceSlot) -> dict: ...
 
-@action(display_name="放下", material=Material.place("plate", to_site="target_site"))
+@action(display_name="放下", materials=Material.place("plate", to_site="target_site"))
 def place_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="原位搅拌", material=[Material.in_place("sample"), Material.order_sensitive()])
+@action(display_name="原位搅拌", materials=[Material.in_place("sample"), Material.order_sensitive()])
 def stir(self, sample: ResourceSlot, rpm: int = 300) -> None: ...
 ```
 
-物料动作（稳定）：
+物料动作：
 
 | 写法 | 含义 |
 | --- | --- |
@@ -172,7 +172,7 @@ def stir(self, sample: ResourceSlot, rpm: int = 300) -> None: ...
 | `Material.place("plate", to_site="site", carrier_device=None)` | 两步搬运第二步：从夹爪库位放到 `to_site`，结束托管 |
 | `Material.dispense(from_material="source", to_materials=["target", ...])` | 按实测量在容器之间转移内容物 |
 
-实验性（注册时告警一次）：
+不代表物料动作的声明：
 
 | 写法 | 含义 |
 | --- | --- |

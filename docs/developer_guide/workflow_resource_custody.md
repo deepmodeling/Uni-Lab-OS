@@ -8,10 +8,10 @@
 v1.0 的 `task_while_loaded` 表示样品装入后设备持续归该任务托管，成功卸载才释放。
 任务停止、取消、超时、跳过、进程退出都不是卸载证据。
 
-在 `@action(material=...)` 声明参数名（写法对照见 [动作的参数、返回值与资源语义](action_standard.md)）：
+在 `@action(materials=...)` 声明参数名（写法对照见 [动作的参数、返回值与资源语义](action_standard.md)）：
 
 ```python
-@action(material=Material.load("sample", device="vessel"))
+@action(materials=Material.load("sample", device="vessel"))
 def load_sample(self, sample: ResourceSlot, vessel: str) -> CustodyResult: ...
 ```
 

@@ -17,7 +17,7 @@ ROS 动作类型（`@action(action_type=SendCmd, goal={...}, result={...})`）�
 | `Annotated[X, Field(ge=, le=, min_length=, max_length=, title=, description=)]` | 带范围与说明 | 严格 |
 | `ResourceSlot` / `list[ResourceSlot]` | 物料引用 `{"uuid": ...}`（或按库位绑定的 `{"site_uuid": ...}`，准入时解析），加物料锁 | 严格；Host 解析成物料实例 |
 | `DeviceSlot` / `SiteSlot` | 设备 ID / 库位 UUID 字符串（字段带 `x-unilabos-slot: "device"` / `"site"`），加设备锁 / 库位锁 | 严格 |
-| `SiteSlot` 且写了 `material_contract=Material.site_picker("site", of=...)` | 库位 UUID、所属方下的库位名（工作流里写死的工位，派发前解析成库位 uuid），或按所属物料选择的 `{"owner_uuid": ...}`（准入时选定）；带库位关系（`x-unilabos-site-selector`），不限定 uuid 格式 | 严格；预检与派发前核对库位归属与占用 |
+| `SiteSlot` 且写了 `material_contract=MaterialRole.site_picker("site", of=...)` | 库位 UUID、所属方下的库位名（工作流里写死的工位，派发前解析成库位 uuid），或按所属物料选择的 `{"owner_uuid": ...}`（准入时选定）；带库位关系（`x-unilabos-site-selector`），不限定 uuid 格式 | 严格；预检与派发前核对库位归属与占用 |
 | `dict`、`Dict[str, Any]`、`Mapping` | 任意 JSON 对象 | 只校验是对象 |
 | 没写注解、`Any`、`object` | 任意 JSON 值（`{}`） | 不限值 |
 | 严格解析器不认识的注解（`Union[int, str]`、`List[Optional[float]]`、枚举、PLR / pydantic 类型……） | 退回注册表原来的签名类型推断 | 按推断结果；推断不出的部分接受任意值 |
@@ -99,11 +99,11 @@ schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输�
 以后可能调整」，装饰器（导入时）与注册表 AST 扫描共用同一身份，同一定义只告警一次。改名前的 `material=`（见「不兼容变更」）
 与短暂出现过的 `materials=` 注册时都直接报错并提示改成 `material_contract=`，不会被静默忽略。
 
-`Material` 声明的是动作**真实的物料动作**：搬运一件容器、两步搬运、在容器之间转移内容物。调度器在派发前按它解析
+`MaterialRole` 声明的是动作**真实的物料动作**：搬运一件容器、两步搬运、在容器之间转移内容物。调度器在派发前按它解析
 来源、目标与搬运设备，动作成功后由核心一次结算物料位置 / 内容物（`PhysicalMove` / 搬运回执、`AliquotReceipt`）。
 不代表物料动作的声明（跨动作的设备独占、原位检查、库位选择器提示、顺序约束）也写在 `material_contract=` 里。
 
-一个动作的语义只用 `@action` 的这一个字段声明，值是 `Material` 的一个方法调用，多个语义写成列表。
+一个动作的语义只用 `@action` 的这一个字段声明，值是 `MaterialRole` 的一个方法调用，多个语义写成列表。
 字符串参数都是动作的参数名，注册时对照签名检查参数存在、类型正确：
 
 | 角色 | 参数类型 | 值 |
@@ -113,19 +113,19 @@ schema 的 `x-unilabos-action-contract` 扩展（第 2 版）记录参数与输�
 | 设备（`carrier_device`、`device`、`from_device`） | `DeviceSlot` | 设备 id；省略就是**执行设备** |
 
 ```python
-from unilabos.registry.decorators import Material, action
+from unilabos.registry.decorators import MaterialRole, action
 from unilabos.registry.placeholder_type import DeviceSlot, ResourceSlot, SiteSlot
 
-@action(display_name="搬运板", material_contract=Material.move("plate", to_site="target_site"))
+@action(display_name="搬运板", material_contract=MaterialRole.move("plate", to_site="target_site"))
 def move_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="抓取", material_contract=Material.pick("plate"))
+@action(display_name="抓取", material_contract=MaterialRole.pick("plate"))
 def pick_plate(self, plate: ResourceSlot) -> dict: ...
 
-@action(display_name="放下", material_contract=Material.place("plate", to_site="target_site"))
+@action(display_name="放下", material_contract=MaterialRole.place("plate", to_site="target_site"))
 def place_plate(self, plate: ResourceSlot, target_site: SiteSlot) -> dict: ...
 
-@action(display_name="移液", material_contract=Material.dispense(from_material="source", to_materials=["target"]))
+@action(display_name="移液", material_contract=MaterialRole.dispense(from_material="source", to_materials=["target"]))
 def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: float) -> dict: ...
 ```
 
@@ -133,10 +133,10 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 | 写法 | 含义 | 内部合同字段 |
 | --- | --- | --- |
-| `Material.move("plate", to_site="target_site", from_site=None, carrier_device=None)` | 一个动作把容器搬到 `to_site` | `transfer` |
-| `Material.pick("plate", from_site=None, carrier_device=None)` | 两步搬运第一步：从来源库位抓到搬运设备的夹爪库位 | `transfer_step`（pick） |
-| `Material.place("plate", to_site="target_site", carrier_device=None)` | 两步搬运第二步：从夹爪库位放到 `to_site` | `transfer_step`（place） |
-| `Material.dispense(from_material="source", to_materials=["target", ...])` | 按驱动回报的实际量，在容器之间转移内容物 | `aliquot`（`AliquotReceipt`） |
+| `MaterialRole.move("plate", to_site="target_site", from_site=None, carrier_device=None)` | 一个动作把容器搬到 `to_site` | `transfer` |
+| `MaterialRole.pick("plate", from_site=None, carrier_device=None)` | 两步搬运第一步：从来源库位抓到搬运设备的夹爪库位 | `transfer_step`（pick） |
+| `MaterialRole.place("plate", to_site="target_site", carrier_device=None)` | 两步搬运第二步：从夹爪库位放到 `to_site` | `transfer_step`（place） |
+| `MaterialRole.dispense(from_material="source", to_materials=["target", ...])` | 按驱动回报的实际量，在容器之间转移内容物 | `aliquot`（`AliquotReceipt`） |
 
 - **所属方由库位决定**：`to_site` / `from_site` 是库位 uuid，调度器向物料权威读出库位的所属方——可以是载架
   （仓库、板位……），也可以是设备根节点（设备自身的库位），不再单独写所属物料参数。
@@ -154,11 +154,11 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
   （一个动作只能有一种搬运声明），`dispense` 可以与下面不代表物料动作的声明同时写。
 - 物料的**消耗 / 新建**这次不做声明式写法：消耗仍然用工作流节点上的 `inventory=`，新建仍在驱动里调用 `materials.create`（见下节）。
 
-### 声明式 `Material` 与运行时 `materials` 的分工
+### 声明式 `MaterialRole` 与运行时 `materials` 的分工
 
 两者都会改变物料权威里的事实，但时机和归属不同：
 
-| | 声明式 `Material`（`registry/material_roles.py`） | 运行时 `materials`（`unilabos.resources.materials`） |
+| | 声明式 `MaterialRole`（`registry/material_roles.py`） | 运行时 `materials`（`unilabos.resources.materials`） |
 | --- | --- | --- |
 | 写在哪里 | `@action(material_contract=...)` | 驱动代码里，动作执行时调用 |
 | 谁读 / 谁执行 | 调度器派发前读：解析来源、目标、搬运设备，加锁、预留库位；动作成功后**核心**结算 | 驱动直接调用，立即改权威 |
@@ -166,7 +166,7 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 规则：
 
-- 用 `Material.move` / `pick` / `place` 声明了的搬运，物料位置由核心结算；驱动**不能**再对同一件物料调用
+- 用 `MaterialRole.move` / `pick` / `place` 声明了的搬运，物料位置由核心结算；驱动**不能**再对同一件物料调用
   `materials.transfer` / `materials.assign`（会重复写位置，与核心的结算冲突）。驱动只负责物理动作：动作成功而结果里
   没有 `material_transfer_receipts` 时，核心按派发前冻结的来源 / 目标结算；驱动给了搬运回执，就必须与冻结计划完全一致
   （否则结算被拒绝，转人工核实）。人工补记结算（任务终止后）仍要逐条给出实际位置。
@@ -181,11 +181,11 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 
 | 写法 | 含义 | 内部合同字段 |
 | --- | --- | --- |
-| `Material.load("sample", device=None, from_device=None)` | 装进设备，任务托管设备直到卸载；`from_device` 同时从另一台设备转出 | `device_tenancy`（取得设备，可同时释放 `from_device`） |
-| `Material.unload("sample", device=None)` | 从设备取出，结束托管 | `device_tenancy`（释放设备） |
-| `Material.in_place("sample")` | 物料必须仍在执行设备内（由之前的 `load` 托管着） | `operate_in_place` |
-| `Material.site_picker("site", of=None, for_material=None, occupied="show")` | 前端库位选择器提示：库位参数 `site` 列出 `of` 的库位 | 不进资源合同：写进 `site` 参数 schema 的 `x-unilabos-site-selector` |
-| `Material.order_sensitive()` | 同一资源上的兄弟动作必须显式排序（只约束计划） | `order_sensitive` |
+| `MaterialRole.load("sample", device=None, from_device=None)` | 装进设备，任务托管设备直到卸载；`from_device` 同时从另一台设备转出 | `device_tenancy`（取得设备，可同时释放 `from_device`） |
+| `MaterialRole.unload("sample", device=None)` | 从设备取出，结束托管 | `device_tenancy`（释放设备） |
+| `MaterialRole.in_place("sample")` | 物料必须仍在执行设备内（由之前的 `load` 托管着） | `operate_in_place` |
+| `MaterialRole.site_picker("site", of=None, for_material=None, occupied="show")` | 前端库位选择器提示：库位参数 `site` 列出 `of` 的库位 | 不进资源合同：写进 `site` 参数 schema 的 `x-unilabos-site-selector` |
+| `MaterialRole.order_sensitive()` | 同一资源上的兄弟动作必须显式排序（只约束计划） | `order_sensitive` |
 
 - `load` / `unload` 的 `device` / `from_device` 是 `DeviceSlot` 参数，省略就是执行设备；语义与以前相同（设备间转移用
   `from_device=`；`load` 与 `unload` 不能写在同一个动作上）。
@@ -199,22 +199,22 @@ def transfer_liquid(self, source: ResourceSlot, target: ResourceSlot, volume: fl
 | --- | --- |
 | `ResourceSlot` / `list[ResourceSlot]`（以及选择器为 `unilabos_resources` 的参数） | 物料锁（现状） |
 | `DeviceSlot` / `list[DeviceSlot]` | 设备锁：值是设备 id，派发前核对它是已登记的设备，与该设备上正在执行的动作互斥 |
-| `SiteSlot` | 库位锁：值是库位 uuid，按「所属物料 + 库位」加锁；值是 `Material.site_picker` 所属方下的库位名时按解析出的库位加锁；两者都解析不出时不加锁 |
+| `SiteSlot` | 库位锁：值是库位 uuid，按「所属物料 + 库位」加锁；值是 `MaterialRole.site_picker` 所属方下的库位名时按解析出的库位加锁；两者都解析不出时不加锁 |
 
 空值（`None` / `""` / `[]`）不加锁。`always_free` 只免除执行设备自身的动作锁，按类型加的设备锁 / 库位锁照旧。
 
-### 库位参数：`SiteSlot` 与 `Material.site_picker`
+### 库位参数：`SiteSlot` 与 `MaterialRole.site_picker`
 
 库位参数只有一个类型 `SiteSlot`（值是库位 UUID，前端用库位选择器填写）。选择器列出哪个所属方的库位、放进去的是哪件物料、
-已占用的库位怎么处理，写在 `Material.site_picker`：
+已占用的库位怎么处理，写在 `MaterialRole.site_picker`：
 
 ```python
-from unilabos.registry.decorators import Material, action
+from unilabos.registry.decorators import MaterialRole, action
 from unilabos.registry.placeholder_type import ResourceSlot, SiteSlot
 
 @action(
     display_name="放到库位",
-    material_contract=Material.site_picker("site", of="carrier", for_material="sample", occupied="show"),
+    material_contract=MaterialRole.site_picker("site", of="carrier", for_material="sample", occupied="show"),
 )
 def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = None) -> None: ...
 ```
@@ -227,16 +227,16 @@ def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = No
 - 生成的 `x-unilabos-site-selector` 扩展形状不变：`{"version": 1, "owner": <of>, "occupant": <for_material>,
   "show_occupied": ..., "allow_occupied": ...}`；`of` 省略时 `owner` 为 `null`（执行设备根节点），`of` 是 `DeviceSlot`
   参数时它的值是设备 id。
-- 只写 `SiteSlot`、不写 `Material.site_picker` 的参数照旧是库位选择器，只是没有这层关系的核对。
+- 只写 `SiteSlot`、不写 `MaterialRole.site_picker` 的参数照旧是库位选择器，只是没有这层关系的核对。
 - **工作流里写死的工位**：库位 uuid 由物料权威在建树时发号，同一个设备图在不同部署里的库位 uuid 不同，工作流源码
-  不能写死库位 uuid。带 `Material.site_picker(of=...)` 关系的库位参数可以改给所属方下的**库位名**（或序号），例如
+  不能写死库位 uuid。带 `MaterialRole.site_picker(of=...)` 关系的库位参数可以改给所属方下的**库位名**（或序号），例如
   `{"target_owner": {"uuid": <载架 uuid>}, "target_site": "position_x15_y01"}`：运行预检与派发前在 `of` 所属方下唯一
-  匹配，解析出的库位用于归属 / 占用核对、库位锁和 `Material.move` / `place` 的目标（`from_site` 同样）。所属方下匹配不到
+  匹配，解析出的库位用于归属 / 占用核对、库位锁和 `MaterialRole.move` / `place` 的目标（`from_site` 同样）。所属方下匹配不到
   或不唯一时报错；没有 `site_picker` 关系的库位名无从解析，派发前报错。
 
 #### 按所属物料选库位：`{"owner_uuid": ...}`
 
-带 `Material.site_picker` 关系的库位参数（以及工作流入口参数里的 `SiteSlot`）可以不给库位 uuid，而给
+带 `MaterialRole.site_picker` 关系的库位参数（以及工作流入口参数里的 `SiteSlot`）可以不给库位 uuid，而给
 `{"owner_uuid": "<所属物料 uuid>"}`，由调度器在**任务准入**时挑一个库位：
 
 - 候选是所属物料下（可见的）库位里，接收规则接受放入物料（`site_picker` 的 `for_material` 参数；它按库位绑定时先解析）的：
@@ -251,7 +251,7 @@ def place(self, carrier: ResourceSlot, sample: ResourceSlot, site: SiteSlot = No
   （`stage=preflight`、`reason=no_acceptable_site`，`details` 带参数、节点、所属物料）；运行预检给 `invalid_site_selection`。
   接受的库位此刻都被占着或已被预留是临时条件：任务保持 `pending` 排队，attempt 的 `wait_reason.code=site_group_unavailable`，
   有任务结束或 5 秒兜底重算时按创建先后重试；运行预检给 `site_selection_unavailable`（可以提交，提交后排队）。
-- 写法本身不对时建任务就拒绝（`error.code=site_selection_invalid`，`error.details.reason`）：参数没有 `Material.site_picker` 关系
+- 写法本身不对时建任务就拒绝（`error.code=site_selection_invalid`，`error.details.reason`）：参数没有 `MaterialRole.site_picker` 关系
   （`no_site_relation`）、关系没有声明 `for_material`（`occupant_undeclared`）、放入物料在建任务时不确定（来自上游结果，
   `occupant_unknown`）、与 `of` 参数给的物料不一致（`owner_mismatch`）。
 - 给精确的库位 uuid 照旧，不经过选择与预留。
@@ -306,25 +306,26 @@ def confirm(self, timeout_seconds: int, assignee_user_ids: list[str]): ...
 | 删除的写法 | 新写法 |
 | --- | --- |
 | `@action(contract="typed")` / `contract="legacy"` | 去掉：所有 JSON 动作同一标准 |
-| `@action(resource_contract={...})` | `@action(material_contract=Material.xxx(...))`，对照表见上 |
-| `@action(material=Material.xxx(...))` / `material=[...]`（字段改名前的写法） | `@action(material_contract=Material.xxx(...))` / `material_contract=[...]`：只改字段名，值不变；`material_contract=` 是实验性功能，写了就按定义告警一次 |
+| `@action(resource_contract={...})` | `@action(material_contract=MaterialRole.xxx(...))`，对照表见上 |
+| `@action(material=Material.xxx(...))` / `material=[...]`（字段改名前的写法） | `@action(material_contract=MaterialRole.xxx(...))` / `material_contract=[...]`：字段名改为 `material_contract=`，声明类改为 `MaterialRole`（见下一行），方法与参数不变；`material_contract=` 是实验性功能，写了就按定义告警一次 |
+| `Material.xxx(...)`（声明类 `Material`，`from unilabos.registry.decorators import Material`） | `MaterialRole.xxx(...)`（`from unilabos.registry.decorators import MaterialRole`）：只改类名，方法与参数不变，与运行时物料操作模块 `unilabos.resources.materials` 区分开。`Material` 仍可导入，但 `Material.xxx(...)` 在导入时与 AST 扫描里都直接报错并给出新写法 |
 | `Annotated[T, Placeholder(PLACEHOLDER_...)]`（`unilabos.registry.annotations.Placeholder`） | `@action(placeholder_keys={"参数名": PLACEHOLDER_...})`，参数照常注解为 `T` |
-| `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material_contract=Material.site_picker("参数名", of=..., for_material=..., occupied=...))`；生成的 schema 扩展与以前相同 |
+| `Annotated[str, SiteSelector(owner=..., occupant=..., show_occupied=..., allow_occupied=...)]`（`unilabos.registry.annotations.SiteSelector`） | 参数注解为 `SiteSlot`，关系写成 `@action(material_contract=MaterialRole.site_picker("参数名", of=..., for_material=..., occupied=...))`；生成的 schema 扩展与以前相同 |
 | JSON 动作的 `@action(goal={...})` / `result={...}` 重命名 | 去掉：字段名就是参数名 / 返回 TypedDict 的字段名（要改名就改参数名） |
 | 按名字注入的动作上下文：参数叫 `action_context` 但没有 `ActionContext` 注解 | 注解为 `Optional[ActionContext]`（`from unilabos.client.host.runtime.action import ActionContext`），名字随意；没有注解的 `action_context` 参数注册时报错（自动动作同样） |
 
-### `Material` 辅助 API 重做（一次性不兼容）
+### 资源语义辅助 API 重做（一次性不兼容）
 
-`Material` 改为声明真实的物料动作（见「资源语义」）。下面的旧写法在装饰器（导入时）与注册表 AST 扫描里都直接报错，
+资源语义改为声明真实的物料动作（见「资源语义」），声明类改名为 `MaterialRole`。下面的旧写法在装饰器（导入时）与注册表 AST 扫描里都直接报错，
 错误信息给出新写法；不做转换。
 
 | 删除的写法 | 新写法 |
 | --- | --- |
-| `Material.transfer("plate", to="owner", site="site" \| site_name="site", gripper="arm.gripper", source=..., source_site=..., source_site_name=..., motion=..., tools=...)` | `Material.move("plate", to_site="site", from_site=None, carrier_device=None)`：库位参数改成 `SiteSlot`（值是库位 uuid），所属方由库位决定，不写 `to` / `source`；搬运设备的夹爪库位角色统一为 `gripper`，不写 `gripper=`；`motion` / `tools` 去掉（设备参数按类型加锁） |
-| `Material.pick("plate", owner="owner", site="site", carriers=["carrier"])` | `Material.pick("plate", from_site=None, carrier_device=None)`：搬运设备是 `DeviceSlot` 参数，省略即执行设备 |
-| `Material.place("plate", owner="owner", site="site", carriers=["carrier"])` | `Material.place("plate", to_site="site", carrier_device=None)` |
-| `Material.aliquot(source="source", targets=["target"])` | `Material.dispense(from_material="source", to_materials=["target"])`（语义不变） |
-| `Material.site("site", owner="carrier", occupant="sample", show_occupied=..., allow_occupied=...)` | `Material.site_picker("site", of="carrier", for_material="sample", occupied="hide" \| "show" \| "allow")`（`show_occupied=False` → `"hide"`；`allow_occupied=True` → `"allow"`；其余 → `"show"`） |
+| `Material.transfer("plate", to="owner", site="site" \| site_name="site", gripper="arm.gripper", source=..., source_site=..., source_site_name=..., motion=..., tools=...)` | `MaterialRole.move("plate", to_site="site", from_site=None, carrier_device=None)`：库位参数改成 `SiteSlot`（值是库位 uuid），所属方由库位决定，不写 `to` / `source`；搬运设备的夹爪库位角色统一为 `gripper`，不写 `gripper=`；`motion` / `tools` 去掉（设备参数按类型加锁） |
+| `Material.pick("plate", owner="owner", site="site", carriers=["carrier"])` | `MaterialRole.pick("plate", from_site=None, carrier_device=None)`：搬运设备是 `DeviceSlot` 参数，省略即执行设备 |
+| `Material.place("plate", owner="owner", site="site", carriers=["carrier"])` | `MaterialRole.place("plate", to_site="site", carrier_device=None)` |
+| `Material.aliquot(source="source", targets=["target"])` | `MaterialRole.dispense(from_material="source", to_materials=["target"])`（语义不变） |
+| `Material.site("site", owner="carrier", occupant="sample", show_occupied=..., allow_occupied=...)` | `MaterialRole.site_picker("site", of="carrier", for_material="sample", occupied="hide" \| "show" \| "allow")`（`show_occupied=False` → `"hide"`；`allow_occupied=True` → `"allow"`；其余 → `"show"`） |
 | `Material.uses(device=[...], tool=[...], motion=[...], site=[...], material=[...])` | 删除：参数按类型加锁（`ResourceSlot` 物料锁、`DeviceSlot` 设备锁、`SiteSlot` 库位锁），把参数注解成对应类型即可 |
 | `Material.load("sample", device="vessel")`（`vessel` 是 `str` / `ResourceSlot`） | `vessel` 注解为 `DeviceSlot`；装进执行设备本身时省略 `device=` |
 

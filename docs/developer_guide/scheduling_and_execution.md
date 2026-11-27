@@ -319,7 +319,7 @@ attempt 和新 `job_uuid`（与 4.1 本机调度器的 retry 语义相同，只�
 一个 Job 不会只持有部分锁；等待顺序由持久准入决定（5.0）。
 
 **临时资源条件只排队、不失败**（V1 `resource_wait_policy`，`scheduler/resource_wait_policy.py`）：解析动作参数与
-物理合同时（`Material.site_picker` 关系的库位被占、搬运来源暂时不在库位、夹爪库位有物），或物料权威准备物理动作时
+物理合同时（`MaterialRole.site_picker` 关系的库位被占、搬运来源暂时不在库位、夹爪库位有物），或物料权威准备物理动作时
 （`prepare_material_execution` 发现目标库位刚被占、另一作业的物理动作尚未结算），attempt 不记 `dispatch_not_sent`，
 而是撤回已取得的 Claim、区间准入与内存锁，回到等待集合，下一次资源变化（任一作业释放资源、5 秒兜底重算）时
 按首次排队先后重试；排队原因写在 attempt 的 `control_data.wait_reason`（`{code, message, waiting_since}`，作业

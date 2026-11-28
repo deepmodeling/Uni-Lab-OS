@@ -1,0 +1,42 @@
+package:
+  name: ros2_csharp
+  version: 0.0.1
+
+source:
+  path: {{ 你的安装打包目录 }}
+
+build:
+  number: 0
+  script:
+  # 创建基本目录
+  - mkdir %PREFIX%\Library\bin 2>nul
+  - mkdir %PREFIX%\Library\include 2>nul
+  - mkdir %PREFIX%\Library\lib 2>nul
+  - mkdir %PREFIX%\Library\share 2>nul 
+  # 复制文件
+  - xcopy /E /I /Y %SRC_DIR%\bin %PREFIX%\Library\bin
+  - xcopy /E /I /Y %SRC_DIR%\include %PREFIX%\Library\include
+  - xcopy /E /I /Y %SRC_DIR%\lib %PREFIX%\Library\lib
+  - xcopy /E /I /Y %SRC_DIR%\share %PREFIX%\Library\share
+  
+  # 关键：注册ROS 2包
+  - mkdir %PREFIX%\Library\share\ament_index\resource_index\packages 2>nul
+  - copy  %RECIPE_DIR%\ros_driver %PREFIX%\Library\share\ament_index\resource_index\packages\ros_driver
+  
+  # 设置环境变量
+  - mkdir %PREFIX%\etc\conda\activate.d 2>nul
+  - mkdir %PREFIX%\etc\conda\deactivate.d 2>nul
+  # activate脚本
+  - copy %RECIPE_DIR%\activate.bat %PREFIX%\etc\conda\activate.d\ros_csharp.bat
+  - copy %RECIPE_DIR%\deactivate.bat %PREFIX%\etc\conda\deactivate.d\ros_csharp.bat
+
+
+requirements:
+  host:
+  run:
+
+about:
+  home: https://www.ros.org/
+  license: BSD-3-Clause
+  summary: |
+    Robot Operating System
